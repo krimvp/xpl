@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { packFor, packForFile, tomlPack } from "../src/languages/index.js";
 import { MAX_KEYS_PER_FILE } from "../src/languages/keys.js";
 import { indexFiles, symbol, symbolLines } from "./helpers.js";
 
@@ -333,15 +334,34 @@ describe("TOML symbols", () => {
     ]);
   });
 
-  it("indexes the file as text (FileLanguage has no toml) and says refs none", async () => {
+  it("indexes the file as toml, with its own line in the language summary, and says refs none", async () => {
     const { index } = await indexFiles({
       "pyproject.toml": '[project]\nname = "x"\n',
+      "Cargo.TOML": '[package]\nname = "y"\n',
       "README.md": "# hi\n",
     });
-    expect(index.files.find((f) => f.path === "pyproject.toml")!.language).toBe("text");
+    expect(index.files.find((f) => f.path === "pyproject.toml")!.language).toBe("toml");
+    expect(index.files.find((f) => f.path === "Cargo.TOML")!.language).toBe("toml");
+    expect(index.files.find((f) => f.path === "README.md")!.language).toBe("text");
     expect(index.refs).toEqual([]);
-    expect(index.languages.text).toEqual({ files: 2, symbols: 2, refs: "none" });
+    expect(index.languages.toml).toEqual({ files: 2, symbols: 4, refs: "none" });
+    expect(index.languages.text).toEqual({ files: 1, symbols: 0, refs: "none" });
+    expect(index.symbols.map((s) => s.id).sort()).toEqual([
+      "Cargo.TOML#package",
+      "Cargo.TOML#package.name",
+      "pyproject.toml#project",
+      "pyproject.toml#project.name",
+    ]);
     expect(index.tool).toContain("tree-sitter-toml@0.7.0");
+  });
+
+  it("the pack is found by the toml language (and by nothing else)", () => {
+    expect(packFor("toml")).toBe(tomlPack);
+    expect(packForFile("a/pyproject.toml", "toml")).toBe(tomlPack);
+    expect(tomlPack.languages).toEqual(["toml"]);
+    expect(packFor("text")).toBeUndefined();
+    // a text file is not TOML just because of its extension: the language table decides
+    expect(packForFile("notes.toml", "text")).toBeUndefined();
   });
 
   it("pairs at the top of the file, dotted keys, quoted keys, inline tables and arrays of inline tables", async () => {

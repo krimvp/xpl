@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { expect, test } from "@playwright/test";
 import {
   byId,
+  fitAll,
   linesWith,
   matchesOf,
   openBundle,
@@ -394,6 +395,8 @@ test.describe("hit targets", () => {
    * parts of them, so their groups are built around an anchor on the route (see GraphView).
    */
   async function everyElementTakesAClick(page: import("@playwright/test").Page) {
+    // a big diagram starts zoomed in, with part of it out of sight: fit it, so that every element is on screen
+    await fitAll(page);
     const ids = await page
       .locator("[data-element-id]")
       .evaluateAll((els) => els.map((el) => el.getAttribute("data-element-id")!));

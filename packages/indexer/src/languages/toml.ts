@@ -17,8 +17,7 @@
  * - quoted keys are unquoted (`"a b" = 1` -> `a b`); at most 6 levels of keys (indices do not count) and 2000
  *   keys per file, as for YAML.
  *
- * The files are `text` in the index: `FileLanguage` (core) has no "toml" yet, so the pack is found by file
- * extension (`LanguagePack.extensions`) and parsed with its own grammar.
+ * The files are `toml` in the index (`languageForPath` maps `.toml`), and the pack is found by that language.
  */
 import type { Node } from "web-tree-sitter";
 import { pointsToSpan } from "../ast.js";
@@ -182,8 +181,7 @@ class TomlWalker {
 
 export const tomlPack: LanguagePack = {
   id: "toml",
-  languages: [],
-  extensions: [".toml"],
+  languages: ["toml"],
   grammarFor: () => "toml",
   packageScope: "file",
   refs: "none",

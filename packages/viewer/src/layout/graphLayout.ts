@@ -25,6 +25,7 @@ import {
 } from "@xpl/core";
 import { textWidth } from "../measure.js";
 import { nearRoute, routeAnchor, type Box, type Point } from "../svg.js";
+import { unionBox } from "../viewport.js";
 
 export type { Point } from "../svg.js";
 
@@ -562,6 +563,42 @@ export async function layoutGraph(
     console.warn("xpl: ELK layout failed, using a grid", error);
     return fallbackLayout(model);
   }
+}
+
+// ─── Where a diagram too big to fit starts ──────────────────────────────────────────────────────
+
+/** The boxes of all nodes (containers and what is inside them, ghosts) by id, in canvas coordinates. */
+export function absoluteBoxes(nodes: readonly LayoutNode[]): Map<string, Box> {
+  const out = new Map<string, Box>();
+  const walk = (list: readonly LayoutNode[], origin: Point) => {
+    for (const node of list) {
+      const at = { x: origin.x + node.x, y: origin.y + node.y };
+      out.set(node.id, { ...at, width: node.width, height: node.height });
+      walk(node.children, at);
+    }
+  };
+  walk(nodes, { x: 0, y: 0 });
+  return out;
+}
+
+/**
+ * What a diagram that is too big to be shown whole starts on (see viewport.ts): the selected boxes, else the
+ * first box of the view's include list that is drawn (`order`: the include list keeps the author's order,
+ * which puts the entry point first). Undefined leaves the start at the top-left corner.
+ */
+export function startAnchor(
+  layout: Pick<GraphLayout, "nodes">,
+  selection: readonly string[],
+  order: readonly string[],
+): Box | undefined {
+  const boxes = absoluteBoxes(layout.nodes);
+  const selected = unionBox(selection.flatMap((id) => boxes.get(id) ?? []));
+  if (selected) return selected;
+  for (const id of order) {
+    const box = boxes.get(id);
+    if (box) return box;
+  }
+  return undefined;
 }
 
 // ─── Direction: whichever reads larger in the pane ──────────────────────────────────────────────

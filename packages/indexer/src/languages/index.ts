@@ -1,7 +1,8 @@
 /**
  * Registry of language packs. One pack per language family; `packFor(language)` maps an
  * `IndexedFile.language` to its pack (undefined for "text"), `packForFile(path, language)` also finds the pack
- * of a `text` file by its extension (TOML). Other text files are indexed without symbols.
+ * of a `text` file by its extension (`LanguagePack.extensions`, for a format that has no language of its own;
+ * none does now). Other text files are indexed without symbols.
  */
 import type { FileLanguage } from "@xpl/core";
 import { goPack } from "./go.js";

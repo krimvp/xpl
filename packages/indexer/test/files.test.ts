@@ -30,6 +30,9 @@ describe("languageForPath", () => {
     ["config/default.yaml", "yaml"],
     ["ci.yml", "yaml"],
     ["package.json", "json"],
+    ["pyproject.toml", "toml"],
+    ["crates/core/Cargo.toml", "toml"],
+    ["CONFIG.TOML", "toml"],
     ["README.md", "text"],
     ["Dockerfile", "text"],
     ["Makefile", "text"],
@@ -178,6 +181,14 @@ describe("discoverFiles in a git work tree", () => {
     });
     const files = await discoverFiles(dir, { languages: ["python", "text"] });
     expect(files.files.map((f) => f.path)).toEqual(["b.py", "d.md"]);
+  });
+
+  it("finds TOML files as their own language", async () => {
+    const dir = makeRepo({ "pyproject.toml": "[project]\n", "d.md": "x\n", "e.txt": "y\n" });
+    const toml = await discoverFiles(dir, { languages: ["toml"] });
+    expect(toml.files.map((f) => [f.path, f.language])).toEqual([["pyproject.toml", "toml"]]);
+    const text = await discoverFiles(dir, { languages: ["text"] });
+    expect(text.files.map((f) => f.path)).toEqual(["d.md", "e.txt"]);
   });
 });
 

@@ -104,6 +104,11 @@ export interface ViewerState {
   tour: TourPosition | undefined;
   /** The step that produced the current selection; undefined after a detour (see `AppliedStep`). */
   applied: AppliedStep | undefined;
+  /**
+   * Counts the tour steps applied so far. The diagram starts over (its first view, on the step's focus)
+   * whenever this changes, even when the step stays in the same view.
+   */
+  stepSeq: number;
   /** Source text of the files loaded so far (all of them in a static bundle). */
   files: Readonly<Record<FilePath, string>>;
   /** Files that could not be loaded, with the reason. */
@@ -159,6 +164,7 @@ export class ViewerStore {
       mode: "explore",
       tour: tour ? { tourId: tour.id, step: stepIndex(launch.step, tour.steps.length) } : undefined,
       applied: undefined,
+      stepSeq: 0,
       files: bundle.files,
       fileErrors: {},
       dirty: false,
@@ -389,6 +395,7 @@ export class ViewerStore {
       selection: [...new Set(focus)],
       cursor: undefined,
       openedFile: undefined,
+      stepSeq: this.state.stepSeq + 1,
       applied: {
         tourId: tour.id,
         stepId: step.id,

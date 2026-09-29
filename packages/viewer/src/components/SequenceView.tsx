@@ -20,6 +20,8 @@ import { PanZoom, PRESENT_FIT_PADDING, PRESENT_MAX_FIT_ZOOM } from "./PanZoom.js
 
 export interface SequenceViewProps {
   view: SequenceViewData;
+  /** A new key starts the diagram over (its first view); default: the view id. */
+  resetKey?: string;
   model: ExplainerModel;
   selection: readonly string[];
   matches: readonly string[];
@@ -33,6 +35,7 @@ const additive = (event: MouseEvent | KeyboardEvent) =>
 
 export function SequenceView({
   view,
+  resetKey = view.id,
   model,
   selection,
   matches,
@@ -60,7 +63,7 @@ export function SequenceView({
     <PanZoom
       width={layout.width}
       height={layout.height}
-      resetKey={view.id}
+      resetKey={resetKey}
       label="Sequence diagram. Drag to pan, scroll to zoom."
       maxFitZoom={present ? PRESENT_MAX_FIT_ZOOM : undefined}
       fitPadding={present ? PRESENT_FIT_PADDING : undefined}

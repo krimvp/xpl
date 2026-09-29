@@ -1,9 +1,11 @@
 import { deriveGraph, ExplainerModel, type GraphView } from "@xpl/core";
 import { describe, expect, it } from "vitest";
 import {
+  absoluteBoxes,
   fitScale,
   layoutGraph,
   layoutGraphFitting,
+  startAnchor,
   type LayoutEdge,
   type LayoutNode,
 } from "../src/layout/graphLayout.js";
@@ -299,5 +301,70 @@ describe("layoutGraphFitting", () => {
     expect(fitScale({ width: 904, height: 100 }, { width: 500, height: 500 })).toBeCloseTo(0.5, 5);
     expect(fitScale({ width: 100, height: 904 }, { width: 500, height: 500 })).toBeCloseTo(0.5, 5);
     expect(fitScale({ width: 0, height: 0 }, { width: 10, height: 10 })).toBe(1.25);
+  });
+});
+
+describe("where a diagram too big to fit starts", () => {
+  const NESTED = ["file:src/a.ts", "sym:src/a.ts#A", "sym:src/a.ts#A.run", "file:src/b.ts"];
+
+  it("absoluteBoxes gives every box in canvas coordinates, children included", async () => {
+    const { graph } = graphOf(NESTED);
+    const layout = await layoutGraph(graph);
+    const boxes = absoluteBoxes(layout.nodes);
+    // every node, containers and what is inside them; ghost boxes are boxes too
+    expect([...boxes.keys()].filter((id) => !id.startsWith("ghost:")).sort()).toEqual(
+      [...NESTED].sort(),
+    );
+    expect([...boxes.keys()].some((id) => id.startsWith("ghost:"))).toBe(true);
+    // a child sits inside its container, in the container's coordinates plus the container's own position
+    const file = layout.nodes.find((n) => n.id === "file:src/a.ts")!;
+    const cls = file.children.find((n) => n.id === "sym:src/a.ts#A")!;
+    expect(boxes.get("file:src/a.ts")).toEqual({
+      x: file.x,
+      y: file.y,
+      width: file.width,
+      height: file.height,
+    });
+    expect(boxes.get("sym:src/a.ts#A")).toEqual({
+      x: file.x + cls.x,
+      y: file.y + cls.y,
+      width: cls.width,
+      height: cls.height,
+    });
+    const method = cls.children.find((n) => n.id === "sym:src/a.ts#A.run")!;
+    expect(boxes.get("sym:src/a.ts#A.run")!.x).toBe(file.x + cls.x + method.x);
+    expect(boxes.get("sym:src/a.ts#A.run")!.y).toBe(file.y + cls.y + method.y);
+  });
+
+  it("starts on the selected boxes; else on the first box of the include list that is drawn", async () => {
+    const { graph } = graphOf(NESTED);
+    const layout = await layoutGraph(graph);
+    const boxes = absoluteBoxes(layout.nodes);
+    const box = (id: string) => boxes.get(id)!;
+    // the selection wins (a concept or an edge that is not a box is skipped)
+    expect(startAnchor(layout, ["file:src/b.ts"], NESTED)).toEqual(box("file:src/b.ts"));
+    expect(startAnchor(layout, ["concept:x", "file:src/b.ts"], NESTED)).toEqual(
+      box("file:src/b.ts"),
+    );
+    // several: the box around them
+    const both = startAnchor(layout, ["file:src/a.ts", "file:src/b.ts"], NESTED)!;
+    expect(both.x).toBe(Math.min(box("file:src/a.ts").x, box("file:src/b.ts").x));
+    expect(both.x + both.width).toBe(
+      Math.max(
+        box("file:src/a.ts").x + box("file:src/a.ts").width,
+        box("file:src/b.ts").x + box("file:src/b.ts").width,
+      ),
+    );
+    // no (drawn) selection: the first included box, in the order of the include list
+    expect(startAnchor(layout, [], NESTED)).toEqual(box("file:src/a.ts"));
+    expect(startAnchor(layout, ["edge:whatever"], ["file:src/b.ts", "file:src/a.ts"])).toEqual(
+      box("file:src/b.ts"),
+    );
+    expect(startAnchor(layout, [], ["file:src/gone.ts", "file:src/b.ts"])).toEqual(
+      box("file:src/b.ts"),
+    );
+    // nothing to go by: the top-left corner
+    expect(startAnchor(layout, [], [])).toBeUndefined();
+    expect(startAnchor(layout, ["concept:x"], ["file:src/gone.ts"])).toBeUndefined();
   });
 });

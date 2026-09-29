@@ -54,6 +54,9 @@ export function languageSupport(language: FileLanguage): Extension {
       return yaml();
     case "json":
       return json();
+    case "toml":
+      // No CodeMirror mode is installed for TOML (a legacy mode would be a new dependency): plain text.
+      return [];
     case "text":
       return [];
   }
