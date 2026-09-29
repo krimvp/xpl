@@ -19,8 +19,11 @@ export function renderResolveReport(report: ResolveReport): string[] {
           : "";
       lines.push(`  ${element.elementId}  (${element.owner})${kept}`);
       for (const drifted of element.anchors) {
+        const approximate = drifted.approximate
+          ? " (approximate: where the span was; the changed code may have shifted, so re-read it)"
+          : "";
         lines.push(
-          `    ${drifted.path}  ${describeAnchor(drifted.anchor)} [${drifted.anchor.role}]  now at lines ${rangeText(drifted.range)}`,
+          `    ${drifted.path}  ${describeAnchor(drifted.anchor)} [${drifted.anchor.role}]  now at lines ${rangeText(drifted.range)}${approximate}`,
         );
         if (drifted.reason) lines.push(`      ${drifted.reason}`);
       }

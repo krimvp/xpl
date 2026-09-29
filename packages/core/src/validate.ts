@@ -73,6 +73,11 @@ export interface Issue {
   elementId?: string;
   message: string;
   code?: IssueCode;
+  /**
+   * Anchor problems (drifted, missing) of an element whose anchors the user owns (origin `user`, or `anchors`
+   * / `steps` in `userFields`). An llm patch cannot repair them, so `applyPatch` never lets them reject one.
+   */
+  userLocked?: true;
 }
 
 export interface ValidateOptions {
@@ -177,9 +182,16 @@ class Validator {
     message: string,
     elementId: string | undefined,
     code: IssueCode,
+    userLocked = false,
   ): void {
-    if (this.strict) this.error(path, message, elementId, code);
-    else this.warn(path, message, elementId, code);
+    this.issues.push({
+      severity: this.strict ? "error" : "warning",
+      path,
+      ...(elementId ? { elementId } : {}),
+      message,
+      code,
+      ...(userLocked ? { userLocked: true as const } : {}),
+    });
   }
 
   // ─── Driver ─────────────────────────────────────────────────────────────────────────────────
@@ -433,11 +445,17 @@ class Validator {
    * Resolves and validates every anchor of a list. Anchors that resolve `drifted` / `missing` are
    * errors in strict mode and warnings in lenient mode.
    */
-  private checkAnchors(anchors: unknown, path: string, elementId: string): CheckedAnchor[] {
+  private checkAnchors(
+    anchors: unknown,
+    path: string,
+    elementId: string,
+    owner?: { provenance: unknown; field: string },
+  ): CheckedAnchor[] {
     if (!Array.isArray(anchors)) {
       this.error(path, "anchors must be an array", elementId);
       return [];
     }
+    const locked = owner ? lockedBy(owner.provenance, owner.field) : undefined;
     const out: CheckedAnchor[] = [];
     anchors.forEach((raw: unknown, i) => {
       const at = `${path}[${i}]`;
@@ -472,19 +490,31 @@ class Validator {
       }
       const result = resolveWith(anchor, this.index, this.texts);
       const where = describeAnchor(anchor);
+      // Only the user can repair what the user owns: an llm patch skips it, so say who acts.
+      const userFix = locked
+        ? ` This element ${locked}, so an llm patch cannot change it (it is skipped): tell the user, or fix it with \`xpl apply --actor user\`.`
+        : undefined;
       if (result.status === "missing") {
         this.stale(
           at,
-          `anchor ${where} is missing: ${result.reason ?? "not found"}`,
+          `anchor ${where} is missing: ${endSentence(result.reason ?? "not found")}${
+            userFix ??
+            " Re-anchor it to where the code went, or drop it (resend the element without this anchor, or remove the element)."
+          }`,
           elementId,
           "anchor-missing",
+          locked !== undefined,
         );
       } else if (result.status === "drifted") {
         this.stale(
           at,
-          `anchor ${where} drifted: ${result.reason ?? "the code changed since it was written"}. Re-read the code and rewrite the anchor (and the explanation that depends on it).`,
+          `anchor ${where} drifted: ${endSentence(result.reason ?? "the code changed since it was written")}${
+            userFix ??
+            " Re-read the code and rewrite the anchor (and the explanation that depends on it)."
+          }`,
           elementId,
           "anchor-drifted",
+          locked !== undefined,
         );
       }
       out.push({
@@ -583,7 +613,10 @@ class Validator {
       this.warn(`${path}.members`, "members only apply to groups and are ignored here", id);
     }
 
-    this.checkAnchors(node.anchors ?? [], `${path}.anchors`, id);
+    this.checkAnchors(node.anchors ?? [], `${path}.anchors`, id, {
+      provenance: node.provenance,
+      field: "anchors",
+    });
   }
 
   /** Groups must not (transitively) contain themselves. */
@@ -668,7 +701,10 @@ class Validator {
     if (edge.provenance === undefined)
       this.error(`${path}.provenance`, "provenance is required", id);
     else this.checkProvenance(edge.provenance, `${path}.provenance`, id);
-    const checked = this.checkAnchors(edge.anchors ?? [], `${path}.anchors`, id);
+    const checked = this.checkAnchors(edge.anchors ?? [], `${path}.anchors`, id, {
+      provenance: edge.provenance,
+      field: "anchors",
+    });
 
     if (isRecord(edge.provenance) && edge.provenance.origin === "llm") {
       for (const [end, label, ok] of [
@@ -722,7 +758,10 @@ class Validator {
         this.error(`${path}.related`, "related must be an array of element ids", id);
       else c.related.forEach((r, j) => this.refElement(r, `${path}.related[${j}]`, id, "related"));
     }
-    this.checkAnchors(c.anchors ?? [], `${path}.anchors`, id);
+    this.checkAnchors(c.anchors ?? [], `${path}.anchors`, id, {
+      provenance: c.provenance,
+      field: "anchors",
+    });
   }
 
   // ─── Views ──────────────────────────────────────────────────────────────────────────────────
@@ -966,7 +1005,11 @@ class Validator {
         }
       }
       if (step.edge !== undefined) this.refEdge(step.edge, `${at}.edge`, sid, "step edge");
-      this.checkAnchors(step.anchors ?? [], `${at}.anchors`, sid);
+      // a step belongs to its view: the view's provenance says who may rewrite it
+      this.checkAnchors(step.anchors ?? [], `${at}.anchors`, sid, {
+        provenance: view.provenance,
+        field: "steps",
+      });
     });
 
     // frames
@@ -1150,6 +1193,20 @@ class Validator {
       }
     });
   }
+}
+
+/** Why an llm patch cannot rewrite `field` of an element with this provenance (undefined: it can). */
+function lockedBy(provenance: unknown, field: string): string | undefined {
+  if (!isRecord(provenance)) return undefined;
+  if (provenance.origin === "user") return "is user-authored";
+  const fields = provenance.userFields;
+  if (Array.isArray(fields) && fields.includes(field)) return `has its ${field} edited by the user`;
+  return undefined;
+}
+
+/** `text` with a full stop, unless it already ends a sentence (a "did you mean ...?" hint does). */
+function endSentence(text: string): string {
+  return /[.?!]$/.test(text) ? text : `${text}.`;
 }
 
 function describeInside(end: ElementId): string {

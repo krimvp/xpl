@@ -1,0 +1,24 @@
+{
+  "nodes": [
+    {
+      "id": "sym:src/runner.ts#Runner.dispatch",
+      "summary": "Mine: the hot loop. Pop, lease, run, then ack, requeue or dead-letter."
+    }
+  ],
+  "concepts": [
+    {
+      "id": "concept:retry-tuning",
+      "label": "Retry tuning",
+      "summary": "Why the backoff is exponential and capped: a flapping dependency must not be hammered.",
+      "anchors": [
+        {
+          "file": "src/runner.ts",
+          "symbol": "Runner.dispatch",
+          "span": { "from": 30, "to": 41 },
+          "role": "definition"
+        }
+      ],
+      "related": ["sym:src/runner.ts#Runner.dispatch"]
+    }
+  ]
+}

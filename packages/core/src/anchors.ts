@@ -722,6 +722,12 @@ export interface DriftedAnchor {
     role: AnchorRole;
   };
   range: Range;
+  /**
+   * Set for span anchors: a span is only re-found while its text is unchanged, so for a drifted one `range`
+   * is just where the span used to sit. Lines added or removed above it inside the symbol put the changed
+   * code a few lines off; re-read the code instead of trusting these lines.
+   */
+  approximate?: true;
   reason?: string;
 }
 
@@ -828,6 +834,7 @@ export function reresolveExplainer(
           path: site.path,
           anchor: anchorRef(anchor),
           range: result.range,
+          ...(anchor.span !== undefined ? { approximate: true as const } : {}),
           ...(result.reason !== undefined ? { reason: result.reason } : {}),
         });
       } else {
