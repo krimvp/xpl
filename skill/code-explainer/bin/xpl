@@ -1,0 +1,32 @@
+#!/usr/bin/env node
+// Launcher for the built xpl CLI (packages/cli/dist/xpl.mjs of the repo this skill lives in).
+//
+// It resolves its own real path (so a symlinked skill directory works), finds the CLI relative to
+// that, and runs it in this process: same argv, stdio, signals and exit code as `node xpl.mjs ...`.
+// XPL_CLI=<path to xpl.mjs> overrides the lookup (for a skill that was copied out of the repo).
+import { existsSync, realpathSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
+
+const self = realpathSync(fileURLToPath(import.meta.url)); // <repo>/skill/code-explainer/bin/xpl
+const repo = resolve(dirname(self), "../../..");
+const cli = process.env.XPL_CLI
+  ? resolve(process.env.XPL_CLI)
+  : resolve(repo, "packages/cli/dist/xpl.mjs");
+
+if (!existsSync(cli)) {
+  console.error(`xpl: the CLI is not built: ${cli} does not exist.`);
+  if (process.env.XPL_CLI) {
+    console.error("XPL_CLI is set; point it at a built xpl.mjs or unset it.");
+  } else {
+    console.error(
+      `Build it once from the repository root:\n  cd ${repo} && npm install && npm run build`,
+    );
+    console.error(
+      "(If this skill directory was copied out of the repo, symlink it instead, or set XPL_CLI.)",
+    );
+  }
+  process.exit(1);
+}
+
+await import(pathToFileURL(cli).href);
