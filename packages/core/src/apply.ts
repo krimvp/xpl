@@ -10,7 +10,14 @@
  * (`anchors` in `userFields`) is not rejected for the drift of those anchors, which it cannot
  * repair; the problem is kept as a warning.
  */
-import { makeAnchor, toTextCache, type GetText, type TextCache } from "./anchors.js";
+import {
+  makeAnchor,
+  storedSymbolHints,
+  toTextCache,
+  type GetText,
+  type MakeAnchorOptions,
+  type TextCache,
+} from "./anchors.js";
 import { EXPLAINER_SCHEMA } from "./constants.js";
 import { EDGE_KINDS, nodeKindOfId, parseId, REPO_ID } from "./ids.js";
 import { asIndexModel, type IndexModel } from "./index-model.js";
@@ -137,11 +144,14 @@ const GRAPH_SPEC: Spec = {
     scope: "object",
     provenance: "object",
     include: "string[]",
+    includeAdd: "string[]",
+    includeRemove: "string[]",
     edgeKinds: "array",
     hidden: "string[]",
+    excludeFiles: "string[]",
     layout: "object",
   },
-  nullable: ["edgeKinds", "hidden", "layout"],
+  nullable: ["edgeKinds", "hidden", "excludeFiles", "layout"],
 };
 const SEQUENCE_SPEC: Spec = {
   fields: {
@@ -252,6 +262,11 @@ function sameContent(a: unknown, b: unknown): boolean {
 /** Loosely typed JSON object: patches and stored elements are handled field by field. */
 type AnyRecord = Record<string, any>;
 type Kind = "node" | "edge" | "concept" | "graph" | "sequence" | "tour";
+/** `includeAdd` / `includeRemove` of a graph view patch (ids, without duplicates). */
+interface IncludeOps {
+  add: string[];
+  remove: string[];
+}
 
 // ─── applyPatch ─────────────────────────────────────────────────────────────────────────────────
 
@@ -262,8 +277,10 @@ type Kind = "node" | "edge" | "concept" | "graph" | "sequence" | "tour";
  *   clears an optional field, arrays replace wholesale); a new id needs its required fields.
  * - Anchors go through `makeAnchor` (hash and `resolved` filled in; unresolvable anchors are errors).
  * - `actor: "llm"` never modifies or removes an element (or view) whose origin is `user` (skipped with
- *   a warning) and keeps fields listed in `provenance.userFields`. `actor: "user"` editing an element
- *   of another origin adds the changed fields to its `userFields`.
+ *   a warning) and keeps fields listed in `provenance.userFields`; it does not remove an element or view
+ *   that carries `userFields`, nor single steps of a view whose `steps` are user fields. The one edit it
+ *   may still make to a field the user owns is `includeAdd` on a graph view (it only adds; see patch.ts).
+ *   `actor: "user"` editing an element of another origin adds the changed fields to its `userFields`.
  * - New elements get `provenance = { origin: actor, commit: index.commit }` unless given; a changed
  *   `llm` element gets `provenance.commit = index.commit`.
  * - `remove` deletes elements, views, tours and steps by id.
@@ -293,6 +310,8 @@ class Applier {
   private readonly touched = new Map<string, string>();
   /** Position of each id in `patch.remove`, for issue paths. */
   private readonly removeIndex = new Map<string, number>();
+  /** `includeAdd` of the graph views the patch edits (view id -> ids), to point issues at the patch. */
+  private readonly includeAdds = new Map<string, readonly string[]>();
   private errors = 0;
 
   constructor(input: Explainer, index: IndexModel, texts: TextCache, actor: "llm" | "user") {
@@ -441,29 +460,34 @@ class Applier {
     >;
     ids.forEach((id) => {
       const path = `remove[${this.removeIndex.get(id) ?? ids.indexOf(id)}]`;
-      const protectedOwner = (origin: string | undefined): boolean => {
-        if (this.actor === "llm" && origin === "user") {
-          this.warn(
-            path,
-            `${id} is user-authored; an llm patch cannot remove it (skipped)`,
-            id,
-            "protected",
-          );
-          return true;
+      // An llm patch leaves alone what the user owns: user-authored elements, anything carrying userFields
+      // (the user edited part of it, so deleting it would throw that work away), and the steps of a view whose
+      // `steps` the user edited.
+      const protectedOwner = (provenance: AnyRecord | undefined, steps = false): boolean => {
+        if (this.actor !== "llm") return false;
+        const fields: string[] = Array.isArray(provenance?.userFields) ? provenance.userFields : [];
+        let why: string | undefined;
+        if (provenance?.origin === "user") why = "is user-authored";
+        else if (steps && fields.includes("steps")) {
+          why = "belongs to a view whose steps were edited by the user";
+        } else if (!steps && fields.length > 0) {
+          why = `has fields edited by the user (${fields.join(", ")})`;
         }
-        return false;
+        if (why === undefined) return false;
+        this.warn(path, `${id} ${why}; an llm patch cannot remove it (skipped)`, id, "protected");
+        return true;
       };
       for (const list of ["nodes", "edges", "concepts"] as const) {
         const at = w[list].findIndex((e) => e.id === id);
         if (at === -1) continue;
-        if (protectedOwner(w[list][at]!.provenance?.origin)) return;
+        if (protectedOwner(w[list][at]!.provenance)) return;
         w[list].splice(at, 1);
         this.changed.push(id);
         return;
       }
       const viewAt = w.views.findIndex((v) => v.id === id);
       if (viewAt !== -1) {
-        if (protectedOwner(w.views[viewAt]!.provenance?.origin)) return;
+        if (protectedOwner(w.views[viewAt]!.provenance)) return;
         w.views.splice(viewAt, 1);
         this.changed.push(id);
         return;
@@ -479,7 +503,7 @@ class Applier {
           ? view.steps.findIndex((s: AnyRecord) => s.id === id)
           : -1;
         if (stepAt === -1) continue;
-        if (protectedOwner(view.provenance?.origin)) return;
+        if (protectedOwner(view.provenance, true)) return;
         view.steps.splice(stepAt, 1);
         this.changed.push(id);
         return;
@@ -529,6 +553,16 @@ class Applier {
     return ok;
   }
 
+  private hintOptions: MakeAnchorOptions | undefined;
+
+  /**
+   * When an anchor names a symbol that is gone, the stored anchors of the explainer remember how big it was
+   * (a whole-symbol anchor keeps its old range and hash), which helps to find where it went.
+   */
+  private anchorOptions(): MakeAnchorOptions {
+    return (this.hintOptions ??= { symbolHint: storedSymbolHints(this.input) });
+  }
+
   /** `AnchorInput[]` -> stored anchors (every failure is reported); undefined when any failed. */
   private anchors(value: unknown, path: string, id: string): Anchor[] | undefined {
     if (!Array.isArray(value)) {
@@ -538,7 +572,7 @@ class Applier {
     const out: Anchor[] = [];
     let ok = true;
     value.forEach((input: AnchorInput, i) => {
-      const made = makeAnchor(input, this.index, this.texts);
+      const made = makeAnchor(input, this.index, this.texts, this.anchorOptions());
       if (made.ok) out.push(made.anchor);
       else {
         ok = false;
@@ -694,6 +728,7 @@ class Applier {
     let ok = true;
     for (const [key, value] of Object.entries(raw)) {
       if (key === "id" || key === "provenance" || value === undefined) continue;
+      if (kind === "graph" && (key === "includeAdd" || key === "includeRemove")) continue; // see includeOps
       if (protectedKeys.has(key)) {
         this.warn(
           `${path}.${key}`,
@@ -815,6 +850,7 @@ class Applier {
     path: string,
     id: string,
     immutableKey: "kind" | "type" | undefined,
+    includeOps?: IncludeOps,
   ): AnyRecord | undefined {
     if (
       immutableKey &&
@@ -841,6 +877,8 @@ class Applier {
       merged[key] = value;
     }
     for (const key of fields.clear) delete merged[key];
+    if (includeOps)
+      this.applyIncludeOps(merged, includeOps, protectedKeys.has("include"), path, id);
     if (this.actor === "user" && isRecord(raw.provenance)) {
       merged.provenance = { ...(merged.provenance ?? {}), ...cloneJson(raw.provenance) };
     }
@@ -852,6 +890,13 @@ class Applier {
       .filter((key) => {
         return key !== immutableKey && !sameContent(existing[key], merged[key]);
       });
+    if (
+      includeOps &&
+      !changedFields.includes("include") &&
+      !sameContent(existing.include, merged.include)
+    ) {
+      changedFields.push("include");
+    }
     if (merged.provenance === undefined) merged.provenance = { origin: "static" };
     const provenance: Provenance = merged.provenance;
     if (this.actor === "user") {
@@ -862,6 +907,70 @@ class Applier {
       provenance.commit = this.index.commit;
     }
     return merged;
+  }
+
+  /**
+   * `includeAdd` / `includeRemove` of a graph view: validated here (types are checked with the other
+   * fields). Returns undefined when the patch has neither, null after reporting an error.
+   */
+  private includeOps(raw: AnyRecord, path: string, id: string): IncludeOps | undefined | null {
+    if (raw.includeAdd === undefined && raw.includeRemove === undefined) return undefined;
+    const add = unique<string>(Array.isArray(raw.includeAdd) ? raw.includeAdd : []);
+    const remove = unique<string>(Array.isArray(raw.includeRemove) ? raw.includeRemove : []);
+    let ok = true;
+    for (const [k, rid] of remove.entries()) {
+      if (add.includes(rid)) {
+        this.error(
+          `${path}.includeRemove[${k}]`,
+          `${rid} is in both includeAdd and includeRemove of ${id}; give it to one of them`,
+          id,
+        );
+        ok = false;
+      }
+    }
+    return ok ? { add, remove } : null;
+  }
+
+  /** Applies `includeRemove`, then `includeAdd`, to `merged.include` (see patch.ts for the rules). */
+  private applyIncludeOps(
+    merged: AnyRecord,
+    ops: IncludeOps,
+    locked: boolean,
+    path: string,
+    id: string,
+  ): void {
+    let list: string[] = Array.isArray(merged.include) ? [...merged.include] : [];
+    if (ops.remove.length > 0) {
+      if (locked) {
+        this.warn(
+          `${path}.includeRemove`,
+          `includeRemove of ${id} was skipped: its include was edited by the user and is kept as it is (includeAdd still works)`,
+          id,
+          "protected",
+        );
+      } else {
+        const present = new Set(list);
+        ops.remove.forEach((rid, k) => {
+          if (!present.has(rid)) {
+            this.warn(
+              `${path}.includeRemove[${k}]`,
+              `${rid} is not in the include of ${id}; nothing to remove`,
+              id,
+            );
+          }
+        });
+        const drop = new Set(ops.remove);
+        list = list.filter((entry) => !drop.has(entry));
+      }
+    }
+    const have = new Set(list);
+    for (const add of ops.add) {
+      if (!have.has(add)) {
+        have.add(add);
+        list.push(add);
+      }
+    }
+    merged.include = list;
   }
 
   private createElement(
@@ -1018,13 +1127,16 @@ class Applier {
     }
     const spec = type === "graph" ? GRAPH_SPEC : SEQUENCE_SPEC;
     if (!this.checkFields({ ...raw, type }, spec, path, id, true)) return;
+    const ops = type === "graph" ? this.includeOps(raw, path, id) : undefined;
+    if (ops === null) return;
 
     if (at === -1) {
-      const created = this.createView(type, raw, path, id);
+      const created = this.createView(type, raw, path, id, ops);
       if (!created) return;
       views.push(created);
       this.touched.set(id, path);
       this.changed.push(id);
+      if (ops && ops.add.length > 0) this.includeAdds.set(id, ops.add);
       return;
     }
     const existing = views[at]!;
@@ -1032,9 +1144,10 @@ class Applier {
     const before = Array.isArray(existing.steps)
       ? (existing.steps as AnyRecord[]).map((s) => s.id)
       : [];
-    const merged = this.mergeExisting(type, existing, raw, path, id, "type");
+    const merged = this.mergeExisting(type, existing, raw, path, id, "type", ops);
     if (!merged) return;
     if (merged === existing) return;
+    if (ops && ops.add.length > 0) this.includeAdds.set(id, ops.add);
     if (type === "sequence" && Array.isArray(merged.steps)) {
       const after = new Set((merged.steps as AnyRecord[]).map((s) => s.id));
       const dropped = before.filter((sid) => !after.has(sid));
@@ -1057,6 +1170,7 @@ class Applier {
     raw: AnyRecord,
     path: string,
     id: string,
+    ops?: IncludeOps,
   ): AnyRecord | undefined {
     const fields = this.convertFields(type, raw, path, id, new Set());
     const provenance = this.newProvenance(raw, path, id);
@@ -1073,15 +1187,21 @@ class Applier {
       return undefined;
     }
     if (type === "graph") {
-      if (f.include === undefined) return this.missing(path, id, "include");
+      // A new view may be given its nodes as `include` or as `includeAdd`.
+      if (f.include === undefined && (ops === undefined || ops.add.length === 0)) {
+        return this.missing(path, id, "include");
+      }
+      const draft: AnyRecord = { include: f.include ?? [] };
+      if (ops) this.applyIncludeOps(draft, ops, false, path, id);
       return {
         id,
         type: "graph",
         title: f.title,
         scope,
-        include: f.include,
+        include: draft.include,
         ...(f.edgeKinds !== undefined ? { edgeKinds: f.edgeKinds } : {}),
         ...(f.hidden !== undefined ? { hidden: f.hidden } : {}),
+        ...(f.excludeFiles !== undefined ? { excludeFiles: f.excludeFiles } : {}),
         ...(f.layout !== undefined ? { layout: f.layout } : {}),
         provenance,
       };
@@ -1150,7 +1270,7 @@ class Applier {
     for (const issue of after) {
       const touched = issue.elementId !== undefined && this.touched.has(issue.elementId);
       const isNew = !knownBefore.has(key(issue));
-      const shown = { ...issue, path: rewrite(issue.path) };
+      const shown = { ...issue, path: this.includeAddPath(issue) ?? rewrite(issue.path) };
       if (issue.severity === "error") {
         if (this.actor === "llm" && issue.userLocked && touched && !isNew) {
           // The patch changed an element whose anchors the user owns and cannot repair them: the problem
@@ -1173,6 +1293,20 @@ class Applier {
     }
     if (this.issues.some((issue) => issue.severity === "error")) return this.fail();
     return { ok: true, explainer: this.work, issues: this.issues, changed: unique(this.changed) };
+  }
+
+  /**
+   * An issue on `views[n].include[j]` whose id came from the patch's `includeAdd` points at
+   * `views[i].includeAdd[k]` in the patch; undefined for every other issue.
+   */
+  private includeAddPath(issue: Issue): string | undefined {
+    const adds = issue.elementId !== undefined ? this.includeAdds.get(issue.elementId) : undefined;
+    const patchPath = issue.elementId !== undefined ? this.touched.get(issue.elementId) : undefined;
+    const at = /^views\[(\d+)\]\.include\[(\d+)\]$/.exec(issue.path);
+    if (!adds || patchPath === undefined || !at) return undefined;
+    const view = (this.work.views as unknown as AnyRecord[])[Number(at[1])];
+    const k = adds.indexOf(view?.include?.[Number(at[2])]);
+    return k === -1 ? undefined : `${patchPath}.includeAdd[${k}]`;
   }
 
   /** Maps paths into the merged explainer (`nodes[3]`) back to the patch (`nodes[0]`). */

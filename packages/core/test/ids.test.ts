@@ -208,7 +208,7 @@ describe("normalizeElementId", () => {
     expect(r.ok).toBe(false);
     if (!r.ok) {
       expect(r.error).toContain('symbol "Runner.dispach" not found in src/runner.ts');
-      expect(r.error).toContain("Did you mean: src/runner.ts#Runner.dispatch"); // a typo, two edits at most
+      expect(r.error).toContain("Did you mean: sym:src/runner.ts#Runner.dispatch?"); // a typo; the id form
       expect(r.candidates).toEqual(["sym:src/runner.ts#Runner.dispatch"]);
     }
     const near = norm("src/runner.ts#Foo.dispatch");
@@ -220,6 +220,17 @@ describe("normalizeElementId", () => {
     const other = norm("src/worker.ts#Queue.pop");
     expect(other.ok).toBe(false);
     if (!other.ok) expect(other.candidates).toContain("sym:src/queue.ts#Queue.pop");
+  });
+
+  it("without candidates it points at the outline of the file", () => {
+    const r = norm("src/runner.ts#Zzz");
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.candidates).toEqual([]);
+      expect(r.error).toBe(
+        'symbol "Zzz" not found in src/runner.ts. List the symbols of the file with `xpl outline --under file:src/runner.ts`.',
+      );
+    }
   });
 
   it("suggests files and reports files vs directories", () => {

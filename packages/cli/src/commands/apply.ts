@@ -32,18 +32,33 @@ export const applyCommand: CommandSpec = {
   usage: "xpl apply <explainer> <patch.json|-> [--actor llm|user] [--dry-run]",
   summary: "Validate and apply a patch; print issues; exit 1 on error",
   details: [
-    "Applies an ExplainerPatch (JSON) to the explainer: elements, views and tours are upserted by id,",
-    "anchors are checked against the index (hashes and resolved ranges are filled in), `remove` deletes",
-    "ids. The whole patch is rejected if anything is wrong (nothing is written); every error names the",
-    "path into the patch and says how to fix it, with suggestions for unknown files, symbols and ids.",
-    "The explainer file is written atomically only on success. Use `-` to read the patch from stdin.",
-    "--actor llm (default) never modifies or removes user-authored elements or fields the user edited.",
-    "Patch: { title?, nodes?, edges?, concepts?, views?, tours?, remove?: [ids] }. An anchor is",
-    '  { "file": "src/runner.ts", "symbol": "Runner.dispatch", "span": {"from": 34, "to": 36}, "role": "call-site" }',
-    'where span = 0-based line offsets from `xpl show`, or use "find": "<text on one or more lines>" instead of span',
-    "(it must occur exactly once in the symbol or file), and role is definition | call-site | usage | config | test.",
-    "Never write hashes: they are computed. Merge rules and required fields: packages/core/src/patch.ts.",
-    "Exit codes: 0 applied (or dry run passed), 1 rejected, 2 usage error.",
+    "Validates a patch (JSON) and merges it into .explainer/<explainer>.explainer.json, atomically: on any error",
+    "nothing is written. `-` reads the patch from stdin; --dry-run only checks. Every error names the path into",
+    "the patch and says how to fix it.",
+    "",
+    'Patch: { "title"?, "nodes"?, "edges"?, "concepts"?, "views"?, "tours"?, "remove"?: [ids] }. Every key is',
+    "  optional; other top-level keys are rejected. Elements, views and tours are upserted by id: a new id needs its",
+    "  required fields (group: label + members; edge: from, to, kind, label; concept: label; graph view: type,",
+    "  title, include; sequence view: type, title, participants, steps; tour: title, steps), an existing id is",
+    "  shallow-merged.",
+    'Anchor (AnchorInput): { "file": "src/runner.ts", "symbol"?: "Runner.dispatch", "span"?: {"from": 34, "to": 36},',
+    '  "find"?: "<text that occurs once>", "role": "definition|call-site|usage|config|test" }. symbol is the path',
+    "  inside the file (not the sym: id); span = 0-based line offsets from `xpl show`, relative to the symbol's",
+    "  first line (file line 1 without symbol); give span or find; never write a hash.",
+    "Merge rules: fields you send replace, fields you omit stay; arrays and objects replace wholesale (members,",
+    "  include, hidden, participants, steps, frames, anchors, related, scope, layout): resend the whole list; null",
+    "  clears an optional field (summary, detail, members, related, edgeKinds, hidden, excludeFiles, layout, frames).",
+    "  A node's kind and a view's type never change; step ids are never renumbered.",
+    "Graph views also take includeAdd / includeRemove (edit `include` without resending it) and excludeFiles (globs,",
+    '  e.g. ["**/*_test.go", "**/test/**"]: derived edges and stubs ignore references that start or end in them).',
+    "Ownership: --actor llm (default) never changes or removes user-authored elements, the fields listed in",
+    "  provenance.userFields, or elements that carry userFields: they are skipped with a `protected` warning.",
+    "  includeAdd is the one edit still allowed on a view whose include the user curated. A patch that changes",
+    "  nothing because of that exits 1 and names the protected ids: use a new view or includeAdd, or ask the user.",
+    "Reference (a template per element, examples, every rejection message): reference/patch-format.md in the",
+    "  code-explainer skill, next to SKILL.md.",
+    "Exit codes: 0 applied or dry run passed (warnings allowed), 1 rejected, or nothing applied because everything",
+    "  was protected, 2 usage error.",
   ],
   options: {
     actor: {
@@ -67,23 +82,32 @@ export const applyCommand: CommandSpec = {
       actor,
     });
     const errors = result.issues.filter((issue) => issue.severity === "error").length;
+    const protectedIssues = result.issues.filter((issue) => issue.code === "protected");
+    const protectedIds = [
+      ...new Set(protectedIssues.map((issue) => issue.elementId).filter((id) => id !== undefined)),
+    ] as string[];
+    // Everything the patch changes belongs to the user: that is not "no changes", it is a refusal.
+    const allProtected = result.ok && result.changed.length === 0 && protectedIssues.length > 0;
     const write = result.ok && !dryRun && result.changed.length > 0;
     if (write) await atomicWrite(loaded.abs, jsonFile(result.explainer));
 
     if (ctx.json) {
       ctx.emit({
-        ok: result.ok,
+        ok: result.ok && !allProtected,
         applied: write,
         dryRun,
         actor,
         path: loaded.rel,
         changed: result.changed,
         issues: result.issues,
+        ...(protectedIds.length > 0 ? { protectedIds } : {}),
         ...(result.ok
-          ? {}
+          ? allProtected
+            ? { error: `nothing applied: ${protectedSummary(protectedIds)}` }
+            : {}
           : { error: `patch rejected: ${plural(errors, "error")}, nothing applied` }),
       });
-      return result.ok ? 0 : 1;
+      return result.ok && !allProtected ? 0 : 1;
     }
 
     const lines: string[] = [];
@@ -91,6 +115,15 @@ export const applyCommand: CommandSpec = {
       lines.push(
         `rejected: ${plural(errors, "error")}, nothing was applied to ${loaded.rel} (patch from ${label})`,
         ...renderIssues(result.issues),
+      );
+      ctx.out(lines.join("\n"));
+      return 1;
+    }
+    if (allProtected) {
+      lines.push(
+        `nothing was applied to ${loaded.rel} (patch from ${label}): ${protectedSummary(protectedIds)}`,
+        ...renderIssues(result.issues),
+        PROTECTED_ADVICE,
       );
       ctx.out(lines.join("\n"));
       return 1;
@@ -110,7 +143,29 @@ export const applyCommand: CommandSpec = {
     if (result.issues.length > 0) {
       lines.push(`issues (${issueSummary(result.issues)}):`, ...renderIssues(result.issues));
     }
+    // The warnings that matter most go last, where they are read.
+    if (protectedIds.length > 0) {
+      lines.push(
+        `skipped as protected (${protectedIds.join(", ")}): the user owns those parts, so they stay as the user left them. ` +
+          `That is not an error and not something to work around: ${PROTECTED_ADVICE_SHORT}`,
+      );
+    }
     ctx.out(lines.join("\n"));
     return 0;
   },
 };
+
+/** "everything this patch changes is owned by the user (protected): a, b" */
+function protectedSummary(ids: readonly string[]): string {
+  return `everything this patch would change is owned by the user (skipped as protected): ${ids.join(", ")}`;
+}
+
+const PROTECTED_ADVICE_SHORT =
+  "put new content in a new view (new slug) or new elements, grow a user-curated view with includeAdd, or ask the user.";
+
+const PROTECTED_ADVICE = [
+  "what to do: the user's edits win over Claude's.",
+  "  - new nodes for a view the user curated: put them in a NEW view (new slug), or add them with `includeAdd` (allowed even when the user owns `include`; a whole `include` and `includeRemove` are not),",
+  "  - a summary or anchors the user rewrote: leave them, or ask the user (`--actor user` only for a change the user dictates),",
+  "  - never re-create an element under another id to replace theirs.",
+].join("\n");

@@ -171,6 +171,8 @@ export interface Workspace {
   /** Working-tree text (cached). */
   texts: TextCache;
   tree: WorkingTree;
+  /** How the index differs from the working tree; undefined when it matches (or the check was skipped). */
+  stale: Staleness | undefined;
 }
 
 export interface OpenOptions {
@@ -180,6 +182,8 @@ export interface OpenOptions {
   skipExplainerIndex?: boolean;
   /** Skip the comparison with the working tree (default: check and warn). */
   skipFreshnessCheck?: boolean;
+  /** Compare, but leave the warning to the caller (it decides between a warning and a refusal). */
+  deferStaleWarning?: boolean;
   tree?: WorkingTree;
 }
 
@@ -228,6 +232,14 @@ export async function chooseIndexFile(
   return (candidates.find((c) => c.commit === current) ?? candidates[0]!).abs;
 }
 
+/** How an index differs from the working tree. */
+export interface Staleness {
+  /** `index X (path) does not match the working tree (Y): 2 changed (a, b)`. */
+  head: string;
+  /** The warning commands print: `head`, what it means and what to run. */
+  message: string;
+}
+
 /** Why the index does not match the working tree, or undefined when it does. */
 export async function stalenessWarning(
   env: RepoEnv,
@@ -236,6 +248,16 @@ export async function stalenessWarning(
   indexFile: string,
   explainer?: LoadedExplainer,
 ): Promise<string | undefined> {
+  return (await stalenessOf(env, tree, index, indexFile, explainer))?.message;
+}
+
+export async function stalenessOf(
+  env: RepoEnv,
+  tree: WorkingTree,
+  index: SymbolIndex,
+  indexFile: string,
+  explainer?: LoadedExplainer,
+): Promise<Staleness | undefined> {
   const current = await tree.commit();
   if (current === index.commit) return undefined;
   const hashes = await tree.fileHashes();
@@ -255,9 +277,10 @@ export async function stalenessWarning(
   if (changed.length > 0) parts.push(`${changed.length} changed (${listText(changed)})`);
   if (added.length > 0) parts.push(`${added.length} new (${listText(added)})`);
   if (removed.length > 0) parts.push(`${removed.length} deleted (${listText(removed)})`);
-  let message =
+  const head =
     `index ${index.commit} (${displayPath(env.root, indexFile)}) does not match the working tree ` +
-    `(${current}): ${parts.join(", ")}. Line numbers and offsets may be off; run \`xpl index\``;
+    `(${current}): ${parts.join(", ")}`;
+  let message = `${head}. Line numbers and offsets may be off; run \`xpl index\``;
   const newer = listIndexFiles(env.root).find((c) => c.commit === current && c.abs !== indexFile);
   if (newer) {
     message += ` (an index for the current tree exists: ${displayPath(env.root, newer.abs)}${
@@ -266,7 +289,7 @@ export async function stalenessWarning(
   } else if (explainer) {
     message += `, then \`xpl resolve ${explainer.name} --write\``;
   }
-  return `${message}.`;
+  return { head, message: `${message}.` };
 }
 
 export async function openWorkspace(env: RepoEnv, opts: OpenOptions = {}): Promise<Workspace> {
@@ -274,9 +297,10 @@ export async function openWorkspace(env: RepoEnv, opts: OpenOptions = {}): Promi
   const indexFile = await chooseIndexFile(env, tree, opts);
   const { index, model } = loadIndexFile(indexFile);
   // XPL_SKIP_STALE_CHECK=1: skip hashing the working tree (it costs about a second per 5000 files).
+  let stale: Staleness | undefined;
   if (!opts.skipFreshnessCheck && !envFlag(env.env.XPL_SKIP_STALE_CHECK)) {
-    const warning = await stalenessWarning(env, tree, index, indexFile, opts.explainer);
-    if (warning) env.warn(warning);
+    stale = await stalenessOf(env, tree, index, indexFile, opts.explainer);
+    if (stale && !opts.deferStaleWarning) env.warn(stale.message);
   }
   return {
     env,
@@ -287,6 +311,7 @@ export async function openWorkspace(env: RepoEnv, opts: OpenOptions = {}): Promi
     model,
     texts: tree.texts,
     tree,
+    stale,
   };
 }
 

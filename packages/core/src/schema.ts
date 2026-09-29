@@ -12,6 +12,8 @@
  *   8. Explainer.index.path is repo-root-relative.
  *   9. Symbol ranges exclude leading comments but include decorators/modifiers; Anchor.span
  *      offsets are relative to that start line and must lie inside the symbol.
+ *  10. GraphView adds `excludeFiles` (glob patterns on repo paths): derived edges and stubs ignore the
+ *      references that start or end in a matching file (test files in an overview, say).
  *
  * Two files per repo:
  *   index-<commit>.json    SymbolIndex. Static analysis of one commit. Built once, shared by every view.
@@ -324,6 +326,16 @@ export interface GraphView extends ViewBase {
   edgeKinds?: Edge["kind"][];
   /** Curation: derived nodes/edges you don't want shown here. */
   hidden?: ElementId[];
+  /**
+   * (amended) Glob patterns on repo-relative paths, e.g. `["*_test.go", "test/**"]`: a double star crosses
+   * directories, `*` stays inside one path segment, `?` is one character, and a pattern without a slash also
+   * matches the file name at any depth (see glob.ts). Derived edges and stubs are computed without the
+   * references that start or end in a matching file, so an edge that exists only through test files
+   * disappears, and so does a stub that leads only to them. What is not filtered: nodes in `include` (they
+   * always show, and so do the edges of a file or symbol the view includes by name), stored (llm/user)
+   * edges, and the references of files that do not match.
+   */
+  excludeFiles?: string[];
   /** Positions you pinned by hand; everything else is auto-laid-out. */
   layout?: Record<ElementId, { x: number; y: number }>;
 }

@@ -55,6 +55,8 @@ export interface ApplyJson extends JsonEnvelope {
   applied: boolean;
   actor: string;
   changed: string[];
+  /** Ids the patch touched that belong to the user (set when something was skipped as protected). */
+  protectedIds?: string[];
   issues: {
     severity: "error" | "warning";
     path: string;

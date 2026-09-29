@@ -12,7 +12,7 @@
  * A `sym:` id is split into file and symbol path at the FIRST "#" (file paths containing "#" are not
  * supported by the id syntax; the index-aware helpers try every "#" when the index is at hand).
  */
-import { asIndexModel, type IndexModel } from "./index-model.js";
+import { asIndexModel, type IndexModel, type SymbolHint } from "./index-model.js";
 import type {
   Edge,
   ElementId,
@@ -291,6 +291,24 @@ export function nodeKindOfId(id: string): Node["kind"] | undefined {
   }
 }
 
+// ─── Suggestions ────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * How an error offers a symbol: the element id (`sym:src/runner.ts#Runner.dispatch`) and, when the
+ * problem is with an anchor, the fields the anchor takes for it (`file: "src/runner.ts", symbol:
+ * "Runner.dispatch"`: the symbol there is only the path inside the file, not the id). `extra` is appended
+ * to the anchor fields (a span, say).
+ */
+export function describeSymbolCandidate(
+  sym: { file: FilePath; path: SymbolPath },
+  opts: { anchor?: boolean; extra?: string } = {},
+): string {
+  const id = `sym:${sym.file}#${sym.path}`;
+  if (!opts.anchor) return id;
+  const fields = `file: ${JSON.stringify(sym.file)}, symbol: ${JSON.stringify(sym.path)}`;
+  return `${id} (anchor: ${fields}${opts.extra ?? ""})`;
+}
+
 // ─── Loose input (CLI arguments) ────────────────────────────────────────────────────────────────
 
 export type NormalizeIdResult =
@@ -301,6 +319,11 @@ export type NormalizeIdResult =
       /** Nearby element ids worth suggesting, when there are any. */
       candidates?: string[];
     };
+
+export interface NormalizeIdOptions {
+  /** What is known about a symbol that is not in the index (see `SymbolHint`): steers the suggestions. */
+  symbolHint?: (file: FilePath, symbol: SymbolPath) => SymbolHint | undefined;
+}
 
 /**
  * Turns what a person (or Claude) types into an element id, checking structural ids against the
@@ -313,6 +336,7 @@ export type NormalizeIdResult =
 export function normalizeElementId(
   input: string,
   indexLike: SymbolIndex | IndexModel,
+  opts: NormalizeIdOptions = {},
 ): NormalizeIdResult {
   const index = asIndexModel(indexLike);
   const raw = input.trim().replace(/\\/g, "/");
@@ -326,16 +350,16 @@ export function normalizeElementId(
     case "file":
       return normalizeFile(index, parsed.path);
     case "symbol":
-      return normalizeSymbol(index, parsed.symbolId);
+      return normalizeSymbol(index, parsed.symbolId, opts);
     case "unknown":
       break;
     default:
       return { ok: true, id: raw };
   }
-  if (raw.startsWith("sym:")) return normalizeSymbol(index, raw.slice(4));
+  if (raw.startsWith("sym:")) return normalizeSymbol(index, raw.slice(4), opts);
   if (raw.startsWith("file:")) return normalizeFile(index, raw.slice(5));
   if (raw.startsWith("dir:")) return normalizeDir(index, raw.slice(4));
-  if (raw.includes("#")) return normalizeSymbol(index, raw);
+  if (raw.includes("#")) return normalizeSymbol(index, raw, opts);
   return normalizePath(index, raw);
 }
 
@@ -387,7 +411,11 @@ function normalizeDir(index: IndexModel, rawPath: string): NormalizeIdResult {
   };
 }
 
-function normalizeSymbol(index: IndexModel, symbolIdLike: string): NormalizeIdResult {
+function normalizeSymbol(
+  index: IndexModel,
+  symbolIdLike: string,
+  opts: NormalizeIdOptions = {},
+): NormalizeIdResult {
   const cleaned = symbolIdLike.replace(/^(\.\/)+/, "");
   const { file, path } = splitSymbolId(cleaned, (p) => index.hasFile(p));
   if (!index.hasFile(file)) {
@@ -400,11 +428,15 @@ function normalizeSymbol(index: IndexModel, symbolIdLike: string): NormalizeIdRe
   }
   if (path === "") return { ok: true, id: fileId(file) };
   if (index.symbolAt(file, path)) return { ok: true, id: symId(file, path) };
-  const found = index.suggestSymbols(file, path);
-  const candidates = found.map((sym) => `sym:${sym.id}`);
+  const found = index.suggestSymbols(file, path, 5, opts.symbolHint?.(file, path) ?? {});
+  const candidates = found.map((sym) => describeSymbolCandidate(sym));
   return {
     ok: false,
-    error: `symbol "${path}" not found in ${file}.${suggestions(found.map((sym) => sym.id))}`,
+    error:
+      `symbol "${path}" not found in ${file}.${suggestions(candidates)}` +
+      (candidates.length === 0
+        ? ` List the symbols of the file with \`xpl outline --under file:${file}\`.`
+        : ""),
     candidates,
   };
 }

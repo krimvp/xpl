@@ -138,7 +138,7 @@ describe("resolveAnchor: whole symbols and files", () => {
       { id: "src/a.ts#Other.run", start: 4, end: 12 },
     ]);
     expect(resolveAnchor(a, moved.index, moved.getText).reason).toContain(
-      "did you mean src/a.ts#Other.run",
+      'did you mean sym:src/a.ts#Other.run (anchor: file: "src/a.ts", symbol: "Other.run")',
     );
   });
 
@@ -623,7 +623,9 @@ describe("makeAnchor", () => {
     it("unknown symbol suggests the same last segment in that file", () => {
       const e = fail_({ file: "src/a.ts", symbol: "Runer.run", role: "definition" });
       expect(e).toContain('symbol "Runer.run" not found in src/a.ts');
-      expect(e).toContain("Did you mean: src/a.ts#Runner.run");
+      expect(e).toContain(
+        'Did you mean: sym:src/a.ts#Runner.run (anchor: file: "src/a.ts", symbol: "Runner.run")',
+      );
     });
 
     it("unknown symbol suggests the same path in other files", () => {

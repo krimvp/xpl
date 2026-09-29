@@ -946,6 +946,347 @@ describe("applyPatch: user protection", () => {
   });
 });
 
+describe("applyPatch: remove respects userFields", () => {
+  const protectedOf = (r: ApplyResult) =>
+    warningsOf(r)
+      .filter((i) => i.code === "protected")
+      .map((i) => [i.path, i.elementId]);
+
+  it("an llm patch cannot remove an element that carries userFields: skipped with a warning", () => {
+    // DISPATCH is an llm overlay whose summary the user typed (userFields: summary)
+    const r = apply({ remove: [DISPATCH, "concept:idem"] });
+    expect(r.ok).toBe(true);
+    expect(r.explainer.nodes.map((n) => n.id)).toContain(DISPATCH);
+    expect(r.explainer.concepts.map((c) => c.id)).toEqual(["concept:retry-policy"]);
+    expect(r.changed).toEqual(["concept:idem"]);
+    expect(protectedOf(r)).toEqual([["remove[0]", DISPATCH]]);
+    expect(warningsOf(r)[0]!.message).toBe(
+      `${DISPATCH} has fields edited by the user (summary); an llm patch cannot remove it (skipped)`,
+    );
+  });
+
+  it("covers edges, concepts and views too, whichever field the user edited", () => {
+    const ex = seed();
+    el(ex.edges, "edge:job-completed").provenance = { ...OLD, userFields: ["label"] };
+    el(ex.concepts, "concept:idem").provenance = { ...OLD, userFields: ["detail"] };
+    view(ex, "view:overview").provenance = { ...OLD, userFields: ["layout"] };
+    const r = apply(
+      { remove: ["edge:job-completed", "concept:idem", "view:overview"] },
+      { explainer: ex },
+    );
+    expect(r.changed).toEqual([]);
+    expect(r.explainer.edges).toHaveLength(1);
+    expect(r.explainer.concepts).toHaveLength(2);
+    expect(r.explainer.views.map((v) => v.id)).toContain("view:overview");
+    expect(protectedOf(r)).toEqual([
+      ["remove[0]", "edge:job-completed"],
+      ["remove[1]", "concept:idem"],
+      ["remove[2]", "view:overview"],
+    ]);
+    // the user, on the other hand, may remove all of them
+    const asUser = apply(
+      { remove: ["edge:job-completed", "concept:idem", "view:overview"] },
+      { explainer: ex, actor: "user" },
+    );
+    expect(asUser.changed).toEqual(["edge:job-completed", "concept:idem", "view:overview"]);
+    expect(protectedOf(asUser)).toEqual([]);
+  });
+
+  it("an element without userFields is still removable by an llm patch", () => {
+    const ex = seed();
+    el(ex.concepts, "concept:idem").provenance = { ...OLD, userFields: [] };
+    const r = apply({ remove: ["concept:idem"] }, { explainer: ex });
+    expect(r.changed).toEqual(["concept:idem"]);
+  });
+
+  it("single steps of a view whose steps the user edited are protected; other user fields do not matter", () => {
+    const ex = seed();
+    view(ex, "view:dispatch").provenance = { ...OLD, userFields: ["steps"] };
+    const r = apply({ remove: ["dispatch:1"] }, { explainer: ex });
+    expect((view(r.explainer, "view:dispatch") as SequenceView).steps).toHaveLength(3);
+    expect(r.changed).toEqual([]);
+    expect(protectedOf(r)).toEqual([["remove[0]", "dispatch:1"]]);
+    expect(warningsOf(r)[0]!.message).toBe(
+      "dispatch:1 belongs to a view whose steps were edited by the user; an llm patch cannot remove it (skipped)",
+    );
+    const asUser = apply({ remove: ["dispatch:1"] }, { explainer: ex, actor: "user" });
+    expect((view(asUser.explainer, "view:dispatch") as SequenceView).steps).toHaveLength(2);
+
+    // the user only retitled the view: its steps are still the llm's to remove
+    const retitled = seed();
+    view(retitled, "view:dispatch").provenance = { ...OLD, userFields: ["title"] };
+    const ok = apply({ remove: ["dispatch:1"] }, { explainer: retitled });
+    expect((view(ok.explainer, "view:dispatch") as SequenceView).steps).toHaveLength(2);
+    expect(ok.changed).toEqual(["dispatch:1"]);
+    // ...but the view as a whole carries a user field and cannot be removed
+    const whole = apply({ remove: ["view:dispatch"] }, { explainer: retitled });
+    expect(whole.changed).toEqual([]);
+    expect(protectedOf(whole)).toEqual([["remove[0]", "view:dispatch"]]);
+  });
+
+  it("a protected removal alone leaves the explainer as it was", () => {
+    const r = apply({ remove: [DISPATCH] });
+    expect(r).toMatchObject({ ok: true, changed: [] });
+    expect(r.explainer).toEqual(seed());
+  });
+});
+
+describe("applyPatch: includeAdd and includeRemove", () => {
+  const includeOf = (r: ApplyResult, id = "view:overview") =>
+    (view(r.explainer, id) as GraphView).include;
+  const edit = (over: Record<string, unknown>) =>
+    ({ views: [{ id: "view:overview", type: "graph", ...over }] }) as ExplainerPatch;
+
+  it("includeAdd appends what is missing, in the order given, and is never stored", () => {
+    const r = apply(edit({ includeAdd: [F.metrics, F.worker, F.queue] }));
+    expect(r.ok).toBe(true);
+    expect(includeOf(r)).toEqual(["grp:scheduling", F.worker, F.metrics, F.queue]);
+    expect(r.changed).toEqual(["view:overview"]);
+    const stored = view(r.explainer, "view:overview") as unknown as Record<string, unknown>;
+    expect("includeAdd" in stored).toBe(false);
+    expect("includeRemove" in stored).toBe(false);
+    expect(validateExplainer(r.explainer, w.index, w.getText)).toEqual([]);
+    // the commit of a changed llm view moves with it, like any other edit
+    expect(view(r.explainer, "view:overview").provenance).toEqual({ origin: "llm", commit: "c1" });
+  });
+
+  it("includeRemove removes; ids that are not in the list are warnings, not errors", () => {
+    const r = apply(edit({ includeRemove: [F.worker, F.queue] }));
+    expect(r.ok).toBe(true);
+    expect(includeOf(r)).toEqual(["grp:scheduling"]);
+    expect(warningsOf(r)).toEqual([
+      expect.objectContaining({
+        path: "views[0].includeRemove[1]",
+        elementId: "view:overview",
+        message: `${F.queue} is not in the include of view:overview; nothing to remove`,
+      }),
+    ]);
+  });
+
+  it("applies include first, then includeRemove, then includeAdd", () => {
+    const r = apply(
+      edit({
+        include: ["grp:scheduling", F.worker, F.metrics],
+        includeRemove: [F.worker],
+        includeAdd: [F.queue, F.runner],
+      }),
+    );
+    expect(includeOf(r)).toEqual(["grp:scheduling", F.metrics, F.queue, F.runner]);
+  });
+
+  it("is idempotent: the same edit twice changes nothing the second time", () => {
+    const patch = edit({ includeAdd: [F.queue], includeRemove: [F.worker] });
+    const first = apply(patch);
+    expect(first.changed).toEqual(["view:overview"]);
+    const second = apply(patch, { explainer: first.explainer });
+    expect(second.changed).toEqual([]);
+    expect(includeOf(second)).toEqual(includeOf(first));
+  });
+
+  it("checks the ids like include: unknown ones are errors pointing into includeAdd", () => {
+    const r = apply(edit({ includeAdd: [F.queue, "file:src/queue.tz", "src/runner.ts"] }));
+    expect(r.ok).toBe(false);
+    expect(r.explainer).toEqual(seed());
+    expect(errorsOf(r).map((i) => [i.path, i.elementId])).toEqual([
+      ["views[0].includeAdd[1]", "view:overview"],
+      ["views[0].includeAdd[2]", "view:overview"],
+    ]);
+    expect(errorsOf(r)[0]!.message).toContain("src/queue.tz");
+    expect(errorsOf(r)[1]!.message).toContain("did you mean file:src/runner.ts?");
+    // an id that only the patch's own groups make valid is fine
+    const withGroup = apply({
+      nodes: [{ id: "grp:new", label: "New", members: [F.metrics] }],
+      views: [{ id: "view:overview", type: "graph", includeAdd: ["grp:new"] }],
+    });
+    expect(withGroup.ok).toBe(true);
+    expect(includeOf(withGroup)).toContain("grp:new");
+  });
+
+  it("may remove an id that vanished from the index: that is how a stale entry is dropped", () => {
+    const ex = seed();
+    (view(ex, "view:overview") as GraphView).include.push("sym:src/runner.ts#Runner.gone");
+    // the stale entry is an error of the explainer as it is, and blocks patches that touch the view...
+    expect(apply(edit({ includeAdd: [F.queue] }), { explainer: ex }).ok).toBe(false);
+    // ...unless the same patch removes it
+    const r = apply(
+      edit({ includeRemove: ["sym:src/runner.ts#Runner.gone"], includeAdd: [F.queue] }),
+      { explainer: ex },
+    );
+    expect(r.ok).toBe(true);
+    expect(includeOf(r)).toEqual(["grp:scheduling", F.worker, F.queue]);
+    expect(warningsOf(r)).toEqual([]);
+  });
+
+  it("an id in both lists is an error", () => {
+    const r = apply(edit({ includeAdd: [F.queue], includeRemove: [F.queue] }));
+    expect(r.ok).toBe(false);
+    expect(errorsOf(r)).toEqual([
+      expect.objectContaining({ path: "views[0].includeRemove[0]", elementId: "view:overview" }),
+    ]);
+    expect(errorsOf(r)[0]!.message).toContain("both includeAdd and includeRemove");
+  });
+
+  it("rejects wrong types, and sequence views have no such fields", () => {
+    expect(apply(edit({ includeAdd: "file:src/queue.ts" })).issues[0]).toMatchObject({
+      path: "views[0].includeAdd",
+      severity: "error",
+    });
+    expect(apply(edit({ includeRemove: [1] })).issues[0]).toMatchObject({
+      path: "views[0].includeRemove",
+    });
+    expect(apply(edit({ includeAdd: null })).issues[0]!.message).toContain("cannot be null");
+    const seq = apply({
+      views: [{ id: "view:dispatch", type: "sequence", includeAdd: [F.queue] } as never],
+    });
+    expect(seq.ok).toBe(false);
+    expect(seq.issues[0]).toMatchObject({ path: "views[0].includeAdd" });
+    expect(seq.issues[0]!.message).toContain("unknown field");
+  });
+
+  it("a new view may use includeAdd instead of include", () => {
+    const r = apply({
+      views: [{ id: "view:fresh", type: "graph", title: "Fresh", includeAdd: [F.queue, F.queue] }],
+    });
+    expect(r.ok).toBe(true);
+    expect(includeOf(r, "view:fresh")).toEqual([F.queue]);
+    const missing = apply({ views: [{ id: "view:none", type: "graph", title: "No nodes" }] });
+    expect(missing.ok).toBe(false);
+    expect(missing.issues[0]!.message).toContain('needs "include"');
+  });
+
+  describe("when the user edited include", () => {
+    const curated = (): Explainer => {
+      const ex = seed();
+      view(ex, "view:overview").provenance = {
+        origin: "llm",
+        commit: "c0",
+        userFields: ["include", "layout"],
+      };
+      return ex;
+    };
+
+    it("includeAdd still works for an llm patch: it only adds", () => {
+      const r = apply(edit({ includeAdd: [F.queue, F.metrics] }), { explainer: curated() });
+      expect(r.ok).toBe(true);
+      expect(includeOf(r)).toEqual(["grp:scheduling", F.worker, F.queue, F.metrics]);
+      expect(r.changed).toEqual(["view:overview"]);
+      expect(warningsOf(r)).toEqual([]);
+      // still the user's field: their curation keeps winning over a resent include
+      expect(view(r.explainer, "view:overview").provenance).toEqual({
+        origin: "llm",
+        commit: "c1",
+        userFields: ["include", "layout"],
+      });
+    });
+
+    it("includeRemove and a whole include are skipped with a protected warning", () => {
+      const r = apply(
+        edit({ include: [F.runner], includeRemove: [F.worker], includeAdd: [F.queue] }),
+        { explainer: curated() },
+      );
+      expect(r.ok).toBe(true);
+      expect(includeOf(r)).toEqual(["grp:scheduling", F.worker, F.queue]);
+      expect(warningsOf(r).map((i) => [i.code, i.path])).toEqual([
+        ["protected", "views[0].include"],
+        ["protected", "views[0].includeRemove"],
+      ]);
+      expect(warningsOf(r)[1]!.message).toContain("includeAdd still works");
+    });
+
+    it("includeRemove alone changes nothing", () => {
+      const r = apply(edit({ includeRemove: [F.worker] }), { explainer: curated() });
+      expect(r.changed).toEqual([]);
+      expect(includeOf(r)).toEqual(["grp:scheduling", F.worker]);
+      expect(protectedOnly(r)).toEqual(["views[0].includeRemove"]);
+    });
+
+    it("a user patch is not held back, and an edit through the ops marks include as the user's", () => {
+      const r = apply(edit({ includeRemove: [F.worker] }), {
+        explainer: curated(),
+        actor: "user",
+      });
+      expect(includeOf(r)).toEqual(["grp:scheduling"]);
+      const plain = apply(edit({ includeAdd: [F.queue] }), { actor: "user" });
+      expect(view(plain.explainer, "view:overview").provenance).toEqual({
+        origin: "llm",
+        commit: "c0",
+        userFields: ["include"],
+      });
+    });
+
+    it("a user-authored view is skipped whole, includeAdd or not", () => {
+      const r = apply({
+        views: [{ id: "view:mine", type: "graph", includeAdd: [F.worker] }],
+      });
+      expect(r.changed).toEqual([]);
+      expect((view(r.explainer, "view:mine") as GraphView).include).toEqual([F.queue]);
+      expect(protectedOnly(r)).toEqual(["views[0]"]);
+    });
+  });
+
+  function protectedOnly(r: ApplyResult): string[] {
+    return warningsOf(r)
+      .filter((i) => i.code === "protected")
+      .map((i) => i.path);
+  }
+});
+
+describe("applyPatch: excludeFiles", () => {
+  const patch = (over: Record<string, unknown>) =>
+    ({ views: [{ id: "view:overview", type: "graph", ...over }] }) as ExplainerPatch;
+
+  it("stores the glob list on a graph view, replaces it, and null clears it", () => {
+    const set = apply(patch({ excludeFiles: ["**/*.test.ts", "test/**"] }));
+    expect(set.ok).toBe(true);
+    expect((view(set.explainer, "view:overview") as GraphView).excludeFiles).toEqual([
+      "**/*.test.ts",
+      "test/**",
+    ]);
+    const replaced = apply(patch({ excludeFiles: ["docs/**"] }), { explainer: set.explainer });
+    expect((view(replaced.explainer, "view:overview") as GraphView).excludeFiles).toEqual([
+      "docs/**",
+    ]);
+    const cleared = apply(patch({ excludeFiles: null }), { explainer: set.explainer });
+    expect("excludeFiles" in view(cleared.explainer, "view:overview")).toBe(false);
+    expect(cleared.changed).toEqual(["view:overview"]);
+  });
+
+  it("can be given when a view is created", () => {
+    const r = apply({
+      views: [
+        { id: "view:fresh", type: "graph", title: "F", include: [F.queue], excludeFiles: ["x/**"] },
+      ],
+    });
+    expect((view(r.explainer, "view:fresh") as GraphView).excludeFiles).toEqual(["x/**"]);
+  });
+
+  it("rejects non-string lists and warns about patterns that cannot match", () => {
+    expect(apply(patch({ excludeFiles: "**/test/**" })).issues[0]).toMatchObject({
+      path: "views[0].excludeFiles",
+      severity: "error",
+    });
+    expect(apply(patch({ excludeFiles: [1] })).ok).toBe(false);
+    const smelly = apply(patch({ excludeFiles: ["/src/**", "./test/**", "", "a\\b"] }));
+    expect(smelly.ok).toBe(true);
+    expect(warningsOf(smelly).map((i) => i.path)).toEqual([
+      "views[0].excludeFiles[0]",
+      "views[0].excludeFiles[1]",
+      "views[0].excludeFiles[2]",
+      "views[0].excludeFiles[3]",
+    ]);
+    expect(warningsOf(smelly)[0]!.message).toContain("drop the leading");
+  });
+
+  it("is a field of the view the user can own: an llm patch keeps it", () => {
+    const ex = seed();
+    (view(ex, "view:overview") as GraphView).excludeFiles = ["mine/**"];
+    view(ex, "view:overview").provenance = { ...OLD, userFields: ["excludeFiles"] };
+    const r = apply(patch({ excludeFiles: ["other/**"] }), { explainer: ex });
+    expect((view(r.explainer, "view:overview") as GraphView).excludeFiles).toEqual(["mine/**"]);
+    expect(warningsOf(r)[0]).toMatchObject({ code: "protected", path: "views[0].excludeFiles" });
+  });
+});
+
 describe("applyPatch: anchors", () => {
   it("reports anchor errors with their location in the patch", () => {
     const r = apply({
@@ -1000,7 +1341,9 @@ describe("applyPatch: anchors", () => {
       "views[0].steps[0].anchors[1]",
       "tours[0].steps[0].code[0]",
     ]);
-    expect(errs[0]!.message).toContain("Did you mean: src/queue.ts#Queue.pop");
+    expect(errs[0]!.message).toContain(
+      'Did you mean: sym:src/queue.ts#Queue.pop (anchor: file: "src/queue.ts", symbol: "Queue.pop")',
+    );
     expect(errs[1]!.message).toContain("outside");
     expect(errs[0]!.elementId).toBe("dispatch:1"); // a step's anchors belong to the step
     expect(errs[1]!.elementId).toBe("tour:intro");
@@ -1557,13 +1900,30 @@ describe("applyPatch: remove", () => {
   });
 
   it("removing a stored overlay leaves the derived node; unknown ids are warnings", () => {
-    const r = apply({ remove: [DISPATCH.replace("dispatch", "dispatch"), "concept:nope"] });
+    // an overlay the user never touched (no userFields): the llm may remove it
+    const ex = seed();
+    ex.nodes.push({
+      id: F.queue,
+      kind: "file",
+      parent: "dir:src",
+      label: "queue.ts",
+      summary: "The queue.",
+      anchors: [],
+      provenance: OLD,
+    });
+    const r = apply({ remove: [F.queue, "concept:nope"] }, { explainer: ex });
     expect(r.ok).toBe(true);
-    expect(r.explainer.nodes.map((n) => n.id)).toEqual(["grp:scheduling"]);
+    expect(r.explainer.nodes.map((n) => n.id)).toEqual(["grp:scheduling", DISPATCH]);
     expect(warningsOf(r)).toEqual([
       expect.objectContaining({ path: "remove[1]", elementId: "concept:nope" }),
     ]);
-    expect(r.changed).toEqual([DISPATCH]);
+    expect(r.changed).toEqual([F.queue]);
+    // the derived node is still there for the views
+    expect(validateExplainer(r.explainer, w.index, w.getText)).toEqual([]);
+    // a user patch may remove the overlay that carries their words
+    const asUser = apply({ remove: [DISPATCH] }, { actor: "user" });
+    expect(asUser.changed).toEqual([DISPATCH]);
+    expect(asUser.explainer.nodes.map((n) => n.id)).toEqual(["grp:scheduling"]);
   });
 
   it("rejects a removal that leaves dangling references, and accepts it with the fix", () => {

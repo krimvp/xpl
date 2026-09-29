@@ -3,7 +3,8 @@
  * file text, building stored anchors from what Claude writes (`AnchorInput`), and re-resolving a
  * whole explainer after the code changed.
  */
-import { asIndexModel, type IndexModel } from "./index-model.js";
+import { describeSymbolCandidate } from "./ids.js";
+import { asIndexModel, type IndexModel, type SymbolHint } from "./index-model.js";
 import type { AnchorInput } from "./patch.js";
 import type {
   Anchor,
@@ -12,6 +13,7 @@ import type {
   Explainer,
   FilePath,
   Hash,
+  IndexedFile,
   IndexedSymbol,
   Origin,
   Range,
@@ -156,13 +158,7 @@ export function resolveWith(anchor: Anchor, index: IndexModel, texts: TextCache)
   let symbol: IndexedSymbol | undefined;
   if (anchor.symbol) {
     symbol = index.symbolAt(anchor.file, anchor.symbol);
-    if (!symbol) {
-      const hint = index.suggestSymbols(anchor.file, anchor.symbol, 3).map((s) => s.id);
-      return missing(
-        `symbol ${anchor.symbol} is not in ${anchor.file}` +
-          (hint.length ? `; did you mean ${hint.join(", ")}?` : ""),
-      );
-    }
+    if (!symbol) return missing(describeVanished(anchor, index, texts, file));
   }
 
   const region: Range = symbol ? { ...symbol.range } : { startLine: 1, endLine: file.lines };
@@ -233,6 +229,69 @@ export function resolveWith(anchor: Anchor, index: IndexModel, texts: TextCache)
       symbol ? `${anchor.file}#${anchor.symbol}` : anchor.file
     } (expected ${anchor.hash}, now ${currentHash})`,
   };
+}
+
+/** The number of lines of a stored range (undefined for a missing or malformed one). */
+function rangeLines(range: Range | undefined): number | undefined {
+  if (!range || !Number.isInteger(range.startLine) || !Number.isInteger(range.endLine)) {
+    return undefined;
+  }
+  return range.endLine >= range.startLine ? range.endLine - range.startLine + 1 : undefined;
+}
+
+/** What the anchor remembers of the symbol that is gone: its size and text, when it pointed at all of it. */
+function vanishedHint(anchor: Anchor): SymbolHint {
+  if (anchor.span !== undefined && anchor.span !== null) return {};
+  const lines = rangeLines(anchor.resolved?.range);
+  return {
+    ...(lines !== undefined ? { lines } : {}),
+    ...(typeof anchor.hash === "string" && anchor.hash !== "" ? { hash: anchor.hash } : {}),
+  };
+}
+
+/**
+ * Why an anchor's symbol is missing, with where it may have gone: for a span anchor, the symbol whose text
+ * now contains the anchored lines (found by content: a renamed method keeps its body); then the likeliest
+ * candidates of `suggestSymbols`. Every candidate is spelled as an id and as anchor fields.
+ */
+function describeVanished(
+  anchor: Anchor,
+  index: IndexModel,
+  texts: TextCache,
+  file: IndexedFile,
+): string {
+  let text = `symbol ${anchor.symbol} is not in ${anchor.file}`;
+  let moved: IndexedSymbol | undefined;
+  if (isSpan(anchor.span) && typeof anchor.hash === "string") {
+    const lines = texts.lines(anchor.file);
+    if (lines) {
+      const rawLen = anchor.span.to - anchor.span.from + 1;
+      const prev = anchor.resolved?.range;
+      const expected = prev ?? { startLine: 1, endLine: rawLen };
+      const region = { startLine: 1, endLine: Math.min(lines.length, file.lines) };
+      const hit = searchSpan(lines, region, expected, rawLen, anchor.hash);
+      const holder = hit ? index.innermostSymbolAt(anchor.file, hit.start) : undefined;
+      if (hit && holder && hit.end <= holder.range.endLine) {
+        moved = holder;
+        const from = hit.start - holder.range.startLine;
+        const to = hit.end - holder.range.startLine;
+        text += `; the anchored lines now sit in ${describeSymbolCandidate(holder, {
+          anchor: true,
+          extra: `, span: {from: ${from}, to: ${to}}`,
+        })}`;
+      }
+    }
+  }
+  const candidates = index
+    .suggestSymbols(anchor.file, anchor.symbol ?? "", 4, vanishedHint(anchor))
+    .filter((sym) => sym.id !== moved?.id)
+    .slice(0, 3);
+  if (candidates.length > 0) {
+    text += `; ${moved ? "or" : "did you mean"} ${candidates
+      .map((sym) => describeSymbolCandidate(sym, { anchor: true }))
+      .join(", ")}?`;
+  }
+  return text;
 }
 
 function clampRange(range: Range, region: Range): Range {
@@ -334,6 +393,14 @@ function searchSpan(
 
 export type MakeAnchorResult = { ok: true; anchor: Anchor } | { ok: false; error: string };
 
+export interface MakeAnchorOptions {
+  /**
+   * What is known about a symbol that is not in the index (the explainer's stored anchors remember the
+   * size of a symbol that was renamed): steers the "did you mean" candidates.
+   */
+  symbolHint?: (file: FilePath, symbol: string) => SymbolHint | undefined;
+}
+
 const INPUT_KEYS = new Set(["file", "symbol", "role", "span", "find", "hash", "resolved"]);
 
 /**
@@ -350,6 +417,7 @@ export function makeAnchor(
   input: AnchorInput,
   indexLike: SymbolIndex | IndexModel,
   getText: GetText | TextCache,
+  opts: MakeAnchorOptions = {},
 ): MakeAnchorResult {
   const index = asIndexModel(indexLike);
   const texts = toTextCache(getText);
@@ -409,13 +477,20 @@ export function makeAnchor(
   if (symbolPath !== undefined) {
     symbol = index.symbolAt(input.file, symbolPath);
     if (!symbol) {
-      const hint = index.suggestSymbols(input.file, symbolPath);
+      const hint = index.suggestSymbols(
+        input.file,
+        symbolPath,
+        3,
+        opts.symbolHint?.(input.file, symbolPath) ?? {},
+      );
       const mistaken = symbolPath.startsWith(`${input.file}#`)
         ? ` The symbol is the path inside the file, without the file part: "${symbolPath.slice(input.file.length + 1)}".`
         : "";
       return fail(
         `symbol "${symbolPath}" not found in ${input.file}.${mistaken}` +
-          (hint.length ? ` Did you mean: ${hint.map((s) => s.id).join(", ")}?` : "") +
+          (hint.length
+            ? ` Did you mean: ${hint.map((s) => describeSymbolCandidate(s, { anchor: true })).join(", ")}?`
+            : "") +
           (hint.length === 0 ? " Use `xpl outline` to list the symbols of the file." : ""),
       );
     }
@@ -619,6 +694,36 @@ export interface AnchorSite {
   origin?: Origin;
   /** Fields the user edited on the owner (a step: its view's `userFields`). */
   userFields: string[];
+  /** Steps: the id of the sequence view the step belongs to. */
+  viewId?: string;
+}
+
+/**
+ * What the stored anchors of an explainer remember about symbols: a whole-symbol anchor keeps the range and
+ * hash the symbol had, which helps to find where a renamed or moved symbol went (see `suggestSymbols`).
+ * Returns a lookup by file and symbol path.
+ */
+export function storedSymbolHints(
+  explainer: Explainer,
+): (file: FilePath, symbol: string) => SymbolHint | undefined {
+  const known = new Map<string, SymbolHint>();
+  try {
+    for (const site of collectAnchors(explainer)) {
+      const a = site.anchor;
+      if (typeof a.symbol !== "string" || (a.span !== undefined && a.span !== null)) continue;
+      const lines = rangeLines(a.resolved?.range);
+      if (lines === undefined) continue;
+      const key = `${a.file}\0${a.symbol}`;
+      if (known.has(key)) continue;
+      known.set(key, {
+        lines,
+        ...(typeof a.hash === "string" && a.hash !== "" ? { hash: a.hash } : {}),
+      });
+    }
+  } catch {
+    // a hand-edited explainer with junk in it: fewer hints, never an error
+  }
+  return (file, symbol) => known.get(`${file}\0${symbol}`);
 }
 
 /** Every anchor of an explainer (elements, sequence steps, tour code overrides), by reference. */
@@ -631,6 +736,7 @@ export function collectAnchors(explainer: Explainer): AnchorSite[] {
     owner: AnchorSite["owner"],
     origin: Origin | undefined,
     userFields: string[] | undefined,
+    viewId?: string,
   ) => {
     if (!Array.isArray(anchors)) return;
     anchors.forEach((anchor, i) => {
@@ -642,6 +748,7 @@ export function collectAnchors(explainer: Explainer): AnchorSite[] {
           owner,
           origin,
           userFields: userFields ?? [],
+          ...(viewId !== undefined ? { viewId } : {}),
         });
       }
     });
@@ -689,6 +796,7 @@ export function collectAnchors(explainer: Explainer): AnchorSite[] {
         "step",
         view.provenance?.origin,
         view.provenance?.userFields,
+        view.id,
       ),
     );
   });
@@ -735,6 +843,8 @@ export interface DriftedAnchor {
 export interface DriftedElement {
   elementId: string;
   owner: AnchorSite["owner"];
+  /** Steps: the sequence view they belong to. */
+  view?: string;
   /** Fields the user edited; a re-explanation must leave them alone. */
   userFields: string[];
   anchors: DriftedAnchor[];
@@ -743,6 +853,8 @@ export interface DriftedElement {
 export interface MissingAnchor {
   elementId: string;
   owner: AnchorSite["owner"];
+  /** Steps: the sequence view they belong to. */
+  view?: string;
   origin?: Origin;
   path: string;
   anchor: {
@@ -813,6 +925,7 @@ export function reresolveExplainer(
       missing.push({
         elementId: site.elementId,
         owner: site.owner,
+        ...(site.viewId !== undefined ? { view: site.viewId } : {}),
         origin: site.origin,
         path: site.path,
         anchor: anchorRef(anchor),
@@ -825,6 +938,7 @@ export function reresolveExplainer(
           element = {
             elementId: site.elementId,
             owner: site.owner,
+            ...(site.viewId !== undefined ? { view: site.viewId } : {}),
             userFields: [...site.userFields],
             anchors: [],
           };

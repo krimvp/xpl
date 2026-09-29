@@ -5,8 +5,11 @@
  *
  * This module is a leaf (it imports only the schema types and `util`), so ids.ts can depend on it.
  */
+import { TEST_FILE_GLOBS } from "./constants.js";
+import { matchesAnyGlob } from "./glob.js";
 import type {
   FilePath,
+  Hash,
   IndexedFile,
   IndexedSymbol,
   Reference,
@@ -32,6 +35,49 @@ export function baseName(path: string): string {
 /** Last segment of a dotted symbol path, without a duplicate suffix (`Runner.dispatch~2` -> `dispatch`). */
 function lastSegment(path: SymbolPath): string {
   return path.slice(path.lastIndexOf(".") + 1).replace(/~\d+$/, "");
+}
+
+/** The symbol path without its last segment (`Runner.dispatch` -> `Runner`; `""` for a top-level symbol). */
+function parentPathOf(path: SymbolPath): SymbolPath {
+  const dot = path.lastIndexOf(".");
+  return dot === -1 ? "" : path.slice(0, dot);
+}
+
+/** Is this file test code (see `TEST_FILE_GLOBS`)? */
+export function isTestFile(path: FilePath): boolean {
+  return matchesAnyGlob(path, TEST_FILE_GLOBS);
+}
+
+/**
+ * What is known about a symbol that vanished (renamed or deleted), to rank the candidates that might be
+ * it. Everything is optional; `suggestSymbols` uses what it is given.
+ */
+export interface SymbolHint {
+  /** Its kind, when known: same-kind siblings come first. */
+  kind?: IndexedSymbol["kind"];
+  /** Its size in lines (a whole-symbol anchor remembers the range it had). */
+  lines?: number;
+  /** Its hash (a whole-symbol anchor remembers it): a symbol with identical text is where it moved to. */
+  hash?: Hash;
+}
+
+/** 0..1: how alike two names are (case-insensitive edit distance, or containment). */
+function nameSimilarity(a: string, b: string): number {
+  const x = a.toLowerCase();
+  const y = b.toLowerCase();
+  if (x === y) return 1;
+  const longest = Math.max(x.length, y.length);
+  if (longest === 0) return 0;
+  const shortest = Math.min(x.length, y.length);
+  const byDistance = 1 - editDistance(x, y, longest) / longest;
+  const contained =
+    shortest > 0 && (x.includes(y) || y.includes(x)) ? 0.5 + (0.5 * shortest) / longest : 0;
+  return Math.max(byDistance, contained);
+}
+
+/** 0..1: how close two line counts are. */
+function sizeSimilarity(a: number, b: number): number {
+  return 1 - Math.abs(a - b) / Math.max(a, b, 1);
 }
 
 export class IndexModel {
@@ -275,33 +321,94 @@ export class IndexModel {
   // ─── Suggestions (for error messages Claude reads) ────────────────────────────────────────────
 
   /**
-   * Candidate symbols for a symbol path that does not exist in `file`: same last segment in that
-   * file, then the same path in other files, then paths in that file within two edits (typos), then
-   * the same last segment in other files.
+   * Candidates for a symbol path that does not exist in `file` (a typo, or a symbol that was renamed,
+   * moved or deleted), best first:
+   *
+   *   1. a symbol with the very text the missing one had (`hint.hash`; a move, not a rename);
+   *   2. the siblings: same file, same parent (same kind first, when `hint.kind` is known), ranked by
+   *      name similarity and, when `hint.lines` is known, by how close their size is to the old one, so a
+   *      renamed `Runner.dispatch` is found among `Runner`'s methods by its length;
+   *   3. same-named symbols elsewhere: the same name under another parent in the file, the same path in
+   *      another file, the same name in another file;
+   *   4. paths in the file within two edits (typos in the parent part).
+   *
+   * Test files rank after everything else of the same tier and are never preferred over production code
+   * (unless `file` is a test file itself).
    */
-  suggestSymbols(file: FilePath, path: SymbolPath, limit = 5): IndexedSymbol[] {
-    const out: IndexedSymbol[] = [];
-    const seen = new Set<SymbolId>();
-    const add = (sym: IndexedSymbol) => {
-      if (out.length < limit && !seen.has(sym.id)) {
-        seen.add(sym.id);
-        out.push(sym);
-      }
-    };
+  suggestSymbols(
+    file: FilePath,
+    path: SymbolPath,
+    limit = 5,
+    hint: SymbolHint = {},
+  ): IndexedSymbol[] {
     const last = lastSegment(path);
-    const lastLower = last.toLowerCase();
-    for (const sym of this.symbolsInFile(file)) if (lastSegment(sym.path) === last) add(sym);
-    for (const sym of this.symbolsInFile(file)) {
-      if (lastSegment(sym.path).toLowerCase() === lastLower) add(sym);
+    const parent = parentPathOf(path);
+    const wantedLower = path.toLowerCase();
+    const fromTest = isTestFile(file);
+    interface Candidate {
+      sym: IndexedSymbol;
+      rank: number;
+      score: number;
     }
-    for (const sym of this.symbols) if (sym.file !== file && sym.path === path) add(sym);
+    const found = new Map<SymbolId, Candidate>();
+    const offer = (sym: IndexedSymbol, rank: number, score = 0): void => {
+      const known = found.get(sym.id);
+      if (known && (known.rank < rank || (known.rank === rank && known.score >= score))) return;
+      found.set(sym.id, { sym, rank, score });
+    };
+    const size = (sym: IndexedSymbol) => sym.range.endLine - sym.range.startLine + 1;
+    const nameOf = (sym: IndexedSymbol) => nameSimilarity(last, lastSegment(sym.path));
+    const sizeOf = (sym: IndexedSymbol) =>
+      hint.lines === undefined ? 0 : sizeSimilarity(size(sym), hint.lines);
+    const similarity = (sym: IndexedSymbol): number =>
+      hint.lines === undefined ? nameOf(sym) : 0.65 * nameOf(sym) + 0.35 * sizeOf(sym);
+
+    if (hint.hash !== undefined) {
+      const same = this.symbols.filter((sym) => sym.hash === hint.hash && size(sym) >= 3);
+      if (same.length > 0 && same.length <= 2) for (const sym of same) offer(sym, -1);
+    }
+    // A size can only stand in for a name when it points at one sibling: three methods of four lines each
+    // say nothing about which of them a deleted four-line method became.
+    const sameSize =
+      hint.lines !== undefined && hint.lines >= 3
+        ? this.symbolsInFile(file).filter(
+            (sym) => parentPathOf(sym.path) === parent && nameOf(sym) < 0.5 && sizeOf(sym) >= 0.7,
+          )
+        : [];
+    for (const sym of this.symbolsInFile(file)) {
+      if (parentPathOf(sym.path) === parent) {
+        // A sibling is offered when something about it fits: a similar name, or the one sibling of the old
+        // size (a rename keeps the body). Members that merely share the class are not candidates.
+        const fits = nameOf(sym) >= 0.5 || (sameSize.length === 1 && sameSize[0] === sym);
+        const kindOk = hint.kind === undefined || sym.kind === hint.kind;
+        if (fits) offer(sym, kindOk ? 0 : 0.5, similarity(sym));
+      } else if (lastSegment(sym.path) === last) {
+        offer(sym, 1, similarity(sym));
+      } else if (lastSegment(sym.path).toLowerCase() === last.toLowerCase()) {
+        offer(sym, 1.05, similarity(sym));
+      }
+    }
+    for (const sym of this.symbols) {
+      if (sym.file === file) continue;
+      if (sym.path === path) offer(sym, 1.2, 1);
+      else if (lastSegment(sym.path) === last) offer(sym, 1.3, similarity(sym));
+    }
     // A typo: a path in the same file within two edits.
     for (const sym of this.symbolsInFile(file)) {
-      if (editDistance(sym.path.toLowerCase(), path.toLowerCase(), 2) <= 2) add(sym);
+      if (editDistance(sym.path.toLowerCase(), wantedLower, 2) <= 2) offer(sym, 2, similarity(sym));
     }
-    for (const sym of this.symbols)
-      if (sym.file !== file && lastSegment(sym.path) === last) add(sym);
-    return out;
+
+    return [...found.values()]
+      .map((c) => ({ ...c, rank: c.rank + (!fromTest && isTestFile(c.sym.file) ? 10 : 0) }))
+      .sort(
+        (a, b) =>
+          a.rank - b.rank ||
+          b.score - a.score ||
+          cmp(a.sym.file, b.sym.file) ||
+          a.sym.range.startLine - b.sym.range.startLine,
+      )
+      .slice(0, limit)
+      .map((c) => c.sym);
   }
 
   /** Candidate file paths for an unknown path: same base name, then containing the text. */

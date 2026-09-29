@@ -5,6 +5,7 @@ import { GRAMMAR_IDS, createParser, getWasmDir, initParser, type GrammarId } fro
 import pkg from "../package.json" with { type: "json" };
 import { GLOBAL_OPTIONS, parseCommandArgs, type OptionDefs } from "./args.js";
 import type { CommandSpec } from "./command.js";
+import { anchorsCommand } from "./commands/anchors.js";
 import { applyCommand } from "./commands/apply.js";
 import { indexCommand } from "./commands/build-index.js";
 import { bundleCommand } from "./commands/bundle.js";
@@ -33,6 +34,7 @@ export const COMMANDS: readonly CommandSpec[] = [
   newCommand,
   applyCommand,
   validateCommand,
+  anchorsCommand,
   resolveCommand,
   statusCommand,
   viewCommand,

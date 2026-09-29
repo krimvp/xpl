@@ -5,10 +5,12 @@
  * viewer applies: expanding a stub, drilling into a node, collapsing one, the default `include`.
  */
 import { DEFAULT_EDGE_KINDS } from "./constants.js";
+import { globMatcher } from "./glob.js";
 import {
   derivedEdgeId,
   elementIdForSymbolId,
   ghostId,
+  parseId,
   REF_TO_EDGE_KIND,
   REPO_ID,
   stubId,
@@ -320,6 +322,11 @@ interface StubAgg {
  * - `stubs`: references and stored edges with exactly one end inside, aggregated per `(direction,
  *   inside, ghost)`. The ghost is the highest structural ancestor of the outside end, below `repo`,
  *   that contains no included node.
+ * - `view.excludeFiles` (glob patterns, see glob.ts) drops the references that start or end in a matching
+ *   file before anything is aggregated: an edge or stub that only exists through such files disappears,
+ *   the others count only their remaining references. Included nodes are never removed, and the files a
+ *   view includes by name (`file:`, or a `sym:` in it, also as a member of an included group) keep their
+ *   references. Stored edges are not filtered.
  * - `view.hidden` is applied last: hidden nodes are removed (their children move up to the nearest
  *   visible container), together with the edges and stubs touching them; hidden edge, stub and ghost
  *   ids are removed too.
@@ -339,6 +346,7 @@ export function deriveGraph(
   );
   const include = new Set(includeIds);
   const rep = new Representation(model, include);
+  const dropRef = excludedRefs(view, model, includeIds);
 
   // Nodes with render parents.
   const parents = new Map<ElementId, ElementId>();
@@ -407,6 +415,7 @@ export function deriveGraph(
     const fromEl = endpoint(ref.from);
     const toEl = endpoint(ref.to);
     if (fromEl === undefined || toEl === undefined) continue;
+    if (dropRef?.(ref)) continue;
     const a = rep.repr(fromEl);
     const b = rep.repr(toEl);
     if (a !== undefined && b !== undefined) {
@@ -535,6 +544,46 @@ export function deriveGraph(
   }
   stubs.sort((a, b) => cmp(a.id, b.id));
   return { nodes, edges: outEdges, stubs };
+}
+
+/**
+ * The `excludeFiles` filter of a view: true for a reference that starts or ends in an excluded file that
+ * the view does not include by name. Undefined when the view excludes nothing.
+ */
+function excludedRefs(
+  view: GraphView,
+  model: ExplainerModel,
+  includeIds: readonly ElementId[],
+): ((ref: Reference) => boolean) | undefined {
+  const matches = globMatcher(view.excludeFiles);
+  if (!matches) return undefined;
+  const index = model.index;
+  // Files the view names itself: through `file:`/`sym:` ids, and through the members of included groups.
+  const named = new Set<string>();
+  const seen = new Set<ElementId>();
+  const visit = (id: ElementId): void => {
+    if (seen.has(id)) return;
+    seen.add(id);
+    const parsed = parseId(id);
+    if (parsed.type === "file") named.add(parsed.path);
+    else if (parsed.type === "symbol") {
+      const file = index.fileOfSymbolId(parsed.symbolId);
+      if (file !== undefined) named.add(file);
+    } else if (parsed.type === "group") for (const member of model.members(id)) visit(member);
+  };
+  for (const id of includeIds) visit(id);
+  const dropped = new Map<string, boolean>();
+  const isDropped = (file: string | undefined): boolean => {
+    if (file === undefined) return false;
+    let known = dropped.get(file);
+    if (known === undefined) {
+      known = matches(file) && !named.has(file);
+      dropped.set(file, known);
+    }
+    return known;
+  };
+  return (ref) =>
+    isDropped(index.fileOfSymbolId(ref.from)) || isDropped(index.fileOfSymbolId(ref.to));
 }
 
 /** Removes parent links that would form a cycle (nested groups that contain each other). */

@@ -224,7 +224,7 @@ describe("xpl show", () => {
   it("unknown ids fail with core's suggestions, not-symbol ids are refused", async () => {
     const typo = await xpl(dir, "show", "src/runner.ts#Runner.dispach");
     expect(typo.code).toBe(1);
-    expect(typo.err).toContain("Did you mean: src/runner.ts#Runner.dispatch?");
+    expect(typo.err).toContain("Did you mean: sym:src/runner.ts#Runner.dispatch?");
     const dirAsFile = await xpl(dir, "show", "file:src");
     expect(dirAsFile.err).toContain("is a directory; use dir:src");
     const group = await xpl(dir, "show", "grp:scheduling");

@@ -176,7 +176,7 @@ describe("xpl refs", () => {
   it("unknown ids are reported with suggestions", async () => {
     const { code, err } = await xpl(dir, "refs", "src/queue.ts#Queue.requeu");
     expect(code).toBe(1);
-    expect(err).toContain("Did you mean: src/queue.ts#Queue.requeue?");
+    expect(err).toContain("Did you mean: sym:src/queue.ts#Queue.requeue?");
   });
 });
 

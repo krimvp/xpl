@@ -366,7 +366,7 @@ describe("3. backoff is renamed to delay in the requeue call and its declaration
     expect(text.out).toContain("anchors: 16 (ok 12, moved 0, drifted 4, missing 0)");
     expect(text.out).toContain("drifted llm elements to re-explain (3):");
     expect(text.out).toContain(`  ${DISPATCH}  (node)  [keep userFields: summary]`);
-    expect(text.out).toContain("  dispatch:3  (step)");
+    expect(text.out).toContain("  dispatch:3  (step in view:dispatch)");
     expect(text.out).toContain("drifted, but not llm-owned (left alone) (1):");
     expect(text.out).toContain("  concept:retry-tuning  (origin user)  concepts[1].anchors[0]");
   });
@@ -525,8 +525,11 @@ describe("4. Queue.ack and its call are deleted", () => {
     expect(lenient.json.errors).toBe(0);
     // the message says what is gone, what it might be, and what to do about it
     const message = lenient.json.issues.find((i: any) => i.code === "anchor-missing").message;
+    // (candidates are spelled as ids and as anchor fields; the test double comes last)
     expect(message).toBe(
-      "anchor src/queue.ts#Queue.ack is missing: symbol Queue.ack is not in src/queue.ts; did you mean src/queue.ts#Queue.acked, test/retry.test.ts#RecordingQueue.ack? " +
+      "anchor src/queue.ts#Queue.ack is missing: symbol Queue.ack is not in src/queue.ts; did you mean " +
+        'sym:src/queue.ts#Queue.acked (anchor: file: "src/queue.ts", symbol: "Queue.acked"), ' +
+        'sym:test/retry.test.ts#RecordingQueue.ack (anchor: file: "test/retry.test.ts", symbol: "RecordingQueue.ack")? ' +
         "Re-anchor it to where the code went, or drop it (resend the element without this anchor, or remove the element).",
     );
   });
@@ -874,7 +877,8 @@ describe("drift under fields the user edited (userFields)", () => {
       "This element has its steps edited by the user, so an llm patch cannot change it",
     );
 
-    // resending the steps does nothing but warn: dispatch:3 stays drifted until the user acts
+    // resending the steps does nothing but warn: dispatch:3 stays drifted until the user acts. The patch
+    // changes nothing because the user owns it, so apply says so with exit 1 instead of "applied"
     const fixed = structuredClone(readJson(r.dir, EXPLAINER_PATH).views[1].steps) as any[];
     fixed[2].anchors[0] = {
       file: "src/runner.ts",
@@ -882,11 +886,17 @@ describe("drift under fields the user edited (userFields)", () => {
       find: "await this.queue.requeue(\n          job,\n          delay);",
       role: "call-site",
     };
-    const attempt = await applyOk(
+    const attempt = await applyPatch(
       r.dir,
       { views: [{ id: "view:dispatch", type: "sequence", steps: fixed }] },
       "llm",
     );
+    expect(attempt.code).toBe(1);
+    expect(attempt.json).toMatchObject({
+      ok: false,
+      applied: false,
+      protectedIds: ["view:dispatch"],
+    });
     expect(attempt.json.changed).toEqual([]);
     expect(attempt.json.issues.find((i) => i.code === "protected")).toMatchObject({
       path: "views[0].steps",
@@ -1012,12 +1022,15 @@ describe("all five edits in one second commit", () => {
     ]);
     expect(json.missing.map((m: any) => m.elementId)).toEqual(["concept:ack-semantics"]);
     expect(json.driftedOther.map((d: any) => d.elementId)).toEqual(["concept:retry-tuning"]);
-    expect(json.todo).toMatchObject({ drifted: 3, missing: 1, requests: 0 });
+    // 3 llm elements to re-explain, plus the user's concept: counted, but apart (ask the user)
+    expect(json.todo).toMatchObject({ drifted: 4, driftedUserOwned: 1, missing: 1, requests: 0 });
     expect(json.anchors.counts).toEqual({ ok: 11, moved: 0, drifted: 4, missing: 1 });
 
     const text = await xpl(dir, "status", NAME);
     expect(text.code).toBe(0);
-    expect(text.out).toMatch(/^to do: \d+ unexplained, 3 drifted, 1 missing anchors, 0 requests$/m);
+    expect(text.out).toMatch(
+      /^to do: \d+ unexplained, 4 drifted \(1 user-owned: ask the user\), 1 missing anchors, 0 requests$/m,
+    );
     const section = (from: string, to?: string) => {
       const start = text.out.indexOf(from);
       expect(start, from).toBeGreaterThan(-1);
@@ -1173,7 +1186,8 @@ describe("all five edits in one second commit", () => {
     expect(json.drifted).toEqual([]);
     expect(json.missing.map((m: any) => m.elementId)).toEqual(["concept:ack-semantics"]);
     expect(json.driftedOther.map((d: any) => d.elementId)).toEqual(["concept:retry-tuning"]);
-    expect(json.todo).toMatchObject({ drifted: 0, missing: 1 });
+    // nothing left for Claude; the user's own drifted concept is the one that waits
+    expect(json.todo).toMatchObject({ drifted: 1, driftedUserOwned: 1, missing: 1 });
   });
 
   it("strict validate fails only on the missing anchor and on the user's own drifted anchor, with actionable messages", async () => {
