@@ -1,6 +1,7 @@
 /**
  * The viewer bundle (`ViewerBundle`, ARCHITECTURE.md §5) shared by `xpl bundle` (inlined into the HTML)
- * and `xpl view` (injected into `GET /`, served at `GET /api/bundle`).
+ * and `xpl view` (injected into `GET /`, served at `GET /api/bundle`): which source files go in
+ * (`collectFiles`), and how much of the symbol index (`embedIndex`, which `xpl bundle` uses).
  */
 import { lstatSync } from "node:fs";
 import { join } from "node:path";
@@ -16,6 +17,7 @@ import {
   elementIdForSymbolId,
   globMatcher,
   parseId,
+  pruneIndex,
   repr,
   viewCandidates,
   type DerivedGraph,
@@ -24,6 +26,7 @@ import {
   type GraphView,
   type IndexModel,
   type Reference,
+  type SymbolIndex,
   type TextCache,
   type ViewerBundle,
 } from "@xpl/core";
@@ -151,6 +154,8 @@ function stubFiles(view: GraphView, graph: DerivedGraph, model: ExplainerModel):
 export interface CollectedFiles {
   /** Working-tree text of the embedded files. */
   files: Record<string, string>;
+  /** The files selected, sorted: those of `files`, and any whose text could not be read. */
+  paths: string[];
   /** Which selection was used. */
   choice: FilesChoice;
   /** Bytes of source text embedded (UTF-8). */
@@ -203,10 +208,81 @@ export function collectFiles(opts: {
   }
   return {
     files,
+    paths,
     choice,
     embeddedBytes,
     indexedFiles: opts.index.files.length,
     indexedBytes: opts.measure === false ? 0 : indexedBytes(opts.root, opts.index),
+  };
+}
+
+export type IndexChoice = "full" | "pruned";
+
+/** What `xpl bundle` embeds of the index when `--embed-index` is not given: all of it with `--files all`. */
+export function defaultIndexChoice(files: FilesChoice): IndexChoice {
+  return files === "all" ? "full" : "pruned";
+}
+
+export interface EmbeddedIndex {
+  /** What goes into the bundle: the index itself, or a pruned copy of it (`index.pruned` says what it had). */
+  index: SymbolIndex;
+  /** The selection made: the whole index, or the pruned one. */
+  choice: IndexChoice;
+  /** Something was dropped (`choice` is `pruned` and the explainer did not need everything). */
+  pruned: boolean;
+  /** Size of the embedded index and of the whole one, as compact JSON (UTF-8 bytes). */
+  bytes: number;
+  fullBytes: number;
+  /** Symbols and references embedded, and in the whole index. */
+  symbols: { embedded: number; indexed: number };
+  refs: { embedded: number; indexed: number };
+}
+
+const indexBytes = (index: SymbolIndex): number => Buffer.byteLength(JSON.stringify(index));
+
+/**
+ * The index the bundle carries. `pruned` (the default with `--files referenced`) cuts it down to what the viewer can
+ * draw for this explainer with the code of `files` embedded: see `pruneIndex` in core for what stays and why the
+ * viewer derives the same from it. `full` embeds the index as it is. `model` is `index` as an `IndexModel`, when one
+ * is at hand.
+ */
+export function embedIndex(opts: {
+  index: SymbolIndex;
+  model?: IndexModel;
+  explainer: Explainer;
+  /** The files whose code is embedded (`CollectedFiles.paths`). */
+  files: readonly string[];
+  choice?: IndexChoice;
+}): EmbeddedIndex {
+  const choice = opts.choice ?? "pruned";
+  const fullBytes = indexBytes(opts.index);
+  const indexed = {
+    symbols: (opts.index.symbols ?? []).length,
+    refs: (opts.index.refs ?? []).length,
+  };
+  if (choice === "full") {
+    return {
+      index: opts.index,
+      choice,
+      pruned: false,
+      bytes: fullBytes,
+      fullBytes,
+      symbols: { embedded: indexed.symbols, indexed: indexed.symbols },
+      refs: { embedded: indexed.refs, indexed: indexed.refs },
+    };
+  }
+  const result = pruneIndex(opts.model ?? opts.index, {
+    files: opts.files,
+    explainer: opts.explainer,
+  });
+  return {
+    index: result.index,
+    choice,
+    pruned: result.pruned,
+    bytes: result.pruned ? indexBytes(result.index) : fullBytes,
+    fullBytes,
+    symbols: { embedded: result.symbols.kept, indexed: result.symbols.total },
+    refs: { embedded: result.refs.kept, indexed: result.refs.total },
   };
 }
 

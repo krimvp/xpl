@@ -15,3 +15,4 @@ export * from "./validate.js";
 export * from "./apply.js";
 export * from "./sequence.js";
 export * from "./bundle.js";
+export * from "./prune.js";
