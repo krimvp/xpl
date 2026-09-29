@@ -1,0 +1,378 @@
+{
+  "schema": "code-explainer@0",
+  "title": "Job runner",
+  "repo": {
+    "name": "acme/jobrunner",
+    "commit": "wt-6dd745d736"
+  },
+  "index": {
+    "path": ".explainer/index-wt-6dd745d736.json",
+    "commit": "wt-6dd745d736"
+  },
+  "nodes": [
+    {
+      "id": "grp:scheduling",
+      "kind": "group",
+      "label": "Scheduling",
+      "summary": "Decides which job runs next and hands it to a free worker.",
+      "parent": "repo",
+      "members": [
+        "file:src/runner.ts",
+        "file:src/queue.ts"
+      ],
+      "anchors": [],
+      "provenance": {
+        "origin": "llm",
+        "commit": "wt-6dd745d736"
+      }
+    },
+    {
+      "id": "sym:src/runner.ts#Runner.dispatch",
+      "kind": "symbol",
+      "label": "Runner.dispatch",
+      "summary": "The hot loop: pop, lease a worker, run, ack or requeue.",
+      "parent": "sym:src/runner.ts#Runner",
+      "anchors": [
+        {
+          "file": "src/runner.ts",
+          "symbol": "Runner.dispatch",
+          "role": "definition",
+          "hash": "sha256:c02146e8d847",
+          "resolved": {
+            "commit": "wt-6dd745d736",
+            "range": {
+              "startLine": 42,
+              "endLine": 88
+            },
+            "status": "ok"
+          }
+        }
+      ],
+      "provenance": {
+        "origin": "llm",
+        "commit": "wt-6dd745d736",
+        "userFields": [
+          "summary"
+        ]
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge:job-completed",
+      "from": "file:src/worker.ts",
+      "to": "file:src/metrics.ts",
+      "kind": "emits",
+      "label": "job.completed",
+      "summary": "Worker publishes on the event bus; metrics subscribes. Invisible to the call graph.",
+      "anchors": [
+        {
+          "file": "src/worker.ts",
+          "symbol": "Worker.run",
+          "span": {
+            "from": 21,
+            "to": 21
+          },
+          "role": "call-site",
+          "hash": "sha256:205444834577",
+          "resolved": {
+            "commit": "wt-6dd745d736",
+            "range": {
+              "startLine": 51,
+              "endLine": 51
+            },
+            "status": "ok"
+          }
+        },
+        {
+          "file": "src/metrics.ts",
+          "symbol": "onJobCompleted",
+          "role": "definition",
+          "hash": "sha256:ec3431f14677",
+          "resolved": {
+            "commit": "wt-6dd745d736",
+            "range": {
+              "startLine": 15,
+              "endLine": 19
+            },
+            "status": "ok"
+          }
+        }
+      ],
+      "provenance": {
+        "origin": "llm",
+        "commit": "wt-6dd745d736"
+      }
+    }
+  ],
+  "concepts": [
+    {
+      "id": "concept:retry-policy",
+      "label": "Retry policy",
+      "summary": "Failed jobs are requeued with exponential backoff up to maxRetries, then dead-lettered.",
+      "anchors": [
+        {
+          "file": "src/runner.ts",
+          "symbol": "Runner.dispatch",
+          "span": {
+            "from": 30,
+            "to": 41
+          },
+          "role": "definition",
+          "hash": "sha256:adc8374edfff",
+          "resolved": {
+            "commit": "wt-6dd745d736",
+            "range": {
+              "startLine": 72,
+              "endLine": 83
+            },
+            "status": "ok"
+          }
+        },
+        {
+          "file": "config/default.yaml",
+          "symbol": "retry",
+          "span": {
+            "from": 0,
+            "to": 3
+          },
+          "role": "config",
+          "hash": "sha256:7c1c80036851",
+          "resolved": {
+            "commit": "wt-6dd745d736",
+            "range": {
+              "startLine": 13,
+              "endLine": 16
+            },
+            "status": "ok"
+          }
+        },
+        {
+          "file": "test/retry.test.ts",
+          "role": "test",
+          "hash": "sha256:2794a0dab99c",
+          "resolved": {
+            "commit": "wt-6dd745d736",
+            "range": {
+              "startLine": 1,
+              "endLine": 91
+            },
+            "status": "ok"
+          }
+        }
+      ],
+      "related": [
+        "sym:src/runner.ts#Runner.dispatch",
+        "file:src/queue.ts"
+      ],
+      "provenance": {
+        "origin": "llm",
+        "commit": "wt-6dd745d736"
+      }
+    }
+  ],
+  "views": [
+    {
+      "id": "view:overview",
+      "type": "graph",
+      "title": "Overview",
+      "scope": {
+        "root": "repo",
+        "depth": 1
+      },
+      "include": [
+        "grp:scheduling",
+        "file:src/worker.ts",
+        "file:src/metrics.ts"
+      ],
+      "provenance": {
+        "origin": "llm",
+        "commit": "wt-6dd745d736"
+      }
+    },
+    {
+      "id": "view:dispatch",
+      "type": "sequence",
+      "title": "How a job is dispatched",
+      "scope": {
+        "root": "repo",
+        "depth": 3,
+        "question": "How does a job get from the queue to a worker?",
+        "entryPoints": [
+          "src/runner.ts#Runner.dispatch"
+        ]
+      },
+      "participants": [
+        "sym:src/runner.ts#Runner.dispatch",
+        "file:src/queue.ts",
+        "file:src/worker.ts"
+      ],
+      "steps": [
+        {
+          "id": "dispatch:1",
+          "from": "sym:src/runner.ts#Runner.dispatch",
+          "to": "file:src/queue.ts",
+          "label": "pop()",
+          "kind": "call",
+          "anchors": [
+            {
+              "file": "src/runner.ts",
+              "symbol": "Runner.dispatch",
+              "span": {
+                "from": 4,
+                "to": 4
+              },
+              "role": "call-site",
+              "hash": "sha256:c2fd0931e02b",
+              "resolved": {
+                "commit": "wt-6dd745d736",
+                "range": {
+                  "startLine": 46,
+                  "endLine": 46
+                },
+                "status": "ok"
+              }
+            },
+            {
+              "file": "src/queue.ts",
+              "symbol": "Queue.pop",
+              "role": "definition",
+              "hash": "sha256:b022955822dc",
+              "resolved": {
+                "commit": "wt-6dd745d736",
+                "range": {
+                  "startLine": 72,
+                  "endLine": 81
+                },
+                "status": "ok"
+              }
+            }
+          ]
+        },
+        {
+          "id": "dispatch:2",
+          "from": "sym:src/runner.ts#Runner.dispatch",
+          "to": "file:src/worker.ts",
+          "label": "run(job)",
+          "kind": "call",
+          "anchors": [
+            {
+              "file": "src/runner.ts",
+              "symbol": "Runner.dispatch",
+              "span": {
+                "from": 18,
+                "to": 19
+              },
+              "role": "call-site",
+              "hash": "sha256:c43d408fd3b8",
+              "resolved": {
+                "commit": "wt-6dd745d736",
+                "range": {
+                  "startLine": 60,
+                  "endLine": 61
+                },
+                "status": "ok"
+              }
+            },
+            {
+              "file": "src/worker.ts",
+              "symbol": "Worker.run",
+              "role": "definition",
+              "hash": "sha256:64889655134b",
+              "resolved": {
+                "commit": "wt-6dd745d736",
+                "range": {
+                  "startLine": 30,
+                  "endLine": 53
+                },
+                "status": "ok"
+              }
+            }
+          ]
+        },
+        {
+          "id": "dispatch:3",
+          "from": "sym:src/runner.ts#Runner.dispatch",
+          "to": "file:src/queue.ts",
+          "label": "requeue(job, backoff)",
+          "kind": "call",
+          "anchors": [
+            {
+              "file": "src/runner.ts",
+              "symbol": "Runner.dispatch",
+              "span": {
+                "from": 34,
+                "to": 36
+              },
+              "role": "call-site",
+              "hash": "sha256:3f9467b4c51b",
+              "resolved": {
+                "commit": "wt-6dd745d736",
+                "range": {
+                  "startLine": 76,
+                  "endLine": 78
+                },
+                "status": "ok"
+              }
+            },
+            {
+              "file": "src/queue.ts",
+              "symbol": "Queue.requeue",
+              "role": "definition",
+              "hash": "sha256:9abf2fb62272",
+              "resolved": {
+                "commit": "wt-6dd745d736",
+                "range": {
+                  "startLine": 87,
+                  "endLine": 90
+                },
+                "status": "ok"
+              }
+            }
+          ]
+        }
+      ],
+      "frames": [
+        {
+          "id": "frame:retry",
+          "kind": "loop",
+          "label": "until success or maxRetries",
+          "fromStep": "dispatch:2",
+          "toStep": "dispatch:3"
+        }
+      ],
+      "provenance": {
+        "origin": "llm",
+        "commit": "wt-6dd745d736"
+      }
+    }
+  ],
+  "tours": [
+    {
+      "id": "tour:intro",
+      "title": "Intro talk",
+      "steps": [
+        {
+          "id": "t1",
+          "view": "view:overview",
+          "focus": [
+            "grp:scheduling"
+          ],
+          "note": "Big picture first: scheduling is two files."
+        },
+        {
+          "id": "t2",
+          "view": "view:dispatch",
+          "focus": [
+            "dispatch:3",
+            "concept:retry-policy"
+          ],
+          "note": "Where failures go: requeue with backoff.",
+          "editor": {
+            "primary": "src/runner.ts"
+          }
+        }
+      ]
+    }
+  ]
+}

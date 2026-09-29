@@ -8,6 +8,8 @@
     "dev": "vite",
     "build": "vite build",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json",
+    "bundle": "tsx scripts/make-bundle.ts",
+    "bundle:ts": "tsx scripts/make-bundle.ts ../../fixtures/ts-jobrunner --name jobrunner --title \"Job runner\" --repo acme/jobrunner --patch scripts/ts-example.patch.json",
     "test:e2e": "vite build && playwright test"
   },
   "dependencies": {
