@@ -1,0 +1,16 @@
+{
+  "name": "@xpl/core",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "xpl schema types and pure logic (hashing, anchors, derivation, validation, patches). Browser-safe: no node:* imports.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@noble/hashes": "^2.4.0"
+  }
+}

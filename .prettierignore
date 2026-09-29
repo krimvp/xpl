@@ -1,0 +1,13 @@
+node_modules
+dist
+test-results
+playwright-report
+package-lock.json
+coverage
+
+# Line numbers in fixtures are load-bearing (anchors, acceptance tests): never reformat them.
+fixtures
+# Design docs are hand-formatted.
+docs
+# Appendix B of docs/handoff.md, kept byte-identical (apart from the import path).
+packages/core/test/types/example.explainer.ts
