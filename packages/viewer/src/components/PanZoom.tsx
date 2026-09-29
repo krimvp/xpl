@@ -26,8 +26,11 @@ interface Transform {
 const MIN_ZOOM = 0.1;
 const MAX_ZOOM = 4;
 const FIT_PADDING = 24;
-/** Fitting never blows a small diagram up by more than this. */
+/** Fitting never blows a small diagram up by more than this (a talk allows more: `maxFitZoom`). */
 const MAX_FIT_ZOOM = 1.25;
+/** In Present the diagram is enlarged more, and fitted closer to the edge: it is read from further away. */
+export const PRESENT_MAX_FIT_ZOOM = 1.6;
+export const PRESENT_FIT_PADDING = 10;
 const DRAG_THRESHOLD = 4;
 
 const clamp = (value: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, value));
@@ -47,6 +50,10 @@ export interface PanZoomProps {
   onBackgroundClick?: () => void;
   /** Extra text for screen readers. */
   label: string;
+  /** How far fitting may enlarge a small diagram (default 1.25). */
+  maxFitZoom?: number;
+  /** Room fitting leaves around the diagram, in px (default 24). */
+  fitPadding?: number;
   children: ReactNode;
 }
 
@@ -56,6 +63,8 @@ export function PanZoom({
   resetKey,
   onBackgroundClick,
   label,
+  maxFitZoom = MAX_FIT_ZOOM,
+  fitPadding = FIT_PADDING,
   children,
 }: PanZoomProps) {
   const wrap = useRef<HTMLDivElement>(null);
@@ -80,16 +89,16 @@ export function PanZoom({
   const fit = useCallback(() => {
     if (size.w === 0 || size.h === 0 || width === 0 || height === 0) return;
     const k = clamp(
-      Math.min((size.w - 2 * FIT_PADDING) / width, (size.h - 2 * FIT_PADDING) / height),
+      Math.min((size.w - 2 * fitPadding) / width, (size.h - 2 * fitPadding) / height),
       MIN_ZOOM,
-      MAX_FIT_ZOOM,
+      maxFitZoom,
     );
     setT({
       k,
       x: (size.w - width * k) / 2,
-      y: Math.max(FIT_PADDING / 2, (size.h - height * k) / 2),
+      y: Math.max(fitPadding / 2, (size.h - height * k) / 2),
     });
-  }, [size.w, size.h, width, height]);
+  }, [size.w, size.h, width, height, maxFitZoom, fitPadding]);
 
   useLayoutEffect(() => {
     if (lastReset.current !== resetKey) {

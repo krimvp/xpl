@@ -7,6 +7,8 @@
  *     GET  {api}/file?path=<file>     source text of a file missing from `bundle.files`
  *                                     (plain text; JSON `"..."` or `{ "text": "..." }` also works)
  *     PUT  {api}/views/<view id>      persist a view edit: JSON `{ "type": <view type>, ...changed fields }`
+ *     PUT  {api}/tours/<tour id>      persist a tour edit: JSON `{ "title": ..., "steps": [...] }` (the whole tour;
+ *                                     a new tour is created the same way)
  *     POST {api}/requests             queue an "explain this" request: JSON `{ kind, id, view?, label? }`
  * - without `server` every edit stays in memory (the header offers "Download explainer JSON").
  */
@@ -105,6 +107,18 @@ export class ServerApi {
     );
   }
 
+  /** Persists a tour: its title and all of its steps (a tour is small; steps are replaced wholesale). */
+  async putTour(tourId: string, tour: { title: string; steps: readonly unknown[] }): Promise<void> {
+    const id = encodeURIComponent(tourId).replace(/%3A/gi, ":");
+    await this.check(
+      await fetch(this.url(`/tours/${id}`), {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ title: tour.title, steps: tour.steps }),
+      }),
+    );
+  }
+
   async postRequest(request: ExplainRequest): Promise<void> {
     await this.check(
       await fetch(this.url("/requests"), {
@@ -121,10 +135,14 @@ export function explainCommand(id: string): string {
   return `/code-explainer expand ${id}`;
 }
 
-/** Launch parameters (`?mode=present&tour=<id>&step=<n>&view=<id>`). Present mode is a later phase. */
+/**
+ * Launch parameters (`?mode=present&tour=<id>&step=<n>&view=<id>`). `step` counts from 1, like the
+ * "2 / 5" counter; the store turns it into an index.
+ */
 export interface LaunchParams {
   mode?: "explore" | "present";
   tour?: string;
+  /** 1-based. */
   step?: number;
   view?: string;
 }
@@ -137,7 +155,7 @@ export function readLaunchParams(search: string = location.search): LaunchParams
   const tour = params.get("tour");
   if (tour) out.tour = tour;
   const step = Number(params.get("step"));
-  if (params.has("step") && Number.isInteger(step) && step >= 0) out.step = step;
+  if (params.has("step") && Number.isInteger(step) && step >= 1) out.step = step;
   const view = params.get("view");
   if (view) out.view = view;
   return out;

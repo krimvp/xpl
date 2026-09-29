@@ -1,7 +1,8 @@
 /**
  * Graph views: `DerivedGraph` (core) -> boxes and routed edges (elkjs) that GraphView draws as SVG.
  *
- * ELK `layered`, direction RIGHT, `hierarchyHandling: INCLUDE_CHILDREN`: one pass lays out the whole
+ * ELK `layered` (direction RIGHT by default; `layoutGraphFitting` picks RIGHT or DOWN by what reads larger
+ * in the pane), `hierarchyHandling: INCLUDE_CHILDREN`: one pass lays out the whole
  * containment tree, so edges may cross container borders. Included nodes with included children are
  * containers (ELK compound nodes). Ghost boxes (where a view stops) are plain nodes at the top level;
  * stubs are edges to them.
@@ -64,6 +65,9 @@ export interface LayoutEdge {
   anchor: Point;
 }
 
+/** Which way the layers run: `RIGHT` (columns, left to right) or `DOWN` (rows, top to bottom). */
+export type Direction = "RIGHT" | "DOWN";
+
 export interface GraphLayout {
   width: number;
   height: number;
@@ -71,6 +75,7 @@ export interface GraphLayout {
   edges: LayoutEdge[];
   /** True when ELK failed and the grid fallback was used. */
   fallback: boolean;
+  direction: Direction;
 }
 
 // ─── Sizes ──────────────────────────────────────────────────────────────────────────────────────
@@ -83,10 +88,16 @@ const LEAF_HEIGHT = 48;
 const GHOST_HEIGHT = 40;
 const HEADER_HEIGHT = 34;
 const CONTAINER_PAD = 14;
-const LABEL_HEIGHT = 17;
+const LABEL_HEIGHT = 18;
 
-const NODE_LABEL_FONT = 13;
-const BADGE_FONT = 11.5;
+// Font sizes of the diagram's text in its own units (styles.css draws with the same numbers). A diagram is
+// fitted into its pane, so this is what decides how small the text ends up: kept generous, and the boxes
+// hardly grow with it (a short label sits in a box of minimum width anyway).
+const NODE_LABEL_FONT = 14;
+const BADGE_FONT = 12;
+const GHOST_LABEL_FONT = 13.5;
+const GHOST_DETAIL_FONT = 12.5;
+const EDGE_LABEL_FONT = 13;
 
 /** Width of the kind badge pill. */
 export function badgeWidth(text: string): number {
@@ -117,7 +128,13 @@ function containerMinWidth(label: string, badge: string): number {
 function ghostWidth(label: string, detail: string): number {
   return Math.max(
     92,
-    Math.ceil(Math.max(textWidth(label, 12.5, 600) + 16, textWidth(detail, 11.5, 500))) + 2 * PAD_X,
+    Math.ceil(
+      Math.max(
+        textWidth(label, GHOST_LABEL_FONT, 600) + 16,
+        textWidth(detail, GHOST_DETAIL_FONT, 500),
+      ),
+    ) +
+      2 * PAD_X,
   );
 }
 
@@ -130,7 +147,11 @@ function stubLabelText(stub: Stub): string {
 }
 
 function labelBox(text: string): { text: string; width: number; height: number } {
-  return { text, width: Math.ceil(textWidth(text, 12, 500)) + 10, height: LABEL_HEIGHT };
+  return {
+    text,
+    width: Math.ceil(textWidth(text, EDGE_LABEL_FONT, 500)) + 10,
+    height: LABEL_HEIGHT,
+  };
 }
 
 // ─── Model shared by ELK and the fallback ───────────────────────────────────────────────────────
@@ -295,13 +316,15 @@ const ROOT_OPTIONS: Record<string, string> = {
   "elk.edgeRouting": "ORTHOGONAL",
   "elk.json.edgeCoords": "CONTAINER",
   "elk.padding": "[top=24,left=24,bottom=24,right=24]",
-  "elk.spacing.nodeNode": "34",
-  "elk.spacing.edgeNode": "22",
-  "elk.spacing.edgeEdge": "14",
+  // Tight on purpose: a layout is fitted into its pane, so every pixel of air between boxes shrinks the
+  // text. These spacings read about 20% larger than ELK's roomy ones on the fixture's overview.
+  "elk.spacing.nodeNode": "24",
+  "elk.spacing.edgeNode": "14",
+  "elk.spacing.edgeEdge": "10",
   "elk.spacing.edgeLabel": "4",
-  "elk.layered.spacing.nodeNodeBetweenLayers": "44",
-  "elk.layered.spacing.edgeNodeBetweenLayers": "22",
-  "elk.layered.spacing.edgeEdgeBetweenLayers": "14",
+  "elk.layered.spacing.nodeNodeBetweenLayers": "30",
+  "elk.layered.spacing.edgeNodeBetweenLayers": "14",
+  "elk.layered.spacing.edgeEdgeBetweenLayers": "10",
   "elk.layered.considerModelOrder.strategy": "NODES_AND_EDGES",
 };
 
@@ -494,11 +517,68 @@ export async function layoutGraph(
     const width = out.width ?? 0;
     const height = out.height ?? 0;
     placeAnchors(nodes, edges, { width, height });
-    return { width, height, nodes, edges, fallback: false };
+    const direction = (options["elk.direction"] ?? ROOT_OPTIONS["elk.direction"]) as Direction;
+    return { width, height, nodes, edges, fallback: false, direction };
   } catch (error) {
     console.warn("xpl: ELK layout failed, using a grid", error);
     return fallbackLayout(model);
   }
+}
+
+// ─── Direction: whichever reads larger in the pane ──────────────────────────────────────────────
+
+/** The scale a diagram is shown at when fitted into a viewport (PanZoom's "Fit"): bigger reads better. */
+export function fitScale(
+  layout: { width: number; height: number },
+  viewport: { width: number; height: number },
+  maxZoom = 1.25,
+  padding = 24,
+): number {
+  if (layout.width <= 0 || layout.height <= 0) return maxZoom;
+  return Math.min(
+    maxZoom,
+    (viewport.width - 2 * padding) / layout.width,
+    (viewport.height - 2 * padding) / layout.height,
+  );
+}
+
+/** Above this many nodes, edges and stubs only the direction the pane's shape suggests is tried. */
+const BOTH_DIRECTIONS_LIMIT = 150;
+/** The other direction has to fit this much larger to win: the reading direction stays put otherwise. */
+const OTHER_DIRECTION_MARGIN = 1.08;
+
+/**
+ * Lays the graph out for a pane of the given size. A wide pane suggests `RIGHT`, a tall one `DOWN`; for
+ * graphs that are not huge, and that the suggested direction cannot show at natural size, both are laid
+ * out and the one that fits the pane at the larger scale wins (ties and near-ties keep the suggested
+ * one). Without a size it is plain `layoutGraph`. A layered layout is as wide as it has layers times a
+ * box, and as tall as its widest layer: in a tall pane the same graph laid out downwards is drawn much
+ * larger than one laid out to the right, and vice versa.
+ */
+export async function layoutGraphFitting(
+  graph: DerivedGraph,
+  viewport: { width: number; height: number } | undefined,
+  maxZoom = 1.25,
+  padding = 24,
+): Promise<GraphLayout> {
+  if (!viewport || viewport.width <= 0 || viewport.height <= 0) return layoutGraph(graph);
+  const suggested: Direction = viewport.width / viewport.height < 1 ? "DOWN" : "RIGHT";
+  const other: Direction = suggested === "RIGHT" ? "DOWN" : "RIGHT";
+  const first = await layoutGraph(graph, { "elk.direction": suggested });
+  if (
+    first.fallback ||
+    // shown at its natural size or larger: turning it would not make the text read better
+    fitScale(first, viewport, maxZoom, padding) >= 1 ||
+    graph.nodes.length + graph.edges.length + graph.stubs.length > BOTH_DIRECTIONS_LIMIT
+  ) {
+    return first;
+  }
+  const second = await layoutGraph(graph, { "elk.direction": other });
+  if (second.fallback) return first;
+  return fitScale(second, viewport, maxZoom, padding) >
+    fitScale(first, viewport, maxZoom, padding) * OTHER_DIRECTION_MARGIN
+    ? second
+    : first;
 }
 
 // ─── Fallback: a grid ───────────────────────────────────────────────────────────────────────────
@@ -597,5 +677,5 @@ function fallbackLayout(model: Model): GraphLayout {
   }
   const canvas = { width: grid.width + 48, height: grid.height + 48 };
   placeAnchors(nodes, edges, canvas);
-  return { ...canvas, nodes, edges, fallback: true };
+  return { ...canvas, nodes, edges, fallback: true, direction: "RIGHT" };
 }

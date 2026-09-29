@@ -1,5 +1,4 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { PRESENT_AVAILABLE } from "../src/modes.js";
 import { ViewerStore } from "../src/store.js";
 import { makeBundle, TEXTS } from "./world.js";
 
@@ -87,22 +86,6 @@ describe("the caret", () => {
     expect(store.getState().openSeq).toBe(state.openSeq + 1);
     store.closeOpenedFile();
     expect(store.getState().openedFile).toBeUndefined();
-  });
-});
-
-describe("mode and tour (the seam for Present mode)", () => {
-  it("stays in explore until Present exists, but keeps the requested tour", () => {
-    expect(PRESENT_AVAILABLE).toBe(false);
-    const store = new ViewerStore(makeBundle({ mode: "present", tour: "tour:x" }), {
-      mode: "present",
-      step: 2,
-    });
-    expect(store.getState().mode).toBe("explore");
-    expect(store.getState().tour).toEqual({ tourId: "tour:x", step: 2 });
-    store.setMode("present");
-    expect(store.getState().mode).toBe("explore");
-    store.setTour(undefined);
-    expect(store.getState().tour).toBeUndefined();
   });
 });
 

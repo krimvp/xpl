@@ -1,18 +1,19 @@
 /**
- * The viewer shell. Explore mode (this phase): header, then the diagram with the concept list and the
- * details panel below it on the left, the file tree and the editor stack on the right, with resizable
- * splits. Present mode is a later phase and plugs in through `mode` (see modes.ts, present/).
+ * The viewer shell. Explore mode: header, then the diagram with the concept list and the details panel
+ * below it on the left, the file tree and the editor stack on the right, with resizable splits. Present
+ * mode (present/PresentMode.tsx) plays a tour: the diagram and a caption on the left, the code on the
+ * right, no file tree. The keys of both modes are handled here, in one place.
  */
 import { useEffect, useState } from "react";
+import { CodeArea } from "./components/CodeArea.js";
 import { ConceptList } from "./components/ConceptList.js";
 import { Details } from "./components/Details.js";
 import { DiagramPane } from "./components/DiagramPane.js";
 import { ErrorBoundary } from "./components/ErrorBoundary.js";
-import { EditorStack } from "./components/EditorStack.js";
-import { FileTree } from "./components/FileTree.js";
 import { Header } from "./components/Header.js";
 import { Splitter } from "./components/Splitter.js";
 import { StoreContext, useStore, useViewerState } from "./hooks.js";
+import { isFormField, tourKeyAction } from "./present/keys.js";
 import { PresentMode } from "./present/PresentMode.js";
 import type { ViewerStore } from "./store.js";
 
@@ -40,42 +41,94 @@ function Shell() {
   const store = useStore();
   const state = useViewerState();
   const title = state.explainer.title;
-
-  useEffect(() => {
-    document.title = title ? `${title} · xpl` : "xpl viewer";
-  }, [title]);
-
-  // Escape clears the selection (unless the key is meant for a form field).
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape" || event.defaultPrevented) return;
-      const target = event.target as HTMLElement | null;
-      if (target && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return;
-      store.clearSelection();
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [store]);
-
-  return (
-    <div className="app" data-mode={state.mode}>
-      <Header />
-      {state.mode === "present" ? <PresentMode /> : <ExploreLayout />}
-    </div>
-  );
-}
-
-const clamp = (value: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, value));
-
-function ExploreLayout() {
+  // The splits live here, not in ExploreLayout, so that a round trip through Present keeps them.
   const [leftWidth, setLeftWidth] = useState(() =>
     Math.round(clamp(window.innerWidth * 0.52, 420, 900)),
   );
   const [lowerHeight, setLowerHeight] = useState(() =>
     Math.round(clamp(window.innerHeight * 0.36, 220, 380)),
   );
-  const [treeOpen, setTreeOpen] = useState(true);
 
+  useEffect(() => {
+    document.title = title ? `${title} · xpl` : "xpl viewer";
+  }, [title]);
+
+  // Explore: Escape clears the selection (unless the key is meant for a form field or a panel).
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented) return;
+      if (store.getState().mode !== "explore" || isFormField(event.target)) return;
+      store.clearSelection();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [store]);
+
+  // Present: the tour keys. Registered for the capture phase so that they win over the diagram (which
+  // pans with the arrows), the editors (caret keys) and a focused button (Space); a text field or a
+  // menu keeps its own keys. A held key steps once, not a dozen times.
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (store.getState().mode !== "present") return;
+      const action = tourKeyAction(event);
+      if (!action || isFormField(event.target)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (event.repeat) return;
+      switch (action) {
+        case "next":
+          store.nextStep();
+          break;
+        case "prev":
+          store.prevStep();
+          break;
+        case "first":
+          store.goToStep(0);
+          break;
+        case "last":
+          store.goToStep(Number.MAX_SAFE_INTEGER);
+          break;
+        case "exit":
+          store.exitPresent();
+          break;
+      }
+    };
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
+  }, [store]);
+
+  return (
+    <div className="app" data-mode={state.mode}>
+      <Header />
+      {state.mode === "present" ? (
+        <PresentMode />
+      ) : (
+        <ExploreLayout
+          leftWidth={leftWidth}
+          setLeftWidth={setLeftWidth}
+          lowerHeight={lowerHeight}
+          setLowerHeight={setLowerHeight}
+        />
+      )}
+    </div>
+  );
+}
+
+const clamp = (value: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, value));
+
+interface ExploreLayoutProps {
+  leftWidth: number;
+  setLeftWidth: (update: (width: number) => number) => void;
+  lowerHeight: number;
+  setLowerHeight: (update: (height: number) => number) => void;
+}
+
+function ExploreLayout({
+  leftWidth,
+  setLeftWidth,
+  lowerHeight,
+  setLowerHeight,
+}: ExploreLayoutProps) {
   return (
     <main
       className="explore"
@@ -104,25 +157,7 @@ function ExploreLayout() {
         onResize={(d) => setLeftWidth((w) => clamp(w + d, 320, window.innerWidth - 360))}
       />
       <section className="right" aria-label="Code">
-        <div className={"code-area" + (treeOpen ? "" : " is-tree-closed")}>
-          <aside className="tree-panel">
-            <div className="tree-head">
-              {treeOpen && <span className="panel-title">Files</span>}
-              <button
-                type="button"
-                className="icon-btn"
-                aria-label={treeOpen ? "Collapse the file tree" : "Expand the file tree"}
-                aria-expanded={treeOpen}
-                title={treeOpen ? "Collapse the file tree" : "Expand the file tree"}
-                onClick={() => setTreeOpen((open) => !open)}
-              >
-                {treeOpen ? "«" : "»"}
-              </button>
-            </div>
-            {treeOpen && <FileTree />}
-          </aside>
-          <EditorStack />
-        </div>
+        <CodeArea tree="collapsible" />
       </section>
     </main>
   );

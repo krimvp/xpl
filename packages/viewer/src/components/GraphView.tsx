@@ -7,19 +7,32 @@
  * Click selects (shift adds), double-click drills into a node, a click on a ghost adds it to the view.
  */
 import type { DerivedGraph } from "@xpl/core";
-import { memo, useEffect, useMemo, useState, type KeyboardEvent, type MouseEvent } from "react";
+import {
+  createContext,
+  memo,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type MouseEvent,
+} from "react";
 import {
   badgeWidth,
   EDGE_BOUNDS_PAD,
   labelWidth,
-  layoutGraph,
+  layoutGraphFitting,
   type GraphLayout,
   type LayoutEdge,
   type LayoutNode,
 } from "../layout/graphLayout.js";
 import { arrowHeadPath, distanceToSegment, roundedPath, routeBox } from "../svg.js";
 import { useStore } from "../hooks.js";
-import { PanZoom } from "./PanZoom.js";
+import { PanZoom, PRESENT_FIT_PADDING, PRESENT_MAX_FIT_ZOOM } from "./PanZoom.js";
+
+/** True while presenting: a talk looks at the diagram, it does not edit it (no drill-in, collapse or expand). */
+const ReadOnly = createContext(false);
 
 interface Marks {
   selected: ReadonlySet<string>;
@@ -61,10 +74,20 @@ export interface GraphViewProps {
   selection: readonly string[];
   matches: readonly string[];
   related: ReadonlySet<string>;
+  /** Present mode: larger fitting, and the diagram cannot be edited. */
+  present?: boolean;
 }
 
-export function GraphView({ viewId, graph, selection, matches, related }: GraphViewProps) {
+export function GraphView({
+  viewId,
+  graph,
+  selection,
+  matches,
+  related,
+  present = false,
+}: GraphViewProps) {
   const store = useStore();
+  const host = useRef<HTMLDivElement>(null);
   const [layout, setLayout] = useState<GraphLayout | undefined>();
   const [error, setError] = useState<string | undefined>();
   // Stable while nothing selected, matched or related changes, so unchanged shapes are not re-rendered.
@@ -73,9 +96,17 @@ export function GraphView({ viewId, graph, selection, matches, related }: GraphV
     [selection, matches, related],
   );
 
+  // The layout direction (right or down) is chosen for the pane the diagram is drawn in.
   useEffect(() => {
     let cancelled = false;
-    layoutGraph(graph).then(
+    const el = host.current;
+    const viewport = el ? { width: el.clientWidth, height: el.clientHeight } : undefined;
+    layoutGraphFitting(
+      graph,
+      viewport,
+      present ? PRESENT_MAX_FIT_ZOOM : undefined,
+      present ? PRESENT_FIT_PADDING : undefined,
+    ).then(
       (result) => {
         if (cancelled) return;
         setLayout(result);
@@ -88,40 +119,54 @@ export function GraphView({ viewId, graph, selection, matches, related }: GraphV
     return () => {
       cancelled = true;
     };
-  }, [graph]);
+  }, [graph, present]);
 
-  if (error) return <div className="diagram-message is-error">Layout failed: {error}</div>;
-  if (!layout) return <div className="diagram-message">Laying out the graph…</div>;
-  if (layout.nodes.length === 0) {
-    return (
+  let body;
+  if (error) body = <div className="diagram-message is-error">Layout failed: {error}</div>;
+  else if (!layout) body = <div className="diagram-message">Laying out the graph…</div>;
+  else if (layout.nodes.length === 0) {
+    body = (
       <div className="diagram-message">
         This view shows nothing yet. Add nodes to its <code>include</code> list.
       </div>
     );
+  } else {
+    body = (
+      <PanZoom
+        width={layout.width}
+        height={layout.height}
+        resetKey={viewId}
+        label="Diagram. Drag to pan, scroll to zoom."
+        maxFitZoom={present ? PRESENT_MAX_FIT_ZOOM : undefined}
+        fitPadding={present ? PRESENT_FIT_PADDING : undefined}
+        onBackgroundClick={() => store.clearSelection()}
+      >
+        <g
+          className="graph"
+          data-fallback={layout.fallback ? "true" : undefined}
+          data-direction={layout.direction}
+        >
+          {/* Nodes are drawn above the edges of their level: a click on a box is never taken by an edge. */}
+          <g className="edges">
+            {layout.edges.map((edge) => (
+              <EdgeShape key={edge.id} edge={edge} marks={marks} />
+            ))}
+          </g>
+          <g className="nodes">
+            {layout.nodes.map((node) => (
+              <NodeShape key={node.id} node={node} marks={marks} />
+            ))}
+          </g>
+        </g>
+      </PanZoom>
+    );
   }
-
   return (
-    <PanZoom
-      width={layout.width}
-      height={layout.height}
-      resetKey={viewId}
-      label="Diagram. Drag to pan, scroll to zoom."
-      onBackgroundClick={() => store.clearSelection()}
-    >
-      <g className="graph" data-fallback={layout.fallback ? "true" : undefined}>
-        {/* Nodes are drawn above the edges of their level: a click on a box is never taken by an edge. */}
-        <g className="edges">
-          {layout.edges.map((edge) => (
-            <EdgeShape key={edge.id} edge={edge} marks={marks} />
-          ))}
-        </g>
-        <g className="nodes">
-          {layout.nodes.map((node) => (
-            <NodeShape key={node.id} node={node} marks={marks} />
-          ))}
-        </g>
-      </g>
-    </PanZoom>
+    <ReadOnly.Provider value={present}>
+      <div className="graph-host" ref={host}>
+        {body}
+      </div>
+    </ReadOnly.Provider>
   );
 }
 
@@ -137,6 +182,7 @@ const NodeShape = memo(function NodeShape({ node, marks }: { node: LayoutNode; m
 
 function BoxShape({ node, marks }: { node: LayoutNode; marks: Marks }) {
   const store = useStore();
+  const readOnly = useContext(ReadOnly);
   const container = node.children.length > 0;
   const select = (event: MouseEvent | KeyboardEvent) => store.click(node.id, additive(event));
   const badge = badgeWidth(node.badge);
@@ -155,12 +201,12 @@ function BoxShape({ node, marks }: { node: LayoutNode; marks: Marks }) {
       }}
       onDoubleClick={(event) => {
         event.stopPropagation();
-        store.drillIn(node.id);
+        if (!readOnly) store.drillIn(node.id);
       }}
       onKeyDown={(event) => activate(event, () => select(event))}
     >
       <title>
-        {store.canDrillIn(node.id)
+        {!readOnly && store.canDrillIn(node.id)
           ? `${node.label} (${node.badge}): double-click to open what it contains`
           : `${node.label} (${node.badge})`}
       </title>
@@ -189,24 +235,26 @@ function BoxShape({ node, marks }: { node: LayoutNode; marks: Marks }) {
           {node.children.map((child) => (
             <NodeShape key={child.id} node={child} marks={marks} />
           ))}
-          <g
-            className="collapse"
-            role="button"
-            tabIndex={0}
-            aria-label={`Collapse ${node.label}`}
-            data-collapse-id={node.id}
-            transform={`translate(${node.width - 30} 8)`}
-            onClick={(event) => {
-              event.stopPropagation();
-              store.collapse(node.id);
-            }}
-            onDoubleClick={(event) => event.stopPropagation()}
-            onKeyDown={(event) => activate(event, () => store.collapse(node.id))}
-          >
-            <title>Collapse: remove what is inside</title>
-            <rect width={20} height={18} rx={4} />
-            <path d="M5 9h10" />
-          </g>
+          {!readOnly && (
+            <g
+              className="collapse"
+              role="button"
+              tabIndex={0}
+              aria-label={`Collapse ${node.label}`}
+              data-collapse-id={node.id}
+              transform={`translate(${node.width - 30} 8)`}
+              onClick={(event) => {
+                event.stopPropagation();
+                store.collapse(node.id);
+              }}
+              onDoubleClick={(event) => event.stopPropagation()}
+              onKeyDown={(event) => activate(event, () => store.collapse(node.id))}
+            >
+              <title>Collapse: remove what is inside</title>
+              <rect width={20} height={18} rx={4} />
+              <path d="M5 9h10" />
+            </g>
+          )}
           {centerIsCovered(node) && (
             <circle className="hit" cx={node.width / 2} cy={node.height / 2} r={10} />
           )}
@@ -268,8 +316,9 @@ function Badge({ x, y, text, width }: { x: number; y: number; text: string; widt
 
 function GhostShape({ node, marks }: { node: LayoutNode; marks: Marks }) {
   const store = useStore();
+  const readOnly = useContext(ReadOnly);
   const expand = () => {
-    if (node.ghostTarget !== undefined) store.expandStub({ ghost: node.ghostTarget });
+    if (node.ghostTarget !== undefined && !readOnly) store.expandStub({ ghost: node.ghostTarget });
   };
   return (
     <g
@@ -278,7 +327,7 @@ function GhostShape({ node, marks }: { node: LayoutNode; marks: Marks }) {
       transform={`translate(${node.x} ${node.y})`}
       role="button"
       tabIndex={0}
-      aria-label={`Add ${node.label} to the view`}
+      aria-label={readOnly ? `${node.label} (not in this view)` : `Add ${node.label} to the view`}
       onClick={(event) => {
         event.stopPropagation();
         expand();
@@ -286,9 +335,11 @@ function GhostShape({ node, marks }: { node: LayoutNode; marks: Marks }) {
       onKeyDown={(event) => activate(event, expand)}
     >
       <title>
-        {node.hint
-          ? `Add ${node.label} to the view (${node.hint} reach it across the edge of this view)`
-          : `Add ${node.label} to the view`}
+        {readOnly
+          ? `${node.label} is not in this view`
+          : node.hint
+            ? `Add ${node.label} to the view (${node.hint} reach it across the edge of this view)`
+            : `Add ${node.label} to the view`}
       </title>
       <rect className="box" width={node.width} height={node.height} rx={8} />
       <path className="plus" d="M13 15h8M17 11v8" />

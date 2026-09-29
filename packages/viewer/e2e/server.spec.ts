@@ -16,9 +16,12 @@ import {
 interface Recorded {
   files: string[];
   puts: { path: string; body: Record<string, unknown> }[];
+  /** PUT /api/tours/<id>. */
+  tourPuts: { path: string; body: Record<string, unknown> }[];
   posts: Record<string, unknown>[];
   /** Status PUT answers with; a test may change it while the page is open. */
   putStatus: number;
+  tourStatus: number;
 }
 
 async function serve(
@@ -27,6 +30,7 @@ async function serve(
     /** Files the page does not carry: served on demand by GET /api/file. */
     withheld?: string[];
     putStatus?: number;
+    tourStatus?: number;
     fileStatus?: number;
   } = {},
 ): Promise<Recorded> {
@@ -38,7 +42,14 @@ async function serve(
     delete files[path];
   }
   bundle.server = { api: "/api" };
-  const recorded: Recorded = { files: [], puts: [], posts: [], putStatus: opts.putStatus ?? 200 };
+  const recorded: Recorded = {
+    files: [],
+    puts: [],
+    tourPuts: [],
+    posts: [],
+    putStatus: opts.putStatus ?? 200,
+    tourStatus: opts.tourStatus ?? 200,
+  };
   await page.route("http://xpl.test/**", async (route) => {
     const request = route.request();
     const url = new URL(request.url());
@@ -61,6 +72,20 @@ async function serve(
           status: recorded.putStatus,
           contentType: "application/json",
           body: JSON.stringify({ error: "the explainer is read-only" }),
+        });
+      }
+      return route.fulfill({ contentType: "application/json", body: "{}" });
+    }
+    if (url.pathname.startsWith("/api/tours/") && request.method() === "PUT") {
+      recorded.tourPuts.push({
+        path: decodeURIComponent(url.pathname),
+        body: JSON.parse(request.postData() ?? "null") as Record<string, unknown>,
+      });
+      if (recorded.tourStatus >= 400) {
+        return route.fulfill({
+          status: recorded.tourStatus,
+          contentType: "application/json",
+          body: JSON.stringify({ error: "tour patch rejected: stale anchor" }),
         });
       }
       return route.fulfill({ contentType: "application/json", body: "{}" });
@@ -128,9 +153,13 @@ test("view edits are sent to PUT /api/views/<id> with the changed fields (coales
   });
   expect((await stateOf(page)).dirty).toBe(false);
 
-  // Two quick toggles arrive as one request carrying the final value.
-  await page.locator('[data-edge-kind="imports"]').click();
-  await page.locator('[data-edge-kind="reads"]').click();
+  // Two quick toggles arrive as one request carrying the final value. Both clicks happen in one task, so
+  // that a slow machine cannot spread them beyond the delay that coalesces edits.
+  await page.evaluate(() => {
+    for (const kind of ["imports", "reads"]) {
+      document.querySelector<HTMLElement>(`[data-edge-kind="${kind}"]`)!.click();
+    }
+  });
   await expect(page.locator(".save-status")).toHaveText("Saved");
   await expect.poll(() => recorded.puts.length).toBe(2);
   expect(recorded.puts[1]!.body).toEqual({
@@ -174,4 +203,108 @@ test("Explain this queues a request with POST /api/requests", async ({ page }) =
   ]);
   // No command box when the request was queued.
   await expect(page.getByTestId("explain-command")).toHaveCount(0);
+});
+
+/** The fixture's tour:intro as the page embeds it. */
+function embeddedTour(): { id: string; title: string; steps: Record<string, unknown>[] } {
+  const { bundle } = readEmbeddedBundle();
+  const explainer = bundle.explainer as { tours: { id: string; title: string; steps: {}[] }[] };
+  return structuredClone(explainer.tours[0]!) as ReturnType<typeof embeddedTour>;
+}
+
+test("tour edits are sent to PUT /api/tours/<id> with the whole tour, coalesced", async ({
+  page,
+}) => {
+  const problems = watchProblems(page);
+  const recorded = await serve(page);
+  await page.getByTestId("tours-button").click();
+  const rows = page.getByTestId("tour-step");
+  await expect(rows).toHaveCount(2);
+
+  // Typing is many edits; they go out as one request that carries the note as it is by then.
+  const note = rows.first().getByTestId("tour-step-note");
+  await note.fill("");
+  await note.pressSequentially("Edited", { delay: 15 });
+  await expect(page.locator(".save-status")).toHaveText("Saved");
+  expect(recorded.tourPuts.length).toBeGreaterThan(0);
+  expect(recorded.tourPuts.length).toBeLessThan(7);
+  const last = recorded.tourPuts.at(-1)!;
+  const tour = embeddedTour();
+  expect(last.path).toBe("/api/tours/tour:intro");
+  expect(last.body).toEqual({
+    title: "Intro talk",
+    steps: [{ ...tour.steps[0], note: "Edited" }, tour.steps[1]],
+  });
+  expect(recorded.puts).toEqual([]); // no view was touched
+  expect((await stateOf(page)).dirty).toBe(false);
+  await expect(page.locator(".save-status")).toHaveAttribute("title", "Your edits are saved");
+
+  // Reordering sends the steps in the new order; deleting one leaves the other.
+  recorded.tourPuts.length = 0;
+  await rows.first().getByTestId("tour-step-down").click();
+  await expect.poll(() => recorded.tourPuts.length).toBe(1);
+  expect((recorded.tourPuts[0]!.body.steps as { id: string }[]).map((s) => s.id)).toEqual([
+    "t2",
+    "t1",
+  ]);
+  await rows.first().getByTestId("tour-step-delete").click();
+  await expect.poll(() => recorded.tourPuts.length).toBe(2);
+  expect(recorded.tourPuts[1]!.body).toEqual({
+    title: "Intro talk",
+    steps: [{ ...tour.steps[0], note: "Edited" }],
+  });
+  expect(problems).toEqual([]);
+});
+
+test("a new tour is created with PUT /api/tours/tour:<slug>, title and steps", async ({ page }) => {
+  const recorded = await serve(page);
+  await page.evaluate(() => window.__xpl!.setView("view:dispatch"));
+  await byId(page, "dispatch:1").click();
+  await page.getByTestId("tours-button").click();
+  await page.getByTestId("tour-target").selectOption({ label: "New tour…" });
+  await page.getByTestId("tour-new-title").fill("My talk");
+  await page.getByTestId("tour-add").click();
+  await expect(page.locator(".save-status")).toHaveText("Saved");
+  expect(recorded.tourPuts).toHaveLength(1);
+  expect(recorded.tourPuts[0]).toEqual({
+    path: "/api/tours/tour:my-talk",
+    body: { title: "My talk", steps: [{ id: "t1", view: "view:dispatch", focus: ["dispatch:1"] }] },
+  });
+  // and a second step of the same session goes to the same tour
+  await byId(page, "dispatch:3").click();
+  await page.getByTestId("tour-add").click();
+  await expect.poll(() => recorded.tourPuts.length).toBe(2);
+  expect(recorded.tourPuts[1]!.path).toBe("/api/tours/tour:my-talk");
+  expect((recorded.tourPuts[1]!.body.steps as { id: string }[]).map((s) => s.id)).toEqual([
+    "t1",
+    "t2",
+  ]);
+  // the new tour can be presented right away
+  await page.getByTestId("tour-present").click();
+  await expect(page.getByTestId("tour-picker")).toHaveValue("tour:my-talk");
+  await expect(page.getByTestId("tour-counter")).toHaveText("1 / 2");
+});
+
+test("a refused tour save keeps the edit, says why, does not hold back a view edit, and can be retried", async ({
+  page,
+}) => {
+  const recorded = await serve(page, { tourStatus: 400 });
+  await byId(page, "ghost:file:src/bus.ts").click(); // a view edit, which the server accepts
+  await page.getByTestId("tours-button").click();
+  await page.getByTestId("tour-step-note").first().fill("Will be refused.");
+  const status = page.locator(".save-status");
+  await expect(status).toContainText("Not saved");
+  await expect(status).toContainText("400");
+  await expect(status).toContainText("tour patch rejected: stale anchor");
+  expect((await stateOf(page)).dirty).toBe(true);
+  expect(recorded.puts).toHaveLength(1); // the view edit went through
+  await expect(page.getByRole("button", { name: "Download explainer JSON" })).toBeEnabled();
+
+  recorded.tourStatus = 200;
+  await page.getByRole("button", { name: "Retry save" }).click();
+  await expect(status).toHaveText("Saved");
+  expect((await stateOf(page)).dirty).toBe(false);
+  const steps = recorded.tourPuts.at(-1)!.body.steps as { note?: string }[];
+  expect(steps[0]!.note).toBe("Will be refused.");
+  expect(recorded.puts).toHaveLength(1); // the view edit was not sent again
 });

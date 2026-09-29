@@ -303,10 +303,155 @@ describe("xpl view", () => {
     );
   });
 
+  it("PUT /api/tours/<id> applies a tour as the user, persists it, and returns the tour", async () => {
+    const dir = cloneDir(demo);
+    const view = await serve(dir);
+    const url = `${view.url}/api/tours/tour:intro`;
+    const put = (target: string, body: unknown) =>
+      fetch(target, { method: "PUT", headers: JSON_HEADERS, body: JSON.stringify(body) });
+    const original = readJson(dir, ".explainer/demo.explainer.json").tours[0];
+    expect(original.steps.map((s: any) => s.id)).toEqual(["t1", "t2"]);
+
+    // Reorder the steps, edit a note, add a step with a code override (anchors as Claude writes them).
+    const steps = [
+      original.steps[1],
+      { ...original.steps[0], note: "Edited by the user." },
+      {
+        id: "t3",
+        view: "view:dispatch",
+        focus: ["dispatch:1"],
+        code: [{ file: "src/runner.ts", symbol: "Runner.dispatch", role: "definition" }],
+        editor: { dimOthers: false, hideFileTree: false },
+      },
+    ];
+    const res = await put(url, { title: "Intro talk (edited)", steps });
+    expect(res.status).toBe(200);
+    const updated = await json(res);
+    expect(updated).toMatchObject({ id: "tour:intro", title: "Intro talk (edited)" });
+    expect(updated.steps.map((s: any) => s.id)).toEqual(["t2", "t1", "t3"]);
+    expect(updated.steps[1].note).toBe("Edited by the user.");
+    expect(updated.steps[2].code[0]).toMatchObject({
+      file: "src/runner.ts",
+      symbol: "Runner.dispatch",
+      role: "definition",
+      resolved: { status: "ok" },
+    });
+    expect(updated.steps[2].code[0].hash).toMatch(/^sha256:/);
+    expect(updated.provenance).toBeUndefined(); // tours carry no provenance
+
+    const path = ".explainer/demo.explainer.json";
+    const saved = readJson(dir, path).tours.find((t: any) => t.id === "tour:intro");
+    expect(saved).toEqual(updated);
+    // the bundle shows the edit
+    const bundle = (await json(await fetch(`${view.url}/api/bundle`))) as ViewerBundle;
+    expect(bundle.explainer.tours.find((t) => t.id === "tour:intro")).toEqual(updated);
+
+    // The viewer sends a tour back whole, stored anchors included: nothing changes on disk.
+    const before = readFile(dir, path);
+    const again = await put(url, { title: updated.title, steps: updated.steps });
+    expect(again.status).toBe(200);
+    expect(await json(again)).toEqual(updated);
+    expect(readFile(dir, path)).toBe(before);
+
+    // Only the fields that are given change (a rename keeps the steps), and the encoded id works.
+    const renamed = await put(`${view.url}/api/tours/tour%3Aintro`, { title: "Renamed" });
+    expect(renamed.status).toBe(200);
+    expect(await json(renamed)).toMatchObject({ title: "Renamed", steps: updated.steps });
+
+    // A new tour needs a title and steps.
+    const created = await put(`${view.url}/api/tours/tour:mine`, {
+      title: "Mine",
+      steps: [{ id: "t1", view: "view:overview", focus: [], note: "Just the view." }],
+    });
+    expect(created.status).toBe(200);
+    expect(await json(created)).toEqual({
+      id: "tour:mine",
+      title: "Mine",
+      steps: [{ id: "t1", view: "view:overview", focus: [], note: "Just the view." }],
+    });
+    expect(readJson(dir, path).tours.map((t: any) => t.id)).toEqual(["tour:intro", "tour:mine"]);
+    // an llm patch that leaves the tour alone keeps the user's edits
+    const applied = await invoke(["apply", "demo", "-"], {
+      cwd: dir,
+      stdin: JSON.stringify({ title: "Job runner" }),
+    });
+    expect(applied.code).toBe(0);
+    expect(readJson(dir, path).tours.map((t: any) => t.id)).toEqual(["tour:intro", "tour:mine"]);
+  });
+
+  it("PUT /api/tours/<id> rejects an invalid tour with 400 and the issues, and writes nothing", async () => {
+    const dir = cloneDir(demo);
+    const before = readFile(dir, ".explainer/demo.explainer.json");
+    const view = await serve(dir);
+    const put = (id: string, body: unknown) =>
+      fetch(`${view.url}/api/tours/${id}`, {
+        method: "PUT",
+        headers: JSON_HEADERS,
+        body: JSON.stringify(body),
+      });
+
+    const badView = await put("tour:intro", {
+      steps: [{ id: "t1", view: "view:nope", focus: [] }],
+    });
+    expect(badView.status).toBe(400);
+    const body = await json(badView);
+    expect(body.error).toContain("tour patch rejected");
+    expect(body.issues[0]).toMatchObject({ severity: "error", path: "tours[0].steps[0].view" });
+    expect(body.issues[0].message).toContain("view:nope");
+
+    const badFocus = await put("tour:intro", {
+      steps: [{ id: "t1", view: "view:overview", focus: ["grp:nope"] }],
+    });
+    expect(badFocus.status).toBe(400);
+    expect((await json(badFocus)).issues[0].path).toBe("tours[0].steps[0].focus[0]");
+
+    const duplicate = await put("tour:intro", {
+      steps: [
+        { id: "t1", view: "view:overview", focus: [] },
+        { id: "t1", view: "view:overview", focus: [] },
+      ],
+    });
+    expect(duplicate.status).toBe(400);
+    expect((await json(duplicate)).error).toContain("duplicate");
+
+    const badAnchor = await put("tour:intro", {
+      steps: [
+        {
+          id: "t1",
+          view: "view:overview",
+          focus: [],
+          code: [{ file: "src/nope.ts", role: "definition" }],
+        },
+      ],
+    });
+    expect(badAnchor.status).toBe(400);
+    expect((await json(badAnchor)).issues[0].message).toContain("src/nope.ts");
+
+    // a new tour needs its title and steps; its id needs the tour: prefix
+    expect((await put("tour:fresh", { title: "No steps" })).status).toBe(400);
+    expect((await put("tour:fresh", { steps: [] })).status).toBe(400);
+    expect((await put("mine", { title: "Bad id", steps: [] })).status).toBe(400);
+    expect((await put("tour:intro", { id: "tour:other" })).status).toBe(400);
+    expect((await put("tour:intro", [1])).status).toBe(400);
+    expect((await put("", { title: "x" })).status).toBe(400);
+    expect(readFile(dir, ".explainer/demo.explainer.json")).toBe(before);
+  });
+
   it("refuses writes that are not JSON, cross-origin, from another Host, or too large", async () => {
     const view = await serve(cloneDir(demo));
     const plain = await fetch(`${view.url}/api/views/view:overview`, { method: "PUT", body: "{}" });
     expect(plain.status).toBe(415);
+    const plainTour = await fetch(`${view.url}/api/tours/tour:intro`, {
+      method: "PUT",
+      body: "{}",
+    });
+    expect(plainTour.status).toBe(415);
+    const foreignTour = await fetch(`${view.url}/api/tours/tour:intro`, {
+      method: "PUT",
+      headers: { ...JSON_HEADERS, Origin: "http://evil.example" },
+      body: JSON.stringify({ title: "pwned" }),
+    });
+    expect(foreignTour.status).toBe(403);
     const foreign = await fetch(`${view.url}/api/requests`, {
       method: "POST",
       headers: { ...JSON_HEADERS, Origin: "http://evil.example" },
@@ -510,6 +655,7 @@ describe("xpl view", () => {
     expect(post.status).toBe(405);
     expect(post.headers.get("allow")).toBe("GET, HEAD");
     expect((await fetch(`${view.url}/api/views/view:overview`)).status).toBe(405);
+    expect((await fetch(`${view.url}/api/tours/tour:intro`)).status).toBe(405);
     expect((await fetch(`${view.url}/favicon.ico`)).status).toBe(204);
     const head = await fetch(`${view.url}/`, { method: "HEAD" });
     expect(head.status).toBe(200);

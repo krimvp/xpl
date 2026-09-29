@@ -4,6 +4,7 @@ import { App } from "./App.js";
 import { loadBundle, readLaunchParams } from "./data.js";
 import { ViewerStore } from "./store.js";
 import { installTestHooks } from "./testHooks.js";
+import { watchUrl } from "./url.js";
 import "./styles.css";
 
 const root = createRoot(document.getElementById("root")!);
@@ -12,6 +13,7 @@ const loaded = loadBundle();
 if (loaded.ok) {
   const store = new ViewerStore(loaded.bundle, readLaunchParams());
   installTestHooks(store);
+  watchUrl(store, loaded.bundle.mode);
   root.render(
     <StrictMode>
       <App store={store} />

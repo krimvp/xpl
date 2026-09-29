@@ -8,6 +8,8 @@
  *                             404 for anything that is not in the index
  *   PUT  /api/views/<id>      a view patch, applied as actor "user", written to disk; 200 with the
  *                             updated view, 400 with { error, issues } when rejected
+ *   PUT  /api/tours/<id>      the same for a tour: { title?, steps? } (both for a new tour), applied as
+ *                             actor "user"; 200 with the updated tour
  *   GET  /api/requests        queued "explain this" requests
  *   POST /api/requests        { elementId, note? } appended to .explainer/requests.json (the viewer's
  *                             { kind, id, view?, label? } is accepted too: id is the elementId)
@@ -237,41 +239,47 @@ export async function startViewServer(options: ViewServerOptions): Promise<ViewS
       send(req, res, 200, text, "text/plain; charset=utf-8");
       return;
     }
-    if (pathname.startsWith(`${API}/views/`)) {
+    // PUT /api/views/<id> and PUT /api/tours/<id>: a patch of one view / tour, applied as the user.
+    const record = pathname.startsWith(`${API}/views/`)
+      ? ({ kind: "view", collection: "views" } as const)
+      : pathname.startsWith(`${API}/tours/`)
+        ? ({ kind: "tour", collection: "tours" } as const)
+        : undefined;
+    if (record) {
       allow("PUT");
-      let viewId: string;
+      let id: string;
       try {
-        viewId = decodeURIComponent(pathname.slice(`${API}/views/`.length));
+        id = decodeURIComponent(pathname.slice(`${API}/${record.collection}/`.length));
       } catch {
-        throw new HttpError(400, "malformed view id in the URL");
+        throw new HttpError(400, `malformed ${record.kind} id in the URL`);
       }
-      if (viewId === "" || viewId.length > 200)
-        throw new HttpError(400, "missing or too long view id");
+      if (id === "" || id.length > 200) {
+        throw new HttpError(400, `missing or too long ${record.kind} id`);
+      }
       const body = await readJsonBody(req);
-      if (body.id !== undefined && body.id !== viewId) {
-        throw new HttpError(
-          400,
-          `the id in the body (${String(body.id)}) does not match ${viewId}`,
-        );
+      if (body.id !== undefined && body.id !== id) {
+        throw new HttpError(400, `the id in the body (${String(body.id)}) does not match ${id}`);
       }
-      const view = await serial(async () => {
+      const saved = await serial(async () => {
         const state = await loadState();
-        const patch = { views: [{ ...body, id: viewId }] } as unknown as ExplainerPatch;
+        const patch = { [record.collection]: [{ ...body, id }] } as unknown as ExplainerPatch;
         const result = applyPatch(state.loaded.explainer, patch, state.model, state.tree.texts, {
           actor: "user",
         });
         if (!result.ok) {
           const errors = result.issues.filter((issue) => issue.severity === "error");
-          throw new HttpError(400, `view patch rejected: ${errors[0]?.message ?? "invalid"}`, {
-            issues: result.issues,
-          });
+          throw new HttpError(
+            400,
+            `${record.kind} patch rejected: ${errors[0]?.message ?? "invalid"}`,
+            { issues: result.issues },
+          );
         }
         if (result.changed.length > 0) {
           await atomicWrite(state.loaded.abs, jsonFile(result.explainer));
         }
-        return result.explainer.views.find((v) => v.id === viewId);
+        return result.explainer[record.collection].find((item) => item.id === id);
       });
-      sendJson(req, res, 200, view);
+      sendJson(req, res, 200, saved);
       return;
     }
     if (pathname === `${API}/requests`) {

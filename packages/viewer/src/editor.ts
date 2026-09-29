@@ -90,7 +90,7 @@ const baseTheme = EditorView.theme({
   "&.cm-focused": { outline: "none" },
   ".cm-scroller": {
     fontFamily: "var(--font-mono)",
-    fontSize: "12.5px",
+    fontSize: "var(--code-font-size, 12.5px)",
     lineHeight: "1.6",
     overflow: "auto",
   },
@@ -244,11 +244,13 @@ export function applyFocus(view: EditorView, focus: PaneFocus): void {
   view.dispatch({ effects: setFocus.of(focus) });
 }
 
-/** Scrolls so that `line` is near the top of the editor. */
-export function scrollToLine(view: EditorView, line: number): void {
+/** Scrolls so that `line` is near the top of the editor, `margin` px (default 44) below its edge. */
+export function scrollToLine(view: EditorView, line: number, margin = 44): void {
   const doc = view.state.doc;
   const target = doc.line(Math.min(Math.max(1, line), doc.lines));
-  view.dispatch({ effects: EditorView.scrollIntoView(target.from, { y: "start", yMargin: 44 }) });
+  view.dispatch({
+    effects: EditorView.scrollIntoView(target.from, { y: "start", yMargin: margin }),
+  });
 }
 
 /**

@@ -208,9 +208,17 @@ test.describe("view:overview", () => {
     const metrics = await byId(page, "file:src/metrics.ts").locator("> rect.box").boundingBox();
     const route = await edge.locator("path.line").boundingBox();
     expect(worker && metrics && route).toBeTruthy();
-    // It leaves worker.ts on the right and ends at metrics.ts on the left (layout runs left to right).
-    expect(route!.x).toBeGreaterThanOrEqual(worker!.x + worker!.width - 2);
-    expect(route!.x + route!.width).toBeLessThanOrEqual(metrics!.x + 2);
+    // It leaves worker.ts and ends at metrics.ts, along the way the layout runs: the layers go to the
+    // right or downwards, whichever fits the pane better (data-direction says which).
+    const direction = await page.locator(".graph").getAttribute("data-direction");
+    if (direction === "RIGHT") {
+      expect(route!.x).toBeGreaterThanOrEqual(worker!.x + worker!.width - 2);
+      expect(route!.x + route!.width).toBeLessThanOrEqual(metrics!.x + 2);
+    } else {
+      expect(direction).toBe("DOWN");
+      expect(route!.y).toBeGreaterThanOrEqual(worker!.y + worker!.height - 2);
+      expect(route!.y + route!.height).toBeLessThanOrEqual(metrics!.y + 2);
+    }
 
     // At least one derived edge and at least one stub with its ghost box.
     await expect(page.locator('[data-element-id^="edge:calls:"]').first()).toBeVisible();

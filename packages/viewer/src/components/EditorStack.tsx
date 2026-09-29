@@ -1,12 +1,12 @@
 /**
- * The right side of Explore mode: one read-only CodeMirror editor per file in the current focus (the
+ * The code side of both modes: one read-only CodeMirror editor per file in the current focus (the
  * primary file first), each under a file header. A pane keeps its editor while the file stays in the
  * focus, so the code does not flicker when the selection changes; decorations, scrolling and the caret
  * are pushed into the live editor instead.
  */
 import type { EditorView } from "@codemirror/view";
-import type { AnchorRole, FileLanguage } from "@xpl/core";
-import { memo, useEffect, useRef } from "react";
+import type { AnchorRole, FileLanguage, FocusRange } from "@xpl/core";
+import { memo, useEffect, useRef, type CSSProperties } from "react";
 import type { PaneSpec } from "../derive.js";
 import {
   applyFocus,
@@ -46,14 +46,17 @@ export function EditorStack() {
     );
   }
 
+  const present = state.mode === "present";
   return (
     <div className="editor-stack">
-      {panes.map((pane) => {
+      {panes.map((pane, i) => {
         const info = state.model.index.file(pane.file);
         return (
           <EditorPane
             key={pane.file}
             pane={pane}
+            wantLines={present ? paneLines(pane) : undefined}
+            shrink={paneShrink(i)}
             language={info?.language ?? "text"}
             lines={info?.lines ?? 0}
             text={state.files[pane.file]}
@@ -81,8 +84,46 @@ export function EditorStack() {
   );
 }
 
+/** Lines covered by the ranges, overlaps counted once. */
+export function focusedLineCount(ranges: readonly FocusRange[]): number {
+  const spans = ranges
+    .map((r) => [r.range.startLine, r.range.endLine] as const)
+    .sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  let total = 0;
+  let end = 0;
+  for (const [from, to] of spans) {
+    const start = Math.max(from, end + 1);
+    if (to >= start) total += to - start + 1;
+    end = Math.max(end, to);
+  }
+  return total;
+}
+
+/**
+ * A pane in a talk is as tall as its focus (3 to 12 lines) plus a line of context; a file that was only
+ * opened gets 6 lines.
+ */
+export function paneLines(pane: PaneSpec): number {
+  if (!pane.focused) return 6;
+  return Math.min(12, Math.max(3, focusedLineCount(pane.ranges))) + 1;
+}
+
+/**
+ * flex-shrink of the i-th pane: 0 for the first, then 1, 100, 10000, ...: when the column is too short the
+ * last pane gives way first (down to its minimum), then the one above it, and the first pane never does.
+ */
+export function paneShrink(index: number): number {
+  return index === 0 ? 0 : 100 ** Math.min(index - 1, 6);
+}
+
 interface PaneProps {
   pane: PaneSpec;
+  /**
+   * Present mode only: how many lines of code the pane wants to show (its focus plus context). `shrink` is
+   * its flex-shrink: 0 for the first pane, more for each one below, so the first pane keeps its focus in view.
+   */
+  wantLines: number | undefined;
+  shrink: number;
   language: FileLanguage;
   lines: number;
   text: string | undefined;
@@ -98,6 +139,8 @@ const ROLE_ORDER: AnchorRole[] = ["definition", "call-site", "usage", "config", 
 
 const EditorPane = memo(function EditorPane({
   pane,
+  wantLines,
+  shrink,
   language,
   lines,
   text,
@@ -131,18 +174,18 @@ const EditorPane = memo(function EditorPane({
   // Decorations follow the focus.
   useEffect(() => {
     const editor = view.current;
-    if (editor) applyFocus(editor, { ranges: pane.ranges, dim: pane.focused });
-  }, [pane.ranges, pane.focused, text, pane.file, language]);
+    if (editor) applyFocus(editor, { ranges: pane.ranges, dim: pane.dim });
+  }, [pane.ranges, pane.dim, text, pane.file, language]);
 
   // Scroll to the first range when the focus changes (or the file is opened again).
   useEffect(() => {
     const editor = view.current;
     if (!editor) return;
     const first = firstFocusLine(pane.ranges);
-    if (first !== undefined) scrollToLine(editor, first);
+    if (first !== undefined) scrollToLine(editor, first, wantLines !== undefined ? 22 : undefined);
     else if (openToken > 0) scrollToLine(editor, 1);
     // `pane.ranges` belongs to this very `focusToken`; the token is what says "the focus changed".
-  }, [focusToken, openToken, text, pane.file, language]);
+  }, [focusToken, openToken, text, pane.file, language, wantLines !== undefined]);
 
   // The caret follows the store (window.__xpl.setCursor, anchor clicks); a real click already is the store.
   useEffect(() => {
@@ -162,6 +205,11 @@ const EditorPane = memo(function EditorPane({
     <section
       className={"pane" + (pane.focused ? " is-focused" : "") + (pane.opened ? " is-opened" : "")}
       data-file={pane.file}
+      style={
+        wantLines !== undefined
+          ? ({ "--pane-lines": wantLines, "--pane-shrink": shrink } as CSSProperties)
+          : undefined
+      }
     >
       <header className="pane-header">
         <span className="pane-file" title={pane.file}>
