@@ -1,0 +1,381 @@
+{
+  "schema": "code-explainer@0",
+  "title": "Job runner",
+  "repo": {
+    "name": "acme/jobrunner",
+    "commit": "wt-fd6c9886d1"
+  },
+  "index": {
+    "path": ".explainer/index-wt-fd6c9886d1.json",
+    "commit": "wt-fd6c9886d1"
+  },
+  "nodes": [
+    {
+      "id": "grp:scheduling",
+      "kind": "group",
+      "label": "Scheduling",
+      "summary": "Decides which job runs next and hands it to a free worker: the queue serves the highest priority first, then the oldest job, and Runner.Dispatch leases a worker for it.",
+      "parent": "repo",
+      "members": [
+        "file:internal/runner/runner.go",
+        "file:internal/queue/queue.go"
+      ],
+      "anchors": [],
+      "provenance": {
+        "origin": "llm",
+        "commit": "wt-fd6c9886d1"
+      }
+    },
+    {
+      "id": "sym:internal/runner/runner.go#Runner.Dispatch",
+      "kind": "symbol",
+      "label": "Runner.Dispatch",
+      "summary": "The hot loop: pop, lease a worker, run, ack or requeue.",
+      "parent": "sym:internal/runner/runner.go#Runner",
+      "anchors": [
+        {
+          "file": "internal/runner/runner.go",
+          "symbol": "Runner.Dispatch",
+          "role": "definition",
+          "hash": "sha256:6773e9490365",
+          "resolved": {
+            "commit": "wt-fd6c9886d1",
+            "range": {
+              "startLine": 75,
+              "endLine": 126
+            },
+            "status": "ok"
+          }
+        }
+      ],
+      "provenance": {
+        "origin": "llm",
+        "commit": "wt-fd6c9886d1",
+        "userFields": [
+          "summary"
+        ]
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge:job-completed",
+      "from": "file:internal/worker/worker.go",
+      "to": "file:internal/metrics/metrics.go",
+      "kind": "emits",
+      "label": "job.completed",
+      "summary": "Worker.Run publishes job.completed on the bus after a successful attempt; metrics.Register subscribes OnJobCompleted to that topic through bus.Subscribe. Invisible to the call graph: the worker and metrics packages never import each other.",
+      "anchors": [
+        {
+          "file": "internal/worker/worker.go",
+          "symbol": "Worker.Run",
+          "span": {
+            "from": 38,
+            "to": 38
+          },
+          "role": "call-site",
+          "hash": "sha256:90b14af02838",
+          "resolved": {
+            "commit": "wt-fd6c9886d1",
+            "range": {
+              "startLine": 83,
+              "endLine": 83
+            },
+            "status": "ok"
+          }
+        },
+        {
+          "file": "internal/metrics/metrics.go",
+          "symbol": "Metrics.OnJobCompleted",
+          "role": "definition",
+          "hash": "sha256:f6ad72a7da40",
+          "resolved": {
+            "commit": "wt-fd6c9886d1",
+            "range": {
+              "startLine": 29,
+              "endLine": 35
+            },
+            "status": "ok"
+          }
+        }
+      ],
+      "provenance": {
+        "origin": "llm",
+        "commit": "wt-fd6c9886d1"
+      }
+    }
+  ],
+  "concepts": [
+    {
+      "id": "concept:retry-policy",
+      "label": "Retry policy",
+      "summary": "Failed jobs are requeued with exponential backoff up to maxRetries, then dead-lettered.",
+      "anchors": [
+        {
+          "file": "internal/runner/runner.go",
+          "symbol": "Runner.Dispatch",
+          "span": {
+            "from": 33,
+            "to": 46
+          },
+          "role": "definition",
+          "hash": "sha256:ecacfe78fa66",
+          "resolved": {
+            "commit": "wt-fd6c9886d1",
+            "range": {
+              "startLine": 108,
+              "endLine": 121
+            },
+            "status": "ok"
+          }
+        },
+        {
+          "file": "config/default.yaml",
+          "symbol": "retry",
+          "span": {
+            "from": 0,
+            "to": 3
+          },
+          "role": "config",
+          "hash": "sha256:7c1c80036851",
+          "resolved": {
+            "commit": "wt-fd6c9886d1",
+            "range": {
+              "startLine": 13,
+              "endLine": 16
+            },
+            "status": "ok"
+          }
+        },
+        {
+          "file": "internal/runner/retry_test.go",
+          "role": "test",
+          "hash": "sha256:09541bdce79c",
+          "resolved": {
+            "commit": "wt-fd6c9886d1",
+            "range": {
+              "startLine": 1,
+              "endLine": 173
+            },
+            "status": "ok"
+          }
+        }
+      ],
+      "related": [
+        "sym:internal/runner/runner.go#Runner.Dispatch",
+        "file:internal/queue/queue.go"
+      ],
+      "provenance": {
+        "origin": "user",
+        "commit": "wt-fd6c9886d1"
+      }
+    }
+  ],
+  "views": [
+    {
+      "id": "view:overview",
+      "type": "graph",
+      "title": "Overview",
+      "scope": {
+        "root": "repo",
+        "depth": 1
+      },
+      "include": [
+        "grp:scheduling",
+        "file:internal/worker/worker.go",
+        "file:internal/metrics/metrics.go"
+      ],
+      "provenance": {
+        "origin": "llm",
+        "commit": "wt-fd6c9886d1"
+      }
+    },
+    {
+      "id": "view:dispatch",
+      "type": "sequence",
+      "title": "How a job is dispatched",
+      "scope": {
+        "root": "repo",
+        "depth": 3,
+        "question": "How does a job get from the queue to a worker?",
+        "entryPoints": [
+          "internal/runner/runner.go#Runner.Dispatch"
+        ]
+      },
+      "participants": [
+        "sym:internal/runner/runner.go#Runner.Dispatch",
+        "file:internal/queue/queue.go",
+        "file:internal/worker/worker.go"
+      ],
+      "steps": [
+        {
+          "id": "dispatch:1",
+          "from": "sym:internal/runner/runner.go#Runner.Dispatch",
+          "to": "file:internal/queue/queue.go",
+          "label": "Pop()",
+          "kind": "call",
+          "anchors": [
+            {
+              "file": "internal/runner/runner.go",
+              "symbol": "Runner.Dispatch",
+              "span": {
+                "from": 4,
+                "to": 4
+              },
+              "role": "call-site",
+              "hash": "sha256:2b7652bf456b",
+              "resolved": {
+                "commit": "wt-fd6c9886d1",
+                "range": {
+                  "startLine": 79,
+                  "endLine": 79
+                },
+                "status": "ok"
+              }
+            },
+            {
+              "file": "internal/queue/queue.go",
+              "symbol": "Queue.Pop",
+              "role": "definition",
+              "hash": "sha256:b721dfdea704",
+              "resolved": {
+                "commit": "wt-fd6c9886d1",
+                "range": {
+                  "startLine": 86,
+                  "endLine": 108
+                },
+                "status": "ok"
+              }
+            }
+          ],
+          "summary": "r.queue is the JobQueue interface, which hides the implementation: the demo passes a *queue.Queue (the tests wrap one in a recording double), whose Pop hands out the next due job (highest priority first, then oldest) or returns queue.ErrEmpty, and then the loop sleeps for IdleDelay."
+        },
+        {
+          "id": "dispatch:2",
+          "from": "sym:internal/runner/runner.go#Runner.Dispatch",
+          "to": "file:internal/worker/worker.go",
+          "label": "Run(job)",
+          "kind": "call",
+          "anchors": [
+            {
+              "file": "internal/runner/runner.go",
+              "symbol": "Runner.Dispatch",
+              "span": {
+                "from": 22,
+                "to": 22
+              },
+              "role": "call-site",
+              "hash": "sha256:3bfe041e8549",
+              "resolved": {
+                "commit": "wt-fd6c9886d1",
+                "range": {
+                  "startLine": 97,
+                  "endLine": 97
+                },
+                "status": "ok"
+              }
+            },
+            {
+              "file": "internal/worker/worker.go",
+              "symbol": "Worker.Run",
+              "role": "definition",
+              "hash": "sha256:0dcf3cd95023",
+              "resolved": {
+                "commit": "wt-fd6c9886d1",
+                "range": {
+                  "startLine": 45,
+                  "endLine": 85
+                },
+                "status": "ok"
+              }
+            }
+          ],
+          "summary": "Runs one attempt on the leased worker; the context is detached from cancellation so a job in progress finishes during shutdown. Failures (errors, panics, timeouts) come back in Result.Err, never as a returned error or a panic; a success is also published on the bus as job.completed."
+        },
+        {
+          "id": "dispatch:3",
+          "from": "sym:internal/runner/runner.go#Runner.Dispatch",
+          "to": "file:internal/queue/queue.go",
+          "label": "Requeue(job, backoff)",
+          "kind": "call",
+          "anchors": [
+            {
+              "file": "internal/runner/runner.go",
+              "symbol": "Runner.Dispatch",
+              "span": {
+                "from": 37,
+                "to": 37
+              },
+              "role": "call-site",
+              "hash": "sha256:84956281660f",
+              "resolved": {
+                "commit": "wt-fd6c9886d1",
+                "range": {
+                  "startLine": 112,
+                  "endLine": 112
+                },
+                "status": "ok"
+              }
+            },
+            {
+              "file": "internal/queue/queue.go",
+              "symbol": "Queue.Requeue",
+              "role": "definition",
+              "hash": "sha256:fd9d6d59dbb2",
+              "resolved": {
+                "commit": "wt-fd6c9886d1",
+                "range": {
+                  "startLine": 112,
+                  "endLine": 124
+                },
+                "status": "ok"
+              }
+            }
+          ],
+          "summary": "A failed job with retries left goes back through JobQueue.Requeue, due again after backoffDelay: BaseDelay * 2^(attempt-1), capped at MaxDelay. The implementation, (*queue.Queue).Requeue, takes the job out of the in-flight set and appends a copy with Attempts+1 and AvailableAt set to now plus the delay."
+        }
+      ],
+      "frames": [
+        {
+          "id": "frame:retry",
+          "kind": "loop",
+          "label": "until success or maxRetries",
+          "fromStep": "dispatch:2",
+          "toStep": "dispatch:3"
+        }
+      ],
+      "provenance": {
+        "origin": "llm",
+        "commit": "wt-fd6c9886d1"
+      }
+    }
+  ],
+  "tours": [
+    {
+      "id": "tour:intro",
+      "title": "Intro talk",
+      "steps": [
+        {
+          "id": "t1",
+          "view": "view:overview",
+          "focus": [
+            "grp:scheduling"
+          ],
+          "note": "Big picture first: scheduling is two files."
+        },
+        {
+          "id": "t2",
+          "view": "view:dispatch",
+          "focus": [
+            "dispatch:3",
+            "concept:retry-policy"
+          ],
+          "note": "Where failures go: requeue with backoff.",
+          "editor": {
+            "primary": "internal/runner/runner.go"
+          }
+        }
+      ]
+    }
+  ]
+}

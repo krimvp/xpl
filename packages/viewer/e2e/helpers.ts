@@ -4,6 +4,9 @@ import { expect, type Locator, type Page } from "@playwright/test";
 
 /** The self-contained TS fixture bundle built by global-setup.ts. */
 export const TS_BUNDLE = new URL("../dist/bundles/ts-jobrunner.html", import.meta.url);
+/** The Python and Go fixture bundles built by global-setup.ts (same design, other languages). */
+export const PY_BUNDLE = new URL("../dist/bundles/py-jobrunner.html", import.meta.url);
+export const GO_BUNDLE = new URL("../dist/bundles/go-jobrunner.html", import.meta.url);
 /** The viewer without any data. */
 export const EMPTY_VIEWER = new URL("../dist/index.html", import.meta.url);
 
@@ -20,9 +23,16 @@ export function watchProblems(page: Page): string[] {
   return problems;
 }
 
-/** Opens the bundle and waits until the app has installed `window.__xpl`; optionally switches view. */
-export async function openBundle(page: Page, view?: string): Promise<void> {
-  await page.goto(TS_BUNDLE.href);
+/**
+ * Opens the bundle (the TS fixture unless `bundle` says otherwise) and waits until the app has installed
+ * `window.__xpl`; optionally switches view.
+ */
+export async function openBundle(
+  page: Page,
+  view?: string,
+  bundle: URL = TS_BUNDLE,
+): Promise<void> {
+  await page.goto(bundle.href);
   await page.waitForFunction(() => window.__xpl !== undefined);
   if (view) {
     await page.evaluate((id) => window.__xpl!.setView(id), view);
@@ -46,9 +56,12 @@ export async function linesWith(pane: Locator, selector: string): Promise<number
 /** The element by its test-hook id (ids contain ":" and "#", so no CSS `#id` selectors). */
 export const byId = (page: Page, id: string): Locator => page.locator(`[data-element-id="${id}"]`);
 
-/** The bundle JSON embedded in the fixture page, for building server-mode variants of it. */
-export function readEmbeddedBundle(): { html: string; bundle: Record<string, unknown> } {
-  const html = readFileSync(TS_BUNDLE, "utf8");
+/** The bundle JSON embedded in the fixture page (TS unless `file` says otherwise), for building variants of it. */
+export function readEmbeddedBundle(file: URL = TS_BUNDLE): {
+  html: string;
+  bundle: Record<string, unknown>;
+} {
+  const html = readFileSync(file, "utf8");
   const match = /<script id="xpl-data" type="application\/json">([\s\S]*?)<\/script>/.exec(html);
   if (!match) throw new Error("no xpl-data script in the fixture bundle");
   return { html, bundle: JSON.parse(match[1]!) as Record<string, unknown> };

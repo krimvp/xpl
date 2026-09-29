@@ -1,0 +1,150 @@
+{
+  "nodes": [
+    {
+      "id": "grp:scheduling",
+      "kind": "group",
+      "parent": "repo",
+      "label": "Scheduling",
+      "summary": "Decides which job runs next and hands it to a free worker: the queue serves the highest priority first, then the oldest job, and Runner.dispatch leases a worker for it.",
+      "members": ["file:jobrunner/runner.py", "file:jobrunner/queue.py"],
+      "anchors": []
+    },
+    {
+      "id": "sym:jobrunner/runner.py#Runner.dispatch",
+      "kind": "symbol",
+      "parent": "file:jobrunner/runner.py",
+      "label": "Runner.dispatch",
+      "summary": "Async loop that runs until stopped: pops the next due job, runs it on a leased worker, then acks it, requeues it with backoff or dead-letters it.",
+      "anchors": [
+        { "file": "jobrunner/runner.py", "symbol": "Runner.dispatch", "role": "definition" }
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge:job-completed",
+      "from": "file:jobrunner/worker.py",
+      "to": "file:jobrunner/metrics.py",
+      "kind": "emits",
+      "label": "job.completed",
+      "summary": "Worker.run publishes job.completed on the event bus after a successful attempt; register_metrics subscribes on_job_completed to that topic. Invisible to the call graph: the worker and the metrics never reference each other.",
+      "anchors": [
+        {
+          "file": "jobrunner/worker.py",
+          "symbol": "Worker.run",
+          "span": { "from": 22, "to": 22 },
+          "role": "call-site"
+        },
+        { "file": "jobrunner/metrics.py", "symbol": "on_job_completed", "role": "definition" }
+      ]
+    }
+  ],
+  "views": [
+    {
+      "id": "view:overview",
+      "type": "graph",
+      "title": "Overview",
+      "scope": { "root": "repo", "depth": 1 },
+      "include": ["grp:scheduling", "file:jobrunner/worker.py", "file:jobrunner/metrics.py"]
+    },
+    {
+      "id": "view:dispatch",
+      "type": "sequence",
+      "title": "How a job is dispatched",
+      "scope": {
+        "root": "repo",
+        "depth": 3,
+        "question": "How does a job get from the queue to a worker?",
+        "entryPoints": ["jobrunner/runner.py#Runner.dispatch"]
+      },
+      "participants": [
+        "sym:jobrunner/runner.py#Runner.dispatch",
+        "file:jobrunner/queue.py",
+        "file:jobrunner/worker.py"
+      ],
+      "steps": [
+        {
+          "id": "dispatch:1",
+          "from": "sym:jobrunner/runner.py#Runner.dispatch",
+          "to": "file:jobrunner/queue.py",
+          "label": "pop()",
+          "kind": "call",
+          "summary": "Takes the next job that is due: highest priority first, then oldest enqueue time. Returns None when nothing is due, and the loop sleeps for idle_delay_ms.",
+          "anchors": [
+            {
+              "file": "jobrunner/runner.py",
+              "symbol": "Runner.dispatch",
+              "span": { "from": 4, "to": 4 },
+              "role": "call-site"
+            },
+            { "file": "jobrunner/queue.py", "symbol": "Queue.pop", "role": "definition" }
+          ]
+        },
+        {
+          "id": "dispatch:2",
+          "from": "sym:jobrunner/runner.py#Runner.dispatch",
+          "to": "file:jobrunner/worker.py",
+          "label": "run(job)",
+          "kind": "call",
+          "summary": "Runs one attempt on the leased worker, with the configured timeout. A failure (exception, timeout, unknown job kind) comes back as RunResult(ok=False, error=...), never as a raised exception; a success is also published on the bus as job.completed.",
+          "anchors": [
+            {
+              "file": "jobrunner/runner.py",
+              "symbol": "Runner.dispatch",
+              "span": { "from": 16, "to": 16 },
+              "role": "call-site"
+            },
+            { "file": "jobrunner/worker.py", "symbol": "Worker.run", "role": "definition" }
+          ]
+        },
+        {
+          "id": "dispatch:3",
+          "from": "sym:jobrunner/runner.py#Runner.dispatch",
+          "to": "file:jobrunner/queue.py",
+          "label": "requeue(job, backoff)",
+          "kind": "call",
+          "summary": "A failed job with retries left goes back on the queue, due again after backoff_delay: base_delay_ms * 2^(attempt-1), capped at max_delay_ms. Queue.requeue records the failed attempt and keeps the job's original enqueue time.",
+          "anchors": [
+            {
+              "file": "jobrunner/runner.py",
+              "symbol": "Runner.dispatch",
+              "span": { "from": 29, "to": 29 },
+              "role": "call-site"
+            },
+            { "file": "jobrunner/queue.py", "symbol": "Queue.requeue", "role": "definition" }
+          ]
+        }
+      ],
+      "frames": [
+        {
+          "id": "frame:retry",
+          "kind": "loop",
+          "label": "until success or maxRetries",
+          "fromStep": "dispatch:2",
+          "toStep": "dispatch:3"
+        }
+      ]
+    }
+  ],
+  "tours": [
+    {
+      "id": "tour:intro",
+      "title": "Intro talk",
+      "steps": [
+        {
+          "id": "t1",
+          "view": "view:overview",
+          "focus": ["grp:scheduling"],
+          "note": "Big picture first: scheduling is two files."
+        },
+        {
+          "id": "t2",
+          "view": "view:dispatch",
+          "focus": ["dispatch:3"],
+          "note": "Where failures go: requeue with backoff.",
+          "editor": { "primary": "jobrunner/runner.py" }
+        }
+      ]
+    }
+  ]
+}
