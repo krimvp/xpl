@@ -213,6 +213,8 @@ code {
 .app {
   height: 100%;
   display: grid;
+  /* A column that is as wide as the window and no wider: a header with many tabs must not stretch it. */
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: auto minmax(0, 1fr);
 }
 
@@ -223,11 +225,21 @@ code {
   z-index: 5;
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
+  /* One row: the view strip gives way (it scrolls), the controls never do. Narrow screens wrap, below. */
+  flex-wrap: nowrap;
   gap: 6px 10px;
   padding: 7px 12px;
   background: var(--panel);
   border-bottom: 1px solid var(--border);
+}
+
+/* What the strip must not squeeze off the screen. */
+.brand,
+.tours-btn,
+.segmented,
+.save,
+.tour-picker {
+  flex: none;
 }
 
 .brand {
@@ -259,20 +271,106 @@ code {
   flex: 1;
 }
 
-.view-tabs {
+/*
+ * The view switcher: the strip takes the room the header leaves and holds the tabs in a pill that scrolls
+ * sideways (no scrollbar: an arrow and a fade mark each end that has more), with the Views menu button at
+ * its end. A handful of tabs is as wide as they are; a dozen scroll.
+ */
+.view-strip {
   display: flex;
-  gap: 4px;
-  padding: 3px;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.view-tabs-frame {
+  position: relative;
+  display: flex;
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
   background: var(--panel-2);
   border: 1px solid var(--border);
   border-radius: 9px;
 }
 
+.view-tabs {
+  display: flex;
+  flex: 0 1 auto;
+  gap: 4px;
+  min-width: 0;
+  padding: 3px;
+  overflow: auto hidden;
+  overscroll-behavior-x: contain;
+  scroll-padding-inline: 44px;
+  scrollbar-width: none;
+}
+
+.view-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+/* The arrow of an end that has more tabs: over the tabs, on a fade of the pill's own colour. */
+.strip-arrow {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  width: 44px;
+  padding: 0 8px;
+  border: 0;
+  color: var(--muted);
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s;
+}
+
+.strip-arrow.is-start {
+  left: 0;
+  justify-content: flex-start;
+  background: linear-gradient(to right, var(--panel-2) 55%, transparent);
+}
+
+.strip-arrow.is-end {
+  right: 0;
+  justify-content: flex-end;
+  background: linear-gradient(to left, var(--panel-2) 55%, transparent);
+}
+
+.strip-arrow::before {
+  content: "";
+  width: 12px;
+  height: 12px;
+  background: currentColor;
+  -webkit-mask: var(--chevron) center / contain no-repeat;
+  mask: var(--chevron) center / contain no-repeat;
+  --chevron: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'><path d='M7.5 2 3.5 6 7.5 10' stroke='black' stroke-width='1.6' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+}
+
+.strip-arrow.is-end::before {
+  transform: scaleX(-1);
+}
+
+.strip-arrow:hover {
+  color: var(--fg);
+}
+
+.view-tabs-frame[data-more-start="true"] > .is-start,
+.view-tabs-frame[data-more-end="true"] > .is-end {
+  opacity: 1;
+  pointer-events: auto;
+}
+
 .tab {
   display: inline-flex;
+  flex: none;
   align-items: center;
   gap: 6px;
-  max-width: 18ch;
+  max-width: 24ch;
   padding: 4px 10px;
   border: 0;
   border-radius: 6px;
@@ -288,7 +386,7 @@ code {
 }
 
 .tab.is-active {
-  max-width: 32ch;
+  max-width: 34ch;
   background: var(--panel);
   color: var(--fg);
   font-weight: 600;
@@ -301,6 +399,124 @@ code {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* "Views (N)": every view, by its full title, in a menu that opens under the button. */
+.views-menu {
+  position: relative;
+  flex: none;
+}
+
+.views-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.views-caret {
+  width: 10px;
+  height: 10px;
+  background: currentColor;
+  -webkit-mask: var(--caret) center / contain no-repeat;
+  mask: var(--caret) center / contain no-repeat;
+  --caret: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'><path d='M2 3.5 5 6.5 8 3.5' stroke='black' stroke-width='1.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+}
+
+.views-btn[aria-expanded="true"] .views-caret {
+  transform: scaleY(-1);
+}
+
+.views-list {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  width: max-content;
+  min-width: min(260px, calc(100vw - 16px));
+  max-width: min(560px, calc(100vw - 16px));
+  max-height: min(70vh, 520px);
+  padding: 5px;
+  overflow: hidden auto;
+  overscroll-behavior: contain;
+  background: var(--panel);
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.24);
+}
+
+.views-item {
+  display: flex;
+  flex: none;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 5px 8px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--fg);
+  text-align: left;
+  cursor: pointer;
+}
+
+.views-item .tab-icon {
+  margin-top: 3px;
+  color: var(--muted);
+}
+
+.views-item-title {
+  flex: 1;
+  min-width: 0;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.views-item:hover {
+  background: var(--hover);
+}
+
+.views-item.is-active {
+  background: var(--accent-soft);
+  font-weight: 600;
+}
+
+.views-item.is-active .tab-icon {
+  color: var(--accent);
+}
+
+.views-item:focus-visible {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  outline: none;
+}
+
+/*
+ * Below 1100px the strip would be left with too little room beside the controls: the header wraps and
+ * the strip gets a row of its own, the full width. Tablets keep the title and the controls on the first
+ * row and put the strip under them; phones have the strip under the title and the controls after it.
+ */
+@media (max-width: 1100px) {
+  .header {
+    flex-wrap: wrap;
+  }
+
+  .view-strip {
+    flex-basis: 100%;
+  }
+}
+
+@media (min-width: 761px) and (max-width: 1100px) {
+  .view-strip {
+    order: 1;
+  }
+}
+
+@media (max-width: 760px) {
+  .spacer {
+    display: none;
+  }
 }
 
 .tab-icon {
@@ -443,7 +659,8 @@ code {
   border-color: var(--accent);
 }
 
-.tours-btn .count {
+.tours-btn .count,
+.views-btn .count {
   margin-left: 6px;
   padding: 0 6px;
   border-radius: 999px;

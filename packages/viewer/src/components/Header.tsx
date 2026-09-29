@@ -1,12 +1,14 @@
 /**
- * The header: explainer title and view switcher, the Tours panel, the Explore / Present toggle and the
- * save / download controls. While presenting it holds the tour picker instead of the view tabs: the tour
- * decides which view is on screen. (The edge-kind toggles sit with the diagram they filter: EdgeKinds.)
+ * The header: explainer title and view switcher (ViewTabs), the Tours panel, the Explore / Present toggle
+ * and the save / download controls. It is one row: the view tabs give way (they scroll) so that the
+ * controls never leave the screen. While presenting it holds the tour picker instead of the view tabs: the
+ * tour decides which view is on screen. (The edge-kind toggles sit with the diagram they filter: EdgeKinds.)
  */
 import { useEffect, useState } from "react";
 import { explainerFileName } from "../edits.js";
 import { useStore, useViewerState } from "../hooks.js";
 import { TourPanel } from "./TourPanel.js";
+import { ViewTabs } from "./ViewTabs.js";
 
 /** The tooltip of the disabled Present toggle. */
 export const NO_TOURS_HINT =
@@ -16,7 +18,6 @@ export function Header() {
   const store = useStore();
   const state = useViewerState();
   const [toursOpen, setToursOpen] = useState(false);
-  const views = state.model.views;
   const tours = state.model.tours;
   const present = state.mode === "present";
   // The tour panel belongs to Explore: Present starts with it closed.
@@ -38,23 +39,8 @@ export function Header() {
       {present ? (
         <TourPicker />
       ) : (
-        <div className="view-tabs" role="tablist" aria-label="Views">
-          {views.map((v) => (
-            <button
-              key={v.id}
-              type="button"
-              role="tab"
-              className={"tab" + (v.id === state.viewId ? " is-active" : "")}
-              aria-selected={v.id === state.viewId}
-              data-view-id={v.id}
-              title={v.type === "sequence" && v.scope?.question ? v.scope.question : v.title}
-              onClick={() => store.setView(v.id)}
-            >
-              <span className={`tab-icon is-${v.type}`} aria-hidden="true" />
-              <span className="tab-title">{v.title}</span>
-            </button>
-          ))}
-        </div>
+        // One popup at a time: the views menu takes the place of the tour panel.
+        <ViewTabs onMenuOpen={() => setToursOpen(false)} />
       )}
 
       <div className="spacer" />
