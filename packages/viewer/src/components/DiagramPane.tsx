@@ -1,5 +1,7 @@
 /** The diagram of the current view (graph or sequence) under a caption with its title and question. */
+import { DEFAULT_EDGE_KINDS } from "@xpl/core";
 import { useDerived, useViewerState } from "../hooks.js";
+import { EdgeKindToggles } from "./EdgeKinds.js";
 import { ErrorBoundary } from "./ErrorBoundary.js";
 import { GraphView } from "./GraphView.js";
 import { SequenceView } from "./SequenceView.js";
@@ -18,11 +20,15 @@ export function DiagramPane() {
     );
   }
   const question = view.scope?.question;
+  const present = state.mode === "present";
   return (
     <div className="diagram" data-view-id={view.id} data-view-type={view.type}>
       <div className="diagram-caption">
         <span className="caption-title">{view.title}</span>
         {question && <span className="caption-question">{question}</span>}
+        {view.type === "graph" && !present && (
+          <EdgeKindToggles kinds={view.edgeKinds ?? DEFAULT_EDGE_KINDS} />
+        )}
       </div>
       <div className="diagram-body">
         <ErrorBoundary
@@ -40,6 +46,7 @@ export function DiagramPane() {
               selection={state.selection}
               matches={derived.matches}
               related={derived.selection.related}
+              present={present}
             />
           ) : view.type === "sequence" ? (
             <SequenceView
@@ -48,6 +55,7 @@ export function DiagramPane() {
               selection={state.selection}
               matches={derived.matches}
               related={derived.selection.related}
+              present={present}
             />
           ) : (
             <div className="diagram-message">

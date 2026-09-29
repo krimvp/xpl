@@ -1,6 +1,12 @@
 import { deriveGraph, ExplainerModel, type GraphView } from "@xpl/core";
 import { describe, expect, it } from "vitest";
-import { layoutGraph, type LayoutEdge, type LayoutNode } from "../src/layout/graphLayout.js";
+import {
+  fitScale,
+  layoutGraph,
+  layoutGraphFitting,
+  type LayoutEdge,
+  type LayoutNode,
+} from "../src/layout/graphLayout.js";
 import { distanceToSegment } from "../src/svg.js";
 import { makeBundle } from "./world.js";
 
@@ -182,5 +188,52 @@ describe("layoutGraph", () => {
   it("is deterministic", async () => {
     const { graph } = graphOf(["grp:core", "file:config/c.yaml"]);
     expect(await layoutGraph(graph)).toEqual(await layoutGraph(graph));
+  });
+});
+
+describe("layoutGraphFitting", () => {
+  const FLOW = ["file:src/a.ts", "file:src/b.ts", "sym:src/a.ts#A.run", "sym:src/b.ts#B.go"];
+
+  it("fits the layout to the pane: RIGHT in a wide pane, DOWN in a tall one", async () => {
+    // one layer per file, then one per method: a chain that is long one way and thin the other
+    const { graph } = graphOf(FLOW);
+    const wide = await layoutGraphFitting(graph, { width: 1200, height: 300 });
+    const tall = await layoutGraphFitting(graph, { width: 300, height: 1200 });
+    expect(wide.direction).toBe("RIGHT");
+    expect(tall.direction).toBe("DOWN");
+    // whichever it picked is the one that fits at the larger scale
+    const right = await layoutGraph(graph, { "elk.direction": "RIGHT" });
+    const down = await layoutGraph(graph, { "elk.direction": "DOWN" });
+    expect(right.direction).toBe("RIGHT");
+    expect(down.direction).toBe("DOWN");
+    const fits = (l: { width: number; height: number }, v: { width: number; height: number }) =>
+      fitScale(l, v);
+    expect(fits(wide, { width: 1200, height: 300 })).toBeGreaterThanOrEqual(
+      fits(down, { width: 1200, height: 300 }),
+    );
+    expect(fits(tall, { width: 300, height: 1200 })).toBeGreaterThanOrEqual(
+      fits(right, { width: 300, height: 1200 }),
+    );
+  });
+
+  it("without a pane size it is the plain left-to-right layout", async () => {
+    const { graph } = graphOf(["file:src/a.ts", "file:src/b.ts"]);
+    expect((await layoutGraphFitting(graph, undefined)).direction).toBe("RIGHT");
+    expect((await layoutGraphFitting(graph, { width: 0, height: 0 })).direction).toBe("RIGHT");
+  });
+
+  it("keeps the suggested direction unless the other fits clearly larger", async () => {
+    const { graph } = graphOf(["file:src/a.ts", "file:src/b.ts"]);
+    // a square pane suggests RIGHT (width / height is not below 1) and a small diagram fits either way
+    expect((await layoutGraphFitting(graph, { width: 900, height: 900 })).direction).toBe("RIGHT");
+    expect((await layoutGraphFitting(graph, { width: 899, height: 900 })).direction).toBe("DOWN");
+  });
+
+  it("fitScale is what fitting does: bounded above, padded on every side", () => {
+    expect(fitScale({ width: 100, height: 100 }, { width: 1000, height: 1000 })).toBe(1.25);
+    expect(fitScale({ width: 100, height: 100 }, { width: 1000, height: 1000 }, 1.6)).toBe(1.6);
+    expect(fitScale({ width: 904, height: 100 }, { width: 500, height: 500 })).toBeCloseTo(0.5, 5);
+    expect(fitScale({ width: 100, height: 904 }, { width: 500, height: 500 })).toBeCloseTo(0.5, 5);
+    expect(fitScale({ width: 0, height: 0 }, { width: 10, height: 10 })).toBe(1.25);
   });
 });

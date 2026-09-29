@@ -76,7 +76,10 @@ const MIN_GAP = 36;
 const ROW_PITCH = 58;
 const SELF_PITCH = 78;
 const SELF_WIDTH = 46;
-const LABEL_FONT = 12;
+// Font sizes in the diagram's own units; styles.css draws the text with the same numbers. Kept generous:
+// a diagram is fitted into its pane, and the lifeline heads (not the labels) decide how wide it is.
+const LABEL_FONT = 13.5;
+const HEAD_FONT = 14;
 const FRAME_TOP = 26;
 const FRAME_BOTTOM = 12;
 const FRAME_PAD_X = 16;
@@ -110,7 +113,7 @@ export function layoutSequence(view: SequenceView, model: ExplainerModel): Seque
 
   // ── x: heads, then gaps wide enough for the labels of the steps that pass through them ──────────
   const headWidths = participants.map((p) =>
-    Math.max(MIN_HEAD_WIDTH, Math.ceil(textWidth(p.label, 13, 600)) + 36),
+    Math.max(MIN_HEAD_WIDTH, Math.ceil(textWidth(p.label, HEAD_FONT, 600)) + 36),
   );
   const gaps: number[] = [];
   for (let i = 0; i + 1 < count; i++)

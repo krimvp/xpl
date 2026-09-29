@@ -91,6 +91,29 @@ export function makeIndex(): SymbolIndex {
   };
 }
 
+/** Three steps: a graph view; a sequence view with `primary`; a code override that does not dim. */
+export const TOUR = {
+  id: "tour:demo",
+  title: "Demo",
+  steps: [
+    { id: "t1", view: "view:overview", focus: ["grp:core"], note: "Start with the **core**." },
+    {
+      id: "t2",
+      view: "view:flow",
+      focus: ["flow:1", "concept:retry"],
+      note: "How A reaches B.",
+      editor: { primary: "src/b.ts" },
+    },
+    {
+      id: "t3",
+      view: "view:flow",
+      focus: ["flow:2"],
+      code: [{ file: "config/c.yaml", symbol: "retry", role: "config" as const }],
+      editor: { dimOthers: false, hideFileTree: false },
+    },
+  ],
+};
+
 export const PATCH: ExplainerPatch = {
   nodes: [
     {
@@ -163,6 +186,7 @@ export const PATCH: ExplainerPatch = {
       ],
     },
   ],
+  tours: [TOUR],
 };
 
 export function makeBundle(extra: Partial<ViewerBundle> = {}): ViewerBundle {

@@ -21,6 +21,7 @@ import {
   REF_TO_EDGE_KIND,
   repr,
   viewCandidates,
+  type Anchor,
   type DerivedEdge,
   type DerivedGraph,
   type ElementId,
@@ -65,8 +66,10 @@ export interface PaneSpec {
   file: FilePath;
   /** Focus ranges in this file (empty for a file that was only opened). */
   ranges: readonly FocusRange[];
-  /** The file is in the current focus: lines outside the ranges are dimmed. */
+  /** The file is in the current focus. */
   focused: boolean;
+  /** Lines outside the ranges are dimmed: a focused file, unless the tour step says `dimOthers: false`. */
+  dim: boolean;
   /** The user asked for this file (tree, anchor list). */
   opened: boolean;
 }
@@ -178,19 +181,74 @@ function relatedIds(vd: ViewDerived, model: ExplainerModel, selection: readonly 
   return out;
 }
 
+/** Code a tour step shows instead of what its focus points at (`TourStep.code`). */
+export interface CodeOverride {
+  anchors: readonly Anchor[];
+  /** What the ranges are attributed to: `<tour id>/<step id>`, like core's anchor owners. */
+  owner: string;
+}
+
+/**
+ * The focus range of one anchor of a code override: its resolved range (never a missing anchor), or,
+ * for an anchor that was never resolved, computed from the index like core does for elements.
+ */
+function overrideFocus(override: CodeOverride, model: ExplainerModel): FocusRange[] {
+  const out: FocusRange[] = [];
+  for (const anchor of override.anchors) {
+    if (typeof anchor !== "object" || anchor === null) continue;
+    const resolved = anchor.resolved;
+    if (resolved) {
+      if (resolved.status === "missing") continue;
+      out.push({
+        file: anchor.file,
+        range: { ...resolved.range },
+        role: anchor.role,
+        elementId: override.owner,
+        status: resolved.status,
+      });
+      continue;
+    }
+    const file = model.index.file(anchor.file);
+    if (!file) continue;
+    let region = { startLine: 1, endLine: file.lines };
+    if (anchor.symbol) {
+      const symbol = model.index.symbolAt(anchor.file, anchor.symbol);
+      if (!symbol) continue;
+      region = { startLine: symbol.range.startLine, endLine: symbol.range.endLine };
+    }
+    out.push({
+      file: anchor.file,
+      range: anchor.span
+        ? {
+            startLine: Math.min(region.startLine + anchor.span.from, region.endLine),
+            endLine: Math.min(region.startLine + anchor.span.to, region.endLine),
+          }
+        : region,
+      role: anchor.role,
+      elementId: override.owner,
+      status: "ok",
+    });
+  }
+  return out;
+}
+
 function deriveSelection(
   vd: ViewDerived,
   model: ExplainerModel,
   selection: readonly ElementId[],
+  override: CodeOverride | undefined,
 ): SelectionDerived {
   const focus: FocusRange[] = [];
-  for (const id of selection) {
-    const type = parseId(id).type;
-    if (type === "stub") {
-      const stub = vd.stubMap.get(id);
-      if (stub) focus.push(...stubFocus(stub, vd, model));
-    } else if (type !== "ghost") {
-      focus.push(...codeFocus([id], model, { derivedEdges: vd.edgeMap }));
+  if (override) focus.push(...overrideFocus(override, model));
+  else {
+    for (const id of selection) {
+      const type = parseId(id).type;
+      if (type === "stub") {
+        const stub = vd.stubMap.get(id);
+        if (stub) focus.push(...stubFocus(stub, vd, model));
+      } else if (type !== "ghost") {
+        focus.push(...codeFocus([id], model, { derivedEdges: vd.edgeMap }));
+      }
     }
   }
   const files = mergeFocusByFile(focus);
@@ -217,30 +275,44 @@ function deriveMatches(vd: ViewDerived, cursor: Cursor | undefined): ElementId[]
 
 // ─── Panes ──────────────────────────────────────────────────────────────────────────────────────
 
+/** Options for the panes: what the user opened, and what the tour step asks of the editor. */
+interface PaneOptions {
+  openedFile: FilePath | undefined;
+  /** `editor.primary` of the applied tour step. */
+  primary: FilePath | undefined;
+  dimOthers: boolean;
+}
+
+/**
+ * One pane per focused file, in the order of the focus. A file the user opened comes first (focused or
+ * not), then the tour step's primary file, then the rest.
+ */
 function derivePanes(
   sel: SelectionDerived,
-  openedFile: FilePath | undefined,
+  { openedFile, primary, dimOthers }: PaneOptions,
   hasFile: (file: FilePath) => boolean,
 ): { panes: PaneSpec[]; overflow: FilePath[] } {
-  const all: PaneSpec[] = [];
-  if (openedFile !== undefined && hasFile(openedFile)) {
-    const own = sel.files.find((f) => f.file === openedFile);
-    all.push({
-      file: openedFile,
+  const paneFor = (file: FilePath, opened: boolean): PaneSpec => {
+    const own = sel.files.find((f) => f.file === file);
+    return {
+      file,
       ranges: own ? own.ranges.flatMap((r) => r.sources) : [],
       focused: own !== undefined,
-      opened: true,
-    });
-  }
-  for (const focus of sel.files) {
-    if (focus.file === openedFile) continue;
-    all.push({
-      file: focus.file,
-      ranges: focus.ranges.flatMap((r) => r.sources),
-      focused: true,
-      opened: false,
-    });
-  }
+      dim: own !== undefined && dimOthers,
+      opened,
+    };
+  };
+  const all: PaneSpec[] = [];
+  const seen = new Set<FilePath>();
+  // Files that are asked for by name must exist; focused files are shown whatever the index says.
+  const add = (file: FilePath | undefined, opened: boolean, mustExist: boolean) => {
+    if (file === undefined || seen.has(file) || (mustExist && !hasFile(file))) return;
+    seen.add(file);
+    all.push(paneFor(file, opened));
+  };
+  add(openedFile, true, true);
+  add(primary, false, true);
+  for (const focus of sel.files) add(focus.file, false, false);
   return {
     panes: all.slice(0, MAX_PANES),
     overflow: all.slice(MAX_PANES).map((p) => p.file),
@@ -251,18 +323,48 @@ function derivePanes(
 
 let lastView: { model: ExplainerModel; viewId: string | undefined; value: ViewDerived } | undefined;
 let lastSelection:
-  { view: ViewDerived; selection: readonly ElementId[]; value: SelectionDerived } | undefined;
+  | {
+      view: ViewDerived;
+      selection: readonly ElementId[];
+      override: readonly Anchor[] | undefined;
+      value: SelectionDerived;
+    }
+  | undefined;
 let lastMatches: { view: ViewDerived; cursor: Cursor | undefined; value: ElementId[] } | undefined;
 let lastPanes:
-  | { sel: SelectionDerived; opened: FilePath | undefined; value: ReturnType<typeof derivePanes> }
+  | {
+      sel: SelectionDerived;
+      opened: FilePath | undefined;
+      primary: FilePath | undefined;
+      dimOthers: boolean;
+      value: ReturnType<typeof derivePanes>;
+    }
   | undefined;
 const byState = new WeakMap<ViewerState, Derived>();
+
+/**
+ * True when nothing a view is drawn from differs between the two models. A tour edit builds a new model
+ * but leaves nodes, edges, concepts and views alone; the graph (and its layout) must survive that, or
+ * typing a note would lay the diagram out again on every key.
+ */
+function sameDrawing(a: ExplainerModel, b: ExplainerModel): boolean {
+  if (a === b) return true;
+  const x = a.explainer;
+  const y = b.explainer;
+  return (
+    a.index === b.index &&
+    x.nodes === y.nodes &&
+    x.edges === y.edges &&
+    x.concepts === y.concepts &&
+    x.views === y.views
+  );
+}
 
 export function getDerived(state: ViewerState): Derived {
   const known = byState.get(state);
   if (known) return known;
 
-  if (!lastView || lastView.model !== state.model || lastView.viewId !== state.viewId) {
+  if (!lastView || !sameDrawing(lastView.model, state.model) || lastView.viewId !== state.viewId) {
     lastView = {
       model: state.model,
       viewId: state.viewId,
@@ -271,15 +373,26 @@ export function getDerived(state: ViewerState): Derived {
   }
   const view = lastView.value;
 
+  const applied = state.applied;
+  const override = applied?.code;
   if (
     !lastSelection ||
     lastSelection.view !== view ||
-    lastSelection.selection !== state.selection
+    lastSelection.selection !== state.selection ||
+    lastSelection.override !== override
   ) {
     lastSelection = {
       view,
       selection: state.selection,
-      value: deriveSelection(view, state.model, state.selection),
+      override,
+      value: deriveSelection(
+        view,
+        state.model,
+        state.selection,
+        applied && override
+          ? { anchors: override, owner: `${applied.tourId}/${applied.stepId}` }
+          : undefined,
+      ),
     };
   }
   const selection = lastSelection.value;
@@ -288,11 +401,23 @@ export function getDerived(state: ViewerState): Derived {
     lastMatches = { view, cursor: state.cursor, value: deriveMatches(view, state.cursor) };
   }
 
-  if (!lastPanes || lastPanes.sel !== selection || lastPanes.opened !== state.openedFile) {
+  const primary = applied?.primary;
+  const dimOthers = applied?.dimOthers ?? true;
+  if (
+    !lastPanes ||
+    lastPanes.sel !== selection ||
+    lastPanes.opened !== state.openedFile ||
+    lastPanes.primary !== primary ||
+    lastPanes.dimOthers !== dimOthers
+  ) {
     lastPanes = {
       sel: selection,
       opened: state.openedFile,
-      value: derivePanes(selection, state.openedFile, (file) => state.model.index.hasFile(file)),
+      primary,
+      dimOthers,
+      value: derivePanes(selection, { openedFile: state.openedFile, primary, dimOthers }, (file) =>
+        state.model.index.hasFile(file),
+      ),
     };
   }
 

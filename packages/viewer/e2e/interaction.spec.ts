@@ -351,12 +351,20 @@ test.describe("header", () => {
     expect((await stateOf(page)).viewType).toBe("sequence");
     // The edge kind toggles are for graph views only.
     await expect(page.locator(".edge-kinds")).toHaveCount(0);
-    // Present is a disabled stub for now.
+    // The explainer has a tour, so Present is on offer (tours.spec.ts plays it); Explore is the start.
     await expect(page.getByRole("button", { name: "Explore" })).toHaveAttribute(
       "aria-pressed",
       "true",
     );
-    await expect(page.getByRole("button", { name: "Present" })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "Present" })).toBeEnabled();
+    await page.getByRole("button", { name: "Present" }).click();
+    await expect(page.getByRole("button", { name: "Present" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    await expect(page.locator(".tab")).toHaveCount(0);
+    await page.getByRole("button", { name: "Explore" }).click();
+    await expect(page.locator(".tab")).toHaveCount(2);
 
     // Download: the explainer including this session's view edits.
     await page.locator('.tab[data-view-id="view:overview"]').click();

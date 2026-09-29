@@ -52,6 +52,7 @@
   --ghost-border: #98a3b1;
   --frame-bg: rgba(90, 100, 120, 0.05);
 
+  --code-font-size: 12.5px;
   --code-bg: #ffffff;
   --code-fg: #1c2127;
   --code-gutter-bg: #f5f6f8;
@@ -218,6 +219,8 @@ code {
 /* ── Header ───────────────────────────────────────────────────────────────────────────────────── */
 
 .header {
+  position: relative;
+  z-index: 5;
   display: flex;
   align-items: center;
   flex-wrap: wrap;
@@ -319,8 +322,10 @@ code {
 
 .edge-kinds {
   display: flex;
+  flex: none;
   align-items: center;
   gap: 4px;
+  margin-left: auto;
 }
 
 .edge-kinds-label {
@@ -421,6 +426,52 @@ code {
 .icon-btn:hover {
   color: var(--fg);
   background: var(--hover);
+}
+
+.btn.is-active {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+
+.tours-btn .count {
+  margin-left: 6px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.tour-picker {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tour-picker-label {
+  color: var(--faint);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+}
+
+.tour-picker select,
+.tp-target select,
+.tp-target input {
+  padding: 4px 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: 7px;
+  background: var(--panel);
+  color: var(--fg);
+  font: inherit;
+}
+
+.tour-picker select {
+  min-width: 14ch;
+  max-width: 34ch;
+  font-weight: 600;
 }
 
 .save {
@@ -576,8 +627,9 @@ code {
 
 .diagram-caption {
   display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
-  gap: 10px;
+  gap: 4px 10px;
   padding: 8px 12px;
   background: var(--panel);
   border-bottom: 1px solid var(--border);
@@ -613,6 +665,12 @@ code {
 
 .diagram-message.is-error {
   color: var(--danger);
+}
+
+.graph-host {
+  position: relative;
+  width: 100%;
+  height: 100%;
 }
 
 .panzoom {
@@ -753,7 +811,7 @@ code {
 }
 
 .node .label {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
   fill: var(--fg);
 }
@@ -763,7 +821,7 @@ code {
 }
 
 .node .badge text {
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 650;
   text-anchor: middle;
   fill: hsl(var(--k-hue, 220) var(--pill-s) var(--pill-fg-l));
@@ -809,12 +867,13 @@ code {
 }
 
 .node.ghost .label {
+  font-size: 13.5px;
   font-weight: 500;
   fill: var(--muted);
 }
 
 .node.ghost .detail {
-  font-size: 11.5px;
+  font-size: 12.5px;
   font-weight: 500;
   fill: var(--faint);
 }
@@ -930,7 +989,7 @@ code {
 }
 
 .edge-label text {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 500;
   text-anchor: middle;
   fill: var(--muted);
@@ -1000,7 +1059,7 @@ code {
 }
 
 .lifeline-head .label {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
   text-anchor: middle;
   fill: var(--fg);
@@ -1081,7 +1140,7 @@ code {
 }
 
 .step .label {
-  font-size: 12px;
+  font-size: 13.5px;
   font-weight: 500;
   fill: var(--fg);
   paint-order: stroke;
@@ -1147,13 +1206,13 @@ code {
 }
 
 .frame-kind {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   fill: var(--muted);
 }
 
 .frame-label {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 500;
   fill: var(--muted);
 }
@@ -1511,6 +1570,10 @@ code {
   grid-template-columns: 36px minmax(0, 1fr);
 }
 
+.code-area.has-no-tree {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .tree-panel {
   display: flex;
   flex-direction: column;
@@ -1772,7 +1835,7 @@ code {
 /* ── Empty states, present stub ───────────────────────────────────────────────────────────────── */
 
 .no-data,
-.present-stub {
+.present-empty {
   max-width: 44em;
   margin: 12vh auto 0;
   padding: 0 24px;
@@ -1784,6 +1847,409 @@ code {
 
 .no-data h1 {
   font-size: 22px;
+}
+
+/* ── Present mode ─────────────────────────────────────────────────────────────────────────────── */
+
+.present-empty h2 {
+  font-size: 20px;
+}
+
+.present {
+  --code-font-size: 15.5px;
+  display: grid;
+  grid-template-columns: minmax(340px, 40%) minmax(0, 1fr);
+  gap: 8px;
+  min-height: 0;
+  min-width: 0;
+  padding: 8px;
+}
+
+.present-left {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: 8px;
+  min-height: 0;
+  min-width: 0;
+}
+
+.present-right {
+  min-height: 0;
+  min-width: 0;
+}
+
+.present .diagram-caption {
+  padding: 9px 14px;
+  font-size: 15px;
+}
+
+.present .pz-toolbar {
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.present .panzoom:hover .pz-toolbar,
+.present .pz-toolbar:focus-within {
+  opacity: 1;
+}
+
+.present .pane-header {
+  padding: 7px 14px;
+}
+
+.present .pane-file {
+  font-size: 14px;
+}
+
+.present .pane-meta,
+.present .role {
+  font-size: 12px;
+}
+
+/* Panes in a talk are as tall as their focus (EditorStack `paneLines`); when the column is too short the
+   first pane keeps its size and the ones below give way, and below that the stack scrolls. */
+.present {
+  --code-line-height: calc(var(--code-font-size) * 1.6);
+  --pane-chrome: 46px;
+}
+
+.present .pane {
+  flex: 1 var(--pane-shrink, 1)
+    calc(var(--pane-lines, 10) * var(--code-line-height) + var(--pane-chrome));
+  min-height: calc(3 * var(--code-line-height) + var(--pane-chrome));
+}
+
+/* The caption: what the speaker says about this step, large enough to read from the back of the room. */
+.tour-caption {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 48vh;
+  min-height: 0;
+  overflow: auto;
+  padding: 12px 18px 16px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-left: 6px solid var(--accent);
+  border-radius: 10px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+}
+
+.tour-nav {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.tour-btn {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  padding: 0 0 3px;
+  border: 1px solid var(--border-strong);
+  border-radius: 50%;
+  background: var(--panel-2);
+  color: var(--fg);
+  font-size: 24px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.tour-btn:hover:not(:disabled) {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-fg);
+}
+
+.tour-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.tour-counter {
+  min-width: 4.4em;
+  text-align: center;
+  font-size: 20px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.tour-keys {
+  margin-left: auto;
+  color: var(--faint);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.tour-progress {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--panel-2);
+  overflow: hidden;
+}
+
+.tour-progress span {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--accent);
+  transition: width 0.2s;
+}
+
+.tour-detour {
+  margin-left: auto;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--warn-soft);
+  color: var(--warn);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.tour-detour .link {
+  color: inherit;
+  font-weight: 650;
+}
+
+.tour-note.markdown {
+  margin: 2px 0 0;
+  font-size: clamp(18px, 1.6vw, 26px);
+  line-height: 1.4;
+}
+
+.tour-note.markdown p + p,
+.tour-note.markdown ul,
+.tour-note.markdown ol {
+  margin-top: 0.5em;
+}
+
+.tour-note.markdown code {
+  padding: 0 4px;
+  border-radius: 4px;
+  background: var(--panel-2);
+}
+
+/* ── Tour panel (Explore) ─────────────────────────────────────────────────────────────────────── */
+
+.tour-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 12px;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(430px, calc(100vw - 24px));
+  max-height: calc(100vh - 84px);
+  overflow: auto;
+  padding: 12px 14px 14px;
+  background: var(--panel);
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.24);
+}
+
+.tp-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.tp-head h2 {
+  font-size: 15px;
+}
+
+.tp-intro {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.tp-target {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+}
+
+.tp-target label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+}
+
+.tp-target select {
+  max-width: 24ch;
+}
+
+.tp-target input {
+  flex: 1;
+  min-width: 12ch;
+}
+
+.tp-add {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  padding: 7px 12px;
+  white-space: normal;
+  text-align: left;
+}
+
+.tp-add-what {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 500;
+  opacity: 0.9;
+}
+
+.tp-steps-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--faint);
+}
+
+.tp-steps-title .count {
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  letter-spacing: 0;
+}
+
+.tp-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tp-step {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 7px 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-2);
+}
+
+.tp-step.is-current {
+  border-color: var(--accent);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.tp-step-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tp-step-show {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  padding: 2px 4px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.tp-step-show:hover {
+  background: var(--hover);
+}
+
+.tp-num {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--accent-fg);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.tp-step-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.tp-step-view {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 650;
+}
+
+.tp-step-focus {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.tp-step-tools {
+  display: flex;
+  flex: none;
+  gap: 3px;
+}
+
+.icon-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.icon-btn.is-danger:hover:not(:disabled) {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+.tp-step textarea {
+  width: 100%;
+  min-height: 3.6em;
+  padding: 6px 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--fg);
+  font: inherit;
+  resize: vertical;
+}
+
+.tp-undo {
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.tp-foot {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.tp-empty {
+  font-size: 12.5px;
 }
 
 /* ── Narrow screens: stack the two halves ─────────────────────────────────────────────────────── */
@@ -1819,6 +2285,22 @@ code {
   .lower {
     grid-template-columns: minmax(0, 1fr);
     overflow: auto;
+  }
+
+  .present {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .present-left {
+    height: 85vh;
+  }
+
+  .present-right {
+    height: 90vh;
+  }
+
+  .tour-panel {
+    right: 8px;
   }
 
   .code-area {

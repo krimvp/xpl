@@ -16,7 +16,7 @@ import {
 } from "../layout/sequenceLayout.js";
 import { useStore } from "../hooks.js";
 import { arrowHeadPath, openArrowHeadPath, roundedPath } from "../svg.js";
-import { PanZoom } from "./PanZoom.js";
+import { PanZoom, PRESENT_FIT_PADDING, PRESENT_MAX_FIT_ZOOM } from "./PanZoom.js";
 
 export interface SequenceViewProps {
   view: SequenceViewData;
@@ -24,12 +24,21 @@ export interface SequenceViewProps {
   selection: readonly string[];
   matches: readonly string[];
   related: ReadonlySet<string>;
+  /** Present mode: a small diagram is enlarged more. */
+  present?: boolean;
 }
 
 const additive = (event: MouseEvent | KeyboardEvent) =>
   event.shiftKey || event.metaKey || event.ctrlKey;
 
-export function SequenceView({ view, model, selection, matches, related }: SequenceViewProps) {
+export function SequenceView({
+  view,
+  model,
+  selection,
+  matches,
+  related,
+  present = false,
+}: SequenceViewProps) {
   const store = useStore();
   const layout = useMemo(() => layoutSequence(view, model), [view, model]);
   const selected = useMemo(() => new Set(selection), [selection]);
@@ -53,6 +62,8 @@ export function SequenceView({ view, model, selection, matches, related }: Seque
       height={layout.height}
       resetKey={view.id}
       label="Sequence diagram. Drag to pan, scroll to zoom."
+      maxFitZoom={present ? PRESENT_MAX_FIT_ZOOM : undefined}
+      fitPadding={present ? PRESENT_FIT_PADDING : undefined}
       onBackgroundClick={() => store.clearSelection()}
     >
       <g className="sequence">
