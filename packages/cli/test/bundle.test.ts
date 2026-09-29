@@ -39,13 +39,26 @@ function bundle(dir: string, ...argv: string[]) {
   return invoke(["bundle", "demo", ...argv, "--root", dir], { cwd: dir, env: viewerEnv });
 }
 
+/** What the demo explainer needs: its anchors' files, its views' nodes and participants, and its ghosts. */
+const REFERENCED = [
+  "config/default.yaml",
+  "src/bus.ts",
+  "src/main.ts",
+  "src/metrics.ts",
+  "src/queue.ts",
+  "src/runner.ts",
+  "src/worker.ts",
+  "test/retry.test.ts",
+];
+
 describe("xpl bundle", () => {
   it("writes one HTML file with the xpl-data script, and the payload parses back", async () => {
     const { code, out, err } = await bundle(demo, "-o", "out.html");
     expect(err).toBe("");
     expect(code).toBe(0);
+    // the default embeds what the explainer needs, and says how much that is and what --files all would add
     expect(out).toMatch(
-      /^wrote out\.html \(\d+(\.\d)? KB\): \.explainer\/demo\.explainer\.json, 12 files embedded \(all\), mode explore$/,
+      /^wrote out\.html \(\d+(\.\d)? KB\): \.explainer\/demo\.explainer\.json, 8 of 12 files embedded \(referenced: \d+(\.\d)? KB of source; --files all adds 4 files, \d+(\.\d)? KB\), mode explore$/,
     );
 
     const html = readFile(demo, "out.html");
@@ -60,28 +73,162 @@ describe("xpl bundle", () => {
     expect(data.mode).toBe("explore");
     expect(data.tour).toBeUndefined();
     expect(data.server).toBeUndefined();
-    // every indexed file, with its exact text
-    expect(Object.keys(data.files).sort()).toEqual(data.index.files.map((f) => f.path).sort());
+    // the files of the anchors and of what the views draw, with their exact text
+    expect(Object.keys(data.files).sort()).toEqual(REFERENCED);
     expect(data.files["src/runner.ts"]).toBe(readFile(demo, "src/runner.ts"));
     expect(data.files["config/default.yaml"]).toBe(readFile(demo, "config/default.yaml"));
+    // the index still lists every file: the viewer's file tree is built from it
+    expect(data.index.files).toHaveLength(12);
   });
 
-  it("--files referenced embeds only what the explainer points at", async () => {
-    const { code, out } = await bundle(demo, "-o", "small.html", "--files", "referenced");
+  it("--files all embeds every indexed file and says so", async () => {
+    const { code, out } = await bundle(demo, "-o", "all.html", "--files", "all");
     expect(code).toBe(0);
-    expect(out).toContain("(referenced)");
+    expect(out).toMatch(
+      /^wrote all\.html \(\d+(\.\d)? KB\): \.explainer\/demo\.explainer\.json, 12 files embedded \(all: \d+(\.\d)? KB of source\), mode explore$/,
+    );
+    const data = bundleOf(readFile(demo, "all.html"));
+    expect(Object.keys(data.files).sort()).toEqual(data.index.files.map((f) => f.path).sort());
+    expect(data.files["src/main.ts"]).toBe(readFile(demo, "src/main.ts"));
+  });
+
+  it("--files referenced is the default: the same files as saying it", async () => {
+    const explicit = await bundle(demo, "-o", "small.html", "--files", "referenced");
+    expect(explicit.code).toBe(0);
+    expect(explicit.out).toContain("(referenced:");
     const data = bundleOf(readFile(demo, "small.html"));
-    expect(Object.keys(data.files).sort()).toEqual([
-      "config/default.yaml",
-      "src/metrics.ts",
+    expect(Object.keys(data.files).sort()).toEqual(REFERENCED);
+    // not referenced by any anchor, view, ghost or concept
+    expect(data.files["src/config.ts"]).toBeUndefined();
+    expect(data.files["README.md"]).toBeUndefined();
+    expect(readFile(demo, "small.html").length).toBeLessThan(readFile(demo, "all.html").length);
+  });
+
+  it("referenced covers the nodes of graph views, the participants of sequence views and the ghosts one hop out", async () => {
+    const dir = cloneDir(demo);
+    expect((await xpl(dir, "new", "other")).code).toBe(0);
+    const apply = (patch: object) =>
+      invoke(["apply", "other", "-"], { cwd: dir, stdin: JSON.stringify(patch) });
+    const filesOf = async (out: string) => {
+      const { code } = await invoke(["bundle", "other", "-o", out, "--root", dir], {
+        cwd: dir,
+        env: viewerEnv,
+      });
+      expect(code).toBe(0);
+      return Object.keys(bundleOf(readFile(dir, out)).files).sort();
+    };
+
+    // a graph view of one file and nothing else, no anchors: the file, and what its dashed stubs lead to
+    // (the files that call it: main, runner and the test; worker only mentions its types, which a view does
+    // not draw by default; nor bus, metrics, config or the docs)
+    expect(
+      (
+        await apply({
+          views: [
+            { id: "view:queue", type: "graph", title: "Queue", include: ["file:src/queue.ts"] },
+          ],
+        })
+      ).code,
+    ).toBe(0);
+    expect(await filesOf("queue.html")).toEqual([
+      "src/main.ts",
       "src/queue.ts",
       "src/runner.ts",
-      "src/worker.ts",
       "test/retry.test.ts",
     ]);
-    // not referenced by any anchor, view or concept
-    expect(data.files["src/main.ts"]).toBeUndefined();
-    expect(data.files["src/config.ts"]).toBeUndefined();
+
+    // a group and a directory in a graph view: their files; a sequence view: its participants, with no anchors
+    expect(
+      (
+        await apply({
+          nodes: [{ id: "grp:cfg", label: "Config", members: ["file:src/config.ts"] }],
+          views: [
+            { id: "view:queue", type: "graph", include: ["dir:config"] },
+            {
+              id: "view:groups",
+              type: "graph",
+              title: "Groups",
+              include: ["grp:cfg", "dir:test"],
+            },
+            {
+              id: "view:flow",
+              type: "sequence",
+              title: "Flow",
+              participants: ["file:src/bus.ts", "file:src/metrics.ts"],
+              steps: [
+                {
+                  id: "flow:1",
+                  from: "file:src/bus.ts",
+                  to: "file:src/metrics.ts",
+                  label: "deliver",
+                  kind: "async",
+                },
+              ],
+            },
+          ],
+        })
+      ).code,
+    ).toBe(0);
+    const files = await filesOf("groups.html");
+    for (const file of [
+      "config/default.yaml", // dir:config
+      "src/config.ts", // grp:cfg
+      "test/retry.test.ts", // dir:test
+      "src/bus.ts", // participants of view:flow
+      "src/metrics.ts",
+    ]) {
+      expect(files, file).toContain(file);
+    }
+    expect(files).not.toContain("README.md");
+    expect(files).not.toContain("package.json");
+  });
+
+  it("embeds what a dashed stub shows when clicked, and honours excludeFiles and the stub policy", async () => {
+    const dir = cloneDir(demo);
+    expect((await xpl(dir, "new", "solo")).code).toBe(0);
+    const apply = (view: object) =>
+      invoke(["apply", "solo", "-"], {
+        cwd: dir,
+        stdin: JSON.stringify({
+          views: [{ id: "view:solo", type: "graph", title: "Solo", ...view }],
+        }),
+      });
+    const filesOf = async (out: string) => {
+      const { code } = await invoke(["bundle", "solo", "-o", out, "--root", dir], {
+        cwd: dir,
+        env: viewerEnv,
+      });
+      expect(code).toBe(0);
+      return Object.keys(bundleOf(readFile(dir, out)).files).sort();
+    };
+    expect((await apply({ include: ["file:src/queue.ts"] })).code).toBe(0);
+    expect(await filesOf("a.html")).toEqual([
+      "src/main.ts",
+      "src/queue.ts",
+      "src/runner.ts",
+      "test/retry.test.ts",
+    ]);
+    // the references of files the view excludes are not shown at its edge, so their files are not needed
+    expect((await apply({ excludeFiles: ["test/**"] })).code).toBe(0);
+    expect(await filesOf("b.html")).toEqual(["src/main.ts", "src/queue.ts", "src/runner.ts"]);
+    // no stubs, no ghosts: the view shows its own nodes and nothing beyond
+    expect((await apply({ excludeFiles: null, stubs: { mode: "none" } })).code).toBe(0);
+    expect(await filesOf("c.html")).toEqual(["src/queue.ts"]);
+  });
+
+  it("prints the output path as given: relative as typed, absolute when absolute", async () => {
+    const relative = await bundle(demo, "-o", "./nested-as-typed.html");
+    expect(relative.out).toMatch(/^wrote \.\/nested-as-typed\.html \(/);
+    const target = join(demo, "abs.html");
+    const absolute = await bundle(demo, "-o", target);
+    expect(absolute.out).toMatch(
+      new RegExp(`^wrote ${target.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} \\(`),
+    );
+    expect(existsSync(target)).toBe(true);
+    const json = JSON.parse((await bundle(demo, "-o", target, "--json")).out);
+    expect(json).toMatchObject({ path: target, absolutePath: target });
+    const asTyped = JSON.parse((await bundle(demo, "-o", "./j2.html", "--json")).out);
+    expect(asTyped).toMatchObject({ path: "./j2.html", absolutePath: join(demo, "j2.html") });
   });
 
   it("--mode present and --tour set the initial mode and tour", async () => {
@@ -107,6 +254,10 @@ describe("xpl bundle", () => {
     expect(unknown.code).toBe(1);
     expect(unknown.err).toContain('no tour "nope"');
     expect(unknown.err).toContain("tours: tour:intro");
+    const typo = await bundle(demo, "-o", "x.html", "--tour", "intr");
+    expect(typo.err).toContain(
+      'no tour "intr" in .explainer/demo.explainer.json. Did you mean: tour:intro?',
+    );
     expect(existsSync(join(demo, "x.html"))).toBe(false);
   });
 
@@ -142,8 +293,10 @@ describe("xpl bundle", () => {
       ok: true,
       path: "j.html",
       mode: "explore",
-      files: { embedded: 12, choice: "all" },
+      files: { embedded: 8, choice: "referenced", indexed: 12 },
     });
+    expect(json.files.embeddedBytes).toBeGreaterThan(1000);
+    expect(json.files.indexedBytes).toBeGreaterThan(json.files.embeddedBytes);
     expect(json.bytes).toBe(Buffer.byteLength(readFile(demo, "j.html")));
     expect(json.index.commit).toMatch(/^wt-/);
   });

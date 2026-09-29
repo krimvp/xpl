@@ -204,22 +204,24 @@ test.describe("graph view", () => {
     page,
   }) => {
     await openBundle(page);
-    const imports = page.locator('[data-edge-kind="imports"]');
-    await expect(imports).toHaveAttribute("aria-checked", "false");
-    await expect(page.locator('[data-element-id^="edge:imports:"]')).toHaveCount(0);
-    // Turn on imports for a view that includes main.ts as well.
+    // runner.ts only has `import type` from queue.ts, which the indexer records as type references
+    // (a runtime `imports` edge would be wrong), so toggle the `references` kind.
+    const references = page.locator('[data-edge-kind="references"]');
+    await expect(references).toHaveAttribute("aria-checked", "false");
+    await expect(page.locator('[data-element-id^="edge:references:"]')).toHaveCount(0);
     await page.evaluate(() => window.__xpl!.select([]));
     await byId(page, "grp:scheduling").dblclick();
-    await imports.click();
-    await expect(imports).toHaveAttribute("aria-checked", "true");
+    await references.click();
+    await expect(references).toHaveAttribute("aria-checked", "true");
     const state = await stateOf(page);
-    expect(state.edgeKinds).toEqual(["calls", "imports", "extends", "implements"]);
-    // Elements that import from each other now show `imports ×n` edges (runner.ts imports queue.ts).
+    expect(state.edgeKinds).toEqual(expect.arrayContaining(["calls", "references"]));
+    expect(state.edgeKinds).not.toContain("imports");
+    // Elements that reference each other's types now show `references ×n` edges.
     await expect(
-      page.locator('[data-element-id="edge:imports:file:src/runner.ts->file:src/queue.ts"]'),
+      page.locator('[data-element-id="edge:references:file:src/runner.ts->file:src/queue.ts"]'),
     ).toBeVisible();
-    await imports.click();
-    await expect(page.locator('[data-element-id^="edge:imports:"]')).toHaveCount(0);
+    await references.click();
+    await expect(page.locator('[data-element-id^="edge:references:"]')).toHaveCount(0);
   });
 
   test("the pan/zoom canvas: wheel zooms about the pointer, dragging pans, Fit restores", async ({

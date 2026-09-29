@@ -76,6 +76,75 @@ describe("Python import bindings", () => {
     expect((await bindingsOf(source)).map((b) => b.localName)).toEqual(["Queue", "fast", "thing"]);
   });
 
+  it("imports in the body of `if TYPE_CHECKING:` (or `typing.TYPE_CHECKING`, `elif`) are type-only; else branches, `not`, and other conditions are not", async () => {
+    const source = src(
+      "import typing as t", // 1
+      "if TYPE_CHECKING:", // 2
+      "    from .a import A", // 3
+      "    import b.c", // 4
+      "    if sys.version_info >= (3, 9):", // 5
+      "        from .nested import N", // 6
+      "elif t.TYPE_CHECKING:", // 7
+      "    from d import D", // 8
+      "else:", // 9
+      "    from e import E", // 10
+      "if not TYPE_CHECKING:", // 11
+      "    from f import F", // 12
+      "if (typing.TYPE_CHECKING):", // 13
+      "    from g import G", // 14
+      "if TYPE_CHECKING and other:", // 15
+      "    from h import H", // 16
+      "def f():", // 17
+      "    from i import I", // 18
+      "if TYPE_CHECKING:", // 19
+      "    from j import *", // 20
+    );
+    const { facts } = await extract("a.py", source);
+    expect(facts.imports.map((b) => `${b.localName}${b.typeOnly ? " (type)" : ""}`)).toEqual([
+      "t",
+      "A (type)",
+      "b.c (type)",
+      "N (type)",
+      "D (type)",
+      "E",
+      "F",
+      "G (type)",
+      "H",
+      "I",
+    ]);
+    expect(
+      facts.exports!.map((e) => `${e.name} ${e.module}${e.typeOnly ? " (type)" : ""}`),
+    ).toEqual(["* j (type)"]);
+  });
+
+  it("type-only imports give `type-ref` references instead of `import`, for names, modules and star imports", async () => {
+    const { index } = await indexFiles({
+      "pkg/__init__.py": "",
+      "pkg/queue.py": "class Queue:\n    pass\n",
+      "pkg/util.py": "def helper():\n    pass\n",
+      "pkg/all.py": "ALL = 1\n",
+      "pkg/run.py": src(
+        "from typing import TYPE_CHECKING",
+        "from .util import helper",
+        "if TYPE_CHECKING:",
+        "    from .queue import Queue",
+        "    from . import all as everything",
+        "    from .all import *",
+        "",
+        "def use(q: 'Queue') -> None:",
+        "    helper()",
+      ),
+    });
+    expect(refTriples(index).filter((r) => r.startsWith("pkg/run.py#"))).toEqual([
+      "pkg/run.py# -> pkg/util.py#helper (import)",
+      "pkg/run.py# -> pkg/queue.py#Queue (type-ref)",
+      "pkg/run.py# -> pkg/all.py# (type-ref)",
+      "pkg/run.py# -> pkg/all.py# (type-ref)",
+      "pkg/run.py#use -> pkg/queue.py#Queue (type-ref)",
+      "pkg/run.py#use -> pkg/util.py#helper (call)",
+    ]);
+  });
+
   it("`from x import *` is an export of `*` (and binds nothing); `from __future__` binds nothing", async () => {
     const source = src("from __future__ import annotations", "from x import *", "from .y import *");
     const { facts } = await extract("a.py", source);

@@ -122,15 +122,19 @@ function deriveView(model: ExplainerModel, viewId: string | undefined): ViewDeri
 /**
  * Code behind a stub: the reference sites that cross the view's boundary at that stub, plus the
  * definitions on the far side (core builds those anchors for derived edges; a stub is the same thing
- * with one end outside), and the anchors of stored edges that leave the view there.
+ * with one end outside), and the anchors of stored edges that leave the view there. A stub to a folded
+ * ghost ("rest of <file>", "N more") covers every element it folds (`stub.targets`).
  */
 function stubFocus(stub: Stub, vd: ViewDerived, model: ExplainerModel): FocusRange[] {
   const kinds = new Set<string>(stub.kinds);
+  const targets = stub.targets.map((t) => t.target);
   const crosses = (from: ElementId, to: ElementId): boolean => {
     const inside = stub.direction === "out" ? from : to;
     const outside = stub.direction === "out" ? to : from;
     return (
-      repr(inside, vd.include, model) === stub.inside && model.subtreeContains(stub.ghost, outside)
+      repr(inside, vd.include, model) === stub.inside &&
+      repr(outside, vd.include, model) === undefined &&
+      targets.some((target) => model.subtreeContains(target, outside))
     );
   };
   const refs = model.index.refs.filter(

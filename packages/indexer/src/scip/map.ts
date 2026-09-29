@@ -13,11 +13,14 @@
  *              constructor. Definitions nested in something that is not a symbol of ours (a parameter, a local
  *              variable, an instance attribute) have no target and their references are dropped. `local N`
  *              symbols follow the same rules, which keeps calls to functions nested in functions;
- *  - `kind`/`site` = the language pack's `classifySite` at the occurrence. When the pack does not classify it:
+ *  - `kind`/`site` = the language pack's `classifySite` at the occurrence (`import` becomes `type-ref` for
+ *              type-only imports, by the syntax of the statement; a plain read is a `read` when its target is a
+ *              variable of ours, a field or a constant - the indexers do not tell reads from writes, the pack's
+ *              syntax does). When the pack does not classify it:
  *              a quoted module specifier -> `import` (of the module scope; redundant, hence dropped, when the
  *              same statement imports names), role Import -> `import`, role WriteAccess -> `write`, a
- *              type-like symbol -> `type-ref`, else the occurrence is dropped (plain reads and declarations
- *              are not references we keep).
+ *              type-like symbol -> `type-ref`, else the occurrence is dropped (declarations are not references
+ *              we keep).
  *
  * `is_implementation` relationships become `implements` references from the implementing symbol's definition
  * to the definition of what it implements (Go interfaces are satisfied implicitly, so this is the only place
@@ -31,7 +34,7 @@
  * to our 1-based, inclusive, UTF-16 columns against the text of the file on disk.
  */
 import { splitLines } from "@xpl/core";
-import type { FileLanguage, FilePath, Reference, SymbolId } from "@xpl/core";
+import type { FileLanguage, FilePath, IndexedSymbol, Reference, SymbolId } from "@xpl/core";
 import { nodeSpan, pointsToSpan, spanContains } from "../ast.js";
 import type { FileContext, RepoView, Span } from "../languages/types.js";
 import type { PreciseInput } from "../precise.js";
@@ -571,7 +574,7 @@ class Mapper {
         definition.span.startLine,
         definition.span.startCol,
       );
-      if (entry && namesSymbol(entry, definition.text)) {
+      if (entry && !entry.anchorOnly && namesSymbol(entry, definition.text)) {
         return this.target(parsed, entry, definition, typeLike);
       }
     }
@@ -579,8 +582,8 @@ class Mapper {
     const path = parsed ? symbolPath(parsed) : undefined;
     if (path !== undefined) {
       for (const definition of definitions) {
-        const found = this.lookup.get(`${definition.file}#${path}`);
-        if (found) return this.target(parsed, this.lookup.entry(found.id)!, definition, typeLike);
+        const found = this.lookup.entry(`${definition.file}#${path}`);
+        if (found && !found.anchorOnly) return this.target(parsed, found, definition, typeLike);
       }
     }
     return null;
@@ -699,10 +702,22 @@ class Mapper {
       let site: Span;
       let bare = false;
       const info = classified?.[i];
-      const cls = info?.site;
+      let cls = info?.site;
+      if (cls?.kind === "read") {
+        // A plain read is a reference only to a variable (a field, a constant): a function passed as a value or
+        // a class used as a namespace is not one, and falls through to the rules below like any unclassified
+        // occurrence. The indexers do not tell reads from writes (scip-typescript sets no role, the others say
+        // "read" for everything), the pack's syntax does; a WriteAccess role, when there is one, wins.
+        const target = this.lookup.get(c.target.id);
+        if (target?.kind !== "variable" || (cls.bare && this.isMember(target))) cls = undefined;
+        else if ((c.roles & SymbolRole.WriteAccess) !== 0) cls = { kind: "write", site: cls.site };
+      }
       if (cls) {
         kind = cls.kind;
         site = cls.site;
+        // The quoted module of a type-only import (`import type * as ns from "./x"`) is a module reference like
+        // any other: redundant when the statement names what it imports.
+        bare = kind === "type-ref" && c.target.moduleLike && info?.specifier !== undefined;
       } else if (c.target.moduleLike && info?.specifier !== undefined) {
         kind = "import";
         site = c.span;
@@ -737,7 +752,11 @@ class Mapper {
         bare,
       });
     });
-    const named = pending.filter((p) => p.ref.kind === "import" && !p.ref.to.endsWith("#"));
+    // What a statement names: import specifiers, type-only ones (`type-ref`) included. A type reference cannot
+    // lie inside an import statement otherwise.
+    const named = pending.filter(
+      (p) => (p.ref.kind === "import" || p.ref.kind === "type-ref") && !p.ref.to.endsWith("#"),
+    );
     for (const { ref, statement, bare } of pending) {
       if (bare && statement) {
         const namesImports = named.some(
@@ -749,6 +768,18 @@ class Mapper {
       }
       if (ref.from !== ref.to) this.add(ref);
     }
+  }
+
+  /** Is this symbol a member of a class, interface, type or enum (a field, a property)? */
+  private isMember(symbol: IndexedSymbol): boolean {
+    const parent = symbol.parent === undefined ? undefined : this.lookup.get(symbol.parent);
+    return (
+      parent !== undefined &&
+      (parent.kind === "class" ||
+        parent.kind === "interface" ||
+        parent.kind === "type" ||
+        parent.kind === "enum")
+    );
   }
 
   /** Ask the language pack about every candidate (kind and site, and for modules the file and statement). */

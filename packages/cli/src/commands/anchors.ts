@@ -1,15 +1,23 @@
 import {
   ExplainerModel,
+  codeFocus,
   collectAnchors,
+  deriveGraph,
+  derivedEdgeMap,
   describeAnchor,
   normalizeElementId,
   parseId,
   resolveWith,
+  suggestIds,
   type Anchor,
   type AnchorSite,
   type AnchorStatus,
   type Explainer,
+  type FocusOptions,
+  type FocusRange,
   type Range,
+  type Tour,
+  type TourStep,
 } from "@xpl/core";
 import type { CommandSpec } from "../command.js";
 import { CliError } from "../errors.js";
@@ -29,7 +37,7 @@ interface ShownLine {
 }
 
 interface AnchorReport {
-  /** Where the anchor is stored: `views[1].steps[2].anchors[0]`. */
+  /** Where the anchor is stored: `views[1].steps[2].anchors[0]`; a derived range: the focus of its tour step. */
   path: string;
   role: Anchor["role"];
   file: string;
@@ -46,19 +54,32 @@ interface AnchorReport {
   /** Drifted span: the lines are only where the span used to sit. */
   approximate?: true;
   reason?: string;
+  /** The head and the tail of a long anchor's code (see `elided`). */
   lines?: ShownLine[];
   /** Code lines cut by the cap. */
   moreLines?: number;
+  /** The lines between the head and the tail that were cut. */
+  elided?: { startLine: number; endLine: number };
+  /** Tour steps without `code`: this range is what the viewer derives from the focus, not a stored anchor. */
+  derived?: true;
+  /** For a derived range: the element of the step's `focus` it comes from. */
+  from?: string;
 }
 
 interface ElementReport {
   id: string;
   type: AnchorSite["owner"];
-  /** Steps: the sequence view they belong to. */
+  /** Steps: the sequence view they belong to. Tour steps: the view they show. */
   view?: string;
   origin?: string;
   /** Fields the user edited: `anchors` (or `steps`) means Claude cannot change these anchors. */
   userFields?: string[];
+  /** A tour step without `code`: what follows is its derived focus, not stored anchors. */
+  derived?: true;
+  /** A derived tour step: its `focus`. */
+  focus?: string[];
+  /** A derived tour step: focus ids that have no code to show (no anchors, or none that resolves). */
+  noCode?: string[];
   anchors: AnchorReport[];
 }
 
@@ -73,16 +94,54 @@ function groupSites(explainer: Explainer): Map<string, AnchorSite[]> {
   return groups;
 }
 
+/** A tour step to show by what its focus derives to (it has no `code` override). */
+interface DerivedStep {
+  /** `tour:intro/t2`. */
+  id: string;
+  tour: Tour;
+  step: TourStep;
+  /** Where the step is stored: `tours[0].steps[1]`. */
+  path: string;
+  origin?: string;
+  userFields: string[];
+}
+
+/** One thing to print: the stored anchors of an element, or the derived focus of a tour step. */
+interface Entry {
+  id: string;
+  derived?: DerivedStep;
+}
+
 interface Selection {
-  ids: string[];
+  entries: Entry[];
   /** Requested elements that exist but carry no stored anchors, with what they are. */
   bare: { id: string; type: string; note?: string }[];
 }
 
+/** Does the viewer use the step's `code`? (An empty override counts as none, like there.) */
+function hasCode(step: TourStep): boolean {
+  return Array.isArray(step.code) && step.code.length > 0;
+}
+
+function derivedStep(model: ExplainerModel, tour: Tour, step: TourStep): DerivedStep {
+  const tours = model.tours;
+  const ti = tours.findIndex((t) => t.id === tour.id);
+  const si = tour.steps.findIndex((s) => s.id === step.id);
+  return {
+    id: `${tour.id}/${step.id}`,
+    tour,
+    step,
+    path: `tours[${ti}].steps[${si}]`,
+    ...(tour.provenance?.origin !== undefined ? { origin: tour.provenance.origin } : {}),
+    userFields: tour.provenance?.userFields ?? [],
+  };
+}
+
 /**
- * Turns what was typed into element ids that have anchors: an element id as it is (`concept:x`,
- * `dispatch:3`, `tour:intro/t2`), a view (its steps) or a tour (its steps' code), or a structural id in any
- * of the loose forms of the other commands (`src/runner.ts#Runner.dispatch`).
+ * Turns what was typed into what to print: an element id as it is (`concept:x`, `dispatch:3`, `tour:intro/t2`), a
+ * view (its steps), a tour (its steps: those with `code` show the stored anchors, the others their derived focus),
+ * a tour step without `code` (its derived focus), or a structural id in any of the loose forms of the other
+ * commands (`src/runner.ts#Runner.dispatch`).
  */
 function select(
   inputs: readonly string[],
@@ -91,14 +150,14 @@ function select(
   ws: Workspace,
   name: string,
 ): Selection {
-  const ids: string[] = [];
+  const entries: Entry[] = [];
   const bare: Selection["bare"] = [];
-  const add = (id: string) => {
-    if (!ids.includes(id)) ids.push(id);
+  const add = (entry: Entry) => {
+    if (!entries.some((known) => known.id === entry.id)) entries.push(entry);
   };
   for (const input of inputs) {
     if (groups.has(input)) {
-      add(input);
+      add({ id: input });
       continue;
     }
     const parsed = parseId(input);
@@ -107,7 +166,7 @@ function select(
       if (view?.type === "sequence") {
         const steps = (Array.isArray(view.steps) ? view.steps : []).map((s) => s.id);
         const withAnchors = steps.filter((id) => groups.has(id));
-        withAnchors.forEach(add);
+        withAnchors.forEach((id) => add({ id }));
         if (withAnchors.length === 0) {
           bare.push({ id: input, type: "sequence view", note: "none of its steps has an anchor" });
         }
@@ -123,20 +182,31 @@ function select(
       }
     }
     if (parsed.type === "tour") {
-      const prefix = `${input}/`;
-      const steps = [...groups.keys()].filter((id) => id.startsWith(prefix));
-      if (steps.length > 0) {
-        steps.forEach(add);
+      const tour = model.tour(input);
+      if (tour) {
+        const steps = Array.isArray(tour.steps) ? tour.steps : [];
+        if (steps.length === 0) {
+          bare.push({ id: input, type: "tour", note: "it has no steps" });
+        }
+        for (const step of steps) {
+          if (hasCode(step) && groups.has(`${tour.id}/${step.id}`)) {
+            add({ id: `${tour.id}/${step.id}` });
+          } else add({ id: `${tour.id}/${step.id}`, derived: derivedStep(model, tour, step) });
+        }
         continue;
       }
-      if (model.tour(input)) {
-        bare.push({ id: input, type: "tour", note: "none of its steps has a code override" });
+      // `tour:intro/t2`: one step of a tour; with a `code` override it is in `groups`, else it is derived
+      const slash = input.lastIndexOf("/");
+      const owner = slash === -1 ? undefined : model.tour(input.slice(0, slash));
+      const step = owner?.steps.find((s) => s.id === input.slice(slash + 1));
+      if (owner && step) {
+        add({ id: input, derived: derivedStep(model, owner, step) });
         continue;
       }
     }
     const loose = normalizeElementId(input, ws.model);
     if (loose.ok && groups.has(loose.id)) {
-      add(loose.id);
+      add({ id: loose.id });
       continue;
     }
     const element = model.element(loose.ok ? loose.id : input);
@@ -148,11 +218,20 @@ function select(
       ...groups.keys(),
       ...model.concepts.map((c) => c.id),
       ...model.storedEdges.map((e) => e.id),
+      ...model.groups.map((g) => g.id),
+      ...model.views.map((v) => v.id),
+      ...model.tours.map((t) => t.id),
+      ...model.views.flatMap((v) => (v.type === "sequence" ? v.steps.map((s) => s.id) : [])),
     ];
     const needle = input.toLowerCase();
-    const near = [...new Set(known)]
-      .filter((id) => id.toLowerCase().includes(needle) || needle.includes(id.toLowerCase()))
-      .slice(0, 5);
+    const near = [
+      ...new Set([
+        ...suggestIds(input, known),
+        ...known.filter(
+          (id) => id.toLowerCase().includes(needle) || needle.includes(id.toLowerCase()),
+        ),
+      ]),
+    ].slice(0, 5);
     throw new CliError(
       `no element "${input}" in ${name}` +
         (near.length > 0
@@ -162,7 +241,43 @@ function select(
       near.length > 0 ? { candidates: near } : {},
     );
   }
-  return { ids, bare };
+  return { entries, bare };
+}
+
+/**
+ * The code of an anchor's lines (or of a derived range): the head and, when there are more than `cap` lines, the
+ * tail after an elision, so that the end of a span can be checked too (an off-by-one there is the usual mistake).
+ */
+function attachLines(
+  report: AnchorReport,
+  ws: Workspace,
+  file: string,
+  base: number,
+  range: { startLine: number; endLine: number },
+  cap: number,
+): void {
+  const lines = ws.texts.lines(file);
+  if (!lines) {
+    report.reason = `cannot read ${file} from the working tree`;
+    return;
+  }
+  const first = Math.max(1, range.startLine);
+  const last = Math.min(lines.length, range.endLine);
+  const wanted = Math.max(0, last - first + 1);
+  const shown: ShownLine[] = [];
+  const push = (line: number) => shown.push({ line, offset: line - base, text: lines[line - 1]! });
+  // Cutting two lines to write "2 lines elided" is no saving: the cap gives way to a couple of lines more.
+  if (cap > 0 && wanted > cap + 2) {
+    const tail = cap >= 3 ? Math.floor(cap / 3) : 0;
+    const head = cap - tail;
+    for (let line = first; line < first + head; line++) push(line);
+    for (let line = last - tail + 1; line <= last; line++) push(line);
+    report.elided = { startLine: first + head, endLine: last - tail };
+    report.moreLines = wanted - cap;
+  } else {
+    for (let line = first; line <= last; line++) push(line);
+  }
+  report.lines = shown;
 }
 
 function describeOne(site: AnchorSite, ws: Workspace, cap: number): AnchorReport {
@@ -204,35 +319,95 @@ function describeOne(site: AnchorSite, ws: Workspace, cap: number): AnchorReport
     report.stored = { status: stored.status, range: { ...stored.range } };
   }
 
-  const lines = ws.texts.lines(anchor.file);
-  if (!lines) {
-    report.reason = `cannot read ${anchor.file} from the working tree`;
-    return report;
-  }
   const base =
     (anchor.symbol ? ws.model.symbolAt(anchor.file, anchor.symbol)?.range.startLine : 1) ?? 1;
-  const first = Math.max(1, resolved.range.startLine);
-  const last = Math.min(lines.length, resolved.range.endLine);
-  const wanted = Math.max(0, last - first + 1);
-  const shown = cap > 0 ? Math.min(wanted, cap) : wanted;
-  report.lines = [];
-  for (let line = first; line < first + shown; line++) {
-    report.lines.push({ line, offset: line - base, text: lines[line - 1]! });
-  }
-  if (shown < wanted) report.moreLines = wanted - shown;
+  attachLines(report, ws, anchor.file, base, resolved.range, cap);
   return report;
 }
 
-function renderCode(lines: readonly ShownLine[]): string[] {
+/** A range of the derived focus, spelled like an anchor: the symbol that holds it and the offsets inside. */
+function describeDerived(
+  focus: FocusRange,
+  step: DerivedStep,
+  ws: Workspace,
+  cap: number,
+): AnchorReport {
+  const { file, range } = focus;
+  let symbol = ws.model.innermostSymbolAt(file, range.startLine);
+  while (symbol && symbol.range.endLine < range.endLine) symbol = ws.model.parentSymbol(symbol.id);
+  const base = symbol ? symbol.range.startLine : 1;
+  const whole = symbol
+    ? range.startLine === symbol.range.startLine && range.endLine === symbol.range.endLine
+    : range.startLine === 1 && range.endLine === (ws.model.file(file)?.lines ?? range.endLine);
+  const span = whole
+    ? undefined
+    : { from: Math.max(0, range.startLine - base), to: Math.max(0, range.endLine - base) };
+  const report: AnchorReport = {
+    path: `${step.path}.focus`,
+    role: focus.role,
+    file,
+    ...(symbol ? { symbol: symbol.path } : {}),
+    ...(span ? { span } : {}),
+    where: describeAnchor({
+      file,
+      ...(symbol ? { symbol: symbol.path } : {}),
+      ...(span ? { span } : {}),
+    }),
+    status: focus.status,
+    range: { startLine: range.startLine, endLine: range.endLine },
+    derived: true,
+    from: focus.elementId,
+  };
+  attachLines(report, ws, file, base, range, cap);
+  return report;
+}
+
+/** What the viewer shows for a tour step without `code`: the code of its focus, in the view's own terms. */
+function describeDerivedStep(
+  step: DerivedStep,
+  model: ExplainerModel,
+  ws: Workspace,
+  cap: number,
+  optionsOf: (viewId: string) => FocusOptions,
+) {
+  const focusIds = Array.isArray(step.step.focus) ? step.step.focus : [];
+  const options = optionsOf(step.step.view);
+  // one element at a time, like the viewer: every range says which focus id it comes from
+  const ranges = focusIds.flatMap((id) => codeFocus([id], model, options));
+  const noCode = focusIds.filter((id) => !ranges.some((range) => range.elementId === id));
+  return {
+    ranges: ranges.map((range) => describeDerived(range, step, ws, cap)),
+    noCode,
+    focus: [...focusIds],
+  };
+}
+
+function renderCode(report: AnchorReport): string[] {
+  const lines = report.lines ?? [];
   const absWidth = String(Math.max(...lines.map((l) => l.line))).length;
   const offWidth = String(Math.max(0, ...lines.map((l) => l.offset))).length;
-  return lines.map((l) => {
+  const elision = (): string => {
+    const { startLine, endLine } = report.elided!;
+    return `... ${report.moreLines} lines elided (${startLine}-${endLine}); --full shows all, or \`xpl show ${report.file}${report.symbol ? `#${report.symbol}` : ""} --lines ${startLine}-${endLine}\``;
+  };
+  const out: string[] = [];
+  let elided = false;
+  for (const l of lines) {
+    // the elision sits between the head and the tail: before the first line after the cut
+    if (report.elided && !elided && l.line > report.elided.endLine) {
+      out.push(elision());
+      elided = true;
+    }
     const text =
       l.text.length > MAX_LINE_CHARS
         ? `${l.text.slice(0, MAX_LINE_CHARS)}…[+${l.text.length - MAX_LINE_CHARS} chars]`
         : l.text;
-    return `${String(l.line).padStart(absWidth)} ${String(l.offset).padStart(offWidth)}│ ${text}`.trimEnd();
-  });
+    out.push(
+      `${String(l.line).padStart(absWidth)} ${String(l.offset).padStart(offWidth)}│ ${text}`.trimEnd(),
+    );
+  }
+  if (report.elided && !elided) out.push(elision()); // no tail: the cut is the end
+  return out;
 }
 
 function renderAnchor(a: AnchorReport, n: number, name: string): string[] {
@@ -241,6 +416,7 @@ function renderAnchor(a: AnchorReport, n: number, name: string): string[] {
     const label = a.status === "missing" ? "last known lines" : "lines";
     parts.push(`${label} ${rangeText(a.range)}`);
   }
+  if (a.derived) parts.push(`[derived from ${a.from}]`);
   const out = [`  ${parts.join("  ")}`];
   if (a.approximate) {
     out.push(
@@ -253,23 +429,20 @@ function renderAnchor(a: AnchorReport, n: number, name: string): string[] {
     );
   }
   if (a.reason) out.push(`     ${a.reason}`);
-  if (a.lines && a.lines.length > 0) {
-    out.push(...renderCode(a.lines).map((line) => `     ${line}`));
-    if (a.moreLines) {
-      const to = a.range!.endLine;
-      out.push(
-        `     ... ${a.moreLines} more lines (${a.range!.startLine + a.lines.length}-${to}); --full shows all, or \`xpl show ${a.file}${a.symbol ? `#${a.symbol}` : ""} --lines ${a.range!.startLine + a.lines.length}-${to}\``,
-      );
-    }
-  }
+  if (a.lines && a.lines.length > 0) out.push(...renderCode(a).map((line) => `     ${line}`));
   return out;
 }
 
 function headerOf(e: ElementReport): string {
+  if (e.derived) {
+    const tail = e.userFields?.includes("steps") === true ? ", steps owned by the user" : "";
+    return `${e.id}  (tour step in ${e.view}, no code override: what its focus shows, derived${tail})  ${plural(e.anchors.length, "range")}`;
+  }
   const kind = e.type === "step" && e.view ? `step in ${e.view}` : e.type;
   const owner = e.origin ? `, ${e.origin}` : "";
   const locked =
-    e.userFields?.includes(e.type === "step" ? "steps" : "anchors") === true
+    e.userFields?.includes(e.type === "step" || e.type === "tour-step" ? "steps" : "anchors") ===
+    true
       ? ", anchors owned by the user"
       : "";
   return `${e.id}  (${kind}${owner}${locked})  ${plural(e.anchors.length, "anchor")}`;
@@ -288,14 +461,17 @@ export const anchorsCommand: CommandSpec = {
     "after `xpl apply` to confirm every span landed on the code you meant, and to re-read what drifted.",
     "Ids: element ids as they are (concept:x, dispatch:3, edge:x, sym:src/a.ts#A.b, tour:intro/t2), a view (its",
     "steps), a tour (its steps), or the loose forms of the other commands. Without ids: every element with anchors.",
-    `Each anchor's code is cut after ${DEFAULT_ANCHOR_LINES} lines; --full (or --max-lines 0) prints all of it.`,
+    "A tour step without a `code` override shows what the viewer will show for its focus: the code of the focused",
+    "elements, marked `derived` (`xpl anchors <explainer> tour:intro` lists every step, with `code` or derived).",
+    `A long anchor is cut to ${DEFAULT_ANCHOR_LINES} lines: its first lines, an elision line and its last ones (the`,
+    "end of a span is the part that goes wrong); --full (or --max-lines 0) prints all of it.",
   ],
   options: {
     full: { type: "boolean", desc: "Print every line of every anchor (no cap)" },
     "max-lines": {
       type: "string",
       arg: "<n>",
-      desc: `Cut each anchor's code after n lines (default ${DEFAULT_ANCHOR_LINES}, 0 = no limit)`,
+      desc: `Cut each anchor's code to n lines, head and tail (default ${DEFAULT_ANCHOR_LINES}, 0 = no limit)`,
     },
   },
   positionals: [{ name: "explainer" }, { name: "id", required: false, rest: true }],
@@ -306,16 +482,43 @@ export const anchorsCommand: CommandSpec = {
     const model = new ExplainerModel(loaded.explainer, ws.model);
     const groups = groupSites(loaded.explainer);
     const requested = args.positionals.slice(1);
-    const selection =
+    const selection: Selection =
       requested.length > 0
         ? select(requested, groups, model, ws, loaded.name)
-        : { ids: [...groups.keys()], bare: [] };
+        : { entries: [...groups.keys()].map((id) => ({ id })), bare: [] };
 
-    const elements: ElementReport[] = selection.ids.map((id) => {
-      const sites = groups.get(id)!;
+    // the derived edges of a graph view are what its stubs and edges focus: computed once per view
+    const focusOptions = new Map<string, FocusOptions>();
+    const optionsOf = (viewId: string): FocusOptions => {
+      let options = focusOptions.get(viewId);
+      if (!options) {
+        const view = model.view(viewId);
+        options =
+          view?.type === "graph" ? { derivedEdges: derivedEdgeMap(deriveGraph(view, model)) } : {};
+        focusOptions.set(viewId, options);
+      }
+      return options;
+    };
+    const elements: ElementReport[] = selection.entries.map((entry) => {
+      if (entry.derived) {
+        const step = entry.derived;
+        const found = describeDerivedStep(step, model, ws, cap, optionsOf);
+        return {
+          id: entry.id,
+          type: "tour-step",
+          view: step.step.view,
+          ...(step.origin !== undefined ? { origin: step.origin } : {}),
+          ...(step.userFields.length > 0 ? { userFields: step.userFields } : {}),
+          derived: true,
+          focus: found.focus,
+          ...(found.noCode.length > 0 ? { noCode: found.noCode } : {}),
+          anchors: found.ranges,
+        };
+      }
+      const sites = groups.get(entry.id)!;
       const first = sites[0]!;
       return {
-        id,
+        id: entry.id,
         type: first.owner,
         ...(first.viewId !== undefined ? { view: first.viewId } : {}),
         ...(first.origin !== undefined ? { origin: first.origin } : {}),
@@ -324,8 +527,20 @@ export const anchorsCommand: CommandSpec = {
       };
     });
     const counts: Record<AnchorStatus, number> = { ok: 0, moved: 0, drifted: 0, missing: 0 };
-    for (const element of elements) for (const a of element.anchors) counts[a.status]++;
-    const total = elements.reduce((sum, e) => sum + e.anchors.length, 0);
+    let total = 0;
+    let stored = 0;
+    let derivedRanges = 0;
+    for (const element of elements) {
+      if (element.derived) derivedRanges += element.anchors.length;
+      else {
+        stored++;
+        for (const a of element.anchors) {
+          counts[a.status]++;
+          total++;
+        }
+      }
+    }
+    const derivedSteps = elements.filter((element) => element.derived).length;
 
     if (ctx.json) {
       ctx.emit({
@@ -344,6 +559,14 @@ export const anchorsCommand: CommandSpec = {
       if (lines.length > 0) lines.push("");
       lines.push(headerOf(element));
       element.anchors.forEach((a, i) => lines.push(...renderAnchor(a, i + 1, loaded.name)));
+      if (element.derived && element.noCode) {
+        for (const id of element.noCode) {
+          lines.push(`  no code for ${id}: it has no anchors, or none that resolves`);
+        }
+      }
+      if (element.derived && element.anchors.length === 0 && !element.noCode?.length) {
+        lines.push("  the focus is empty: this step shows no code");
+      }
     }
     for (const b of selection.bare) {
       if (lines.length > 0) lines.push("");
@@ -352,11 +575,16 @@ export const anchorsCommand: CommandSpec = {
     if (elements.length === 0 && selection.bare.length === 0) {
       lines.push(`${loaded.rel} has no anchors yet`);
     }
-    if (total > 0) {
-      lines.push(
-        "",
-        `${plural(total, "anchor")} of ${plural(elements.length, "element")}: ok ${counts.ok}, moved ${counts.moved}, drifted ${counts.drifted}, missing ${counts.missing}`,
-      );
+    if (total > 0 || derivedRanges > 0) {
+      const summary =
+        total > 0
+          ? `${plural(total, "anchor")} of ${plural(stored, "element")}: ok ${counts.ok}, moved ${counts.moved}, drifted ${counts.drifted}, missing ${counts.missing}`
+          : "";
+      const derivedNote =
+        derivedSteps > 0
+          ? `${plural(derivedRanges, "derived range")} of ${plural(derivedSteps, "tour step")} without a code override (not stored anchors)`
+          : "";
+      lines.push("", [summary, derivedNote].filter((part) => part !== "").join("; "));
     }
     ctx.out(lines.join("\n"));
     return 0;

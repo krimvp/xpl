@@ -23,7 +23,7 @@ import { resolveCommitId, validateCommitId } from "./commit.js";
 import { FILE_LANGUAGES, detectGit, discoverFiles, readSource } from "./files.js";
 import { FileHasher } from "./hash.js";
 import type { DiscoveredFile } from "./files.js";
-import { packFor } from "./languages/index.js";
+import { packForFile } from "./languages/index.js";
 import type { FileFacts, LanguagePack, RepoView } from "./languages/types.js";
 import { ParserPool, parseFile, withParsedFile } from "./parse.js";
 import { preciseResolvers } from "./precise.js";
@@ -33,6 +33,8 @@ import { resolveHeuristic } from "./resolve/heuristic.js";
 import type { ResolverFile } from "./resolve/heuristic.js";
 import { SymbolLookup, assembleSymbols } from "./symbols.js";
 import type { SymbolEntry } from "./symbols.js";
+import { findSyntaxErrors, significantSyntaxErrors, syntaxErrorWarning } from "./syntax-errors.js";
+import type { SyntaxErrorFile } from "./syntax-errors.js";
 import { GRAMMAR_WASM } from "./wasm-files.js";
 
 /** Options of `buildIndex` (ARCHITECTURE.md §3). */
@@ -53,9 +55,6 @@ export interface BuildIndexResult {
   index: SymbolIndex;
   warnings: string[];
 }
-
-/** Number of files with syntax errors to name in the warning. */
-const SYNTAX_WARNING_EXAMPLES = 5;
 
 /** `RepoView` over the indexed files of a build. */
 class BuildRepoView implements RepoView {
@@ -218,7 +217,7 @@ export async function buildIndex(opts: BuildIndexOptions): Promise<BuildIndexRes
   const resolverFiles: ResolverFile[] = [];
   const usedPacks: { pack: LanguagePack; language: FileLanguage }[] = [];
   const usedPackKeys = new Set<string>();
-  const syntaxErrors: FilePath[] = [];
+  const syntaxErrors: SyntaxErrorFile[] = [];
   const pool = new ParserPool();
   try {
     for (const discovered of discovery.files) {
@@ -243,16 +242,7 @@ export async function buildIndex(opts: BuildIndexOptions): Promise<BuildIndexRes
   } finally {
     await pool.dispose();
   }
-  if (syntaxErrors.length > 0) {
-    const shown = syntaxErrors.slice(0, SYNTAX_WARNING_EXAMPLES).join(", ");
-    const more =
-      syntaxErrors.length > SYNTAX_WARNING_EXAMPLES
-        ? `, and ${syntaxErrors.length - SYNTAX_WARNING_EXAMPLES} more`
-        : "";
-    warnings.push(
-      `${syntaxErrors.length} file(s) have syntax errors, their symbols may be incomplete: ${shown}${more}`,
-    );
-  }
+  if (syntaxErrors.length > 0) warnings.push(syntaxErrorWarning(syntaxErrors));
 
   // 3. Heuristic references for every language whose pack derives them.
   const lookup = new SymbolLookup(entries);
@@ -388,7 +378,7 @@ async function indexFile(
   pool: ParserPool,
   entries: SymbolEntry[],
   resolverFiles: ResolverFile[],
-  syntaxErrors: FilePath[],
+  syntaxErrors: SyntaxErrorFile[],
   warnings: string[],
 ): Promise<{ file: IndexedFile; pack: LanguagePack | undefined } | undefined> {
   let text: string;
@@ -405,7 +395,7 @@ async function indexFile(
     hash: hasher.hashFile(),
     lines: lines.length,
   };
-  const pack = packFor(discovered.language);
+  const pack = packForFile(discovered.path, discovered.language);
   if (!pack) return { file, pack };
 
   let facts: FileFacts | undefined;
@@ -414,7 +404,11 @@ async function indexFile(
     if (parsed) {
       try {
         facts = pack.extract(parsed.ctx);
-        if (parsed.ctx.tree.rootNode.hasError) syntaxErrors.push(discovered.path);
+        const errors = significantSyntaxErrors(
+          discovered.path,
+          findSyntaxErrors(parsed.ctx.tree.rootNode, pack),
+        );
+        if (errors) syntaxErrors.push(errors);
       } finally {
         parsed.dispose();
       }

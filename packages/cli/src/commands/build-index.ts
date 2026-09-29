@@ -1,5 +1,6 @@
 import { readdirSync } from "node:fs";
 import { join } from "node:path";
+import type { LanguageInfo } from "@xpl/core";
 import { buildIndex, writeIndex } from "@xpl/indexer";
 import type { CommandSpec } from "../command.js";
 import { CliError, errorMessage } from "../errors.js";
@@ -30,6 +31,19 @@ function explainersNeedingResolve(root: string, commit: string): string[] {
   return out.sort();
 }
 
+/**
+ * How far the references of a language can be trusted: `none`, `heuristic`, `precise (scip-python@0.6.6)`, and
+ * when the precise tool did not describe every file (build constraints, its own exclusions), how many it did:
+ * `precise 64/82 (scip-python@0.6.6), 18 heuristic`. The references of those files are hints.
+ */
+export function describeRefs(info: LanguageInfo): string {
+  if (info.refs !== "precise") return info.refs;
+  const tool = info.tool ? ` (${info.tool})` : "";
+  const heuristic = info.heuristicFiles ?? 0;
+  if (heuristic <= 0) return `precise${tool}`;
+  return `precise ${Math.max(0, info.files - heuristic)}/${info.files}${tool}, ${heuristic} heuristic`;
+}
+
 export const indexCommand: CommandSpec = {
   name: "index",
   usage: "xpl index [--precise auto|off|require] [--commit c]",
@@ -39,6 +53,10 @@ export const indexCommand: CommandSpec = {
     "The commit id is the short HEAD for a clean top-level git tree, else wt-<hash> of the files.",
     "--precise auto uses SCIP indexers when available (heuristic references otherwise, with a warning);",
     "off never runs them; require fails instead of falling back.",
+    "Each language line ends with how far its references can be trusted: `refs: precise (tool)`, `refs: heuristic`",
+    "(hints: confirm each call with `xpl show`), `refs: none` (yaml, json, text), or, when the precise tool did not",
+    "describe every file, `refs: precise 64/82 (scip-python@0.6.6), 18 heuristic`: the references of those 18 files",
+    "are hints.",
   ],
   options: {
     precise: {
@@ -88,10 +106,10 @@ export const indexCommand: CommandSpec = {
       `index written: ${rel}`,
       `commit: ${index.commit}  files: ${index.files.length}  symbols: ${index.symbols.length}  refs: ${index.refs.length}`,
       "",
-      ...languages.map(([name, info]) => {
-        const tool = info.refs === "precise" && info.tool ? ` (${info.tool})` : "";
-        return `${name.padEnd(width)}  ${plural(info.files, "file").padEnd(9)}  ${plural(info.symbols, "symbol").padEnd(12)}  refs: ${info.refs}${tool}`;
-      }),
+      ...languages.map(
+        ([name, info]) =>
+          `${name.padEnd(width)}  ${plural(info.files, "file").padEnd(9)}  ${plural(info.symbols, "symbol").padEnd(12)}  refs: ${describeRefs(info)}`,
+      ),
     ];
     if (stale.length > 0) {
       lines.push(

@@ -157,10 +157,10 @@ describe("mapScip: references from occurrences", () => {
     expect(warnings).toEqual([]);
     expect(triples(refs)).toEqual(
       [
-        // imports of names: from module scope to the symbol
+        // imports of names: from module scope to the symbol; `import type` is a type reference
         "import src/runner.ts# -> src/queue.ts#Queue",
         "import src/runner.ts# -> src/queue.ts#helper",
-        "import src/runner.ts# -> src/queue.ts#Job",
+        "type-ref src/runner.ts# -> src/queue.ts#Job",
         // `import * as q from` and `import "./side.ts"` have no bindings: the module specifier stands for them
         "import src/runner.ts# -> src/queue.ts#",
         "import src/runner.ts# -> src/side.ts#",
@@ -168,12 +168,74 @@ describe("mapScip: references from occurrences", () => {
         "call src/runner.ts#Runner.queue -> src/queue.ts#Queue",
         "type-ref src/runner.ts#Runner.queue -> src/queue.ts#Queue",
         "type-ref src/runner.ts#Runner.dispatch -> src/queue.ts#Job",
+        // `this.queue.requeue(...)` reads the field `queue`
+        "read src/runner.ts#Runner.dispatch -> src/runner.ts#Runner.queue",
         "call src/runner.ts#Runner.dispatch -> src/queue.ts#Queue.requeue",
         "call src/runner.ts#Runner.dispatch -> src/queue.ts#helper",
         "type-ref src/queue.ts#Queue.requeue -> src/queue.ts#Job",
       ].sort(),
     );
     expect(refs.every((r) => r.resolution === "precise")).toBe(true);
+  });
+
+  it("classifies imports by the syntax of the statement: `import type` and `{ type X }` are type references", async () => {
+    const runner = marked(`import type { ⟦Job⟧ } from ⟦"./queue.ts"⟧;
+import { type ⟦Queue⟧, ⟦helper⟧ } from ⟦"./queue.ts"⟧;
+import type * as ⟦q⟧ from ⟦"./queue.ts"⟧;
+import * as ⟦r⟧ from ⟦"./queue.ts"⟧;
+`);
+    const files = { ...mainScenario().files, "src/runner.ts": runner.text };
+    const sources = [
+      source([
+        {
+          path: "src/queue.ts",
+          occurrences: [
+            moduleDef("src/queue.ts"),
+            ...occs(queueSrc, [
+              [0, Q.cls, DEF],
+              [1, Q.ctor, DEF],
+              [2, Q.max, DEF],
+              [3, Q.requeue, DEF],
+              [4, Q.job],
+              [5, Q.job, DEF],
+              [6, Q.helper, DEF],
+            ]),
+          ],
+        },
+        {
+          path: "src/runner.ts",
+          occurrences: [
+            moduleDef("src/runner.ts"),
+            ...occs(runner, [
+              [0, Q.job],
+              [1, ts("src/queue.ts")],
+              [2, Q.cls],
+              [3, Q.helper],
+              [4, ts("src/queue.ts")],
+              [5, "local 0", DEF],
+              [6, ts("src/queue.ts")],
+              [7, "local 1", DEF],
+              [8, ts("src/queue.ts")],
+            ]),
+          ],
+        },
+        { path: "src/side.ts", occurrences: [moduleDef("src/side.ts")] },
+      ]),
+    ];
+    const { refs } = await run(files, sources);
+    expect(triples(refs)).toEqual(
+      [
+        "type-ref src/runner.ts# -> src/queue.ts#Job",
+        "type-ref src/runner.ts# -> src/queue.ts#Queue",
+        "import src/runner.ts# -> src/queue.ts#helper",
+        // `import type * as q` names nothing, so its quoted module stands for it (as a type reference)
+        "type-ref src/runner.ts# -> src/queue.ts#",
+        "import src/runner.ts# -> src/queue.ts#",
+        "type-ref src/queue.ts#Queue.requeue -> src/queue.ts#Job",
+      ].sort(),
+    );
+    const namespace = refs.find((r) => r.kind === "type-ref" && r.to === "src/queue.ts#")!;
+    expect(namespace.site).toEqual({ startLine: 3, startCol: 25, endLine: 3, endCol: 36 });
   });
 
   it("takes kind and site from the language pack (the whole multi-line call expression)", async () => {
@@ -189,11 +251,21 @@ describe("mapScip: references from occurrences", () => {
     expect(namedImport.site).toEqual({ startLine: 1, endLine: 1, startCol: 17, endCol: 22 });
   });
 
-  it("keeps property reads out: only calls, imports, types, heritage and writes are references", async () => {
+  it("keeps plain reads of fields as `read` references, at the member expression, but no parameter property", async () => {
     const { files, sources } = mainScenario();
     const { refs } = await run(files, sources);
-    // `this.queue` (a read of a field) and the parameter property `max` produce nothing
-    expect(refs.some((r) => r.to === "src/runner.ts#Runner.queue")).toBe(false);
+    // `this.queue` is a read of the field `queue`; the site is the whole `this.queue`
+    const read = refs.filter((r) => r.to === "src/runner.ts#Runner.queue" && r.kind === "read");
+    expect(read).toEqual([
+      {
+        kind: "read",
+        from: "src/runner.ts#Runner.dispatch",
+        to: "src/runner.ts#Runner.queue",
+        site: { startLine: 9, startCol: 11, endLine: 9, endCol: 20 },
+        resolution: "precise",
+      },
+    ]);
+    // the parameter property `max` is not a symbol of ours, nothing points at it
     expect(refs.some((r) => r.to.includes("max"))).toBe(false);
   });
 
@@ -707,15 +779,30 @@ export function ⟦use⟧(): number {
     ]);
   });
 
-  it("everything else is dropped: plain reads of functions and variables, self references", async () => {
+  it("everything else is dropped: plain reads of functions (not variables), self references", async () => {
     const { refs } = await run({ "a.ts": src.text }, [
       doc([
         [5, ts("a.ts", "other().")],
-        [6, ts("a.ts", "counter.")],
         [9, ts("a.ts", "use().")],
       ]),
     ]);
     expect(refs).toEqual([]);
+  });
+
+  it("a plain read of a variable is a `read` (the pack says it is one, the symbol says it is a variable)", async () => {
+    const { refs } = await run({ "a.ts": src.text }, [
+      doc([
+        [5, ts("a.ts", "other().")],
+        [6, ts("a.ts", "counter.")],
+        [8, ts("a.ts", "counter.")],
+      ]),
+    ]);
+    // one reference per site
+    expect(triples(refs)).toEqual([
+      "read a.ts#use -> a.ts#counter",
+      "read a.ts#use -> a.ts#counter",
+    ]);
+    expect(refs.map((r) => r.site.startLine)).toEqual([7, 9]);
   });
 });
 

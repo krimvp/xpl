@@ -23,10 +23,12 @@ import {
   nestedStatements,
   paramsOf,
   scopeNodeOf,
+  underTypeChecking,
 } from "./ast.js";
 import type { SiteShape } from "./ast.js";
 import { alternatives, chainOf, collapseDotted, inferFromInit } from "./exprs.js";
 import type { Env, Inferred } from "./exprs.js";
+import { PyScopes } from "./scope.js";
 import {
   callShape,
   decoratorShape,
@@ -34,6 +36,7 @@ import {
   heritageShapes,
   importCallShape,
   importStatement,
+  readShape,
   writeShapes,
 } from "./shapes.js";
 
@@ -48,6 +51,7 @@ const SCAN_TYPES = [
   "type",
   "assignment",
   "augmented_assignment",
+  "identifier", // the leaves a `read` can sit on (see `readShape`)
 ];
 
 interface Scope {
@@ -104,6 +108,9 @@ export class Extractor implements Env {
   /** Field facts by `${class}\0${field}`: declared ones win over inferred ones (flushed at the end). */
   private readonly fieldDeclared = new Map<string, TypeFact[]>();
   private readonly fieldInferred = new Map<string, TypeFact[]>();
+  /** Identifiers a `read` may sit on, in source order (decided once every fact is known). */
+  private readonly readLeaves: Node[] = [];
+  private readonly scopes = new PyScopes((fn) => this.globalsOf(fn));
 
   constructor(private readonly ctx: FileContext) {
     this.lines = ctx.lines;
@@ -271,12 +278,14 @@ export class Extractor implements Env {
 
   private onImport(stmt: Node): void {
     const { entries, star } = importStatement(stmt);
+    // Imports under `if TYPE_CHECKING:` exist for the type checker: their references are `type-ref`s.
+    const typeOnly = underTypeChecking(stmt) ? ({ typeOnly: true } as const) : {};
     for (const entry of entries) {
-      this.imports.push({ ...entry.binding, site: nodeSpan(entry.node, this.lines) });
+      this.imports.push({ ...entry.binding, site: nodeSpan(entry.node, this.lines), ...typeOnly });
       if (stmt.type === "import_statement" && entry.binding.localName.includes("."))
         this.dotted.add(entry.binding.localName);
     }
-    if (star) this.exports.push({ ...star, site: nodeSpan(stmt, this.lines) });
+    if (star) this.exports.push({ ...star, site: nodeSpan(stmt, this.lines), ...typeOnly });
   }
 
   /**
@@ -333,12 +342,68 @@ export class Extractor implements Env {
             this.pushShape(shape);
           if (n.type === "assignment") assignments.push(n);
           break;
+        case "identifier":
+          this.readLeaves.push(n);
+          break;
         default:
           break;
       }
     }
     // Parameter types are known by now: `self.queue = queue` copies the type of `queue`.
     for (const assignment of assignments) this.onAssignmentFacts(assignment);
+    this.onReads();
+  }
+
+  // ── reads ──────────────────────────────────────────────────────────────────────────────────────
+
+  private onReads(): void {
+    if (this.readLeaves.length === 0) return;
+    // What the file declares or imports: a bare name can only be a variable read when it is one of these
+    // (or when a star import may have brought it in).
+    const bare = new Set<string>();
+    const roots = new Set<string>();
+    for (const draft of this.drafts) {
+      const name = lastSegment(draft.path);
+      roots.add(name);
+      if (draft.kind === "variable") bare.add(name);
+    }
+    for (const binding of this.imports) {
+      bare.add(binding.localName);
+      roots.add(binding.localName);
+    }
+    const anyBare = this.exports.some((e) => e.name === "*");
+    // Locals and parameters with a type fact, by function: their members can be resolved.
+    const typed = new Set<string>();
+    for (const fact of this.typeFacts)
+      if (fact.kind === "local" || fact.kind === "param")
+        typed.add(`${fact.scopePath}\0${fact.name}`);
+    for (const leaf of this.readLeaves) {
+      const shape = readShape(leaf, this.lines);
+      if (!shape) continue;
+      if (!shape.qualifierNode) {
+        if ((anyBare || bare.has(shape.name)) && !this.scopes.bindingScope(leaf, shape.name))
+          this.sites.push({ kind: "read", name: shape.name, qualifier: [], site: shape.site });
+        continue;
+      }
+      const chain = chainOf(shape.qualifierNode, this);
+      if (!chain) continue;
+      const root = chain[0]!;
+      let ok = root === "this" || root === "super";
+      if (!ok) {
+        const called = root.endsWith("()");
+        const name = called ? root.slice(0, -2) : root;
+        const scope = this.scopes.bindingScope(leaf, name);
+        if (scope) {
+          const path =
+            scope.type === "function_definition" ? this.symbolPaths.get(scope.id) : undefined;
+          ok = !called && path !== undefined && typed.has(`${path}\0${name}`);
+        } else {
+          ok = roots.has(name);
+        }
+      }
+      if (ok)
+        this.sites.push({ kind: "read", name: shape.name, qualifier: chain, site: shape.site });
+    }
   }
 
   private pushShape(shape: SiteShape): void {

@@ -10,6 +10,7 @@ import {
   ExplainerModel,
   MAX_DERIVED_ANCHORS,
   repr,
+  singleChildChain,
   type Explainer,
   type GraphView,
 } from "../src/index.js";
@@ -202,8 +203,8 @@ describe("deriveGraph: nodes", () => {
     expect(ids(graph.nodes)).toEqual([F.queue]);
   });
 
-  it("has no nodes, edges or stubs for an empty include", () => {
-    expect(derive([]).graph).toEqual({ nodes: [], edges: [], stubs: [] });
+  it("has no nodes, edges, stubs or ghosts for an empty include", () => {
+    expect(derive([]).graph).toEqual({ nodes: [], edges: [], stubs: [], ghosts: [] });
   });
 });
 
@@ -302,10 +303,13 @@ describe("deriveGraph: derived edges", () => {
     expect(requeue.anchors.map((a) => a.role)).toEqual(["call-site", "definition"]);
   });
 
-  it("draws an edge from a nested node to its container, and between containers", () => {
+  it("draws an edge from a nested node to another box, but none to its own container", () => {
     const { graph } = derive([F.runner, S.dispatch, F.queue]);
-    expect(graph.edges.map((e) => [e.from, e.to])).toContainEqual([S.dispatch, F.runner]); // -> backoffDelay
-    expect(graph.edges.map((e) => [e.from, e.to])).toContainEqual([S.dispatch, F.queue]);
+    const pairs = graph.edges.map((e) => [e.from, e.to]);
+    expect(pairs).toContainEqual([S.dispatch, F.queue]);
+    // dispatch -> backoffDelay lifts to file:src/runner.ts, the box dispatch is drawn in: no arrow
+    expect(pairs).not.toContainEqual([S.dispatch, F.runner]);
+    expect(pairs).not.toContainEqual([F.runner, S.dispatch]);
   });
 
   it("aggregates through a group, and skips edges internal to it", () => {
@@ -482,6 +486,9 @@ describe("deriveGraph: stored edges", () => {
         inside: F.worker,
         ghost: F.metrics,
         ghostLabel: "metrics.ts",
+        targets: [
+          { target: F.metrics, label: "metrics.ts", kind: "file", count: 1, kinds: ["emits"] },
+        ],
         kinds: ["emits"],
         count: 1,
       },
@@ -559,6 +566,9 @@ describe("deriveGraph: stubs and ghosts", () => {
         inside: S.dispatch,
         ghost: "dir:src/util", // sleep.ts is alone in src/util, which holds no included node
         ghostLabel: "util",
+        targets: [
+          { target: "dir:src/util", label: "util", kind: "dir", count: 1, kinds: ["calls"] },
+        ],
         kinds: ["calls"],
         count: 1,
       },
@@ -568,6 +578,9 @@ describe("deriveGraph: stubs and ghosts", () => {
         inside: S.dispatch,
         ghost: F.worker, // dir:src holds included nodes, so the ghost is the file
         ghostLabel: "worker.ts",
+        targets: [
+          { target: F.worker, label: "worker.ts", kind: "file", count: 1, kinds: ["calls"] },
+        ],
         kinds: ["calls"],
         count: 1,
       },
@@ -584,6 +597,7 @@ describe("deriveGraph: stubs and ghosts", () => {
         inside: "file:core/queue.ts",
         ghost: "dir:app", // app/main.ts and app/more/other.ts both live under app/
         ghostLabel: "app",
+        targets: [{ target: "dir:app", label: "app", kind: "dir", count: 2, kinds: ["calls"] }],
         kinds: ["calls"],
         count: 2,
       },
@@ -616,8 +630,8 @@ describe("deriveGraph: stubs and ghosts", () => {
     expect(derive([F.queue], { edgeKinds: [] }).graph.stubs).toEqual([]);
   });
 
-  it("uses the outside element itself when it contains an included node", () => {
-    // included: sym:sleep only; module-scope style ref to a file that contains an included symbol
+  it("uses the outside element itself when it contains an included node (folded into the rest of that file)", () => {
+    // module-scope style ref to a file that contains an included symbol: the whole file is the outside end
     const tiny = makeWorld({
       files: [
         { path: "a.ts", lines: 10 },
@@ -631,7 +645,22 @@ describe("deriveGraph: stubs and ghosts", () => {
     });
     const view = graphView("view:v", ["sym:a.ts#f", "sym:b.ts#g"], { edgeKinds: ["imports"] });
     const g = deriveGraph(view, new ExplainerModel(emptyExplainer({ views: [view] }), tiny.model));
-    expect(g.stubs).toMatchObject([{ inside: "sym:a.ts#f", ghost: "file:b.ts", direction: "out" }]);
+    // in mode "all" the ghost is the file itself...
+    const all = deriveGraph(
+      { ...view, stubs: { mode: "all" } },
+      new ExplainerModel(emptyExplainer({ views: [view] }), tiny.model),
+    );
+    expect(all.stubs).toMatchObject([
+      { inside: "sym:a.ts#f", ghost: "file:b.ts", direction: "out" },
+    ]);
+    // ...and by default it is what is left of b.ts (g is shown), which offers the file as its target
+    expect(g.stubs).toMatchObject([
+      { inside: "sym:a.ts#f", ghost: "rest:file:b.ts", direction: "out" },
+    ]);
+    expect(g.ghosts).toMatchObject([
+      { id: "ghost:rest:file:b.ts", kind: "rest", label: "rest of b.ts" },
+    ]);
+    expect(g.ghosts[0]!.targets.map((t) => t.target)).toEqual(["file:b.ts"]);
   });
 
   it("treats members of an included group as covered when choosing ghosts", () => {
@@ -1005,6 +1034,98 @@ describe("defaultInclude", () => {
     const { graph } = derive(include);
     expect(graph.nodes).toHaveLength(include.length);
     expect(graph.edges.length).toBeGreaterThan(0);
+  });
+});
+
+describe("defaultInclude and singleChildChain: src layouts", () => {
+  // a Flask-like project: everything of the package sits in src/flask
+  const flask = makeWorld({
+    files: [
+      { path: "docs/conf.py" },
+      { path: "docs/api.md", language: "text" },
+      { path: "examples/app.py" },
+      { path: "src/flask/app.py" },
+      { path: "src/flask/helpers.py" },
+      { path: "src/flask/json/provider.py" },
+      { path: "tests/test_app.py" },
+    ],
+    symbols: [
+      { id: "src/flask/app.py#Flask", kind: "class", start: 1, end: 9 },
+      { id: "src/flask/app.py#Flask.run", start: 2, end: 5 },
+      { id: "src/flask/helpers.py#url_for", kind: "function", start: 1, end: 4 },
+    ],
+  });
+  const m = new ExplainerModel(emptyExplainer(), flask.model);
+
+  it("singleChildChain follows directories that hold nothing but one directory", () => {
+    expect(singleChildChain(m, "dir:src")).toEqual(["dir:src", "dir:src/flask"]);
+    expect(singleChildChain(m, "dir:src/flask")).toEqual(["dir:src/flask"]);
+    expect(singleChildChain(m, "dir:docs")).toEqual(["dir:docs"]);
+    expect(singleChildChain(m, "repo")).toEqual(["repo"]); // four things, not one
+    // a directory whose only child is a file, a file and a symbol are not chains
+    expect(singleChildChain(m, "dir:src/flask/json")).toEqual(["dir:src/flask/json"]);
+    expect(singleChildChain(m, "file:src/flask/app.py")).toEqual(["file:src/flask/app.py"]);
+    expect(singleChildChain(m, "sym:src/flask/app.py#Flask")).toEqual([
+      "sym:src/flask/app.py#Flask",
+    ]);
+    expect(singleChildChain(m, "dir:nope")).toEqual(["dir:nope"]);
+    // a repo with a single top-level directory starts a chain too, and chains can be long
+    const deep = makeWorld({ files: [{ path: "a/b/c/d.ts" }, { path: "a/b/c/e.ts" }] });
+    const dm = new ExplainerModel(emptyExplainer(), deep.model);
+    expect(singleChildChain(dm, "repo")).toEqual(["repo", "dir:a", "dir:a/b", "dir:a/b/c"]);
+    expect(singleChildChain(dm, "dir:a/b")).toEqual(["dir:a/b", "dir:a/b/c"]);
+  });
+
+  it("depth 1 of the repo shows src/flask where it used to show one box src", () => {
+    expect(defaultInclude({ root: "repo", depth: 1 }, m)).toEqual([
+      "dir:docs",
+      "dir:examples",
+      "dir:src/flask",
+      "dir:tests",
+    ]);
+  });
+
+  it("the chain counts as one level: depth 2 opens src/flask, the other directories open too", () => {
+    expect(defaultInclude({ root: "repo", depth: 2 }, m)).toEqual([
+      "file:docs/api.md",
+      "file:docs/conf.py",
+      "file:examples/app.py",
+      "dir:src/flask/json",
+      "file:src/flask/app.py",
+      "file:src/flask/helpers.py",
+      "file:tests/test_app.py",
+    ]);
+    const d3 = defaultInclude({ root: "repo", depth: 3 }, m);
+    expect(d3).toContain("sym:src/flask/app.py#Flask"); // level 3: the symbols of src/flask/app.py
+    expect(d3).toContain("file:src/flask/json/provider.py");
+    expect(d3).not.toContain("dir:src");
+    expect(d3).not.toContain("dir:src/flask");
+  });
+
+  it("a root that starts a chain is entered at the end of it; depth 0 and other roots are untouched", () => {
+    expect(defaultInclude({ root: "dir:src", depth: 1 }, m)).toEqual([
+      "dir:src/flask/json",
+      "file:src/flask/app.py",
+      "file:src/flask/helpers.py",
+    ]);
+    expect(defaultInclude({ root: "dir:src", depth: 0 }, m)).toEqual(["dir:src"]);
+    expect(defaultInclude({ root: "dir:src/flask", depth: 1 }, m)).toEqual([
+      "dir:src/flask/json",
+      "file:src/flask/app.py",
+      "file:src/flask/helpers.py",
+    ]);
+    const deep = makeWorld({ files: [{ path: "a/b/c/d.ts" }, { path: "a/b/c/e.ts" }] });
+    const dm = new ExplainerModel(emptyExplainer(), deep.model);
+    // everything sits under a/b/c: the repo's depth 1 is its two files
+    expect(defaultInclude({ root: "repo", depth: 1 }, dm)).toEqual([
+      "file:a/b/c/d.ts",
+      "file:a/b/c/e.ts",
+    ]);
+  });
+
+  it("still gives a derivable view", () => {
+    const include = defaultInclude({ root: "repo", depth: 2 }, m);
+    expect(derive(include, {}, {}, flask).graph.nodes).toHaveLength(include.length);
   });
 });
 

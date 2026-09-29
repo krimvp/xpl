@@ -27,7 +27,7 @@ import {
   viewId,
   viewSlug,
 } from "../src/index.js";
-import { jobrunner } from "./helpers.js";
+import { jobrunner, makeWorld } from "./helpers.js";
 
 describe("id builders", () => {
   it("builds every id form of section 4.3", () => {
@@ -245,5 +245,36 @@ describe("normalizeElementId", () => {
     if (!asDir.ok) expect(asDir.error).toContain("is a file");
     expect(norm("").ok).toBe(false);
     expect(norm("nowhere/at/all").ok).toBe(false);
+  });
+
+  it("suggests the directory of that name first, then near names, then those that contain the text", () => {
+    const tree = makeWorld({
+      files: [
+        { path: "examples/tutorial/flaskr/auth.py" },
+        { path: "examples/tutorial/flaskr/blog.py" },
+        { path: "src/flask/app.py" },
+        { path: "src/flask/sansio/app.py" },
+        { path: "test/a.py" },
+        { path: "docs/index.rst" },
+      ],
+    });
+    const candidates = (input: string) => {
+      const r = normalizeElementId(input, tree.model);
+      return r.ok ? [] : (r.candidates ?? []);
+    };
+    // `flask` names src/flask (and not only the longer names that contain it)
+    expect(candidates("dir:flask")[0]).toBe("dir:src/flask");
+    expect(candidates("flask").filter((c) => c.startsWith("dir:"))[0]).toBe("dir:src/flask");
+    expect(candidates("dir:flask")).toEqual([
+      "dir:src/flask",
+      "dir:src/flask/sansio",
+      "dir:examples/tutorial/flaskr",
+    ]);
+    // a near name: a plural, a typo
+    expect(candidates("dir:tests")).toEqual(["dir:test"]);
+    expect(candidates("dir:doc")).toEqual(["dir:docs"]);
+    // a path suffix
+    expect(candidates("dir:flask/sansio")).toEqual(["dir:src/flask/sansio"]);
+    expect(candidates("dir:zzz")).toEqual([]);
   });
 });

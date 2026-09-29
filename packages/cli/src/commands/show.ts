@@ -1,4 +1,3 @@
-import { basename } from "node:path";
 import { hashText } from "@xpl/core";
 import type { Args } from "../args.js";
 import type { CommandSpec } from "../command.js";
@@ -16,6 +15,7 @@ import {
   type RefEntry,
 } from "../ref-data.js";
 import { openWorkspace, type Workspace } from "../repo.js";
+import { detectRepoName } from "../repo-name.js";
 import { resolveTarget, type Target } from "../target.js";
 
 /** Code lines printed before `show` cuts a symbol or file (`--max-lines 0` prints everything). */
@@ -73,7 +73,7 @@ async function showListing(
   const tree = buildOutline(ws.model, target.id, {
     depth: 1,
     keys: false,
-    repoName: basename(ctx.root) || "repo",
+    repoName: (await detectRepoName(ctx.root)).name,
   });
   const refs = args.flag("refs")
     ? {

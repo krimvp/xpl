@@ -18,6 +18,8 @@ export interface SymbolEntry {
   span: Span;
   /** The pack's pre-dedup path (`symbol.path` without a `~N` suffix). */
   basePath: string;
+  /** `SymbolDraft.anchorOnly`: never looked up by name, never the target of a reference. */
+  anchorOnly?: boolean;
 }
 
 export interface AssembledSymbols {
@@ -122,7 +124,9 @@ export function assembleSymbols(
         if (best !== undefined) symbol.parent = `${file}#${finalPaths[best]!}`;
       }
     }
-    entries.push({ symbol, span: draft.range, basePath: draft.path });
+    const entry: SymbolEntry = { symbol, span: draft.range, basePath: draft.path };
+    if (draft.anchorOnly) entry.anchorOnly = true;
+    entries.push(entry);
   });
   return { entries };
 }

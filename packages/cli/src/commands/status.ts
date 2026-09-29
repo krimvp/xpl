@@ -3,15 +3,46 @@ import {
   deriveGraph,
   parseId,
   reresolveExplainer,
+  resolveStubPolicy,
   validateExplainer,
+  type DerivedGraph,
   type DriftedElement,
+  type Ghost,
   type ResolveReport,
+  type StubMode,
 } from "@xpl/core";
 import type { CommandSpec } from "../command.js";
 import { listText, plural, renderIssues } from "../format.js";
 import { readRequests, type QueuedRequest } from "../requests.js";
 import { loadExplainer, openWorkspace } from "../repo.js";
 import { renderResolveReport } from "./resolve.js";
+
+/** A graph view that draws more ghost boxes than this stops in too many places to be read. */
+export const CROWDED_GHOSTS = 12;
+/** Ghost ids named in the text output (`--json` lists all of them). */
+const TOP_GHOSTS = 5;
+
+/** Where a graph view stops: its ghost boxes and the stubs that lead to them. */
+interface GhostStatus {
+  /** The view's stub policy (`view.stubs`, defaults filled in). */
+  mode: StubMode;
+  max: number;
+  /** Ghost boxes drawn, and the stubs (dashed edges) that lead to them. */
+  total: number;
+  stubs: number;
+  /** More than `CROWDED_GHOSTS` ghosts: too many to read. */
+  crowded: boolean;
+  /** Every ghost, the most referenced first: `id` is what `hidden` takes. */
+  list: {
+    id: string;
+    kind: Ghost["kind"];
+    label: string;
+    count: number;
+    direction: Ghost["direction"];
+  }[];
+  /** Every stub id (`hidden` takes those too). */
+  stubIds: string[];
+}
 
 interface ViewStatus {
   id: string;
@@ -21,8 +52,61 @@ interface ViewStatus {
   nodes: { total: number; unexplained: string[] };
   /** Graph views: edges shown. `stored` ones (llm/user) need a summary; static ones may have one. */
   edges: { total: number; unexplained: { id: string; stored: boolean }[] };
+  /** Graph views: where the view stops. */
+  ghosts?: GhostStatus;
   /** Sequence views. */
   steps: { total: number; unexplained: string[] };
+}
+
+/** A tour, and the steps that no longer point at anything (their focus ids, or their view, are gone). */
+interface TourStatus {
+  id: string;
+  title: string;
+  steps: number;
+  unresolved: { step: string; focus: string[]; missingView?: string }[];
+}
+
+/** `stubs` is the view's own field (`view.stubs`), as stored: the defaults are filled in here. */
+function ghostStatus(graph: DerivedGraph, stubs: unknown): GhostStatus {
+  const policy = resolveStubPolicy(stubs);
+  const list = [...graph.ghosts]
+    .sort((a, b) => b.count - a.count || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+    .map((g) => ({
+      id: g.id,
+      kind: g.kind,
+      label: g.label,
+      count: g.count,
+      direction: g.direction,
+    }));
+  return {
+    ...policy,
+    total: graph.ghosts.length,
+    stubs: graph.stubs.length,
+    crowded: graph.ghosts.length > CROWDED_GHOSTS,
+    list,
+    stubIds: graph.stubs.map((s) => s.id),
+  };
+}
+
+function tourStatuses(model: ExplainerModel): TourStatus[] {
+  return model.tours.map((tour) => {
+    const steps = Array.isArray(tour.steps) ? tour.steps : [];
+    const unresolved: TourStatus["unresolved"] = [];
+    for (const step of steps) {
+      const focus = (Array.isArray(step.focus) ? step.focus : []).filter(
+        (id) => typeof id !== "string" || !model.hasElement(id),
+      );
+      const missingView = model.view(step.view) === undefined ? step.view : undefined;
+      if (focus.length > 0 || missingView !== undefined) {
+        unresolved.push({
+          step: step.id,
+          focus: focus.map(String),
+          ...(missingView !== undefined ? { missingView: String(missingView) } : {}),
+        });
+      }
+    }
+    return { id: tour.id, title: tour.title, steps: steps.length, unresolved };
+  });
 }
 
 function viewStatuses(model: ExplainerModel): ViewStatus[] {
@@ -48,6 +132,7 @@ function viewStatuses(model: ExplainerModel): ViewStatus[] {
       status.edges.unexplained = graph.edges
         .filter((e) => !(typeof e.summary === "string" && e.summary.trim() !== ""))
         .map((e) => ({ id: e.id, stored: e.stored }));
+      status.ghosts = ghostStatus(graph, view.stubs);
     } else {
       const participants = Array.isArray(view.participants) ? view.participants : [];
       status.nodes.total = participants.length;
@@ -68,6 +153,58 @@ function edgeIds(ids: readonly string[], max = 8): string {
   return ids.length <= max
     ? ids.join(", ")
     : `${ids.slice(0, max).join(", ")}, ... +${ids.length - max} more (--json lists all)`;
+}
+
+/** The text lines about where a graph view stops: counts, the most referenced ghosts, a crowding warning. */
+function ghostLines(g: GhostStatus): string[] {
+  const policy = g.mode === "top" ? `top ${g.max}` : g.mode;
+  if (g.total === 0) {
+    return [
+      g.mode === "none"
+        ? "  ghosts: none drawn (stubs: none)"
+        : "  ghosts: none (nothing leaves the view)",
+    ];
+  }
+  const shown = g.list.slice(0, TOP_GHOSTS).map((ghost) => `${ghost.id} ×${ghost.count}`);
+  const lines = [
+    `  ghosts: ${g.total} (${plural(g.stubs, "stub")}; stubs: ${policy}), most referenced: ${shown.join(", ")}${
+      g.list.length > TOP_GHOSTS
+        ? `, ... +${g.list.length - TOP_GHOSTS} more (--json lists all, and the stub ids)`
+        : ""
+    }`,
+  ];
+  if (g.crowded) {
+    lines.push(
+      `  warning: ${g.total} ghosts: this view stops in too many places to read (more than ${CROWDED_GHOSTS}). ` +
+        (g.mode === "all"
+          ? 'Set "stubs": {"mode": "top"} (what a view without "stubs" does: the 8 most referenced ghosts, the rest folded), '
+          : `Lower "stubs": {"max": ${g.max}} to 8 or fewer, `) +
+        'put ghost ids in "hidden" (`status --json`: views[].ghosts.list), or add "excludeFiles"',
+    );
+  }
+  return lines;
+}
+
+/** `t3 (focus: sym:a#gone, edge:x)`, `t5 (view view:gone is gone)`. */
+function unresolvedStep(step: TourStatus["unresolved"][number]): string {
+  const parts = [
+    ...(step.focus.length > 0 ? [`focus: ${step.focus.join(", ")}`] : []),
+    ...(step.missingView !== undefined ? [`view ${step.missingView} is gone`] : []),
+  ];
+  return `${step.step} (${parts.join("; ")})`;
+}
+
+function tourLines(tours: readonly TourStatus[]): string[] {
+  const lines = [`tours (${tours.length}):`];
+  for (const tour of tours) {
+    lines.push(
+      `  ${tour.id} (${plural(tour.steps, "step")}): ` +
+        (tour.unresolved.length === 0
+          ? "every focus id resolves"
+          : `${tour.unresolved.length === 1 ? "1 step points" : `${tour.unresolved.length} steps point`} at something that is gone: ${tour.unresolved.map(unresolvedStep).join(", ")}`),
+    );
+  }
+  return lines;
 }
 
 /**
@@ -108,11 +245,15 @@ function unexplainedConcepts(model: ExplainerModel): string[] {
 export const statusCommand: CommandSpec = {
   name: "status",
   usage: "xpl status <explainer>",
-  summary: "To-do list: unexplained elements, drifted, missing, queued requests",
+  summary: "To-do list: unexplained elements, drifted, missing, queued requests, ghosts, tours",
   details: [
     "The skill's to-do list for an explainer, without changing anything:",
     "  - per view, the visible nodes, edges and steps that have no `summary` (static edges are optional),",
+    "  - per graph view, where it stops: the ghost boxes and stubs it draws (counts, and the most referenced ghost",
+    "    ids; --json lists every ghost id with its count, and every stub id, in views[].ghosts), with a warning",
+    `    above ${CROWDED_GHOSTS} ghosts (a view without "stubs" keeps the 8 most referenced and folds the rest),`,
     "  - concepts without a summary,",
+    "  - tours: id, number of steps, and the steps whose focus ids (or view) no longer resolve,",
     "  - llm elements whose anchors drifted (re-explain them, keeping userFields) and missing anchors; drift the",
     "    user owns is counted apart (ask the user),",
     "  - broken references: ids that vanished from the index (overlays of deleted symbols, include, members,",
@@ -132,6 +273,7 @@ export const statusCommand: CommandSpec = {
       mode: "lenient",
     }).filter((issue) => issue.code === "unknown-id");
     const stale = staleOverlays(model);
+    const tours = tourStatuses(model);
     const drift = driftCounts(report);
     const queue = readRequests(ctx.root);
     if (queue.error) ctx.warn(queue.error);
@@ -165,6 +307,7 @@ export const statusCommand: CommandSpec = {
         todo,
         views,
         concepts: { unexplained: concepts },
+        tours,
         anchors: { total: report.total, counts: report.counts },
         drifted: report.drifted,
         driftedOther: report.driftedOther,
@@ -206,6 +349,7 @@ export const statusCommand: CommandSpec = {
               ? `; ${staticEdges.length} static without summary (optional): ${edgeIds(staticEdges)}`
               : ""),
         );
+        if (view.ghosts) lines.push(...ghostLines(view.ghosts));
       } else {
         lines.push(
           view.steps.unexplained.length === 0
@@ -217,6 +361,7 @@ export const statusCommand: CommandSpec = {
     if (concepts.length > 0) {
       lines.push("", `concepts without summary (${concepts.length}): ${listText(concepts, 8)}`);
     }
+    if (tours.length > 0) lines.push("", ...tourLines(tours));
     if (report.drifted.length > 0 || report.missing.length > 0 || report.driftedOther.length > 0) {
       lines.push("", ...renderResolveReport(report));
     }

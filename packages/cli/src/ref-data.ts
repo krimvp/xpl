@@ -70,6 +70,9 @@ const HOP_KINDS: ReadonlySet<RefKind> = new Set<RefKind>(["call", "type-ref", "r
 /** Implementations listed under one interface line; `--limit 0` lists them all. */
 export const MAX_IMPLS_PER_HOP = 10;
 
+/** Children listed under one line of a call hierarchy; `--max-children 0` lists them all. */
+export const DEFAULT_MAX_CHILDREN = 15;
+
 /** Parses `--kind`: reference kinds (`call`) and edge-kind spellings (`calls`) are both accepted. */
 export function parseKinds(values: readonly string[]): Set<RefKind> | undefined {
   if (values.length === 0) return undefined;
@@ -179,11 +182,13 @@ export function countByKind(entries: readonly RefEntry[]): string {
 
 export interface RefNode {
   entry: TreeEntry;
-  /** `seen`: expanded elsewhere in this tree; `cycle`: an ancestor of this line. */
+  /** `seen`: expanded above, as far down as this line would be; `cycle`: an ancestor of this line. */
   note?: "seen" | "cycle";
   children?: RefNode[];
   /** Implementations under this line that were cut (`MAX_IMPLS_PER_HOP`). */
   moreImpls?: number;
+  /** References under this line that were left out (`maxChildren`). */
+  moreChildren?: number;
 }
 
 export interface RefTree {
@@ -196,6 +201,8 @@ export interface RefTree {
   hops: number;
   /** Implementations that were left out because they sit in test files (`--tests` shows them). */
   hiddenTests: number;
+  /** First-level references left out because of `maxChildren` (only for a hierarchy: `depth` 2 or more). */
+  more: number;
 }
 
 function symbolOf(model: IndexModel, elementId: string): IndexedSymbol | undefined {
@@ -233,33 +240,54 @@ function implEntry(
  * declaration, which has no body of its own. For incoming references, a method that implements an
  * interface method gets that method as a first-level `impl` line, with the callers of the interface method
  * below it. Hops cost no depth.
+ *
+ * A subtree is printed once: an element expanded above is not expanded again (its later lines are marked
+ * `seen`, unless nothing was listed below it above), unless the earlier expansion went less deep than this one
+ * would (it was met on the last levels first), and then the deeper one is printed too. `maxChildren` (0 or absent: no cap) lists at most that many
+ * references under a line, the rest are counted (`moreChildren`); the subject's own list is capped only for a
+ * hierarchy (`depth` 2 or more), a flat list is cut by `limit` alone.
  */
 export function buildRefTree(
   model: IndexModel,
   target: Target,
   direction: RefDirection,
-  opts: { depth: number; kinds?: ReadonlySet<RefKind>; limit: number; tests?: boolean },
+  opts: {
+    depth: number;
+    kinds?: ReadonlySet<RefKind>;
+    limit: number;
+    tests?: boolean;
+    maxChildren?: number;
+  },
 ): RefTree {
   const state = {
     budget: opts.limit > 0 ? opts.limit : Number.POSITIVE_INFINITY,
     truncated: false,
-    expanded: new Set<string>([target.id]),
+    /** Element id -> the depth it was expanded to (levels below it that were listed). */
+    expanded: new Map<string, number>([[target.id, opts.depth]]),
+    /** Elements expanded above with nothing below them: a repeat of one has no subtree that was printed above. */
+    leaves: new Set<string>(),
     path: new Set<string>([target.id]),
     hopped: new Set<string>(),
     hiddenTests: 0,
   };
+  const cap = opts.maxChildren !== undefined && opts.maxChildren > 0 ? opts.maxChildren : Infinity;
   let total = 0;
   let hops = 0;
+  let rootMore = 0;
 
-  /** Expands `id` (an element id) below a node, once per element. */
+  /** Expands `id` (an element id) below a node, once per element (and depth). */
   const expandId = (node: RefNode, id: string, depth: number): void => {
     if (state.path.has(id)) node.note = "cycle";
-    else if (state.expanded.has(id)) node.note = "seen";
+    else if (state.leaves.has(id)) return;
+    else if ((state.expanded.get(id) ?? 0) >= depth) node.note = "seen";
     else {
-      state.expanded.add(id);
+      state.expanded.set(id, depth);
       state.path.add(id);
       try {
-        node.children = expand(resolveTarget(model, id), depth);
+        const found = expand(resolveTarget(model, id), depth);
+        node.children = found.nodes;
+        if (found.more > 0) node.moreChildren = found.more;
+        else if (found.nodes.length === 0) state.leaves.add(id);
       } catch {
         // an endpoint that is not in the index (stale ids): leave it unexpanded
       }
@@ -328,7 +356,9 @@ export function buildRefTree(
       else {
         state.hopped.add(node.entry.id);
         state.path.add(node.entry.id);
-        node.children = expand(resolveTarget(model, node.entry.id), depth, true);
+        const found = expand(resolveTarget(model, node.entry.id), depth, true);
+        node.children = found.nodes;
+        if (found.more > 0) node.moreChildren = found.more;
         state.path.delete(node.entry.id);
       }
       out.push(node);
@@ -336,15 +366,27 @@ export function buildRefTree(
     return out;
   };
 
-  const expand = (current: Target, depth: number, viaInterface = false): RefNode[] => {
+  const expand = (
+    current: Target,
+    depth: number,
+    viaInterface = false,
+  ): { nodes: RefNode[]; more: number } => {
     const nodes: RefNode[] = [];
     // The other implementers are siblings, not callers: leave them out of a hop's callers (unless asked for).
     const kinds =
       opts.kinds ??
       (viaInterface ? new Set(REF_KINDS.filter((k) => k !== "implements")) : undefined);
     const entries = collectRefs(model, current, direction, kinds);
-    if (current === target) total = entries.length;
+    const isRoot = current === target;
+    if (isRoot) total = entries.length;
+    // a flat list is the whole answer (`total` says how long it is); in a hierarchy every level is capped
+    const limitHere = isRoot && opts.depth <= 1 ? Infinity : cap;
+    let more = 0;
     for (const entry of entries) {
+      if (nodes.length >= limitHere) {
+        more = entries.length - nodes.length;
+        break;
+      }
       if (state.budget <= 0) {
         state.truncated = true;
         break;
@@ -355,15 +397,23 @@ export function buildRefTree(
       if (direction === "out" && HOP_KINDS.has(entry.kind)) addImplementations(node, depth);
       nodes.push(node);
     }
+    if (isRoot) rootMore = more;
     if (direction === "in") {
       const found = interfaceHops(current, depth);
-      if (current === target) hops = found.length;
+      if (isRoot) hops = found.length;
       nodes.push(...found);
     }
-    return nodes;
+    return { nodes, more };
   };
-  const nodes = expand(target, opts.depth);
-  return { nodes, total, truncated: state.truncated, hops, hiddenTests: state.hiddenTests };
+  const { nodes } = expand(target, opts.depth);
+  return {
+    nodes,
+    total,
+    truncated: state.truncated,
+    hops,
+    hiddenTests: state.hiddenTests,
+    more: rootMore,
+  };
 }
 
 export function renderRefTree(
@@ -371,6 +421,8 @@ export function renderRefTree(
   direction: RefDirection,
   subject: string,
   indent = 1,
+  /** References that a `maxChildren` cap left out of this list. */
+  more = 0,
 ): string[] {
   const out: string[] = [];
   for (const node of nodes) {
@@ -383,15 +435,29 @@ export function renderRefTree(
     const line = refLine(node.entry, needsFrom(node.entry, direction, subject));
     out.push(`${"  ".repeat(indent)}${line}${hop}${note}`);
     if (node.children) {
-      out.push(...renderRefTree(node.children, direction, node.entry.id, indent + 1));
-    }
+      out.push(
+        ...renderRefTree(
+          node.children,
+          direction,
+          node.entry.id,
+          indent + 1,
+          node.moreChildren ?? 0,
+        ),
+      );
+    } else if (node.moreChildren) out.push(moreChildrenLine(node.moreChildren, indent + 1));
     if (node.moreImpls) {
       out.push(
         `${"  ".repeat(indent + 1)}... ${node.moreImpls} more implementations (--limit 0 lists them all)`,
       );
     }
   }
+  if (more > 0) out.push(moreChildrenLine(more, indent));
   return out;
+}
+
+/** `... +5 more (--max-children 0 lists all)`: what a capped list left out. */
+export function moreChildrenLine(count: number, indent: number): string {
+  return `${"  ".repeat(indent)}... +${count} more (--max-children 0 lists all)`;
 }
 
 /** JSON form of a tree: entries with their children. */
@@ -400,6 +466,7 @@ export function refTreeJson(nodes: readonly RefNode[]): unknown[] {
     ...node.entry,
     ...(node.note ? { note: node.note } : {}),
     ...(node.moreImpls ? { moreImpls: node.moreImpls } : {}),
+    ...(node.moreChildren ? { moreChildren: node.moreChildren } : {}),
     ...(node.children ? { children: refTreeJson(node.children) } : {}),
   }));
 }

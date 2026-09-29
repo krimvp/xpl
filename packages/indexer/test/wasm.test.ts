@@ -43,6 +43,11 @@ const SAMPLES: Record<GrammarId, { source: string; root: string; contains: strin
     root: "document",
     contains: ["pair"],
   },
+  toml: {
+    source: '[project.scripts]\nflask = "flask.cli:main"\n',
+    root: "document",
+    contains: ["table", "dotted_key", "pair"],
+  },
 };
 
 describe("tree-sitter wasm grammars", () => {

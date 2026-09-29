@@ -144,6 +144,30 @@ export function isMainGuard(stmt: Node): boolean {
   );
 }
 
+/** `TYPE_CHECKING`, `typing.TYPE_CHECKING`, `t.TYPE_CHECKING`, parenthesised or not (not `not TYPE_CHECKING`). */
+function isTypeCheckingCondition(condition: Node | null | undefined): boolean {
+  let n = condition ?? undefined;
+  while (n?.type === "parenthesized_expression") n = named(n)[0];
+  if (n?.type === "identifier") return n.text === "TYPE_CHECKING";
+  return n?.type === "attribute" && n.childForFieldName("attribute")?.text === "TYPE_CHECKING";
+}
+
+/**
+ * Is `node` inside the body of an `if TYPE_CHECKING:` (or `elif`)? That constant is False at run time: what
+ * the block imports is there for type checkers only. The `else` branch runs, so it does not count.
+ */
+export function underTypeChecking(node: Node): boolean {
+  for (let child: Node = node, n = node.parent; n; child = n, n = n.parent) {
+    if (
+      (n.type === "if_statement" || n.type === "elif_clause") &&
+      n.childForFieldName("consequence")?.id === child.id &&
+      isTypeCheckingCondition(n.childForFieldName("condition"))
+    )
+      return true;
+  }
+  return false;
+}
+
 const CLAUSES = new Set([
   "elif_clause",
   "else_clause",

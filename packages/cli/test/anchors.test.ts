@@ -57,23 +57,38 @@ describe("xpl anchors", () => {
     expect(out).toContain("  3. test  test/retry.test.ts  ok  lines 1-");
   });
 
-  it("caps the code of an anchor, and --full / --max-lines lift or move the cap", async () => {
+  it("caps the code of an anchor to its head and its tail, and --full / --max-lines lift or move the cap", async () => {
     const capped = await xpl(demo, "anchors", "demo", DISPATCH);
     const lines = capped.out.split("\n");
     expect(lines[1]).toBe("  1. definition  src/runner.ts#Runner.dispatch  ok  lines 42-88");
-    expect(lines.filter((l) => /^ {5}\d+ +\d+│/.test(l))).toHaveLength(12);
+    const code = (out: string) => out.split("\n").filter((l) => /^ {5}\d+ +\d+│/.test(l));
+    expect(code(capped.out)).toHaveLength(12); // 8 from the start, 4 from the end
     expect(capped.out).toContain(
-      "     ... 35 more lines (54-88); --full shows all, or `xpl show src/runner.ts#Runner.dispatch --lines 54-88`",
+      "     ... 35 lines elided (50-84); --full shows all, or `xpl show src/runner.ts#Runner.dispatch --lines 50-84`",
     );
+    // the end of the span is checkable: the last lines follow the elision, in order
+    const shown = code(capped.out).map((l) => Number(/^ {5}(\d+) /.exec(l)![1]));
+    expect(shown).toEqual([42, 43, 44, 45, 46, 47, 48, 49, 85, 86, 87, 88]);
+    const at = lines.findIndex((l) => l.includes("lines elided"));
+    expect(lines[at - 1]).toMatch(/^ {5}49 +7│/);
+    expect(lines[at + 1]).toMatch(/^ {5}85 +43│/);
+    expect(lines[at + 4]).toMatch(/^ {5}88 +46│ {3}\}$/);
     const full = await xpl(demo, "anchors", "demo", DISPATCH, "--full");
-    expect(full.out.split("\n").filter((l) => /^ {5}\d+ +\d+│/.test(l))).toHaveLength(47);
-    expect(full.out).not.toContain("more lines");
+    expect(code(full.out)).toHaveLength(47);
+    expect(full.out).not.toContain("elided");
     const three = await xpl(demo, "anchors", "demo", DISPATCH, "--max-lines", "3");
-    expect(three.out.split("\n").filter((l) => /^ {5}\d+ +\d+│/.test(l))).toHaveLength(3);
+    expect(code(three.out).map((l) => Number(/^ {5}(\d+) /.exec(l)![1]))).toEqual([42, 43, 88]);
     const none = await xpl(demo, "anchors", "demo", DISPATCH, "--max-lines", "0");
-    expect(none.out.split("\n").filter((l) => /^ {5}\d+ +\d+│/.test(l))).toHaveLength(47);
+    expect(code(none.out)).toHaveLength(47);
     const bad = await xpl(demo, "anchors", "demo", "--max-lines", "many");
     expect(bad.code).toBe(2);
+    // --json keeps the head and the tail, and says which lines were cut
+    const json = await xplJson<any>(demo, "anchors", "demo", DISPATCH);
+    const anchor = json.json.elements[0].anchors[0];
+    expect(anchor.lines.map((l: any) => l.line)).toEqual([
+      42, 43, 44, 45, 46, 47, 48, 49, 85, 86, 87, 88,
+    ]);
+    expect(anchor).toMatchObject({ moreLines: 35, elided: { startLine: 50, endLine: 84 } });
   });
 
   it("takes a view (its steps), a tour (its steps' code), and the loose id forms", async () => {
@@ -116,12 +131,139 @@ describe("xpl anchors", () => {
     ).toBe(0);
     const tour = await xpl(dir, "anchors", "demo", "tour:intro");
     expect(tour.out.split("\n").slice(0, 3)).toEqual([
-      "tour:intro/t1  (tour-step)  1 anchor",
+      "tour:intro/t1  (tour-step, llm)  1 anchor",
       "  1. call-site  src/runner.ts#Runner.dispatch +4..4  ok  lines 46-46",
       "     46 4│       const job = await this.queue.pop();",
     ]);
     const step = await xpl(dir, "anchors", "demo", "tour:intro/t1");
-    expect(step.out).toContain("tour:intro/t1  (tour-step)");
+    expect(step.out).toContain("tour:intro/t1  (tour-step, llm)");
+  });
+
+  it("a tour step without a code override shows the derived focus, marked as derived", async () => {
+    const dir = cloneDir(demo);
+    const steps = [
+      { id: "t1", view: "view:dispatch", focus: ["dispatch:3"] },
+      { id: "t2", view: "view:overview", focus: ["grp:scheduling"], note: "whole files" },
+      { id: "t3", view: "view:dispatch", focus: ["concept:retry-policy", "concept:bare"] },
+      { id: "t4", view: "view:overview", focus: [] },
+      {
+        id: "t5",
+        view: "view:dispatch",
+        focus: ["dispatch:1"],
+        code: [
+          {
+            file: "src/runner.ts",
+            symbol: "Runner.dispatch",
+            find: "await this.queue.pop()",
+            role: "call-site",
+          },
+        ],
+      },
+    ];
+    expect(
+      (
+        await apply(dir, {
+          concepts: [{ id: "concept:bare", label: "Bare" }],
+          tours: [{ id: "tour:talk", title: "Talk", steps }],
+        })
+      ).code,
+    ).toBe(0);
+
+    // one step: what dispatch:3 focuses is its call site and the definition it calls
+    const one = await xpl(dir, "anchors", "demo", "tour:talk/t1");
+    expect(one.code).toBe(0);
+    expect(one.out.split("\n")).toEqual([
+      "tour:talk/t1  (tour step in view:dispatch, no code override: what its focus shows, derived)  2 ranges",
+      "  1. call-site  src/runner.ts#Runner.dispatch +34..36  ok  lines 76-78  [derived from dispatch:3]",
+      "     76 34│         await this.queue.requeue(",
+      "     77 35│           job,",
+      "     78 36│           backoff);",
+      "  2. definition  src/queue.ts#Queue.requeue  ok  lines 87-90  [derived from dispatch:3]",
+      "     87 0│   async requeue(job: Job, delayMs: number): Promise<void> {",
+      "     88 1│     this.inflight.delete(job.id);",
+      "     89 2│     this.ready.push({ ...job, attempts: job.attempts + 1, availableAt: Date.now() + delayMs });",
+      "     90 3│   }",
+      "",
+      "2 derived ranges of 1 tour step without a code override (not stored anchors)",
+    ]);
+
+    // the whole tour: derived steps and the step with a code override, in the tour's order
+    const tour = await xpl(dir, "anchors", "demo", "tour:talk");
+    const headers = tour.out.split("\n").filter((l) => /^tour:/.test(l));
+    expect(headers).toEqual([
+      "tour:talk/t1  (tour step in view:dispatch, no code override: what its focus shows, derived)  2 ranges",
+      "tour:talk/t2  (tour step in view:overview, no code override: what its focus shows, derived)  2 ranges",
+      "tour:talk/t3  (tour step in view:dispatch, no code override: what its focus shows, derived)  3 ranges",
+      "tour:talk/t4  (tour step in view:overview, no code override: what its focus shows, derived)  0 ranges",
+      "tour:talk/t5  (tour-step, llm)  1 anchor",
+    ]);
+    // a group focuses the whole files of its members: capped like every anchor
+    expect(tour.out).toContain(
+      "  1. definition  src/runner.ts  ok  lines 1-111  [derived from grp:scheduling]",
+    );
+    expect(tour.out).toMatch(
+      /lines elided \(9-107\); --full shows all, or `xpl show src\/runner\.ts --lines 9-107`/,
+    );
+    // a focus without code says so; an empty focus too
+    expect(tour.out).toContain(
+      "  no code for concept:bare: it has no anchors, or none that resolves",
+    );
+    expect(tour.out).toContain("  the focus is empty: this step shows no code");
+    // stored and derived are counted apart
+    expect(tour.out).toMatch(
+      /^1 anchor of 1 element: ok 1, moved 0, drifted 0, missing 0; 7 derived ranges of 4 tour steps without a code override \(not stored anchors\)$/m,
+    );
+
+    // --json marks them too, and leaves them out of the anchor counts
+    const json = await xplJson<any>(dir, "anchors", "demo", "tour:talk/t1");
+    expect(json.json.anchors).toEqual({
+      total: 0,
+      counts: { ok: 0, moved: 0, drifted: 0, missing: 0 },
+    });
+    expect(json.json.elements[0]).toMatchObject({
+      id: "tour:talk/t1",
+      type: "tour-step",
+      view: "view:dispatch",
+      derived: true,
+      focus: ["dispatch:3"],
+    });
+    expect(json.json.elements[0].anchors[0]).toMatchObject({
+      derived: true,
+      from: "dispatch:3",
+      role: "call-site",
+      where: "src/runner.ts#Runner.dispatch +34..36",
+      range: { startLine: 76, endLine: 78 },
+    });
+    const noCode = await xplJson<any>(dir, "anchors", "demo", "tour:talk/t3");
+    expect(noCode.json.elements[0].noCode).toEqual(["concept:bare"]);
+    // a step with a code override is the stored anchors, as before
+    const stored = await xpl(dir, "anchors", "demo", "tour:talk/t5");
+    expect(stored.out).toContain("tour:talk/t5  (tour-step, llm)  1 anchor");
+    expect(stored.out).not.toContain("derived");
+    // a tour that does not exist gets the closest one
+    const unknown = await xpl(dir, "anchors", "demo", "tour:tal");
+    expect(unknown.code).toBe(1);
+    expect(unknown.err).toContain("Did you mean: tour:talk");
+  });
+
+  it("does not elide a line or two: that would be no saving", async () => {
+    // concept:retry-policy's first anchor is 12 lines (72-83)
+    const fits = await xpl(demo, "anchors", "demo", "concept:retry-policy", "--max-lines", "10");
+    const first = fits.out.slice(0, fits.out.indexOf("  2. config"));
+    expect(first).not.toContain("elided");
+    expect(first.match(/^ {5}\d+ +\d+│/gm)).toHaveLength(12);
+    const cut = await xpl(demo, "anchors", "demo", "concept:retry-policy", "--max-lines", "9");
+    expect(cut.out).toContain("... 3 lines elided (78-80);");
+  });
+
+  it("--max-lines 2 keeps the start, and says how many lines follow", async () => {
+    const { out } = await xpl(demo, "anchors", "demo", DISPATCH, "--max-lines", "2");
+    const lines = out.split("\n");
+    expect(lines[2]).toMatch(/^ {5}42 0│/);
+    expect(lines[3]).toMatch(/^ {5}43 1│/);
+    expect(lines[4]).toBe(
+      "     ... 45 lines elided (44-88); --full shows all, or `xpl show src/runner.ts#Runner.dispatch --lines 44-88`",
+    );
   });
 
   it("says so for elements that exist but have no stored anchors, and fails for unknown ones", async () => {

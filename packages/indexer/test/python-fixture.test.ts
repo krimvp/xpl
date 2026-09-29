@@ -191,10 +191,27 @@ describe("py-jobrunner: references from Runner.dispatch", () => {
     }
   });
 
-  it("references nothing else: the whole of dispatch is these 14 references", () => {
+  it("references nothing else: the whole of dispatch is these 25 references (13 calls, 11 reads, 1 write)", () => {
     const from = index.refs.filter((r) => r.from === dispatch);
-    expect(count(from, (r) => r.kind)).toEqual({ call: 13, write: 1 });
-    expect(from).toHaveLength(14);
+    expect(count(from, (r) => r.kind)).toEqual({ call: 13, read: 11, write: 1 });
+    expect(from).toHaveLength(25);
+  });
+
+  it("reads: the fields of the job, the result and the configuration; instance attributes are not symbols", () => {
+    const reads = index.refs.filter((r) => r.from === dispatch && r.kind === "read");
+    expect(reads.map((r) => r.to.slice(r.to.indexOf("#") + 1)).sort()).toEqual([
+      "Job.attempts",
+      "Job.attempts",
+      "Job.id",
+      "Job.id",
+      "RetryConfig.max_retries",
+      "RunResult.error",
+      "RunResult.ok",
+      "RunnerConfig.idle_delay_ms",
+      "RunnerConfig.retry",
+      "RunnerConfig.retry",
+      "RunnerConfig.timeout_ms",
+    ]);
   });
 });
 
@@ -319,6 +336,7 @@ describe("py-jobrunner: imports, heritage, the demo and the tests", () => {
       call: 93,
       write: 4,
       extends: 1,
+      read: 74,
     });
   });
 });

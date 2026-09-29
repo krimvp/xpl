@@ -504,9 +504,12 @@ describe("moving through a tour", () => {
     store.drillIn("sym:src/a.ts#A.run");
     store.collapse("sym:src/a.ts#A.run");
     store.toggleEdgeKind("calls");
+    store.setStubMode("all");
     expect(store.getState().dirty).toBe(false);
     expect(store.getState().explainer).toBe(bundle.explainer);
     store.exitPresent();
+    store.setStubMode("all");
+    expect(store.getState().dirty).toBe(true);
     store.toggleEdgeKind("calls");
     expect(store.getState().dirty).toBe(true);
   });

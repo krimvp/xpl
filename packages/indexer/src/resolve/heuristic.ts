@@ -23,7 +23,11 @@
  *    the facts of its own file give it (`bus = new EventBus()`);
  * 5. last resort, only when the receiver's type is completely unknown: a class named like the qualifier
  *    (case-insensitive) that has the member (`queue.pop()` -> `Queue.pop`), preferring the same file, then
- *    a class the file imports, then the same directory; ambiguity drops the site.
+ *    a class the file imports, then the same directory; ambiguity drops the site. Calls and writes only.
+ *
+ * A `read` site resolves the same way (1-4) but only to variables: package-level variables and constants,
+ * fields and properties. `import type` / `TYPE_CHECKING` bindings (`ImportBinding.typeOnly`) are `type-ref`
+ * references instead of `import`s.
  *
  * Receivers whose type is known but not part of the repository (`Map`, `Array`, `Promise`, a bare npm
  * import) are "opaque": nothing is guessed for them.
@@ -105,7 +109,7 @@ const isTypeLike = (s: IndexedSymbol): boolean =>
   s.kind === "enum" ||
   s.kind === "other";
 
-const WANT: Record<"any" | "call" | "type" | "write", Want> = {
+const WANT: Record<"any" | "call" | "type" | "write" | "read", Want> = {
   any: () => true,
   call: (s) => s.kind !== "interface" && s.kind !== "type" && s.kind !== "key",
   type: isTypeLike,
@@ -115,6 +119,8 @@ const WANT: Record<"any" | "call" | "type" | "write", Want> = {
     s.kind !== "type" &&
     s.kind !== "enum" &&
     s.kind !== "key",
+  // Only variables and fields are read: a function used as a value is not a read of it, a class is not either.
+  read: (s) => s.kind === "variable",
 };
 
 /** Safety bound for chained evaluations (facts are memoised and cycle-safe, so this is rarely reached). */
@@ -214,6 +220,7 @@ class Resolver {
       pushTo(this.byDir, index.dir, index);
     }
     for (const entry of input.entries) {
+      if (entry.anchorOnly) continue; // a test block: its title is not a name in the code
       const index = this.files.get(entry.symbol.file);
       if (!index) continue;
       pushTo(index.symbols, entry.basePath, entry.symbol);
@@ -296,9 +303,10 @@ class Resolver {
   private resolveBinding(file: ResolverFile, binding: ImportBinding): void {
     const ctx = this.contextAt(file, binding.site);
     const entity = this.bindingEntity(file.path, binding);
-    if (entity?.k === "sym") this.add(ctx, entity.sym.id, "import", binding.site);
+    const kind = binding.typeOnly ? "type-ref" : "import";
+    if (entity?.k === "sym") this.add(ctx, entity.sym.id, kind, binding.site);
     else if (entity?.k === "module" || entity?.k === "missing") {
-      this.add(ctx, moduleScopeId(entity.files[0]!), "import", binding.site);
+      this.add(ctx, moduleScopeId(entity.files[0]!), kind, binding.site);
     }
   }
 
@@ -314,9 +322,10 @@ class Resolver {
         k: "missing",
         files,
       };
-    if (entity.k === "sym") this.add(ctx, entity.sym.id, "import", site);
+    const kind = fact.typeOnly ? "type-ref" : "import";
+    if (entity.k === "sym") this.add(ctx, entity.sym.id, kind, site);
     else if (entity.k === "module" || entity.k === "missing")
-      this.add(ctx, moduleScopeId(entity.files[0]!), "import", site);
+      this.add(ctx, moduleScopeId(entity.files[0]!), kind, site);
   }
 
   /** Repository files a module specifier used in `file` may name (cached). */
@@ -855,9 +864,11 @@ class Resolver {
       if (files.length > 0) this.add(ctx, moduleScopeId(files[0]!), "import", site.site);
       return;
     }
-    const want = site.kind === "call" ? WANT.call : site.kind === "write" ? WANT.write : WANT.type;
-    const wantKey = site.kind === "call" ? "call" : site.kind === "write" ? "write" : "type";
-    // The name-based fallback only applies to calls and writes: a qualified type name is not guessed.
+    const wantKey =
+      site.kind === "call" || site.kind === "write" || site.kind === "read" ? site.kind : "type";
+    const want = WANT[wantKey];
+    // The name-based fallback only applies to calls and writes: a qualified type name is not guessed, and
+    // neither is the receiver of a read (there are far more of those than of calls, and no member to check).
     const guess =
       site.kind === "call" || site.kind === "write"
         ? site.qualifier[site.qualifier.length - 1]
@@ -868,6 +879,9 @@ class Resolver {
       const owner = this.qualifiedValue(site.qualifier, ctx, 0);
       if (owner.k === "type" && owner.sym.kind === "enum") target = owner.sym;
     }
+    // Re-export chains look names up without regard to their kind (`from .app import Flask as Flask` finds the
+    // class): a read only ever points at a variable.
+    if (target && site.kind === "read" && target.kind !== "variable") target = undefined;
     if (target) this.add(ctx, target.id, site.kind, site.site);
   }
 
@@ -911,8 +925,13 @@ class Resolver {
     lastSegment: string | undefined,
   ): IndexedSymbol | undefined {
     switch (value.k) {
-      case "type":
-        return this.findMember(value.sym, name, want);
+      case "type": {
+        if (want !== WANT.read) return this.findMember(value.sym, name, want);
+        // The nearest member of that name decides: a property that overrides a base class's attribute
+        // (`@property def name` over `name: str`) is not a variable, and the attribute below it is out of reach.
+        const member = this.findMember(value.sym, name, WANT.any);
+        return member && want(member) ? member : undefined;
+      }
       case "module": {
         const entity = this.exported(value.files, name, want, new Set());
         return entity?.k === "sym" ? entity.sym : undefined;

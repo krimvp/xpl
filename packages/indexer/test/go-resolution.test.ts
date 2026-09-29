@@ -72,6 +72,7 @@ describe("same-directory files share a namespace", () => {
       "Queue.Bump -> q/queue.go#Queue.Len (call)",
       "Queue.Bump -> q/queue.go#Queue.Len (call)",
       "Queue.Bump -> q/queue.go#Queue.n (write)",
+      "Queue.Bump -> q/queue.go#Queue.peer (read)",
     ]);
   });
 });

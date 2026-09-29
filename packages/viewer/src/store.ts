@@ -17,6 +17,7 @@ import {
   expandStub as expandStubView,
   ExplainerModel,
   parseId,
+  resolveStubPolicy,
   type Anchor,
   type Edge,
   type ElementId,
@@ -25,6 +26,8 @@ import {
   type GraphView,
   type IndexModel,
   type Stub,
+  type StubMode,
+  type StubPolicy,
   type Tour,
   type TourStep,
   type View,
@@ -400,10 +403,13 @@ export class ViewerStore {
 
   // ─── View edits (persisted through the server when there is one) ─────────────────────────────
 
-  // A talk does not edit the diagram: while presenting, the four view edits below do nothing (a stray
+  // A talk does not edit the diagram: while presenting, the view edits below do nothing (a stray
   // double-click must not rewrite the explainer). Tours are edited from Explore.
 
-  /** Expands a stub: its ghost target joins the view. */
+  /**
+   * Expands a stub: its ghost target joins the view. A ghost that folds several elements ("rest of
+   * <file>", "N more") is no element and expands nothing: pass one of its targets instead (the ghost menu).
+   */
   expandStub(stub: Pick<Stub, "ghost">): void {
     if (this.state.mode === "present") return;
     const view = this.graphView();
@@ -436,6 +442,19 @@ export class ViewerStore {
     if (!view) return false;
     const included = new Set(view.include);
     return drillChildren(this.state.model, id).some((child) => !included.has(child));
+  }
+
+  /**
+   * How many ghost boxes the graph view draws where it stops (`GraphView.stubs.mode`): `top` (the default),
+   * `all` or `none`. A `max` the view already carries is kept. Does nothing when the view already has that
+   * mode, and while presenting.
+   */
+  setStubMode(mode: StubMode): void {
+    const view = this.graphView();
+    if (!view || this.state.mode === "present") return;
+    if (resolveStubPolicy(view.stubs).mode === mode) return;
+    const stubs: StubPolicy = { ...(view.stubs ?? {}), mode };
+    this.editView(view.id, { stubs });
   }
 
   toggleEdgeKind(kind: Edge["kind"]): void {

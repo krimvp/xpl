@@ -15,7 +15,10 @@ const spanKey = (kind: string, s: Span): string =>
 /**
  * Compare the classification of every identifier of `source` with the sites and import bindings `extract`
  * emits. Returns what `extract` emitted but no identifier classifies to (`missing`), and what an identifier
- * classifies to that `extract` did not emit (`extra`).
+ * classifies to that `extract` did not emit (`extra`). Reads are the exception: `classifySite` calls every
+ * identifier in a value position a read (SCIP has resolved it, the mapper keeps those of variables), while
+ * `extract` only emits the candidates (not locals, only names the file declares or imports), so a read is
+ * never `extra`, and `emitted` counts the other kinds.
  */
 async function compare(
   source: string,
@@ -24,7 +27,7 @@ async function compare(
   const { facts, pack, withTree } = await extract(path, source);
   const emitted = new Set<string>([
     ...facts.sites.map((s) => spanKey(s.kind, s.site)),
-    ...facts.imports.map((b) => spanKey("import", b.site)),
+    ...facts.imports.map((b) => spanKey(b.typeOnly ? "type-ref" : "import", b.site)),
   ]);
   const classified = new Set<string>();
   withTree((ctx: FileContext) => {
@@ -33,12 +36,12 @@ async function compare(
       if (c) classified.add(spanKey(c.kind, c.site));
     }
   });
-  const extra = [...classified].filter((k) => !emitted.has(k));
+  const extra = [...classified].filter((k) => !emitted.has(k) && !k.startsWith("read "));
   return {
     missing: [...emitted].filter((k) => !classified.has(k)),
     extra,
     extraText: extra.map((k) => textAt(source, k)),
-    emitted: emitted.size,
+    emitted: [...emitted].filter((k) => !k.startsWith("read ")).length,
   };
 }
 
@@ -107,6 +110,46 @@ describe("classifySite agrees with extract", () => {
     expect(result.emitted).toBeGreaterThan(50);
     expect(result.missing).toEqual([]);
     expect(result.extra).toEqual([]);
+  });
+
+  it("imports under `if TYPE_CHECKING:` are classified as type references, the others as imports", async () => {
+    const source = src(
+      "import typing", // 1
+      "from typing import TYPE_CHECKING", // 2
+      "import a.b", // 3
+      "if TYPE_CHECKING:", // 4
+      "    from .queue import Queue", // 5
+      "    import c.d as cd", // 6
+      "    import e", // 7
+      "elif typing.TYPE_CHECKING:", // 8
+      "    from f import F, G as H", // 9
+      "else:", // 10
+      "    from runtime import R", // 11
+    );
+    const result = await compare(source);
+    expect(result.emitted).toBe(9);
+    expect(result.missing).toEqual([]);
+    expect(result.extra).toEqual([]);
+    const { facts, pack, withTree } = await extract("a.py", source);
+    const kindAt = (line: number, needle: string) =>
+      withTree((ctx) =>
+        pack.classifySite(ctx, line, source.split("\n")[line - 1]!.indexOf(needle) + 1),
+      )?.kind;
+    expect(kindAt(1, "typing")).toBe("import");
+    expect(kindAt(3, "a.b")).toBe("import");
+    expect(kindAt(5, "Queue")).toBe("type-ref");
+    expect(kindAt(6, "c.d")).toBe("type-ref");
+    expect(kindAt(7, "e")).toBe("type-ref");
+    expect(kindAt(9, "F")).toBe("type-ref");
+    expect(kindAt(9, "G")).toBe("type-ref");
+    expect(kindAt(11, "R")).toBe("import");
+    expect(facts.imports.filter((b) => b.typeOnly).map((b) => b.localName)).toEqual([
+      "Queue",
+      "cd",
+      "e",
+      "F",
+      "H",
+    ]);
   });
 
   it("on every file of the Python fixture", async () => {
@@ -204,23 +247,30 @@ describe("classifySite: single identifiers", () => {
     expect(await at(5, 35)).toBeUndefined(); // `key`
   });
 
-  it("calls: the callee name, not the receiver, the arguments or keyword names", async () => {
+  it("calls: the callee name; the receiver and the arguments are reads, keyword names and targets are nothing", async () => {
     const call = { kind: "call", site: { startLine: 6, startCol: 17, endLine: 6, endCol: 39 } };
     expect(await at(6, 22)).toEqual(call); // `helper`
-    expect(await at(6, 17)).toBeUndefined(); // `self`
-    expect(await at(6, 29)).toBeUndefined(); // `arg` (argument)
+    expect(await at(6, 17)).toEqual({
+      kind: "read",
+      site: { startLine: 6, startCol: 17, endLine: 6, endCol: 20 },
+      bare: true,
+    }); // `self`: a name in a value position (SCIP says it is a parameter, which the mapper drops)
+    expect(await at(6, 29)).toMatchObject({ kind: "read", bare: true }); // `arg` (argument)
     expect(await at(6, 34)).toBeUndefined(); // `key=` keyword name
     expect(await at(6, 9)).toBeUndefined(); // `value` target: a plain local
   });
 
-  it("writes: the attribute name of an assignment target; reads are nothing", async () => {
+  it("writes: the attribute name of an assignment target; the rest around it are reads", async () => {
     expect(await at(7, 14)).toEqual({
       kind: "write",
       site: { startLine: 7, startCol: 9, endLine: 7, endCol: 25 },
     }); // `attr`
-    expect(await at(7, 9)).toBeUndefined(); // `self`
-    expect(await at(7, 21)).toBeUndefined(); // `value` on the right
-    expect(await at(8, 22)).toBeUndefined(); // `value.attr` read
+    expect(await at(7, 9)).toMatchObject({ kind: "read", bare: true }); // `self`
+    expect(await at(7, 21)).toMatchObject({ kind: "read", bare: true }); // `value` on the right
+    expect(await at(8, 22)).toEqual({
+      kind: "read",
+      site: { startLine: 8, startCol: 16, endLine: 8, endCol: 25 },
+    }); // `value.attr`: the attribute is read, at the whole access
   });
 
   it("positions that are not identifiers, or outside the file, are nothing", async () => {

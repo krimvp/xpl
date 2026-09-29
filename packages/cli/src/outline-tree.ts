@@ -93,6 +93,49 @@ export interface OutlineOptions {
   /** Show config-key symbols. */
   keys: boolean;
   repoName: string;
+  /**
+   * Only symbols of these kinds (`method`, `class`, ...). What contains a match (its directories, its file, its
+   * parent symbols) is listed too, so the matches keep their place; everything else is left out.
+   */
+  kinds?: ReadonlySet<string>;
+}
+
+/** The symbol kinds a `--kind` filter takes (`IndexedSymbol.kind`). */
+export const SYMBOL_KINDS: readonly string[] = [
+  "class",
+  "interface",
+  "function",
+  "method",
+  "type",
+  "variable",
+  "enum",
+  "key",
+  "other",
+];
+
+/** What contains a symbol of the wanted kinds: ids of the symbols that match or hold a match, and their files and dirs. */
+interface KindFilter {
+  symbols: ReadonlySet<string>;
+  files: ReadonlySet<string>;
+  dirs: ReadonlySet<string>;
+}
+
+function kindFilter(model: IndexModel, kinds: ReadonlySet<string>): KindFilter {
+  const symbols = new Set<string>();
+  const files = new Set<string>();
+  const dirs = new Set<string>();
+  for (const symbol of model.symbols) {
+    if (!kinds.has(symbol.kind)) continue;
+    let cur: IndexedSymbol | undefined = symbol;
+    for (let hops = 0; cur && cur.file === symbol.file && hops < 64; hops++) {
+      symbols.add(symId(cur.file, cur.path));
+      cur = model.parentSymbol(cur.id);
+    }
+    files.add(symbol.file);
+    for (let dir = dirOf(symbol.file); dir !== "" && !dirs.has(dir); dir = dirOf(dir))
+      dirs.add(dir);
+  }
+  return { symbols, files, dirs };
 }
 
 /** Ids of the children of a node: directories then files, or the symbols inside a file or symbol. */
@@ -100,12 +143,16 @@ function childIds(
   model: IndexModel,
   id: string,
   keys: boolean,
+  filter?: KindFilter,
 ): { ids: string[]; hiddenKeys: number } {
   const parsed = parseId(id);
   if (parsed.type === "repo" || parsed.type === "dir") {
     const { dirs, files } = model.dirChildren(parsed.type === "repo" ? "" : parsed.path);
     return {
-      ids: [...dirs.map((d) => `dir:${d}`), ...files.map((f) => `file:${f}`)],
+      ids: [
+        ...dirs.filter((d) => !filter || filter.dirs.has(d)).map((d) => `dir:${d}`),
+        ...files.filter((f) => !filter || filter.files.has(f)).map((f) => `file:${f}`),
+      ],
       hiddenKeys: 0,
     };
   }
@@ -113,13 +160,17 @@ function childIds(
   let hiddenKeys = 0;
   if (parsed.type === "file") {
     symbols = model.topLevelSymbols(parsed.path);
-    if (!keys) hiddenKeys = model.symbolsInFile(parsed.path).filter((s) => s.kind === "key").length;
+    // a kind filter is a choice of what to see: no note about keys that were not asked for
+    if (!keys && !filter) {
+      hiddenKeys = model.symbolsInFile(parsed.path).filter((s) => s.kind === "key").length;
+    }
   } else if (parsed.type === "symbol") {
     symbols = model.childSymbols(parsed.symbolId);
   }
   const ids = symbols
     .filter((symbol) => keys || symbol.kind !== "key")
-    .map((symbol) => symId(symbol.file, symbol.path));
+    .map((symbol) => symId(symbol.file, symbol.path))
+    .filter((symbolId) => !filter || filter.symbols.has(symbolId));
   return { ids, hiddenKeys };
 }
 
@@ -180,8 +231,9 @@ function makeNode(model: IndexModel, fans: Fans, id: string, opts: OutlineOption
 /** The outline below the element `id` (repo, dir, file or symbol), `opts.depth` levels deep. */
 export function buildOutline(model: IndexModel, id: string, opts: OutlineOptions): OutlineNode {
   const fans = computeFans(model);
+  const filter = opts.kinds ? kindFilter(model, opts.kinds) : undefined;
   const fill = (node: OutlineNode, depth: number): void => {
-    const { ids, hiddenKeys } = childIds(model, node.id, opts.keys);
+    const { ids, hiddenKeys } = childIds(model, node.id, opts.keys, filter);
     node.hiddenKeys = hiddenKeys;
     if (depth <= 0) {
       node.more = ids.length;

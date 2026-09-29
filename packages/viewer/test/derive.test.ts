@@ -82,6 +82,36 @@ describe("code focus of a selection", () => {
     store.select(["ghost:file:src/b.ts"]);
     expect(derived().selection.focus).toEqual([]);
   });
+
+  it("a stub to a folded ghost: the sites and definitions of every element it folds", () => {
+    const { store, derived } = storeFor("view:overview", (bundle) => {
+      const view = bundle.explainer.views.find((v) => v.id === "view:overview")!;
+      if (view.type === "graph") view.include = [RUN];
+    });
+    // A.stop calls A.run, and A.stop is a symbol of a.ts, a file the view shows in part
+    const stub = "stub:in:sym:src/a.ts#A.run->ghost:rest:file:src/a.ts";
+    expect(derived().view.stubMap.has(stub)).toBe(true);
+    store.select([stub]);
+    expect(summary(derived().selection.focus)).toEqual([
+      ["src/a.ts", 26, 26, "call-site"],
+      ["src/a.ts", 5, 20, "definition"],
+    ]);
+    // a reference that ends in something the view shows is not part of it
+    expect(derived().selection.focus.every((f) => f.elementId === stub)).toBe(true);
+    // the overflow ghost works the same way
+    const { store: capped, derived: cappedDerived } = storeFor("view:overview", (bundle) => {
+      const view = bundle.explainer.views.find((v) => v.id === "view:overview")!;
+      if (view.type === "graph") {
+        view.include = [RUN];
+        view.stubs = { max: 0 };
+      }
+    });
+    capped.select(["stub:out:sym:src/a.ts#A.run->ghost:more:out"]);
+    expect(summary(cappedDerived().selection.focus)).toEqual([
+      ["src/a.ts", 12, 12, "call-site"],
+      ["src/b.ts", 3, 10, "definition"],
+    ]);
+  });
 });
 
 describe("what a concept relates to, as drawn in the current view", () => {

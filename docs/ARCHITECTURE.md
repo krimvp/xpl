@@ -114,6 +114,10 @@ Conventions (all packages):
 10. Symbol ranges exclude leading comments and include decorators, `export` and modifiers. `Anchor.span`
     offsets are relative to that start line (or to file line 1 when `symbol` is absent) and must lie inside
     the symbol.
+11. `GraphView` adds `stubs?: { mode?: "top" | "all" | "none"; max?: number }` (`StubPolicy`): how many of
+    the places where the view stops are drawn as ghost boxes. Default `top` / 8: the 8 most referenced ghosts,
+    the outside symbols of partly shown files folded into one "rest of <file>" ghost, the ghosts beyond the
+    8 into "+N more" (§4.4). `all` draws one ghost per outside element, `none` no stubs at all.
 
 Patch-side types (never stored) live in `packages/core/src/patch.ts`; its header holds the authoritative
 merge rules and `skill/code-explainer/reference/patch-format.md` is the practical guide. What Claude writes:
@@ -331,7 +335,7 @@ the bundled CLI, `node_modules` in development).
 ## 4. Core (`@xpl/core`)
 
 Modules of `packages/core/src`: `schema`, `patch`, `constants`, `text` (hashing), `glob`, `ids`,
-`index-model` (`IndexModel`), `implementations`, `anchors`, `model` (`ExplainerModel`), `graph`, `focus`,
+`index-model` (`IndexModel`), `implementations`, `anchors`, `model` (`ExplainerModel`), `stubs`, `graph`, `focus`,
 `sequence`, `validate`, `apply`, `bundle`.
 
 ### 4.1 Text and hashing
@@ -391,7 +395,8 @@ dir → parent dir or `repo`. Stored ids: `grp:<slug>`, `concept:<slug>`, `edge:
 `view:<slug>`, `tour:<slug>`, `frame:<slug>`, steps `<view-slug>:<n>` (e.g. `dispatch:3`; never renumbered;
 one namespace with the elements). Slugs: letters, digits, `.`, `_`, `-`, starting with a letter or digit; a
 view slug may not be a reserved prefix (`dir file sym grp concept edge view tour frame ghost stub`). Derived:
-`edge:<kind>:<fromId>-><toId>`. Render-only: `ghost:<id>`, `stub:<in|out>:<insideId>->ghost:<id>`. A `sym:`
+`edge:<kind>:<fromId>-><toId>`. Render-only: `ghost:<id>` (the element the ghost stands for), the folded ghosts `ghost:rest:file:<path>`
+and `ghost:more:in` / `ghost:more:out` (§4.4), `stub:<in|out>:<insideId>->ghost:<key>`. A `sym:`
 id splits into file and path at the first `#` (the index-aware helpers try every `#`).
 
 `ExplainerModel(explainer, indexModel)` merges derived structural nodes with stored overlays (a stored node
@@ -400,7 +405,7 @@ derived id. Default labels: repo name, dir/file basename, a symbol's last path s
 `Class.method`). Hand-edited files are tolerated: entries without an id are skipped, the first of a repeated
 id wins (validation reports the duplicates).
 
-### 4.4 Graph derivation (`graph.ts`)
+### 4.4 Graph derivation (`graph.ts`, `stubs.ts`)
 
 - `repr(x, include, model)`: walk `x, parent(x), …, repo`; at each step return the element if it is included,
   else the nearest included group that lists it as a member, directly or through nested groups (**groups nest
@@ -409,7 +414,9 @@ id wins (validation reports the duplicates).
   each level the groups that contain the element before moving to the structural parent. An included node
   that others render inside is a **container**. Cycles between nested groups are broken.
 - **Derived edges:** each index reference `(from, to, kind)` maps to `(repr(from), repr(to))`; skip it if
-  either end is outside (→ stub) or both are equal. Kind map: call→calls, import→imports, extends,
+  either end is outside (→ stub), both are equal, or one end renders inside the other (in the render tree, at
+  any depth: a call from a child of an opened file to a sibling that is not shown lifts to the file, and an
+  arrow from a box to its own container says nothing). Kind map: call→calls, import→imports, extends,
   implements, type-ref→references, read→reads, write→writes; only kinds in `edgeKinds` (default
   `DEFAULT_EDGE_KINDS`). Module scopes lift to their file. Aggregate per `(kind, a, b)` into
   `edge:<kind>:<a>-><b>` with `count`, `resolution` (`precise` if any aggregated reference is) and derived
@@ -417,23 +424,48 @@ id wins (validation reports the duplicates).
   never stored.
 - **Stored edges** are shown whatever their `kind`, when both ends are represented in the view. One whose id
   equals a derived id overlays that edge (label, summary, anchors) and keeps its derived resolution; the
-  others carry `llm`, `user` or `static` after their provenance. Stored edges that leave the view give stubs
-  too.
+  others carry `llm`, `user` or `static` after their provenance. Stored edges follow the same nesting rule
+  (an edge between a group and one of its members, or from a box to its own group, is not drawn) and give
+  stubs when they leave the view; a stored edge that ends on a group is drawn between the boxes that show its
+  ends, the group box being its end when the group is included, and leaves through `ghost:grp:<slug>` when
+  it is not.
 - **Stubs:** references (and stored edges) with exactly one end inside. Ghost target = the highest structural
-  ancestor of the outside end, below `repo`, that contains no included node (a group is its own target).
-  Aggregate per `(direction, insideId, ghostId)` with the kinds and the count.
+  ancestor of the outside end, below `repo`, that contains no included node (a group is its own target); a
+  target that holds the inside node itself (a stored edge to one's own file) is dropped. Aggregate per
+  `(direction, insideId, target)` with the kinds and the count, then apply the view's **stub policy**
+  (`view.stubs`, `stubs.ts`; default `top` / 8) to decide what is drawn:
+  - `top`: a target that is a symbol of a file the view shows only in part (the file holds an included node
+    but is not itself in the view), or such a file when the whole file is the outside end (a module import),
+    folds into **one ghost per file**, `ghost:rest:file:<path>`, labelled "rest of <file>". The ghosts are
+    then ranked by the references that lead to them (ties by key) and the first `max` (default 8) stay; the
+    others fold into one overflow ghost per direction, `ghost:more:in` / `ghost:more:out` ("+N more", N = the
+    elements it stands for). A stub is aggregated per `(direction, inside, ghost key)` after the folding.
+  - `all`: no folding and no cap, one plain ghost per target (what an unbounded view looks like).
+  - `none`: no stubs and no ghosts.
+  A folded ghost stands for several elements: `Ghost.targets` lists them with their kinds and reference
+  counts, most referenced first (every folded element, also for the overflow ghost; `Stub.targets` holds the
+  ones of one stub). Adding one of them to `include` expands the view; the folded ghost itself is not an
+  element and `expandStub` does nothing for it. A `rest` ghost's targets include the file itself when a module
+  import ends there: adding the file makes it a container of what is shown, standing for the rest of it.
 - `view.excludeFiles` drops references that start or end in a matching file before anything is aggregated
   (files the view includes by name, directly or as members of included groups, are exempt); stored edges are
   not filtered. `view.hidden` is applied last: hidden nodes go, their children **re-parent** to the nearest
   visible container, and the edges and stubs touching them go; hidden edge, stub and ghost ids are removed.
-- `deriveGraph(view, model, { edgeKinds? }) → { nodes, edges, stubs }`, sorted by id. `nodes[i] = { id, label,
-  kind, symbolKind?, container, parent? }`; `edges[i]` adds `count`, `stored` and `resolution: "precise" |
-  "heuristic" | "llm" | "user" | "static"`.
-- Pure view edits: `expandStub(view, stub)`: `include += ghost target`. `drillIn(view, id, model)`: `include +=`
-  the node (when missing) and its children (a group opens into its members), so it becomes a container.
-  `collapse(view, id, model)`: remove its included descendants (for a group: its members' subtrees).
-  `defaultInclude(scope, model)`: nodes exactly `depth` levels under `root`, plus shallower leaves (files and
-  symbols without children).
+  That includes the folded ones (`ghost:rest:file:<path>`, `ghost:more:out`, `stub:…->ghost:more:in`), and an
+  element that is hidden, or whose old plain ghost id (`ghost:sym:…`) is, leaves the ghost it was folded into.
+  Hidden ghosts and stubs are dropped before the ranking, so they free their place among the top ghosts.
+- `deriveGraph(view, model, { edgeKinds? }) → { nodes, edges, stubs, ghosts }`, sorted by id. `nodes[i] = { id,
+  label, kind, symbolKind?, container, parent? }`; `edges[i]` adds `count`, `stored` and `resolution: "precise" |
+  "heuristic" | "llm" | "user" | "static"`; `ghosts[i] = { id, key, kind: "target" | "rest" | "more", label,
+  target?, kinds, count, direction: "in" | "out" | "both", targets }`; `stubs[i] = { id, direction, inside,
+  ghost (the key), ghostLabel, targets, kinds, count }`.
+- Pure view edits: `expandStub(view, stub)`: `include += ghost target` (nothing for a folded ghost).
+  `drillIn(view, id, model)`: `include +=` the node (when missing) and its children (a group opens into its
+  members), so it becomes a container. `collapse(view, id, model)`: remove its included descendants (for a
+  group: its members' subtrees). `defaultInclude(scope, model)`: nodes exactly `depth` levels under `root`,
+  plus shallower leaves (files and symbols without children); a chain of single-child directories (`src/`
+  that holds only `src/flask/`, see `singleChildChain`) counts as one level and is shown as its end
+  (`dir:src/flask`), the root of the scope included.
 
 ### 4.5 Code focus and reverse lookup (`focus.ts`)
 
@@ -543,7 +575,7 @@ that spans use, `+34..36` for the span of a reference site. `--json` on every co
 | `xpl validate <explainer> [--lenient]` | §4.6 |
 | `xpl anchors <explainer> [id...] [--full] [--max-lines n]` | each anchor of an element (or of every element) resolved now: role, `file#symbol +span`, status, lines, and the code at them with offsets; verifies spans without reading JSON |
 | `xpl resolve <explainer> [--write] [--allow-stale]` | §4.2 re-resolve against the index of the current code; report drifted llm elements, missing anchors; `--write` saves |
-| `xpl status <explainer>` | the skill's to-do list, read-only: per view the shown nodes, stored edges and steps without a summary (static edges optional), concepts without one, drift (user-owned drift counted apart), missing anchors, broken references (ids gone from the index), stale derived-edge overlays, queued requests |
+| `xpl status <explainer>` | the skill's to-do list, read-only: per view the shown nodes, stored edges and steps without a summary (static edges optional), concepts without one, drift (user-owned drift counted apart), missing anchors, broken references (ids gone from the index), stale derived-edge overlays, queued requests; per graph view the ghosts and stubs it draws (counts, the most referenced ghost ids, `--json`: every ghost with its count and every stub id in `views[].ghosts`) with a warning above 12 ghosts; the tours (id, step count, steps whose focus ids or view are gone) |
 | `xpl view <explainer> [--port p] [--host h] [--no-open]` | local server (below) |
 | `xpl bundle <explainer> -o out.html [--mode explore\|present] [--tour id] [--files all\|referenced]` | self-contained HTML; `--tour` (`tour:intro` or `intro`) implies present mode |
 
@@ -616,7 +648,8 @@ targets; summaries are plain text.
 
 **Explore.** Header: title, one tab per view (the tooltip of a sequence view is its question), the Tours
 button, the Explore/Present toggle (Present is disabled without tours and says how to get one), save state and
-download. Left: the diagram (caption: title, question, and for graph views the derived-edge-kind toggles),
+download. Left: the diagram (caption: title, question, and for graph views the Stubs control (top / all / none) and the
+derived-edge-kind toggles),
 below it the concept list and the details panel. Right: the code, the file tree (collapsible; files outside
 the focus are greyed `is-dimmed`, files in it `is-focus`) beside the stack of CodeMirror editors. Both splits
 (diagram / panels, diagram / code) are resizable. Below 900 px the halves stack.
@@ -627,11 +660,17 @@ the focus are greyed `is-dimmed`, files in it `is-focus`) beside the stack of Co
   `hierarchyHandling: INCLUDE_CHILDREN`, containers for nested includes, edges routed inside their lowest
   common container. If ELK throws, a grid layout keeps the diagram usable (`data-fallback`). Edges are styled
   by resolution: precise, heuristic (thinner and lighter), `llm`, `user`; stubs are dashed and lead to ghost
-  boxes. Click selects (shift/ctrl/cmd adds, the background clears); clicking a ghost calls `expandStub`;
-  double-clicking a node calls `drillIn`; a container has a collapse button. Pan by dragging, zoom with the
-  wheel, the buttons or `+`/`-`, "Fit". View edits (expand, drill in, collapse, edge-kind toggles) are stored
-  on the view. Selecting a stub focuses the reference sites that cross the boundary there plus the
-  definitions on the far side.
+  boxes (at most 8 by default plus one "+N more" per direction, see §4.4; ghosts that stand for several
+  elements have a dotted border and a list icon). Click selects (shift/ctrl/cmd adds, the background clears);
+  clicking a ghost for one element calls `expandStub`, clicking a folded ghost ("rest of <file>", "+N more")
+  opens a **menu** beside it: its elements with kind and reference count, most referenced first (a "rest of"
+  menu starts with "The whole file", which adds the file as one box), and picking one adds it to the view
+  (`expandStub` on that element); Escape, a click elsewhere or a turn of the wheel over the diagram closes it,
+  the arrow keys move in it. Double-clicking a node calls `drillIn`; a container has a collapse button. Pan by
+  dragging, zoom with the wheel, the buttons or `+`/`-`, "Fit". View edits (expand, drill in, collapse,
+  edge-kind toggles, the Stubs control) are stored on the view. Selecting a stub focuses the reference sites
+  that cross the boundary there plus the definitions on the far side (of every element a folded ghost stands
+  for); its details list those elements with a button each. Ghosts are pictures in Present: no menu.
 - **Sequence view:** lifelines, one row per step (`call` solid, `return` dashed, `async` open head), self-calls
   as loops, frames (`loop`/`alt`/`opt`/`par`) as labelled rectangles around their steps, nested by
   `resolveFrames`. A step's hit area covers its label and arrow.
@@ -670,16 +709,21 @@ defaults, which the URL overrides.
 **Test hooks (stable contract for Playwright):**
 
 - Every clickable diagram element or list item carries `data-element-id="<id>"` (nodes, edges, steps,
-  lifelines, concepts); stubs also `data-stub-id`, ghosts `data-element-id="ghost:<id>"`. State classes:
+  lifelines, concepts); stubs also `data-stub-id`, ghosts `data-element-id="ghost:<key>"` (`ghost:file:src/a.ts`,
+  `ghost:rest:file:src/a.ts`, `ghost:more:out`). State classes:
   `is-selected`, `is-match`, `is-related`; file-tree rows `is-dimmed`, `is-focus`.
 - Other attributes: `data-view-id` (view tabs, and the diagram with `data-view-type`), `data-mode` on `.app`,
   `data-direction` / `data-fallback` on the graph, `data-collapse-id`, `data-edge-kind`, `data-frame-id`,
-  `data-details-id`, `data-path` (tree rows), `data-status` (anchor rows), `data-zoom` (canvas). Present:
-  `[data-testid="present"]` with `data-tour`, `data-step` (1-based) and `data-step-id`.
+  `data-details-id`, `data-path` (tree rows), `data-status` (anchor rows), `data-zoom` (canvas),
+  `data-stub-mode` (the Stubs control's `top` / `all` / `none` buttons, `aria-pressed`), `data-ghost-id` (the
+  ghost menu) and `data-ghost-target` (its entries and those in a stub's details: the element a click adds).
+  Folded ghosts carry `aria-haspopup="menu"`. Present: `[data-testid="present"]` with `data-tour`,
+  `data-step` (1-based) and `data-step-id`.
 - `data-testid`: `mode-explore`, `mode-present`, `tours-button`, `tour-panel`, `tour-target`, `tour-new-title`,
   `tour-add`, `tour-step`, `tour-step-note`, `tour-step-up`, `tour-step-down`, `tour-step-delete`,
   `tour-undo`, `tour-present`, `tour-picker`, `tour-prev`, `tour-next`, `tour-counter`, `tour-note`,
-  `tour-detour`, `explain-command`, `no-data`.
+  `tour-detour`, `explain-command`, `no-data`, `stubs-control`, `ghost-menu`, `ghost-targets` (the list in the
+  details panel of a stub to a folded ghost).
 - Editor panes `[data-file="<path>"]`; every line `.cm-line[data-line="<n>"]`; decorations `xpl-hl`,
   `xpl-hl-<role>`, `xpl-dim`, and `xpl-site` on the exact call or usage expression when the range has
   columns.
@@ -687,8 +731,9 @@ defaults, which the URL overrides.
   order), `matches()`, `setCursor(file, line)` (opens the file when no pane shows it), `setView(id)`,
   `present(tourId, step = 1)` (false without such a tour), `next()`, `prev()`, `exitPresent()`, `state()`: a
   JSON snapshot (`mode`, `tour`, `step`, `stepCount`, `stepId`, `detour`, `viewId`, `viewType`, `selection`,
-  `cursor`, `matches`, `related`, `panes`, `focusFiles`, `openedFile`, `graph { nodes, edges, stubs }`,
-  `serverMode`, `dirty`, `include`, `edgeKinds`).
+  `cursor`, `matches`, `related`, `panes`, `focusFiles`, `openedFile`, `graph { nodes, edges, stubs, ghosts }`
+  (ids; ghosts as `ghost:<key>`), `serverMode`, `dirty`, `include`, `edgeKinds`, `stubs` (`{ mode, max }`, defaults
+  filled in)).
 
 ---
 
@@ -716,7 +761,8 @@ default in cloud sessions) or `xpl view`.
   that span folders, an overview graph (`scope: { root: "repo", depth: 1 }`, `excludeFiles` for test files,
   `edgeKinds` when package dependencies are the point), `llm` edges, a few concepts at most, one sequence view
   for an obvious entry point. Deeper nodes stay unexplained; offer the 2–3 most useful expansions.
-- **`expand <node>`**: an id, a clicked ghost (`ghost:dir:x` means `dir:x`) or a queued request. Read it, patch
+- **`expand <node>`**: an id, a clicked ghost (`ghost:dir:x` means `dir:x`; `ghost:rest:file:p` is what a partly
+  shown `file:p` holds outside the view, `ghost:more:in|out` the ghosts beyond `stubs.max`) or a queued request. Read it, patch
   the graph view with `includeAdd` (works on user-curated views), explain only what became visible (`xpl
   status` names it), drain `.explainer/requests.json` and delete it.
 - **`make tour`**: 5–12 steps `{ id: "t1", view, focus: [ids], note, editor: { primary } }`, with a `code`

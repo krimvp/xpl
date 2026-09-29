@@ -8,9 +8,11 @@ import {
   type Anchor,
   type AnchorRole,
   type AnchorStatus,
+  isFoldedGhostKey,
   type DerivedEdge,
   type ElementId,
   type ExplainerModel,
+  type GhostTarget,
   type Provenance,
   type Stub,
 } from "@xpl/core";
@@ -43,6 +45,8 @@ export interface ElementInfo {
   /** Concepts: elements to co-highlight. */
   related: ElementId[];
   stub?: Stub;
+  /** A stub to a folded ghost: the elements it stands for, to pick from (see `GhostTargetList`). */
+  targets?: GhostTarget[];
   derived?: DerivedEdge;
 }
 
@@ -105,25 +109,34 @@ export function describeElement(
 function buildInfo(id: ElementId, model: ExplainerModel, vd: ViewDerived): ElementInfo {
   const stub = vd.stubMap.get(id);
   if (stub) {
+    const folded = isFoldedGhostKey(stub.ghost);
+    const inside = model.label(stub.inside);
+    const outside = stub.ghostLabel;
+    const things = plural(stub.targets.length, "element");
     return {
       id,
       type: "stub",
       title: `${stub.kinds.join(", ")} ×${stub.count}`,
       kind: "stub",
       where: `${stub.direction === "out" ? "leaves" : "enters"} the view here`,
-      summary:
-        stub.direction === "out"
-          ? `${model.label(stub.inside)} reaches ${stub.ghostLabel}, which is not in this view. Click the dashed box to add it.`
-          : `${stub.ghostLabel}, which is not in this view, reaches ${model.label(stub.inside)}. Click the dashed box to add it.`,
+      summary: folded
+        ? stub.direction === "out"
+          ? `${inside} reaches ${outside} (${things} not in this view). Pick one below to add it, or click the dashed box to choose there.`
+          : `${outside} (${things} not in this view) reaches ${inside}. Pick one below to add it, or click the dashed box to choose there.`
+        : stub.direction === "out"
+          ? `${inside} reaches ${outside}, which is not in this view. Click the dashed box to add it.`
+          : `${outside}, which is not in this view, reaches ${inside}. Click the dashed box to add it.`,
       facts: [
-        { label: "Inside", value: model.label(stub.inside) },
-        { label: "Outside", value: stub.ghostLabel },
+        { label: "Inside", value: inside },
+        { label: "Outside", value: outside },
+        ...(folded ? [{ label: "Elements", value: String(stub.targets.length) }] : []),
         { label: "Direction", value: stub.direction },
         { label: "References", value: String(stub.count) },
       ],
       anchors: [],
       related: [],
       stub,
+      ...(folded ? { targets: stub.targets } : {}),
     };
   }
 

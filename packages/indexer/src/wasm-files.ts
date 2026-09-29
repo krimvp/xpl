@@ -13,10 +13,11 @@ import { join } from "node:path";
 import type { FileLanguage } from "@xpl/core";
 
 /**
- * Languages with a tree-sitter grammar. "javascript" files are parsed with the "typescript" (or, for
- * JSX, "tsx") grammar; "text" files are not parsed.
+ * Grammars we ship. Every `FileLanguage` with a grammar of its own is one ("javascript" files are parsed with
+ * the "typescript" or, for JSX, the "tsx" grammar; "text" files are not parsed), plus "toml": TOML files are
+ * `text` in the index (`FileLanguage` has no name for them) but are parsed with this grammar.
  */
-export type GrammarId = Exclude<FileLanguage, "javascript" | "text">;
+export type GrammarId = Exclude<FileLanguage, "javascript" | "text"> | "toml";
 
 /** One `.wasm` file: where to find it in `node_modules`, and its name inside a wasm directory. */
 export interface WasmSource {
@@ -33,6 +34,7 @@ export const GRAMMAR_WASM: Record<GrammarId, WasmSource> = {
   go: { pkg: "tree-sitter-go", file: "tree-sitter-go.wasm" },
   yaml: { pkg: "@tree-sitter-grammars/tree-sitter-yaml", file: "tree-sitter-yaml.wasm" },
   json: { pkg: "tree-sitter-json", file: "tree-sitter-json.wasm" },
+  toml: { pkg: "@tree-sitter-grammars/tree-sitter-toml", file: "tree-sitter-toml.wasm" },
 };
 
 /** The web-tree-sitter runtime itself (loaded through `Parser.init({ locateFile })`). */

@@ -62,7 +62,7 @@ export interface SymbolHint {
 }
 
 /** 0..1: how alike two names are (case-insensitive edit distance, or containment). */
-function nameSimilarity(a: string, b: string): number {
+export function nameSimilarity(a: string, b: string): number {
   const x = a.toLowerCase();
   const y = b.toLowerCase();
   if (x === y) return 1;

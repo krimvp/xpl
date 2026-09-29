@@ -375,7 +375,14 @@
             "primary": "internal/runner/runner.go"
           }
         }
-      ]
+      ],
+      "provenance": {
+        "origin": "llm",
+        "commit": "wt-fd6c9886d1",
+        "userFields": [
+          "steps"
+        ]
+      }
     }
   ]
 }

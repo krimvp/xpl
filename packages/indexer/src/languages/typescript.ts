@@ -21,17 +21,34 @@
  *   `export default call()`) -> path `default`; `export default foo` adds no symbol (see `ExportFact`)
  * - body-less overload signatures are skipped when an implementation with the same name follows; ambient
  *   declarations (`declare function f(): void`, `.d.ts` files) have no implementation and are kept
+ * - test blocks: statement-level calls of `describe` / `suite` / `context` / `it` / `test` (also `.only`,
+ *   `.skip`, `.each(table)(...)`, ...) whose first argument is a string literal (or a template without
+ *   substitutions) -> `function`, path = the titles nested by `describe`, each with `.` and `#` replaced by
+ *   `_` and whitespace collapsed (`Queue.pop().returns the oldest job`), range = the whole statement. They are
+ *   `anchorOnly` (see `SymbolDraft`): anchors and outlines see them, name resolution does not. A `describe`
+ *   with a computed title is not a symbol, the tests inside are, without it in their path. Found at the top of
+ *   the file and inside the callbacks of test blocks, also under `if` / `for` / `try` there; other
+ *   declarations inside those callbacks are not symbols. A test block whose path equals a real symbol's is
+ *   dropped with what is inside it, so declarations keep their plain paths
  *
  * A symbol's range runs from the first decorator / `export` / `declare` / modifier to the end of the
  * declaration; leading comments are not part of it.
  *
  * Sites: calls (`f()`, `a.b.c()`, `new X()`, `super.m()`, JSX components), imports without bindings
- * (`import "./x"`, `import("./x")`, `require("./x")`), `extends` / `implements`, `type-ref`, `write`.
+ * (`import "./x"`, `import("./x")`, `require("./x")`), `extends` / `implements`, `type-ref`, `write`, `read`.
+ *
+ * Reads: a bare identifier in an expression that is not a callee, an assignment target or a declaration, and
+ * a member access `a.b` that is not a callee or target either, are `read` sites - when what they name can be
+ * a variable of the repository. A bare name is a candidate when the file declares or imports it and no
+ * function, block, loop or `catch` around the use binds it (./ts-scope.ts); a member access when its receiver
+ * is `this` / `super`, a call or cast, a name of the file, or a local or parameter of known type (a type
+ * fact). The resolver decides the rest.
  */
 import { posix } from "node:path";
 import type { Node } from "web-tree-sitter";
-import { SpanIndex, nodeSpan, spanBetween, spanLineCount } from "../ast.js";
+import { SpanIndex, nodeSpan, spanBetween, spanContains, spanLineCount } from "../ast.js";
 import { probeModule, repoPath, resolveBareSpecifier } from "./ts-modules.js";
+import { LocalScopes, patternNames } from "./ts-scope.js";
 import type {
   ClassifiedSite,
   ExportFact,
@@ -94,6 +111,11 @@ const SCAN_TYPES = [
   "jsx_self_closing_element",
   "required_parameter",
   "optional_parameter",
+  // the leaves a `read` can sit on (see `readShapeOf`)
+  "identifier",
+  "shorthand_property_identifier",
+  "property_identifier",
+  "private_property_identifier",
 ];
 
 // ─── Small node helpers ───────────────────────────────────────────────────────────────────────────
@@ -182,29 +204,23 @@ function lastSegment(path: string): string {
   return i < 0 ? path : path.slice(i + 1);
 }
 
-/** Names bound by a destructuring pattern (`{ a, b: c }`, `[x, y]`, defaults and rest included). */
-function patternNames(pattern: Node, out: string[] = [], depth = 0): string[] {
-  if (depth > 8) return out;
-  switch (pattern.type) {
-    case "identifier":
-    case "shorthand_property_identifier_pattern":
-      out.push(pattern.text);
-      break;
-    case "pair_pattern": {
-      const value = pattern.childForFieldName("value");
-      if (value) patternNames(value, out, depth + 1);
-      break;
-    }
-    case "assignment_pattern":
-    case "object_assignment_pattern": {
-      const left = pattern.childForFieldName("left");
-      if (left) patternNames(left, out, depth + 1);
-      break;
-    }
-    default:
-      for (const child of pattern.namedChildren) patternNames(child, out, depth + 1);
-  }
-  return out;
+/**
+ * Is this `import` / `export ... from` statement type-only (`import type { A } from`, `export type { A } from`)?
+ * tree-sitter-typescript 0.23 cannot parse `export type * from "x"` (TS 5.0): it leaves the keyword in an `ERROR`
+ * inside the statement and reads the rest as `export * from "x"`, which is what is looked for here too.
+ */
+function isTypeStatement(statement: Node | null | undefined): boolean {
+  return (
+    !!statement &&
+    statement.children.some(
+      (c) => (c.type === "type" && !c.isNamed) || (c.type === "ERROR" && c.text === "type"),
+    )
+  );
+}
+
+/** `{ type A }`: an import or export specifier with its own `type` modifier. */
+function isTypeSpecifier(specifier: Node): boolean {
+  return specifier.children.some((c) => c.type === "type" && !c.isNamed);
 }
 
 // ─── Types and qualifiers ─────────────────────────────────────────────────────────────────────────
@@ -490,6 +506,172 @@ function inferReturn(fn: Node, body: Node): Inferred | undefined {
   return undefined;
 }
 
+// ─── Reads (shared by extract and classifySite) ──────────────────────────────────────────────────
+
+/** Parents in which an `identifier` child declares or names something rather than refers to a value. */
+const NON_REFERENCE_PARENTS = new Set([
+  "pair_pattern",
+  "array_pattern",
+  "object_pattern",
+  "rest_pattern",
+  "catch_clause",
+  "function_declaration",
+  "generator_function_declaration",
+  "function_expression",
+  "function",
+  "generator_function",
+  "function_signature",
+  "enum_declaration",
+  "internal_module",
+  "module",
+  "import_alias",
+  "import_clause",
+  "import_require_clause",
+  "import_specifier",
+  "import_statement",
+  "export_specifier",
+  "namespace_import",
+  "namespace_export",
+  "index_signature",
+  "asserts",
+  "type_predicate",
+  "type_query",
+  "nested_identifier",
+  "nested_type_identifier",
+  "jsx_opening_element",
+  "jsx_closing_element",
+  "jsx_self_closing_element",
+  "jsx_namespace_name",
+  "extends_clause",
+  "implements_clause",
+  "labeled_statement",
+]);
+
+/** Does this identifier stand for a value (as opposed to a name being declared, a label, a type...)? */
+function isReferencePosition(id: Node, parent: Node): boolean {
+  const is = (field: string): boolean => parent.childForFieldName(field)?.id === id.id;
+  if (NON_REFERENCE_PARENTS.has(parent.type)) return false;
+  switch (parent.type) {
+    case "variable_declarator":
+    case "required_parameter":
+    case "optional_parameter":
+      return is("value");
+    case "assignment_pattern":
+    case "object_assignment_pattern":
+      return is("right");
+    case "arrow_function":
+      return is("body");
+    case "for_in_statement":
+      return is("right");
+    case "member_expression":
+      return is("object");
+    case "pair":
+      return is("value");
+    default:
+      return true;
+  }
+}
+
+/**
+ * The expression `node` is part of when it is a callee or a target: through parentheses and `!`, is it what a
+ * call calls, what an assignment or `++` assigns to (a `write`)? Those are sites of their own kinds. Every
+ * `parent` is a walk down from the root of the tree, so each is read once (`parent` is `node.parent`, when the
+ * caller has it already).
+ */
+function isCalleeOrTarget(node: Node, parent: Node | null = node.parent): boolean {
+  let top = node;
+  let holder = parent;
+  while (
+    holder &&
+    (holder.type === "non_null_expression" || holder.type === "parenthesized_expression")
+  ) {
+    top = holder;
+    holder = top.parent;
+  }
+  if (!holder) return false;
+  const is = (field: string): boolean => holder.childForFieldName(field)?.id === top.id;
+  switch (holder.type) {
+    case "call_expression":
+      return is("function");
+    case "new_expression":
+      return is("constructor");
+    case "assignment_expression":
+    case "augmented_assignment_expression":
+    case "for_in_statement":
+    case "assignment_pattern":
+      return is("left");
+    case "update_expression":
+      return is("argument");
+    case "pair_pattern":
+      return is("value");
+    case "array_pattern":
+    case "rest_pattern":
+    case "jsx_opening_element":
+    case "jsx_closing_element":
+    case "jsx_self_closing_element":
+      return true;
+    default:
+      return false;
+  }
+}
+
+/** A `read`, syntactically: what is read, of what, and where. */
+interface ReadShape {
+  name: string;
+  /** The receiver of a member access (`a.b` of `a.b.c`); absent for a bare name. */
+  object?: Node;
+  site: Span;
+}
+
+/** The member expression a property leaf is the property of, and its receiver. */
+function memberOf(leaf: Node): { member: Node; object: Node } | undefined {
+  if (leaf.type !== "property_identifier" && leaf.type !== "private_property_identifier")
+    return undefined;
+  const member = leaf.parent;
+  if (member?.type !== "member_expression") return undefined;
+  if (member.childForFieldName("property")?.id !== leaf.id) return undefined;
+  const object = member.childForFieldName("object");
+  return object ? { member, object } : undefined;
+}
+
+/** The read of `object.<leaf>` (`member` is the member expression), unless it is a callee, a target or a type. */
+function memberRead(
+  leaf: Node,
+  member: Node,
+  object: Node,
+  lines: readonly string[],
+): ReadShape | undefined {
+  if (isCalleeOrTarget(member)) return undefined;
+  // `a.b` of `typeof a.b.c`, of `namespace a.b.c {}` or of `import x = a.b.c`: not a value
+  for (let a = member.parent, i = 0; a && i < 3; a = a.parent, i++)
+    if (a.type === "type_query" || a.type === "nested_identifier") return undefined;
+  const whole = nodeSpan(member, lines);
+  return {
+    name: leaf.text,
+    object,
+    site: spanLineCount(whole) <= SITE_MAX_LINES ? whole : nodeSpan(leaf, lines),
+  };
+}
+
+/** The read of the bare name `leaf` (an `identifier` or `shorthand_property_identifier`), unless it is not a value. */
+function bareRead(leaf: Node, name: string, lines: readonly string[]): ReadShape | undefined {
+  const parent = leaf.parent;
+  if (!parent) return undefined;
+  if (!isReferencePosition(leaf, parent) || isCalleeOrTarget(leaf, parent)) return undefined;
+  return { name, site: nodeSpan(leaf, lines) };
+}
+
+/**
+ * The read `leaf` (an `identifier`, `shorthand_property_identifier`, or the property of a member expression)
+ * makes, if any. Purely syntactic: whether the name is local or resolves to a variable is decided elsewhere.
+ */
+function readShapeOf(leaf: Node, lines: readonly string[]): ReadShape | undefined {
+  if (leaf.type === "identifier" || leaf.type === "shorthand_property_identifier")
+    return bareRead(leaf, leaf.text, lines);
+  const found = memberOf(leaf);
+  return found ? memberRead(leaf, found.member, found.object, lines) : undefined;
+}
+
 // ─── Site spans (shared by extract and classifySite) ─────────────────────────────────────────────
 
 /** Whole call expression, or only the callee when the call spans more than 10 lines. */
@@ -559,6 +741,107 @@ function jsxComponent(element: Node): NameParts | undefined {
   return undefined;
 }
 
+// ─── Test blocks ──────────────────────────────────────────────────────────────────────────────────
+
+/** Functions that open a test or a suite when called with a title (Mocha, Jest, Vitest, node:test, Jasmine). */
+const TEST_FUNCTIONS = new Set(["describe", "suite", "context", "it", "test"]);
+/** Members of those functions: `it.only(...)`, `test.skip(...)`, `describe.each(table)(...)`, `it.skipIf(c)(...)`. */
+const TEST_MODIFIERS = new Set([
+  "only",
+  "skip",
+  "todo",
+  "concurrent",
+  "sequential",
+  "serial",
+  "shuffle",
+  "fails",
+  "failing",
+  "each",
+  "skipIf",
+  "runIf",
+]);
+
+/** `describe("A", () => {...})` and friends, as far as the pack cares. */
+interface TestBlock {
+  /** The title as a path segment; undefined when it is not a plain literal (`describe(Foo.name, ...)`). */
+  segment?: string;
+  /** The callback: the last function among the arguments. */
+  callback?: Node;
+}
+
+/** A title as a symbol path segment: `.` and `#` become `_` (they are path syntax), whitespace is collapsed. */
+function titleSegment(raw: string): string {
+  return raw
+    .replace(/\\[nrt]/g, " ")
+    .replace(/\\(.)/g, "$1")
+    .replace(/[.#]/g, "_")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/** The literal title of a test: a string, or a template without substitutions; undefined otherwise. */
+function literalTitle(node: Node | null | undefined): string | undefined {
+  if (node?.type === "string") return titleSegment(stringContent(node)) || undefined;
+  if (
+    node?.type === "template_string" &&
+    !node.namedChildren.some((c) => c.type === "template_substitution")
+  )
+    return titleSegment(stringContent(node)) || undefined;
+  return undefined;
+}
+
+/**
+ * Is `call` a call of a test function (`it("x", fn)`, `describe.only("x", fn)`, `it.each(table)("x %s", fn)`)?
+ * The callee is a test function, optionally followed by modifiers, and for the curried forms
+ * (`.each(table)(...)`, `.skipIf(c)(...)`) that call itself is the callee.
+ */
+function testBlockOf(call: Node): TestBlock | undefined {
+  let callee = call.childForFieldName("function");
+  if (callee?.type === "call_expression") callee = callee.childForFieldName("function");
+  for (let i = 0; callee?.type === "member_expression" && i < 4; i++) {
+    const property = callee.childForFieldName("property");
+    if (!property || !TEST_MODIFIERS.has(property.text)) return undefined;
+    callee = callee.childForFieldName("object");
+  }
+  if (callee?.type !== "identifier" || !TEST_FUNCTIONS.has(callee.text)) return undefined;
+  const args = call
+    .childForFieldName("arguments")
+    ?.namedChildren.filter((c) => c.type !== "comment");
+  if (!args || args.length === 0) return undefined;
+  const block: TestBlock = {};
+  const segment = literalTitle(args[0]);
+  if (segment !== undefined) block.segment = segment;
+  for (const arg of args) if (isFunctionValue(arg)) block.callback = arg;
+  // A computed title only makes a test block when a callback follows: `test(x)` is any function.
+  return block.segment !== undefined || block.callback ? block : undefined;
+}
+
+/** The statements directly inside a compound statement (blocks, `if` branches, loop bodies, `try` parts). */
+function childStatements(stmt: Node): Node[] {
+  const field = (name: string): Node[] => {
+    const child = stmt.childForFieldName(name);
+    return child ? [child] : [];
+  };
+  switch (stmt.type) {
+    case "statement_block":
+    case "else_clause":
+      return stmt.namedChildren.filter((c) => c.type !== "comment");
+    case "if_statement":
+      return [...field("consequence"), ...field("alternative")];
+    case "for_statement":
+    case "for_in_statement":
+    case "while_statement":
+    case "do_statement":
+    case "catch_clause":
+    case "finally_clause":
+      return field("body");
+    case "try_statement":
+      return [...field("body"), ...field("handler"), ...field("finalizer")];
+    default:
+      return [];
+  }
+}
+
 // ─── The extractor ────────────────────────────────────────────────────────────────────────────────
 
 interface Scope {
@@ -620,7 +903,9 @@ function iifeBody(stmt: Node): Node | undefined {
 }
 
 class Extractor {
-  private readonly drafts: SymbolDraft[] = [];
+  private drafts: SymbolDraft[] = [];
+  /** The drafts that are test blocks (`anchorOnly`). */
+  private readonly testDrafts = new Set<SymbolDraft>();
   private readonly sites: SiteDraft[] = [];
   private readonly imports: ImportBinding[] = [];
   private readonly typeFacts: TypeFact[] = [];
@@ -636,6 +921,9 @@ class Extractor {
   private readonly functionNodes = new Set<number>();
   private readonly fieldFacts = new Set<string>();
   private readonly paramFacts = new Map<string, TypeFact>();
+  /** Leaves a `read` may sit on, in source order (decided once every fact is known). */
+  private readonly readLeaves: Node[] = [];
+  private readonly scopes = new LocalScopes();
 
   constructor(private readonly ctx: FileContext) {
     this.lines = ctx.lines;
@@ -644,8 +932,11 @@ class Extractor {
   run(): FileFacts {
     const root = this.ctx.tree.rootNode;
     this.visitStatements(root.namedChildren, { prefix: "" });
-    this.draftIndex = new SpanIndex(this.drafts.map((d) => ({ span: d.range, value: d })));
-    for (const draft of this.drafts)
+    this.dropCollidingTests();
+    // Facts belong to the real symbol around them: a test block is not a scope of names.
+    const real = this.drafts.filter((d) => !this.testDrafts.has(d));
+    this.draftIndex = new SpanIndex(real.map((d) => ({ span: d.range, value: d })));
+    for (const draft of real)
       if (!this.draftByPath.has(draft.path)) this.draftByPath.set(draft.path, draft);
     this.scan(root);
     return {
@@ -670,6 +961,75 @@ class Extractor {
     if (parentPath !== undefined) draft.parentPath = parentPath;
     this.drafts.push(draft);
     return draft;
+  }
+
+  // ── test blocks ────────────────────────────────────────────────────────────────────────────────
+
+  /**
+   * `stmt` as a test block (`describe(...)`, `it(...)`), or a compound statement with some inside: emits the
+   * symbols and reports whether the statement held any test call (then it is not a declaration).
+   */
+  private nestedTest(stmt: Node, parentPath: string | undefined, depth: number): boolean {
+    if (depth > 24) return false;
+    if (stmt.type === "expression_statement") {
+      const call = stmt.namedChild(0);
+      const block = call?.type === "call_expression" ? testBlockOf(call) : undefined;
+      if (!block) return false;
+      this.testBlock(stmt, block, parentPath, depth);
+      return true;
+    }
+    let found = false;
+    for (const child of childStatements(stmt))
+      if (this.nestedTest(child, parentPath, depth + 1)) found = true;
+    return found;
+  }
+
+  private testBlock(
+    range: Node,
+    block: TestBlock,
+    parentPath: string | undefined,
+    depth: number,
+  ): void {
+    let path = parentPath;
+    if (block.segment !== undefined) {
+      path = parentPath === undefined ? block.segment : `${parentPath}.${block.segment}`;
+      const draft = this.emit(path, "function", range, range, parentPath);
+      draft.anchorOnly = true;
+      this.testDrafts.add(draft);
+    }
+    const body = block.callback?.childForFieldName("body");
+    if (!body) return;
+    if (body.type === "call_expression") {
+      // `describe("x", () => it("y", () => {}))`
+      const inner = testBlockOf(body);
+      if (inner) this.testBlock(body, inner, path, depth + 1);
+    } else {
+      for (const stmt of childStatements(body)) this.nestedTest(stmt, path, depth + 1);
+    }
+  }
+
+  /**
+   * Test blocks whose path is a real symbol's are dropped, with everything inside them: the framework numbers
+   * duplicate paths in source order, and a `describe("build")` above `function build` would turn the function
+   * into `build~2`.
+   */
+  private dropCollidingTests(): void {
+    if (this.testDrafts.size === 0) return;
+    const real = new Set<string>();
+    for (const draft of this.drafts) if (!this.testDrafts.has(draft)) real.add(draft.path);
+    const dropped = new Set<string>();
+    this.drafts = this.drafts.filter((draft) => {
+      if (!this.testDrafts.has(draft)) return true;
+      if (
+        real.has(draft.path) ||
+        (draft.parentPath !== undefined && dropped.has(draft.parentPath))
+      ) {
+        dropped.add(draft.path);
+        this.testDrafts.delete(draft);
+        return false;
+      }
+      return true;
+    });
   }
 
   private visitStatements(stmts: readonly Node[], scope: Scope): void {
@@ -697,9 +1057,11 @@ class Extractor {
     // `(function () { ... })();` and friends: the definitions inside are the module's (legacy JS, UMD).
     const iife = iifeBody(stmt);
     if (iife) {
+      if (iife.parent) this.scopes.markSymbolScope(iife.parent);
       this.visitStatements(iife.namedChildren, scope);
       return;
     }
+    if (scope.prefix === "" && this.nestedTest(stmt, undefined, 0)) return;
     const unwrapped = unwrapStatement(stmt);
     if (stmt.type === "export_statement") this.exportStatement(stmt, unwrapped);
     const node = unwrapped.node;
@@ -1007,6 +1369,8 @@ class Extractor {
   // ── imports and exports (statement level) ──────────────────────────────────────────────────────
 
   private importStatement(stmt: Node): void {
+    const typeOnly = isTypeStatement(stmt);
+    const flag = (only: boolean): { typeOnly?: true } => (only ? { typeOnly: true } : {});
     const require = stmt.namedChildren.find((c) => c.type === "import_require_clause");
     if (require) {
       const id = require.namedChild(0);
@@ -1016,6 +1380,7 @@ class Extractor {
           localName: id.text,
           module: stringContent(source),
           site: nodeSpan(require, this.lines),
+          ...flag(typeOnly),
         });
       return;
     }
@@ -1039,10 +1404,17 @@ class Extractor {
           module,
           importedName: "default",
           site: nodeSpan(part, this.lines),
+          ...flag(typeOnly),
         });
       } else if (part.type === "namespace_import") {
         const id = part.namedChild(0);
-        if (id) this.imports.push({ localName: id.text, module, site: nodeSpan(part, this.lines) });
+        if (id)
+          this.imports.push({
+            localName: id.text,
+            module,
+            site: nodeSpan(part, this.lines),
+            ...flag(typeOnly),
+          });
       } else if (part.type === "named_imports") {
         for (const spec of part.namedChildren) {
           if (spec.type !== "import_specifier") continue;
@@ -1054,6 +1426,7 @@ class Extractor {
             module,
             importedName: name.text,
             site: nodeSpan(spec, this.lines),
+            ...flag(typeOnly || isTypeSpecifier(spec)),
           });
         }
       }
@@ -1066,6 +1439,8 @@ class Extractor {
     if (source) {
       const module = stringContent(source);
       const namespaceExport = stmt.namedChildren.find((c) => c.type === "namespace_export");
+      const typeOnly = isTypeStatement(stmt);
+      const flag = (only: boolean): { typeOnly?: true } => (only ? { typeOnly: true } : {});
       if (clause) {
         for (const spec of clause.namedChildren) {
           if (spec.type !== "export_specifier") continue;
@@ -1077,13 +1452,25 @@ class Extractor {
             module,
             importedName: name.text,
             site: nodeSpan(spec, this.lines),
+            ...flag(typeOnly || isTypeSpecifier(spec)),
           });
         }
       } else if (namespaceExport) {
         const id = namespaceExport.namedChild(0);
-        if (id) this.exports.push({ name: id.text, module, site: nodeSpan(stmt, this.lines) });
+        if (id)
+          this.exports.push({
+            name: id.text,
+            module,
+            site: nodeSpan(stmt, this.lines),
+            ...flag(typeOnly),
+          });
       } else {
-        this.exports.push({ name: "*", module, site: nodeSpan(stmt, this.lines) });
+        this.exports.push({
+          name: "*",
+          module,
+          site: nodeSpan(stmt, this.lines),
+          ...flag(typeOnly),
+        });
       }
       return;
     }
@@ -1154,11 +1541,80 @@ class Extractor {
         case "optional_parameter":
           this.onParameter(n);
           break;
+        case "identifier":
+        case "shorthand_property_identifier":
+        case "property_identifier":
+        case "private_property_identifier":
+          this.readLeaves.push(n);
+          break;
         default:
           break;
       }
     }
     for (const assignment of assignments) this.onConstructorAssignment(assignment);
+    this.onReads();
+  }
+
+  // ── reads ──────────────────────────────────────────────────────────────────────────────────────
+
+  private onReads(): void {
+    if (this.readLeaves.length === 0) return;
+    // What the file declares or imports: a bare name can only be a variable read when it is one of these.
+    const bare = new Set<string>();
+    const roots = new Set<string>();
+    for (const draft of this.drafts) {
+      if (this.testDrafts.has(draft)) continue;
+      const name = lastSegment(draft.path);
+      roots.add(name);
+      if (draft.kind === "variable") bare.add(name);
+    }
+    for (const binding of this.imports) {
+      bare.add(binding.localName);
+      roots.add(binding.localName);
+    }
+    // Locals and parameters with a type fact, by name (their members can be resolved).
+    const typed = new Map<string, TypeFact[]>();
+    for (const fact of this.typeFacts) {
+      if (fact.kind !== "local" && fact.kind !== "param") continue;
+      const list = typed.get(fact.name);
+      if (list) list.push(fact);
+      else typed.set(fact.name, [fact]);
+    }
+    const hasFact = (name: string, site: Span): boolean =>
+      typed
+        .get(name)
+        ?.some((f) => !f.visibleIn || spanContains(f.visibleIn, site.startLine, site.startCol)) ??
+      false;
+    // Cheapest tests first: `leaf.parent` walks down from the root of the tree, and most leaves are locals.
+    for (const leaf of this.readLeaves) {
+      if (leaf.type === "identifier" || leaf.type === "shorthand_property_identifier") {
+        const name = leaf.text;
+        if (!bare.has(name)) continue;
+        const shape = bareRead(leaf, name, this.lines);
+        if (shape && !this.scopes.isBound(leaf, name))
+          this.sites.push({ kind: "read", name, qualifier: [], site: shape.site });
+        continue;
+      }
+      const found = memberOf(leaf);
+      if (!found) continue;
+      const chain = chainOf(found.object);
+      if (!chain) continue;
+      const root = chain[0]!;
+      const called = root.endsWith("()");
+      const rootName = called ? root.slice(0, -2) : root;
+      const special = root === "this" || root === "super" || root.startsWith(":");
+      // a receiver that is neither declared in the file nor a local with a known type resolves to nothing
+      if (!special && !roots.has(rootName) && !typed.has(rootName)) continue;
+      const shape = memberRead(leaf, found.member, found.object, this.lines);
+      if (!shape) continue;
+      const ok =
+        special ||
+        (this.scopes.isBound(leaf, rootName)
+          ? !called && hasFact(rootName, shape.site)
+          : roots.has(rootName));
+      if (ok)
+        this.sites.push({ kind: "read", name: shape.name, qualifier: chain, site: shape.site });
+    }
   }
 
   private pushSite(kind: SiteDraft["kind"], parts: NameParts, site: Span): void {
@@ -1408,13 +1864,43 @@ function importSiteNode(id: Node): Node | undefined {
   return undefined;
 }
 
+/** The statement an import/export specifier (or default binding) is part of. */
+function statementOf(node: Node): Node | undefined {
+  for (let n: Node | null = node; n; n = n.parent) {
+    if (n.type === "import_statement" || n.type === "export_statement") return n;
+  }
+  return undefined;
+}
+
+/** `import` for a binding of a run-time import, `type-ref` for `import type` / `{ type A }` ones. */
+function importKind(specifier: Node): "import" | "type-ref" {
+  return isTypeSpecifier(specifier) || isTypeStatement(statementOf(specifier))
+    ? "type-ref"
+    : "import";
+}
+
+/** The module specifier string of a type-only `import ... from "x"` / `export ... from "x"`, if `node` is in it. */
+function typeOnlySource(node: Node): Node | undefined {
+  for (let n: Node | null = node, i = 0; n && i < 3; n = n.parent, i++) {
+    if (n.type !== "string") continue;
+    const statement = n.parent;
+    if (
+      (statement?.type === "import_statement" || statement?.type === "export_statement") &&
+      statement.childForFieldName("source")?.id === n.id
+    )
+      return isTypeStatement(statement) ? n : undefined;
+    return undefined;
+  }
+  return undefined;
+}
+
 function classifyIdentifier(id: Node, lines: readonly string[]): ClassifiedSite | undefined {
   const parent = id.parent;
   if (!parent) return undefined;
 
-  // Imports (including `export { x } from "..."`).
+  // Imports (including `export { x } from "..."`); type-only ones are type references.
   const importNode = importSiteNode(id);
-  if (importNode) return { kind: "import", site: nodeSpan(importNode, lines) };
+  if (importNode) return { kind: importKind(importNode), site: nodeSpan(importNode, lines) };
 
   // Calls: `f()`, `a.b.f()`, `new X()`, `new ns.X()`.
   let callee: Node | undefined;
@@ -1512,7 +1998,13 @@ function classifyIdentifier(id: Node, lines: readonly string[]): ClassifiedSite 
       return { kind: "write", site: writeSpan(holder, target, lines) };
     }
   }
-  return undefined;
+
+  // Reads: whether the name is local, or a variable, is for the caller to know (SCIP has resolved it).
+  const read = readShapeOf(id, lines);
+  if (!read) return undefined;
+  return read.object
+    ? { kind: "read", site: read.site }
+    : { kind: "read", site: read.site, bare: true };
 }
 
 // ─── Module resolution ────────────────────────────────────────────────────────────────────────────
@@ -1531,6 +2023,52 @@ function resolveTypescriptModule(spec: string, fromFile: string, repo: RepoView)
   const directoryOnly =
     clean === "." || clean === ".." || clean.endsWith("/") || /(^|\/)\.\.?$/.test(clean);
   return probeModule(joined, repo, directoryOnly);
+}
+
+// ─── Syntax errors in types ───────────────────────────────────────────────────────────────────────
+
+/**
+ * Nodes that hold a type expression. tree-sitter-typescript 0.23 (the last release) cannot parse a labelled
+ * tuple element whose label is a type keyword (`[symbol: string]`, `[string: string]`, `[any: T]`, valid
+ * TypeScript): it reports an `ERROR` inside the tuple and carries on, so everything outside the tuple is intact.
+ * An error inside one of these nodes cannot have cost a symbol. Interface bodies, type literals' members and
+ * class bodies are deliberately not here: an error directly in them may have swallowed a member.
+ */
+const TYPE_CONTAINERS = new Set([
+  "type_annotation",
+  "type_arguments",
+  "type_parameters",
+  "type_alias_declaration",
+  "tuple_type",
+  "union_type",
+  "intersection_type",
+  "array_type",
+  "function_type",
+  "constructor_type",
+  "generic_type",
+  "conditional_type",
+  "mapped_type_clause",
+  "index_type_query",
+  "lookup_type",
+  "template_literal_type",
+  "readonly_type",
+  "parenthesized_type",
+  "infer_type",
+  "type_query",
+  "type_predicate",
+  "type_predicate_annotation",
+  "opting_type_annotation",
+  "omitting_type_annotation",
+  "asserts_annotation",
+]);
+
+function errorInTypePosition(error: Node): boolean {
+  // `export type * from "x"` / `export type * as ns from "x"`: the keyword alone is the error, the statement
+  // around it is read as the export it is (see `isTypeStatement`).
+  if (error.isError && error.text === "type" && error.parent?.type === "export_statement")
+    return true;
+  for (let n = error.parent; n; n = n.parent) if (TYPE_CONTAINERS.has(n.type)) return true;
+  return false;
 }
 
 // ─── The pack ─────────────────────────────────────────────────────────────────────────────────────
@@ -1553,9 +2091,17 @@ export const typescriptPack: LanguagePack = {
       { row: line - 1, column: col - 1 },
       { row: line - 1, column: col },
     );
-    if (!node || !IDENTIFIER_TYPES.has(node.type)) return undefined;
+    if (!node) return undefined;
+    if (!IDENTIFIER_TYPES.has(node.type)) {
+      // The module specifier of `import type * as ns from "x"`: a type reference to the module (redundant
+      // when the same statement names what it imports; the SCIP mapper decides).
+      const source = typeOnlySource(node);
+      return source ? { kind: "type-ref", site: nodeSpan(source, ctx.lines) } : undefined;
+    }
     return classifyIdentifier(node, ctx.lines);
   },
 
   resolveModule: resolveTypescriptModule,
+
+  errorInTypePosition,
 };

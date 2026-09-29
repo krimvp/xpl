@@ -35,11 +35,13 @@ export type { CommitIdOptions } from "./commit.js";
 export {
   languagePacks,
   packFor,
+  packForFile,
   typescriptPack,
   pythonPack,
   goPack,
   yamlPack,
   jsonPack,
+  tomlPack,
 } from "./languages/index.js";
 export type {
   ClassifiedSite,

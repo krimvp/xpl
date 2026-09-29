@@ -10,11 +10,12 @@ import {
 import { distanceToSegment } from "../src/svg.js";
 import { makeBundle } from "./world.js";
 
-function graphOf(include: string[]) {
+function graphOf(include: string[], over: Partial<GraphView> = {}) {
   const bundle = makeBundle();
   const explainer = structuredClone(bundle.explainer);
   const view = explainer.views.find((v) => v.id === "view:overview") as GraphView;
   view.include = include;
+  Object.assign(view, over);
   const model = new ExplainerModel(explainer, bundle.index);
   return { graph: deriveGraph(view, model), model };
 }
@@ -79,6 +80,69 @@ describe("layoutGraph", () => {
     expect(stub.label).toBeUndefined();
     expect(stub.title).toBe("calls ×1");
     expect(stub.points.at(-1)!.x).toBeCloseTo(ghost.x, 0);
+  });
+
+  it("draws a ghost that folds several elements as one box that carries its pick-list", async () => {
+    // A.stop calls A.run: the rest of a.ts (a file shown in part) is one ghost, not one per symbol
+    const { graph } = graphOf(["sym:src/a.ts#A.run"]);
+    const layout = await layoutGraph(graph);
+    const rest = layout.nodes.find((n) => n.id === "ghost:rest:file:src/a.ts")!;
+    expect(rest.ghost).toBe(true);
+    expect(rest.label).toBe("rest of a.ts");
+    expect(rest.detail).toBe("calls ×1");
+    expect(rest.hint).toBe("calls ×1");
+    expect(rest.ghostTarget).toBeUndefined(); // nothing is added by clicking it
+    expect(rest.ghostFold).toMatchObject({ kind: "rest", file: "file:src/a.ts" });
+    expect(rest.ghostFold!.targets.map((t) => [t.target, t.count])).toEqual([
+      ["sym:src/a.ts#A.stop", 1],
+    ]);
+    // it only enters the view there, so it is placed before what it enters
+    const run = layout.nodes.find((n) => n.id === "sym:src/a.ts#A.run")!;
+    expect(rest.x + rest.width).toBeLessThanOrEqual(run.x);
+    // the ghost for a single element stays a plain one
+    const plain = layout.nodes.find((n) => n.id === "ghost:file:src/b.ts")!;
+    expect(plain.ghostTarget).toBe("file:src/b.ts");
+    expect(plain.ghostFold).toBeUndefined();
+    expect(
+      layout.edges.some((e) => e.id === graph.stubs.find((s) => s.ghost.startsWith("rest:"))!.id),
+    ).toBe(true);
+  });
+
+  it("draws the overflow ghost with every folded element in its list", async () => {
+    const { graph } = graphOf(["sym:src/a.ts#A.run"], { stubs: { max: 0 } });
+    const layout = await layoutGraph(graph);
+    expect(
+      layout.nodes
+        .filter((n) => n.ghost)
+        .map((n) => [n.id, n.label])
+        .sort(),
+    ).toEqual([
+      ["ghost:more:in", "+1 more"],
+      ["ghost:more:out", "+1 more"],
+    ]);
+    const out = layout.nodes.find((n) => n.id === "ghost:more:out")!;
+    expect(out.ghostFold).toMatchObject({ kind: "more" });
+    expect(out.ghostFold!.file).toBeUndefined();
+    expect(out.ghostFold!.targets.map((t) => t.target)).toEqual(["file:src/b.ts"]);
+  });
+
+  it("draws no ghost and no stub when the view says none", async () => {
+    const { graph } = graphOf(["sym:src/a.ts#A.run"], { stubs: { mode: "none" } });
+    const layout = await layoutGraph(graph);
+    expect(layout.nodes.filter((n) => n.ghost)).toEqual([]);
+    expect(layout.edges.filter((e) => e.stub)).toEqual([]);
+  });
+
+  it("still lays out a graph built without the ghost list, reading the ghosts off the stubs", async () => {
+    const { graph } = graphOf(["sym:src/a.ts#A.run"], { stubs: { mode: "all" } });
+    const { ghosts: _dropped, ...bare } = graph;
+    const layout = await layoutGraph(bare as typeof graph);
+    const ghost = layout.nodes.find((n) => n.id === "ghost:file:src/b.ts")!;
+    expect(ghost).toMatchObject({
+      ghostTarget: "file:src/b.ts",
+      label: "b.ts",
+      detail: "calls ×1",
+    });
   });
 
   it("marks heuristic edges so they can be drawn lighter", async () => {

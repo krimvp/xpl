@@ -442,6 +442,94 @@ export function typeShape(
   };
 }
 
+/** Is this bare name in a value position, rather than being declared, assigned, labelled or used as a key? */
+function isValuePosition(id: Node): boolean {
+  const parent = id.parent;
+  if (!parent) return false;
+  const is = (field: string): boolean => parent.childForFieldName(field)?.id === id.id;
+  switch (parent.type) {
+    case "function_declaration":
+    case "parameter_declaration":
+    case "variadic_parameter_declaration":
+    case "type_parameter_declaration":
+    case "var_spec":
+    case "const_spec":
+    case "inc_statement":
+    case "dec_statement":
+    case "labeled_statement":
+      return false;
+    case "call_expression":
+      return !is("function");
+    case "selector_expression":
+      return is("operand");
+    case "expression_list": {
+      // `a, b := ...` and `a, b = ...` declare or assign what is on the left; `for i := range`, `case v := <-ch`
+      // and `switch t := x.(type)` declare theirs.
+      const holder = parent.parent;
+      const side = (field: string): boolean => holder?.childForFieldName(field)?.id === parent.id;
+      switch (holder?.type) {
+        case "short_var_declaration":
+        case "assignment_statement":
+          return side("right");
+        case "range_clause":
+        case "receive_statement":
+          return !side("left");
+        case "type_switch_statement":
+          return !side("alias");
+        default:
+          return true;
+      }
+    }
+    case "literal_element": {
+      // `T{Field: v}`: the key is a field name (or, in a map literal, an expression we cannot tell from it)
+      const holder = parent.parent;
+      return !(
+        holder?.type === "keyed_element" && holder.childForFieldName("key")?.id === parent.id
+      );
+    }
+    default:
+      return true;
+  }
+}
+
+/**
+ * The `read` a leaf makes, if any: a bare name, or the field of a selector `x.f`, in a value position that is
+ * not a callee (a call) or an assignment target (a write). Purely syntactic: whether the name is local, or
+ * resolves to a variable, is decided elsewhere.
+ */
+export function readShape(leaf: Node, lines: readonly string[]): SiteShape | undefined {
+  if (leaf.type !== "identifier" && leaf.type !== "field_identifier") return undefined;
+  if (leaf.type === "identifier" && !isValuePosition(leaf)) return undefined;
+  if (shapeOfLeaf(leaf, lines)) return undefined; // a call or a write
+  if (leaf.type === "identifier") {
+    if (leaf.text === "") return undefined; // a MISSING identifier of a syntax error
+    return {
+      kind: "read",
+      name: leaf.text,
+      nameNode: leaf,
+      core: leaf,
+      site: nodeSpan(leaf, lines),
+    };
+  }
+  const selector = leaf.parent;
+  if (
+    selector?.type !== "selector_expression" ||
+    selector.childForFieldName("field")?.id !== leaf.id
+  )
+    return undefined;
+  const operand = selector.childForFieldName("operand");
+  if (!operand) return undefined;
+  const whole = nodeSpan(selector, lines);
+  return {
+    kind: "read",
+    name: leaf.text,
+    nameNode: leaf,
+    core: selector,
+    operand,
+    site: spanLineCount(whole) <= SITE_MAX_LINES ? whole : nodeSpan(leaf, lines),
+  };
+}
+
 /**
  * The shape of the site an identifier / field identifier / type identifier leaf belongs to, if any: the
  * inverse of the scan the extractor does (owner node -> shape), shared with `classifySite`.
