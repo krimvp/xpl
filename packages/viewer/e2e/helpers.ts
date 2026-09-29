@@ -40,6 +40,14 @@ export async function openBundle(
   }
 }
 
+/**
+ * The toolbar's Fit: all of the diagram in view. A diagram too big to read when fitted starts zoomed in, with
+ * part of it out of sight (PanZoom, "Fit all"): a spec that goes through every element fits it first.
+ */
+export async function fitAll(page: Page): Promise<void> {
+  await page.getByRole("button", { name: "Fit to view" }).click();
+}
+
 export const focusOf = (page: Page) => page.evaluate(() => window.__xpl!.focus());
 export const matchesOf = (page: Page) => page.evaluate(() => window.__xpl!.matches());
 export const selectionOf = (page: Page) => page.evaluate(() => window.__xpl!.selection());

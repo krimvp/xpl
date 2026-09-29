@@ -13,6 +13,7 @@ import { readFileSync } from "node:fs";
 import { expect, test, type Page } from "@playwright/test";
 import {
   byId,
+  fitAll,
   readEmbeddedBundle,
   screenshotPath,
   selectionOf,
@@ -410,6 +411,8 @@ test.describe("the Stubs control", () => {
   }) => {
     await openCrowded(page);
     await page.locator('[data-stub-mode="all"]').click();
+    // all ghosts make a big diagram, which starts zoomed in: fit it to reach the last one
+    await fitAll(page);
     await byId(page, "ghost:file:src/f11.ts").click();
     await expect(byId(page, "file:src/f11.ts")).toBeVisible();
     expect((await stateOf(page)).stubs).toEqual({ mode: "all", max: 8 });

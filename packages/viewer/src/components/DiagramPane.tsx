@@ -22,6 +22,8 @@ export function DiagramPane() {
   }
   const question = view.scope?.question;
   const present = state.mode === "present";
+  // Each tour step starts the diagram over, even in the same view: it looks at the step's focus.
+  const resetKey = `${view.id}#${state.stepSeq}`;
   return (
     <div className="diagram" data-view-id={view.id} data-view-type={view.type}>
       <div className="diagram-caption">
@@ -46,15 +48,18 @@ export function DiagramPane() {
           {view.type === "graph" && derived.view.graph ? (
             <GraphView
               viewId={view.id}
+              resetKey={resetKey}
               graph={derived.view.graph}
               selection={state.selection}
               matches={derived.matches}
               related={derived.selection.related}
+              order={Array.isArray(view.include) ? view.include : undefined}
               present={present}
             />
           ) : view.type === "sequence" ? (
             <SequenceView
               view={view}
+              resetKey={resetKey}
               model={state.model}
               selection={state.selection}
               matches={derived.matches}

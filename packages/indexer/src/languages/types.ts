@@ -265,8 +265,9 @@ export interface LanguagePack {
   /** The `IndexedFile.language` values this pack handles. */
   readonly languages: readonly FileLanguage[];
   /**
-   * Extensions (lowercase, with the dot) of `text` files this pack handles too: formats `FileLanguage` has no
-   * name for yet (TOML). Such files are `text` in the index but are parsed and extracted by this pack.
+   * Extensions (lowercase, with the dot) of `text` files this pack handles too: a format `FileLanguage` has no
+   * name for. Such files are `text` in the index but are parsed and extracted by this pack. No pack uses it
+   * at the moment (TOML has its own language now).
    */
   readonly extensions?: readonly string[];
   /** Grammar used to parse a file of `language` (e.g. javascript -> "tsx"; `text` for `extensions`). */

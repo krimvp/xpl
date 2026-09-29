@@ -1,6 +1,10 @@
 /**
  * The repo's files as a collapsible tree. With a focus, files outside it are greyed (`is-dimmed`);
  * files in it are marked (`is-focus`). Click a file to show it in the editor stack.
+ *
+ * A static bundle (no server) lists only the files it embeds: `xpl bundle` puts in what the explainer
+ * needs, and a file that is not there cannot be opened. A footer says how many of the indexed files that is
+ * and how to get the rest. Under `xpl view` every indexed file is listed and fetched when it is opened.
  */
 import type { IndexedFile } from "@xpl/core";
 import { useEffect, useMemo, useState } from "react";
@@ -40,7 +44,13 @@ export function FileTree() {
   const store = useStore();
   const state = useViewerState();
   const derived = useDerived();
-  const tree = useMemo(() => buildTree(state.model.index.files), [state.model]);
+  const { model, files, serverMode } = state;
+  const indexed = model.index.files;
+  const listed = useMemo(
+    () => (serverMode ? indexed : indexed.filter((file) => Object.hasOwn(files, file.path))),
+    [indexed, files, serverMode],
+  );
+  const tree = useMemo(() => buildTree(listed), [listed]);
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
   const focusFiles = derived.selection.focusFiles;
   const hasFocus = focusFiles.size > 0;
@@ -122,11 +132,22 @@ export function FileTree() {
   };
 
   return (
-    <nav className="tree" aria-label="Files">
-      <ul role="tree">
-        {tree.dirs.map((dir) => renderDir(dir, 0))}
-        {tree.files.map((file) => renderFile(file, 0))}
-      </ul>
-    </nav>
+    <>
+      <nav className="tree" aria-label="Files">
+        <ul role="tree">
+          {tree.dirs.map((dir) => renderDir(dir, 0))}
+          {tree.files.map((file) => renderFile(file, 0))}
+        </ul>
+      </nav>
+      {listed.length < indexed.length && (
+        <p
+          className="tree-foot"
+          data-testid="tree-foot"
+          title="This page carries the source of only some of the repo's files, so the others cannot be opened here. Run `xpl bundle --files all` to embed every file."
+        >
+          {listed.length} of {indexed.length} files included · rebuild with <code>--files all</code>
+        </p>
+      )}
+    </>
   );
 }

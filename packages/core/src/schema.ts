@@ -135,7 +135,16 @@ export interface LanguageInfo {
  * file-relative anchors work anywhere.
  */
 export type FileLanguage =
-  "typescript" | "tsx" | "javascript" | "python" | "go" | "yaml" | "json" | "text";
+  | "typescript"
+  | "tsx"
+  | "javascript"
+  | "python"
+  | "go"
+  | "yaml"
+  | "json"
+  /** TOML config (`pyproject.toml`, `Cargo.toml`): keys are symbols, like YAML and JSON. */
+  | "toml"
+  | "text";
 
 export interface IndexedFile {
   path: FilePath;

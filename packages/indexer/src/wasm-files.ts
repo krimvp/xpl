@@ -14,10 +14,9 @@ import type { FileLanguage } from "@xpl/core";
 
 /**
  * Grammars we ship. Every `FileLanguage` with a grammar of its own is one ("javascript" files are parsed with
- * the "typescript" or, for JSX, the "tsx" grammar; "text" files are not parsed), plus "toml": TOML files are
- * `text` in the index (`FileLanguage` has no name for them) but are parsed with this grammar.
+ * the "typescript" or, for JSX, the "tsx" grammar; "text" files are not parsed).
  */
-export type GrammarId = Exclude<FileLanguage, "javascript" | "text"> | "toml";
+export type GrammarId = Exclude<FileLanguage, "javascript" | "text">;
 
 /** One `.wasm` file: where to find it in `node_modules`, and its name inside a wasm directory. */
 export interface WasmSource {

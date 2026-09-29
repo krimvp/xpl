@@ -29,6 +29,7 @@ import {
   EDGE_BOUNDS_PAD,
   labelWidth,
   layoutGraphFitting,
+  startAnchor,
   type GraphLayout,
   type LayoutEdge,
   type LayoutNode,
@@ -101,20 +102,31 @@ function activate(event: KeyboardEvent, run: () => void) {
 
 export interface GraphViewProps {
   viewId: string;
+  /** A new key starts the diagram over (its first view); default: the view id. */
+  resetKey?: string;
   graph: DerivedGraph;
   selection: readonly string[];
   matches: readonly string[];
   related: ReadonlySet<string>;
+  /**
+   * The view's include list, in the author's order. A diagram too big to be shown whole starts on the
+   * selection, else on the first of these that is drawn.
+   */
+  order?: readonly string[];
   /** Present mode: larger fitting, and the diagram cannot be edited. */
   present?: boolean;
 }
 
+const NO_ORDER: readonly string[] = [];
+
 export function GraphView({
   viewId,
+  resetKey = viewId,
   graph,
   selection,
   matches,
   related,
+  order = NO_ORDER,
   present = false,
 }: GraphViewProps) {
   const store = useStore();
@@ -126,6 +138,11 @@ export function GraphView({
   const marks = useMemo<Marks>(
     () => ({ selected: new Set(selection), matches: new Set(matches), related }),
     [selection, matches, related],
+  );
+
+  const startBox = useMemo(
+    () => (layout ? startAnchor(layout, selection, order) : undefined),
+    [layout, selection, order],
   );
 
   // The layout direction (right or down) is chosen for the pane the diagram is drawn in.
@@ -208,10 +225,11 @@ export function GraphView({
       <PanZoom
         width={layout.width}
         height={layout.height}
-        resetKey={viewId}
+        resetKey={resetKey}
         label="Diagram. Drag to pan, scroll to zoom."
         maxFitZoom={present ? PRESENT_MAX_FIT_ZOOM : undefined}
         fitPadding={present ? PRESENT_FIT_PADDING : undefined}
+        startBox={startBox}
         onBackgroundClick={() => store.clearSelection()}
       >
         <g

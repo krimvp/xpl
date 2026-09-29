@@ -45,6 +45,7 @@ export const FILE_LANGUAGES: readonly FileLanguage[] = [
   "go",
   "yaml",
   "json",
+  "toml",
   "text",
 ];
 
@@ -63,6 +64,7 @@ const EXTENSION_LANGUAGE: Readonly<Record<string, FileLanguage>> = {
   ".yaml": "yaml",
   ".yml": "yaml",
   ".json": "json",
+  ".toml": "toml",
 };
 
 /** Language of a file by extension (case-insensitive); anything unknown is "text". */
