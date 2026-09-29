@@ -1,0 +1,233 @@
+/**
+ * The language-pack interface (ARCHITECTURE.md §3).
+ *
+ * A pack turns one parsed file into plain facts. It never assigns symbol ids, `~2` duplicate suffixes,
+ * hashes or parents, and it never resolves anything: the framework (src/build.ts, src/symbols.ts) does
+ * that, and the language-agnostic heuristic resolver (src/resolve/heuristic.ts) consumes the facts of all
+ * files to produce `Reference`s. Every top-level symbol counts as exported (importable by its path).
+ *
+ * Conventions every pack follows:
+ *
+ * - All positions are `Span`s: 1-based, inclusive lines AND columns, columns counted in UTF-16 code units
+ *   (JS string indices). Build them with `nodeSpan` / `spanBetween` from `../ast.js`; they turn
+ *   tree-sitter's 0-based, end-exclusive points into this convention.
+ * - Paths (`SymbolDraft.path`, `TypeFact.scopePath`, ...) are dot-separated and *pre-dedup*: the pack never
+ *   appends `~2`. If two drafts have the same path the framework numbers them in source order, and the
+ *   resolver strips `~N` again before comparing against pack-space paths.
+ * - A pack must not keep `web-tree-sitter` nodes in its output: the tree is freed right after `extract`.
+ * - The receiver of a member access is normalised to `"this"` (TS `this`; Python `self`/`cls`; Go receiver
+ *   variable names) so the resolver has one rule for it. TS `super` stays `"super"` (base-class members).
+ *
+ * Qualifier segments (`SiteDraft.qualifier`, `TypeFact.initCall.qualifier`) describe the receiver
+ * expression of a member access or call, left to right:
+ *
+ *   `this.pool.lease()`        -> qualifier ["this", "pool"], name "lease"
+ *   `worker.run(job)`          -> qualifier ["worker"],       name "run"
+ *   `Queue.create()`           -> qualifier ["Queue"],        name "create"
+ *   `a.b().c()`                -> qualifier ["a", "b()"],     name "c"     (`x()` = result of calling x)
+ *   `new Foo().bar()`          -> qualifier ["Foo()"],        name "bar"   (calling a class = an instance)
+ *   `(x as Foo).bar()`         -> qualifier [":Foo"],         name "bar"   (":T" = a value of declared type T)
+ *
+ * A pack that cannot express a receiver (`arr[0].run()`) should not emit the site at all.
+ */
+import type { Tree } from "web-tree-sitter";
+import type { FileLanguage, FilePath, IndexedSymbol, Range, SymbolPath } from "@xpl/core";
+import type { GrammarId } from "../wasm-files.js";
+
+/** 1-based, inclusive lines and columns (UTF-16 code units): a `Range` whose columns are always present. */
+export type Span = Range & { startCol: number; endCol: number };
+
+/** A parsed file, as handed to `LanguagePack.extract` / `classifySite`. The tree is only valid during the call. */
+export interface FileContext {
+  /** Repo-root-relative POSIX path. */
+  file: FilePath;
+  language: FileLanguage;
+  /** Full text, exactly as read from disk (may contain `\r\n` and a BOM). */
+  source: string;
+  /** `splitLines(source)`: line `n` (1-based) is `lines[n - 1]`. */
+  lines: readonly string[];
+  tree: Tree;
+}
+
+/**
+ * Read-only view of the indexed repository, for `resolveModule` (and anything else a pack needs to look at
+ * across files, e.g. `go.mod` or `pyproject.toml`).
+ */
+export interface RepoView {
+  /** Absolute path of the indexed root. */
+  readonly root: string;
+  /** Every indexed file path (repo-root-relative POSIX). */
+  readonly files: ReadonlySet<FilePath>;
+  /** Indexed files that live directly in `dir` (`""` = the root), sorted. */
+  filesInDir(dir: string): readonly FilePath[];
+  /** Text of any file under the root, indexed or not (cached); undefined when missing or unreadable. */
+  readText(path: FilePath): string | undefined;
+}
+
+// ─── Facts ────────────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * A symbol the pack found. Order does not matter (the framework sorts by position).
+ *
+ * `range` is the full extent of the declaration *including* decorators, `export`/modifiers and (TS) the
+ * `declare` keyword, but *excluding* leading comments (ARCHITECTURE.md §2.9). The index stores whole lines
+ * only; the columns are kept internally for innermost-symbol lookups.
+ */
+export interface SymbolDraft {
+  /** Dotted path, e.g. `Runner.dispatch`, `outer.inner`, `retry.maxRetries`. Never empty. */
+  path: SymbolPath;
+  kind: IndexedSymbol["kind"];
+  range: Span;
+  /**
+   * Path of the logical parent (usually the path minus its last segment). The framework resolves it to
+   * the draft with that path (the one containing this draft if several were numbered `~N`). If no draft
+   * has that path (e.g. a Go method whose receiver type lives in another file) the symbol has no parent.
+   */
+  parentPath?: SymbolPath;
+}
+
+export type SiteKind = "call" | "import" | "extends" | "implements" | "type-ref" | "write";
+
+/**
+ * A syntactic reference site: something in the code that mentions a name.
+ *
+ * - `call`: `name(...)`, `recv.name(...)`, `new Name(...)`, composite literals (Go), JSX components.
+ *   `site` is the whole call expression, or only the callee if the call spans more than 10 lines.
+ * - `import`: a module-level import that has no `ImportBinding` (`import "./x"`, dynamic `import("./x")`,
+ *   `require("./x")` outside a declaration). `name` is the module specifier, `qualifier` is empty.
+ * - `extends` / `implements`: heritage clauses; Python class bases are `extends`. `site` is the base name.
+ * - `type-ref`: a name in a type position. `site` is the type name (qualified names included).
+ * - `write`: assignment (`=`, `+=`, `++`) to a field or module variable. `site` is the assignment
+ *   expression, or only its target if it spans more than 10 lines.
+ *
+ * The "from" symbol of a site is *not* given: the framework finds the innermost symbol containing
+ * `site.startLine/startCol`, or the module scope (`"<file>#"`). That also attributes sites correctly when
+ * several symbols share a path (`~2`), which a pack-space path cannot.
+ */
+export interface SiteDraft {
+  kind: SiteKind;
+  /** The referenced name: last segment of the callee / type / module specifier. */
+  name: string;
+  /** Receiver chain (see the file comment). Empty for plain names. */
+  qualifier: string[];
+  site: Span;
+  /** Optional and ignored: the pack-space path of the enclosing symbol, if a pack happens to know it. */
+  fromPath?: SymbolPath;
+}
+
+/** A name a file brings into scope from another module. */
+export interface ImportBinding {
+  /** The name as used in this file (the alias if there is one). */
+  localName: string;
+  /** Module specifier exactly as written (`./queue.ts`, `jobrunner.queue`, `github.com/x/y/internal/queue`). */
+  module: string;
+  /** Name in the target module; `undefined` = the module itself (namespace / `import x as y` / Go package). */
+  importedName?: string;
+  /** The specifier (or the whole statement when there is no finer node). */
+  site: Span;
+}
+
+export interface TypeFact {
+  /**
+   * The symbol path that owns the declaration:
+   * - `field`: the class / interface / struct (`Runner`); `name` is the field name.
+   * - `param`, `local`: the enclosing function or method (`Runner.dispatch`); `""` for module-level variables.
+   * - `return`: the function or method itself (`WorkerPool.lease`); `name` is its last path segment.
+   */
+  scopePath: SymbolPath;
+  name: string;
+  kind: "field" | "param" | "local" | "return";
+  /**
+   * The declared or inferred type name, base name only: generics stripped, `T | undefined` reduced to `T`,
+   * `Promise<T>` unwrapped for `return`, pointers stripped. May be qualified (`mod.Type`), resolved through
+   * imports. Omit it when only `initCall` / `initChain` is known. `"this"` (return facts) means "the
+   * receiver's own type" (fluent methods).
+   */
+  typeName?: string;
+  /**
+   * The value is the result of this call (`const worker = await this.pool.lease()`): the resolver looks the
+   * callee up and uses its declared return type. Same shape as a `SiteDraft` callee.
+   */
+  initCall?: { qualifier: string[]; name: string };
+  /**
+   * The value is the value of this receiver chain, in the syntax of `SiteDraft.qualifier`: an alias such as
+   * `const index = model.index` (["model", "index"]) or `const q = this.queue` (["this", "queue"]).
+   */
+  initChain?: string[];
+  /**
+   * Where the name is in scope, when that is narrower than everything inside `scopePath`: a callback's
+   * parameters, a `const` declared in a nested block. The resolver only uses the fact for sites inside this
+   * span and prefers the innermost one, so two callbacks that both declare `q` do not mix their types. Omit
+   * it for names visible in the whole `scopePath` (Python/Go function scope, module-level variables).
+   */
+  visibleIn?: Span;
+}
+
+/**
+ * What a module exposes beyond its top-level symbols (all top-level symbols are considered exported).
+ *
+ * - `{ name: "default", localName: "Foo" }`: `export default Foo` / `export { Foo as default }`.
+ * - `{ name: "Bar", localName: "Foo" }`: `export { Foo as Bar }`.
+ * - `{ name: "Bar", module: "./x", importedName: "Foo", site }`: `export { Foo as Bar } from "./x"`.
+ * - `{ name: "ns", module: "./x", site }`: `export * as ns from "./x"` (no `importedName`).
+ * - `{ name: "*", module: "./x", site }`: `export * from "./x"`, or Python `from x import *` (the resolver
+ *   also consults it for names used in the same file).
+ *
+ * Re-exports with a `module` also yield an `import` reference from the file to the target.
+ */
+export interface ExportFact {
+  name: string;
+  localName?: string;
+  module?: string;
+  importedName?: string;
+  site?: Span;
+}
+
+/** Everything `extract` returns for one file. */
+export interface FileFacts {
+  symbols: SymbolDraft[];
+  sites: SiteDraft[];
+  imports: ImportBinding[];
+  typeFacts: TypeFact[];
+  exports?: ExportFact[];
+  /** Human-readable problems; the framework prefixes them with the file path. */
+  warnings?: string[];
+}
+
+export interface ClassifiedSite {
+  kind: SiteKind;
+  /** Same convention as `SiteDraft.site`. */
+  site: Span;
+}
+
+// ─── The pack ─────────────────────────────────────────────────────────────────────────────────────
+
+export interface LanguagePack {
+  /** Pack id, e.g. "typescript" (one pack may serve several file languages). */
+  readonly id: string;
+  /** The `IndexedFile.language` values this pack handles. */
+  readonly languages: readonly FileLanguage[];
+  /** Grammar used to parse a file of `language` (e.g. javascript -> "tsx"). */
+  grammarFor(language: FileLanguage): GrammarId;
+  /**
+   * How far a top-level name is visible without an import: `"file"` (TS, Python) or `"directory"` (Go:
+   * every file of a package directory shares one namespace).
+   */
+  readonly packageScope: "file" | "directory";
+  /** `"heuristic"` if `extract` produces sites (refs are derived), `"none"` for config formats and stubs. */
+  readonly refs: "heuristic" | "none";
+  /** Extract symbols, sites, bindings and type facts from a parsed file. Must not throw on syntax errors. */
+  extract(ctx: FileContext): FileFacts;
+  /**
+   * Classify the identifier at 1-based (`line`, `col`) with the same rules `extract` uses for its sites
+   * (used later to classify SCIP occurrences). `undefined` means "not one of the site kinds", i.e. a plain
+   * read, a declaration or something else. The returned `site` equals what `extract` emits for that site.
+   */
+  classifySite(ctx: FileContext, line: number, col: number): ClassifiedSite | undefined;
+  /**
+   * Candidate repository files (in priority order) for a module specifier used in `fromFile`. Only files
+   * present in `repo.files` may be returned. External modules (bare specifiers, stdlib) return `[]`. A
+   * package that spans several files (Go) returns all of them.
+   */
+  resolveModule(spec: string, fromFile: FilePath, repo: RepoView): FilePath[];
+}
