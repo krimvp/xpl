@@ -144,6 +144,32 @@ describe("Python read sites", () => {
     ]);
   });
 
+  it("annotations and the bases of a class are not reads, its keyword arguments and default values are", async () => {
+    const source = src(
+      "from lib import Alias, Base, Meta",
+      "X = 1",
+      "",
+      "",
+      "class C(Base, metaclass=Meta, flag=X):",
+      "    field: Alias = X",
+      "",
+      "    def m(self, a: Alias, b: X = X) -> Alias:",
+      "        c: list[Alias] = [X]",
+      "        return c",
+      "",
+      "",
+      "class D(C[X]):",
+      "    pass",
+    );
+    expect(await reads(source, "a.py")).toEqual([
+      "5: read Meta «Meta»",
+      "5: read X «X»",
+      "6: read X «X»",
+      "8: read X «X»",
+      "9: read X «X»",
+    ]);
+  });
+
   it("a name assigned anywhere in a function is local in all of it, `global` undoes that, default values run outside", async () => {
     const source = src(
       "LIMIT = 1",

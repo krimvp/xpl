@@ -26,9 +26,10 @@ import {
   underTypeChecking,
 } from "./ast.js";
 import type { SiteShape } from "./ast.js";
-import { alternatives, chainOf, collapseDotted, inferFromInit } from "./exprs.js";
+import { alternatives, chainOf, collapseDotted, inferFromInit, rootIdentifierOf } from "./exprs.js";
 import type { Env, Inferred } from "./exprs.js";
 import { PyScopes } from "./scope.js";
+import type { ReadEnv } from "./shapes.js";
 import {
   callShape,
   decoratorShape,
@@ -36,7 +37,9 @@ import {
   heritageShapes,
   importCallShape,
   importStatement,
-  readShape,
+  bareReadShape,
+  memberReadShape,
+  spanHolds,
   writeShapes,
 } from "./shapes.js";
 
@@ -51,7 +54,9 @@ const SCAN_TYPES = [
   "type",
   "assignment",
   "augmented_assignment",
-  "identifier", // the leaves a `read` can sit on (see `readShape`)
+  // what a `read` can be: a bare name, or the attribute of `a.b` (see `readShape`)
+  "identifier",
+  "attribute",
 ];
 
 interface Scope {
@@ -108,8 +113,14 @@ export class Extractor implements Env {
   /** Field facts by `${class}\0${field}`: declared ones win over inferred ones (flushed at the end). */
   private readonly fieldDeclared = new Map<string, TypeFact[]>();
   private readonly fieldInferred = new Map<string, TypeFact[]>();
-  /** Identifiers a `read` may sit on, in source order (decided once every fact is known). */
-  private readonly readLeaves: Node[] = [];
+  /** Identifiers and attribute accesses a `read` may sit on, in source order (decided once every fact is known). */
+  private readonly readNames: Node[] = [];
+  private readonly readMembers: Node[] = [];
+  /** The first parameter of every function: what `self` (or whatever a method calls its receiver) can be. */
+  private readonly firstParams = new Set<string>();
+  /** Where the annotations and the base class lists of the file are (`[start, end)` indexes, in source order). */
+  private readonly annotationSpans: [number, number][] = [];
+  private readonly baseSpans: [number, number][] = [];
   private readonly scopes = new PyScopes((fn) => this.globalsOf(fn));
 
   constructor(private readonly ctx: FileContext) {
@@ -326,15 +337,23 @@ export class Extractor implements Env {
           if (shape) this.pushShape(shape);
           break;
         }
-        case "class_definition":
+        case "class_definition": {
+          const bases = n.childForFieldName("superclasses");
+          if (bases) this.baseSpans.push([bases.startIndex, bases.endIndex]);
           for (const shape of heritageShapes(n, this.lines)) this.pushShape(shape);
           break;
-        case "function_definition":
+        }
+        case "function_definition": {
+          const first = paramsOf(n)[0];
+          if (first && !first.splat) this.firstParams.add(first.name);
           this.onFunction(n);
           break;
+        }
         case "type":
-          if (isAnnotationRoot(n))
+          if (isAnnotationRoot(n)) {
+            this.annotationSpans.push([n.startIndex, n.endIndex]);
             for (const shape of collectTypeRefs(n, this.lines)) this.pushShape(shape);
+          }
           break;
         case "assignment":
         case "augmented_assignment":
@@ -343,7 +362,10 @@ export class Extractor implements Env {
           if (n.type === "assignment") assignments.push(n);
           break;
         case "identifier":
-          this.readLeaves.push(n);
+          this.readNames.push(n);
+          break;
+        case "attribute":
+          this.readMembers.push(n);
           break;
         default:
           break;
@@ -357,7 +379,7 @@ export class Extractor implements Env {
   // ── reads ──────────────────────────────────────────────────────────────────────────────────────
 
   private onReads(): void {
-    if (this.readLeaves.length === 0) return;
+    if (this.readNames.length === 0 && this.readMembers.length === 0) return;
     // What the file declares or imports: a bare name can only be a variable read when it is one of these
     // (or when a star import may have brought it in).
     const bare = new Set<string>();
@@ -374,18 +396,50 @@ export class Extractor implements Env {
     const anyBare = this.exports.some((e) => e.name === "*");
     // Locals and parameters with a type fact, by function: their members can be resolved.
     const typed = new Set<string>();
+    const typedNames = new Set<string>();
     for (const fact of this.typeFacts)
-      if (fact.kind === "local" || fact.kind === "param")
+      if (fact.kind === "local" || fact.kind === "param") {
         typed.add(`${fact.scopePath}\0${fact.name}`);
-    for (const leaf of this.readLeaves) {
-      const shape = readShape(leaf, this.lines);
-      if (!shape) continue;
-      if (!shape.qualifierNode) {
-        if ((anyBare || bare.has(shape.name)) && !this.scopes.bindingScope(leaf, shape.name))
-          this.sites.push({ kind: "read", name: shape.name, qualifier: [], site: shape.site });
-        continue;
+        typedNames.add(fact.name);
       }
-      const chain = chainOf(shape.qualifierNode, this);
+    // The names a receiver can start with: `import a.b.c` binds "a.b.c", which spells `a.b.c.x` (see `collapseDotted`).
+    const heads = new Set<string>();
+    for (const name of roots) heads.add(name.split(".")[0]!);
+    const env: ReadEnv = {
+      inAnnotation: (index) => spanHolds(this.annotationSpans, index),
+      inBases: (index) => spanHolds(this.baseSpans, index),
+    };
+    // Cheapest tests first: every `parent` is a walk down from the root of the tree, and most names are locals.
+    const reads: { at: number; site: SiteDraft }[] = [];
+    if (anyBare || bare.size > 0) {
+      for (const leaf of this.readNames) {
+        const name = leaf.text;
+        if (!anyBare && !bare.has(name)) continue;
+        const shape = bareReadShape(leaf, name, this.lines, env);
+        if (shape && !this.scopes.bindingScope(leaf, name))
+          reads.push({
+            at: leaf.startIndex,
+            site: { kind: "read", name, qualifier: [], site: shape.site },
+          });
+      }
+    }
+    for (const member of this.readMembers) {
+      const leaf = member.childForFieldName("attribute");
+      const object = member.childForFieldName("object");
+      if (!leaf || !object) continue;
+      // a receiver that cannot be `self`, is not declared in the file and is no typed local resolves to nothing
+      const rootName = rootIdentifierOf(object);
+      if (
+        rootName === undefined ||
+        (rootName !== "super" &&
+          !this.firstParams.has(rootName) &&
+          !heads.has(rootName) &&
+          !typedNames.has(rootName))
+      )
+        continue;
+      const shape = memberReadShape(member, leaf, object, this.lines, env);
+      if (!shape) continue;
+      const chain = chainOf(object, this);
       if (!chain) continue;
       const root = chain[0]!;
       let ok = root === "this" || root === "super";
@@ -402,8 +456,14 @@ export class Extractor implements Env {
         }
       }
       if (ok)
-        this.sites.push({ kind: "read", name: shape.name, qualifier: chain, site: shape.site });
+        reads.push({
+          at: leaf.startIndex,
+          site: { kind: "read", name: shape.name, qualifier: chain, site: shape.site },
+        });
     }
+    // in source order, by the name being read (an outer attribute access starts before its inner ones)
+    reads.sort((a, b) => a.at - b.at);
+    for (const read of reads) this.sites.push(read.site);
   }
 
   private pushShape(shape: SiteShape): void {

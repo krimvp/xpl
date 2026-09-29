@@ -111,11 +111,15 @@ const SCAN_TYPES = [
   "jsx_self_closing_element",
   "required_parameter",
   "optional_parameter",
-  // the leaves a `read` can sit on (see `readShapeOf`)
+  // `var` statements: hoisted to the function around them (see `LocalScopes`)
+  "variable_declaration",
+  // where a member expression is a name, not a value (see `markNonValueMembers`)
+  "type_query",
+  "nested_identifier",
+  // what a `read` can be: a bare name, or the property of a member expression (see `readShapeOf`)
   "identifier",
   "shorthand_property_identifier",
-  "property_identifier",
-  "private_property_identifier",
+  "member_expression",
 ];
 
 // ─── Small node helpers ───────────────────────────────────────────────────────────────────────────
@@ -621,6 +625,8 @@ interface ReadShape {
   /** The receiver of a member access (`a.b` of `a.b.c`); absent for a bare name. */
   object?: Node;
   site: Span;
+  /** The parent of a bare name (a scope of its own when it is an arrow function: `x => x`). */
+  holder?: Node;
 }
 
 /** The member expression a property leaf is the property of, and its receiver. */
@@ -634,17 +640,25 @@ function memberOf(leaf: Node): { member: Node; object: Node } | undefined {
   return object ? { member, object } : undefined;
 }
 
-/** The read of `object.<leaf>` (`member` is the member expression), unless it is a callee, a target or a type. */
+/**
+ * The read of `object.<leaf>` (`member` is the member expression), unless it is a callee, a target or a type.
+ * `nonValue` are the members already known to be names in a type or a module path (see `markNonValueMembers`);
+ * without it the ancestors are looked at.
+ */
 function memberRead(
   leaf: Node,
   member: Node,
   object: Node,
   lines: readonly string[],
+  nonValue?: ReadonlySet<number>,
 ): ReadShape | undefined {
+  if (nonValue?.has(member.id)) return undefined;
   if (isCalleeOrTarget(member)) return undefined;
   // `a.b` of `typeof a.b.c`, of `namespace a.b.c {}` or of `import x = a.b.c`: not a value
-  for (let a = member.parent, i = 0; a && i < 3; a = a.parent, i++)
-    if (a.type === "type_query" || a.type === "nested_identifier") return undefined;
+  if (!nonValue) {
+    for (let a = member.parent, i = 0; a && i < 3; a = a.parent, i++)
+      if (a.type === "type_query" || a.type === "nested_identifier") return undefined;
+  }
   const whole = nodeSpan(member, lines);
   return {
     name: leaf.text,
@@ -658,7 +672,7 @@ function bareRead(leaf: Node, name: string, lines: readonly string[]): ReadShape
   const parent = leaf.parent;
   if (!parent) return undefined;
   if (!isReferencePosition(leaf, parent) || isCalleeOrTarget(leaf, parent)) return undefined;
-  return { name, site: nodeSpan(leaf, lines) };
+  return { name, site: nodeSpan(leaf, lines), holder: parent };
 }
 
 /**
@@ -921,8 +935,14 @@ class Extractor {
   private readonly functionNodes = new Set<number>();
   private readonly fieldFacts = new Set<string>();
   private readonly paramFacts = new Map<string, TypeFact>();
-  /** Leaves a `read` may sit on, in source order (decided once every fact is known). */
-  private readonly readLeaves: Node[] = [];
+  /**
+   * The bare names (`identifier` leaves) and the member expressions that may be reads, in source order
+   * (decided once every fact is known).
+   */
+  private readonly readNames: Node[] = [];
+  private readonly readMembers: Node[] = [];
+  /** Member expressions that are names in a type (`typeof a.b`) or a module path (`namespace a.b`). */
+  private readonly nonValueMembers = new Set<number>();
   private readonly scopes = new LocalScopes();
 
   constructor(private readonly ctx: FileContext) {
@@ -1541,11 +1561,19 @@ class Extractor {
         case "optional_parameter":
           this.onParameter(n);
           break;
+        case "variable_declaration":
+          this.scopes.noteVar(n);
+          break;
+        case "type_query":
+        case "nested_identifier":
+          this.markNonValueMembers(n);
+          break;
         case "identifier":
         case "shorthand_property_identifier":
-        case "property_identifier":
-        case "private_property_identifier":
-          this.readLeaves.push(n);
+          this.readNames.push(n);
+          break;
+        case "member_expression":
+          this.readMembers.push(n);
           break;
         default:
           break;
@@ -1557,8 +1585,27 @@ class Extractor {
 
   // ── reads ──────────────────────────────────────────────────────────────────────────────────────
 
+  /**
+   * `a.b` of `typeof a.b.c`, `namespace a.b.c {}` and `import x = a.b.c`: the tree has member expressions for
+   * them, and they are not reads of `a`.
+   */
+  private markNonValueMembers(n: Node): void {
+    let cur: Node | null =
+      n.type === "type_query" ? n.namedChild(0) : n.childForFieldName("object");
+    for (let i = 0; cur && i < 32; i++) {
+      if (cur.type === "member_expression") {
+        this.nonValueMembers.add(cur.id);
+        cur = cur.childForFieldName("object");
+      } else if (cur.type === "instantiation_expression" || cur.type === "non_null_expression") {
+        cur = cur.namedChild(0); // `typeof a.b<string>`
+      } else {
+        break;
+      }
+    }
+  }
+
   private onReads(): void {
-    if (this.readLeaves.length === 0) return;
+    if (this.readNames.length === 0 && this.readMembers.length === 0) return;
     // What the file declares or imports: a bare name can only be a variable read when it is one of these.
     const bare = new Set<string>();
     const roots = new Set<string>();
@@ -1572,32 +1619,47 @@ class Extractor {
       bare.add(binding.localName);
       roots.add(binding.localName);
     }
-    // Locals and parameters with a type fact, by name (their members can be resolved).
-    const typed = new Map<string, TypeFact[]>();
+    // Locals and parameters with a type fact, by name (their members can be resolved): where each is visible.
+    const typed = new Map<
+      string,
+      { always: boolean; spans: { span: Span; value: TypeFact }[]; index?: SpanIndex<TypeFact> }
+    >();
     for (const fact of this.typeFacts) {
       if (fact.kind !== "local" && fact.kind !== "param") continue;
-      const list = typed.get(fact.name);
-      if (list) list.push(fact);
-      else typed.set(fact.name, [fact]);
+      let entry = typed.get(fact.name);
+      if (!entry) {
+        entry = { always: false, spans: [] };
+        typed.set(fact.name, entry);
+      }
+      if (fact.visibleIn) entry.spans.push({ span: fact.visibleIn, value: fact });
+      else entry.always = true;
     }
-    const hasFact = (name: string, site: Span): boolean =>
-      typed
-        .get(name)
-        ?.some((f) => !f.visibleIn || spanContains(f.visibleIn, site.startLine, site.startCol)) ??
-      false;
-    // Cheapest tests first: `leaf.parent` walks down from the root of the tree, and most leaves are locals.
-    for (const leaf of this.readLeaves) {
-      if (leaf.type === "identifier" || leaf.type === "shorthand_property_identifier") {
+    const hasFact = (name: string, site: Span): boolean => {
+      const entry = typed.get(name);
+      if (!entry) return false;
+      if (entry.always) return true;
+      entry.index ??= new SpanIndex(entry.spans); // minified code has thousands of locals called `a`
+      return entry.index.innermost(site.startLine, site.startCol) !== undefined;
+    };
+    // Cheapest tests first: every `parent` is a walk down from the root of the tree, and most names are locals.
+    const reads: { at: number; site: SiteDraft }[] = [];
+    if (bare.size > 0) {
+      for (const leaf of this.readNames) {
         const name = leaf.text;
         if (!bare.has(name)) continue;
         const shape = bareRead(leaf, name, this.lines);
-        if (shape && !this.scopes.isBound(leaf, name))
-          this.sites.push({ kind: "read", name, qualifier: [], site: shape.site });
-        continue;
+        if (shape && !this.scopes.isBound(leaf, name, shape.holder))
+          reads.push({
+            at: leaf.startIndex,
+            site: { kind: "read", name, qualifier: [], site: shape.site },
+          });
       }
-      const found = memberOf(leaf);
-      if (!found) continue;
-      const chain = chainOf(found.object);
+    }
+    for (const member of this.readMembers) {
+      const leaf = member.childForFieldName("property");
+      const object = member.childForFieldName("object");
+      if (!leaf || !object) continue;
+      const chain = chainOf(object);
       if (!chain) continue;
       const root = chain[0]!;
       const called = root.endsWith("()");
@@ -1605,16 +1667,22 @@ class Extractor {
       const special = root === "this" || root === "super" || root.startsWith(":");
       // a receiver that is neither declared in the file nor a local with a known type resolves to nothing
       if (!special && !roots.has(rootName) && !typed.has(rootName)) continue;
-      const shape = memberRead(leaf, found.member, found.object, this.lines);
+      const shape = memberRead(leaf, member, object, this.lines, this.nonValueMembers);
       if (!shape) continue;
       const ok =
         special ||
-        (this.scopes.isBound(leaf, rootName)
+        (this.scopes.isBound(member, rootName)
           ? !called && hasFact(rootName, shape.site)
           : roots.has(rootName));
       if (ok)
-        this.sites.push({ kind: "read", name: shape.name, qualifier: chain, site: shape.site });
+        reads.push({
+          at: leaf.startIndex,
+          site: { kind: "read", name: shape.name, qualifier: chain, site: shape.site },
+        });
     }
+    // in source order, by the name being read (an outer member expression starts before its inner ones)
+    reads.sort((a, b) => a.at - b.at);
+    for (const read of reads) this.sites.push(read.site);
   }
 
   private pushSite(kind: SiteDraft["kind"], parts: NameParts, site: Span): void {

@@ -95,6 +95,8 @@ export class LocalScopes {
   private readonly blocks = new Map<number, ReadonlySet<string>>();
   /** Function-like nodes whose own declarations are module-level symbols (IIFEs): only their parameters are local. */
   private readonly symbolFunctions = new Set<number>();
+  /** The `var` statements of the file, noted while the pack scans it. */
+  private readonly vars: Node[] = [];
   /** The `var` names each function hoists, for the whole file (built when first needed). */
   private hoisted: Map<number, Set<string>> | undefined;
   /** Per scope node: whether a name is bound there or around it (answers already found). */
@@ -105,19 +107,28 @@ export class LocalScopes {
     this.symbolFunctions.add(fn.id);
   }
 
-  /** Is `name` bound in a function, block, loop or `catch` around `node` (not at module level)? */
-  isBound(node: Node, name: string): boolean {
+  /** A `var` statement of the file: it declares its names in the function around it, wherever in it it is. */
+  noteVar(declaration: Node): void {
+    this.vars.push(declaration);
+  }
+
+  /**
+   * Is `name` bound in a function, block, loop or `catch` around `node` (not at module level)? The scopes
+   * examined are those from `first` up, `node`'s parent by default (a caller that has it saves a walk).
+   */
+  isBound(node: Node, name: string, first: Node | null = node.parent): boolean {
     const unbound: number[] = []; // scopes passed on the way up that do not bind the name themselves
     let answer = false;
-    for (let n = node.parent; n; n = n.parent) {
-      if (n.type === "program") break;
-      if (!SCOPES.has(n.type)) continue;
+    for (let n = first; n; n = n.parent) {
+      const type = n.type; // each read of `type` is a call into the parser
+      if (type === "program") break;
+      if (!SCOPES.has(type)) continue;
       const known = this.around.get(n.id)?.get(name);
       if (known !== undefined) {
         answer = known;
         break;
       }
-      if (this.binds(n, name)) {
+      if (this.binds(n, type, name)) {
         answer = true;
         this.remember(n.id, name, true);
         break;
@@ -139,8 +150,8 @@ export class LocalScopes {
   }
 
   /** Does the scope node `n` itself bind `name` for the code inside it? */
-  private binds(n: Node, name: string): boolean {
-    switch (n.type) {
+  private binds(n: Node, type: string, name: string): boolean {
+    switch (type) {
       case "statement_block":
       case "class_static_block":
         return !this.isSymbolBlock(n) && this.blockNames(n).has(name);
@@ -164,7 +175,7 @@ export class LocalScopes {
       case "switch_body":
         return this.blockNames(n).has(name);
       default:
-        return FUNCTION_LIKE.has(n.type) && this.functionNames(n).has(name);
+        return FUNCTION_LIKE.has(type) && this.functionNames(n).has(name);
     }
   }
 
@@ -198,7 +209,7 @@ export class LocalScopes {
   private hoistedBy(fn: Node): ReadonlySet<string> | undefined {
     if (!this.hoisted) {
       const byFunction = new Map<number, Set<string>>();
-      for (const declaration of fn.tree.rootNode.descendantsOfType("variable_declaration")) {
+      for (const declaration of this.vars) {
         const owner = enclosingFunction(declaration);
         if (!owner) continue;
         let names = byFunction.get(owner.id);
