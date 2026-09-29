@@ -18,7 +18,9 @@
  * 3. qualifier root that is a local or parameter: its declared type (type facts) or, for `const w =
  *    this.pool.lease()`, the declared return type of the callee (`Promise<T>` already unwrapped);
  * 4. qualifier root that is a class, namespace or imported module: static members (`Class.m()`,
- *    `ns.f()`, `mod.Type`); qualified type names resolve through imports;
+ *    `ns.f()`, `mod.Type`); qualified type names resolve through imports; a module-level variable of
+ *    another file (`import { bus }`, `pkg.Default`, a package variable of a sibling Go file) has the type
+ *    the facts of its own file give it (`bus = new EventBus()`);
  * 5. last resort, only when the receiver's type is completely unknown: a class named like the qualifier
  *    (case-insensitive) that has the member (`queue.pop()` -> `Queue.pop`), preferring the same file, then
  *    a class the file imports, then the same directory; ambiguity drops the site.
@@ -53,6 +55,8 @@ export interface ResolverFile {
   imports: readonly ImportBinding[];
   typeFacts: readonly TypeFact[];
   exports: readonly ExportFact[];
+  /** `FileFacts.data`: for `LanguagePack.inferRefs`, ignored by the resolver. */
+  data?: unknown;
 }
 
 export interface ResolverInput {
@@ -326,11 +330,28 @@ class Resolver {
     return files;
   }
 
-  private bindingEntity(file: FilePath, binding: ImportBinding, want: Want = WANT.any): Entity {
+  /**
+   * What a binding names. `visited` and `depth` belong to the lookup this is a step of: bindings and star
+   * imports can form cycles (`a` imports `X` from `b`, `b` star-imports `a`), which only the shared `visited`
+   * set cuts. A lookup that starts here uses fresh ones.
+   */
+  private bindingEntity(
+    file: FilePath,
+    binding: ImportBinding,
+    want: Want = WANT.any,
+    visited: Set<string> = new Set(),
+    depth = 0,
+  ): Entity {
     const files = this.modules(file, binding.module);
     if (files.length === 0) return { k: "opaque" };
     if (binding.importedName === undefined) return { k: "module", files };
-    return this.exported(files, binding.importedName, want, new Set()) ?? { k: "missing", files };
+    const found = this.exported(files, binding.importedName, want, visited, depth);
+    if (found) return found;
+    // `from pkg import name` can import the submodule `pkg.name` (Python): the pack knows how to spell it.
+    const pack = this.files.get(file)!.file.pack;
+    const spec = pack.submoduleSpec?.(binding.module, binding.importedName);
+    const submodule = spec === undefined ? [] : this.modules(file, spec);
+    return submodule.length > 0 ? { k: "module", files: submodule } : { k: "missing", files };
   }
 
   /**
@@ -364,13 +385,13 @@ class Resolver {
           const local = this.pick(index.symbols.get(fact.localName), want);
           if (local) return { k: "sym", sym: local };
           for (const binding of index.bindings.get(fact.localName) ?? []) {
-            const entity = this.bindingEntity(path, binding);
+            const entity = this.bindingEntity(path, binding, WANT.any, visited, depth + 1);
             if (entity.k !== "missing") return entity;
           }
         }
       }
       for (const binding of index.bindings.get(name) ?? []) {
-        const entity = this.bindingEntity(path, binding);
+        const entity = this.bindingEntity(path, binding, WANT.any, visited, depth + 1);
         if (entity.k !== "missing") return entity;
       }
       for (const star of index.stars) {
@@ -495,14 +516,20 @@ class Resolver {
     return entity;
   }
 
-  private entityValue(entity: Entity | undefined): Value {
+  private entityValue(entity: Entity | undefined, depth = 0): Value {
     if (!entity) return UNKNOWN;
     switch (entity.k) {
       case "sym": {
         const s = entity.sym;
         if (isTypeLike(s)) return { k: "type", sym: s };
-        // An object literal / namespace-like variable exposes its members.
-        if (s.kind === "variable" && this.ownersOfMembers.has(s.id)) return { k: "type", sym: s };
+        if (s.kind === "variable") {
+          // An object literal / namespace-like variable exposes its members.
+          if (this.ownersOfMembers.has(s.id)) return { k: "type", sym: s };
+          // A module-level variable has the type its own file's facts give it (`bus = EventBus()`), also
+          // when another file uses it (`import { bus }`, `pkg.Default`).
+          const facts = this.files.get(s.file)?.vars.get(`\0${this.basePath(s)}`);
+          if (facts) return this.firstValue(facts.map((f) => this.factValue(f, s.file, depth)));
+        }
         return UNKNOWN;
       }
       case "module":
@@ -720,7 +747,7 @@ class Resolver {
     if (segment.endsWith("()")) return this.callResult([], segment.slice(0, -2), ctx, depth + 1);
     const local = this.varFacts(ctx, segment);
     if (local) return this.firstValue(local.facts.map((f) => this.factValue(f, ctx.file, depth)));
-    return this.entityValue(this.lexical(ctx.file, segment, ctx.scope, WANT.any, "any"));
+    return this.entityValue(this.lexical(ctx.file, segment, ctx.scope, WANT.any, "any"), depth);
   }
 
   /** One `.segment` step from a value; a segment ending in `()` is a call. */
@@ -743,7 +770,7 @@ class Resolver {
       const entity = this.exported(value.files, name, WANT.any, new Set());
       if (!entity) return UNKNOWN;
       if (isCall && entity.k === "sym") return this.callableValue(entity.sym, undefined, depth + 1);
-      return this.entityValue(entity);
+      return this.entityValue(entity, depth);
     }
     return value;
   }

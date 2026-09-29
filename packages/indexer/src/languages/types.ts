@@ -31,7 +31,16 @@
  * A pack that cannot express a receiver (`arr[0].run()`) should not emit the site at all.
  */
 import type { Tree } from "web-tree-sitter";
-import type { FileLanguage, FilePath, IndexedSymbol, Range, SymbolPath } from "@xpl/core";
+import type {
+  FileLanguage,
+  FilePath,
+  IndexedSymbol,
+  Range,
+  Reference,
+  SymbolPath,
+} from "@xpl/core";
+import type { ResolverFile } from "../resolve/heuristic.js";
+import type { SymbolEntry, SymbolLookup } from "../symbols.js";
 import type { GrammarId } from "../wasm-files.js";
 
 /** 1-based, inclusive lines and columns (UTF-16 code units): a `Range` whose columns are always present. */
@@ -192,12 +201,33 @@ export interface FileFacts {
   exports?: ExportFact[];
   /** Human-readable problems; the framework prefixes them with the file path. */
   warnings?: string[];
+  /**
+   * Pack-private data for `LanguagePack.inferRefs` (it comes back as `ResolverFile.data`). The framework does
+   * not look at it, and it is never stored in the index.
+   */
+  data?: unknown;
 }
 
 export interface ClassifiedSite {
   kind: SiteKind;
   /** Same convention as `SiteDraft.site`. */
   site: Span;
+}
+
+/** A reference a pack infers after resolution (`LanguagePack.inferRefs`); the framework adds `resolution: "heuristic"`. */
+export type InferredRef = Pick<Reference, "from" | "to" | "kind" | "site">;
+
+/** What `LanguagePack.inferRefs` is given. Everything is read-only. */
+export interface InferRefsInput {
+  /** The files of the languages this pack handles (in build order) with the facts `extract` returned for them. */
+  files: readonly ResolverFile[];
+  /** Every symbol of every file, in source order per file. */
+  entries: readonly SymbolEntry[];
+  /** Innermost-symbol lookup over the same symbols. */
+  lookup: SymbolLookup;
+  repo: RepoView;
+  /** Every reference the heuristic resolver produced, for all packs. */
+  refs: readonly Reference[];
 }
 
 // ─── The pack ─────────────────────────────────────────────────────────────────────────────────────
@@ -230,4 +260,19 @@ export interface LanguagePack {
    * package that spans several files (Go) returns all of them.
    */
   resolveModule(spec: string, fromFile: FilePath, repo: RepoView): FilePath[];
+  /**
+   * Optional. For languages where `from module import name` can import a module: the specifier of the
+   * submodule `name` of `module` (Python: `pkg` + `sub` -> `pkg.sub`, `.` + `x` -> `.x`). The resolver tries
+   * it through `resolveModule` when `module` does not define `name`. Leave it out when `name` cannot be one.
+   */
+  submoduleSpec?(module: string, name: string): string | undefined;
+  /**
+   * Optional post-resolution pass for references that no single site expresses (Go: a type implements an
+   * interface by having its methods, so `implements` refs are inferred from the symbols). Called once per
+   * build, after the heuristic resolver, for packs whose files were resolved heuristically. The result must be
+   * deterministic. The framework marks the refs `resolution: "heuristic"`, drops self-references and
+   * duplicates of existing refs, and - like every heuristic ref - replaces them by precise refs where a
+   * precise resolver covers the language.
+   */
+  inferRefs?(input: InferRefsInput): InferredRef[];
 }
