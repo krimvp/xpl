@@ -1,0 +1,29 @@
+{
+  "concepts": [
+    {
+      "id": "concept:ack-semantics",
+      "label": "Ack semantics",
+      "summary": "A job is done for good once acked; the queue only counts it.",
+      "anchors": [{ "file": "src/queue.ts", "symbol": "Queue.ack", "role": "definition" }]
+    },
+    {
+      "id": "concept:how-it-works",
+      "label": "How it works (README)",
+      "summary": "The README's walk through pop, lease, run, then ack, requeue or dead-letter.",
+      "anchors": [{ "file": "README.md", "span": { "from": 21, "to": 24 }, "role": "usage" }]
+    },
+    {
+      "id": "concept:dead-letter",
+      "label": "Dead-lettering",
+      "summary": "A job that is out of retries is parked together with its last error.",
+      "anchors": [
+        {
+          "file": "src/runner.ts",
+          "symbol": "Runner.dispatch",
+          "find": "} else {\n        await this.queue.deadLetter(job, result.error);\n        this.stats.deadLettered += 1;\n        this.log(`dead-lettered ${job.id} after ${attempts} attempts`);\n      }",
+          "role": "definition"
+        }
+      ]
+    }
+  ]
+}

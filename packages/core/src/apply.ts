@@ -6,7 +6,9 @@
  * Validation after the merge is strict, but only what the patch introduced or touched can reject it:
  * errors that were already in the explainer, on elements the patch did not change, become one
  * summary warning. Otherwise a single drifted anchor on a user-owned concept would block every later
- * patch.
+ * patch. One more exception: an `llm` patch that changes an element whose anchors the user owns
+ * (`anchors` in `userFields`) is not rejected for the drift of those anchors, which it cannot
+ * repair; the problem is kept as a warning.
  */
 import { makeAnchor, toTextCache, type GetText, type TextCache } from "./anchors.js";
 import { EXPLAINER_SCHEMA } from "./constants.js";
@@ -1150,7 +1152,11 @@ class Applier {
       const isNew = !knownBefore.has(key(issue));
       const shown = { ...issue, path: rewrite(issue.path) };
       if (issue.severity === "error") {
-        if (isNew || touched) this.issues.push(shown);
+        if (this.actor === "llm" && issue.userLocked && touched && !isNew) {
+          // The patch changed an element whose anchors the user owns and cannot repair them: the problem
+          // stays visible, but it must not block the re-explanation (it would need the user first).
+          this.issues.push({ ...shown, severity: "warning" });
+        } else if (isNew || touched) this.issues.push(shown);
         else {
           ignored++;
           firstIgnored ??= `${issue.path}: ${issue.message}`;

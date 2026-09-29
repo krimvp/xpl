@@ -1,0 +1,40 @@
+{
+  "concepts": [
+    {
+      "id": "concept:retry-config",
+      "label": "Retry configuration",
+      "summary": "maxRetries, baseDelayMs and maxDelayMs shape the backoff that Dispatch applies.",
+      "anchors": [{ "file": "config/default.yaml", "symbol": "retry", "role": "config" }]
+    }
+  ],
+  "views": [
+    {
+      "id": "view:requeue",
+      "type": "sequence",
+      "title": "Where a failed job goes",
+      "participants": [
+        "sym:internal/runner/runner.go#Runner.Dispatch",
+        "sym:internal/queue/queue.go#Queue.Requeue"
+      ],
+      "steps": [
+        {
+          "id": "requeue:1",
+          "from": "sym:internal/runner/runner.go#Runner.Dispatch",
+          "to": "sym:internal/queue/queue.go#Queue.Requeue",
+          "label": "Requeue(job, backoff)",
+          "kind": "call",
+          "summary": "A failed job goes back on the queue after the computed backoff.",
+          "anchors": [
+            {
+              "file": "internal/runner/runner.go",
+              "symbol": "Runner.Dispatch",
+              "find": "r.queue.Requeue(job, backoff)",
+              "role": "call-site"
+            },
+            { "file": "internal/queue/queue.go", "symbol": "Queue.Requeue", "role": "definition" }
+          ]
+        }
+      ]
+    }
+  ]
+}
