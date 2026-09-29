@@ -22,25 +22,52 @@ const queueTs = src(
 );
 
 describe("imports", () => {
-  it("named imports point at the imported symbol; type-only imports too", async () => {
-    const r = await refs(
-      {
-        "src/a.ts": src(
-          "import { Foo, type Bar as Baz } from './b';",
-          "import type { T } from './b';",
-        ),
-        "src/b.ts": src(
-          "export class Foo {}",
-          "export interface Bar {}",
-          "export type T = string;",
-        ),
-      },
-      "import",
-    );
+  it("named imports point at the imported symbol; type-only imports too, as type references", async () => {
+    const r = await refs({
+      "src/a.ts": src(
+        "import { Foo, type Bar as Baz } from './b';",
+        "import type { T } from './b';",
+      ),
+      "src/b.ts": src("export class Foo {}", "export interface Bar {}", "export type T = string;"),
+    });
     expect(r).toEqual([
       "src/a.ts# -> src/b.ts#Foo (import)",
-      "src/a.ts# -> src/b.ts#Bar (import)",
-      "src/a.ts# -> src/b.ts#T (import)",
+      "src/a.ts# -> src/b.ts#Bar (type-ref)",
+      "src/a.ts# -> src/b.ts#T (type-ref)",
+    ]);
+  });
+
+  it("type-only default, namespace and re-export forms are type references too; run-time ones stay imports", async () => {
+    const r = await refs({
+      "a.ts": src(
+        "import type D from './d';",
+        "import type * as ns from './n';",
+        "import E from './e';",
+        "import * as rt from './n';",
+        "export type { T } from './t';",
+        "export { type U, V } from './t';",
+        "export type * from './star';",
+        "export type * as sns from './star';",
+        "export * from './star2';",
+      ),
+      "d.ts": "export default class D {}\n",
+      "n.ts": "export const x = 1;\n",
+      "e.ts": "export default class E {}\n",
+      "t.ts": src("export type T = string;", "export type U = number;", "export const V = 1;"),
+      "star.ts": "export const s = 1;\n",
+      "star2.ts": "export const s2 = 1;\n",
+    });
+    expect(r).toEqual([
+      "a.ts# -> d.ts#D (type-ref)",
+      "a.ts# -> n.ts# (type-ref)",
+      "a.ts# -> e.ts#E (import)",
+      "a.ts# -> n.ts# (import)",
+      "a.ts# -> t.ts#T (type-ref)",
+      "a.ts# -> t.ts#U (type-ref)",
+      "a.ts# -> t.ts#V (import)",
+      "a.ts# -> star.ts# (type-ref)",
+      "a.ts# -> star.ts# (type-ref)",
+      "a.ts# -> star2.ts# (import)",
     ]);
   });
 

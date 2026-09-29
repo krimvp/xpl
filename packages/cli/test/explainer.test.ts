@@ -563,7 +563,9 @@ describe("xpl status", () => {
     expect(out).toContain(
       '2026-01-01T00:00:00.000Z  sym:src/runner.ts#Runner.dispatch  "why a loop?"',
     );
-    expect(out).not.toContain("file:src/bus.ts"); // meant for another explainer
+    // meant for another explainer (the ghost boxes of the overview name bus.ts too, so look for the request itself)
+    expect(out).not.toContain("2026-01-02T00:00:00.000Z");
+    expect(out).not.toMatch(/^\s+\S+\s+file:src\/bus\.ts$/m);
     const { json } = await xplJson<any>(dir, "status", "demo");
     expect(json.requests).toHaveLength(1);
     expect(json.missing[0].elementId).toBe("dispatch:1");

@@ -193,18 +193,24 @@ describe("Go classifySite: the specific kinds", () => {
   });
 });
 
-describe("Go classifySite: everything else is undefined", () => {
-  it("reads, declarations, receivers, arguments, keys, punctuation and positions outside the file", async () => {
+describe("Go classifySite: reads, and everything else is undefined", () => {
+  it("names and selector fields in value positions are reads (bare names flagged): SCIP says whether they are variables", async () => {
+    const ex = await extract("a.go", source);
+    const at = classifier(ex, source);
+    expect(at("«r».pool.Lease")).toMatchObject({ kind: "read", bare: true }); // a receiver in a chain
+    expect(at("r.«p»ool.Lease")).toMatchObject({ kind: "read" }); // a field read in a chain
+    expect(at("r.«p»ool.Lease")).not.toHaveProperty("bare");
+    expect(at("Lease(«c»tx)")).toMatchObject({ kind: "read", bare: true }); // an argument
+    expect(at("Println(«r»esult")).toMatchObject({ kind: "read", bare: true });
+  });
+
+  it("declarations, receivers, keys, punctuation and positions outside the file are nothing", async () => {
     const ex = await extract("a.go", source);
     const at = classifier(ex, source);
     expect(at("type «R»unner struct")).toBeUndefined(); // a declaration name
     expect(at("func (r *Runner) «D»ispatch(")).toBeUndefined(); // a method name
     expect(at("func («r» *Runner)")).toBeUndefined(); // the receiver variable
     expect(at("«w», err :=")).toBeUndefined(); // a declared local
-    expect(at("«r».pool.Lease")).toBeUndefined(); // a receiver in a chain
-    expect(at("r.«p»ool.Lease")).toBeUndefined(); // a field read in a chain
-    expect(at("Lease(«c»tx)")).toBeUndefined(); // an argument
-    expect(at("Println(«r»esult")).toBeUndefined();
     expect(at("Job{«I»D:")).toBeUndefined(); // a composite literal key
     expect(at("var «c»ounter int")).toBeUndefined();
     expect(at("«p»ackage sample")).toBeUndefined();
@@ -214,7 +220,7 @@ describe("Go classifySite: everything else is undefined", () => {
     expect(outside).toBeUndefined();
   });
 
-  it("a name that is an argument or operand is not a site even when it also appears as one elsewhere", async () => {
+  it("a name that is an argument or operand is a read, not a call or write, even when it also appears as one elsewhere", async () => {
     const source2 = src(
       "package p",
       "func f(cb func()) {", // 2
@@ -226,8 +232,8 @@ describe("Go classifySite: everything else is undefined", () => {
     const ex = await extract("b.go", source2);
     const at = classifier(ex, source2);
     expect(at("\t«c»b()")).toMatchObject({ kind: "call" });
-    expect(at("g(«c»b)")).toBeUndefined();
-    expect(at("«c»b.x = 1")).toBeUndefined(); // the receiver of a write
+    expect(at("g(«c»b)")).toMatchObject({ kind: "read", bare: true }); // an argument is a read
+    expect(at("«c»b.x = 1")).toMatchObject({ kind: "read", bare: true }); // the receiver of a write is read
     expect(at("cb.«x» = 1")).toMatchObject({ kind: "write" });
   });
 });

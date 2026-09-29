@@ -17,7 +17,7 @@
  *   exitPresent()            back to Explore, keeping the view and the selection (like Esc)
  *   state()                  a JSON snapshot for assertions
  */
-import type { FocusRange } from "@xpl/core";
+import { resolveStubPolicy, type FocusRange } from "@xpl/core";
 import { getDerived } from "./derive.js";
 import { stepNumber } from "./modes.js";
 import type { ViewerStore } from "./store.js";
@@ -59,13 +59,15 @@ export interface XplSnapshot {
   /** Files in the current focus, in order. */
   focusFiles: string[];
   openedFile: string | null;
-  /** Graph views: what is drawn. */
-  graph: { nodes: string[]; edges: string[]; stubs: string[] } | null;
+  /** Graph views: what is drawn (`ghosts` are the render ids of the ghost boxes, `ghost:<key>`). */
+  graph: { nodes: string[]; edges: string[]; stubs: string[]; ghosts: string[] } | null;
   serverMode: boolean;
   dirty: boolean;
   /** `include` of the current graph view (after edits). */
   include: string[] | null;
   edgeKinds: string[] | null;
+  /** The stub policy of the current graph view with the defaults filled in (`top`, 8); null otherwise. */
+  stubs: { mode: "top" | "all" | "none"; max: number } | null;
 }
 
 declare global {
@@ -124,12 +126,14 @@ export function installTestHooks(store: ViewerStore, target: Window = window): X
               nodes: graph.nodes.map((n) => n.id),
               edges: graph.edges.map((e) => e.id),
               stubs: graph.stubs.map((s) => s.id),
+              ghosts: graph.ghosts.map((g) => g.id),
             }
           : null,
         serverMode: state.serverMode,
         dirty: state.dirty,
         include: view?.type === "graph" ? [...view.include] : null,
         edgeKinds: view?.type === "graph" && view.edgeKinds ? [...view.edgeKinds] : null,
+        stubs: view?.type === "graph" ? resolveStubPolicy(view.stubs) : null,
       };
     },
   };

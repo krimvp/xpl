@@ -189,6 +189,145 @@ describe("xpl outline", () => {
     expect(find(json.json.tree, "sym:src/runner.ts#Runner.dispatch")).toBeDefined();
   });
 
+  it("labels the repo with the name `xpl new` records, not the directory's", async () => {
+    const { out } = await xpl(dir, "outline", "--depth", "1");
+    // the fixture's package.json says ts-jobrunner; the temp directory it was copied to is called otherwise
+    expect(out.split("\n")[0]).toMatch(/^repo {2}ts-jobrunner {2}12 files, \d+ symbols$/);
+    const json = await xplJson<{ tree: Node & { label: string } }>(dir, "outline", "--depth", "0");
+    expect(json.json.tree.label).toBe("ts-jobrunner");
+    const named = await xpl(dir, "new", "labelled");
+    expect(named.out).toContain("repo: ts-jobrunner (package.json)");
+    // an explainer's `--repo` does not change what outline says: it is the same detection `new` runs
+    const show = await xplJson<{ tree: Node & { label: string } }>(dir, "show", "repo");
+    expect(show.json.tree.label).toBe("ts-jobrunner");
+  });
+
+  describe("--kind", () => {
+    const symbols = (out: string) =>
+      out
+        .split("\n")
+        .filter((l) => /^ *sym:/.test(l))
+        .map((l) => l.trim().split(/ {2}/).slice(0, 2));
+
+    it("lists only symbols of those kinds; what contains a match stays for context", async () => {
+      const { code, out } = await xpl(
+        dir,
+        "outline",
+        "--under",
+        "file:src/runner.ts",
+        "--kind",
+        "method",
+        "--depth",
+        "3",
+      );
+      expect(code).toBe(0);
+      expect(symbols(out)).toEqual([
+        ["sym:src/runner.ts#Runner", "class"], // context: it holds methods
+        ["sym:src/runner.ts#Runner.constructor", "method"],
+        ["sym:src/runner.ts#Runner.start", "method"],
+        ["sym:src/runner.ts#Runner.stop", "method"],
+        ["sym:src/runner.ts#Runner.dispatch", "method"],
+        ["sym:src/runner.ts#Runner.log", "method"],
+        ["sym:src/runner.ts#RunnerStats", "class"],
+        ["sym:src/runner.ts#RunnerStats.record", "method"],
+      ]);
+      // no properties, no top-level function, no type alias
+      expect(out).not.toContain("Runner.queue");
+      expect(out).not.toContain("backoffDelay");
+      expect(out).not.toContain("#Logger");
+      expect(out).toContain(
+        "--kind method: only symbols of these kinds, plus the dirs, files and parent",
+      );
+      // without a filter they are all there
+      expect(
+        (await xpl(dir, "outline", "--under", "file:src/runner.ts", "--depth", "3")).out,
+      ).toContain("backoffDelay");
+    });
+
+    it("takes several kinds, repeated or comma-separated, and finds them across the repo", async () => {
+      const commas = await xplJson<{ kinds: string[]; tree: Node }>(
+        dir,
+        "outline",
+        "--kind",
+        "class,function",
+        "--depth",
+        "4",
+      );
+      const repeated = await xplJson<{ tree: Node }>(
+        dir,
+        "outline",
+        "--kind",
+        "class",
+        "--kind",
+        "function",
+        "--depth",
+        "4",
+      );
+      expect(commas.json.kinds).toEqual(["class", "function"]);
+      expect(repeated.json.tree).toEqual(commas.json.tree);
+      const kinds = new Set<string>();
+      const walk = (node: Node) => {
+        if (node.type === "symbol") kinds.add(node.kind);
+        (node.children ?? []).forEach(walk);
+      };
+      walk(commas.json.tree);
+      expect([...kinds].sort()).toEqual(["class", "function"]);
+      // a class or function is where it is: under its dir and file
+      expect(find(commas.json.tree, "sym:src/queue.ts#Queue")).toBeDefined();
+      expect(find(commas.json.tree, "sym:src/config.ts#loadConfig")).toBeDefined();
+      // directories and files without a match are not listed
+      expect(find(commas.json.tree, "dir:config")).toBeUndefined();
+      expect(find(commas.json.tree, "file:README.md")).toBeUndefined();
+      expect(find(commas.json.tree, "file:src/runner.ts")).toBeDefined();
+    });
+
+    it("counts only what matches in [+n]", async () => {
+      // depth 2 from the repo stops at the files: src/queue.ts holds one class and no other match
+      const { out } = await xpl(dir, "outline", "--kind", "class", "--depth", "2");
+      expect(out).toMatch(/^ {4}file:src\/queue\.ts {2}typescript {2}1-104 .* \[\+1\]$/m);
+      expect(out).toMatch(/^ {4}file:src\/runner\.ts {2}typescript .* \[\+2\]$/m);
+      expect(out).not.toContain("keys hidden");
+    });
+
+    it("kind key shows the config keys without --keys; no match says so", async () => {
+      const keys = await xpl(
+        dir,
+        "outline",
+        "--under",
+        "file:config/default.yaml",
+        "--kind",
+        "key",
+        "--depth",
+        "2",
+      );
+      expect(keys.out).toContain("sym:config/default.yaml#retry  key");
+      // the root is the match itself
+      const itself = await xpl(
+        dir,
+        "outline",
+        "--under",
+        "sym:src/runner.ts#Runner.dispatch",
+        "--kind",
+        "method",
+      );
+      expect(itself.out.split("\n")[0]).toMatch(/^sym:src\/runner\.ts#Runner\.dispatch {2}method /);
+      expect(itself.out).toContain("--kind method: only symbols of these kinds");
+      expect(itself.out).not.toContain("no symbol of kind");
+      const none = await xpl(dir, "outline", "--under", "file:README.md", "--kind", "class");
+      expect(none.code).toBe(0);
+      expect(none.out).toContain("no symbol of kind class under file:README.md");
+    });
+
+    it("an unknown kind is a usage error that lists the kinds", async () => {
+      const { code, err } = await xpl(dir, "outline", "--kind", "meth");
+      expect(code).toBe(2);
+      expect(err).toContain(
+        'unknown symbol kind "meth" (expected: class, interface, function, method, type, variable, enum, key, other)',
+      );
+      expect((await xpl(dir, "outline", "--help")).out).toContain("--kind <k,...>");
+    });
+  });
+
   it("an unknown id fails with core's suggestions", async () => {
     const { code, err } = await xpl(dir, "outline", "--under", "src/runner.ts#Runner.dispach");
     expect(code).toBe(1);

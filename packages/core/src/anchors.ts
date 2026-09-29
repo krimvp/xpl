@@ -690,9 +690,12 @@ export interface AnchorSite {
   /** Id of the owning element; for tour step code overrides `"<tour id>/<step id>"`. */
   elementId: string;
   owner: "node" | "edge" | "concept" | "step" | "tour-step";
-  /** Origin of the owning element (a step: its view's origin). Tours have none. */
+  /**
+   * Origin of the owning element (a step: its view's origin; a tour step: its tour's, undefined for a tour
+   * without provenance, which counts as `llm`).
+   */
   origin?: Origin;
-  /** Fields the user edited on the owner (a step: its view's `userFields`). */
+  /** Fields the user edited on the owner (a step: its view's `userFields`; a tour step: its tour's). */
   userFields: string[];
   /** Steps: the id of the sequence view the step belongs to. */
   viewId?: string;
@@ -807,8 +810,9 @@ export function collectAnchors(explainer: Explainer): AnchorSite[] {
         `tours[${i}].steps[${j}].code`,
         `${tour.id}/${step.id}`,
         "tour-step",
-        undefined,
-        undefined,
+        // a tour written before tours had provenance has none: it counts as the llm's
+        tour.provenance?.origin,
+        tour.provenance?.userFields,
       ),
     ),
   );

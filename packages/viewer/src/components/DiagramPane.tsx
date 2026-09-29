@@ -1,10 +1,11 @@
 /** The diagram of the current view (graph or sequence) under a caption with its title and question. */
-import { DEFAULT_EDGE_KINDS } from "@xpl/core";
+import { DEFAULT_EDGE_KINDS, resolveStubPolicy } from "@xpl/core";
 import { useDerived, useViewerState } from "../hooks.js";
 import { EdgeKindToggles } from "./EdgeKinds.js";
 import { ErrorBoundary } from "./ErrorBoundary.js";
 import { GraphView } from "./GraphView.js";
 import { SequenceView } from "./SequenceView.js";
+import { StubsControl } from "./StubsControl.js";
 
 export function DiagramPane() {
   const state = useViewerState();
@@ -27,7 +28,10 @@ export function DiagramPane() {
         <span className="caption-title">{view.title}</span>
         {question && <span className="caption-question">{question}</span>}
         {view.type === "graph" && !present && (
-          <EdgeKindToggles kinds={view.edgeKinds ?? DEFAULT_EDGE_KINDS} />
+          <div className="caption-controls">
+            <StubsControl {...resolveStubPolicy(view.stubs)} />
+            <EdgeKindToggles kinds={view.edgeKinds ?? DEFAULT_EDGE_KINDS} />
+          </div>
         )}
       </div>
       <div className="diagram-body">

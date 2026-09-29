@@ -5,18 +5,24 @@
  * children so a click on a child never also selects the container), derived and stored edges, stubs
  * (`data-stub-id` too) and ghost boxes (`ghost:<id>`). State classes: is-selected, is-match, is-related.
  * Click selects (shift adds), double-click drills into a node, a click on a ghost adds it to the view.
+ * A ghost that stands for several elements ("rest of <file>", "N more") opens a menu of them instead
+ * (GhostMenu), and adding one of them expands the view.
  */
 import type { DerivedGraph } from "@xpl/core";
 import {
   createContext,
   memo,
+  useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
   type KeyboardEvent,
   type MouseEvent,
+  type PointerEvent,
+  type WheelEvent,
 } from "react";
 import {
   badgeWidth,
@@ -29,10 +35,35 @@ import {
 } from "../layout/graphLayout.js";
 import { arrowHeadPath, distanceToSegment, roundedPath, routeBox } from "../svg.js";
 import { useStore } from "../hooks.js";
+import { GhostTargetList } from "./GhostTargets.js";
 import { PanZoom, PRESENT_FIT_PADDING, PRESENT_MAX_FIT_ZOOM } from "./PanZoom.js";
 
 /** True while presenting: a talk looks at the diagram, it does not edit it (no drill-in, collapse or expand). */
 const ReadOnly = createContext(false);
+
+/** Where a ghost box is on screen, relative to the diagram pane (the menu of a folded ghost opens beside it). */
+interface Anchor {
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+}
+
+interface GhostMenuState {
+  /** Render id of the ghost (`ghost:rest:file:src/a.ts`). */
+  id: string;
+  anchor: Anchor;
+}
+
+/** Opens and closes the menu of a folded ghost; `openId` is the ghost whose menu is open. */
+interface GhostMenuApi {
+  openId: string | undefined;
+  toggle(id: string, box: DOMRect): void;
+}
+const GhostMenuContext = createContext<GhostMenuApi>({
+  openId: undefined,
+  toggle: () => undefined,
+});
 
 interface Marks {
   selected: ReadonlySet<string>;
@@ -90,6 +121,7 @@ export function GraphView({
   const host = useRef<HTMLDivElement>(null);
   const [layout, setLayout] = useState<GraphLayout | undefined>();
   const [error, setError] = useState<string | undefined>();
+  const [menu, setMenu] = useState<GhostMenuState | undefined>();
   // Stable while nothing selected, matched or related changes, so unchanged shapes are not re-rendered.
   const marks = useMemo<Marks>(
     () => ({ selected: new Set(selection), matches: new Set(matches), related }),
@@ -120,6 +152,47 @@ export function GraphView({
       cancelled = true;
     };
   }, [graph, present]);
+
+  // The menu belongs to the layout it was opened on.
+  useEffect(() => setMenu(undefined), [graph, present, viewId]);
+
+  const menuApi = useMemo<GhostMenuApi>(
+    () => ({
+      openId: menu?.id,
+      toggle(id, box) {
+        const hostBox = host.current?.getBoundingClientRect();
+        if (!hostBox) return;
+        setMenu((open) =>
+          open?.id === id
+            ? undefined
+            : {
+                id,
+                anchor: {
+                  left: box.left - hostBox.left,
+                  right: box.right - hostBox.left,
+                  top: box.top - hostBox.top,
+                  bottom: box.bottom - hostBox.top,
+                },
+              },
+        );
+      },
+    }),
+    [menu?.id],
+  );
+  const closeMenu = useCallback(() => setMenu(undefined), []);
+  // A press anywhere else (a ghost handles its own click) or a wheel turn over the diagram puts the menu
+  // away: what it was anchored to is about to move.
+  const dismiss = (event: PointerEvent<HTMLDivElement>) => {
+    if (!menu) return;
+    const target = event.target as Element;
+    if (target.closest(".ghost-menu") || target.closest('[data-element-id^="ghost:"]')) return;
+    setMenu(undefined);
+  };
+  // (a long menu scrolls with the wheel: only a turn over the diagram puts it away)
+  const dismissOnWheel = (event: WheelEvent<HTMLDivElement>) => {
+    if (!(event.target as Element).closest(".ghost-menu")) setMenu(undefined);
+  };
+  const menuGhost = menu ? layout?.nodes.find((n) => n.id === menu.id) : undefined;
 
   let body;
   if (error) body = <div className="diagram-message is-error">Layout failed: {error}</div>;
@@ -163,9 +236,19 @@ export function GraphView({
   }
   return (
     <ReadOnly.Provider value={present}>
-      <div className="graph-host" ref={host}>
-        {body}
-      </div>
+      <GhostMenuContext.Provider value={menuApi}>
+        <div
+          className="graph-host"
+          ref={host}
+          onPointerDownCapture={dismiss}
+          onWheelCapture={menu ? dismissOnWheel : undefined}
+        >
+          {body}
+          {menu && menuGhost?.ghostFold && (
+            <GhostMenu node={menuGhost} anchor={menu.anchor} onClose={closeMenu} />
+          )}
+        </div>
+      </GhostMenuContext.Provider>
     </ReadOnly.Provider>
   );
 }
@@ -317,32 +400,53 @@ function Badge({ x, y, text, width }: { x: number; y: number; text: string; widt
 function GhostShape({ node, marks }: { node: LayoutNode; marks: Marks }) {
   const store = useStore();
   const readOnly = useContext(ReadOnly);
-  const expand = () => {
-    if (node.ghostTarget !== undefined && !readOnly) store.expandStub({ ghost: node.ghostTarget });
+  const menu = useContext(GhostMenuContext);
+  const fold = node.ghostFold;
+  const open = fold !== undefined && menu.openId === node.id;
+  // One element: add it. Several: choose (the menu). While presenting, nothing happens.
+  const expand = (box: DOMRect) => {
+    if (readOnly) return;
+    if (fold) menu.toggle(node.id, box);
+    else if (node.ghostTarget !== undefined) store.expandStub({ ghost: node.ghostTarget });
   };
+  const label = readOnly
+    ? `${node.label} (not in this view)`
+    : fold
+      ? `${node.label}: choose what to add to the view`
+      : `Add ${node.label} to the view`;
   return (
     <g
-      className={`node ghost${stateClasses(node.id, marks)}`}
+      className={`node ghost${fold ? " is-fold" : ""}${open ? " is-open" : ""}${stateClasses(node.id, marks)}`}
       data-element-id={node.id}
       transform={`translate(${node.x} ${node.y})`}
       role="button"
       tabIndex={0}
-      aria-label={readOnly ? `${node.label} (not in this view)` : `Add ${node.label} to the view`}
+      aria-label={label}
+      aria-haspopup={fold && !readOnly ? "menu" : undefined}
+      aria-expanded={fold && !readOnly ? open : undefined}
       onClick={(event) => {
         event.stopPropagation();
-        expand();
+        expand(event.currentTarget.getBoundingClientRect());
       }}
-      onKeyDown={(event) => activate(event, expand)}
+      onKeyDown={(event) =>
+        activate(event, () => expand(event.currentTarget.getBoundingClientRect()))
+      }
     >
       <title>
         {readOnly
           ? `${node.label} is not in this view`
-          : node.hint
-            ? `Add ${node.label} to the view (${node.hint} reach it across the edge of this view)`
-            : `Add ${node.label} to the view`}
+          : fold
+            ? `${node.label}: ${node.hint ?? ""} reach ${fold.kind === "more" ? "places" : "symbols"} that are not in this view. Click to choose what to add.`
+            : node.hint
+              ? `Add ${node.label} to the view (${node.hint} reach it across the edge of this view)`
+              : `Add ${node.label} to the view`}
       </title>
       <rect className="box" width={node.width} height={node.height} rx={8} />
-      <path className="plus" d="M13 15h8M17 11v8" />
+      {fold ? (
+        <path className="plus is-list" d="M12 11h10M12 15h10M12 19h10" />
+      ) : (
+        <path className="plus" d="M13 15h8M17 11v8" />
+      )}
       <text className="label" x={28} y={19}>
         {node.label}
       </text>
@@ -352,6 +456,116 @@ function GhostShape({ node, marks }: { node: LayoutNode; marks: Marks }) {
         </text>
       )}
     </g>
+  );
+}
+
+/**
+ * The menu of a ghost that stands for several elements: what it folds, most referenced first, each with
+ * its reference count. Picking one adds that element to the view (`expandStub`); a "rest of <file>" ghost
+ * also offers the whole file as one box, which wraps what is shown and stands for everything else in it.
+ */
+function GhostMenu({
+  node,
+  anchor,
+  onClose,
+}: {
+  node: LayoutNode;
+  anchor: Anchor;
+  onClose: () => void;
+}) {
+  const store = useStore();
+  const ref = useRef<HTMLDivElement>(null);
+  const [at, setAt] = useState<{ left: number; top: number }>({
+    left: anchor.right + 8,
+    top: anchor.top,
+  });
+  const fold = node.ghostFold!;
+
+  // Beside the ghost, on the side that has room, and inside the pane.
+  useLayoutEffect(() => {
+    const el = ref.current;
+    const hostEl = el?.parentElement;
+    if (!el || !hostEl) return;
+    const room = 8;
+    const right = anchor.right + room;
+    const left =
+      right + el.offsetWidth <= hostEl.clientWidth - room
+        ? right
+        : Math.max(room, anchor.left - room - el.offsetWidth);
+    const top = Math.max(room, Math.min(anchor.top, hostEl.clientHeight - el.offsetHeight - room));
+    setAt({ left, top });
+  }, [anchor]);
+
+  useEffect(() => {
+    ref.current?.querySelector<HTMLElement>("button")?.focus({ preventScroll: true });
+  }, []);
+
+  const add = (target: string) => {
+    store.expandStub({ ghost: target });
+    onClose();
+  };
+  const whole =
+    fold.kind === "rest" &&
+    fold.file !== undefined &&
+    !fold.targets.some((t) => t.target === fold.file)
+      ? fold.file
+      : undefined;
+
+  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    const items = [...event.currentTarget.querySelectorAll<HTMLElement>("button")];
+    const current = items.indexOf(document.activeElement as HTMLElement);
+    if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      onClose();
+      // Back to the ghost, so the keyboard picks up where it was.
+      requestAnimationFrame(() =>
+        document.querySelector<SVGElement>(`[data-element-id="${node.id}"]`)?.focus(),
+      );
+    } else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      const step = event.key === "ArrowDown" ? 1 : -1;
+      items[(current + step + items.length) % items.length]?.focus();
+    } else if (event.key === "Home" || event.key === "End") {
+      event.preventDefault();
+      items[event.key === "Home" ? 0 : items.length - 1]?.focus();
+    }
+  };
+
+  return (
+    <div
+      ref={ref}
+      className="ghost-menu"
+      role="menu"
+      aria-label={`${node.label}: choose what to add to the view`}
+      data-testid="ghost-menu"
+      data-ghost-id={node.id}
+      style={{ left: at.left, top: at.top }}
+      onKeyDown={onKeyDown}
+    >
+      <p className="ghost-menu-head">
+        <strong>{node.label}</strong>
+        <span>
+          {fold.kind === "rest"
+            ? "Not in this view. Add one to expand it."
+            : "Left out to keep the view readable. Add one to expand it."}
+        </span>
+      </p>
+      {whole && (
+        <button
+          type="button"
+          role="menuitem"
+          className="ghost-target is-whole"
+          data-ghost-target={whole}
+          title="Add the file as one box: it wraps what is shown and stands for the rest of it"
+          onClick={() => add(whole)}
+        >
+          <span className="ghost-target-label">The whole file</span>
+          <span className="ghost-target-count">as one box</span>
+        </button>
+      )}
+      <GhostTargetList targets={fold.targets} onPick={add} menu />
+    </div>
   );
 }
 

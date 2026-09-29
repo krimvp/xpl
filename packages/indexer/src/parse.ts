@@ -7,7 +7,7 @@ import { splitLines } from "@xpl/core";
 import type { FileLanguage, FilePath } from "@xpl/core";
 import type { Parser, Tree } from "web-tree-sitter";
 import type { FileContext, LanguagePack } from "./languages/types.js";
-import { packFor } from "./languages/index.js";
+import { packForFile } from "./languages/index.js";
 import { createParser } from "./wasm.js";
 import type { GrammarId } from "./wasm-files.js";
 
@@ -49,8 +49,8 @@ export interface ParsedFile {
 }
 
 /**
- * Parse `source` as `language` with the registered pack. Returns undefined when the language has no pack
- * (plain text). This is the "reparse helper" a SCIP importer uses to run `pack.classifySite` on a file.
+ * Parse `source` as `language` with the registered pack. Returns undefined when the file has no pack (plain
+ * text). This is the "reparse helper" a SCIP importer uses to run `pack.classifySite` on a file.
  */
 export async function parseFile(
   pool: ParserPool,
@@ -58,7 +58,7 @@ export async function parseFile(
   language: FileLanguage,
   source: string,
 ): Promise<ParsedFile | undefined> {
-  const pack = packFor(language);
+  const pack = packForFile(file, language);
   if (!pack) return undefined;
   const tree = await pool.parse(pack.grammarFor(language), source);
   const ctx: FileContext = { file, language, source, lines: splitLines(source), tree };

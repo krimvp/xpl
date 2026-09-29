@@ -14,6 +14,8 @@
  *      offsets are relative to that start line and must lie inside the symbol.
  *  10. GraphView adds `excludeFiles` (glob patterns on repo paths): derived edges and stubs ignore the
  *      references that start or end in a matching file (test files in an overview, say).
+ *  11. GraphView adds `stubs` ({ mode, max }): how many of the places where the view stops are drawn as
+ *      ghost boxes. Default: the 8 most referenced, with the rest folded into "N more".
  *
  * Two files per repo:
  *   index-<commit>.json    SymbolIndex. Static analysis of one commit. Built once, shared by every view.
@@ -336,8 +338,37 @@ export interface GraphView extends ViewBase {
    * edges, and the references of files that do not match.
    */
   excludeFiles?: string[];
+  /**
+   * (amended) How many of the places where the view stops are drawn: a ghost box for what lies outside,
+   * with dashed stubs from the boxes that reach it. Default when omitted: `{ mode: "top", max: 8 }`, so
+   * a crowded view stays readable (see StubPolicy).
+   */
+  stubs?: StubPolicy;
   /** Positions you pinned by hand; everything else is auto-laid-out. */
   layout?: Record<ElementId, { x: number; y: number }>;
+}
+
+/**
+ * (amended) The stub policy of a graph view (`GraphView.stubs`): how many ghost boxes it draws where it
+ * stops. Every reference or stored edge with exactly one end in the view is a stub; the ghost is what it
+ * leads to.
+ *
+ * - `"top"` (the default): at most `max` ghosts, the ones most references lead to. Outside symbols that
+ *   live in a file the view shows only in part are folded into one "rest of <file>" ghost per file
+ *   (`ghost:rest:file:<path>`), and the ghosts beyond `max` into one "N more" ghost per direction
+ *   (`ghost:more:in`, `ghost:more:out`). A folded ghost is not expanded by one click: it offers the
+ *   elements it stands for, each with its reference count, and adding one of them expands the view.
+ * - `"all"`: every ghost, one per outside element, however many that are (a crowded view).
+ * - `"none"`: no stubs and no ghosts; edges that leave the view are simply not drawn.
+ */
+export interface StubPolicy {
+  /** Default `"top"`. */
+  mode?: "top" | "all" | "none";
+  /**
+   * With `mode: "top"`: how many ghosts are kept, most referenced first (ties by id), before the rest are
+   * folded away. A whole number, 0 or more; default 8.
+   */
+  max?: number;
 }
 
 /** A sequence diagram: ordered messages between lifelines. */
@@ -383,6 +414,13 @@ export interface Tour {
   id: string;
   title: string;
   steps: TourStep[];
+  /**
+   * (amended) Who made the tour and what the user edited on it, like every other element. An `llm` patch never
+   * changes or removes a tour with `origin: "user"` (one made in the viewer's tour panel), nor a field listed in
+   * `userFields` (`title`, `steps`) of a tour the user edited, nor removes a tour that carries `userFields`.
+   * Optional: a tour without it (written before tours had provenance) counts as `origin: "llm"`.
+   */
+  provenance?: Provenance;
 }
 
 export interface TourStep {
@@ -432,7 +470,8 @@ export interface Explainer {
  *   file→file when files are shown), for the kinds in the view's `edgeKinds`. Anchors: the ref
  *   sites + the target's definition. Refs to or from a module scope ("<file>#") lift to the file.
  *   Edges built only from heuristic refs are drawn lighter.
- * - Stubs: edges from an included node to a non-included one. Clicking one expands.
+ * - Stubs: edges from an included node to a non-included one, drawn to ghost boxes (by default the 8 most
+ *   referenced; the others are folded, see StubPolicy). Clicking a ghost expands it, or offers what it folds.
  * - Code focus of a selection: union of its anchors. A structural node with no anchors falls
  *   back to its own range (symbol), whole file (file) or its files (dir).
  * - Reverse lookup (code → elements): interval index over resolved anchor ranges. Innermost

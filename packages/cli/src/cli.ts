@@ -109,6 +109,7 @@ async function smoke(io: Io): Promise<number> {
     go: { source: "package main\n", root: "source_file" },
     yaml: { source: "a: 1\n", root: "stream" },
     json: { source: '{"a": 1}\n', root: "document" },
+    toml: { source: "a = 1\n", root: "document" },
   };
   io.out(`wasm dir: ${getWasmDir() ?? "(node_modules)"}`);
   await initParser();

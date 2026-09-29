@@ -169,6 +169,9 @@ export async function startViewServer(options: ViewServerOptions): Promise<ViewS
       texts: state.tree.texts,
       explainer: state.loaded.explainer,
       choice: "referenced",
+      // the viewer fetches what is not here on demand, so what lies behind a stub can wait for its click
+      measure: false,
+      stubs: false,
     });
     return makeBundle({
       explainer: state.loaded.explainer,

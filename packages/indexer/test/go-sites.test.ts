@@ -383,7 +383,7 @@ describe("Go type-ref sites", () => {
       "var _ = (*pkg.Impl2)(nil)", // 3
       "var _ = Conv(x)", // 4
     );
-    expect(await sitesOf(source)).toEqual([
+    expect(await sitesOf(source, ["type-ref", "call"])).toEqual([
       "type-ref Iface «Iface»",
       "type-ref Impl «Impl»",
       "type-ref pkg.Impl2 «pkg.Impl2»",

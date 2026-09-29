@@ -19,13 +19,16 @@ import {
   normalizeElementId,
   parseId,
   RESERVED_PREFIXES,
+  listIds,
   splitSymbolId,
+  suggestIds,
   viewSlug,
   type ParsedId,
 } from "./ids.js";
 import { asIndexModel, type IndexModel } from "./index-model.js";
 import { ExplainerModel } from "./model.js";
 import { resolveFrames } from "./sequence.js";
+import { parseGhostKey, STUB_MODES } from "./stubs.js";
 import type {
   Anchor,
   AnchorStatus,
@@ -89,6 +92,12 @@ export interface ValidateOptions {
    * vanished from the index, are warnings.
    */
   mode?: "strict" | "lenient";
+  /**
+   * Ids to treat as existing wherever they are referenced. `applyPatch` passes the elements, views and steps
+   * that the patch tried to create and failed to, so that one error does not become one more error for
+   * every reference to them.
+   */
+  assumeIds?: Iterable<string>;
 }
 
 const ORIGINS = ["static", "llm", "user"];
@@ -114,7 +123,7 @@ export function validateExplainer(
       { severity: "error", path: "", message: "explainer must be an object", code: "schema" },
     ];
   }
-  const validator = new Validator(explainer, asIndexModel(index), toTextCache(getText), opts.mode);
+  const validator = new Validator(explainer, asIndexModel(index), toTextCache(getText), opts);
   validator.run();
   return validator.issues;
 }
@@ -132,18 +141,16 @@ class Validator {
   private readonly texts: TextCache;
   private readonly model: ExplainerModel;
   private readonly strict: boolean;
+  private readonly assumed: ReadonlySet<string>;
   private hints: ReturnType<typeof storedSymbolHints> | undefined;
+  private pools: IdPools | undefined;
 
-  constructor(
-    explainer: Explainer,
-    index: IndexModel,
-    texts: TextCache,
-    mode?: "strict" | "lenient",
-  ) {
+  constructor(explainer: Explainer, index: IndexModel, texts: TextCache, opts: ValidateOptions) {
     this.ex = explainer;
     this.index = index;
     this.texts = texts;
-    this.strict = mode !== "lenient";
+    this.strict = opts.mode !== "lenient";
+    this.assumed = new Set(opts.assumeIds ?? []);
     this.model = new ExplainerModel(explainer, index);
   }
 
@@ -306,13 +313,53 @@ class Validator {
     return `${id} does not exist in the index`;
   }
 
+  /** The ids of this explainer that a mistyped id may have meant, by kind (built once, on the first error). */
+  private known(): IdPools {
+    if (this.pools) return this.pools;
+    const idsOf = (list: unknown): string[] =>
+      (Array.isArray(list) ? list : [])
+        .filter(isRecord)
+        .map((item) => item.id)
+        .filter((id): id is string => typeof id === "string" && id !== "");
+    const steps = new Map<string, string[]>();
+    for (const view of Array.isArray(this.ex.views) ? this.ex.views : []) {
+      if (isRecord(view) && view.type === "sequence" && typeof view.id === "string") {
+        steps.set(view.id, idsOf(view.steps));
+      }
+    }
+    const all = [
+      ...idsOf(this.ex.nodes).filter((id) => parseId(id).type === "group"),
+      ...idsOf(this.ex.concepts),
+      ...idsOf(this.ex.edges),
+      ...idsOf(this.ex.views),
+      ...idsOf(this.ex.tours),
+      ...[...steps.values()].flat(),
+      ...this.assumed,
+    ];
+    return (this.pools = { all, views: idsOf(this.ex.views), steps });
+  }
+
+  /** `. Did you mean: a, b?` for an id that does not exist, or nothing when no id of the explainer is close. */
+  private didYouMean(id: string): string {
+    const found = suggestIds(id, this.known().all);
+    return found.length > 0 ? `. Did you mean: ${found.join(", ")}?` : "";
+  }
+
+  /** For a tour step's unknown view: the closest view ids, else the views there are. */
+  private viewHint(value: unknown): string {
+    const views = this.known().views;
+    const near = typeof value === "string" ? suggestIds(value, views) : [];
+    if (near.length > 0) return `. Did you mean: ${near.join(", ")}?`;
+    return views.length > 0 ? ` (views: ${listIds(views)})` : " (it has no views yet)";
+  }
+
   /** Checks that `id` is a node id that exists (or is derivable from the index). */
   private refNode(id: unknown, path: string, elementId: string | undefined, what: string): boolean {
     if (typeof id !== "string" || id === "") {
       this.error(path, `${what} must be an element id string`, elementId);
       return false;
     }
-    if (this.model.hasNode(id)) return true;
+    if (this.assumed.has(id) || this.model.hasNode(id)) return true;
     const parsed = parseId(id);
     switch (parsed.type) {
       case "dir":
@@ -321,7 +368,12 @@ class Validator {
         this.stale(path, `${what}: ${this.describeMissing(id)}`, elementId, "unknown-id");
         break;
       case "group":
-        this.error(path, `${what}: no group ${id} in this explainer`, elementId, "unknown-id");
+        this.error(
+          path,
+          `${what}: no group ${id} in this explainer${this.didYouMean(id)}`,
+          elementId,
+          "unknown-id",
+        );
         break;
       case "unknown":
         this.error(path, `${what}: ${this.describeNotAnId(id)}`, elementId, "unknown-id");
@@ -348,7 +400,7 @@ class Validator {
       this.error(path, `${what} must be an element id string`, elementId);
       return false;
     }
-    if (this.model.hasElement(id)) return true;
+    if (this.assumed.has(id) || this.model.hasElement(id)) return true;
     const parsed = parseId(id);
     switch (parsed.type) {
       case "dir":
@@ -367,14 +419,26 @@ class Validator {
       case "group":
       case "concept":
       case "edge":
-      case "step":
         this.error(
           path,
-          `${what}: no ${parsed.type} with id ${id} in this explainer`,
+          `${what}: no ${parsed.type} with id ${id} in this explainer${this.didYouMean(id)}`,
           elementId,
           "unknown-id",
         );
         break;
+      case "step": {
+        // the view exists: name its steps; else the step of a view with a similar name and the same number
+        const steps = this.known().steps.get(`view:${parsed.view}`);
+        this.error(
+          path,
+          steps
+            ? `${what}: no step ${id} in view:${parsed.view} (its steps: ${listIds(steps)})`
+            : `${what}: no step with id ${id} in this explainer${this.didYouMean(id)}`,
+          elementId,
+          "unknown-id",
+        );
+        break;
+      }
       default:
         this.error(path, `${what}: ${this.describeNotAnId(id)}`, elementId, "unknown-id");
     }
@@ -387,6 +451,8 @@ class Validator {
     if (loose.ok && loose.id !== id) {
       return `"${id}" is not an element id; did you mean ${loose.id}?`;
     }
+    const near = suggestIds(id, this.known().all);
+    if (near.length > 0) return `"${id}" is not an element id; did you mean ${near.join(", ")}?`;
     return `"${id}" is not an element id (expected repo, dir:<path>, file:<path>, sym:<file>#<symbol> or grp:<slug>)`;
   }
 
@@ -931,6 +997,7 @@ class Validator {
         });
       }
     }
+    if (view.stubs !== undefined) this.checkStubPolicy(view.stubs, `${path}.stubs`, id);
     if (view.layout !== undefined) {
       if (!isRecord(view.layout)) this.error(`${path}.layout`, "layout must map ids to {x, y}", id);
       else {
@@ -954,6 +1021,30 @@ class Validator {
     }
   }
 
+  /** `GraphView.stubs`: `{ mode?: "top" | "all" | "none", max?: a whole number, 0 or more }`. */
+  private checkStubPolicy(stubs: unknown, at: string, viewId: string): void {
+    if (!isRecord(stubs)) {
+      this.error(at, 'stubs must be an object like {"mode": "top", "max": 8}', viewId);
+      return;
+    }
+    for (const key of Object.keys(stubs)) {
+      if (key !== "mode" && key !== "max") {
+        this.warn(`${at}.${key}`, `unknown field "${key}" in stubs (mode, max)`, viewId);
+      }
+    }
+    if (stubs.mode !== undefined && !(STUB_MODES as readonly unknown[]).includes(stubs.mode)) {
+      this.error(
+        `${at}.mode`,
+        `stubs.mode must be one of ${STUB_MODES.map((mode) => `"${mode}"`).join(", ")}`,
+        viewId,
+      );
+    }
+    const max = stubs.max;
+    if (max !== undefined && (typeof max !== "number" || !Number.isInteger(max) || max < 0)) {
+      this.error(`${at}.max`, "stubs.max must be a whole number, 0 or more", viewId);
+    }
+  }
+
   /** Hidden entries: nodes, edges (stored or derived), ghosts and stubs. */
   private refHidden(item: unknown, at: string, viewId: string): void {
     if (typeof item !== "string") {
@@ -961,16 +1052,26 @@ class Validator {
       return;
     }
     const parsed = parseId(item);
-    if (parsed.type === "ghost") this.refNode(parsed.target, at, viewId, "hidden ghost");
+    if (parsed.type === "ghost") this.refGhostKey(parsed.target, at, viewId, "hidden ghost");
     else if (parsed.type === "stub") {
       this.refNode(parsed.inside, at, viewId, "hidden stub");
-      this.refNode(parsed.ghost, at, viewId, "hidden stub");
+      this.refGhostKey(parsed.ghost, at, viewId, "hidden stub");
     } else this.refElement(item, at, viewId, "hidden");
+  }
+
+  /**
+   * The key of a ghost (`ghost:<key>`, or the end of a stub id): an element outside the view, `rest:file:<path>`
+   * (an indexed file: the rest of it) or `more:in` / `more:out` (the overflow ghosts of `stubs.max`).
+   */
+  private refGhostKey(key: string, at: string, viewId: string, what: string): void {
+    const info = parseGhostKey(key);
+    if (info.kind === "more") return;
+    this.refNode(info.kind === "rest" ? info.file : info.target, at, viewId, what);
   }
 
   private refLayoutKey(key: string, at: string, viewId: string): void {
     const parsed = parseId(key);
-    if (parsed.type === "ghost") this.refNode(parsed.target, at, viewId, "layout key");
+    if (parsed.type === "ghost") this.refGhostKey(parsed.target, at, viewId, "layout key");
     else this.refNode(key, at, viewId, "layout key");
   }
 
@@ -1168,6 +1269,9 @@ class Validator {
       else this.checkSlug(parsed.slug, path, tour.id, "tour");
     }
     if (typeof tour.title !== "string") this.error(`${path}.title`, "title must be a string", id);
+    // Optional: a tour written before tours had provenance counts as written by the llm.
+    if (tour.provenance !== undefined)
+      this.checkProvenance(tour.provenance, `${path}.provenance`, id);
     if (!Array.isArray(tour.steps)) {
       this.error(`${path}.steps`, "steps must be an array", id);
       return;
@@ -1193,10 +1297,10 @@ class Validator {
         else stepIds.set(step.id, at);
       }
       const view = typeof step.view === "string" ? this.model.view(step.view) : undefined;
-      if (!view) {
+      if (!view && !(typeof step.view === "string" && this.assumed.has(step.view))) {
         this.error(
           `${at}.view`,
-          `tour step view ${JSON.stringify(step.view)} is not a view of this explainer`,
+          `tour step view ${JSON.stringify(step.view)} is not a view of this explainer${this.viewHint(step.view)}`,
           id,
           "unknown-id",
         );
@@ -1216,7 +1320,13 @@ class Validator {
           }
         });
       }
-      if (step.code !== undefined) this.checkAnchors(step.code, `${at}.code`, id);
+      // a tour step's code belongs to its tour: the tour's provenance says who may rewrite it
+      if (step.code !== undefined) {
+        this.checkAnchors(step.code, `${at}.code`, id, {
+          provenance: tour.provenance,
+          field: "steps",
+        });
+      }
       if (step.note !== undefined && typeof step.note !== "string")
         this.error(`${at}.note`, "note must be a string", id);
       if (step.editor !== undefined) {
@@ -1236,6 +1346,15 @@ class Validator {
       }
     });
   }
+}
+
+/** Ids of the explainer that a mistyped id may have meant (see `Validator.known`). */
+interface IdPools {
+  /** Groups, concepts, stored edges, views, tours and steps. */
+  all: string[];
+  views: string[];
+  /** Step ids by sequence view id. */
+  steps: Map<string, string[]>;
 }
 
 /** Why an llm patch cannot rewrite `field` of an element with this provenance (undefined: it can). */

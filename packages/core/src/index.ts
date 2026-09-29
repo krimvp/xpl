@@ -8,6 +8,7 @@ export * from "./index-model.js";
 export * from "./implementations.js";
 export * from "./anchors.js";
 export * from "./model.js";
+export * from "./stubs.js";
 export * from "./graph.js";
 export * from "./focus.js";
 export * from "./validate.js";

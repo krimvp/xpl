@@ -309,6 +309,52 @@ describe("imports", () => {
     ]);
   });
 
+  it("type-only bindings are flagged: `import type`, `{ type A }`, default and namespace forms", async () => {
+    const source = src(
+      "import type { A } from './a';",
+      "import { type B, C, type D as E } from './b';",
+      "import type F from './f';",
+      "import type * as ns from './n';",
+      "import type G, { H } from './g';",
+      "import def, * as all from './all';",
+    );
+    const { facts } = await extract("a.ts", source);
+    expect(facts.imports.map((i) => `${i.localName}${i.typeOnly ? " (type)" : ""}`)).toEqual([
+      "A (type)",
+      "B (type)",
+      "C",
+      "E (type)",
+      "F (type)",
+      "ns (type)",
+      "G (type)",
+      "H (type)",
+      "def",
+      "all",
+    ]);
+  });
+
+  it("type-only re-exports are flagged too, including `export type *`, which the grammar reads as an ERROR", async () => {
+    const source = src(
+      "export type { A } from './a';",
+      "export { type B, C } from './b';",
+      "export type * from './star';",
+      "export type * as ns from './ns';",
+      "export * from './star2';",
+      "export type { Local };",
+    );
+    const { facts } = await extract("a.ts", source);
+    expect(
+      facts.exports!.map((e) => `${e.name}${e.typeOnly ? " (type)" : ""} <- ${e.module ?? "-"}`),
+    ).toEqual([
+      "A (type) <- ./a",
+      "B (type) <- ./b",
+      "C <- ./b",
+      "* (type) <- ./star",
+      "ns (type) <- ./ns",
+      "* <- ./star2",
+    ]);
+  });
+
   it("does not report a require binding twice", async () => {
     const { facts } = await extract("a.js", src("const x = require('./x');"));
     expect(facts.imports).toHaveLength(1);
@@ -625,8 +671,13 @@ describe("classifySite agrees with the sites `extract` emits", () => {
     };
     for (const b of ex.facts.imports) {
       const { line, col } = identifierPosition(b);
-      expect(at(line, col), b.localName).toEqual({ kind: "import", site: b.site });
+      // `import { type Job }` is a type reference, like `import type`: the kind follows the statement's syntax
+      expect(at(line, col), b.localName).toEqual({
+        kind: b.typeOnly ? "type-ref" : "import",
+        site: b.site,
+      });
     }
+    expect(ex.facts.imports.filter((b) => b.typeOnly).map((b) => b.localName)).toEqual(["Job"]);
     const reexport = ex.facts.exports!.find((e) => e.module)!;
     expect(at(reexport.site!.startLine, reexport.site!.startCol)).toEqual({
       kind: "import",
@@ -634,7 +685,41 @@ describe("classifySite agrees with the sites `extract` emits", () => {
     });
   });
 
-  it("returns undefined for reads, declarations, receivers, arguments and punctuation", async () => {
+  it("classifies the specifiers of type-only imports and re-exports as type references, run-time ones as imports", async () => {
+    const text = src(
+      "import type { A } from './a';", // 1
+      "import { type B, C } from './b';", // 2
+      "import type * as ns from './n';", // 3
+      "export type { D } from './d';", // 4
+      "export { type E, F } from './e';", // 5
+      "import { G } from './g';", // 6
+    );
+    const ex = await extract("a.ts", text);
+    const at = (line: number, col: number) =>
+      ex.withTree((ctx) => ex.pack.classifySite(ctx, line, col));
+    const kindAt = (line: number, needle: string) =>
+      at(line, text.split("\n")[line - 1]!.indexOf(needle) + 1)?.kind;
+    expect(kindAt(1, "A")).toBe("type-ref");
+    expect(kindAt(2, "B")).toBe("type-ref");
+    expect(kindAt(2, "C")).toBe("import");
+    expect(kindAt(4, "D")).toBe("type-ref");
+    expect(kindAt(5, "E")).toBe("type-ref");
+    expect(kindAt(5, "F")).toBe("import");
+    expect(kindAt(6, "G")).toBe("import");
+    // The quoted module of a type-only statement is a type reference (the mapper drops it when names are
+    // imported); a run-time statement's is not classified (the mapper makes it an import).
+    expect(kindAt(3, "'./n'")).toBe("type-ref");
+    expect(kindAt(1, "'./a'")).toBe("type-ref");
+    expect(kindAt(6, "'./g'")).toBeUndefined();
+    expect(at(3, text.split("\n")[2]!.indexOf("'./n'") + 1)?.site).toEqual({
+      startLine: 3,
+      startCol: 26,
+      endLine: 3,
+      endCol: 30,
+    });
+  });
+
+  it("reads are classified (bare names flagged); declarations, punctuation and positions outside the file are nothing", async () => {
     const ex = await extract(
       "a.ts",
       src(
@@ -650,11 +735,17 @@ describe("classifySite agrees with the sites `extract` emits", () => {
       ex.withTree((ctx) => ex.pack.classifySite(ctx, line, col));
     expect(at(1, 7)).toBeUndefined(); // class name (declaration)
     expect(at(2, 3)).toBeUndefined(); // method name (declaration)
-    expect(at(3, 15)).toBeUndefined(); // `job` read
-    expect(at(4, 5)).toBeUndefined(); // receiver `w`
+    expect(at(2, 5)).toBeUndefined(); // parameter name (declaration)
+    expect(at(3, 11)).toBeUndefined(); // `w` (declaration)
+    expect(at(3, 15)).toEqual({
+      kind: "read",
+      site: { startLine: 3, startCol: 15, endLine: 3, endCol: 17 },
+      bare: true,
+    }); // `job`: a name in a value position; SCIP says it is a parameter, and the mapper drops it
+    expect(at(4, 5)).toMatchObject({ kind: "read", bare: true }); // receiver `w`
     expect(at(4, 7)).toMatchObject({ kind: "call" }); // `run`
-    expect(at(4, 11)).toBeUndefined(); // argument `job`
-    expect(at(4, 16)).toBeUndefined(); // argument `other`
+    expect(at(4, 11)).toMatchObject({ kind: "read", bare: true }); // argument `job`
+    expect(at(4, 16)).toMatchObject({ kind: "read", bare: true }); // argument `other`
     expect(at(4, 6)).toBeUndefined(); // the `.` punctuation
     expect(at(99, 1)).toBeUndefined(); // outside the file
   });

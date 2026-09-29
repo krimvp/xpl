@@ -15,8 +15,10 @@ import {
   heritageShapes,
   importCallShape,
   importSiteNodeOf,
+  readShape,
   writeShapes,
 } from "./shapes.js";
+import { underTypeChecking } from "./ast.js";
 
 /** Ancestors examined above an identifier (a type name can sit a few generics deep). */
 const MAX_CLIMB = 32;
@@ -56,11 +58,18 @@ export function classifyPythonSite(
 
   if (node.type === "identifier") {
     const imported = importSiteNodeOf(node);
-    if (imported) return { kind: "import", site: nodeSpan(imported, lines) };
+    if (imported) {
+      // Imports under `if TYPE_CHECKING:` are for the type checker, like `import type` (see `onImport`).
+      return {
+        kind: underTypeChecking(imported) ? "type-ref" : "import",
+        site: nodeSpan(imported, lines),
+      };
+    }
   }
 
   let n: Node | null = node;
   for (let depth = 0; n && depth < MAX_CLIMB; depth++, n = n.parent) {
+    if (n.type === "block" || n.type === "module") break; // statements are not part of an expression
     let shapes: SiteShape[] | undefined;
     switch (n.type) {
       case "call": {
@@ -87,14 +96,16 @@ export function classifyPythonSite(
         )
           shapes = heritageShapes(n.parent, lines);
         break;
-      case "block":
-      case "module":
-        return undefined;
       default:
         break;
     }
     const hit = shapes?.find((s) => s.nameNode.id === node.id && s.name !== "");
     if (hit) return { kind: hit.kind, site: hit.site };
   }
-  return undefined;
+  // Reads: whether the name is local, or a variable, is for the caller to know (SCIP has resolved it).
+  const read = readShape(node, lines);
+  if (!read) return undefined;
+  return read.qualifierNode
+    ? { kind: "read", site: read.site }
+    : { kind: "read", site: read.site, bare: true };
 }

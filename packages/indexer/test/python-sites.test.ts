@@ -175,6 +175,8 @@ describe("Python receivers: `self` and `cls` become `this`", () => {
       ["this", "run"],
       ["this", "q", "push"],
       ["args", "count"], // `*args` is not a receiver
+      ["this", "queue"], // the reads come last: the receivers of the calls above
+      ["this", "q"],
     ]);
   });
 

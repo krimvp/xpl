@@ -1,12 +1,27 @@
 import { resolve } from "node:path";
-import { injectBundle } from "@xpl/core";
-import { collectFiles, makeBundle } from "../bundle-data.js";
+import { injectBundle, suggestIds } from "@xpl/core";
+import { collectFiles, makeBundle, type CollectedFiles } from "../bundle-data.js";
 import type { CommandSpec } from "../command.js";
 import { CliError, UsageError } from "../errors.js";
 import { formatBytes, plural } from "../format.js";
-import { atomicWrite, displayPath } from "../fsutil.js";
+import { atomicWrite } from "../fsutil.js";
 import { loadExplainer, openWorkspace } from "../repo.js";
 import { readViewerHtml } from "../viewer-html.js";
+
+/** `14 of 82 files embedded (referenced: 180 KB of source; --files all adds 68 files, 1.9 MB)`. */
+function describeFiles(c: CollectedFiles): string {
+  const embedded = Object.keys(c.files).length;
+  const size = formatBytes(c.embeddedBytes);
+  if (c.choice === "all") return `${plural(embedded, "file")} embedded (all: ${size} of source)`;
+  if (embedded >= c.indexedFiles) {
+    return `${plural(embedded, "file")} embedded (referenced: all of them, ${size} of source)`;
+  }
+  const rest = c.indexedFiles - embedded;
+  return (
+    `${embedded} of ${plural(c.indexedFiles, "file")} embedded (referenced: ${size} of source; ` +
+    `--files all adds ${plural(rest, "file")}, ${formatBytes(Math.max(0, c.indexedBytes - c.embeddedBytes))})`
+  );
+}
 
 export const bundleCommand: CommandSpec = {
   name: "bundle",
@@ -15,9 +30,17 @@ export const bundleCommand: CommandSpec = {
   summary: "Write one self-contained HTML file",
   details: [
     "Writes the viewer with the explainer, the symbol index and the source files inlined, so the file works",
-    "offline and can be shared. --files all (the default when the indexed files total under 20 MB) embeds",
-    "every indexed file; referenced embeds only the files the explainer points at.",
+    "offline and can be shared. --files referenced (the default) embeds the files the explainer needs: those of",
+    "every anchor, of the nodes its graph views include (a directory or group: its files), of a sequence view's",
+    "participants, and the code behind the dashed stubs of a graph view (what the viewer shows when one is clicked:",
+    "the sites of the references that leave the view and what they lead to; none for `stubs: {mode: none}`, and",
+    "references from excludeFiles do not count). --files all embeds every indexed file.",
+    "The command prints how many files and how much source went in, and what --files all would add. The other",
+    'files open as "not included in this bundle" (the file tree still lists them: it is built from the embedded',
+    "index).",
     "--mode present opens in present mode; --tour <id> starts that tour (and implies --mode present).",
+    "The output path is printed as given (absolute when you gave it absolute); -o is relative to the working",
+    "directory.",
   ],
   options: {
     out: { type: "string", short: "o", arg: "<out.html>", desc: "Output file (required)" },
@@ -30,7 +53,7 @@ export const bundleCommand: CommandSpec = {
     files: {
       type: "string",
       arg: "all|referenced",
-      desc: "Files to embed (default: all when they total < 20 MB, else referenced)",
+      desc: "Files to embed: referenced (default: what the explainer shows) or all",
     },
   },
   positionals: [{ name: "explainer" }],
@@ -49,8 +72,10 @@ export const bundleCommand: CommandSpec = {
       );
       tour = [tourOption, `tour:${tourOption}`].find((id) => ids.includes(id));
       if (tour === undefined) {
+        const near = suggestIds(tourOption, ids);
         throw new CliError(
           `no tour "${tourOption}" in ${loaded.rel}` +
+            (near.length > 0 ? `. Did you mean: ${near.join(", ")}?` : "") +
             (ids.length > 0 ? ` (tours: ${ids.join(", ")})` : " (it has no tours yet)"),
         );
       }
@@ -81,7 +106,7 @@ export const bundleCommand: CommandSpec = {
 
     if (ctx.json) {
       ctx.emit({
-        path: displayPath(ctx.cwd, target),
+        path: out,
         absolutePath: target,
         bytes,
         mode,
@@ -89,14 +114,16 @@ export const bundleCommand: CommandSpec = {
         files: {
           embedded,
           choice: collected.choice,
-          ...(collected.totalBytes !== undefined ? { indexedBytes: collected.totalBytes } : {}),
+          embeddedBytes: collected.embeddedBytes,
+          indexed: collected.indexedFiles,
+          indexedBytes: collected.indexedBytes,
         },
         index: { path: ws.indexRel, commit: ws.index.commit },
       });
       return 0;
     }
     ctx.out(
-      `wrote ${displayPath(ctx.cwd, target)} (${formatBytes(bytes)}): ${loaded.rel}, ${plural(embedded, "file")} embedded (${collected.choice}), mode ${mode}${tour !== undefined ? `, tour ${tour}` : ""}`,
+      `wrote ${out} (${formatBytes(bytes)}): ${loaded.rel}, ${describeFiles(collected)}, mode ${mode}${tour !== undefined ? `, tour ${tour}` : ""}`,
     );
     return 0;
   },

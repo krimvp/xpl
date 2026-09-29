@@ -126,6 +126,54 @@ describe("view edits without a server", () => {
     ]);
   });
 
+  it("setStubMode edits the view's stub policy (keeping its max), like the other view edits", () => {
+    const store = graphStore();
+    const stubs = () => {
+      const view = store.view();
+      return view?.type === "graph" ? view.stubs : undefined;
+    };
+    expect(stubs()).toBeUndefined();
+    store.setStubMode("top"); // already the default: nothing to store
+    expect(stubs()).toBeUndefined();
+    expect(store.getState().dirty).toBe(false);
+    store.setStubMode("all");
+    expect(stubs()).toEqual({ mode: "all" });
+    expect(store.getState().dirty).toBe(true);
+    store.setStubMode("all"); // no change, no new edit
+    const before = store.getState().explainer;
+    store.setStubMode("all");
+    expect(store.getState().explainer).toBe(before);
+    store.setStubMode("none");
+    expect(stubs()).toEqual({ mode: "none" });
+    // a max the view carries stays
+    const view = store.view();
+    if (view?.type === "graph") view.stubs = { mode: "none", max: 3 };
+    store.setStubMode("top");
+    expect(stubs()).toEqual({ mode: "top", max: 3 });
+    const exported = JSON.parse(store.explainerJson()) as {
+      views: { id: string; provenance: { userFields: string[] } }[];
+    };
+    expect(exported.views.find((v) => v.id === "view:overview")!.provenance.userFields).toEqual([
+      "stubs",
+    ]);
+  });
+
+  it("a folded ghost expands nothing; one of its targets does", () => {
+    const bundle = makeBundle();
+    const view = bundle.explainer.views.find((v) => v.id === "view:overview")!;
+    if (view.type === "graph") view.include = ["sym:src/a.ts#A.run"];
+    const store = new ViewerStore(bundle);
+    store.expandStub({ ghost: "rest:file:src/a.ts" });
+    store.expandStub({ ghost: "more:out" });
+    expect(store.getState().dirty).toBe(false);
+    store.expandStub({ ghost: "sym:src/a.ts#A.stop" });
+    const now = store.view();
+    expect(now?.type === "graph" && now.include).toEqual([
+      "sym:src/a.ts#A.run",
+      "sym:src/a.ts#A.stop",
+    ]);
+  });
+
   it("drops selected elements that an edit removes from the view", () => {
     const bundle = makeBundle();
     const view = bundle.explainer.views.find((v) => v.id === "view:overview")!;
@@ -204,6 +252,16 @@ describe("under xpl view (server mode)", () => {
     });
     expect(store.getState().save).toEqual({ status: "saved" });
     expect(store.getState().dirty).toBe(false);
+  });
+
+  it("persists the stub mode as a `stubs` field of the view", async () => {
+    const store = graphStore(true);
+    store.setStubMode("none");
+    await vi.advanceTimersByTimeAsync(400);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.url).toBe("/api/views/view:overview");
+    expect(body(0)).toEqual({ type: "graph", stubs: { mode: "none" } });
+    expect(store.getState().save).toEqual({ status: "saved" });
   });
 
   it("keeps a rejected edit and retries it with the next flush", async () => {

@@ -9,13 +9,19 @@
  * - An id that exists: the patch is shallow-merged onto it. Fields absent from the patch keep their
  *   values, arrays and nested objects (`members`, `include`, `steps`, `layout`, `scope`, ...) are
  *   replaced wholesale, and `null` clears an optional field (`summary`, `detail`, `members`,
- *   `related`, `edgeKinds`, `hidden`, `excludeFiles`, `layout`, `frames`). In particular a sequence view's
+ *   `related`, `edgeKinds`, `hidden`, `excludeFiles`, `stubs`, `layout`, `frames`). In particular a sequence view's
  *   `steps` are sent whole (keep every step id: tours and frames point at them; `remove` deletes single steps).
  * - A graph view's `include` can also be edited incrementally, with `includeAdd` and `includeRemove` (patch-only
  *   fields, never stored). They apply after `include` (when that is given too): the ids in `includeRemove` leave
  *   the list, the ids in `includeAdd` that are not in it yet are appended. Ids are checked like `include`
  *   entries (an `includeRemove` id may name something that no longer exists in the index: that is how a
  *   vanished node is dropped), and an id in both lists is an error. They are how `expand` grows a view.
+ * - A sequence view's steps can also be edited one by one, with `stepsUpdate` (a patch-only field, never stored): a
+ *   list of `{ id, ...fields }` whose fields are shallow-merged into the existing steps with those ids (`anchors`
+ *   are `AnchorInput`s and replace the step's anchors wholesale; `null` clears `summary` or `edge`; `id` is the
+ *   key, so it cannot change). It applies after `steps` when both are sent. An id that is not a step of the view
+ *   is an error that names the view's steps. Like `steps`, it is skipped (with a `protected` warning) for an
+ *   `llm` patch when the user edited the view's `steps`. It is how one summary is fixed without resending them all.
  * - User ownership (`provenance.userFields`, see `applyPatch`): an `llm` patch never replaces or shrinks a
  *   field the user edited, so `include` (sent whole) and `includeRemove` are skipped with a `protected` warning
  *   when the user edited the view's `include`. `includeAdd` is the exception: it only adds, so an `llm` patch
@@ -33,8 +39,10 @@
  *     `steps`.
  *     `scope` defaults to `{ root: "repo", depth: 1 }`.
  *   - tour: `title`, `steps`.
- * - `provenance` is optional. New elements get `{ origin: <actor>, commit: <index commit> }` unless
- *   given; on existing elements it is managed by `applyPatch` (an `llm` patch cannot change it).
+ * - `provenance` is optional. New elements (and tours) get `{ origin: <actor>, commit: <index commit> }` unless
+ *   given; on existing elements it is managed by `applyPatch` (an `llm` patch cannot change it). Tours follow the
+ *   same ownership rules as elements: an `llm` patch skips a tour with `origin: "user"`, keeps the `userFields` of
+ *   one the user edited (`title`, `steps`) and does not remove it; a tour without provenance counts as `llm`.
  */
 import type {
   AnchorRole,
@@ -128,12 +136,27 @@ export interface PatchSequenceStep extends Omit<SequenceStep, "anchors"> {
   anchors?: AnchorInput[];
 }
 
+/**
+ * What `stepsUpdate` says about one step: its `id` and the fields to change (any of the step's; `anchors` are
+ * `AnchorInput`s). `null` clears `summary` or `edge`.
+ */
+export type PatchStepUpdate = {
+  id: string;
+  anchors?: AnchorInput[];
+} & PatchFields<Omit<SequenceStep, "id" | "anchors">>;
+
 /** A SequenceView as written in a patch: `steps` (replaced wholesale) carry `AnchorInput`s. */
 export type PatchSequenceView = {
   id: string;
   type: "sequence";
   provenance?: PatchProvenance;
   steps?: PatchSequenceStep[];
+  /**
+   * Fields to merge into existing steps by id, applied after `steps` (when that is sent too). An unknown step id is
+   * an error. Skipped with a `protected` warning for an `llm` patch when the user edited the view's `steps`. Never
+   * stored; only for an existing view (a new view sends `steps`).
+   */
+  stepsUpdate?: PatchStepUpdate[];
 } & PatchFields<Omit<SequenceView, "id" | "type" | "provenance" | "steps">>;
 
 export type PatchView = PatchGraphView | PatchSequenceView;
@@ -146,9 +169,11 @@ export interface PatchTourStep extends Omit<TourStep, "code"> {
   code?: AnchorInput[];
 }
 
-export type PatchTour = { id: string; steps?: PatchTourStep[] } & PatchFields<
-  Omit<Tour, "id" | "steps">
->;
+export type PatchTour = {
+  id: string;
+  steps?: PatchTourStep[];
+  provenance?: PatchProvenance;
+} & PatchFields<Omit<Tour, "id" | "steps" | "provenance">>;
 
 /**
  * Elements/views/tours as in the schema, but with every field optional beyond the id, anchors as

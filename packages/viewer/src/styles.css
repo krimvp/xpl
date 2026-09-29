@@ -320,12 +320,22 @@ code {
   --icon: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'><path d='M2 0.5v11M10 0.5v11' stroke='black' stroke-width='1.3' fill='none'/><path d='M2 3.5h7M10 8.5H3' stroke='black' stroke-width='1.3' fill='none'/><path d='M7.5 2 9.5 3.5 7.5 5ZM4.5 7 2.5 8.5 4.5 10Z'/></svg>");
 }
 
-.edge-kinds {
+/* The controls of a graph view, right-aligned in the caption: stubs mode and edge kinds. */
+.caption-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px 14px;
+  margin-left: auto;
+}
+
+.edge-kinds,
+.stubs-control {
   display: flex;
   flex: none;
   align-items: center;
   gap: 4px;
-  margin-left: auto;
 }
 
 .edge-kinds-label {
@@ -884,9 +894,115 @@ code {
   fill: none;
 }
 
-.node.ghost:hover .box {
+.node.ghost:hover .box,
+.node.ghost.is-open .box {
   fill: var(--accent-soft);
   stroke: var(--accent);
+}
+
+/* A ghost that stands for several elements opens a list instead of adding one. */
+.node.ghost.is-fold .box {
+  stroke-dasharray: 2 3;
+  stroke-width: 1.6;
+}
+
+.node.ghost .plus.is-list {
+  stroke-width: 1.5;
+  stroke-linecap: round;
+}
+
+/* The menu of a folded ghost, beside the box, over the diagram. */
+.ghost-menu {
+  position: absolute;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  width: min(340px, calc(100% - 16px));
+  max-height: min(70%, 380px);
+  padding: 6px;
+  overflow: hidden auto;
+  background: var(--panel);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.22);
+  font-size: 12.5px;
+}
+
+.ghost-menu-head {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 2px 4px 6px;
+  color: var(--muted);
+  font-size: 11.5px;
+}
+
+.ghost-menu-head strong {
+  color: var(--fg);
+  font-size: 13px;
+}
+
+.ghost-targets {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ghost-target {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  padding: 3px 6px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--fg);
+  text-align: left;
+  cursor: pointer;
+}
+
+.ghost-target:hover,
+.ghost-target:focus-visible {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  outline: none;
+}
+
+.ghost-target-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 12px var(--font-mono);
+}
+
+.ghost-target-badge {
+  color: var(--faint);
+  font-size: 10.5px;
+  white-space: nowrap;
+}
+
+.ghost-target-count {
+  color: var(--muted);
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+
+.ghost-target.is-whole {
+  margin-bottom: 4px;
+  border-color: var(--border);
+  font-weight: 600;
+}
+
+/* The same list in the details panel of a stub. */
+.ghost-details .ghost-targets {
+  max-height: 220px;
+  overflow: auto;
 }
 
 .collapse rect {

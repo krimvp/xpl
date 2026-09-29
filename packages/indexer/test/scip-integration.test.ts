@@ -150,7 +150,10 @@ suite("scip integration: ts-jobrunner (scip-typescript)", () => {
 
   it("resolves imports, constructors and heritage", () => {
     const refs = built.precise.refs;
-    expect(has(refs, "import", "src/runner.ts#", "src/queue.ts#Queue")).toBeDefined();
+    expect(has(refs, "import", "src/main.ts#", "src/queue.ts#Queue")).toBeDefined();
+    // `import type { Queue }` is a type reference, whichever resolver says so
+    expect(has(refs, "type-ref", "src/runner.ts#", "src/queue.ts#Queue")).toBeDefined();
+    expect(has(refs, "import", "src/runner.ts#", "src/queue.ts#Queue")).toBeUndefined();
     // `new Queue(...)` and `new Runner(...)` in main call the classes
     expect(has(refs, "call", "src/main.ts#main", "src/queue.ts#Queue")).toBeDefined();
     expect(has(refs, "call", "src/main.ts#main", "src/runner.ts#Runner")).toBeDefined();

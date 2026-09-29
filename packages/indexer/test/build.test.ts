@@ -177,6 +177,95 @@ describe("buildIndex", () => {
     expect(warnings[0]).toMatch(/1 file\(s\) have syntax errors.*broken\.ts/);
   });
 
+  describe("syntax error warning", () => {
+    it("names each file with the lines the errors start on and says symbols near them may be incomplete", async () => {
+      const { warnings } = await indexFiles({
+        "ok.ts": "export const ok = 1;\n",
+        "broken.ts": "export function fine() {}\nexport class {{{ \n",
+        "bad.py": "def f():\n    return 1\n\ndef g(:\n    pass\n",
+      });
+      expect(warnings).toEqual([
+        "2 file(s) have syntax errors; symbols near these lines may be incomplete: bad.py:4, broken.ts:2",
+      ]);
+    });
+
+    it("lists at most three lines per file and five files", async () => {
+      const files: Record<string, string> = {};
+      for (let i = 0; i < 7; i++)
+        files[`f${i}.ts`] = "const a = ;\nconst b = ;\nconst c = ;\nconst d = ;\n";
+      const { warnings } = await indexFiles(files);
+      expect(warnings).toHaveLength(1);
+      expect(warnings[0]).toBe(
+        "7 file(s) have syntax errors; symbols near these lines may be incomplete: " +
+          [0, 1, 2, 3, 4].map((i) => `f${i}.ts:1,2,3,…`).join(", ") +
+          ", and 2 more",
+      );
+    });
+
+    it("does not count a labelled tuple element named like a type keyword, a valid form the grammar cannot read", async () => {
+      // tree-sitter-typescript 0.23.2 reports an ERROR inside the tuple for these; nothing else is affected
+      const source = [
+        "export type A = [symbol: string];",
+        "export type B = [string: string, number: number];",
+        "export interface I { pair: [any: number, rest?: string]; other: number }",
+        "export function f(x: [void: void]): [never: never] { return x as never; }",
+        "export class C { field: readonly [object: object] = [{}]; m(): Array<[symbol: string]> { return []; } }",
+        "export const g = (arg: [boolean: boolean]) => arg;",
+        "",
+      ].join("\n");
+      const { index, warnings } = await indexFiles({ "tuples.ts": source });
+      expect(warnings).toEqual([]);
+      expect(index.symbols.map((s) => s.path)).toEqual([
+        "A",
+        "B",
+        "I",
+        "I.pair",
+        "I.other",
+        "f",
+        "C",
+        "C.field",
+        "C.m",
+        "g",
+      ]);
+    });
+
+    it("still reports the real errors of a file that also has such tuples, by their own lines", async () => {
+      const source = [
+        "export type A = [symbol: string];", // 1: harmless
+        "export function ok() {}", // 2
+        "export const broken = ;", // 3: a real error
+        "export type B = [string: string];", // 4: harmless
+        "",
+      ].join("\n");
+      const { warnings } = await indexFiles({ "mixed.ts": source });
+      expect(warnings).toEqual([
+        "1 file(s) have syntax errors; symbols near these lines may be incomplete: mixed.ts:3",
+      ]);
+    });
+
+    it("an error directly in an interface body is a real one: a member may be missing", async () => {
+      const source = [
+        "export interface I {",
+        "  a: number",
+        "  b: ;",
+        "  c: string;",
+        "}",
+        "",
+      ].join("\n");
+      const { warnings } = await indexFiles({ "iface.ts": source });
+      expect(warnings).toHaveLength(1);
+      expect(warnings[0]).toMatch(/have syntax errors.*iface\.ts:3/);
+    });
+
+    it("reports no warning for a clean file, and none for a broken file of a language that is not parsed", async () => {
+      const { warnings } = await indexFiles({
+        "clean.ts": "export const x: [a: number, b: string] = [1, 'b'];\n",
+        "notes.txt": "export class {{{ not code",
+      });
+      expect(warnings).toEqual([]);
+    });
+  });
+
   it("indexes files with CRLF line endings and a BOM, keeping ranges and hashes consistent", async () => {
     const crlf = "export class A {\r\n  m() {}\r\n}\r\n";
     const bom = "﻿export const b = 1;\n";

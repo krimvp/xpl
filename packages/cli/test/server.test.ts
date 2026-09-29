@@ -118,7 +118,7 @@ describe("xpl view", () => {
     expect(data.server).toEqual({ api: "/api" });
     expect(data.mode).toBe("explore");
     expect(data.explainer.title).toBe("Job runner");
-    // the files referenced by anchors and views; the viewer fetches the rest lazily
+    // the files referenced by anchors and views; the viewer fetches the rest lazily (what lies behind a stub too)
     expect(Object.keys(data.files).sort()).toEqual([
       "config/default.yaml",
       "src/metrics.ts",
@@ -256,6 +256,50 @@ describe("xpl view", () => {
     expect(final.include).toEqual(include);
   });
 
+  it("PUT takes the stub policy and folded ghost ids the viewer sends, and records them as the user's", async () => {
+    const dir = cloneDir(demo);
+    const view = await serve(dir);
+    const put = (body: unknown) =>
+      fetch(`${view.url}/api/views/view:overview`, {
+        method: "PUT",
+        headers: JSON_HEADERS,
+        body: JSON.stringify(body),
+      });
+    const res = await put({
+      type: "graph",
+      stubs: { mode: "top", max: 3 },
+      hidden: [
+        "ghost:more:out",
+        "ghost:rest:file:src/queue.ts",
+        "stub:out:file:src/worker.ts->ghost:more:out",
+      ],
+    });
+    expect(res.status, JSON.stringify(await res.clone().json())).toBe(200);
+    const saved = await json(res);
+    expect(saved.stubs).toEqual({ mode: "top", max: 3 });
+    expect(saved.hidden).toContain("ghost:more:out");
+    expect(saved.provenance.userFields).toEqual(["stubs", "hidden"]);
+    // an llm patch keeps the user's policy
+    const applied = await invoke(["apply", "demo", "-"], {
+      cwd: dir,
+      stdin: JSON.stringify({
+        views: [{ id: "view:overview", type: "graph", stubs: { mode: "all" } }],
+      }),
+    });
+    expect(applied.code).toBe(1);
+    expect(applied.out).toContain("nothing was applied");
+    expect(
+      readJson(dir, ".explainer/demo.explainer.json").views.find(
+        (v: any) => v.id === "view:overview",
+      ).stubs,
+    ).toEqual({ mode: "top", max: 3 });
+    // a bad policy or a ghost of a file that is not there is refused
+    expect((await put({ type: "graph", stubs: { mode: "loud" } })).status).toBe(400);
+    expect((await put({ type: "graph", hidden: ["ghost:rest:file:src/nope.ts"] })).status).toBe(
+      400,
+    );
+  });
+
   it("PUT rejects an invalid view patch with 400 and the issues, and writes nothing", async () => {
     const dir = cloneDir(demo);
     const before = readFile(dir, ".explainer/demo.explainer.json");
@@ -337,7 +381,12 @@ describe("xpl view", () => {
       resolved: { status: "ok" },
     });
     expect(updated.steps[2].code[0].hash).toMatch(/^sha256:/);
-    expect(updated.provenance).toBeUndefined(); // tours carry no provenance
+    // the tour is the llm's (Claude wrote it), and now records what the user edited
+    expect(updated.provenance).toEqual({
+      origin: "llm",
+      commit: original.provenance.commit,
+      userFields: ["title", "steps"],
+    });
 
     const path = ".explainer/demo.explainer.json";
     const saved = readJson(dir, path).tours.find((t: any) => t.id === "tour:intro");
@@ -368,15 +417,59 @@ describe("xpl view", () => {
       id: "tour:mine",
       title: "Mine",
       steps: [{ id: "t1", view: "view:overview", focus: [], note: "Just the view." }],
+      provenance: { origin: "user", commit: original.provenance.commit },
     });
     expect(readJson(dir, path).tours.map((t: any) => t.id)).toEqual(["tour:intro", "tour:mine"]);
-    // an llm patch that leaves the tour alone keeps the user's edits
+    // an llm patch that leaves the tours alone keeps the user's edits
     const applied = await invoke(["apply", "demo", "-"], {
       cwd: dir,
       stdin: JSON.stringify({ title: "Job runner" }),
     });
     expect(applied.code).toBe(0);
     expect(readJson(dir, path).tours.map((t: any) => t.id)).toEqual(["tour:intro", "tour:mine"]);
+
+    // ...and one that tries to replace them is refused, like any other user-owned element: the tour the user
+    // made, and the fields the user edited of the one Claude made
+    const mine = readJson(dir, path).tours.find((t: any) => t.id === "tour:mine");
+    const intro = readJson(dir, path).tours.find((t: any) => t.id === "tour:intro");
+    const replace = await invoke(["apply", "demo", "-"], {
+      cwd: dir,
+      stdin: JSON.stringify({
+        tours: [
+          { id: "tour:mine", title: "Overwritten", steps: [] },
+          { id: "tour:intro", title: "Overwritten", steps: [] },
+        ],
+      }),
+    });
+    expect(replace.code).toBe(1);
+    expect(replace.out).toContain("nothing was applied");
+    expect(replace.out).toContain("skipped as protected");
+    expect(replace.out).toContain("tour:mine");
+    expect(replace.out).toContain("tour:intro");
+    const removal = await invoke(["apply", "demo", "-", "--json"], {
+      cwd: dir,
+      stdin: JSON.stringify({ remove: ["tour:mine", "tour:intro"] }),
+    });
+    expect(removal.code).toBe(1);
+    expect(JSON.parse(removal.out)).toMatchObject({
+      ok: false,
+      applied: false,
+      protectedIds: ["tour:mine", "tour:intro"],
+    });
+    const after = readJson(dir, path).tours;
+    expect(after.find((t: any) => t.id === "tour:mine")).toEqual(mine);
+    expect(after.find((t: any) => t.id === "tour:intro")).toEqual(intro);
+    // what the user did not touch stays the llm's: a partly protected patch applies the rest (exit 0)
+    const partial = await invoke(["apply", "demo", "-"], {
+      cwd: dir,
+      stdin: JSON.stringify({
+        tours: [{ id: "tour:intro", title: "Nope" }],
+        concepts: [{ id: "concept:extra", label: "Extra" }],
+      }),
+    });
+    expect(partial.code).toBe(0);
+    expect(partial.out).toContain("skipped as protected (tour:intro)");
+    expect(readJson(dir, path).tours.find((t: any) => t.id === "tour:intro").title).toBe("Renamed");
   });
 
   it("PUT /api/tours/<id> rejects an invalid tour with 400 and the issues, and writes nothing", async () => {

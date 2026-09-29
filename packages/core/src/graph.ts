@@ -1,20 +1,13 @@
 /**
  * Graph derivation (ARCHITECTURE.md section 4.4): what a graph view shows, computed from its
  * `include` list, the index and the stored edges. Nodes with their render parents and container
- * flags, derived + stored edges, and stubs (edges that leave the view). Also the pure view edits the
- * viewer applies: expanding a stub, drilling into a node, collapsing one, the default `include`.
+ * flags, derived + stored edges, and stubs with their ghost boxes (edges that leave the view; the
+ * policy that keeps them readable is in stubs.ts). Also the pure view edits the viewer applies:
+ * expanding a stub, drilling into a node, collapsing one, the default `include`.
  */
 import { DEFAULT_EDGE_KINDS } from "./constants.js";
 import { globMatcher } from "./glob.js";
-import {
-  derivedEdgeId,
-  elementIdForSymbolId,
-  ghostId,
-  parseId,
-  REF_TO_EDGE_KIND,
-  REPO_ID,
-  stubId,
-} from "./ids.js";
+import { derivedEdgeId, elementIdForSymbolId, parseId, REF_TO_EDGE_KIND, REPO_ID } from "./ids.js";
 import type { IndexModel } from "./index-model.js";
 import type { ExplainerModel } from "./model.js";
 import type {
@@ -29,6 +22,14 @@ import type {
   Scope,
   SymbolId,
 } from "./schema.js";
+import {
+  isFoldedGhostKey,
+  planStubs,
+  resolveStubPolicy,
+  type Ghost,
+  type Stub,
+  type StubCandidate,
+} from "./stubs.js";
 import { cmp, sortedUnique, unique } from "./util.js";
 
 // ─── Output types ───────────────────────────────────────────────────────────────────────────────
@@ -71,27 +72,13 @@ export interface DerivedEdge {
   anchors: Anchor[];
 }
 
-/** A dashed edge to a ghost box: where a view stops. Clicking it expands (`expandStub`). */
-export interface Stub {
-  /** `stub:<in|out>:<inside>->ghost:<ghost>`. */
-  id: ElementId;
-  direction: "in" | "out";
-  /** The rendered node the stub attaches to. */
-  inside: ElementId;
-  /**
-   * The element the ghost box stands for (add it to `include` to expand). Its render id is
-   * `ghostId(ghost)` (`ghost:<id>`).
-   */
-  ghost: ElementId;
-  ghostLabel: string;
-  kinds: Edge["kind"][];
-  count: number;
-}
-
 export interface DerivedGraph {
   nodes: GraphNode[];
   edges: DerivedEdge[];
+  /** Dashed edges to ghost boxes: where the view stops (bounded by the view's stub policy). */
   stubs: Stub[];
+  /** The ghost boxes the stubs lead to, sorted by id. */
+  ghosts: Ghost[];
 }
 
 export interface DeriveOptions {
@@ -303,25 +290,26 @@ interface EdgeAgg {
   precise: boolean;
 }
 
-interface StubAgg {
-  direction: "in" | "out";
-  inside: ElementId;
-  ghost: ElementId;
+interface StubAgg extends StubCandidate {
   kinds: Set<Edge["kind"]>;
-  count: number;
 }
 
 /**
  * What a graph view shows (section 4.4).
  *
  * - `nodes`: the included nodes that exist, with their render `parent` and `container` flag.
- * - `edges`: index references mapped through `repr` (skipped when an end is outside or both ends
- *   coincide), aggregated per `(kind, from, to)`, for the kinds in `opts.edgeKinds ?? view.edgeKinds ??
- *   DEFAULT_EDGE_KINDS`; plus every stored edge with both ends through `repr` (whatever its kind). A
- *   stored edge whose id equals a derived id overlays that edge (label, summary, anchors).
- * - `stubs`: references and stored edges with exactly one end inside, aggregated per `(direction,
- *   inside, ghost)`. The ghost is the highest structural ancestor of the outside end, below `repo`,
- *   that contains no included node.
+ * - `edges`: index references mapped through `repr` (skipped when an end is outside, when both ends
+ *   coincide, or when one end is drawn inside the other: an arrow from a box to its own container says
+ *   nothing), aggregated per `(kind, from, to)`, for the kinds in `opts.edgeKinds ?? view.edgeKinds ??
+ *   DEFAULT_EDGE_KINDS`; plus every stored edge with both ends through `repr` (whatever its kind, and
+ *   under the same rules). A stored edge whose id equals a derived id overlays that edge (label,
+ *   summary, anchors).
+ * - `stubs` and `ghosts`: references and stored edges with exactly one end inside. The candidate ghost of
+ *   a stub is the highest structural ancestor of the outside end, below `repo`, that contains no included
+ *   node (a group is its own); one whose end contains the inside node itself is dropped. What is drawn is
+ *   then up to `view.stubs` (stubs.ts): by default outside symbols of partly shown files fold into one
+ *   `rest:file:<path>` ghost per file and only the 8 most referenced ghosts stay, the others being folded
+ *   into `more:in` / `more:out`; `stubs: { mode: "all" }` keeps one ghost per candidate, `"none"` no stubs.
  * - `view.excludeFiles` (glob patterns, see glob.ts) drops the references that start or end in a matching
  *   file before anything is aggregated: an edge or stub that only exists through such files disappears,
  *   the others count only their remaining references. Included nodes are never removed, and the files a
@@ -329,7 +317,7 @@ interface StubAgg {
  *   references. Stored edges are not filtered.
  * - `view.hidden` is applied last: hidden nodes are removed (their children move up to the nearest
  *   visible container), together with the edges and stubs touching them; hidden edge, stub and ghost
- *   ids are removed too.
+ *   ids are removed too (a hidden ghost or stub frees its place among the top ghosts for the next one).
  *
  * Everything is sorted by id.
  */
@@ -347,6 +335,7 @@ export function deriveGraph(
   const include = new Set(includeIds);
   const rep = new Representation(model, include);
   const dropRef = excludedRefs(view, model, includeIds);
+  const policy = resolveStubPolicy(view.stubs);
 
   // Nodes with render parents.
   const parents = new Map<ElementId, ElementId>();
@@ -355,6 +344,22 @@ export function deriveGraph(
     if (parent !== undefined && include.has(parent)) parents.set(id, parent);
   }
   breakCycles(parents, [...includeIds].sort(cmp));
+
+  // A box drawn inside another one (any depth) has no arrow to or from it: the arrow would run from the
+  // box to its own container (a call from an opened file's child to a sibling that is not shown lifts
+  // to the file, say).
+  const aboveMemo = new Map<ElementId, ReadonlySet<ElementId>>();
+  const above = (id: ElementId): ReadonlySet<ElementId> => {
+    let known = aboveMemo.get(id);
+    if (!known) {
+      const list = new Set<ElementId>();
+      for (let cur = parents.get(id); cur !== undefined && !list.has(cur); cur = parents.get(cur))
+        list.add(cur);
+      aboveMemo.set(id, (known = list));
+    }
+    return known;
+  };
+  const nested = (a: ElementId, b: ElementId): boolean => above(a).has(b) || above(b).has(a);
 
   // Ghost targets need to know which elements have an included node in their subtree.
   let covered: Set<ElementId> | undefined;
@@ -390,17 +395,24 @@ export function deriveGraph(
 
   const edgeAggs = new Map<ElementId, EdgeAgg>();
   const stubAggs = new Map<string, StubAgg>();
+  const rejectedStubs = new Set<string>();
   const addStub = (
     direction: "in" | "out",
     inside: ElementId,
     outside: ElementId,
     kind: Edge["kind"],
   ) => {
-    const ghost = ghostTarget(outside);
-    const key = `${direction}\0${inside}\0${ghost}`;
+    const target = ghostTarget(outside);
+    const key = `${direction}\0${inside}\0${target}`;
     let agg = stubAggs.get(key);
     if (!agg) {
-      agg = { direction, inside, ghost, kinds: new Set(), count: 0 };
+      if (rejectedStubs.has(key)) return;
+      // An outside end that holds the inside node (a stored edge to its own file, say) is no place to stop.
+      if (model.subtreeContains(target, inside) || model.subtreeContains(inside, target)) {
+        rejectedStubs.add(key);
+        return;
+      }
+      agg = { direction, inside, target, kinds: new Set(), count: 0 };
       stubAggs.set(key, agg);
     }
     agg.kinds.add(kind);
@@ -419,7 +431,7 @@ export function deriveGraph(
     const a = rep.repr(fromEl);
     const b = rep.repr(toEl);
     if (a !== undefined && b !== undefined) {
-      if (a === b) continue;
+      if (a === b || nested(a, b)) continue;
       const id = derivedEdgeId(kind, a, b);
       let agg = edgeAggs.get(id);
       if (!agg) {
@@ -464,7 +476,7 @@ export function deriveGraph(
     const a = rep.repr(stored.from);
     const b = rep.repr(stored.to);
     if (a !== undefined && b !== undefined) {
-      if (a === b) continue;
+      if (a === b || nested(a, b)) continue;
       const edge: DerivedEdge = {
         id: stored.id,
         from: a,
@@ -521,29 +533,13 @@ export function deriveGraph(
   const outEdges = [...edges.values()]
     .filter((e) => !hidden.has(e.id) && !hidden.has(e.from) && !hidden.has(e.to))
     .sort((a, b) => cmp(a.id, b.id));
-  const stubs: Stub[] = [];
-  for (const agg of stubAggs.values()) {
-    const id = stubId(agg.direction, agg.inside, agg.ghost);
-    if (
-      hidden.has(id) ||
-      hidden.has(agg.inside) ||
-      hidden.has(agg.ghost) ||
-      hidden.has(ghostId(agg.ghost))
-    ) {
-      continue;
-    }
-    stubs.push({
-      id,
-      direction: agg.direction,
-      inside: agg.inside,
-      ghost: agg.ghost,
-      ghostLabel: model.label(agg.ghost),
-      kinds: [...agg.kinds].sort(cmp),
-      count: agg.count,
-    });
-  }
-  stubs.sort((a, b) => cmp(a.id, b.id));
-  return { nodes, edges: outEdges, stubs };
+  const { stubs, ghosts } = planStubs([...stubAggs.values()], {
+    model,
+    policy,
+    covered: (id) => coveredSet().has(id),
+    hidden,
+  });
+  return { nodes, edges: outEdges, stubs, ghosts };
 }
 
 /**
@@ -607,9 +603,13 @@ export function drillChildren(model: ExplainerModel, id: ElementId): ElementId[]
   return model.node(id)?.kind === "group" ? [...model.members(id)] : model.children(id);
 }
 
-/** `include += stub.ghost` (returns `view` itself when it is already included). */
+/**
+ * `include += stub.ghost` (returns `view` itself when it is already included). A folded ghost (`rest:file:...`,
+ * `more:in`, `more:out`) is not an element and expands nothing: add one of the targets it stands for
+ * (`stub.targets[i].target`, or `Ghost.targets`), which is what `expandStub(view, { ghost: target })` does.
+ */
 export function expandStub(view: GraphView, stub: Pick<Stub, "ghost">): GraphView {
-  return view.include.includes(stub.ghost)
+  return isFoldedGhostKey(stub.ghost) || view.include.includes(stub.ghost)
     ? view
     : { ...view, include: [...view.include, stub.ghost] };
 }
@@ -638,23 +638,48 @@ export function collapse(view: GraphView, id: ElementId, model: ExplainerModel):
 }
 
 /**
+ * The chain of single-child directories that starts at `id` (`repo` or a `dir:`): `["dir:src",
+ * "dir:src/flask"]` when `src/` holds nothing but `src/flask/`, and so on down to the first directory that
+ * holds a file or several things. `[id]` for anything else. A chain is one level of a project, not
+ * several: `defaultInclude` counts it once, and an outline can mark it (`dir:src -> dir:src/flask`).
+ */
+export function singleChildChain(model: ExplainerModel, id: ElementId): ElementId[] {
+  const chain = [id];
+  for (;;) {
+    const last = chain[chain.length - 1]!;
+    const kind = model.node(last)?.kind;
+    if (kind !== "repo" && kind !== "dir") break;
+    const children = model.children(last);
+    const only = children.length === 1 ? children[0]! : undefined;
+    if (only === undefined || model.node(only)?.kind !== "dir") break;
+    chain.push(only);
+  }
+  return chain;
+}
+
+/**
  * The default `include` for a scope: the nodes exactly `depth` levels under `root`, plus shallower
  * leaves (files and symbols without children). `depth` 0 is the root itself. Order: breadth first,
- * in structural order (directories, then files; symbols by position).
+ * in structural order (directories, then files; symbols by position). A chain of single-child directories
+ * (`src/` that holds only `src/flask/`, see `singleChildChain`) counts as one level: the node shown for it
+ * is the end of the chain (`dir:src/flask`), so a src layout does not put a whole project into one box;
+ * the same goes for a `root` that starts such a chain.
  */
 export function defaultInclude(scope: Scope, model: ExplainerModel): ElementId[] {
   const root = scope.root ?? REPO_ID;
   if (!model.hasNode(root)) return [];
   const depth = Math.max(0, Math.floor(scope.depth ?? 1));
   if (depth === 0) return [root];
+  const chainEnd = (id: ElementId): ElementId => singleChildChain(model, id).at(-1)!;
   const out: ElementId[] = [];
-  let level: ElementId[] = [root];
+  let level: ElementId[] = [chainEnd(root)];
   for (let d = 1; d <= depth && level.length > 0; d++) {
     const next: ElementId[] = [];
     for (const id of level) {
       for (const child of drillChildren(model, id)) {
-        if (d === depth || drillChildren(model, child).length === 0) out.push(child);
-        else next.push(child);
+        const shown = chainEnd(child);
+        if (d === depth || drillChildren(model, shown).length === 0) out.push(shown);
+        else next.push(shown);
       }
     }
     level = next;

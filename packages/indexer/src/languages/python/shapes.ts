@@ -8,8 +8,16 @@
 import type { Node } from "web-tree-sitter";
 import { nodeSpan } from "../../ast.js";
 import type { ExportFact, ImportBinding } from "../types.js";
-import { collectTypeRefs } from "./annotations.js";
-import { DOTTED_NAME, callSpan, named, plainString, scopeNodeOf, writeSpan } from "./ast.js";
+import { annotationRootOf, collectTypeRefs } from "./annotations.js";
+import {
+  DOTTED_NAME,
+  SITE_MAX_LINES,
+  callSpan,
+  named,
+  plainString,
+  scopeNodeOf,
+  writeSpan,
+} from "./ast.js";
 import type { SiteShape } from "./ast.js";
 
 // ─── Calls ────────────────────────────────────────────────────────────────────────────────────────
@@ -196,6 +204,152 @@ export function writeShapes(
     }
   }
   return out;
+}
+
+// ─── Reads ────────────────────────────────────────────────────────────────────────────────────────
+
+/** Nodes that hold several assignment targets (or one, in parentheses). */
+const TARGET_WRAPPERS = new Set([
+  "pattern_list",
+  "tuple_pattern",
+  "list_pattern",
+  "list_splat_pattern",
+  "tuple",
+  "list",
+  "parenthesized_expression",
+]);
+
+/**
+ * Is `node` (a name or an attribute) something a statement binds or assigns to: an assignment target
+ * (`x = ...`, `self.x += ...`, `a, b = ...`), a `for` / `with ... as` / `del` / walrus target?
+ */
+function isTarget(node: Node): boolean {
+  let child = node;
+  for (let n = node.parent; n; child = n, n = n.parent) {
+    if (TARGET_WRAPPERS.has(n.type)) continue;
+    switch (n.type) {
+      case "assignment":
+      case "augmented_assignment":
+      case "for_statement":
+      case "for_in_clause":
+        return n.childForFieldName("left")?.id === child.id;
+      case "as_pattern_target":
+      case "delete_statement":
+        return true;
+      case "named_expression":
+        return n.childForFieldName("name")?.id === child.id;
+      default:
+        return false;
+    }
+  }
+  return false;
+}
+
+/** The node itself, or the outermost parenthesised expression around it. */
+function outermost(node: Node): Node {
+  let top = node;
+  while (top.parent?.type === "parenthesized_expression") top = top.parent;
+  return top;
+}
+
+/** Is this expression what a call calls or what a bare decorator applies (a `call` site), not a value read? */
+function isCallee(node: Node): boolean {
+  const top = outermost(node);
+  const holder = top.parent;
+  if (!holder) return false;
+  if (holder.type === "decorator") return true;
+  return holder.type === "call" && holder.childForFieldName("function")?.id === top.id;
+}
+
+/**
+ * Is this part of a base of a class (`class A(mod.Base, Generic[T])`)? Those are `extends` sites (and the
+ * `type-ref`s of their type arguments); a keyword argument (`metaclass=M`) is not a base.
+ */
+function isBaseClass(node: Node): boolean {
+  let child = node;
+  for (let n = node.parent; n; child = n, n = n.parent) {
+    if (n.type === "argument_list") {
+      return (
+        n.parent?.type === "class_definition" &&
+        n.parent.childForFieldName("superclasses")?.id === n.id &&
+        child.type !== "keyword_argument"
+      );
+    }
+    if (n.type === "block" || n.type === "module") return false;
+  }
+  return false;
+}
+
+/** Parents in which an identifier declares, imports or names something rather than refers to a value. */
+const NON_REFERENCE_PARENTS = new Set([
+  "parameters",
+  "lambda_parameters",
+  "typed_parameter",
+  "list_splat_pattern",
+  "dictionary_splat_pattern",
+  "function_definition",
+  "class_definition",
+  "import_statement",
+  "import_from_statement",
+  "future_import_statement",
+  "aliased_import",
+  "dotted_name",
+  "relative_import",
+  "global_statement",
+  "nonlocal_statement",
+  "delete_statement",
+  "type_alias_statement",
+  "type_parameter",
+  "decorator",
+  "case_pattern",
+  "class_pattern",
+  "keyword_pattern",
+  "union_pattern",
+  "as_pattern_target",
+]);
+
+/** Does this bare name stand for a value? (The caller has excluded targets and callees.) */
+function isReferencePosition(id: Node, parent: Node): boolean {
+  const is = (field: string): boolean => parent.childForFieldName(field)?.id === id.id;
+  if (NON_REFERENCE_PARENTS.has(parent.type)) return false;
+  switch (parent.type) {
+    case "attribute":
+      return is("object");
+    case "keyword_argument":
+    case "named_expression":
+    case "default_parameter":
+    case "typed_default_parameter":
+      return is("value");
+    default:
+      return true;
+  }
+}
+
+/**
+ * The `read` an identifier makes, if any: a bare name, or the attribute of `a.b`, in a value position that is
+ * not a callee (a call), an assignment target (a write), a declaration, an import, a type annotation or a class
+ * base. Purely syntactic: whether the name is local, or resolves to a variable, is decided elsewhere.
+ */
+export function readShape(leaf: Node, lines: readonly string[]): SiteShape | undefined {
+  if (leaf.type !== "identifier") return undefined;
+  const parent = leaf.parent;
+  if (!parent || annotationRootOf(leaf)) return undefined;
+  if (parent.type === "attribute" && parent.childForFieldName("attribute")?.id === leaf.id) {
+    const object = parent.childForFieldName("object");
+    if (!object || isCallee(parent) || isTarget(parent) || isBaseClass(parent)) return undefined;
+    const whole = nodeSpan(parent, lines);
+    const lineCount = whole.endLine - whole.startLine + 1;
+    return {
+      kind: "read",
+      name: leaf.text,
+      nameNode: leaf,
+      qualifierNode: object,
+      site: lineCount <= SITE_MAX_LINES ? whole : nodeSpan(leaf, lines),
+    };
+  }
+  if (!isReferencePosition(leaf, parent) || isCallee(leaf) || isTarget(leaf) || isBaseClass(leaf))
+    return undefined;
+  return { kind: "read", name: leaf.text, nameNode: leaf, site: nodeSpan(leaf, lines) };
 }
 
 // ─── Imports ──────────────────────────────────────────────────────────────────────────────────────

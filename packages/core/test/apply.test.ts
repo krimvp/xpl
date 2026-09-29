@@ -1231,6 +1231,76 @@ describe("applyPatch: includeAdd and includeRemove", () => {
   }
 });
 
+describe("applyPatch: stubs", () => {
+  const stubsOf = (r: ApplyResult) => (view(r.explainer, "view:overview") as GraphView).stubs;
+
+  it("stores the stub policy of a graph view, replaces it, and null clears it", () => {
+    const set = apply({
+      views: [{ id: "view:overview", type: "graph", stubs: { mode: "top", max: 4 } }],
+    });
+    expect(set.ok).toBe(true);
+    expect(stubsOf(set)).toEqual({ mode: "top", max: 4 });
+    expect(set.changed).toEqual(["view:overview"]);
+    const replaced = apply(
+      { views: [{ id: "view:overview", type: "graph", stubs: { mode: "none" } }] },
+      { explainer: set.explainer },
+    );
+    expect(stubsOf(replaced)).toEqual({ mode: "none" });
+    const cleared = apply(
+      { views: [{ id: "view:overview", type: "graph", stubs: null }] },
+      { explainer: set.explainer },
+    );
+    expect("stubs" in view(cleared.explainer, "view:overview")).toBe(false);
+    // a new view may carry it
+    const created = apply({
+      views: [
+        { id: "view:new", type: "graph", title: "New", include: [F.queue], stubs: { mode: "all" } },
+      ],
+    });
+    expect((view(created.explainer, "view:new") as GraphView).stubs).toEqual({ mode: "all" });
+  });
+
+  it("rejects what is not a policy, pointing into the patch", () => {
+    const bad = (stubs: unknown) =>
+      errorsOf(apply({ views: [{ id: "view:overview", type: "graph", stubs } as never] }));
+    expect(bad("top")[0]).toMatchObject({ path: "views[0].stubs" });
+    expect(bad({ mode: "some" }).map((i) => i.path)).toEqual(["views[0].stubs.mode"]);
+    expect(bad({ max: -1 }).map((i) => i.path)).toEqual(["views[0].stubs.max"]);
+    expect(bad({ max: 2.5 }).map((i) => i.path)).toEqual(["views[0].stubs.max"]);
+    // an unknown key is a warning, the rest of the policy still counts
+    const warned = apply({
+      views: [{ id: "view:overview", type: "graph", stubs: { limit: 3 } } as never],
+    });
+    expect(warned.ok).toBe(true);
+    expect(warningsOf(warned).map((i) => [i.path, i.message])).toEqual([
+      ["views[0].stubs.limit", 'unknown field "limit" in stubs (mode, max)'],
+    ]);
+    expect(bad({ mode: "top", max: 0 })).toEqual([]);
+    // sequence views have none
+    expect(
+      errorsOf(
+        apply({ views: [{ id: "view:dispatch", type: "sequence", stubs: {} } as never] }),
+      )[0]!.message,
+    ).toContain('unknown field "stubs"');
+  });
+
+  it("is a field of the view the user can own: an llm patch keeps it", () => {
+    const user = apply(
+      { views: [{ id: "view:overview", type: "graph", stubs: { mode: "all" } }] },
+      { actor: "user" },
+    );
+    expect(
+      (view(user.explainer, "view:overview").provenance as { userFields?: string[] }).userFields,
+    ).toEqual(["stubs"]);
+    const llm = apply(
+      { views: [{ id: "view:overview", type: "graph", stubs: { mode: "none" } }] },
+      { explainer: user.explainer },
+    );
+    expect(stubsOf(llm)).toEqual({ mode: "all" });
+    expect(warningsOf(llm).some((i) => i.code === "protected")).toBe(true);
+  });
+});
+
 describe("applyPatch: excludeFiles", () => {
   const patch = (over: Record<string, unknown>) =>
     ({ views: [{ id: "view:overview", type: "graph", ...over }] }) as ExplainerPatch;
@@ -1312,6 +1382,7 @@ describe("applyPatch: anchors", () => {
               ],
             },
           ],
+          frames: null,
         },
       ],
       tours: [
@@ -1810,20 +1881,34 @@ describe("applyPatch: views and tours", () => {
     expect("hidden" in view(cleared.explainer, "view:overview")).toBe(false);
   });
 
-  it("never gives a tour a provenance, whoever edits it", () => {
+  it("gives a tour a provenance like any element: the llm's until a user edits it", () => {
+    // the seed's tour predates tour provenance: it counts as the llm's, and an llm edit records it
     const llm = apply({ tours: [{ id: "tour:intro", title: "Renamed" }] });
-    expect("provenance" in el(llm.explainer.tours, "tour:intro")).toBe(false);
+    expect(el(llm.explainer.tours, "tour:intro").provenance).toEqual({
+      origin: "llm",
+      commit: "c1",
+    });
     const user = apply({ tours: [{ id: "tour:intro", title: "Mine" }] }, { actor: "user" });
     expect(user.changed).toEqual(["tour:intro"]);
     expect(el(user.explainer.tours, "tour:intro")).toEqual({
       id: "tour:intro",
       title: "Mine",
       steps: seed().tours[0]!.steps,
+      provenance: { origin: "llm", userFields: ["title"] },
     });
+    // an llm patch cannot create a tour as the user's, nor make an existing one the user's
     expect(
-      apply({ tours: [{ id: "tour:intro", title: "x", provenance: { origin: "user" } } as never] })
-        .ok,
+      apply({
+        tours: [{ id: "tour:new", title: "x", steps: [], provenance: { origin: "user" } }],
+      }).ok,
     ).toBe(false);
+    const ignored = apply({
+      tours: [{ id: "tour:intro", title: "Renamed", provenance: { origin: "user" } }],
+    });
+    expect(el(ignored.explainer.tours, "tour:intro").provenance).toEqual({
+      origin: "llm",
+      commit: "c1",
+    });
   });
 
   it("creates and updates tours; steps replace wholesale and their code goes through makeAnchor", () => {
@@ -1871,7 +1956,7 @@ describe("applyPatch: views and tours", () => {
       { explainer: create.explainer },
     );
     expect(el(replaced.explainer.tours, "tour:new").steps).toHaveLength(1);
-    // tours have no provenance: an llm patch may replace one
+    // an llm tour the user did not edit: an llm patch may replace it
     expect(update.changed).toEqual(["tour:new"]);
   });
 });
@@ -1993,5 +2078,759 @@ describe("applyPatch: title", () => {
     expect(r.explainer.title).toBe("New title");
     expect(r.changed).toEqual(["title"]);
     expect(apply({ title: "Test" }).changed).toEqual([]);
+  });
+});
+
+// ─── stepsUpdate ────────────────────────────────────────────────────────────────────────────────
+
+describe("applyPatch: stepsUpdate", () => {
+  const dispatchOf = (r: ApplyResult) => view(r.explainer, "view:dispatch") as SequenceView;
+  const update = (stepsUpdate: unknown[], over: Record<string, unknown> = {}): ExplainerPatch => ({
+    views: [{ id: "view:dispatch", type: "sequence", stepsUpdate, ...over } as never],
+  });
+  const protectedOf = (r: ApplyResult) =>
+    warningsOf(r)
+      .filter((i) => i.code === "protected")
+      .map((i) => [i.path, i.elementId]);
+
+  it("merges fields into the steps it names, leaves every other step and the frames alone", () => {
+    const r = apply(
+      update([{ id: "dispatch:2", summary: "Requeues with backoff.", label: "requeue(job, ms)" }]),
+    );
+    expect(r.ok).toBe(true);
+    expect(r.issues).toEqual([]);
+    expect(r.changed).toEqual(["view:dispatch", "dispatch:2"]); // the step is named, not just the view
+    const steps = dispatchOf(r).steps;
+    expect(steps[1]).toEqual({
+      ...seed().views.flatMap((v) => (v.type === "sequence" ? v.steps : []))[1],
+      summary: "Requeues with backoff.",
+      label: "requeue(job, ms)",
+    });
+    expect(steps[0]).toEqual((view(seed(), "view:dispatch") as SequenceView).steps[0]);
+    expect(steps[2]).toEqual((view(seed(), "view:dispatch") as SequenceView).steps[2]);
+    expect(dispatchOf(r).frames).toEqual((view(seed(), "view:dispatch") as SequenceView).frames);
+    expect(dispatchOf(r).provenance).toEqual({ origin: "llm", commit: "c1" });
+    expect(validateExplainer(r.explainer, w.index, w.getText, { mode: "strict" })).toEqual([]);
+    expect("stepsUpdate" in dispatchOf(r)).toBe(false); // never stored
+  });
+
+  it("is a summary fix without resending the other steps: several steps in one list, in any order", () => {
+    const r = apply(
+      update([
+        { id: "dispatch:3", summary: "Third." },
+        { id: "dispatch:1", summary: "First." },
+      ]),
+    );
+    expect(r.changed).toEqual(["view:dispatch", "dispatch:3", "dispatch:1"]);
+    expect(dispatchOf(r).steps.map((s) => s.summary)).toEqual(["First.", undefined, "Third."]);
+  });
+
+  it("anchors are AnchorInputs: made against the index, replacing the step's anchors", () => {
+    const r = apply(
+      update([
+        {
+          id: "dispatch:1",
+          anchors: [
+            {
+              file: "src/runner.ts",
+              symbol: "Runner.dispatch",
+              find: "await this.queue.pop()",
+              role: "call-site",
+            },
+          ],
+        },
+      ]),
+    );
+    expect(r.ok).toBe(true);
+    const anchors = dispatchOf(r).steps[0]!.anchors;
+    expect(anchors).toHaveLength(1);
+    expect(anchors[0]).toMatchObject({
+      symbol: "Runner.dispatch",
+      span: { from: 4, to: 4 },
+      resolved: { status: "ok" },
+    });
+    // a bad anchor is reported where it is in the patch
+    const bad = apply(
+      update([
+        {
+          id: "dispatch:1",
+          anchors: [{ file: "src/queue.ts", symbol: "Queue.popp", role: "usage" }],
+        },
+      ]),
+    );
+    expect(bad.ok).toBe(false);
+    expect(errorsOf(bad).map((i) => [i.path, i.elementId])).toEqual([
+      ["views[0].stepsUpdate[0].anchors[0]", "dispatch:1"],
+    ]);
+    expect(errorsOf(bad)[0]!.message).toContain("Did you mean: sym:src/queue.ts#Queue.pop");
+  });
+
+  it("null clears the optional summary and edge; no other field takes null", () => {
+    const first = apply(update([{ id: "dispatch:2", summary: "x" }]));
+    const cleared = apply(update([{ id: "dispatch:2", summary: null }]), {
+      explainer: first.explainer,
+    });
+    expect(cleared.ok).toBe(true);
+    expect("summary" in dispatchOf(cleared).steps[1]!).toBe(false);
+    expect(cleared.changed).toEqual(["view:dispatch", "dispatch:2"]);
+    const label = apply(update([{ id: "dispatch:2", label: null }]));
+    expect(label.ok).toBe(false);
+    expect(errorsOf(label)[0]).toMatchObject({ path: "views[0].stepsUpdate[0].label" });
+    expect(errorsOf(label)[0]!.message).toBe(
+      "label cannot be null (null clears only: summary, edge)",
+    );
+  });
+
+  it("an unknown step id is an error that names the view's steps", () => {
+    const r = apply(update([{ id: "dispatch:9", summary: "x" }]));
+    expect(r.ok).toBe(false);
+    expect(errorsOf(r)).toEqual([
+      expect.objectContaining({
+        path: "views[0].stepsUpdate[0].id",
+        elementId: "view:dispatch",
+        code: "unknown-id",
+        message:
+          "step dispatch:9 is not a step of view:dispatch (its steps: dispatch:1, dispatch:2, dispatch:3)",
+      }),
+    ]);
+    expect(r.explainer).toEqual(seed()); // atomic
+  });
+
+  it("suggests the step of a similar view, and says when the step belongs to another view", () => {
+    const ex = seed();
+    ex.views.push(
+      sequenceView(
+        "view:apply-flow",
+        [DISPATCH, F.queue],
+        [1, 2, 3, 4].map((n) => ({
+          id: `apply-flow:${n}`,
+          from: DISPATCH,
+          to: F.queue,
+          label: `step ${n}`,
+          kind: "call" as const,
+          anchors: [],
+        })),
+        { provenance: OLD },
+      ),
+    );
+    const near = apply(
+      {
+        views: [
+          {
+            id: "view:apply-flow",
+            type: "sequence",
+            stepsUpdate: [{ id: "apply:4", summary: "x" }],
+          },
+        ],
+      },
+      { explainer: ex },
+    );
+    expect(errorsOf(near)[0]!.message).toBe(
+      "step apply:4 is not a step of view:apply-flow (its steps: apply-flow:1, apply-flow:2, apply-flow:3, apply-flow:4). Did you mean: apply-flow:4?",
+    );
+    const other = apply(update([{ id: "apply-flow:2", summary: "x" }]), { explainer: ex });
+    expect(errorsOf(other)[0]!.message).toBe(
+      "step apply-flow:2 belongs to view:apply-flow, not to view:dispatch",
+    );
+  });
+
+  it("checks the list and its entries: shape, ids, duplicates, fields", () => {
+    const notArray = apply(update({ id: "dispatch:1" } as never));
+    expect(errorsOf(notArray)[0]).toMatchObject({ path: "views[0].stepsUpdate" });
+    const r = apply(
+      update([
+        3,
+        { summary: "no id" },
+        { id: "dispatch:1", summry: "typo" },
+        { id: "dispatch:2", kind: "flies" },
+        { id: "dispatch:3", summary: "a" },
+        { id: "dispatch:3", summary: "b" },
+      ]),
+    );
+    expect(errorsOf(r).map((i) => i.path)).toEqual([
+      "views[0].stepsUpdate[0]",
+      "views[0].stepsUpdate[1].id",
+      "views[0].stepsUpdate[2].summry",
+      "views[0].stepsUpdate[3].kind",
+      "views[0].stepsUpdate[5].id",
+    ]);
+    expect(errorsOf(r)[2]!.message).toContain("unknown field");
+    expect(errorsOf(r)[4]).toMatchObject({ code: "duplicate-id" });
+  });
+
+  it("only sequence views have it, and only existing ones", () => {
+    const graph = apply({
+      views: [{ id: "view:overview", type: "graph", stepsUpdate: [] } as never],
+    });
+    expect(errorsOf(graph)[0]!.message).toContain('unknown field "stepsUpdate"');
+    const created = apply({
+      views: [
+        {
+          id: "view:new",
+          type: "sequence",
+          title: "New",
+          participants: [DISPATCH, F.queue],
+          steps: [],
+          stepsUpdate: [{ id: "new:1", summary: "x" }],
+        },
+      ],
+    });
+    expect(errorsOf(created)[0]).toMatchObject({ path: "views[0].stepsUpdate" });
+    expect(errorsOf(created)[0]!.message).toContain("view:new is a new view: send its steps whole");
+  });
+
+  it("applies after steps when a patch sends both", () => {
+    const r = apply({
+      views: [
+        {
+          id: "view:dispatch",
+          type: "sequence",
+          steps: [
+            { id: "dispatch:1", from: DISPATCH, to: F.queue, label: "pop()", kind: "call" },
+            { id: "dispatch:2", from: DISPATCH, to: F.queue, label: "requeue()", kind: "call" },
+            { id: "dispatch:3", from: F.queue, to: DISPATCH, label: "ok", kind: "return" },
+          ],
+          stepsUpdate: [{ id: "dispatch:2", summary: "On the new list." }],
+        },
+      ],
+    });
+    expect(r.ok).toBe(true);
+    expect(dispatchOf(r).steps[0]!.anchors).toEqual([]); // sent whole
+    expect(dispatchOf(r).steps[1]!.summary).toBe("On the new list.");
+  });
+
+  it("a step cannot be updated and removed by the same patch", () => {
+    const r = apply({ ...update([{ id: "dispatch:3", summary: "x" }]), remove: ["dispatch:3"] });
+    expect(r.ok).toBe(false);
+    expect(errorsOf(r)[0]).toMatchObject({
+      path: "remove",
+      elementId: "dispatch:3",
+      message: "dispatch:3 is both updated (views[0].stepsUpdate[0]) and removed by this patch",
+    });
+  });
+
+  it("is idempotent: the same update twice changes nothing the second time", () => {
+    const patch = update([{ id: "dispatch:2", summary: "Same." }]);
+    const once = apply(patch);
+    const twice = apply(patch, { explainer: once.explainer });
+    expect(twice.ok).toBe(true);
+    expect(twice.changed).toEqual([]);
+    expect(twice.explainer).toEqual(once.explainer);
+  });
+
+  it("points validation errors at the entry of the patch, not at steps[j]", () => {
+    const r = apply(update([{ id: "dispatch:2", to: F.metrics }]));
+    expect(r.ok).toBe(false);
+    expect(errorsOf(r).map((i) => [i.path, i.elementId])).toEqual([
+      ["views[0].stepsUpdate[0].to", "dispatch:2"],
+    ]);
+    expect(errorsOf(r)[0]!.message).toContain("is not a participant of view:dispatch");
+  });
+
+  it("a step it changes must be valid: a drifted anchor of that step is reported, others are not", () => {
+    const ex = seed();
+    const steps = (view(ex, "view:dispatch") as SequenceView).steps;
+    steps[0]!.anchors[0]!.hash = "sha256:000000000000"; // dispatch:1 drifted
+    const other = apply(update([{ id: "dispatch:2", summary: "x" }]), { explainer: ex });
+    expect(other.ok).toBe(true); // an update of dispatch:2 does not answer for dispatch:1
+    expect(warningsOf(other).some((i) => i.message.includes("existing validation error"))).toBe(
+      true,
+    );
+    const same = apply(update([{ id: "dispatch:1", summary: "x" }]), { explainer: ex });
+    expect(same.ok).toBe(false); // the step it changes is still drifted: rewrite its anchors too
+    expect(errorsOf(same)[0]).toMatchObject({ code: "anchor-drifted", elementId: "dispatch:1" });
+    const fixed = apply(
+      update([
+        {
+          id: "dispatch:1",
+          summary: "x",
+          anchors: [
+            {
+              file: "src/runner.ts",
+              symbol: "Runner.dispatch",
+              find: "await this.queue.pop()",
+              role: "call-site",
+            },
+          ],
+        },
+      ]),
+      { explainer: ex },
+    );
+    expect(fixed.ok).toBe(true);
+  });
+
+  describe("when the user edited the view's steps", () => {
+    const edited = () => {
+      const ex = seed();
+      view(ex, "view:dispatch").provenance = { ...OLD, userFields: ["steps"] };
+      return ex;
+    };
+
+    it("an llm patch skips it with a protected warning; the other fields of the view still merge", () => {
+      const r = apply(update([{ id: "dispatch:2", summary: "x" }], { title: "Retitled" }), {
+        explainer: edited(),
+      });
+      expect(r.ok).toBe(true);
+      expect(dispatchOf(r).title).toBe("Retitled");
+      expect(dispatchOf(r).steps).toEqual((view(edited(), "view:dispatch") as SequenceView).steps);
+      expect(protectedOf(r)).toEqual([["views[0].stepsUpdate", "view:dispatch"]]);
+      expect(r.changed).toEqual(["view:dispatch"]);
+    });
+
+    it("alone it changes nothing: everything it would change is protected", () => {
+      const ex = edited();
+      const r = apply(update([{ id: "dispatch:2", summary: "x" }]), { explainer: ex });
+      expect(r).toMatchObject({ ok: true, changed: [] });
+      expect(protectedOf(r)).toEqual([["views[0].stepsUpdate", "view:dispatch"]]);
+      expect(r.explainer).toEqual(ex);
+    });
+
+    it("a user patch is not held back, and records steps as a user field", () => {
+      const fresh = apply(update([{ id: "dispatch:2", summary: "Mine." }]), { actor: "user" });
+      expect(fresh.ok).toBe(true);
+      expect(dispatchOf(fresh).steps[1]!.summary).toBe("Mine.");
+      expect(dispatchOf(fresh).provenance).toEqual({
+        origin: "llm",
+        commit: "c0",
+        userFields: ["steps"],
+      });
+      // ...after which the llm's stepsUpdate is skipped too
+      const llm = apply(update([{ id: "dispatch:2", summary: "Overwritten?" }]), {
+        explainer: fresh.explainer,
+      });
+      expect(llm.changed).toEqual([]);
+      expect(dispatchOf(llm).steps[1]!.summary).toBe("Mine.");
+    });
+
+    it("an unknown step id is not reported when the update is skipped", () => {
+      const r = apply(update([{ id: "dispatch:9", summary: "x" }]), { explainer: edited() });
+      expect(r.ok).toBe(true);
+      expect(protectedOf(r)).toHaveLength(1);
+    });
+  });
+
+  it("a user-authored view takes no llm edit at all, stepsUpdate included", () => {
+    const ex = seed();
+    view(ex, "view:dispatch").provenance = USER;
+    const r = apply(update([{ id: "dispatch:2", summary: "x" }]), { explainer: ex });
+    expect(r.changed).toEqual([]);
+    expect(protectedOf(r)).toEqual([["views[0]", "view:dispatch"]]);
+  });
+});
+
+// ─── One wave of errors ─────────────────────────────────────────────────────────────────────────
+
+describe("applyPatch: one wave of errors", () => {
+  const badSpan = {
+    file: "src/runner.ts",
+    symbol: "Runner.dispatch",
+    span: { from: 0, to: 99 },
+    role: "usage",
+  } as const;
+  const pathsOf = (r: ApplyResult) => errorsOf(r).map((i) => i.path);
+
+  it("a bad code span and a bad focus id are reported together", () => {
+    const r = apply({
+      tours: [
+        {
+          id: "tour:intro",
+          steps: [
+            { id: "t1", view: "view:dispatch", focus: ["dispatch:1"], code: [badSpan] },
+            { id: "t2", view: "view:dispatch", focus: ["dispatch:99"] },
+          ],
+        },
+      ],
+    });
+    expect(r.ok).toBe(false);
+    expect(pathsOf(r)).toEqual(["tours[0].steps[0].code[0]", "tours[0].steps[1].focus[0]"]);
+    expect(errorsOf(r)[0]!.message).toContain("outside");
+    expect(errorsOf(r)[1]!.message).toContain("no step dispatch:99 in view:dispatch");
+    expect(r.explainer).toEqual(seed()); // still atomic
+  });
+
+  it("the same for a bad anchor and a bad reference in one element", () => {
+    const r = apply({
+      concepts: [
+        {
+          id: "concept:x",
+          label: "X",
+          anchors: [{ file: "src/nope.ts", role: "usage" }],
+          related: ["concept:retry", "file:src/queue.ts"],
+        },
+      ],
+    });
+    expect(pathsOf(r)).toEqual(["concepts[0].anchors[0]", "concepts[0].related[0]"]);
+    expect(errorsOf(r)[1]!.message).toContain("Did you mean: concept:retry-policy?");
+  });
+
+  it("reports the references of a view whose steps had a bad anchor, and the rest of the patch", () => {
+    const r = apply({
+      views: [
+        {
+          id: "view:dispatch",
+          type: "sequence",
+          steps: [
+            {
+              id: "dispatch:1",
+              from: DISPATCH,
+              to: F.queue,
+              label: "pop()",
+              kind: "call",
+              anchors: [{ file: "src/queue.ts", symbol: "Queue.popp", role: "definition" }],
+            },
+            // a step end that is not a participant, and frames that point at steps this list drops
+            { id: "dispatch:2", from: DISPATCH, to: F.metrics, label: "x", kind: "call" },
+          ],
+        },
+      ],
+      concepts: [{ id: "concept:c", label: "C", anchors: [{ file: "src/nope.ts", role: "test" }] }],
+    });
+    expect(r.ok).toBe(false);
+    // the anchors first (patch order), then what the merged result gets wrong: the step end, the frame and the
+    // seed's tour that point at what the new steps drop
+    expect(pathsOf(r)).toEqual([
+      "concepts[0].anchors[0]",
+      "views[0].steps[0].anchors[0]",
+      "views[0].steps[1].to",
+      "views[0].frames[0].toStep",
+      "tours[0].steps[0].focus[0]",
+    ]);
+  });
+
+  it("does not ask for the evidence of an llm edge whose anchor failed", () => {
+    const r = apply({
+      edges: [
+        {
+          id: "edge:new",
+          from: F.worker,
+          to: F.metrics,
+          kind: "emits",
+          label: "x",
+          anchors: [
+            {
+              file: "src/worker.ts",
+              symbol: "Worker.run",
+              span: { from: 21, to: 21 },
+              role: "call-site",
+            },
+            { file: "src/metrics.ts", symbol: "onJobCompletd", role: "definition" },
+          ],
+        },
+      ],
+    });
+    expect(pathsOf(r)).toEqual(["edges[0].anchors[1]"]); // no "needs at least one anchor inside its to"
+    // fix the anchor and the evidence is judged after all
+    const wrongEnd = apply({
+      edges: [
+        {
+          id: "edge:new",
+          from: F.worker,
+          to: F.metrics,
+          kind: "emits",
+          label: "x",
+          anchors: [
+            {
+              file: "src/worker.ts",
+              symbol: "Worker.run",
+              span: { from: 21, to: 21 },
+              role: "call-site",
+            },
+          ],
+        },
+      ],
+    });
+    expect(errorsOf(wrongEnd)[0]).toMatchObject({ code: "evidence" });
+  });
+
+  it("does not turn an element that could not be built into an error at every reference to it", () => {
+    const r = apply({
+      nodes: [{ id: "grp:broken", label: "Broken" }], // a group needs members
+      views: [{ id: "view:v", type: "graph", title: "V", include: ["grp:broken", F.queue] }],
+      concepts: [{ id: "concept:c", label: "C", related: ["grp:broken"] }],
+    });
+    expect(errorsOf(r).map((i) => [i.path, i.elementId])).toEqual([
+      ["nodes[0].members", "grp:broken"],
+    ]);
+    // ...and a view that could not be built takes its steps with it
+    const view = apply({
+      views: [
+        {
+          id: "view:apply-flow",
+          type: "sequence",
+          title: "Apply",
+          participants: [DISPATCH, F.queue],
+          steps: [{ id: "apply-flow:1", from: DISPATCH, to: F.queue, label: "x", kind: "call" }],
+          bogus: 1,
+        } as never,
+      ],
+      tours: [
+        {
+          id: "tour:t",
+          title: "T",
+          steps: [{ id: "s1", view: "view:apply-flow", focus: ["apply-flow:1"] }],
+        },
+      ],
+    });
+    expect(errorsOf(view).map((i) => i.path)).toEqual(["views[0].bogus"]);
+  });
+
+  it("still reports what is really missing", () => {
+    const r = apply({
+      nodes: [{ id: "grp:broken", label: "Broken" }],
+      concepts: [{ id: "concept:c", label: "C", related: ["grp:brokn", "grp:broken"] }],
+    });
+    expect(pathsOf(r)).toEqual(["nodes[0].members", "concepts[0].related[0]"]);
+    expect(errorsOf(r)[1]!.message).toContain("no group with id grp:brokn in this explainer");
+    expect(errorsOf(r)[1]!.message).toContain("Did you mean: grp:broken?"); // the one being created
+  });
+
+  it("an unknown patch field no longer hides the other errors", () => {
+    const r = apply({
+      nope: [],
+      concepts: [
+        { id: "concept:x", label: "X", anchors: [{ file: "src/nope.ts", role: "usage" }] },
+      ],
+    } as never);
+    expect(pathsOf(r)).toEqual(["nope", "concepts[0].anchors[0]"]);
+  });
+
+  it("finds the dangling reference of a removal in the same wave as a bad anchor", () => {
+    const r = apply({
+      remove: ["dispatch:3"], // the frame and the tour still point at it
+      concepts: [
+        { id: "concept:x", label: "X", anchors: [{ file: "src/nope.ts", role: "usage" }] },
+      ],
+    });
+    expect(r.ok).toBe(false);
+    expect(pathsOf(r)[0]).toBe("concepts[0].anchors[0]");
+    expect(errorsOf(r).some((i) => i.message.includes("dispatch:3"))).toBe(true);
+  });
+
+  it("counts every error in the rejection, and a valid patch is not affected", () => {
+    expect(apply({ concepts: [{ id: "concept:ok", label: "Ok" }] }).ok).toBe(true);
+    const r = apply({
+      concepts: [
+        { id: "concept:a", label: "A", anchors: [{ file: "src/nope.ts", role: "usage" }] },
+        { id: "concept:b", label: "B", related: ["concept:zzz"] },
+        { id: "concept:c" },
+      ],
+    });
+    expect(errorsOf(r)).toHaveLength(3);
+  });
+});
+
+// ─── Tour provenance ────────────────────────────────────────────────────────────────────────────
+
+describe("applyPatch: tour provenance", () => {
+  const tourOf = (r: ApplyResult, id = "tour:intro") => el(r.explainer.tours, id);
+  const protectedOf = (r: ApplyResult) =>
+    warningsOf(r)
+      .filter((i) => i.code === "protected")
+      .map((i) => [i.path, i.elementId]);
+  const withProvenance = (provenance: Explainer["tours"][number]["provenance"]): Explainer => {
+    const ex = seed();
+    ex.tours[0]!.provenance = provenance;
+    return ex;
+  };
+  const steps = [{ id: "t1", view: "view:overview", focus: [F.queue], note: "New." }];
+
+  it("a new tour gets { origin: actor, commit }, whoever writes it", () => {
+    const create = { tours: [{ id: "tour:new", title: "New", steps }] };
+    expect(tourOf(apply(create), "tour:new").provenance).toEqual({ origin: "llm", commit: "c1" });
+    expect(tourOf(apply(create, { actor: "user" }), "tour:new").provenance).toEqual({
+      origin: "user",
+      commit: "c1",
+    });
+  });
+
+  it("an llm patch cannot modify a tour of the user's: skipped with a protected warning", () => {
+    const ex = withProvenance({ origin: "user" });
+    const r = apply(
+      { tours: [{ id: "tour:intro", title: "Overwritten", steps }] },
+      { explainer: ex },
+    );
+    expect(r).toMatchObject({ ok: true, changed: [] });
+    expect(protectedOf(r)).toEqual([["tours[0]", "tour:intro"]]);
+    expect(r.explainer).toEqual(ex);
+    // the user may edit their own tour
+    const user = apply(
+      { tours: [{ id: "tour:intro", title: "Mine" }] },
+      { explainer: ex, actor: "user" },
+    );
+    expect(tourOf(user)).toMatchObject({ title: "Mine", provenance: { origin: "user" } });
+  });
+
+  it("an llm patch cannot remove a tour of the user's, nor one the user edited", () => {
+    const theirs = apply(
+      { remove: ["tour:intro"] },
+      { explainer: withProvenance({ origin: "user" }) },
+    );
+    expect(theirs.explainer.tours.map((t) => t.id)).toEqual(["tour:intro"]);
+    expect(theirs.changed).toEqual([]);
+    expect(protectedOf(theirs)).toEqual([["remove[0]", "tour:intro"]]);
+    const edited = apply(
+      { remove: ["tour:intro"] },
+      { explainer: withProvenance({ origin: "llm", userFields: ["steps"] }) },
+    );
+    expect(edited.explainer.tours).toHaveLength(1);
+    expect(protectedOf(edited)).toEqual([["remove[0]", "tour:intro"]]);
+    expect(warningsOf(edited)[0]!.message).toBe(
+      "tour:intro has fields edited by the user (steps); an llm patch cannot remove it (skipped)",
+    );
+    // an untouched llm tour is removable, and so is one without provenance (written before tours had any)
+    expect(apply({ remove: ["tour:intro"] }).explainer.tours).toEqual([]);
+    expect(
+      apply(
+        { remove: ["tour:intro"] },
+        { explainer: withProvenance({ origin: "llm", commit: "c0" }) },
+      ).explainer.tours,
+    ).toEqual([]);
+    // the user may remove their own
+    const byUser = apply(
+      { remove: ["tour:intro"] },
+      { explainer: withProvenance({ origin: "user" }), actor: "user" },
+    );
+    expect(byUser.explainer.tours).toEqual([]);
+  });
+
+  it("a user edit of an llm tour records the fields; the llm then keeps them and changes the rest", () => {
+    const edited = apply({ tours: [{ id: "tour:intro", steps }] }, { actor: "user" });
+    expect(tourOf(edited).provenance).toEqual({ origin: "llm", userFields: ["steps"] });
+    // the llm retitles it and tries to replace its steps: the title changes, the steps stay
+    const llm = apply(
+      { tours: [{ id: "tour:intro", title: "Better title", steps: [] }] },
+      { explainer: edited.explainer },
+    );
+    expect(llm.ok).toBe(true);
+    expect(tourOf(llm).title).toBe("Better title");
+    expect(tourOf(llm).steps).toEqual(steps);
+    expect(protectedOf(llm)).toEqual([["tours[0].steps", "tour:intro"]]);
+    expect(tourOf(llm).provenance).toEqual({ origin: "llm", userFields: ["steps"], commit: "c1" });
+    // the same on the title: the user's retitle survives an llm retitle
+    const retitled = apply({ tours: [{ id: "tour:intro", title: "Mine" }] }, { actor: "user" });
+    const again = apply(
+      { tours: [{ id: "tour:intro", title: "Not yours", steps }] },
+      { explainer: retitled.explainer },
+    );
+    expect(tourOf(again).title).toBe("Mine");
+    expect(tourOf(again).steps).toEqual(steps);
+    expect(protectedOf(again)).toEqual([["tours[0].title", "tour:intro"]]);
+  });
+
+  it("a patch that touches only what the user owns changes nothing (the CLI turns that into exit 1)", () => {
+    const edited = apply({ tours: [{ id: "tour:intro", steps }] }, { actor: "user" });
+    const r = apply({ tours: [{ id: "tour:intro", steps: [] }] }, { explainer: edited.explainer });
+    expect(r).toMatchObject({ ok: true, changed: [] });
+    expect(protectedOf(r)).toEqual([["tours[0].steps", "tour:intro"]]);
+    expect(r.explainer).toEqual(edited.explainer);
+  });
+
+  it("a tour written before tours had provenance is the llm's: an llm edit records it", () => {
+    const legacy = seed();
+    expect("provenance" in legacy.tours[0]!).toBe(false);
+    const r = apply({ tours: [{ id: "tour:intro", title: "Retitled" }] }, { explainer: legacy });
+    expect(tourOf(r)).toMatchObject({
+      title: "Retitled",
+      provenance: { origin: "llm", commit: "c1" },
+    });
+    // an unchanged one stays as it is, provenance-less
+    const same = apply({ tours: [{ id: "tour:intro", title: "Intro" }] }, { explainer: legacy });
+    expect(same.changed).toEqual([]);
+    expect("provenance" in tourOf(same)).toBe(false);
+  });
+
+  it("an adopting user patch may set provenance; an llm one cannot", () => {
+    const adopted = apply(
+      { tours: [{ id: "tour:intro", provenance: { origin: "user" } }] },
+      { actor: "user" },
+    );
+    expect(tourOf(adopted).provenance).toEqual({ origin: "user" });
+    expect(
+      apply({ tours: [{ id: "tour:intro", provenance: { origin: "user" } }] }).explainer,
+    ).toEqual(apply({ tours: [{ id: "tour:intro" }] }).explainer);
+  });
+
+  it("validation checks a tour's provenance when it has one", () => {
+    const ex = seed();
+    (ex.tours[0] as { provenance: unknown }).provenance = { origin: "robot" };
+    const issues = validateExplainer(ex, w.index, w.getText, { mode: "strict" });
+    expect(issues.map((i) => [i.path, i.elementId])).toContainEqual([
+      "tours[0].provenance.origin",
+      "tour:intro",
+    ]);
+    expect(validateExplainer(seed(), w.index, w.getText, { mode: "strict" })).toEqual([]);
+  });
+});
+
+// ─── Spans that start or end on a blank line ────────────────────────────────────────────────────
+
+describe("applyPatch: a span that starts or ends on a blank line", () => {
+  const text = [
+    "export function f() {", // 1
+    "  const a = 1;", // 2
+    "", // 3
+    "  const b = 2;", // 4
+    "", // 5
+    "  return a + b;", // 6
+    "}", // 7
+  ].join("\n");
+  const bw = makeWorld({
+    files: [{ path: "src/a.ts", text }],
+    symbols: [{ id: "src/a.ts#f", kind: "function", start: 1, end: 7 }],
+  });
+  const applyTo = (anchors: unknown[]) =>
+    applyPatch(
+      emptyExplainer(),
+      { concepts: [{ id: "concept:x", label: "X", anchors: anchors as never }] },
+      bw.index,
+      bw.getText,
+      { actor: "llm" },
+    );
+  const span = (from: number, to: number) => ({
+    file: "src/a.ts",
+    symbol: "f",
+    span: { from, to },
+    role: "usage",
+  });
+
+  it("warns that it is probably off by one, and says where the code is", () => {
+    const r = applyTo([span(1, 2)]); // lines 2-3: ends on the blank line 3
+    expect(r.ok).toBe(true);
+    expect(warningsOf(r)).toEqual([
+      expect.objectContaining({
+        path: "concepts[0].anchors[0]",
+        elementId: "concept:x",
+        code: "anchor-invalid",
+        message: expect.stringContaining(
+          "span src/a.ts#f +1..2 ends on a blank line (line 3): probably off by one, the code in it ends at line 2 (offset 1)",
+        ),
+      }),
+    ]);
+    const start = applyTo([span(2, 3)]); // lines 3-4: starts on the blank line 3
+    expect(warningsOf(start)[0]!.message).toContain(
+      "starts on a blank line (line 3): probably off by one, the code in it starts at line 4 (offset 3)",
+    );
+    const both = applyTo([span(2, 4)]); // lines 3-5: both edges blank
+    expect(
+      warningsOf(both).map((i) => i.message.match(/(starts|ends) on a blank line/)?.[0]),
+    ).toEqual(["starts on a blank line", "ends on a blank line"]);
+  });
+
+  it("stays quiet for spans on code, for find anchors, and for anchors resent with their hash", () => {
+    expect(warningsOf(applyTo([span(1, 3)]))).toEqual([]); // lines 2-4: code at both edges, a blank inside
+    expect(warningsOf(applyTo([span(0, 6)]))).toEqual([]);
+    expect(
+      warningsOf(applyTo([{ file: "src/a.ts", symbol: "f", find: "const a = 1;", role: "usage" }])),
+    ).toEqual([]);
+    const stored = (applyTo([span(1, 3)]).explainer.concepts[0] as { anchors: unknown[] }).anchors;
+    expect(warningsOf(applyTo(stored))).toEqual([]);
+    // a stored anchor whose span has a blank edge (made before this warning) is not nagged about either
+    expect(warningsOf(applyTo([anchor(bw, span(1, 2) as never)]))).toEqual([]);
+  });
+
+  it("a span of blank lines only is still an error", () => {
+    const r = applyTo([span(2, 2)]);
+    expect(r.ok).toBe(false);
+    expect(errorsOf(r)[0]!.message).toContain("covers only blank lines");
   });
 });

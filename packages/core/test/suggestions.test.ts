@@ -7,12 +7,16 @@ import {
   normalizeElementId,
   reresolveExplainer,
   resolveAnchor,
+  suggestIds,
   validateExplainer,
   type SymbolHint,
 } from "../src/index.js";
 import {
   anchor,
+  concept,
   emptyExplainer,
+  graphView,
+  group,
   JOBRUNNER,
   jobrunner,
   makeWorld,
@@ -441,5 +445,197 @@ describe("normalizeElementId suggests ids", () => {
       expect(r.error).toContain("Did you mean: sym:src/queue.ts#Queue.pop");
       expect(r.candidates?.[0]).toBe("sym:src/queue.ts#Queue.pop");
     }
+  });
+});
+
+describe("suggestIds", () => {
+  const known = [
+    "grp:scheduling",
+    "grp:retry-engine",
+    "concept:retry-policy",
+    "concept:idempotency",
+    "edge:job-completed",
+    "view:overview",
+    "view:dispatch",
+    "tour:intro",
+    "dispatch:1",
+    "dispatch:2",
+    "apply-flow:1",
+    "apply-flow:4",
+    "file:src/queue.ts",
+  ];
+
+  it("offers the same kind with a similar slug: a longer name, a typo, another case", () => {
+    expect(suggestIds("concept:retry", known)).toEqual(["concept:retry-policy"]);
+    expect(suggestIds("grp:sched", known)).toEqual(["grp:scheduling"]);
+    expect(suggestIds("edge:job-complete", known)).toEqual(["edge:job-completed"]);
+    expect(suggestIds("view:Overview", known)).toEqual(["view:overview"]);
+    expect(suggestIds("tour:intro2", known)).toEqual(["tour:intro"]);
+  });
+
+  it("offers the right slug under another kind, after the same kind", () => {
+    expect(suggestIds("grp:retry-policy", known)).toEqual(["concept:retry-policy"]);
+    expect(suggestIds("concept:retry-engine", known)).toEqual(["grp:retry-engine"]);
+    expect(suggestIds("grp:retry-policy", ["concept:retry-policy", "grp:retry-policies"])).toEqual([
+      "grp:retry-policies",
+      "concept:retry-policy",
+    ]);
+  });
+
+  it("takes text without a known prefix as a slug of any kind", () => {
+    expect(suggestIds("retry-policy", known)).toEqual(["concept:retry-policy"]);
+    expect(suggestIds("group:scheduling", known)).toEqual(["grp:scheduling"]);
+    expect(suggestIds("overview", known)).toEqual(["view:overview"]);
+  });
+
+  it("a step: the step with the same number in a view of a similar name", () => {
+    expect(suggestIds("apply:4", known)).toEqual(["apply-flow:4"]);
+    expect(suggestIds("dispach:2", known)).toEqual(["dispatch:2"]);
+    // a number nobody has, and a view nobody has: nothing worth saying
+    expect(suggestIds("dispatch:9", known)).toEqual([]);
+    expect(suggestIds("zzz:1", known)).toEqual([]);
+  });
+
+  it("is quiet when nothing is close, never offers the id itself, and honours the limit", () => {
+    expect(suggestIds("concept:zzz", known)).toEqual([]);
+    expect(suggestIds("view:overview", known)).toEqual([]);
+    expect(suggestIds("", known)).toEqual([]);
+    const many = ["a1", "a2", "a3", "a4"].map((slug) => `grp:${slug}`);
+    expect(suggestIds("grp:a", many)).toHaveLength(3);
+    expect(suggestIds("grp:a", many, 2)).toHaveLength(2);
+    // structural ids belong to the index (normalizeElementId): never offered here
+    expect(suggestIds("file:src/queue", known)).toEqual([]);
+  });
+});
+
+describe("an unknown id in an explainer says what was probably meant", () => {
+  const w = jobrunner();
+  const F = { queue: "file:src/queue.ts", runner: "file:src/runner.ts" };
+  const DISPATCH = "sym:src/runner.ts#Runner.dispatch";
+  const step = (id: string, label: string) => ({
+    id,
+    from: DISPATCH,
+    to: F.queue,
+    label,
+    kind: "call" as const,
+    anchors: [],
+  });
+  const explainer = () =>
+    emptyExplainer({
+      nodes: [group("grp:scheduling", [F.runner, F.queue])],
+      concepts: [concept("concept:retry-policy")],
+      views: [
+        graphView("view:overview", ["grp:scheduling"]),
+        sequenceView(
+          "view:dispatch",
+          [DISPATCH, F.queue],
+          [step("dispatch:1", "a"), step("dispatch:2", "b")],
+        ),
+        sequenceView(
+          "view:apply-flow",
+          [DISPATCH, F.queue],
+          [1, 2, 3, 4].map((n) => step(`apply-flow:${n}`, `s${n}`)),
+        ),
+      ],
+      tours: [{ id: "tour:intro", title: "Intro", steps: [] }],
+    });
+  const messages = (patch: (ex: ReturnType<typeof explainer>) => void): string[] => {
+    const ex = explainer();
+    patch(ex);
+    return validateExplainer(ex, w.index, w.getText, { mode: "strict" })
+      .filter((i) => i.severity === "error")
+      .map((i) => i.message);
+  };
+  const relatedOf =
+    (...ids: string[]) =>
+    (ex: ReturnType<typeof explainer>) => {
+      ex.concepts[0]!.related = ids;
+    };
+
+  it("is valid to start with", () => {
+    expect(validateExplainer(explainer(), w.index, w.getText, { mode: "strict" })).toEqual([]);
+  });
+
+  it("a step: `apply:4` when `apply-flow:4` exists", () => {
+    expect(messages(relatedOf("apply:4"))).toEqual([
+      "related: no step with id apply:4 in this explainer. Did you mean: apply-flow:4?",
+    ]);
+  });
+
+  it("a step of a view that exists: names the view's steps", () => {
+    expect(messages(relatedOf("dispatch:9"))).toEqual([
+      "related: no step dispatch:9 in view:dispatch (its steps: dispatch:1, dispatch:2)",
+    ]);
+  });
+
+  it("a concept, a group, an edge", () => {
+    expect(messages(relatedOf("concept:retry"))).toEqual([
+      "related: no concept with id concept:retry in this explainer. Did you mean: concept:retry-policy?",
+    ]);
+    expect(messages(relatedOf("edge:nope"))).toEqual([
+      "related: no edge with id edge:nope in this explainer",
+    ]);
+    expect(
+      messages((ex) => {
+        ex.views[0] = graphView("view:overview", ["grp:sched", F.queue]);
+      }),
+    ).toEqual(["include: no group grp:sched in this explainer. Did you mean: grp:scheduling?"]);
+    expect(
+      messages((ex) => {
+        ex.nodes[0]!.members = ["grp:schedulin"];
+      }),
+    ).toEqual(["member: no group grp:schedulin in this explainer. Did you mean: grp:scheduling?"]);
+  });
+
+  it("a text that is not an id at all: the id it looks like", () => {
+    expect(messages(relatedOf("retry-policy"))).toEqual([
+      'related: "retry-policy" is not an element id; did you mean concept:retry-policy?',
+    ]);
+    expect(messages(relatedOf("zzz"))[0]).toContain('"zzz" is not an element id (expected');
+  });
+
+  it("a tour step's view: the closest, else the views there are", () => {
+    const tour = (view: string) => (ex: ReturnType<typeof explainer>) => {
+      ex.tours[0]!.steps = [{ id: "t1", view, focus: [] }];
+    };
+    expect(messages(tour("view:overvew"))).toEqual([
+      'tour step view "view:overvew" is not a view of this explainer. Did you mean: view:overview?',
+    ]);
+    expect(messages(tour("overview"))).toEqual([
+      'tour step view "overview" is not a view of this explainer. Did you mean: view:overview?',
+    ]);
+    expect(messages(tour("view:zzz"))).toEqual([
+      'tour step view "view:zzz" is not a view of this explainer (views: view:overview, view:dispatch, view:apply-flow)',
+    ]);
+  });
+
+  it("a tour step's focus is checked the same way", () => {
+    expect(
+      messages((ex) => {
+        ex.tours[0]!.steps = [
+          { id: "t1", view: "view:dispatch", focus: ["dispatch:3", "apply:2"] },
+        ];
+      }),
+    ).toEqual([
+      "focus: no step dispatch:3 in view:dispatch (its steps: dispatch:1, dispatch:2)",
+      "focus: no step with id apply:2 in this explainer. Did you mean: apply-flow:2?",
+    ]);
+  });
+
+  it("applyPatch says the same for a removal that names nothing (a warning)", () => {
+    const r = applyPatch(
+      explainer(),
+      { remove: ["tour:intr", "concept:retry", "dispatch:9", "view:zzz"] },
+      w.index,
+      w.getText,
+      { actor: "llm" },
+    );
+    expect(r.ok).toBe(true);
+    expect(r.issues.map((i) => i.message)).toEqual([
+      "nothing to remove: no element, view, tour or step has the id tour:intr. Did you mean: tour:intro?",
+      "nothing to remove: no element, view, tour or step has the id concept:retry. Did you mean: concept:retry-policy?",
+      "nothing to remove: no element, view, tour or step has the id dispatch:9",
+      "nothing to remove: no element, view, tour or step has the id view:zzz",
+    ]);
   });
 });

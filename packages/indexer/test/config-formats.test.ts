@@ -296,3 +296,220 @@ describe("JSON symbols", () => {
     expect(index.languages.json).toEqual({ files: 1, symbols: 2, refs: "none" });
   });
 });
+
+describe("TOML symbols", () => {
+  it("tables and pairs are `key` symbols; pyproject.toml's [project.scripts] flask is project.scripts.flask", async () => {
+    const source = src(
+      "[build-system]", // 1
+      'requires = ["hatchling"]', // 2
+      'build-backend = "hatchling.build"', // 3
+      "", // 4
+      "[project]", // 5
+      'name = "flask"', // 6
+      'version = "3.1.3"', // 7
+      "dependencies = [", // 8
+      '  "blinker>=1.9",   # events', // 9
+      '  "click>=8.1",', // 10
+      "]", // 11
+      "", // 12
+      "[project.scripts]", // 13
+      'flask = "flask.cli:main"', // 14
+      "", // 15
+      "[tool.pytest.ini_options]", // 16
+      'testpaths = ["tests"]', // 17
+    );
+    expect(await keys("pyproject.toml", source)).toEqual([
+      "key build-system 1-3",
+      "key build-system.requires 2-2",
+      "key build-system.build-backend 3-3",
+      "key project 5-11",
+      "key project.name 6-6",
+      "key project.version 7-7",
+      "key project.dependencies 8-11",
+      "key project.scripts 13-14",
+      "key project.scripts.flask 14-14",
+      "key tool.pytest.ini_options 16-17",
+      "key tool.pytest.ini_options.testpaths 17-17",
+    ]);
+  });
+
+  it("indexes the file as text (FileLanguage has no toml) and says refs none", async () => {
+    const { index } = await indexFiles({
+      "pyproject.toml": '[project]\nname = "x"\n',
+      "README.md": "# hi\n",
+    });
+    expect(index.files.find((f) => f.path === "pyproject.toml")!.language).toBe("text");
+    expect(index.refs).toEqual([]);
+    expect(index.languages.text).toEqual({ files: 2, symbols: 2, refs: "none" });
+    expect(index.tool).toContain("tree-sitter-toml@0.7.0");
+  });
+
+  it("pairs at the top of the file, dotted keys, quoted keys, inline tables and arrays of inline tables", async () => {
+    const source = src(
+      'title = "x"   # root pair', // 1
+      "a.b.c = 1", // 2
+      '"quoted key".x = 2', // 3
+      "point = { x = 1, y = { z = 2 } }", // 4
+      "list = [ { k = 1 }, [ { deep = 1 } ] ]", // 5
+      "[t]", // 6
+      "u.v = 3", // 7
+    );
+    expect(await keys("c.toml", source)).toEqual([
+      "key title 1-1",
+      "key a.b.c 2-2",
+      "key quoted key.x 3-3",
+      "key point 4-4",
+      "key point.x 4-4",
+      "key point.y 4-4",
+      "key point.y.z 4-4",
+      "key list 5-5",
+      "key list.0.k 5-5",
+      "key list.1.0.deep 5-5",
+      "key t 6-7",
+      "key t.u.v 7-7",
+    ]);
+  });
+
+  it("arrays of tables address their elements by index; tables below belong to the latest element", async () => {
+    const source = src(
+      "[[fruits]]", // 1
+      'name = "apple"', // 2
+      "", // 3
+      "[fruits.physical]", // 4
+      'color = "red"', // 5
+      "", // 6
+      "[[fruits.varieties]]", // 7
+      'name = "red delicious"', // 8
+      "", // 9
+      "[[fruits]]", // 10
+      'name = "banana"', // 11
+      "", // 12
+      "[[fruits.varieties]]", // 13
+      'name = "plantain"', // 14
+    );
+    expect(await keys("fruits.toml", source)).toEqual([
+      "key fruits.0 1-2",
+      "key fruits.0.name 2-2",
+      "key fruits.0.physical 4-5",
+      "key fruits.0.physical.color 5-5",
+      "key fruits.0.varieties.0 7-8",
+      "key fruits.0.varieties.0.name 8-8",
+      "key fruits.1 10-11",
+      "key fruits.1.name 11-11",
+      "key fruits.1.varieties.0 13-14",
+      "key fruits.1.varieties.0.name 14-14",
+    ]);
+  });
+
+  it("[[tool.mypy.overrides]] elements are tool.mypy.overrides.0, .1 with their pairs", async () => {
+    const source = src(
+      "[[tool.mypy.overrides]]", // 1
+      'module = ["a"]', // 2
+      "ignore_missing_imports = true", // 3
+      "[[tool.mypy.overrides]]", // 4
+      'module = ["b"]', // 5
+    );
+    expect(await keys("pyproject.toml", source)).toEqual([
+      "key tool.mypy.overrides.0 1-3",
+      "key tool.mypy.overrides.0.module 2-2",
+      "key tool.mypy.overrides.0.ignore_missing_imports 3-3",
+      "key tool.mypy.overrides.1 4-5",
+      "key tool.mypy.overrides.1.module 5-5",
+    ]);
+  });
+
+  it("a table ends at its last pair: comments and blank lines after it belong to what follows", async () => {
+    const source = src(
+      "[a]", // 1
+      "x = 1", // 2
+      "# trailing of a", // 3
+      "", // 4
+      "# about b", // 5
+      "[b]", // 6
+      "y = 2   # trailing", // 7
+      "", // 8
+      "# end", // 9
+      "[c]", // 10
+    );
+    expect(await keys("c.toml", source)).toEqual([
+      "key a 1-2",
+      "key a.x 2-2",
+      "key b 6-7",
+      "key b.y 7-7",
+      "key c 10-10",
+    ]);
+  });
+
+  it("a multi-line array or string is one pair; trailing comments and comment lines inside do not extend it", async () => {
+    const source = src(
+      "multi = [", // 1
+      '  "a",', // 2
+      '  "b", # c', // 3
+      "]   # after", // 4
+      'text = """', // 5
+      "one", // 6
+      "two", // 7
+      '"""', // 8
+      "after = 1", // 9
+    );
+    expect(await keys("c.toml", source)).toEqual([
+      "key multi 1-4",
+      "key text 5-8",
+      "key after 9-9",
+    ]);
+  });
+
+  it("sets parents to the enclosing table or inline table (tables have none: they do not nest by range)", async () => {
+    const source = src("[project.scripts]", 'flask = "x"', "point = { y = { z = 2 } }", "[other]");
+    const { index } = await indexFiles({ "c.toml": source });
+    expect(symbol(index, "c.toml", "project.scripts")!.parent).toBeUndefined();
+    expect(symbol(index, "c.toml", "project.scripts.flask")!.parent).toBe("c.toml#project.scripts");
+    expect(symbol(index, "c.toml", "project.scripts.point.y.z")!.parent).toBe(
+      "c.toml#project.scripts.point.y",
+    );
+    expect(symbol(index, "c.toml", "other")!.parent).toBeUndefined();
+    expect(symbol(index, "c.toml", "project")).toBeUndefined(); // implied tables are not symbols
+    expect(symbol(index, "c.toml", "project.scripts")!.kind).toBe("key");
+  });
+
+  it("limits keys to depth 6, counting keys and not the indices of arrays of tables", async () => {
+    expect(
+      (await keys("d.toml", src("[a.b.c.d.e.f]", "g = 1", "[a.b.c.d.e.f.g]", "h = 1"))).map(
+        (l) => l.split(" ")[1],
+      ),
+    ).toEqual(["a.b.c.d.e.f"]);
+    expect(
+      (
+        await keys("e.toml", src("[[a.b]]", "[[a.b.c]]", "[[a.b.c.d]]", "e.f = 1", "e.f.g = 2"))
+      ).map((l) => l.split(" ")[1]),
+    ).toEqual(["a.b.0", "a.b.0.c.0", "a.b.0.c.0.d.0", "a.b.0.c.0.d.0.e.f"]);
+  });
+
+  it("unescapes quoted keys, keeps dots inside them, numbers duplicates, tolerates errors and empty files", async () => {
+    expect(await keys("e.toml", "")).toEqual([]);
+    expect(await keys("c.toml", "# only a comment\n")).toEqual([]);
+    const paths = (
+      await keys("q.toml", src('"esc\\"aped" = 1', "'lit\\eral' = 2", "dup = 1", "dup = 2"))
+    ).map((l) => l.split(" ")[1]);
+    expect(paths).toEqual(['esc"aped', "lit\\eral", "dup", "dup~2"]);
+    expect(await keys("bad.toml", src("a = 1", "b = [unclosed", "c = 2"))).toContain("key a 1-1");
+  });
+
+  it("caps the number of keys per file and warns", async () => {
+    const lines = Array.from({ length: MAX_KEYS_PER_FILE + 20 }, (_, i) => `k${i} = ${i}`);
+    const { index, warnings } = await indexFiles({ "big.toml": lines.join("\n") + "\n" });
+    expect(index.symbols).toHaveLength(MAX_KEYS_PER_FILE);
+    expect(warnings.some((w) => w.startsWith("big.toml: 20 keys beyond the first"))).toBe(true);
+  });
+
+  it("only files with the extension .toml are parsed as TOML", async () => {
+    const { index } = await indexFiles({
+      "Cargo.TOML": "[package]\nname = 'x'\n",
+      "settings.toml.example": "[a]\nb = 1\n",
+      toml: "[a]\nb = 1\n",
+    });
+    expect(symbolLines(index, "Cargo.TOML")).toEqual(["key package 1-2", "key package.name 2-2"]);
+    expect(symbolLines(index, "settings.toml.example")).toEqual([]);
+    expect(symbolLines(index, "toml")).toEqual([]);
+  });
+});

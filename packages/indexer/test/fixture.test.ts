@@ -169,9 +169,19 @@ describe("ts-jobrunner: what the static index cannot see", () => {
 
 describe("ts-jobrunner: imports, heritage and the test file", () => {
   it("import refs go from the module scope to the imported symbols", () => {
-    expect(refsFrom("src/runner.ts#", "src/queue.ts#Queue", "import")).toHaveLength(1);
     expect(refsFrom("src/main.ts#", "src/runner.ts#Runner", "import")).toHaveLength(1);
-    expect(refsFrom("src/runner.ts#", "src/worker.ts#WorkerPool", "import")).toHaveLength(1);
+    expect(refsFrom("src/main.ts#", "src/queue.ts#Queue", "import")).toHaveLength(1);
+    expect(refsFrom("src/main.ts#", "src/worker.ts#WorkerPool", "import")).toHaveLength(1);
+  });
+
+  it("`import type` is a type reference, not an import: runner.ts only depends on queue.ts and worker.ts at compile time", () => {
+    for (const to of ["src/queue.ts#Queue", "src/queue.ts#Job", "src/worker.ts#WorkerPool"]) {
+      expect(refsFrom("src/runner.ts#", to, "type-ref"), to).toHaveLength(1);
+      expect(refsFrom("src/runner.ts#", to, "import"), to).toHaveLength(0);
+    }
+    expect(index.refs.filter((r) => r.kind === "import" && r.from === "src/runner.ts#")).toEqual(
+      [],
+    );
   });
 
   it("the test's RecordingQueue extends Queue and calls super.requeue", () => {

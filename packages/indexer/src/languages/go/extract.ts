@@ -43,6 +43,7 @@ import {
   firstNamed,
   isTypeParam,
   namedChildren,
+  readShape,
   receiverBaseName,
   receiverNameOf,
   stringValue,
@@ -69,6 +70,9 @@ const SCAN_TYPES = [
   "range_clause",
   "type_switch_statement",
   "receive_statement",
+  // the leaves a `read` can sit on (see `readShape`)
+  "identifier",
+  "field_identifier",
 ];
 
 /** Nodes that end the scope of a name declared inside them. */
@@ -187,6 +191,10 @@ class Extractor {
   private readonly typeParams: TypeParamScopes = { enabled: true, names: new Map() };
   /** The methods of the file in source order, for `receiverAt`. */
   private readonly methods: { start: Point; end: Point; receiver: string | undefined }[] = [];
+  /** Identifiers and selector fields a `read` may sit on, in source order (decided once every local is known). */
+  private readonly readLeaves: Node[] = [];
+  /** The names the file's imports bind (packages, not variables). */
+  private readonly importNames = new Set<string>();
 
   constructor(private readonly ctx: FileContext) {
     this.lines = ctx.lines;
@@ -528,8 +536,10 @@ class Extractor {
     if (module === "") return;
     const alias = spec.childForFieldName("name");
     const site = nodeSpan(spec, this.lines);
-    for (const localName of alias ? [alias.text] : assumedPackageNames(module))
+    for (const localName of alias ? [alias.text] : assumedPackageNames(module)) {
       this.imports.push({ localName, module, site });
+      this.importNames.add(localName);
+    }
     // `import . "pkg"` brings every exported name of pkg into the file: like a star import.
     if (alias?.type === "dot") this.exports.push({ name: "*", module, site });
   }
@@ -572,10 +582,39 @@ class Extractor {
         case "receive_statement":
           this.onReceive(n);
           break;
+        case "identifier":
+        case "field_identifier":
+          this.readLeaves.push(n);
+          break;
         default:
           break;
       }
     }
+    for (const leaf of this.readLeaves) this.onRead(leaf);
+  }
+
+  /**
+   * A read of a package variable or of a field. Bare names that are locals are dropped with the other bare
+   * sites (`shadowed`); the names of the language, the receiver and the packages of the file's imports are
+   * not variables to read.
+   */
+  private onRead(leaf: Node): void {
+    const shape = readShape(leaf, this.lines);
+    if (!shape) return;
+    if (!shape.operand) {
+      const name = shape.name;
+      if (this.declaredNames.has(name)) {
+        // a package-level name of this very file: always a candidate
+      } else if (
+        PREDECLARED.has(name) ||
+        BUILTIN_FUNCTIONS.has(name) ||
+        this.importNames.has(name)
+      ) {
+        return;
+      }
+      if (this.receiverAt(leaf) === name) return;
+    }
+    this.pushShape(shape);
   }
 
   private onTypeName(n: Node): void {
@@ -629,7 +668,7 @@ class Extractor {
     const draft: SiteDraft = { kind: shape.kind, name: shape.name, qualifier, site: shape.site };
     this.sites.push(draft);
     if (
-      (shape.kind === "call" || shape.kind === "write") &&
+      (shape.kind === "call" || shape.kind === "write" || shape.kind === "read") &&
       qualifier.length === 0 &&
       shape.core.type === "identifier"
     )

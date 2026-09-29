@@ -14,7 +14,15 @@
  * usable (all edges on the canvas, in canvas coordinates).
  */
 import ELKModule, { type ElkExtendedEdge, type ElkNode } from "elkjs/lib/elk.bundled.js";
-import { ghostId, type DerivedEdge, type DerivedGraph, type GraphNode, type Stub } from "@xpl/core";
+import {
+  ghostId,
+  type DerivedEdge,
+  type DerivedGraph,
+  type Ghost,
+  type GhostTarget,
+  type GraphNode,
+  type Stub,
+} from "@xpl/core";
 import { textWidth } from "../measure.js";
 import { nearRoute, routeAnchor, type Box, type Point } from "../svg.js";
 
@@ -29,8 +37,14 @@ export interface LayoutNode {
   /** CSS class suffix: the node kind, or the symbol kind for symbols; `ghost` for ghost boxes. */
   kindClass: string;
   ghost: boolean;
-  /** Ghosts: the element that joins the view when the ghost is clicked. */
+  /** Ghosts: the element that joins the view when the ghost is clicked (a ghost for one element). */
   ghostTarget?: string;
+  /**
+   * Ghosts that stand for several elements ("rest of <file>", "N more"): a click offers them as a list
+   * (`targets`, most referenced first) instead of adding anything. `file` is the file a "rest" ghost is the
+   * rest of.
+   */
+  ghostFold?: { kind: "rest" | "more"; targets: GhostTarget[]; file?: string };
   /** Ghosts: what leaves or enters the view there (`calls ×9`). */
   detail?: string;
   /** Ghosts: the same with every kind named, for the tooltip. */
@@ -156,24 +170,24 @@ function labelBox(text: string): { text: string; width: number; height: number }
 
 // ─── Model shared by ELK and the fallback ───────────────────────────────────────────────────────
 
+interface ModelNode {
+  label: string;
+  badge: string;
+  kindClass: string;
+  ghostTarget?: string;
+  ghostFold?: LayoutNode["ghostFold"];
+  detail?: string;
+  hint?: string;
+  /** Ghosts: `in` when every stub enters the view there, `out` when every stub leaves it. */
+  side?: "in" | "out";
+}
+
 interface Model {
   roots: string[];
   children: Map<string, string[]>;
   /** Render parent (container) of every non-top-level node. */
   parent: Map<string, string>;
-  nodes: Map<
-    string,
-    {
-      label: string;
-      badge: string;
-      kindClass: string;
-      ghostTarget?: string;
-      detail?: string;
-      hint?: string;
-      /** Ghosts: `in` when every stub enters the view there, `out` when every stub leaves it. */
-      side?: "in" | "out";
-    }
-  >;
+  nodes: Map<string, ModelNode>;
   edges: {
     id: string;
     from: string;
@@ -208,22 +222,28 @@ function buildModel(graph: DerivedGraph): Model {
   }
   const edges: Model["edges"] = [];
   const seen = new Set<string>();
-  // What each ghost stands for: the kinds and the number of references that end there.
-  const ghostKinds = new Map<
-    string,
-    { kinds: Set<string>; count: number; directions: Set<string> }
-  >();
-  for (const stub of graph.stubs) {
-    const info = ghostKinds.get(stub.ghost) ?? {
-      kinds: new Set<string>(),
-      count: 0,
-      directions: new Set<string>(),
+  // What each ghost stands for. Core says (`graph.ghosts`); a graph built without them (by hand) is read
+  // off its stubs instead.
+  const ghosts = new Map<string, Ghost>((graph.ghosts ?? []).map((ghost) => [ghost.key, ghost]));
+  const ghostOf = (stub: Stub): Ghost => {
+    const known = ghosts.get(stub.ghost);
+    if (known) return known;
+    const own = graph.stubs.filter((s) => s.ghost === stub.ghost);
+    const directions = new Set(own.map((s) => s.direction));
+    const made: Ghost = {
+      id: ghostId(stub.ghost),
+      key: stub.ghost,
+      kind: "target",
+      label: stub.ghostLabel,
+      target: stub.ghost,
+      kinds: [...new Set(own.flatMap((s) => s.kinds))].sort(),
+      count: own.reduce((n, s) => n + s.count, 0),
+      direction: directions.size === 2 ? "both" : directions.has("in") ? "in" : "out",
+      targets: [],
     };
-    stub.kinds.forEach((kind) => info.kinds.add(kind));
-    info.count += stub.count;
-    info.directions.add(stub.direction);
-    ghostKinds.set(stub.ghost, info);
-  }
+    ghosts.set(stub.ghost, made);
+    return made;
+  };
   for (const edge of graph.edges) {
     if (!known.has(edge.from) || !known.has(edge.to) || seen.has(edge.id)) continue;
     seen.add(edge.id);
@@ -240,25 +260,34 @@ function buildModel(graph: DerivedGraph): Model {
   for (const stub of graph.stubs) {
     if (!known.has(stub.inside) || seen.has(stub.id)) continue;
     seen.add(stub.id);
-    const ghost = ghostId(stub.ghost);
-    if (!nodes.has(ghost)) {
-      const info = ghostKinds.get(stub.ghost)!;
-      nodes.set(ghost, {
-        label: stub.ghostLabel,
+    const box = ghostId(stub.ghost);
+    if (!nodes.has(box)) {
+      const ghost = ghostOf(stub);
+      const kinds = [...ghost.kinds].sort();
+      nodes.set(box, {
+        label: ghost.label,
         badge: "",
         kindClass: "ghost",
-        ghostTarget: stub.ghost,
+        ...(ghost.kind === "target"
+          ? { ghostTarget: ghost.key }
+          : {
+              ghostFold: {
+                kind: ghost.kind,
+                targets: ghost.targets,
+                ...(ghost.kind === "rest" ? { file: parseFile(ghost.key) } : {}),
+              },
+            }),
         // One kind is named; several are left to the tooltip and the details panel.
-        detail: `${info.kinds.size === 1 ? `${[...info.kinds][0]} ` : ""}×${info.count}`,
-        hint: `${[...info.kinds].sort().join(", ")} ×${info.count}`,
-        ...(info.directions.size === 1 ? { side: [...info.directions][0] as "in" | "out" } : {}),
+        detail: `${kinds.length === 1 ? `${kinds[0]} ` : ""}×${ghost.count}`,
+        hint: `${kinds.join(", ")} ×${ghost.count}`,
+        ...(ghost.direction !== "both" ? { side: ghost.direction } : {}),
       });
-      roots.push(ghost);
+      roots.push(box);
     }
     edges.push({
       id: stub.id,
-      from: stub.direction === "out" ? stub.inside : ghost,
-      to: stub.direction === "out" ? ghost : stub.inside,
+      from: stub.direction === "out" ? stub.inside : box,
+      to: stub.direction === "out" ? box : stub.inside,
       label: stubLabelText(stub),
       stub: true,
       resolution: "stub",
@@ -268,9 +297,18 @@ function buildModel(graph: DerivedGraph): Model {
   return { roots, children, parent, nodes, edges };
 }
 
+/** `rest:file:<path>` -> `file:<path>`. */
+function parseFile(key: string): string {
+  return `file:${key.slice("rest:file:".length)}`;
+}
+
+/** A ghost box, whether it stands for one element or for several. */
+const isGhost = (node: ModelNode): boolean =>
+  node.ghostTarget !== undefined || node.ghostFold !== undefined;
+
 function leafSize(model: Model, id: string): { width: number; height: number } {
   const node = model.nodes.get(id)!;
-  if (node.ghostTarget !== undefined) {
+  if (isGhost(node)) {
     return { width: ghostWidth(node.label, node.detail ?? ""), height: GHOST_HEIGHT };
   }
   return { width: leafWidth(node.label, node.badge), height: LEAF_HEIGHT };
@@ -289,12 +327,13 @@ function makeNode(
     label: node.label,
     badge: node.badge,
     kindClass: node.kindClass,
-    ghost: node.ghostTarget !== undefined,
+    ghost: isGhost(node),
     ...box,
     children,
     edges,
   };
   if (node.ghostTarget !== undefined) out.ghostTarget = node.ghostTarget;
+  if (node.ghostFold !== undefined) out.ghostFold = node.ghostFold;
   if (node.detail !== undefined) out.detail = node.detail;
   if (node.hint !== undefined) out.hint = node.hint;
   return out;

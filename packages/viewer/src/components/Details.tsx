@@ -7,6 +7,7 @@ import { describeElement, type AnchorRow, type ElementInfo } from "../details.js
 import { explainCommand, messageOf } from "../data.js";
 import { useDerived, useStore, useViewerState } from "../hooks.js";
 import { renderMarkdown } from "../markdown.js";
+import { GhostTargetList } from "./GhostTargets.js";
 
 const MAX_ANCHOR_ROWS = 8;
 
@@ -55,7 +56,7 @@ export function Details() {
 
       <div className="actions">
         <ExplainButton id={info.id} onPhase={(phase) => setExplain({ id: info.id, phase })} />
-        {info.stub && (
+        {info.stub && !info.targets && (
           <button type="button" className="btn" onClick={() => store.expandStub(info.stub!)}>
             Add {info.stub.ghostLabel} to the view
           </button>
@@ -91,6 +92,15 @@ export function Details() {
       )}
 
       {info.summary && <p className="summary">{info.summary}</p>}
+      {info.targets && (
+        <div className="ghost-details">
+          <h3>Add to the view</h3>
+          <GhostTargetList
+            targets={info.targets}
+            onPick={(target) => store.expandStub({ ghost: target })}
+          />
+        </div>
+      )}
       {info.detail && (
         <div
           className="markdown"

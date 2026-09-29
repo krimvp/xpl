@@ -3,6 +3,13 @@
  * writes into an explainer, atomically. Nothing is mutated: on any error the input explainer is
  * returned untouched. The merge rules are documented in patch.ts.
  *
+ * One wave of errors: a patch is judged whole, so that one `apply` shows everything that is wrong with it. An
+ * element whose anchors fail is still merged, without the failed anchors, so that the references it carries
+ * (a tour's `focus`, a concept's `related`, a step's ends) are checked in the same pass; an element that cannot
+ * be built at all (a wrong field, a missing one) is left out and the ids it would have had are assumed to exist,
+ * so that its failure does not become a second error at every reference to it. What depends on an anchor that
+ * failed (the evidence an llm edge needs) is not checked until the anchor is fixed.
+ *
  * Validation after the merge is strict, but only what the patch introduced or touched can reject it:
  * errors that were already in the explainer, on elements the patch did not change, become one
  * summary warning. Otherwise a single drifted anchor on a user-owned concept would block every later
@@ -11,6 +18,7 @@
  * repair; the problem is kept as a warning.
  */
 import {
+  describeAnchor,
   makeAnchor,
   storedSymbolHints,
   toTextCache,
@@ -19,7 +27,7 @@ import {
   type TextCache,
 } from "./anchors.js";
 import { EXPLAINER_SCHEMA } from "./constants.js";
-import { EDGE_KINDS, nodeKindOfId, parseId, REPO_ID } from "./ids.js";
+import { EDGE_KINDS, listIds, nodeKindOfId, parseId, REPO_ID, suggestIds } from "./ids.js";
 import { asIndexModel, type IndexModel } from "./index-model.js";
 import { defaultLabel, ExplainerModel } from "./model.js";
 import type { AnchorInput, ExplainerPatch } from "./patch.js";
@@ -149,9 +157,10 @@ const GRAPH_SPEC: Spec = {
     edgeKinds: "array",
     hidden: "string[]",
     excludeFiles: "string[]",
+    stubs: "object",
     layout: "object",
   },
-  nullable: ["edgeKinds", "hidden", "excludeFiles", "layout"],
+  nullable: ["edgeKinds", "hidden", "excludeFiles", "stubs", "layout"],
 };
 const SEQUENCE_SPEC: Spec = {
   fields: {
@@ -162,12 +171,13 @@ const SEQUENCE_SPEC: Spec = {
     provenance: "object",
     participants: "string[]",
     steps: "array",
+    stepsUpdate: "array",
     frames: "array",
   },
   nullable: ["frames"],
 };
 const TOUR_SPEC: Spec = {
-  fields: { id: "string", title: "string", steps: "array" },
+  fields: { id: "string", title: "string", steps: "array", provenance: "object" },
   nullable: [],
 };
 const STEP_SPEC: Spec = {
@@ -181,7 +191,8 @@ const STEP_SPEC: Spec = {
     anchors: "array",
     summary: "string",
   },
-  nullable: [],
+  // only `stepsUpdate` clears them (a step sent whole leaves them out instead)
+  nullable: ["summary", "edge"],
 };
 const FRAME_SPEC: Spec = {
   fields: {
@@ -267,6 +278,10 @@ interface IncludeOps {
   add: string[];
   remove: string[];
 }
+/** `stepsUpdate` of a sequence view patch: the entries (checked for shape), with their path in the patch. */
+interface StepOps {
+  updates: { id: string; fields: AnyRecord; path: string }[];
+}
 
 // ─── applyPatch ─────────────────────────────────────────────────────────────────────────────────
 
@@ -312,6 +327,19 @@ class Applier {
   private readonly removeIndex = new Map<string, number>();
   /** `includeAdd` of the graph views the patch edits (view id -> ids), to point issues at the patch. */
   private readonly includeAdds = new Map<string, readonly string[]>();
+  /** Steps changed by `stepsUpdate` (view id -> step id -> its entry's path in the patch), to point issues at it. */
+  private readonly stepUpdatePaths = new Map<string, Map<string, string>>();
+  /** Views whose `stepsUpdate` the patch sends without `steps`: their step paths have nothing to map to. */
+  private readonly stepsUpdateOnly = new Set<string>();
+  /** Every step a `stepsUpdate` entry names (step id -> its entry's path), changed or not. */
+  private readonly updatedSteps = new Map<string, string>();
+  /**
+   * Ids of elements, views and steps that the patch tried to create and failed to: references to them are
+   * not errors (the failure is the error).
+   */
+  private readonly assumed = new Set<string>();
+  /** Elements with an anchor that failed to build: what depends on their anchors is not judged yet. */
+  private readonly anchorFailures = new Set<string>();
   private errors = 0;
 
   constructor(input: Explainer, index: IndexModel, texts: TextCache, actor: "llm" | "user") {
@@ -379,15 +407,17 @@ class Applier {
         this.error(key, `unknown patch field "${key}" (allowed: ${PATCH_KEYS.join(", ")})`);
       }
     }
+    let corrupt = false;
     for (const key of ["nodes", "edges", "concepts", "views", "tours"] as const) {
       if (!Array.isArray((this.work as unknown as AnyRecord)[key])) {
         this.error("", `the explainer's ${key} is not an array; repair the file first`);
+        corrupt = true;
       }
     }
-    if (this.errors > 0) return this.fail();
+    if (corrupt) return this.fail();
 
     const seen = new Map<string, string>();
-    const each = (name: keyof ExplainerPatch, handler: (raw: unknown, i: number) => void) => {
+    const each = (name: keyof ExplainerPatch, handler: (raw: unknown, i: number) => boolean) => {
       const list = patch[name];
       if (list === undefined) return;
       if (!Array.isArray(list)) {
@@ -409,7 +439,7 @@ class Applier {
           }
           seen.set(id, `${name}[${i}]`);
         }
-        handler(raw, i);
+        if (!handler(raw, i)) this.assumeFailed(raw);
       });
     };
 
@@ -424,6 +454,10 @@ class Applier {
       if (at !== undefined) {
         this.error("remove", `${id} is both upserted (${at}) and removed by this patch`, id);
       }
+      const step = this.updatedSteps.get(id);
+      if (step !== undefined) {
+        this.error("remove", `${id} is both updated (${step}) and removed by this patch`, id);
+      }
     }
     if (patch.title !== undefined) {
       if (typeof patch.title !== "string" || patch.title.trim() === "") {
@@ -433,10 +467,34 @@ class Applier {
         this.changed.push("title");
       }
     }
-    if (this.errors === 0) this.remove(removals);
-    if (this.errors > 0) return this.fail();
-
+    this.remove(removals);
+    // Validation runs whatever went wrong above: it is what finds the references that are wrong too.
     return this.validate();
+  }
+
+  /**
+   * An element, view or tour the patch could not build: its id (and the ids of the steps it carries) are
+   * assumed to exist when references are checked, so that the failure is reported once, where it is.
+   */
+  private assumeFailed(raw: unknown): void {
+    if (!isRecord(raw) || typeof raw.id !== "string") return;
+    const assume = (id: string): void => {
+      switch (parseId(id).type) {
+        case "group":
+        case "concept":
+        case "edge":
+        case "view":
+        case "tour":
+        case "step":
+          this.assumed.add(id);
+      }
+    };
+    assume(raw.id);
+    if (Array.isArray(raw.steps)) {
+      for (const step of raw.steps) {
+        if (isRecord(step) && typeof step.id === "string") assume(step.id);
+      }
+    }
   }
 
   // ─── Removal ────────────────────────────────────────────────────────────────────────────────
@@ -494,6 +552,7 @@ class Applier {
       }
       const tourAt = w.tours.findIndex((t) => t.id === id);
       if (tourAt !== -1) {
+        if (protectedOwner(w.tours[tourAt]!.provenance)) return;
         w.tours.splice(tourAt, 1);
         this.changed.push(id);
         return;
@@ -508,8 +567,28 @@ class Applier {
         this.changed.push(id);
         return;
       }
-      this.warn(path, `nothing to remove: no element, view, tour or step has the id ${id}`, id);
+      this.warn(
+        path,
+        `nothing to remove: no element, view, tour or step has the id ${id}${this.didYouMean(id)}`,
+        id,
+      );
     });
+  }
+
+  /** `. Did you mean: a, b?` for an id that names nothing in the explainer; empty when no id is close. */
+  private didYouMean(id: string): string {
+    const w = this.work as unknown as Record<string, AnyRecord[]>;
+    const ids: string[] = [];
+    for (const list of ["nodes", "edges", "concepts", "views", "tours"]) {
+      for (const item of w[list] ?? []) if (typeof item.id === "string") ids.push(item.id);
+    }
+    for (const view of w.views ?? []) {
+      for (const step of Array.isArray(view.steps) ? (view.steps as AnyRecord[]) : []) {
+        if (typeof step.id === "string") ids.push(step.id);
+      }
+    }
+    const found = suggestIds(id, ids);
+    return found.length > 0 ? `. Did you mean: ${found.join(", ")}?` : "";
   }
 
   // ─── Field handling ─────────────────────────────────────────────────────────────────────────
@@ -563,23 +642,63 @@ class Applier {
     return (this.hintOptions ??= { symbolHint: storedSymbolHints(this.input) });
   }
 
-  /** `AnchorInput[]` -> stored anchors (every failure is reported); undefined when any failed. */
+  /**
+   * `AnchorInput[]` -> stored anchors. Every failure is reported and the anchors that did build are returned
+   * (the element is still merged, so that the rest of it is checked in the same pass); undefined when `value`
+   * is not an array.
+   */
   private anchors(value: unknown, path: string, id: string): Anchor[] | undefined {
     if (!Array.isArray(value)) {
       this.error(path, "anchors must be an array of {file, symbol?, span?|find?, role}", id);
       return undefined;
     }
     const out: Anchor[] = [];
-    let ok = true;
     value.forEach((input: AnchorInput, i) => {
       const made = makeAnchor(input, this.index, this.texts, this.anchorOptions());
-      if (made.ok) out.push(made.anchor);
-      else {
-        ok = false;
+      if (made.ok) {
+        out.push(made.anchor);
+        this.warnBlankSpanEdges(input, made.anchor, `${path}[${i}]`, id);
+      } else {
+        this.anchorFailures.add(id);
         this.error(`${path}[${i}]`, made.error, id, "anchor-invalid");
       }
     });
-    return ok ? out : undefined;
+    return out;
+  }
+
+  /**
+   * A span written in this patch that starts or ends on a blank line is most likely off by one (the code it
+   * means starts a line later, or ended a line earlier): a warning that says which lines the code is on.
+   * Anchors resent with their `hash` came from an explainer, not from a person counting lines.
+   */
+  private warnBlankSpanEdges(input: AnchorInput, anchor: Anchor, path: string, id: string): void {
+    if (input.span === undefined || input.hash !== undefined || anchor.span === undefined) return;
+    const range = anchor.resolved?.range;
+    const lines = this.texts.lines(anchor.file);
+    if (!range || !lines) return;
+    const blank = (line: number): boolean => (lines[line - 1] ?? "").trim() === "";
+    const base = range.startLine - anchor.span.from;
+    const where = describeAnchor(anchor);
+    if (blank(range.startLine)) {
+      let first = range.startLine;
+      while (first < range.endLine && blank(first)) first++;
+      this.warn(
+        path,
+        `span ${where} starts on a blank line (line ${range.startLine}): probably off by one, the code in it starts at line ${first} (offset ${first - base}); check the offsets with \`xpl show\` or \`xpl anchors\``,
+        id,
+        "anchor-invalid",
+      );
+    }
+    if (blank(range.endLine)) {
+      let last = range.endLine;
+      while (last > range.startLine && blank(last)) last--;
+      this.warn(
+        path,
+        `span ${where} ends on a blank line (line ${range.endLine}): probably off by one, the code in it ends at line ${last} (offset ${last - base}); check the offsets with \`xpl show\` or \`xpl anchors\``,
+        id,
+        "anchor-invalid",
+      );
+    }
   }
 
   private convertSteps(value: unknown, path: string, viewId: string): SequenceStep[] | undefined {
@@ -729,6 +848,7 @@ class Applier {
     for (const [key, value] of Object.entries(raw)) {
       if (key === "id" || key === "provenance" || value === undefined) continue;
       if (kind === "graph" && (key === "includeAdd" || key === "includeRemove")) continue; // see includeOps
+      if (kind === "sequence" && key === "stepsUpdate") continue; // see stepOps
       if (protectedKeys.has(key)) {
         this.warn(
           `${path}.${key}`,
@@ -784,32 +904,33 @@ class Applier {
 
   // ─── Elements (nodes, edges, concepts) ──────────────────────────────────────────────────────
 
-  private upsertElement(kind: "node" | "edge" | "concept", raw: unknown, i: number): void {
+  /** True when the element was merged or legitimately skipped (protected); false when it could not be built. */
+  private upsertElement(kind: "node" | "edge" | "concept", raw: unknown, i: number): boolean {
     const listName = kind === "node" ? "nodes" : kind === "edge" ? "edges" : "concepts";
     const path = `${listName}[${i}]`;
     const spec = kind === "node" ? NODE_SPEC : kind === "edge" ? EDGE_SPEC : CONCEPT_SPEC;
     if (!isRecord(raw)) {
       this.error(path, `${kind} must be an object with an "id"`);
-      return;
+      return false;
     }
     const id = raw.id;
     if (typeof id !== "string" || id === "") {
       this.error(`${path}.id`, `${kind} needs a non-empty string "id"`);
-      return;
+      return false;
     }
-    if (!this.checkFields(raw, spec, path, id, true)) return;
+    if (!this.checkFields(raw, spec, path, id, true)) return false;
     const list = (this.work as unknown as Record<string, AnyRecord[]>)[listName]!;
     const at = list.findIndex((e) => e.id === id);
     if (at === -1) {
       const created = this.createElement(kind, raw, path, id);
-      if (!created) return;
+      if (!created) return false;
       list.push(created);
       this.touched.set(id, path);
       this.changed.push(id);
-      return;
+      return true;
     }
     const existing = list[at]!;
-    if (this.skipUserOwned(existing, id, path)) return;
+    if (this.skipUserOwned(existing, id, path)) return true;
     const merged = this.mergeExisting(
       kind,
       existing,
@@ -818,12 +939,13 @@ class Applier {
       id,
       kind === "node" ? "kind" : undefined,
     );
-    if (!merged) return;
+    if (!merged) return false;
     if (merged !== existing) {
       list[at] = merged;
       this.touched.set(id, path);
       this.changed.push(id);
     }
+    return true;
   }
 
   private skipUserOwned(existing: AnyRecord, id: string, path: string): boolean {
@@ -851,6 +973,7 @@ class Applier {
     id: string,
     immutableKey: "kind" | "type" | undefined,
     includeOps?: IncludeOps,
+    stepOps?: StepOps,
   ): AnyRecord | undefined {
     if (
       immutableKey &&
@@ -879,11 +1002,13 @@ class Applier {
     for (const key of fields.clear) delete merged[key];
     if (includeOps)
       this.applyIncludeOps(merged, includeOps, protectedKeys.has("include"), path, id);
+    if (stepOps && !this.applyStepUpdates(merged, stepOps, protectedKeys.has("steps"), path, id)) {
+      return undefined;
+    }
     if (this.actor === "user" && isRecord(raw.provenance)) {
       merged.provenance = { ...(merged.provenance ?? {}), ...cloneJson(raw.provenance) };
     }
     if (sameContent(existing, merged)) return existing;
-    if (kind === "tour") return merged; // tours carry no provenance
 
     const changedFields = Object.keys({ ...fields.set })
       .concat(fields.clear)
@@ -897,7 +1022,14 @@ class Applier {
     ) {
       changedFields.push("include");
     }
-    if (merged.provenance === undefined) merged.provenance = { origin: "static" };
+    if (stepOps && !changedFields.includes("steps") && !sameContent(existing.steps, merged.steps)) {
+      changedFields.push("steps");
+    }
+    // Elements without provenance are static (from the index); a tour without it predates tour provenance
+    // and counts as written by the llm.
+    if (merged.provenance === undefined) {
+      merged.provenance = { origin: kind === "tour" ? "llm" : "static" };
+    }
     const provenance: Provenance = merged.provenance;
     if (this.actor === "user") {
       if (provenance.origin !== "user" && changedFields.length > 0) {
@@ -907,6 +1039,155 @@ class Applier {
       provenance.commit = this.index.commit;
     }
     return merged;
+  }
+
+  /**
+   * `stepsUpdate` of a sequence view patch: the shape of the list (an array of objects with the `id` of a step
+   * and fields the step has) is checked here. Undefined when the patch has none, null after an error.
+   */
+  private stepOps(raw: AnyRecord, path: string, viewId: string): StepOps | undefined | null {
+    if (raw.stepsUpdate === undefined) return undefined;
+    if (!Array.isArray(raw.stepsUpdate)) {
+      this.error(
+        `${path}.stepsUpdate`,
+        "stepsUpdate must be an array of {id, ...fields of the step to change}",
+        viewId,
+      );
+      return null;
+    }
+    const updates: StepOps["updates"] = [];
+    const first = new Map<string, number>();
+    let ok = true;
+    raw.stepsUpdate.forEach((entry: unknown, j) => {
+      const at = `${path}.stepsUpdate[${j}]`;
+      if (!isRecord(entry)) {
+        this.error(at, "stepsUpdate entry must be an object {id, ...fields to change}", viewId);
+        ok = false;
+        return;
+      }
+      if (typeof entry.id !== "string" || entry.id === "") {
+        this.error(`${at}.id`, `stepsUpdate entry needs the "id" of an existing step`, viewId);
+        ok = false;
+        return;
+      }
+      const again = first.get(entry.id);
+      if (again !== undefined) {
+        this.error(
+          `${at}.id`,
+          `step "${entry.id}" appears twice in stepsUpdate (also at stepsUpdate[${again}]); merge the two entries`,
+          viewId,
+          "duplicate-id",
+        );
+        ok = false;
+        return;
+      }
+      first.set(entry.id, j);
+      if (!this.checkFields(entry, STEP_SPEC, at, viewId, true)) {
+        ok = false;
+        return;
+      }
+      updates.push({ id: entry.id, fields: entry, path: at });
+    });
+    return ok ? { updates } : null;
+  }
+
+  /** Why `stepId` is not a step of `viewId`, and what to use instead. */
+  private unknownStep(viewId: string, stepId: string, steps: readonly string[]): string {
+    const views = this.work.views as unknown as AnyRecord[];
+    const owner = views.find(
+      (other) =>
+        other.id !== viewId &&
+        Array.isArray(other.steps) &&
+        (other.steps as AnyRecord[]).some((step) => step.id === stepId),
+    );
+    if (owner) return `step ${stepId} belongs to ${String(owner.id)}, not to ${viewId}`;
+    const near = suggestIds(stepId, steps);
+    return (
+      `step ${stepId} is not a step of ${viewId} (its steps: ${steps.length > 0 ? listIds(steps) : "none"})` +
+      (near.length > 0 ? `. Did you mean: ${near.join(", ")}?` : "")
+    );
+  }
+
+  /**
+   * Merges the `stepsUpdate` entries into `merged.steps` (after `steps`, when the patch sent both): each entry's
+   * fields go into the step with its id; `anchors` are built like anywhere else and replace the step's; `null`
+   * clears `summary` or `edge`. Skipped with a `protected` warning when the user edited the view's steps.
+   * False when an entry names no step or a field is wrong (every problem is reported).
+   */
+  private applyStepUpdates(
+    merged: AnyRecord,
+    ops: StepOps,
+    locked: boolean,
+    path: string,
+    viewId: string,
+  ): boolean {
+    if (locked) {
+      this.warn(
+        `${path}.stepsUpdate`,
+        `stepsUpdate of ${viewId} was skipped: its steps were edited by the user and are kept as they are`,
+        viewId,
+        "protected",
+      );
+      return true;
+    }
+    const steps: AnyRecord[] = Array.isArray(merged.steps)
+      ? [...(merged.steps as AnyRecord[])]
+      : [];
+    const known = steps.map((step) => String(step.id));
+    let ok = true;
+    for (const update of ops.updates) {
+      const at = steps.findIndex((step) => step.id === update.id);
+      if (at === -1) {
+        this.error(
+          `${update.path}.id`,
+          this.unknownStep(viewId, update.id, known),
+          viewId,
+          "unknown-id",
+        );
+        ok = false;
+        continue;
+      }
+      this.updatedSteps.set(update.id, update.path);
+      const next: AnyRecord = { ...steps[at]! };
+      for (const [key, value] of Object.entries(update.fields)) {
+        if (key === "id" || value === undefined) continue;
+        if (value === null) delete next[key];
+        else if (key === "anchors") {
+          const anchors = this.anchors(value, `${update.path}.anchors`, update.id);
+          if (anchors === undefined) ok = false;
+          else next.anchors = anchors;
+        } else next[key] = value;
+      }
+      steps[at] = next;
+    }
+    merged.steps = steps;
+    return ok;
+  }
+
+  /**
+   * After a view was merged: the steps `stepsUpdate` changed are changed ids too, and their issues point at
+   * their entry in the patch.
+   */
+  private noteStepUpdates(
+    viewId: string,
+    before: AnyRecord,
+    after: AnyRecord,
+    ops: StepOps,
+    hasSteps: boolean,
+  ): void {
+    const stepsOf = (view: AnyRecord): AnyRecord[] =>
+      Array.isArray(view.steps) ? (view.steps as AnyRecord[]) : [];
+    const old = new Map(stepsOf(before).map((step) => [step.id, step] as const));
+    const paths = new Map<string, string>();
+    for (const update of ops.updates) {
+      const now = stepsOf(after).find((step) => step.id === update.id);
+      if (!now || sameContent(old.get(update.id), now)) continue;
+      this.changed.push(update.id);
+      this.touched.set(update.id, update.path);
+      paths.set(update.id, update.path);
+    }
+    if (paths.size > 0) this.stepUpdatePaths.set(viewId, paths);
+    if (!hasSteps) this.stepsUpdateOnly.add(viewId);
   }
 
   /**
@@ -1103,16 +1384,16 @@ class Applier {
 
   // ─── Views and tours ────────────────────────────────────────────────────────────────────────
 
-  private upsertView(raw: unknown, i: number): void {
+  private upsertView(raw: unknown, i: number): boolean {
     const path = `views[${i}]`;
     if (!isRecord(raw)) {
       this.error(path, `view must be an object with an "id" and a "type"`);
-      return;
+      return false;
     }
     const id = raw.id;
     if (typeof id !== "string" || id === "") {
       this.error(`${path}.id`, `view needs a non-empty string "id"`);
-      return;
+      return false;
     }
     const views = this.work.views as unknown as AnyRecord[];
     const at = views.findIndex((v) => v.id === id);
@@ -1123,30 +1404,40 @@ class Applier {
         `view.type must be "graph" or "sequence" (got ${JSON.stringify(raw.type)})`,
         id,
       );
-      return;
+      return false;
     }
     const spec = type === "graph" ? GRAPH_SPEC : SEQUENCE_SPEC;
-    if (!this.checkFields({ ...raw, type }, spec, path, id, true)) return;
+    if (!this.checkFields({ ...raw, type }, spec, path, id, true)) return false;
     const ops = type === "graph" ? this.includeOps(raw, path, id) : undefined;
-    if (ops === null) return;
+    if (ops === null) return false;
+    const stepOps = type === "sequence" ? this.stepOps(raw, path, id) : undefined;
+    if (stepOps === null) return false;
 
     if (at === -1) {
+      if (stepOps) {
+        this.error(
+          `${path}.stepsUpdate`,
+          `stepsUpdate changes steps that exist already, and ${id} is a new view: send its steps whole`,
+          id,
+        );
+        return false;
+      }
       const created = this.createView(type, raw, path, id, ops);
-      if (!created) return;
+      if (!created) return false;
       views.push(created);
       this.touched.set(id, path);
       this.changed.push(id);
       if (ops && ops.add.length > 0) this.includeAdds.set(id, ops.add);
-      return;
+      return true;
     }
     const existing = views[at]!;
-    if (this.skipUserOwned(existing, id, path)) return;
+    if (this.skipUserOwned(existing, id, path)) return true;
     const before = Array.isArray(existing.steps)
       ? (existing.steps as AnyRecord[]).map((s) => s.id)
       : [];
-    const merged = this.mergeExisting(type, existing, raw, path, id, "type", ops);
-    if (!merged) return;
-    if (merged === existing) return;
+    const merged = this.mergeExisting(type, existing, raw, path, id, "type", ops, stepOps);
+    if (!merged) return false;
+    if (merged === existing) return true;
     if (ops && ops.add.length > 0) this.includeAdds.set(id, ops.add);
     if (type === "sequence" && Array.isArray(merged.steps)) {
       const after = new Set((merged.steps as AnyRecord[]).map((s) => s.id));
@@ -1163,6 +1454,8 @@ class Applier {
     views[at] = merged;
     this.touched.set(id, path);
     this.changed.push(id);
+    if (stepOps) this.noteStepUpdates(id, existing, merged, stepOps, raw.steps !== undefined);
+    return true;
   }
 
   private createView(
@@ -1202,6 +1495,7 @@ class Applier {
         ...(f.edgeKinds !== undefined ? { edgeKinds: f.edgeKinds } : {}),
         ...(f.hidden !== undefined ? { hidden: f.hidden } : {}),
         ...(f.excludeFiles !== undefined ? { excludeFiles: f.excludeFiles } : {}),
+        ...(f.stubs !== undefined ? { stubs: f.stubs } : {}),
         ...(f.layout !== undefined ? { layout: f.layout } : {}),
         provenance,
       };
@@ -1220,47 +1514,59 @@ class Applier {
     };
   }
 
-  private upsertTour(raw: unknown, i: number): void {
+  private upsertTour(raw: unknown, i: number): boolean {
     const path = `tours[${i}]`;
     if (!isRecord(raw)) {
       this.error(path, `tour must be an object with an "id"`);
-      return;
+      return false;
     }
     const id = raw.id;
     if (typeof id !== "string" || id === "") {
       this.error(`${path}.id`, `tour needs a non-empty string "id"`);
-      return;
+      return false;
     }
-    if (!this.checkFields(raw, TOUR_SPEC, path, id, true)) return;
+    if (!this.checkFields(raw, TOUR_SPEC, path, id, true)) return false;
     const tours = this.work.tours as unknown as AnyRecord[];
     const at = tours.findIndex((t) => t.id === id);
     if (at === -1) {
       const fields = this.convertFields("tour", raw, path, id, new Set());
-      if (!fields) return;
+      const provenance = this.newProvenance(raw, path, id);
+      if (!fields || !provenance) return false;
       for (const required of ["title", "steps"]) {
         if (fields.set[required] === undefined) {
           this.missing(path, id, required);
-          return;
+          return false;
         }
       }
-      tours.push({ id, title: fields.set.title, steps: fields.set.steps } satisfies Tour);
+      tours.push({
+        id,
+        title: fields.set.title,
+        steps: fields.set.steps,
+        provenance,
+      } satisfies Tour);
       this.touched.set(id, path);
       this.changed.push(id);
-      return;
+      return true;
     }
     const existing = tours[at]!;
+    if (this.skipUserOwned(existing, id, path)) return true;
     const merged = this.mergeExisting("tour", existing, raw, path, id, undefined);
-    if (!merged || merged === existing) return;
+    if (!merged) return false;
+    if (merged === existing) return true;
     tours[at] = merged;
     this.touched.set(id, path);
     this.changed.push(id);
+    return true;
   }
 
   // ─── Validation of the result ───────────────────────────────────────────────────────────────
 
   private validate(): ApplyResult {
     const before = validateExplainer(this.input, this.index, this.texts, { mode: "strict" });
-    const after = validateExplainer(this.work, this.index, this.texts, { mode: "strict" });
+    const after = validateExplainer(this.work, this.index, this.texts, {
+      mode: "strict",
+      assumeIds: this.assumed,
+    });
     const key = (issue: Issue) => `${issue.code ?? ""}|${issue.elementId ?? ""}|${issue.message}`;
     const knownBefore = new Set(before.map(key));
     const rewrite = this.pathRewriter();
@@ -1268,6 +1574,15 @@ class Applier {
     let ignored = 0;
     let firstIgnored: string | undefined;
     for (const issue of after) {
+      // What an llm edge's evidence needs is an anchor at each end: one that failed to build is reported
+      // already, and the edge cannot be judged until it is fixed.
+      if (
+        issue.code === "evidence" &&
+        issue.elementId !== undefined &&
+        this.anchorFailures.has(issue.elementId)
+      ) {
+        continue;
+      }
       const touched = issue.elementId !== undefined && this.touched.has(issue.elementId);
       const isNew = !knownBefore.has(key(issue));
       const shown = { ...issue, path: this.includeAddPath(issue) ?? rewrite(issue.path) };
@@ -1312,7 +1627,24 @@ class Applier {
   /** Maps paths into the merged explainer (`nodes[3]`) back to the patch (`nodes[0]`). */
   private pathRewriter(): (path: string) => string {
     const prefixes: [string, string][] = [];
+    const collapse: [string, string][] = [];
     const w = this.work as unknown as Record<string, AnyRecord[]>;
+    // A step that `stepsUpdate` changed is the entry of that list in the patch, not `steps[j]`; the other steps
+    // of a view sent only `stepsUpdate` are not in the patch at all (the message names the step).
+    for (const [viewId, steps] of this.stepUpdatePaths) {
+      const at = w.views?.findIndex((view) => view.id === viewId) ?? -1;
+      const list: unknown = at === -1 ? undefined : w.views![at]!.steps;
+      if (!Array.isArray(list)) continue;
+      for (const [stepId, patchPath] of steps) {
+        const stepAt = (list as AnyRecord[]).findIndex((step) => step.id === stepId);
+        if (stepAt !== -1) prefixes.push([`views[${at}].steps[${stepAt}]`, patchPath]);
+      }
+    }
+    for (const viewId of this.stepsUpdateOnly) {
+      const at = w.views?.findIndex((view) => view.id === viewId) ?? -1;
+      const patchPath = this.touched.get(viewId);
+      if (at !== -1 && patchPath !== undefined) collapse.push([`views[${at}].steps[`, patchPath]);
+    }
     for (const [id, patchPath] of this.touched) {
       const list = patchPath.slice(0, patchPath.indexOf("["));
       const at = w[list]?.findIndex((e) => e.id === id) ?? -1;
@@ -1324,6 +1656,7 @@ class Applier {
           return to + path.slice(from.length);
         }
       }
+      for (const [from, to] of collapse) if (path.startsWith(from)) return to;
       return path;
     };
   }

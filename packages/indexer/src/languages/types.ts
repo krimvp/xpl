@@ -30,7 +30,7 @@
  *
  * A pack that cannot express a receiver (`arr[0].run()`) should not emit the site at all.
  */
-import type { Tree } from "web-tree-sitter";
+import type { Node, Tree } from "web-tree-sitter";
 import type {
   FileLanguage,
   FilePath,
@@ -93,9 +93,16 @@ export interface SymbolDraft {
    * has that path (e.g. a Go method whose receiver type lives in another file) the symbol has no parent.
    */
   parentPath?: SymbolPath;
+  /**
+   * The symbol exists to be anchored and outlined and is never referenced by name: a test block (TS
+   * `describe("Queue", ...)`), whose title is not a name in the code. The resolvers leave it out when they look
+   * names up, so it cannot capture `Queue()` from the code under test, and no reference points at it; it still
+   * is the `from` of the references inside it. Not stored in the index.
+   */
+  anchorOnly?: boolean;
 }
 
-export type SiteKind = "call" | "import" | "extends" | "implements" | "type-ref" | "write";
+export type SiteKind = "call" | "import" | "extends" | "implements" | "type-ref" | "write" | "read";
 
 /**
  * A syntactic reference site: something in the code that mentions a name.
@@ -108,6 +115,12 @@ export type SiteKind = "call" | "import" | "extends" | "implements" | "type-ref"
  * - `type-ref`: a name in a type position. `site` is the type name (qualified names included).
  * - `write`: assignment (`=`, `+=`, `++`) to a field or module variable. `site` is the assignment
  *   expression, or only its target if it spans more than 10 lines.
+ * - `read`: a use of a module- or package-level variable or constant (`LIMIT`, `config.LIMIT`), or of a field
+ *   of a value whose type is known (`this.queue`, `job.attempts`), that is not a call and not a write. `name`
+ *   and `qualifier` as for a call (`this.pool.size` -> ["this", "pool"], `size`); `site` is the identifier or
+ *   member expression (only the member's name if it spans more than 10 lines). Locals and parameters are not
+ *   references: the pack leaves out bare names that are bound around the use. What the name resolves to
+ *   decides: only variables and fields count (a function passed as a value does not).
  *
  * The "from" symbol of a site is *not* given: the framework finds the innermost symbol containing
  * `site.startLine/startCol`, or the module scope (`"<file>#"`). That also attributes sites correctly when
@@ -134,6 +147,11 @@ export interface ImportBinding {
   importedName?: string;
   /** The specifier (or the whole statement when there is no finer node). */
   site: Span;
+  /**
+   * The binding only exists for types: TS `import type { A }` / `import { type A }`, Python imports under
+   * `if TYPE_CHECKING:`. Its reference is a `type-ref`, not an `import`: erased at run time, not a dependency.
+   */
+  typeOnly?: boolean;
 }
 
 export interface TypeFact {
@@ -190,6 +208,8 @@ export interface ExportFact {
   module?: string;
   importedName?: string;
   site?: Span;
+  /** A type-only re-export (`export type { A } from "./a"`, `export type * from`): its reference is a `type-ref`. */
+  typeOnly?: boolean;
 }
 
 /** Everything `extract` returns for one file. */
@@ -212,6 +232,13 @@ export interface ClassifiedSite {
   kind: SiteKind;
   /** Same convention as `SiteDraft.site`. */
   site: Span;
+  /**
+   * A `read` of a bare name (`LIMIT`), not of a member (`this.limit`): what it names is a variable or constant,
+   * never a field. An indexer that reports the field of an object literal there (`{ retry }` with a contextual
+   * type: the property `retry`, not the variable) is not describing a read of that field, and the SCIP mapper
+   * drops it.
+   */
+  bare?: boolean;
 }
 
 /** A reference a pack infers after resolution (`LanguagePack.inferRefs`); the framework adds `resolution: "heuristic"`. */
@@ -237,7 +264,12 @@ export interface LanguagePack {
   readonly id: string;
   /** The `IndexedFile.language` values this pack handles. */
   readonly languages: readonly FileLanguage[];
-  /** Grammar used to parse a file of `language` (e.g. javascript -> "tsx"). */
+  /**
+   * Extensions (lowercase, with the dot) of `text` files this pack handles too: formats `FileLanguage` has no
+   * name for yet (TOML). Such files are `text` in the index but are parsed and extracted by this pack.
+   */
+  readonly extensions?: readonly string[];
+  /** Grammar used to parse a file of `language` (e.g. javascript -> "tsx"; `text` for `extensions`). */
   grammarFor(language: FileLanguage): GrammarId;
   /**
    * How far a top-level name is visible without an import: `"file"` (TS, Python) or `"directory"` (Go:
@@ -266,6 +298,13 @@ export interface LanguagePack {
    * it through `resolveModule` when `module` does not define `name`. Leave it out when `name` cannot be one.
    */
   submoduleSpec?(module: string, name: string): string | undefined;
+  /**
+   * Optional. Is this syntax-error node (`ERROR` or a MISSING token) inside a type expression, where the parser
+   * recovered without disturbing anything a pack extracts (TypeScript: `[symbol: string]`, a valid labelled tuple
+   * element the grammar cannot read, makes an `ERROR` inside the tuple only)? A file whose errors are all of
+   * that kind is not reported as having syntax errors. Leave it out when no such errors are known.
+   */
+  errorInTypePosition?(error: Node): boolean;
   /**
    * Optional post-resolution pass for references that no single site expresses (Go: a type implements an
    * interface by having its methods, so `implements` refs are inferred from the symbols). Called once per

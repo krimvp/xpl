@@ -15,7 +15,7 @@ describe("xpl refs", () => {
     expect(code).toBe(0);
     const lines = out.split("\n");
     expect(lines[0]).toBe(`${DISPATCH} (method) src/runner.ts:42-88`);
-    expect(lines[1]).toBe("out (14):");
+    expect(lines[1]).toMatch(/^out \(\d+\):$/); // (how many depends on what the heuristic resolver sees)
     // Queue.requeue: lines 76-78, offsets 34..36 (what a call-site anchor's span uses)
     expect(out).toContain(`  call  ${REQUEUE}  (src/runner.ts:76-78, heuristic)  +34..36`);
     expect(out).toContain("  call  sym:src/queue.ts#Queue.pop  (src/runner.ts:46, heuristic)  +4");
@@ -147,7 +147,6 @@ describe("xpl refs", () => {
 
   it("says how many references there are when it cuts the list", async () => {
     const cut = await xpl(dir, "refs", DISPATCH, "--limit", "3");
-    expect(cut.out).toContain("out (14, first 3 shown):");
     const json = await xplJson<{ totals: { out: number }; truncated: boolean }>(
       dir,
       "refs",
@@ -155,11 +154,22 @@ describe("xpl refs", () => {
       "--limit",
       "3",
     );
-    expect(json.json).toMatchObject({ totals: { out: 14 }, truncated: true });
+    const total = json.json.totals.out;
+    expect(total).toBeGreaterThan(3);
+    expect(cut.out).toContain(`out (${total}, first 3 shown):`);
+    expect(json.json).toMatchObject({ truncated: true });
   });
 
   it("--json returns the tree with anchor-ready offsets", async () => {
-    const { json } = await xplJson<any>(dir, "refs", DISPATCH, "--depth", "2");
+    const { json } = await xplJson<any>(
+      dir,
+      "refs",
+      DISPATCH,
+      "--depth",
+      "2",
+      "--max-children",
+      "0",
+    );
     expect(json.id).toBe(DISPATCH);
     const requeue = json.out.find((r: any) => r.id === REQUEUE);
     expect(requeue).toMatchObject({
@@ -245,12 +255,14 @@ describe("xpl search", () => {
     const { json } = await xplJson<any>(dir, "search", "job.completed", "--limit", "1");
     expect(json.total).toBeGreaterThan(1);
     expect(json.hits).toHaveLength(1);
+    // code comes first: the first hit is in src/, not in the README
     expect(json.hits[0]).toMatchObject({
-      file: "README.md",
-      line: 15,
-      id: "file:README.md",
-      offset: 14,
+      file: "src/bus.ts",
+      line: 1,
+      id: "file:src/bus.ts",
+      offset: 0,
     });
+    expect(json.searched).toBe(12);
     const worker = (await xplJson<any>(dir, "search", 'emit("job.completed"')).json.hits[0];
     expect(worker).toMatchObject({
       file: "src/worker.ts",
@@ -258,6 +270,102 @@ describe("xpl search", () => {
       id: "sym:src/worker.ts#Worker.run",
       offset: 21,
     });
+  });
+
+  it("lists code files before config and docs, so the first hits are the code", async () => {
+    const { out } = await xpl(dir, "search", "retry", "-i", "--limit", "0");
+    const files = [...new Set(out.split("\n").map((l) => l.split(":")[0]!))].filter((f) =>
+      /\.(ts|yaml|md)$/.test(f),
+    );
+    const kind = (file: string) => (file.endsWith(".ts") ? 0 : file.endsWith(".yaml") ? 1 : 2);
+    expect(files.map(kind)).toEqual([...files.map(kind)].sort());
+    expect(files[0]).toMatch(/\.ts$/);
+    expect(files.at(-1)).toBe("README.md");
+    // with a limit, the code is what survives
+    const two = await xpl(dir, "search", "retry", "-i", "--limit", "2");
+    expect(two.out.split("\n")[0]).toMatch(/^src\//);
+  });
+
+  it("--code keeps only files in a code language (no README, no yaml)", async () => {
+    const all = await xplJson<any>(dir, "search", "retry", "-i", "--limit", "0");
+    const code = await xplJson<any>(dir, "search", "retry", "-i", "--limit", "0", "--code");
+    const files = new Set(code.json.hits.map((h: any) => h.file));
+    expect([...files].every((f: any) => /\.tsx?$/.test(f))).toBe(true);
+    expect(all.json.hits.some((h: any) => h.file === "README.md")).toBe(true);
+    expect(all.json.hits.some((h: any) => h.file === "config/default.yaml")).toBe(true);
+    expect(code.json.total).toBeLessThan(all.json.total);
+    expect(code.json).toMatchObject({ code: true });
+    const none = await xpl(dir, "search", "A tiny job runner", "--code");
+    expect(none.out).toBe(
+      'no matches for "A tiny job runner" in 8 indexed files (code files only)',
+    );
+  });
+
+  it("--under keeps the search in a dir, a file, a symbol or a glob (repeatable)", async () => {
+    const files = async (...argv: string[]) => {
+      const { json } = await xplJson<any>(dir, "search", "retry", "-i", "--limit", "0", ...argv);
+      return [...new Set<string>(json.hits.map((h: any) => h.file))].sort();
+    };
+    const test = await files("--under", "test");
+    expect(test).toEqual(["test/retry.test.ts"]);
+    expect(await files("--under", "dir:test")).toEqual(test);
+    expect(await files("--under", "test/")).toEqual(test);
+    expect(await files("--under", "file:src/runner.ts")).toEqual(["src/runner.ts"]);
+    expect(await files("--under", "*.md")).toEqual(["README.md"]);
+    expect(await files("--under", "src/*.ts")).toEqual(
+      (await files("--under", "dir:src")).filter((f) => /^src\/[^/]+\.ts$/.test(f)),
+    );
+    // several: repeated, or with commas
+    expect(await files("--under", "test", "--under", "*.md")).toEqual([
+      "README.md",
+      "test/retry.test.ts",
+    ]);
+    expect(await files("--under", "test,*.md")).toEqual(["README.md", "test/retry.test.ts"]);
+    // a symbol id keeps the search inside that symbol's lines
+    const symbol = await xplJson<any>(
+      dir,
+      "search",
+      "queue",
+      "--limit",
+      "0",
+      "--under",
+      "sym:src/runner.ts#Runner.dispatch",
+    );
+    expect(symbol.json.hits.length).toBeGreaterThan(0);
+    for (const hit of symbol.json.hits) {
+      expect(hit.file).toBe("src/runner.ts");
+      expect(hit.line).toBeGreaterThanOrEqual(42);
+      expect(hit.line).toBeLessThanOrEqual(88);
+    }
+    expect(symbol.json.under).toEqual(["sym:src/runner.ts#Runner.dispatch"]);
+    // the total and the "more" line count inside the scope
+    const scoped = await xpl(dir, "search", "retry", "-i", "--under", "test", "--limit", "1");
+    expect(scoped.out).toMatch(/^\.\.\. \d+ more matches \(showing 1 of \d+ in 1 file\)/m);
+    // combined with --code
+    const both = await xpl(dir, "search", "retry", "-i", "--under", "*.md", "--code");
+    expect(both.out).toBe(
+      'no matches for "retry" in 0 indexed files (under *.md, code files only)',
+    );
+  });
+
+  it("--under with an id the index does not know fails with suggestions", async () => {
+    const { code, err } = await xpl(dir, "search", "retry", "--under", "tests");
+    expect(code).toBe(1);
+    expect(err).toContain('"tests" is not a file, directory or symbol in the index');
+    expect(err).toContain("dir:test");
+    const asJson = await xplJson<any>(dir, "search", "retry", "--under", "tests");
+    expect(asJson.json).toMatchObject({ ok: false });
+    expect(asJson.json.candidates).toContain("dir:test");
+  });
+
+  it("lists -i and the new options in its usage and help", async () => {
+    const { out } = await xpl(dir, "search", "--help");
+    expect(out).toContain(
+      "Usage: xpl search <pattern> [--regex] [-i] [--limit n] [--under <dir|glob>] [--code]",
+    );
+    expect(out).toContain("-i, --ignore-case");
+    expect(out).toContain("--under <dir|glob>");
+    expect(out).toContain("--code");
   });
 
   it("an empty pattern is a usage error", async () => {

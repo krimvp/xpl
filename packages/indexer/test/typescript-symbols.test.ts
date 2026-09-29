@@ -554,3 +554,247 @@ describe("JavaScript and TSX files", () => {
     expect(index.languages.typescript).toMatchObject({ files: 1, symbols: 2 });
   });
 });
+
+describe("TypeScript symbols: test blocks", () => {
+  it("describe / it / test calls with a literal title are `function` symbols nested by describe, with the range of the whole call", async () => {
+    const source = src(
+      'import { describe, it, expect } from "vitest";', // 1
+      "", // 2
+      'describe("Queue", () => {', // 3
+      '  describe("pop()", () => {', // 4
+      '    it("returns the oldest job", () => {', // 5
+      "      expect(1).toBe(1);", // 6
+      "    });", // 7
+      "", // 8
+      '    it("returns undefined when empty", async () => {', // 9
+      "      expect(2).toBe(2);", // 10
+      "    });", // 11
+      "  });", // 12
+      '  it("is FIFO", () => {});', // 13
+      "});", // 14
+      "", // 15
+      'test("top-level test", () => {', // 16
+      "  expect(1).toBe(1);", // 17
+      "});", // 18
+    );
+    expect(await symbolsOf(source, "queue.test.ts")).toEqual([
+      "function Queue 3-14",
+      "function Queue.pop() 4-12",
+      "function Queue.pop().returns the oldest job 5-7",
+      "function Queue.pop().returns undefined when empty 9-11",
+      "function Queue.is FIFO 13-13",
+      "function top-level test 16-18",
+    ]);
+    const { index } = await indexFiles({ "queue.test.ts": source });
+    expect(symbol(index, "queue.test.ts", "Queue.pop()")!.parent).toBe("queue.test.ts#Queue");
+    expect(symbol(index, "queue.test.ts", "Queue.pop().returns the oldest job")!.parent).toBe(
+      "queue.test.ts#Queue.pop()",
+    );
+    expect(symbol(index, "queue.test.ts", "Queue")!.parent).toBeUndefined();
+  });
+
+  it("covers suite, context, .only, .skip, .todo, .concurrent and the .each forms", async () => {
+    const source = src(
+      'suite("S", () => {', // 1
+      '  context("C", () => {', // 2
+      '    it.only("only", () => {});', // 3
+      '    it.skip("skipped", () => {});', // 4
+      '    it.todo("later");', // 5
+      '    test.concurrent("parallel", async () => {});', // 6
+      '    it.each([1, 2])("each %i", (n) => {});', // 7
+      '    test.skip.each([[1]])("skip each", () => {});', // 8
+      "    describe.each`", // 9
+      "      a | b", // 10
+      '    `("tagged", () => {', // 11
+      "    });", // 12
+      '    it.skipIf(process.env.CI)("skip if", () => {});', // 13
+      "  });", // 14
+      "});", // 15
+    );
+    expect(await symbolsOf(source, "a.test.ts")).toEqual([
+      "function S 1-15",
+      "function S.C 2-14",
+      "function S.C.only 3-3",
+      "function S.C.skipped 4-4",
+      "function S.C.later 5-5",
+      "function S.C.parallel 6-6",
+      "function S.C.each %i 7-7",
+      "function S.C.skip each 8-8",
+      "function S.C.tagged 9-12",
+      "function S.C.skip if 13-13",
+    ]);
+  });
+
+  it("replaces `.` and `#` in titles by `_` and collapses whitespace; template titles without substitutions count", async () => {
+    const source = src(
+      'describe("a.b  c#d", () => {', // 1
+      "  it(`two", // 2
+      "     lines`, () => {});", // 3
+      '  it("with \\"quotes\\" and \\\\", () => {});', // 4
+      "});", // 5
+    );
+    expect(await symbolsOf(source, "a.test.js")).toEqual([
+      "function a_b c_d 1-5",
+      "function a_b c_d.two lines 2-3",
+      'function a_b c_d.with "quotes" and \\ 4-4',
+    ]);
+  });
+
+  it("titles that are not literals: a computed describe is no symbol, the tests inside are, without it in their path", async () => {
+    const source = src(
+      "describe(Queue.name, () => {", // 1
+      '  it("pushes", () => {});', // 2
+      "  describe(`${kind} queue`, () => {", // 3
+      '    it("pops", () => {});', // 4
+      "  });", // 5
+      "});", // 6
+      "it(`case ${n}`, () => {});", // 7
+      "test(name);", // 8
+      "test(fn => fn)", // 9
+    );
+    expect(await symbolsOf(source, "dyn.test.ts")).toEqual([
+      "function pushes 2-2",
+      "function pops 4-4",
+    ]);
+  });
+
+  it("finds tests in if / for / try blocks, at the top of the file and inside describe callbacks, and in expression-bodied arrows", async () => {
+    const source = src(
+      "if (process.env.SLOW) {", // 1
+      '  describe("slow", () => {', // 2
+      '    it("a", () => {});', // 3
+      "  });", // 4
+      "}", // 5
+      "for (const c of cases) {", // 6
+      '  it("in a loop", () => {});', // 7
+      "}", // 8
+      'describe("outer", () => {', // 9
+      "  try {", // 10
+      '    it("in try", () => {});', // 11
+      "  } catch {}", // 12
+      "  if (x) {", // 13
+      '    it("if branch", () => {});', // 14
+      "  } else {", // 15
+      '    it("else branch", () => {});', // 16
+      "  }", // 17
+      "});", // 18
+      'describe("arrow body", () => it("inner", () => {}));', // 19
+    );
+    expect(await symbolsOf(source, "nest.test.ts")).toEqual([
+      "function slow 2-4",
+      "function slow.a 3-3",
+      "function in a loop 7-7",
+      "function outer 9-18",
+      "function outer.in try 11-11",
+      "function outer.if branch 14-14",
+      "function outer.else branch 16-16",
+      "function arrow body 19-19",
+      "function arrow body.inner 19-19",
+    ]);
+  });
+
+  it("does not treat other calls as tests: no literal title and no callback, other names, calls used as values", async () => {
+    const source = src(
+      'foo("title", () => {});', // 1
+      'it.other("title", () => {});', // 2
+      'const t = test("value", () => {});', // 3
+      'expect(it("x", () => {}));', // 4
+      'obj.test("member", () => {});', // 5
+      "export function run() {", // 6
+      '  it("inside a function", () => {});', // 7
+      "}", // 8
+    );
+    expect(await symbolsOf(source, "x.ts")).toEqual(["variable t 3-3", "function run 6-8"]);
+  });
+
+  it("declarations inside test callbacks are not symbols; the tests keep only the calls' ranges", async () => {
+    const source = src(
+      'describe("A", () => {', // 1
+      "  const queue = new Queue();", // 2
+      "  function helper() {}", // 3
+      "  class Fake {}", // 4
+      '  it("x", () => {', // 5
+      "    const local = 1;", // 6
+      "  });", // 7
+      "});", // 8
+    );
+    expect(await symbolsOf(source, "a.test.ts")).toEqual(["function A 1-8", "function A.x 5-7"]);
+  });
+
+  it("a test block named like a real symbol is dropped with what is inside it: declarations keep their plain paths", async () => {
+    const source = src(
+      'describe("build", () => {', // 1
+      '  it("works", () => {});', // 2
+      "});", // 3
+      'describe("other", () => {', // 4
+      '  it("works", () => {});', // 5
+      "});", // 6
+      "export function build() {}", // 7
+      "export class Queue {}", // 8
+      'describe("Queue", () => {});', // 9
+    );
+    expect(await symbolsOf(source, "c.test.ts")).toEqual([
+      "function other 4-6",
+      "function other.works 5-5",
+      "function build 7-7",
+      "class Queue 8-8",
+    ]);
+  });
+
+  it("numbers repeated titles ~2 like any duplicate path", async () => {
+    const source = src(
+      'it("works", () => {});',
+      'it("works", () => {});',
+      'describe("g", () => {',
+      '  it("works", () => {});',
+      '  it("works", () => {});',
+      "});",
+    );
+    expect(await symbolsOf(source, "d.test.ts")).toEqual([
+      "function works 1-1",
+      "function works~2 2-2",
+      "function g 3-6",
+      "function g.works 4-4",
+      "function g.works~2 5-5",
+    ]);
+  });
+
+  it("works in .js and .tsx files and in files that also declare things around the tests", async () => {
+    const source = src(
+      'const { describe, it } = require("node:test");',
+      "const util = require('./util');",
+      'describe("util", function () {',
+      '  it("adds", function () { util.add(1, 2); });',
+      "});",
+    );
+    expect(await symbolsOf(source, "util.test.js")).toEqual([
+      "function util 3-5",
+      "function util.adds 4-4",
+    ]);
+  });
+});
+
+describe("TypeScript test blocks in the reference resolver", () => {
+  it("sites inside a test are `from` the test; a describe named like the function under test does not capture its calls", async () => {
+    const { index } = await indexFiles({
+      "src/parse.ts": "export function parse(text: string): number {\n  return text.length;\n}\n",
+      "src/parse.test.ts": src(
+        'import { parse } from "./parse.ts";',
+        'describe("parse", () => {',
+        '  it("counts", () => {',
+        '    parse("abc");',
+        "  });",
+        "});",
+      ),
+    });
+    const calls = index.refs.filter((r) => r.kind === "call");
+    expect(calls.map((r) => `${r.from} -> ${r.to}`)).toEqual([
+      "src/parse.test.ts#parse.counts -> src/parse.ts#parse",
+    ]);
+    // no reference points at a test block
+    const tests = new Set(
+      index.symbols.filter((s) => s.file === "src/parse.test.ts").map((s) => s.id),
+    );
+    expect(index.refs.some((r) => tests.has(r.to))).toBe(false);
+  });
+});

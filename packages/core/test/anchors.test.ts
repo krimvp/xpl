@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  collectAnchors,
   hashText,
   makeAnchor,
   normalizedPrefixHashes,
@@ -935,6 +936,23 @@ describe("reresolveExplainer", () => {
       ["concept:llm-drifted", "concept"],
       ["tour:t/t1", "tour-step"],
     ]);
+  });
+
+  it("uses the tour's provenance for the code of its steps: a user's tour is not the llm's to re-explain", () => {
+    const ex = explainer();
+    ex.tours[0]!.steps[0]!.code = [anchors.runDef]; // drifted in v2
+    const drifted = () => reresolveExplainer(ex, v2.index, v2.getText).report;
+    // a tour without provenance predates it and counts as the llm's
+    expect(drifted().drifted.map((d) => d.elementId)).toContain("tour:t/t1");
+    ex.tours[0]!.provenance = { origin: "llm", commit: "c1" };
+    expect(drifted().drifted.map((d) => d.elementId)).toContain("tour:t/t1");
+    ex.tours[0]!.provenance = { origin: "user" };
+    expect(drifted().drifted.map((d) => d.elementId)).not.toContain("tour:t/t1");
+    expect(drifted().driftedOther.map((d) => d.elementId)).toContain("tour:t/t1");
+    // the fields the user edited travel with the anchors, like a view's steps
+    ex.tours[0]!.provenance = { origin: "llm", userFields: ["steps"] };
+    const site = collectAnchors(ex).find((s) => s.elementId === "tour:t/t1");
+    expect(site).toMatchObject({ owner: "tour-step", origin: "llm", userFields: ["steps"] });
   });
 
   it("uses the view's origin for sequence steps", () => {

@@ -12,7 +12,13 @@
  * A `sym:` id is split into file and symbol path at the FIRST "#" (file paths containing "#" are not
  * supported by the id syntax; the index-aware helpers try every "#" when the index is at hand).
  */
-import { asIndexModel, type IndexModel, type SymbolHint } from "./index-model.js";
+import {
+  asIndexModel,
+  baseName,
+  nameSimilarity,
+  type IndexModel,
+  type SymbolHint,
+} from "./index-model.js";
 import type {
   Edge,
   ElementId,
@@ -23,6 +29,7 @@ import type {
   SymbolIndex,
   SymbolPath,
 } from "./schema.js";
+import { cmp } from "./util.js";
 
 export const REPO_ID: ElementId = "repo";
 
@@ -309,6 +316,87 @@ export function describeSymbolCandidate(
   return `${id} (anchor: ${fields}${opts.extra ?? ""})`;
 }
 
+/** How alike two slugs must be for `suggestIds` to offer one for the other. */
+const MIN_SLUG_SIMILARITY = 0.6;
+
+interface SlugParts {
+  /** The id's kind; "" for text that is not a stored id (no known prefix, or a structural id). */
+  kind: "grp" | "concept" | "edge" | "view" | "tour" | "frame" | "step" | "";
+  /** The part after the prefix; for a step the view slug. */
+  slug: string;
+  /** Steps: the number after the colon. */
+  n?: number;
+}
+
+function slugParts(id: string): SlugParts {
+  const parsed = parseId(id);
+  switch (parsed.type) {
+    case "group":
+      return { kind: "grp", slug: parsed.slug };
+    case "concept":
+    case "edge":
+    case "view":
+    case "tour":
+    case "frame":
+      return { kind: parsed.type, slug: parsed.slug };
+    case "step":
+      return { kind: "step", slug: parsed.view, n: parsed.n };
+    default: {
+      // `group:scheduling` or `scheduling`: no known prefix, so compare what follows the colon (or all of it)
+      const colon = id.indexOf(":");
+      return { kind: "", slug: colon === -1 ? id : id.slice(colon + 1) };
+    }
+  }
+}
+
+/**
+ * Ids of `known` (stored ids: `grp:`, `concept:`, `edge:`, `view:`, `tour:`, `frame:` and sequence steps)
+ * that `wanted` was probably meant to be, best first, at most `limit`:
+ *
+ *   - the same kind with a similar slug (`concept:retry` -> `concept:retry-policy`, a typo, a longer name);
+ *   - the same slug under another kind (`grp:retry-policy` -> `concept:retry-policy`);
+ *   - text without a prefix (`retry-policy`, `group:scheduling`) -> any kind with that slug;
+ *   - a step: the step with the same number in a view whose slug is similar (`apply:4` -> `apply-flow:4`).
+ *
+ * Structural ids (`file:`, `dir:`, `sym:`) are the index's business: see `normalizeElementId`.
+ */
+export function suggestIds(wanted: string, known: Iterable<string>, limit = 3): string[] {
+  const w = slugParts(wanted);
+  const found: { id: string; score: number }[] = [];
+  for (const id of new Set(known)) {
+    if (id === wanted) continue;
+    const c = slugParts(id);
+    if (c.kind === "") continue;
+    const similarity = nameSimilarity(w.slug, c.slug);
+    let score: number;
+    if (w.kind === "step") {
+      if (c.kind !== "step" || c.n !== w.n || similarity < MIN_SLUG_SIMILARITY) continue;
+      score = 2 + similarity;
+    } else if (w.kind === "") {
+      if (c.kind === "step" || similarity < MIN_SLUG_SIMILARITY) continue;
+      score = similarity;
+    } else if (c.kind === w.kind) {
+      if (similarity < MIN_SLUG_SIMILARITY) continue;
+      score = 2 + similarity;
+    } else {
+      if (c.kind === "step" || similarity < 1) continue;
+      score = 1;
+    }
+    found.push({ id, score });
+  }
+  return found
+    .sort((a, b) => b.score - a.score || cmp(a.id, b.id))
+    .slice(0, limit)
+    .map((f) => f.id);
+}
+
+/** `dispatch:1, dispatch:2, ...` (at most 8 ids, then how many there are in all). */
+export function listIds(ids: readonly string[], max = 8): string {
+  return ids.length <= max
+    ? ids.join(", ")
+    : `${ids.slice(0, max).join(", ")}, ... (${ids.length} in all)`;
+}
+
 // ─── Loose input (CLI arguments) ────────────────────────────────────────────────────────────────
 
 export type NormalizeIdResult =
@@ -389,6 +477,30 @@ function normalizeFile(index: IndexModel, rawPath: string): NormalizeIdResult {
   };
 }
 
+/**
+ * Directories a mistyped path may have meant, best first: the one with that name (`flask` -> `src/flask`, before
+ * `examples/flaskr`), then one whose name is nearly it (`tests` -> `test`), then the ones that contain the text.
+ */
+function suggestDirs(index: IndexModel, path: string, limit: number): string[] {
+  const needle = path.toLowerCase();
+  const base = baseName(needle);
+  const scored: { dir: string; score: number }[] = [];
+  for (const dir of index.directories) {
+    const lower = dir.toLowerCase();
+    const name = baseName(lower);
+    let score = 0;
+    if (lower === needle || lower.endsWith(`/${needle}`)) score = 4;
+    else if (name === base) score = 3;
+    else if (lower.includes(needle)) score = 1;
+    else if (nameSimilarity(name, base) >= 0.7) score = 2;
+    if (score > 0) scored.push({ dir, score });
+  }
+  return scored
+    .sort((a, b) => b.score - a.score || a.dir.length - b.dir.length || cmp(a.dir, b.dir))
+    .slice(0, limit)
+    .map((entry) => entry.dir);
+}
+
 function normalizeDir(index: IndexModel, rawPath: string): NormalizeIdResult {
   const path = cleanPath(rawPath);
   if (path === "" || path === ".") return { ok: true, id: REPO_ID };
@@ -400,10 +512,7 @@ function normalizeDir(index: IndexModel, rawPath: string): NormalizeIdResult {
       candidates: [fileId(path)],
     };
   }
-  const candidates = index.directories
-    .filter((d) => d.includes(path))
-    .slice(0, 5)
-    .map(dirId);
+  const candidates = suggestDirs(index, path, 5).map(dirId);
   return {
     ok: false,
     error: `unknown directory "${path}" (no indexed file under it).${suggestions(candidates)}`,
@@ -448,10 +557,7 @@ function normalizePath(index: IndexModel, raw: string): NormalizeIdResult {
   if (index.hasDirectory(path)) return { ok: true, id: dirId(path) };
   const candidates = [
     ...index.suggestFiles(path, 3).map(fileId),
-    ...index.directories
-      .filter((d) => d.includes(path))
-      .slice(0, 2)
-      .map(dirId),
+    ...suggestDirs(index, path, 2).map(dirId),
   ];
   return {
     ok: false,

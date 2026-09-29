@@ -1,6 +1,7 @@
 import type { CommandSpec } from "../command.js";
 import { plural } from "../format.js";
 import {
+  DEFAULT_MAX_CHILDREN,
   buildRefTree,
   parseKinds,
   refTreeJson,
@@ -15,7 +16,7 @@ export const DEFAULT_REF_LIMIT = 200;
 
 export const refsCommand: CommandSpec = {
   name: "refs",
-  usage: "xpl refs <id> [--in|--out] [--kind k] [--depth n]",
+  usage: "xpl refs <id> [--in|--out] [--kind k] [--depth n] [--max-children n]",
   summary: "Call/reference hierarchy with sites",
   details: [
     "Lists the references that leave (--out, the default) or enter (--in) an element. Each line is",
@@ -24,9 +25,12 @@ export const refsCommand: CommandSpec = {
     "it is not the element itself: outgoing references of a file, directory or class), so a call-site",
     "anchor's span is +34..36 -> span {from: 34, to: 36}. Kinds: call, import, extends, implements,",
     "type-ref, read, write. heuristic references are hints, not proof.",
-    "--depth n expands each other end in turn (a call hierarchy); an element is expanded once,",
-    "repeats are marked (expanded above) or (cycle). For files and directories the references that stay",
-    "inside them are left out.",
+    "--depth n expands each other end in turn (a call hierarchy); an element is expanded once, repeats are marked",
+    "(expanded above) or (cycle), so no subtree is printed twice (one met on the last levels first is expanded again,",
+    "deeper, when it turns up nearer the top; an element with nothing below it is never marked). At most",
+    "--max-children n (default 15, 0 = all) references are listed under a line, the rest are counted",
+    "(`... +5 more`); in a hierarchy that includes the subject's own list, while the flat list of a plain `refs`",
+    "(depth 1) is cut by --limit alone. For files and directories the references that stay inside them are left out.",
     "Interfaces are transparent. Under a call (or type use) of an interface or one of its methods, --out lists",
     "the implementations as `impl  <id>  (<file>:<lines>, <resolution>)` lines (from `implements` references:",
     "a TS `implements`, Go's implicit interface satisfaction, precise member-level relations; same-named",
@@ -46,6 +50,11 @@ export const refsCommand: CommandSpec = {
       desc: "Only these kinds (repeat or comma-separate): call, import, extends, implements, type-ref, read, write",
     },
     depth: { type: "string", arg: "<n>", desc: "Levels to expand (default 1)" },
+    "max-children": {
+      type: "string",
+      arg: "<n>",
+      desc: `List at most n references under each line of a hierarchy (default ${DEFAULT_MAX_CHILDREN}, 0 = all); with --depth 1 only --limit cuts the list`,
+    },
     limit: {
       type: "string",
       arg: "<n>",
@@ -65,6 +74,7 @@ export const refsCommand: CommandSpec = {
     const kinds = parseKinds(args.list("kind"));
     const depth = args.int("depth", { min: 1 }) ?? 1;
     const limit = args.int("limit") ?? DEFAULT_REF_LIMIT;
+    const maxChildren = args.int("max-children") ?? DEFAULT_MAX_CHILDREN;
     const ws = await openWorkspace(ctx);
     const target = resolveTarget(ws.model, args.positionals[0]!);
 
@@ -73,6 +83,7 @@ export const refsCommand: CommandSpec = {
       tree: buildRefTree(ws.model, target, direction, {
         depth,
         limit,
+        maxChildren,
         tests: args.flag("tests"),
         ...(kinds ? { kinds } : {}),
       }),
@@ -87,6 +98,15 @@ export const refsCommand: CommandSpec = {
           trees.map(({ direction, tree }) => [direction, refTreeJson(tree.nodes)]),
         ),
         totals: Object.fromEntries(trees.map(({ direction, tree }) => [direction, tree.total])),
+        ...(trees.some(({ tree }) => tree.more > 0)
+          ? {
+              moreChildren: Object.fromEntries(
+                trees
+                  .filter(({ tree }) => tree.more > 0)
+                  .map(({ direction, tree }) => [direction, tree.more]),
+              ),
+            }
+          : {}),
         truncated: trees.some(({ tree }) => tree.truncated),
         hiddenTestImplementations: trees.reduce((sum, { tree }) => sum + tree.hiddenTests, 0),
       });
@@ -102,7 +122,7 @@ export const refsCommand: CommandSpec = {
       const via = tree.hops > 0 ? `, plus ${tree.hops} via interface` : "";
       lines.push(
         `${direction} (${tree.total}${via}${tree.truncated && tree.total > tree.nodes.length ? `, first ${tree.nodes.length} shown` : ""}):`,
-        ...renderRefTree(tree.nodes, direction, target.id),
+        ...renderRefTree(tree.nodes, direction, target.id, 1, tree.more),
       );
       if (tree.truncated) {
         lines.push(`  ... cut after ${limit} lines; use --limit 0, --kind, or a smaller --depth`);
