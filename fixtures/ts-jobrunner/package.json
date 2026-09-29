@@ -1,0 +1,15 @@
+{
+  "name": "ts-jobrunner",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A tiny job runner: queue, workers, retry with backoff, event bus. Fixture for xpl.",
+  "type": "module",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "start": "node src/main.ts",
+    "test": "node --test test/*.test.ts",
+    "typecheck": "tsc -p ."
+  }
+}
