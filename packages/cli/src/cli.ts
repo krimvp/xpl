@@ -1,93 +1,63 @@
+import { statSync } from "node:fs";
+import { resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { GRAMMAR_IDS, createParser, getWasmDir, initParser, type GrammarId } from "@xpl/indexer";
 import pkg from "../package.json" with { type: "json" };
+import { GLOBAL_OPTIONS, parseCommandArgs, type OptionDefs } from "./args.js";
+import type { CommandSpec } from "./command.js";
+import { applyCommand } from "./commands/apply.js";
+import { indexCommand } from "./commands/build-index.js";
+import { bundleCommand } from "./commands/bundle.js";
+import { newCommand } from "./commands/new.js";
+import { outlineCommand } from "./commands/outline.js";
+import { refsCommand } from "./commands/refs.js";
+import { resolveCommand } from "./commands/resolve.js";
+import { searchCommand } from "./commands/search.js";
+import { showCommand } from "./commands/show.js";
+import { statusCommand } from "./commands/status.js";
+import { validateCommand } from "./commands/validate.js";
+import { viewCommand } from "./commands/view.js";
+import { createCtx, type Io } from "./context.js";
+import { CliError, UsageError, errorMessage } from "./errors.js";
 
-/** One row of the command table in ARCHITECTURE.md §5. */
-export interface CommandSpec {
-  name: string;
-  usage: string;
-  summary: string;
-}
+export type { CommandSpec } from "./command.js";
+export type { Io } from "./context.js";
 
-/** The commands of ARCHITECTURE.md §5. Every one is a stub until its phase lands. */
+/** The commands of ARCHITECTURE.md §5, in the order of its table. */
 export const COMMANDS: readonly CommandSpec[] = [
-  {
-    name: "index",
-    usage: "xpl index [--precise auto|off|require] [--commit c]",
-    summary: "Build and write the symbol index; print a per-language summary",
-  },
-  {
-    name: "outline",
-    usage: "xpl outline [--under <id>] [--depth n]",
-    summary: "Dir/file/symbol tree with kind, lines, fan-in/fan-out",
-  },
-  {
-    name: "show",
-    usage: "xpl show <id> [--refs]",
-    summary: "Code with 0-based offsets relative to the symbol (what spans use), plus refs",
-  },
-  {
-    name: "refs",
-    usage: "xpl refs <id> [--in|--out] [--kind k] [--depth n]",
-    summary: "Call/reference hierarchy with sites",
-  },
-  {
-    name: "search",
-    usage: "xpl search <pattern> [--regex]",
-    summary: "Text hits with enclosing symbol id and offset",
-  },
-  {
-    name: "new",
-    usage: "xpl new <name> [--title t]",
-    summary: "Create .explainer/<name>.explainer.json bound to the index",
-  },
-  {
-    name: "apply",
-    usage: "xpl apply <explainer> <patch.json|-> [--actor llm|user] [--dry-run]",
-    summary: "Validate and apply a patch; print issues; exit 1 on error",
-  },
-  {
-    name: "validate",
-    usage: "xpl validate <explainer> [--lenient]",
-    summary: "Check an explainer against the index",
-  },
-  {
-    name: "resolve",
-    usage: "xpl resolve <explainer> [--write]",
-    summary: "Re-resolve anchors; report drifted llm elements and missing anchors",
-  },
-  {
-    name: "status",
-    usage: "xpl status <explainer>",
-    summary: "To-do list: unexplained elements, drifted, missing, queued requests",
-  },
-  {
-    name: "view",
-    usage: "xpl view <explainer> [--port p] [--no-open]",
-    summary: "Serve the viewer locally with live repo access",
-  },
-  {
-    name: "bundle",
-    usage: "xpl bundle <explainer> -o out.html [--mode explore|present] [--tour id]",
-    summary: "Write one self-contained HTML file",
-  },
+  indexCommand,
+  outlineCommand,
+  showCommand,
+  refsCommand,
+  searchCommand,
+  newCommand,
+  applyCommand,
+  validateCommand,
+  resolveCommand,
+  statusCommand,
+  viewCommand,
+  bundleCommand,
 ];
-
-export interface Io {
-  out(text: string): void;
-  err(text: string): void;
-}
 
 const defaultIo: Io = {
   out: (text) => process.stdout.write(text + "\n"),
   err: (text) => process.stderr.write(text + "\n"),
 };
 
+// ─── Help ───────────────────────────────────────────────────────────────────────────────────────
+
+function optionRows(options: OptionDefs): string[] {
+  const rows = Object.entries(options).map(([name, def]) => {
+    const flag = `${def.short ? `-${def.short}, ` : ""}--${name}${def.arg ? ` ${def.arg}` : ""}`;
+    return { flag, desc: def.desc };
+  });
+  const width = Math.max(0, ...rows.map((row) => row.flag.length));
+  return rows.map((row) => `  ${row.flag.padEnd(width)}  ${row.desc}`);
+}
+
 function helpText(): string {
   const width = Math.max(...COMMANDS.map((command) => command.name.length));
-  const rows = COMMANDS.map(
-    (command) => `  ${command.name.padEnd(width)}  ${command.summary}  (not implemented yet)`,
-  );
+  const rows = COMMANDS.map((command) => `  ${command.name.padEnd(width)}  ${command.summary}`);
   return [
     `xpl ${pkg.version} - code explainer`,
     "",
@@ -97,17 +67,33 @@ function helpText(): string {
     ...rows,
     "",
     "Global options:",
-    "  --root <dir>     Repository root (default: current directory)",
-    "  --json           Machine-readable output",
-    "  --index <path>   Symbol index to use (default: the index of the current commit id,",
-    "                   else the newest .explainer/index-*.json)",
-    "  -h, --help       Show this help (or a command's usage: xpl <command> --help)",
-    "  -v, --version    Show the version",
+    ...optionRows(GLOBAL_OPTIONS),
     "",
     "<id> arguments accept sym:..., file:..., dir:..., src/a.ts#A.b and src/a.ts.",
-    "See docs/ARCHITECTURE.md section 5.",
+    "Environment: XPL_VIEWER_HTML=<file> overrides the viewer page (view, bundle); XPL_SKIP_STALE_CHECK=1 skips",
+    "the comparison of the index with the working tree (about a second per 5000 files); XPL_WASM_DIR, XPL_DEBUG.",
+    "Typical use: xpl index; xpl outline; xpl show <id> --refs; xpl new <name>; xpl apply <name> patch.json;",
+    "xpl view <name>. Exit codes: 0 ok, 1 rejected or failed, 2 usage error. See docs/ARCHITECTURE.md section 5.",
+    'Run "xpl <command> --help" for a command\'s options.',
   ].join("\n");
 }
+
+function commandHelp(command: CommandSpec): string {
+  return [
+    `Usage: ${command.usage}`,
+    "",
+    command.summary,
+    ...(command.details ? ["", ...command.details] : []),
+    ...(Object.keys(command.options).length > 0
+      ? ["", "Options:", ...optionRows(command.options)]
+      : []),
+    "",
+    "Global options:",
+    ...optionRows(GLOBAL_OPTIONS),
+  ].join("\n");
+}
+
+// ─── Hidden smoke test ──────────────────────────────────────────────────────────────────────────
 
 /**
  * Hidden `xpl __smoke`: load every tree-sitter grammar (from `dist/wasm` when running the bundle)
@@ -139,42 +125,155 @@ async function smoke(io: Io): Promise<number> {
   return failures === 0 ? 0 : 1;
 }
 
-/** Run the CLI; resolves to the process exit code. */
-export async function run(argv: string[], io: Io = defaultIo): Promise<number> {
-  const { values, positionals } = parseArgs({
-    args: argv,
-    allowPositionals: true,
-    strict: false, // per-command options are declared by each command as it is implemented
-    options: {
-      help: { type: "boolean", short: "h" },
-      version: { type: "boolean", short: "v" },
-      root: { type: "string" },
-      json: { type: "boolean" },
-      index: { type: "string" },
-    },
-  });
-  const [name] = positionals;
-  const command = COMMANDS.find((candidate) => candidate.name === name);
+// ─── Dispatch ───────────────────────────────────────────────────────────────────────────────────
 
-  if (values.version) {
+/** Is `--json` among the arguments (before a `--` terminator)? Errors need it before parsing worked. */
+function wantsJson(argv: readonly string[]): boolean {
+  const end = argv.indexOf("--");
+  return (end === -1 ? argv : argv.slice(0, end)).includes("--json");
+}
+
+function editDistance(a: string, b: string): number {
+  let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    const row = [i];
+    for (let j = 1; j <= b.length; j++) {
+      row.push(
+        Math.min(prev[j]! + 1, row[j - 1]! + 1, prev[j - 1]! + (a[i - 1] === b[j - 1] ? 0 : 1)),
+      );
+    }
+    prev = row;
+  }
+  return prev[b.length]!;
+}
+
+function unknownCommand(name: string): UsageError {
+  const near = COMMANDS.filter(
+    (c) => c.name.startsWith(name) || name.startsWith(c.name) || editDistance(c.name, name) <= 2,
+  );
+  return new UsageError(
+    `unknown command "${name}"` +
+      (near.length > 0 ? `. Did you mean: ${near.map((c) => c.name).join(", ")}?` : "") +
+      `. Run "xpl --help" for the list of commands.`,
+  );
+}
+
+async function dispatch(argv: string[], io: Io): Promise<number> {
+  // Pass 1: only the global options, to find the command name and the help/version flags.
+  const globalConfig = Object.fromEntries(
+    Object.entries(GLOBAL_OPTIONS).map(([name, def]) => [
+      name,
+      { type: def.type, ...(def.short ? { short: def.short } : {}) },
+    ]),
+  );
+  const first = parseArgs({
+    args: argv,
+    options: globalConfig,
+    allowPositionals: true,
+    strict: false,
+    tokens: true,
+  });
+  const nameToken = first.tokens?.find((token) => token.kind === "positional");
+  const name = nameToken?.kind === "positional" ? nameToken.value : undefined;
+
+  if (first.values.version === true) {
     io.out(pkg.version);
     return 0;
   }
-  if (values.help) {
-    io.out(
-      command ? `${command.usage}\n\n${command.summary}\n\n(not implemented yet)` : helpText(),
-    );
-    return 0;
-  }
   if (name === undefined) {
+    if (first.values.help === true) {
+      io.out(helpText());
+      return 0;
+    }
     io.err(helpText());
     return 2;
   }
-  if (name === "__smoke") return smoke(io);
-  if (!command) {
-    io.err(`xpl: unknown command "${name}". Run "xpl --help" for the list of commands.`);
-    return 2;
+  if (name === "help") {
+    const topic = first.positionals[1];
+    const command = topic === undefined ? undefined : COMMANDS.find((c) => c.name === topic);
+    if (topic !== undefined && !command) throw unknownCommand(topic);
+    io.out(command ? commandHelp(command) : helpText());
+    return 0;
   }
-  io.err(`xpl ${command.name}: not implemented yet`);
+  if (name === "__smoke") return smoke(io);
+  const command = COMMANDS.find((candidate) => candidate.name === name);
+  if (!command) throw unknownCommand(name);
+  if (first.values.help === true) {
+    io.out(commandHelp(command));
+    return 0;
+  }
+
+  // Pass 2: the command's own options, strictly.
+  const rest = argv.filter((_, i) => i !== nameToken!.index);
+  let args;
+  try {
+    args = parseCommandArgs(rest, command.options, command.positionals);
+  } catch (error) {
+    if (error instanceof UsageError) error.usage ??= command.usage;
+    throw error;
+  }
+
+  const cwd = resolve(io.cwd ?? process.cwd());
+  const rootOption = args.str("root");
+  const root = resolve(cwd, rootOption ?? ".");
+  try {
+    if (!statSync(root).isDirectory()) throw new Error("not a directory");
+  } catch {
+    throw new UsageError(`--root ${rootOption ?? "."}: ${root} is not a directory`, command.usage);
+  }
+  const ctx = createCtx(io, {
+    root,
+    cwd,
+    env: io.env ?? process.env,
+    json: args.flag("json"),
+    indexOption: args.str("index"),
+  });
+  try {
+    return await command.run(ctx, args);
+  } catch (error) {
+    if (error instanceof UsageError) error.usage ??= command.usage;
+    throw error;
+  }
+}
+
+function reportError(io: Io, json: boolean, error: unknown): number {
+  if (error instanceof CliError) {
+    if (json) {
+      io.out(
+        JSON.stringify(
+          {
+            ok: false,
+            error: error.message,
+            ...(error instanceof UsageError && error.usage ? { usage: error.usage } : {}),
+            ...error.extra,
+          },
+          null,
+          2,
+        ),
+      );
+    } else {
+      io.err(`error: ${error.message}`);
+      if (error instanceof UsageError && error.usage) {
+        io.err(`usage: ${error.usage}`);
+        io.err(`Run "xpl ${error.usage.split(/\s+/)[1] ?? ""} --help" for details.`);
+      }
+    }
+    return error.exitCode;
+  }
+  const message = errorMessage(error);
+  if (json) io.out(JSON.stringify({ ok: false, error: message }, null, 2));
+  else {
+    io.err(`error: ${message}`);
+    if (process.env.XPL_DEBUG && error instanceof Error) io.err(error.stack ?? "");
+  }
   return 1;
+}
+
+/** Run the CLI; resolves to the process exit code. */
+export async function run(argv: string[], io: Io = defaultIo): Promise<number> {
+  try {
+    return await dispatch(argv, io);
+  } catch (error) {
+    return reportError(io, wantsJson(argv), error);
+  }
 }

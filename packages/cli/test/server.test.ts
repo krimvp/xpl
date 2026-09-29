@@ -1,0 +1,612 @@
+import { existsSync } from "node:fs";
+import { request } from "node:http";
+import { createServer as createNetServer } from "node:net";
+import { join } from "node:path";
+import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { BUNDLE_SCHEMA, parseBundle, type ViewerBundle } from "@xpl/core";
+import { DEFAULT_PORT } from "../src/commands/view.js";
+import { startViewServer, type ViewServer } from "../src/server.js";
+import {
+  cloneDir,
+  editFile,
+  indexedFixture,
+  invoke,
+  PATCH_PATH,
+  readFile,
+  readJson,
+  writeViewerStub,
+  xpl,
+  type Invocation,
+} from "./helpers.js";
+
+let demo: string;
+let viewerEnv: { XPL_VIEWER_HTML: string };
+
+beforeAll(async () => {
+  const indexed = await indexedFixture();
+  demo = cloneDir(indexed);
+  await xpl(demo, "new", "demo");
+  expect((await xpl(demo, "apply", "demo", PATCH_PATH)).code).toBe(0);
+  viewerEnv = { XPL_VIEWER_HTML: writeViewerStub() };
+});
+
+/** `xpl view` running in-process, stopped by aborting its signal. */
+interface Running {
+  server: ViewServer;
+  url: string;
+  done: Promise<Invocation>;
+  stop(): Promise<Invocation>;
+}
+
+const running: Running[] = [];
+afterEach(async () => {
+  for (const r of running.splice(0)) await r.stop();
+});
+
+async function serve(dir: string, ...extra: string[]): Promise<Running> {
+  const controller = new AbortController();
+  let onServer!: (server: ViewServer) => void;
+  const ready = new Promise<ViewServer>((resolve) => (onServer = resolve));
+  const done = invoke(["view", "demo", "--port", "0", "--no-open", "--root", dir, ...extra], {
+    cwd: dir,
+    env: viewerEnv,
+    signal: controller.signal,
+    onServer,
+  });
+  const server = await Promise.race([
+    ready,
+    done.then((result) => {
+      throw new Error(`xpl view exited early: ${result.err || result.out}`);
+    }),
+  ]);
+  const handle: Running = {
+    server,
+    url: server.url.replace(/\/$/, ""),
+    done,
+    stop: async () => {
+      controller.abort();
+      return done;
+    },
+  };
+  running.push(handle);
+  return handle;
+}
+
+const JSON_HEADERS = { "Content-Type": "application/json" };
+
+async function json(res: Response): Promise<any> {
+  return JSON.parse(await res.text());
+}
+
+describe("xpl view", () => {
+  it("prints the URL, serves on 127.0.0.1, and stops when told to", async () => {
+    const view = await serve(demo);
+    expect(view.server.url).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/$/);
+    expect(view.server.host).toBe("127.0.0.1");
+    expect(view.server.port).toBeGreaterThan(0);
+    const result = await view.stop();
+    expect(result.code).toBe(0);
+    expect(result.out).toBe(
+      `serving .explainer/demo.explainer.json at ${view.server.url}  (Ctrl-C to stop)`,
+    );
+    await expect(fetch(`${view.url}/api/bundle`)).rejects.toThrow();
+  });
+
+  it("--json prints the URL as data", async () => {
+    const view = await serve(demo, "--json");
+    const result = await view.stop();
+    const data = JSON.parse(result.out);
+    expect(data).toMatchObject({
+      ok: true,
+      host: "127.0.0.1",
+      port: view.server.port,
+      url: view.server.url,
+    });
+  });
+
+  it("GET / is the viewer page with the bundle injected", async () => {
+    const view = await serve(demo);
+    const res = await fetch(`${view.url}/`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toBe("text/html; charset=utf-8");
+    const html = await res.text();
+    expect(html).toContain("<title>stub viewer</title>");
+    const match = /<script id="xpl-data" type="application\/json">([\s\S]*?)<\/script>/.exec(html);
+    expect(match).not.toBeNull();
+    const data = parseBundle(match![1]!);
+    expect(data.schema).toBe(BUNDLE_SCHEMA);
+    expect(data.server).toEqual({ api: "/api" });
+    expect(data.mode).toBe("explore");
+    expect(data.explainer.title).toBe("Job runner");
+    // the files referenced by anchors and views; the viewer fetches the rest lazily
+    expect(Object.keys(data.files).sort()).toEqual([
+      "config/default.yaml",
+      "src/metrics.ts",
+      "src/queue.ts",
+      "src/runner.ts",
+      "src/worker.ts",
+      "test/retry.test.ts",
+    ]);
+    expect(data.files["src/runner.ts"]).toBe(readFile(demo, "src/runner.ts"));
+    expect(data.index.files).toHaveLength(12);
+  });
+
+  it("GET /api/bundle returns the same bundle as JSON", async () => {
+    const view = await serve(demo);
+    const res = await fetch(`${view.url}/api/bundle`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain("application/json");
+    const bundle = (await json(res)) as ViewerBundle;
+    expect(bundle.schema).toBe(BUNDLE_SCHEMA);
+    expect(bundle.server).toEqual({ api: "/api" });
+    expect(bundle.explainer.views).toHaveLength(2);
+    expect(Object.keys(bundle.files)).toContain("src/runner.ts");
+    const html = await (await fetch(`${view.url}/`)).text();
+    expect(bundleFromHtml(html)).toEqual(bundle);
+  });
+
+  it("GET /api/file serves indexed files as text and rejects everything else", async () => {
+    const view = await serve(demo);
+    const ok = await fetch(`${view.url}/api/file?path=src/queue.ts`);
+    expect(ok.status).toBe(200);
+    expect(ok.headers.get("content-type")).toBe("text/plain; charset=utf-8");
+    expect(await ok.text()).toBe(readFile(demo, "src/queue.ts"));
+    // files the bundle does not embed are available lazily
+    expect((await fetch(`${view.url}/api/file?path=src/main.ts`)).status).toBe(200);
+    expect(await (await fetch(`${view.url}/api/file?path=README.md`)).text()).toBe(
+      readFile(demo, "README.md"),
+    );
+
+    for (const bad of [
+      "../secret.txt",
+      "src/../src/queue.ts",
+      "%2e%2e/%2e%2e/etc/passwd",
+      "..%2f..%2fetc%2fpasswd",
+      "/etc/passwd",
+      "src\\queue.ts",
+      "src/queue.ts%00",
+      "",
+    ]) {
+      const res = await fetch(`${view.url}/api/file?path=${bad}`);
+      expect(res.status, `path=${bad}`).toBe(400);
+      expect((await json(res)).error).toContain("repo-relative path");
+    }
+    // well-formed but not in the index: the index itself, git internals, unknown files
+    for (const unknown of [".explainer/demo.explainer.json", "package-lock.json", "src/nope.ts"]) {
+      const res = await fetch(`${view.url}/api/file?path=${unknown}`);
+      expect(res.status, unknown).toBe(404);
+      expect((await json(res)).error).toContain("is not in the index");
+    }
+    expect((await fetch(`${view.url}/api/file`)).status).toBe(400);
+    const suggestions = await json(await fetch(`${view.url}/api/file?path=runner.ts`));
+    expect(suggestions.suggestions).toContain("src/runner.ts");
+  });
+
+  it("does not follow a symlink out of the repository", async () => {
+    const dir = cloneDir(demo);
+    const { symlinkSync, writeFileSync, rmSync } = await import("node:fs");
+    const outside = join(dir, "..", `outside-${Date.now()}.txt`);
+    writeFileSync(outside, "secret");
+    rmSync(join(dir, "README.md"));
+    symlinkSync(outside, join(dir, "README.md"));
+    try {
+      const view = await serve(dir);
+      const res = await fetch(`${view.url}/api/file?path=README.md`);
+      expect(res.status).toBe(404); // README.md is in the (old) index, but it now leaves the root
+    } finally {
+      rmSync(outside, { force: true });
+    }
+  });
+
+  it("PUT /api/views/<id> applies a view patch as the user, persists it, and returns the view", async () => {
+    const dir = cloneDir(demo);
+    const view = await serve(dir);
+    const layout = { "file:src/worker.ts": { x: 10, y: 20 } };
+    const res = await fetch(`${view.url}/api/views/view:overview`, {
+      method: "PUT",
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ layout }),
+    });
+    expect(res.status).toBe(200);
+    const updated = await json(res);
+    expect(updated).toMatchObject({ id: "view:overview", type: "graph", layout });
+    expect(updated.provenance.userFields).toEqual(["layout"]);
+    expect(updated.provenance.origin).toBe("llm"); // still the llm's view; the layout is the user's
+
+    const saved = readJson(dir, ".explainer/demo.explainer.json").views.find(
+      (v: any) => v.id === "view:overview",
+    );
+    expect(saved).toEqual(updated);
+
+    // the encoded id works too, and further edits add to userFields
+    const include = [
+      "grp:scheduling",
+      "file:src/worker.ts",
+      "file:src/metrics.ts",
+      "file:src/bus.ts",
+    ];
+    const again = await fetch(`${view.url}/api/views/view%3Aoverview`, {
+      method: "PUT",
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ id: "view:overview", type: "graph", include }),
+    });
+    expect(again.status).toBe(200);
+    const twice = await json(again);
+    expect(twice.include).toEqual(include);
+    expect(twice.provenance.userFields).toEqual(["layout", "include"]);
+    expect(twice.layout).toEqual(layout);
+
+    // the bundle shows the edit
+    const bundle = (await json(await fetch(`${view.url}/api/bundle`))) as ViewerBundle;
+    expect(bundle.explainer.views.find((v) => v.id === "view:overview")).toEqual(twice);
+    // an llm patch afterwards keeps the user's fields
+    const patch = {
+      views: [{ id: "view:overview", type: "graph", layout: {}, title: "Overview (llm)" }],
+    };
+    const applied = await invoke(["apply", "demo", "-"], {
+      cwd: dir,
+      stdin: JSON.stringify(patch),
+    });
+    expect(applied.code).toBe(0);
+    const final = readJson(dir, ".explainer/demo.explainer.json").views.find(
+      (v: any) => v.id === "view:overview",
+    );
+    expect(final.title).toBe("Overview (llm)");
+    expect(final.layout).toEqual(layout);
+    expect(final.include).toEqual(include);
+  });
+
+  it("PUT rejects an invalid view patch with 400 and the issues, and writes nothing", async () => {
+    const dir = cloneDir(demo);
+    const before = readFile(dir, ".explainer/demo.explainer.json");
+    const view = await serve(dir);
+    const res = await fetch(`${view.url}/api/views/view:overview`, {
+      method: "PUT",
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ include: ["file:src/nope.ts"] }),
+    });
+    expect(res.status).toBe(400);
+    const body = await json(res);
+    expect(body.error).toContain("view patch rejected");
+    expect(body.issues[0]).toMatchObject({ severity: "error", path: "views[0].include[0]" });
+    expect(body.issues[0].message).toContain("src/nope.ts");
+    expect(readFile(dir, ".explainer/demo.explainer.json")).toBe(before);
+
+    const mismatch = await fetch(`${view.url}/api/views/view:overview`, {
+      method: "PUT",
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ id: "view:other" }),
+    });
+    expect(mismatch.status).toBe(400);
+    const notObject = await fetch(`${view.url}/api/views/view:overview`, {
+      method: "PUT",
+      headers: JSON_HEADERS,
+      body: "[1]",
+    });
+    expect(notObject.status).toBe(400);
+    const notJson = await fetch(`${view.url}/api/views/view:overview`, {
+      method: "PUT",
+      headers: JSON_HEADERS,
+      body: "{",
+    });
+    expect(notJson.status).toBe(400);
+    expect((await json(notJson)).error).toContain("not valid JSON");
+    // a new view needs its required fields
+    const create = await fetch(`${view.url}/api/views/view:mine`, {
+      method: "PUT",
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ type: "graph", title: "Mine", include: ["file:src/queue.ts"] }),
+    });
+    expect(create.status).toBe(200);
+    expect(readJson(dir, ".explainer/demo.explainer.json").views.map((v: any) => v.id)).toContain(
+      "view:mine",
+    );
+  });
+
+  it("refuses writes that are not JSON, cross-origin, from another Host, or too large", async () => {
+    const view = await serve(cloneDir(demo));
+    const plain = await fetch(`${view.url}/api/views/view:overview`, { method: "PUT", body: "{}" });
+    expect(plain.status).toBe(415);
+    const foreign = await fetch(`${view.url}/api/requests`, {
+      method: "POST",
+      headers: { ...JSON_HEADERS, Origin: "http://evil.example" },
+      body: JSON.stringify({ elementId: "file:src/queue.ts" }),
+    });
+    expect(foreign.status).toBe(403);
+    const sameOrigin = await fetch(`${view.url}/api/requests`, {
+      method: "POST",
+      headers: { ...JSON_HEADERS, Origin: view.url },
+      body: JSON.stringify({ elementId: "file:src/queue.ts" }),
+    });
+    expect(sameOrigin.status).toBe(201);
+    const huge = await fetch(`${view.url}/api/views/view:overview`, {
+      method: "PUT",
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ layout: { pad: "x".repeat(9 * 1024 * 1024) } }),
+    }).catch(() => undefined);
+    if (huge) expect(huge.status).toBe(413);
+
+    // DNS rebinding: a request whose Host is not the server's is refused
+    const status = await new Promise<number>((resolve, reject) => {
+      const req = request(
+        {
+          host: "127.0.0.1",
+          port: view.server.port,
+          path: "/api/bundle",
+          headers: { Host: "evil.example" },
+        },
+        (res) => {
+          res.resume();
+          resolve(res.statusCode ?? 0);
+        },
+      );
+      req.on("error", reject);
+      req.end();
+    });
+    expect(status).toBe(403);
+    // localhost is fine
+    expect((await fetch(`http://localhost:${view.server.port}/api/bundle`)).status).toBe(200);
+  });
+
+  it("POST /api/requests queues an explain-this request for the skill", async () => {
+    const dir = cloneDir(demo);
+    const view = await serve(dir);
+    const res = await fetch(`${view.url}/api/requests`, {
+      method: "POST",
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ elementId: "sym:src/runner.ts#Runner.dispatch", note: "why a loop?" }),
+    });
+    expect(res.status).toBe(201);
+    const body = await json(res);
+    expect(body).toMatchObject({
+      ok: true,
+      pending: 1,
+      request: {
+        elementId: "sym:src/runner.ts#Runner.dispatch",
+        note: "why a loop?",
+        explainer: "demo",
+      },
+    });
+    expect(new Date(body.request.at).toISOString()).toBe(body.request.at);
+    await fetch(`${view.url}/api/requests`, {
+      method: "POST",
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ elementId: "file:src/bus.ts" }),
+    });
+
+    const queue = readJson(dir, ".explainer/requests.json");
+    expect(queue.map((r: any) => r.elementId)).toEqual([
+      "sym:src/runner.ts#Runner.dispatch",
+      "file:src/bus.ts",
+    ]);
+    expect(queue[1].note).toBeUndefined();
+    expect((await json(await fetch(`${view.url}/api/requests`))).pending).toBe(2);
+
+    // the skill sees it in `xpl status`
+    const status = await xpl(dir, "status", "demo");
+    expect(status.out).toContain("requests queued by the viewer (2");
+    expect(status.out).toContain('sym:src/runner.ts#Runner.dispatch  "why a loop?"');
+
+    for (const bad of [{}, { elementId: "" }, { elementId: 5 }, { elementId: "x", note: 3 }]) {
+      const res = await fetch(`${view.url}/api/requests`, {
+        method: "POST",
+        headers: JSON_HEADERS,
+        body: JSON.stringify(bad),
+      });
+      expect(res.status, JSON.stringify(bad)).toBe(400);
+    }
+    expect(readJson(dir, ".explainer/requests.json")).toHaveLength(2);
+  });
+
+  it("also accepts the viewer's own request shape { kind, id, view, label }", async () => {
+    const dir = cloneDir(demo);
+    const view = await serve(dir);
+    const res = await fetch(`${view.url}/api/requests`, {
+      method: "POST",
+      headers: JSON_HEADERS,
+      body: JSON.stringify({
+        kind: "expand",
+        id: "sym:src/runner.ts#Runner.dispatch",
+        view: "view:dispatch",
+        label: "Runner.dispatch",
+      }),
+    });
+    expect(res.status).toBe(201);
+    expect((await json(res)).request).toMatchObject({
+      elementId: "sym:src/runner.ts#Runner.dispatch",
+      kind: "expand",
+      view: "view:dispatch",
+      label: "Runner.dispatch",
+      explainer: "demo",
+    });
+    expect(readJson(dir, ".explainer/requests.json")).toHaveLength(1);
+    const status = await xpl(dir, "status", "demo");
+    expect(status.out).toMatch(
+      / expand sym:src\/runner\.ts#Runner\.dispatch {2}\(in view:dispatch\) {2}\[Runner\.dispatch\]$/m,
+    );
+    const bad = await fetch(`${view.url}/api/requests`, {
+      method: "POST",
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ kind: 5, id: "x" }),
+    });
+    expect(bad.status).toBe(400);
+  });
+
+  it("concurrent requests do not lose each other", async () => {
+    const dir = cloneDir(demo);
+    const view = await serve(dir);
+    const responses = await Promise.all(
+      Array.from({ length: 12 }, (_, i) =>
+        fetch(`${view.url}/api/requests`, {
+          method: "POST",
+          headers: JSON_HEADERS,
+          body: JSON.stringify({ elementId: `file:src/queue.ts`, note: `n${i}` }),
+        }),
+      ),
+    );
+    expect(responses.every((r) => r.status === 201)).toBe(true);
+    expect(readJson(dir, ".explainer/requests.json")).toHaveLength(12);
+    const edits = await Promise.all(
+      [1, 2, 3, 4].map((n) =>
+        fetch(`${view.url}/api/views/view:overview`, {
+          method: "PUT",
+          headers: JSON_HEADERS,
+          body: JSON.stringify({ layout: { "file:src/worker.ts": { x: n, y: n } } }),
+        }),
+      ),
+    );
+    expect(edits.every((r) => r.status === 200)).toBe(true);
+  });
+
+  it("re-reads the explainer on every request, so `xpl apply` shows up without a restart", async () => {
+    const dir = cloneDir(demo);
+    const view = await serve(dir);
+    const before = (await json(await fetch(`${view.url}/api/bundle`))) as ViewerBundle;
+    expect(before.explainer.concepts.map((c) => c.id)).toEqual(["concept:retry-policy"]);
+    const patch = {
+      concepts: [
+        {
+          id: "concept:queue",
+          label: "Queue",
+          summary: "Holds the jobs.",
+          anchors: [{ file: "src/queue.ts", symbol: "Queue", role: "definition" }],
+        },
+      ],
+    };
+    expect(
+      (await invoke(["apply", "demo", "-"], { cwd: dir, stdin: JSON.stringify(patch) })).code,
+    ).toBe(0);
+    const after = (await json(await fetch(`${view.url}/api/bundle`))) as ViewerBundle;
+    expect(after.explainer.concepts.map((c) => c.id)).toEqual([
+      "concept:retry-policy",
+      "concept:queue",
+    ]);
+    // and the viewer's own edits keep what apply wrote
+    await fetch(`${view.url}/api/views/view:overview`, {
+      method: "PUT",
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ layout: { "file:src/worker.ts": { x: 1, y: 2 } } }),
+    });
+    const saved = readJson(dir, ".explainer/demo.explainer.json");
+    expect(saved.concepts.map((c: any) => c.id)).toContain("concept:queue");
+  });
+
+  it("serves the working tree: edits to a file show up in /api/file", async () => {
+    const dir = cloneDir(demo);
+    const view = await serve(dir);
+    editFile(dir, "src/queue.ts", (text) => `${text}// edited while serving\n`);
+    const text = await (await fetch(`${view.url}/api/file?path=src/queue.ts`)).text();
+    expect(text.endsWith("// edited while serving\n")).toBe(true);
+  });
+
+  it("unknown routes and methods", async () => {
+    const view = await serve(demo);
+    expect((await fetch(`${view.url}/api/nope`)).status).toBe(404);
+    const post = await fetch(`${view.url}/api/bundle`, {
+      method: "POST",
+      headers: JSON_HEADERS,
+      body: "{}",
+    });
+    expect(post.status).toBe(405);
+    expect(post.headers.get("allow")).toBe("GET, HEAD");
+    expect((await fetch(`${view.url}/api/views/view:overview`)).status).toBe(405);
+    expect((await fetch(`${view.url}/favicon.ico`)).status).toBe(204);
+    const head = await fetch(`${view.url}/`, { method: "HEAD" });
+    expect(head.status).toBe(200);
+    expect(await head.text()).toBe("");
+    expect(head.headers.get("cache-control")).toBe("no-store");
+  });
+
+  it("fails early with clear messages", async () => {
+    const noViewer = await invoke(["view", "demo", "--no-open", "--port", "0", "--root", demo], {
+      cwd: demo,
+      env: { XPL_VIEWER_HTML: "/no/such/viewer.html" },
+    });
+    expect(noViewer.code).toBe(1);
+    expect(noViewer.err).toContain("XPL_VIEWER_HTML points to /no/such/viewer.html");
+    const noExplainer = await invoke(["view", "ghost", "--no-open", "--root", demo], {
+      cwd: demo,
+      env: viewerEnv,
+    });
+    expect(noExplainer.code).toBe(1);
+    expect(noExplainer.err).toContain('no explainer "ghost"');
+    const badPort = await invoke(["view", "demo", "--port", "70000", "--root", demo], {
+      cwd: demo,
+      env: viewerEnv,
+    });
+    expect(badPort.code).toBe(2);
+    expect(badPort.err).toContain("--port must be an integer between 0 and 65535");
+  });
+
+  it("reports a port that is already taken", async () => {
+    const first = await serve(demo);
+    const clash = await invoke(
+      ["view", "demo", "--no-open", "--port", String(first.server.port), "--root", demo],
+      {
+        cwd: demo,
+        env: viewerEnv,
+      },
+    );
+    expect(clash.code).toBe(1);
+    expect(clash.err).toContain(`port ${first.server.port} on 127.0.0.1 is already in use`);
+  });
+
+  it("without --port it tries the default port, and falls back to a free one when it is busy", async () => {
+    const run = async () => {
+      const controller = new AbortController();
+      let onServer!: (server: ViewServer) => void;
+      const ready = new Promise<ViewServer>((resolve) => (onServer = resolve));
+      const done = invoke(["view", "demo", "--no-open", "--root", demo], {
+        cwd: demo,
+        env: viewerEnv,
+        signal: controller.signal,
+        onServer,
+      });
+      const server = await ready;
+      return {
+        server,
+        stop: async () => {
+          controller.abort();
+          return (await done).code;
+        },
+      };
+    };
+
+    // occupy the default port ourselves (when someone else already has it, that is just as good)
+    const blocker = createNetServer();
+    const held = await new Promise<boolean>((resolve) => {
+      blocker.once("error", () => resolve(false));
+      blocker.listen(DEFAULT_PORT, "127.0.0.1", () => resolve(true));
+    });
+    try {
+      const busy = await run();
+      expect(busy.server.port).toBeGreaterThan(0);
+      expect(busy.server.port).not.toBe(DEFAULT_PORT);
+      expect(await busy.stop()).toBe(0);
+    } finally {
+      if (held) await new Promise((resolve) => blocker.close(resolve));
+    }
+  });
+
+  it("startViewServer can be used directly (port 0, custom host)", async () => {
+    const server = await startViewServer({
+      env: { root: demo, cwd: demo, env: {}, indexOption: undefined, warn: () => undefined },
+      explainerPath: join(demo, ".explainer", "demo.explainer.json"),
+      host: "127.0.0.1",
+      port: 0,
+      viewerHtml: () => "<html><head></head><body>x</body></html>",
+    });
+    try {
+      const html = await (await fetch(server.url)).text();
+      expect(html).toContain('<script id="xpl-data"');
+      expect(existsSync(server.explainerPath)).toBe(true);
+    } finally {
+      await server.close();
+    }
+  });
+});
+
+function bundleFromHtml(html: string): ViewerBundle {
+  const match = /<script id="xpl-data" type="application\/json">([\s\S]*?)<\/script>/.exec(html);
+  return parseBundle(match![1]!);
+}
