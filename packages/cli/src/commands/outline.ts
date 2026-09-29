@@ -23,7 +23,7 @@ export const outlineCommand: CommandSpec = {
     "Ids are exact: paste them into patches (sym:src/a.ts#A.b) or into other commands.",
     "in/out count the references into / out of the element's subtree (calls, imports, type uses, ...),",
     "not counting references that stay inside it. [+n] marks n children below the depth limit.",
-    "Config keys (yaml/json) are hidden unless --keys is given.",
+    "Config keys (yaml/json/toml) are hidden unless --keys is given.",
     `--kind method,function,class lists only symbols of those kinds (${SYMBOL_KINDS.join(", ")}); the dirs, files`,
     "and parent symbols that contain a match are listed too, so each keeps its place. The repo line carries the",
     "name `xpl new` gives the repository (package.json, go.mod, pyproject.toml, git remote), not the directory's.",
@@ -35,7 +35,7 @@ export const outlineCommand: CommandSpec = {
       desc: "Start at this dir, file or symbol (default: the repo)",
     },
     depth: { type: "string", arg: "<n>", desc: "Levels below the start to show (default 2)" },
-    keys: { type: "boolean", desc: "Also show config keys (yaml/json mapping keys)" },
+    keys: { type: "boolean", desc: "Also show config keys (yaml/json/toml)" },
     kind: {
       type: "string",
       multiple: true,

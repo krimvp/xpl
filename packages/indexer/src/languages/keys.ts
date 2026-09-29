@@ -1,5 +1,5 @@
 /**
- * Shared bookkeeping of the config-format packs (YAML, JSON): every mapping key becomes a symbol of kind
+ * Shared bookkeeping of the config-format packs (YAML, JSON, TOML): every mapping key becomes a symbol of kind
  * `key` whose path is the dotted key path (sequence items are addressed by index, `workers.0.name`).
  */
 import type { Span, SymbolDraft } from "./types.js";

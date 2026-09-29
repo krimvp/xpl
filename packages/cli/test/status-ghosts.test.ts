@@ -1,6 +1,6 @@
 /**
- * `xpl status`: where a graph view stops (ghosts and stubs, with a warning for a crowded view) and the tours
- * of the explainer (steps that point at something that is gone).
+ * `xpl status`: where a graph view stops (ghosts and stubs, what a folded ghost stands for, a warning for a crowded
+ * view) and the tours of the explainer (steps that point at something that is gone).
  */
 import { beforeAll, describe, expect, it } from "vitest";
 import {
@@ -121,6 +121,7 @@ describe("xpl status: ghosts and stubs", () => {
       label: "leaf07.ts",
       count: 7,
       direction: "out",
+      targets: [{ id: "file:src/leaf07.ts", count: 7 }],
     });
     // sorted by count, then id; the overflow ghost is in the list too
     const counts = view.ghosts.list.map((g: any) => g.count);
@@ -132,6 +133,68 @@ describe("xpl status: ghosts and stubs", () => {
     // a stub id goes into `hidden` as it is: the same numbers as `deriveGraph` gives
     const overflow = view.ghosts.list.find((g: any) => g.id === "ghost:more:out");
     expect(overflow.label).toBe("+7 more");
+  });
+
+  it("--json says what each ghost stands for: its targets, most referenced first, with their counts", async () => {
+    const { json } = await xplJson<any>(crowd, "status", "crowd");
+    const list = json.views.find((v: any) => v.id === "view:crowd").ghosts.list;
+    const ghost = (id: string) => list.find((g: any) => g.id === id);
+    // "rest of hub.ts": the outside elements of a file the view shows in part (run constructs Hub, Hub.a calls b)
+    expect(ghost("ghost:rest:file:src/hub.ts")).toMatchObject({
+      kind: "rest",
+      count: 2,
+      targets: [
+        { id: "sym:src/hub.ts#Hub", count: 1 },
+        { id: "sym:src/hub.ts#Hub.b", count: 1 },
+      ],
+    });
+    // "+7 more": every element it folds, not only the first few
+    const more = ghost("ghost:more:out");
+    expect(more.targets.map((t: any) => t.id)).toEqual(
+      ["06", "08", "09", "10", "11", "12", "13"].map((n) => `file:src/leaf${n}.ts`),
+    );
+    // a ghost that is an element itself stands for just that
+    expect(ghost("ghost:file:src/leaf07.ts").targets).toEqual([
+      { id: "file:src/leaf07.ts", count: 7 },
+    ]);
+    for (const g of list) {
+      expect(
+        g.targets.reduce((n: number, t: any) => n + t.count, 0),
+        g.id,
+      ).toBe(g.count);
+    }
+    // a target is what `includeAdd` takes: adding one expands the view, and the ghost no longer stands for it
+    const dir = cloneDir(crowd);
+    const patch = {
+      views: [{ id: "view:crowd", type: "graph", includeAdd: [more.targets[0].id] }],
+    };
+    const applied = await invoke(["apply", "crowd", "-"], {
+      cwd: dir,
+      stdin: JSON.stringify(patch),
+    });
+    expect(applied.code, applied.out).toBe(0);
+    const after = (await xplJson<any>(dir, "status", "crowd")).json.views[0].ghosts.list;
+    const rest = after.find((g: any) => g.id === "ghost:more:out").targets.map((t: any) => t.id);
+    expect(rest).toHaveLength(6);
+    expect(rest).not.toContain(more.targets[0].id);
+  });
+
+  it("names up to 3 targets of each folded ghost in the text, and none for a ghost that is an element", async () => {
+    const { out } = await ok(crowd, "status", "crowd");
+    const lines = out.split("\n");
+    expect(lines).toContain(
+      "    ghost:more:out ×7 → file:src/leaf06.ts ×1, file:src/leaf08.ts ×1, file:src/leaf09.ts ×1, ... +4 more",
+    );
+    // three or fewer: all of them
+    expect(lines).toContain(
+      "    ghost:rest:file:src/hub.ts ×2 → sym:src/hub.ts#Hub ×1, sym:src/hub.ts#Hub.b ×1",
+    );
+    expect(out).not.toContain("ghost:file:src/leaf07.ts ×7 →");
+    expect(out.match(/ → /g)).toHaveLength(2);
+    // stubs: all folds nothing
+    const dir = cloneDir(crowd);
+    editView(dir, { stubs: { mode: "all" } });
+    expect((await ok(dir, "status", "crowd")).out).not.toContain(" → ");
   });
 
   it("warns when a view draws more than 12 ghosts, and says how to fix it", async () => {

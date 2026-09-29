@@ -125,6 +125,10 @@ Conventions (all packages):
 12. `Tour` adds optional `provenance` (the handoff's tours have none): new tours get `{ origin: actor, commit }`,
     the viewer's tour panel records `userFields` (`title`, `steps`), and `applyPatch` protects a tour like any
     element (§4.7). A tour without one (an older file) counts as `llm`.
+13. `SymbolIndex` adds `pruned?: { files, symbols, refs }`: the counts of the full index, set when `xpl bundle`
+    embeds a copy with something dropped (§5, Bundle payload). Every file entry is kept, so `files` only repeats
+    `files.length`; `symbols.length` and `refs.length` say what is left, and `languages` still describes the
+    full index. Absent on a complete index, which is everything `xpl index` writes.
 
 Patch-side types (never stored) live in `packages/core/src/patch.ts`; its header holds the authoritative
 merge rules and `skill/code-explainer/reference/patch-format.md` is the practical guide. What Claude writes:
@@ -632,9 +636,9 @@ stdout (a rejection exits 1); fatal errors (`error: …`) and warnings (`warning
 | `xpl validate <explainer> [--lenient]` | §4.6 |
 | `xpl anchors <explainer> [id...] [--full] [--max-lines n]` | each anchor of an element (or of every element) resolved now: role, `file#symbol +span`, status, lines, and the code at them with offsets (a long anchor: its first lines, an elision line, its last lines); `tour:<id>` (or `tour:<id>/<step>`) also shows what a step without `code` derives from its `focus`, marked derived; verifies spans without reading JSON |
 | `xpl resolve <explainer> [--write] [--allow-stale]` | §4.2 re-resolve against the index of the current code; report drifted llm elements, missing anchors; `--write` saves |
-| `xpl status <explainer>` | the skill's to-do list, read-only: per view the shown nodes, stored edges and steps without a summary (static edges optional), concepts without one, drift (user-owned drift counted apart), missing anchors, broken references (ids gone from the index), stale derived-edge overlays, queued requests; per graph view the ghosts and stubs it draws (counts, the most referenced ghost ids, `--json`: every ghost with its count and every stub id in `views[].ghosts`) with a warning above 12 ghosts; the tours (id, step count, steps whose focus ids or view are gone) |
+| `xpl status <explainer>` | the skill's to-do list, read-only: per view the shown nodes, stored edges and steps without a summary (static edges optional), concepts without one, drift (user-owned drift counted apart), missing anchors, broken references (ids gone from the index), stale derived-edge overlays, queued requests; per graph view the ghosts and stubs it draws (counts, the most referenced ghost ids, and for each folded ghost up to 3 of the elements it stands for with their counts; `--json`: every ghost with its count and all its `targets` (`{id, count}`), and every stub id, in `views[].ghosts`) with a warning above 12 ghosts; the tours (id, step count, steps whose focus ids or view are gone) |
 | `xpl view <explainer> [--port p] [--host h] [--no-open]` | local server (below) |
-| `xpl bundle <explainer> -o out.html [--mode explore\|present] [--tour id] [--files referenced\|all]` | self-contained HTML; `--tour` (`tour:intro` or `intro`) implies present mode; embeds the files the explainer references by default and prints what went in (`8 of 12 files embedded (referenced: 18.4 KB of source; --files all adds 4 files, 6.7 KB)`), `--files all` every indexed file |
+| `xpl bundle <explainer> -o out.html [--mode explore\|present] [--tour id] [--files referenced\|all] [--embed-index full\|pruned]` | self-contained HTML; `--tour` (`tour:intro` or `intro`) implies present mode; embeds the files the explainer references by default and prints what went in (`8 of 12 files embedded (referenced: 18.4 KB of source; --files all adds 4 files, 6.7 KB)`), `--files all` every indexed file; the symbol index in it is pruned to what the viewer can draw with `--files referenced` and whole with `--files all` (`--embed-index` overrides; the summary line says `index 1.3 MB (pruned from 9.0 MB)`) |
 
 **Exit codes.** 0 ok (warnings allowed); 1 rejected or failed: unknown id, no index, a rejected patch, a patch
 that changed nothing because the user owns everything it touched, validation errors, `resolve --write` on a
@@ -694,6 +698,27 @@ references that cross the edge of the view and what they lead to: none for `stub
 under `xpl view` and absent from a static bundle). The viewer's file tree lists only the embedded files of a
 static bundle, with an "N of M files included" footer. The viewer HTML comes from `XPL_VIEWER_HTML`, else
 `dist/viewer.html` next to the running bundle, else `packages/viewer/dist/index.html`.
+
+**Pruned index.** The `index` of a bundle is most of the page for a large repository (every symbol and
+reference, next to the code of a dozen files), so `xpl bundle` embeds a **pruned** one by default
+(`--files referenced`) and the whole one with `--files all`; `--embed-index full|pruned` overrides either
+(`pruned` with `--files all` finds nothing to drop). `pruneIndex` (core, `prune.ts`) keeps every file entry; the
+references with an end inside a graph view, on a derived edge the explainer names, or in an embedded file (`read`
+references only between two embedded files); and the symbols of the embedded files, of what the graph views hold,
+of what the explainer names (an anchor, a group member, an edge end, a tour focus) and where the kept references
+end, with their parent chains. The viewer derives the same nodes, edges, stubs, ghosts, code focus and reverse
+lookup from it as from the whole index, whatever the edge-kind selection and stub mode; the tests compare the
+two. `SymbolIndex.pruned` (§2) records what the full index had.
+
+The summary line says what was saved, `…, index 1.3 MB (pruned from 9.0 MB), …` (just `index 9.0 MB` when
+nothing was dropped). With `--json` the `index` field is `{ path, commit, choice: "full"|"pruned", pruned, bytes,
+fullBytes, symbols: { embedded, indexed }, refs: { embedded, indexed } }` (`bytes` and `fullBytes`: the embedded
+and the whole index as compact JSON).
+
+**Known limit:** exploring past the embedded code is not exact. A ghost added there, one that leads into a file
+whose code is not embedded, opens only into the symbols the kept references end in, not all the symbols of the
+file, and edges between two such ghosts are missing. `--files all` (or `--embed-index full`) keeps everything,
+and `xpl view` always serves the whole index.
 
 ---
 
@@ -845,9 +870,10 @@ every error at once: fix the patch, apply again) → `xpl validate` and `xpl sta
   shown `file:p` holds outside the view, `ghost:more:in|out` the ghosts beyond `stubs.max`) or a queued
   request. Read it, patch the graph view with `includeAdd` (works on user-curated views), explain only what
   became visible (`xpl status` names it), drain `.explainer/requests.json` and delete it. A folded ghost is
-  not an element: `includeAdd` the elements it stands for (the viewer's menu, `outline --under file:p` and
-  `refs <shown id> --out` show them) or `file:p` for the whole file as one box; `hidden` takes ghost and stub
-  ids (`xpl status --json` lists them); `stubs.mode` `all` is for small views only, `none` draws no stubs.
+  not an element: `includeAdd` the elements it stands for (`xpl status` prints up to 3 per ghost, `status --json`
+  all as `views[].ghosts.list[].targets`; the viewer's menu, `outline --under file:p` and `refs <shown id> --out`
+  show them too) or `file:p` for the whole file as one box; `hidden` takes ghost and stub ids
+  (`xpl status --json` lists them); `stubs.mode` `all` is for small views only, `none` draws no stubs.
 - **`make tour`**: 5–12 steps `{ id: "t1", view, focus: [ids], note, editor: { primary } }`, with a `code`
   override when the focus is a group, file or directory; ids `tour:<slug>`, steps `t1`, `t2`…; apply, read
   `xpl anchors <name> tour:<slug>` (what each step will show: its `code`, else the ranges derived from its

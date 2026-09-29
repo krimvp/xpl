@@ -21,6 +21,8 @@ import { renderResolveReport } from "./resolve.js";
 export const CROWDED_GHOSTS = 12;
 /** Ghost ids named in the text output (`--json` lists all of them). */
 const TOP_GHOSTS = 5;
+/** Targets named per folded ghost in the text output (`--json` lists all of them). */
+const TOP_TARGETS = 3;
 
 /** Where a graph view stops: its ghost boxes and the stubs that lead to them. */
 interface GhostStatus {
@@ -32,13 +34,18 @@ interface GhostStatus {
   stubs: number;
   /** More than `CROWDED_GHOSTS` ghosts: too many to read. */
   crowded: boolean;
-  /** Every ghost, the most referenced first: `id` is what `hidden` takes. */
+  /**
+   * Every ghost, the most referenced first: `id` is what `hidden` takes. `targets` is what the ghost stands for,
+   * most referenced first, each with its reference count: the ids `includeAdd` takes. A folded ghost
+   * (`rest`, `more`) is not an element, so its targets are how to expand it; a `target` ghost has just itself.
+   */
   list: {
     id: string;
     kind: Ghost["kind"];
     label: string;
     count: number;
     direction: Ghost["direction"];
+    targets: { id: string; count: number }[];
   }[];
   /** Every stub id (`hidden` takes those too). */
   stubIds: string[];
@@ -77,6 +84,7 @@ function ghostStatus(graph: DerivedGraph, stubs: unknown): GhostStatus {
       label: g.label,
       count: g.count,
       direction: g.direction,
+      targets: g.targets.map((t) => ({ id: t.target, count: t.count })),
     }));
   return {
     ...policy,
@@ -155,7 +163,18 @@ function edgeIds(ids: readonly string[], max = 8): string {
     : `${ids.slice(0, max).join(", ")}, ... +${ids.length - max} more (--json lists all)`;
 }
 
-/** The text lines about where a graph view stops: counts, the most referenced ghosts, a crowding warning. */
+/** `sym:a.go#T.m ×9, file:b.go ×5, sym:c.go#f ×4, ... +2 more`: what a ghost stands for, at most `TOP_TARGETS`. */
+function targetsText(targets: readonly { id: string; count: number }[]): string {
+  const shown = targets.slice(0, TOP_TARGETS).map((t) => `${t.id} ×${t.count}`);
+  return targets.length > TOP_TARGETS
+    ? `${shown.join(", ")}, ... +${targets.length - TOP_TARGETS} more`
+    : shown.join(", ");
+}
+
+/**
+ * The text lines about where a graph view stops: counts, the most referenced ghosts, what each folded ghost
+ * stands for, a crowding warning.
+ */
 function ghostLines(g: GhostStatus): string[] {
   const policy = g.mode === "top" ? `top ${g.max}` : g.mode;
   if (g.total === 0) {
@@ -173,6 +192,12 @@ function ghostLines(g: GhostStatus): string[] {
         : ""
     }`,
   ];
+  // A folded ghost is not an element, so `includeAdd` needs one of the elements it stands for.
+  for (const ghost of g.list) {
+    if (ghost.kind !== "target") {
+      lines.push(`    ${ghost.id} ×${ghost.count} → ${targetsText(ghost.targets)}`);
+    }
+  }
   if (g.crowded) {
     lines.push(
       `  warning: ${g.total} ghosts: this view stops in too many places to read (more than ${CROWDED_GHOSTS}). ` +
@@ -250,8 +275,10 @@ export const statusCommand: CommandSpec = {
     "The skill's to-do list for an explainer, without changing anything:",
     "  - per view, the visible nodes, edges and steps that have no `summary` (static edges are optional),",
     "  - per graph view, where it stops: the ghost boxes and stubs it draws (counts, and the most referenced ghost",
-    "    ids; --json lists every ghost id with its count, and every stub id, in views[].ghosts), with a warning",
-    `    above ${CROWDED_GHOSTS} ghosts (a view without "stubs" keeps the 8 most referenced and folds the rest),`,
+    `    ids), with a warning above ${CROWDED_GHOSTS} ghosts (a view without "stubs" keeps the 8 most referenced and`,
+    "    folds the rest). A folded ghost (ghost:rest:file:<path>, ghost:more:in|out) is not an element: it gets a line",
+    "    under the counts that names up to 3 of the elements it stands for, and includeAdd takes any of them. --json",
+    "    lists every ghost id with its count and all its targets, and every stub id, in views[].ghosts,",
     "  - concepts without a summary,",
     "  - tours: id, number of steps, and the steps whose focus ids (or view) no longer resolve,",
     "  - llm elements whose anchors drifted (re-explain them, keeping userFields) and missing anchors; drift the",

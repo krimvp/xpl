@@ -40,7 +40,7 @@ export type FilePath = string;
 
 /**
  * Dot-separated path inside a file, e.g. "Runner.dispatch". A path that occurs more than once in a
- * file gets "~2", "~3", … appended, in source order. Config keys (YAML/JSON) are dotted key paths,
+ * file gets "~2", "~3", … appended, in source order. Config keys (YAML/JSON/TOML) are dotted key paths,
  * with sequence items addressed by index, e.g. "retry.maxRetries" or "workers.0.name".
  */
 export type SymbolPath = string;
@@ -123,7 +123,7 @@ export interface LanguageInfo {
   /**
    * Where this language's references come from. "precise": resolved by a SCIP indexer.
    * "heuristic": scope-aware tree-sitter resolver; treat as hints. "none": no references are
-   * extracted for this language (e.g. yaml, json, text).
+   * extracted for this language (e.g. yaml, json, toml, text).
    */
   refs: "precise" | "heuristic" | "none";
   /** Tool that produced the references, e.g. "scip-typescript@0.4.0". */
@@ -167,7 +167,7 @@ export interface IndexedSymbol {
   file: FilePath;
   path: SymbolPath;
   /**
-   * (amended) Adds "enum" and "key". "key" is a config key (YAML/JSON mapping key); `path` is then
+   * (amended) Adds "enum" and "key". "key" is a config key (YAML/JSON/TOML key); `path` is then
    * the dotted key path. Type aliases are "type"; Go structs are "class".
    */
   kind:
