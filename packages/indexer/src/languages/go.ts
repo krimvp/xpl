@@ -18,6 +18,12 @@
  * fields and package variables (`write`). The receiver variable of a method is the qualifier root `"this"`.
  * Names of the language itself (`int`, `error`, `len(...)`) are not sites.
  *
+ * Reads: a bare name in a value position (not declared, assigned, labelled, used as a key, called or the
+ * operand of `++`), and the field of a selector `x.f` that is not called or assigned, are `read` sites; the
+ * resolver keeps the ones that resolve to a package variable / constant or to a struct field. Bare names that
+ * a local hides at that position (`localScopes`), the receiver variable, the packages of the file's imports and
+ * the predeclared names are left out; a local or parameter of known type makes `x.f` resolvable.
+ *
  * Facts: field types, parameter / named-result / result types, and the locals of `x := f()`, `x := &T{}`,
  * `var x T`, `v := x.(T)`, `switch v := x.(type)` and friends, each with Go's scope (`visibleIn`); locals of
  * unknown type are facts too, so that they shadow imports and package-level names.

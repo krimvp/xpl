@@ -29,6 +29,13 @@
  * - `write`: assignments to attribute targets (`self.x = v`, `self.x: T = v`, `stats.n += 1`, also inside
  *   tuple targets) and to module variables: `x = v` / `x += v` in a function that declares `global x`, and
  *   `x += v` at module level (a plain `x = v` at module level is the definition of the symbol `x`)
+ * - `read`: a bare name in a value position that is not a callee, an assignment target, a declaration, an import,
+ *   an annotation or a class base, and an attribute access `a.b` that is not a callee, target, base or annotation
+ *   either - when what they name can be a variable of the repository. A bare name is a candidate when the file
+ *   declares or imports it (or star-imports something) and no function, lambda, comprehension or class body
+ *   around it binds it (./python/scope.ts: parameters and every name assigned in the body, unless `global`); an
+ *   attribute access when its receiver is `self` (spelled "this"), `super()`, a name of the file, or a local or
+ *   parameter of known type. The resolver decides the rest
  * - the first parameter of a method (`self`, `cls`, whatever it is called; not for `@staticmethod`) is
  *   spelled "this" in qualifiers, also inside nested functions and lambdas that do not shadow it
  * - a receiver that cannot be spelled (`arr[0].run()`, `f()()`) yields no site
@@ -40,7 +47,10 @@
  * `from ..pkg import y` -> {y, module "..pkg", importedName y}. A module path of only dots names a package
  * whose members are almost always modules: `from . import x` -> {x, module ".x"} (a namespace binding).
  * `from x import *` is an `ExportFact` {name "*", module x}. `from __future__ import ...` binds nothing.
- * Imports anywhere in the file count (inside functions, `if TYPE_CHECKING:`, `try:`). In a package's
+ * Imports anywhere in the file count (inside functions, `if TYPE_CHECKING:`, `try:`). An import under
+ * `if TYPE_CHECKING:` / `if typing.TYPE_CHECKING:` (that branch, also as an `elif`; not the `else`) is typing-only: its
+ * bindings are marked `typeOnly`, so the reference the resolver makes for it is a `type-ref`, not an `import`
+ * (`classifySite` decides the same by the statement's position). In a package's
  * `__init__.py`, `from .sub import x` also declares `sub` an `ExportFact` {name "sub", module ".sub"}: an
  * imported submodule is an attribute of its package, so `from pkg import *` and `from pkg import sub` see it.
  *

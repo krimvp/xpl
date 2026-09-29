@@ -69,6 +69,33 @@ export function chainOf(node: Node | null | undefined, env: Env, depth = 0): str
   }
 }
 
+/**
+ * The name a receiver expression starts from (`a` of `a.b().c`, `f` of `f().x`, `super` of `super().m`): the
+ * first segment of `chainOf`, without the questions about scopes that spelling it takes (nor the merging of
+ * dotted import names). Undefined when `chainOf` cannot spell it either.
+ */
+export function rootIdentifierOf(node: Node | null | undefined, depth = 0): string | undefined {
+  if (!node || depth > 16) return undefined;
+  switch (node.type) {
+    case "identifier":
+      return node.text;
+    case "attribute":
+      return rootIdentifierOf(node.childForFieldName("object"), depth + 1);
+    case "call": {
+      const fn = node.childForFieldName("function");
+      if (fn?.type === "identifier") return fn.text;
+      return fn?.type === "attribute"
+        ? rootIdentifierOf(fn.childForFieldName("object"), depth + 1)
+        : undefined;
+    }
+    case "await":
+    case "parenthesized_expression":
+      return rootIdentifierOf(named(node)[0], depth + 1);
+    default:
+      return undefined;
+  }
+}
+
 /** `name` and `qualifier` of a callee expression (`f`, `a.b.f`). */
 export function calleeParts(
   node: Node | null | undefined,

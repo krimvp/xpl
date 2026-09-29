@@ -188,6 +188,9 @@ class Extractor {
   private readonly data: GoFileData = { signatures: {}, constraints: [] };
   /** Scopes of the local names declared in this file, by name. */
   private readonly localScopes = new Map<string, Span[]>();
+  /** Once the scan is over the locals are final: a name with many scopes is looked up in an index. */
+  private scanDone = false;
+  private readonly localIndexes = new Map<string, SpanIndex<true>>();
   private readonly typeParams: TypeParamScopes = { enabled: true, names: new Map() };
   /** The methods of the file in source order, for `receiverAt`. */
   private readonly methods: { start: Point; end: Point; receiver: string | undefined }[] = [];
@@ -590,6 +593,7 @@ class Extractor {
           break;
       }
     }
+    this.scanDone = true;
     for (const leaf of this.readLeaves) this.onRead(leaf);
   }
 
@@ -599,21 +603,22 @@ class Extractor {
    * not variables to read.
    */
   private onRead(leaf: Node): void {
-    const shape = readShape(leaf, this.lines);
-    if (!shape) return;
-    if (!shape.operand) {
-      const name = shape.name;
-      if (this.declaredNames.has(name)) {
-        // a package-level name of this very file: always a candidate
-      } else if (
-        PREDECLARED.has(name) ||
-        BUILTIN_FUNCTIONS.has(name) ||
-        this.importNames.has(name)
-      ) {
+    if (leaf.type === "identifier") {
+      // What is dropped below for a bare name, asked before the walk up the tree that `readShape` takes
+      // (most names are locals): the names of the language, the packages of the imports, the receiver, and
+      // the locals in scope (the sites `shadowed` would remove at the end).
+      const name = leaf.text;
+      if (
+        !this.declaredNames.has(name) &&
+        (PREDECLARED.has(name) || BUILTIN_FUNCTIONS.has(name) || this.importNames.has(name))
+      )
         return;
-      }
+      const at = nodeSpan(leaf, this.lines);
+      if (this.isLocalAt(name, at.startLine, at.startCol)) return;
       if (this.receiverAt(leaf) === name) return;
     }
+    const shape = readShape(leaf, this.lines);
+    if (!shape) return;
     this.pushShape(shape);
   }
 
@@ -697,7 +702,16 @@ class Extractor {
   /** Is a local variable called `name` in scope at the 1-based position? */
   private isLocalAt(name: string, line: number, col: number): boolean {
     const scopes = this.localScopes.get(name);
-    return !!scopes?.some((scope) => spanContains(scope, line, col));
+    if (!scopes) return false;
+    if (!this.scanDone || scopes.length <= 8)
+      return scopes.some((scope) => spanContains(scope, line, col));
+    // `err` has a scope in nearly every function; every use of it asks
+    let index = this.localIndexes.get(name);
+    if (!index) {
+      index = new SpanIndex(scopes.map((span) => ({ span, value: true as const })));
+      this.localIndexes.set(name, index);
+    }
+    return index.innermost(line, col) !== undefined;
   }
 
   /** A bare `name(...)` / `name = ...` where a local `name` is in scope refers to the local, not a package-level symbol. */

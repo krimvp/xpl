@@ -326,30 +326,88 @@ function isReferencePosition(id: Node, parent: Node): boolean {
 }
 
 /**
- * The `read` an identifier makes, if any: a bare name, or the attribute of `a.b`, in a value position that is
- * not a callee (a call), an assignment target (a write), a declaration, an import, a type annotation or a class
- * base. Purely syntactic: whether the name is local, or resolves to a variable, is decided elsewhere.
+ * Where annotations and class bases are in a file, as the extractor has seen them: the questions "is this in an
+ * annotation?" and "could this be in the bases of a class?" that every read asks are answered by position
+ * instead of by walking up the tree (`parent` is a walk down from the root). Spans are `[start, end)` indexes,
+ * disjoint and in source order.
  */
+export interface ReadEnv {
+  inAnnotation(index: number): boolean;
+  /** A necessary condition of being in a base class list: `isBaseClass` decides. */
+  inBases(index: number): boolean;
+}
+
+/** The span containing `index`, by binary search (`spans` sorted, disjoint). */
+export function spanHolds(spans: readonly (readonly [number, number])[], index: number): boolean {
+  let lo = 0;
+  let hi = spans.length - 1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    const [start, end] = spans[mid]!;
+    if (index < start) hi = mid - 1;
+    else if (index >= end) lo = mid + 1;
+    else return true;
+  }
+  return false;
+}
+
+/**
+ * The `read` of the bare name `leaf` (an identifier whose text is `name`), if it is one: in a value position
+ * that is not a callee (a call), an assignment target (a write), a declaration, an import, a type annotation or
+ * a class base. Purely syntactic: whether the name is local, or resolves to a variable, is decided elsewhere.
+ * The cheap tests come first: every `parent` is a walk down from the root of the tree.
+ */
+export function bareReadShape(
+  leaf: Node,
+  name: string,
+  lines: readonly string[],
+  env?: ReadEnv,
+): SiteShape | undefined {
+  const parent = leaf.parent;
+  if (!parent) return undefined;
+  if (parent.type === "attribute" && parent.childForFieldName("attribute")?.id === leaf.id)
+    return undefined; // the attribute of `a.b` is `memberReadShape`'s
+  if (!isReferencePosition(leaf, parent) || isCallee(leaf) || isTarget(leaf)) return undefined;
+  if (env?.inBases(leaf.startIndex) !== false && isBaseClass(leaf)) return undefined;
+  if (env ? env.inAnnotation(leaf.startIndex) : annotationRootOf(leaf)) return undefined;
+  return { kind: "read", name, nameNode: leaf, site: nodeSpan(leaf, lines) };
+}
+
+/**
+ * The `read` of the attribute of `attribute` (`a.b`: `b` of `a`), unless the access is a callee, a target, a
+ * class base or part of an annotation.
+ */
+export function memberReadShape(
+  attribute: Node,
+  leaf: Node,
+  object: Node,
+  lines: readonly string[],
+  env?: ReadEnv,
+): SiteShape | undefined {
+  if (isCallee(attribute) || isTarget(attribute)) return undefined;
+  if (env?.inBases(attribute.startIndex) !== false && isBaseClass(attribute)) return undefined;
+  if (env ? env.inAnnotation(leaf.startIndex) : annotationRootOf(leaf)) return undefined;
+  const whole = nodeSpan(attribute, lines);
+  const lineCount = whole.endLine - whole.startLine + 1;
+  return {
+    kind: "read",
+    name: leaf.text,
+    nameNode: leaf,
+    qualifierNode: object,
+    site: lineCount <= SITE_MAX_LINES ? whole : nodeSpan(leaf, lines),
+  };
+}
+
+/** The `read` an identifier makes, if any: a bare name (`bareReadShape`) or the attribute of `a.b` (`memberReadShape`). */
 export function readShape(leaf: Node, lines: readonly string[]): SiteShape | undefined {
   if (leaf.type !== "identifier") return undefined;
   const parent = leaf.parent;
-  if (!parent || annotationRootOf(leaf)) return undefined;
+  if (!parent) return undefined;
   if (parent.type === "attribute" && parent.childForFieldName("attribute")?.id === leaf.id) {
     const object = parent.childForFieldName("object");
-    if (!object || isCallee(parent) || isTarget(parent) || isBaseClass(parent)) return undefined;
-    const whole = nodeSpan(parent, lines);
-    const lineCount = whole.endLine - whole.startLine + 1;
-    return {
-      kind: "read",
-      name: leaf.text,
-      nameNode: leaf,
-      qualifierNode: object,
-      site: lineCount <= SITE_MAX_LINES ? whole : nodeSpan(leaf, lines),
-    };
+    return object ? memberReadShape(parent, leaf, object, lines) : undefined;
   }
-  if (!isReferencePosition(leaf, parent) || isCallee(leaf) || isTarget(leaf) || isBaseClass(leaf))
-    return undefined;
-  return { kind: "read", name: leaf.text, nameNode: leaf, site: nodeSpan(leaf, lines) };
+  return bareReadShape(leaf, leaf.text, lines);
 }
 
 // ─── Imports ──────────────────────────────────────────────────────────────────────────────────────

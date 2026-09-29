@@ -261,6 +261,70 @@ describe("read sites: names, members, and what is left out", () => {
       "7: read a «a»",
     ]);
   });
+
+  it("the parts of a type query or a module path are not member reads, however long the path", async () => {
+    const source = src(
+      "import * as a from './a';",
+      "type T = typeof a.b.c.d.e.f;",
+      "type U = typeof a.b<string>;",
+      "declare namespace a.b.c.d.e { const q: number; }",
+      "import x = a.b.c.d.e;",
+      "export const w = a.b.c.d;",
+    );
+    expect(await reads(source)).toEqual([
+      "2: read a «a»",
+      "3: read a «a»",
+      "4: read a «a»",
+      "5: read a «a»",
+      "6: read a «a»",
+      "6: read a.b «a.b»",
+      "6: read a.b.c «a.b.c»",
+      "6: read a.b.c.d «a.b.c.d»",
+    ]);
+  });
+
+  it("what a scope binds is asked once per scope but answered per use: siblings, nesting and later blocks differ", async () => {
+    const source = src(
+      "const A = 1;",
+      "function f(A) { { use(A); } return A; }", // parameter: both uses are bound
+      "function g() { { use(A); } return A; }", // nothing binds it: two reads
+      "function h() { const A = 2; { use(A); } return A; }", // bound in the function block
+      "function i() { { const A = 3; } use(A); return A; }", // the block's own: two reads after it
+      "function j() { for (const A of []) { use(A); } return A; }", // loop variable: one read after the loop
+      "function k() { try { use(A); } catch (A) { use(A); } return A; }", // catch parameter: two reads
+      "const m = () => { use(A); return (A) => A; };", // the arrow's own parameter hides it only inside
+      "use(A);",
+    );
+    expect(await reads(source)).toEqual([
+      "3: read A «A»",
+      "3: read A «A»",
+      "5: read A «A»",
+      "5: read A «A»",
+      "6: read A «A»",
+      "7: read A «A»",
+      "7: read A «A»",
+      "8: read A «A»",
+      "9: read A «A»",
+    ]);
+  });
+
+  it("a local of a known type is a candidate only where that local is visible", async () => {
+    const source = src(
+      "import { Foo } from './foo';",
+      "const c = { x: 1 };",
+      "function f() { const c: Foo = make(); return c.x; }", // typed local
+      "function g() { const c = 1 + 2; return c.x; }", // a local without a type fact
+      "function h(c) { return c.x; }", // an untyped parameter
+      "function k(c: Foo) { { return c.x; } }", // typed parameter, used in a block
+      "function m() { return c.x; }", // the module's `c`
+    );
+    expect(await reads(source)).toEqual([
+      "3: read c.x «c.x»",
+      "6: read c.x «c.x»",
+      "7: read c «c»",
+      "7: read c.x «c.x»",
+    ]);
+  });
 });
 
 describe("read sites: classifySite agrees with extract", () => {

@@ -127,6 +127,35 @@ describe("Go read sites", () => {
     ).toEqual(["3: read Elsewhere «Elsewhere»", "3: read x «x»"]);
   });
 
+  it("a name that is a local in many functions is still a package variable where no local is in scope yet", async () => {
+    const funcs = Array.from({ length: 12 }, (_, i) => `func f${i}() { count := ${i}; _ = count }`);
+    const source = src(
+      "package p",
+      "",
+      "var count = 1",
+      "",
+      "func use() int { return count }",
+      "func late() int {",
+      "	x := count",
+      "	count := 2",
+      "	return x + count",
+      "}",
+      "func inner() int {",
+      "	if true {",
+      "		count := 3",
+      "		_ = count",
+      "	}",
+      "	return count",
+      "}",
+      ...funcs,
+    );
+    expect(await reads(source, "a.go")).toEqual([
+      "5: read count «count»",
+      "7: read count «count»",
+      "16: read count «count»",
+    ]);
+  });
+
   it("the names of the language are not variables to read", async () => {
     expect(
       await reads(
