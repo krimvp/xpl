@@ -1,0 +1,11 @@
+node_modules
+dist
+test-results
+playwright-report
+*.tsbuildinfo
+coverage
+*.log
+.DS_Store
+
+# Generated symbol indexes (rebuilt by `xpl index`); *.explainer.json files are committed.
+**/.explainer/index-*.json

@@ -1,0 +1,19 @@
+{
+  "name": "@xpl/cli",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "The xpl command. Bundled with esbuild into dist/xpl.mjs (+ dist/wasm, dist/viewer.html).",
+  "bin": {
+    "xpl": "dist/xpl.mjs"
+  },
+  "scripts": {
+    "build": "tsx build.ts",
+    "dev": "tsx src/main.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@xpl/core": "*",
+    "@xpl/indexer": "*"
+  }
+}
