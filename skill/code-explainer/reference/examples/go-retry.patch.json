@@ -1,0 +1,505 @@
+{
+  "nodes": [
+    {
+      "id": "grp:retry-engine",
+      "label": "Retry engine",
+      "summary": "The runner decides whether a failed job gets another attempt; the queue stores the requeued or dead-lettered job.",
+      "members": [
+        "file:internal/runner/runner.go",
+        "file:internal/queue/queue.go",
+        "file:internal/queue/deadletter.go"
+      ]
+    },
+    {
+      "id": "grp:retry-config",
+      "label": "Retry configuration",
+      "summary": "retry.maxRetries, baseDelayMs and maxDelayMs travel from the YAML file through config.Parse and main into the runner.",
+      "members": [
+        "file:config/default.yaml",
+        "file:internal/config/config.go",
+        "sym:cmd/jobrunner/main.go#runnerConfig"
+      ]
+    },
+    {
+      "id": "sym:internal/runner/runner.go#Runner.Dispatch",
+      "summary": "The dispatch loop: pop a job, lease a worker, run it, then ack it or, if it failed, requeue it with backoff or dead-letter it."
+    },
+    {
+      "id": "sym:internal/runner/runner.go#backoffDelay",
+      "summary": "Exponential backoff: BaseDelay doubled once per earlier attempt, capped at MaxDelay."
+    },
+    {
+      "id": "sym:internal/worker/worker.go#Worker",
+      "summary": "Runs one attempt of a job; failures, panics and timeouts come back as a Result, never as an error to the caller."
+    },
+    {
+      "id": "sym:internal/queue/queue.go#Queue",
+      "summary": "In-memory priority queue with an in-flight set; Requeue and DeadLetter both release the job from in-flight first."
+    },
+    {
+      "id": "file:internal/runner/runner.go",
+      "summary": "The dispatch loop and the retry policy: it decides, after each failed attempt, between requeueing with backoff and dead-lettering."
+    },
+    {
+      "id": "file:internal/queue/queue.go",
+      "summary": "The in-memory queue: Push, Pop (highest priority first, skipping jobs that are not due), Requeue and Ack."
+    },
+    {
+      "id": "file:internal/queue/deadletter.go",
+      "summary": "Queue.DeadLetter parks a job that ran out of retries, with its last error; Queue.Dead lists them."
+    },
+    {
+      "id": "file:internal/worker/worker.go",
+      "summary": "Worker.Run executes one attempt with a timeout and reports the outcome as a Result; only successes are announced on the bus."
+    },
+    {
+      "id": "file:internal/config/config.go",
+      "summary": "Parses config/default.yaml by hand into typed structs; config.Retry holds the three retry settings."
+    },
+    {
+      "id": "file:config/default.yaml",
+      "summary": "Default settings; the retry block allows 3 retries with a 500 ms base delay capped at 30 s."
+    },
+    {
+      "id": "sym:cmd/jobrunner/main.go#runnerConfig",
+      "summary": "Copies the retry settings (and the idle delay and worker timeout) from the loaded config into runner.Config."
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge:runner-queue-di",
+      "from": "sym:internal/runner/runner.go#Runner.Dispatch",
+      "to": "sym:internal/queue/queue.go#Queue",
+      "kind": "calls",
+      "label": "JobQueue",
+      "summary": "Dispatch only knows the JobQueue interface; main.go passes the concrete *queue.Queue to runner.New, so Requeue and DeadLetter land in the queue package.",
+      "anchors": [
+        {
+          "file": "internal/runner/runner.go",
+          "symbol": "Runner.Dispatch",
+          "find": "r.queue.Requeue(job, backoff)",
+          "role": "call-site"
+        },
+        {
+          "file": "cmd/jobrunner/main.go",
+          "symbol": "run",
+          "find": "runner.New(q, worker.NewPool(workers...)",
+          "role": "usage"
+        },
+        {
+          "file": "internal/queue/queue.go",
+          "symbol": "Queue.Requeue",
+          "role": "definition"
+        }
+      ]
+    },
+    {
+      "id": "edge:retry-config-keys",
+      "from": "sym:config/default.yaml#retry",
+      "to": "sym:internal/config/config.go#Parse",
+      "kind": "reads",
+      "label": "retry.*",
+      "summary": "Parse reads the three retry keys by name from the YAML sections; the string keys are invisible to the call graph.",
+      "anchors": [
+        {
+          "file": "config/default.yaml",
+          "symbol": "retry",
+          "role": "config"
+        },
+        {
+          "file": "internal/config/config.go",
+          "symbol": "Parse",
+          "span": {
+            "from": 18,
+            "to": 22
+          },
+          "role": "call-site"
+        }
+      ]
+    }
+  ],
+  "concepts": [
+    {
+      "id": "concept:retry-policy",
+      "label": "Retry policy",
+      "summary": "A failed job is requeued with exponential backoff (BaseDelay * 2^(attempt-1), capped at MaxDelay) while attempts <= MaxRetries, then dead-lettered.",
+      "anchors": [
+        {
+          "file": "internal/runner/runner.go",
+          "symbol": "Runner.Dispatch",
+          "span": {
+            "from": 33,
+            "to": 46
+          },
+          "role": "definition"
+        },
+        {
+          "file": "internal/runner/runner.go",
+          "symbol": "backoffDelay",
+          "role": "definition"
+        },
+        {
+          "file": "config/default.yaml",
+          "symbol": "retry",
+          "role": "config"
+        },
+        {
+          "file": "internal/runner/retry_test.go",
+          "symbol": "TestFailsTwiceThenSucceedsIsAckedAfterTwoRequeues",
+          "role": "test"
+        },
+        {
+          "file": "internal/runner/retry_test.go",
+          "symbol": "TestAlwaysFailingJobIsDeadLetteredAfterMaxRetries",
+          "role": "test"
+        }
+      ],
+      "related": [
+        "sym:internal/runner/runner.go#Runner.Dispatch",
+        "grp:retry-engine",
+        "grp:retry-config"
+      ]
+    },
+    {
+      "id": "concept:delayed-redelivery",
+      "label": "Delayed redelivery",
+      "summary": "Requeue stamps the copy with AvailableAt = now + backoff and Pop skips jobs that are not due yet, so the delay needs no timer.",
+      "anchors": [
+        {
+          "file": "internal/queue/queue.go",
+          "symbol": "Queue.Requeue",
+          "span": {
+            "from": 7,
+            "to": 10
+          },
+          "role": "definition"
+        },
+        {
+          "file": "internal/queue/queue.go",
+          "symbol": "Queue.Pop",
+          "span": {
+            "from": 7,
+            "to": 9
+          },
+          "role": "definition"
+        }
+      ],
+      "related": ["sym:internal/queue/queue.go#Queue"]
+    }
+  ],
+  "views": [
+    {
+      "id": "view:retry",
+      "type": "sequence",
+      "title": "How a failed job gets retried",
+      "scope": {
+        "root": "repo",
+        "depth": 3,
+        "question": "How does a failed job get retried?",
+        "entryPoints": ["internal/runner/runner.go#Runner.Dispatch"]
+      },
+      "participants": [
+        "sym:internal/runner/runner.go#Runner.Dispatch",
+        "sym:internal/worker/worker.go#Worker",
+        "sym:internal/runner/runner.go#backoffDelay",
+        "sym:internal/queue/queue.go#Queue"
+      ],
+      "steps": [
+        {
+          "id": "retry:1",
+          "from": "sym:internal/runner/runner.go#Runner.Dispatch",
+          "to": "sym:internal/queue/queue.go#Queue",
+          "label": "Pop()",
+          "kind": "call",
+          "summary": "Takes the best job that is due; a requeued job is skipped until its backoff delay has passed.",
+          "anchors": [
+            {
+              "file": "internal/runner/runner.go",
+              "symbol": "Runner.Dispatch",
+              "find": "job, err := r.queue.Pop()",
+              "role": "call-site"
+            },
+            {
+              "file": "internal/queue/queue.go",
+              "symbol": "Queue.Pop",
+              "role": "definition"
+            }
+          ]
+        },
+        {
+          "id": "retry:2",
+          "from": "sym:internal/runner/runner.go#Runner.Dispatch",
+          "to": "sym:internal/worker/worker.go#Worker",
+          "label": "Run(ctx, job, opts)",
+          "kind": "call",
+          "summary": "Runs one attempt on the leased worker, with the configured timeout.",
+          "anchors": [
+            {
+              "file": "internal/runner/runner.go",
+              "symbol": "Runner.Dispatch",
+              "find": "result := w.Run(",
+              "role": "call-site"
+            },
+            {
+              "file": "internal/worker/worker.go",
+              "symbol": "Worker.Run",
+              "role": "definition"
+            }
+          ]
+        },
+        {
+          "id": "retry:3",
+          "from": "sym:internal/worker/worker.go#Worker",
+          "to": "sym:internal/runner/runner.go#Runner.Dispatch",
+          "label": "Result{Err}",
+          "kind": "return",
+          "summary": "A failed attempt (handler error, panic or timeout) is returned as a Result carrying the error; the runner checks result.OK().",
+          "anchors": [
+            {
+              "file": "internal/worker/worker.go",
+              "symbol": "Worker.Run",
+              "find": "return Result{Err: out.err, Duration: elapsed}",
+              "role": "definition"
+            },
+            {
+              "file": "internal/runner/runner.go",
+              "symbol": "Runner.Dispatch",
+              "find": "if result.OK() {",
+              "role": "call-site"
+            }
+          ]
+        },
+        {
+          "id": "retry:4",
+          "from": "sym:internal/runner/runner.go#Runner.Dispatch",
+          "to": "sym:internal/runner/runner.go#backoffDelay",
+          "label": "backoffDelay(attempts, Retry)",
+          "kind": "call",
+          "summary": "While attempts <= MaxRetries, the delay is BaseDelay doubled once per earlier attempt, capped at MaxDelay.",
+          "anchors": [
+            {
+              "file": "internal/runner/runner.go",
+              "symbol": "Runner.Dispatch",
+              "find": "backoff := backoffDelay(attempts, r.cfg.Retry)",
+              "role": "call-site"
+            },
+            {
+              "file": "internal/runner/runner.go",
+              "symbol": "backoffDelay",
+              "role": "definition"
+            }
+          ]
+        },
+        {
+          "id": "retry:5",
+          "from": "sym:internal/runner/runner.go#Runner.Dispatch",
+          "to": "sym:internal/queue/queue.go#Queue",
+          "label": "Requeue(job, backoff)",
+          "kind": "call",
+          "summary": "Puts a copy of the job back with Attempts+1 and AvailableAt = now + backoff, so a later Pop picks it up again.",
+          "anchors": [
+            {
+              "file": "internal/runner/runner.go",
+              "symbol": "Runner.Dispatch",
+              "find": "r.queue.Requeue(job, backoff)",
+              "role": "call-site"
+            },
+            {
+              "file": "internal/queue/queue.go",
+              "symbol": "Queue.Requeue",
+              "role": "definition"
+            }
+          ]
+        },
+        {
+          "id": "retry:6",
+          "from": "sym:internal/runner/runner.go#Runner.Dispatch",
+          "to": "sym:internal/queue/queue.go#Queue",
+          "label": "DeadLetter(job, err)",
+          "kind": "call",
+          "summary": "Once MaxRetries requeues are used up, the job is parked in the dead-letter list with its last error.",
+          "anchors": [
+            {
+              "file": "internal/runner/runner.go",
+              "symbol": "Runner.Dispatch",
+              "find": "r.queue.DeadLetter(job, result.Err)",
+              "role": "call-site"
+            },
+            {
+              "file": "internal/queue/deadletter.go",
+              "symbol": "Queue.DeadLetter",
+              "role": "definition"
+            }
+          ]
+        }
+      ],
+      "frames": [
+        {
+          "id": "frame:retry-loop",
+          "kind": "loop",
+          "label": "while the context is live (one pass = one attempt)",
+          "fromStep": "retry:1",
+          "toStep": "retry:6"
+        },
+        {
+          "id": "frame:attempts-left",
+          "kind": "alt",
+          "label": "attempts <= MaxRetries",
+          "fromStep": "retry:4",
+          "toStep": "retry:5"
+        },
+        {
+          "id": "frame:retries-exhausted",
+          "kind": "alt",
+          "label": "else: retries exhausted",
+          "fromStep": "retry:6",
+          "toStep": "retry:6"
+        }
+      ]
+    },
+    {
+      "id": "view:retry-code",
+      "type": "graph",
+      "title": "Code involved in retrying a failed job",
+      "scope": {
+        "root": "repo",
+        "depth": 3,
+        "question": "How does a failed job get retried?",
+        "entryPoints": ["internal/runner/runner.go#Runner.Dispatch"]
+      },
+      "include": [
+        "grp:retry-engine",
+        "file:internal/runner/runner.go",
+        "file:internal/queue/queue.go",
+        "file:internal/queue/deadletter.go",
+        "file:internal/worker/worker.go",
+        "grp:retry-config",
+        "file:config/default.yaml",
+        "file:internal/config/config.go",
+        "sym:cmd/jobrunner/main.go#runnerConfig"
+      ]
+    }
+  ],
+  "tours": [
+    {
+      "id": "tour:retry",
+      "title": "How a failed job gets retried",
+      "steps": [
+        {
+          "id": "t1",
+          "view": "view:retry-code",
+          "focus": ["grp:retry-engine"],
+          "note": "Two files do the work: the runner decides whether a failed job gets another try, the queue stores the job again. The worker only reports what happened.",
+          "code": [
+            {
+              "file": "internal/runner/runner.go",
+              "symbol": "Runner.Dispatch",
+              "span": {
+                "from": 33,
+                "to": 46
+              },
+              "role": "definition"
+            },
+            {
+              "file": "internal/queue/queue.go",
+              "symbol": "Queue.Requeue",
+              "role": "definition"
+            },
+            {
+              "file": "internal/queue/deadletter.go",
+              "symbol": "Queue.DeadLetter",
+              "role": "definition"
+            }
+          ],
+          "editor": {
+            "primary": "internal/runner/runner.go"
+          }
+        },
+        {
+          "id": "t2",
+          "view": "view:retry",
+          "focus": ["retry:2"],
+          "note": "Each pass of the dispatch loop leases a worker and runs one attempt with a timeout.",
+          "editor": {
+            "primary": "internal/runner/runner.go"
+          }
+        },
+        {
+          "id": "t3",
+          "view": "view:retry",
+          "focus": ["retry:3"],
+          "note": "A failed attempt is a value, not an error: handler errors, panics and timeouts all come back as Result{Err}, and the runner asks result.OK().",
+          "editor": {
+            "primary": "internal/worker/worker.go"
+          }
+        },
+        {
+          "id": "t4",
+          "view": "view:retry",
+          "focus": ["retry:4", "concept:retry-policy"],
+          "note": "The policy lives here: while attempts <= MaxRetries the delay is BaseDelay doubled per earlier attempt, capped at MaxDelay. The numbers come from the config.",
+          "editor": {
+            "primary": "internal/runner/runner.go"
+          }
+        },
+        {
+          "id": "t5",
+          "view": "view:retry",
+          "focus": ["retry:5", "concept:delayed-redelivery"],
+          "note": "Requeue does not sleep. It stamps AvailableAt = now + backoff and Pop skips jobs that are not due yet, so the job comes back on its own.",
+          "editor": {
+            "primary": "internal/queue/queue.go"
+          }
+        },
+        {
+          "id": "t6",
+          "view": "view:retry",
+          "focus": ["retry:6"],
+          "note": "When the retry budget is spent the job is parked in the dead-letter list with its last error instead of looping forever.",
+          "editor": {
+            "primary": "internal/queue/deadletter.go"
+          }
+        },
+        {
+          "id": "t7",
+          "view": "view:retry-code",
+          "focus": ["grp:retry-config", "edge:retry-config-keys"],
+          "note": "Where the numbers come from: retry.maxRetries, baseDelayMs and maxDelayMs are read by name from the YAML, so the link is invisible to the call graph.",
+          "code": [
+            {
+              "file": "config/default.yaml",
+              "symbol": "retry",
+              "role": "config"
+            },
+            {
+              "file": "internal/config/config.go",
+              "symbol": "Parse",
+              "span": {
+                "from": 18,
+                "to": 22
+              },
+              "role": "call-site"
+            },
+            {
+              "file": "cmd/jobrunner/main.go",
+              "symbol": "runnerConfig",
+              "role": "definition"
+            }
+          ],
+          "editor": {
+            "primary": "config/default.yaml"
+          }
+        },
+        {
+          "id": "t8",
+          "view": "view:retry-code",
+          "focus": ["edge:runner-queue-di"],
+          "note": "One last wrinkle: the runner only knows a JobQueue interface. main.go hands it the real queue, which is why Requeue and DeadLetter end up in the queue package.",
+          "editor": {
+            "primary": "internal/runner/runner.go"
+          }
+        }
+      ]
+    }
+  ]
+}
