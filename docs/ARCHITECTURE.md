@@ -5,7 +5,7 @@ What was built, and the contracts it was built against. `docs/handoff.md` is the
 its schema, and fixes the algorithms and interfaces of every package. It was written before the code and
 has been corrected to match it; where the two still disagree, fix one of them in the same change.
 
-Target languages: **TypeScript/JavaScript, Python, Go** (plus YAML/JSON config keys).
+Target languages: **TypeScript/JavaScript, Python, Go** (plus YAML, JSON and TOML config keys).
 
 ```
 source ── xpl index ──→ .explainer/index-<commit>.json ──┐   static analysis; generated, git-ignored
@@ -19,7 +19,7 @@ Claude ── patch.json ── xpl apply ──→ <name>.explainer.json ┘   
 
 1. **Indexer: hybrid, not either/or.** tree-sitter (WASM, `web-tree-sitter`) extracts *structure* for every
    language: files, symbols, ranges, hashes and the syntactic *reference sites* (calls, imports, heritage,
-   type positions, writes). *Resolution* of a site to its target symbol comes from SCIP when the indexer
+   type positions, reads, writes). *Resolution* of a site to its target symbol comes from SCIP when the indexer
    can run (`scip-typescript`, `scip-python`, `scip-go`), otherwise from a scope-aware heuristic resolver.
    Every `Reference` records `resolution: "precise" | "heuristic"`, so the viewer draws heuristic edges
    lighter and Claude treats them as hints. Rationale: tree-sitter alone makes "static" edges guesses; SCIP
@@ -27,9 +27,10 @@ Claude ── patch.json ── xpl apply ──→ <name>.explainer.json ┘   
    model and upgrades edge trust where tooling exists: SCIP references replace the heuristic ones file by
    file (§3).
 2. **Symbol-less code.** Config keys become symbols (`kind: "key"`, path = dotted key path, e.g.
-   `config/default.yaml#retry.maxRetries`), so YAML/JSON anchors use `symbol` like everything else: no new
-   anchor kind. Truly symbol-less text (scripts, Dockerfiles, Markdown) keeps file-relative spans; the
-   resolver re-finds moved spans by content (§4.2), which removes most of their fragility.
+   `config/default.yaml#retry.maxRetries`, `pyproject.toml#project.scripts.flask`), so YAML, JSON and TOML
+   anchors use `symbol` like everything else: no new anchor kind. Truly symbol-less text (scripts,
+   Dockerfiles, Markdown) keeps file-relative spans; the resolver re-finds moved spans by content (§4.2),
+   which removes most of their fragility.
 3. **Prototype target:** three fixture repos with the same design (a job runner) in TS, Python and Go
    (`fixtures/*-jobrunner`). The TS one reproduces the handoff example exactly (§8).
 4. **Viewer packaging: both, one build.** The viewer is one static single-file app. `xpl view` serves it
@@ -93,14 +94,17 @@ Conventions (all packages):
 2. `IndexedSymbol.kind` adds `"enum"` and `"key"` (config keys). TS namespaces are `"other"`.
 3. `Reference` adds `resolution: "precise" | "heuristic"`. `from`/`to` may be a *module scope* id
    `"<file>#"` (empty symbol path) for top-level code and whole-module imports; the index has no symbol
-   entry for it. Emitted kinds: `call import extends implements type-ref write`. `read` is in the schema,
-   but nothing produces it (§9).
+   entry for it. All kinds are emitted: `call import extends implements type-ref read write`. A `read` is a
+   use of a module- or package-level variable or constant, or of a field whose type is known, that is neither
+   a call nor a write. A TS `import type` and a Python import under `TYPE_CHECKING` are `type-ref`, so
+   `import` references are the runtime dependencies (§3).
 4. `SymbolIndex` adds `languages: Record<string, LanguageInfo>` and `root?: string` (absolute,
    informational, never used for resolution). `LanguageInfo = { files, symbols, refs: "precise" |
    "heuristic" | "none", tool?, heuristicFiles? }`. `tool` names what produced the references
    (`scip-typescript@0.4.0`, `xpl-heuristic@… (tree-sitter-typescript@…)`); `heuristicFiles` counts the files
    of a precise language that keep heuristic references because the tool did not describe them (§3).
-5. `IndexedFile.language: FileLanguage` = `typescript | tsx | javascript | python | go | yaml | json | text`.
+5. `IndexedFile.language: FileLanguage` = `typescript | tsx | javascript | python | go | yaml | json | toml |
+   text`.
 6. `Edge.kind` adds `"references"` (lifted type-refs).
 7. `GraphView` adds `edgeKinds?: Edge["kind"][]`: the derived edge kinds shown. Default
    `DEFAULT_EDGE_KINDS` = `["calls", "extends", "implements"]`. Stored edges are always shown.
@@ -118,6 +122,9 @@ Conventions (all packages):
     the places where the view stops are drawn as ghost boxes. Default `top` / 8: the 8 most referenced ghosts,
     the outside symbols of partly shown files folded into one "rest of <file>" ghost, the ghosts beyond the
     8 into "+N more" (§4.4). `all` draws one ghost per outside element, `none` no stubs at all.
+12. `Tour` adds optional `provenance` (the handoff's tours have none): new tours get `{ origin: actor, commit }`,
+    the viewer's tour panel records `userFields` (`title`, `steps`), and `applyPatch` protects a tour like any
+    element (§4.7). A tour without one (an older file) counts as `llm`.
 
 Patch-side types (never stored) live in `packages/core/src/patch.ts`; its header holds the authoritative
 merge rules and `skill/code-explainer/reference/patch-format.md` is the practical guide. What Claude writes:
@@ -138,12 +145,12 @@ interface ExplainerPatch {
 }
 ```
 
-- **Patch elements are partial.** `id` is the only required field of an existing element, view or tour.
-  Absent fields keep their values; `null` clears an optional field (`summary detail members related
-  edgeKinds hidden excludeFiles layout frames`); arrays and nested objects (`members include steps scope
-  layout …`) replace wholesale. A sequence view's `steps` are sent whole (keep every step id; `remove` deletes
-  single steps). Unknown fields are errors. `provenance` is optional: new elements get
-  `{ origin: actor, commit }`.
+- **Patch elements are partial.** `id` is the only required field of an existing element, view or tour. Absent
+  fields keep their values; `null` clears an optional field (`summary detail members related edgeKinds hidden
+  excludeFiles stubs layout frames`); arrays and nested objects (`members include steps scope layout …`)
+  replace wholesale. A sequence view's `steps` are sent whole (keep every step id; `remove` deletes single
+  steps), or edited by id with `stepsUpdate` (below). Unknown fields are errors. `provenance` is optional: new
+  elements get `{ origin: actor, commit }`.
 - A new id needs what cannot be inferred. Node: `label` (not for `dir:`/`file:`/`sym:` overlays; `kind` comes
   from the id, `parent` defaults to the structural parent) and, for a group, `members`. Edge: `from`, `to`,
   `kind`, `label` (a derived-edge overlay `edge:<kind>:<a>-><b>` takes the first three from its id and may
@@ -155,6 +162,14 @@ interface ExplainerPatch {
   `includeAdd` (appended, duplicates ignored); an id in both is an error; an `includeRemove` id may name
   something gone from the index (that is how a vanished node is dropped). `includeAdd` is how `expand` grows
   a view, and the one edit an `llm` patch may make to a view whose `include` the user curated (§4.7).
+- Sequence views also take `stepsUpdate` (patch-only, never stored): a list of `{ id, …fields }` shallow-merged
+  into the existing steps with those ids, so one step's summary or anchors change without resending the rest
+  (the other steps, the frames and the tours that point at them are untouched). The fields are a step's;
+  `anchors` are `AnchorInput`s and replace that step's anchors wholesale, `null` clears `summary` or `edge`,
+  `id` is the key. It applies after `steps` when both are sent and only to an existing view (a new view
+  sends `steps`). An id that is not a step of the view is an error that names the view's steps (or the view
+  the step belongs to), a step twice in the list is an error, and an `llm` patch skips it (`protected`) when
+  the user edited the view's `steps` (§4.7).
 - Tours in a patch carry `AnchorInput`s in a step's `code` override (`PatchTourStep`); a stored tour is a
   valid patch too.
 - `find` is matched exactly first, then with runs of whitespace collapsed. Zero or several matches are
@@ -173,22 +188,25 @@ writeIndex(root: string, index: SymbolIndex): Promise<string>
 ```
 
 Pipeline: discover files → per file: read, hash, parse once, `pack.extract`, free the tree → assemble symbols
-(ids, `~N` suffixes, whole-line ranges, hashes, parents) → heuristic resolution of every site, plus the
-packs' `inferRefs` → precise resolvers replace references file by file → commit id → `SymbolIndex`.
-`tool` = `xpl-indexer@<v> web-tree-sitter@<v> <grammar>@<v> …`. A file with syntax errors is indexed anyway
-(one summary warning: its symbols may be incomplete); an extraction failure is a warning and a file without
+(ids, `~N` suffixes, whole-line ranges, hashes, parents) → heuristic resolution of every site, plus the packs'
+`inferRefs` → precise resolvers replace references file by file → commit id → `SymbolIndex`. `tool` =
+`xpl-indexer@<v> web-tree-sitter@<v> <grammar>@<v> …`. A file with syntax errors is indexed anyway: one
+warning covers them all and names the first lines (`N file(s) have syntax errors; symbols near these lines may
+be incomplete: a.ts:12,40`; at most 5 files and 3 lines each), and errors a pack knows cost no symbol are not
+reported (`errorInTypePosition`: the TS grammar cannot read a labelled tuple element such as `[symbol:
+string]`, and its recovery stays inside the tuple). An extraction failure is a warning and a file without
 symbols. References are sorted by file, position and kind. `resolvers` replaces the registry (tests inject
 fakes); `languages` restricts the build to some `FileLanguage`s (the CLI does not expose it).
 
-**Files.** `git ls-files --cached --others --exclude-standard` when `root` is inside a git work tree
-(limited to the root's subtree), otherwise a walk that skips `.git node_modules dist build out vendor target
+**Files.** `git ls-files --cached --others --exclude-standard` when `root` is inside a git work tree (limited
+to the root's subtree), otherwise a walk that skips `.git node_modules dist build out vendor target
 __pycache__ .venv venv .explainer` and dot-directories. In both modes `.explainer/`, `node_modules/` and
 `.git/` are never indexed (`.explainer/` would feed our own index back into the working-tree commit id).
-Dropped silently: binaries (NUL in the first 8 KB), files over 1 MB, symlinks and submodule directories,
-files deleted but still tracked, and lockfiles (`*-lock.json`, `*.lock`, `go.sum`, `pnpm-lock.yaml`,
+Dropped silently: binaries (NUL in the first 8 KB), files over 1 MB, symlinks and submodule directories, files
+deleted but still tracked, and lockfiles (`*-lock.json`, `*.lock`, `go.sum`, `pnpm-lock.yaml`,
 `npm-shrinkwrap.json`). Every remaining text file is an `IndexedFile` (unknown extensions → `text`), so
-file-relative anchors work anywhere. Language by extension: `.ts .mts .cts` typescript, `.tsx` tsx,
-`.js .mjs .cjs .jsx` javascript, `.py .pyi` python, `.go` go, `.yaml .yml` yaml, `.json` json. Paths are
+file-relative anchors work anywhere. Language by extension: `.ts .mts .cts` typescript, `.tsx` tsx, `.js .mjs
+.cjs .jsx` javascript, `.py .pyi` python, `.go` go, `.yaml .yml` yaml, `.json` json, `.toml` toml. Paths are
 POSIX, repo-root-relative, sorted.
 
 **Commit id.** `--commit` wins (letters, digits, `.`, `_`, `-` only: it becomes part of a file name). Else, if
@@ -203,12 +221,14 @@ the framework (`build.ts`, `symbols.ts`) and the language-agnostic heuristic res
 ```ts
 interface LanguagePack {
   id: string; languages: FileLanguage[]; grammarFor(language): GrammarId;
+  extensions?: string[];               // `text` files this pack parses too (a format with no FileLanguage of its own; none does now)
   packageScope: "file" | "directory";  // how far a top-level name is visible without an import (Go: the package dir)
   refs: "heuristic" | "none";          // does the pack emit sites (references are derived from them)?
   extract(ctx: FileContext): FileFacts;                        // one walk of the syntax tree
   classifySite(ctx, line, col): ClassifiedSite | undefined;    // the same rules as extract, for SCIP occurrences
   resolveModule(spec, fromFile, repo: RepoView): FilePath[];   // import specifier → repository files ([] = external)
   submoduleSpec?(module, name): string | undefined;            // Python: `from pkg import sub` may name module pkg.sub
+  errorInTypePosition?(error: Node): boolean;  // a syntax error inside a type expression that cost no symbol: not reported
   inferRefs?(input): InferredRef[];    // references no single site expresses (Go: implicit interfaces)
 }
 interface FileFacts {
@@ -220,22 +240,33 @@ interface FileFacts {
 
 - Positions are `Span`s: 1-based inclusive lines and columns in UTF-16 (`nodeSpan`/`spanBetween` convert
   tree-sitter's points). A pack must not keep tree nodes: the tree is freed right after `extract`.
-- `SymbolDraft { path, kind, range, parentPath? }`: dotted, pre-dedup paths.
-- `SiteDraft { kind, name, qualifier, site }`: `qualifier` is the receiver chain left to right, with the
-  receiver normalised to `"this"` (TS `this`, Python `self`/`cls`, the Go receiver variable; TS `super`
-  stays): `this.pool.lease()` → `["this", "pool"]`, `lease`. `x()` in a chain is the result of calling `x`,
-  `:T` a value of declared type `T`. A receiver the pack cannot spell (`arr[0].run()`) yields no site.
-- `ImportBinding { localName, module, importedName?, site }`.
+- `SymbolDraft { path, kind, range, parentPath?, anchorOnly? }`: dotted, pre-dedup paths. `anchorOnly` marks a
+  symbol that exists to be anchored and outlined and is never referenced by name (a TS test block: its title
+  is not a name in the code): the resolvers leave it out of name lookup, so `describe("Queue")` cannot capture
+  `Queue()` from the code under test, and no reference points at it; it still is the `from` of the references
+  inside it. Not stored in the index.
+- `SiteDraft { kind, name, qualifier, site }` (`kind`: `call import extends implements type-ref write read`):
+  `qualifier` is the receiver chain left to right, with the receiver normalised to `"this"` (TS `this`, Python
+  `self`/`cls`, the Go receiver variable; TS `super` stays): `this.pool.lease()` → `["this", "pool"]`,
+  `lease`. `x()` in a chain is the result of calling `x`, `:T` a value of declared type `T`. A receiver the
+  pack cannot spell (`arr[0].run()`) yields no site.
+- `ImportBinding { localName, module, importedName?, site, typeOnly? }`. `typeOnly`: TS `import type { A }` /
+  `import { type A }`, Python imports under `if TYPE_CHECKING:` (that branch, `elif` included): erased at run time,
+  so the reference made for it is a `type-ref`, not an `import`.
 - `TypeFact { scopePath, name, kind: "field" | "param" | "local" | "return", typeName?, initCall?, initChain?,
   visibleIn? }`: the declared or inferred type of a field, parameter, local or return value (generics
   stripped, `T | undefined` → `T`, `Promise<T>` unwrapped for returns). `initCall`: the value is the result of
   that call (the resolver follows it to the callee's return type). `initChain`: an alias of a receiver chain
   (`const q = this.queue`). `visibleIn` narrows where a name is in scope (a callback's parameters, a
   block-scoped `const`, Go's scoping); the resolver prefers the innermost fact.
-- `ExportFact { name, localName?, module?, importedName?, site? }`: what a module exposes beyond its
+- `ExportFact { name, localName?, module?, importedName?, site?, typeOnly? }`: what a module exposes beyond its
   top-level symbols (every top-level symbol counts as exported): `export { A as B }`, `export default X`,
-  re-exports (`export … from`, which also yield an `import` reference), `export *`, Python `from x import *`
-  and the submodule exports of a package's `__init__.py`.
+  re-exports (`export … from`, which also yield an `import` reference, or a `type-ref` when `typeOnly`:
+  `export type { A } from`), `export *`, Python `from x import *` and the submodule exports of a package's
+  `__init__.py`.
+- `ClassifiedSite { kind, site, bare? }`: what `classifySite` says about one position. `bare`: a `read` of a bare
+  name (`LIMIT`), not of a member (`this.limit`): the name is a variable or constant, never a field (the SCIP
+  mapper uses it, below).
 
 **Symbols.** Duplicate paths within a file get `~2`, `~3`… in source order (assigned by the framework).
 `IndexedSymbol.hash` = `hashText` of the symbol's full lines; `IndexedFile.hash` = `hashText` of the whole
@@ -243,19 +274,25 @@ file.
 
 | Language | Symbols (kind) | Path rules |
 |---|---|---|
-| TS/TSX/JS | class (also a class expression bound to a const, an anonymous default export), interface, type alias (`type`), enum (members are not symbols), function and generator declarations, `const/let/var` declarators (arrow/function initialiser → `function`, else `variable`; destructured names too), class members (methods incl. constructor/get/set/abstract → `method`; fields → `variable`, **except fields initialised with an arrow or function, which are `method`**), interface members (method signatures → `method`, property signatures → `variable`), functions nested in functions or methods, methods and function-valued properties of top-level object literals (`method`), namespaces (`other`) | `Class.member` (`#private` keeps its `#`, `[Symbol.iterator]` → `@@iterator`), `outer.inner`, `obj.key`, `NS.name`; anonymous default export → `default`; body-less overload signatures are skipped when an implementation follows, ambient declarations are kept; `declare module` / `declare global` members are listed as top-level |
+| TS/TSX/JS | class (also a class expression bound to a const, an anonymous default export), interface, type alias (`type`), enum (members are not symbols), function and generator declarations, `const/let/var` declarators (arrow/function initialiser → `function`, else `variable`; destructured names too), class members (methods incl. constructor/get/set/abstract → `method`; fields → `variable`, **except fields initialised with an arrow or function, which are `method`**), interface members (method signatures → `method`, property signatures → `variable`), functions nested in functions or methods, methods and function-valued properties of top-level object literals (`method`), namespaces (`other`) | `Class.member` (`#private` keeps its `#`, `[Symbol.iterator]` → `@@iterator`), `outer.inner`, `obj.key`, `NS.name`; anonymous default export → `default`; body-less overload signatures are skipped when an implementation follows, ambient declarations are kept; `declare module` / `declare global` members are listed as top-level; **test blocks**: statement-level `describe` / `suite` / `context` / `it` / `test` calls with a string title (also `.only`, `.skip`, `.each(table)(…)`) are `function` symbols whose path is the titles nested by `describe`, each with `.` and `#` replaced by `_` (`Queue.pop().returns the oldest job`) and whose range is the whole statement; they are `anchorOnly`, and a block whose path equals a real symbol's is dropped |
 | Python | class; `def` / `async def` (`function`; directly in a class body → `method`); module- and class-level simple assignments (`variable`; also annotation-only `id: str`; single-name targets only); `type X = …` (`type`) | `Class.method`, `outer.inner`, `Class.Inner.method`; the range starts at the first decorator; definitions inside `if`/`try`/`with`/`for`/`while`/`match` belong to the scope around them; `if __name__ == "__main__":` is skipped; `@overload` stubs are skipped; `@x.setter` gives `x~2` |
 | Go | `func` (`function`); methods (`method`, path `Recv.Name`, pointer receivers and type parameters stripped); `type` declarations (struct → `class`, interface → `interface`, anything else, aliases included → `type`); struct fields (`variable`, `Type.field`, nested anonymous structs `Type.field.sub`); interface methods (`method`); top-level `var`/`const` specs (`variable`, one per name, `_` declares nothing) | a method is a child of its receiver type only when that type is declared in the same file; **a type symbol's range starts at its name** (not at `type`); **embedded struct fields and interface elements are not symbols but `extends` sites**; function-local types and closures are not symbols |
 | YAML/JSON | mapping keys (`key`) | dotted key path; sequence items by index (`workers.0.name`); at most 6 levels of keys and 2000 keys per file (one warning beyond); a key's range is its whole `key: value` pair; YAML merge (`<<`), empty, complex and alias keys are not symbols |
+| TOML | tables and pairs (`key`) | dotted key path: `[project.scripts]` + `flask = "…"` → `project.scripts.flask`; a table's range is its header and the pairs up to the next header (a table that is only implied, `a` in `[a.b]`, is not a symbol); a dotted key `x.y = v` is one symbol (the pair); an array of tables addresses its elements by index (`fruits.0.name`); inline tables and arrays as in YAML; quoted keys are unquoted; at most 6 levels of keys and 2000 keys per file |
 
 **Reference sites.** Each pack emits syntactic sites `{ kind, name, qualifier, site }` for calls (including
 `new X()`, composite literals, JSX components, Python decorators), imports without a binding (`import "./x"`,
 `import("./x")`, `require("./x")`), `extends` / `implements` (Python class bases and Go embedded fields are
-`extends`), type positions (`type-ref`) and assignments to fields and module variables (`write`). A call or
-assignment spanning more than 10 lines is reported by its callee or target only. `from` is not given by the
-pack: the framework takes the innermost symbol containing the site's start (line and column), else the module
-scope `"<file>#"`. `classifySite(ctx, line, col)` applies the same rules to one position, so SCIP occurrences
-are classified exactly like sites.
+`extends`), type positions (`type-ref`), assignments to fields and module variables (`write`) and reads
+(`read`): a use of a module- or package-level variable or constant (`LIMIT`, `config.LIMIT`), or of a field of
+a value whose type is known (`this.queue`, `job.attempts`), that is not a call, a target or a declaration.
+Locals and parameters are not references: the pack leaves out a bare name that a function, block, loop,
+`catch`, comprehension or class body around the use binds, and the resolver decides the rest (only variables
+and fields count: a function passed as a value is not a read of it). A call or assignment spanning more than
+10 lines is reported by its callee or target only. `from` is not given by the pack: the framework takes the
+innermost symbol containing the site's start (line and column), else the module scope `"<file>#"`.
+`classifySite(ctx, line, col)` applies the same rules to one position, so SCIP occurrences are classified
+exactly like sites.
 
 **Heuristic resolution** (`src/resolve/heuristic.ts`), for a site `qualifier.name`, in order:
 
@@ -272,7 +309,12 @@ are classified exactly like sites.
    it (`bus = new EventBus()`);
 5. last resort, only when the receiver's type is completely unknown: a class named like the qualifier
    (case-insensitively) that has the member (`queue.pop()` → `Queue.pop`), preferring the same file, then a
-   class the file imports, then the same directory. Ambiguity drops the site.
+   class the file imports, then the same directory. Ambiguity drops the site. Calls and writes only.
+
+A `read` site resolves by 1–4 and only to a variable or field: a re-export chain that finds a class or function
+drops it, and the nearest member of that name decides (a property that overrides a base-class attribute is not
+a variable, and the attribute below it is out of reach). An import binding marked `typeOnly` yields a
+`type-ref` reference instead of an `import`.
 
 Receivers whose type is known but outside the repository (`Map`, `Promise`, a bare npm import) are opaque:
 nothing is guessed. Unresolved sites and self-references are dropped. Module resolution (`resolveModule`):
@@ -306,20 +348,26 @@ with a timeout (10 minutes, `XPL_SCIP_TIMEOUT_MS`), writing to a temp directory 
 
 Mapping (`map.ts`): for every non-definition occurrence of a symbol whose definition lies in an indexed file,
 `from` = the innermost symbol at the occurrence (else the module scope) and `to` = the symbol whose name sits
-at the definition (a module or package → the module scope of the defining file, the alphabetically first for
-a Go package; a constructor → its class). `kind` and `site` come from the pack's `classifySite`. When the
-pack does not classify an occurrence: a quoted module specifier → `import` of the module scope (dropped when
-the same statement imports names), role Import → `import`, WriteAccess → `write`, a type-like symbol →
-`type-ref`; anything else, plain reads and declarations included, is dropped. Also dropped: references to
+at the definition (a module or package → the module scope of the defining file, the alphabetically first for a
+Go package; a constructor → its class; a test block is never a target). `kind` and `site` come from the pack's
+`classifySite` (an `import` becomes a `type-ref` for a type-only import, by the syntax of the statement). The
+indexers do not tell reads from writes (scip-typescript sets no role, the others call everything a read), so
+the pack's syntax decides: a `read` is kept only when its target is a variable of ours (a field, a constant; a
+function passed as a value, or a class used as a namespace, falls through to the rules below), a `bare` one
+(`ClassifiedSite.bare`: `LIMIT`, not `this.limit`) whose target is a class member is dropped (SCIP reports the
+property of an object-literal shorthand `{ retry }`, which reads no field), and a WriteAccess role turns it
+into a `write`. When the pack does not classify an occurrence: a quoted module specifier → `import` of the
+module scope (dropped when the same statement imports names), role Import → `import`, WriteAccess → `write`, a
+type-like symbol → `type-ref`; anything else, declarations included, is dropped. Also dropped: references to
 definitions nested in something that is not one of our symbols (parameters, local variables, instance
 attributes), occurrences that do not fit the file text (a warning counts them), self-references. `local N`
 symbols follow the same rules, so calls to functions nested in functions stay. SCIP `is_implementation`
-relationships become `implements` references (Go interfaces are satisfied implicitly, so this is where
-precise Go gets them), unless an occurrence already said `extends`/`implements` or the member merely
-overrides a base-class member. SCIP ranges (0-based, end-exclusive, in the document's encoding: UTF-16 for
-scip-typescript and scip-python, UTF-8 bytes for scip-go) become 1-based, inclusive UTF-16 against the file on
-disk. Symbols are matched across indexes without their package version, so the modules of a Go repository
-resolve each other.
+relationships become `implements` references (Go interfaces are satisfied implicitly, so this is where precise
+Go gets them), unless an occurrence already said `extends`/`implements` or the member merely overrides a
+base-class member. SCIP ranges (0-based, end-exclusive, in the document's encoding: UTF-16 for scip-typescript
+and scip-python, UTF-8 bytes for scip-go) become 1-based, inclusive UTF-16 against the file on disk. Symbols
+are matched across indexes without their package version, so the modules of a Go repository resolve each
+other.
 
 **Replacement is per file.** The files a tool *described* (`PreciseOutput.describedFiles`; for SCIP, the
 documents of its index) lose their heuristic references to the tool's. Files it did not describe (build-tagged
@@ -522,23 +570,31 @@ atomic: any error → `ok: false` and the input explainer, untouched.
 - Upsert by id, shallow-merged as in §2. An id twice in one patch, or upserted and removed by the same patch,
   is an error. `remove` takes elements, views, tours and single steps (an unknown id is a warning); dropping a
   step id by resending a view's `steps` is a warning (`step`: tours may point at it).
-- **Ownership.** `actor: "llm"` never modifies (skipped with a `protected` warning) an element or view whose
-  origin is `user`, and keeps the fields listed in `userFields`. It cannot create `origin: "user"` elements
-  and cannot change `provenance`. It cannot remove an element or view that has `userFields` (or is
-  user-authored), nor single steps of a view whose `steps` the user edited. The one edit it may still make to
-  a field the user owns is `includeAdd`. `actor: "user"` editing an element of another origin adds the
-  changed fields to `userFields`; that is how viewer edits and `xpl apply --actor user` protect themselves
-  from regeneration.
-- New elements get `provenance = { origin: actor, commit: index.commit }` unless given; a changed `llm`
-  element gets `provenance.commit = index.commit`. Tours have no provenance.
+- **Ownership.** `actor: "llm"` never modifies (skipped with a `protected` warning) an element, view or tour
+  whose origin is `user`, and keeps the fields listed in `userFields` (a tour's are `title` and `steps`). It
+  cannot create `origin: "user"` elements and cannot change `provenance`. It cannot remove an element, view or
+  tour that has `userFields` (or is user-authored), nor single steps of a view whose `steps` the user edited,
+  and a `stepsUpdate` of such a view is skipped like `steps`. The one edit it may still make to a field the
+  user owns is `includeAdd`. A tour without `provenance` counts as `llm`. `actor: "user"` editing an element
+  of another origin adds the changed fields to `userFields`; that is how viewer edits and `xpl apply --actor
+  user` protect themselves from regeneration.
+- New elements, views and tours get `provenance = { origin: actor, commit: index.commit }` unless given; a
+  changed `llm` element gets `provenance.commit = index.commit`.
 - Anchors go through `makeAnchor`, steps and tour `code` overrides likewise, frames are checked.
+- **Errors come all at once.** Anchors, references and ids are checked in one pass, so a rejection lists every
+  problem of the patch: an element whose anchor failed is still merged (without that anchor) and checked for
+  its other problems, an element that cannot be built is assumed to exist so that later references to it stay
+  quiet, and the checks that depend on a failed anchor (an `llm` edge's evidence at both ends) wait until it is
+  fixed. Ids that name nothing come with `Did you mean: …` (elements, views, tours and steps, in `remove` too),
+  symbols with both spellings. A span written in the patch that starts or ends on a blank line is a warning
+  (`probably off by one`, with the offset where the code starts or ends): the anchor is kept as written.
 - **Validation after the merge is strict, but only what the patch introduced or touched can reject it.**
   Errors that were already in the explainer, on elements the patch did not change, become one summary
   warning (otherwise a single drifted anchor on a user-owned concept would block every later patch). One more
   exception: an `llm` patch that changes an element whose anchors the user owns is not rejected for the drift
   of those anchors, which it cannot repair; the problem stays a warning (`userLocked`).
 - `changed` lists the ids of elements, views, tours and steps the patch added, changed or removed (upserts
-  that change nothing are not listed), plus `"title"`.
+  that change nothing are not listed), plus `"title"`; a `stepsUpdate` lists the view and each step it changed.
 
 ### 4.8 Also in core
 
@@ -561,23 +617,24 @@ Global: `--root <dir>` (default cwd), `--json` (machine output), `--index <path>
 suggestions when wrong. `<explainer>` is a name (`jobrunner`), a file name or a path. Output is compact and
 copy-pasteable, for Claude as much as for people: exact ids, `<line> <offset>│ code` with the 0-based offsets
 that spans use, `+34..36` for the span of a reference site. `--json` on every command prints `{ "ok": true,
-…, "warnings"? }`; errors print `{ "ok": false, "error", … }`. Warnings go to stderr as `warning: …`.
+…, "warnings"? }`; errors print `{ "ok": false, "error", … }`. Results, issue lists and patch rejections go to
+stdout (a rejection exits 1); fatal errors (`error: …`) and warnings (`warning: …`) go to stderr.
 
 | Command | Does |
 |---|---|
-| `xpl index [--precise auto\|off\|require] [--commit c]` | build + write the index; writes `.explainer/.gitignore` (`index-*.json`); prints a per-language summary and names explainers bound to another index |
-| `xpl outline [--under <id>] [--depth n] [--keys] [--limit n]` | dir/file/symbol tree with kind, lines, fan-in/fan-out (references into/out of the subtree); default depth 2; config keys only with `--keys` |
+| `xpl index [--precise auto\|off\|require] [--commit c]` | build + write the index; writes `.explainer/.gitignore` (`index-*.json`); prints a per-language summary whose last column is the trust of its references (`precise (tool)`, `precise 64/82 (tool), 18 heuristic` when the tool described only some files, `heuristic`, `none`) and names explainers bound to another index |
+| `xpl outline [--under <id>] [--depth n] [--kind k,...] [--keys] [--limit n]` | dir/file/symbol tree with kind, lines, fan-in/fan-out (references into/out of the subtree); default depth 2; config keys only with `--keys`; `--kind method,function` keeps only those symbol kinds, with the dirs, files and parents that hold a match; the repo line carries the name `xpl new` records |
 | `xpl show <id> [--refs] [--context n] [--lines a-b] [--max-lines n]` | code with 0-based offsets relative to the symbol (the numbers spans use); dirs and the repo list children; `--refs` appends outgoing and incoming references with `+offset` |
-| `xpl refs <id> [--in\|--out] [--kind k] [--depth n] [--limit n] [--tests]` | call/reference hierarchy with sites; hops through interfaces as `impl` lines; test doubles hidden unless `--tests` |
-| `xpl search <pattern> [--regex] [-i] [--limit n]` | text hits over the working tree with enclosing symbol id and offset |
+| `xpl refs <id> [--in\|--out] [--kind k] [--depth n] [--max-children n] [--limit n] [--tests]` | call/reference hierarchy with sites; hops through interfaces as `impl` lines; test doubles hidden unless `--tests`; a subtree is printed once (later occurrences: `(expanded above)`), at most `--max-children` (default 15) references under a line of a hierarchy (`... +8 more`); `--kind read` finds the readers of a variable or field |
+| `xpl search <pattern> [--regex] [-i] [--limit n] [--under <dir\|glob>] [--code]` | text hits over the working tree with enclosing symbol id and offset; code files first, then config, then docs (`--code`: code only); `--under` keeps the search in a dir, file, symbol or glob |
 | `xpl new <name> [--title t] [--repo r] [--url u]` | create `.explainer/<name>.explainer.json` bound to the index; never overwrites; repo name from `--repo`, else `package.json`, `go.mod`, `pyproject.toml`, git remote, directory name |
-| `xpl apply <explainer> <patch.json\|-> [--actor llm\|user] [--dry-run]` | §4.7; prints issues; atomic; `--help` summarises the patch format |
+| `xpl apply <explainer> <patch.json\|-> [--actor llm\|user] [--dry-run]` | §4.7; prints every issue of a rejected patch at once; atomic; `--help` summarises the patch format |
 | `xpl validate <explainer> [--lenient]` | §4.6 |
-| `xpl anchors <explainer> [id...] [--full] [--max-lines n]` | each anchor of an element (or of every element) resolved now: role, `file#symbol +span`, status, lines, and the code at them with offsets; verifies spans without reading JSON |
+| `xpl anchors <explainer> [id...] [--full] [--max-lines n]` | each anchor of an element (or of every element) resolved now: role, `file#symbol +span`, status, lines, and the code at them with offsets (a long anchor: its first lines, an elision line, its last lines); `tour:<id>` (or `tour:<id>/<step>`) also shows what a step without `code` derives from its `focus`, marked derived; verifies spans without reading JSON |
 | `xpl resolve <explainer> [--write] [--allow-stale]` | §4.2 re-resolve against the index of the current code; report drifted llm elements, missing anchors; `--write` saves |
 | `xpl status <explainer>` | the skill's to-do list, read-only: per view the shown nodes, stored edges and steps without a summary (static edges optional), concepts without one, drift (user-owned drift counted apart), missing anchors, broken references (ids gone from the index), stale derived-edge overlays, queued requests; per graph view the ghosts and stubs it draws (counts, the most referenced ghost ids, `--json`: every ghost with its count and every stub id in `views[].ghosts`) with a warning above 12 ghosts; the tours (id, step count, steps whose focus ids or view are gone) |
 | `xpl view <explainer> [--port p] [--host h] [--no-open]` | local server (below) |
-| `xpl bundle <explainer> -o out.html [--mode explore\|present] [--tour id] [--files all\|referenced]` | self-contained HTML; `--tour` (`tour:intro` or `intro`) implies present mode |
+| `xpl bundle <explainer> -o out.html [--mode explore\|present] [--tour id] [--files referenced\|all]` | self-contained HTML; `--tour` (`tour:intro` or `intro`) implies present mode; embeds the files the explainer references by default and prints what went in (`8 of 12 files embedded (referenced: 18.4 KB of source; --files all adds 4 files, 6.7 KB)`), `--files all` every indexed file |
 
 **Exit codes.** 0 ok (warnings allowed); 1 rejected or failed: unknown id, no index, a rejected patch, a patch
 that changed nothing because the user owns everything it touched, validation errors, `resolve --write` on a
@@ -625,12 +682,18 @@ array of `{ elementId, note?, kind?, view?, label?, at, explainer? }`; the skill
 handled the requests.
 
 **Bundle payload** (`ViewerBundle`, also `/api/bundle`): `{ schema: "code-explainer/bundle@0", explainer,
-index, files: Record<FilePath, string>, mode?, tour?, server? }`, embedded as
-`<script id="xpl-data" type="application/json">` with `<` escaped as `\u003c` (and U+2028/2029 escaped).
-Under `xpl view` `files` may be partial and the viewer fetches the rest from `/api/file`. `xpl bundle`
-embeds every indexed file when they total under 20 MB, else the referenced ones (`--files` decides): those of
-every anchor, plus every file that a view element, concept or tour step can focus. The viewer HTML comes from
-`XPL_VIEWER_HTML`, else `dist/viewer.html` next to the running bundle, else `packages/viewer/dist/index.html`.
+index, files: Record<FilePath, string>, mode?, tour?, server? }`, embedded as `<script id="xpl-data"
+type="application/json">` with `<` escaped as `\u003c` (and U+2028/2029 escaped). Under `xpl view` `files` may
+be partial and the viewer fetches the rest from `/api/file`. `xpl bundle` embeds the files the explainer needs
+(`--files referenced`, the default; `--files all` embeds every indexed file): those of every anchor and tour
+`editor.primary`, of what the views draw (the nodes a graph view includes, a directory or group bringing its
+files, the sites and definitions behind its derived edges, a sequence view's participants and steps), of what
+a tour step can focus, and, one hop out, the code behind the dashed stubs of graph views (the sites of the
+references that cross the edge of the view and what they lead to: none for `stubs: none`, references of
+`excludeFiles` files do not count; a ghost directory that joins the view when expanded is fetched on demand
+under `xpl view` and absent from a static bundle). The viewer's file tree lists only the embedded files of a
+static bundle, with an "N of M files included" footer. The viewer HTML comes from `XPL_VIEWER_HTML`, else
+`dist/viewer.html` next to the running bundle, else `packages/viewer/dist/index.html`.
 
 ---
 
@@ -648,29 +711,36 @@ targets; summaries are plain text.
 
 **Explore.** Header: title, one tab per view (the tooltip of a sequence view is its question), the Tours
 button, the Explore/Present toggle (Present is disabled without tours and says how to get one), save state and
-download. Left: the diagram (caption: title, question, and for graph views the Stubs control (top / all / none) and the
-derived-edge-kind toggles),
-below it the concept list and the details panel. Right: the code, the file tree (collapsible; files outside
-the focus are greyed `is-dimmed`, files in it `is-focus`) beside the stack of CodeMirror editors. Both splits
-(diagram / panels, diagram / code) are resizable. Below 900 px the halves stack.
+download. Left: the diagram (caption: title, question, and for graph views the Stubs control (top / all /
+none) and the derived-edge-kind toggles), below it the concept list and the details panel. Right: the code,
+the file tree (collapsible; files outside the focus are greyed `is-dimmed`, files in it `is-focus`; a static
+bundle lists only the files it embeds, with a footer "N of M files included · rebuild with --files all",
+`tree-foot`; under `xpl view` every indexed file is listed and loaded when opened) beside the stack of
+CodeMirror editors (language modes for TS/TSX/JS, Python, Go, YAML and JSON; TOML and other text are plain).
+Both splits (diagram / panels, diagram / code) are resizable. Below 900 px the halves stack.
 
-- **Graph view:** elkjs `layered`, direction RIGHT, or DOWN when the pane is taller than wide; when the
-  result would have to be scaled down to fit, the other direction is tried too (graphs of at most 150
-  elements) and kept if it fits at least 8% larger. The direction is on the graph as `data-direction`.
-  `hierarchyHandling: INCLUDE_CHILDREN`, containers for nested includes, edges routed inside their lowest
-  common container. If ELK throws, a grid layout keeps the diagram usable (`data-fallback`). Edges are styled
-  by resolution: precise, heuristic (thinner and lighter), `llm`, `user`; stubs are dashed and lead to ghost
-  boxes (at most 8 by default plus one "+N more" per direction, see §4.4; ghosts that stand for several
-  elements have a dotted border and a list icon). Click selects (shift/ctrl/cmd adds, the background clears);
-  clicking a ghost for one element calls `expandStub`, clicking a folded ghost ("rest of <file>", "+N more")
-  opens a **menu** beside it: its elements with kind and reference count, most referenced first (a "rest of"
-  menu starts with "The whole file", which adds the file as one box), and picking one adds it to the view
-  (`expandStub` on that element); Escape, a click elsewhere or a turn of the wheel over the diagram closes it,
-  the arrow keys move in it. Double-clicking a node calls `drillIn`; a container has a collapse button. Pan by
-  dragging, zoom with the wheel, the buttons or `+`/`-`, "Fit". View edits (expand, drill in, collapse,
-  edge-kind toggles, the Stubs control) are stored on the view. Selecting a stub focuses the reference sites
-  that cross the boundary there plus the definitions on the far side (of every element a folded ghost stands
-  for); its details list those elements with a button each. Ghosts are pictures in Present: no menu.
+- **Graph view:** elkjs `layered`, direction RIGHT, or DOWN when the pane is taller than wide; when the result
+  would have to be scaled down to fit, the other direction is tried too (graphs of at most 150 elements) and
+  kept if it fits at least 8% larger. The direction is on the graph as `data-direction`. `hierarchyHandling:
+  INCLUDE_CHILDREN`, containers for nested includes, edges routed inside their lowest common container. If ELK
+  throws, a grid layout keeps the diagram usable (`data-fallback`). Edges are styled by resolution: precise,
+  heuristic (thinner and lighter), `llm`, `user`; stubs are dashed and lead to ghost boxes (at most 8 by
+  default plus one "+N more" per direction, see §4.4; ghosts that stand for several elements have a dotted
+  border and a list icon). Click selects (shift/ctrl/cmd adds, the background clears); clicking a ghost for
+  one element calls `expandStub`, clicking a folded ghost ("rest of <file>", "+N more") opens a **menu**
+  beside it: its elements with kind and reference count, most referenced first (a "rest of" menu starts with
+  "The whole file", which adds the file as one box), and picking one adds it to the view (`expandStub` on that
+  element); Escape, a click elsewhere or a turn of the wheel over the diagram closes it, the arrow keys move
+  in it. Double-clicking a node calls `drillIn`; a container has a collapse button. Pan by dragging, zoom with
+  the wheel, the buttons or `+`/`-`, "Fit" (or `0`) for all of it. The first view is the fit, unless the
+  diagram is too big to read fitted (a fit scale below 0.6, as for seventeen boxes with groups): then it
+  starts at zoom 0.75 on the selection, else on the first box of `view.include` that is drawn, and a badge
+  (`pz-badge`) says part of it is out of sight and offers "Fit all" (once all of it is in sight: "Readable
+  size" to come back). Sequence diagrams pan and zoom the same way, and each tour step starts its diagram over
+  on the step's focus, even within one view. View edits (expand, drill in, collapse, edge-kind toggles, the
+  Stubs control) are stored on the view. Selecting a stub focuses the reference sites that cross the boundary
+  there plus the definitions on the far side (of every element a folded ghost stands for); its details list
+  those elements with a button each. Ghosts are pictures in Present: no menu.
 - **Sequence view:** lifelines, one row per step (`call` solid, `return` dashed, `async` open head), self-calls
   as loops, frames (`loop`/`alt`/`opt`/`par`) as labelled rectangles around their steps, nested by
   `resolveFrames`. A step's hit area covers its label and arrow.
@@ -723,7 +793,8 @@ defaults, which the URL overrides.
   `tour-add`, `tour-step`, `tour-step-note`, `tour-step-up`, `tour-step-down`, `tour-step-delete`,
   `tour-undo`, `tour-present`, `tour-picker`, `tour-prev`, `tour-next`, `tour-counter`, `tour-note`,
   `tour-detour`, `explain-command`, `no-data`, `stubs-control`, `ghost-menu`, `ghost-targets` (the list in the
-  details panel of a stub to a folded ghost).
+  details panel of a stub to a folded ghost), `pz-badge` (the "Fit all" / "Readable size" badge of a diagram
+  that is too big to read fitted), `tree-foot` (the "N of M files included" footer of a static bundle).
 - Editor panes `[data-file="<path>"]`; every line `.cm-line[data-line="<n>"]`; decorations `xpl-hl`,
   `xpl-hl-<role>`, `xpl-dim`, and `xpl-site` on the exact call or usage expression when the range has
   columns.
@@ -745,41 +816,57 @@ copied (`XPL_CLI=<xpl.mjs>` overrides the lookup). Everything Claude writes is a
 explainer by hand.
 
 Workflow: `xpl index` → `xpl new <name>` → read the code (`outline`, `search`, `show`, `refs`) → write one
-patch → `xpl apply` (a rejection writes nothing: fix the patch, apply again) → `xpl validate` and `xpl
-status` (until `0 unexplained`) and `xpl anchors` (read what every span landed on) → `xpl bundle` (the
-default in cloud sessions) or `xpl view`.
+patch → re-read every summary against the code it anchors → `xpl apply` (a rejection writes nothing and lists
+every error at once: fix the patch, apply again) → `xpl validate` and `xpl status` (until `0 unexplained`) and
+`xpl anchors` (read what every span landed on) → `xpl bundle` (the default in cloud sessions) or `xpl view`.
 
 - **`explain <question>`**: ask one short question if the scope is really ambiguous; find entry points
-  (`search -i`, `outline`); trace (`show <entry> --refs`, `refs --out --depth 2 --kind call`, hopping through
-  interfaces via `impl` lines); look for what static analysis misses (event bus, DI, callbacks, HTTP,
-  queues, config keys read by name); decide the model (a sequence view of 3–6 participants and one step per
-  call that matters; a graph of the 5–15 files or symbols involved, with groups where a responsibility
-  crosses folders; concepts anchored to code, config keys and tests; `llm` edges only for the links just
-  found, evidence at both ends; a summary for everything the views show); write ONE patch; apply; check; show
-  the result; answer in 3–6 sentences.
-- **`explain repo`**: coarse first, lazy after. `outline --depth 1/2`, 4–10 boxes, groups for responsibilities
-  that span folders, an overview graph (`scope: { root: "repo", depth: 1 }`, `excludeFiles` for test files,
-  `edgeKinds` when package dependencies are the point), `llm` edges, a few concepts at most, one sequence view
-  for an obvious entry point. Deeper nodes stay unexplained; offer the 2–3 most useful expansions.
+  (`search -i`, `outline`); trace (`show <entry> --refs`, `refs --out --kind call` at depth 1 and a targeted
+  `show` per callee, since `--depth 2` on a hub is noise; hop through interfaces via `impl` lines; a `call`
+  whose target is a variable or field is a call through a function value, so anchor the field as `usage`
+  and the concrete function if it is in the repo; calls into dependencies are not indexed, so anchor the call
+  site and name the dependency); look for what static analysis misses (event bus, DI, callbacks, HTTP,
+  queues, config keys read by name; `refs <field> --in --kind read` for the readers of a typed config
+  field); decide the model (a sequence view of 3–6 participants, more than 6 meaning several views, and one
+  step per call that matters; a graph of the 5–15 files or symbols involved, with groups where a
+  responsibility crosses folders; concepts anchored to code, config keys and tests; `llm` edges only for the
+  links just found, evidence at both ends; a summary for everything the views show); write ONE patch; **re-read
+  every summary against the `show` output of its anchors**, removing or qualifying absolute words (only,
+  never, all, always, nothing but) and any behaviour the anchored code does not show (prose is the main
+  quality risk: the viewer displays it next to the code); apply; check; show the result; answer in 3–6
+  sentences.
+- **`explain repo`**: coarse first, lazy after. `outline --depth 1/2`, 4–10 boxes (in a `src/<pkg>/` layout
+  start at `dir:src/<pkg>`), groups for responsibilities that span folders, an overview graph (`scope: { root:
+  "repo", depth: 1 }`, `excludeFiles` for tests, examples and docs, `edgeKinds` when package dependencies are
+  the point), `llm` edges, a few concepts at most, one sequence view for an obvious entry point. Deeper nodes
+  stay unexplained; offer the 2–3 most useful expansions. `xpl status` warns when a view stops in more than 12
+  places.
 - **`expand <node>`**: an id, a clicked ghost (`ghost:dir:x` means `dir:x`; `ghost:rest:file:p` is what a partly
-  shown `file:p` holds outside the view, `ghost:more:in|out` the ghosts beyond `stubs.max`) or a queued request. Read it, patch
-  the graph view with `includeAdd` (works on user-curated views), explain only what became visible (`xpl
-  status` names it), drain `.explainer/requests.json` and delete it.
+  shown `file:p` holds outside the view, `ghost:more:in|out` the ghosts beyond `stubs.max`) or a queued
+  request. Read it, patch the graph view with `includeAdd` (works on user-curated views), explain only what
+  became visible (`xpl status` names it), drain `.explainer/requests.json` and delete it. A folded ghost is
+  not an element: `includeAdd` the elements it stands for (the viewer's menu, `outline --under file:p` and
+  `refs <shown id> --out` show them) or `file:p` for the whole file as one box; `hidden` takes ghost and stub
+  ids (`xpl status --json` lists them); `stubs.mode` `all` is for small views only, `none` draws no stubs.
 - **`make tour`**: 5–12 steps `{ id: "t1", view, focus: [ids], note, editor: { primary } }`, with a `code`
-  override when the focus is a group, file or directory; ids `tour:<slug>`, steps `t1`, `t2`…; apply, then
-  `xpl bundle -o … --tour tour:<slug>`.
+  override when the focus is a group, file or directory; ids `tour:<slug>`, steps `t1`, `t2`…; apply, read
+  `xpl anchors <name> tour:<slug>` (what each step will show: its `code`, else the ranges derived from its
+  `focus`), then `xpl bundle -o … --tour tour:<slug>`. A tour the user edited in the tour panel is protected:
+  a new tour (new slug) takes the changes.
 - **Regeneration** (after the code changed): `xpl index` → `xpl resolve <name> --write` → `xpl status` →
-  re-read the code and resend the anchors and dependent summaries of drifted `llm` elements, skipping
-  `userFields` and never touching `origin: "user"`; repair broken references (`includeRemove`, lists resent
-  without the gone id); report missing anchors to the user with the "did you mean" hint, never dropping or
-  retargeting them silently → `xpl validate` (strict) must pass.
+  re-read the code and resend the anchors and dependent summaries of drifted `llm` elements (a drifted step:
+  a `stepsUpdate` entry with its rebuilt anchors and summary, the other steps stay), skipping `userFields` and
+  never touching `origin: "user"`; repair broken references (`includeRemove`, lists resent without the gone
+  id); report missing anchors to the user with the "did you mean" hint, never dropping or retargeting them
+  silently → `xpl validate` (strict) must pass.
 
 Hard rules: you cannot invent code (every anchor resolves or `apply` rejects it; never write hashes, and
 never line numbers or offsets from memory: copy them from `show`/`refs`/`search` output, or use `find`);
 read before you claim (a reference is a hint until you have seen the call); `llm` edges only for what static
 analysis cannot see, with anchors at both ends; stable ids (slugs chosen once, step ids never renumbered or
 reused); the default actor `llm` (never overwrite `origin: "user"` or `userFields`; `--actor user` only for
-text the user dictates); summaries are 1–2 concrete sentences about this code; lazy; ask rather than guess.
+text the user dictates; views and tours the user edited are theirs too); summaries are 1–2 concrete sentences
+about this code, every claim visible in the code their anchors show; lazy; ask rather than guess.
 
 `reference/`: `patch-format.md` (a template for every element, merge rules, rejection messages and their
 fixes; its `json patch` blocks are applied by a test), `cli.md` (every command with sample output),
@@ -834,13 +921,15 @@ explore, tours, `xpl view`'s API from the browser, degraded (malformed) explaine
 ## 9. Status
 
 **Exists and tested:** the four packages and the skill as described above; three language packs with
-heuristic references, SCIP-precise references for all three, the full CLI, explore and present modes with
-tours, and example explainers for the three fixtures.
+heuristic references, SCIP-precise references for all three, config keys of YAML, JSON and TOML files, the
+full CLI, explore and present modes with tours, and example explainers for the three fixtures.
 
 **Known limitations**
 
-- Nothing produces `read` references, so the viewer's `reads` toggle has nothing to switch (stored `reads`
-  edges are always shown).
+- `read` references are conservative (§3): module or package variables and constants, and fields whose type is
+  known. A read of a local or parameter, through a receiver of unknown type or by dynamic access is not
+  recorded, and `reads` edges are off by default (`DEFAULT_EDGE_KINDS`; the viewer's toggle and `edgeKinds`
+  switch them on; stored `reads` edges are always shown).
 - `GraphView.layout` (hand-pinned positions) is validated and accepted in patches but the viewer never reads
   it, and `GraphView.hidden` is honoured by derivation but has no UI: hiding an edge or node is a patch
   (`xpl status --json` lists the derived edge ids).
@@ -854,15 +943,14 @@ tours, and example explainers for the three fixtures.
   downloads them. Files a tool did not describe stay heuristic (`heuristicFiles`).
 - "Explain this" is a queue, not a live call: an explanation appears the next time the skill runs.
 - Step ids are "never renumbered" by convention: the code only warns when a resend drops one.
-- Tours have no `provenance`, so a tour the user edited in the tour panel is not protected: an `llm` patch that
-  resends or removes its id replaces it (the skill's patch reference says tours "can be re-sent freely").
-  Everything else the user edits is protected (§4.7), which makes tours the one exception to the handoff's
-  rule that user-owned content is never overwritten on regeneration.
+- Tours have `provenance` and are protected like the rest (§4.7); a tour written before that has none and
+  counts as `llm`, so an `llm` patch may still replace it. A tour has no `stepsUpdate`: fixing one of its
+  steps means resending its `steps`.
 - Not published: the packages are private and `xpl` runs from a clone (`npm install && npm run build`), which
   is also what the skill launcher expects. Node ≥ 22.12 is required; only Linux has been exercised.
 
 **Next steps, roughly by value:** live reload for `xpl view` (poll `/api/bundle`, or a server-sent event when
 the explainer file changes); a UI for hiding and pinning, or dropping the unused `layout` field; ELK in a Web
-Worker; `read` references (SCIP roles already carry them); more language packs (each needs `extract`,
+Worker; more language packs (each needs `extract`,
 `classifySite`, `resolveModule`, and optionally a SCIP resolver); publishing the CLI and packaging the skill
 so that install is one step; a regeneration mode in the skill that walks `xpl status` on its own.
