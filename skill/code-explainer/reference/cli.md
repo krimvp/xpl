@@ -375,7 +375,7 @@ error: refusing to write .explainer/jobrunner.explainer.json: index wt-3fa2f32c4
 The skill's to-do list, read-only: per view, the shown nodes, participants, stored edges and steps without a `summary` (and the ids of the static edges without one, which you need to overlay them); per graph view, where it stops (its ghosts and stubs); concepts without a summary; the tours; drifted llm elements; missing anchors; **broken references**; stale edge overlays; requests queued by the viewer. Static edges are optional. `status` reads the explainer through the index it is bound to: after `xpl index`, run `xpl resolve <name> --write` first so that it sees the new code.
 
 - The `to do:` line counts drift the user owns apart: `4 drifted (1 user-owned: ask the user)`. User-owned = an element that is not llm-authored, or an llm element whose anchors (or, for a step, whose view's `steps`) the user edited: an llm patch cannot repair those.
-- `ghosts: 2 (7 stubs; stubs: top 6), most referenced: ghost:file:src/main.ts ×23, ...`: the graph view draws 2 ghost boxes, with 7 stubs (dashed edges) leading to them; `stubs: top 6` is the view's stub policy (the default is `top 8`); `×23` is how many references lead to that ghost. A folded ghost stands for several elements and is named by what it folds: `ghost:more:out ×8` ("+8 more", the ghosts beyond the cap), `ghost:rest:file:src/main.ts ×1` ("rest of main.ts", the outside symbols of a file the view shows in part). Folded ghosts are not elements (they cannot be `include`d), but their ids and the stub ids go in `hidden`. `--json` lists every ghost (`views[].ghosts.list[]`: `{id, kind: target|rest|more, label, count, direction}`, most referenced first) and every stub id (`views[].ghosts.stubIds`), with `mode`, `max`, `total`, `stubs` and `crowded`. Above 12 ghosts a warning follows the line.
+- `ghosts: 2 (7 stubs; stubs: top 6), most referenced: ghost:file:src/main.ts ×23, ...`: the graph view draws 2 ghost boxes, with 7 stubs (dashed edges) leading to them; `stubs: top 6` is the view's stub policy (the default is `top 8`); `×23` is how many references lead to that ghost. A folded ghost stands for several elements and is named by what it folds: `ghost:more:out ×8` ("+8 more", the ghosts beyond the cap), `ghost:rest:file:src/main.ts ×1` ("rest of main.ts", the outside symbols of a file the view shows in part). Folded ghosts are not elements (they cannot be `include`d), but their ids and the stub ids go in `hidden`. Each folded ghost also gets a line under `ghosts:` with the elements it stands for (`ghost:rest:file:src/runner.ts ×6 → sym:src/runner.ts#Runner.log ×3, ...`): up to 3 ids with their reference counts, most referenced first, then `... +N more`. `includeAdd` one of them; a ghost that is one element (`ghost:file:x`) gets no such line. `--json` lists every ghost (`views[].ghosts.list[]`: `{id, kind: target|rest|more, label, count, direction, targets: [{id, count}]}`, most referenced first) with all the elements it stands for in `targets` (most referenced first; a `target` ghost has just itself), and every stub id (`views[].ghosts.stubIds`), with `mode`, `max`, `total`, `stubs` and `crowded`. Above 12 ghosts a warning follows the line.
 - `tours (n)`: each tour with its step count, and the steps whose `focus` ids or `view` no longer exist (`1 step points at something that is gone: t2 (focus: sym:src/queue.ts#Queue.pop)`); a tour has no `stepsUpdate`: resend its `steps` with the ids fixed, unless the user edited the tour (then make a new one).
 - `broken references (n)`: ids that no longer exist in the index (lenient validation): the overlay of a deleted symbol, an `include`, `members`, `related` or `participants` entry, a step end, a tour's `focus`. The line `, n broken references` is appended to `to do:` only when there are some.
 - `warning: stale edge overlays (n)`: stored `edge:<kind>:<a>-><b>` overlays that no graph view derives any more (the ends of a derived id follow the view's `include`, or the code changed). They are ignored until re-created on a current id; hidden edges do not count.
@@ -423,6 +423,18 @@ view:main (graph): main
   warning: 16 ghosts: this view stops in too many places to read (more than 12). Set "stubs": {"mode": "top"} (what a view without "stubs" does: the 8 most referenced ghosts, the rest folded), put ghost ids in "hidden" (`status --json`: views[].ghosts.list), or add "excludeFiles"
 ```
 
+A view with folded ghosts (`"stubs": {"mode": "top", "max": 3}` on a view of `Runner.dispatch` and `Queue.requeue`): the other symbols of `runner.ts` and `queue.ts` fold into one ghost each, the ghost beyond the third into `ghost:more:in`, and each folded ghost lists what it stands for:
+
+```
+view:dispatch-code (graph): Runner.dispatch and its neighbours
+  nodes without summary (2 of 2): sym:src/queue.ts#Queue.requeue, sym:src/runner.ts#Runner.dispatch
+  edges: 1 shown; every stored edge is explained; 1 static without summary (optional): edge:calls:sym:src/runner.ts#Runner.dispatch->sym:src/queue.ts#Queue.requeue
+  ghosts: 4 (5 stubs; stubs: top 3), most referenced: ghost:rest:file:src/runner.ts ×6, ghost:file:src/worker.ts ×3, ghost:rest:file:src/queue.ts ×3, ghost:more:in ×1
+    ghost:rest:file:src/runner.ts ×6 → sym:src/runner.ts#Runner.log ×3, sym:src/runner.ts#Runner.start ×1, sym:src/runner.ts#RunnerStats ×1, ... +1 more
+    ghost:rest:file:src/queue.ts ×3 → sym:src/queue.ts#Queue.ack ×1, sym:src/queue.ts#Queue.deadLetter ×1, sym:src/queue.ts#Queue.pop ×1
+    ghost:more:in ×1 → dir:test ×1
+```
+
 `.explainer/requests.json` is a JSON array of `{elementId, note?, kind?, view?, label?, at, explainer?}`; the element may be a node, edge, concept, step or ghost id. Delete the file after handling.
 
 ## `xpl view <explainer> [--port p] [--host h] [--no-open]`
@@ -436,29 +448,31 @@ serving .explainer/jobrunner.explainer.json at http://127.0.0.1:34971/  (Ctrl-C 
 
 API (for scripts): `GET /api/bundle`, `GET /api/file?path=`, `PUT /api/views/<id>`, `PUT /api/tours/<id>`, `GET|POST /api/requests`.
 
-## `xpl bundle <explainer> -o out.html [--mode explore|present] [--tour id] [--files referenced|all]`
+## `xpl bundle <explainer> -o out.html [--mode explore|present] [--tour id] [--files referenced|all] [--embed-index full|pruned]`
 
 Writes one self-contained HTML file: the viewer, the explainer, the index and source files inline. Works offline and can be shared. `--tour <id>` (`tour:intro` or `intro`) starts that tour and implies `--mode present`.
 
 `--files referenced` (the **default**) embeds the files the explainer needs: those of every anchor, of the nodes its graph views include (a directory or group: its files), of a sequence view's participants, of the sites and definitions behind its derived edges, and the code behind the dashed stubs of graph views (what the viewer shows when one is clicked; none for `"stubs": {"mode": "none"}`, and references from `excludeFiles` do not count). The viewer's file tree lists only the embedded files, with an "N of M files included" footer (under `xpl view` every indexed file is listed and fetched when opened). `--files all` embeds every indexed file. The command says what went in and what `--files all` would add; the output path is printed as given.
 
+The symbol index, most of the page for a large repository, is **pruned** with `--files referenced`: every file entry stays, and so do the symbols of the embedded files and of what the explainer names or its graph views show (with their parents), and the references that touch an embedded file (`read` references: both ends), lie on a graph view or make up a derived edge the explainer names. The views, tours and code behave as with the whole index. `--files all` embeds the whole index; `--embed-index full|pruned` overrides either. The summary line says what was saved (`index 71.1 KB (pruned from 82.2 KB)`; just `index 82.2 KB` when nothing was dropped) and the embedded index carries `pruned: {files, symbols, refs}`, the counts of the whole one. One limit: a ghost the reader expands into a file whose code is not embedded opens only into the symbols the kept references end in, and edges between two such ghosts are missing (use `--files all`, or `--embed-index full`, when the reader should explore freely).
+
 ```
 $ xpl bundle jobrunner -o jobrunner.html
-wrote jobrunner.html (2.3 MB): .explainer/jobrunner.explainer.json, 8 of 12 files embedded (referenced: 18.4 KB of source; --files all adds 4 files, 6.7 KB), mode explore
+wrote jobrunner.html (2.3 MB): .explainer/jobrunner.explainer.json, 8 of 12 files embedded (referenced: 18.4 KB of source; --files all adds 4 files, 6.7 KB), index 71.1 KB (pruned from 82.2 KB), mode explore
 $ xpl bundle jobrunner -o talk.html --tour tour:intro
-wrote talk.html (2.3 MB): .explainer/jobrunner.explainer.json, 8 of 12 files embedded (referenced: 18.4 KB of source; --files all adds 4 files, 6.7 KB), mode present, tour tour:intro
+wrote talk.html (2.3 MB): .explainer/jobrunner.explainer.json, 8 of 12 files embedded (referenced: 18.4 KB of source; --files all adds 4 files, 6.7 KB), index 71.1 KB (pruned from 82.2 KB), mode present, tour tour:intro
 $ xpl bundle jobrunner -o all.html --files all
-wrote all.html (2.3 MB): .explainer/jobrunner.explainer.json, 12 files embedded (all: 25.1 KB of source), mode explore
+wrote all.html (2.3 MB): .explainer/jobrunner.explainer.json, 12 files embedded (all: 25.1 KB of source), index 82.2 KB, mode explore
 ```
 
-`--json`: `{ok, path, absolutePath, bytes, mode, tour?, files: {embedded, choice, embeddedBytes, indexed, indexedBytes}, index: {path, commit}}`.
+`--json`: `{ok, path, absolutePath, bytes, mode, tour?, files: {embedded, choice, embeddedBytes, indexed, indexedBytes}, index: {path, commit, choice: "full"|"pruned", pruned, bytes, fullBytes, symbols: {embedded, indexed}, refs: {embedded, indexed}}}` (`index.bytes` and `fullBytes`: the embedded and the whole index as compact JSON).
 
 ## `--json` shapes (the ones worth scripting)
 
 - `index`: `{ok, path, commit, files, symbols, refs, languages: {<lang>: {files, symbols, refs: "precise"|"heuristic"|"none", tool?, heuristicFiles?}}}` (`heuristicFiles`: files of a precise language whose references stayed heuristic)
 - `apply`: `{ok, applied, dryRun, actor, path, changed: [ids], issues: [{severity, path, elementId?, message, code}], protectedIds?: [ids], error?}`; issue `code`s: `schema duplicate-id bad-id unknown-id anchor-invalid anchor-drifted anchor-missing evidence frame cycle step commit protected`. `ok: false` with `applied: false` also when everything the patch touched is protected.
 - `validate`: `{ok, mode, index, errors, warnings, issues[]}`
-- `status`: `{ok, todo: {unexplained, drifted, driftedUserOwned, missing, requests, broken}, views: [{id, type, nodes: {total, unexplained[]}, edges: {total, unexplained: [{id, stored}]}, ghosts?: {mode, max, total, stubs, crowded, list: [{id, kind, label, count, direction}], stubIds[]}, steps: {total, unexplained[]}}], concepts: {unexplained[]}, tours: [{id, title, steps, unresolved: [{step, focus[], missingView?}]}], anchors: {total, counts}, drifted[], driftedOther[], missing[], broken: [issues], staleOverlays: [ids], requests[]}` (`ghosts` on graph views only) (`todo.drifted` counts every drifted element, `driftedUserOwned` those of it the user owns)
+- `status`: `{ok, todo: {unexplained, drifted, driftedUserOwned, missing, requests, broken}, views: [{id, type, nodes: {total, unexplained[]}, edges: {total, unexplained: [{id, stored}]}, ghosts?: {mode, max, total, stubs, crowded, list: [{id, kind, label, count, direction, targets: [{id, count}]}], stubIds[]}, steps: {total, unexplained[]}}], concepts: {unexplained[]}, tours: [{id, title, steps, unresolved: [{step, focus[], missingView?}]}], anchors: {total, counts}, drifted[], driftedOther[], missing[], broken: [issues], staleOverlays: [ids], requests[]}` (`ghosts` on graph views only) (`todo.drifted` counts every drifted element, `driftedUserOwned` those of it the user owns)
 - `anchors`: see its section
 - `new`: `{ok, path, name, title, repo: {name, source, url?}, index: {path, commit}}`
 - `outline`: `{ok, index, commit, depth, tree: {id, type, label, kind, range?, fanIn, fanOut, more?, children[]}}`

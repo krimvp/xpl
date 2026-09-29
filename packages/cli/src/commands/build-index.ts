@@ -54,7 +54,7 @@ export const indexCommand: CommandSpec = {
     "--precise auto uses SCIP indexers when available (heuristic references otherwise, with a warning);",
     "off never runs them; require fails instead of falling back.",
     "Each language line ends with how far its references can be trusted: `refs: precise (tool)`, `refs: heuristic`",
-    "(hints: confirm each call with `xpl show`), `refs: none` (yaml, json, text), or, when the precise tool did not",
+    "(hints: confirm each call with `xpl show`), `refs: none` (yaml, json, toml, text), or, when the precise tool did not",
     "describe every file, `refs: precise 64/82 (scip-python@0.6.6), 18 heuristic`: the references of those 18 files",
     "are hints.",
   ],
