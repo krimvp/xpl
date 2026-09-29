@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "py-jobrunner"
+version = "0.1.0"
+description = "A tiny job runner: queue, workers, retry with backoff, event bus. Fixture for xpl."
+requires-python = ">=3.10"
+dependencies = []
+
+[project.scripts]
+jobrunner = "jobrunner.__main__:main"
+
+[tool.setuptools]
+packages = ["jobrunner"]
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
+
+[tool.ruff]
+line-length = 120

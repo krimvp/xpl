@@ -9,3 +9,7 @@ coverage
 
 # Generated symbol indexes (rebuilt by `xpl index`); *.explainer.json files are committed.
 **/.explainer/index-*.json
+
+# Python
+__pycache__/
+*.pyc

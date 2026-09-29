@@ -1,0 +1,21 @@
+# jobrunner default configuration (two-level "key: value" YAML; durations in ms).
+
+queue:
+  name: default
+  maxPending: 1000
+  idleDelayMs: 200        # how long dispatch sleeps when nothing is ready
+
+workers:
+  count: 4
+  namePrefix: worker
+  timeoutMs: 30000        # per-job timeout, enforced inside the worker
+
+retry:
+  maxRetries: 3
+  baseDelayMs: 500
+  maxDelayMs: 30000
+
+metrics:
+  enabled: true
+  prefix: jobrunner       # prepended to every metric name
+  printSummary: true      # print the totals when the demo run drains
