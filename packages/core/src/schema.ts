@@ -105,6 +105,13 @@ export interface SymbolIndex {
   files: IndexedFile[];
   symbols: IndexedSymbol[];
   refs: Reference[];
+  /**
+   * Set when this index was cut down for a bundle (`xpl bundle` embeds a pruned one by default, see
+   * `pruneIndex`): how many files, symbols and references the full index had. Every file entry is kept, so
+   * `files` only repeats `files.length`; `symbols.length` and `refs.length` say what is left, and `languages`
+   * still describes the full index. Absent on a complete index (everything `xpl index` writes).
+   */
+  pruned?: { files: number; symbols: number; refs: number };
 }
 
 /** (amended) One entry of `SymbolIndex.languages`. */
