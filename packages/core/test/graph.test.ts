@@ -726,6 +726,152 @@ describe("deriveGraph: hidden", () => {
   });
 });
 
+describe("deriveGraph: excludeFiles", () => {
+  // pkg/a.go (f) and pkg/a_test.go (t) both call lib/b.go (g); only the test calls lib/c.go (h) and
+  // other/o.go (o); the production code calls lib/b.go only.
+  const tiny = makeWorld({
+    files: [
+      { path: "pkg/a.go", lines: 20 },
+      { path: "pkg/a_test.go", lines: 20 },
+      { path: "lib/b.go", lines: 20 },
+      { path: "lib/c.go", lines: 20 },
+      { path: "other/o.go", lines: 20 },
+    ],
+    symbols: [
+      { id: "pkg/a.go#f", kind: "function", start: 1, end: 9 },
+      { id: "pkg/a_test.go#t", kind: "function", start: 1, end: 9 },
+      { id: "lib/b.go#g", kind: "function", start: 1, end: 9 },
+      { id: "lib/c.go#h", kind: "function", start: 1, end: 9 },
+      { id: "other/o.go#o", kind: "function", start: 1, end: 9 },
+    ],
+    refs: [
+      { from: "pkg/a.go#f", to: "lib/b.go#g", line: 3 },
+      { from: "pkg/a_test.go#t", to: "lib/b.go#g", line: 4 },
+      { from: "pkg/a_test.go#t", to: "lib/c.go#h", line: 5 },
+      { from: "pkg/a_test.go#t", to: "other/o.go#o", line: 6 },
+    ],
+  });
+  const TESTS = ["**/*_test.go"];
+  const both = ["dir:pkg", "dir:lib"];
+
+  it("ignores the references that start in an excluded file: edges through tests disappear, the rest is recounted", () => {
+    const all = derive(both, {}, {}, tiny).graph;
+    expect(all.edges.map((e) => [e.id, e.count])).toEqual([
+      ["edge:calls:dir:pkg->dir:lib", 3], // f->g, t->g, t->h
+    ]);
+    const { graph } = derive(both, { excludeFiles: TESTS }, {}, tiny);
+    expect(graph.edges.map((e) => [e.id, e.count])).toEqual([["edge:calls:dir:pkg->dir:lib", 1]]);
+    // the sites and definitions of the dropped references are gone with them
+    const edge = graph.edges[0]!;
+    expect(edge.anchors.map((a) => [a.file, a.role])).toEqual([
+      ["pkg/a.go", "call-site"],
+      ["lib/b.go", "definition"],
+    ]);
+    // nodes are untouched
+    expect(ids(graph.nodes)).toEqual(ids(all.nodes));
+  });
+
+  it("drops an edge that exists only through excluded files", () => {
+    const lib = ["dir:lib", "dir:other"];
+    const withTest = derive(["dir:pkg", ...lib], {}, {}, tiny).graph;
+    expect(withTest.edges.map((e) => e.id)).toEqual([
+      "edge:calls:dir:pkg->dir:lib",
+      "edge:calls:dir:pkg->dir:other",
+    ]);
+    const { graph } = derive(["dir:pkg", ...lib], { excludeFiles: TESTS }, {}, tiny);
+    expect(graph.edges.map((e) => e.id)).toEqual(["edge:calls:dir:pkg->dir:lib"]);
+    expect(ids(graph.nodes)).toEqual(["dir:lib", "dir:other", "dir:pkg"]); // the box stays
+  });
+
+  it("filters stubs the same way: fewer references, or none at all", () => {
+    const stubs = (include: string[], over: Partial<GraphView> = {}) =>
+      derive(include, over, {}, tiny).graph.stubs.map((s) => [s.inside, s.ghost, s.count]);
+    expect(stubs(["dir:lib"])).toEqual([["dir:lib", "dir:pkg", 3]]);
+    expect(stubs(["dir:lib"], { excludeFiles: TESTS })).toEqual([["dir:lib", "dir:pkg", 1]]);
+    // dir:other is reached only from the test: no stub is left
+    expect(stubs(["dir:other"])).toEqual([["dir:other", "dir:pkg", 1]]);
+    expect(stubs(["dir:other"], { excludeFiles: TESTS })).toEqual([]);
+    // outgoing stubs too: pkg/a_test.go (named by the view, so it keeps its references) leads to two ghosts
+    expect(stubs(["file:pkg/a_test.go"], { excludeFiles: TESTS })).toEqual([
+      ["file:pkg/a_test.go", "dir:lib", 2],
+      ["file:pkg/a_test.go", "dir:other", 1],
+    ]);
+    expect(stubs(["dir:pkg"], { excludeFiles: TESTS })).toEqual([["dir:pkg", "dir:lib", 1]]);
+  });
+
+  it("a reference is dropped when either end lies in an excluded file", () => {
+    const view = { excludeFiles: ["lib/b.go"] };
+    const { graph } = derive(both, view, {}, tiny);
+    // f->g and t->g end in lib/b.go; t->h remains
+    expect(graph.edges.map((e) => [e.id, e.count])).toEqual([["edge:calls:dir:pkg->dir:lib", 1]]);
+    expect(graph.edges[0]!.anchors.map((a) => a.file)).toEqual(["pkg/a_test.go", "lib/c.go"]);
+  });
+
+  it("nodes and edges of files the view includes by name are kept, whatever excludeFiles says", () => {
+    const named = derive([...both, "file:pkg/a_test.go"], { excludeFiles: TESTS }, {}, tiny).graph;
+    expect(named.nodes.map((n) => n.id)).toContain("file:pkg/a_test.go");
+    expect(named.edges.map((e) => [e.id, e.count])).toEqual([
+      ["edge:calls:dir:pkg->dir:lib", 1],
+      ["edge:calls:file:pkg/a_test.go->dir:lib", 2],
+    ]);
+    // a symbol of the file counts as naming it
+    const bySymbol = derive([...both, "sym:pkg/a_test.go#t"], { excludeFiles: TESTS }, {}, tiny);
+    expect(bySymbol.graph.edges.some((e) => e.from === "sym:pkg/a_test.go#t")).toBe(true);
+    // and so do the members of an included group
+    const inGroup = derive(
+      [...both, "grp:tests"],
+      { excludeFiles: TESTS },
+      { nodes: [group("grp:tests", ["file:pkg/a_test.go"])] },
+      tiny,
+    ).graph;
+    expect(inGroup.edges.some((e) => e.from === "grp:tests")).toBe(true);
+  });
+
+  it("a directory that is included does not count as naming the files below it", () => {
+    const { graph } = derive(
+      ["dir:pkg", "dir:lib", "dir:other"],
+      { excludeFiles: TESTS },
+      {},
+      tiny,
+    );
+    expect(graph.edges.every((e) => e.from === "dir:pkg")).toBe(true);
+    expect(graph.edges.map((e) => e.id)).toEqual(["edge:calls:dir:pkg->dir:lib"]);
+  });
+
+  it("does not touch stored edges, and an empty or missing list changes nothing", () => {
+    const stored = edge("edge:x", "file:pkg/a_test.go", "file:lib/c.go");
+    const ex = { edges: [stored] };
+    const g = derive(
+      ["file:pkg/a_test.go", "file:lib/c.go"],
+      { excludeFiles: TESTS },
+      ex,
+      tiny,
+    ).graph;
+    expect(g.edges.map((e) => e.id)).toContain("edge:x");
+    const plain = derive(both, {}, {}, tiny).graph;
+    expect(derive(both, { excludeFiles: [] }, {}, tiny).graph).toEqual(plain);
+    expect(derive(both, { excludeFiles: ["nothing/**"] }, {}, tiny).graph).toEqual(plain);
+    expect(derive(both, { excludeFiles: [3 as never, ""] }, {}, tiny).graph).toEqual(plain);
+  });
+
+  it("uses the same glob rules everywhere: **, * and ?", () => {
+    const edges = (patterns: string[]) =>
+      derive(both, { excludeFiles: patterns }, {}, tiny).graph.edges.map((e) => e.count);
+    expect(edges(["pkg/**"])).toEqual([]); // every reference starts in pkg/
+    expect(edges(["pkg/a?test.go"])).toEqual([1]);
+    expect(edges(["pkg/a?.go"])).toEqual([3]); // ? is exactly one character
+    expect(edges(["**/a_test.go"])).toEqual([1]);
+    expect(edges(["*_test.go"])).toEqual([1]); // no slash: matches the file name at any depth
+    expect(edges(["pkg/*_test.go"])).toEqual([1]);
+    expect(edges(["lib/*.go"])).toEqual([]); // every reference ends in lib/
+  });
+
+  it("keeps the viewer's derivation and the focus fallback consistent: sites of excluded files are not derived anchors", () => {
+    const { graph } = derive(both, { excludeFiles: TESTS }, {}, tiny);
+    expect(graph.edges[0]!.anchors.some((a) => a.file === "pkg/a_test.go")).toBe(false);
+  });
+});
+
 describe("view edits", () => {
   const m = modelOf({ nodes: [group("grp:g", [F.runner, F.queue])] });
 

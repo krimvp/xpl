@@ -174,7 +174,10 @@ describe("xpl apply", () => {
     );
     expect(out).toContain("concepts[0].anchors[0]");
     expect(out).toContain('symbol "Runner.dispach" not found in src/runner.ts');
-    expect(out).toContain("Did you mean: src/runner.ts#Runner.dispatch?");
+    // both forms: the id, and what an anchor takes (its symbol is only the part after the "#")
+    expect(out).toContain(
+      'Did you mean: sym:src/runner.ts#Runner.dispatch (anchor: file: "src/runner.ts", symbol: "Runner.dispatch")?',
+    );
     expect(readFile(dir, EXPLAINER)).toBe(before);
   });
 
@@ -275,14 +278,20 @@ describe("xpl apply", () => {
     const concept = readJson(dir, EXPLAINER).concepts.find((c: any) => c.id === "concept:mine");
     expect(concept.provenance.origin).toBe("user");
 
+    // the patch only touches what the user owns: refused with exit 1, naming the ids and what to do
     const overwrite = { concepts: [{ id: "concept:mine", label: "Changed by llm" }] };
     const { code, out } = await invoke(["apply", "demo", "-"], {
       cwd: dir,
       stdin: JSON.stringify(overwrite),
     });
-    expect(code).toBe(0);
-    expect(out).toContain("no changes");
+    expect(code).toBe(1);
+    expect(out).toContain(
+      "nothing was applied to .explainer/demo.explainer.json (patch from stdin)",
+    );
+    expect(out).toContain("owned by the user (skipped as protected): concept:mine");
     expect(out).toContain("concept:mine is user-authored; an llm patch cannot modify it (skipped)");
+    expect(out).toContain("what to do:");
+    expect(out).toContain("NEW view");
     expect(readJson(dir, EXPLAINER).concepts.find((c: any) => c.id === "concept:mine").label).toBe(
       "Mine",
     );
@@ -427,7 +436,7 @@ describe("xpl resolve", () => {
     expect(out).toMatch(/anchors: 12 \(ok \d+, moved 0, drifted [1-9]\d*, missing 0\)/);
     expect(out).toContain("drifted llm elements to re-explain");
     // the step whose call site was edited, with the anchor as it was written
-    expect(out).toContain("dispatch:3  (step)");
+    expect(out).toContain("dispatch:3  (step in view:dispatch)");
     expect(out).toContain(
       "views[1].steps[2].anchors[0]  src/runner.ts#Runner.dispatch +34..36 [call-site]",
     );

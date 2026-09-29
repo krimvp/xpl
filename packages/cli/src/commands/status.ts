@@ -1,6 +1,14 @@
-import { ExplainerModel, deriveGraph, reresolveExplainer } from "@xpl/core";
+import {
+  ExplainerModel,
+  deriveGraph,
+  parseId,
+  reresolveExplainer,
+  validateExplainer,
+  type DriftedElement,
+  type ResolveReport,
+} from "@xpl/core";
 import type { CommandSpec } from "../command.js";
-import { listText, plural } from "../format.js";
+import { listText, plural, renderIssues } from "../format.js";
 import { readRequests, type QueuedRequest } from "../requests.js";
 import { loadExplainer, openWorkspace } from "../repo.js";
 import { renderResolveReport } from "./resolve.js";
@@ -55,6 +63,42 @@ function viewStatuses(model: ExplainerModel): ViewStatus[] {
   return out;
 }
 
+/** Ids of the edges the views show without a summary, at most `max`, then how many more there are. */
+function edgeIds(ids: readonly string[], max = 8): string {
+  return ids.length <= max
+    ? ids.join(", ")
+    : `${ids.slice(0, max).join(", ")}, ... +${ids.length - max} more (--json lists all)`;
+}
+
+/**
+ * Drifted elements, split by who can repair them: an llm element whose drifted anchors the user owns
+ * (`anchors`, or `steps` for a step) and every element that is not llm-owned wait for the user.
+ */
+function driftCounts(report: ResolveReport): { total: number; userOwned: number } {
+  const locked = (d: DriftedElement) =>
+    d.userFields.includes(d.owner === "step" ? "steps" : "anchors");
+  return {
+    total: report.drifted.length + report.driftedOther.length,
+    userOwned: report.drifted.filter(locked).length + report.driftedOther.length,
+  };
+}
+
+/**
+ * Stored overlays of derived edges (`edge:<kind>:<a>-><b>`) that no graph view derives now: the ends of a
+ * derived id follow the view's `include`, so an overlay can end up on an id that means nothing any more.
+ * (Hidden edges count as derived: hiding is the user's choice, not a stale id.)
+ */
+function staleOverlays(model: ExplainerModel): string[] {
+  const derived = new Set<string>();
+  for (const view of model.views) {
+    if (view.type !== "graph") continue;
+    for (const edge of deriveGraph({ ...view, hidden: [] }, model).edges) derived.add(edge.id);
+  }
+  return model.storedEdges
+    .filter((edge) => parseId(edge.id).type === "derived-edge" && !derived.has(edge.id))
+    .map((edge) => edge.id);
+}
+
 function unexplainedConcepts(model: ExplainerModel): string[] {
   return model.concepts
     .filter((c) => !(typeof c.summary === "string" && c.summary.trim() !== ""))
@@ -69,7 +113,10 @@ export const statusCommand: CommandSpec = {
     "The skill's to-do list for an explainer, without changing anything:",
     "  - per view, the visible nodes, edges and steps that have no `summary` (static edges are optional),",
     "  - concepts without a summary,",
-    "  - llm elements whose anchors drifted (re-explain them, keeping userFields) and missing anchors,",
+    "  - llm elements whose anchors drifted (re-explain them, keeping userFields) and missing anchors; drift the",
+    "    user owns is counted apart (ask the user),",
+    "  - broken references: ids that vanished from the index (overlays of deleted symbols, include, members,",
+    "    related, participants, step ends), and stored derived-edge overlays that no graph view derives now,",
     "  - explain-this requests the viewer queued in .explainer/requests.json (delete the file once handled).",
   ],
   options: {},
@@ -81,6 +128,11 @@ export const statusCommand: CommandSpec = {
     const views = viewStatuses(model);
     const concepts = unexplainedConcepts(model);
     const { report } = reresolveExplainer(loaded.explainer, ws.model, ws.texts);
+    const broken = validateExplainer(loaded.explainer, ws.model, ws.texts, {
+      mode: "lenient",
+    }).filter((issue) => issue.code === "unknown-id");
+    const stale = staleOverlays(model);
+    const drift = driftCounts(report);
     const queue = readRequests(ctx.root);
     if (queue.error) ctx.warn(queue.error);
     const requests: QueuedRequest[] = queue.requests.filter(
@@ -99,9 +151,11 @@ export const statusCommand: CommandSpec = {
       ) + concepts.length;
     const todo = {
       unexplained,
-      drifted: report.drifted.length,
+      drifted: drift.total,
+      driftedUserOwned: drift.userOwned,
       missing: report.missing.length,
       requests: requests.length,
+      broken: broken.length,
     };
 
     if (ctx.json) {
@@ -115,6 +169,8 @@ export const statusCommand: CommandSpec = {
         drifted: report.drifted,
         driftedOther: report.driftedOther,
         missing: report.missing,
+        broken,
+        staleOverlays: stale,
         requests,
       });
       return 0;
@@ -122,7 +178,11 @@ export const statusCommand: CommandSpec = {
 
     const lines = [
       `${loaded.rel}: index ${ws.index.commit}, ${plural(views.length, "view")}, ${plural(model.concepts.length, "concept")}`,
-      `to do: ${todo.unexplained} unexplained, ${todo.drifted} drifted, ${todo.missing} missing anchors, ${plural(todo.requests, "request")}`,
+      `to do: ${todo.unexplained} unexplained, ${todo.drifted} drifted${
+        todo.driftedUserOwned > 0 ? ` (${todo.driftedUserOwned} user-owned: ask the user)` : ""
+      }, ${todo.missing} missing anchors, ${plural(todo.requests, "request")}${
+        todo.broken > 0 ? `, ${plural(todo.broken, "broken reference")}` : ""
+      }`,
     ];
     if (views.length === 0)
       lines.push("", "no views yet: apply a patch with a graph or sequence view");
@@ -136,13 +196,15 @@ export const statusCommand: CommandSpec = {
       );
       if (view.type === "graph") {
         const stored = view.edges.unexplained.filter((e) => e.stored).map((e) => e.id);
-        const staticEdges = view.edges.unexplained.filter((e) => !e.stored).length;
+        const staticEdges = view.edges.unexplained.filter((e) => !e.stored).map((e) => e.id);
         lines.push(
           `  edges: ${view.edges.total} shown; ` +
             (stored.length > 0
               ? `stored without summary (${stored.length}): ${listText(stored, 8)}`
               : "every stored edge is explained") +
-            (staticEdges > 0 ? `; ${staticEdges} static without summary (optional)` : ""),
+            (staticEdges.length > 0
+              ? `; ${staticEdges.length} static without summary (optional): ${edgeIds(staticEdges)}`
+              : ""),
         );
       } else {
         lines.push(
@@ -157,6 +219,23 @@ export const statusCommand: CommandSpec = {
     }
     if (report.drifted.length > 0 || report.missing.length > 0 || report.driftedOther.length > 0) {
       lines.push("", ...renderResolveReport(report));
+    }
+    if (broken.length > 0) {
+      lines.push(
+        "",
+        `broken references (${broken.length}): ids that no longer exist in the index. Repair each with a patch ` +
+          "(`includeRemove` drops a stale include entry; resend members, participants or steps without it), or remove the element:",
+        ...renderIssues(broken).map((line) => `  ${line}`),
+      );
+    }
+    if (stale.length > 0) {
+      lines.push(
+        "",
+        `warning: stale edge overlays (${stale.length}): stored overlays of derived edges that no graph view derives now ` +
+          "(the ends of a derived id follow the view's include, and the code may have changed), so they are ignored. " +
+          "Re-create them on the current ids (`status --json`: views[].edges.unexplained) or remove them:",
+        ...stale.map((id) => `  ${id}`),
+      );
     }
     if (requests.length > 0) {
       lines.push(

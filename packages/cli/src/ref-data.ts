@@ -9,7 +9,12 @@
 import {
   EDGE_TO_REF_KIND,
   elementIdForSymbolId,
+  implementationsOf,
+  implementedBy,
+  isTestFile,
+  parseId,
   type IndexModel,
+  type IndexedSymbol,
   type Range,
   type Reference,
 } from "@xpl/core";
@@ -44,6 +49,26 @@ export interface RefEntry {
   offset: { from: number; to: number };
   resolution: Reference["resolution"];
 }
+
+/**
+ * A hop through an interface, printed as an `impl` line: in a list of outgoing references, under a call (or
+ * type use) of an interface or one of its methods, an implementation of it; in a list of incoming
+ * references, the interface member that the subject implements (its own callers follow). `from` is always
+ * the implementing symbol and `to` the implemented one, as in an `implements` reference; `id`, `file` and
+ * `site` describe the symbol the line shows (`offset` spans all of it).
+ */
+export interface ImplEntry extends Omit<RefEntry, "kind"> {
+  kind: "impl";
+}
+
+/** What a line of the reference tree shows: a reference, or an interface hop. */
+export type TreeEntry = RefEntry | ImplEntry;
+
+/** Reference kinds whose target, when it is an interface (member), is followed to its implementations. */
+const HOP_KINDS: ReadonlySet<RefKind> = new Set<RefKind>(["call", "type-ref", "read", "write"]);
+
+/** Implementations listed under one interface line; `--limit 0` lists them all. */
+export const MAX_IMPLS_PER_HOP = 10;
 
 /** Parses `--kind`: reference kinds (`call`) and edge-kind spellings (`calls`) are both accepted. */
 export function parseKinds(values: readonly string[]): Set<RefKind> | undefined {
@@ -129,14 +154,17 @@ export function groupByKind(entries: readonly RefEntry[]): RefEntry[] {
  * a file, directory or class, where the sites lie in different symbols. (For incoming references the
  * printed id is the referencing symbol itself, and for a method's outgoing references it is the subject.)
  */
-export function refLine(entry: RefEntry, showFrom = false): string {
+export function refLine(entry: TreeEntry, showFrom = false): string {
+  if (entry.kind === "impl") {
+    return `impl  ${entry.id}  (${entry.file}:${linesText(entry.site)}, ${entry.resolution})`;
+  }
   const from = showFrom ? ` in ${entry.from}` : "";
   return `${entry.kind}  ${entry.id}  (${entry.file}:${linesText(entry.site)}, ${entry.resolution})  ${offsetText(entry.offset)}${from}`;
 }
 
 /** Does an outgoing entry of `subject` need its referencing symbol spelled out? */
-export function needsFrom(entry: RefEntry, direction: RefDirection, subject: string): boolean {
-  return direction === "out" && entry.from !== subject;
+export function needsFrom(entry: TreeEntry, direction: RefDirection, subject: string): boolean {
+  return direction === "out" && entry.kind !== "impl" && entry.from !== subject;
 }
 
 export function countByKind(entries: readonly RefEntry[]): string {
@@ -150,10 +178,12 @@ export function countByKind(entries: readonly RefEntry[]): string {
 // ─── Call hierarchy ─────────────────────────────────────────────────────────────────────────────
 
 export interface RefNode {
-  entry: RefEntry;
+  entry: TreeEntry;
   /** `seen`: expanded elsewhere in this tree; `cycle`: an ancestor of this line. */
   note?: "seen" | "cycle";
   children?: RefNode[];
+  /** Implementations under this line that were cut (`MAX_IMPLS_PER_HOP`). */
+  moreImpls?: number;
 }
 
 export interface RefTree {
@@ -162,28 +192,157 @@ export interface RefTree {
   total: number;
   /** Lines were dropped because of the limit. */
   truncated: boolean;
+  /** First-level `impl` lines (incoming: the interface members the subject implements). */
+  hops: number;
+  /** Implementations that were left out because they sit in test files (`--tests` shows them). */
+  hiddenTests: number;
+}
+
+function symbolOf(model: IndexModel, elementId: string): IndexedSymbol | undefined {
+  const parsed = parseId(elementId);
+  return parsed.type === "symbol" ? model.symbol(parsed.symbolId) : undefined;
+}
+
+/** The `impl` line for a hop: `direction` says which of the two symbols the line shows. */
+function implEntry(
+  direction: RefDirection,
+  implementer: IndexedSymbol,
+  implemented: IndexedSymbol,
+  resolution: Reference["resolution"],
+): ImplEntry {
+  const shown = direction === "out" ? implementer : implemented;
+  return {
+    kind: "impl",
+    id: `sym:${shown.id}`,
+    from: `sym:${implementer.id}`,
+    to: `sym:${implemented.id}`,
+    file: shown.file,
+    site: { startLine: shown.range.startLine, endLine: shown.range.endLine },
+    offset: { from: 0, to: shown.range.endLine - shown.range.startLine },
+    resolution,
+  };
 }
 
 /**
  * The reference tree of `target` to `depth` levels: each entry's other end is expanded in turn
  * (its own outgoing or incoming references), once per element. `limit` caps the number of entries.
+ *
+ * Interfaces are transparent (`impl` lines, see `ImplEntry`). An outgoing reference to an interface or one
+ * of its members gets its implementations listed under it (test doubles are left out unless `opts.tests`,
+ * or the reference itself lies in a test file); with `depth > 1` they are expanded in place of the
+ * declaration, which has no body of its own. For incoming references, a method that implements an
+ * interface method gets that method as a first-level `impl` line, with the callers of the interface method
+ * below it. Hops cost no depth.
  */
 export function buildRefTree(
   model: IndexModel,
   target: Target,
   direction: RefDirection,
-  opts: { depth: number; kinds?: ReadonlySet<RefKind>; limit: number },
+  opts: { depth: number; kinds?: ReadonlySet<RefKind>; limit: number; tests?: boolean },
 ): RefTree {
   const state = {
     budget: opts.limit > 0 ? opts.limit : Number.POSITIVE_INFINITY,
     truncated: false,
     expanded: new Set<string>([target.id]),
     path: new Set<string>([target.id]),
+    hopped: new Set<string>(),
+    hiddenTests: 0,
   };
   let total = 0;
-  const expand = (current: Target, depth: number): RefNode[] => {
+  let hops = 0;
+
+  /** Expands `id` (an element id) below a node, once per element. */
+  const expandId = (node: RefNode, id: string, depth: number): void => {
+    if (state.path.has(id)) node.note = "cycle";
+    else if (state.expanded.has(id)) node.note = "seen";
+    else {
+      state.expanded.add(id);
+      state.path.add(id);
+      try {
+        node.children = expand(resolveTarget(model, id), depth);
+      } catch {
+        // an endpoint that is not in the index (stale ids): leave it unexpanded
+      }
+      state.path.delete(id);
+    }
+  };
+
+  /** Outgoing: the implementations of the interface (member) an entry points at, as children of its node. */
+  const addImplementations = (node: RefNode, depth: number): void => {
+    const shown = symbolOf(model, node.entry.id);
+    if (!shown) return;
+    const impls = implementationsOf(model, shown.id);
+    if (impls.length === 0) return;
+    if (state.hopped.has(node.entry.id)) {
+      node.note ??= "seen";
+      return;
+    }
+    state.hopped.add(node.entry.id);
+    // Test doubles are noise for production code that calls the interface, and the point when a test does.
+    const showTests =
+      opts.tests === true || (node.entry.kind !== "impl" && isTestFile(node.entry.file));
+    const visible = impls.filter((impl) => {
+      const symbol = model.symbol(impl.id);
+      if (!symbol) return false;
+      if (!showTests && isTestFile(symbol.file)) {
+        state.hiddenTests++;
+        return false;
+      }
+      return true;
+    });
+    const listed = opts.limit > 0 ? visible.slice(0, MAX_IMPLS_PER_HOP) : visible;
+    if (listed.length < visible.length) node.moreImpls = visible.length - listed.length;
+    for (const impl of listed) {
+      if (state.budget <= 0) {
+        state.truncated = true;
+        break;
+      }
+      state.budget--;
+      const child: RefNode = {
+        entry: implEntry("out", model.symbol(impl.id)!, shown, impl.resolution),
+      };
+      if (depth > 1) expandId(child, child.entry.id, depth - 1);
+      (node.children ??= []).push(child);
+    }
+  };
+
+  /** Incoming: the interface members `current` implements, each with the callers of that member below. */
+  const interfaceHops = (current: Target, depth: number): RefNode[] => {
+    // members only: the callers of the interface method are what the reader is after
+    if (current.type !== "symbol" || !["method", "variable"].includes(current.symbol.kind))
+      return [];
+    const out: RefNode[] = [];
+    for (const impl of implementedBy(model, current.symbolId)) {
+      const implemented = model.symbol(impl.id);
+      if (!implemented) continue;
+      if (state.budget <= 0) {
+        state.truncated = true;
+        break;
+      }
+      state.budget--;
+      const node: RefNode = {
+        entry: implEntry("in", current.symbol, implemented, impl.resolution),
+      };
+      if (state.hopped.has(node.entry.id)) node.note = "seen";
+      else if (state.path.has(node.entry.id)) node.note = "cycle";
+      else {
+        state.hopped.add(node.entry.id);
+        state.path.add(node.entry.id);
+        node.children = expand(resolveTarget(model, node.entry.id), depth, true);
+        state.path.delete(node.entry.id);
+      }
+      out.push(node);
+    }
+    return out;
+  };
+
+  const expand = (current: Target, depth: number, viaInterface = false): RefNode[] => {
     const nodes: RefNode[] = [];
-    const entries = collectRefs(model, current, direction, opts.kinds);
+    // The other implementers are siblings, not callers: leave them out of a hop's callers (unless asked for).
+    const kinds =
+      opts.kinds ??
+      (viaInterface ? new Set(REF_KINDS.filter((k) => k !== "implements")) : undefined);
+    const entries = collectRefs(model, current, direction, kinds);
     if (current === target) total = entries.length;
     for (const entry of entries) {
       if (state.budget <= 0) {
@@ -192,26 +351,19 @@ export function buildRefTree(
       }
       state.budget--;
       const node: RefNode = { entry };
-      if (depth > 1) {
-        if (state.path.has(entry.id)) node.note = "cycle";
-        else if (state.expanded.has(entry.id)) node.note = "seen";
-        else {
-          state.expanded.add(entry.id);
-          state.path.add(entry.id);
-          try {
-            node.children = expand(resolveTarget(model, entry.id), depth - 1);
-          } catch {
-            // an endpoint that is not in the index (stale ids): leave it unexpanded
-          }
-          state.path.delete(entry.id);
-        }
-      }
+      if (depth > 1) expandId(node, entry.id, depth - 1);
+      if (direction === "out" && HOP_KINDS.has(entry.kind)) addImplementations(node, depth);
       nodes.push(node);
+    }
+    if (direction === "in") {
+      const found = interfaceHops(current, depth);
+      if (current === target) hops = found.length;
+      nodes.push(...found);
     }
     return nodes;
   };
   const nodes = expand(target, opts.depth);
-  return { nodes, total, truncated: state.truncated };
+  return { nodes, total, truncated: state.truncated, hops, hiddenTests: state.hiddenTests };
 }
 
 export function renderRefTree(
@@ -224,10 +376,19 @@ export function renderRefTree(
   for (const node of nodes) {
     const note =
       node.note === "seen" ? "  (expanded above)" : node.note === "cycle" ? "  (cycle)" : "";
+    const hop =
+      direction === "in" && node.entry.kind === "impl"
+        ? "  [the interface member it implements; its callers follow]"
+        : "";
     const line = refLine(node.entry, needsFrom(node.entry, direction, subject));
-    out.push(`${"  ".repeat(indent)}${line}${note}`);
+    out.push(`${"  ".repeat(indent)}${line}${hop}${note}`);
     if (node.children) {
       out.push(...renderRefTree(node.children, direction, node.entry.id, indent + 1));
+    }
+    if (node.moreImpls) {
+      out.push(
+        `${"  ".repeat(indent + 1)}... ${node.moreImpls} more implementations (--limit 0 lists them all)`,
+      );
     }
   }
   return out;
@@ -238,6 +399,7 @@ export function refTreeJson(nodes: readonly RefNode[]): unknown[] {
   return nodes.map((node) => ({
     ...node.entry,
     ...(node.note ? { note: node.note } : {}),
+    ...(node.moreImpls ? { moreImpls: node.moreImpls } : {}),
     ...(node.children ? { children: refTreeJson(node.children) } : {}),
   }));
 }

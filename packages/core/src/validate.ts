@@ -6,6 +6,7 @@
 import { EXPLAINER_SCHEMA } from "./constants.js";
 import {
   resolveWith,
+  storedSymbolHints,
   toTextCache,
   ANCHOR_ROLES,
   describeAnchor,
@@ -18,6 +19,7 @@ import {
   normalizeElementId,
   parseId,
   RESERVED_PREFIXES,
+  splitSymbolId,
   viewSlug,
   type ParsedId,
 } from "./ids.js";
@@ -130,6 +132,7 @@ class Validator {
   private readonly texts: TextCache;
   private readonly model: ExplainerModel;
   private readonly strict: boolean;
+  private hints: ReturnType<typeof storedSymbolHints> | undefined;
 
   constructor(
     explainer: Explainer,
@@ -289,9 +292,16 @@ class Validator {
     }
   }
 
+  /** What the explainer's own whole-symbol anchors remember about a symbol: finds a renamed one by its size. */
+  private hintFor(file: string, path: string) {
+    return (this.hints ??= storedSymbolHints(this.ex))(file, path);
+  }
+
   /** A `sym:`/`file:`/`dir:` id that is not in the index: suggestions from `normalizeElementId`. */
   private describeMissing(id: string): string {
-    const result = normalizeElementId(id, this.index);
+    const result = normalizeElementId(id, this.index, {
+      symbolHint: (file, path) => this.hintFor(file, path),
+    });
     if (!result.ok) return result.error;
     return `${id} does not exist in the index`;
   }
@@ -841,7 +851,7 @@ class Validator {
           if (typeof entry !== "string" || !this.index.symbol(entry)) {
             this.stale(
               `${path}.entryPoints[${j}]`,
-              `entry point ${JSON.stringify(entry)} is not a symbol id in the index (form: "src/a.ts#Class.method")`,
+              `entry point ${JSON.stringify(entry)} is not a symbol id in the index (form: "src/a.ts#Class.method")${this.entryPointHint(entry)}`,
               viewId,
               "unknown-id",
             );
@@ -849,6 +859,15 @@ class Validator {
         });
       }
     }
+  }
+
+  /** `; did you mean src/a.ts#Class.run?` for an entry point whose file exists but whose symbol does not. */
+  private entryPointHint(entry: unknown): string {
+    if (typeof entry !== "string") return "";
+    const { file, path } = splitSymbolId(entry, (candidate) => this.index.hasFile(candidate));
+    if (!this.index.hasFile(file) || path === "") return "";
+    const found = this.index.suggestSymbols(file, path, 3, this.hintFor(file, path) ?? {});
+    return found.length > 0 ? `; did you mean ${found.map((sym) => sym.id).join(", ")}?` : "";
   }
 
   private checkGraphView(view: Record<string, unknown>, path: string, id: string): void {
@@ -886,6 +905,30 @@ class Validator {
           `edgeKinds must be an array of ${EDGE_KINDS.join(", ")}`,
           id,
         );
+      }
+    }
+    if (view.excludeFiles !== undefined) {
+      if (
+        !Array.isArray(view.excludeFiles) ||
+        view.excludeFiles.some((p) => typeof p !== "string")
+      ) {
+        this.error(
+          `${path}.excludeFiles`,
+          'excludeFiles must be an array of glob patterns on repo-relative paths, e.g. ["**/*_test.go", "**/test/**"]',
+          id,
+        );
+      } else {
+        (view.excludeFiles as string[]).forEach((pattern, j) => {
+          const at = `${path}.excludeFiles[${j}]`;
+          if (pattern.trim() === "") this.warn(at, "empty glob pattern matches nothing", id);
+          else if (/^\.?\//.test(pattern) || pattern.includes("\\")) {
+            this.warn(
+              at,
+              `glob pattern "${pattern}" is matched against repo-relative POSIX paths ("src/a.ts"): drop the leading "/" or "./" and use "/" as the separator`,
+              id,
+            );
+          }
+        });
       }
     }
     if (view.layout !== undefined) {

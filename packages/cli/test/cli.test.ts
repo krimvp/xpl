@@ -15,6 +15,7 @@ describe("xpl cli", () => {
       "new",
       "apply",
       "validate",
+      "anchors",
       "resolve",
       "status",
       "view",

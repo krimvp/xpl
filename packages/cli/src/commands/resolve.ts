@@ -1,5 +1,6 @@
 import { describeAnchor, reresolveExplainer, type ResolveReport } from "@xpl/core";
 import type { CommandSpec } from "../command.js";
+import { CliError } from "../errors.js";
 import { rangeText } from "../format.js";
 import { atomicWrite, jsonFile } from "../fsutil.js";
 import { loadExplainer, openWorkspace } from "../repo.js";
@@ -17,7 +18,9 @@ export function renderResolveReport(report: ResolveReport): string[] {
         element.userFields.length > 0
           ? `  [keep userFields: ${element.userFields.join(", ")}]`
           : "";
-      lines.push(`  ${element.elementId}  (${element.owner})${kept}`);
+      const owner =
+        element.owner === "step" && element.view ? `step in ${element.view}` : element.owner;
+      lines.push(`  ${element.elementId}  (${owner})${kept}`);
       for (const drifted of element.anchors) {
         const approximate = drifted.approximate
           ? " (approximate: where the span was; the changed code may have shifted, so re-read it)"
@@ -62,18 +65,40 @@ export const resolveCommand: CommandSpec = {
     "Prints the counts, the drifted llm elements (re-explain those, skipping their userFields; never",
     "touch origin user) and the missing anchors. --write saves the explainer with the new resolved",
     "ranges and index binding; drifted anchors stay drifted until their element is re-explained.",
+    "--write refuses (exit 1) when the index it would resolve against no longer matches the working tree:",
+    "run `xpl index` first, so the ranges it saves are the current ones (--allow-stale overrides).",
   ],
   options: {
     write: { type: "boolean", desc: "Save the re-resolved explainer (default: report only)" },
+    "allow-stale": {
+      type: "boolean",
+      desc: "With --write: save even though the index does not match the working tree",
+    },
   },
   positionals: [{ name: "explainer" }],
   async run(ctx, args) {
     const loaded = loadExplainer(ctx, args.positionals[0]!);
-    const ws = await openWorkspace(ctx, { explainer: loaded, skipExplainerIndex: true });
+    const write = args.flag("write");
+    const ws = await openWorkspace(ctx, {
+      explainer: loaded,
+      skipExplainerIndex: true,
+      deferStaleWarning: true,
+    });
+    if (ws.stale) {
+      if (write && !args.flag("allow-stale")) {
+        throw new CliError(
+          `refusing to write ${loaded.rel}: ${ws.stale.head}. The ranges it would save are already out of date: ` +
+            `run \`xpl index\` first, then \`xpl resolve ${loaded.name} --write\` again ` +
+            "(--allow-stale saves them against this index anyway).",
+          1,
+          { stale: ws.stale.head },
+        );
+      }
+      ctx.warn(ws.stale.message);
+    }
     const { explainer, report } = reresolveExplainer(loaded.explainer, ws.model, ws.texts, {
       indexPath: ws.indexRel,
     });
-    const write = args.flag("write");
     if (write) await atomicWrite(loaded.abs, jsonFile(explainer));
     if (ctx.json) {
       ctx.emit({

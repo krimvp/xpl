@@ -521,7 +521,7 @@ describe("validateExplainer: references", () => {
       code: "unknown-id",
       elementId: "edge:job-completed",
     });
-    expect(issue.message).toContain("Did you mean: src/queue.ts#Queue.pop");
+    expect(issue.message).toContain("Did you mean: sym:src/queue.ts#Queue.pop");
     expect(
       edit((ex) => (ex.edges[0]!.to = "concept:retry-policy")).find(
         (i) => i.path === "edges[0].to",
@@ -631,6 +631,30 @@ describe("validateExplainer: references", () => {
     });
   });
 
+  it("checks excludeFiles: an array of glob strings, with warnings for patterns that cannot match", () => {
+    const view = (ex: Explainer) => ex.views[0] as ReturnType<typeof graphView>;
+    expect(edit((ex) => (view(ex).excludeFiles = ["**/*_test.go", "test/**"]))).toEqual([]);
+    expect(only(edit((ex) => (view(ex).excludeFiles = "**/test/**" as never)))).toMatchObject({
+      severity: "error",
+      path: "views[0].excludeFiles",
+      elementId: "view:overview",
+    });
+    expect(only(edit((ex) => (view(ex).excludeFiles = ["a", 3 as never])))).toMatchObject({
+      path: "views[0].excludeFiles",
+    });
+    const smelly = edit(
+      (ex) => (view(ex).excludeFiles = ["/src/**", "./test/**", " ", "a\\b", "ok/**"]),
+    );
+    expect(smelly.map((i) => [i.severity, i.path])).toEqual([
+      ["warning", "views[0].excludeFiles[0]"],
+      ["warning", "views[0].excludeFiles[1]"],
+      ["warning", "views[0].excludeFiles[2]"],
+      ["warning", "views[0].excludeFiles[3]"],
+    ]);
+    expect(smelly[0]!.message).toContain('glob pattern "/src/**" is matched against repo-relative');
+    expect(smelly[2]!.message).toBe("empty glob pattern matches nothing");
+  });
+
   it("checks scope", () => {
     const view = (ex: Explainer) => ex.views[0]!;
     expect(only(edit((ex) => (view(ex).scope.root = "dir:nope")))).toMatchObject({
@@ -642,6 +666,19 @@ describe("validateExplainer: references", () => {
     expect(only(edit((ex) => (view(ex).scope.entryPoints = ["src/runner.ts#Nope"])))).toMatchObject(
       { path: "views[0].scope.entryPoints[0]" },
     );
+    // an entry point that is nearly a symbol of an existing file says which one (in the form entry points use)
+    const near = only(
+      edit((ex) => (view(ex).scope.entryPoints = ["src/runner.ts#Runner.dispatchh"])),
+    );
+    expect(near.path).toBe("views[0].scope.entryPoints[0]");
+    expect(near.message).toContain("; did you mean src/runner.ts#Runner.dispatch?");
+    // no suggestion for a file that does not exist, and none when nothing is close
+    expect(
+      only(edit((ex) => (view(ex).scope.entryPoints = ["src/nowhere.ts#Runner.dispatch"]))).message,
+    ).not.toContain("did you mean");
+    expect(
+      only(edit((ex) => (view(ex).scope.entryPoints = ["src/runner.ts#Zzzzzz"]))).message,
+    ).not.toContain("did you mean");
     expect(only(edit((ex) => ((view(ex) as { scope: unknown }).scope = null)))).toMatchObject({
       path: "views[0].scope",
     });

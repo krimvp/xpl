@@ -308,11 +308,17 @@ describe.each([python, go])("regeneration on the $name fixture", (lang) => {
       const { json } = await xplJson<any>(after.dir, "status", NAME);
       expect(json.drifted.map((d: any) => d.elementId)).toEqual(["concept:retry-config"]);
       expect(json.missing.map((m: any) => m.elementId)).toEqual(["requeue:1"]);
-      expect(json.todo).toMatchObject({ drifted: 1, missing: 1, requests: 0 });
+      // the participant and the step end that pointed at the vanished symbol are broken references too
+      expect(json.todo).toMatchObject({ drifted: 1, missing: 1, requests: 0, broken: 2 });
+      expect(json.broken.map((i: any) => i.path)).toEqual([
+        "views[0].participants[1]",
+        "views[0].steps[0].to",
+      ]);
       const text = await xpl(after.dir, "status", NAME);
       expect(text.out).toMatch(
-        /^to do: \d+ unexplained, 1 drifted, 1 missing anchors, 0 requests$/m,
+        /^to do: \d+ unexplained, 1 drifted, 1 missing anchors, 0 requests, 2 broken references$/m,
       );
+      expect(text.out).toContain("broken references (2): ids that no longer exist in the index");
       expect(text.out).toContain("drifted llm elements to re-explain (1):");
       expect(text.out).toContain("  concept:retry-config  (concept)");
     });

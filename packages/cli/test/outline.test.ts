@@ -193,7 +193,7 @@ describe("xpl outline", () => {
     const { code, err } = await xpl(dir, "outline", "--under", "src/runner.ts#Runner.dispach");
     expect(code).toBe(1);
     expect(err).toContain('symbol "Runner.dispach" not found in src/runner.ts');
-    expect(err).toContain("Did you mean: src/runner.ts#Runner.dispatch?");
+    expect(err).toContain("Did you mean: sym:src/runner.ts#Runner.dispatch?");
     const file = await xpl(dir, "outline", "--under", "runner.ts");
     expect(file.code).toBe(1);
     expect(file.err).toContain("Did you mean: file:src/runner.ts");

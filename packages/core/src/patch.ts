@@ -9,8 +9,19 @@
  * - An id that exists: the patch is shallow-merged onto it. Fields absent from the patch keep their
  *   values, arrays and nested objects (`members`, `include`, `steps`, `layout`, `scope`, ...) are
  *   replaced wholesale, and `null` clears an optional field (`summary`, `detail`, `members`,
- *   `related`, `edgeKinds`, `hidden`, `layout`, `frames`). In particular a sequence view's `steps` are
- *   sent whole (keep every step id: tours and frames point at them; `remove` deletes single steps).
+ *   `related`, `edgeKinds`, `hidden`, `excludeFiles`, `layout`, `frames`). In particular a sequence view's
+ *   `steps` are sent whole (keep every step id: tours and frames point at them; `remove` deletes single steps).
+ * - A graph view's `include` can also be edited incrementally, with `includeAdd` and `includeRemove` (patch-only
+ *   fields, never stored). They apply after `include` (when that is given too): the ids in `includeRemove` leave
+ *   the list, the ids in `includeAdd` that are not in it yet are appended. Ids are checked like `include`
+ *   entries (an `includeRemove` id may name something that no longer exists in the index: that is how a
+ *   vanished node is dropped), and an id in both lists is an error. They are how `expand` grows a view.
+ * - User ownership (`provenance.userFields`, see `applyPatch`): an `llm` patch never replaces or shrinks a
+ *   field the user edited, so `include` (sent whole) and `includeRemove` are skipped with a `protected` warning
+ *   when the user edited the view's `include`. `includeAdd` is the exception: it only adds, so an `llm` patch
+ *   may use it to grow a view whose `include` the user curated. (`remove` follows the same protection: an
+ *   `llm` patch cannot remove an element or view that carries `userFields`, nor single steps of a sequence
+ *   view whose `steps` the user edited.)
  * - A new id: the fields that cannot be inferred must be present. Required when creating:
  *   - node: `label` (except for `dir:`/`file:`/`sym:` overlays, whose default label is used) and, for a
  *     group, `members`. `kind` is inferred from the id, `parent` defaults to the structural parent
@@ -18,7 +29,8 @@
  *   - edge: `from`, `to`, `kind` and `label` (for an id of the derived form `edge:<kind>:<a>-><b>`
  *     they come from the id and `label` may be omitted).
  *   - concept: `label`.
- *   - graph view: `type`, `title`, `include`. Sequence view: `type`, `title`, `participants`, `steps`.
+ *   - graph view: `type`, `title`, `include` (or `includeAdd`). Sequence view: `type`, `title`, `participants`,
+ *     `steps`.
  *     `scope` defaults to `{ root: "repo", depth: 1 }`.
  *   - tour: `title`, `steps`.
  * - `provenance` is optional. New elements get `{ origin: <actor>, commit: <index commit> }` unless
@@ -97,6 +109,17 @@ export type PatchGraphView = {
   id: string;
   type: "graph";
   provenance?: PatchProvenance;
+  /**
+   * Nodes to append to the view's `include` (those already in it are ignored). Additive, so it is allowed
+   * for an `llm` patch even when the user edited `include`: this is how `expand` grows a user-curated view.
+   * Never stored; a new view may use it instead of `include`.
+   */
+  includeAdd?: ElementId[];
+  /**
+   * Nodes to remove from the view's `include`. Follows the protection of `include`: skipped (with a
+   * `protected` warning) for an `llm` patch when the user edited the view's `include`. Never stored.
+   */
+  includeRemove?: ElementId[];
 } & PatchFields<Omit<GraphView, "id" | "type" | "provenance">>;
 
 /** A SequenceStep as written in a patch. Step ids are kept and never renumbered. */
