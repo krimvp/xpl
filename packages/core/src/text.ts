@@ -52,3 +52,26 @@ export function hashNormalized(normalized: string): Hash {
 export function hashRange(text: string, range: Range): Hash {
   return hashText(sliceLines(text, range));
 }
+
+/**
+ * Hashes of every prefix of `lines[start..]`: entry `k - 1` equals `hashNormalized(lines.slice(start,
+ * start + k).join("\n"))`, for `k = 1..maxCount`. The lines must already be normalized (trimmed and
+ * non-empty, see `normalizeLines`). Computed incrementally (one SHA-256 state, cloned per prefix), so
+ * scanning all windows of a line sequence costs O(lines x maxCount) instead of O(lines x maxCount^2).
+ * Used by the anchor resolver to re-find moved code.
+ */
+export function normalizedPrefixHashes(
+  lines: readonly string[],
+  start: number,
+  maxCount: number,
+): Hash[] {
+  const count = Math.min(maxCount, lines.length - start);
+  const out: Hash[] = [];
+  if (count <= 0) return out;
+  const state = sha256.create();
+  for (let k = 0; k < count; k++) {
+    state.update(utf8ToBytes(k === 0 ? lines[start]! : "\n" + lines[start + k]!));
+    out.push("sha256:" + bytesToHex(state.clone().digest()).slice(0, 12));
+  }
+  return out;
+}
