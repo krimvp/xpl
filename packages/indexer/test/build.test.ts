@@ -110,9 +110,10 @@ describe("buildIndex", () => {
     expect(index.languages.yaml).toEqual({ files: 1, symbols: 2, refs: "none" });
     expect(index.languages.json).toEqual({ files: 1, symbols: 3, refs: "none" });
     expect(index.languages.text).toEqual({ files: 1, symbols: 0, refs: "none" });
-    // The Python and Go packs are stubs for now: they index files but find nothing yet.
-    expect(index.languages.python).toEqual({ files: 1, symbols: 0, refs: "none" });
-    expect(index.languages.go).toEqual({ files: 1, symbols: 0, refs: "none" });
+    // The Python and Go packs find `def main()` / `func main()` and derive heuristic references.
+    expect(index.languages.python).toMatchObject({ files: 1, symbols: 1, refs: "heuristic" });
+    expect(index.languages.python!.tool).toContain("tree-sitter-python@");
+    expect(index.languages.go).toMatchObject({ files: 1, symbols: 1, refs: "heuristic" });
     const total = Object.values(index.languages).reduce((sum, l) => sum + l.symbols, 0);
     expect(total).toBe(index.symbols.length);
   });
@@ -323,12 +324,24 @@ describe("precise resolvers (registry and modes)", () => {
     ...overrides,
   });
 
-  it("starts with an empty registry", () => {
-    expect(preciseResolvers()).toEqual([]);
+  // `precise: "require"` needs a resolver for every language with references, and the Python and Go packs
+  // derive heuristic references now: the tests of the fake TypeScript resolver index the TypeScript part only.
+  const tsOnly = Object.fromEntries(
+    Object.entries(project).filter(
+      ([path]) => !path.startsWith("app/") && !path.startsWith("cmd/"),
+    ),
+  );
+
+  it("starts with the SCIP resolvers registered (importing the indexer registers them)", () => {
+    expect(preciseResolvers().map((r) => r.id)).toEqual([
+      "scip-typescript",
+      "scip-python",
+      "scip-go",
+    ]);
   });
 
   it("auto with no resolver uses heuristic references silently", async () => {
-    const { index, warnings } = await indexFiles(project, { precise: "auto" });
+    const { index, warnings } = await indexFiles(project, { precise: "auto", resolvers: [] });
     expect(warnings).toEqual([]);
     expect(index.languages.typescript!.refs).toBe("heuristic");
     expect(index.refs.length).toBeGreaterThan(0);
@@ -337,13 +350,18 @@ describe("precise resolvers (registry and modes)", () => {
 
   it("require with no resolver fails with a clear message naming the languages", async () => {
     const dir = makeDir(project);
-    await expect(buildIndex({ root: dir, precise: "require" })).rejects.toThrow(
-      /precise references are required.*no precise resolver is available for: typescript/,
+    await expect(buildIndex({ root: dir, precise: "require", resolvers: [] })).rejects.toThrow(
+      /precise references are required.*no precise resolver is available for: go, python, typescript/,
     );
   });
 
   it("require does not complain about repositories that have nothing to resolve", async () => {
-    const dir = makeDir({ "a.yaml": "a: 1\n", "b.json": "{}\n", "c.md": "x\n", "d.py": "x = 1\n" });
+    const dir = makeDir({
+      "a.yaml": "a: 1\n",
+      "b.json": "{}\n",
+      "c.md": "x\n",
+      "d.txt": "x = 1\n",
+    });
     const { index } = await buildIndex({ root: dir, precise: "require" });
     expect(index.files).toHaveLength(4);
   });
@@ -427,25 +445,28 @@ describe("precise resolvers (registry and modes)", () => {
         throw new Error("boom");
       },
     });
-    await expect(
-      indexFiles(project, { precise: "require", resolvers: [resolver] }),
-    ).rejects.toThrow(/precise resolver "fake-ts" failed: boom/);
+    await expect(indexFiles(tsOnly, { precise: "require", resolvers: [resolver] })).rejects.toThrow(
+      /precise resolver "fake-ts" failed: boom/,
+    );
   });
 
   it("require: satisfied when every language with references has a resolver", async () => {
-    const { index } = await indexFiles(project, { precise: "require", resolvers: [fake()] });
+    const { index } = await indexFiles(tsOnly, { precise: "require", resolvers: [fake()] });
     expect(index.languages.typescript!.refs).toBe("precise");
   });
 
   it("resolvers only run when their languages occur, and the registry is honoured by default", async () => {
     let calls = 0;
-    const goResolver = fake({
-      id: "fake-go",
-      languages: ["go"],
+    const tsxResolver = fake({
+      id: "fake-tsx",
+      languages: ["tsx"],
       resolve: async () => (calls++, { refs: [], tool: "x" }),
     });
-    await indexFiles(project, { precise: "auto", resolvers: [goResolver] }); // go has no refs yet (stub pack)
+    await indexFiles(project, { precise: "auto", resolvers: [tsxResolver] }); // the project has no .tsx file
     expect(calls).toBe(0);
+    // the default registry holds the SCIP resolvers (real tools): set them aside for this test
+    const scip = [...preciseResolvers()];
+    for (const resolver of scip) unregisterPreciseResolver(resolver.id);
     registerPreciseResolver(fake({ id: "registered" }));
     try {
       expect(preciseResolvers().map((r) => r.id)).toEqual(["registered"]);
@@ -462,7 +483,8 @@ describe("precise resolvers (registry and modes)", () => {
     } finally {
       expect(unregisterPreciseResolver("registered")).toBe(true);
       expect(unregisterPreciseResolver("registered")).toBe(false);
+      expect(preciseResolvers()).toEqual([]);
+      for (const resolver of scip) registerPreciseResolver(resolver);
     }
-    expect(preciseResolvers()).toEqual([]);
   });
 });

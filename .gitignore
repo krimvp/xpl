@@ -13,3 +13,6 @@ coverage
 # Python
 __pycache__/
 *.pyc
+
+# Local test tooling output
+.vitest/

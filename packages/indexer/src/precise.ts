@@ -3,7 +3,10 @@
  *
  * `buildIndex` always computes heuristic references first. With `precise: "auto" | "require"` it then runs
  * the registered resolvers that cover a language present in the repository and, for those languages,
- * replaces the heuristic references by the resolver's own (`resolution: "precise"`).
+ * replaces the heuristic references by the resolver's own (`resolution: "precise"`) - file by file: the
+ * heuristic references of a file the tool *described* (`PreciseOutput.describedFiles`) are dropped, the tool saw
+ * every site there; files it did not describe (build-tagged Go files, files a Python project's pyright
+ * configuration excludes, ...) keep their heuristic references, and `LanguageInfo.heuristicFiles` counts them.
  *
  *  - `"off"`: never runs a resolver.
  *  - `"auto"`: a resolver that throws produces a warning and the language keeps its heuristic references.
@@ -53,6 +56,13 @@ export interface PreciseOutput {
   refs: Reference[];
   /** Tool and version, e.g. "scip-typescript@0.4.0" (goes to `SymbolIndex.languages[lang].tool`). */
   tool: string;
+  /**
+   * The files of `PreciseInput.languages` the tool described (for SCIP: the documents of its index). Their
+   * heuristic references are replaced by `refs`; the heuristic references of the other files are kept. A file
+   * that has a reference in `refs` counts as described. Omitted: every file of `languages` is described.
+   * A tool that described none of the files (and produced no references) counts as failed.
+   */
+  describedFiles?: Iterable<FilePath>;
 }
 
 export interface PreciseResolver {

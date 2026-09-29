@@ -3,8 +3,8 @@
  *
  * Pipeline: discover files -> for each file: read, hash, parse once, let the language pack extract facts
  * from the tree, free the tree -> assemble symbols (ids, `~N` suffixes, ranges, hashes, parents) ->
- * heuristic resolution of all sites -> optional precise resolvers replace the references of the languages
- * they cover -> commit id -> `SymbolIndex`.
+ * heuristic resolution of all sites -> optional precise resolvers replace the references of the files they
+ * describe (the other files of their languages keep the heuristic ones) -> commit id -> `SymbolIndex`.
  */
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { readFileSync, statSync } from "node:fs";
@@ -28,6 +28,7 @@ import type { FileFacts, LanguagePack, RepoView } from "./languages/types.js";
 import { ParserPool, parseFile, withParsedFile } from "./parse.js";
 import { preciseResolvers } from "./precise.js";
 import type { PreciseResolver } from "./precise.js";
+import "./scip/index.js"; // registers the SCIP resolvers (scip-typescript, scip-python, scip-go)
 import { resolveHeuristic } from "./resolve/heuristic.js";
 import type { ResolverFile } from "./resolve/heuristic.js";
 import { SymbolLookup, assembleSymbols } from "./symbols.js";
@@ -155,6 +156,47 @@ function compareRefs(a: Reference, b: Reference): number {
   );
 }
 
+/** `from -> to (kind)` at a site: what makes two references the same one. */
+function refKey(ref: Reference): string {
+  const s = ref.site;
+  return `${ref.from}\0${ref.to}\0${ref.kind}\0${s.startLine}:${s.startCol ?? 0}-${s.endLine}:${s.endCol ?? 0}`;
+}
+
+/**
+ * References the packs infer from all their files at once (`LanguagePack.inferRefs`, e.g. Go's implicit
+ * interfaces). Runs once per pack that declares the hook and has heuristic files; returns only refs that are
+ * new, marked heuristic.
+ */
+function inferPackRefs(
+  files: readonly ResolverFile[],
+  entries: readonly SymbolEntry[],
+  lookup: SymbolLookup,
+  repo: RepoView,
+  refs: readonly Reference[],
+): Reference[] {
+  const seen = new Set(refs.map(refKey));
+  const out: Reference[] = [];
+  for (const pack of new Set(files.map((f) => f.pack))) {
+    if (!pack.inferRefs) continue;
+    const inferred = pack.inferRefs({
+      files: files.filter((f) => f.pack === pack),
+      entries,
+      lookup,
+      repo,
+      refs,
+    });
+    for (const { from, to, kind, site } of inferred) {
+      if (from === to) continue;
+      const ref: Reference = { from, to, kind, site: { ...site }, resolution: "heuristic" };
+      const key = refKey(ref);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(ref);
+    }
+  }
+  return out;
+}
+
 /** Build the symbol index of `opts.root`. */
 export async function buildIndex(opts: BuildIndexOptions): Promise<BuildIndexResult> {
   const root = await resolveRoot(opts.root);
@@ -220,11 +262,14 @@ export async function buildIndex(opts: BuildIndexOptions): Promise<BuildIndexRes
   );
   const heuristicFiles = resolverFiles.filter((f) => f.pack.refs === "heuristic");
   let refs = resolveHeuristic({ files: heuristicFiles, entries, lookup, repo });
+  refs = refs.concat(inferPackRefs(heuristicFiles, entries, lookup, repo, refs));
 
   // 4. Precise references replace the heuristic ones of the languages they cover.
   const languageOfFile = new Map<FilePath, FileLanguage>(files.map((f) => [f.path, f.language]));
   const refLanguages = new Set<FileLanguage>(heuristicFiles.map((f) => f.language));
   const preciseTools = new Map<FileLanguage, string>();
+  /** Per language: files that keep heuristic references because the precise tool did not describe them. */
+  const keptHeuristicFiles = new Map<FileLanguage, number>();
   if (precise !== "off") {
     const available = opts.resolvers ?? preciseResolvers();
     if (precise === "require") {
@@ -262,12 +307,47 @@ export async function buildIndex(opts: BuildIndexOptions): Promise<BuildIndexRes
             warn: (message) => warnings.push(message),
           });
           const covered = new Set<FileLanguage>(languages);
-          refs = refs.filter((ref) => !covered.has(languageOfFile.get(fileOfId(ref.from))!));
-          for (const ref of output.refs) {
+          const preciseRefs = output.refs.filter((ref) => {
             const language = languageOfFile.get(fileOfId(ref.from));
-            if (language !== undefined && covered.has(language)) refs.push(ref);
+            return language !== undefined && covered.has(language);
+          });
+          // File by file: the files the tool described get its references (it saw every site there, so the
+          // heuristic ones it did not confirm go); the other files of these languages (build-tagged, excluded
+          // by the tool's own configuration, ...) keep their heuristic references.
+          const described = new Set<FilePath>(output.describedFiles ?? []);
+          for (const ref of preciseRefs) described.add(fileOfId(ref.from));
+          const replaces = (file: FilePath): boolean =>
+            output.describedFiles === undefined || described.has(file);
+          const describedIn = new Set<FileLanguage>();
+          for (const file of described) {
+            const language = languageOfFile.get(file);
+            if (language !== undefined && covered.has(language)) describedIn.add(language);
           }
-          for (const language of languages) preciseTools.set(language, output.tool);
+          // A language none of whose files was described is not precise, whatever else the tool covered.
+          const preciseLanguages =
+            output.describedFiles === undefined
+              ? languages
+              : languages.filter((l) => describedIn.has(l));
+          if (preciseLanguages.length === 0) {
+            const total = heuristicFiles.filter((f) => covered.has(f.language)).length;
+            throw new Error(
+              `the tool described none of the ${total} ${languages.join("/")} file(s)`,
+            );
+          }
+          refs = refs.filter((ref) => {
+            const file = fileOfId(ref.from);
+            return !(covered.has(languageOfFile.get(file)!) && replaces(file));
+          });
+          for (const ref of preciseRefs) refs.push(ref);
+          for (const language of preciseLanguages) preciseTools.set(language, output.tool);
+          for (const file of heuristicFiles) {
+            if (preciseLanguages.includes(file.language) && !replaces(file.path)) {
+              keptHeuristicFiles.set(
+                file.language,
+                (keptHeuristicFiles.get(file.language) ?? 0) + 1,
+              );
+            }
+          }
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
           if (precise === "require")
@@ -285,7 +365,7 @@ export async function buildIndex(opts: BuildIndexOptions): Promise<BuildIndexRes
 
   // 5. Commit id, language summary, tool string.
   const commit = await resolveCommitId({ commit: opts.commit, git, files, root });
-  const languages = summarizeLanguages(files, entries, usedPacks, preciseTools);
+  const languages = summarizeLanguages(files, entries, usedPacks, preciseTools, keptHeuristicFiles);
   const tool =
     `xpl-indexer@${pkg.version} web-tree-sitter@${pkg.dependencies["web-tree-sitter"]} ${grammarVersions(usedPacks).join(" ")}`.trim();
 
@@ -356,6 +436,7 @@ async function indexFile(
     imports: facts.imports,
     typeFacts: facts.typeFacts,
     exports: facts.exports ?? [],
+    ...(facts.data !== undefined ? { data: facts.data } : {}),
   });
   return { file, pack };
 }
@@ -365,6 +446,7 @@ function summarizeLanguages(
   entries: readonly SymbolEntry[],
   usedPacks: readonly { pack: LanguagePack; language: FileLanguage }[],
   preciseTools: ReadonlyMap<FileLanguage, string>,
+  keptHeuristicFiles: ReadonlyMap<FileLanguage, number> = new Map(),
 ): Record<string, LanguageInfo> {
   const languageOf = new Map<FilePath, FileLanguage>(files.map((f) => [f.path, f.language]));
   const packOf = new Map<FileLanguage, LanguagePack>(usedPacks.map((u) => [u.language, u.pack]));
@@ -387,6 +469,8 @@ function summarizeLanguages(
     if (tool !== undefined) {
       info.refs = "precise";
       info.tool = tool;
+      const kept = keptHeuristicFiles.get(language) ?? 0;
+      if (kept > 0) info.heuristicFiles = kept;
     } else if (pack && pack.refs === "heuristic") {
       info.refs = "heuristic";
       info.tool = `xpl-heuristic@${pkg.version} (${grammarVersion(GRAMMAR_WASM[pack.grammarFor(language)].pkg)})`;

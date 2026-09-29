@@ -117,6 +117,13 @@ export interface LanguageInfo {
   refs: "precise" | "heuristic" | "none";
   /** Tool that produced the references, e.g. "scip-typescript@0.4.0". */
   tool?: string;
+  /**
+   * Only with `refs: "precise"`: how many files of this language keep the heuristic resolver's references
+   * because the precise tool did not describe them (excluded by build constraints or by the tool's own
+   * configuration, unreadable, ...). References from every other file of the language are precise; those of
+   * these files have `resolution: "heuristic"`. Absent when the tool described every file.
+   */
+  heuristicFiles?: number;
 }
 
 /**
