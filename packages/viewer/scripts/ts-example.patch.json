@@ -14,9 +14,8 @@
       "kind": "symbol",
       "parent": "file:src/runner.ts",
       "label": "Runner.dispatch",
-      "summary": "The hot loop: pop, lease a worker, run, ack or requeue.",
-      "anchors": [{ "file": "src/runner.ts", "symbol": "Runner.dispatch", "role": "definition" }],
-      "provenance": { "origin": "llm", "userFields": ["summary"] }
+      "summary": "Loops until stopped: pops the next job, runs it on a leased worker, then acks it, requeues it with backoff or dead-letters it.",
+      "anchors": [{ "file": "src/runner.ts", "symbol": "Runner.dispatch", "role": "definition" }]
     }
   ],
   "edges": [
@@ -36,29 +35,6 @@
         },
         { "file": "src/metrics.ts", "symbol": "onJobCompleted", "role": "definition" }
       ]
-    }
-  ],
-  "concepts": [
-    {
-      "id": "concept:retry-policy",
-      "label": "Retry policy",
-      "summary": "Failed jobs are requeued with exponential backoff up to maxRetries, then dead-lettered.",
-      "anchors": [
-        {
-          "file": "src/runner.ts",
-          "symbol": "Runner.dispatch",
-          "span": { "from": 30, "to": 41 },
-          "role": "definition"
-        },
-        {
-          "file": "config/default.yaml",
-          "symbol": "retry",
-          "span": { "from": 0, "to": 3 },
-          "role": "config"
-        },
-        { "file": "test/retry.test.ts", "role": "test" }
-      ],
-      "related": ["sym:src/runner.ts#Runner.dispatch", "file:src/queue.ts"]
     }
   ],
   "views": [
@@ -159,7 +135,7 @@
         {
           "id": "t2",
           "view": "view:dispatch",
-          "focus": ["dispatch:3", "concept:retry-policy"],
+          "focus": ["dispatch:3"],
           "note": "Where failures go: requeue with backoff.",
           "editor": { "primary": "src/runner.ts" }
         }

@@ -1,0 +1,52 @@
+{
+  "nodes": [
+    {
+      "id": "sym:internal/runner/runner.go#Runner.Dispatch",
+      "summary": "The hot loop: pop, lease a worker, run, ack or requeue."
+    }
+  ],
+  "concepts": [
+    {
+      "id": "concept:retry-policy",
+      "label": "Retry policy",
+      "summary": "Failed jobs are requeued with exponential backoff up to maxRetries, then dead-lettered.",
+      "anchors": [
+        {
+          "file": "internal/runner/runner.go",
+          "symbol": "Runner.Dispatch",
+          "span": { "from": 33, "to": 46 },
+          "role": "definition"
+        },
+        {
+          "file": "config/default.yaml",
+          "symbol": "retry",
+          "span": { "from": 0, "to": 3 },
+          "role": "config"
+        },
+        { "file": "internal/runner/retry_test.go", "role": "test" }
+      ],
+      "related": ["sym:internal/runner/runner.go#Runner.Dispatch", "file:internal/queue/queue.go"]
+    }
+  ],
+  "tours": [
+    {
+      "id": "tour:intro",
+      "title": "Intro talk",
+      "steps": [
+        {
+          "id": "t1",
+          "view": "view:overview",
+          "focus": ["grp:scheduling"],
+          "note": "Big picture first: scheduling is two files."
+        },
+        {
+          "id": "t2",
+          "view": "view:dispatch",
+          "focus": ["dispatch:3", "concept:retry-policy"],
+          "note": "Where failures go: requeue with backoff.",
+          "editor": { "primary": "internal/runner/runner.go" }
+        }
+      ]
+    }
+  ]
+}

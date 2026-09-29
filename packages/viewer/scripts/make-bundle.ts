@@ -1,10 +1,23 @@
 /**
- * make-bundle: turns a repo (a fixture) plus an explainer patch into everything the viewer needs.
+ * make-bundle: turns a repo (a fixture) plus explainer patches into everything the viewer needs.
  *
- *   npx tsx scripts/make-bundle.ts <root> --patch <patch.json> [options]
+ *   npx tsx scripts/make-bundle.ts <root> --patch <patch.json> [--user-patch <patch.json>] [options]
  *
  * 1. `buildIndex` (@xpl/indexer, `precise: "off"`) indexes <root>.
- * 2. `createExplainer` + `applyPatch` (actor `llm`, exactly what `xpl apply` does) build the explainer.
+ * 2. `createExplainer` + `applyPatch` build the explainer, exactly like `xpl new` + `xpl apply`:
+ *    a. --patch       applied as actor `llm`: what Claude writes (groups, overlays with summaries, llm
+ *                     edges with evidence at both ends, views, tours).
+ *    b. --user-patch  applied afterwards as actor `user`: what the person adds on top. An llm patch cannot
+ *                     create user-authored elements, and only a user patch makes core record
+ *                     `provenance.userFields` (the fields of an llm element the user edited), so the
+ *                     provenance of docs/handoff.md Appendix B (a concept with `origin: "user"`, a
+ *                     `Runner.dispatch` overlay with `userFields: ["summary"]`) needs both.
+ *                     Default: the sibling of --patch named `<x>.user.patch.json` when it exists
+ *                     (scripts/ts-example.patch.json -> scripts/ts-example.user.patch.json), so
+ *                     `--patch scripts/<lang>-example.patch.json` alone builds the whole example.
+ *                     (The example's tour is in both: the llm tour cannot focus a concept that does not
+ *                     exist yet, so its second stop focuses the step only, and the user patch resends
+ *                     the tour with the concept added; tours are replaced wholesale.)
  *    A patch that does not apply cleanly fails the script (exit code 1).
  * 3. Outputs:
  *    a. <root>/.explainer/<name>.explainer.json        the explainer (skipped with --no-explainer)
@@ -25,27 +38,39 @@ import {
   BUNDLE_SCHEMA,
   createExplainer,
   injectBundle,
+  type Explainer,
   type ExplainerPatch,
   type Issue,
+  type SymbolIndex,
   type ViewerBundle,
 } from "@xpl/core";
 import { buildIndex } from "@xpl/indexer";
 
 const viewerDir = resolve(import.meta.dirname, "..");
 
-const USAGE = `usage: tsx scripts/make-bundle.ts <root> --patch <patch.json> [options]
+const USAGE = `usage: tsx scripts/make-bundle.ts <root> --patch <patch.json> [--user-patch <patch.json>] [options]
 
-  --patch <file>      explainer patch (ExplainerPatch JSON), applied as actor "llm"
-  --name <name>       explainer name; file is <root>/.explainer/<name>.explainer.json (default: root's basename)
-  --title <text>      explainer title (default: the name)
-  --repo <name>       repo name recorded in the explainer (default: the name)
-  --out <file>        bundle HTML (default: dist/bundles/<root basename>.html in the viewer package)
-  --dev-json <file>   bundle as JSON for the Vite dev server (default: dist/bundles/<root basename>.bundle.json)
-  --viewer <file>     built viewer to inject into (default: dist/index.html in the viewer package)
-  --commit <id>       commit id override for the index
-  --no-explainer      do not write <root>/.explainer/<name>.explainer.json
-  --mode <mode>       initial viewer mode recorded in the bundle: explore (default) or present
+  --patch <file>       explainer patch (ExplainerPatch JSON), applied as actor "llm"
+  --user-patch <file>  second patch, applied as actor "user" after --patch (default: <x>.user.patch.json
+                       next to <x>.patch.json, when that file exists)
+  --no-user-patch      do not look for that sibling file
+  --name <name>        explainer name; file is <root>/.explainer/<name>.explainer.json (default: root's basename)
+  --title <text>       explainer title (default: the name)
+  --repo <name>        repo name recorded in the explainer (default: the name)
+  --out <file>         bundle HTML (default: dist/bundles/<root basename>.html in the viewer package)
+  --dev-json <file>    bundle as JSON for the Vite dev server (default: dist/bundles/<root basename>.bundle.json)
+  --viewer <file>      built viewer to inject into (default: dist/index.html in the viewer package)
+  --commit <id>        commit id override for the index
+  --no-explainer       do not write <root>/.explainer/<name>.explainer.json
+  --mode <mode>        initial viewer mode recorded in the bundle: explore (default) or present
 `;
+
+/** `scripts/x-example.patch.json` -> `scripts/x-example.user.patch.json` (undefined for other names). */
+function siblingUserPatch(patchFile: string): string | undefined {
+  return /\.patch\.json$/.test(patchFile) && !/\.user\.patch\.json$/.test(patchFile)
+    ? patchFile.replace(/\.patch\.json$/, ".user.patch.json")
+    : undefined;
+}
 
 function fail(message: string): never {
   console.error(`make-bundle: ${message}`);
@@ -69,11 +94,39 @@ function printIssues(issues: readonly Issue[]): void {
   }
 }
 
+/** `xpl apply <explainer> <patchFile> --actor <actor>`: exits with the issues when the patch is rejected. */
+function applyPatchFile(
+  explainer: Explainer,
+  patchFile: string,
+  actor: "llm" | "user",
+  index: SymbolIndex,
+  getText: (file: string) => string | undefined,
+): Explainer {
+  if (!existsSync(patchFile)) fail(`no such patch file: ${patchFile}`);
+  const patch = JSON.parse(readFileSync(patchFile, "utf8")) as ExplainerPatch;
+  const result = applyPatch(explainer, patch, index, getText, { actor });
+  if (!result.ok) {
+    console.error(`make-bundle: the ${actor} patch ${basename(patchFile)} did not apply:`);
+    printIssues(result.issues);
+    process.exit(1);
+  }
+  if (result.issues.length > 0) {
+    console.warn(
+      `make-bundle: the ${actor} patch ${basename(patchFile)} applied with ` +
+        `${result.issues.length} note(s):`,
+    );
+    printIssues(result.issues);
+  }
+  return result.explainer;
+}
+
 async function main(): Promise<void> {
   const { values, positionals } = parseArgs({
     allowPositionals: true,
     options: {
       patch: { type: "string" },
+      "user-patch": { type: "string" },
+      "no-user-patch": { type: "boolean", default: false },
       name: { type: "string" },
       title: { type: "string" },
       repo: { type: "string" },
@@ -125,22 +178,14 @@ async function main(): Promise<void> {
     index,
     indexPath: `.explainer/index-${index.commit}.json`,
   });
-  if (values.patch) {
-    const patchFile = resolve(values.patch);
-    if (!existsSync(patchFile)) fail(`no such patch file: ${patchFile}`);
-    const patch = JSON.parse(readFileSync(patchFile, "utf8")) as ExplainerPatch;
-    const result = applyPatch(explainer, patch, index, getText, { actor: "llm" });
-    if (!result.ok) {
-      console.error(`make-bundle: the patch did not apply:`);
-      printIssues(result.issues);
-      process.exit(1);
-    }
-    if (result.issues.length > 0) {
-      console.warn(`make-bundle: the patch applied with ${result.issues.length} note(s):`);
-      printIssues(result.issues);
-    }
-    explainer = result.explainer;
+  const llmPatch = values.patch ? resolve(values.patch) : undefined;
+  if (llmPatch) explainer = applyPatchFile(explainer, llmPatch, "llm", index, getText);
+  let userPatch = values["user-patch"] ? resolve(values["user-patch"]) : undefined;
+  if (!userPatch && llmPatch && !values["no-user-patch"]) {
+    const sibling = siblingUserPatch(llmPatch);
+    if (sibling && existsSync(sibling)) userPatch = sibling;
   }
+  if (userPatch) explainer = applyPatchFile(explainer, userPatch, "user", index, getText);
 
   // 3. outputs
   const written: string[] = [];
@@ -171,6 +216,11 @@ async function main(): Promise<void> {
       `${explainer.edges.length} edges, ${explainer.concepts.length} concepts, ` +
       `${explainer.views.length} views, ${explainer.tours.length} tours`,
   );
+  const applied = [
+    llmPatch && `${basename(llmPatch)} (llm)`,
+    userPatch && `${basename(userPatch)} (user)`,
+  ].filter(Boolean);
+  if (applied.length > 0) console.log(`patches: ${applied.join(", ")}`);
   console.log(`bundle html ${kb(Buffer.byteLength(html))}`);
   for (const path of written) console.log(`wrote ${path}`);
 }

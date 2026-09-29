@@ -3,46 +3,46 @@
   "title": "Job runner",
   "repo": {
     "name": "acme/jobrunner",
-    "commit": "wt-6dd745d736"
+    "commit": "wt-f35ab6db83"
   },
   "index": {
-    "path": ".explainer/index-wt-6dd745d736.json",
-    "commit": "wt-6dd745d736"
+    "path": ".explainer/index-wt-f35ab6db83.json",
+    "commit": "wt-f35ab6db83"
   },
   "nodes": [
     {
       "id": "grp:scheduling",
       "kind": "group",
       "label": "Scheduling",
-      "summary": "Decides which job runs next and hands it to a free worker.",
+      "summary": "Decides which job runs next and hands it to a free worker: the queue serves the highest priority first, then the oldest job, and Runner.dispatch leases a worker for it.",
       "parent": "repo",
       "members": [
-        "file:src/runner.ts",
-        "file:src/queue.ts"
+        "file:jobrunner/runner.py",
+        "file:jobrunner/queue.py"
       ],
       "anchors": [],
       "provenance": {
         "origin": "llm",
-        "commit": "wt-6dd745d736"
+        "commit": "wt-f35ab6db83"
       }
     },
     {
-      "id": "sym:src/runner.ts#Runner.dispatch",
+      "id": "sym:jobrunner/runner.py#Runner.dispatch",
       "kind": "symbol",
       "label": "Runner.dispatch",
       "summary": "The hot loop: pop, lease a worker, run, ack or requeue.",
-      "parent": "sym:src/runner.ts#Runner",
+      "parent": "sym:jobrunner/runner.py#Runner",
       "anchors": [
         {
-          "file": "src/runner.ts",
+          "file": "jobrunner/runner.py",
           "symbol": "Runner.dispatch",
           "role": "definition",
-          "hash": "sha256:c02146e8d847",
+          "hash": "sha256:5b7851af7ca5",
           "resolved": {
-            "commit": "wt-6dd745d736",
+            "commit": "wt-f35ab6db83",
             "range": {
-              "startLine": 42,
-              "endLine": 88
+              "startLine": 61,
+              "endLine": 96
             },
             "status": "ok"
           }
@@ -50,7 +50,7 @@
       ],
       "provenance": {
         "origin": "llm",
-        "commit": "wt-6dd745d736",
+        "commit": "wt-f35ab6db83",
         "userFields": [
           "summary"
         ]
@@ -60,40 +60,40 @@
   "edges": [
     {
       "id": "edge:job-completed",
-      "from": "file:src/worker.ts",
-      "to": "file:src/metrics.ts",
+      "from": "file:jobrunner/worker.py",
+      "to": "file:jobrunner/metrics.py",
       "kind": "emits",
       "label": "job.completed",
-      "summary": "Worker publishes on the event bus; metrics subscribes. Invisible to the call graph.",
+      "summary": "Worker.run publishes job.completed on the event bus after a successful attempt; register_metrics subscribes on_job_completed to that topic. Invisible to the call graph: the worker and the metrics never reference each other.",
       "anchors": [
         {
-          "file": "src/worker.ts",
+          "file": "jobrunner/worker.py",
           "symbol": "Worker.run",
           "span": {
-            "from": 21,
-            "to": 21
+            "from": 22,
+            "to": 22
           },
           "role": "call-site",
-          "hash": "sha256:205444834577",
+          "hash": "sha256:c522c722d0d3",
           "resolved": {
-            "commit": "wt-6dd745d736",
+            "commit": "wt-f35ab6db83",
             "range": {
-              "startLine": 51,
-              "endLine": 51
+              "startLine": 63,
+              "endLine": 63
             },
             "status": "ok"
           }
         },
         {
-          "file": "src/metrics.ts",
-          "symbol": "onJobCompleted",
+          "file": "jobrunner/metrics.py",
+          "symbol": "on_job_completed",
           "role": "definition",
-          "hash": "sha256:ec3431f14677",
+          "hash": "sha256:62d0c3482473",
           "resolved": {
-            "commit": "wt-6dd745d736",
+            "commit": "wt-f35ab6db83",
             "range": {
-              "startLine": 15,
-              "endLine": 19
+              "startLine": 18,
+              "endLine": 22
             },
             "status": "ok"
           }
@@ -101,7 +101,7 @@
       ],
       "provenance": {
         "origin": "llm",
-        "commit": "wt-6dd745d736"
+        "commit": "wt-f35ab6db83"
       }
     }
   ],
@@ -112,19 +112,19 @@
       "summary": "Failed jobs are requeued with exponential backoff up to maxRetries, then dead-lettered.",
       "anchors": [
         {
-          "file": "src/runner.ts",
+          "file": "jobrunner/runner.py",
           "symbol": "Runner.dispatch",
           "span": {
-            "from": 30,
-            "to": 41
+            "from": 25,
+            "to": 33
           },
           "role": "definition",
-          "hash": "sha256:adc8374edfff",
+          "hash": "sha256:90a41a74d137",
           "resolved": {
-            "commit": "wt-6dd745d736",
+            "commit": "wt-f35ab6db83",
             "range": {
-              "startLine": 72,
-              "endLine": 83
+              "startLine": 86,
+              "endLine": 94
             },
             "status": "ok"
           }
@@ -139,7 +139,7 @@
           "role": "config",
           "hash": "sha256:7c1c80036851",
           "resolved": {
-            "commit": "wt-6dd745d736",
+            "commit": "wt-f35ab6db83",
             "range": {
               "startLine": 13,
               "endLine": 16
@@ -148,26 +148,26 @@
           }
         },
         {
-          "file": "test/retry.test.ts",
+          "file": "tests/test_retry.py",
           "role": "test",
-          "hash": "sha256:2794a0dab99c",
+          "hash": "sha256:e9c21676f8a2",
           "resolved": {
-            "commit": "wt-6dd745d736",
+            "commit": "wt-f35ab6db83",
             "range": {
               "startLine": 1,
-              "endLine": 91
+              "endLine": 106
             },
             "status": "ok"
           }
         }
       ],
       "related": [
-        "sym:src/runner.ts#Runner.dispatch",
-        "file:src/queue.ts"
+        "sym:jobrunner/runner.py#Runner.dispatch",
+        "file:jobrunner/queue.py"
       ],
       "provenance": {
         "origin": "user",
-        "commit": "wt-6dd745d736"
+        "commit": "wt-f35ab6db83"
       }
     }
   ],
@@ -182,12 +182,12 @@
       },
       "include": [
         "grp:scheduling",
-        "file:src/worker.ts",
-        "file:src/metrics.ts"
+        "file:jobrunner/worker.py",
+        "file:jobrunner/metrics.py"
       ],
       "provenance": {
         "origin": "llm",
-        "commit": "wt-6dd745d736"
+        "commit": "wt-f35ab6db83"
       }
     },
     {
@@ -199,137 +199,140 @@
         "depth": 3,
         "question": "How does a job get from the queue to a worker?",
         "entryPoints": [
-          "src/runner.ts#Runner.dispatch"
+          "jobrunner/runner.py#Runner.dispatch"
         ]
       },
       "participants": [
-        "sym:src/runner.ts#Runner.dispatch",
-        "file:src/queue.ts",
-        "file:src/worker.ts"
+        "sym:jobrunner/runner.py#Runner.dispatch",
+        "file:jobrunner/queue.py",
+        "file:jobrunner/worker.py"
       ],
       "steps": [
         {
           "id": "dispatch:1",
-          "from": "sym:src/runner.ts#Runner.dispatch",
-          "to": "file:src/queue.ts",
+          "from": "sym:jobrunner/runner.py#Runner.dispatch",
+          "to": "file:jobrunner/queue.py",
           "label": "pop()",
           "kind": "call",
           "anchors": [
             {
-              "file": "src/runner.ts",
+              "file": "jobrunner/runner.py",
               "symbol": "Runner.dispatch",
               "span": {
                 "from": 4,
                 "to": 4
               },
               "role": "call-site",
-              "hash": "sha256:c2fd0931e02b",
+              "hash": "sha256:d92245159a0f",
               "resolved": {
-                "commit": "wt-6dd745d736",
+                "commit": "wt-f35ab6db83",
                 "range": {
-                  "startLine": 46,
-                  "endLine": 46
+                  "startLine": 65,
+                  "endLine": 65
                 },
                 "status": "ok"
               }
             },
             {
-              "file": "src/queue.ts",
+              "file": "jobrunner/queue.py",
               "symbol": "Queue.pop",
               "role": "definition",
-              "hash": "sha256:b022955822dc",
+              "hash": "sha256:c6237d962e0b",
               "resolved": {
-                "commit": "wt-6dd745d736",
+                "commit": "wt-f35ab6db83",
                 "range": {
-                  "startLine": 72,
-                  "endLine": 81
+                  "startLine": 58,
+                  "endLine": 70
                 },
                 "status": "ok"
               }
             }
-          ]
+          ],
+          "summary": "Takes the next job that is due: highest priority first, then oldest enqueue time. Returns None when nothing is due, and the loop sleeps for idle_delay_ms."
         },
         {
           "id": "dispatch:2",
-          "from": "sym:src/runner.ts#Runner.dispatch",
-          "to": "file:src/worker.ts",
+          "from": "sym:jobrunner/runner.py#Runner.dispatch",
+          "to": "file:jobrunner/worker.py",
           "label": "run(job)",
           "kind": "call",
           "anchors": [
             {
-              "file": "src/runner.ts",
+              "file": "jobrunner/runner.py",
               "symbol": "Runner.dispatch",
               "span": {
-                "from": 18,
-                "to": 19
+                "from": 16,
+                "to": 16
               },
               "role": "call-site",
-              "hash": "sha256:c43d408fd3b8",
+              "hash": "sha256:65f8c25e58cf",
               "resolved": {
-                "commit": "wt-6dd745d736",
+                "commit": "wt-f35ab6db83",
                 "range": {
-                  "startLine": 60,
-                  "endLine": 61
+                  "startLine": 77,
+                  "endLine": 77
                 },
                 "status": "ok"
               }
             },
             {
-              "file": "src/worker.ts",
+              "file": "jobrunner/worker.py",
               "symbol": "Worker.run",
               "role": "definition",
-              "hash": "sha256:64889655134b",
+              "hash": "sha256:66db977da112",
               "resolved": {
-                "commit": "wt-6dd745d736",
+                "commit": "wt-f35ab6db83",
                 "range": {
-                  "startLine": 30,
-                  "endLine": 53
+                  "startLine": 41,
+                  "endLine": 64
                 },
                 "status": "ok"
               }
             }
-          ]
+          ],
+          "summary": "Runs one attempt on the leased worker, with the configured timeout. A failure (exception, timeout, unknown job kind) comes back as RunResult(ok=False, error=...), never as a raised exception; a success is also published on the bus as job.completed."
         },
         {
           "id": "dispatch:3",
-          "from": "sym:src/runner.ts#Runner.dispatch",
-          "to": "file:src/queue.ts",
+          "from": "sym:jobrunner/runner.py#Runner.dispatch",
+          "to": "file:jobrunner/queue.py",
           "label": "requeue(job, backoff)",
           "kind": "call",
           "anchors": [
             {
-              "file": "src/runner.ts",
+              "file": "jobrunner/runner.py",
               "symbol": "Runner.dispatch",
               "span": {
-                "from": 34,
-                "to": 36
+                "from": 29,
+                "to": 29
               },
               "role": "call-site",
-              "hash": "sha256:3f9467b4c51b",
+              "hash": "sha256:a64c17fcd7fb",
               "resolved": {
-                "commit": "wt-6dd745d736",
+                "commit": "wt-f35ab6db83",
                 "range": {
-                  "startLine": 76,
-                  "endLine": 78
+                  "startLine": 90,
+                  "endLine": 90
                 },
                 "status": "ok"
               }
             },
             {
-              "file": "src/queue.ts",
+              "file": "jobrunner/queue.py",
               "symbol": "Queue.requeue",
               "role": "definition",
-              "hash": "sha256:9abf2fb62272",
+              "hash": "sha256:ca090ea5797e",
               "resolved": {
-                "commit": "wt-6dd745d736",
+                "commit": "wt-f35ab6db83",
                 "range": {
-                  "startLine": 87,
-                  "endLine": 90
+                  "startLine": 72,
+                  "endLine": 79
                 },
                 "status": "ok"
               }
             }
-          ]
+          ],
+          "summary": "A failed job with retries left goes back on the queue, due again after backoff_delay: base_delay_ms * 2^(attempt-1), capped at max_delay_ms. Queue.requeue records the failed attempt and keeps the job's original enqueue time."
         }
       ],
       "frames": [
@@ -343,7 +346,7 @@
       ],
       "provenance": {
         "origin": "llm",
-        "commit": "wt-6dd745d736"
+        "commit": "wt-f35ab6db83"
       }
     }
   ],
@@ -369,7 +372,7 @@
           ],
           "note": "Where failures go: requeue with backoff.",
           "editor": {
-            "primary": "src/runner.ts"
+            "primary": "jobrunner/runner.py"
           }
         }
       ]

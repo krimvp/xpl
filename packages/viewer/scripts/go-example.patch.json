@@ -1,0 +1,158 @@
+{
+  "nodes": [
+    {
+      "id": "grp:scheduling",
+      "kind": "group",
+      "parent": "repo",
+      "label": "Scheduling",
+      "summary": "Decides which job runs next and hands it to a free worker: the queue serves the highest priority first, then the oldest job, and Runner.Dispatch leases a worker for it.",
+      "members": ["file:internal/runner/runner.go", "file:internal/queue/queue.go"],
+      "anchors": []
+    },
+    {
+      "id": "sym:internal/runner/runner.go#Runner.Dispatch",
+      "kind": "symbol",
+      "parent": "file:internal/runner/runner.go",
+      "label": "Runner.Dispatch",
+      "summary": "Loops until its context is cancelled or the queue or the pool fails: pops the next due job, runs it on a leased worker, then acks it, requeues it with backoff or dead-letters it. The queue and the pool are reached through the JobQueue and WorkerPool interfaces.",
+      "anchors": [
+        { "file": "internal/runner/runner.go", "symbol": "Runner.Dispatch", "role": "definition" }
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge:job-completed",
+      "from": "file:internal/worker/worker.go",
+      "to": "file:internal/metrics/metrics.go",
+      "kind": "emits",
+      "label": "job.completed",
+      "summary": "Worker.Run publishes job.completed on the bus after a successful attempt; metrics.Register subscribes OnJobCompleted to that topic through bus.Subscribe. Invisible to the call graph: the worker and metrics packages never import each other.",
+      "anchors": [
+        {
+          "file": "internal/worker/worker.go",
+          "symbol": "Worker.Run",
+          "span": { "from": 38, "to": 38 },
+          "role": "call-site"
+        },
+        {
+          "file": "internal/metrics/metrics.go",
+          "symbol": "Metrics.OnJobCompleted",
+          "role": "definition"
+        }
+      ]
+    }
+  ],
+  "views": [
+    {
+      "id": "view:overview",
+      "type": "graph",
+      "title": "Overview",
+      "scope": { "root": "repo", "depth": 1 },
+      "include": [
+        "grp:scheduling",
+        "file:internal/worker/worker.go",
+        "file:internal/metrics/metrics.go"
+      ]
+    },
+    {
+      "id": "view:dispatch",
+      "type": "sequence",
+      "title": "How a job is dispatched",
+      "scope": {
+        "root": "repo",
+        "depth": 3,
+        "question": "How does a job get from the queue to a worker?",
+        "entryPoints": ["internal/runner/runner.go#Runner.Dispatch"]
+      },
+      "participants": [
+        "sym:internal/runner/runner.go#Runner.Dispatch",
+        "file:internal/queue/queue.go",
+        "file:internal/worker/worker.go"
+      ],
+      "steps": [
+        {
+          "id": "dispatch:1",
+          "from": "sym:internal/runner/runner.go#Runner.Dispatch",
+          "to": "file:internal/queue/queue.go",
+          "label": "Pop()",
+          "kind": "call",
+          "summary": "r.queue is the JobQueue interface, which hides the implementation: the demo passes a *queue.Queue (the tests wrap one in a recording double), whose Pop hands out the next due job (highest priority first, then oldest) or returns queue.ErrEmpty, and then the loop sleeps for IdleDelay.",
+          "anchors": [
+            {
+              "file": "internal/runner/runner.go",
+              "symbol": "Runner.Dispatch",
+              "span": { "from": 4, "to": 4 },
+              "role": "call-site"
+            },
+            { "file": "internal/queue/queue.go", "symbol": "Queue.Pop", "role": "definition" }
+          ]
+        },
+        {
+          "id": "dispatch:2",
+          "from": "sym:internal/runner/runner.go#Runner.Dispatch",
+          "to": "file:internal/worker/worker.go",
+          "label": "Run(job)",
+          "kind": "call",
+          "summary": "Runs one attempt on the leased worker; the context is detached from cancellation so a job in progress finishes during shutdown. Failures (errors, panics, timeouts) come back in Result.Err, never as a returned error or a panic; a success is also published on the bus as job.completed.",
+          "anchors": [
+            {
+              "file": "internal/runner/runner.go",
+              "symbol": "Runner.Dispatch",
+              "span": { "from": 22, "to": 22 },
+              "role": "call-site"
+            },
+            { "file": "internal/worker/worker.go", "symbol": "Worker.Run", "role": "definition" }
+          ]
+        },
+        {
+          "id": "dispatch:3",
+          "from": "sym:internal/runner/runner.go#Runner.Dispatch",
+          "to": "file:internal/queue/queue.go",
+          "label": "Requeue(job, backoff)",
+          "kind": "call",
+          "summary": "A failed job with retries left goes back through JobQueue.Requeue, due again after backoffDelay: BaseDelay * 2^(attempt-1), capped at MaxDelay. The implementation, (*queue.Queue).Requeue, takes the job out of the in-flight set and appends a copy with Attempts+1 and AvailableAt set to now plus the delay.",
+          "anchors": [
+            {
+              "file": "internal/runner/runner.go",
+              "symbol": "Runner.Dispatch",
+              "span": { "from": 37, "to": 37 },
+              "role": "call-site"
+            },
+            { "file": "internal/queue/queue.go", "symbol": "Queue.Requeue", "role": "definition" }
+          ]
+        }
+      ],
+      "frames": [
+        {
+          "id": "frame:retry",
+          "kind": "loop",
+          "label": "until success or maxRetries",
+          "fromStep": "dispatch:2",
+          "toStep": "dispatch:3"
+        }
+      ]
+    }
+  ],
+  "tours": [
+    {
+      "id": "tour:intro",
+      "title": "Intro talk",
+      "steps": [
+        {
+          "id": "t1",
+          "view": "view:overview",
+          "focus": ["grp:scheduling"],
+          "note": "Big picture first: scheduling is two files."
+        },
+        {
+          "id": "t2",
+          "view": "view:dispatch",
+          "focus": ["dispatch:3"],
+          "note": "Where failures go: requeue with backoff.",
+          "editor": { "primary": "internal/runner/runner.go" }
+        }
+      ]
+    }
+  ]
+}
