@@ -29,7 +29,8 @@ TypeScript, Python or Go repository, ask Claude Code:
 
 Claude indexes the repo, writes `.explainer/<name>.explainer.json` (commit it; the indexes beside it are
 git-ignored) and gives you the result. Open it yourself with `xpl bundle <name> -o <name>.html` (one
-self-contained file: works offline, easy to share) or `xpl view <name>` (a local server with live repo access:
+self-contained file that carries the source files the explainer shows: works offline, easy to share;
+`--files all` embeds every file of the repo) or `xpl view <name>` (a local server with live repo access:
 your edits are saved and "Explain this" clicks are queued for Claude). Other things to ask for: `explain this
 repo`, `expand <node>`, `make a tour` (Present mode: arrow keys step through it). More in
 [skill/code-explainer/README.md](skill/code-explainer/README.md).
@@ -55,7 +56,7 @@ xpl new myrepo --title "My repo"                # .explainer/myrepo.explainer.js
 xpl apply myrepo patch.json                     # check a patch against the index, then merge it: all or nothing
 xpl validate myrepo                             # every id and anchor still resolves?
 xpl view myrepo                                 # http://127.0.0.1:4747 (falls back to a free port)
-xpl bundle myrepo -o myrepo.html                # one self-contained HTML file (--tour <id> starts a tour)
+xpl bundle myrepo -o myrepo.html                # one self-contained HTML file (--files all: every file; --tour <id>: a tour)
 ```
 
 `xpl search`, `xpl anchors`, `xpl resolve` (after the code changed) and `xpl status` (what still needs
@@ -64,24 +65,25 @@ The format of `patch.json`: [skill/code-explainer/reference/patch-format.md](ski
 
 ## Languages and precision
 
-TypeScript/JavaScript, Python and Go get symbols and references. YAML and JSON get their keys as symbols
-(`config/default.yaml#retry.maxRetries` can be anchored like a function); any other text file is indexed as
-plain text. Symbols always come from tree-sitter (WASM, nothing to install). References (calls, imports,
-inheritance, type uses) come from a scope-aware heuristic resolver, or, when the tool can run, from a
-compiler-grade SCIP indexer. `xpl index` tries SCIP by default and prints what each language got:
-`refs: precise (scip-go@0.2.7)` or `refs: heuristic`. The viewer draws heuristic edges lighter, and Claude
-treats them as hints.
+TypeScript/JavaScript, Python and Go get symbols and references. YAML, JSON and TOML get their keys as
+symbols (`config/default.yaml#retry.maxRetries` or `pyproject.toml#project.scripts.flask` can be anchored like
+a function); any other text file is indexed as plain text. Symbols always come from tree-sitter (WASM, nothing
+to install). References (calls, imports, inheritance, type uses, reads of variables and fields) come from a
+scope-aware heuristic resolver, or, when the tool can run, from a compiler-grade SCIP indexer. `xpl index`
+tries SCIP by default and prints what each language got: `refs: precise (scip-go@0.2.7)` or `refs: heuristic`.
+The viewer draws heuristic edges lighter, and Claude treats them as hints.
 
-| Language   | Precise references need                                                             |
-| ---------- | ----------------------------------------------------------------------------------- |
-| TS / JS    | `npx` and, on first use, network access: `scip-typescript` 0.4.0                    |
-| Python     | `npx` and, on first use, network access: `scip-python` 0.6.6                        |
-| Go         | Go 1.25 or newer, or an older `go` that may download the toolchain: `scip-go` 0.2.7 |
-| YAML, JSON | nothing: keys are symbols, there are no references                                  |
+| Language         | Precise references need                                                             |
+| ---------------- | ----------------------------------------------------------------------------------- |
+| TS / JS          | `npx` and, on first use, network access: `scip-typescript` 0.4.0                    |
+| Python           | `npx` and, on first use, network access: `scip-python` 0.6.6                        |
+| Go               | Go 1.25 or newer, or an older `go` that may download the toolchain: `scip-go` 0.2.7 |
+| YAML, JSON, TOML | nothing: keys are symbols, there are no references                                  |
 
 `--precise off` skips SCIP (fast, heuristic), `--precise require` fails instead of falling back;
 `XPL_SCIP_TIMEOUT_MS` sets the per-tool timeout (default 10 minutes). Files a tool did not describe (build-tagged
-Go files, for one) keep their heuristic references and are named in a warning.
+Go files, for one) keep their heuristic references and are named in a warning; the summary then reads
+`refs: precise 10/11 (scip-go@0.2.7), 1 heuristic`.
 
 ## Repository layout
 
