@@ -53,7 +53,7 @@ interface GhostStatus {
 
 interface ViewStatus {
   id: string;
-  type: "graph" | "sequence";
+  type: "graph" | "sequence" | "flow";
   title: string;
   /** Nodes shown (graph: included nodes; sequence: participants). */
   nodes: { total: number; unexplained: string[] };

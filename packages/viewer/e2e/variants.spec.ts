@@ -23,7 +23,7 @@ async function openVariant(page: Page, edit: (bundle: Loose) => void): Promise<v
   await page.route("http://xpl.test/**", (route) =>
     route.fulfill({ contentType: "text/html", body: withBundle(html, bundle) }),
   );
-  await page.goto("http://xpl.test/");
+  await page.goto("http://xpl.test/?mode=explore");
   await page.waitForFunction(() => window.__xpl !== undefined);
 }
 

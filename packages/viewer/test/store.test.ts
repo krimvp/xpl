@@ -49,7 +49,7 @@ describe("selection", () => {
     expect(new ViewerStore(makeBundle(), { view: "view:nope" }).getState().viewId).toBe(
       "view:overview",
     );
-    const store = new ViewerStore(makeBundle());
+    const store = new ViewerStore(makeBundle(), { mode: "explore" });
     store.select(["concept:retry"]);
     expect(store.setView("view:flow")).toBe(true);
     expect(store.getState().viewId).toBe("view:flow");

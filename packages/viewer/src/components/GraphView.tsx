@@ -34,7 +34,8 @@ import {
   type LayoutEdge,
   type LayoutNode,
 } from "../layout/graphLayout.js";
-import { arrowHeadPath, distanceToSegment, roundedPath, routeBox } from "../svg.js";
+import { arrowHeadPath, distanceToSegment, roundedPath, routeBox, type Box } from "../svg.js";
+import { unionBox } from "../viewport.js";
 import { useStore } from "../hooks.js";
 import { GhostTargetList } from "./GhostTargets.js";
 import { PanZoom, PRESENT_FIT_PADDING, PRESENT_MAX_FIT_ZOOM } from "./PanZoom.js";
@@ -83,6 +84,41 @@ const CONTAINER_BOUNDS_PAD = 40;
 
 const additive = (event: MouseEvent | KeyboardEvent) =>
   event.shiftKey || event.metaKey || event.ctrlKey;
+
+function canvasBounds(layout: GraphLayout): Box {
+  const boxes: Box[] = [{ x: 0, y: 0, width: layout.width, height: layout.height }];
+  const edges = (list: LayoutEdge[], x: number, y: number) => {
+    for (const edge of list) {
+      const box = routeBox(edge.points, edge.label);
+      const width = Math.max(edge.anchor.x - box.x, box.x + box.width - edge.anchor.x) + BOUNDS_PAD;
+      const height =
+        Math.max(edge.anchor.y - box.y, box.y + box.height - edge.anchor.y) + BOUNDS_PAD;
+      boxes.push({
+        x: x + edge.anchor.x - width,
+        y: y + edge.anchor.y - height,
+        width: 2 * width,
+        height: 2 * height,
+      });
+    }
+  };
+  const visit = (list: LayoutNode[], x: number, y: number) => {
+    for (const node of list) {
+      const at = { x: x + node.x, y: y + node.y };
+      const pad = node.children.length > 0 ? CONTAINER_BOUNDS_PAD : 0;
+      boxes.push({
+        x: at.x - pad,
+        y: at.y - pad,
+        width: node.width + 2 * pad,
+        height: node.height + 2 * pad,
+      });
+      edges(node.edges, at.x, at.y);
+      visit(node.children, at.x, at.y);
+    }
+  };
+  edges(layout.edges, 0, 0);
+  visit(layout.nodes, 0, 0);
+  return unionBox(boxes)!;
+}
 
 function stateClasses(id: string, marks: Marks): string {
   return (
@@ -140,10 +176,11 @@ export function GraphView({
     [selection, matches, related],
   );
 
-  const startBox = useMemo(
-    () => (layout ? startAnchor(layout, selection, order) : undefined),
-    [layout, selection, order],
-  );
+  const canvas = useMemo(() => (layout ? canvasBounds(layout) : undefined), [layout]);
+  const startBox = useMemo(() => {
+    const box = layout ? startAnchor(layout, selection, order) : undefined;
+    return box && canvas ? { ...box, x: box.x - canvas.x, y: box.y - canvas.y } : box;
+  }, [layout, canvas, selection, order]);
 
   // The layout direction (right or down) is chosen for the pane the diagram is drawn in.
   useEffect(() => {
@@ -223,8 +260,8 @@ export function GraphView({
   } else {
     body = (
       <PanZoom
-        width={layout.width}
-        height={layout.height}
+        width={canvas!.width}
+        height={canvas!.height}
         resetKey={resetKey}
         label="Diagram. Drag to pan, scroll to zoom."
         maxFitZoom={present ? PRESENT_MAX_FIT_ZOOM : undefined}
@@ -234,6 +271,7 @@ export function GraphView({
       >
         <g
           className="graph"
+          transform={`translate(${-canvas!.x} ${-canvas!.y})`}
           data-fallback={layout.fallback ? "true" : undefined}
           data-direction={layout.direction}
         >

@@ -11,6 +11,8 @@ import { Details } from "./components/Details.js";
 import { DiagramPane } from "./components/DiagramPane.js";
 import { ErrorBoundary } from "./components/ErrorBoundary.js";
 import { Header } from "./components/Header.js";
+import { Workspace } from "./components/Workspace.js";
+import "./workspace.css";
 import { Splitter } from "./components/Splitter.js";
 import { StoreContext, useStore, useViewerState } from "./hooks.js";
 import { isFormField, tourKeyAction } from "./present/keys.js";
@@ -102,6 +104,8 @@ function Shell() {
       <Header />
       {state.mode === "present" ? (
         <PresentMode />
+      ) : state.perspective !== "explore" ? (
+        <Workspace />
       ) : (
         <ExploreLayout
           leftWidth={leftWidth}

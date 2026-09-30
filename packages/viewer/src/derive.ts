@@ -173,7 +173,7 @@ function relatedIds(vd: ViewDerived, model: ExplainerModel, selection: readonly 
         // What the view draws for it: the element itself, or the group / container that stands for it.
         const shown = repr(related, vd.include, model);
         if (shown !== undefined) out.add(shown);
-      } else if (view?.type === "sequence") {
+      } else if (view?.type === "sequence" || view?.type === "flow") {
         for (const participant of view.participants ?? []) {
           if (participant === related || model.subtreeContains(participant, related)) {
             out.add(participant);

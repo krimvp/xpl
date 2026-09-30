@@ -2165,7 +2165,7 @@ describe("applyPatch: stepsUpdate", () => {
     expect(errorsOf(bad)[0]!.message).toContain("Did you mean: sym:src/queue.ts#Queue.pop");
   });
 
-  it("null clears the optional summary and edge; no other field takes null", () => {
+  it("null clears optional fields; required fields reject null", () => {
     const first = apply(update([{ id: "dispatch:2", summary: "x" }]));
     const cleared = apply(update([{ id: "dispatch:2", summary: null }]), {
       explainer: first.explainer,
@@ -2177,7 +2177,7 @@ describe("applyPatch: stepsUpdate", () => {
     expect(label.ok).toBe(false);
     expect(errorsOf(label)[0]).toMatchObject({ path: "views[0].stepsUpdate[0].label" });
     expect(errorsOf(label)[0]!.message).toBe(
-      "label cannot be null (null clears only: summary, edge)",
+      "label cannot be null (null clears only: summary, edge, shape, next)",
     );
   });
 

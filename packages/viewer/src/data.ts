@@ -145,6 +145,8 @@ export interface LaunchParams {
   /** 1-based. */
   step?: number;
   view?: string;
+  perspective?: "guide" | "map" | "flow" | "code" | "explore";
+  focus?: string[];
 }
 
 export function readLaunchParams(search: string = location.search): LaunchParams {
@@ -158,5 +160,15 @@ export function readLaunchParams(search: string = location.search): LaunchParams
   if (params.has("step") && Number.isInteger(step) && step >= 1) out.step = step;
   const view = params.get("view");
   if (view) out.view = view;
+  const perspective = params.get("perspective");
+  if (
+    perspective === "guide" ||
+    perspective === "map" ||
+    perspective === "flow" ||
+    perspective === "code" ||
+    perspective === "explore"
+  )
+    out.perspective = perspective;
+  if (params.has("focus")) out.focus = params.getAll("focus");
   return out;
 }

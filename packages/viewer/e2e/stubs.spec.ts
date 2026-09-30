@@ -145,7 +145,7 @@ async function openCrowded(page: Page, view: Record<string, unknown> = {}) {
   await page.route("http://xpl.test/**", (route) =>
     route.fulfill({ contentType: "text/html", body: withBundle(html, crowdedBundle(view)) }),
   );
-  await page.goto("http://xpl.test/");
+  await page.goto("http://xpl.test/?mode=explore");
   await page.waitForFunction(() => window.__xpl !== undefined);
   await expect(byId(page, RUN)).toBeVisible();
 }
@@ -420,7 +420,9 @@ test.describe("the Stubs control", () => {
   });
 
   test("the control is for graph views only", async ({ page }) => {
-    await page.goto(new URL("../dist/bundles/ts-jobrunner.html", import.meta.url).href);
+    await page.goto(
+      new URL("../dist/bundles/ts-jobrunner.html", import.meta.url).href + "?mode=explore",
+    );
     await page.waitForFunction(() => window.__xpl !== undefined);
     await expect(page.getByTestId("stubs-control")).toBeVisible();
     await page.evaluate(() => window.__xpl!.setView("view:dispatch"));

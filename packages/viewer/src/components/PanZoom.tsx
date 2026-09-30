@@ -166,6 +166,7 @@ export function PanZoom({
 
   const onPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.button !== 0) return;
+    suppressClick.current = false;
     drag.current = { x: event.clientX, y: event.clientY, moved: false, id: event.pointerId };
   };
   const onPointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {

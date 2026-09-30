@@ -9,6 +9,7 @@ import { explainerFileName } from "../edits.js";
 import { useStore, useViewerState } from "../hooks.js";
 import { TourPanel } from "./TourPanel.js";
 import { ViewTabs } from "./ViewTabs.js";
+import { WorkspaceTabs } from "./WorkspaceTabs.js";
 
 /** The tooltip of the disabled Present toggle. */
 export const NO_TOURS_HINT =
@@ -38,9 +39,11 @@ export function Header() {
 
       {present ? (
         <TourPicker />
-      ) : (
-        // One popup at a time: the views menu takes the place of the tour panel.
+      ) : // One popup at a time: the views menu takes the place of the tour panel.
+      state.perspective === "explore" ? (
         <ViewTabs onMenuOpen={() => setToursOpen(false)} />
+      ) : (
+        <WorkspaceTabs />
       )}
 
       <div className="spacer" />
@@ -63,8 +66,17 @@ export function Header() {
       <div className="segmented" role="group" aria-label="Mode">
         <button
           type="button"
-          className={state.mode === "explore" ? "is-active" : ""}
-          aria-pressed={state.mode === "explore"}
+          className={!present && state.perspective !== "explore" ? "is-active" : ""}
+          aria-pressed={!present && state.perspective !== "explore"}
+          data-testid="mode-read"
+          onClick={() => store.setPerspective("guide")}
+        >
+          Read
+        </button>
+        <button
+          type="button"
+          className={state.mode === "explore" && state.perspective === "explore" ? "is-active" : ""}
+          aria-pressed={state.mode === "explore" && state.perspective === "explore"}
           data-testid="mode-explore"
           onClick={() => store.setMode("explore")}
         >
