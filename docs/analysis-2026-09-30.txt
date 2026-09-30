@@ -1,0 +1,366 @@
+XPL PROJECT ANALYSIS
+Reviewed 2026-09-30
+Repository: https://github.com/krimvp/xpl (private)
+Branch: main
+Commit: 56a11d677cc22893c39c1c929f97aca12fc5d774
+Checkout: /workspace/xpl
+
+ASSESSMENT
+
+xpl has a coherent architecture, unusually extensive tests for an early private
+tool, and a useful product loop: turn an explanation into structured data whose
+references can be checked, then explore it through code-linked diagrams. The
+four-package split is appropriate. The browser and CLI use the same core model,
+so important behavior is shared instead of being independently implemented.
+
+The main work before wider use is correctness and protection of user edits.
+I reproduced six defects, including silent loss of saved viewer edits and source
+changes that can escape freshness or drift detection. Passing tests currently do
+not cover these cases. Fix these before treating xpl as a dependable regeneration
+tool across active repositories. Larger feature work can follow.
+
+This was an analysis, not an implementation change. The checkout remains clean.
+Generated indexes, build products, downloaded tools, and review artifacts are
+local; no changes were committed, pushed, or published.
+
+ARCHITECTURE AND DATA FLOW
+
+1. packages/indexer discovers repository files, parses supported languages with
+   tree-sitter WASM, assembles symbols, resolves heuristic references, and can
+   replace references file by file with compiler-derived SCIP results.
+2. packages/core defines the schema, lookup models, anchors, graph/sequence
+   derivation, focus and reverse lookup, patch merging, ownership rules, and
+   validation. It is browser-safe and avoids Node runtime imports.
+3. packages/cli implements indexing, inspection, explainer creation, applying
+   patches, resolving drift, validation, status, static HTML bundles, and a local
+   HTTP server. Its injected IO interface makes command behavior testable.
+4. packages/viewer renders React diagrams with ELK and source with CodeMirror.
+   Its external store drives both the UI and browser test hooks. Offline bundles
+   retain edits in memory for export; server mode persists edits through the API.
+5. skill/code-explainer supplies the agent workflow and schema/CLI references.
+
+The supported code languages are TypeScript/JavaScript, Python, and Go. YAML,
+JSON, and TOML expose configuration keys as symbols; other text is indexed as
+plain text. Heuristic references have an explicit trust label and precise SCIP
+tools are pinned. The architecture documents limitations candidly.
+
+Measured scope: 133 production TypeScript/TSX source files and 35,068 source
+lines across the four packages; 91 unit-test files; 136 browser acceptance tests.
+The root requires Node >=22.12. Review execution used Node 24.19.0 on Linux.
+
+REPRODUCED FINDINGS, IN PRIORITY ORDER
+
+1. HIGH: overlapping writers can erase saved user edits and ownership markers
+
+Code: packages/cli/src/commands/apply.ts:90 and :104;
+      packages/cli/src/server.ts:186 and :267;
+      packages/cli/src/commands/resolve.ts:80 and :102.
+
+The CLI loads the explainer before asynchronous patch reading and workspace
+loading, then atomically replaces the entire file from that snapshot. The HTTP
+server serializes its own mutations, but that queue does not coordinate with CLI
+commands, another server instance, or another process. Atomic rename prevents a
+partial file; it does not make read-modify-write transactions conflict-safe.
+
+Reproduction: start `apply demo -` and pause stdin after the explainer has been
+loaded. PUT a view title through the server. The server returns 200 and the file
+contains title "User edit" plus provenance.userFields=["title"]. Resume the CLI
+with a patch changing only the explainer's top-level title. The CLI exits 0,
+but the view reverts to "Original" and its userFields marker disappears.
+
+Impact: normal agent/viewer concurrency silently loses both the user's work and
+the protection that should prevent future agent writes from overwriting it.
+
+Recommendation: implement one transaction helper used by apply, resolve, and
+server mutations. Use a cross-process lock around reading the latest explainer,
+merging, validation, and writing, or a versioned conflict protocol with locking
+for the compare-and-replace. Read input before taking the lock. Re-reading just
+before an unguarded rename still leaves a race. Add a deterministic regression
+that overlaps a server user edit and an unrelated CLI patch.
+
+2. HIGH: whitespace normalization hides changes to program meaning
+
+Code: packages/core/src/text.ts:32;
+      packages/indexer/src/hash.ts:76;
+      packages/core/src/anchors.ts:181.
+
+Every line is trimmed and blank lines are removed before hashing. This is used
+for file hashes, symbol hashes, anchors, and working-tree identity. It is an
+intentional formatting-tolerance policy, but whitespace can be semantic.
+
+Reproduction: index this valid Python function:
+
+    def f(flag):
+        if flag:
+            return 1
+        return 2
+
+Then indent the final return under the if:
+
+    def f(flag):
+        if flag:
+            return 1
+            return 2
+
+f(False) changes from 2 to None. Both indexed versions nevertheless have the same
+file hash and working-tree commit, and the whole-function anchor resolves "ok"
+against the rebuilt index. Similar issues apply to YAML nesting and whitespace
+inside multiline strings/template literals.
+
+Recommendation: use exact-content hashes for file identity. Define drift hashing
+separately, preserving meaningful whitespace; start conservatively with exact
+text plus line-ending normalization, or use a language-aware representation.
+Version hash semantics so old indexes/anchors cannot silently mix with new ones.
+Add Python indentation, YAML nesting, and multiline-string regressions.
+
+3. HIGH: line movement can leave an index falsely marked fresh
+
+Code: packages/indexer/src/commit.ts:32;
+      packages/cli/src/repo.ts:75, :262, and :271.
+
+This is related to finding 2 but has a distinct consequence: even semantically
+harmless formatting can invalidate the absolute line/column coordinates of a
+symbol index. The freshness check compares normalized hashes, and returns early
+when the normalized working-tree commit matches.
+
+Reproduction: build a TypeScript index with function run at lines 2-4, then prepend
+two blank lines. The actual function is at lines 4-6. stalenessOf returns no
+warning and treats the old index as fresh. No explicit stale-check bypass was set.
+
+Impact: inspections and code highlighting can use old coordinates without warning.
+Whole-symbol anchors use index hashes/ranges rather than re-reading current text.
+This also undermines resolve --write's stale-index safeguard.
+
+Recommendation: separate exact file freshness from tolerant anchor relocation.
+Any byte change relevant to coordinates should invalidate the old index, even
+if its semantic content is equivalent. Compare exact hashes, not only line counts
+(moving a blank line can retain the same count). Let re-indexing and anchor
+re-resolution handle relocation. Cover non-git roots, subdirectory roots, and
+dirty git trees in regression tests.
+
+4. HIGH IN CONCURRENT USE: Go indexing can overwrite unrelated module edits
+
+Code: packages/indexer/src/scip/run.ts:544, :556, :602, and :616.
+
+SCIP Go execution snapshots go.mod/go.sum and restores them afterward because
+the Go tool may modify them. Restoration compares the final file with the initial
+snapshot, then unconditionally restores the initial contents whenever they differ.
+It cannot distinguish an indexer change from a user's or editor's concurrent edit.
+
+Reproduction with the injected command runner: snapshot a go.mod, write a user
+edit while the runner is active, then return a tool failure without writing an
+index. The finally block restores the original go.mod, discarding the user edit.
+This reproduction exercised real snapshot/restore code with a simulated runner,
+not a networked Go tool. The default tool timeout allows a long overlap window.
+
+Recommendation: run tools that can modify repository metadata in an isolated
+snapshot/worktree or make module loading read-only where practical. Merely
+restoring snapshots on the original tree is unsafe in an interactive workflow.
+Also distinguish unreadable files from genuinely absent files in snapshot logic.
+
+5. MEDIUM: timeout escalation can abandon a still-running child process
+
+Code: packages/indexer/src/scip/run.ts:114 and :123.
+
+On timeout, runCommand sends SIGTERM to the process group and schedules SIGKILL
+three seconds later. The immediate child's close event cancels that escalation.
+The immediate child can exit while a descendant continues running, especially
+if the descendant ignores SIGTERM and has independent/ignored stdio.
+
+Reproduction: a parent spawns a child that ignores SIGTERM with stdio ignored.
+After timeout the parent exits. After an additional 3.5 seconds, the descendant
+is still in Linux state S (sleeping/running, not zombie). The review explicitly
+killed this process afterward.
+
+Recommendation: after a timeout, retain the process-group cleanup obligation
+until the group has been terminated or the grace-period escalation has run.
+Do not cancel it solely because the immediate process closed. Add a child that
+ignores SIGTERM to the process-cleanup test.
+
+6. MEDIUM: clicking a graph stub includes excluded references
+
+Code: packages/viewer/src/derive.ts:128 and :140;
+      compare packages/core/src/graph.ts:337 and :549;
+      packages/cli/src/bundle-data.ts:134.
+
+Graph derivation applies excludeFiles before aggregating references into stubs.
+The viewer reconstructs the selected stub's focus by scanning all references
+without applying that exclusion filter. A stub representing an outside directory
+can therefore display excluded references to other files within that directory.
+
+Reproduction: src/main.ts calls lib/b.ts and lib/b.test.ts. A view includes
+src/main.ts and excludes **/*.test.ts. Its lib stub correctly reports one call.
+Clicking it nevertheless highlights both calls and displays lib/b.test.ts too.
+This can also disagree with a static bundle's file-selection logic.
+
+Recommendation: move reference eligibility/crossing logic into a shared core
+helper and reuse it for derivation, viewer focus, and bundle collection. Preserve
+the existing rule that explicitly included files override exclusion. Test both
+live and static/pruned bundles with a mixed directory stub.
+
+VALIDATION RESULTS
+
+Dependency installation: passed with npm ci and a workspace-local npm cache.
+The initial attempt used npm's unwritable default cache; that was an environment
+problem, not a defect in the lockfile.
+
+Type checking: passed for all four workspaces.
+Production build: passed. Viewer HTML is 2,328,610 bytes (about 742 KB gzipped by
+Vite); CLI bundle is about 844 KiB; all eight WASM assets were copied.
+Built CLI grammar smoke check: passed for TS, TSX, Python, Go, YAML, JSON, TOML.
+
+Unit suite: 1,902 passed, 19 skipped, one failed out of 1,922 tests.
+The 19 skipped tests are the opt-in real SCIP integrations; they were then run
+separately and all passed.
+
+The one unit failure is runCommand's assertion that a killed descendant cannot be
+observed with kill(pid,0). An independent reproduction showed that the ordinary
+descendant was terminated but remained as state Z, parent PID 1, in this container.
+That assertion conflates a zombie with a running process. This environment-specific
+failure is separate from the real SIGTERM-ignoring-child defect in finding 5.
+Earlier EPERM failures were sandbox restrictions; the properly permitted rerun
+produced the results above.
+
+Browser acceptance: all 136 Playwright tests passed.
+Real SCIP integrations: all 19 passed across TS, Python, Go, including the
+build-tagged Go coverage case. This environment initially had a /usr/bin/go that
+was not the Go compiler ("Unknown option: run"). I installed a local Go 1.27.1
+toolchain, verified its archive checksum against the official release metadata,
+and reran with that toolchain on PATH.
+
+Formatting: failed only for .explainer/xpl.explainer.json. Production code did
+not trigger a formatting warning. This is a low-priority maintenance issue;
+avoid blindly reformatting fixtures because their line numbers are load-bearing.
+
+Self-analysis through xpl:
+  - Index: 335 files, 8,040 symbols, 27,992 heuristic references.
+  - One parser warning at packages/cli/test/index-trust.test.ts:25, even though
+    TypeScript type checking passes; investigate tree-sitter compatibility with
+    that valid TypeScript construct if symbol completeness there matters.
+  - Strict validation of the committed self-explainer: zero errors and one
+    index-binding warning (it records the previous code commit 61bd439).
+  - Status: no unexplained items, drifted anchors, missing anchors, broken
+    references, or pending explanation requests.
+  - Self-explainer: 74 node overlays, 43 stored edges, 30 concepts, 16 views,
+    two tours containing 22 steps.
+  - Generated self-bundle: 13,648,334 bytes with 101 embedded source files.
+    It opened in Chromium with no page errors; its six-node overview rendered
+    in about 2.1 seconds on this worker. This is a single observation, not a
+    general performance benchmark or an exhaustive review of every view.
+
+SECURITY AND DEPENDENCIES
+
+The default local-server boundary is sensible: it binds to loopback, validates
+Host for loopback binds, checks Origin on writes, requires JSON bodies, caps
+body size at 8 MiB, only serves indexed paths, and blocks symlinks that leave
+the repository. The browser escapes raw markdown HTML, suppresses images,
+restricts link protocols, and bundle JSON escapes '<' before script injection.
+Relevant existing tests passed. I did not establish an exploitable XSS or default
+path-traversal issue in the reviewed paths; this is not a security certification.
+
+Binding the server to a non-loopback interface deliberately exposes source and
+editing to reachable clients without authentication. The CLI already warns about
+this. Retain the local-tool scope; adding collaboration requires authentication
+and a stronger conflict protocol.
+
+Bundles carry raw contents of selected files, not just highlighted snippets.
+Pruning is a size optimization, not a confidentiality boundary. In xpl's own
+bundle, the index shrank from 9,488,771 to 9,126,826 bytes (only about 3.8%), keeping
+7,506/8,040 symbols and 27,026/27,992 references. Broad views and embedded files
+retain much of the graph. Before a broader sharing workflow, consider an explicit
+file manifest, secret-file exclusions, and a share preview describing what is
+embedded. No generated bundle was uploaded or published during this review.
+
+Installation scripts are disabled repo-wide, reducing native-build friction and
+dependency lifecycle execution. Exact grammar pins and the package lock support
+reproducible builds. Workspace dependencies expose TS sources, which is convenient
+for local tools but needs a deliberate packaging strategy before npm publication.
+All packages are currently private version 0.0.0.
+
+The online npm vulnerability audit was NOT run. Automatic approval review rejected
+it because the audit sends dependency names/versions derived from the lockfile to
+registry.npmjs.org without specific approval. Approval was requested and remained
+pending at report creation. Consequently, this report makes no claim about the
+absence of known dependency vulnerabilities.
+
+MAINTAINABILITY, PERFORMANCE, AND PRODUCT GAPS
+
+Strengths:
+  - Shared pure core logic, typed schema, and strict TypeScript configuration.
+  - Good ownership semantics inside applyPatch when operating on current data.
+  - Errors identify actionable paths and often suggest IDs or symbol candidates.
+  - Extensive fixture, regeneration, pruning-equivalence, and UI tests.
+  - Real language fixtures and committed examples make the project demonstrable.
+
+Maintenance opportunities:
+  - apply.ts is 1,663 lines, validate.ts 1,388, and the TS extractor 2,175.
+    Extract responsibilities when fixing behavior, especially field conversion,
+    ownership, transaction IO, and shared reference filtering. Avoid a broad
+    rewrite solely to reduce line counts.
+  - There are no checked-in GitHub Actions workflows. Add CI for npm ci,
+    typecheck, unit tests, build, grammar smoke check, and browser tests. Run
+    network-dependent SCIP integration checks in a dedicated or scheduled job.
+  - noUncheckedIndexedAccess is false. Consider enabling it package by package
+    after the correctness fixes; parser and model code contain many indexing
+    assumptions, and a wholesale switch would create substantial noise.
+  - Schema checks at JSON boundaries are uneven: patches have detailed runtime
+    validation, while parseBundle checks only the schema label and readExplainerFile
+    initially checks only object shape. Strengthen boundary validation and error
+    handling before model construction; the viewer store is created before the
+    React error boundary exists.
+  - Keep dependency vulnerability auditing explicit until approved, and add a
+    permitted automated audit policy to CI rather than claiming checks were run.
+
+Performance and usability:
+  - ELK uses the bundled main-thread implementation. Large layouts can freeze
+    interaction; move layout into a worker and retain fallback rendering.
+  - Core/view/selection memoization and bounded file-discovery concurrency are
+    good choices. However, request-time bundle construction can rederive multiple
+    views and serialize large indexes; profile and cache by content revision,
+    with invalidation tied to the transaction/freshness design.
+  - Live reload is absent. The server rereads data, but the open page needs manual
+    reload after an agent changes the explainer. Add revision-aware polling or
+    server-sent updates only after edit-conflict behavior is defined.
+  - GraphView.layout is accepted and validated but ignored by the renderer;
+    hidden has no editing UI. Implement pin/hide interaction or remove unsupported
+    promises from the user-facing contract.
+  - "Explain this" is a disk queue, not a live request. The existing docs make
+    this clear; show pending state/acknowledgment in the UI if expanding usage.
+  - Saves are debounced, and there is no page-lifecycle guard for pending edits.
+    Consider warning before navigation or flushing safely, while retaining the
+    current retry and explainer-download recovery behavior.
+  - Installation requires a clone, build, and Claude skill symlink. Simplify it
+    after correctness and CI, through a distributable CLI plus matching skill
+    assets. Cross-platform behavior needs testing beyond the exercised Linux setup.
+
+RECOMMENDED IMPLEMENTATION ORDER
+
+1. Establish exact source freshness and language-correct drift semantics.
+2. Protect every explainer mutation with a shared cross-process transaction.
+3. Isolate Go tooling from editable repository metadata.
+4. Fix timeout escalation and unify filtered stub-reference selection.
+5. Add focused regressions for all six reproductions and establish CI.
+6. Introduce revision-aware live reload, safe navigation with pending edits, and
+   worker-based graph layout.
+7. Package the CLI/skill and improve sharing manifests before wider distribution.
+
+REVIEW ARTIFACTS
+
+Report: /workspace/xpl-analysis.txt
+General reproduction: /workspace/scratch/xpl-review.mts
+General results: /workspace/scratch/xpl-review-results.json
+Additional reproductions: /workspace/scratch/xpl-more-repros.mts
+Additional results: /workspace/scratch/xpl-more-review-results.json
+Zombie diagnostic: /workspace/scratch/xpl-zombie-results.json
+Unit log: /workspace/scratch/xpl-tests-authorized.log
+Type-check log: /workspace/scratch/xpl-typecheck.log
+Build log: /workspace/scratch/xpl-build-authorized.log
+Browser log: /workspace/scratch/xpl-e2e.log
+Real SCIP log: /workspace/scratch/xpl-go-integration.log
+Formatting log: /workspace/scratch/xpl-format.log
+Self-index summary: /workspace/scratch/xpl-self-index.json
+Self-validation: /workspace/scratch/xpl-self-validate.json
+Self-status: /workspace/scratch/xpl-self-status.json
+Self-bundle summary: /workspace/scratch/xpl-self-bundle.json
+Interactive self-explainer: /workspace/scratch/xpl-reviewed.html
+Overview screenshot: /workspace/scratch/xpl-review-overview.png
