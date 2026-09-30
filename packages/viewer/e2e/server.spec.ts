@@ -96,7 +96,7 @@ async function serve(
     }
     return route.fulfill({ status: 404, body: "not found" });
   });
-  await page.goto("http://xpl.test/");
+  await page.goto("http://xpl.test/?mode=explore");
   await page.waitForFunction(() => window.__xpl !== undefined);
   return recorded;
 }

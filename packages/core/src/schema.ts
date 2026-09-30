@@ -105,6 +105,7 @@ export interface SymbolIndex {
   files: IndexedFile[];
   symbols: IndexedSymbol[];
   refs: Reference[];
+  resources?: ResourceReference[];
   /**
    * Set when this index was cut down for a bundle (`xpl bundle` embeds a pruned one by default, see
    * `pruneIndex`): how many files, symbols and references the full index had. Every file entry is kept, so
@@ -199,6 +200,15 @@ export interface Reference {
    * treats them as hints.
    */
   resolution: "precise" | "heuristic";
+}
+
+export interface ResourceReference {
+  from: SymbolId;
+  files: FilePath[];
+  kind: "loads" | "discovers" | "configures" | "overrides";
+  site: Range;
+  pattern?: string;
+  resolution: "static" | "inferred";
 }
 
 // ─── Anchors ────────────────────────────────────────────────────────────────────────────────────
@@ -298,6 +308,10 @@ export interface Edge extends ElementBase {
     | "reads"
     | "writes"
     | "emits"
+    | "loads"
+    | "discovers"
+    | "configures"
+    | "overrides"
     | "custom";
 }
 
@@ -389,7 +403,7 @@ export interface StubPolicy {
 
 /** A sequence diagram: ordered messages between lifelines. */
 export interface SequenceView extends ViewBase {
-  type: "sequence";
+  type: "sequence" | "flow";
   /** Lifelines, left to right. */
   participants: ElementId[];
   steps: SequenceStep[];
@@ -407,6 +421,8 @@ export interface SequenceStep {
   to: ElementId;
   label: string;
   kind: "call" | "return" | "async";
+  shape?: "stage" | "decision" | "terminal";
+  next?: { step: string; label?: string }[];
   /** The edge this message instantiates, if any. */
   edge?: ElementId;
   anchors: Anchor[];

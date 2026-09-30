@@ -46,7 +46,15 @@ export const DERIVED_EDGE_KINDS = [
 export type DerivedEdgeKind = (typeof DERIVED_EDGE_KINDS)[number];
 
 /** Every `Edge.kind`. */
-export const EDGE_KINDS: readonly Edge["kind"][] = [...DERIVED_EDGE_KINDS, "emits", "custom"];
+export const EDGE_KINDS: readonly Edge["kind"][] = [
+  ...DERIVED_EDGE_KINDS,
+  "emits",
+  "loads",
+  "discovers",
+  "configures",
+  "overrides",
+  "custom",
+];
 
 /** `Reference.kind` -> derived `Edge.kind`. */
 export const REF_TO_EDGE_KIND: Readonly<Record<Reference["kind"], DerivedEdgeKind>> = {

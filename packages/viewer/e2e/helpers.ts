@@ -32,7 +32,7 @@ export async function openBundle(
   view?: string,
   bundle: URL = TS_BUNDLE,
 ): Promise<void> {
-  await page.goto(bundle.href);
+  await page.goto(bundle.href + "?mode=explore");
   await page.waitForFunction(() => window.__xpl !== undefined);
   if (view) {
     await page.evaluate((id) => window.__xpl!.setView(id), view);

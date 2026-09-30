@@ -165,7 +165,7 @@ const GRAPH_SPEC: Spec = {
 const SEQUENCE_SPEC: Spec = {
   fields: {
     id: "string",
-    type: ["sequence"],
+    type: ["sequence", "flow"],
     title: "string",
     scope: "object",
     provenance: "object",
@@ -187,12 +187,14 @@ const STEP_SPEC: Spec = {
     to: "string",
     label: "string",
     kind: ["call", "return", "async"],
+    shape: ["stage", "decision", "terminal"],
+    next: "array",
     edge: "string",
     anchors: "array",
     summary: "string",
   },
   // only `stepsUpdate` clears them (a step sent whole leaves them out instead)
-  nullable: ["summary", "edge"],
+  nullable: ["summary", "edge", "shape", "next"],
 };
 const FRAME_SPEC: Spec = {
   fields: {
@@ -272,7 +274,7 @@ function sameContent(a: unknown, b: unknown): boolean {
 
 /** Loosely typed JSON object: patches and stored elements are handled field by field. */
 type AnyRecord = Record<string, any>;
-type Kind = "node" | "edge" | "concept" | "graph" | "sequence" | "tour";
+type Kind = "node" | "edge" | "concept" | "graph" | "sequence" | "flow" | "tour";
 /** `includeAdd` / `includeRemove` of a graph view patch (ids, without duplicates). */
 interface IncludeOps {
   add: string[];
@@ -742,6 +744,8 @@ class Applier {
         ...(raw.edge !== undefined ? { edge: raw.edge } : {}),
         anchors,
         ...(raw.summary !== undefined ? { summary: raw.summary } : {}),
+        ...(raw.shape !== undefined ? { shape: raw.shape } : {}),
+        ...(raw.next !== undefined ? { next: cloneJson(raw.next) } : {}),
       } as SequenceStep);
     });
     return ok ? out : undefined;
@@ -848,7 +852,7 @@ class Applier {
     for (const [key, value] of Object.entries(raw)) {
       if (key === "id" || key === "provenance" || value === undefined) continue;
       if (kind === "graph" && (key === "includeAdd" || key === "includeRemove")) continue; // see includeOps
-      if (kind === "sequence" && key === "stepsUpdate") continue; // see stepOps
+      if ((kind === "sequence" || kind === "flow") && key === "stepsUpdate") continue; // see stepOps
       if (protectedKeys.has(key)) {
         this.warn(
           `${path}.${key}`,
@@ -864,7 +868,7 @@ class Applier {
       }
       let converted: unknown = value;
       if (key === "anchors") converted = this.anchors(value, `${path}.anchors`, id);
-      else if (key === "steps" && kind === "sequence")
+      else if (key === "steps" && (kind === "sequence" || kind === "flow"))
         converted = this.convertSteps(value, `${path}.steps`, id);
       else if (key === "steps" && kind === "tour")
         converted = this.convertTourSteps(value, `${path}.steps`, id);
@@ -1398,10 +1402,10 @@ class Applier {
     const views = this.work.views as unknown as AnyRecord[];
     const at = views.findIndex((v) => v.id === id);
     const type = raw.type ?? (at !== -1 ? views[at]!.type : undefined);
-    if (type !== "graph" && type !== "sequence") {
+    if (type !== "graph" && type !== "sequence" && type !== "flow") {
       this.error(
         `${path}.type`,
-        `view.type must be "graph" or "sequence" (got ${JSON.stringify(raw.type)})`,
+        `view.type must be "graph", "sequence" or "flow" (got ${JSON.stringify(raw.type)})`,
         id,
       );
       return false;
@@ -1410,7 +1414,8 @@ class Applier {
     if (!this.checkFields({ ...raw, type }, spec, path, id, true)) return false;
     const ops = type === "graph" ? this.includeOps(raw, path, id) : undefined;
     if (ops === null) return false;
-    const stepOps = type === "sequence" ? this.stepOps(raw, path, id) : undefined;
+    const stepOps =
+      type === "sequence" || type === "flow" ? this.stepOps(raw, path, id) : undefined;
     if (stepOps === null) return false;
 
     if (at === -1) {
@@ -1439,7 +1444,7 @@ class Applier {
     if (!merged) return false;
     if (merged === existing) return true;
     if (ops && ops.add.length > 0) this.includeAdds.set(id, ops.add);
-    if (type === "sequence" && Array.isArray(merged.steps)) {
+    if ((type === "sequence" || type === "flow") && Array.isArray(merged.steps)) {
       const after = new Set((merged.steps as AnyRecord[]).map((s) => s.id));
       const dropped = before.filter((sid) => !after.has(sid));
       if (dropped.length > 0) {
@@ -1459,7 +1464,7 @@ class Applier {
   }
 
   private createView(
-    type: "graph" | "sequence",
+    type: "graph" | "sequence" | "flow",
     raw: AnyRecord,
     path: string,
     id: string,
@@ -1504,7 +1509,7 @@ class Applier {
     if (f.steps === undefined) return this.missing(path, id, "steps");
     return {
       id,
-      type: "sequence",
+      type,
       title: f.title,
       scope,
       participants: f.participants,

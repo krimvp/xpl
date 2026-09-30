@@ -323,7 +323,11 @@ class Validator {
         .filter((id): id is string => typeof id === "string" && id !== "");
     const steps = new Map<string, string[]>();
     for (const view of Array.isArray(this.ex.views) ? this.ex.views : []) {
-      if (isRecord(view) && view.type === "sequence" && typeof view.id === "string") {
+      if (
+        isRecord(view) &&
+        (view.type === "sequence" || view.type === "flow") &&
+        typeof view.id === "string"
+      ) {
         steps.set(view.id, idsOf(view.steps));
       }
     }
@@ -888,9 +892,9 @@ class Validator {
     this.checkScope(view.scope, `${path}.scope`, id);
 
     if (view.type === "graph") this.checkGraphView(view, path, id);
-    else if (view.type === "sequence")
+    else if (view.type === "sequence" || view.type === "flow")
       this.checkSequenceView(view as unknown as SequenceView, path, id, claimed);
-    else this.error(`${path}.type`, `view.type must be "graph" or "sequence"`, id);
+    else this.error(`${path}.type`, `view.type must be "graph", "sequence" or "flow"`, id);
   }
 
   private checkScope(scope: unknown, path: string, viewId: string): void {
@@ -1154,6 +1158,34 @@ class Validator {
         provenance: view.provenance,
         field: "steps",
       });
+    });
+
+    view.steps.forEach((step, j) => {
+      if (!isRecord(step)) return;
+      const at = `${path}.steps[${j}]`;
+      if (step.shape !== undefined && !["stage", "decision", "terminal"].includes(step.shape))
+        this.error(`${at}.shape`, "shape must be stage, decision or terminal", id);
+      if (step.next !== undefined) {
+        if (!Array.isArray(step.next))
+          this.error(`${at}.next`, "next must be an array of {step, label?}", id);
+        else
+          step.next.forEach((link: unknown, k: number) => {
+            if (
+              !isRecord(link) ||
+              typeof link.step !== "string" ||
+              !stepIds.has(link.step) ||
+              (link.label !== undefined && typeof link.label !== "string") ||
+              Object.keys(link).some((key) => key !== "step" && key !== "label")
+            )
+              this.error(
+                `${at}.next[${k}]`,
+                "transition must reference a step of this view and have an optional string label",
+                id,
+              );
+          });
+      }
+      if (step.shape === "terminal" && Array.isArray(step.next) && step.next.length > 0)
+        this.error(`${at}.next`, "terminal stages cannot have outgoing transitions", id);
     });
 
     // frames

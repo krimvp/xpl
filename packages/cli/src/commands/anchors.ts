@@ -163,7 +163,7 @@ function select(
     const parsed = parseId(input);
     if (parsed.type === "view") {
       const view = model.view(input);
-      if (view?.type === "sequence") {
+      if (view?.type === "sequence" || view?.type === "flow") {
         const steps = (Array.isArray(view.steps) ? view.steps : []).map((s) => s.id);
         const withAnchors = steps.filter((id) => groups.has(id));
         withAnchors.forEach((id) => add({ id }));
@@ -221,7 +221,7 @@ function select(
       ...model.groups.map((g) => g.id),
       ...model.views.map((v) => v.id),
       ...model.tours.map((t) => t.id),
-      ...model.views.flatMap((v) => (v.type === "sequence" ? v.steps.map((s) => s.id) : [])),
+      ...model.views.flatMap((v) => (v.type !== "graph" ? v.steps.map((s) => s.id) : [])),
     ];
     const needle = input.toLowerCase();
     const near = [

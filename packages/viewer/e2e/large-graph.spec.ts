@@ -84,7 +84,7 @@ function withPipeline(bundle: Loose): void {
   });
 }
 
-async function open(page: Page, search = ""): Promise<void> {
+async function open(page: Page, search = "?mode=explore"): Promise<void> {
   const { html, bundle } = readEmbeddedBundle();
   withPipeline(bundle);
   await page.route("http://xpl.test/**", (route) =>
@@ -270,7 +270,7 @@ test.describe("what a big diagram starts on", () => {
     await page.route("http://xpl.test/**", (route) =>
       route.fulfill({ contentType: "text/html", body: withBundle(html, bundle) }),
     );
-    await page.goto("http://xpl.test/");
+    await page.goto("http://xpl.test/?mode=explore");
     await page.waitForFunction(() => window.__xpl !== undefined);
     await showPipeline(page);
     await expectZoom(page, 0.75);

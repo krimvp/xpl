@@ -20,7 +20,7 @@
 import { resolveStubPolicy, type FocusRange } from "@xpl/core";
 import { getDerived } from "./derive.js";
 import { stepNumber } from "./modes.js";
-import type { ViewerStore } from "./store.js";
+import type { Perspective, ViewerStore } from "./store.js";
 
 export interface XplHooks {
   select(ids: string[]): void;
@@ -49,7 +49,10 @@ export interface XplSnapshot {
   /** In Present: the selection was changed by a click since the step was applied (a detour). */
   detour: boolean;
   viewId: string | null;
-  viewType: "graph" | "sequence" | null;
+  viewType: "graph" | "sequence" | "flow" | null;
+  perspective: Perspective;
+  canGoBack: boolean;
+  canGoForward: boolean;
   selection: string[];
   cursor: { file: string; fromLine: number; toLine: number } | null;
   matches: string[];
@@ -102,6 +105,9 @@ export function installTestHooks(store: ViewerStore, target: Window = window): X
       const tour = store.currentTour();
       return {
         mode: state.mode,
+        perspective: state.perspective,
+        canGoBack: state.canGoBack,
+        canGoForward: state.canGoForward,
         tour: state.tour ? state.tour.tourId : null,
         step: state.tour ? stepNumber(state.tour.step) : null,
         stepCount: tour ? tour.steps.length : null,

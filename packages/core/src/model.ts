@@ -113,7 +113,7 @@ export class ExplainerModel {
     }
     for (const view of records(explainer.views)) {
       if (!this.viewMap.has(view.id)) this.viewMap.set(view.id, view);
-      if (view.type === "sequence") {
+      if (view.type === "sequence" || view.type === "flow") {
         arr(view.steps).forEach((step, index) => {
           if (isRecord(step) && typeof step.id === "string" && !this.stepMap.has(step.id)) {
             this.stepMap.set(step.id, { step, view, index });

@@ -4,6 +4,7 @@ import { useDerived, useViewerState } from "../hooks.js";
 import { EdgeKindToggles } from "./EdgeKinds.js";
 import { ErrorBoundary } from "./ErrorBoundary.js";
 import { GraphView } from "./GraphView.js";
+import { FlowDiagram } from "./FlowDiagram.js";
 import { SequenceView } from "./SequenceView.js";
 import { StubsControl } from "./StubsControl.js";
 
@@ -56,6 +57,8 @@ export function DiagramPane() {
               order={Array.isArray(view.include) ? view.include : undefined}
               present={present}
             />
+          ) : view.type === "flow" ? (
+            <FlowDiagram view={view} />
           ) : view.type === "sequence" ? (
             <SequenceView
               view={view}

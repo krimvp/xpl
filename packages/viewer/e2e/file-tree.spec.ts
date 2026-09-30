@@ -32,7 +32,7 @@ async function openVariant(page: Page, edit: (bundle: Loose) => void): Promise<v
   await page.route("http://xpl.test/**", (route) =>
     route.fulfill({ contentType: "text/html", body: withBundle(html, bundle) }),
   );
-  await page.goto("http://xpl.test/");
+  await page.goto("http://xpl.test/?mode=explore");
   await page.waitForFunction(() => window.__xpl !== undefined);
 }
 
@@ -123,7 +123,7 @@ test("under xpl view every indexed file is listed, and fetched when it is opened
     }
     return route.fulfill({ status: 404, body: "not found" });
   });
-  await page.goto("http://xpl.test/");
+  await page.goto("http://xpl.test/?mode=explore");
   await page.waitForFunction(() => window.__xpl !== undefined);
 
   expect((await stateOf(page)).serverMode).toBe(true);

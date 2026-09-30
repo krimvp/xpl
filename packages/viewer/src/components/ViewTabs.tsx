@@ -24,10 +24,6 @@ export function viewHint(view: View): string {
   return question ? `${view.title}\n${question}` : view.title;
 }
 
-const reducedMotion = (): boolean =>
-  typeof window.matchMedia === "function" &&
-  window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-
 /** Scrolls the strip, and nothing else on the page, so that `tab` is in sight. */
 function reveal(strip: HTMLElement, tab: HTMLElement): void {
   const box = strip.getBoundingClientRect();
@@ -105,7 +101,7 @@ export function ViewTabs({ onMenuOpen }: { onMenuOpen?: () => void }) {
     if (!el) return;
     el.scrollBy({
       left: direction * Math.max(120, el.clientWidth * 0.7),
-      behavior: reducedMotion() ? "auto" : "smooth",
+      behavior: "instant",
     });
   };
 

@@ -27,7 +27,7 @@ type Loose = Record<string, any>;
 const NOTE_1 = "Big picture first: scheduling is two files.";
 const NOTE_2 = "Where failures go: requeue with backoff.";
 
-async function open(page: Page, search = ""): Promise<void> {
+async function open(page: Page, search = "?mode=explore"): Promise<void> {
   await page.goto(TS_BUNDLE.href + search);
   await page.waitForFunction(() => window.__xpl !== undefined);
 }
@@ -38,7 +38,9 @@ async function openVariant(page: Page, edit: (bundle: Loose) => void, search = "
   await page.route("http://xpl.test/**", (route) =>
     route.fulfill({ contentType: "text/html", body: withBundle(html, bundle) }),
   );
-  await page.goto(`http://xpl.test/${search}`);
+  await page.goto(
+    `http://xpl.test/${search || (bundle.mode === "present" ? "" : "?mode=explore")}`,
+  );
   await page.waitForFunction(() => window.__xpl !== undefined);
 }
 
@@ -350,9 +352,9 @@ test.describe("the address bar", () => {
     await open(page, "?mode=present&step=0");
     await expect(counter(page)).toHaveText("1 / 2");
     // without mode=present the page is Explore, and Present resumes at the step asked for
-    await open(page, "?tour=tour:intro&step=2");
+    await open(page, "?mode=explore&tour=tour:intro&step=2");
     expect((await stateOf(page)).mode).toBe("explore");
-    expect(searchOf(page)).toBe("?tour=tour:intro&step=2"); // untouched until something changes
+    expect(searchOf(page)).toBe("?mode=explore&tour=tour:intro&step=2"); // untouched until something changes
     await page.getByTestId("mode-present").click();
     await expect(counter(page)).toHaveText("2 / 2");
   });

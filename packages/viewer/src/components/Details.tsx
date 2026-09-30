@@ -158,8 +158,9 @@ function ProvenanceBadge({ info }: { info: ElementInfo }) {
 
 function Anchors({ rows }: { rows: AnchorRow[] }) {
   const store = useStore();
+  const [expanded, setExpanded] = useState(false);
   if (rows.length === 0) return null;
-  const shown = rows.slice(0, MAX_ANCHOR_ROWS);
+  const shown = expanded ? rows : rows.slice(0, MAX_ANCHOR_ROWS);
   return (
     <div className="anchors">
       <h3>Anchors</h3>
@@ -189,7 +190,11 @@ function Anchors({ rows }: { rows: AnchorRow[] }) {
           </li>
         ))}
       </ul>
-      {rows.length > shown.length && <p className="more">…and {rows.length - shown.length} more</p>}
+      {rows.length > shown.length && (
+        <button className="link" onClick={() => setExpanded(true)}>
+          Show {rows.length - shown.length} more references
+        </button>
+      )}
     </div>
   );
 }

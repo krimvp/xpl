@@ -8,6 +8,7 @@
  */
 import {
   asIndexModel,
+  codeFocus,
   collapse as collapseView,
   DEFAULT_EDGE_KINDS,
   deriveGraph,
@@ -34,6 +35,7 @@ import {
   type ViewerBundle,
 } from "@xpl/core";
 import { messageOf, ServerApi, type LaunchParams } from "./data.js";
+import { workspaceView } from "./workspace.js";
 import { serializeExplainer, withViewFields } from "./edits.js";
 import { clampStep, stepIndex, type Mode, type TourPosition } from "./modes.js";
 import {
@@ -80,7 +82,17 @@ export interface AppliedStep {
   primary: FilePath | undefined;
 }
 
+export type Perspective = "guide" | "map" | "flow" | "code" | "explore";
+
+type Navigation = Pick<
+  ViewerState,
+  "perspective" | "mode" | "viewId" | "selection" | "cursor" | "openedFile" | "tour" | "applied"
+>;
+
 export interface ViewerState {
+  perspective: Perspective;
+  canGoBack: boolean;
+  canGoForward: boolean;
   explainer: Explainer;
   model: ExplainerModel;
   /** The view on screen; undefined only when the explainer has no views. */
@@ -138,6 +150,8 @@ export class ViewerStore {
   private readonly pending = new Map<string, Record<string, unknown>>();
   private saveTimer: ReturnType<typeof setTimeout> | undefined;
   private saving: Promise<void> | undefined;
+  private readonly past: Navigation[] = [];
+  private readonly future: Navigation[] = [];
 
   constructor(bundle: ViewerBundle, launch: LaunchParams = {}) {
     this.indexModel = asIndexModel(bundle.index);
@@ -154,10 +168,15 @@ export class ViewerStore {
     const present = (launch.mode ?? bundle.mode ?? "explore") === "present" && tours.length > 0;
     const tour = asked ?? (present ? tours[0] : undefined);
     this.state = {
+      perspective:
+        launch.perspective ??
+        (launch.mode || launch.view || bundle.mode === "present" ? "explore" : "guide"),
+      canGoBack: false,
+      canGoForward: false,
       explainer,
       model,
       viewId,
-      selection: [],
+      selection: (launch.focus ?? []).filter((id) => model.hasElement(id)),
       cursor: undefined,
       openedFile: undefined,
       openSeq: 0,
@@ -172,6 +191,17 @@ export class ViewerStore {
       serverMode: this.api !== undefined,
     };
     if (present) this.present();
+    else if (launch.perspective && asked && launch.step) {
+      this.applyStep(asked, stepIndex(launch.step, asked.steps.length));
+      if (launch.focus && JSON.stringify(this.state.selection) !== JSON.stringify(launch.focus))
+        this.set({
+          selection: launch.focus.filter((id) => model.hasElement(id)),
+          applied: undefined,
+        });
+    }
+    const perspective = this.state.perspective;
+    if (!present && (perspective === "map" || perspective === "flow"))
+      this.set({ viewId: workspaceView(this.state, perspective)?.id ?? this.state.viewId });
   }
 
   /** The model of an explainer, over tours that are sound (hand-edited files may not be). */
@@ -195,6 +225,85 @@ export class ViewerStore {
     for (const listener of [...this.listeners]) listener();
   }
 
+  private position(): Navigation {
+    const { perspective, mode, viewId, selection, cursor, openedFile, tour, applied } = this.state;
+    return { perspective, mode, viewId, selection, cursor, openedFile, tour, applied };
+  }
+
+  private remember(): void {
+    this.past.push(this.position());
+    if (this.past.length > 100) this.past.shift();
+    this.future.length = 0;
+  }
+
+  private navigate(patch: Partial<ViewerState>): void {
+    this.remember();
+    this.set({ ...patch, canGoBack: true, canGoForward: false });
+  }
+
+  private travel(from: Navigation[], to: Navigation[]): void {
+    const position = from.pop();
+    if (!position) return;
+    to.push(this.position());
+    this.set({
+      ...position,
+      selection: position.selection.filter((id) => this.state.model.hasElement(id)),
+      applied:
+        position.applied && this.state.model.tour(position.applied.tourId)
+          ? position.applied
+          : undefined,
+      openSeq: this.state.openSeq + 1,
+      stepSeq: this.state.stepSeq + 1,
+      canGoBack: this.past.length > 0,
+      canGoForward: this.future.length > 0,
+    });
+  }
+
+  back(): void {
+    this.travel(this.past, this.future);
+  }
+  forward(): void {
+    this.travel(this.future, this.past);
+  }
+
+  setPerspective(perspective: Perspective): void {
+    if (perspective === this.state.perspective && this.state.mode === "explore") return;
+    const view =
+      perspective === "map" || perspective === "flow"
+        ? workspaceView(this.state, perspective)
+        : undefined;
+    this.navigate({ perspective, mode: "explore", viewId: view?.id ?? this.state.viewId });
+  }
+
+  readExplanation(): boolean {
+    const { model, selection } = this.state;
+    const files = new Set(codeFocus(selection, model).map((focus) => focus.file));
+    let best: { tour: string; index: number; score: number } | undefined;
+    for (const tour of model.tours) {
+      tour.steps.forEach((step, index) => {
+        const direct = step.focus.filter((id) => selection.includes(id)).length;
+        const related = step.focus.filter((id) =>
+          selection.some(
+            (selected) =>
+              model.hasNode(id) &&
+              model.hasNode(selected) &&
+              (model.subtreeContains(id, selected) || model.subtreeContains(selected, id)),
+          ),
+        ).length;
+        const shared = codeFocus(step.focus, model).filter((focus) => files.has(focus.file)).length;
+        const score = direct * 1000 + related * 100 + shared;
+        if (score > (best?.score ?? 0)) best = { tour: tour.id, index, score };
+      });
+    }
+    if (!best) {
+      this.setPerspective("guide");
+      return false;
+    }
+    this.previewStep(best.tour, best.index);
+    this.set({ perspective: "guide", mode: "explore" });
+    return true;
+  }
+
   // ─── Views ───────────────────────────────────────────────────────────────────────────────────
 
   view(): View | undefined {
@@ -205,11 +314,12 @@ export class ViewerStore {
   setView(id: string): boolean {
     if (!this.state.model.view(id)) return false;
     if (id === this.state.viewId) return true;
-    this.set({
+    const shared = this.state.perspective !== "explore";
+    this.navigate({
       viewId: id,
-      selection: [],
-      cursor: undefined,
-      openedFile: undefined,
+      selection: shared ? this.state.selection : [],
+      cursor: shared ? this.state.cursor : undefined,
+      openedFile: shared ? this.state.openedFile : undefined,
       applied: undefined,
     });
     return true;
@@ -228,7 +338,7 @@ export class ViewerStore {
     ) {
       return;
     }
-    this.set({ selection, cursor: undefined, openedFile: undefined, applied: undefined });
+    this.navigate({ selection, cursor: undefined, openedFile: undefined, applied: undefined });
   }
 
   /** Shift-click: adds the element, or removes it when it is already selected. */
@@ -274,7 +384,7 @@ export class ViewerStore {
       const at = Math.max(1, Math.floor(line));
       patch.cursor = { file, fromLine: at, toLine: at };
     }
-    this.set(patch);
+    this.navigate(patch);
   }
 
   /** Closes the pane of a file that was opened but is not part of the focus. */
@@ -311,7 +421,7 @@ export class ViewerStore {
   /** The Explore / Present toggle. Present needs a tour: without one it stays in Explore. */
   setMode(mode: Mode): void {
     if (mode === "present") this.present();
-    else this.exitPresent();
+    else this.setPerspective("explore");
   }
 
   /** The tour the state points at (being presented, or the one Present would start with). */
@@ -364,7 +474,7 @@ export class ViewerStore {
   previewStep(tourId: string, index: number): void {
     const tour = this.state.model.tour(tourId);
     if (!tour || index < 0 || index >= tour.steps.length) return;
-    this.set({ tour: { tourId, step: index } });
+    this.navigate({ tour: { tourId, step: index } });
     this.applyStep(tour, index);
   }
 
@@ -475,7 +585,11 @@ export class ViewerStore {
 
   private graphView(): GraphView | undefined {
     const view = this.view();
-    return view?.type === "graph" ? view : undefined;
+    return view?.type === "graph"
+      ? view
+      : this.state.perspective === "map"
+        ? (workspaceView(this.state, "map") as GraphView | undefined)
+        : undefined;
   }
 
   private editView(viewId: string, fields: Record<string, unknown>): void {

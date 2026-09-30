@@ -1,0 +1,110 @@
+import {
+  codeFocus,
+  deriveGraph,
+  repr,
+  type ElementId,
+  type ExplainerModel,
+  type GraphView,
+  type SequenceView,
+  type View,
+} from "@xpl/core";
+import type { ViewerState } from "./store.js";
+
+export function topicElements(ids: readonly ElementId[], model: ExplainerModel): Set<ElementId> {
+  const result = new Set(ids);
+  for (const id of ids) {
+    const element = model.element(id);
+    if (element?.type === "concept")
+      for (const related of element.concept.related ?? []) result.add(related);
+    if (element?.type === "step") {
+      result.add(element.step.from);
+      result.add(element.step.to);
+    }
+    if (element?.type === "edge" || element?.type === "derived-edge") {
+      result.add(element.type === "edge" ? element.edge.from : element.from);
+      result.add(element.type === "edge" ? element.edge.to : element.to);
+    }
+  }
+  return result;
+}
+
+export function topicMatches(
+  id: ElementId,
+  topics: ReadonlySet<ElementId>,
+  model: ExplainerModel,
+): boolean {
+  return (
+    topics.has(id) ||
+    [...topics].some(
+      (topic) => model.hasNode(topic) && model.hasNode(id) && model.subtreeContains(topic, id),
+    )
+  );
+}
+
+export function workspaceView(state: ViewerState, type: "map" | "flow"): View | undefined {
+  const candidates = state.model.views.filter((view) =>
+    type === "map" ? view.type === "graph" : view.type === "sequence" || view.type === "flow",
+  );
+  const current = candidates.find((view) => view.id === state.viewId);
+  if (current) return current;
+  const topics = topicElements(state.selection, state.model);
+  const files = new Set(codeFocus(state.selection, state.model).map((range) => range.file));
+  const score = (view: View) => {
+    const ids = (
+      view.type === "graph"
+        ? Array.isArray(view.include)
+          ? view.include
+          : []
+        : [
+            ...(Array.isArray(view.participants) ? view.participants : []),
+            ...(Array.isArray(view.steps)
+              ? view.steps.flatMap((step) => (step?.id ? [step.id] : []))
+              : []),
+          ]
+    ).filter((id) => typeof id === "string");
+    const direct = ids.filter((id) => topics.has(id)).length;
+    const nested = ids.filter((id) =>
+      [...topics].some(
+        (topic) =>
+          state.model.hasNode(id) &&
+          state.model.hasNode(topic) &&
+          state.model.subtreeContains(id, topic),
+      ),
+    ).length;
+    const shared = codeFocus(ids, state.model).filter((range) => files.has(range.file)).length;
+    return direct * 1000 + nested * 100 + shared + (view.id === state.viewId ? 1 : 0);
+  };
+  return candidates.reduce<View | undefined>(
+    (best, view) => (!best || score(view) > score(best) ? view : best),
+    undefined,
+  );
+}
+
+export function workspaceMap(state: ViewerState) {
+  const authored = workspaceView(state, "map") as GraphView | undefined;
+  const process = workspaceView(state, "flow") as SequenceView | undefined;
+  const view: GraphView = authored
+    ? {
+        ...authored,
+        include: Array.isArray(authored.include)
+          ? authored.include.filter((id) => typeof id === "string")
+          : [],
+      }
+    : {
+        id: "view:workspace-map",
+        type: "graph",
+        title: "System map",
+        scope: { root: "repo", depth: 1 },
+        include: process?.participants ?? state.model.children("repo"),
+        provenance: { origin: "static" },
+        stubs: { mode: "none" },
+      };
+  const graph = deriveGraph(view, state.model);
+  const included = new Set(view.include);
+  const related = new Set<ElementId>();
+  for (const id of topicElements(state.selection, state.model)) {
+    const shown = repr(id, included, state.model);
+    if (shown) related.add(shown);
+  }
+  return { view, graph, related, generated: authored === undefined };
+}

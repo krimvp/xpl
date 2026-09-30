@@ -19,6 +19,7 @@ import {
   parseId,
   pruneIndex,
   repr,
+  relatedFiles,
   viewCandidates,
   type DerivedGraph,
   type Explainer,
@@ -64,9 +65,10 @@ export function referencedFiles(
       focusOptions.set(view.id, options);
       if (opts.stubs !== false) for (const file of stubFiles(view, derived, model)) files.add(file);
     }
-    for (const focus of codeFocus(viewCandidates(view, model, derived), model, options)) {
-      files.add(focus.file);
-    }
+    const candidates = viewCandidates(view, model, derived);
+    for (const focus of codeFocus(candidates, model, options)) files.add(focus.file);
+    for (const link of relatedFiles(candidates, model))
+      for (const file of link.files) files.add(file);
   }
   for (const tour of model.tours) {
     for (const step of Array.isArray(tour.steps) ? tour.steps : []) {
@@ -74,6 +76,7 @@ export function referencedFiles(
       for (const focus of codeFocus(ids, model, focusOptions.get(step.view) ?? {})) {
         files.add(focus.file);
       }
+      for (const link of relatedFiles(ids, model)) for (const file of link.files) files.add(file);
       if (typeof step.editor?.primary === "string") files.add(step.editor.primary);
     }
   }

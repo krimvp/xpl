@@ -88,7 +88,7 @@ function withManyViews(bundle: Loose): string[] {
 async function openMany(
   page: Page,
   size: { width: number; height: number },
-  query = "",
+  query = "?mode=explore",
 ): Promise<{ ids: string[]; titles: string[] }> {
   const { html, bundle } = readEmbeddedBundle();
   const ids = withManyViews(bundle);
@@ -669,7 +669,7 @@ test.describe("a few views", () => {
   }) => {
     const problems = watchProblems(page);
     await page.setViewportSize({ width: 1440, height: 900 });
-    await page.goto(TS_BUNDLE.href);
+    await page.goto(TS_BUNDLE.href + "?mode=explore");
     await page.waitForFunction(() => window.__xpl !== undefined);
     const frame = page.getByTestId("view-tabs-frame");
     await expect(page.locator(".tab")).toHaveCount(2);

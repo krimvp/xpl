@@ -36,6 +36,7 @@ import type { SymbolEntry } from "./symbols.js";
 import { findSyntaxErrors, significantSyntaxErrors, syntaxErrorWarning } from "./syntax-errors.js";
 import type { SyntaxErrorFile } from "./syntax-errors.js";
 import { GRAMMAR_WASM } from "./wasm-files.js";
+import { collectResourceSites, resolveResources, type ResourceSite } from "./resources.js";
 
 /** Options of `buildIndex` (ARCHITECTURE.md §3). */
 export interface BuildIndexOptions {
@@ -218,6 +219,7 @@ export async function buildIndex(opts: BuildIndexOptions): Promise<BuildIndexRes
   const usedPacks: { pack: LanguagePack; language: FileLanguage }[] = [];
   const usedPackKeys = new Set<string>();
   const syntaxErrors: SyntaxErrorFile[] = [];
+  const resourceSites: ResourceSite[] = [];
   const pool = new ParserPool();
   try {
     for (const discovered of discovery.files) {
@@ -228,6 +230,7 @@ export async function buildIndex(opts: BuildIndexOptions): Promise<BuildIndexRes
         resolverFiles,
         syntaxErrors,
         warnings,
+        resourceSites,
       );
       if (!indexed) continue;
       files.push(indexed.file);
@@ -359,6 +362,11 @@ export async function buildIndex(opts: BuildIndexOptions): Promise<BuildIndexRes
   const tool =
     `xpl-indexer@${pkg.version} web-tree-sitter@${pkg.dependencies["web-tree-sitter"]} ${grammarVersions(usedPacks).join(" ")}`.trim();
 
+  const resources = resolveResources(
+    resourceSites,
+    files.map((file) => file.path),
+    entries,
+  );
   const index: SymbolIndex = {
     schema: INDEX_SCHEMA,
     commit,
@@ -368,6 +376,7 @@ export async function buildIndex(opts: BuildIndexOptions): Promise<BuildIndexRes
     files,
     symbols: entries.map((e) => e.symbol),
     refs,
+    ...(resources.length > 0 ? { resources } : {}),
   };
   return { index, warnings };
 }
@@ -380,6 +389,7 @@ async function indexFile(
   resolverFiles: ResolverFile[],
   syntaxErrors: SyntaxErrorFile[],
   warnings: string[],
+  resourceSites: ResourceSite[],
 ): Promise<{ file: IndexedFile; pack: LanguagePack | undefined } | undefined> {
   let text: string;
   try {
@@ -404,6 +414,7 @@ async function indexFile(
     if (parsed) {
       try {
         facts = pack.extract(parsed.ctx);
+        resourceSites.push(...collectResourceSites(parsed.ctx));
         const errors = significantSyntaxErrors(
           discovered.path,
           findSyntaxErrors(parsed.ctx.tree.rootNode, pack),

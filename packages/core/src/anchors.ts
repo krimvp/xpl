@@ -790,7 +790,7 @@ export function collectAnchors(explainer: Explainer): AnchorSite[] {
     ),
   );
   list(explainer.views).forEach((view, i) => {
-    if (view.type !== "sequence") return;
+    if (view.type !== "sequence" && view.type !== "flow") return;
     list(view.steps).forEach((step, j) =>
       add(
         step.anchors,

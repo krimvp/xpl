@@ -13,7 +13,8 @@ import type { ViewerState, ViewerStore } from "./store.js";
 
 /** The query string (with the leading `?`, or empty) for a state, on top of the current `search`. */
 export function searchFor(
-  state: Pick<ViewerState, "mode" | "tour">,
+  state: Pick<ViewerState, "mode" | "tour"> &
+    Partial<Pick<ViewerState, "perspective" | "viewId" | "selection">>,
   search: string,
   bundleMode: "explore" | "present" | undefined,
 ): string {
@@ -27,6 +28,20 @@ export function searchFor(
     params.delete("step");
     if (bundleMode === "present") params.set("mode", "explore");
     else params.delete("mode");
+  }
+  if (state.mode !== "present" && state.perspective && state.perspective !== "explore") {
+    params.delete("mode");
+    params.set("perspective", state.perspective);
+    if (state.viewId) params.set("view", state.viewId);
+    if (state.tour) {
+      params.set("tour", state.tour.tourId);
+      params.set("step", String(stepNumber(state.tour.step)));
+    }
+    params.delete("focus");
+    for (const id of state.selection ?? []) params.append("focus", id);
+  } else {
+    params.delete("perspective");
+    params.delete("focus");
   }
   // Ids are `tour:intro`: a colon is fine in a query string, and much easier to read than `%3A`.
   const text = params.toString().replace(/%3A/gi, ":");
@@ -52,7 +67,11 @@ export function watchUrl(
     }
   };
   const key = (state: ViewerState) =>
-    state.mode === "present" ? `present|${state.tour?.tourId}|${state.tour?.step}` : "explore";
+    state.mode === "present"
+      ? `present|${state.tour?.tourId}|${state.tour?.step}`
+      : state.perspective === "explore"
+        ? "explore"
+        : `${state.perspective}|${state.viewId}|${state.tour?.tourId}|${state.tour?.step}|${JSON.stringify(state.selection)}`;
   let last = key(store.getState());
   if (store.getState().mode === "present") write(store.getState());
   return store.subscribe(() => {

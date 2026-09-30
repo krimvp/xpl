@@ -148,7 +148,7 @@ export type PatchStepUpdate = {
 /** A SequenceView as written in a patch: `steps` (replaced wholesale) carry `AnchorInput`s. */
 export type PatchSequenceView = {
   id: string;
-  type: "sequence";
+  type: "sequence" | "flow";
   provenance?: PatchProvenance;
   steps?: PatchSequenceStep[];
   /**

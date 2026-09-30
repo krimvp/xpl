@@ -282,6 +282,12 @@ Keep a view readable: `"mode": "all"` (one ghost per outside element) only for s
 }
 ```
 
+### Process-flow views and supporting files
+
+Use `type: "flow"` for execution stages instead of lifelines. It shares a sequence view's required `title`, `participants`, `steps`, scope and anchors. Each step may add `shape: "stage" | "decision" | "terminal"` and `next: [{"step": "process:2", "label": "eligible"}]`. Transition targets must be steps in the same view. Missing `next` means the next stage unless `shape` is `terminal`; `next: []` means no outgoing transition. Explicitly model each branch and loop, and anchor the deciding condition. `shape` and `next` are also accepted by `stepsUpdate`; `null` clears them. Existing sequence views appear as labeled, ordered projections in the reader's Process flow tab; a projection is not a discovered execution model.
+
+For supporting files, use configuration-key anchors (`role: "config"`) and evidence-backed edges with `kind: "loads"`, `"discovers"`, `"configures"` or `"overrides"`. A loader points to the loaded file or plugin directory/group; configuration points to its consumer; an overriding file points to the overridden file. Anchor both ends and explain conditions and precedence in the edge summary. The Related files panel groups file collections and exposes the loader and target source. Index `resources` adds supported literal-path and glob relationships, with source sites and `static`/`inferred` resolution labels. Matching files are not proof of runtime activation; dynamically composed paths may need annotated edges.
+
 ### 3.7 Sequence view (steps, frames)
 
 Required: `type: "sequence"`, `title`, `participants` (lifelines, left to right), `steps`. Every step needs `id` (`<view-slug>:<n>`), `from`, `to` (both must be participants), `label` (the call text), `kind` (`call` solid arrow, `return` dashed back to the caller, `async` open head), and should have `summary` and anchors: the exact call in the caller (`call-site`) plus the callee's definition. `edge` links a step to the edge it instantiates. A step's `from` may equal `to` (self-call). Frames (`loop`, `alt`, `opt`, `par`) wrap the run `fromStep`..`toStep` (inclusive); nest them or keep them apart (a partial overlap draws a warning). Keep a sequence view to 6 participants at most: a flow with more is two or three views (one per phase or per collaborator group), each readable on its own.
