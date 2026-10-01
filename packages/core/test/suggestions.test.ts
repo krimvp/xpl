@@ -236,7 +236,7 @@ describe("a stored anchor whose symbol was renamed", () => {
     // dispatch is gone; its requeue block now lives in Runner.stop (lines 30-40), at lines 33-35
     const lines = RUNNER_TEXT.split("\n");
     for (let n = 76; n <= 78; n++) lines[n - 1] = `// ${n}`;
-    for (const [i, text] of ["await this.queue.requeue(", "  job,", "  backoff);"].entries()) {
+    for (const [i, text] of RUNNER_TEXT.split("\n").slice(75, 78).entries()) {
       lines[33 + i - 1] = text;
     }
     const moved = makeWorld({

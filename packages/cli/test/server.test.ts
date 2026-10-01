@@ -4,6 +4,7 @@ import { createServer as createNetServer } from "node:net";
 import { join } from "node:path";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { BUNDLE_SCHEMA, parseBundle, type ViewerBundle } from "@xpl/core";
+import { run } from "../src/cli.js";
 import { DEFAULT_PORT } from "../src/commands/view.js";
 import { startViewServer, type ViewServer } from "../src/server.js";
 import {
@@ -79,6 +80,68 @@ async function json(res: Response): Promise<any> {
 }
 
 describe("xpl view", () => {
+  it("keeps a viewer edit and its ownership while CLI apply waits for stdin", async () => {
+    const dir = cloneDir(demo);
+    const view = await serve(dir);
+    let resume!: (text: string) => void;
+    let reading!: () => void;
+    const waiting = new Promise<void>((resolve) => {
+      reading = resolve;
+    });
+    const input = new Promise<string>((resolve) => {
+      resume = resolve;
+    });
+    const apply = run(["apply", "demo", "-"], {
+      cwd: dir,
+      out: () => {},
+      err: () => {},
+      readStdin: () => {
+        reading();
+        return input;
+      },
+    });
+    await waiting;
+    const saved = await fetch(`${view.url}/api/views/view:overview`, {
+      method: "PUT",
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ title: "User's title" }),
+    });
+    expect(saved.status).toBe(200);
+    resume(
+      JSON.stringify({ title: "CLI title", views: [{ id: "view:overview", title: "LLM title" }] }),
+    );
+    expect(await apply).toBe(0);
+    const explainer = readJson(dir, ".explainer/demo.explainer.json");
+    expect(explainer.title).toBe("CLI title");
+    const overview = explainer.views.find((v: any) => v.id === "view:overview");
+    expect(overview.title).toBe("User's title");
+    expect(overview.provenance.userFields).toContain("title");
+  });
+
+  it("serializes independent viewer servers writing the same explainer", async () => {
+    const dir = cloneDir(demo);
+    const first = await serve(dir);
+    const second = await serve(dir);
+    const results = await Promise.all([
+      fetch(`${first.url}/api/views/view:overview`, {
+        method: "PUT",
+        headers: JSON_HEADERS,
+        body: JSON.stringify({ title: "From first" }),
+      }),
+      fetch(`${second.url}/api/views/view:overview`, {
+        method: "PUT",
+        headers: JSON_HEADERS,
+        body: JSON.stringify({ layout: {} }),
+      }),
+    ]);
+    expect(results.map((r) => r.status)).toEqual([200, 200]);
+    const overview = readJson(dir, ".explainer/demo.explainer.json").views.find(
+      (v: any) => v.id === "view:overview",
+    );
+    expect(overview).toMatchObject({ title: "From first", layout: {} });
+    expect(overview.provenance.userFields).toEqual(expect.arrayContaining(["title", "layout"]));
+  });
+
   it("prints the URL, serves on 127.0.0.1, and stops when told to", async () => {
     const view = await serve(demo);
     expect(view.server.url).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/$/);
@@ -380,7 +443,7 @@ describe("xpl view", () => {
       role: "definition",
       resolved: { status: "ok" },
     });
-    expect(updated.steps[2].code[0].hash).toMatch(/^sha256:/);
+    expect(updated.steps[2].code[0].hash).toMatch(/^sha256-v2:/);
     // the tour is the llm's (Claude wrote it), and now records what the user edited
     expect(updated.provenance).toEqual({
       origin: "llm",

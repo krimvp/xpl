@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { hashText, INDEX_SCHEMA, splitLines } from "@xpl/core";
+import { hashText, INDEX_SCHEMA, sliceLines, splitLines } from "@xpl/core";
 import type { Reference, SymbolIndex } from "@xpl/core";
 import {
   buildIndex,
@@ -272,7 +272,9 @@ describe("buildIndex", () => {
     const { index } = await indexFiles({ "crlf.ts": crlf, "bom.ts": bom });
     expect(symbol(index, "crlf.ts", "A")!.range).toEqual({ startLine: 1, endLine: 3 });
     expect(symbol(index, "crlf.ts", "A.m")!.range).toEqual({ startLine: 2, endLine: 2 });
-    expect(symbol(index, "crlf.ts", "A")!.hash).toBe(hashText(crlf));
+    expect(symbol(index, "crlf.ts", "A")!.hash).toBe(
+      hashText(sliceLines(crlf, { startLine: 1, endLine: 3 })),
+    );
     expect(symbol(index, "bom.ts", "b")).toBeDefined();
     expect(index.files.find((f) => f.path === "crlf.ts")!.lines).toBe(4);
   });

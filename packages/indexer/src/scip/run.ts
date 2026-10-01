@@ -22,7 +22,7 @@
  *  - Tools print their fatal errors to stdout as well as stderr, so both are captured; scip-python exits 1 but
  *    still leaves a (metadata-only) index behind when it crashes.
  *  - `GOFLAGS=-mod=mod` lets scip-go load modules whose go.sum is incomplete but may rewrite go.mod/go.sum:
- *    both are restored to what they were. The go command rejects `-mod=mod` in workspace mode and it would
+ *    Go runs in a private source copy, so its module writes never reach the working tree. The go command rejects `-mod=mod` in workspace mode and it would
  *    bypass a vendor directory (which loads without network access), so a repository with a go.work, and a
  *    module with a vendor directory, are indexed without it.
  *  - A tsconfig that cannot be loaded (`extends` a package that is not installed in a fresh checkout) makes
@@ -32,9 +32,18 @@
  */
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, delimiter, join, posix } from "node:path";
+import {
+  basename,
+  delimiter,
+  isAbsolute,
+  join,
+  posix,
+  relative,
+  resolve as resolvePath,
+  sep,
+} from "node:path";
 import type { FilePath, IndexedFile } from "@xpl/core";
 import { documentPath } from "./map.js";
 import type { ScipSource } from "./map.js";
@@ -111,10 +120,17 @@ export const runCommand: CommandRunner = (command, args, options) =>
     child.stderr.on("data", (chunk: Buffer) => (stderr = tail(stderr, chunk)));
     let timedOut = false;
     let killTimer: NodeJS.Timeout | undefined;
+    let closed = false;
+    let exitCode: number | null = null;
     const timer = setTimeout(() => {
       timedOut = true;
       killTree(child.pid, "SIGTERM");
-      killTimer = setTimeout(() => killTree(child.pid, "SIGKILL"), KILL_GRACE_MS);
+      killTimer = setTimeout(() => {
+        // The group may outlive its leader and close all pipes. Finish escalation before returning.
+        killTree(child.pid, "SIGKILL");
+        killTimer = undefined;
+        if (closed) resolve({ code: exitCode, stdout, stderr, timedOut });
+      }, KILL_GRACE_MS);
     }, options.timeoutMs);
     child.on("error", (error) => {
       clearTimeout(timer);
@@ -123,8 +139,9 @@ export const runCommand: CommandRunner = (command, args, options) =>
     });
     child.on("close", (code) => {
       clearTimeout(timer);
-      clearTimeout(killTimer);
-      resolve({ code, stdout, stderr, timedOut });
+      closed = true;
+      exitCode = code;
+      if (!killTimer) resolve({ code, stdout, stderr, timedOut });
     });
   });
 
@@ -540,30 +557,90 @@ export function goModules(files: readonly Pick<IndexedFile, "path">[]): string[]
   return [...dirs].sort();
 }
 
-/** Remember the contents of files (null = missing) so `restoreFiles` can undo what a tool did to them. */
-async function snapshotFiles(paths: readonly string[]): Promise<Map<string, string | null>> {
-  const snapshot = new Map<string, string | null>();
-  for (const path of paths) {
+/** Copy the source tree before allowing Go to update module/workspace metadata.
+ * Dereference symlinks: a metadata symlink must not give Go a writable route back to the source.
+ * Relative local replacements outside the root keep pointing at their original dependency location.
+ */
+async function copyGoTree(
+  root: string,
+  destination: string,
+  temp: string,
+  files: readonly Pick<IndexedFile, "path">[],
+): Promise<void> {
+  await cp(root, destination, {
+    recursive: true,
+    dereference: true,
+    filter: (source) =>
+      source !== temp && ![".git", ".explainer", "node_modules"].includes(basename(source)),
+  });
+  for (const file of files) {
+    if (!["go.mod", "go.work"].includes(posix.basename(file.path)) || inSkippedDir(file.path))
+      continue;
+    const path = join(destination, file.path);
+    let text: string;
     try {
-      snapshot.set(path, await readFile(path, "utf8"));
-    } catch {
-      snapshot.set(path, null);
+      text = await readFile(path, "utf8");
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
+      throw error;
     }
-  }
-  return snapshot;
-}
-
-async function restoreFiles(snapshot: ReadonlyMap<string, string | null>): Promise<void> {
-  for (const [path, original] of snapshot) {
-    let current: string | null;
-    try {
-      current = await readFile(path, "utf8");
-    } catch {
-      current = null;
+    // Go module paths cannot contain whitespace; quoted local replacement paths can.
+    text = text.replace(
+      /(=>\s*)("(?:[^"\\]|\\.)*"|[^\s]+)(?=\s|$)/g,
+      (match, arrow: string, token: string) => {
+        const target: string = token.startsWith('"') ? JSON.parse(token) : token;
+        if (!isAbsolute(target) && !target.startsWith("./") && !target.startsWith("../"))
+          return match;
+        const absolute = resolvePath(root, posix.dirname(file.path), target);
+        const within = relative(root, absolute);
+        if (within !== ".." && !within.startsWith(".." + sep) && !isAbsolute(within)) {
+          return isAbsolute(target) ? arrow + JSON.stringify(join(destination, within)) : match;
+        }
+        return arrow + JSON.stringify(absolute);
+      },
+    );
+    if (posix.basename(file.path) === "go.work") {
+      // Workspace members are main modules, which Go may edit. Never leave a use path pointing
+      // back into the original tree or into a sibling checkout outside the private copy.
+      const tokens = [
+        ...text.matchAll(/"(?:[^"\\]|\\.)*"|`[^`]*`|\/\/[^\n]*|[()]|[^\s()]+/g),
+      ].filter((t) => !t[0].startsWith("//"));
+      const replacements: { start: number; end: number; text: string }[] = [];
+      for (let i = 0; i < tokens.length; i++) {
+        if (tokens[i]![0] !== "use") continue;
+        const block = tokens[i + 1]?.[0] === "(";
+        let next = i + (block ? 2 : 1);
+        do {
+          const token = tokens[next];
+          if (!token || token[0] === ")") break;
+          const value = token[0];
+          const target: string = value.startsWith('"')
+            ? JSON.parse(value)
+            : value.startsWith("`")
+              ? value.slice(1, -1)
+              : value;
+          const absolute = resolvePath(root, posix.dirname(file.path), target);
+          const within = relative(root, absolute);
+          if (within === ".." || within.startsWith(".." + sep) || isAbsolute(within)) {
+            throw new ScipRunError(
+              "go.work uses a module outside the indexed root: include the workspace in the root or set GOWORK=off",
+              "environment",
+            );
+          }
+          replacements.push({
+            start: token.index,
+            end: token.index + value.length,
+            text: JSON.stringify(join(destination, within)),
+          });
+          next++;
+        } while (block);
+        i = next - 1;
+      }
+      for (const replacement of replacements.reverse()) {
+        text = text.slice(0, replacement.start) + replacement.text + text.slice(replacement.end);
+      }
     }
-    if (current === original) continue;
-    if (original === null) await rm(path, { force: true });
-    else await writeFile(path, original);
+    await writeFile(path, text);
   }
 }
 
@@ -596,25 +673,38 @@ export async function runScipGo(
   const sources: ScipSource[] = [];
   const warnings: string[] = [];
   await withTempDir(cfg, async (dir) => {
-    for (const [i, module] of modules.entries()) {
-      const moduleDir = module === "" ? root : join(root, module);
-      const output = join(dir, `module-${i}.scip`);
-      const touched = await snapshotFiles([join(moduleDir, "go.mod"), join(moduleDir, "go.sum")]);
-      try {
-        const result = await runTool(
-          module === "" ? label : `${label} (${module})`,
-          "go",
-          ["run", `${SCIP_GO_PACKAGE}@${SCIP_GO_VERSION}`, "index", "--output", output],
-          moduleDir,
-          envFor(moduleDir),
-          cfg,
+    const snapshot = join(dir, "source");
+    await copyGoTree(
+      root,
+      snapshot,
+      dir,
+      base.GOWORK === "off" ? files.filter((f) => posix.basename(f.path) !== "go.work") : files,
+    );
+    const env = { ...base };
+    if (base.GOWORK && base.GOWORK !== "off" && base.GOWORK !== "auto") {
+      const work = relative(root, resolvePath(root, base.GOWORK));
+      if (work === ".." || work.startsWith(".." + sep) || isAbsolute(work)) {
+        throw new ScipRunError(
+          "GOWORK points outside the indexed root: include the workspace in the root or set GOWORK=off",
+          "environment",
         );
-        const index = await readIndex(label, output);
-        sources.push({ index, pathPrefix: module, defaultEncoding: "utf8" });
-        warnings.push(...extractWarnings(label, result.stderr, result.stdout));
-      } finally {
-        await restoreFiles(touched);
       }
+      env.GOWORK = join(snapshot, work);
+    }
+    for (const [i, module] of modules.entries()) {
+      const moduleDir = module === "" ? snapshot : join(snapshot, module);
+      const output = join(dir, `module-${i}.scip`);
+      const result = await runTool(
+        module === "" ? label : `${label} (${module})`,
+        "go",
+        ["run", `${SCIP_GO_PACKAGE}@${SCIP_GO_VERSION}`, "index", "--output", output],
+        moduleDir,
+        { ...envFor(moduleDir), ...(env.GOWORK ? { GOWORK: env.GOWORK } : {}) },
+        cfg,
+      );
+      const index = await readIndex(label, output);
+      sources.push({ index, pathPrefix: module, defaultEncoding: "utf8" });
+      warnings.push(...extractWarnings(label, result.stderr, result.stdout));
     }
   });
   return { sources, warnings };

@@ -546,7 +546,7 @@ export function deriveGraph(
  * The `excludeFiles` filter of a view: true for a reference that starts or ends in an excluded file that
  * the view does not include by name. Undefined when the view excludes nothing.
  */
-function excludedRefs(
+export function excludedRefs(
   view: GraphView,
   model: ExplainerModel,
   includeIds: readonly ElementId[],

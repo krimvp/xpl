@@ -3,11 +3,11 @@
   "title": "Job runner",
   "repo": {
     "name": "acme/jobrunner",
-    "commit": "wt-fd6c9886d1"
+    "commit": "wt-386c8aba3e"
   },
   "index": {
-    "path": ".explainer/index-wt-fd6c9886d1.json",
-    "commit": "wt-fd6c9886d1"
+    "path": ".explainer/index-wt-386c8aba3e.json",
+    "commit": "wt-386c8aba3e"
   },
   "nodes": [
     {
@@ -23,7 +23,7 @@
       "anchors": [],
       "provenance": {
         "origin": "llm",
-        "commit": "wt-fd6c9886d1"
+        "commit": "wt-386c8aba3e"
       }
     },
     {
@@ -37,9 +37,9 @@
           "file": "internal/runner/runner.go",
           "symbol": "Runner.Dispatch",
           "role": "definition",
-          "hash": "sha256:6773e9490365",
+          "hash": "sha256-v2:c76e3b3d6a3a",
           "resolved": {
-            "commit": "wt-fd6c9886d1",
+            "commit": "wt-386c8aba3e",
             "range": {
               "startLine": 75,
               "endLine": 126
@@ -50,7 +50,7 @@
       ],
       "provenance": {
         "origin": "llm",
-        "commit": "wt-fd6c9886d1",
+        "commit": "wt-386c8aba3e",
         "userFields": [
           "summary"
         ]
@@ -74,9 +74,9 @@
             "to": 38
           },
           "role": "call-site",
-          "hash": "sha256:90b14af02838",
+          "hash": "sha256-v2:bee206f6fc96",
           "resolved": {
-            "commit": "wt-fd6c9886d1",
+            "commit": "wt-386c8aba3e",
             "range": {
               "startLine": 83,
               "endLine": 83
@@ -88,9 +88,9 @@
           "file": "internal/metrics/metrics.go",
           "symbol": "Metrics.OnJobCompleted",
           "role": "definition",
-          "hash": "sha256:f6ad72a7da40",
+          "hash": "sha256-v2:2fb312971f53",
           "resolved": {
-            "commit": "wt-fd6c9886d1",
+            "commit": "wt-386c8aba3e",
             "range": {
               "startLine": 29,
               "endLine": 35
@@ -101,7 +101,7 @@
       ],
       "provenance": {
         "origin": "llm",
-        "commit": "wt-fd6c9886d1"
+        "commit": "wt-386c8aba3e"
       }
     }
   ],
@@ -119,9 +119,9 @@
             "to": 46
           },
           "role": "definition",
-          "hash": "sha256:ecacfe78fa66",
+          "hash": "sha256-v2:b49cc2f2850d",
           "resolved": {
-            "commit": "wt-fd6c9886d1",
+            "commit": "wt-386c8aba3e",
             "range": {
               "startLine": 108,
               "endLine": 121
@@ -137,9 +137,9 @@
             "to": 3
           },
           "role": "config",
-          "hash": "sha256:7c1c80036851",
+          "hash": "sha256-v2:ae794b741f74",
           "resolved": {
-            "commit": "wt-fd6c9886d1",
+            "commit": "wt-386c8aba3e",
             "range": {
               "startLine": 13,
               "endLine": 16
@@ -150,9 +150,9 @@
         {
           "file": "internal/runner/retry_test.go",
           "role": "test",
-          "hash": "sha256:09541bdce79c",
+          "hash": "sha256-v2:9d7acd5d9b40",
           "resolved": {
-            "commit": "wt-fd6c9886d1",
+            "commit": "wt-386c8aba3e",
             "range": {
               "startLine": 1,
               "endLine": 173
@@ -167,7 +167,7 @@
       ],
       "provenance": {
         "origin": "user",
-        "commit": "wt-fd6c9886d1"
+        "commit": "wt-386c8aba3e"
       }
     }
   ],
@@ -187,7 +187,7 @@
       ],
       "provenance": {
         "origin": "llm",
-        "commit": "wt-fd6c9886d1"
+        "commit": "wt-386c8aba3e"
       }
     },
     {
@@ -223,9 +223,9 @@
                 "to": 4
               },
               "role": "call-site",
-              "hash": "sha256:2b7652bf456b",
+              "hash": "sha256-v2:a2468b903dd1",
               "resolved": {
-                "commit": "wt-fd6c9886d1",
+                "commit": "wt-386c8aba3e",
                 "range": {
                   "startLine": 79,
                   "endLine": 79
@@ -237,9 +237,9 @@
               "file": "internal/queue/queue.go",
               "symbol": "Queue.Pop",
               "role": "definition",
-              "hash": "sha256:b721dfdea704",
+              "hash": "sha256-v2:fd8b296a210f",
               "resolved": {
-                "commit": "wt-fd6c9886d1",
+                "commit": "wt-386c8aba3e",
                 "range": {
                   "startLine": 86,
                   "endLine": 108
@@ -265,9 +265,9 @@
                 "to": 22
               },
               "role": "call-site",
-              "hash": "sha256:3bfe041e8549",
+              "hash": "sha256-v2:95d84d2d596e",
               "resolved": {
-                "commit": "wt-fd6c9886d1",
+                "commit": "wt-386c8aba3e",
                 "range": {
                   "startLine": 97,
                   "endLine": 97
@@ -279,9 +279,9 @@
               "file": "internal/worker/worker.go",
               "symbol": "Worker.Run",
               "role": "definition",
-              "hash": "sha256:0dcf3cd95023",
+              "hash": "sha256-v2:6f604b67358b",
               "resolved": {
-                "commit": "wt-fd6c9886d1",
+                "commit": "wt-386c8aba3e",
                 "range": {
                   "startLine": 45,
                   "endLine": 85
@@ -307,9 +307,9 @@
                 "to": 37
               },
               "role": "call-site",
-              "hash": "sha256:84956281660f",
+              "hash": "sha256-v2:0420f77234e1",
               "resolved": {
-                "commit": "wt-fd6c9886d1",
+                "commit": "wt-386c8aba3e",
                 "range": {
                   "startLine": 112,
                   "endLine": 112
@@ -321,9 +321,9 @@
               "file": "internal/queue/queue.go",
               "symbol": "Queue.Requeue",
               "role": "definition",
-              "hash": "sha256:fd9d6d59dbb2",
+              "hash": "sha256-v2:6b7bf5fdaaa8",
               "resolved": {
-                "commit": "wt-fd6c9886d1",
+                "commit": "wt-386c8aba3e",
                 "range": {
                   "startLine": 112,
                   "endLine": 124
@@ -346,7 +346,7 @@
       ],
       "provenance": {
         "origin": "llm",
-        "commit": "wt-fd6c9886d1"
+        "commit": "wt-386c8aba3e"
       }
     }
   ],
@@ -378,7 +378,7 @@
       ],
       "provenance": {
         "origin": "llm",
-        "commit": "wt-fd6c9886d1",
+        "commit": "wt-386c8aba3e",
         "userFields": [
           "steps"
         ]

@@ -230,28 +230,21 @@ describe("1. five comment lines above Runner.dispatch", () => {
 });
 
 describe("2. a blank line inside the retry block", () => {
-  it("re-finds the block by content: moved with an updated span, not drifted", async () => {
+  it("drifts spans containing the blank line and moves unchanged spans after it", async () => {
     const r = await regenerate(base, [edits.blankLineInRetryBlock]);
     const before = readJson(base, EXPLAINER_PATH);
     const block = anchorsOf(r.explainer, "concept:retry-policy")[0]!;
     expect(block.resolved).toEqual({
       commit: r.commit,
-      status: "moved",
-      range: { startLine: 72, endLine: 84 },
+      status: "drifted",
+      range: { startLine: 72, endLine: 83 },
     });
-    expect(block.span, "the 12 lines of the block are 13 with the blank one").toEqual({
-      from: 30,
-      to: 42,
-    });
-    expect(block.hash, "blank lines do not count: same text").toBe(
-      anchorsOf(before, "concept:retry-policy")[0]!.hash,
-    );
-    // the user's concept anchors the same block and moves the same way
+    expect(block.span).toEqual({ from: 30, to: 41 });
+    expect(block.hash).toBe(anchorsOf(before, "concept:retry-policy")[0]!.hash);
     expect(anchorsOf(r.explainer, "concept:retry-tuning")[0]).toMatchObject({
-      span: { from: 30, to: 42 },
-      resolved: { status: "moved" },
+      span: { from: 30, to: 41 },
+      resolved: { status: "drifted" },
     });
-    // the requeue call and the dead-letter branch sit one line lower
     expect(anchorsOf(r.explainer, "dispatch:3")[0]).toMatchObject({
       span: { from: 35, to: 37 },
       resolved: { status: "moved", range: { startLine: 77, endLine: 79 } },
@@ -260,13 +253,16 @@ describe("2. a blank line inside the retry block", () => {
       span: { from: 38, to: 42 },
       resolved: { status: "moved", range: { startLine: 80, endLine: 84 } },
     });
-    // above the blank line nothing moved
     expect(statusesOf(r.explainer, "dispatch:1")).toEqual(["ok", "ok"]);
     expect(statusesOf(r.explainer, "dispatch:2")).toEqual(["ok", "ok"]);
-    expect(r.resolve.counts).toEqual({ ok: 11, moved: 5, drifted: 0, missing: 0 });
-    expect(r.resolve).toMatchObject({ drifted: [], driftedOther: [], missing: [] });
+    expect(r.resolve.counts).toEqual({ ok: 11, moved: 2, drifted: 3, missing: 0 });
+    expect(r.resolve.drifted.map((d: any) => d.elementId)).toEqual([
+      DISPATCH,
+      "concept:retry-policy",
+    ]);
+    expect(r.resolve.driftedOther.map((d: any) => d.elementId)).toEqual(["concept:retry-tuning"]);
     checkResolvedCache(r.dir, r.explainer);
-    expect((await xpl(r.dir, "validate", NAME)).code).toBe(0);
+    expect((await xpl(r.dir, "validate", NAME)).code).toBe(1);
   });
 
   it("does not hide a real change: when the block's text changes too, it drifts", async () => {
@@ -287,19 +283,19 @@ describe("2. a blank line inside the retry block", () => {
     checkResolvedCache(r.dir, r.explainer);
   });
 
-  it("inside a span that itself contains the blank line: the dead-letter branch grows by one line", async () => {
+  it("drifts the dead-letter and retry spans when a blank line is inserted inside them", async () => {
     const r = await regenerate(base, [edits.blankLineInDeadLetterBranch]);
     expect(anchorsOf(r.explainer, "concept:dead-letter")[0]).toMatchObject({
-      span: { from: 37, to: 42 },
-      resolved: { status: "moved", range: { startLine: 79, endLine: 84 } },
+      span: { from: 37, to: 41 },
+      resolved: { status: "drifted", range: { startLine: 79, endLine: 83 } },
     });
     expect(anchorsOf(r.explainer, "concept:retry-policy")[0]).toMatchObject({
-      span: { from: 30, to: 42 },
-      resolved: { status: "moved" },
+      span: { from: 30, to: 41 },
+      resolved: { status: "drifted" },
     });
     // the requeue call is above the blank line
     expect(statusesOf(r.explainer, "dispatch:3")).toEqual(["ok", "ok"]);
-    expect(r.resolve.counts).toEqual({ ok: 12, moved: 4, drifted: 0, missing: 0 });
+    expect(r.resolve.counts).toEqual({ ok: 12, moved: 0, drifted: 4, missing: 0 });
     checkResolvedCache(r.dir, r.explainer);
   });
 });
@@ -591,7 +587,7 @@ describe("5. the README paragraph moves down", () => {
 // ─── Other edits a regeneration meets ───────────────────────────────────────────────────────────
 
 describe("other edits", () => {
-  it("formatting only (CRLF, re-indenting, trailing spaces) changes nothing: not even a move", async () => {
+  it("CRLF preserves anchors; re-indenting and trailing spaces drift affected anchors", async () => {
     const r = await regenerate(base, [
       (dir) =>
         writeFile(dir, "src/runner.ts", readFile(dir, "src/runner.ts").replace(/\n/g, "\r\n")),
@@ -614,8 +610,9 @@ describe("other edits", () => {
             .join("\n"),
         ),
     ]);
-    expect(r.resolve.counts).toEqual({ ok: 16, moved: 0, drifted: 0, missing: 0 });
-    expect(r.resolve).toMatchObject({ drifted: [], driftedOther: [], missing: [] });
+    expect(r.resolve.counts).toEqual({ ok: 12, moved: 0, drifted: 4, missing: 0 });
+    expect(r.resolve.drifted.length).toBeGreaterThan(0);
+    expect(r.resolve.missing).toEqual([]);
     checkResolvedCache(r.dir, r.explainer);
   });
 
@@ -962,14 +959,14 @@ describe("all five edits in one second commit", () => {
     }
   });
 
-  it("2. the blank line moved the dead-letter branch (updated span), it did not drift it", () => {
+  it("2. the blank line inside the dead-letter branch drifts it", () => {
     const now = anchorsOf(after.explainer, "concept:dead-letter")[0]!;
-    // -1 for the deleted call above it, +1 line inside it
-    expect(now.span).toEqual({ from: 36, to: 41 });
+    // Keep the original span and hash until the changed text is re-explained.
+    expect(now.span).toEqual({ from: 37, to: 41 });
     expect(now.resolved).toEqual({
       commit: after.commit,
-      status: "moved",
-      range: { startLine: 83, endLine: 88 },
+      status: "drifted",
+      range: { startLine: 84, endLine: 88 },
     });
     expect(now.hash).toBe(anchorsOf(before, "concept:dead-letter")[0]!.hash);
   });
@@ -980,6 +977,7 @@ describe("all five edits in one second commit", () => {
     expect(drifted.map((d) => d.elementId)).toEqual([
       DISPATCH,
       "concept:retry-policy",
+      "concept:dead-letter",
       "dispatch:3",
     ]);
     expect(drifted.find((d) => d.elementId === DISPATCH).userFields).toEqual(["summary"]);
@@ -1007,7 +1005,7 @@ describe("all five edits in one second commit", () => {
   });
 
   it("counts every anchor once and every written cache agrees with the text", () => {
-    expect(after.resolve.counts).toEqual({ ok: 7, moved: 4, drifted: 4, missing: 1 });
+    expect(after.resolve.counts).toEqual({ ok: 7, moved: 3, drifted: 5, missing: 1 });
     expect(after.resolve.total).toBe(16);
     expect(statusCounts(after.explainer)).toEqual(after.resolve.counts);
     checkResolvedCache(dir, after.explainer);
@@ -1018,18 +1016,19 @@ describe("all five edits in one second commit", () => {
     expect(json.drifted.map((d: any) => d.elementId)).toEqual([
       DISPATCH,
       "concept:retry-policy",
+      "concept:dead-letter",
       "dispatch:3",
     ]);
     expect(json.missing.map((m: any) => m.elementId)).toEqual(["concept:ack-semantics"]);
     expect(json.driftedOther.map((d: any) => d.elementId)).toEqual(["concept:retry-tuning"]);
-    // 3 llm elements to re-explain, plus the user's concept: counted, but apart (ask the user)
-    expect(json.todo).toMatchObject({ drifted: 4, driftedUserOwned: 1, missing: 1, requests: 0 });
-    expect(json.anchors.counts).toEqual({ ok: 11, moved: 0, drifted: 4, missing: 1 });
+    // 4 llm elements to re-explain, plus the user's concept: counted, but apart (ask the user)
+    expect(json.todo).toMatchObject({ drifted: 5, driftedUserOwned: 1, missing: 1, requests: 0 });
+    expect(json.anchors.counts).toEqual({ ok: 10, moved: 0, drifted: 5, missing: 1 });
 
     const text = await xpl(dir, "status", NAME);
     expect(text.code).toBe(0);
     expect(text.out).toMatch(
-      /^to do: \d+ unexplained, 4 drifted \(1 user-owned: ask the user\), 1 missing anchors, 0 requests$/m,
+      /^to do: \d+ unexplained, 5 drifted \(1 user-owned: ask the user\), 1 missing anchors, 0 requests$/m,
     );
     const section = (from: string, to?: string) => {
       const start = text.out.indexOf(from);
@@ -1037,8 +1036,9 @@ describe("all five edits in one second commit", () => {
       const end = to === undefined ? text.out.length : text.out.indexOf(to, start);
       return text.out.slice(start, end);
     };
-    const llm = section("drifted llm elements to re-explain (3):", "drifted, but not llm-owned");
-    for (const id of [DISPATCH, "concept:retry-policy", "dispatch:3"]) expect(llm).toContain(id);
+    const llm = section("drifted llm elements to re-explain (4):", "drifted, but not llm-owned");
+    for (const id of [DISPATCH, "concept:retry-policy", "concept:dead-letter", "dispatch:3"])
+      expect(llm).toContain(id);
     expect(llm).not.toContain("concept:retry-tuning");
     expect(llm).not.toContain("concept:ack-semantics");
     const other = section("drifted, but not llm-owned (left alone) (1):", "missing anchors (1)");
@@ -1121,13 +1121,29 @@ describe("all five edits in one second commit", () => {
           ],
         },
         { id: "concept:retry-tuning", summary: "LLM rewrite of the user's concept" },
+        {
+          id: "concept:dead-letter",
+          anchors: [
+            {
+              file: "src/runner.ts",
+              symbol: "Runner.dispatch",
+              role: "definition",
+              find: "} else {\n        await this.queue.deadLetter(job, result.error);\n\n        this.stats.deadLettered += 1;\n        this.log(`dead-lettered ${job.id} after ${attempts} attempts`);\n      }",
+            },
+          ],
+        },
       ],
       views: [{ id: "view:dispatch", type: "sequence", steps }],
     };
 
     const result = await applyOk(dir, patch, "llm");
     expect(result.json.applied).toBe(true);
-    expect(result.json.changed).toEqual([DISPATCH, "concept:retry-policy", "view:dispatch"]);
+    expect(result.json.changed).toEqual([
+      DISPATCH,
+      "concept:retry-policy",
+      "concept:dead-letter",
+      "view:dispatch",
+    ]);
     expect(result.json.issues.filter((i) => i.severity === "error")).toEqual([]);
 
     // the apply says what it kept and what it skipped

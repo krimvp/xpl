@@ -4,8 +4,8 @@ import type { CommandSpec } from "../command.js";
 import type { Ctx } from "../context.js";
 import { CliError } from "../errors.js";
 import { issueSummary, plural, renderIssues } from "../format.js";
-import { atomicWrite, jsonFile, parseJson, readTextFile } from "../fsutil.js";
-import { loadExplainer, openWorkspace } from "../repo.js";
+import { atomicWrite, withFileLock, jsonFile, parseJson, readTextFile } from "../fsutil.js";
+import { loadExplainer, openWorkspace, resolveExplainerPath } from "../repo.js";
 
 async function defaultReadStdin(): Promise<string> {
   if (process.stdin.isTTY) {
@@ -87,83 +87,89 @@ export const applyCommand: CommandSpec = {
   async run(ctx, args) {
     const actor = args.choice("actor", ["llm", "user"] as const) ?? "llm";
     const dryRun = args.flag("dry-run");
-    const loaded = loadExplainer(ctx, args.positionals[0]!);
+    const path = resolveExplainerPath(ctx, args.positionals[0]!);
     const { patch, label } = await readPatch(ctx, args.positionals[1]!);
-    const ws = await openWorkspace(ctx, { explainer: loaded });
-    const result = applyPatch(loaded.explainer, patch as ExplainerPatch, ws.model, ws.texts, {
-      actor,
-    });
-    const errors = result.issues.filter((issue) => issue.severity === "error").length;
-    const protectedIssues = result.issues.filter((issue) => issue.code === "protected");
-    const protectedIds = [
-      ...new Set(protectedIssues.map((issue) => issue.elementId).filter((id) => id !== undefined)),
-    ] as string[];
-    // Everything the patch changes belongs to the user: that is not "no changes", it is a refusal.
-    const allProtected = result.ok && result.changed.length === 0 && protectedIssues.length > 0;
-    const write = result.ok && !dryRun && result.changed.length > 0;
-    if (write) await atomicWrite(loaded.abs, jsonFile(result.explainer));
-
-    if (ctx.json) {
-      ctx.emit({
-        ok: result.ok && !allProtected,
-        applied: write,
-        dryRun,
+    return withFileLock(path, async () => {
+      const loaded = loadExplainer(ctx, args.positionals[0]!);
+      const ws = await openWorkspace(ctx, { explainer: loaded });
+      const result = applyPatch(loaded.explainer, patch as ExplainerPatch, ws.model, ws.texts, {
         actor,
-        path: loaded.rel,
-        changed: result.changed,
-        issues: result.issues,
-        ...(protectedIds.length > 0 ? { protectedIds } : {}),
-        ...(result.ok
-          ? allProtected
-            ? { error: `nothing applied: ${protectedSummary(protectedIds)}` }
-            : {}
-          : { error: `patch rejected: ${plural(errors, "error")}, nothing applied` }),
       });
-      return result.ok && !allProtected ? 0 : 1;
-    }
+      const errors = result.issues.filter((issue) => issue.severity === "error").length;
+      const protectedIssues = result.issues.filter((issue) => issue.code === "protected");
+      const protectedIds = [
+        ...new Set(
+          protectedIssues.map((issue) => issue.elementId).filter((id) => id !== undefined),
+        ),
+      ] as string[];
+      // Everything the patch changes belongs to the user: that is not "no changes", it is a refusal.
+      const allProtected = result.ok && result.changed.length === 0 && protectedIssues.length > 0;
+      const write = result.ok && !dryRun && result.changed.length > 0;
+      if (write) await atomicWrite(loaded.abs, jsonFile(result.explainer));
 
-    const lines: string[] = [];
-    if (!result.ok) {
-      lines.push(
-        `rejected: ${plural(errors, "error")}, nothing was applied to ${loaded.rel} (patch from ${label})`,
-        ...renderIssues(result.issues),
-      );
+      if (ctx.json) {
+        ctx.emit({
+          ok: result.ok && !allProtected,
+          applied: write,
+          dryRun,
+          actor,
+          path: loaded.rel,
+          changed: result.changed,
+          issues: result.issues,
+          ...(protectedIds.length > 0 ? { protectedIds } : {}),
+          ...(result.ok
+            ? allProtected
+              ? { error: `nothing applied: ${protectedSummary(protectedIds)}` }
+              : {}
+            : { error: `patch rejected: ${plural(errors, "error")}, nothing applied` }),
+        });
+        return result.ok && !allProtected ? 0 : 1;
+      }
+
+      const lines: string[] = [];
+      if (!result.ok) {
+        lines.push(
+          `rejected: ${plural(errors, "error")}, nothing was applied to ${loaded.rel} (patch from ${label})`,
+          ...renderIssues(result.issues),
+        );
+        ctx.out(lines.join("\n"));
+        return 1;
+      }
+      if (allProtected) {
+        lines.push(
+          `nothing was applied to ${loaded.rel} (patch from ${label}): ${protectedSummary(protectedIds)}`,
+          ...renderIssues(result.issues),
+          PROTECTED_ADVICE,
+        );
+        ctx.out(lines.join("\n"));
+        return 1;
+      }
+      if (result.changed.length === 0) {
+        lines.push(`no changes: the patch matches ${loaded.rel}${dryRun ? " (dry run)" : ""}`);
+      } else if (dryRun) {
+        lines.push(
+          `dry run: the patch is valid and would change ${plural(result.changed.length, "id")} in ${loaded.rel}; nothing written`,
+        );
+      } else {
+        lines.push(
+          `applied to ${loaded.rel} (actor ${actor}): ${plural(result.changed.length, "id")} changed`,
+        );
+      }
+      if (result.changed.length > 0)
+        lines.push("changed:", ...result.changed.map((id) => `  ${id}`));
+      if (result.issues.length > 0) {
+        lines.push(`issues (${issueSummary(result.issues)}):`, ...renderIssues(result.issues));
+      }
+      // The warnings that matter most go last, where they are read.
+      if (protectedIds.length > 0) {
+        lines.push(
+          `skipped as protected (${protectedIds.join(", ")}): the user owns those parts, so they stay as the user left them. ` +
+            `That is not an error and not something to work around: ${PROTECTED_ADVICE_SHORT}`,
+        );
+      }
       ctx.out(lines.join("\n"));
-      return 1;
-    }
-    if (allProtected) {
-      lines.push(
-        `nothing was applied to ${loaded.rel} (patch from ${label}): ${protectedSummary(protectedIds)}`,
-        ...renderIssues(result.issues),
-        PROTECTED_ADVICE,
-      );
-      ctx.out(lines.join("\n"));
-      return 1;
-    }
-    if (result.changed.length === 0) {
-      lines.push(`no changes: the patch matches ${loaded.rel}${dryRun ? " (dry run)" : ""}`);
-    } else if (dryRun) {
-      lines.push(
-        `dry run: the patch is valid and would change ${plural(result.changed.length, "id")} in ${loaded.rel}; nothing written`,
-      );
-    } else {
-      lines.push(
-        `applied to ${loaded.rel} (actor ${actor}): ${plural(result.changed.length, "id")} changed`,
-      );
-    }
-    if (result.changed.length > 0) lines.push("changed:", ...result.changed.map((id) => `  ${id}`));
-    if (result.issues.length > 0) {
-      lines.push(`issues (${issueSummary(result.issues)}):`, ...renderIssues(result.issues));
-    }
-    // The warnings that matter most go last, where they are read.
-    if (protectedIds.length > 0) {
-      lines.push(
-        `skipped as protected (${protectedIds.join(", ")}): the user owns those parts, so they stay as the user left them. ` +
-          `That is not an error and not something to work around: ${PROTECTED_ADVICE_SHORT}`,
-      );
-    }
-    ctx.out(lines.join("\n"));
-    return 0;
+      return 0;
+    });
   },
 };
 

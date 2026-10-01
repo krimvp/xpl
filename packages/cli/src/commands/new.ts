@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { createExplainer } from "@xpl/core";
 import type { CommandSpec } from "../command.js";
 import { CliError, UsageError } from "../errors.js";
-import { atomicWrite, displayPath, jsonFile } from "../fsutil.js";
+import { atomicWrite, withFileLock, displayPath, jsonFile } from "../fsutil.js";
 import { EXPLAINER_DIR, EXPLAINER_SUFFIX, openWorkspace } from "../repo.js";
 import { detectRepoName } from "../repo-name.js";
 
@@ -71,7 +71,13 @@ export const newCommand: CommandSpec = {
       index: ws.model,
       indexPath: ws.indexRel,
     });
-    await atomicWrite(path, jsonFile(explainer));
+    await withFileLock(path, async () => {
+      if (existsSync(path))
+        throw new CliError(
+          `${rel} already exists; not overwriting it. Pick another name, or change it with \`xpl apply ${name} patch.json\`.`,
+        );
+      await atomicWrite(path, jsonFile(explainer));
+    });
     if (ctx.json) {
       ctx.emit({
         path: rel,

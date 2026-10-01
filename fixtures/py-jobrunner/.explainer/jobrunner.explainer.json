@@ -3,11 +3,11 @@
   "title": "Job runner",
   "repo": {
     "name": "acme/jobrunner",
-    "commit": "wt-f35ab6db83"
+    "commit": "wt-7bced63c85"
   },
   "index": {
-    "path": ".explainer/index-wt-f35ab6db83.json",
-    "commit": "wt-f35ab6db83"
+    "path": ".explainer/index-wt-7bced63c85.json",
+    "commit": "wt-7bced63c85"
   },
   "nodes": [
     {
@@ -23,7 +23,7 @@
       "anchors": [],
       "provenance": {
         "origin": "llm",
-        "commit": "wt-f35ab6db83"
+        "commit": "wt-7bced63c85"
       }
     },
     {
@@ -37,9 +37,9 @@
           "file": "jobrunner/runner.py",
           "symbol": "Runner.dispatch",
           "role": "definition",
-          "hash": "sha256:5b7851af7ca5",
+          "hash": "sha256-v2:eae389382016",
           "resolved": {
-            "commit": "wt-f35ab6db83",
+            "commit": "wt-7bced63c85",
             "range": {
               "startLine": 61,
               "endLine": 96
@@ -50,7 +50,7 @@
       ],
       "provenance": {
         "origin": "llm",
-        "commit": "wt-f35ab6db83",
+        "commit": "wt-7bced63c85",
         "userFields": [
           "summary"
         ]
@@ -74,9 +74,9 @@
             "to": 22
           },
           "role": "call-site",
-          "hash": "sha256:c522c722d0d3",
+          "hash": "sha256-v2:7679b6401691",
           "resolved": {
-            "commit": "wt-f35ab6db83",
+            "commit": "wt-7bced63c85",
             "range": {
               "startLine": 63,
               "endLine": 63
@@ -88,9 +88,9 @@
           "file": "jobrunner/metrics.py",
           "symbol": "on_job_completed",
           "role": "definition",
-          "hash": "sha256:62d0c3482473",
+          "hash": "sha256-v2:bdb72fec5eb9",
           "resolved": {
-            "commit": "wt-f35ab6db83",
+            "commit": "wt-7bced63c85",
             "range": {
               "startLine": 18,
               "endLine": 22
@@ -101,7 +101,7 @@
       ],
       "provenance": {
         "origin": "llm",
-        "commit": "wt-f35ab6db83"
+        "commit": "wt-7bced63c85"
       }
     }
   ],
@@ -119,9 +119,9 @@
             "to": 33
           },
           "role": "definition",
-          "hash": "sha256:90a41a74d137",
+          "hash": "sha256-v2:a710c75c25f6",
           "resolved": {
-            "commit": "wt-f35ab6db83",
+            "commit": "wt-7bced63c85",
             "range": {
               "startLine": 86,
               "endLine": 94
@@ -137,9 +137,9 @@
             "to": 3
           },
           "role": "config",
-          "hash": "sha256:7c1c80036851",
+          "hash": "sha256-v2:ae794b741f74",
           "resolved": {
-            "commit": "wt-f35ab6db83",
+            "commit": "wt-7bced63c85",
             "range": {
               "startLine": 13,
               "endLine": 16
@@ -150,9 +150,9 @@
         {
           "file": "tests/test_retry.py",
           "role": "test",
-          "hash": "sha256:e9c21676f8a2",
+          "hash": "sha256-v2:fd10e1dacb6a",
           "resolved": {
-            "commit": "wt-f35ab6db83",
+            "commit": "wt-7bced63c85",
             "range": {
               "startLine": 1,
               "endLine": 106
@@ -167,7 +167,7 @@
       ],
       "provenance": {
         "origin": "user",
-        "commit": "wt-f35ab6db83"
+        "commit": "wt-7bced63c85"
       }
     }
   ],
@@ -187,7 +187,7 @@
       ],
       "provenance": {
         "origin": "llm",
-        "commit": "wt-f35ab6db83"
+        "commit": "wt-7bced63c85"
       }
     },
     {
@@ -223,9 +223,9 @@
                 "to": 4
               },
               "role": "call-site",
-              "hash": "sha256:d92245159a0f",
+              "hash": "sha256-v2:f9dd5a2df5a5",
               "resolved": {
-                "commit": "wt-f35ab6db83",
+                "commit": "wt-7bced63c85",
                 "range": {
                   "startLine": 65,
                   "endLine": 65
@@ -237,9 +237,9 @@
               "file": "jobrunner/queue.py",
               "symbol": "Queue.pop",
               "role": "definition",
-              "hash": "sha256:c6237d962e0b",
+              "hash": "sha256-v2:2ddf36098d3a",
               "resolved": {
-                "commit": "wt-f35ab6db83",
+                "commit": "wt-7bced63c85",
                 "range": {
                   "startLine": 58,
                   "endLine": 70
@@ -265,9 +265,9 @@
                 "to": 16
               },
               "role": "call-site",
-              "hash": "sha256:65f8c25e58cf",
+              "hash": "sha256-v2:8b846152a999",
               "resolved": {
-                "commit": "wt-f35ab6db83",
+                "commit": "wt-7bced63c85",
                 "range": {
                   "startLine": 77,
                   "endLine": 77
@@ -279,9 +279,9 @@
               "file": "jobrunner/worker.py",
               "symbol": "Worker.run",
               "role": "definition",
-              "hash": "sha256:66db977da112",
+              "hash": "sha256-v2:e95da762f8e1",
               "resolved": {
-                "commit": "wt-f35ab6db83",
+                "commit": "wt-7bced63c85",
                 "range": {
                   "startLine": 41,
                   "endLine": 64
@@ -307,9 +307,9 @@
                 "to": 29
               },
               "role": "call-site",
-              "hash": "sha256:a64c17fcd7fb",
+              "hash": "sha256-v2:1963db623777",
               "resolved": {
-                "commit": "wt-f35ab6db83",
+                "commit": "wt-7bced63c85",
                 "range": {
                   "startLine": 90,
                   "endLine": 90
@@ -321,9 +321,9 @@
               "file": "jobrunner/queue.py",
               "symbol": "Queue.requeue",
               "role": "definition",
-              "hash": "sha256:ca090ea5797e",
+              "hash": "sha256-v2:e03b228121bf",
               "resolved": {
-                "commit": "wt-f35ab6db83",
+                "commit": "wt-7bced63c85",
                 "range": {
                   "startLine": 72,
                   "endLine": 79
@@ -346,7 +346,7 @@
       ],
       "provenance": {
         "origin": "llm",
-        "commit": "wt-f35ab6db83"
+        "commit": "wt-7bced63c85"
       }
     }
   ],
@@ -378,7 +378,7 @@
       ],
       "provenance": {
         "origin": "llm",
-        "commit": "wt-f35ab6db83",
+        "commit": "wt-7bced63c85",
         "userFields": [
           "steps"
         ]

@@ -89,13 +89,13 @@ describe("commit id of a git repository", () => {
     expect(a).not.toBe(b);
   });
 
-  it("ignores whitespace-only edits (the hash normalises lines), like anchors do", async () => {
+  it("distinguishes whitespace edits that may alter semantics or line positions", async () => {
     const dir = makeRepo({ "a.ts": "const x = 1;\nconst y = 2;\n" });
     writeFileSync(join(dir, "a.ts"), "  const x = 1;\n\n\tconst y = 2;   \n");
     const dirty = (await buildIndex({ root: dir, precise: "off" })).index.commit;
     writeFileSync(join(dir, "a.ts"), "const x = 1;\nconst y = 2;\n\n");
     const other = (await buildIndex({ root: dir, precise: "off" })).index.commit;
-    expect(dirty).toBe(other);
+    expect(dirty).not.toBe(other);
   });
 
   it("is not changed by writing the index, .explainer/.gitignore or explainers", async () => {

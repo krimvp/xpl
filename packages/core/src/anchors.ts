@@ -19,7 +19,7 @@ import type {
   Range,
   SymbolIndex,
 } from "./schema.js";
-import { hashNormalized, normalizedPrefixHashes, normalizeLines, splitLines } from "./text.js";
+import { hashText, normalizeLines, splitLines } from "./text.js";
 import { cloneJson, isRecord } from "./util.js";
 
 /** Current text of a file, or undefined when it cannot be read. */
@@ -122,8 +122,7 @@ function isSpan(span: unknown): span is { from: number; to: number } {
  *    is compared with `anchor.hash`: equal is `ok` (or `moved` when the region is not where
  *    `anchor.resolved.range` says), different is `drifted`.
  * 3. With a span, the lines at `region start + span` are hashed. Equal: `ok`/`moved`. Otherwise the
- *    region is searched for the text: windows of the same raw length first, then windows over the
- *    non-blank lines (blank-line edits do not matter), nearest to the expected position first. A hit
+ *    region is searched for exact text in windows of the same length, nearest to the expected position first. A hit
  *    is `moved` (new `range` and `span`); no hit is `drifted` at the expected range.
  *
  * `getText` is only needed for span anchors. When it cannot supply the file, the cached
@@ -168,6 +167,16 @@ export function resolveWith(anchor: Anchor, index: IndexModel, texts: TextCache)
     range,
     hash,
   });
+
+  if (typeof anchor.hash !== "string" || !anchor.hash.startsWith("sha256-v2:")) {
+    return {
+      status: "drifted",
+      range: prev ?? region,
+      hash: symbol ? symbol.hash : file.hash,
+      reason:
+        "legacy whitespace-insensitive hash cannot verify source changes; reindex and re-explain this anchor",
+    };
+  }
 
   if (anchor.span === undefined || anchor.span === null) {
     const current = symbol ? symbol.hash : file.hash;
@@ -301,13 +310,8 @@ function clampRange(range: Range, region: Range): Range {
 }
 
 function hashOf(lines: readonly string[], range: Range): Hash {
-  return hashNormalized(
-    normalizeLines(lines.slice(Math.max(0, range.startLine - 1), range.endLine)),
-  );
+  return hashText(lines.slice(Math.max(0, range.startLine - 1), range.endLine).join("\n"));
 }
-
-/** Upper bound on prefix-hash operations of the non-blank-line search (about 2 s worst case). */
-const MAX_SEARCH_OPS = 600_000;
 
 /** Integers in `[lo, hi]` ordered by distance to `center`; the lower one first on ties. */
 function* byDistance(center: number, lo: number, hi: number): Generator<number> {
@@ -326,30 +330,7 @@ function* byDistance(center: number, lo: number, hi: number): Generator<number> 
   }
 }
 
-/** Indices of `sorted` ordered by distance of their value to `center`; the lower one first on ties. */
-function* byDistanceIndex(sorted: readonly number[], center: number): Generator<number> {
-  let lo = 0;
-  let hi = sorted.length;
-  while (lo < hi) {
-    const mid = (lo + hi) >> 1;
-    if (sorted[mid]! < center) lo = mid + 1;
-    else hi = mid;
-  }
-  let right = lo;
-  let left = lo - 1;
-  while (left >= 0 || right < sorted.length) {
-    const dl = left >= 0 ? center - sorted[left]! : Infinity;
-    const dr = right < sorted.length ? sorted[right]! - center : Infinity;
-    if (dl <= dr) yield left--;
-    else yield right++;
-  }
-}
-
-/**
- * Re-finds text whose hash is `target` inside `region`. First every window of `rawLen` lines, then
- * windows over the non-blank lines (lengths 1..rawLen, so blank-line edits do not matter). The window
- * whose first line is nearest to `expected.startLine` wins. Returns its 1-based inclusive lines.
- */
+/** Re-find an unchanged span at new lines; internal whitespace changes are drift. */
 function searchSpan(
   lines: readonly string[],
   region: Range,
@@ -363,29 +344,12 @@ function searchSpan(
   if (maxStart >= first) {
     for (const start of byDistance(expected.startLine, first, maxStart)) {
       const end = start + rawLen - 1;
-      if (hashNormalized(normalizeLines(lines.slice(start - 1, end))) === target) {
+      if (hashText(lines.slice(start - 1, end).join("\n")) === target) {
         return { start, end };
       }
     }
   }
 
-  const nbLine: number[] = [];
-  const nbText: string[] = [];
-  for (let line = first; line <= last; line++) {
-    const text = lines[line - 1]!.trim();
-    if (text !== "") {
-      nbLine.push(line);
-      nbText.push(text);
-    }
-  }
-  let ops = 0;
-  for (const p of byDistanceIndex(nbLine, expected.startLine)) {
-    const hashes = normalizedPrefixHashes(nbText, p, rawLen);
-    const k = hashes.indexOf(target);
-    if (k !== -1) return { start: nbLine[p]!, end: nbLine[p + k]! };
-    ops += hashes.length;
-    if (ops > MAX_SEARCH_OPS) break;
-  }
   return undefined;
 }
 
@@ -496,6 +460,16 @@ export function makeAnchor(
     }
   }
 
+  // Spans depend on indexed line positions too. Hashing current text cannot make a legacy index safe.
+  if (
+    [file.hash, ...(symbol ? [symbol.hash] : [])].some(
+      (hash) => typeof hash !== "string" || !hash.startsWith("sha256-v2:"),
+    )
+  ) {
+    return fail(
+      "legacy index hashes cannot verify source changes; run `xpl index` before building anchors",
+    );
+  }
   const region: Range = symbol ? symbol.range : { startLine: 1, endLine: file.lines };
   const base = region.startLine;
   const target = symbol ? `${input.file}#${symbolPath}` : input.file;
@@ -541,7 +515,7 @@ export function makeAnchor(
     const normalized = normalizeLines(lines.slice(range.startLine - 1, range.endLine));
     if (normalized === "")
       return fail(`span ${span.from}..${span.to} of ${target} covers only blank lines`);
-    hash = hashNormalized(normalized);
+    hash = hashOf(lines, range);
   }
   if (input.hash !== undefined && input.hash !== hash) {
     return fail(

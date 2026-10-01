@@ -44,11 +44,12 @@ describe("FileHasher matches @xpl/core hashText(sliceLines(...))", () => {
     }
   });
 
-  it("ignores indentation, blank lines and CRLF the way anchors do", () => {
+  it("preserves indentation and blank lines, canonicalizing CRLF", () => {
     const a = new FileHasher(splitLines("  x = 1\r\n\r\n\ty = 2\r\n")).hashFile();
     const b = new FileHasher(splitLines("x = 1\ny = 2")).hashFile();
-    expect(a).toBe(b);
-    expect(a).toMatch(/^sha256:[0-9a-f]{12}$/);
+    expect(a).not.toBe(b);
+    expect(a).toBe(new FileHasher(splitLines("  x = 1\n\n\ty = 2\n")).hashFile());
+    expect(a).toMatch(/^sha256-v2:[0-9a-f]{12}$/);
   });
 
   it("is fast enough to hash a large nested file many times", () => {

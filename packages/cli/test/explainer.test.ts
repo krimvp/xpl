@@ -133,7 +133,7 @@ describe("xpl apply", () => {
       role: "call-site",
       resolved: { status: "ok", range: { startLine: 76, endLine: 78 } },
     });
-    expect(step.anchors[0].hash).toMatch(/^sha256:[0-9a-f]{12}$/);
+    expect(step.anchors[0].hash).toMatch(/^sha256-v2:[0-9a-f]{12}$/);
     // new elements are llm-owned, stamped with the index commit
     expect(explainer.concepts[0].provenance).toEqual({
       origin: "llm",

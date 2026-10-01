@@ -177,12 +177,12 @@ describe("assembleSymbols", () => {
     expect(entries[0]!.symbol.range).toEqual({ startLine: 2, endLine: 2 });
   });
 
-  it("hashes ignore indentation and blank lines like anchors do", () => {
+  it("hashes preserve indentation and blank lines like anchors do", () => {
     const a = assembleSymbols("a.ts", ["  x = 1", "", "y = 2"], [draft("s", 1, 3)]).entries[0]!
       .symbol.hash;
     const b = assembleSymbols("b.ts", ["x = 1", "y = 2"], [draft("s", 1, 2)]).entries[0]!.symbol
       .hash;
-    expect(a).toBe(b);
+    expect(a).not.toBe(b);
   });
 });
 

@@ -1,4 +1,11 @@
-import { hashText, INDEX_SCHEMA, type SymbolIndex, type ViewerBundle } from "@xpl/core";
+import {
+  BUNDLE_SCHEMA,
+  createExplainer,
+  hashText,
+  INDEX_SCHEMA,
+  type SymbolIndex,
+  type ViewerBundle,
+} from "@xpl/core";
 import { describe, expect, it } from "vitest";
 import { getDerived, MAX_PANES } from "../src/derive.js";
 import { ViewerStore } from "../src/store.js";
@@ -18,6 +25,76 @@ const summary = (
 ) => ranges.map((r) => [r.file, r.range.startLine, r.range.endLine, r.role]);
 
 describe("code focus of a selection", () => {
+  it("excludes test references when selecting an aggregated directory stub", () => {
+    const files = {
+      "src/main.ts": "function run() {\n  go();\n  test();\n}",
+      "lib/b.ts": "function go() {}",
+      "lib/b.test.ts": "function test() {}",
+    };
+    const index: SymbolIndex = {
+      schema: INDEX_SCHEMA,
+      commit: "repro",
+      tool: "test",
+      languages: {},
+      files: Object.entries(files).map(([path, text]) => ({
+        path,
+        language: "typescript",
+        hash: hashText(text),
+        lines: text.split("\n").length,
+      })),
+      symbols: Object.entries(files).map(([file, text], i) => ({
+        id: `${file}#${["run", "go", "test"][i]}`,
+        file,
+        path: ["run", "go", "test"][i]!,
+        kind: "function",
+        range: { startLine: 1, endLine: text.split("\n").length },
+        hash: hashText(text),
+      })),
+      refs: [
+        {
+          from: "src/main.ts#run",
+          to: "lib/b.ts#go",
+          kind: "call",
+          site: { startLine: 2, endLine: 2 },
+          resolution: "precise",
+        },
+        {
+          from: "src/main.ts#run",
+          to: "lib/b.test.ts#test",
+          kind: "call",
+          site: { startLine: 3, endLine: 3 },
+          resolution: "precise",
+        },
+      ],
+    };
+    const explainer = createExplainer({
+      title: "Test",
+      repoName: "test",
+      index,
+      indexPath: ".explainer/index-repro.json",
+    });
+    explainer.views.push({
+      id: "view:repro",
+      type: "graph",
+      title: "Repro",
+      scope: { root: "repo", depth: 1 },
+      include: ["file:src/main.ts"],
+      excludeFiles: ["**/*.test.ts"],
+      provenance: { origin: "llm", commit: "repro" },
+    });
+    const store = new ViewerStore({ schema: BUNDLE_SCHEMA, index, explainer, files });
+    const derived = () => getDerived(store.getState());
+    const stub = [...derived().view.stubMap.values()].find(
+      (s) => s.direction === "out" && s.targets.some((t) => t.target === "dir:lib"),
+    )!;
+    expect(stub).toBeDefined();
+    store.select([stub.id]);
+    expect(derived().selection.files.map((f) => f.file)).toEqual(["src/main.ts", "lib/b.ts"]);
+    expect(
+      derived().selection.focus.some((f) => f.file === "src/main.ts" && f.range.startLine === 3),
+    ).toBe(false);
+  });
+
   it("a sequence step: the call site and the definition, files in anchor order", () => {
     const { store, derived } = storeFor("view:flow");
     store.select(["flow:1"]);

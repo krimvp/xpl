@@ -13,6 +13,7 @@ import {
   writeFile,
   xpl,
   xplJson,
+  readJson,
 } from "./helpers.js";
 
 let base: string;
@@ -38,6 +39,29 @@ async function reindexWith(dir: string, marker: string): Promise<string> {
 }
 
 describe("index selection", () => {
+  it("rejects freshness after blank lines move symbols, even with the same index commit label", async () => {
+    const dir = cloneDir(base);
+    editFile(dir, "src/runner.ts", (text) => "\n\n" + text);
+    const { json } = await xplJson(
+      dir,
+      "outline",
+      "--depth",
+      "0",
+      "--index",
+      `.explainer/index-${baseCommit}.json`,
+    );
+    expect(json.warnings?.join("\n")).toContain("1 changed (src/runner.ts)");
+    const rebuilt = await xplJson(dir, "index", "--precise", "off");
+    expect(rebuilt.json.commit).not.toBe(baseCommit);
+    // Reusing a commit label (or a legacy wt-id collision) cannot bypass source verification.
+    const oldPath = `.explainer/index-${baseCommit}.json`;
+    const old = readJson(dir, oldPath);
+    old.commit = rebuilt.json.commit;
+    writeFile(dir, oldPath, JSON.stringify(old));
+    const relabeled = await xplJson(dir, "outline", "--depth", "0", "--index", oldPath);
+    expect(relabeled.json.warnings?.join("\n")).toContain("1 changed (src/runner.ts)");
+  });
+
   it("uses the index of the current commit id, even when another one is newer", async () => {
     const dir = cloneDir(base);
     const original = readFile(dir, "src/runner.ts");

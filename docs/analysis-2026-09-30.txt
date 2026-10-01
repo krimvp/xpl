@@ -364,3 +364,47 @@ Self-status: /workspace/scratch/xpl-self-status.json
 Self-bundle summary: /workspace/scratch/xpl-self-bundle.json
 Interactive self-explainer: /workspace/scratch/xpl-reviewed.html
 Overview screenshot: /workspace/scratch/xpl-review-overview.png
+
+
+Remediation completed on 2026-09-30
+=================================
+
+The six reproduced defects above are fixed:
+
+1. CLI apply/resolve, viewer saves, new explainers and request appends share
+   cross-process file locks around the complete read/merge/write transaction.
+   Apply reads stdin before locking, then reads the current explainer and
+   checks ownership. A crashed writer's lock requires explicit removal after
+   confirming the writer has terminated; it is never stolen on a timer.
+2. Source hashes now use sha256-v2, preserving indentation, trailing spaces
+   and blank lines while canonicalizing CRLF to LF. Python indentation and
+   blank lines inside string values can no longer silently retain a hash.
+3. Freshness compares source hashes even when commit labels match. Adding
+   blank lines before a symbol changes the file hash and working-tree id.
+4. Go tools run in a private source copy, including vendor and workspace
+   files. Tool writes are discarded; no restoration can overwrite concurrent
+   user edits. Workspace members must be inside the indexed root, or the
+   caller must include their workspace in the root or set GOWORK=off.
+5. Timeout escalation remains active after the parent closes its pipes and
+   exits. A silent descendant ignoring SIGTERM is killed after the grace
+   period before runCommand returns. Tests recognize dead Linux zombies.
+6. Graph construction, viewer stub focus and static bundle collection use
+   the same exclusion filter and explicit-inclusion overrides.
+
+Legacy sha256 indexes need rebuilding, and legacy anchors remain drifted
+until their evidence is reread and reapplied. Resolve never silently upgrades
+those hashes. The three example explainers were regenerated, and the xpl
+self-explainer was reread, updated and re-anchored to the current source.
+Focused regression coverage includes cross-process transactions, overlapping
+CLI/viewer edits, independent viewer servers, concurrent creation, semantic
+whitespace, moved line positions, Go isolation, workspace metadata and timeout
+cleanup. Real SCIP checks pass for all three languages and a Go workspace.
+
+The fixes were integrated with main's subsequent package-curation and
+navigation changes. Final validation: 1,944 unit checks, 20 real SCIP checks,
+and 145 browser checks passed, as did typechecking, formatting, builds,
+seven-language WASM smoke checks and strict self-explainer validation.
+The private package mirror was inaccessible in this session. An isolated
+validation checkout downloaded the same pinned public packages, verifying
+all lockfile integrity hashes; the repository's mirror URLs and package
+configuration were preserved.

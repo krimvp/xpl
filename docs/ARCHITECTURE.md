@@ -348,7 +348,7 @@ with a timeout (10 minutes, `XPL_SCIP_TIMEOUT_MS`), writing to a temp directory 
 |---|---|
 | scip-typescript 0.4.0 (typescript, tsx, javascript) | `npx --yes @sourcegraph/scip-typescript@0.4.0 index --cwd <root> --no-progress-bar --output <tmp>/x.scip <projects>`, projects = every directory with a `tsconfig.json` (or the `jsconfig.json` of one without). Never `--infer-tsconfig`: it writes a tsconfig into the repository and then indexes only `.ts`. Files no project includes (all of them without a tsconfig) get a **second pass** with a synthetic tsconfig kept in the temp directory; so do all files when a tsconfig cannot be loaded (its `extends` package is not installed). |
 | scip-python 0.6.6 | `npx --yes @sourcegraph/scip-python@0.6.6 index --cwd <root> --project-name <n> --project-version 0.0.0 --environment <tmp>/environment.json --quiet --output <tmp>/index.scip`. The version keeps it from crashing outside git, the empty environment (`[]`) skips its `pip` introspection, and the repository's package roots (`src/`, nested projects) go on `PYTHONPATH` so that `import flask` resolves to `src/flask`. |
-| scip-go v0.2.7 | `go run github.com/scip-code/scip-go/cmd/scip-go@v0.2.7 index --output <tmp>/module-N.scip`, once per `go.mod` (the module moved from `github.com/sourcegraph/scip-go`, which stops at v0.1.26). Needs Go ≥ 1.25: an older `go` downloads the toolchain on first use, which needs network access. `GOFLAGS=-mod=mod` unless there is a `go.work` or a `vendor/` directory; `go.mod` and `go.sum` are restored afterwards. |
+| scip-go v0.2.7 | `go run github.com/scip-code/scip-go/cmd/scip-go@v0.2.7 index --output <tmp>/module-N.scip`, once per `go.mod` (the module moved from `github.com/sourcegraph/scip-go`, which stops at v0.1.26). Needs Go ≥ 1.25: an older `go` downloads the toolchain on first use, which needs network access. `GOFLAGS=-mod=mod` unless there is a `go.work` or a `vendor/` directory; Go runs against a private copy of the root (including workspace members and vendor files). Module and workspace metadata writes are discarded with that copy; concurrent edits to the working tree are never restored over. Workspace members must lie inside the indexed root; otherwise include the workspace in the root or set `GOWORK=off`. |
 
 Mapping (`map.ts`): for every non-definition occurrence of a symbol whose definition lies in an indexed file,
 `from` = the innermost symbol at the occurrence (else the module scope) and `to` = the symbol whose name sits
@@ -394,8 +394,12 @@ Modules of `packages/core/src`: `schema`, `patch`, `constants`, `text` (hashing)
 
 - `splitLines(text)` splits on `\r?\n` (a trailing newline yields a final empty line). `sliceLines(text,
   range)` returns full lines `startLine..endLine`.
-- `normalizeText(text)`: trim every line, drop lines that are empty after trimming, join with `\n`.
-- `hashText(text)` = `"sha256:" + hex(sha256(normalizeText(text))).slice(0, 12)` (sync; `@noble/hashes`).
+- `normalizeText(text)`: trim every line, drop blank lines, join with `\n`; for text matching only, never source hashing.
+- `hashText(text)` = `"sha256-v2:" + hex(sha256(splitLines(text).join("\n"))).slice(0, 12)` (sync; `@noble/hashes`).
+  Indentation, trailing spaces and blank lines are preserved: they can change Python/YAML structure and string values.
+  Only CRLF/LF differences are canonicalized. File freshness compares these source hashes even when commit labels match.
+  Legacy `sha256:` indexes must be rebuilt. Legacy anchors report drift until their evidence is reread and reapplied;
+  `resolve --write` updates ranges but never silently upgrades or acknowledges a legacy hash.
   The indexer hashes with Node's native sha256 (`FileHasher`), which checks itself against `hashText` on a
   fixed sample and falls back to it, so index values never depend on which path ran.
 
@@ -409,8 +413,7 @@ returns the current file text.
 3. No span: current hash = symbol/file hash. Equal to `anchor.hash` → `ok`, or `moved` if `anchor.resolved.range`
    exists and differs from the region. Different → `drifted` (range = region).
 4. Span: expected = `[base+from, base+to]`. Hash of the expected lines equal → `ok`/`moved` as above.
-   Otherwise search the region for the text: first every window of the same raw length, then windows over the
-   non-blank-line sequence (lengths 1..raw length) so blank-line edits do not matter (bounded work); the
+   Otherwise search the region for unchanged text in windows of the same length; the
    nearest match to the expected position wins → `moved` with the new range and new `span`. No match →
    `drifted` at the expected range, clamped to the region: since a span is only re-found while its text is
    unchanged, that range is where the span *used to* sit, and reports mark it **approximate**.
@@ -648,6 +651,10 @@ stale index, port in use; 2 usage error. **Environment:** `XPL_VIEWER_HTML` (vie
 
 **Files in `.explainer/`:** `index-<commit>.json` (generated, git-ignored by `.explainer/.gitignore`),
 `<name>.explainer.json` (committed), `requests.json` (the queue below). Writes are atomic (temp file + rename).
+CLI apply/resolve, creation, viewer edits and request appends also share per-file directory locks across processes.
+Read input before locking; read the latest file, merge and check ownership, then write while holding the lock.
+Locks are never stolen on a timer. A crashed writer may leave `<file>.lock`: after verifying the writer has terminated,
+remove that directory and retry (writers time out after 30 seconds with that instruction).
 
 **Index selection**, in order: `--index <path>` (relative to the working directory, else to the root); for
 explainer commands, the explainer's own `index.path` when that file exists (`xpl resolve` **ignores** it: it

@@ -62,6 +62,30 @@ const spanAnchor = (): Anchor =>
   mk(v1, { file: "src/a.ts", symbol: "Runner.run", span: { from: 4, to: 5 }, role: "call-site" });
 
 describe("resolveAnchor: whole symbols and files", () => {
+  it("detects a Python return moving into a conditional and refuses legacy hashes", () => {
+    const text = "def f(flag):\n    if flag:\n        return 1\n    return 2";
+    const before = makeWorld({
+      files: [{ path: "f.py", text }],
+      symbols: [{ id: "f.py#f", kind: "function", start: 1, end: 4 }],
+    });
+    const made = makeAnchor(
+      { file: "f.py", symbol: "f", role: "definition" },
+      before.index,
+      before.getText,
+    );
+    if (!made.ok) throw new Error(made.error);
+    const after = makeWorld({
+      files: [{ path: "f.py", text: text.replace("    return 2", "        return 2") }],
+      symbols: [{ id: "f.py#f", kind: "function", start: 1, end: 4 }],
+    });
+    expect(resolveAnchor(made.anchor, after.index, after.getText).status).toBe("drifted");
+    const legacy = { ...made.anchor, hash: "sha256:legacy" };
+    expect(resolveAnchor(legacy, before.index, before.getText)).toMatchObject({
+      status: "drifted",
+      reason: expect.stringContaining("legacy"),
+    });
+  });
+
   it("is ok when the symbol hash matches (no cache)", () => {
     const a = mk(v1, { file: "src/a.ts", symbol: "Runner.run", role: "definition" });
     const { resolved: _cache, ...bare } = a;
@@ -106,13 +130,13 @@ describe("resolveAnchor: whole symbols and files", () => {
     expect(r.reason).toContain("changed");
   });
 
-  it("ignores whitespace-only edits (hashes are normalised)", () => {
+  it("reports indentation changes as drift", () => {
     const a = mk(v1, { file: "src/a.ts", symbol: "Runner.run", role: "definition" });
     const reindented = world(
       V1.map((l) => (l.startsWith("  ") ? "\t" + l : l)),
       V1_SYMBOLS,
     );
-    expect(resolveAnchor(a, reindented.index, reindented.getText).status).toBe("ok");
+    expect(resolveAnchor(a, reindented.index, reindented.getText).status).toBe("drifted");
   });
 
   it("is missing when the file is gone, keeping the previous range", () => {
@@ -202,26 +226,19 @@ describe("resolveAnchor: spans", () => {
     expect(r.hash).toBe(a.hash);
   });
 
-  it("is moved when blank lines were inserted inside the span", () => {
+  it("reports blank lines inserted inside the span as drift", () => {
     const a = spanAnchor();
-    const blanks = [...V1.slice(0, 8), "", "", ...V1.slice(8)]; // between retry() and log()
+    const blanks = [...V1.slice(0, 8), "", "", ...V1.slice(8)];
     const after = world(blanks, [
       { id: "src/a.ts#Runner", kind: "class", start: 3, end: 15 },
       { id: "src/a.ts#Runner.run", start: 4, end: 14 },
       { id: "src/a.ts#helper", kind: "function", start: 17, end: 19 },
     ]);
     const r = resolveAnchor(a, after.index, after.getText);
-    expect(r.status).toBe("moved");
-    expect(r.range).toEqual({ startLine: 8, endLine: 11 });
-    expect(r.span).toEqual({ from: 4, to: 7 });
-    expect(r.hash).toBe(a.hash);
-    // and re-anchoring the moved span keeps resolving ok
-    const again = {
-      ...a,
-      span: r.span!,
-      resolved: { commit: "c2", range: r.range, status: "moved" as const },
-    };
-    expect(resolveAnchor(again, after.index, after.getText).status).toBe("ok");
+    expect(r.status).toBe("drifted");
+    expect(r.range).toEqual({ startLine: 8, endLine: 9 });
+    expect(r.span).toBeUndefined();
+    expect(r.hash).not.toBe(a.hash);
   });
 
   it("is moved when the symbol moved but the span offsets still hold", () => {
@@ -459,6 +476,18 @@ describe("makeAnchor", () => {
     expect(r.ok && "symbol" in r.anchor).toBe(false);
   });
 
+  it("rejects a span against a legacy index even when current source text is readable", () => {
+    const legacy = structuredClone(v1.index);
+    for (const file of legacy.files) file.hash = "sha256:legacy";
+    for (const symbol of legacy.symbols) symbol.hash = "sha256:legacy";
+    const result = makeAnchor(
+      { file: "src/a.ts", symbol: "Runner.run", span: { from: 4, to: 5 }, role: "call-site" },
+      legacy,
+      v1.getText,
+    );
+    expect(result).toEqual({ ok: false, error: expect.stringContaining("legacy index") });
+  });
+
   it("anchors a span relative to the symbol start", () => {
     const r = make({
       file: "src/a.ts",
@@ -468,7 +497,7 @@ describe("makeAnchor", () => {
     });
     expect(r.ok && r.anchor).toMatchObject({
       span: { from: 4, to: 5 },
-      hash: hashText("retry(job);\nlog('retrying');"),
+      hash: hashText("      retry(job);\n      log('retrying');"),
       resolved: { range: { startLine: 8, endLine: 9 }, status: "ok" },
     });
   });
@@ -527,7 +556,7 @@ describe("makeAnchor", () => {
     it("matches exactly across lines", () => {
       const r = find("retry(job);\n      log('retrying');");
       expect(r.ok && r.anchor.span).toEqual({ from: 4, to: 5 });
-      expect(r.ok && r.anchor.hash).toBe(hashText("retry(job);\nlog('retrying');"));
+      expect(r.ok && r.anchor.hash).toBe(hashText("      retry(job);\n      log('retrying');"));
     });
 
     it("ignores a leading or trailing newline in the needle", () => {
@@ -716,7 +745,7 @@ describe("makeAnchor", () => {
       });
       expect(stale).toContain("stale");
       expect(stale).toContain(hash);
-      const spanHash = hashText("return 42;");
+      const spanHash = hashText("  return 42;");
       expect(
         make({
           file: "src/a.ts",

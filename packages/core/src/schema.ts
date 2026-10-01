@@ -54,7 +54,7 @@ export type SymbolPath = string;
  */
 export type SymbolId = string;
 
-/** Hash of normalised text (trimmed lines), e.g. "sha256:3f1a9c…". */
+/** Versioned hash of source with CRLF canonicalized to LF, e.g. "sha256-v2:3f1a9c…". */
 export type Hash = string;
 
 /**

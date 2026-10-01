@@ -66,10 +66,10 @@ describe("anchor invariants (randomised)", () => {
       let curSpanStart = spanStart;
       let curSpanEnd = spanEnd;
       for (let k = 0; k < inserts; k++) {
-        const at = pick(r, edited.length + 1); // insert before edited[at] (0-based)
+        let at = pick(r, edited.length + 1); // insert before edited[at] (0-based)
+        if (at + 1 > curSpanStart && at + 1 <= curSpanEnd) at = curSpanStart - 1;
         const line1 = at + 1; // the new line's 1-based number
-        const insideSpan = line1 > curSpanStart && line1 <= curSpanEnd; // between anchored lines
-        const text = insideSpan || r() < 0.4 ? "" : `// inserted ${round}-${k}`;
+        const text = r() < 0.4 ? "" : `// inserted ${round}-${k}`;
         edited.splice(at, 0, text);
         if (line1 <= curSpanStart) {
           curSpanStart++;
