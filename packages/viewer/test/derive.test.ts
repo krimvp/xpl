@@ -269,6 +269,31 @@ describe("editor panes", () => {
     expect(derived().panes[0]!.ranges).toEqual([]);
   });
 
+  it("a pane scrolls to the first range in the step's order, not to the lowest line", () => {
+    // flow:1 is at line 12 of src/a.ts, the concept starts at line 7: selected in this order, the pane leads
+    // with line 12 (a step about the second place in a file shows that place first).
+    const { store, derived } = storeFor("view:flow");
+    store.select(["flow:1", "concept:retry"]);
+    const a = derived().panes.find((p) => p.file === "src/a.ts")!;
+    expect(a.ranges.map((r) => r.range.startLine).sort((x, y) => x - y)).toEqual([7, 12]);
+    expect(a.lead).toBe(12);
+    store.select(["concept:retry", "flow:1"]);
+    expect(derived().panes.find((p) => p.file === "src/a.ts")!.lead).toBe(7);
+    // a code override leads in its own order
+    const { store: other, derived: otherDerived } = storeFor("view:flow", (bundle) => {
+      const step = bundle.explainer.tours[0]!.steps[1]!;
+      step.code = [
+        ...bundle.explainer.edges.find((e) => e.id === "edge:notifies")!.anchors.slice(0, 1),
+        ...bundle.explainer.concepts[0]!.anchors.slice(0, 1),
+      ].reverse();
+    });
+    other.previewStep("tour:demo", 1);
+    expect(otherDerived().panes.find((p) => p.file === "src/a.ts")!.lead).toBe(7);
+    // a file that was only opened (not in the focus) has no lead
+    other.openFile("config/c.yaml");
+    expect(otherDerived().panes.find((p) => p.file === "config/c.yaml")!.lead).toBeUndefined();
+  });
+
   it("shows at most MAX_PANES files and lists the rest", () => {
     const count = MAX_PANES + 3;
     const texts = Object.fromEntries(

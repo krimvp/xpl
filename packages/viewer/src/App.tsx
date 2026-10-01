@@ -51,9 +51,16 @@ function Shell() {
     Math.round(clamp(window.innerHeight * 0.36, 220, 380)),
   );
 
+  // The tab says what is being read: the tour while one is open (the Guide shows one, Present plays one),
+  // else the explainer.
+  const tour =
+    state.mode === "present" || state.perspective === "guide"
+      ? (store.currentTour() ?? (state.perspective === "guide" ? state.model.tours[0] : undefined))
+      : undefined;
+  const pageTitle = tour?.title.trim() || title;
   useEffect(() => {
-    document.title = title ? `${title} · xpl` : "xpl viewer";
-  }, [title]);
+    document.title = pageTitle ? `${pageTitle} · xpl` : "xpl viewer";
+  }, [pageTitle]);
 
   // Explore: Escape clears the selection (unless the key is meant for a form field or a panel).
   useEffect(() => {

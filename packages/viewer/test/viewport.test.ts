@@ -5,6 +5,8 @@ import {
   rawFitScale,
   READABLE_FLOOR,
   READABLE_ZOOM,
+  readableFit,
+  scrollDown,
   startView,
   unionBox,
   type Box,
@@ -158,5 +160,34 @@ describe("unionBox", () => {
         { x: 100, y: 5, width: 10, height: 10 },
       ]),
     ).toEqual({ x: 10, y: 5, width: 100, height: 55 });
+  });
+});
+
+describe("readableFit (Fit of a diagram whose text must stay readable)", () => {
+  const options = { padding: 24, maxZoom: 1.25 };
+  it("fits all of it when that keeps the floor, or when there is no floor", () => {
+    expect(readableFit(PANE, { width: 400, height: 300 }, options, 0.85)).toEqual({
+      transform: fitTransform(PANE, { width: 400, height: 300 }, options),
+      width: false,
+    });
+    expect(readableFit(PANE, { width: 1000, height: 1500 }, options, undefined)!.width).toBe(false);
+  });
+
+  it("a tall diagram is fitted to its width, from the top, when all of it would be too small", () => {
+    // all of it: 412 / 1500 = 0.27; its width: 692 / 1000 = 0.69 (above a 0.6 floor)
+    const fit = readableFit(PANE, { width: 1000, height: 1500 }, options, 0.6)!;
+    expect(fit.width).toBe(true);
+    expect(fit.transform.k).toBeCloseTo(0.692, 3);
+    expect(fit.transform.y).toBe(24);
+    // the width does not fit at the floor either: all of it anyway
+    expect(readableFit(PANE, { width: 2000, height: 3000 }, options, 0.6)!.width).toBe(false);
+  });
+
+  it("scrolls a width fit down and back, never past the top or the bottom", () => {
+    const t = { k: 0.5, x: 10, y: 24 };
+    expect(scrollDown(t, 100, PANE, { height: 1500 }, 24).y).toBe(-76);
+    // bottom: the end of the diagram (1500 * 0.5 = 750) at the bottom of the pane (460 - 24)
+    expect(scrollDown(t, 10_000, PANE, { height: 1500 }, 24).y).toBe(460 - 24 - 750);
+    expect(scrollDown(t, -10_000, PANE, { height: 1500 }, 24).y).toBe(24);
   });
 });

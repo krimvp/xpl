@@ -21,7 +21,7 @@ test("opens a readable guide with optional synchronized map, flow and source", a
   expect(await selectionOf(page)).toEqual(selection);
   await page.getByTestId("perspective-flow").click();
   await expect(page.getByTestId("process-flow")).toBeVisible();
-  await expect(page.locator(".flow-projection")).toContainText("not inferred runtime branches");
+  await expect(page.locator(".flow-projection")).toContainText("Read from top to bottom");
   expect(await selectionOf(page)).toEqual(selection);
   await page.getByTestId("perspective-code").click();
   await expect(page.locator(".editor-host").first()).toBeVisible();
@@ -213,7 +213,7 @@ test("offers the map, guide and code even without a tour or process model", asyn
   await page.getByTestId("perspective-map").click();
   await expect(page.locator(".workspace-diagram svg")).toBeVisible();
   await page.getByTestId("perspective-flow").click();
-  await expect(page.locator(".guide-path")).toContainText("no authored execution flow");
+  await expect(page.locator(".guide-path")).toContainText("no flow diagram");
   await page.getByTestId("perspective-code").click();
   await expect(page.locator(".workspace-source .tree-panel")).toBeVisible();
 });

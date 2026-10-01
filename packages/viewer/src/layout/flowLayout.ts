@@ -36,3 +36,19 @@ export function layoutFlow(flow: ProcessFlow): Promise<ElkNode> {
     })),
   });
 }
+
+/**
+ * The laid-out boxes of a flow, each with its stage. ELK answers after the render that asked for it: a
+ * node the flow does not have (from the layout of another view, still on screen while the new one is
+ * computed) is skipped, never drawn from a missing stage.
+ */
+export function placedStages(
+  flow: ProcessFlow,
+  layout: ElkNode,
+): { node: ElkNode; stage: ProcessFlow["stages"][number] }[] {
+  const stages = new Map(flow.stages.map((stage) => [stage.step.id, stage] as const));
+  return (layout.children ?? []).flatMap((node) => {
+    const stage = stages.get(node.id);
+    return stage ? [{ node, stage }] : [];
+  });
+}

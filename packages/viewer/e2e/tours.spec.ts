@@ -58,6 +58,15 @@ const searchOf = (page: Page) => new URL(page.url()).search;
 const present = (page: Page) => page.getByTestId("present");
 const counter = (page: Page) => page.getByTestId("tour-counter");
 const note = (page: Page) => page.getByTestId("tour-note");
+/**
+ * The caption's words: the step title, then the rest of the note. A short note is all title (its first
+ * sentence is the title, and nothing is said twice), so the specs compare the caption as a whole.
+ */
+const caption = (page: Page) => page.locator(".tour-caption").locator(".tour-title, .tour-note");
+const captionText = async (page: Page) =>
+  (await caption(page).allInnerTexts()).join(" ").replace(/\s+/g, " ").trim();
+/** A one-sentence note as the caption shows it: the sentence is the title, without its final period. */
+const asTitle = (note: string) => note.replace(/\.$/, "");
 const paneFiles = (page: Page) =>
   page.locator("[data-file]").evaluateAll((els) => els.map((el) => el.getAttribute("data-file")));
 
@@ -98,7 +107,8 @@ test.describe("tour:intro of the TS fixture", () => {
 
     // the caption: counter, note (markdown), buttons
     await expect(counter(page)).toHaveText("1 / 2");
-    await expect(note(page)).toHaveText(NOTE_1);
+    await expect(page.getByTestId("tour-title")).toHaveText(asTitle(NOTE_1));
+    await expect(note(page)).toHaveCount(0); // a one-sentence note is the title: said once
     await expect(page.getByTestId("tour-prev")).toBeDisabled();
     await expect(page.getByTestId("tour-next")).toBeEnabled();
     // the group's members: two whole files
@@ -142,9 +152,9 @@ test.describe("tour:intro of the TS fixture", () => {
     await expect(byId(page, "sym:src/runner.ts#Runner.dispatch")).toHaveClass(/is-related/);
     await expect(byId(page, "file:src/queue.ts")).toHaveClass(/is-related/);
 
-    // the note is the caption
-    await expect(note(page)).toBeVisible();
-    await expect(note(page)).toHaveText(NOTE_2);
+    // the note is the caption (a one-sentence note is the step's title)
+    await expect(page.getByTestId("tour-title")).toBeVisible();
+    await expect(page.getByTestId("tour-title")).toHaveText(asTitle(NOTE_2));
     await expect(page.getByTestId("tour-next")).toBeDisabled();
     await expect(page.getByTestId("tour-prev")).toBeEnabled();
 
@@ -243,7 +253,7 @@ test.describe("keys", () => {
     await page.keyboard.press("PageDown");
     expect((await stateOf(page)).step).toBe(3);
     await expect(counter(page)).toHaveText("3 / 3");
-    await expect(note(page)).toHaveText("Third: popping the next job.");
+    await expect(page.getByTestId("tour-title")).toHaveText("Third: popping the next job");
     await pressAndWaitForStep(page, "ArrowLeft", 2);
     await pressAndWaitForStep(page, "PageUp", 1);
     await page.keyboard.press("ArrowLeft"); // the start
@@ -406,7 +416,7 @@ test.describe("during a talk", () => {
     // the code follows the click (the step's own code is not shown any more)
     await expect.poll(() => paneFiles(page)).toEqual(["src/runner.ts", "src/queue.ts"]);
     // the note stays: it belongs to the step
-    await expect(note(page)).toHaveText(NOTE_2);
+    await expect(page.getByTestId("tour-title")).toHaveText(asTitle(NOTE_2));
 
     // the arrow key applies a step again
     await page.keyboard.press("ArrowLeft");
@@ -513,11 +523,15 @@ test.describe("during a talk", () => {
       page,
       (bundle) => {
         bundle.explainer.tours[0].steps[0].note =
-          'Use **bold** and `code`.\n\n- one\n- two\n\n<img src=x onerror="window.__pwned = 1"> <script>window.__pwned = 2</script>';
+          '### The **title** line\n\nUse **bold** and `code`.\n\n- one\n- two\n\n<img src=x onerror="window.__pwned = 1"> <script>window.__pwned = 2</script>';
       },
       "?mode=present&tour=tour:intro&step=1",
     );
+    // the heading line is the title (its markdown rendered), and is not printed again in the note
+    await expect(page.getByTestId("tour-title")).toHaveText("The title line");
+    await expect(page.getByTestId("tour-title").locator("strong")).toHaveText("title");
     const box = note(page);
+    await expect(box).not.toContainText("The title line");
     await expect(box.locator("strong")).toHaveText("bold");
     await expect(box.locator("code")).toHaveText("code");
     await expect(box.locator("li")).toHaveCount(2);
@@ -528,7 +542,9 @@ test.describe("during a talk", () => {
     ).toBeUndefined();
   });
 
-  test("a step without a note has no caption text; an empty tour says so", async ({ page }) => {
+  test("a step without a note has a title but no caption text; an empty tour says so", async ({
+    page,
+  }) => {
     await openVariant(
       page,
       (bundle) => {
@@ -538,6 +554,8 @@ test.describe("during a talk", () => {
     );
     await expect(counter(page)).toHaveText("1 / 2");
     await expect(note(page)).toHaveCount(0);
+    // the title of a step without a note: the first element it focuses
+    await expect(page.getByTestId("tour-title")).toHaveText("Scheduling");
 
     await page.unroute("http://xpl.test/**");
     await openVariant(
@@ -726,16 +744,16 @@ test.describe("adding to a tour (in memory: this page has no server)", () => {
       "My walk",
     ]);
     await expect(counter(page)).toHaveText("1 / 2");
-    await expect(note(page)).toHaveText("Then the retry.");
+    await expect.poll(() => captionText(page)).toBe("Then the retry");
     expect((await stateOf(page)).selection).toEqual(["dispatch:3", "concept:retry-policy"]);
     await page.keyboard.press("ArrowRight");
-    await expect(note(page)).toHaveText("Start by popping a job.");
+    await expect.poll(() => captionText(page)).toBe("Start by popping a job");
     expect((await stateOf(page)).selection).toEqual(["dispatch:1"]);
     expect(searchOf(page)).toBe("?mode=present&tour=tour:my-walk&step=2");
     // choosing the other tour starts it
     await page.getByTestId("tour-picker").selectOption("tour:intro");
     await expect(counter(page)).toHaveText("1 / 2");
-    await expect(note(page)).toHaveText(NOTE_1);
+    await expect.poll(() => captionText(page)).toBe(asTitle(NOTE_1));
 
     // the download has the tour (the only place it lives without a server)
     await page.keyboard.press("Escape");
@@ -788,9 +806,11 @@ test.describe("adding to a tour (in memory: this page has no server)", () => {
     await rows.first().getByTestId("tour-step-note").fill("");
     await page.getByTestId("tour-present").click();
     await expect(counter(page)).toHaveText("1 / 3");
+    // no note: the title is what the step focuses, and there is no caption text under it
+    await expect(page.getByTestId("tour-title")).toHaveText("Scheduling");
     await expect(note(page)).toHaveCount(0);
     await page.keyboard.press("ArrowRight");
-    await expect(note(page)).toHaveText("Edited note.");
+    await expect.poll(() => captionText(page)).toBe("Edited note");
     await page.keyboard.press("Escape");
 
     // Escape inside the panel closes the panel, not the selection

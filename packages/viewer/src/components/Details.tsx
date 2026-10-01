@@ -1,17 +1,25 @@
 /**
  * Details of the selected element: label and kind, summary and detail (markdown), provenance, anchors
  * with their status, and actions ("Explain this", open children, collapse, add a stub's target).
+ *
+ * `reader` (Read mode, under "Where this is in the code"): what a reader needs, in plain words. No element
+ * id, no provenance, no author actions, the kind only for a piece of code, roles as "defined here" /
+ * "called here", and a status only when it is not "ok".
  */
 import { useEffect, useMemo, useState } from "react";
 import { describeElement, type AnchorRow, type ElementInfo } from "../details.js";
 import { explainCommand, messageOf } from "../data.js";
 import { useDerived, useStore, useViewerState } from "../hooks.js";
-import { renderMarkdown } from "../markdown.js";
+import { renderInline, renderMarkdown } from "../markdown.js";
+import { readerBadge, roleWords } from "../readerWords.js";
 import { GhostTargetList } from "./GhostTargets.js";
 
 const MAX_ANCHOR_ROWS = 8;
 
-export function Details() {
+/** Facts that only matter to the author of the explainer. */
+const AUTHOR_FACTS = new Set(["Origin", "Resolution"]);
+
+export function Details({ reader = false }: { reader?: boolean }) {
   const store = useStore();
   const state = useViewerState();
   const derived = useDerived();
@@ -42,38 +50,44 @@ export function Details() {
   }
 
   const graphNode = derived.view.graph?.nodes.find((n) => n.id === info.id);
+  const kind = reader ? (info.type === "node" ? readerBadge(info.kind) : undefined) : info.kind;
+  const facts = reader ? info.facts.filter((fact) => !AUTHOR_FACTS.has(fact.label)) : info.facts;
   return (
     <section className="details" aria-label="Details" data-details-id={info.id}>
       <header className="details-head">
-        <span className={`kind-pill kind-${info.kind.split(" ")[0]}`}>{info.kind}</span>
+        {kind && <span className={`kind-pill kind-${kind.split(" ")[0]}`}>{kind}</span>}
         <h2 className="details-title">{info.title}</h2>
-        {info.provenance && <ProvenanceBadge info={info} />}
+        {info.provenance && !reader && <ProvenanceBadge info={info} />}
       </header>
       {info.where && <p className="where">{info.where}</p>}
-      <p className="element-id">
-        <code>{info.id}</code>
-      </p>
+      {!reader && (
+        <p className="element-id">
+          <code>{info.id}</code>
+        </p>
+      )}
 
-      <div className="actions">
-        <ExplainButton id={info.id} onPhase={(phase) => setExplain({ id: info.id, phase })} />
-        {info.stub && !info.targets && (
-          <button type="button" className="btn" onClick={() => store.expandStub(info.stub!)}>
-            Add {info.stub.ghostLabel} to the view
-          </button>
-        )}
-        {graphNode && store.canDrillIn(graphNode.id) && (
-          <button type="button" className="btn" onClick={() => store.drillIn(graphNode.id)}>
-            Open children
-          </button>
-        )}
-        {graphNode?.container && (
-          <button type="button" className="btn" onClick={() => store.collapse(graphNode.id)}>
-            Collapse
-          </button>
-        )}
-      </div>
+      {!reader && (
+        <div className="actions">
+          <ExplainButton id={info.id} onPhase={(phase) => setExplain({ id: info.id, phase })} />
+          {info.stub && !info.targets && (
+            <button type="button" className="btn" onClick={() => store.expandStub(info.stub!)}>
+              Add {info.stub.ghostLabel} to the view
+            </button>
+          )}
+          {graphNode && store.canDrillIn(graphNode.id) && (
+            <button type="button" className="btn" onClick={() => store.drillIn(graphNode.id)}>
+              Open children
+            </button>
+          )}
+          {graphNode?.container && (
+            <button type="button" className="btn" onClick={() => store.collapse(graphNode.id)}>
+              Collapse
+            </button>
+          )}
+        </div>
+      )}
 
-      {explain.id === info.id && <ExplainNote id={info.id} phase={explain.phase} />}
+      {!reader && explain.id === info.id && <ExplainNote id={info.id} phase={explain.phase} />}
 
       {selection.length > 1 && (
         <div className="selected-chips" aria-label="Selected elements">
@@ -91,8 +105,10 @@ export function Details() {
         </div>
       )}
 
-      {info.summary && <p className="summary">{info.summary}</p>}
-      {info.targets && (
+      {info.summary && (
+        <p className="summary" dangerouslySetInnerHTML={{ __html: renderInline(info.summary) }} />
+      )}
+      {info.targets && !reader && (
         <div className="ghost-details">
           <h3>Add to the view</h3>
           <GhostTargetList
@@ -108,9 +124,9 @@ export function Details() {
         />
       )}
 
-      {info.facts.length > 0 && (
+      {facts.length > 0 && (
         <dl className="facts">
-          {info.facts.map((fact) => (
+          {facts.map((fact) => (
             <div key={fact.label}>
               <dt>{fact.label}</dt>
               <dd>{fact.value}</dd>
@@ -138,7 +154,7 @@ export function Details() {
         </div>
       )}
 
-      <Anchors rows={info.anchors} />
+      <Anchors rows={info.anchors} reader={reader} />
     </section>
   );
 }
@@ -156,14 +172,14 @@ function ProvenanceBadge({ info }: { info: ElementInfo }) {
   );
 }
 
-function Anchors({ rows }: { rows: AnchorRow[] }) {
+function Anchors({ rows, reader }: { rows: AnchorRow[]; reader: boolean }) {
   const store = useStore();
   const [expanded, setExpanded] = useState(false);
   if (rows.length === 0) return null;
   const shown = expanded ? rows : rows.slice(0, MAX_ANCHOR_ROWS);
   return (
     <div className="anchors">
-      <h3>Anchors</h3>
+      <h3>{reader ? "In the code" : "Anchors"}</h3>
       <ul>
         {shown.map((row, i) => (
           <li key={`${row.where}:${i}`}>
@@ -174,7 +190,9 @@ function Anchors({ rows }: { rows: AnchorRow[] }) {
               title={`Open ${row.file}${row.startLine ? ` at line ${row.startLine}` : ""}`}
               onClick={() => store.openFile(row.file, row.startLine)}
             >
-              <span className={`role role-${row.role}`}>{row.role}</span>
+              <span className={`role role-${row.role}`}>
+                {reader ? roleWords(row.role) : row.role}
+              </span>
               <span className="where">{row.where}</span>
               {row.startLine !== undefined && (
                 <span className="lines">
@@ -183,9 +201,11 @@ function Anchors({ rows }: { rows: AnchorRow[] }) {
                     : `L${row.startLine}`}
                 </span>
               )}
-              <span className={`badge status-${row.status}`} title={statusHelp(row.status)}>
-                {row.status}
-              </span>
+              {!(reader && row.status === "ok") && (
+                <span className={`badge status-${row.status}`} title={statusHelp(row.status)}>
+                  {row.status}
+                </span>
+              )}
             </button>
           </li>
         ))}
@@ -266,7 +286,7 @@ function ExplainNote({ id, phase }: { id: string; phase: ExplainPhase }) {
     case "command":
       return (
         <div className="command explain-note" role="status">
-          <p className="note">Run this in Claude Code to have it explained:</p>
+          <p className="note">Ask Claude to explain this: paste this into Claude Code.</p>
           <div className="command-line">
             <code data-testid="explain-command">{command}</code>
             <button

@@ -1,15 +1,14 @@
 .workspace-tabs {
   display: flex;
-  gap: 4px;
+  gap: 2px;
   min-width: 0;
-  flex: 1;
-  overflow-x: auto;
+  flex: 0 0 auto;
 }
 .workspace-tabs button {
   border: 0;
   background: transparent;
   color: var(--muted);
-  padding: 9px 12px;
+  padding: 7px 12px;
   border-radius: 7px;
   font: inherit;
   white-space: nowrap;
@@ -144,6 +143,9 @@
   cursor: pointer;
   margin: 3px 0;
 }
+.guide-contents > button {
+  overflow-wrap: anywhere;
+}
 .guide-contents > button > span {
   font-size: 11px;
   min-width: 18px;
@@ -168,11 +170,15 @@
   line-height: 1.2;
   margin: 8px 0 14px;
 }
-.guide-intro {
-  color: var(--muted);
-  max-width: 620px;
+/* The tour's summary: the first thing a reader sees, under the title. */
+.guide-summary {
+  max-width: 680px;
+  margin: 0 0 30px;
+  font-size: 16px;
   line-height: 1.7;
-  margin-bottom: 32px;
+}
+.guide-summary > :first-child {
+  margin-top: 0;
 }
 .guide-section {
   container-type: inline-size;
@@ -295,6 +301,12 @@
   border-top: 1px solid var(--border);
   padding-top: 18px;
 }
+/* Alone in the column (nothing above it to set it apart from): no rule above it. */
+.workspace-inspector:first-child {
+  margin-top: 0;
+  border-top: 0;
+  padding-top: 0;
+}
 .workspace-inspector > summary {
   cursor: pointer;
   color: var(--muted);
@@ -384,6 +396,15 @@
   min-height: 0;
   overflow: hidden;
 }
+/* In the diagram pane (Explore, Present) the flow's parent is a block, not a flex column: fill it. */
+.diagram-body > .flow-diagram {
+  height: 100%;
+}
+/* The canvas takes what the projection note leaves (it is not 100% of the box plus the note). */
+.flow-diagram > .panzoom {
+  flex: 1 1 0;
+  min-height: 0;
+}
 .flow-projection {
   margin: 0;
   padding: 10px 22px;
@@ -439,11 +460,11 @@
 }
 .flow-stage .flow-owner {
   fill: var(--muted);
-  font-size: 10px;
+  font-size: 13px;
 }
 .flow-stage .flow-frame {
   fill: var(--purple);
-  font-size: 11px;
+  font-size: 13px;
 }
 .flow-transition.is-projected polyline {
   stroke-dasharray: 5 4;

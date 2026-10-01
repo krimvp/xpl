@@ -70,6 +70,14 @@ export interface LayoutEdge {
   kind: string;
   /** Text for tooltips and screen readers (`calls ×3`, the stored label); stubs draw no label of their own. */
   title: string;
+  /** The boxes the edge joins (as drawn: a ghost's render id for a stub). */
+  from: string;
+  to: string;
+  /**
+   * The label is a count made up by the viewer (`calls ×3`), not words someone wrote: reader views show it
+   * only on hover or when the edge or one of its ends is selected.
+   */
+  counted: boolean;
   /** Route (start, bends, end) relative to the container that holds the edge, or the canvas. */
   points: Point[];
   label?: { text: string; x: number; y: number; width: number; height: number };
@@ -194,6 +202,7 @@ interface Model {
     from: string;
     to: string;
     label: string;
+    counted: boolean;
     stub: boolean;
     resolution: string;
     kind: string;
@@ -253,6 +262,7 @@ function buildModel(graph: DerivedGraph): Model {
       from: edge.from,
       to: edge.to,
       label: edgeLabelText(edge),
+      counted: !edge.label,
       stub: false,
       resolution: edge.resolution,
       kind: edge.kind,
@@ -290,6 +300,7 @@ function buildModel(graph: DerivedGraph): Model {
       from: stub.direction === "out" ? stub.inside : box,
       to: stub.direction === "out" ? box : stub.inside,
       label: stubLabelText(stub),
+      counted: true,
       stub: true,
       resolution: "stub",
       kind: stub.kinds[0] ?? "calls",
@@ -428,6 +439,9 @@ function layoutEdgeOf(edge: ElkExtendedEdge, meta: EdgeMeta): LayoutEdge {
     resolution: meta.resolution,
     kind: meta.kind,
     title: meta.label,
+    from: meta.from,
+    to: meta.to,
+    counted: meta.counted,
     points,
     anchor: points[0] ?? { x: 0, y: 0 },
   };
@@ -742,6 +756,9 @@ function fallbackLayout(model: Model): GraphLayout {
       resolution: edge.resolution,
       kind: edge.kind,
       title: edge.label,
+      from: edge.from,
+      to: edge.to,
+      counted: edge.counted,
       points: [clip(a, cb), clip(b, ca)],
       anchor: { x: (ca.x + cb.x) / 2, y: (ca.y + cb.y) / 2 },
       label: {

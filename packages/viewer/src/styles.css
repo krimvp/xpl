@@ -238,8 +238,100 @@ code {
 .tours-btn,
 .segmented,
 .save,
-.tour-picker {
+.tour-picker,
+.present-btn,
+.edit-menu {
   flex: none;
+}
+
+/* Read: the title gives way before the reading tabs do (every tab stays whole at 1280px). */
+.header.is-reading .brand {
+  flex: 0 1 auto;
+}
+
+.header.is-reading .title {
+  max-width: 28ch;
+}
+
+/* "Edit": the author tools, in a menu under the button (right-aligned: the button is at the row's end). */
+.edit-menu {
+  position: relative;
+}
+
+.edit-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.edit-btn[aria-expanded="true"] .views-caret {
+  transform: scaleY(-1);
+}
+
+.edit-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--warn);
+}
+
+.edit-dot.is-error {
+  background: var(--danger);
+}
+
+.edit-dot.is-busy {
+  background: var(--muted);
+}
+
+.edit-list {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  width: min(320px, calc(100vw - 16px));
+  padding: 5px;
+  background: var(--panel);
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.24);
+}
+
+.edit-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 7px 10px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--fg);
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+
+.edit-item:hover,
+.edit-item:focus-visible {
+  background: var(--hover);
+  outline: none;
+  border-color: var(--border);
+}
+
+.edit-item-title {
+  font-weight: 600;
+}
+
+.edit-item-hint {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.edit-list .save-status {
+  margin: 4px 10px;
+  max-width: none;
 }
 
 .brand {
@@ -1349,6 +1441,17 @@ code {
   fill: var(--muted);
 }
 
+/* Reader views: a made-up count ("calls ×3") stays out of the way until the edge is hovered or selected. */
+.edge.is-quiet .edge-label {
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+
+.edge.is-quiet:hover .edge-label,
+.edge.is-quiet:focus-visible .edge-label {
+  opacity: 1;
+}
+
 .edge.res-llm .edge-label text {
   fill: var(--edge-llm);
   font-weight: 650;
@@ -1406,6 +1509,16 @@ code {
 }
 
 /* Sequence diagrams */
+/* The participant names kept at the top of a sequence that scrolled down (SequenceView StickyHeads). */
+.sticky-heads {
+  pointer-events: none;
+}
+
+.sticky-band {
+  fill: var(--canvas);
+  opacity: 0.94;
+}
+
 .lifeline-head .head {
   fill: var(--node-bg);
   stroke: var(--node-border);
@@ -1772,6 +1885,14 @@ code {
 
 .markdown a {
   color: var(--accent);
+}
+
+/* A heading inside a note or a summary is a sub-heading of the text around it, never a page title. */
+.markdown :is(h1, h2, h3, h4, h5, h6) {
+  margin: 10px 0 4px;
+  font-size: 1.05em;
+  font-weight: 700;
+  line-height: 1.3;
 }
 
 .facts {
@@ -2288,15 +2409,24 @@ code {
 }
 
 /* The caption: what the speaker says about this step, large enough to read from the back of the room. */
+/*
+ * The caption grows with its text up to 62% of the window's height (the diagram keeps the rest); a note
+ * longer than that scrolls inside it. The counter row stays on top while the text scrolls, and a shadow at
+ * the bottom edge says that there is more (it disappears at the end: the "local" cover scrolls over it).
+ */
 .tour-caption {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  max-height: 48vh;
+  max-height: 62vh;
   min-height: 0;
   overflow: auto;
-  padding: 12px 18px 16px;
-  background: var(--panel);
+  overscroll-behavior: contain;
+  padding: 0 18px 16px;
+  background:
+    linear-gradient(var(--panel), var(--panel)) bottom / 100% 18px no-repeat local,
+    linear-gradient(transparent, rgba(0, 0, 0, 0.16)) bottom / 100% 14px no-repeat scroll,
+    var(--panel);
   border: 1px solid var(--border);
   border-left: 6px solid var(--accent);
   border-radius: 10px;
@@ -2304,9 +2434,14 @@ code {
 }
 
 .tour-nav {
+  position: sticky;
+  top: 0;
+  z-index: 1;
   display: flex;
   align-items: center;
   gap: 10px;
+  padding-top: 12px;
+  background: var(--panel);
 }
 
 .tour-btn {
@@ -2380,10 +2515,28 @@ code {
   font-weight: 650;
 }
 
+/* The step's title (the heading line of its note): above the caption, larger, but no giant h1. */
+.tour-title {
+  margin: 2px 0 0;
+  font-size: clamp(20px, 1.9vw, 30px);
+  font-weight: 700;
+  line-height: 1.25;
+}
+
 .tour-note.markdown {
   margin: 2px 0 0;
   font-size: clamp(18px, 1.6vw, 26px);
   line-height: 1.4;
+}
+
+/* A long note: smaller, so that it fits more often (still large enough for a room). */
+.tour-caption.is-long .tour-title {
+  font-size: clamp(19px, 1.6vw, 26px);
+}
+
+.tour-caption.is-long .tour-note.markdown {
+  font-size: clamp(16px, 1.25vw, 21px);
+  line-height: 1.38;
 }
 
 .tour-note.markdown p + p,

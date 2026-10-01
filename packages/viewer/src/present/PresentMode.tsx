@@ -12,8 +12,12 @@ import { useMemo } from "react";
 import { CodeArea } from "../components/CodeArea.js";
 import { DiagramPane } from "../components/DiagramPane.js";
 import { useStore, useViewerState } from "../hooks.js";
-import { renderMarkdown } from "../markdown.js";
+import { renderInline, renderMarkdown } from "../markdown.js";
 import { stepNumber } from "../modes.js";
+import { stepText } from "../stepTitle.js";
+
+/** A note body longer than this (characters of markdown) is set in the smaller caption size. */
+const LONG_NOTE = 280;
 
 export function PresentMode() {
   const store = useStore();
@@ -22,8 +26,14 @@ export function PresentMode() {
   const index = state.tour?.step ?? 0;
   const step = tour?.steps[index];
   const count = tour?.steps.length ?? 0;
-  const note = step?.note?.trim() ? step.note : undefined;
+  // The step's title (the heading of its note, its short first sentence, else what it focuses), then the
+  // rest of the note: the same title as in the guide, and nothing said twice.
+  const text = step ? stepText(step, state.model) : undefined;
+  const note = text?.body;
   const noteHtml = useMemo(() => (note ? renderMarkdown(note) : ""), [note]);
+  // A long note is set a little smaller, so that it fits its box more often; what still does not fit
+  // scrolls inside the caption (the step counter stays on top).
+  const long = (note?.length ?? 0) > LONG_NOTE;
 
   if (!tour || !step) {
     return (
@@ -54,7 +64,11 @@ export function PresentMode() {
     >
       <section className="present-left" aria-label="Diagram and caption">
         <DiagramPane />
-        <footer className="tour-caption" aria-label="Caption">
+        <footer
+          className={"tour-caption" + (long ? " is-long" : "")}
+          aria-label="Caption"
+          data-testid="tour-caption"
+        >
           <div className="tour-nav">
             <button
               type="button"
@@ -102,6 +116,17 @@ export function PresentMode() {
           <div className="tour-progress" aria-hidden="true">
             <span style={{ width: `${(stepNumber(index) / count) * 100}%` }} />
           </div>
+          {text!.titleMarkdown !== undefined ? (
+            <h2
+              className="tour-title"
+              data-testid="tour-title"
+              dangerouslySetInnerHTML={{ __html: renderInline(text!.titleMarkdown) }}
+            />
+          ) : (
+            <h2 className="tour-title" data-testid="tour-title">
+              {text!.title}
+            </h2>
+          )}
           {note && (
             <div
               className="tour-note markdown"

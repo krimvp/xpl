@@ -1,10 +1,22 @@
 import { useEffect, useId, useMemo, useState } from "react";
 import type { ElkNode } from "elkjs/lib/elk.bundled.js";
-import { buildReverseIndex, processFlow, viewCandidates, type SequenceView } from "@xpl/core";
+import {
+  buildReverseIndex,
+  processFlow,
+  viewCandidates,
+  type ProcessFlow,
+  type SequenceView,
+} from "@xpl/core";
 import { useStore, useViewerState } from "../hooks.js";
-import { layoutFlow } from "../layout/flowLayout.js";
+import { layoutFlow, placedStages } from "../layout/flowLayout.js";
 import { topicElements, topicMatches } from "../workspace.js";
-import { PanZoom } from "./PanZoom.js";
+import {
+  FLOW_READABLE_ZOOM,
+  PanZoom,
+  PRESENT_FIT_PADDING,
+  PRESENT_MAX_FIT_ZOOM,
+  PRESENT_READABLE_ZOOM,
+} from "./PanZoom.js";
 
 function wrap(text: string, width = 32): string[] {
   const lines: string[] = [];
@@ -22,9 +34,13 @@ export function FlowDiagram({ view }: { view: SequenceView }) {
   const store = useStore();
   const state = useViewerState();
   const flow = useMemo(() => processFlow(view), [view]);
-  const [layout, setLayout] = useState<ElkNode>();
+  // The layout remembers the flow it belongs to: after a switch to another view, the old layout is not
+  // drawn with the new flow (that used to crash) while the new one is computed.
+  const [laidOut, setLaidOut] = useState<{ flow: ProcessFlow; layout: ElkNode }>();
+  const layout = laidOut?.flow === flow ? laidOut.layout : undefined;
   const [error, setError] = useState<string>();
   const arrow = useId().replace(/:/g, "");
+  const present = state.mode === "present";
   const topics = topicElements(state.selection, state.model);
   const matches = useMemo(
     () =>
@@ -40,11 +56,10 @@ export function FlowDiagram({ view }: { view: SequenceView }) {
   );
   useEffect(() => {
     let cancelled = false;
-    setLayout(undefined);
     setError(undefined);
     layoutFlow(flow).then(
       (result) => {
-        if (!cancelled) setLayout(result);
+        if (!cancelled) setLaidOut({ flow, layout: result });
       },
       (reason: unknown) => {
         if (!cancelled) setError(reason instanceof Error ? reason.message : String(reason));
@@ -63,21 +78,20 @@ export function FlowDiagram({ view }: { view: SequenceView }) {
   if (!layout) return <div className="diagram-message">Laying out the process…</div>;
   if (flow.stages.length === 0)
     return <div className="diagram-message">This process has no stages yet.</div>;
-  const focal =
-    layout.children?.find((node) => topics.has(node.id)) ??
-    layout.children?.find((node) => {
-      const step = flow.stages.find((stage) => stage.step.id === node.id)?.step;
-      return (
-        step &&
-        (topicMatches(step.from, topics, state.model) || topicMatches(step.to, topics, state.model))
-      );
-    });
+  const placed = placedStages(flow, layout);
+  const focal = (
+    placed.find(({ node }) => topics.has(node.id)) ??
+    placed.find(
+      ({ stage: { step } }) =>
+        topicMatches(step.from, topics, state.model) || topicMatches(step.to, topics, state.model),
+    )
+  )?.node;
   return (
     <div className="flow-diagram" data-testid="process-flow">
       {flow.projected && (
         <p className="flow-projection" role="note">
-          Ordered interaction steps. Frame labels describe alternatives and loops; connecting arrows
-          show ordering, not inferred runtime branches.
+          Read from top to bottom. Each box is one call. The arrows show the order, not every
+          possible path. A label above a box says when it runs.
         </p>
       )}
       <PanZoom
@@ -95,6 +109,10 @@ export function FlowDiagram({ view }: { view: SequenceView }) {
             : undefined
         }
         label="Process flow"
+        maxFitZoom={present ? PRESENT_MAX_FIT_ZOOM : undefined}
+        fitPadding={present ? PRESENT_FIT_PADDING : undefined}
+        readableZoom={present ? PRESENT_READABLE_ZOOM : FLOW_READABLE_ZOOM}
+        fitFloor={FLOW_READABLE_ZOOM}
         onBackgroundClick={() => store.clearSelection()}
       >
         <defs>
@@ -145,8 +163,7 @@ export function FlowDiagram({ view }: { view: SequenceView }) {
             ))}
           </g>
         ))}
-        {(layout.children ?? []).map((node) => {
-          const stage = flow.stages.find(({ step }) => step.id === node.id)!;
+        {placed.map(({ node, stage }) => {
           const { step, shape, frames } = stage;
           const width = node.width ?? 290,
             height = node.height ?? 108;

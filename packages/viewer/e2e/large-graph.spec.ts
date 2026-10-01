@@ -121,6 +121,9 @@ async function inPane(page: Page, id: string): Promise<boolean> {
 const inPaneAll = async (page: Page, ids: readonly string[]) =>
   (await Promise.all(ids.map((id) => inPane(page, id)))).every(Boolean);
 
+/** The zoom Present starts a big diagram at (PanZoom's PRESENT_READABLE_ZOOM): 12px text stays 12px. */
+const PRESENT_ZOOM = 1;
+
 async function expectZoom(page: Page, near: number): Promise<void> {
   await expect.poll(() => zoomOf(page)).toBeCloseTo(near, 2);
 }
@@ -227,8 +230,9 @@ test.describe("what a big diagram starts on", () => {
     await expect(page.getByTestId("tour-counter")).toHaveText("1 / 3");
     await expect(byId(page, LAST)).toHaveClass(/is-selected/);
 
-    // Step 1 focuses Stage 17, at the far end: the first view is on it, not on the corner.
-    await expectZoom(page, 0.75);
+    // Step 1 focuses Stage 17, at the far end: the first view is on it, not on the corner. Present starts
+    // at zoom 1 (not 0.75 as Explore does): the smallest diagram text is 12px or more for the room.
+    await expectZoom(page, PRESENT_ZOOM);
     expect(await inPane(page, LAST)).toBe(true);
     expect(await inPane(page, FIRST)).toBe(false);
     await expect(badge(page)).toHaveText("Fit all");
@@ -238,16 +242,16 @@ test.describe("what a big diagram starts on", () => {
     await page.keyboard.press("ArrowRight");
     await expect(page.getByTestId("tour-counter")).toHaveText("2 / 3");
     await expect(byId(page, FIRST)).toHaveClass(/is-selected/);
-    await expectZoom(page, 0.75);
+    await expectZoom(page, PRESENT_ZOOM);
     expect(await inPane(page, FIRST)).toBe(true);
     expect(await inPane(page, LAST)).toBe(false);
 
     // A detour (the user moves the diagram, then a step comes again) starts the step over.
     await page.getByRole("button", { name: "Zoom out" }).click();
-    expect(await zoomOf(page)).toBeLessThan(0.7);
+    expect(await zoomOf(page)).toBeLessThan(0.9);
     await page.keyboard.press("ArrowLeft");
     await expect(page.getByTestId("tour-counter")).toHaveText("1 / 3");
-    await expectZoom(page, 0.75);
+    await expectZoom(page, PRESENT_ZOOM);
     expect(await inPane(page, LAST)).toBe(true);
 
     // Step 3 is a small diagram again: fitted, no badge.
