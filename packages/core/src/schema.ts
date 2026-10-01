@@ -445,11 +445,18 @@ export type View = GraphView | SequenceView;
 export interface Tour {
   id: string;
   title: string;
+  /**
+   * What the tour is about, in 2-4 sentences of markdown: what it is, why it matters (for a change: what
+   * changes in behaviour, the risk, the tests). Readers see it first, under the tour title. Optional; `null`
+   * in a patch clears it.
+   */
+  summary?: string;
   steps: TourStep[];
   /**
    * (amended) Who made the tour and what the user edited on it, like every other element. An `llm` patch never
    * changes or removes a tour with `origin: "user"` (one made in the viewer's tour panel), nor a field listed in
-   * `userFields` (`title`, `steps`) of a tour the user edited, nor removes a tour that carries `userFields`.
+   * `userFields` (`title`, `summary`, `steps`) of a tour the user edited, nor removes a tour that carries
+   * `userFields`.
    * Optional: a tour without it (written before tours had provenance) counts as `origin: "llm"`.
    */
   provenance?: Provenance;
