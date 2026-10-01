@@ -1054,6 +1054,14 @@ describe("validateExplainer: field types", () => {
     ).toEqual([expect.objectContaining({ severity: "warning", path: "edges[0].label" })]);
   });
 
+  it("checks a tour's optional summary: a string when present", () => {
+    expect(check(baseline())).toEqual([]);
+    expect(edit((ex) => (ex.tours[0]!.summary = "What it is. Why it matters."))).toEqual([]);
+    expect(
+      only(edit((ex) => ((ex.tours[0] as { summary: unknown }).summary = ["no"]))),
+    ).toMatchObject({ path: "tours[0].summary", elementId: "tour:intro", severity: "error" });
+  });
+
   it("handles sequence views without a steps array, without participants, and empty ones", () => {
     expect(
       has(

@@ -1301,6 +1301,7 @@ class Validator {
       else this.checkSlug(parsed.slug, path, tour.id, "tour");
     }
     if (typeof tour.title !== "string") this.error(`${path}.title`, "title must be a string", id);
+    this.checkStringField(tour.summary, path, id, "summary");
     // Optional: a tour written before tours had provenance counts as written by the llm.
     if (tour.provenance !== undefined)
       this.checkProvenance(tour.provenance, `${path}.provenance`, id);

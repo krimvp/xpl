@@ -8,9 +8,9 @@
  * - Elements, views and tours are upserted by `id`.
  * - An id that exists: the patch is shallow-merged onto it. Fields absent from the patch keep their
  *   values, arrays and nested objects (`members`, `include`, `steps`, `layout`, `scope`, ...) are
- *   replaced wholesale, and `null` clears an optional field (`summary`, `detail`, `members`,
- *   `related`, `edgeKinds`, `hidden`, `excludeFiles`, `stubs`, `layout`, `frames`). In particular a sequence view's
- *   `steps` are sent whole (keep every step id: tours and frames point at them; `remove` deletes single steps).
+ *   replaced wholesale, and `null` clears an optional field (`summary` of an element or a tour, `detail`,
+ *   `members`, `related`, `edgeKinds`, `hidden`, `excludeFiles`, `stubs`, `layout`, `frames`). In particular a
+ *   sequence view's `steps` are sent whole (keep every step id: tours and frames point at them; `remove` deletes single steps).
  * - A graph view's `include` can also be edited incrementally, with `includeAdd` and `includeRemove` (patch-only
  *   fields, never stored). They apply after `include` (when that is given too): the ids in `includeRemove` leave
  *   the list, the ids in `includeAdd` that are not in it yet are appended. Ids are checked like `include`
@@ -38,11 +38,11 @@
  *   - graph view: `type`, `title`, `include` (or `includeAdd`). Sequence view: `type`, `title`, `participants`,
  *     `steps`.
  *     `scope` defaults to `{ root: "repo", depth: 1 }`.
- *   - tour: `title`, `steps`.
+ *   - tour: `title`, `steps` (`summary` is optional).
  * - `provenance` is optional. New elements (and tours) get `{ origin: <actor>, commit: <index commit> }` unless
  *   given; on existing elements it is managed by `applyPatch` (an `llm` patch cannot change it). Tours follow the
  *   same ownership rules as elements: an `llm` patch skips a tour with `origin: "user"`, keeps the `userFields` of
- *   one the user edited (`title`, `steps`) and does not remove it; a tour without provenance counts as `llm`.
+ *   one the user edited (`title`, `summary`, `steps`) and does not remove it; a tour without provenance counts as `llm`.
  */
 import type {
   AnchorRole,

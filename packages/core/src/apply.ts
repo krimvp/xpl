@@ -177,8 +177,14 @@ const SEQUENCE_SPEC: Spec = {
   nullable: ["frames"],
 };
 const TOUR_SPEC: Spec = {
-  fields: { id: "string", title: "string", steps: "array", provenance: "object" },
-  nullable: [],
+  fields: {
+    id: "string",
+    title: "string",
+    summary: "string",
+    steps: "array",
+    provenance: "object",
+  },
+  nullable: ["summary"],
 };
 const STEP_SPEC: Spec = {
   fields: {
@@ -1546,6 +1552,7 @@ class Applier {
       tours.push({
         id,
         title: fields.set.title,
+        ...(fields.set.summary !== undefined ? { summary: fields.set.summary } : {}),
         steps: fields.set.steps,
         provenance,
       } satisfies Tour);

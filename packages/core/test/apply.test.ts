@@ -2717,6 +2717,53 @@ describe("applyPatch: tour provenance", () => {
     expect(protectedOf(again)).toEqual([["tours[0].title", "tour:intro"]]);
   });
 
+  it("a tour summary is optional, merges like the title, null clears it, and a user edit protects it", () => {
+    const create = apply({
+      tours: [{ id: "tour:new", title: "New", summary: "What this is. Why it matters.", steps }],
+    });
+    expect(create.ok).toBe(true);
+    expect(tourOf(create, "tour:new").summary).toBe("What this is. Why it matters.");
+    // a tour without one is stored without the key
+    expect(
+      "summary" in tourOf(apply({ tours: [{ id: "tour:b", title: "B", steps }] }), "tour:b"),
+    ).toBe(false);
+    // absent: kept; given: replaced; null: cleared
+    const kept = apply(
+      { tours: [{ id: "tour:new", title: "Renamed" }] },
+      { explainer: create.explainer },
+    );
+    expect(tourOf(kept, "tour:new").summary).toBe("What this is. Why it matters.");
+    const replaced = apply(
+      { tours: [{ id: "tour:new", summary: "Better." }] },
+      { explainer: create.explainer },
+    );
+    expect(tourOf(replaced, "tour:new").summary).toBe("Better.");
+    const cleared = apply(
+      { tours: [{ id: "tour:new", summary: null }] },
+      { explainer: create.explainer },
+    );
+    expect(cleared.ok).toBe(true);
+    expect("summary" in tourOf(cleared, "tour:new")).toBe(false);
+    // not a string: an error that names the field
+    const bad = apply(
+      { tours: [{ id: "tour:new", summary: 3 } as never] },
+      { explainer: create.explainer },
+    );
+    expect(bad.ok).toBe(false);
+    expect(bad.issues[0]).toMatchObject({
+      path: "tours[0].summary",
+      message: "summary must be a string",
+    });
+    // a user's summary is a user field: an llm patch keeps it, and cannot clear it
+    const mine = apply({ tours: [{ id: "tour:intro", summary: "Mine." }] }, { actor: "user" });
+    expect(tourOf(mine).provenance).toEqual({ origin: "llm", userFields: ["summary"] });
+    for (const summary of ["Not yours.", null]) {
+      const llm = apply({ tours: [{ id: "tour:intro", summary }] }, { explainer: mine.explainer });
+      expect(tourOf(llm).summary).toBe("Mine.");
+      expect(protectedOf(llm)).toEqual([["tours[0].summary", "tour:intro"]]);
+    }
+  });
+
   it("a patch that touches only what the user owns changes nothing (the CLI turns that into exit 1)", () => {
     const edited = apply({ tours: [{ id: "tour:intro", steps }] }, { actor: "user" });
     const r = apply({ tours: [{ id: "tour:intro", steps: [] }] }, { explainer: edited.explainer });
