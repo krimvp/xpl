@@ -166,6 +166,11 @@ async function showCode(
     );
   }
   const start = range.startLine;
+  // What the index hashed: every line of the file (`IndexedFile.hash`, the trailing empty line after a final
+  // newline included), or the full lines of the symbol. Compared before the display drops that empty line.
+  const currentHash = whole
+    ? hashText(lines.join("\n"))
+    : hashText(lines.slice(start - 1, Math.min(range.endLine, lines.length)).join("\n"));
   let end = Math.min(range.endLine, lines.length);
   // A file ending in a newline has an empty last "line" that is not code.
   if (whole && end > 1 && lines[end - 1] === "") end--;
@@ -174,7 +179,6 @@ async function showCode(
       `${target.id} starts at line ${start} but ${file} has only ${lines.length} lines: the index is out of date. Run \`xpl index\`.`,
     );
   }
-  const currentHash = hashText(lines.slice(start - 1, end).join("\n"));
   if (currentHash !== indexedHash) {
     ctx.warn(
       `the text of ${target.id} changed since it was indexed (indexed ${indexedHash}, now ${currentHash}); ` +

@@ -65,8 +65,11 @@ describe("xpl show", () => {
   });
 
   it("a file: offsets are line - 1, the trailing newline is not a line", async () => {
-    const { code, out } = await xpl(dir, "show", "src/queue.ts");
+    const { code, out, err } = await xpl(dir, "show", "src/queue.ts");
     expect(code).toBe(0);
+    // right after `xpl index` the file is unchanged: no "changed since it was indexed" warning (the hash covers
+    // the empty line after the final newline, as the index's does, though the display leaves it out)
+    expect(err).toBe("");
     const lines = out.split("\n");
     expect(lines[0]).toMatch(/^file:src\/queue\.ts \(typescript\) src\/queue\.ts:1-104 sha256-v2:/);
     expect(lines[1]).toMatch(/^ {2}1 {3}0│ export interface Job \{$/);
@@ -182,6 +185,9 @@ describe("xpl show", () => {
     expect(empty.out.split("\n")).toHaveLength(2);
     const noNewline = await xpl(dir, "show", "file:notes.txt");
     expect(noNewline.out.split("\n")[1]).toBe("1 0│ no trailing newline");
+    // none of these files changed since `xpl index`: no warning for any of them, whole or by symbol
+    for (const result of [crlf, bom, empty, noNewline]) expect(result.err).toBe("");
+    expect((await xpl(dir, "show", "file:src/crlf.ts")).err).toBe("");
     // and the text is searchable with the same offsets
     const search = await xpl(dir, "search", "return");
     expect(search.out).toContain("src/crlf.ts:6  sym:src/crlf.ts#b +1  ");
@@ -251,5 +257,13 @@ describe("xpl show", () => {
     const json = await xplJson<{ warnings: string[] }>(copy, "show", DISPATCH);
     expect(json.json.warnings).toHaveLength(2);
     expect(json.err).toBe("");
+    // the whole file warns too, also when only its final newline went away
+    const file = await xpl(copy, "show", "file:src/runner.ts");
+    expect(file.err).toContain("the text of file:src/runner.ts changed since it was indexed");
+    const trimmed = cloneDir(dir);
+    editFile(trimmed, "src/queue.ts", (text) => text.replace(/\n$/, ""));
+    expect((await xpl(trimmed, "show", "file:src/queue.ts")).err).toContain(
+      "the text of file:src/queue.ts changed since it was indexed",
+    );
   });
 });

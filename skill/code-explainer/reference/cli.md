@@ -437,6 +437,51 @@ view:dispatch-code (graph): Runner.dispatch and its neighbours
 
 `.explainer/requests.json` is a JSON array of `{elementId, note?, kind?, view?, label?, at, explainer?}`; the element may be a node, edge, concept, step or ghost id. Delete the file after handling.
 
+## `xpl lint <explainer> [--strict]`
+
+Checks the text a reader sees, without the index: the explainer title, tour titles, tour `summary`, tour step notes, view titles, flow and sequence step labels and summaries, the `summary` and `detail` of nodes, edges and concepts, and the labels of groups and concepts. It applies the rules of `reference/writing.md`. Run it before `xpl bundle`, and fix what it finds with a patch.
+
+| Rule                | Finds                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `tour-summary`      | a tour without a `summary`, or one of more than 4 sentences                                                                                                                                                                                                                                                                                                                                                                    |
+| `note-heading`      | a tour note that does not start with a `### Plain title` line (and says so when it starts with a placeholder such as `Fix 1:`)                                                                                                                                                                                                                                                                                                 |
+| `code-title`        | a title that looks like code: a call `f(`, an identifier with `_`, a dotted name `a.b`, a `#` in a name, code operators, a code keyword first (`return x`), one camelCase identifier. Code in backticks inside a plain title is fine (``How `Host.matches` reads the header``)                                                                                                                                                 |
+| `placeholder-title` | a title such as `Fix 1`, `Note`, `Step 3`                                                                                                                                                                                                                                                                                                                                                                                      |
+| `long-sentence`     | a sentence over 25 words                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `long-average`      | a field whose sentences average over 20 words                                                                                                                                                                                                                                                                                                                                                                                  |
+| `bare-it`           | a sentence that starts with `It` or `This` and a verb (`It calls ...`, `This is ...`): name the subject                                                                                                                                                                                                                                                                                                                        |
+| `filler-word`       | marketing and filler words (seamless, robust, leverage, elegant, powerful, simply, just, basically, delve, crucial, comprehensive, cutting-edge, ...), each with a replacement                                                                                                                                                                                                                                                 |
+| `absolute-word`     | all, every, everything, everywhere, everyone, anything, never, always, only, consistent(ly), guaranteed: check every case and anchor it, or narrow the claim. Not counted: `only when/if/after ...` (a condition), `not all`, `if every`, and idioms (`not ... at all`, `after all.`, `once and for all`, `all of a sudden`; `at all times` still counts)                                                                      |
+| `repeats-summary`   | a note sentence that repeats the summary of an element the step focuses (the reader sees both)                                                                                                                                                                                                                                                                                                                                 |
+| `flow-label-code`   | a flow step label written as code; flows name stages in plain words. Sequence views may keep call text                                                                                                                                                                                                                                                                                                                         |
+| `markdown-in-plain` | `**bold**`, `__bold text__`, a `# heading` line or a `[text](link)` in a field the viewer shows as plain text, where the marks show as-is: the explainer, tour and view titles, labels, and the `summary` of nodes, edges, concepts and steps. Markdown works only in a tour `summary`, a step `note` (with its `### title` line) and a `detail`. Code spans and code shapes (`**kwargs`, `__init__`, `xs[0](y)`) do not count |
+
+Code spans (`` `...` ``) are left out of the word checks and count as one word. Every finding names the element, the field, a short quote and a fix. Exit codes: 0 (findings are warnings), 1 with `--strict` when there is any finding, 2 usage error.
+
+```
+$ xpl lint jobrunner
+.explainer/jobrunner.explainer.json: 12 texts checked
+
+tour:intro (tour)
+  summary  tour-summary: no summary: readers see the summary first, under the tour title
+    "Intro talk"
+    fix: add 2-4 sentences: what this is and why it matters; for a change: what behaves differently, the risk, the tests
+
+tour:intro/t1 (tour step)
+  note  note-heading: no "### title" line: the viewer has to make a title from the text
+    "Big picture first: scheduling is two files."
+    fix: start the note with "### <plain title>", a short phrase that says what happens here
+
+tour:intro/t2 (tour step)
+  note  note-heading: no "### title" line: the viewer has to make a title from the text
+    "Where failures go: requeue with backoff."
+    fix: start the note with "### <plain title>", a short phrase that says what happens here
+
+3 findings in 3 elements (tour-summary 1, note-heading 2); warnings only, --strict exits 1
+```
+
+A flow step is named with its view (`host-check:1 (step in view:host-check)`). `--json`: `{ok, path, strict, checked, total, counts: {<rule>: n}, findings: [{rule, elementId, kind: explainer|tour|tour-step|view|step|node|edge|concept, view?, field, quote, message, hint}]}` (`ok` is false only with `--strict` and findings; `field` is `title`, `summary`, `note`, `note heading`, `label` or `detail`).
+
 ## `xpl view <explainer> [--port p] [--host h] [--no-open]`
 
 Serves the viewer with live repo access at `http://127.0.0.1:<port>/` (default 4747, else a free port; `--port 0` = any) and tries to open a browser. The explainer is re-read from disk on every request: after `xpl apply`, reload the page. Edits in the viewer (layout, expanded nodes, the stubs control, tour steps) are saved as `user` edits; "Explain this" clicks are appended to `.explainer/requests.json`. Runs until Ctrl-C. It binds to 127.0.0.1; `--host` other than that exposes the source code.
@@ -448,13 +493,24 @@ serving .explainer/jobrunner.explainer.json at http://127.0.0.1:34971/  (Ctrl-C 
 
 API (for scripts): `GET /api/bundle`, `GET /api/file?path=`, `PUT /api/views/<id>`, `PUT /api/tours/<id>`, `GET|POST /api/requests`.
 
-## `xpl bundle <explainer> -o out.html [--mode explore|present] [--tour id] [--files referenced|all] [--embed-index full|pruned]`
+## `xpl bundle <explainer> -o out.html [--mode explore|present] [--tour id] [--files referenced|boundary|all] [--boundary-max n] [--embed-index full|pruned]`
 
 Writes one self-contained HTML file: the viewer, the explainer, the index and source files inline. Works offline and can be shared. `--tour <id>` (`tour:intro` or `intro`) starts that tour and implies `--mode present`.
 
 `--files referenced` (the **default**) embeds the files the explainer needs: those of every anchor, of the nodes its graph views include (a directory or group: its files), of a sequence view's participants, of the sites and definitions behind its derived edges, and the code behind the dashed stubs of graph views (what the viewer shows when one is clicked; none for `"stubs": {"mode": "none"}`, and references from `excludeFiles` do not count). The viewer's file tree lists only the embedded files, with an "N of M files included" footer (under `xpl view` every indexed file is listed and fetched when opened). `--files all` embeds every indexed file. The command says what went in and what `--files all` would add; the output path is printed as given.
 
-The symbol index, most of the page for a large repository, is **pruned** with `--files referenced`: every file entry stays, and so do the symbols of the embedded files and of what the explainer names or its graph views show (with their parents), and the references that touch an embedded file (`read` references: both ends), lie on a graph view or make up a derived edge the explainer names. The views, tours and code behave as with the whole index. `--files all` embeds the whole index; `--embed-index full|pruned` overrides either. The summary line says what was saved (`index 71.1 KB (pruned from 82.2 KB)`; just `index 82.2 KB` when nothing was dropped) and the embedded index carries `pruned: {files, symbols, refs}`, the counts of the whole one. One limit: a ghost the reader expands into a file whose code is not embedded opens only into the symbols the kept references end in, and edges between two such ghosts are missing (use `--files all`, or `--embed-index full`, when the reader should explore freely).
+`--files boundary` embeds the referenced files plus a safe boundary around what the explainer anchors, so a reader of a PR or a subsystem can check the neighbours: the files of the **direct callers** of every anchored symbol (a class counts with its members), the files it **calls** (depth 1), and the **test files** that reference it (a call, an import or a type use; a test that calls it counts as a test). An anchored constructor or call method (`__init__`, `__call__`, `constructor`, ...) is reached through its class: `URL(scope)` calls `URL.__init__`, and a test that hands `TrustedHostMiddleware` to an app tests its `__call__`. At most 40 files are added (`--boundary-max n`): the ones with the most references first, callers, tests and callees in turn. The summary line says how many of each went in and names the files the cap cut. Use it for PRs: the tests of the changed code and the callers of a changed function come with the page. Only anchors with a `symbol` outside test files count, so anchor the changed symbols, not just their files.
+
+```
+$ xpl bundle metrics -o metrics.html --files boundary
+wrote metrics.html (2.3 MB): .explainer/metrics.explainer.json, 4 of 12 files embedded (referenced 1, boundary +3: callers 1, callees 1, tests 1; 8.1 KB of source; --files all adds 8 files, 16.9 KB), index 29.9 KB (pruned from 80.2 KB), mode explore
+$ xpl bundle metrics -o metrics.html --files boundary --boundary-max 1
+wrote metrics.html (2.2 MB): .explainer/metrics.explainer.json, 2 of 12 files embedded (referenced 1, boundary +1: callers 1, callees 0, tests 0; 2 more cut at --boundary-max 1: test/retry.test.ts, src/bus.ts; 3.7 KB of source; --files all adds 10 files, 21.3 KB), index 15.3 KB (pruned from 80.2 KB), mode explore
+```
+
+(Here `metrics` is an explainer with one concept anchored at `src/metrics.ts#registerMetrics`: `main()` calls it, it calls `EventBus.on` in `src/bus.ts`, and the retry test calls it.)
+
+The symbol index, most of the page for a large repository, is **pruned** with `--files referenced` (and `boundary`, for the files it embeds): every file entry stays, and so do the symbols of the embedded files and of what the explainer names or its graph views show (with their parents), and the references that touch an embedded file (`read` references: both ends), lie on a graph view or make up a derived edge the explainer names. The views, tours and code behave as with the whole index. `--files all` embeds the whole index; `--embed-index full|pruned` overrides either. The summary line says what was saved (`index 71.1 KB (pruned from 82.2 KB)`; just `index 82.2 KB` when nothing was dropped) and the embedded index carries `pruned: {files, symbols, refs}`, the counts of the whole one. One limit: a ghost the reader expands into a file whose code is not embedded opens only into the symbols the kept references end in, and edges between two such ghosts are missing (use `--files all`, or `--embed-index full`, when the reader should explore freely).
 
 ```
 $ xpl bundle jobrunner -o jobrunner.html
@@ -465,13 +521,14 @@ $ xpl bundle jobrunner -o all.html --files all
 wrote all.html (2.3 MB): .explainer/jobrunner.explainer.json, 12 files embedded (all: 25.1 KB of source), index 82.2 KB, mode explore
 ```
 
-`--json`: `{ok, path, absolutePath, bytes, mode, tour?, files: {embedded, choice, embeddedBytes, indexed, indexedBytes}, index: {path, commit, choice: "full"|"pruned", pruned, bytes, fullBytes, symbols: {embedded, indexed}, refs: {embedded, indexed}}}` (`index.bytes` and `fullBytes`: the embedded and the whole index as compact JSON).
+`--json`: `{ok, path, absolutePath, bytes, mode, tour?, files: {embedded, choice, referenced?, boundary?: {added: [{file, reason: caller|callee|test, refs}], cut: [same], max, symbols}, embeddedBytes, indexed, indexedBytes}, index: {path, commit, choice: "full"|"pruned", pruned, bytes, fullBytes, symbols: {embedded, indexed}, refs: {embedded, indexed}}}` (`index.bytes` and `fullBytes`: the embedded and the whole index as compact JSON).
 
 ## `--json` shapes (the ones worth scripting)
 
 - `index`: `{ok, path, commit, files, symbols, refs, languages: {<lang>: {files, symbols, refs: "precise"|"heuristic"|"none", tool?, heuristicFiles?}}}` (`heuristicFiles`: files of a precise language whose references stayed heuristic)
 - `apply`: `{ok, applied, dryRun, actor, path, changed: [ids], issues: [{severity, path, elementId?, message, code}], protectedIds?: [ids], error?}`; issue `code`s: `schema duplicate-id bad-id unknown-id anchor-invalid anchor-drifted anchor-missing evidence frame cycle step commit protected`. `ok: false` with `applied: false` also when everything the patch touched is protected.
 - `validate`: `{ok, mode, index, errors, warnings, issues[]}`
+- `lint`: see its section
 - `status`: `{ok, todo: {unexplained, drifted, driftedUserOwned, missing, requests, broken}, views: [{id, type, nodes: {total, unexplained[]}, edges: {total, unexplained: [{id, stored}]}, ghosts?: {mode, max, total, stubs, crowded, list: [{id, kind, label, count, direction, targets: [{id, count}]}], stubIds[]}, steps: {total, unexplained[]}}], concepts: {unexplained[]}, tours: [{id, title, steps, unresolved: [{step, focus[], missingView?}]}], anchors: {total, counts}, drifted[], driftedOther[], missing[], broken: [issues], staleOverlays: [ids], requests[]}` (`ghosts` on graph views only) (`todo.drifted` counts every drifted element, `driftedUserOwned` those of it the user owns)
 - `anchors`: see its section
 - `new`: `{ok, path, name, title, repo: {name, source, url?}, index: {path, commit}}`

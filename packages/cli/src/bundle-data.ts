@@ -1,7 +1,8 @@
 /**
  * The viewer bundle (`ViewerBundle`, ARCHITECTURE.md §5) shared by `xpl bundle` (inlined into the HTML)
  * and `xpl view` (injected into `GET /`, served at `GET /api/bundle`): which source files go in
- * (`collectFiles`), and how much of the symbol index (`embedIndex`, which `xpl bundle` uses).
+ * (`collectFiles`: the referenced files, optionally with a boundary of neighbours, `boundaryFiles`), and how much
+ * of the symbol index (`embedIndex`, which `xpl bundle` uses).
  */
 import { lstatSync } from "node:fs";
 import { join } from "node:path";
@@ -16,6 +17,7 @@ import {
   derivedEdgeMap,
   elementIdForSymbolId,
   excludedRefs,
+  isTestFile,
   parseId,
   pruneIndex,
   repr,
@@ -27,12 +29,13 @@ import {
   type GraphView,
   type IndexModel,
   type Reference,
+  type SymbolId,
   type SymbolIndex,
   type TextCache,
   type ViewerBundle,
 } from "@xpl/core";
 
-export type FilesChoice = "all" | "referenced";
+export type FilesChoice = "all" | "referenced" | "boundary";
 
 /**
  * The files the viewer needs for this explainer, i.e. every file whose code something in it can show:
@@ -132,6 +135,147 @@ function stubFiles(view: GraphView, graph: DerivedGraph, model: ExplainerModel):
   return files;
 }
 
+// ─── Boundary ───────────────────────────────────────────────────────────────────────────────────
+
+/** Methods that code reaches through their class (constructing it, or calling an instance), not by name. */
+export const ENTRY_METHODS: ReadonlySet<string> = new Set([
+  "__init__",
+  "__new__",
+  "__call__",
+  "constructor",
+  "New",
+]);
+
+/** How many files `--files boundary` adds at most to the referenced ones (`--boundary-max`). */
+export const BOUNDARY_MAX = 40;
+
+/** Why a boundary file is in: it calls an anchored symbol, an anchored symbol calls it, or it is a test of one. */
+export type BoundaryReason = "caller" | "callee" | "test";
+
+export interface BoundaryFile {
+  file: string;
+  reason: BoundaryReason;
+  /** References that tie it to the anchored symbols (of its reason). */
+  refs: number;
+}
+
+export interface Boundary {
+  /** The files added, in the order they were taken (most references first, callers, tests and callees in turn). */
+  added: BoundaryFile[];
+  /** The files over the cap, in the same order: what a larger `max` would add next. */
+  cut: BoundaryFile[];
+  /** The cap that was applied. */
+  max: number;
+  /** Anchored symbols found in the index (the boundary is drawn around them and their members). */
+  symbols: number;
+}
+
+/**
+ * The boundary around what the explainer anchors: the files one call away from it, and its tests. Around every
+ * anchored symbol (an anchor with a `symbol` that the index knows; a class counts with its members; symbols in
+ * test files do not count, their callees are test helpers and the framework, not neighbours of the code):
+ *
+ * - callers: files with a `call` reference to an anchored symbol, from outside the anchored symbols;
+ * - callees: files that an anchored symbol calls (depth 1);
+ * - tests: test files (`isTestFile`) with a reference of any kind (a call, an import, a type use) to an anchored
+ *   symbol. A test file that calls one counts as a test, not as a caller.
+ *
+ * A constructor or call method (`ENTRY_METHODS`: `__init__`, `__call__`, `constructor`, ...) is reached through its
+ * class: `URL(scope)` calls `URL.__init__`, and a test hands `TrustedHostMiddleware` to the app, which then calls
+ * its `__call__`. So when one is anchored, a call of its class counts as a call of it, and a test file's reference
+ * to its class as a reference to it.
+ *
+ * Files in `exclude` (the referenced ones) are not added again. The candidates are ranked by how many references
+ * tie them to the anchored symbols, and taken from the callers, the tests and the callees in turn, so that each
+ * kind is represented when the cap (`max`, default `BOUNDARY_MAX`) cuts the list.
+ */
+export function boundaryFiles(
+  explainer: Explainer,
+  index: IndexModel,
+  exclude: Iterable<string>,
+  max = BOUNDARY_MAX,
+): Boundary {
+  const anchored = new Set<SymbolId>();
+  // the classes of anchored constructors and call methods: code reaches those through the class
+  const entryClasses = new Set<SymbolId>();
+  for (const site of collectAnchors(explainer)) {
+    const { file, symbol } = site.anchor;
+    if (typeof file !== "string" || typeof symbol !== "string" || symbol === "") continue;
+    const sym = index.symbolAt(file, symbol);
+    if (!sym || isTestFile(sym.file)) continue;
+    anchored.add(sym.id);
+    const parent = index.parentSymbol(sym.id);
+    const name = sym.path.slice(sym.path.lastIndexOf(".") + 1);
+    if (parent?.kind === "class" && ENTRY_METHODS.has(name)) entryClasses.add(parent.id);
+  }
+  // is a reference end an anchored symbol, or inside one? (most ends repeat: worked out once each)
+  const inside = new Map<SymbolId, boolean>();
+  const within = (id: SymbolId): boolean => {
+    let known = inside.get(id);
+    if (known === undefined) {
+      known = false;
+      let cur: SymbolId | undefined = id;
+      for (let hops = 0; cur !== undefined && hops < 64; hops++) {
+        if (anchored.has(cur)) {
+          known = true;
+          break;
+        }
+        cur = index.symbol(cur)?.parent;
+      }
+      inside.set(id, known);
+    }
+    return known;
+  };
+  const skip = new Set(exclude);
+  const counts: Record<BoundaryReason, Map<string, number>> = {
+    caller: new Map(),
+    callee: new Map(),
+    test: new Map(),
+  };
+  const count = (reason: BoundaryReason, file: string | undefined) => {
+    if (file === undefined || skip.has(file)) return;
+    counts[reason].set(file, (counts[reason].get(file) ?? 0) + 1);
+  };
+  if (anchored.size > 0) {
+    for (const ref of index.refs) {
+      const toIn = within(ref.to);
+      const fromIn = within(ref.from);
+      if ((toIn || entryClasses.has(ref.to)) && !fromIn) {
+        const file = index.fileOfSymbolId(ref.from);
+        if (file !== undefined && isTestFile(file)) count("test", file);
+        else if (ref.kind === "call") count("caller", file);
+      } else if (fromIn && !toIn && ref.kind === "call") {
+        count("callee", index.fileOfSymbolId(ref.to));
+      }
+    }
+  }
+  // one reason per file: a test is a test, a caller that is also called is a caller
+  const ranked = (reason: BoundaryReason, taken: Set<string>): BoundaryFile[] =>
+    [...counts[reason]]
+      .filter(([file]) => !taken.has(file))
+      .map(([file, refs]) => ({ file, reason, refs }))
+      .sort((a, b) => b.refs - a.refs || (a.file < b.file ? -1 : a.file > b.file ? 1 : 0));
+  const taken = new Set<string>();
+  const lists: BoundaryFile[][] = [];
+  for (const reason of ["test", "caller", "callee"] as const) {
+    const list = ranked(reason, taken);
+    for (const entry of list) taken.add(entry.file);
+    lists.push(list);
+  }
+  const [tests, callers, callees] = lists as [BoundaryFile[], BoundaryFile[], BoundaryFile[]];
+  const order: BoundaryFile[] = [];
+  for (let i = 0; i < Math.max(callers.length, tests.length, callees.length); i++) {
+    for (const list of [callers, tests, callees]) if (i < list.length) order.push(list[i]!);
+  }
+  const cap = Math.max(0, max);
+  return {
+    added: order.slice(0, cap),
+    cut: order.slice(cap),
+    max: cap,
+    symbols: anchored.size,
+  };
+}
+
 export interface CollectedFiles {
   /** Working-tree text of the embedded files. */
   files: Record<string, string>;
@@ -139,6 +283,10 @@ export interface CollectedFiles {
   paths: string[];
   /** Which selection was used. */
   choice: FilesChoice;
+  /** With `referenced` and `boundary`: how many files the explainer references (before the boundary). */
+  referenced?: number;
+  /** With `boundary`: what the boundary added, and what the cap cut. */
+  boundary?: Boundary;
   /** Bytes of source text embedded (UTF-8). */
   embeddedBytes: number;
   /** Files in the index, and their total size on disk (0 unless measured): what `--files all` would embed. */
@@ -161,7 +309,8 @@ export function indexedBytes(root: string, index: IndexModel): number {
 
 /**
  * Working-tree text of the files to embed: the files the explainer references (`choice` absent or `referenced`,
- * see `referencedFiles`), or every indexed file (`all`).
+ * see `referencedFiles`), those plus a boundary of callers, callees and tests around its anchored symbols
+ * (`boundary`, see `boundaryFiles`), or every indexed file (`all`).
  */
 export function collectFiles(opts: {
   root: string;
@@ -173,12 +322,23 @@ export function collectFiles(opts: {
   measure?: boolean;
   /** With `referenced`: also the code behind the stubs of graph views (default: yes; see `referencedFiles`). */
   stubs?: boolean;
+  /** With `boundary`: how many files it adds at most (default `BOUNDARY_MAX`). */
+  boundaryMax?: number;
 }): CollectedFiles {
   const choice: FilesChoice = opts.choice ?? "referenced";
-  const paths =
-    choice === "all"
-      ? opts.index.files.map((file) => file.path)
-      : referencedFiles(opts.explainer, opts.index, { stubs: opts.stubs !== false });
+  let paths: string[];
+  let referenced: number | undefined;
+  let boundary: Boundary | undefined;
+  if (choice === "all") {
+    paths = opts.index.files.map((file) => file.path);
+  } else {
+    paths = referencedFiles(opts.explainer, opts.index, { stubs: opts.stubs !== false });
+    referenced = paths.length;
+    if (choice === "boundary") {
+      boundary = boundaryFiles(opts.explainer, opts.index, paths, opts.boundaryMax);
+      paths = [...paths, ...boundary.added.map((entry) => entry.file)].sort();
+    }
+  }
   const files: Record<string, string> = {};
   let embeddedBytes = 0;
   for (const path of paths) {
@@ -191,6 +351,8 @@ export function collectFiles(opts: {
     files,
     paths,
     choice,
+    ...(referenced !== undefined ? { referenced } : {}),
+    ...(boundary !== undefined ? { boundary } : {}),
     embeddedBytes,
     indexedFiles: opts.index.files.length,
     indexedBytes: opts.measure === false ? 0 : indexedBytes(opts.root, opts.index),
