@@ -3,11 +3,11 @@
   "title": "Job runner",
   "repo": {
     "name": "acme/jobrunner",
-    "commit": "wt-6dd745d736"
+    "commit": "wt-0db7e190f5"
   },
   "index": {
-    "path": ".explainer/index-wt-6dd745d736.json",
-    "commit": "wt-6dd745d736"
+    "path": ".explainer/index-wt-0db7e190f5.json",
+    "commit": "wt-0db7e190f5"
   },
   "nodes": [
     {
@@ -23,7 +23,7 @@
       "anchors": [],
       "provenance": {
         "origin": "llm",
-        "commit": "wt-6dd745d736"
+        "commit": "wt-0db7e190f5"
       }
     },
     {
@@ -37,9 +37,9 @@
           "file": "src/runner.ts",
           "symbol": "Runner.dispatch",
           "role": "definition",
-          "hash": "sha256:c02146e8d847",
+          "hash": "sha256-v2:e6c9c06f4779",
           "resolved": {
-            "commit": "wt-6dd745d736",
+            "commit": "wt-0db7e190f5",
             "range": {
               "startLine": 42,
               "endLine": 88
@@ -50,7 +50,7 @@
       ],
       "provenance": {
         "origin": "llm",
-        "commit": "wt-6dd745d736",
+        "commit": "wt-0db7e190f5",
         "userFields": [
           "summary"
         ]
@@ -74,9 +74,9 @@
             "to": 21
           },
           "role": "call-site",
-          "hash": "sha256:205444834577",
+          "hash": "sha256-v2:f01ae0717a86",
           "resolved": {
-            "commit": "wt-6dd745d736",
+            "commit": "wt-0db7e190f5",
             "range": {
               "startLine": 51,
               "endLine": 51
@@ -88,9 +88,9 @@
           "file": "src/metrics.ts",
           "symbol": "onJobCompleted",
           "role": "definition",
-          "hash": "sha256:ec3431f14677",
+          "hash": "sha256-v2:bc5e4abe3f7b",
           "resolved": {
-            "commit": "wt-6dd745d736",
+            "commit": "wt-0db7e190f5",
             "range": {
               "startLine": 15,
               "endLine": 19
@@ -101,7 +101,7 @@
       ],
       "provenance": {
         "origin": "llm",
-        "commit": "wt-6dd745d736"
+        "commit": "wt-0db7e190f5"
       }
     }
   ],
@@ -119,9 +119,9 @@
             "to": 41
           },
           "role": "definition",
-          "hash": "sha256:adc8374edfff",
+          "hash": "sha256-v2:b7fbe51622a1",
           "resolved": {
-            "commit": "wt-6dd745d736",
+            "commit": "wt-0db7e190f5",
             "range": {
               "startLine": 72,
               "endLine": 83
@@ -137,9 +137,9 @@
             "to": 3
           },
           "role": "config",
-          "hash": "sha256:7c1c80036851",
+          "hash": "sha256-v2:ae794b741f74",
           "resolved": {
-            "commit": "wt-6dd745d736",
+            "commit": "wt-0db7e190f5",
             "range": {
               "startLine": 13,
               "endLine": 16
@@ -150,9 +150,9 @@
         {
           "file": "test/retry.test.ts",
           "role": "test",
-          "hash": "sha256:2794a0dab99c",
+          "hash": "sha256-v2:32267feb6a28",
           "resolved": {
-            "commit": "wt-6dd745d736",
+            "commit": "wt-0db7e190f5",
             "range": {
               "startLine": 1,
               "endLine": 91
@@ -167,7 +167,7 @@
       ],
       "provenance": {
         "origin": "user",
-        "commit": "wt-6dd745d736"
+        "commit": "wt-0db7e190f5"
       }
     }
   ],
@@ -187,7 +187,7 @@
       ],
       "provenance": {
         "origin": "llm",
-        "commit": "wt-6dd745d736"
+        "commit": "wt-0db7e190f5"
       }
     },
     {
@@ -223,9 +223,9 @@
                 "to": 4
               },
               "role": "call-site",
-              "hash": "sha256:c2fd0931e02b",
+              "hash": "sha256-v2:d587cc64a030",
               "resolved": {
-                "commit": "wt-6dd745d736",
+                "commit": "wt-0db7e190f5",
                 "range": {
                   "startLine": 46,
                   "endLine": 46
@@ -237,9 +237,9 @@
               "file": "src/queue.ts",
               "symbol": "Queue.pop",
               "role": "definition",
-              "hash": "sha256:b022955822dc",
+              "hash": "sha256-v2:136b17077ff4",
               "resolved": {
-                "commit": "wt-6dd745d736",
+                "commit": "wt-0db7e190f5",
                 "range": {
                   "startLine": 72,
                   "endLine": 81
@@ -264,9 +264,9 @@
                 "to": 19
               },
               "role": "call-site",
-              "hash": "sha256:c43d408fd3b8",
+              "hash": "sha256-v2:c66872c26f8f",
               "resolved": {
-                "commit": "wt-6dd745d736",
+                "commit": "wt-0db7e190f5",
                 "range": {
                   "startLine": 60,
                   "endLine": 61
@@ -278,9 +278,9 @@
               "file": "src/worker.ts",
               "symbol": "Worker.run",
               "role": "definition",
-              "hash": "sha256:64889655134b",
+              "hash": "sha256-v2:e250f76259c5",
               "resolved": {
-                "commit": "wt-6dd745d736",
+                "commit": "wt-0db7e190f5",
                 "range": {
                   "startLine": 30,
                   "endLine": 53
@@ -305,9 +305,9 @@
                 "to": 36
               },
               "role": "call-site",
-              "hash": "sha256:3f9467b4c51b",
+              "hash": "sha256-v2:531731d3dc12",
               "resolved": {
-                "commit": "wt-6dd745d736",
+                "commit": "wt-0db7e190f5",
                 "range": {
                   "startLine": 76,
                   "endLine": 78
@@ -319,9 +319,9 @@
               "file": "src/queue.ts",
               "symbol": "Queue.requeue",
               "role": "definition",
-              "hash": "sha256:9abf2fb62272",
+              "hash": "sha256-v2:2313a7a99ec8",
               "resolved": {
-                "commit": "wt-6dd745d736",
+                "commit": "wt-0db7e190f5",
                 "range": {
                   "startLine": 87,
                   "endLine": 90
@@ -343,7 +343,7 @@
       ],
       "provenance": {
         "origin": "llm",
-        "commit": "wt-6dd745d736"
+        "commit": "wt-0db7e190f5"
       }
     }
   ],
@@ -375,7 +375,7 @@
       ],
       "provenance": {
         "origin": "llm",
-        "commit": "wt-6dd745d736",
+        "commit": "wt-0db7e190f5",
         "userFields": [
           "steps"
         ]

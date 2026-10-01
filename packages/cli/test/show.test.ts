@@ -26,7 +26,7 @@ describe("xpl show", () => {
     expect(code).toBe(0);
     const lines = out.split("\n");
     expect(lines[0]).toMatch(
-      /^sym:src\/runner\.ts#Runner\.dispatch \(method\) src\/runner\.ts:42-88 sha256:[0-9a-f]{12}$/,
+      /^sym:src\/runner\.ts#Runner\.dispatch \(method\) src\/runner\.ts:42-88 sha256-v2:[0-9a-f]{12}$/,
     );
     // 47 lines, 42..88
     expect(lines).toHaveLength(1 + 47);
@@ -68,7 +68,7 @@ describe("xpl show", () => {
     const { code, out } = await xpl(dir, "show", "src/queue.ts");
     expect(code).toBe(0);
     const lines = out.split("\n");
-    expect(lines[0]).toMatch(/^file:src\/queue\.ts \(typescript\) src\/queue\.ts:1-104 sha256:/);
+    expect(lines[0]).toMatch(/^file:src\/queue\.ts \(typescript\) src\/queue\.ts:1-104 sha256-v2:/);
     expect(lines[1]).toMatch(/^ {2}1 {3}0│ export interface Job \{$/);
     expect(out).toMatch(
       /^ 87 {2}86│ {3}async requeue\(job: Job, delayMs: number\): Promise<void> \{$/m,
@@ -170,7 +170,7 @@ describe("xpl show", () => {
     const crlf = await xpl(dir, "show", "src/crlf.ts#b");
     expect(crlf.out).not.toContain("\r");
     expect(crlf.out.split("\n")).toEqual([
-      expect.stringMatching(/^sym:src\/crlf\.ts#b \(function\) src\/crlf\.ts:5-7 sha256:/),
+      expect.stringMatching(/^sym:src\/crlf\.ts#b \(function\) src\/crlf\.ts:5-7 sha256-v2:/),
       "5 0│ export function b() {",
       '6 1│   return "\u00e9";',
       "7 2│ }",

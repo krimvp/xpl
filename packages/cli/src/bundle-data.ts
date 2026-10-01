@@ -15,7 +15,7 @@ import {
   derivedEdgeAnchors,
   derivedEdgeMap,
   elementIdForSymbolId,
-  globMatcher,
+  excludedRefs,
   parseId,
   pruneIndex,
   repr,
@@ -83,22 +83,6 @@ export function referencedFiles(
   return [...files].filter((file) => index.hasFile(file)).sort();
 }
 
-/** The files of the elements a view includes by name (a file, a symbol's file, a group's members'). */
-function namedFiles(view: GraphView, model: ExplainerModel): Set<string> {
-  const named = new Set<string>();
-  const seen = new Set<string>();
-  const visit = (id: string): void => {
-    if (seen.has(id)) return;
-    seen.add(id);
-    const parsed = parseId(id);
-    if (parsed.type === "file") named.add(parsed.path);
-    else if (parsed.type === "symbol") named.add(parsed.file);
-    else if (parsed.type === "group") model.members(id).forEach(visit);
-  };
-  view.include.forEach(visit);
-  return named;
-}
-
 /**
  * The files behind the dashed stubs of a graph view: what the viewer shows when a stub is clicked, the sites of the
  * references that cross the edge of the view there and what they lead to (`derivedEdgeAnchors`, as the viewer
@@ -110,13 +94,7 @@ function stubFiles(view: GraphView, graph: DerivedGraph, model: ExplainerModel):
   const files = new Set<string>();
   if (graph.stubs.length === 0) return files;
   const include = new Set(view.include.filter((id) => typeof id === "string" && model.hasNode(id)));
-  const excluded = globMatcher(view.excludeFiles);
-  const named = excluded ? namedFiles(view, model) : new Set<string>();
-  const dropped = (id: string): boolean => {
-    if (!excluded) return false;
-    const file = model.index.fileOfSymbolId(id);
-    return file !== undefined && excluded(file) && !named.has(file);
-  };
+  const dropRef = excludedRefs(view, model, [...include]);
   const stubsInside = new Map<string, DerivedGraph["stubs"]>();
   for (const stub of graph.stubs) {
     const list = stubsInside.get(stub.inside);
@@ -136,7 +114,7 @@ function stubFiles(view: GraphView, graph: DerivedGraph, model: ExplainerModel):
     const a = reprOf(from);
     const b = reprOf(to);
     if ((a === undefined) === (b === undefined)) continue; // inside the view or outside it, not across
-    if (dropped(ref.from) || dropped(ref.to)) continue;
+    if (dropRef?.(ref)) continue;
     const kind = REF_TO_EDGE_KIND[ref.kind];
     const direction = a !== undefined ? "out" : "in";
     const outside = a !== undefined ? to : from;

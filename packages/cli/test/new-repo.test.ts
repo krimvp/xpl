@@ -20,6 +20,17 @@ async function repoOf(dir: string, ...args: string[]) {
 }
 
 describe("xpl new: the repository name", () => {
+  it("refuses to overwrite an explainer created concurrently", async () => {
+    const dir = await repoWith({});
+    const results = await Promise.all([
+      xpl(dir, "new", "shared", "--title", "First"),
+      xpl(dir, "new", "shared", "--title", "Second"),
+    ]);
+    expect(results.map((r) => r.code).sort()).toEqual([0, 1]);
+    const winner = results[0]!.code === 0 ? "First" : "Second";
+    expect(readJson(dir, ".explainer/shared.explainer.json").title).toBe(winner);
+  });
+
   it("--repo and --url are recorded, and win over detection", async () => {
     const dir = await repoWith({ "package.json": '{"name": "from-package"}' });
     const { json, explainer } = await repoOf(

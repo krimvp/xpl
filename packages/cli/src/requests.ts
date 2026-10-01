@@ -6,7 +6,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { CliError, errorMessage } from "./errors.js";
-import { atomicWrite, jsonFile } from "./fsutil.js";
+import { atomicWrite, withFileLock, jsonFile } from "./fsutil.js";
 import { EXPLAINER_DIR } from "./repo.js";
 
 export const REQUESTS_FILE = "requests.json";
@@ -57,22 +57,23 @@ export function appendRequest(
   root: string,
   request: Omit<QueuedRequest, "at"> & { at?: string },
 ): Promise<{ request: QueuedRequest; pending: number }> {
-  const run = async () => {
-    const { requests, error } = readRequests(root);
-    if (error) throw new CliError(error);
-    const entry: QueuedRequest = {
-      elementId: request.elementId,
-      ...(request.note !== undefined && request.note !== "" ? { note: request.note } : {}),
-      ...(request.kind !== undefined ? { kind: request.kind } : {}),
-      ...(request.view !== undefined ? { view: request.view } : {}),
-      ...(request.label !== undefined ? { label: request.label } : {}),
-      at: request.at ?? new Date().toISOString(),
-      ...(request.explainer !== undefined ? { explainer: request.explainer } : {}),
-    };
-    requests.push(entry);
-    await atomicWrite(requestsPath(root), jsonFile(requests));
-    return { request: entry, pending: requests.length };
-  };
+  const run = () =>
+    withFileLock(requestsPath(root), async () => {
+      const { requests, error } = readRequests(root);
+      if (error) throw new CliError(error);
+      const entry: QueuedRequest = {
+        elementId: request.elementId,
+        ...(request.note !== undefined && request.note !== "" ? { note: request.note } : {}),
+        ...(request.kind !== undefined ? { kind: request.kind } : {}),
+        ...(request.view !== undefined ? { view: request.view } : {}),
+        ...(request.label !== undefined ? { label: request.label } : {}),
+        at: request.at ?? new Date().toISOString(),
+        ...(request.explainer !== undefined ? { explainer: request.explainer } : {}),
+      };
+      requests.push(entry);
+      await atomicWrite(requestsPath(root), jsonFile(requests));
+      return { request: entry, pending: requests.length };
+    });
   const next = writeChain.then(run, run);
   writeChain = next.catch(() => undefined);
   return next;

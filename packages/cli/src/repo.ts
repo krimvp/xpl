@@ -259,7 +259,7 @@ export async function stalenessOf(
   explainer?: LoadedExplainer,
 ): Promise<Staleness | undefined> {
   const current = await tree.commit();
-  if (current === index.commit) return undefined;
+  // A commit label is not evidence of identical source or line positions (including legacy indexes).
   const hashes = await tree.fileHashes();
   const changed: string[] = [];
   const removed: string[] = [];

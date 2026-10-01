@@ -469,7 +469,7 @@ describe("TypeScript symbols: ranges exclude leading comments and include decora
     const { index } = await indexFiles({ "a.ts": source });
     // Each declarator covers its own lines: the first keeps `export const`, the last the trailing `;`.
     expect(symbol(index, "a.ts", "first")!.hash).toBe(hashText("export const first = 1,"));
-    expect(symbol(index, "a.ts", "second")!.hash).toBe(hashText("second = 2;"));
+    expect(symbol(index, "a.ts", "second")!.hash).toBe(hashText("  second = 2;"));
   });
 
   it("multi-line symbols cover their braces; hashes are hashText of the full lines", async () => {
@@ -478,7 +478,9 @@ describe("TypeScript symbols: ranges exclude leading comments and include decora
     const m = symbol(index, "a.ts", "A.m")!;
     expect(m.range).toEqual({ startLine: 2, endLine: 4 });
     expect(m.hash).toBe(hashText(sliceLines(source, m.range)));
-    expect(symbol(index, "a.ts", "A")!.hash).toBe(hashText(source));
+    expect(symbol(index, "a.ts", "A")!.hash).toBe(
+      hashText(sliceLines(source, { startLine: 1, endLine: 5 })),
+    );
   });
 
   it("symbol ranges are whole lines (no columns), file hash covers the file", async () => {

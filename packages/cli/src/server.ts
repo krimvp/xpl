@@ -25,7 +25,7 @@ import { applyPatch, injectBundle, type ExplainerPatch } from "@xpl/core";
 import { collectFiles, makeBundle } from "./bundle-data.js";
 import type { RepoEnv } from "./context.js";
 import { CliError, errorMessage } from "./errors.js";
-import { atomicWrite, displayPath, jsonFile } from "./fsutil.js";
+import { atomicWrite, withFileLock, displayPath, jsonFile } from "./fsutil.js";
 import { appendRequest, readRequests } from "./requests.js";
 import {
   WorkingTree,
@@ -263,25 +263,27 @@ export async function startViewServer(options: ViewServerOptions): Promise<ViewS
       if (body.id !== undefined && body.id !== id) {
         throw new HttpError(400, `the id in the body (${String(body.id)}) does not match ${id}`);
       }
-      const saved = await serial(async () => {
-        const state = await loadState();
-        const patch = { [record.collection]: [{ ...body, id }] } as unknown as ExplainerPatch;
-        const result = applyPatch(state.loaded.explainer, patch, state.model, state.tree.texts, {
-          actor: "user",
-        });
-        if (!result.ok) {
-          const errors = result.issues.filter((issue) => issue.severity === "error");
-          throw new HttpError(
-            400,
-            `${record.kind} patch rejected: ${errors[0]?.message ?? "invalid"}`,
-            { issues: result.issues },
-          );
-        }
-        if (result.changed.length > 0) {
-          await atomicWrite(state.loaded.abs, jsonFile(result.explainer));
-        }
-        return result.explainer[record.collection].find((item) => item.id === id);
-      });
+      const saved = await serial(() =>
+        withFileLock(explainerPath, async () => {
+          const state = await loadState();
+          const patch = { [record.collection]: [{ ...body, id }] } as unknown as ExplainerPatch;
+          const result = applyPatch(state.loaded.explainer, patch, state.model, state.tree.texts, {
+            actor: "user",
+          });
+          if (!result.ok) {
+            const errors = result.issues.filter((issue) => issue.severity === "error");
+            throw new HttpError(
+              400,
+              `${record.kind} patch rejected: ${errors[0]?.message ?? "invalid"}`,
+              { issues: result.issues },
+            );
+          }
+          if (result.changed.length > 0) {
+            await atomicWrite(state.loaded.abs, jsonFile(result.explainer));
+          }
+          return result.explainer[record.collection].find((item) => item.id === id);
+        }),
+      );
       sendJson(req, res, 200, saved);
       return;
     }

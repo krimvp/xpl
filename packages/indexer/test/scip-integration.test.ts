@@ -416,3 +416,29 @@ suite("scip integration: a file pyright is configured to exclude (per-file repla
     ).toBe(true);
   });
 });
+
+suite("scip integration: isolated Go workspace", () => {
+  it(
+    "resolves cross-module calls without changing module or workspace metadata",
+    async () => {
+      const sources = {
+        "go.work": "go 1.25\n\nuse (\n ./api\n ./dep\n)\n",
+        "api/go.mod": "module example.com/api\n\ngo 1.25\n",
+        "api/main.go": 'package api\nimport "example.com/dep"\nfunc Run() { dep.Go() }\n',
+        "dep/go.mod": "module example.com/dep\n\ngo 1.25\n",
+        "dep/dep.go": "package dep\nfunc Go() {}\n",
+      };
+      const root = makeDir(sources);
+      const before = snapshot(root);
+      const { index, warnings } = await buildIndex({ root, precise: "require" });
+      expect(warnings).toEqual([]);
+      expect(has(index.refs, "call", "api/main.go#Run", "dep/dep.go#Go")).toMatchObject({
+        resolution: "precise",
+      });
+      expect(snapshot(root)).toBe(before);
+      for (const [path, text] of Object.entries(sources))
+        expect(readFileSync(join(root, path), "utf8")).toBe(text);
+    },
+    LONG,
+  );
+});

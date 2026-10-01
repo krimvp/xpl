@@ -2,8 +2,8 @@ import { describeAnchor, reresolveExplainer, type ResolveReport } from "@xpl/cor
 import type { CommandSpec } from "../command.js";
 import { CliError } from "../errors.js";
 import { rangeText } from "../format.js";
-import { atomicWrite, jsonFile } from "../fsutil.js";
-import { loadExplainer, openWorkspace } from "../repo.js";
+import { atomicWrite, withFileLock, jsonFile } from "../fsutil.js";
+import { loadExplainer, openWorkspace, resolveExplainerPath } from "../repo.js";
 
 /** The human-readable report of a re-resolve (also used by `xpl status`). */
 export function renderResolveReport(report: ResolveReport): string[] {
@@ -77,47 +77,49 @@ export const resolveCommand: CommandSpec = {
   },
   positionals: [{ name: "explainer" }],
   async run(ctx, args) {
-    const loaded = loadExplainer(ctx, args.positionals[0]!);
-    const write = args.flag("write");
-    const ws = await openWorkspace(ctx, {
-      explainer: loaded,
-      skipExplainerIndex: true,
-      deferStaleWarning: true,
-    });
-    if (ws.stale) {
-      if (write && !args.flag("allow-stale")) {
-        throw new CliError(
-          `refusing to write ${loaded.rel}: ${ws.stale.head}. The ranges it would save are already out of date: ` +
-            `run \`xpl index\` first, then \`xpl resolve ${loaded.name} --write\` again ` +
-            "(--allow-stale saves them against this index anyway).",
-          1,
-          { stale: ws.stale.head },
-        );
-      }
-      ctx.warn(ws.stale.message);
-    }
-    const { explainer, report } = reresolveExplainer(loaded.explainer, ws.model, ws.texts, {
-      indexPath: ws.indexRel,
-    });
-    if (write) await atomicWrite(loaded.abs, jsonFile(explainer));
-    if (ctx.json) {
-      ctx.emit({
-        path: loaded.rel,
-        written: write,
-        index: { path: ws.indexRel, commit: ws.index.commit },
-        ...report,
+    return withFileLock(resolveExplainerPath(ctx, args.positionals[0]!), async () => {
+      const loaded = loadExplainer(ctx, args.positionals[0]!);
+      const write = args.flag("write");
+      const ws = await openWorkspace(ctx, {
+        explainer: loaded,
+        skipExplainerIndex: true,
+        deferStaleWarning: true,
       });
+      if (ws.stale) {
+        if (write && !args.flag("allow-stale")) {
+          throw new CliError(
+            `refusing to write ${loaded.rel}: ${ws.stale.head}. The ranges it would save are already out of date: ` +
+              `run \`xpl index\` first, then \`xpl resolve ${loaded.name} --write\` again ` +
+              "(--allow-stale saves them against this index anyway).",
+            1,
+            { stale: ws.stale.head },
+          );
+        }
+        ctx.warn(ws.stale.message);
+      }
+      const { explainer, report } = reresolveExplainer(loaded.explainer, ws.model, ws.texts, {
+        indexPath: ws.indexRel,
+      });
+      if (write) await atomicWrite(loaded.abs, jsonFile(explainer));
+      if (ctx.json) {
+        ctx.emit({
+          path: loaded.rel,
+          written: write,
+          index: { path: ws.indexRel, commit: ws.index.commit },
+          ...report,
+        });
+        return 0;
+      }
+      ctx.out(
+        [
+          `resolved ${loaded.rel} against index ${ws.index.commit} (${ws.indexRel})`,
+          ...renderResolveReport(report),
+          write
+            ? `written: ${loaded.rel}`
+            : "not written: pass --write to save the re-resolved explainer",
+        ].join("\n"),
+      );
       return 0;
-    }
-    ctx.out(
-      [
-        `resolved ${loaded.rel} against index ${ws.index.commit} (${ws.indexRel})`,
-        ...renderResolveReport(report),
-        write
-          ? `written: ${loaded.rel}`
-          : "not written: pass --write to save the re-resolved explainer",
-      ].join("\n"),
-    );
-    return 0;
+    });
   },
 };

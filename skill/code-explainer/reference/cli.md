@@ -93,7 +93,7 @@ Code with **0-based offsets from the symbol's first line**: the numbers `span` u
 
 ```
 $ xpl show src/runner.ts#Runner.dispatch --refs
-sym:src/runner.ts#Runner.dispatch (method) src/runner.ts:42-88 sha256:c02146e8d847
+sym:src/runner.ts#Runner.dispatch (method) src/runner.ts:42-88 sha256-v2:c02146e8d847
 42  0│   async dispatch(): Promise<void> {
 43  1│     while (this.running) {
 ...
@@ -281,9 +281,9 @@ $ xpl validate jobrunner
 ok: .explainer/jobrunner.explainer.json is valid (strict, index wt-6dd745d736); no errors, no warnings
 $ xpl validate jobrunner            # after the code changed and `resolve --write`
 .explainer/jobrunner.explainer.json (strict, index wt-3fa2f32c4b): 5 errors, 0 warnings
-error   concepts[1].anchors[0] [concept:mine]: anchor src/queue.ts#Queue.requeue drifted: text of src/queue.ts#Queue.requeue changed (expected sha256:9abf2fb62272, now sha256:ba9e3c066ce0). This element is user-authored, so an llm patch cannot change it (it is skipped): tell the user, or fix it with `xpl apply --actor user`.
+error   concepts[1].anchors[0] [concept:mine]: anchor src/queue.ts#Queue.requeue drifted: text of src/queue.ts#Queue.requeue changed (expected sha256-v2:9abf2fb62272, now sha256-v2:ba9e3c066ce0). This element is user-authored, so an llm patch cannot change it (it is skipped): tell the user, or fix it with `xpl apply --actor user`.
 error   views[1].steps[0].anchors[1] [dispatch:1]: anchor src/queue.ts#Queue.pop is missing: symbol Queue.pop is not in src/queue.ts; did you mean sym:src/queue.ts#Queue.take (anchor: file: "src/queue.ts", symbol: "Queue.take")? Re-anchor it to where the code went, or drop it (resend the element without this anchor, or remove the element).
-error   views[1].steps[3].anchors[1] [dispatch:4]: anchor src/queue.ts#Queue.requeue drifted: text of src/queue.ts#Queue.requeue changed (expected sha256:9abf2fb62272, now sha256:ba9e3c066ce0). Re-read the code and rewrite the anchor (and the explanation that depends on it).
+error   views[1].steps[3].anchors[1] [dispatch:4]: anchor src/queue.ts#Queue.requeue drifted: text of src/queue.ts#Queue.requeue changed (expected sha256-v2:9abf2fb62272, now sha256-v2:ba9e3c066ce0). Re-read the code and rewrite the anchor (and the explanation that depends on it).
 ...
 ```
 
@@ -353,7 +353,7 @@ anchors: 24 (ok 10, moved 9, drifted 3, missing 2)
 drifted llm elements to re-explain (2):
   dispatch:4  (step in view:dispatch)
     views[1].steps[3].anchors[1]  src/queue.ts#Queue.requeue [definition]  now at lines 87-90
-      text of src/queue.ts#Queue.requeue changed (expected sha256:9abf2fb62272, now sha256:ba9e3c066ce0)
+      text of src/queue.ts#Queue.requeue changed (expected sha256-v2:9abf2fb62272, now sha256-v2:ba9e3c066ce0)
   dispatch:5  (step in view:dispatch)
     ...
 drifted, but not llm-owned (left alone) (1):

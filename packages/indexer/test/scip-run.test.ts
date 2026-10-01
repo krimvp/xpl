@@ -3,7 +3,14 @@
  * `buildIndex` treats them. The tools themselves are faked (no network); `runCommand` is tested on real
  * processes; scip-integration.test.ts runs the real indexers.
  */
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -138,12 +145,43 @@ describe("runCommand", () => {
     for (let i = 0; i < 50 && alive; i++) {
       try {
         process.kill(grandchild, 0);
+        if (
+          process.platform === "linux" &&
+          /\) Z /.test(readFileSync(`/proc/${grandchild}/stat`, "utf8"))
+        ) {
+          alive = false;
+          break;
+        }
         await new Promise((r) => setTimeout(r, 100));
       } catch {
         alive = false;
       }
     }
     expect(alive).toBe(false);
+  });
+
+  it("escalates after the parent exits when a silent descendant ignores SIGTERM", async () => {
+    if (process.platform === "win32") return;
+    const dir = makeDir({});
+    const marker = join(dir, "alive");
+    const descendant = `const fs = require('node:fs'); process.on('SIGTERM', () => {}); setInterval(() => fs.appendFileSync(${JSON.stringify(marker)}, 'x'), 30);`;
+    const script = `const { spawn } = require('node:child_process'); const child = spawn(process.execPath, ['-e', ${JSON.stringify(descendant)}], {stdio: 'ignore'}); console.log(child.pid); setInterval(() => {}, 1000);`;
+    const result = await runCommand(process.execPath, ["-e", script], options(600));
+    const pid = Number(result.stdout.trim());
+    try {
+      expect(result.timedOut).toBe(true);
+      expect(pid).toBeGreaterThan(0);
+      expect(existsSync(marker)).toBe(true);
+      const after = readFileSync(marker, "utf8");
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      expect(readFileSync(marker, "utf8")).toBe(after);
+    } finally {
+      try {
+        process.kill(pid, "SIGKILL");
+      } catch {
+        /* already dead */
+      }
+    }
   });
 
   it("rejects when the command cannot be started", async () => {
@@ -702,7 +740,8 @@ describe("runScipGo", () => {
       env: { ...process.env, GOFLAGS: "-tags=ci" },
     });
     expect(calls).toHaveLength(2);
-    expect(calls.map((c) => c.options.cwd)).toEqual([root, join(root, "svc", "api")]);
+    expect(calls[0]!.options.cwd).not.toBe(root);
+    expect(calls[1]!.options.cwd).toBe(join(calls[0]!.options.cwd, "svc", "api"));
     for (const call of calls) {
       expect(call.command).toBe("go");
       expect(call.args.slice(0, 4)).toEqual([
@@ -723,7 +762,7 @@ describe("runScipGo", () => {
     expect(tempEntries(temp)).toEqual([]);
   });
 
-  it("restores go.mod and go.sum when the tool rewrites them (GOFLAGS=-mod=mod)", async () => {
+  it("isolates module writes on success and failure, preserving concurrent user edits", async () => {
     const original = "module example.com/a\n\ngo 1.22\n";
     const root = makeDir({ "go.mod": original });
     const { run } = fakeRunner((call) => {
@@ -732,22 +771,90 @@ describe("runScipGo", () => {
         `${original}\nrequire example.com/dep v1.0.0\n`,
       );
       writeFileSync(join(call.options.cwd, "go.sum"), "example.com/dep v1.0.0 h1:x\n");
+      writeFileSync(join(root, "go.mod"), "user edit\n");
       writeIndexTo(call, { documents: [] });
     });
     await runScipGo(root, files("go.mod"), { timeoutMs: 1, run });
-    expect(readFileSync(join(root, "go.mod"), "utf8")).toBe(original);
+    expect(readFileSync(join(root, "go.mod"), "utf8")).toBe("user edit\n");
     expect(existsSync(join(root, "go.sum"))).toBe(false);
 
-    // ... and a go.sum that existed comes back as it was, even if the tool fails
+    // A failing tool must not restore over a go.sum edit made while it was running.
     writeFileSync(join(root, "go.sum"), "kept\n");
     const failing = fakeRunner((call) => {
       writeFileSync(join(call.options.cwd, "go.sum"), "changed\n");
+      writeFileSync(join(root, "go.sum"), "concurrent edit\n");
       return { code: 2, stderr: "go: broken" };
     });
     await expect(
       runScipGo(root, files("go.mod"), { timeoutMs: 1, run: failing.run }),
     ).rejects.toThrow(/exited with code 2/);
-    expect(readFileSync(join(root, "go.sum"), "utf8")).toBe("kept\n");
+    expect(readFileSync(join(root, "go.sum"), "utf8")).toBe("concurrent edit\n");
+  });
+
+  it.each(["relative", "absolute", "block", "inline block"])(
+    "keeps %s workspace members inside the private copy",
+    async (style) => {
+      const root = makeDir({ "svc/go.mod": "module example.com/svc\n\ngo 1.25\n" });
+      const target = style === "absolute" ? JSON.stringify(join(root, "svc")) : "./svc";
+      const use =
+        style === "block"
+          ? `use (\n // comment\n ${target}\n)\n`
+          : style === "inline block"
+            ? `use (${target})\n`
+            : `use ${target}\n`;
+      writeFileSync(join(root, "go.work"), "go 1.25\n" + use);
+      const { run } = fakeRunner((call) => {
+        const copy = join(call.options.cwd, "..");
+        expect(readFileSync(join(copy, "go.work"), "utf8")).toContain(
+          JSON.stringify(call.options.cwd),
+        );
+        writeFileSync(join(copy, "go.work.sum"), "tool sum");
+        writeFileSync(join(root, "go.work"), "concurrent workspace edit");
+        writeIndexTo(call, { documents: [] });
+      });
+      await runScipGo(root, files("go.work", "svc/go.mod"), { timeoutMs: 1, run });
+      expect(readFileSync(join(root, "go.work"), "utf8")).toBe("concurrent workspace edit");
+      expect(existsSync(join(root, "go.work.sum"))).toBe(false);
+    },
+  );
+
+  it("rejects workspace members outside the root before starting the tool", async () => {
+    const root = makeDir({
+      "go.mod": "module example.com/a\n",
+      "go.work": "go 1.25\nuse ../other\n",
+    });
+    const { run, calls } = fakeRunner();
+    await expect(
+      runScipGo(root, files("go.mod", "go.work"), { timeoutMs: 1, run }),
+    ).rejects.toThrow("outside the indexed root");
+    expect(calls).toEqual([]);
+    await runScipGo(root, files("go.mod", "go.work"), {
+      timeoutMs: 1,
+      run: fakeRunner((call) => writeIndexTo(call, { documents: [] })).run,
+      env: { GOWORK: "off" },
+    });
+  });
+
+  it("dereferences a module metadata symlink before the tool can write through it", async () => {
+    const root = makeDir({ "actual.mod": "module example.com/a\n" });
+    symlinkSync(join(root, "actual.mod"), join(root, "go.mod"));
+    const { run } = fakeRunner((call) => {
+      writeFileSync(join(call.options.cwd, "go.mod"), "tool edit");
+      writeIndexTo(call, { documents: [] });
+    });
+    await runScipGo(root, files("go.mod"), { timeoutMs: 1, run });
+    expect(readFileSync(join(root, "actual.mod"), "utf8")).toBe("module example.com/a\n");
+  });
+
+  it("preserves local replacement paths inside and outside the root", async () => {
+    const root = makeDir({ "go.mod": "module example.com/a\nreplace example.com/dep => ../dep\n" });
+    const { run } = fakeRunner((call) => {
+      const text = readFileSync(join(call.options.cwd, "go.mod"), "utf8");
+      expect(text).toContain(JSON.stringify(join(root, "..", "dep")));
+      writeIndexTo(call, { documents: [] });
+    });
+    await runScipGo(root, files("go.mod"), { timeoutMs: 1, run });
+    expect(readFileSync(join(root, "go.mod"), "utf8")).toContain("=> ../dep");
   });
 
   it("keeps a Go workspace (go.work): the go command rejects -mod=mod there", async () => {

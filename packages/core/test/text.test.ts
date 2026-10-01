@@ -6,10 +6,11 @@ describe("text", () => {
     expect(normalizeText("  a  \r\n\n\t b\n   \n")).toBe("a\nb");
   });
 
-  it("hashes are whitespace- and blank-line-insensitive", () => {
+  it("hashes preserve indentation and blank lines, canonicalizing CRLF only", () => {
     const h = hashText("if (x) {\n  y();\n}");
-    expect(h).toMatch(/^sha256:[0-9a-f]{12}$/);
-    expect(hashText("if (x) {\n\n        y();\r\n}\n")).toBe(h);
+    expect(h).toMatch(/^sha256-v2:[0-9a-f]{12}$/);
+    expect(hashText("if (x) {\n\n        y();\r\n}\n")).not.toBe(h);
+    expect(hashText("if (x) {\r\n  y();\r\n}")).toBe(h);
     expect(hashText("if (x) {\n  z();\n}")).not.toBe(h);
   });
 

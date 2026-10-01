@@ -16,6 +16,7 @@ import {
   derivedEdgeAnchors,
   derivedEdgeMap,
   elementIdForSymbolId,
+  excludedRefs,
   mergeFocusByFile,
   parseId,
   REF_TO_EDGE_KIND,
@@ -137,8 +138,11 @@ function stubFocus(stub: Stub, vd: ViewDerived, model: ExplainerModel): FocusRan
       targets.some((target) => model.subtreeContains(target, outside))
     );
   };
+  const dropRef =
+    vd.view?.type === "graph" ? excludedRefs(vd.view, model, [...vd.include]) : undefined;
   const refs = model.index.refs.filter(
     (ref) =>
+      !dropRef?.(ref) &&
       kinds.has(REF_TO_EDGE_KIND[ref.kind]) &&
       crosses(elementIdForSymbolId(ref.from), elementIdForSymbolId(ref.to)),
   );

@@ -38,14 +38,14 @@ export function normalizeLines(lines: readonly string[]): string {
   return out.join("\n");
 }
 
-/** `"sha256:" + first 12 hex chars of sha256(normalizeText(text))`. */
+/** Versioned source hash: preserve indentation and blank lines; canonicalize CRLF to LF only. */
 export function hashText(text: string): Hash {
-  return hashNormalized(normalizeText(text));
+  return hashNormalized(splitLines(text).join("\n"));
 }
 
-/** Hash of text that is already normalized (see `normalizeText`). */
+/** Hash of source text already canonicalized to LF. Never trim source before hashing. */
 export function hashNormalized(normalized: string): Hash {
-  return "sha256:" + bytesToHex(sha256(utf8ToBytes(normalized))).slice(0, 12);
+  return "sha256-v2:" + bytesToHex(sha256(utf8ToBytes(normalized))).slice(0, 12);
 }
 
 /** Hash of lines `range` of `text` (full lines). */
@@ -55,10 +55,9 @@ export function hashRange(text: string, range: Range): Hash {
 
 /**
  * Hashes of every prefix of `lines[start..]`: entry `k - 1` equals `hashNormalized(lines.slice(start,
- * start + k).join("\n"))`, for `k = 1..maxCount`. The lines must already be normalized (trimmed and
- * non-empty, see `normalizeLines`). Computed incrementally (one SHA-256 state, cloned per prefix), so
+ * start + k).join("\n"))`, for `k = 1..maxCount`. The lines must already be split on CRLF/LF. Computed incrementally (one SHA-256 state, cloned per prefix), so
  * scanning all windows of a line sequence costs O(lines x maxCount) instead of O(lines x maxCount^2).
- * Used by the anchor resolver to re-find moved code.
+ * Retained as a source-prefix hashing utility for callers.
  */
 export function normalizedPrefixHashes(
   lines: readonly string[],
@@ -71,7 +70,7 @@ export function normalizedPrefixHashes(
   const state = sha256.create();
   for (let k = 0; k < count; k++) {
     state.update(utf8ToBytes(k === 0 ? lines[start]! : "\n" + lines[start + k]!));
-    out.push("sha256:" + bytesToHex(state.clone().digest()).slice(0, 12));
+    out.push("sha256-v2:" + bytesToHex(state.clone().digest()).slice(0, 12));
   }
   return out;
 }

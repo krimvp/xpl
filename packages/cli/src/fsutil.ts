@@ -1,7 +1,7 @@
 /** File-system helpers: atomic writes, tolerant JSON reading, the working-tree reader. */
 import { randomBytes } from "node:crypto";
 import { readFileSync, realpathSync } from "node:fs";
-import { mkdir, rename, unlink, writeFile } from "node:fs/promises";
+import { mkdir, rename, rmdir, unlink, writeFile } from "node:fs/promises";
 import { basename, dirname, join, relative, isAbsolute, sep } from "node:path";
 import { CliError, errorMessage } from "./errors.js";
 
@@ -16,6 +16,35 @@ export async function atomicWrite(path: string, data: string): Promise<void> {
   } catch (error) {
     await unlink(tmp).catch(() => undefined);
     throw error;
+  }
+}
+
+/** Serialize a complete read/merge/write transaction across CLI processes and viewer servers.
+ * Readers do not need a lock: atomicWrite publishes only complete snapshots. Never steal a lock
+ * on a timer; a slow writer may still own it. A crashed writer's lock needs explicit removal.
+ */
+export async function withFileLock<T>(path: string, job: () => Promise<T>): Promise<T> {
+  await mkdir(dirname(path), { recursive: true });
+  const lock = join(realpathSync(dirname(path)), `${basename(path)}.lock`);
+  const deadline = Date.now() + 30_000;
+  while (true) {
+    try {
+      await mkdir(lock);
+      break;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      if (Date.now() >= deadline) {
+        throw new CliError(
+          `timed out waiting for ${lock}: another writer holds the lock. If that writer has terminated, remove the lock directory and retry.`,
+        );
+      }
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+  }
+  try {
+    return await job();
+  } finally {
+    await rmdir(lock);
   }
 }
 

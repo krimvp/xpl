@@ -256,7 +256,7 @@ describe("applyPatch: basics", () => {
           symbol: "Runner.dispatch",
           span: { from: 34, to: 34 },
           role: "definition",
-          hash: expect.stringMatching(/^sha256:[0-9a-f]{12}$/),
+          hash: expect.stringMatching(/^sha256-v2:[0-9a-f]{12}$/),
           resolved: { commit: "c1", range: { startLine: 76, endLine: 76 }, status: "ok" },
         },
       ],
