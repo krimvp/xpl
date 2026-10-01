@@ -3,56 +3,50 @@
     {
       "id": "grp:scheduling",
       "label": "Scheduling",
-      "summary": "Decides which job runs next, hands it to a worker, and requeues or dead-letters failures.",
+      "summary": "Decides which job runs next and what happens after each attempt: done, retried with a delay, or dead-lettered.",
       "members": ["file:jobrunner/runner.py", "file:jobrunner/queue.py"]
     },
     {
       "id": "grp:events",
       "label": "Events and metrics",
-      "summary": "A topic bus plus the metrics that subscribe to it; publishers and subscribers share only a topic name.",
+      "summary": "A bus that delivers events by topic name, and the metrics that count finished jobs from those events.",
       "members": ["file:jobrunner/bus.py", "file:jobrunner/metrics.py"]
     },
     {
       "id": "grp:configuration",
-      "label": "Configuration",
-      "summary": "The YAML defaults and the hand-written loader that turns them into typed config objects.",
+      "label": "Settings",
+      "summary": "The default settings in YAML, and the loader that turns them into typed config objects.",
       "members": ["file:config/default.yaml", "file:jobrunner/config.py"]
     },
     {
       "id": "file:jobrunner/__main__.py",
-      "summary": "Entry point: loads the config, wires bus, metrics, workers, queue and runner together, and runs a short demo."
+      "label": "Startup",
+      "summary": "`python -m jobrunner` starts here: `run` loads the settings, connects the parts and runs a short demo."
     },
     {
       "id": "file:jobrunner/worker.py",
-      "summary": "Runs one job attempt with a timeout and reports the outcome; a pool leases workers one at a time."
-    },
-    {
-      "id": "file:config/default.yaml",
-      "summary": "Default settings for the queue, workers, retry policy and metrics."
-    },
-    {
-      "id": "file:jobrunner/bus.py",
-      "summary": "EventBus: subscribe to a string topic with on(), deliver a payload to every subscriber with emit()."
+      "label": "Workers",
+      "summary": "A worker runs one attempt of a job with a timeout and returns the outcome. A pool lends out one free worker at a time."
     },
     {
       "id": "file:jobrunner/config.py",
-      "summary": "Parses the small YAML subset by hand and validates it into QueueConfig, WorkersConfig, RetryConfig and MetricsConfig."
+      "summary": "Parses the YAML file with its own small parser. `load_config` checks each number and flag, and builds `QueueConfig`, `WorkersConfig`, `RetryConfig` and `MetricsConfig`."
     },
     {
       "id": "file:jobrunner/metrics.py",
-      "summary": "Counts completed jobs and their durations; on_job_completed runs only when the bus delivers job.completed."
+      "summary": "Counts finished jobs and their run time. `on_job_completed` runs when the bus delivers a `job.completed` event; no code calls it directly."
     },
     {
       "id": "file:jobrunner/queue.py",
-      "summary": "The in-memory job queue: push, pop (by priority, then age), requeue with a delay, ack and dead-letter."
+      "summary": "The in-memory job queue: `push`, `pop` (by priority, then age), `requeue` with a delay, `ack` and `dead_letter`."
     },
     {
       "id": "file:jobrunner/runner.py",
-      "summary": "Runner.dispatch is the loop that pops a job, runs it on a worker, and acks, requeues with backoff or dead-letters it."
+      "summary": "`Runner.dispatch` is the loop that takes a job and runs it on a worker. Then it acks the job, requeues it with a delay, or dead-letters it."
     },
     {
       "id": "sym:jobrunner/__main__.py#run",
-      "summary": "Wires config, bus, metrics, workers, queue and runner together, pushes three demo jobs and waits for the queue to drain."
+      "summary": "Loads the settings and creates the bus, metrics, workers, queue and runner. Then pushes three demo jobs and waits until the queue is empty."
     }
   ],
   "edges": [
@@ -62,7 +56,7 @@
       "to": "file:jobrunner/metrics.py",
       "kind": "emits",
       "label": "job.completed",
-      "summary": "Worker.run publishes job.completed on the bus after a successful attempt; register_metrics subscribes the metrics handler to that topic.",
+      "summary": "After a successful attempt, `Worker.run` publishes `job.completed` on the bus. `register_metrics` subscribes the metrics handler to that topic.",
       "anchors": [
         {
           "file": "jobrunner/worker.py",
@@ -88,29 +82,37 @@
     {
       "id": "view:overview",
       "type": "graph",
-      "title": "Architecture overview",
+      "title": "The five parts of the job runner",
       "scope": {
         "root": "repo",
-        "depth": 2
+        "depth": 2,
+        "question": "What is this project made of?"
       },
       "include": [
         "file:jobrunner/__main__.py",
-        "grp:scheduling",
-        "file:jobrunner/runner.py",
-        "file:jobrunner/queue.py",
-        "file:jobrunner/worker.py",
-        "grp:events",
-        "file:jobrunner/bus.py",
-        "file:jobrunner/metrics.py",
         "grp:configuration",
-        "file:jobrunner/config.py",
-        "file:config/default.yaml"
-      ]
+        "grp:scheduling",
+        "file:jobrunner/worker.py",
+        "grp:events"
+      ],
+      "excludeFiles": [
+        "**/*_test.go",
+        "**/test/**",
+        "**/tests/**",
+        "**/*.test.*",
+        "**/test_*.py",
+        "**/examples/**",
+        "docs/**"
+      ],
+      "hidden": ["edge:calls:file:jobrunner/worker.py->grp:events"],
+      "stubs": {
+        "mode": "none"
+      }
     },
     {
       "id": "view:startup",
       "type": "sequence",
-      "title": "How the demo starts up",
+      "title": "How the demo starts and stops",
       "scope": {
         "root": "repo",
         "depth": 2,
@@ -129,9 +131,9 @@
           "id": "startup:1",
           "from": "sym:jobrunner/__main__.py#run",
           "to": "file:jobrunner/config.py",
-          "label": "load_config(path)",
+          "label": "load_config(config_path)",
           "kind": "call",
-          "summary": "Reads config/default.yaml (or the path given on the command line) into typed config objects.",
+          "summary": "Reads `config/default.yaml`, or the path given on the command line, into typed config objects.",
           "anchors": [
             {
               "file": "jobrunner/__main__.py",
@@ -152,12 +154,15 @@
           "to": "file:jobrunner/metrics.py",
           "label": "register_metrics(bus, metrics)",
           "kind": "call",
-          "summary": "When metrics are enabled, subscribes the metrics handler to the job.completed topic.",
+          "summary": "When `metrics.enabled` is true, subscribes the metrics handler to the `job.completed` topic.",
           "anchors": [
             {
               "file": "jobrunner/__main__.py",
               "symbol": "run",
-              "find": "register_metrics(bus, metrics)",
+              "span": {
+                "from": 6,
+                "to": 7
+              },
               "role": "call-site"
             },
             {
@@ -171,9 +176,9 @@
           "id": "startup:3",
           "from": "sym:jobrunner/__main__.py#run",
           "to": "file:jobrunner/queue.py",
-          "label": "push(job)",
+          "label": "push(kind, ...)",
           "kind": "call",
-          "summary": "Enqueues the three demo jobs: echo, flaky (priority 5) and broken.",
+          "summary": "Adds the three demo jobs: `echo`, `flaky` with priority 5, and `broken`.",
           "anchors": [
             {
               "file": "jobrunner/__main__.py",
@@ -197,12 +202,15 @@
           "to": "file:jobrunner/runner.py",
           "label": "start()",
           "kind": "async",
-          "summary": "Launches the dispatch loop as a background task; the demo then waits until the queue drains.",
+          "summary": "Starts the dispatch loop as a background asyncio task. `run` then checks the queue size until it is 0.",
           "anchors": [
             {
               "file": "jobrunner/__main__.py",
               "symbol": "run",
-              "find": "runner.start()",
+              "span": {
+                "from": 19,
+                "to": 21
+              },
               "role": "call-site"
             },
             {
@@ -218,7 +226,7 @@
           "to": "file:jobrunner/runner.py",
           "label": "stop()",
           "kind": "call",
-          "summary": "Lets the job in progress finish, ends the loop, and re-raises if the loop crashed.",
+          "summary": "Ends the loop after the job in progress and waits for the loop's task. If the loop crashed, awaiting the task raises its error.",
           "anchors": [
             {
               "file": "jobrunner/__main__.py",
@@ -232,6 +240,176 @@
               "role": "definition"
             }
           ]
+        }
+      ]
+    }
+  ],
+  "tours": [
+    {
+      "id": "tour:overview",
+      "title": "What the job runner is made of",
+      "summary": "py-jobrunner is a small Python job runner, written as a fixture for the xpl code explainer. The program keeps jobs in an in-memory queue and runs each one on a worker. A failed job is retried with a growing delay, and an event bus tells the metrics when a job finishes. This tour shows the five parts, then how `python -m jobrunner` starts and stops a short demo.",
+      "steps": [
+        {
+          "id": "t1",
+          "view": "view:overview",
+          "focus": ["file:jobrunner/__main__.py"],
+          "note": "### One function connects the five parts\n\n`run` in `__main__.py` creates each part and hands it to the parts that need it. For example, `Runner` gets the queue and the worker pool.",
+          "code": [
+            {
+              "file": "jobrunner/__main__.py",
+              "symbol": "run",
+              "span": {
+                "from": 1,
+                "to": 12
+              },
+              "role": "definition"
+            }
+          ],
+          "editor": {
+            "primary": "jobrunner/__main__.py"
+          }
+        },
+        {
+          "id": "t2",
+          "view": "view:overview",
+          "focus": ["grp:configuration"],
+          "note": "### Settings are read and checked first\n\n`load_config` raises `ConfigError` for a malformed line, a missing setting, or a number or flag of the wrong type. `run` loads the settings before it creates the other parts.",
+          "code": [
+            {
+              "file": "jobrunner/config.py",
+              "symbol": "load_config",
+              "role": "definition"
+            },
+            {
+              "file": "jobrunner/config.py",
+              "symbol": "_lookup",
+              "role": "definition"
+            }
+          ],
+          "editor": {
+            "primary": "jobrunner/config.py"
+          }
+        },
+        {
+          "id": "t3",
+          "view": "view:overview",
+          "focus": ["grp:scheduling"],
+          "note": "### The loop takes a job, runs it, then decides\n\nA successful job is acked. A failed job is requeued with a delay while retries are left; after that it goes to the dead-letter list.",
+          "code": [
+            {
+              "file": "jobrunner/runner.py",
+              "symbol": "Runner.dispatch",
+              "span": {
+                "from": 21,
+                "to": 33
+              },
+              "role": "definition"
+            },
+            {
+              "file": "jobrunner/queue.py",
+              "symbol": "Queue.pop",
+              "role": "definition"
+            }
+          ],
+          "editor": {
+            "primary": "jobrunner/runner.py"
+          }
+        },
+        {
+          "id": "t4",
+          "view": "view:overview",
+          "focus": ["file:jobrunner/worker.py"],
+          "note": "### A worker reports failures, it does not raise them\n\nWhen a handler raises an `Exception` or times out, `Worker.run` returns a result with `ok=False`. The loop reads that result and decides what to do next.",
+          "code": [
+            {
+              "file": "jobrunner/worker.py",
+              "symbol": "Worker.run",
+              "span": {
+                "from": 8,
+                "to": 16
+              },
+              "role": "definition"
+            },
+            {
+              "file": "jobrunner/runner.py",
+              "symbol": "Runner.dispatch",
+              "find": "result = await worker.run(job, RunOptions(timeout_ms=self._config.timeout_ms))",
+              "role": "call-site"
+            }
+          ],
+          "editor": {
+            "primary": "jobrunner/worker.py"
+          }
+        },
+        {
+          "id": "t5",
+          "view": "view:overview",
+          "focus": ["grp:events"],
+          "note": "### Finished jobs reach metrics through the bus\n\nThe worker and the metrics code do not import each other. The two share the topic name `job.completed` and the `JobCompleted` type from `bus.py`. When `metrics.enabled` is false, the metrics handler is not subscribed, and the counters stay at zero.",
+          "code": [
+            {
+              "file": "jobrunner/worker.py",
+              "symbol": "Worker.run",
+              "find": "self._bus.emit(\"job.completed\"",
+              "role": "call-site"
+            },
+            {
+              "file": "jobrunner/metrics.py",
+              "symbol": "register_metrics",
+              "role": "definition"
+            }
+          ],
+          "editor": {
+            "primary": "jobrunner/worker.py"
+          }
+        },
+        {
+          "id": "t6",
+          "view": "view:startup",
+          "focus": ["startup:4"],
+          "note": "### The runner works in the background\n\n`Runner.start` returns at once. The demo checks the queue size at each idle interval and stops when no job is waiting or running.",
+          "code": [
+            {
+              "file": "jobrunner/__main__.py",
+              "symbol": "run",
+              "span": {
+                "from": 19,
+                "to": 21
+              },
+              "role": "call-site"
+            },
+            {
+              "file": "jobrunner/runner.py",
+              "symbol": "Runner.start",
+              "role": "definition"
+            }
+          ],
+          "editor": {
+            "primary": "jobrunner/__main__.py"
+          }
+        },
+        {
+          "id": "t7",
+          "view": "view:startup",
+          "focus": ["startup:5"],
+          "note": "### Stopping waits for the job in progress\n\n`stop` lets the current job finish. When the loop crashed, `stop` raises that error, so a crash does not go unnoticed.",
+          "code": [
+            {
+              "file": "jobrunner/runner.py",
+              "symbol": "Runner.stop",
+              "role": "definition"
+            },
+            {
+              "file": "jobrunner/__main__.py",
+              "symbol": "run",
+              "find": "await runner.stop()",
+              "role": "call-site"
+            }
+          ],
+          "editor": {
+            "primary": "jobrunner/runner.py"
+          }
         }
       ]
     }
