@@ -1,6 +1,8 @@
 # Patch format
 
-Everything you write goes into one JSON **patch**. `xpl apply <name> patch.json` (or `-` for stdin) merges it into `.explainer/<name>.explainer.json`, fills in hashes and resolved ranges, validates the result, and either writes everything or nothing.
+Everything you write goes into a JSON **patch**. `xpl apply <name> patch.json` (or `-` for stdin) merges it into `.explainer/<name>.explainer.json`, fills in hashes and resolved ranges, validates the result, and either writes everything or nothing.
+
+**Read only what the task needs.** Always: section 1 (anchors) and 2 (ids). Then the template of each element you write: 3.1 groups, 3.2 overlays (summaries of files and symbols), 3.3-3.4 edges, 3.5 concepts, 3.6 graph views, 3.7 flow views, 3.8 sequence views, 3.9 tours. The rest is for when a command points you there: 4 merge rules (what a resend replaces), 5 provenance (a `protected` warning), 6 the apply output, 7 rejection messages, 8 repair after the code changed.
 
 ```json
 {
@@ -14,7 +16,7 @@ Everything you write goes into one JSON **patch**. `xpl apply <name> patch.json`
 }
 ```
 
-Every key is optional; any other top-level key is rejected. The authoritative merge rules are in the header of `packages/core/src/patch.ts`; this file is the practical version of them, and every JSON block below marked `patch` is real: applied in order to a fresh explainer on the TypeScript fixture it passes `xpl validate` (a test of the repository does exactly that). `xpl apply --help` prints a compact summary of the format.
+Every key is optional; any other top-level key is rejected. The authoritative merge rules are in the header of `packages/core/src/patch.ts`; this file is the practical version of them, and every JSON block below marked `patch` is real: applied in order to a fresh explainer on the TypeScript fixture it passes `xpl validate` (a test of the repository does exactly that). `xpl apply --help` prints a compact summary of the format. What to write in the text fields (titles, summaries, notes) is in `writing.md`.
 
 ## 1. Anchors (`AnchorInput`)
 
@@ -101,8 +103,8 @@ In a graph view, include the group **and** its members to draw it as a container
   "nodes": [
     {
       "id": "sym:src/runner.ts#Runner.dispatch",
-      "summary": "The hot loop: pop a job, lease a worker, run it, then ack, requeue with backoff or dead-letter.",
-      "detail": "Runs until `stop()` is called. An empty queue means a short sleep (`idleDelayMs`).\n\nThe retry decision lives in the last third of the loop; see the retry-policy concept."
+      "summary": "The dispatch loop: pop a job, lease a worker and run the job. Then ack it, requeue it with a delay, or dead-letter it.",
+      "detail": "Runs until `stop()` is called. When the queue has no job that is due, the loop sleeps for `idleDelayMs`.\n\nThe retry decision is in the last third of the loop; see the retry-policy concept."
     },
     {
       "id": "file:src/queue.ts",
@@ -113,7 +115,7 @@ In a graph view, include the group **and** its members to draw it as a container
 }
 ```
 
-Participants of a sequence view and the boxes of a graph view count as "unexplained" (`xpl status`) until they have a `summary`, so write overlays for them.
+The participants of a sequence or flow view and the boxes of a graph view count as "unexplained" (`xpl status`) until they have a `summary`, so write overlays for them in the same patch. Keep a summary to 1-2 sentences about what the code does, with its conditions; put longer lists and the remaining cases in `detail`. A summary is plain text, not markdown (`writing.md`, section 1): in a change explainer, write `Changed: ...` as plain words, without asterisks.
 
 ### 3.3 `llm` edge (only for links static analysis cannot see)
 
@@ -128,7 +130,7 @@ Event bus, DI, HTTP, queues, config keys read by name. Required: `from`, `to`, `
       "to": "file:src/metrics.ts",
       "kind": "emits",
       "label": "job.completed",
-      "summary": "Worker.run publishes job.completed on the event bus and metrics.ts subscribes to that topic, so the two files never reference each other.",
+      "summary": "`Worker.run` publishes `job.completed` on the event bus, and `registerMetrics` subscribes to that topic. No call links `worker.ts` and `metrics.ts`.",
       "anchors": [
         {
           "file": "src/worker.ts",
@@ -186,7 +188,7 @@ Required: `label`. Anchor the implementing code, the config keys and the tests; 
     {
       "id": "concept:retry-policy",
       "label": "Retry policy",
-      "summary": "A failed job is requeued with exponential backoff (baseDelayMs * 2^(attempt-1), capped at maxDelayMs) until retry.maxRetries requeues are used, then dead-lettered.",
+      "summary": "The runner requeues a failed job while `attempts <= retry.maxRetries`, with a delay of `baseDelayMs * 2^(attempts-1)` capped at `maxDelayMs`. After that, it dead-letters the job.",
       "anchors": [
         {
           "file": "src/runner.ts",
@@ -272,25 +274,146 @@ Edit `include` without resending it with `includeAdd` (ids to append; those alre
 }
 ```
 
-**Crowded views (stubs).** Edges that leave a graph view are dashed stubs to ghost boxes. By default (`"stubs": {"mode": "top", "max": 8}`) a view draws only the 8 ghosts that the most references lead to. The outside symbols of a file the view shows in part fold into one `ghost:rest:file:<path>` ("rest of <file>"), and the ghosts beyond the 8 into `ghost:more:in` / `ghost:more:out` ("+N more"). A folded ghost is not an element and cannot go in `include`: `xpl status` prints up to 3 of the elements each one stands for (`ghost:rest:file:src/runner.ts ×6 → sym:src/runner.ts#Runner.log ×3, ...`), `xpl status --json` (`views[].ghosts.list[].targets`) lists all of them with their reference counts, the viewer's menu (click the ghost) lists them too, and `xpl refs <shown id> --out` prints what leaves a box. To expand, `includeAdd` one of those elements, or `file:<path>` for the whole file as one box (`ghost:file:x` and `ghost:dir:x`, the names the viewer gives plain ghosts, still mean `file:x` and `dir:x`).
+**Crowded views (stubs).** A graph view that a tour shows uses `"stubs": {"mode": "none"}` (SKILL.md, "Maps"). The rest of this section is for views used to explore. Edges that leave a graph view are dashed stubs to ghost boxes. By default (`"stubs": {"mode": "top", "max": 8}`) a view draws only the 8 ghosts that the most references lead to. The outside symbols of a file the view shows in part fold into one `ghost:rest:file:<path>` ("rest of <file>"), and the ghosts beyond the 8 into `ghost:more:in` / `ghost:more:out` ("+N more"). A folded ghost is not an element and cannot go in `include`: `xpl status` prints up to 3 of the elements each one stands for (`ghost:rest:file:src/runner.ts ×6 → sym:src/runner.ts#Runner.log ×3, ...`), `xpl status --json` (`views[].ghosts.list[].targets`) lists all of them with their reference counts, the viewer's menu (click the ghost) lists them too, and `xpl refs <shown id> --out` prints what leaves a box. To expand, `includeAdd` one of those elements, or `file:<path>` for the whole file as one box (`ghost:file:x` and `ghost:dir:x`, the names the viewer gives plain ghosts, still mean `file:x` and `dir:x`).
 
-Keep a view readable: `"mode": "all"` (one ghost per outside element) only for small views, `"none"` for no stubs at all, `"max"` for another cap, and `hidden` for the ghost and stub ids you do not need (`status --json` lists both: `views[].ghosts.list[].id` and `views[].ghosts.stubIds`). `xpl status` prints each view's ghosts and stubs and warns above 12. An arrow from a box to its own container is never drawn. In a src layout start the overview at `dir:src/<pkg>`, not `dir:src` (that is one box for the whole tree).
+Keep a graph view readable: `"none"` for no stubs at all (every graph view a tour shows), `"mode": "all"` (one ghost per outside element) only for small views, `{"mode": "top", "max": 6}` for another cap, and `hidden` for the ghost and stub ids you do not need (`status --json` lists both: `views[].ghosts.list[].id` and `views[].ghosts.stubIds`). `xpl status` prints each view's ghosts and stubs and warns above 12. An arrow from a box to its own container is never drawn. In a src layout start the overview at `dir:src/<pkg>`, not `dir:src` (that is one box for the whole tree).
 
 ```json patch
 {
-  "views": [{ "id": "view:overview", "type": "graph", "stubs": { "mode": "top", "max": 6 } }]
+  "views": [{ "id": "view:overview", "type": "graph", "stubs": { "mode": "none" } }]
 }
 ```
 
-### Process-flow views and supporting files
+### 3.7 Flow view (stages, decisions, branches)
 
-Use `type: "flow"` for execution stages instead of lifelines. It shares a sequence view's required `title`, `participants`, `steps`, scope and anchors. Each step may add `shape: "stage" | "decision" | "terminal"` and `next: [{"step": "process:2", "label": "eligible"}]`. Transition targets must be steps in the same view. Missing `next` means the next stage unless `shape` is `terminal`; `next: []` means no outgoing transition. Explicitly model each branch and loop, and anchor the deciding condition. `shape` and `next` are also accepted by `stepsUpdate`; `null` clears them. Existing sequence views appear as labeled, ordered projections in the reader's Process flow tab; a projection is not a discovered execution model.
+Use `type: "flow"` when the point is what the code decides: stages, conditions, and where each path ends. It takes the same fields as a sequence view (3.8): `title`, `participants`, `steps`, `scope`, anchors. Each step may add `shape` (`"stage"`, `"decision"` or `"terminal"`) and `next: [{"step": "<id>", "label": "<when>"}]`. Without `next`, a step goes on to the next step in the list, unless it is a `terminal`; `next: []` ends a path. Every `next` target must be a step of the same view. Model each branch and loop explicitly, and anchor the condition that decides it. A stage or decision inside one function uses that function's participant as both `from` and `to`, with `kind: "call"`; the box shows the label, not the two ends. `shape` and `next` are also accepted by `stepsUpdate` (`null` clears them).
 
-For supporting files, use configuration-key anchors (`role: "config"`) and evidence-backed edges with `kind: "loads"`, `"discovers"`, `"configures"` or `"overrides"`. A loader points to the loaded file or plugin directory/group; configuration points to its consumer; an overriding file points to the overridden file. Anchor both ends and explain conditions and precedence in the edge summary. The Related files panel groups file collections and exposes the loader and target source. Index `resources` adds supported literal-path and glob relationships, with source sites and `static`/`inferred` resolution labels. Matching files are not proof of runtime activation; dynamically composed paths may need annotated edges.
+The flow box shows the step's `label` in large type, so a flow label is a plain stage name ("Requeue with a delay"), not the call text; the call goes in the anchors. A `decision` label is a short question or condition ("Did the attempt succeed?"), and each `next` label says when that branch is taken ("yes", "attempts left").
 
-### 3.7 Sequence view (steps, frames)
+```json patch
+{
+  "views": [
+    {
+      "id": "view:failure-path",
+      "type": "flow",
+      "title": "What happens after a job runs",
+      "scope": {
+        "root": "repo",
+        "depth": 3,
+        "question": "What does the runner do with a finished attempt?",
+        "entryPoints": ["src/runner.ts#Runner.dispatch"]
+      },
+      "participants": ["sym:src/runner.ts#Runner.dispatch", "file:src/queue.ts"],
+      "steps": [
+        {
+          "id": "failure-path:1",
+          "from": "sym:src/runner.ts#Runner.dispatch",
+          "to": "sym:src/runner.ts#Runner.dispatch",
+          "label": "Did the attempt succeed?",
+          "kind": "call",
+          "shape": "decision",
+          "summary": "`Runner.dispatch` checks `result.ok` after each attempt.",
+          "next": [
+            { "step": "failure-path:2", "label": "yes" },
+            { "step": "failure-path:3", "label": "no" }
+          ],
+          "anchors": [
+            {
+              "file": "src/runner.ts",
+              "symbol": "Runner.dispatch",
+              "find": "if (result.ok) {",
+              "role": "call-site"
+            }
+          ]
+        },
+        {
+          "id": "failure-path:2",
+          "from": "sym:src/runner.ts#Runner.dispatch",
+          "to": "file:src/queue.ts",
+          "label": "Mark the job done",
+          "kind": "call",
+          "shape": "terminal",
+          "summary": "`Queue.ack` removes the job from the in-flight set and counts it.",
+          "anchors": [
+            {
+              "file": "src/runner.ts",
+              "symbol": "Runner.dispatch",
+              "find": "await this.queue.ack(job);",
+              "role": "call-site"
+            },
+            { "file": "src/queue.ts", "symbol": "Queue.ack", "role": "definition" }
+          ]
+        },
+        {
+          "id": "failure-path:3",
+          "from": "sym:src/runner.ts#Runner.dispatch",
+          "to": "sym:src/runner.ts#Runner.dispatch",
+          "label": "Attempts left?",
+          "kind": "call",
+          "shape": "decision",
+          "summary": "An attempt is left while `attempts` is at most `retry.maxRetries`.",
+          "next": [
+            { "step": "failure-path:4", "label": "yes" },
+            { "step": "failure-path:5", "label": "no" }
+          ],
+          "anchors": [
+            {
+              "file": "src/runner.ts",
+              "symbol": "Runner.dispatch",
+              "find": "if (attempts <= this.config.retry.maxRetries) {",
+              "role": "call-site"
+            }
+          ]
+        },
+        {
+          "id": "failure-path:4",
+          "from": "sym:src/runner.ts#Runner.dispatch",
+          "to": "file:src/queue.ts",
+          "label": "Requeue with a delay",
+          "kind": "call",
+          "shape": "terminal",
+          "summary": "`Queue.requeue` puts a copy of the job back, due after `backoffDelay(attempts)` milliseconds.",
+          "anchors": [
+            {
+              "file": "src/runner.ts",
+              "symbol": "Runner.dispatch",
+              "span": { "from": 33, "to": 36 },
+              "role": "call-site"
+            },
+            { "file": "src/queue.ts", "symbol": "Queue.requeue", "role": "definition" }
+          ]
+        },
+        {
+          "id": "failure-path:5",
+          "from": "sym:src/runner.ts#Runner.dispatch",
+          "to": "file:src/queue.ts",
+          "label": "Park it in the dead-letter list",
+          "kind": "call",
+          "shape": "terminal",
+          "summary": "`Queue.deadLetter` keeps the job with the error of its last attempt.",
+          "anchors": [
+            {
+              "file": "src/runner.ts",
+              "symbol": "Runner.dispatch",
+              "find": "await this.queue.deadLetter(job, result.error);",
+              "role": "call-site"
+            },
+            { "file": "src/queue.ts", "symbol": "Queue.deadLetter", "role": "definition" }
+          ]
+        }
+      ]
+    }
+  ]
+}
+```
 
-Required: `type: "sequence"`, `title`, `participants` (lifelines, left to right), `steps`. Every step needs `id` (`<view-slug>:<n>`), `from`, `to` (both must be participants), `label` (the call text), `kind` (`call` solid arrow, `return` dashed back to the caller, `async` open head), and should have `summary` and anchors: the exact call in the caller (`call-site`) plus the callee's definition. `edge` links a step to the edge it instantiates. A step's `from` may equal `to` (self-call). Frames (`loop`, `alt`, `opt`, `par`) wrap the run `fromStep`..`toStep` (inclusive); nest them or keep them apart (a partial overlap draws a warning). Keep a sequence view to 6 participants at most: a flow with more is two or three views (one per phase or per collaborator group), each readable on its own.
+A sequence view also appears in the reader's Process flow tab, as an ordered list of its calls; that list is not a model of the decisions. Write a flow view when the decisions are the point.
+
+**Supporting files.** For configuration and files that code loads by name, use configuration-key anchors (`role: "config"`) and edges with `kind: "loads"`, `"discovers"`, `"configures"` or `"overrides"`, anchored at both ends. A loader points to the loaded file or plugin directory (or group); configuration points to the code that reads it; an overriding file points to the file it overrides. Say the conditions and the order of precedence in the edge summary. Index `resources` records resolve literal paths and supported globs, with `static` or `inferred` labels; a matching file does not prove that it is loaded at runtime.
+
+### 3.8 Sequence view (steps, frames)
+
+Required: `type: "sequence"`, `title`, `participants` (lifelines, left to right), `steps`. Every step needs `id` (`<view-slug>:<n>`), `from`, `to` (both must be participants), `label` (the call text, as written in the code), `kind` (`call` solid arrow, `return` dashed back to the caller, `async` open head), and should have `summary` and anchors: the exact call in the caller (`call-site`) plus the callee's definition. `edge` links a step to the edge it instantiates. A step's `from` may equal `to` (self-call). Frames (`loop`, `alt`, `opt`, `par`) wrap the run `fromStep`..`toStep` (inclusive); nest them or keep them apart (a partial overlap draws a warning). Keep a sequence view to 6 participants at most: a flow with more is two or three views (one per phase or per collaborator group), each readable on its own.
 
 ```json patch
 {
@@ -351,7 +474,7 @@ Required: `type: "sequence"`, `title`, `participants` (lifelines, left to right)
           "to": "sym:src/runner.ts#Runner.dispatch",
           "label": "RunResult",
           "kind": "return",
-          "summary": "Failures come back as { ok: false, error }, never as exceptions, so the runner decides what to do next.",
+          "summary": "`Worker.run` returns a failure as `{ ok: false, error }` instead of throwing, so the runner decides what to do next.",
           "anchors": [
             {
               "file": "src/worker.ts",
@@ -423,7 +546,7 @@ Required: `type: "sequence"`, `title`, `participants` (lifelines, left to right)
 }
 ```
 
-**Editing one step.** To fix a step's summary or anchors, do not resend all the steps: `stepsUpdate` is a list of `{id, ...fields}` merged into the existing steps with those ids. The fields are those of a step (`from`, `to`, `label`, `kind`, `summary`, `anchors`, `edge`): `anchors` replace that step's anchors wholesale, `null` clears `summary` or `edge`. The other steps, the frames and the tours that point at them stay as they are, and `changed` lists the view and the ids of the steps it updated. It applies after `steps` when both are sent, only to a view that exists (a new view sends `steps`), and an unknown step id is an error that names the view's steps. Like `steps`, it is skipped with a `protected` warning when the user edited the view's steps.
+**Editing one step** (sequence and flow views). To fix a step's summary or anchors, do not resend all the steps: `stepsUpdate` is a list of `{id, ...fields}` merged into the existing steps with those ids. The fields are those of a step (`from`, `to`, `label`, `kind`, `summary`, `anchors`, `edge`, and for a flow `shape`, `next`): `anchors` replace that step's anchors wholesale, `null` clears `summary` or `edge`. The other steps, the frames and the tours that point at them stay as they are, and `changed` lists the view and the ids of the steps it updated. It applies after `steps` when both are sent, only to a view that exists (a new view sends `steps`), and an unknown step id is an error that names the view's steps. Like `steps`, it is skipped with a `protected` warning when the user edited the view's steps.
 
 ```json patch
 {
@@ -451,9 +574,19 @@ Required: `type: "sequence"`, `title`, `participants` (lifelines, left to right)
 }
 ```
 
-### 3.8 Tour (presentation)
+### 3.9 Tour (the guide)
 
-Required: `title`, `steps`. A tour step: `id`, `view`, `focus` (node, edge, concept or sequence-step ids; a sequence step must belong to that tour step's `view`, else a warning), optional `note` (markdown speaker note), `code` (`AnchorInput[]` that replaces the focus's own code; a group, file or directory focus shows whole files, so give those steps a `code` override: focusing `grp:retry-engine` alone shows runner.go 1-146, queue.go 1-154 and deadletter.go 1-35), `editor` (`primary` file shown first, `dimOthers`, `hideFileTree`). A tour has provenance like an element: what the user edits in the tour panel (`title`, `steps`) becomes theirs (section 5), and an `llm` patch can then neither change those fields nor remove the tour. Send a tour's `steps` whole while it is yours; once the user has edited it, make a new tour (new slug).
+The tour is what the reader sees first: its `title`, its `summary`, then its steps in order. Required: `title`, `steps`. Optional: `summary`, 2-4 sentences of markdown that say what this is and why it matters (for a change: the behaviour change, the risk, what the tests cover); `null` clears it. Write one on every tour (`writing.md`, section 4).
+
+A tour step has:
+
+- `id` (`t1`, `t2`, ...; unique in the tour, never renumbered) and `view` (the picture the step shows);
+- `focus`: one main element (a box, a flow or sequence step, an edge), plus at most one concept that explains it. A step id must belong to that tour step's `view`, else a warning;
+- `note` (markdown): the first line is `### <plain title>`, about 8 words, a statement, no code. The viewer shows that line as the step title (contents, guide, Present) and does not repeat it. The body, 1-4 sentences, says what no summary says: why this step matters, what to look at, the condition that changes the outcome;
+- `code`: `AnchorInput[]` that replaces the code the focus would show. Give it on every step: at most 2 ranges, the range the note talks about first. A group, file or directory focus without it shows whole files (focusing `grp:retry-engine` alone shows runner.go 1-146, queue.go 1-154 and deadletter.go 1-35);
+- `editor`: `primary` (the file shown first: the file of the first `code` range), `dimOthers`, `hideFileTree`.
+
+Order the steps top-down: the big picture first, then the main path, then the details, then edge cases and open questions.
 
 ```json patch
 {
@@ -461,36 +594,61 @@ Required: `title`, `steps`. A tour step: `id`, `view`, `focus` (node, edge, conc
     {
       "id": "tour:retries",
       "title": "How a failed job is retried",
+      "summary": "The runner takes jobs from an in-memory queue and runs each one on a worker. When an attempt fails, the runner puts the job back with a growing delay. After `retry.maxRetries` retries it parks the job in a dead-letter list. This tour follows one failed job and leaves out metrics.",
       "steps": [
         {
           "id": "t1",
           "view": "view:overview",
           "focus": ["grp:scheduling"],
-          "note": "Start with the big picture: the runner and the queue are one responsibility, scheduling.",
+          "note": "### The runner decides, the queue stores\n\nTwo files do the retry work. `runner.ts` decides what happens to a finished attempt; `queue.ts` keeps the jobs and their due times.",
           "code": [
-            { "file": "src/runner.ts", "symbol": "Runner.dispatch", "role": "definition" },
-            { "file": "src/queue.ts", "symbol": "Queue.pop", "role": "definition" }
-          ]
+            {
+              "file": "src/runner.ts",
+              "symbol": "Runner.dispatch",
+              "span": { "from": 25, "to": 41 },
+              "role": "definition"
+            },
+            { "file": "src/queue.ts", "symbol": "Queue.requeue", "role": "definition" }
+          ],
+          "editor": { "primary": "src/runner.ts" }
         },
         {
           "id": "t2",
           "view": "view:dispatch",
           "focus": ["dispatch:2"],
-          "note": "The runner leases a worker and runs one attempt. Failures come back as values.",
+          "note": "### Each pass runs one attempt\n\nThe loop leases a free worker and runs the job once, with the configured timeout.",
+          "code": [
+            {
+              "file": "src/runner.ts",
+              "symbol": "Runner.dispatch",
+              "span": { "from": 18, "to": 19 },
+              "role": "call-site"
+            },
+            { "file": "src/worker.ts", "symbol": "Worker.run", "role": "definition" }
+          ],
           "editor": { "primary": "src/runner.ts" }
         },
         {
           "id": "t3",
-          "view": "view:dispatch",
-          "focus": ["dispatch:4", "concept:retry-policy"],
-          "note": "A failed attempt is requeued with exponential backoff until the retry budget is spent.",
-          "editor": { "primary": "src/runner.ts", "dimOthers": true }
+          "view": "view:failure-path",
+          "focus": ["failure-path:3", "concept:retry-policy"],
+          "note": "### A failed job waits longer each time\n\nThe delay doubles with each failed attempt, up to `maxDelayMs`. The three numbers come from `config/default.yaml`.",
+          "code": [
+            {
+              "file": "src/runner.ts",
+              "symbol": "Runner.dispatch",
+              "span": { "from": 31, "to": 36 },
+              "role": "call-site"
+            },
+            { "file": "src/runner.ts", "symbol": "backoffDelay", "role": "definition" }
+          ],
+          "editor": { "primary": "src/runner.ts" }
         },
         {
           "id": "t4",
           "view": "view:overview",
           "focus": ["edge:job-completed"],
-          "note": "Successes are announced on the event bus, which is why metrics never appear in the call graph.",
+          "note": "### Metrics hear about jobs through the bus\n\nWhen metrics are enabled, `registerMetrics` subscribes to `job.completed`. No call links the worker and the metrics code, so this link is not in the call graph.",
           "code": [
             {
               "file": "src/worker.ts",
@@ -508,7 +666,9 @@ Required: `title`, `steps`. A tour step: `id`, `view`, `focus` (node, edge, conc
 }
 ```
 
-### 3.9 `title` and `remove`
+A tour has provenance like an element: what the user edits in the tour panel (`title`, `summary`, `steps`) becomes theirs (section 5), and an `llm` patch can then neither change those fields nor remove the tour. Tours have no `stepsUpdate`: to change one step, resend that tour's `steps` whole (other tours are not touched). Once the user has edited the tour, make a new tour (new slug) or ask.
+
+### 3.10 `title` and `remove`
 
 `"title"` renames the explainer. `"remove"` deletes elements, views, tours and steps by id; an unknown id is a warning, not an error. Removing what something else points at (a step a frame or tour uses, a group a view includes, a concept a tour focuses) is rejected until the same patch fixes the pointer. An `llm` patch cannot remove what the user owns: an element, view or tour with `origin: "user"` or with any `userFields` (they edited part of it), nor a single step of a view whose `steps` they edited; those ids are skipped with a `protected` warning.
 
@@ -517,8 +677,8 @@ Required: `title`, `steps`. A tour step: `id`, `view`, `focus` (node, edge, conc
 - **Upsert by id.** New id: create (required fields in 3.x). Existing id: shallow merge.
 - **Shallow merge:** fields you send replace, fields you omit keep their value. Send `{"id": "grp:scheduling", "summary": "…"}` and `label` and `members` stay.
 - **Arrays and objects replace wholesale:** `members`, `include`, `hidden`, `excludeFiles`, `participants`, `steps`, `frames`, `anchors`, `related`, `scope`, `layout`. To add one member, resend the whole list (read the current one from the explainer JSON, which you may read but never edit). The exception is a graph view's `include`, which also has `includeAdd` / `includeRemove` (3.6): no list to resend.
-- **`null` clears** an optional field: `summary`, `detail`, `members`, `related`, `edgeKinds`, `hidden`, `excludeFiles`, `stubs`, `layout`, `frames` (in a `stepsUpdate` entry: a step's `summary` and `edge`). Anything else rejects `null` (`label cannot be null`), and a group without members is invalid anyway.
-- **Sequence `steps` are sent whole**, every step with its id. Keep ids; insert with the next free number at the right array position. Dropping a step warns (`steps … were dropped`) and then fails if a frame or tour still points at it. To change one step, use `stepsUpdate` (3.7) instead of resending the list: `[{id, ...fields}]` is merged into the steps with those ids (`anchors` replace that step's anchors, `null` clears `summary` or `edge`), after `steps` when both are sent; an id that is not a step of the view is an error; the user's edits of the view's `steps` protect it as they protect `steps`.
+- **`null` clears** an optional field: `summary` (of an element or a tour), `detail`, `members`, `related`, `edgeKinds`, `hidden`, `excludeFiles`, `stubs`, `layout`, `frames` (in a `stepsUpdate` entry: a step's `summary` and `edge`). Anything else rejects `null` (`label cannot be null`), and a group without members is invalid anyway.
+- **Sequence and flow `steps` are sent whole**, every step with its id. Keep ids; insert with the next free number at the right array position. Dropping a step warns (`steps … were dropped`) and then fails if a frame or tour still points at it. To change one step, use `stepsUpdate` (3.8) instead of resending the list: `[{id, ...fields}]` is merged into the steps with those ids (`anchors` replace that step's anchors, `null` clears `summary` or `edge`), after `steps` when both are sent; an id that is not a step of the view is an error; the user's edits of the view's `steps` protect it as they protect `steps`.
 - **Stored anchors resend verbatim**, but a `hash` in them must still equal the current text: for anchors whose code changed, resend without `hash` (or as `find`/`span`).
 - **`kind` of a node and `type` of a view cannot change.**
 - **Provenance is managed for you** (section 5): new elements, views and tours get `{origin: "llm", commit}`; you cannot set `origin: "user"`; user-owned elements, fields and tours are left alone.
@@ -622,7 +782,7 @@ A rejection lists **every** error of the patch at once (anchors, ids and referen
 
 ## 8. Repairing after code changes
 
-`xpl resolve <name> --write` (after `xpl index`) marks every anchor `ok`, `moved` (span updated automatically), `drifted` (text changed) or `missing`. A drifted anchor stays drifted until you resend it: re-read the code (`xpl anchors <name> <id>` shows what the anchor points at now), resend the element with fresh anchors (no `hash`) and a summary that matches the new code. A missing anchor means the symbol is gone or renamed: its message says where the code went when it can tell (`the anchored lines now sit in sym:… (anchor: file: …, symbol: …, span: {from, to})`, or a same-sized symbol as a `did you mean`); report it to the user and ask before re-anchoring or removing (see SKILL.md, "After the code changed"). Ids that vanished from a view (`xpl status`: broken references) are fixed with `includeRemove`, or by resending `members` / `participants` / `steps` without them. To repair **one step**, use `stepsUpdate` (3.7): the other steps stay as they are.
+`xpl resolve <name> --write` (after `xpl index`) marks every anchor `ok`, `moved` (span updated automatically), `drifted` (text changed) or `missing`. A drifted anchor stays drifted until you resend it: re-read the code (`xpl anchors <name> <id>` shows what the anchor points at now), resend the element with fresh anchors (no `hash`) and a summary that matches the new code. A missing anchor means the symbol is gone or renamed: its message says where the code went when it can tell (`the anchored lines now sit in sym:… (anchor: file: …, symbol: …, span: {from, to})`, or a same-sized symbol as a `did you mean`); report it to the user and ask before re-anchoring or removing (see SKILL.md, "After the code changed"). Ids that vanished from a view (`xpl status`: broken references) are fixed with `includeRemove`, or by resending `members` / `participants` / `steps` without them. To repair **one step**, use `stepsUpdate` (3.8): the other steps stay as they are.
 
 1. `xpl anchors <name> dispatch:4` shows what the step's anchors point at now (`xpl status` names the drifted steps);
 2. rewrite the drifted or missing anchors from `xpl show` output (`find` or `span`, no `hash`), and the summary if the new code says something else;

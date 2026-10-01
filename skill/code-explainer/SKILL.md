@@ -1,147 +1,216 @@
 ---
 name: code-explainer
-description: Generate an interactive code explainer, meaning linked diagrams (box-and-arrow graph, sequence diagram) and a concept list next to a code viewer, where clicking a box, arrow, step or concept highlights the exact code and selecting code lights up the matching diagram elements. Use when the user wants to understand how code works ("how does X work", "how does a failed job get retried"), get an architecture overview of a repo, explore an unfamiliar codebase, or prepare a code walkthrough, demo or presentation. Three operations - explain (a question, or the whole repo) creates views, expand (a node or stub) grows a view and explains what became visible, make tour turns views into a presentation.
+description: Generate an interactive code explainer, meaning a short guided tour with linked diagrams (box-and-arrow map, process flow, sequence diagram) next to a code viewer, where clicking a box, arrow or step highlights the exact code and selecting code lights up the matching diagram elements. Use when the user wants to understand how code works ("how does X work", "how does a failed job get retried"), get an architecture overview of a repo, understand or review a change (a PR, MR, branch or commit range, read locally), explore an unfamiliar codebase, or prepare a code walkthrough, demo or presentation. Operations - explain <question> (part of a project), explain repo (architecture), explain change <base>..<head> (a diff), expand (grow a view), make tour (a talk).
 ---
 
 # Code explainer
 
-You turn a question about code, or a whole repo, into an **explainer**: data that a fixed viewer renders as diagrams linked both ways to the code. You never write UI. You write JSON **patches**; the `xpl` CLI checks every claim against a static index and rejects what it cannot resolve.
+You turn a question about code, a whole repo, or a change into an **explainer**: data that a fixed viewer renders as a guided tour with diagrams linked both ways to the code. You never write UI. You write JSON **patches**; the `xpl` CLI checks every claim against a static index and rejects what it cannot resolve.
 
-Workflow at a glance: `xpl index` → `xpl new <name>` → read the code (`outline`, `search`, `show`, `refs`) → write one patch → `xpl apply` (fix and repeat until clean) → `xpl validate` + `xpl status` + `xpl anchors` → `xpl bundle` or `xpl view`.
+The reader sees, in this order: the tour title and its **summary**, then the tour steps (each a title, a short note, one picture and the code it is about), then the maps and the code on demand. Write for that order: the most important thing first, then one level of detail at a time.
+
+Workflow: `xpl index` → `xpl new <name>` → choose the scope → read the code → patch the structure and text → `xpl apply` → `validate`, `status`, `anchors` → the tour → `xpl lint`, re-read, small fixes → `xpl bundle` → reply.
 
 ## What you are making
 
-- **Index** `.explainer/index-<commit>.json`: symbols, ranges, hashes and reference edges from static analysis. Built by `xpl index`.
+- **Index** `.explainer/index-<commit>.json`: symbols, ranges, hashes and reference edges from static analysis, built by `xpl index`.
 - **Explainer** `.explainer/<name>.explainer.json`: what you add on top. Written only by `xpl apply`; never edit it by hand (reading it is fine).
-- **Elements** (everything clickable): _nodes_ (repo, dir, file, symbol come from the index; you add **groups** and overlays that attach a label or summary), _edges_ (calls come from the index; you add `llm` edges only for links static analysis cannot see), _concepts_ (cross-cutting ideas), _sequence steps_.
-- **Views**: `graph` (`include` = the nodes shown), `flow` (process stages, decisions and labeled transitions), and `sequence` (detailed interactions between participants). **Tours**: ordered sections for reading and presenting. The viewer opens the Guide by default, with System map, Process flow and Code & files tabs sharing the selected topic.
+- **Tour**: the guide. A `summary` and 5-9 steps. Each step shows one view, focuses one main element, and has a note that starts with `### <plain title>`. One primary tour per request.
+- **Views** (the pictures a tour step shows): `graph` (a map: `include` = the boxes), `flow` (stages, decisions and labeled branches) and `sequence` (calls between participants). Add a view only when a tour step uses it.
+- **Elements** (everything clickable): _nodes_ (repo, dir, file, symbol come from the index; you add **groups** and overlays with a label or summary), _edges_ (calls come from the index; you add `llm` edges only for links static analysis cannot see), _concepts_ (ideas that cross files), _steps_ of flow and sequence views.
 - **Anchor** = file + symbol path + optional `span` (0-based line offsets from the symbol's first line) or `find` text. The CLI turns it into a hash-checked pointer, so it can go stale (`ok`/`moved`/`drifted`/`missing`) but never point at code that is not there.
-- **Viewer**: click any element and the editor shows its anchored code (the rest dimmed); select code and the elements covering it light up.
 
 ## Setup
 
-1. **Find the CLI.** It is `bin/xpl` in this skill's directory (shown when the skill loads; else `ls -d ~/.claude/skills/code-explainer .claude/skills/code-explainer`). Below, `xpl` means that path: write it out in full in every command, shell variables may not survive between commands. Run from the root of the repo being explained (or pass `--root <dir>`). If it says "the CLI is not built", tell the user to run `npm install && npm run build` in the xpl repo (the message names the path); nothing works before that.
-2. **Index:** `xpl index` (`--precise auto` is the default). Re-run it whenever the code changed or a command warns `index ... does not match the working tree`. The per-language line is the trust level of every edge you will use:
-   - `refs: precise (scip-...)`: a compiler-grade indexer resolved the references. Listed calls are real; you still choose which ones answer the question.
-   - `refs: precise 64/82 (scip-python@0.6.6), 18 heuristic`: the tool described only 64 of the 82 files (build constraints, its own exclusions; a warning names them). The references of those 18 files are hints: confirm them with `show`.
-   - `refs: heuristic`: scope-aware guesses (a warning says why SCIP was unavailable). Treat refs as hints: confirm each call with `show` before you claim it.
-   - `refs: none`: yaml/json/toml/text. They have symbols (config keys, e.g. `pyproject.toml#project.scripts.flask`) but no references.
-   - A `warning: N file(s) have syntax errors; symbols near these lines may be incomplete: a.ts:12,40` names the lines: read the code there yourself before you rely on the outline.
-   - `--precise require` fails instead of falling back (use it when the user needs the exact call graph); `--precise off` skips SCIP for a fast, heuristic index on a big repo.
-3. **Name it:** `xpl new <name> --title "..."` unless `.explainer/<name>.explainer.json` exists. One explainer per repo (repo name, kebab-case); new questions add views to it. The repository name it records (the label of the repo box) is detected from `package.json`, `go.mod`, `pyproject.toml`, the git remote or the directory; pass `--repo <name>` (and `--url <url>`) to set it.
-4. **Patch files:** write patches outside the repo (scratchpad or `$TMPDIR`) so you can fix and re-apply; `xpl apply <name> -` reads stdin.
+1. **Find the CLI.** It is `bin/xpl` in this skill's directory (shown when the skill loads; else `ls -d ~/.claude/skills/code-explainer .claude/skills/code-explainer`). Below, `xpl` means that path: write it out in full in every command. Run from the root of the repo being explained (or pass `--root <dir>`). If it says "the CLI is not built", tell the user to run `npm install && npm run build` in the xpl repo; nothing works before that.
+2. **Index:** `xpl index`. Re-run it when the code changed or a command warns `index ... does not match the working tree`. The per-language line says how far you can trust each edge: `refs: precise` calls are real; `heuristic` references are hints, so confirm each call with `show` before you claim it; `refs: none` (yaml, json, toml, text) has config keys but no references. `--precise off` is fast and heuristic, for a big repo.
+3. **Name it:** `xpl new <name> --title "..."` unless `.explainer/<name>.explainer.json` exists. One explainer per repo (repo name, kebab-case); new questions add views and a tour to it. A change gets its own explainer, named and titled after it (`xpl new <repo>-pr-42 --title "PR 42: <what it does>"`): the page title is the explainer title. `--repo <name>` sets the name of the repo box when the detected one is wrong.
+4. **Patch files:** write patches outside the repo (scratchpad or `$TMPDIR`); `xpl apply <name> -` reads stdin.
+
+## Choose the scope first
+
+Decide which of the three scopes the request is before you read code, and say it in your reply.
+
+| Request                                                    | Scope                                    | Tour answers                                                      |
+| ---------------------------------------------------------- | ---------------------------------------- | ----------------------------------------------------------------- |
+| "how does X work", a question about one subsystem          | `explain <question>` (part of a project) | the question, from the entry point to the answer                  |
+| "explain this repo", "give me an overview", "architecture" | `explain repo` (whole project)           | what the project is, its parts, the main path through them        |
+| a PR, an MR, a branch, a commit range, "my changes"        | `explain change <base>..<head>` (a diff) | what changes for users, where, who else is affected, tests, risks |
+
+If the request can mean two materially different things (which service, which layer, which branch to compare with), ask one short question with concrete options. Otherwise proceed and state your assumption in the reply.
 
 ## Reading the code
 
-- `xpl outline [--under <id>] [--depth n] [--kind method,function] [--keys]`: dirs, files and symbols with ids, lines and fan-in/out (`in=`/`out=` find the hubs). `--kind` keeps only those symbol kinds (and what holds them); `--keys` lists config keys (yaml, json, toml).
-- `xpl search <text> [--regex] [-i] [--under <dir|glob>] [--code]`: a word, config key, topic, route or error string. Code hits come first, then config, then docs; `--under src/x/` or `--under 'tests/**'` scopes it, `--code` drops docs and config. Each hit shows the enclosing symbol id and `+offset`.
+- `xpl outline [--under <id>] [--depth n] [--kind method,function] [--keys]`: dirs, files and symbols with ids, lines and fan-in/out (`in=`/`out=` find the hubs); `--keys` lists config keys.
+- `xpl search <text> [--regex] [-i] [--under <dir|glob>] [--code]`: a word, config key, route or error string, code hits first. Each hit shows the enclosing symbol id and `+offset`.
 - `xpl show <id> [--refs]`: code as `<line> <offset>│ code`; `--refs` adds outgoing refs and callers, each with `+offset`.
-- `xpl refs <id> [--in|--out] [--kind call] [--depth n] [--max-children n]`: call hierarchy, what this calls / who calls this. `impl` lines hop through interfaces (`--tests`: test doubles). In a hierarchy (`--depth 2` or more) at most `--max-children` (15) lines are listed under each line (`... +9 more`), and a subtree already printed is marked `(expanded above)`.
+- `xpl refs <id> [--in|--out] [--kind call] [--depth n]`: what this calls, or who calls this. `impl` lines hop through interfaces (`--tests`: test doubles).
 
-Paste ids exactly as printed (`sym:internal/runner/runner.go#Runner.Dispatch`, `file:...`, `dir:...`). `+34..36` in the output is a span: `{"from": 34, "to": 36}`. Full options and sample output: `reference/cli.md`. Once an explainer exists, `xpl anchors <name> [ids]` prints what its anchors resolved to (below, "Check").
+Paste ids exactly as printed (`sym:internal/runner/runner.go#Runner.Dispatch`, `file:...`). `+34..36` in the output is a span: `{"from": 34, "to": 36}`. Full options: `reference/cli.md` (look up one command there; do not read it all).
 
-What the index knows besides calls: `read` refs (a variable, constant or typed field used but not called: `refs <field> --in --kind read` lists who reads a config switch; `show --refs` lists reads after the calls; graph views hide `reads` edges by default), `write` refs, and type uses. `imports` are runtime dependencies: a TS `import type` or a Python `TYPE_CHECKING` import is a `type-ref`, so type-level dependencies show as `references`. TS `describe`/`it`/`test` blocks are symbols named by their titles (`Queue.pop().returns the oldest job`: anchor a test with `symbol: "<that path>"`, role `test`).
+`refs <field> --in --kind read` lists who reads a config switch. TS `describe`/`it`/`test` blocks are symbols named by their titles: anchor a test with `symbol: "<that path>"`, role `test`.
 
-## explain <question>
+Tracing traps:
 
-1. **Scope.** If the question can mean two materially different things (which service, which layer, retry of what), ask one short question with concrete options. Otherwise proceed and state your assumption in the reply.
-2. **Entry points.** `search -i` the nouns and verbs of the question (retry, fail, requeue, timeout); `outline --depth 2` for the shape. Pick the function where the flow starts or the decision is made.
-3. **Trace.** `show <entry> --refs`, read the body, then follow the callees that matter with `show` and `refs <id> --out --kind call`. Stay at depth 1 and read each callee you need with `show`: `--depth 2` on a hub (something many others call, a big dispatcher) prints pages of plumbing. Stop when the question is answered; skip logging, metrics and plumbing that do not change the answer. Traps:
-   - A callee that is an interface method (a bodiless declaration, e.g. Go `JobQueue.Requeue`) has no outgoing refs, so `refs --out` hops through it: under the call it lists the implementations as `impl  sym:...` lines (test doubles are hidden and counted, `--tests` shows them; `--depth 2` expands the implementation itself). Read the `impl` that does the work and anchor the step's definition there. `refs <implementation> --in` goes the other way: the interface method it implements, with that method's callers. (Python base classes and TS abstract classes are `extends`, not `implements`: no hop.)
-   - A `call` ref to a type is a construction (`Result{...}`, `new X()`), not a function call.
-   - A `call` ref whose target is a variable or field (`call  sym:src/runner.ts#Runner.logger`) is a call through a function value: a callback, hook or handler held in a field. Anchor the field as `usage`, and the concrete implementation too when it is in the repo (who assigns the field: `refs <field> --in`, `search`); when it is not, say in the summary who supplies the function.
-   - Calls into dependencies (packages outside the repo) are not indexed. Anchor the call site only and name the dependency in the summary; claim nothing about what the library does beyond what the call site shows.
-4. **Find what static analysis misses:** event bus, DI and interface wiring (who passes the concrete class in), callbacks registered in another file, HTTP handlers, queues, topics, config keys read by name (`search` for `emit`, `publish`, `subscribe`, `on(`, `Handle`, `register`, topic/route/key strings; `outline --under file:config/x.yaml --keys`; a typed config field has readers: `refs <field> --in --kind read`, while the yaml/toml key itself has no references). Tests that pin the behaviour (`refs <id> --in`, `search --under 'test/**'`).
-5. **Decide the model** before writing:
-   - Include a guided tour, a system-map graph and an authored process flow when the code establishes an execution path. Keep the overview small and use plain stage labels. A flow uses `type: "flow"` with the same participants, steps and anchors as a sequence; each step may have `shape: "stage" | "decision" | "terminal"` and `next: [{step: "process:2", label: "eligible"}]`. Omitted `next` advances to the next step unless `shape` is `terminal`; `next: []` ends a path. Use explicit branches for conditions, loops and failure paths. Do not turn reading order or static dependencies into claimed execution paths.
-   - Inspect files read by a loader, plugin discovery patterns and configuration precedence. Index `resources` records resolve literal paths and supported globs; they do not prove runtime activation. Add configuration-key anchors to the consumer and evidence-backed `loads`, `discovers`, `configures` or `overrides` edges for dynamic wiring the index cannot establish. Put collections in directory or group targets, and anchor both the loader and its files. `configures` points from configuration to consumer; `overrides` points from overriding configuration to the overridden configuration. Never infer precedence merely from filenames or reading order.
-   - _sequence view_: 3-6 participants (entry symbol first, then the types/files it talks to; a class or file as the lifeline, the method as the definition anchor); more than 6 participants means several views, one per phase or group of collaborators; one step per call that matters, in execution order; `return` steps only where the result drives a branch; frames (`loop`, `alt`, `opt`, `par`) over the steps inside a loop or branch, one `alt` frame per arm.
-   - _graph view_: the 5-15 files/symbols involved; clusters that cross folders become **groups**.
-   - _concepts_: the cross-cutting ideas (retry policy, delayed redelivery) anchored to the implementing code, the config keys and the tests.
-   - _llm edges_: only for the links found in step 4, each with anchors at both ends.
-   - _summaries_ for everything the views show (every participant, step, box, group, concept): 1-2 sentences, concrete, about this code ("requeues with `baseDelay * 2^attempt`, capped at `maxDelay`"), never generic ("handles retries").
-6. **Write ONE patch** with all of it. Read `reference/patch-format.md` first (a template for every element) and imitate `reference/examples/go-retry.patch.json`. Key rules:
-   - A step's anchors are the exact call in the **caller** (`role: "call-site"`) plus the callee's **definition** (`role: "definition"`, whole symbol).
-   - `find` (text copied from `show`, unique inside that symbol) anchors exactly the lines the text touches and checks itself: use it for one-line calls. For a block or a multi-line call use `span` with the `+a..b` printed by `show --refs`/`refs` or the offsets from `show`.
-   - Concept anchors: span/find the deciding lines, not the whole function; config as `symbol: "<key path>"` (`retry.maxRetries`); tests as a test symbol, a span, or the test file.
-   - Step `label` = call text (`Requeue(job, backoff)`); `summary` = what happens and why.
-7. **Re-read your prose against the code (mandatory, before you apply).** Wrong prose is the main quality risk: the viewer shows every summary next to the code it anchors, so a claim the code does not back is on display. For each summary, `detail` and tour note (steps, boxes, groups, concepts, edges) open the `show` output of its anchors and check every sentence against it. Remove or qualify absolute words (only, never, all, always, every, nothing but, exactly) unless that code alone proves them, and delete any behaviour that is not visible in the anchored code (what a callee does elsewhere, what happens on paths you did not read, why the author chose it). Prefer "when X, it does Y" to general statements.
-8. **Apply:** `xpl apply <name> patch.json`. A rejection writes nothing and lists **every** error of the patch at once (path, message, `Did you mean: ...` for ids, ready-to-use anchor fields for symbols): fix the **patch** for all of them, apply again. A warning `span ... starts on a blank line: probably off by one` names the offset where the code starts: fix that anchor now. Results and rejections print on stdout; fatal errors (`error: ...`: bad JSON, unknown explainer) and `warning:` lines go to stderr. Never weaken a claim to get past validation (dropping an llm edge's second anchor, anchoring a whole file instead of the call, deleting a step). What you cannot anchor you cannot claim: leave it out and tell the user. Read the result too: `changed:` must list what you meant to change (after a `stepsUpdate` it names the view and each updated step). A `protected` warning means user-owned content was left untouched: when that is _all_ the patch did, `apply` exits 1 and names the protected ids (use a new view, `includeAdd`, or ask the user); when only part of it was skipped the exit code stays 0 and the last line of the output lists what was skipped.
-9. **Check:** `xpl validate <name>`, then `xpl status <name>`: it lists what the views show without a summary (with the ids of the unexplained edges), where each graph view stops (`ghosts:`) and the tours; fill any summaries that remain with a second patch until `to do: 0 unexplained`. Then `xpl anchors <name> [ids]` (no ids: every element with anchors): for each anchor it prints role, `file#symbol`, span, status, the resolved lines and the code at them as `<line> <offset>│ code` (a long anchor shows its first lines, a `... N lines elided` line and its last lines, so the end of a span can be checked too). Read it for every `span` anchor and confirm it landed on the code you meant; anything wrong is fixed with a patch that resends the anchor (`find` or the offsets shown). Do not read the explainer JSON for this.
-10. **Show it** (below), and answer the question in your reply in 3-6 sentences naming the key functions. The explainer is the evidence, not a replacement for the answer.
+- An interface method (a bodiless declaration, e.g. Go `JobQueue.Requeue`) has no outgoing refs: `refs --out` lists its implementations as `impl sym:...` lines. Read and anchor the `impl` that does the work. (Python base classes and TS abstract classes are `extends`: no hop.)
+- A `call` ref to a type is a construction (`new X()`), so a derived `calls` edge may stand for "creates", not for a call on the path you explain: check it with `show`, then hide or relabel it. A `call` ref to a variable or field is a call through a function value: anchor the field as `usage`, and the concrete function when it is in the repo (`refs <field> --in`).
+- `refs --in` finds no caller for a method reached through a variable or attribute: `await response(scope, receive, send)` calls `__call__`, `handler(job)` calls whatever was stored. Find the callers with `search` for the variable or attribute name, or from where the object is built (`refs <class> --in`); read them, and anchor the calling line as `call-site`.
+- A call that resolves to a base-class method with no real body (`raise NotImplementedError`, an abstract method) runs a subclass method at runtime. Read the subclass method that runs, anchor it, and link the two with an `llm` `calls` edge: static analysis cannot see that call.
+- Calls into dependencies outside the repo are not indexed: anchor the call site, name the dependency, claim nothing about the library.
+- Static analysis misses event buses, DI wiring, callbacks registered elsewhere, HTTP handlers, queues and config keys read by name: `search` for `emit`, `publish`, `on(`, `register` and the topic, route or key strings. Link what you find with an `llm` edge, anchored at both ends.
+- Stay at `--depth 1` on a hub: `--depth 2` prints pages of plumbing. Stop when the question is answered.
 
-## explain repo
+## explain <question>: part of a project
 
-Coarse first, lazy after.
+1. **Entry points.** `search -i` the nouns and verbs of the question (retry, fail, requeue, timeout); `outline --depth 2` for the shape. Pick the function where the flow starts or the decision is made.
+2. **Trace.** `show <entry> --refs`, read the body, then follow the callees that matter with `show` and `refs <id> --out --kind call`. Note every guard on the path (`if`, `match`, early `return`, type checks): the prose names the condition of each branch it describes.
+3. **Boundary** (what to anchor around the answer): the target code, its direct callers (`refs <id> --in`), the callees that change the answer, and the tests that pin the behaviour (`refs <id> --in` lines in test files, `search --under 'tests/**'`). A reader of the bundle checks claims against these files.
+4. **Model** (keep it small):
+   - one **map** (graph, 4-8 boxes) of the files or symbols involved; groups only where one box should stand for several files;
+   - one process view per part of the question; a question with two halves ("how does a request get in, and how does an error get out") gets two, each used by the tour. A **flow** when the code makes decisions: `shape` and labeled `next` branches, loops and failure paths explicit, never reading order presented as an execution path. A **sequence** when the point is who calls whom: 3-6 participants (entry symbol first), one step per call that matters, `return` steps only where the result drives a branch, frames over loops and branches. More than 6 participants means two views;
+   - 0-3 **concepts**, only for ideas that cross files (a retry policy, a lookup order);
+   - `llm` edges only for links static analysis cannot see. For files that code loads by name (config, plugins), anchor the config keys and use `loads`, `discovers`, `configures` or `overrides` edges (`patch-format.md` 3.7); a matching file name does not prove that it is loaded, and file names or reading order do not prove precedence;
+   - summaries for everything the views show.
+5. **Tour** (see "The tour"): summary; the big picture on the map; the main path, step by step; the details that change the outcome; edge cases and open questions last.
+6. Write, apply, check and show it (below). The reply answers the question, naming the key functions: the explainer is the evidence, not a replacement for the answer.
 
-1. `outline --depth 1`, then `--depth 2` (`--under dir:<x>` for big trees). Find the packages/services/layers, entry points (`main`, `cmd/`, servers, CLI dispatch), config, tests, docs.
-2. Choose 4-10 boxes: top-level dirs/packages; when the repo is one package (depth 1 gives fewer than 4 boxes) use its files. In a `src/<pkg>/` layout start at `dir:src/<pkg>`, not `dir:src` (that is one box for everything). Cluster with **groups** (`grp:<slug>` + `members`) where one responsibility spans several files or folders.
-3. One patch (imitate `reference/examples/py-overview.patch.json`): the groups; overlays (`dir:`/`file:`/`grp:`) with a one-line `summary` for **each box the view shows and nothing deeper**; a graph view `view:overview` with `scope: {root: "repo", depth: 1}` (or 2) and `include` = those boxes and their group ids (add `"edgeKinds": ["imports", "calls"]` when package dependencies are the point); `llm` edges for links static analysis cannot see (event bus, DI); 1-3 concepts only if an idea is central to the design.
-   Tests, examples and docs add edges to their package (`internal/runner -> bus` exists only through `retry_test.go`) and ghosts that are not the design: give every overview `"excludeFiles": ["**/*_test.go", "**/test/**", "**/tests/**", "**/*.test.*", "**/test_*.py", "**/examples/**", "docs/**"]` (globs on repo paths; derived edges and stubs then ignore every reference that starts or ends in such a file; nodes you include stay). Check the edges that remain with `refs <dir> --out` and put any still-misleading derived edge ids (from `status --json`) in the view's `hidden`. `status` also prints each view's ghosts and stubs and warns above 12: a view that stops in that many places is unreadable (see `expand`).
-4. If there is an obvious entry point, add one sequence view for the main flow (startup or request path), 4-8 steps, anchored as above, participants explained. No obvious entry point: skip it.
-5. Leave deeper nodes unexplained (lazy). Tell the user, and offer the 2-3 most useful expansions.
+## explain repo: the whole project
 
-## expand <node>
+1. **What it is.** Read the README and the package metadata (`xpl show file:README.md`, `outline --keys` on `pyproject.toml`, `package.json`, `go.mod`): language, kind (web framework, CLI tool, library, service), what it is for. The tour summary starts with this.
+2. **Parts.** `outline --depth 1`, then `--depth 2` (`--under dir:<x>` for big trees). Find the packages, layers, entry points (`main`, `cmd/`, servers, CLI dispatch), config, tests, docs.
+3. **Overview map** `view:overview`: 4-8 boxes, one per responsibility; use the top-level dirs or packages, or files when the repo is one package (in a `src/<pkg>/` layout start at `dir:src/<pkg>`, not `dir:src`). Use groups (`grp:<slug>` + `members`) where one responsibility spans several files or folders. Give each box a one-line `summary` and nothing deeper. Follow "Maps" below (`excludeFiles`, stubs, hidden edges).
+4. **Main path.** If there is an obvious entry point, add one flow or sequence view for the main path (startup or request path), 4-8 steps. No obvious entry point: skip it.
+5. **Tour:** summary (what the project is, what it is for, the main path in one sentence); the overview; the main path; then each remaining box of the overview in one step, or one step that lists the boxes it skips and why. Every overview box is visited or named as skipped. Define the project's central term (a plugin, a job, a middleware) in the first step that needs it.
+6. Leave deeper nodes unexplained (lazy). Tell the user, and offer the 2-3 most useful expansions.
 
-`<node>` is an id or name from the user, a ghost/stub they clicked (`ghost:dir:internal/bus` means `dir:internal/bus`, `ghost:file:x` means `file:x`; folded ghosts: see step 2), or an entry of the request queue.
+## explain change <base>..<head>: a PR, an MR or a branch diff
 
-1. Resolve it to an id (`outline`, `search`) and read it: `show <id> --refs`, `outline --under <id> --depth 1` for its children (a group opens into its `members`).
-2. **Drill in:** patch the graph view with `"includeAdd": ["<id>", ...the children worth showing]`: the ids are appended to the view's `include` (already-included ones are ignored), so there is no list to resend. A node whose children are also included renders as a container. A stub's ghost target is added the same way. `includeAdd` also works when the user curated the view's `include` (it only adds); `includeRemove` (and a whole `include`) is skipped there with a `protected` warning, so to take nodes out of such a view tell the user. Only a user-authored view (`origin: "user"`) rejects every edit: put the nodes in a new graph view (new slug) and say so.
-   - **Folded ghosts (crowded views).** By default (`"stubs": {"mode": "top", "max": 8}`) a graph view draws only the 8 ghosts most references lead to: the outside symbols of a file the view shows in part fold into `ghost:rest:file:<path>` ("rest of <file>"), the ghosts beyond 8 into `ghost:more:in` / `ghost:more:out` ("+N more"). A folded ghost is not an element, so it cannot be `includeAdd`ed: `status` prints what each one stands for under its `ghosts:` line, up to 3 element ids with their reference counts (`ghost:rest:file:command.go ×27 → sym:command.go#Command.Flags ×9, ...`), and `status --json` (`views[].ghosts.list[].targets`) lists them all. The viewer's menu and `outline --under file:<path>` / `refs <shown id> --out` show the same from elsewhere. Add the elements worth showing with `includeAdd`, or `file:<path>` for the whole file as one box. `"mode": "all"` only for a small view, `"none"` for no stubs, `hidden` for ghost and stub ids you do not need (`status --json`: `ghosts.list[].id`, `ghosts.stubIds`); `status` prints each view's ghosts and stubs and warns above 12. An arrow from a box to its own container is never drawn.
-3. **Explain what became visible:** `status <name>` names the new unexplained nodes; add overlays with a `summary` for those and only those.
-4. If the target is a step, edge or concept: a step gets a better `summary` (`stepsUpdate` with that step alone, the other steps stay; steps have no `detail`, put the longer answer in your reply); a concept gets `summary`/`detail`; a derived edge `edge:calls:<a>-><b>` gets an overlay with `label`, `summary` and anchors at both ends. Derived edge ids depend on what the view includes (drilling into a file changes `...->file:x.go` into `...->sym:x.go#Type`): do this after the `include` edit and take the current id from `status --json` (`views[].edges.unexplained`).
-5. **Drain the queue:** `status` prints `requests queued by the viewer` (from `.explainer/requests.json`, filled by "Explain this" in `xpl view`). Do 1-4 for each, then `rm .explainer/requests.json` and tell the user what you added.
+Follow `reference/explain-change.md`. It holds the rules for this scope: what you may run and fetch, checking "before" claims in the base code, who else is affected, tests and gaps, risks, and the review-order tour. The explainer describes the head, the code the index sees.
 
-## make tour
+## The tour
 
-1. Choose the views (ask which if several; default: the newest question view plus the overview). Order the story: overview, main flow step by step, concepts, edge cases.
-2. One tour step per idea, 5-12 in all: `{"id": "t1", "view": "view:...", "focus": [ids], "note": "...", "editor": {"primary": "<file shown first>"}}`.
-   - `focus`: node, edge, concept or sequence-step ids (a step must belong to that tour step's `view`); usually one sequence step, plus the concept that explains it.
-   - `note`: speaker note, markdown, 1-3 sentences: what to say and why it matters, not a paraphrase of the code.
-   - `code` (anchor overrides): give it whenever `focus` is a group, file or directory (their focus is the whole files) or the focused anchors are not what the audience should read: 1-3 anchors of the lines to look at.
-3. Tour ids are `tour:<slug>`; step ids `t1`, `t2`... are unique in the tour and never renumbered (insert with the next free number where it belongs in the array). A tour the user edited in the tour panel (`title`, `steps`) is theirs: an `llm` patch that resends those fields is skipped (`protected` warning, exit 1 when that was all it did) and the tour cannot be removed. To change such a talk make a new tour under a new slug, or ask.
-4. `apply`, then `xpl anchors <name> tour:<slug>`: every step prints the code the viewer will show, from its `code` override or, without one, derived from its `focus` (`[derived from dispatch:2]`). Where that is not what the audience should read, resend the tour's `steps` (tours have no `stepsUpdate`) with a `code` override on that step.
-5. `xpl bundle <name> -o <file>.html --tour tour:<slug>` (opens in present mode, arrow keys step through).
+One primary tour per request: `tour:<slug>`, 5-9 steps (up to 12 for a change), read top-down like a zoom (big picture → main path → details → edge cases).
 
-## After the code changed
+- **`summary`** (2-4 sentences, always): what this is and why it matters; `reference/writing.md` section 4 says what goes in it for each scope.
+- **`title`**: plain, about 8 words, the question or the topic ("How a failed job is retried"); for a change, the change ("PR 42: config rejects invalid retry delays").
+- **Order:** the first step shows the big picture (the map). Then the main path in execution order. Then the details that change the outcome. Edge cases, gotchas and open questions come last. A whole-repo tour visits every overview box or says which it skips.
+- **Each step** `{"id": "t1", "view": "view:...", "focus": [ids], "note": "...", "code": [...]}`:
+  - `focus`: one main element (a box, a flow or sequence step, an edge), plus at most one concept that explains it. A flow or sequence step in `focus` must belong to the tour step's `view`.
+  - `note`: starts with `### <plain title>`, then 1-4 sentences that say what no summary says (`reference/writing.md` sections 1 and 3).
+  - `code`: an override with **at most 2 ranges**, and the range the note talks about first comes first. Give it on every step (a group, file or directory focus otherwise shows whole files). `editor.primary` names the file of that first range.
+- **Ids:** step ids `t1`, `t2`... are unique in the tour and never renumbered (insert with the next free number where it belongs). A tour the user edited (`title`, `summary`, `steps`) is theirs: an `llm` patch that resends those fields is skipped (`protected` warning) and the tour cannot be removed. Make a new tour (new slug) or ask.
 
-1. `xpl index`, then `xpl resolve <name> --write`: re-resolves every anchor (ok / moved / drifted / missing), rewrites moved spans, and reports. (`--write` refuses while the index does not match the working tree: run `xpl index` first.)
-2. `xpl status <name>` is the to-do list: drifted llm elements (drifted steps name their view), `N drifted (K user-owned: ask the user)`, missing anchors, **broken references** (ids that vanished from the index: an overlay of a deleted symbol, an `include` / `members` / `related` / `participants` entry, a step end, a tour step's `focus`; `tours (n)` names the steps that point at something gone) and stale derived-edge overlays (an `edge:<kind>:<a>-><b>` overlay that no view derives any more).
-3. **Drifted llm elements:** re-read the code (`xpl anchors <name> <id>` shows what the anchors point at now), then resend their anchors (without `hash`; for a step, a `stepsUpdate` entry with that step's anchors and summary, the other steps stay: see `reference/patch-format.md` section 8) and any summary that depended on them. Never change a field listed in `userFields`; never touch `origin: "user"` elements or remove anything that carries `userFields` (`apply` skips them with a warning). Resent anchors are re-hashed, which clears the drift.
-4. **Broken references:** fix them in a patch: `includeRemove` drops a stale `include` entry, resend `members` / `participants` / `steps` without the gone id (a tour: resend its `steps` with the focus fixed), or `remove` the overlay; re-create a stale edge overlay on the id `status --json` lists now.
-5. **Missing anchors** (symbol gone or renamed): report each to the user (element, anchor, the `did you mean` hint: it names where the code went when it can tell, as an id and as ready-to-use anchor fields) and ask: re-anchor or remove. Never drop one silently or retarget it to something merely similar.
-6. `xpl validate <name>` (strict) must pass before you finish; `--lenient` is only for inspecting a half-repaired file.
+## Writing
+
+Read `reference/writing.md` before you write prose. It is the one place for the writing rules: which field holds what, which fields are markdown, sentence length, titles and labels, the tour summary, rewrites, and the re-read checklist. `xpl lint` checks the mechanical part.
+
+## Accuracy
+
+The viewer shows every claim next to the code it anchors, so a wrong claim looks checked. Before you apply, re-read every title, label, summary, `detail` and note against the `show` output of its anchors:
+
+- Delete behaviour that is not visible in the anchored code (what a callee does elsewhere, paths you did not read, why the author chose it). What you cannot check, leave out, and say so in the reply.
+- **Guard conditions:** when the anchored lines run only under a condition, the text names it ("when `metrics.enabled` is true", "for HTTP requests"). Anchor the condition too. When the same guard matters in a step's summary and its note, the note says what the guard means for the reader instead of repeating it.
+- **Absolute words and claims about all sites** (all, every, never, only, "the same everywhere") need proof in the anchored code; "every caller" needs `refs <id> --in` evidence and an anchor for each site. Otherwise name the sites or narrow the claim.
+- **Lists** read as complete: check that they are, or write "for example".
+- **Code, not folklore:** describe what the code does, not what a spec or the framework's reputation says ("stops waiting after the timeout", not "kills the job", when the code only races a timer).
+- **Changes:** "before" claims and test claims follow `reference/explain-change.md` sections 4 and 6.
+
+## Boundary and bundle
+
+The bundle is what the reader can check claims against. Anchor the target code, its direct callers, the callees that matter and the tests.
+
+- `--files boundary` (use it for changes and questions): the referenced files, plus the files of the direct callers and callees of each anchored symbol, plus the test files that reference those symbols. Only anchors with a `symbol` outside test files count: anchor the target symbols, and anchor context code you only show with a file-relative `span` (no `symbol`) so it does not widen the boundary. At most 40 files are added (`--boundary-max`).
+- `--files all` when the reader will browse a small repo; `--files referenced` (the CLI default) for only what the explainer references.
+
+## Maps
+
+A map must be readable at a glance:
+
+- 4-8 boxes, one per responsibility; group the rest or leave it out.
+- `"stubs": {"mode": "none"}` on every **graph** view a tour uses (flow and sequence views have no `stubs` field); ghosts and stubs are for exploring, not for reading.
+- `"excludeFiles": ["**/*_test.go", "**/test/**", "**/tests/**", "**/*.test.*", "**/test_*.py", "**/examples/**", "docs/**", "benchmarks/**"]` on overviews: tests, examples and docs add edges that are not the design. (A change map shows its changed test files on purpose, as one group box when there are several.)
+- Check the edges that remain (`refs <dir> --out`, `status --json`) and put noisy or misleading derived edges in `hidden`.
+- A view `title` says what the picture shows, in plain words.
+
+## Write, apply, check
+
+1. **First patch: the structure and the text** (overlays, edges, concepts, views, summaries). Write the tour last, once these have settled (see "Change one thing cheaply" for why). Imitate `reference/examples/go-retry.patch.json` (a question) or `reference/examples/py-overview.patch.json` (a repo). In `reference/patch-format.md` read only what the task needs: section 1 (anchors) and 2 (ids) always; 3.6 graph, 3.7 flow or 3.8 sequence for the views you write; 3.9 for the tour; 3.1-3.5 when you add groups, overlays, edges or concepts. Sections 4-8 (merge rules, provenance, output, rejections, repair) are for when a command points you there. Anchoring:
+   - A step's anchors are the exact call or condition in the **caller** (`role: "call-site"`) plus the callee's **definition** (`role: "definition"`, whole symbol).
+   - `find` (text copied from `show`, unique inside that symbol) anchors exactly the lines it touches and checks itself: use it for one-line calls. For a block or a multi-line call use `span` with the `+a..b` printed by `show --refs`/`refs`, or the offsets from `show`.
+   - Concept anchors: the deciding lines, not the whole function; config as `symbol: "<key path>"` (`retry.maxRetries`); tests as a test symbol, a span, or the test file.
+   - Summaries: 1-2 sentences, concrete, about this code ("requeues with `baseDelay * 2^attempt`, capped at `maxDelay`"), never generic ("handles retries"). Conditions and long lists go in `detail`.
+2. **Apply:** `xpl apply <name> patch.json` (`--dry-run` checks without writing). A rejection writes nothing and lists **every** error at once, with `Did you mean: ...` and ready-to-use anchor fields: fix them all and apply again. Fix a `span ... probably off by one` warning now. Never weaken a claim to get past validation (dropping an `llm` edge's second anchor, anchoring a whole file instead of the call): what you cannot anchor you cannot claim. A `protected` warning means user-owned content was left alone: use a new view, `includeAdd`, or ask the user.
+3. **Check:** `xpl validate <name>`; `xpl status <name>` until `to do: 0 unexplained` (the participants of flow and sequence views count too); `xpl anchors <name> tour:<slug>` shows the code each tour step will show, and `xpl anchors <name> <id>` checks a `span` anchor. Expect 1-3 small follow-up patches after `status` and `xpl lint`: send only what changes (see "Change one thing cheaply"). To resend a tour you may read it back from the explainer JSON (reading is fine; never edit the file).
+
+## Final checks before you show it
+
+1. `xpl lint <name>`: the mechanical writing checks (`reference/writing.md`, section 6). Fix every finding, or say in the reply why you kept it.
+2. Re-read the tour in order as a newcomer would, with the checklist in `reference/writing.md` section 6.
+3. For a change: re-check each before/after claim and each test claim (`reference/explain-change.md`).
 
 ## Show the result
 
-- `xpl bundle <name> -o <name>.html`: one self-contained HTML file (viewer, index, sources), works offline and can be shared. **The default in remote/cloud sessions** and wherever no local browser exists: give the user the path (publish or attach it if your environment can). `--mode present --tour tour:<slug>` starts a tour. By default it embeds only the files the explainer references and says so (`9 of 12 files embedded (referenced: 22.1 KB of source; --files all adds 3 files, 3.0 KB)`): the viewer's file tree lists only those files ("8 of 12 files included"). Add `--files all` when the reader will browse the rest of the repo.
-- `xpl view <name>`: local server (`http://127.0.0.1:4747`), live: reload after each `apply`; the user's layout edits are saved and "Explain this" clicks are queued. Start it in the background, stop it when the user is done. Use it when the user is at the machine and will keep iterating.
+- `xpl bundle <name> -o <name>.html --files boundary`: one self-contained HTML file (viewer, index, sources) that works offline. **The default in remote or cloud sessions** and wherever no local browser exists: give the user the path. Attach or publish it only when the user asked for that: it contains their source code. `--mode present --tour tour:<slug>` starts the tour as a presentation.
+- `xpl view <name>`: a local live server for a user at the machine who will keep iterating (their edits are saved, "Explain this" clicks are queued). Start it in the background; stop it when they are done.
+- **The reply** (the one rule for it): first the answer in 3-6 sentences (for a change: the behaviour change, then the risk). Then short lists, one line per item: the scope and any assumption; for a change, the changed files with `+/-` counts; what you checked by running code; what you left out or could not check; the bundle path, what it embeds and what it does not. Say that `.explainer/` was written into the repo. Do not retell the tour.
+
+## Change one thing cheaply
+
+To change one thing, patch only that element; never regenerate the explainer.
+
+- One element's text: send `{id, summary}` (other fields stay).
+- One step of a flow or sequence: `stepsUpdate` with that step alone (`[{"id": "retry:4", "summary": "...", "anchors": [...]}]`); the other steps stay.
+- A box on a map: `includeAdd` / `includeRemove` on the graph view.
+- A tour: resend that one tour (`id`, and the fields that change). Tours have no `stepsUpdate`: one changed note means resending all its `steps`, which is why the tour comes last.
+
+## expand <node>
+
+`<node>` is an id or name from the user, a ghost or stub they clicked (`ghost:dir:internal/bus` means `dir:internal/bus`, `ghost:file:x` means `file:x`), or an entry of the request queue.
+
+1. Resolve it to an id (`outline`, `search`) and read it: `show <id> --refs`, `outline --under <id> --depth 1` for its children (a group opens into its `members`).
+2. **Drill in:** patch the graph view with `"includeAdd": ["<id>", ...the children worth showing]` (appended to `include`). A node whose children are also included renders as a container. `includeAdd` works even when the user curated the view's `include`; `includeRemove` is then skipped (`protected`), so ask the user to take nodes out. A user-authored view (`origin: "user"`) takes no `llm` edit: use a new view (new slug). A folded ghost (`ghost:rest:file:<path>`, `ghost:more:out`) is not an element: `status` names the elements it stands for; `includeAdd` those, or `file:<path>` (`patch-format.md`, "Crowded views").
+3. **Explain what became visible:** `status <name>` names the new unexplained nodes; add overlays with a `summary` for those and only those.
+4. A step gets a better `summary` with `stepsUpdate`; a concept gets `summary`/`detail`; a derived edge `edge:calls:<a>-><b>` gets an overlay with `label`, `summary` and anchors at both ends. Derived edge ids depend on what the view includes: write the overlay after the `include` edit, with the id from `status --json` (`views[].edges.unexplained`).
+5. **Drain the queue:** `status` prints `requests queued by the viewer` ("Explain this" in `xpl view`). Do 1-4 for each, then `rm .explainer/requests.json` and tell the user what you added.
+
+## make tour
+
+For a talk built from views that exist. Use the rules of "The tour": a summary, 5-9 steps top-down, a `### title` on every note, at most 2 code ranges per step, edge cases last. Default views: the newest question's views plus the overview; ask which when there are several. Check with `xpl anchors <name> tour:<slug>` that each step shows the code its note is about, then `xpl bundle <name> -o <file>.html --tour tour:<slug>` (opens as a presentation; arrow keys step through).
+
+## After the code changed
+
+1. `xpl index`, then `xpl resolve <name> --write`: re-resolves every anchor (ok / moved / drifted / missing) and rewrites moved spans.
+2. `xpl status <name>` is the to-do list: drifted llm elements, missing anchors, **broken references** (ids that vanished from the index) and stale derived-edge overlays.
+3. **Drifted llm elements:** re-read the code (`xpl anchors <name> <id>`), then resend their anchors (without `hash`; for a step, a `stepsUpdate` entry: `reference/patch-format.md` section 8) and any summary or note that depended on them. Never change a field listed in `userFields`; never touch `origin: "user"` elements.
+4. **Broken references:** `includeRemove` drops a stale `include` entry; resend `members` / `participants` / `steps` (a tour: its `steps`) without the gone id, or `remove` the overlay.
+5. **Missing anchors** (symbol gone or renamed): report each to the user (element, anchor, the `did you mean` hint) and ask: re-anchor or remove. Never drop one silently or retarget it to something merely similar.
+6. `xpl validate <name>` (strict) must pass before you finish; `--lenient` is only for inspecting a half-repaired file.
 
 ## Hard rules
 
 1. **You cannot invent code.** Every anchor must resolve against the index or `apply` rejects the patch. Never write hashes. Never write line numbers or offsets from memory: copy them from `show`/`refs`/`search` output of this session, or use `find`.
-2. **Read before you claim.** Never summarise code you have not `show`n. A ref is a hint until you have seen the call.
-3. **`llm` edges only for what static analysis cannot see**, each with anchors at both ends. Calls, imports and inheritance are derived by the viewer: do not store them.
-4. **Stable ids.** Slugs (`grp:`, `concept:`, `edge:`, `view:`, `tour:`, `frame:`) are chosen once (lowercase kebab-case) and kept. Step ids `<view-slug>:<n>` are never renumbered or reused.
-5. **Provenance.** Use the default actor (`llm`). Never overwrite `origin: "user"` elements or `userFields` (views and tours included: `apply` skips them with a `protected` warning); `--actor user` only when the user dictates text to be stored as theirs.
-6. **Summaries** are 1-2 sentences, concrete, about this code, and every claim in them is visible in the code their anchors show (step 7 of `explain`: re-read them against `show` before applying). Use `detail` (markdown) only when it earns its place.
-7. **Lazy.** Explain what a view shows; leave the rest for `expand`.
-8. **Ask, do not guess** when the scope is ambiguous or an anchor cannot be found.
+2. **Read before you claim.** Never summarise code you have not `show`n. A ref is a hint until you have seen the call. For a change, never describe old behaviour you have not read in the base code.
+3. **Read-only on the user's repo and remotes.** Never post, comment, push or change the user's checkout.
+4. **`llm` edges only for what static analysis cannot see** (event buses, DI, calls through a base-class stub), each with anchors at both ends. Calls, imports and inheritance that the index has are derived by the viewer: do not store them again (to label one, use a derived-edge overlay).
+5. **Stable ids.** Slugs (`grp:`, `concept:`, `edge:`, `view:`, `tour:`, `frame:`) are chosen once (lowercase kebab-case) and kept. Step ids `<view-slug>:<n>` are never renumbered or reused.
+6. **Provenance.** Use the default actor (`llm`). Never overwrite `origin: "user"` elements or `userFields` (views and tours included); `--actor user` only when the user dictates text to be stored as theirs.
+7. **One primary tour, few things at the same level.** Views only when a tour step uses them; 0-3 concepts; groups only as map boxes.
+8. **Lazy.** Explain what a view shows; leave the rest for `expand`.
+9. **Ask, do not guess** when the scope is ambiguous or an anchor cannot be found.
 
 ## Gotchas
 
-- An anchor's `symbol` is the path inside the file (`Runner.Dispatch`). Element ids (`from`, `to`, `include`, `participants`, `members`, `focus`) use `sym:<file>#<path>`. `scope.entryPoints` uses `<file>#<path>` without `sym:`. A "did you mean" for an anchor prints both (`sym:src/a.ts#A.b (anchor: file: "src/a.ts", symbol: "A.b")`): copy the fields into the anchor, the id everywhere else.
+- An anchor's `symbol` is the path inside the file (`Runner.Dispatch`). Element ids (`from`, `to`, `include`, `participants`, `members`, `focus`) use `sym:<file>#<path>`; `scope.entryPoints` uses `<file>#<path>`.
 - Every step's `from`/`to` must be in the view's `participants`. Changing participants means resending the steps.
-- `steps`, `participants`, `include`, `members`, `anchors` replace wholesale: always resend the full list. Two exceptions: a graph view's `include` also takes `includeAdd` / `includeRemove` (see `expand`), and a sequence view's steps can be changed one by one with `stepsUpdate` (`[{"id": "dispatch:4", "summary": "...", "anchors": [...]}]`: an entry replaces only the fields it names, its `anchors` replace that step's anchors, `null` clears `summary`/`edge`; an unknown step id is an error).
-- `dir:`/`file:`/`sym:` overlays need only `id` + `summary` (label and anchors default from the index).
-- Ghost ids (`ghost:file:x`, `ghost:rest:file:x`, `ghost:more:out`, `stub:...`) are render-only: they go in a view's `hidden`, never in `include`, `includeAdd`, `members` or `focus`.
-- An `llm` edge takes `kind` `calls` (interface/DI/HTTP call), `emits` (event bus, queue), `reads` (config or string-keyed lookup) or `custom`.
-- A derived-edge overlay (`edge:calls:...`) is still an `llm` edge: it needs anchors at both ends, and a `label` (else a warning).
-- A `warning: index ... does not match the working tree` means offsets may be off: run `xpl index` before anchoring.
+- `steps`, `participants`, `include`, `members`, `anchors` replace wholesale: always resend the full list, except with `includeAdd` / `includeRemove` (graph views) and `stepsUpdate` (flow and sequence views).
+- `dir:`/`file:`/`sym:` overlays need only `id` + `summary`. Ghost and stub ids only go in a view's `hidden`.
+- An `llm` edge takes `kind` `calls` (interface/DI/HTTP call), `emits` (event bus, queue), `reads` (config or string-keyed lookup), `loads`, `discovers`, `configures`, `overrides` or `custom`. A derived-edge overlay (`edge:calls:...`) is still an `llm` edge: anchors at both ends and a `label`.
 
 ## Reference
 
-- `reference/patch-format.md`: every element type as a copy-pasteable template, `AnchorInput`, id rules, merge semantics (`includeAdd`, `excludeFiles`), rejection messages and their fixes. `xpl apply --help` prints a summary of it.
-- `reference/cli.md`: every command, option and output shape.
-- `reference/examples/go-retry.patch.json`: a complete worked patch for a question (sequence + graph views, groups, llm edges, concepts, tour); applies to `fixtures/go-jobrunner`.
-- `reference/examples/py-overview.patch.json`: a worked `explain repo` patch (groups, one-line summaries, overview graph, event-bus llm edge, startup sequence); applies to `fixtures/py-jobrunner`.
+- `reference/writing.md`: writing rules, what goes in which field, titles, the tour summary, rewrites, the checklist. Read it before you write prose.
+- `reference/explain-change.md`: the PR/MR/branch guide. Read it for `explain change`.
+- `reference/patch-format.md`: templates per element (read the sections "Write, apply, check" names), merge rules, provenance, rejection messages, repair. `xpl apply --help` prints a summary.
+- `reference/cli.md`: every command and option; look up the one you need.
+- `reference/examples/go-retry.patch.json`: a complete patch for a question (map, flow, concept, `llm` edges, tour with a summary); applies to `fixtures/go-jobrunner`.
+- `reference/examples/py-overview.patch.json`: an `explain repo` patch (groups, one-line summaries, overview map, event-bus edge, startup sequence, tour); applies to `fixtures/py-jobrunner`.
