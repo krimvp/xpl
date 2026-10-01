@@ -9,6 +9,7 @@ import { anchorsCommand } from "./commands/anchors.js";
 import { applyCommand } from "./commands/apply.js";
 import { indexCommand } from "./commands/build-index.js";
 import { bundleCommand } from "./commands/bundle.js";
+import { lintCommand } from "./commands/lint.js";
 import { newCommand } from "./commands/new.js";
 import { outlineCommand } from "./commands/outline.js";
 import { refsCommand } from "./commands/refs.js";
@@ -24,7 +25,7 @@ import { CliError, UsageError, errorMessage } from "./errors.js";
 export type { CommandSpec } from "./command.js";
 export type { Io } from "./context.js";
 
-/** The commands of ARCHITECTURE.md §5, in the order of its table. */
+/** The commands of ARCHITECTURE.md §5, in the order of its table (`lint` added after `status`). */
 export const COMMANDS: readonly CommandSpec[] = [
   indexCommand,
   outlineCommand,
@@ -37,6 +38,7 @@ export const COMMANDS: readonly CommandSpec[] = [
   anchorsCommand,
   resolveCommand,
   statusCommand,
+  lintCommand,
   viewCommand,
   bundleCommand,
 ];
@@ -75,7 +77,8 @@ function helpText(): string {
     "Environment: XPL_VIEWER_HTML=<file> overrides the viewer page (view, bundle); XPL_SKIP_STALE_CHECK=1 skips",
     "the comparison of the index with the working tree (about a second per 5000 files); XPL_WASM_DIR, XPL_DEBUG.",
     "Typical use: xpl index; xpl outline; xpl show <id> --refs; xpl new <name>; xpl apply <name> patch.json;",
-    "xpl view <name>. Exit codes: 0 ok, 1 rejected or failed, 2 usage error. See docs/ARCHITECTURE.md section 5.",
+    "xpl lint <name>; xpl view <name>. Exit codes: 0 ok, 1 rejected or failed, 2 usage error.",
+    "See docs/ARCHITECTURE.md section 5.",
     'Run "xpl <command> --help" for a command\'s options.',
   ].join("\n");
 }
