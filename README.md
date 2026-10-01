@@ -127,4 +127,7 @@ build step between packages in development. After `npm run build`, `node package
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): how it is built: schema, indexer, anchors and patches, CLI and
   server API, viewer, known limitations.
 - [docs/handoff.md](docs/handoff.md): the original design brief (schema draft and worked example).
+- [docs/review-2026-10-01.md](docs/review-2026-10-01.md): review of four generated explainers (two PRs,
+  a whole repo, a subsystem), what that iteration changed, a validation run on an unseen PR, and the
+  roadmap.
 - [skill/code-explainer/](skill/code-explainer/): what Claude reads: `SKILL.md`, `reference/`.
