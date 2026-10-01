@@ -16,6 +16,7 @@ import {
   scrollToLine,
 } from "../editor.js";
 import { useDerived, useStore, useViewerState } from "../hooks.js";
+import { roleWords } from "../readerWords.js";
 import type { Cursor } from "../store.js";
 
 export function EditorStack() {
@@ -47,6 +48,8 @@ export function EditorStack() {
   }
 
   const present = state.mode === "present";
+  // Read mode and Present are for readers: plain words on the panes.
+  const reader = present || state.perspective !== "explore";
   return (
     <div className="editor-stack">
       {panes.map((pane, i) => {
@@ -56,6 +59,7 @@ export function EditorStack() {
             key={pane.file}
             pane={pane}
             wantLines={present ? paneLines(pane) : undefined}
+            reader={reader}
             shrink={paneShrink(i)}
             language={info?.language ?? "text"}
             lines={info?.lines ?? 0}
@@ -124,6 +128,8 @@ interface PaneProps {
    */
   wantLines: number | undefined;
   shrink: number;
+  /** A reader view: plain words for the roles ("called here"), no language and line count. */
+  reader: boolean;
   language: FileLanguage;
   lines: number;
   text: string | undefined;
@@ -141,6 +147,7 @@ const EditorPane = memo(function EditorPane({
   pane,
   wantLines,
   shrink,
+  reader,
   language,
   lines,
   text,
@@ -177,11 +184,12 @@ const EditorPane = memo(function EditorPane({
     if (editor) applyFocus(editor, { ranges: pane.ranges, dim: pane.dim });
   }, [pane.ranges, pane.dim, text, pane.file, language]);
 
-  // Scroll to the first range when the focus changes (or the file is opened again).
+  // Scroll to the range the step is about when the focus changes (or the file is opened again): the first
+  // one in the step's order (`pane.lead`), else the lowest.
   useEffect(() => {
     const editor = view.current;
     if (!editor) return;
-    const first = firstFocusLine(pane.ranges);
+    const first = pane.lead ?? firstFocusLine(pane.ranges);
     if (first !== undefined) scrollToLine(editor, first, wantLines !== undefined ? 22 : undefined);
     else if (openToken > 0) scrollToLine(editor, 1);
     // `pane.ranges` belongs to this very `focusToken`; the token is what says "the focus changed".
@@ -216,13 +224,15 @@ const EditorPane = memo(function EditorPane({
           {slash !== -1 && <span className="dir">{pane.file.slice(0, slash + 1)}</span>}
           <b>{pane.file.slice(slash + 1)}</b>
         </span>
-        <span className="pane-meta">
-          {language} · {lines} lines
-        </span>
+        {!reader && (
+          <span className="pane-meta">
+            {language} · {lines} lines
+          </span>
+        )}
         <span className="pane-roles">
           {roles.map((role) => (
-            <span key={role} className={`role role-${role}`}>
-              {role}
+            <span key={role} className={`role role-${role}`} data-role={role}>
+              {reader ? roleWords(role) : role}
             </span>
           ))}
           {stale.some((r) => r.status === "drifted") && (

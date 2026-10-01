@@ -148,3 +148,47 @@ export function unionBox(boxes: readonly Box[]): Box | undefined {
   }
   return { x: x1, y: y1, width: x2 - x1, height: y2 - y1 };
 }
+
+export interface ReadableFit {
+  transform: Transform;
+  /** The fit shows the whole width from the top, not all of the diagram: the rest is scrolled to. */
+  width: boolean;
+}
+
+/**
+ * "Fit" for a diagram whose text must stay readable: all of it, when that keeps the zoom at `floor` or more
+ * (or when no floor is given). Else, when its width fits at `floor` or more, the whole width, from the top:
+ * the reader scrolls down for the rest. Else all of it anyway (no readable fit exists for this pane).
+ */
+export function readableFit(
+  size: Size,
+  content: Pick<Box, "width" | "height">,
+  options: FitOptions,
+  floor: number | undefined,
+): ReadableFit | undefined {
+  const fit = fitTransform(size, content, options);
+  if (!fit) return undefined;
+  if (floor === undefined || fit.k >= floor) return { transform: fit, width: false };
+  const k = clamp((size.w - 2 * options.padding) / content.width, MIN_ZOOM, options.maxZoom);
+  if (k < floor) return { transform: fit, width: false };
+  return {
+    transform: { k, x: (size.w - content.width * k) / 2, y: options.padding },
+    width: true,
+  };
+}
+
+/**
+ * Moves the view `dy` pane pixels down the diagram (a wheel turn over a width fit), never past its top or
+ * its bottom (with `padding` of room at either end).
+ */
+export function scrollDown(
+  t: Transform,
+  dy: number,
+  size: Size,
+  content: Pick<Box, "height">,
+  padding: number,
+): Transform {
+  const top = padding;
+  const bottom = Math.min(top, size.h - padding - content.height * t.k);
+  return { ...t, y: clamp(t.y - dy, bottom, top) };
+}

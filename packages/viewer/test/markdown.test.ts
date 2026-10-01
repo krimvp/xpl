@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { escapeHtml, renderMarkdown } from "../src/markdown.js";
+import { escapeHtml, renderInline, renderMarkdown } from "../src/markdown.js";
 
 describe("renderMarkdown", () => {
   it("renders markdown", () => {
@@ -44,5 +44,16 @@ describe("escapeHtml", () => {
     expect(escapeHtml(`<a href="x">&'</a>`)).toBe(
       "&lt;a href=&quot;x&quot;&gt;&amp;&#39;&lt;/a&gt;",
     );
+  });
+});
+
+describe("renderInline (step titles)", () => {
+  it("renders code and emphasis without a paragraph, and is sanitised like the rest", () => {
+    expect(renderInline("Fix 1: drop `q=0` **first**")).toBe(
+      "Fix 1: drop <code>q=0</code> <strong>first</strong>",
+    );
+    const html = renderInline('<img src=x onerror="alert(1)"> [a](javascript:alert(1))');
+    expect(html).not.toMatch(/<img/i);
+    expect(html).toContain('href="#"');
   });
 });

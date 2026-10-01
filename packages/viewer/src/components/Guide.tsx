@@ -1,18 +1,8 @@
 import { useEffect, useRef } from "react";
-import type { TourStep } from "@xpl/core";
+import type { ExplainerModel, TourStep } from "@xpl/core";
 import { useStore, useViewerState } from "../hooks.js";
-import { renderMarkdown } from "../markdown.js";
-
-export function sectionTitle(step: TourStep, label: (id: string) => string): string {
-  const title = step.note
-    ?.split("\n")
-    .find((line) => line.trim())
-    ?.replace(/^#+\s*/, "")
-    .replace(/[*`]/g, "");
-  return title && title.length <= 100
-    ? title.split(": ")[0]!
-    : step.focus.map(label).slice(0, 2).join(" · ") || "Overview";
-}
+import { renderInline, renderMarkdown } from "../markdown.js";
+import { stepText, stepTitle } from "../stepTitle.js";
 
 export function Guide() {
   const store = useStore();
@@ -66,7 +56,7 @@ export function Guide() {
       <div className="guide-fallback">
         <p className="eyebrow">Start here</p>
         <h2>{state.explainer.title}</h2>
-        <p>Choose a topic below, or use the system map to explore its implementation.</p>
+        <p>Choose a topic below, or open the map to see the parts of the code.</p>
         {state.model.views.map((view) => (
           <section className="guide-section" key={view.id}>
             <h3>{view.title}</h3>
@@ -86,7 +76,7 @@ export function Guide() {
                 store.setPerspective(view.type === "graph" ? "map" : "flow");
               }}
             >
-              Explore this topic
+              Show this topic
             </button>
           </section>
         ))}
@@ -94,11 +84,13 @@ export function Guide() {
       </div>
     );
 
-  const title = (step: TourStep) => sectionTitle(step, (id) => state.model.label(id));
+  const title = (step: TourStep) => stepTitle(step, state.model);
+  const summary =
+    typeof tour.summary === "string" && tour.summary.trim() ? tour.summary : undefined;
   return (
     <div className="guide-layout" data-testid="guide">
       <nav className="guide-contents" aria-label="Guide contents">
-        <p className="eyebrow">In this explanation</p>
+        <p className="eyebrow">In this guide</p>
         {state.model.tours.length > 1 && (
           <select
             aria-label="Choose a guide"
@@ -125,130 +117,147 @@ export function Guide() {
         ))}
       </nav>
       <div className="guide-body" ref={body}>
-        <p className="eyebrow">Guided explanation</p>
         <h2>{tour.title}</h2>
-        <p className="guide-intro">
-          Read the story, then switch to a map, process flow or source code without losing your
-          topic.
-        </p>
+        {/* The summary comes first: what this is and why it matters, before any detail. */}
+        {summary && (
+          <div
+            className="guide-summary markdown"
+            data-testid="tour-summary"
+            dangerouslySetInnerHTML={{ __html: renderMarkdown(summary) }}
+          />
+        )}
         {tour.steps.map((step, index) => (
-          <section
-            className={`guide-section${step.id === active ? " is-active" : ""}`}
-            data-section-id={step.id}
+          <GuideSection
             key={step.id}
-          >
-            <span className="section-number">Section {index + 1}</span>
-            <h3>{title(step)}</h3>
-            {step.note && (
-              <div
-                className="markdown"
-                dangerouslySetInnerHTML={{ __html: renderMarkdown(step.note) }}
-              />
-            )}
-            {step.focus.map((id) => {
-              const element = state.model.element(id);
-              const item =
-                element?.type === "node"
-                  ? element.node
-                  : element?.type === "concept"
-                    ? element.concept
-                    : element?.type === "edge"
-                      ? element.edge
-                      : element?.type === "step"
-                        ? element.step
-                        : undefined;
-              return item?.summary ? (
-                <p key={id}>
-                  <strong>{state.model.label(id)}</strong> — {item.summary}
-                </p>
-              ) : null;
-            })}
-            {step.focus.map((id) => {
-              const element = state.model.element(id);
-              const members =
-                element?.type === "node" && element.node.kind === "group"
-                  ? state.model.members(id)
-                  : element?.type === "concept"
-                    ? (element.concept.related ?? [])
-                    : [];
-              return element?.type === "step" ? (
-                <figure
-                  className="guide-mini"
-                  key={id}
-                  aria-label={`Interaction: ${element.step.label}`}
-                >
-                  <figcaption>This interaction</figcaption>
-                  <div className="guide-mini-row">
-                    <button
-                      className="guide-mini-node"
-                      onClick={() => store.select([element.step.from])}
-                    >
-                      {state.model.label(element.step.from)}
-                    </button>
-                    <button
-                      className="guide-mini-link"
-                      onClick={() => store.previewStep(tour.id, index)}
-                    >
-                      {element.step.label}
-                      <span aria-hidden="true">→</span>
-                    </button>
-                    <button
-                      className="guide-mini-node"
-                      onClick={() => store.select([element.step.to])}
-                    >
-                      {state.model.label(element.step.to)}
-                    </button>
-                  </div>
-                </figure>
-              ) : members.length > 0 ? (
-                <figure className="guide-mini" key={id}>
-                  <figcaption>{element?.type === "concept" ? "Applies to" : "Contains"}</figcaption>
-                  <div className="guide-mini-row">
-                    {members.map((member) => (
-                      <button
-                        className="guide-mini-node"
-                        key={member}
-                        onClick={() => store.select([member])}
-                      >
-                        {state.model.label(member)}
-                      </button>
-                    ))}
-                  </div>
-                </figure>
-              ) : null;
-            })}
-            <div className="section-actions">
-              <button
-                className="btn"
-                onClick={() => {
-                  store.previewStep(tour.id, index);
-                  store.setPerspective("map");
-                }}
-              >
-                Show in system map
-              </button>
-              <button
-                className="btn"
-                onClick={() => {
-                  store.previewStep(tour.id, index);
-                  store.setPerspective("flow");
-                }}
-              >
-                Follow the process
-              </button>
-              <button
-                className="btn"
-                onClick={() => {
-                  store.previewStep(tour.id, index);
-                  store.setPerspective("code");
-                }}
-              >
-                Open code & files
-              </button>
-            </div>
-          </section>
+            step={step}
+            index={index}
+            tourId={tour.id}
+            active={step.id === active}
+          />
         ))}
       </div>
     </div>
   );
+}
+
+/**
+ * One section of the guide: a tour step. Its title, then the rest of its note (the title is not said
+ * twice), then what it shows: the interaction it focuses, the members of a group, what a concept applies
+ * to. Each thing is said once: the summaries of the focused elements only stand in for a missing note.
+ */
+function GuideSection({
+  step,
+  index,
+  tourId,
+  active,
+}: {
+  step: TourStep;
+  index: number;
+  tourId: string;
+  active: boolean;
+}) {
+  const store = useStore();
+  const state = useViewerState();
+  const { title, titleMarkdown, body } = stepText(step, state.model);
+  const hasNote = typeof step.note === "string" && step.note.trim() !== "";
+  const show = (perspective: "map" | "flow" | "code") => {
+    store.previewStep(tourId, index);
+    store.setPerspective(perspective);
+  };
+  return (
+    <section className={`guide-section${active ? " is-active" : ""}`} data-section-id={step.id}>
+      <span className="section-number">Step {index + 1}</span>
+      {titleMarkdown !== undefined ? (
+        <h3 dangerouslySetInnerHTML={{ __html: renderInline(titleMarkdown) }} />
+      ) : (
+        <h3>{title}</h3>
+      )}
+      {body && (
+        <div
+          className="markdown"
+          data-testid="section-note"
+          dangerouslySetInnerHTML={{ __html: renderMarkdown(body) }}
+        />
+      )}
+      {!hasNote &&
+        step.focus.map((id) => {
+          const summary = summaryOf(id, state.model);
+          return summary ? (
+            <p key={id} data-testid="focus-summary">
+              <strong>{state.model.label(id)}</strong> —{" "}
+              <span dangerouslySetInnerHTML={{ __html: renderInline(summary) }} />
+            </p>
+          ) : null;
+        })}
+      {step.focus.map((id) => {
+        const element = state.model.element(id);
+        const members =
+          element?.type === "node" && element.node.kind === "group"
+            ? state.model.members(id)
+            : element?.type === "concept"
+              ? (element.concept.related ?? [])
+              : [];
+        return element?.type === "step" ? (
+          <figure className="guide-mini" key={id} aria-label={`Interaction: ${element.step.label}`}>
+            <figcaption>This call</figcaption>
+            <div className="guide-mini-row">
+              <button className="guide-mini-node" onClick={() => store.select([element.step.from])}>
+                {state.model.label(element.step.from)}
+              </button>
+              <button className="guide-mini-link" onClick={() => store.previewStep(tourId, index)}>
+                {element.step.label}
+                <span aria-hidden="true">→</span>
+              </button>
+              <button className="guide-mini-node" onClick={() => store.select([element.step.to])}>
+                {state.model.label(element.step.to)}
+              </button>
+            </div>
+          </figure>
+        ) : members.length > 0 ? (
+          <figure className="guide-mini" key={id}>
+            <figcaption>{element?.type === "concept" ? "Where this applies" : "Parts"}</figcaption>
+            <div className="guide-mini-row">
+              {members.map((member) => (
+                <button
+                  className="guide-mini-node"
+                  key={member}
+                  onClick={() => store.select([member])}
+                >
+                  {state.model.label(member)}
+                </button>
+              ))}
+            </div>
+          </figure>
+        ) : null;
+      })}
+      <div className="section-actions">
+        <button className="btn" onClick={() => show("map")}>
+          Show on the map
+        </button>
+        <button className="btn" onClick={() => show("flow")}>
+          Show in the flow
+        </button>
+        <button className="btn" onClick={() => show("code")}>
+          Show the code
+        </button>
+      </div>
+    </section>
+  );
+}
+
+/** The summary of a node, concept, edge or sequence step (what stands in for a missing note). */
+function summaryOf(id: string, model: ExplainerModel): string | undefined {
+  const element = model.element(id);
+  switch (element?.type) {
+    case "node":
+      return element.node.summary;
+    case "concept":
+      return element.concept.summary;
+    case "edge":
+      return element.edge.summary;
+    case "step":
+      return element.step.summary;
+    default:
+      return undefined;
+  }
 }

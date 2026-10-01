@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { buildReverseIndex, derivedEdgeMap, viewCandidates, type SequenceView } from "@xpl/core";
 import { describeElement } from "../details.js";
+import { renderInline } from "../markdown.js";
+import { stepTitle } from "../stepTitle.js";
 import { useDerived, useStore, useViewerState } from "../hooks.js";
 import { workspaceMap, workspaceView } from "../workspace.js";
 import { CodeArea } from "./CodeArea.js";
@@ -8,7 +10,7 @@ import { Details } from "./Details.js";
 import { ErrorBoundary } from "./ErrorBoundary.js";
 import { FlowDiagram } from "./FlowDiagram.js";
 import { GraphView } from "./GraphView.js";
-import { Guide, sectionTitle } from "./Guide.js";
+import { Guide } from "./Guide.js";
 import { RelatedFiles } from "./RelatedFiles.js";
 
 export function Workspace() {
@@ -31,6 +33,10 @@ export function Workspace() {
   const active = state.selection[state.selection.length - 1];
   const info = active ? describeElement(active, state.model, derived.view) : undefined;
   const tour = store.currentTour() ?? state.model.tours[0];
+  // While a guide section (a tour step) is on screen, "you are here" is that section, by its title.
+  const appliedStep = state.applied
+    ? state.model.tour(state.applied.tourId)?.steps.find((s) => s.id === state.applied!.stepId)
+    : undefined;
   const code = state.perspective === "code";
   const showSource = code || sourceOpen;
   useEffect(() => {
@@ -72,7 +78,11 @@ export function Workspace() {
             {state.explainer.title}
           </button>
           <span aria-hidden="true">/</span>
-          <span>{info?.title ?? tour?.title ?? "Overview"}</span>
+          <span data-testid="breadcrumb-topic">
+            {appliedStep
+              ? stepTitle(appliedStep, state.model)
+              : (info?.title ?? tour?.title ?? "Overview")}
+          </span>
         </nav>
         {active && state.perspective !== "guide" && (
           <button className="btn" onClick={() => store.readExplanation()}>
@@ -93,7 +103,12 @@ export function Workspace() {
         {!code && (
           <section className="workspace-primary" aria-label="Explanation">
             <ErrorBoundary
-              key={state.perspective}
+              // A diagram that fails does not take the other views down with it: another view starts over.
+              key={
+                state.perspective === "guide"
+                  ? "guide"
+                  : `${state.perspective}:${state.perspective === "map" ? map.view.id : (flow?.id ?? "")}`
+              }
               fallback={(error) => (
                 <p role="alert">Could not show this perspective: {error.message}</p>
               )}
@@ -104,13 +119,11 @@ export function Workspace() {
                 <>
                   <div className="workspace-caption">
                     <div>
-                      <p className="eyebrow">
-                        {state.perspective === "map" ? "System map" : "Process flow"}
-                      </p>
+                      <p className="eyebrow">{state.perspective === "map" ? "Map" : "Flow"}</p>
                       <h2>
                         {state.perspective === "map"
                           ? map.view.title
-                          : (flow?.title ?? "Guide path")}
+                          : (flow?.title ?? "The guide's steps")}
                       </h2>
                     </div>
                     <select
@@ -130,10 +143,10 @@ export function Workspace() {
                           </option>
                         ))}
                       {state.perspective === "map" && map.generated && (
-                        <option value={map.view.id}>System map</option>
+                        <option value={map.view.id}>Map</option>
                       )}
                       {state.perspective === "flow" && !flow && (
-                        <option value="">Guide path</option>
+                        <option value="">The guide's steps</option>
                       )}
                     </select>
                   </div>
@@ -148,15 +161,16 @@ export function Workspace() {
                         related={map.related}
                         order={map.view.include}
                         present={map.generated}
+                        reader
                       />
                     </div>
                   ) : flow ? (
-                    <FlowDiagram view={flow} />
+                    <FlowDiagram key={flow.id} view={flow} />
                   ) : (
                     <div className="guide-path">
                       <p>
-                        This explainer has no authored execution flow. These are the guide's reading
-                        stages, not inferred runtime transitions.
+                        This explainer has no flow diagram. Here are the guide's steps, in reading
+                        order.
                       </p>
                       {tour?.steps.map((step, index) => (
                         <button
@@ -165,10 +179,10 @@ export function Workspace() {
                           onClick={() => store.previewStep(tour.id, index)}
                         >
                           <span>{index + 1}</span>
-                          {sectionTitle(step, (id) => state.model.label(id))}
+                          {stepTitle(step, state.model)}
                         </button>
                       ))}
-                      {!tour && <p>Choose a component in the system map to inspect its source.</p>}
+                      {!tour && <p>Pick a box on the map to see its code.</p>}
                     </div>
                   )}
                 </>
@@ -182,28 +196,34 @@ export function Workspace() {
           </section>
         )}
         <aside className="workspace-context" aria-label="Topic context">
-          {info && (
-            <section className="topic-summary">
+          {/* In the guide, the open section is the topic: its summary would say it again. A box picked from
+              a section (a member chip, a call) is another topic, and gets its summary here. */}
+          {info && !(state.perspective === "guide" && appliedStep) && (
+            <section className="topic-summary" data-testid="topic-summary">
               <p className="eyebrow">Current topic</p>
               <h2>{info.title}</h2>
-              <p>{info.summary}</p>
+              {info.summary && (
+                <p dangerouslySetInnerHTML={{ __html: renderInline(info.summary) }} />
+              )}
               {state.perspective === "guide" && (
                 <div className="section-actions">
                   <button className="btn" onClick={() => store.setPerspective("map")}>
-                    System map
+                    Show on the map
                   </button>
                   <button className="btn" onClick={() => store.setPerspective("flow")}>
-                    Process flow
+                    Show in the flow
                   </button>
                 </div>
               )}
             </section>
           )}
           <RelatedFiles onOpen={() => setSourceOpen(true)} />
-          <details className="workspace-inspector">
-            <summary>Source references & details</summary>
-            <Details />
-          </details>
+          {active && (
+            <details className="workspace-inspector">
+              <summary>Where this is in the code</summary>
+              <Details reader />
+            </details>
+          )}
         </aside>
       </div>
     </main>

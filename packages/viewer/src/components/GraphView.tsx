@@ -37,11 +37,23 @@ import {
 import { arrowHeadPath, distanceToSegment, roundedPath, routeBox, type Box } from "../svg.js";
 import { unionBox } from "../viewport.js";
 import { useStore } from "../hooks.js";
+import { readerBadge } from "../readerWords.js";
 import { GhostTargetList } from "./GhostTargets.js";
-import { PanZoom, PRESENT_FIT_PADDING, PRESENT_MAX_FIT_ZOOM } from "./PanZoom.js";
+import {
+  PanZoom,
+  PRESENT_FIT_PADDING,
+  PRESENT_MAX_FIT_ZOOM,
+  PRESENT_READABLE_ZOOM,
+} from "./PanZoom.js";
 
 /** True while presenting: a talk looks at the diagram, it does not edit it (no drill-in, collapse or expand). */
 const ReadOnly = createContext(false);
+/**
+ * True in reader views (Read mode, Present): boxes show the kind of code they are (file, class, function),
+ * not the explainer's structure (group, dir), and the made-up `calls ×N` labels only show on hover or when
+ * the edge or one of its ends is selected.
+ */
+const Reader = createContext(false);
 
 /** Where a ghost box is on screen, relative to the diagram pane (the menu of a folded ghost opens beside it). */
 interface Anchor {
@@ -151,6 +163,8 @@ export interface GraphViewProps {
   order?: readonly string[];
   /** Present mode: larger fitting, and the diagram cannot be edited. */
   present?: boolean;
+  /** A reader view (Read mode; Present always is one): plain badges, quiet count labels. */
+  reader?: boolean;
 }
 
 const NO_ORDER: readonly string[] = [];
@@ -164,6 +178,7 @@ export function GraphView({
   related,
   order = NO_ORDER,
   present = false,
+  reader = false,
 }: GraphViewProps) {
   const store = useStore();
   const host = useRef<HTMLDivElement>(null);
@@ -266,6 +281,7 @@ export function GraphView({
         label="Diagram. Drag to pan, scroll to zoom."
         maxFitZoom={present ? PRESENT_MAX_FIT_ZOOM : undefined}
         fitPadding={present ? PRESENT_FIT_PADDING : undefined}
+        readableZoom={present ? PRESENT_READABLE_ZOOM : undefined}
         startBox={startBox}
         onBackgroundClick={() => store.clearSelection()}
       >
@@ -292,19 +308,21 @@ export function GraphView({
   }
   return (
     <ReadOnly.Provider value={present}>
-      <GhostMenuContext.Provider value={menuApi}>
-        <div
-          className="graph-host"
-          ref={host}
-          onPointerDownCapture={dismiss}
-          onWheelCapture={menu ? dismissOnWheel : undefined}
-        >
-          {body}
-          {menu && menuGhost?.ghostFold && (
-            <GhostMenu node={menuGhost} anchor={menu.anchor} onClose={closeMenu} />
-          )}
-        </div>
-      </GhostMenuContext.Provider>
+      <Reader.Provider value={present || reader}>
+        <GhostMenuContext.Provider value={menuApi}>
+          <div
+            className="graph-host"
+            ref={host}
+            onPointerDownCapture={dismiss}
+            onWheelCapture={menu ? dismissOnWheel : undefined}
+          >
+            {body}
+            {menu && menuGhost?.ghostFold && (
+              <GhostMenu node={menuGhost} anchor={menu.anchor} onClose={closeMenu} />
+            )}
+          </div>
+        </GhostMenuContext.Provider>
+      </Reader.Provider>
     </ReadOnly.Provider>
   );
 }
@@ -322,9 +340,11 @@ const NodeShape = memo(function NodeShape({ node, marks }: { node: LayoutNode; m
 function BoxShape({ node, marks }: { node: LayoutNode; marks: Marks }) {
   const store = useStore();
   const readOnly = useContext(ReadOnly);
+  const reader = useContext(Reader);
   const container = node.children.length > 0;
   const select = (event: MouseEvent | KeyboardEvent) => store.click(node.id, additive(event));
-  const badge = badgeWidth(node.badge);
+  const badgeText = reader ? readerBadge(node.badge) : node.badge;
+  const badge = badgeWidth(badgeText ?? "");
   return (
     <g
       className={`node kind-${node.kindClass}${container ? " is-container" : ""}${stateClasses(node.id, marks)}`}
@@ -364,7 +384,9 @@ function BoxShape({ node, marks }: { node: LayoutNode; marks: Marks }) {
           <text className="label" x={14} y={22}>
             {node.label}
           </text>
-          <Badge x={14 + labelWidth(node.label) + 8} y={9} text={node.badge} width={badge} />
+          {badgeText && (
+            <Badge x={14 + labelWidth(node.label) + 8} y={9} text={badgeText} width={badge} />
+          )}
           {/* What the container holds: its own edges under its children. */}
           <g className="edges">
             {node.edges.map((edge) => (
@@ -400,10 +422,10 @@ function BoxShape({ node, marks }: { node: LayoutNode; marks: Marks }) {
         </>
       ) : (
         <>
-          <text className="label" x={14} y={19}>
+          <text className="label" x={14} y={badgeText ? 19 : node.height / 2 + 5}>
             {node.label}
           </text>
-          <Badge x={14} y={27} text={node.badge} width={badge} />
+          {badgeText && <Badge x={14} y={27} text={badgeText} width={badge} />}
         </>
       )}
     </g>
@@ -629,6 +651,7 @@ function GhostMenu({
 
 const EdgeShape = memo(function EdgeShape({ edge, marks }: { edge: LayoutEdge; marks: Marks }) {
   const store = useStore();
+  const reader = useContext(Reader);
   const points = edge.points;
   if (points.length < 2) return null;
   const path = roundedPath(points);
@@ -642,6 +665,15 @@ const EdgeShape = memo(function EdgeShape({ edge, marks }: { edge: LayoutEdge; m
   const reachY = Math.max(edge.anchor.y - box.y, box.y + box.height - edge.anchor.y) + BOUNDS_PAD;
   const select = (event: MouseEvent | KeyboardEvent) => store.click(edge.id, additive(event));
   const classes = ["edge", edge.stub ? "is-stub" : `res-${edge.resolution}`, `kind-${edge.kind}`];
+  // A count label in a reader view: shown on hover (CSS) and when the edge or an end of it is selected.
+  if (
+    reader &&
+    edge.counted &&
+    !marks.selected.has(edge.id) &&
+    !marks.selected.has(edge.from) &&
+    !marks.selected.has(edge.to)
+  )
+    classes.push("is-quiet");
   return (
     <g
       className={classes.join(" ") + stateClasses(edge.id, marks)}

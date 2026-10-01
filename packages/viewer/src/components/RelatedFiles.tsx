@@ -35,92 +35,80 @@ export function RelatedFiles({ onOpen }: { onOpen: () => void }) {
     }),
     ...(state.applied?.code ?? []),
   ];
+  // Nothing to list: no panel at all (an empty one only says that there is nothing).
+  if (links.length === 0) return null;
   return (
     <section className="related-files" aria-label="Related files">
       <h3>Related files</h3>
-      {links.length === 0 ? (
-        <p className="empty">
-          Select a stage or component to see linked configuration, plugins and resources.
-        </p>
-      ) : (
-        <>
-          {links.map((link) => (
-            <details className="resource-set" key={link.id} open={link.files.length === 1}>
-              <summary>
-                <span className="resource-kind">{LABELS[link.kind]}</span>
-                <span className="resource-label">{link.label}</span>
-                <span className="count">
-                  {link.files.length} {link.files.length === 1 ? "file" : "files"}
-                </span>
-              </summary>
-              {link.summary && <p className="resource-summary">{link.summary}</p>}
-              {[
-                ...new Set(
-                  anchors
-                    .filter(
-                      (anchor) =>
-                        anchor.role === "config" &&
-                        anchor.symbol &&
-                        anchor.resolved?.status !== "missing" &&
-                        link.files.includes(anchor.file),
-                    )
-                    .map((anchor) => anchor.symbol!),
-                ),
-              ].map((symbol) => (
-                <p className="resource-key" key={symbol}>
-                  Key: <code>{symbol}</code>
-                </p>
-              ))}
-              <p className="resource-trust">
-                {link.resolution === "static"
-                  ? "Resolved from source"
-                  : link.resolution === "inferred"
-                    ? "Inferred relationship — review the evidence"
-                    : "Annotated relationship"}
-                {link.pattern ? " · matching files, not confirmed active plugins" : ""}
-              </p>
-              <ul>
-                {link.files.map((file) => (
-                  <li key={file}>
-                    <button
-                      type="button"
-                      className="resource-file"
-                      onClick={() => {
-                        store.openFile(
-                          file,
-                          link.evidence.find((site) => site.file === file)?.line,
-                        );
-                        onOpen();
-                      }}
-                    >
-                      {file}
-                    </button>
-                  </li>
-                ))}
-              </ul>
-              <details className="resource-evidence">
-                <summary>Why these files are linked</summary>
-                {link.evidence.map((site, index) => (
-                  <button
-                    type="button"
-                    className="resource-file"
-                    key={`${site.file}:${site.line}:${index}`}
-                    onClick={() => {
-                      store.openFile(site.file, site.line);
-                      onOpen();
-                    }}
-                  >
-                    {site.file}:L{site.line}
-                  </button>
-                ))}
-              </details>
-            </details>
+      {links.map((link) => (
+        <details className="resource-set" key={link.id} open={link.files.length === 1}>
+          <summary>
+            <span className="resource-kind">{LABELS[link.kind]}</span>
+            <span className="resource-label">{link.label}</span>
+            <span className="count">
+              {link.files.length} {link.files.length === 1 ? "file" : "files"}
+            </span>
+          </summary>
+          {link.summary && <p className="resource-summary">{link.summary}</p>}
+          {[
+            ...new Set(
+              anchors
+                .filter(
+                  (anchor) =>
+                    anchor.role === "config" &&
+                    anchor.symbol &&
+                    anchor.resolved?.status !== "missing" &&
+                    link.files.includes(anchor.file),
+                )
+                .map((anchor) => anchor.symbol!),
+            ),
+          ].map((symbol) => (
+            <p className="resource-key" key={symbol}>
+              Key: <code>{symbol}</code>
+            </p>
           ))}
-          <p className="resource-disclaimer">
-            Source relationships do not prove which files were loaded at runtime.
+          <p className="resource-trust">
+            {link.resolution === "static"
+              ? "Resolved from source"
+              : link.resolution === "inferred"
+                ? "Inferred relationship — review the evidence"
+                : "Linked by the explainer's author"}
+            {link.pattern ? " · matching files, not confirmed active plugins" : ""}
           </p>
-        </>
-      )}
+          <ul>
+            {link.files.map((file) => (
+              <li key={file}>
+                <button
+                  type="button"
+                  className="resource-file"
+                  onClick={() => {
+                    store.openFile(file, link.evidence.find((site) => site.file === file)?.line);
+                    onOpen();
+                  }}
+                >
+                  {file}
+                </button>
+              </li>
+            ))}
+          </ul>
+          <details className="resource-evidence">
+            <summary>Why these files are linked</summary>
+            {link.evidence.map((site, index) => (
+              <button
+                type="button"
+                className="resource-file"
+                key={`${site.file}:${site.line}:${index}`}
+                onClick={() => {
+                  store.openFile(site.file, site.line);
+                  onOpen();
+                }}
+              >
+                {site.file}:L{site.line}
+              </button>
+            ))}
+          </details>
+        </details>
+      ))}
     </section>
   );
 }

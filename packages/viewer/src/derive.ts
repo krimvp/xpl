@@ -73,6 +73,12 @@ export interface PaneSpec {
   dim: boolean;
   /** The user asked for this file (tree, anchor list). */
   opened: boolean;
+  /**
+   * The line the pane scrolls to: the start of the first range in this file in the order of the focus (the
+   * tour step's code override, else its focus list, else the selection), not the lowest line. A step about
+   * the second of two places in a file shows that place first.
+   */
+  lead?: number;
 }
 
 export interface Derived {
@@ -302,12 +308,14 @@ function derivePanes(
 ): { panes: PaneSpec[]; overflow: FilePath[] } {
   const paneFor = (file: FilePath, opened: boolean): PaneSpec => {
     const own = sel.files.find((f) => f.file === file);
+    const lead = sel.focus.find((range) => range.file === file)?.range.startLine;
     return {
       file,
       ranges: own ? own.ranges.flatMap((r) => r.sources) : [],
       focused: own !== undefined,
       dim: own !== undefined && dimOthers,
       opened,
+      ...(own !== undefined && lead !== undefined ? { lead } : {}),
     };
   };
   const all: PaneSpec[] = [];

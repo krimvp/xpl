@@ -42,3 +42,8 @@ const marked = new Marked({
 export function renderMarkdown(source: string): string {
   return marked.parse(source, { async: false });
 }
+
+/** Sanitised HTML for one line of markdown (a title): emphasis, code and links, no paragraph around it. */
+export function renderInline(source: string): string {
+  return marked.parseInline(source, { async: false });
+}

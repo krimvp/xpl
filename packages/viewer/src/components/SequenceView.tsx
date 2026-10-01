@@ -15,8 +15,14 @@ import {
   type Row,
 } from "../layout/sequenceLayout.js";
 import { useStore } from "../hooks.js";
-import { arrowHeadPath, openArrowHeadPath, roundedPath } from "../svg.js";
-import { PanZoom, PRESENT_FIT_PADDING, PRESENT_MAX_FIT_ZOOM } from "./PanZoom.js";
+import { arrowHeadPath, openArrowHeadPath, roundedPath, type Box } from "../svg.js";
+import { unionBox } from "../viewport.js";
+import {
+  PanZoom,
+  PRESENT_FIT_PADDING,
+  PRESENT_MAX_FIT_ZOOM,
+  PRESENT_READABLE_ZOOM,
+} from "./PanZoom.js";
 
 export interface SequenceViewProps {
   view: SequenceViewData;
@@ -46,6 +52,34 @@ export function SequenceView({
   const layout = useMemo(() => layoutSequence(view, model), [view, model]);
   const selected = useMemo(() => new Set(selection), [selection]);
   const matched = useMemo(() => new Set(matches), [matches]);
+  // What a diagram too big to show whole starts on: the selected arrows and participants (a tour step's
+  // focus), so the step being talked about is on screen, not the top-left corner. An arrow counts by its
+  // label (what is read): a long arrow in a narrow pane is then framed on its words, not on its tail.
+  const startBox = useMemo(() => {
+    const boxes: Box[] = [];
+    for (const row of layout.rows) {
+      if (selected.has(row.step.id)) {
+        const left = row.labelAnchor === "middle" ? row.labelX - row.labelWidth / 2 : row.labelX;
+        boxes.push({
+          x: Math.max(row.bandLeft, left - 12),
+          y: row.bandTop,
+          width: row.labelWidth + 24,
+          height: row.bandBottom - row.bandTop,
+        });
+      }
+    }
+    for (const lifeline of layout.lifelines) {
+      if (selected.has(lifeline.id)) {
+        boxes.push({
+          x: lifeline.x - lifeline.headWidth / 2,
+          y: lifeline.headTop,
+          width: lifeline.headWidth,
+          height: lifeline.headHeight,
+        });
+      }
+    }
+    return unionBox(boxes);
+  }, [layout, selected]);
 
   if (layout.lifelines.length === 0) {
     return (
@@ -67,6 +101,9 @@ export function SequenceView({
       label="Sequence diagram. Drag to pan, scroll to zoom."
       maxFitZoom={present ? PRESENT_MAX_FIT_ZOOM : undefined}
       fitPadding={present ? PRESENT_FIT_PADDING : undefined}
+      readableZoom={present ? PRESENT_READABLE_ZOOM : undefined}
+      startBox={startBox}
+      overlay={(t, size) => <StickyHeads lifelines={layout.lifelines} t={t} paneWidth={size.w} />}
       onBackgroundClick={() => store.clearSelection()}
     >
       <g className="sequence">
@@ -139,6 +176,48 @@ function LifelineShape({ lifeline, classes }: { lifeline: Lifeline; classes: str
         <text className="label" x={lifeline.x} y={lifeline.headTop + lifeline.headHeight / 2 + 5}>
           {lifeline.label}
         </text>
+      </g>
+    </g>
+  );
+}
+
+/**
+ * The participant names, kept in sight: when the view has moved down a long sequence (a tour step framed
+ * on a late call), a copy of the heads stays at the top of the pane, at the diagram's zoom and in line with
+ * the lifelines, so you still see who calls whom. Only a picture: the heads in the diagram take the clicks.
+ */
+function StickyHeads({
+  lifelines,
+  t,
+  paneWidth,
+}: {
+  lifelines: readonly Lifeline[];
+  t: { k: number; x: number; y: number };
+  paneWidth: number;
+}) {
+  const first = lifelines[0];
+  if (!first || t.y + first.headTop * t.k >= 0) return null;
+  const top = 6;
+  const height = first.headHeight * t.k;
+  return (
+    <g className="sticky-heads" data-testid="sticky-heads" aria-hidden="true">
+      <rect className="sticky-band" x={0} y={0} width={paneWidth} height={top + height + 6} />
+      <g transform={`translate(${t.x} ${top}) scale(${t.k})`}>
+        {lifelines.map((lifeline) => (
+          <g key={lifeline.id} className="lifeline-head">
+            <rect
+              className="head"
+              x={lifeline.x - lifeline.headWidth / 2}
+              y={0}
+              width={lifeline.headWidth}
+              height={lifeline.headHeight}
+              rx={8}
+            />
+            <text className="label" x={lifeline.x} y={lifeline.headHeight / 2 + 5}>
+              {lifeline.label}
+            </text>
+          </g>
+        ))}
       </g>
     </g>
   );

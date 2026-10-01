@@ -145,7 +145,17 @@ export function FileTree() {
           data-testid="tree-foot"
           title="This page carries the source of only some of the repo's files, so the others cannot be opened here. Run `xpl bundle --files all` to embed every file."
         >
-          {listed.length} of {indexed.length} files included · rebuild with <code>--files all</code>
+          {state.perspective === "explore" ? (
+            <>
+              {listed.length} of {indexed.length} files included · rebuild with{" "}
+              <code>--files all</code>
+            </>
+          ) : (
+            // A reader cannot rebuild the page: say what is there, not how to change it.
+            <>
+              {listed.length} of {indexed.length} files are in this page
+            </>
+          )}
         </p>
       )}
     </>

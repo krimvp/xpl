@@ -7,6 +7,7 @@
 import type { Tour, TourStep } from "@xpl/core";
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { useStore, useViewerState } from "../hooks.js";
+import { stepTitle } from "../stepTitle.js";
 import { focusIds, focusLabel } from "../tours.js";
 
 /** The value of the target menu's "New tour…" entry. */
@@ -216,6 +217,11 @@ function StepRow({
   const { model } = state;
   const viewTitle = model.view(step.view)?.title ?? step.view;
   const focus = (Array.isArray(step.focus) ? step.focus : []).map((id) => focusLabel(id, model));
+  // A step has the title it has everywhere else (the guide, Present): steps are told apart by what their
+  // note says, since several steps often share a view. Under it: the view and what the step focuses.
+  const title = stepTitle(step, model);
+  const where = focus.length > 0 ? focus.join(", ") : "whole view";
+  const sub = `${viewTitle} · ${where}`;
   const current = state.tour?.tourId === tour.id && state.tour.step === index;
   const last = index === tour.steps.length - 1;
   return (
@@ -234,10 +240,10 @@ function StepRow({
         >
           <span className="tp-num">{index + 1}</span>
           <span className="tp-step-text">
-            <span className="tp-step-view">{viewTitle}</span>
-            <span className="tp-step-focus">
-              {focus.length > 0 ? focus.join(", ") : "whole view"}
+            <span className="tp-step-view" data-testid="tour-step-title">
+              {title}
             </span>
+            <span className="tp-step-focus">{sub}</span>
           </span>
         </button>
         <span className="tp-step-tools">
