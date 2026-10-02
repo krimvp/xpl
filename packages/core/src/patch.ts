@@ -22,6 +22,12 @@
  *   key, so it cannot change). It applies after `steps` when both are sent. An id that is not a step of the view
  *   is an error that names the view's steps. Like `steps`, it is skipped (with a `protected` warning) for an
  *   `llm` patch when the user edited the view's `steps`. It is how one summary is fixed without resending them all.
+ * - A tour's steps can be edited one by one too, with the tour's `stepsUpdate`: `[{ id, ...fields }]` merged into the
+ *   tour's steps with those ids (`view`, `focus`, `note`, `code` as `AnchorInput`s, `editor`; `null` clears `note`,
+ *   `code` or `editor`). Same rules as for a sequence view: after `steps`, an unknown id is an error naming the
+ *   tour's steps, protected like `steps`, only for an existing tour. `changed` names such a step `<tour id>/<step id>`.
+ * - Anchors may point at the code before the change (`at: "base"`, with `find` or a `span` from line 1 of the base
+ *   file; no `symbol`) when the explainer has a change record. The record itself (`change`) is not part of a patch.
  * - User ownership (`provenance.userFields`, see `applyPatch`): an `llm` patch never replaces or shrinks a
  *   field the user edited, so `include` (sent whole) and `includeRemove` are skipped with a `protected` warning
  *   when the user edited the view's `include`. `includeAdd` is the exception: it only adds, so an `llm` patch
@@ -74,6 +80,12 @@ export interface AnchorInput {
    * may be multi-line. Matched exactly first, then ignoring whitespace differences.
    */
   find?: string;
+  /**
+   * `"base"`: the code before the change (the base commit of `Explainer.change`) instead of the current code. Only
+   * with `find` or a `span` counted from line 1 of the base file, never `symbol`; only in a changed file that has
+   * a base version (modified, renamed, deleted; a renamed file may be named by its old or new path).
+   */
+  at?: "base";
   /** Optional; if given it must equal the current hash (catches stale drafts). */
   hash?: Hash;
 }
@@ -169,9 +181,24 @@ export interface PatchTourStep extends Omit<TourStep, "code"> {
   code?: AnchorInput[];
 }
 
+/**
+ * What a tour's `stepsUpdate` says about one step: its `id` and the fields to change (`view`, `focus`, `note`,
+ * `code` as `AnchorInput`s, `editor`). `null` clears `note`, `code` or `editor`.
+ */
+export type PatchTourStepUpdate = {
+  id: string;
+  code?: AnchorInput[] | null;
+} & PatchFields<Omit<TourStep, "id" | "code">>;
+
 export type PatchTour = {
   id: string;
   steps?: PatchTourStep[];
+  /**
+   * Fields to merge into existing steps of the tour by id, applied after `steps` (when that is sent too). An unknown
+   * step id is an error that names the tour's steps. Skipped with a `protected` warning for an `llm` patch when the
+   * user edited the tour's steps. Never stored; only for an existing tour (a new tour sends `steps`).
+   */
+  stepsUpdate?: PatchTourStepUpdate[];
   provenance?: PatchProvenance;
 } & PatchFields<Omit<Tour, "id" | "steps" | "provenance">>;
 

@@ -3,6 +3,7 @@
  * at (`codeFocus`), how to merge them per file for the editor (`mergeFocusByFile`), and the
  * code -> elements direction (`buildReverseIndex`: innermost range wins, ties return all).
  */
+import { isBaseAnchor } from "./anchors.js";
 import { deriveGraph, derivedEdgeAnchors, type DerivedEdge, type DerivedGraph } from "./graph.js";
 import { EDGE_TO_REF_KIND, elementIdForSymbolId, parseId } from "./ids.js";
 import type { ExplainerModel, ModelNode } from "./model.js";
@@ -117,6 +118,30 @@ function anchorRanges(
   return out;
 }
 
+/**
+ * The base anchors (`at: "base"`) of a list as ranges of the base version of their file: what a diff view shows
+ * on the "before" side. `codeFocus` leaves them out, because their lines are lines of the base commit, not of the
+ * code the editor shows. `file` is the changed file's path (`ChangedFile.path`; for a renamed file the new path,
+ * whose base text is `ViewerBundle.baseFiles[file]`). Missing and never-resolved anchors are skipped.
+ */
+export function baseAnchorFocus(
+  anchors: readonly Anchor[] | undefined,
+  elementId: ElementId,
+): FocusRange[] {
+  const out: FocusRange[] = [];
+  for (const anchor of Array.isArray(anchors) ? anchors : []) {
+    if (!isBaseAnchor(anchor) || !anchor.resolved || anchor.resolved.status === "missing") continue;
+    out.push({
+      file: anchor.file,
+      range: { ...anchor.resolved.range },
+      role: anchor.role,
+      elementId,
+      status: anchor.resolved.status,
+    });
+  }
+  return out;
+}
+
 /** The focus range of one anchor: its resolved range, or (never resolved) computed from the index. */
 function anchorFocus(
   anchor: Anchor,
@@ -124,6 +149,7 @@ function anchorFocus(
   model: ExplainerModel,
 ): FocusRange | undefined {
   if (typeof anchor !== "object" || anchor === null) return undefined;
+  if (isBaseAnchor(anchor)) return undefined; // lines of the base commit: see `baseAnchorFocus`
   const resolved = anchor.resolved;
   if (resolved) {
     if (resolved.status === "missing") return undefined;

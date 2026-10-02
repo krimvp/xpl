@@ -16,6 +16,13 @@ export interface ViewerBundle {
   index: SymbolIndex;
   /** Source text by repo-relative path. May be partial in server mode. */
   files: Record<FilePath, string>;
+  /**
+   * The code before the change, when the explainer has a change record (`explainer.change`): the base text of
+   * every changed file that is modified, renamed or deleted, keyed by `ChangedFile.path` (the new path of a
+   * renamed file). Added files have none. Absent without a change record. Under `xpl view` it may be partial
+   * (absent); the viewer fetches the base text from `${server.api}/base-file?path=`.
+   */
+  baseFiles?: Record<FilePath, string>;
   /** Initial mode; URL params (`?mode=`, `?tour=`, `?step=`) override it. */
   mode?: "explore" | "present";
   /** Initial tour id for present mode. */

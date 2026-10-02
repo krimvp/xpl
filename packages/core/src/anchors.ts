@@ -3,6 +3,7 @@
  * file text, building stored anchors from what Claude writes (`AnchorInput`), and re-resolving a
  * whole explainer after the code changed.
  */
+import { baseFileOf, basePathOf, describeNoBase, shortSha } from "./change.js";
 import { describeSymbolCandidate } from "./ids.js";
 import { asIndexModel, type IndexModel, type SymbolHint } from "./index-model.js";
 import type { AnchorInput } from "./patch.js";
@@ -10,6 +11,7 @@ import type {
   Anchor,
   AnchorRole,
   AnchorStatus,
+  ChangeRecord,
   Explainer,
   FilePath,
   Hash,
@@ -26,16 +28,52 @@ import { cloneJson, isRecord } from "./util.js";
 export type GetText = (file: FilePath) => string | undefined;
 
 /**
+ * Text of a file at a commit (`git show <commit>:<path>`; `path` is root-relative), or undefined when it cannot be
+ * read. Base anchors read the base commit of the change record through it.
+ */
+export type GetTextAt = (commit: string, path: FilePath) => string | undefined;
+
+/**
  * Memoises `getText` and the line split of each file. The public functions that take a `GetText`
  * build one per call; batch callers (CLI commands) may share one across calls and pass it instead.
+ * With a `GetTextAt`, it also reads files at a commit (what base anchors need); without one, base anchors cannot
+ * be checked.
  */
 export class TextCache {
   private readonly getText: GetText;
+  private readonly getTextAt: GetTextAt | undefined;
   private readonly texts = new Map<FilePath, string | undefined>();
   private readonly lineMap = new Map<FilePath, readonly string[] | undefined>();
+  private readonly atTexts = new Map<string, string | undefined>();
+  private readonly atLines = new Map<string, readonly string[] | undefined>();
 
-  constructor(getText: GetText) {
+  constructor(getText: GetText, getTextAt?: GetTextAt) {
     this.getText = getText;
+    this.getTextAt = getTextAt;
+  }
+
+  /** Text of `path` at `commit`, cached; undefined when there is no reader or it cannot be read. */
+  textAt(commit: string, path: FilePath): string | undefined {
+    const key = `${commit}\0${path}`;
+    if (!this.atTexts.has(key)) {
+      let text: string | undefined;
+      try {
+        text = this.getTextAt?.(commit, path);
+      } catch {
+        text = undefined;
+      }
+      this.atTexts.set(key, text);
+    }
+    return this.atTexts.get(key);
+  }
+
+  linesAt(commit: string, path: FilePath): readonly string[] | undefined {
+    const key = `${commit}\0${path}`;
+    if (!this.atLines.has(key)) {
+      const text = this.textAt(commit, path);
+      this.atLines.set(key, text === undefined ? undefined : splitLines(text));
+    }
+    return this.atLines.get(key);
   }
 
   text(file: FilePath): string | undefined {
@@ -85,14 +123,41 @@ export interface ResolvedAnchor {
   reason?: string;
 }
 
-/** Human-readable location of an anchor: `src/runner.ts#Runner.dispatch +34..36`. */
+/**
+ * Human-readable location of an anchor: `src/runner.ts#Runner.dispatch +34..36`; a base anchor (the code before
+ * the change) is `src/runner.ts@base +40..42`.
+ */
 export function describeAnchor(anchor: {
   file: FilePath;
   symbol?: string;
   span?: { from: number; to: number };
+  at?: string;
 }): string {
-  const where = anchor.symbol ? `${anchor.file}#${anchor.symbol}` : anchor.file;
+  const where =
+    anchor.at === "base"
+      ? `${anchor.file}@base`
+      : anchor.symbol
+        ? `${anchor.file}#${anchor.symbol}`
+        : anchor.file;
   return anchor.span ? `${where} +${anchor.span.from}..${anchor.span.to}` : where;
+}
+
+/** Is this a base anchor (it points at the code before the change)? */
+export function isBaseAnchor(anchor: { at?: unknown } | null | undefined): boolean {
+  return typeof anchor === "object" && anchor !== null && anchor.at === "base";
+}
+
+/**
+ * The lines of the base version of a changed file (`file`: its path, or the old path of a renamed file), read at
+ * the base commit of the change record; undefined when the file has no base version or it cannot be read.
+ */
+export function baseLines(
+  texts: TextCache,
+  change: ChangeRecord | undefined,
+  file: FilePath,
+): readonly string[] | undefined {
+  const changed = change ? baseFileOf(change, file) : undefined;
+  return changed && change ? texts.linesAt(change.base, basePathOf(changed)) : undefined;
 }
 
 function sameLines(a: Range, b: Range): boolean {
@@ -132,12 +197,22 @@ export function resolveAnchor(
   anchor: Anchor,
   index: SymbolIndex | IndexModel,
   getText: GetText | TextCache,
+  change?: ChangeRecord,
 ): ResolvedAnchor {
-  return resolveWith(anchor, asIndexModel(index), toTextCache(getText));
+  return resolveWith(anchor, asIndexModel(index), toTextCache(getText), change);
 }
 
-/** Same as `resolveAnchor` with an `IndexModel` and a `TextCache` (what batch operations use). */
-export function resolveWith(anchor: Anchor, index: IndexModel, texts: TextCache): ResolvedAnchor {
+/**
+ * Same as `resolveAnchor` with an `IndexModel` and a `TextCache` (what batch operations use). A base anchor
+ * (`at: "base"`) resolves against the base version of its file in `change` (see `resolveBase`).
+ */
+export function resolveWith(
+  anchor: Anchor,
+  index: IndexModel,
+  texts: TextCache,
+  change?: ChangeRecord,
+): ResolvedAnchor {
+  if (isBaseAnchor(anchor)) return resolveBase(anchor, change, texts);
   const prev = anchor.resolved?.range;
   const missing = (reason: string): ResolvedAnchor => ({
     status: "missing",
@@ -239,6 +314,112 @@ export function resolveWith(anchor: Anchor, index: IndexModel, texts: TextCache)
     } (expected ${anchor.hash}, now ${currentHash})`,
   };
 }
+
+/** Why a base anchor cannot be used without a change record. */
+export const NO_CHANGE_RECORD =
+  'this explainer has no change record, so there is no code "before" to point at: run `xpl change <name> <base>..<head>` first, or drop "at"';
+
+/**
+ * Resolves a base anchor: the same rules as a file-relative span anchor (section 4.2), against the base version of
+ * its file (`texts.linesAt(change.base, ...)`). The base code does not change, but the record can (`xpl change`
+ * again with another base): then the span is searched for by its text, and is `moved` or `drifted`. No change
+ * record, or a file without a base version: `missing`. When the base text cannot be read (no git), the cached
+ * resolution is kept if it was made for the same base commit.
+ */
+function resolveBase(
+  anchor: Anchor,
+  change: ChangeRecord | undefined,
+  texts: TextCache,
+): ResolvedAnchor {
+  const prev = anchor.resolved?.range;
+  const missing = (reason: string): ResolvedAnchor => ({
+    status: "missing",
+    range: prev ?? { startLine: 0, endLine: 0 },
+    hash: "",
+    reason,
+  });
+  if (!change) return missing(NO_CHANGE_RECORD);
+  if (typeof anchor.symbol === "string" && anchor.symbol !== "") {
+    return missing(BASE_SYMBOL);
+  }
+  const changed = baseFileOf(change, anchor.file);
+  if (!changed) return missing(describeNoBase(change, anchor.file));
+  const lines = texts.linesAt(change.base, basePathOf(changed));
+  if (!lines) {
+    const cached = anchor.resolved;
+    if (cached && cached.commit === change.base) {
+      return {
+        status: cached.status,
+        range: cached.range,
+        hash: anchor.hash,
+        reason:
+          "the code before the change cannot be read here (no git); kept the cached resolution",
+      };
+    }
+    return {
+      status: "drifted",
+      range: prev ?? { startLine: 1, endLine: 1 },
+      hash: "",
+      reason: `cannot read ${basePathOf(changed)} at the base commit ${shortSha(change.base)} (git show failed); cannot verify the span`,
+    };
+  }
+  const region: Range = { startLine: 1, endLine: Math.max(1, lines.length) };
+  if (typeof anchor.hash !== "string" || !anchor.hash.startsWith("sha256-v2:")) {
+    return {
+      status: "drifted",
+      range: prev ?? region,
+      hash: hashOf(lines, region),
+      reason: "the anchor has no current hash; rebuild it with find or span",
+    };
+  }
+  const moved = (range: Range) => (prev && !sameLines(prev, range) ? "moved" : "ok");
+  if (anchor.span === undefined || anchor.span === null) {
+    const current = hashOf(lines, region);
+    return current === anchor.hash
+      ? { status: moved(region), range: region, hash: current }
+      : {
+          status: "drifted",
+          range: region,
+          hash: current,
+          reason: `the base version of ${anchor.file} is not the one this anchor was made from (the change record was written again)`,
+        };
+  }
+  if (!isSpan(anchor.span)) {
+    return missing(`invalid span ${JSON.stringify(anchor.span)} (need integers 0 <= from <= to)`);
+  }
+  const expected = clampRange(
+    { startLine: 1 + anchor.span.from, endLine: 1 + anchor.span.to },
+    region,
+  );
+  const currentHash = hashOf(lines, expected);
+  if (currentHash === anchor.hash) {
+    return { status: moved(expected), range: expected, hash: currentHash };
+  }
+  const hit = searchSpan(
+    lines,
+    region,
+    expected,
+    anchor.span.to - anchor.span.from + 1,
+    anchor.hash,
+  );
+  if (hit) {
+    return {
+      status: "moved",
+      range: { startLine: hit.start, endLine: hit.end },
+      span: { from: hit.start - 1, to: hit.end - 1 },
+      hash: anchor.hash,
+    };
+  }
+  return {
+    status: "drifted",
+    range: expected,
+    hash: currentHash,
+    reason: `text of ${describeAnchor(anchor)} is not in the base version of ${anchor.file} at ${shortSha(change.base)} (the change record was written again with another base?)`,
+  };
+}
+
+const BASE_SYMBOL =
+  'a base anchor cannot name a symbol: only the head is indexed. Use "find" (text that occurs once in the base file) or a "span" counted from line 1 of the base file (`xpl show --at base <path>` prints the offsets)';
 
 /** The number of lines of a stored range (undefined for a missing or malformed one). */
 function rangeLines(range: Range | undefined): number | undefined {
@@ -363,9 +544,11 @@ export interface MakeAnchorOptions {
    * size of a symbol that was renamed): steers the "did you mean" candidates.
    */
   symbolHint?: (file: FilePath, symbol: string) => SymbolHint | undefined;
+  /** The explainer's change record: what a base anchor (`at: "base"`) resolves against. */
+  change?: ChangeRecord;
 }
 
-const INPUT_KEYS = new Set(["file", "symbol", "role", "span", "find", "hash", "resolved"]);
+const INPUT_KEYS = new Set(["file", "symbol", "role", "span", "find", "hash", "resolved", "at"]);
 
 /**
  * Turns an `AnchorInput` (what Claude writes) into a stored `Anchor`: validates the file and symbol
@@ -397,8 +580,15 @@ export function makeAnchor(
   ) as unknown as AnchorInput;
   for (const key of Object.keys(input)) {
     if (!INPUT_KEYS.has(key)) {
-      return fail(`unknown anchor field "${key}" (allowed: file, symbol, span, find, role, hash)`);
+      return fail(
+        `unknown anchor field "${key}" (allowed: file, symbol, span, find, role, at, hash)`,
+      );
     }
+  }
+  if (input.at !== undefined && input.at !== "base") {
+    return fail(
+      `anchor.at must be "base" (the code before the change) or left out (the current code); got ${JSON.stringify(input.at)}`,
+    );
   }
   if (typeof input.file !== "string" || input.file === "") {
     return fail("anchor.file must be a repo-relative path string");
@@ -426,6 +616,7 @@ export function makeAnchor(
   if (input.span !== undefined && input.find !== undefined) {
     return fail("anchor has both span and find; give exactly one of them");
   }
+  if (input.at === "base") return makeBaseAnchor(input, texts, opts.change);
 
   const file = index.file(input.file);
   if (!file) {
@@ -532,6 +723,84 @@ export function makeAnchor(
     resolved: { commit: index.commit, range: { ...range }, status: "ok" },
   };
   return { ok: true, anchor };
+}
+
+/**
+ * A base anchor (`at: "base"`): `find` or a `span` counted from line 1 of the base version of a changed file (read
+ * at `change.base`), never a `symbol`. The hash and `resolved` (base lines, base commit) are filled in like for any
+ * other anchor. Without a change record, or for a file the change did not touch or added, it is an error that says
+ * what to do.
+ */
+function makeBaseAnchor(
+  input: AnchorInput,
+  texts: TextCache,
+  change: ChangeRecord | undefined,
+): MakeAnchorResult {
+  const fail = (error: string): MakeAnchorResult => ({ ok: false, error });
+  if (!change) return fail(`base anchor on ${input.file}: ${NO_CHANGE_RECORD}`);
+  if (typeof input.symbol === "string" && input.symbol !== "") {
+    return fail(`base anchor on ${input.file}#${input.symbol}: ${BASE_SYMBOL}`);
+  }
+  const changed = baseFileOf(change, input.file);
+  if (!changed) return fail(`base anchor: ${describeNoBase(change, input.file)}`);
+  const path = basePathOf(changed);
+  const lines = texts.linesAt(change.base, path);
+  if (!lines) {
+    return fail(
+      `cannot read ${path} at the base commit ${shortSha(change.base)} (git show ${shortSha(change.base)}:${path} failed). Base anchors need the git history of the change.`,
+    );
+  }
+  const target = `${input.file} before the change (${shortSha(change.base)})`;
+  let span = input.span;
+  if (input.find !== undefined) {
+    const located = locateText(lines, input.find);
+    if (located.kind === "empty") return fail("anchor.find is empty");
+    if (located.kind === "none") {
+      return fail(
+        `find text not found in ${target} (tried an exact match and one ignoring whitespace differences)` +
+          firstLineHint(lines, input.find) +
+          `. Copy the text from \`xpl show --at base ${input.file}\`, or use span offsets.`,
+      );
+    }
+    if (located.kind === "many") {
+      return fail(
+        `find text occurs ${located.count} times in ${target} (at offsets ${located.offsets.join(", ")}` +
+          `${located.count > located.offsets.length ? ", ..." : ""}). Extend it with neighbouring text so it is unique, or use span.`,
+      );
+    }
+    span = { from: located.from, to: located.to };
+  }
+  let range: Range;
+  if (span === undefined) range = { startLine: 1, endLine: Math.max(1, lines.length) };
+  else {
+    if (1 + span.to > lines.length) {
+      return fail(
+        `span ${span.from}..${span.to} lies outside ${target}, which has offsets 0..${lines.length - 1}`,
+      );
+    }
+    range = { startLine: 1 + span.from, endLine: 1 + span.to };
+    if (normalizeLines(lines.slice(range.startLine - 1, range.endLine)) === "") {
+      return fail(`span ${span.from}..${span.to} of ${target} covers only blank lines`);
+    }
+  }
+  const hash = hashOf(lines, range);
+  if (input.hash !== undefined && input.hash !== hash) {
+    return fail(
+      `stale base anchor for ${describeAnchor({ file: input.file, span, at: "base" })}: given hash ${input.hash} but the base text hashes to ${hash}; the change record was written again, so re-read the base code and rebuild the anchor`,
+    );
+  }
+  return {
+    ok: true,
+    anchor: {
+      // the changed file's path (a renamed file's old path is stored as its new one): the key of `baseFiles`
+      file: changed.path,
+      at: "base",
+      ...(span !== undefined ? { span: { from: span.from, to: span.to } } : {}),
+      role: input.role,
+      hash,
+      resolved: { commit: change.base, range, status: "ok" },
+    },
+  };
 }
 
 const MAX_LISTED = 8;
@@ -687,6 +956,7 @@ export function storedSymbolHints(
   try {
     for (const site of collectAnchors(explainer)) {
       const a = site.anchor;
+      if (isBaseAnchor(a)) continue; // the base code is not in the index
       if (typeof a.symbol !== "string" || (a.span !== undefined && a.span !== null)) continue;
       const lines = rangeLines(a.resolved?.range);
       if (lines === undefined) continue;
@@ -803,6 +1073,7 @@ export interface DriftedAnchor {
   path: string;
   anchor: {
     file: FilePath;
+    at?: "base";
     symbol?: string;
     span?: { from: number; to: number };
     role: AnchorRole;
@@ -837,6 +1108,7 @@ export interface MissingAnchor {
   path: string;
   anchor: {
     file: FilePath;
+    at?: "base";
     symbol?: string;
     span?: { from: number; to: number };
     role: AnchorRole;
@@ -862,6 +1134,7 @@ export interface ResolveReport {
 function anchorRef(anchor: Anchor): DriftedAnchor["anchor"] {
   return {
     file: anchor.file,
+    ...(isBaseAnchor(anchor) ? { at: "base" as const } : {}),
     ...(anchor.symbol !== undefined ? { symbol: anchor.symbol } : {}),
     ...(anchor.span !== undefined ? { span: { ...anchor.span } } : {}),
     role: anchor.role,
@@ -892,11 +1165,14 @@ export function reresolveExplainer(
   const missing: MissingAnchor[] = [];
   const sites = collectAnchors(next);
 
+  const change = explainer.change;
   for (const site of sites) {
     const { anchor } = site;
-    const result = resolveWith(anchor, index, texts);
+    const result = resolveWith(anchor, index, texts, change);
     counts[result.status]++;
-    anchor.resolved = { commit: index.commit, range: result.range, status: result.status };
+    // a base anchor's lines are lines of the base commit
+    const commit = isBaseAnchor(anchor) && change ? change.base : index.commit;
+    anchor.resolved = { commit, range: result.range, status: result.status };
     if (result.status === "moved" && result.span) anchor.span = result.span;
 
     if (result.status === "missing") {
