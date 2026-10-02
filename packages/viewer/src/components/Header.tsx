@@ -1,41 +1,44 @@
 /**
- * The header. It is one row, in three versions:
+ * The header: one row, built the same way in every mode.
  *
- * - Read (the default screen, for readers): the explainer title, the reading tabs (Guide, Map, Flow, Code),
- *   Present, and one "Edit" menu that holds the author tools: Explore, the tour editor, the download and the
- *   save status. A reader sees reader controls only (progressive disclosure).
- * - Explore (the author's workbench): the view tabs (ViewTabs; they scroll so the controls never leave the
- *   screen), the Tours panel, the Read / Explore / Present switch and the save / download controls.
- * - Present: the tour picker instead of the tabs (the tour decides which view is on screen).
+ *   [xpl] Title | what this mode moves between | spacer | save state | the mode's one action | Edit ▾
  *
- * (The edge-kind and stub toggles sit with the diagram they filter, in Explore only: DiagramPane.)
+ * - Read (the default screen, for readers): the reading tabs (Guide, Map, Flow, Code); the action is
+ *   Present.
+ * - Explore (the author's workbench): the view tabs and the Views menu (ViewTabs: they scroll, so the
+ *   controls never leave the screen); the action is Present.
+ * - Present: the tour picker and the step progress (‹ 3 / 10 ›, and a bar along the header's lower edge);
+ *   the action is Exit.
+ *
+ * Every author tool sits in the one "Edit" menu: the way between Read and Explore, the tour editor, the
+ * stub and edge-kind toggles of a graph view (Explore), "Save as HTML" and the JSON download. The save
+ * state shows beside Edit only when there is something to say ("Unsaved", "Saving…", "Not saved").
  */
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
+import { DEFAULT_EDGE_KINDS, resolveStubPolicy } from "@xpl/core";
 import { explainerFileName } from "../edits.js";
 import { useStore, useViewerState } from "../hooks.js";
+import { stepNumber } from "../modes.js";
+import { canSaveHtml, htmlFileName, savedPage } from "../saveHtml.js";
+import { EdgeKindToggles } from "./EdgeKinds.js";
+import { StubsControl } from "./StubsControl.js";
 import { TourPanel } from "./TourPanel.js";
 import { ViewTabs } from "./ViewTabs.js";
 import { WorkspaceTabs } from "./WorkspaceTabs.js";
 
-/** The tooltip of the disabled Present toggle. */
+/** The tooltip of the disabled Present button. */
 export const NO_TOURS_HINT =
-  "This explainer has no tour yet. Run /code-explainer make tour in Claude Code, or add steps from the Tours panel.";
+  "This explainer has no tour yet. Run /code-explainer make tour in Claude Code, or add steps with Edit > Edit the guide's steps.";
 
 export function Header() {
-  const store = useStore();
   const state = useViewerState();
   const [toursOpen, setToursOpen] = useState(false);
-  const tours = state.model.tours;
   const present = state.mode === "present";
   const reading = !present && state.perspective !== "explore";
-  // The tour panel belongs to Explore and Read: Present starts with it closed.
-  useEffect(() => {
-    if (present) setToursOpen(false);
-  }, [present]);
-  const save = { fileName: explainerFileName(state.explainer), json: () => store.explainerJson() };
+  const mode = present ? "present" : reading ? "read" : "explore";
 
   return (
-    <header className={"header" + (present ? " is-present" : reading ? " is-reading" : "")}>
+    <header className={`header is-${mode}` + (reading ? " is-reading" : "")} data-mode={mode}>
       <div className="brand">
         <span className="logo" aria-hidden="true">
           xpl
@@ -46,81 +49,28 @@ export function Header() {
       </div>
 
       {present ? (
-        <TourPicker />
-      ) : // One popup at a time: the views menu takes the place of the tour panel.
-      reading ? (
+        <>
+          <TourPicker />
+          <StepProgress />
+        </>
+      ) : reading ? (
         <WorkspaceTabs />
       ) : (
+        // One popup at a time: the views menu takes the place of the tour editor.
         <ViewTabs onMenuOpen={() => setToursOpen(false)} />
       )}
 
       <div className="spacer" />
+      <SaveStatus />
+      {present ? <ExitButton /> : <PresentButton />}
+      <EditMenu toursOpen={toursOpen} onTours={() => setToursOpen((open) => !open)} />
 
-      {reading ? (
-        <>
-          <PresentButton />
-          <EditMenu {...save} toursOpen={toursOpen} onTours={() => setToursOpen((open) => !open)} />
-        </>
-      ) : (
-        <>
-          {!present && (
-            <button
-              type="button"
-              className={"btn tours-btn" + (toursOpen ? " is-active" : "")}
-              data-testid="tours-button"
-              aria-expanded={toursOpen}
-              aria-controls="tour-panel"
-              title="Add the current view and selection to a tour, and edit the steps of your tours"
-              onClick={() => setToursOpen((open) => !open)}
-            >
-              Tours
-              {tours.length > 0 && <span className="count">{tours.length}</span>}
-            </button>
-          )}
-
-          <div className="segmented" role="group" aria-label="Mode">
-            <button
-              type="button"
-              className=""
-              aria-pressed={false}
-              data-testid="mode-read"
-              title="Back to the guide"
-              onClick={() => store.setPerspective("guide")}
-            >
-              Read
-            </button>
-            <button
-              type="button"
-              className={!present ? "is-active" : ""}
-              aria-pressed={!present}
-              data-testid="mode-explore"
-              onClick={() => store.setMode("explore")}
-            >
-              Explore
-            </button>
-            <button
-              type="button"
-              className={present ? "is-active" : ""}
-              aria-pressed={present}
-              data-testid="mode-present"
-              disabled={tours.length === 0}
-              title={tours.length === 0 ? NO_TOURS_HINT : "Present a tour: ← → step, Esc to leave"}
-              onClick={() => store.setMode("present")}
-            >
-              Present
-            </button>
-          </div>
-
-          {!present && <SaveControls {...save} />}
-        </>
-      )}
-
-      {!present && toursOpen && <TourPanel onClose={() => setToursOpen(false)} />}
+      {toursOpen && <TourPanel onClose={() => setToursOpen(false)} />}
     </header>
   );
 }
 
-/** Read: the one button that starts the talk. */
+/** Read and Explore: the one button that starts the talk. */
 function PresentButton() {
   const store = useStore();
   const state = useViewerState();
@@ -130,13 +80,84 @@ function PresentButton() {
       type="button"
       className="btn present-btn"
       data-testid="mode-present"
-      aria-pressed={false}
       disabled={none}
       title={none ? NO_TOURS_HINT : "Show the guide as slides: ← → step, Esc to leave"}
       onClick={() => store.setMode("present")}
     >
       Present
     </button>
+  );
+}
+
+/** Present: back to where the talk was started from (Read or Explore), like Esc. */
+function ExitButton() {
+  const store = useStore();
+  return (
+    <button
+      type="button"
+      className="btn present-btn"
+      data-testid="present-exit"
+      title="Leave the talk (Esc)"
+      onClick={() => store.exitPresent()}
+    >
+      Exit
+    </button>
+  );
+}
+
+/** Present: the step counter between the previous and next buttons, and a bar along the header's edge. */
+function StepProgress() {
+  const store = useStore();
+  const state = useViewerState();
+  const tour = store.currentTour();
+  const count = tour?.steps.length ?? 0;
+  if (!tour || count === 0) return null;
+  const index = state.tour?.step ?? 0;
+  const detour = state.applied === undefined;
+  return (
+    <div className="step-progress" title="← → step · Home, End: first, last · Esc: leave">
+      <button
+        type="button"
+        className="tour-btn"
+        data-testid="tour-prev"
+        aria-label="Previous step"
+        title="Previous step (←, Page Up)"
+        disabled={index === 0}
+        onClick={() => store.prevStep()}
+      >
+        ‹
+      </button>
+      <span className="tour-counter" data-testid="tour-counter" aria-live="polite">
+        {stepNumber(index)} / {count}
+      </span>
+      <button
+        type="button"
+        className="tour-btn"
+        data-testid="tour-next"
+        aria-label="Next step"
+        title="Next step (→, Page Down, Space)"
+        disabled={index >= count - 1}
+        onClick={() => store.nextStep()}
+      >
+        ›
+      </button>
+      {detour && (
+        <p
+          className="tour-detour"
+          role="status"
+          data-testid="tour-detour"
+          title="A click took the screen off the tour: an arrow key applies the next step again"
+        >
+          Exploring ·{" "}
+          <button type="button" className="link" onClick={() => store.goToStep(index)}>
+            Back to step {stepNumber(index)}
+          </button>
+        </p>
+      )}
+      <span className="tour-progress" aria-hidden="true">
+        <span style={{ width: `${(stepNumber(index) / count) * 100}%` }} />
+      </span>
+    </div>
   );
 }
 
@@ -159,13 +180,24 @@ function saveStatus(state: ReturnType<typeof useViewerState>) {
         text: "Unsaved",
         tone: "warn",
         title:
-          "Unsaved edits: they live only in this page. Download the explainer JSON to keep them.",
+          "Unsaved edits: they live only in this page. Use Edit > Save as HTML (or download the explainer JSON) to keep them.",
       }
     : undefined;
 }
 
-function download(fileName: string, json: string): void {
-  const url = URL.createObjectURL(new Blob([json], { type: "application/json" }));
+/** Beside Edit: the save state, when there is one. */
+function SaveStatus() {
+  const status = saveStatus(useViewerState());
+  if (!status) return null;
+  return (
+    <span className={`save-status is-${status.tone}`} role="status" title={status.title}>
+      {status.text}
+    </span>
+  );
+}
+
+function download(fileName: string, text: string, type: string): void {
+  const url = URL.createObjectURL(new Blob([text], { type }));
   const link = document.createElement("a");
   link.href = url;
   link.download = fileName;
@@ -176,20 +208,11 @@ function download(fileName: string, json: string): void {
 }
 
 /**
- * Read: the author tools, behind one button. Explore (the workbench), the tour editor, the download and the
- * save status. ↑ ↓ move along the items, Escape closes the menu.
+ * Every author tool, behind one button. ↑ ↓ move along the items, Escape closes the menu (and gives the
+ * focus back to the button), Tab leaves it. The toggles of a graph view keep the menu open: a toggle is
+ * often flipped twice.
  */
-function EditMenu({
-  fileName,
-  json,
-  toursOpen,
-  onTours,
-}: {
-  fileName: string;
-  json: () => string;
-  toursOpen: boolean;
-  onTours: () => void;
-}) {
+function EditMenu({ toursOpen, onTours }: { toursOpen: boolean; onTours: () => void }) {
   const store = useStore();
   const state = useViewerState();
   const [open, setOpen] = useState(false);
@@ -197,6 +220,10 @@ function EditMenu({
   const button = useRef<HTMLButtonElement>(null);
   const menuId = useId();
   const status = saveStatus(state);
+  const present = state.mode === "present";
+  const reading = !present && state.perspective !== "explore";
+  const view = store.view();
+  const graph = !present && !reading && view?.type === "graph" ? view : undefined;
 
   // A press outside the button and the menu closes it.
   useEffect(() => {
@@ -224,7 +251,7 @@ function EditMenu({
       close(true);
     } else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
       event.preventDefault();
-      const items = [...event.currentTarget.querySelectorAll<HTMLElement>('[role="menuitem"]')];
+      const items = [...event.currentTarget.querySelectorAll<HTMLElement>("button:not(:disabled)")];
       const at = items.indexOf(document.activeElement as HTMLElement);
       const step = event.key === "ArrowDown" ? 1 : -1;
       items[(at + step + items.length) % items.length]?.focus();
@@ -234,6 +261,7 @@ function EditMenu({
     close(false);
     action();
   };
+  const fileName = explainerFileName(state.explainer);
 
   return (
     <div ref={root} className="edit-menu">
@@ -245,18 +273,10 @@ function EditMenu({
         aria-haspopup="menu"
         aria-expanded={open}
         aria-controls={open ? menuId : undefined}
-        title="Tools to change this explainer: explore the diagrams, edit the tours, download the file"
+        title="Tools to change this explainer: the diagrams, the tours, saving"
         onClick={() => (open ? close(false) : setOpen(true))}
       >
         Edit
-        {status && status.tone !== "ok" && (
-          <span
-            className={`edit-dot is-${status.tone}`}
-            role="status"
-            aria-label={status.text}
-            title={status.title}
-          />
-        )}
         <span className="views-caret" aria-hidden="true" />
       </button>
       {open && (
@@ -268,54 +288,69 @@ function EditMenu({
           data-testid="edit-menu"
           onKeyDown={onKeyDown}
         >
-          <button
-            type="button"
-            role="menuitem"
-            className="edit-item"
-            data-testid="edit-explore"
-            onClick={run(() => store.setMode("explore"))}
-          >
-            <span className="edit-item-title">Explore the diagrams</span>
-            <span className="edit-item-hint">
-              Every view, with filters and the details of each box
-            </span>
-          </button>
-          <button
-            type="button"
-            role="menuitem"
-            className="edit-item"
-            data-testid="edit-tours"
-            aria-expanded={toursOpen}
-            aria-controls="tour-panel"
+          {reading && (
+            <MenuItem
+              testId="edit-explore"
+              title="Explore the diagrams"
+              hint="Every view, with filters and the details of each box"
+              onClick={run(() => store.setMode("explore"))}
+            />
+          )}
+          {!present && !reading && (
+            <MenuItem
+              testId="edit-read"
+              title="Back to reading"
+              hint="The guide, the map, the flow and the code"
+              onClick={run(() => store.setPerspective(store.lastReading()))}
+            />
+          )}
+          <MenuItem
+            testId="edit-tours"
+            title="Edit the guide's steps"
+            hint="Add, order and write the steps of a tour"
+            expanded={toursOpen}
             onClick={run(onTours)}
-          >
-            <span className="edit-item-title">Edit the guide's steps</span>
-            <span className="edit-item-hint">Add, order and write the steps of a tour</span>
-          </button>
-          <button
-            type="button"
-            role="menuitem"
-            className="edit-item"
-            data-testid="edit-download"
-            onClick={run(() => download(fileName, json()))}
-          >
-            <span className="edit-item-title">Download explainer JSON</span>
-            <span className="edit-item-hint">The file with the edits made here</span>
-          </button>
-          {status && (
-            <p className={`save-status is-${status.tone}`} role="status" title={status.title}>
-              {status.text}
+          />
+          {graph && (
+            <div className="edit-group" role="group" aria-label="This view">
+              <p className="edit-group-title">This view</p>
+              <StubsControl {...resolveStubPolicy(graph.stubs)} />
+              <EdgeKindToggles kinds={graph.edgeKinds ?? DEFAULT_EDGE_KINDS} />
+            </div>
+          )}
+          {canSaveHtml() && (
+            <MenuItem
+              testId="edit-save-html"
+              title="Save as HTML"
+              hint={
+                state.serverMode
+                  ? "A copy of this page with your edits, to share: it opens without xpl"
+                  : "This page with your edits in it: open the file to see them again"
+              }
+              onClick={run(() =>
+                download(htmlFileName(state.explainer), savedPage(state), "text/html"),
+              )}
+            />
+          )}
+          <MenuItem
+            testId="edit-download"
+            title="Download explainer JSON"
+            hint="The file with the edits made here"
+            onClick={run(() => download(fileName, store.explainerJson(), "application/json"))}
+          />
+          {status && status.tone !== "ok" && (
+            <p className={`edit-note is-${status.tone}`} title={status.title}>
+              {status.tone === "warn"
+                ? "Your edits live only in this page until you save them."
+                : status.text}
             </p>
           )}
           {state.serverMode && state.save.status === "error" && (
-            <button
-              type="button"
-              role="menuitem"
-              className="edit-item"
+            <MenuItem
+              testId="edit-retry"
+              title="Retry save"
               onClick={run(() => void store.flush())}
-            >
-              <span className="edit-item-title">Retry save</span>
-            </button>
+            />
           )}
         </div>
       )}
@@ -323,19 +358,53 @@ function EditMenu({
   );
 }
 
-/** Present mode: which tour is played. Choosing one starts it at its first step. */
-function TourPicker() {
+function MenuItem({
+  testId,
+  title,
+  hint,
+  expanded,
+  onClick,
+}: {
+  testId: string;
+  title: string;
+  hint?: string;
+  expanded?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="menuitem"
+      className="edit-item"
+      data-testid={testId}
+      aria-expanded={expanded}
+      aria-controls={expanded !== undefined ? "tour-panel" : undefined}
+      onClick={onClick}
+    >
+      <span className="edit-item-title">{title}</span>
+      {hint && <span className="edit-item-hint">{hint}</span>}
+    </button>
+  );
+}
+
+/**
+ * Which tour is played (Present) or read (the Guide, when there are several). Choosing one starts it at
+ * its first step.
+ */
+export function TourPicker({ testId = "tour-picker" }: { testId?: string }) {
   const store = useStore();
   const state = useViewerState();
   const tours = state.model.tours;
+  const current = store.currentTour() ?? tours[0];
   return (
     <label className="tour-picker">
       <span className="tour-picker-label">Tour</span>
       <select
-        data-testid="tour-picker"
-        value={state.tour?.tourId ?? ""}
+        data-testid={testId}
+        value={current?.id ?? ""}
         onChange={(event) => {
-          store.chooseTour(event.target.value);
+          if (state.mode === "present") store.chooseTour(event.target.value);
+          else store.previewStep(event.target.value, 0);
           // Hand the keys back to the talk: a focused menu would keep the arrows for itself.
           event.currentTarget.blur();
         }}
@@ -347,34 +416,5 @@ function TourPicker() {
         ))}
       </select>
     </label>
-  );
-}
-
-function SaveControls({ fileName, json }: { fileName: string; json: () => string }) {
-  const store = useStore();
-  const state = useViewerState();
-  const { save, dirty, serverMode } = state;
-  const status = saveStatus(state);
-  return (
-    <div className="save">
-      {status && (
-        <span className={`save-status is-${status.tone}`} role="status" title={status.title}>
-          {status.text}
-        </span>
-      )}
-      {serverMode && save.status === "error" && (
-        <button type="button" className="btn" onClick={() => void store.flush()}>
-          Retry save
-        </button>
-      )}
-      <button
-        type="button"
-        className={"btn" + (!serverMode && dirty ? " is-primary" : "")}
-        title="Download the explainer JSON, including the view and tour edits made here"
-        onClick={() => download(fileName, json())}
-      >
-        Download explainer JSON
-      </button>
-    </div>
   );
 }

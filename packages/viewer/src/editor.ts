@@ -17,6 +17,7 @@ import { python } from "@codemirror/lang-python";
 import { yaml } from "@codemirror/lang-yaml";
 import { defaultHighlightStyle, HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import {
+  Compartment,
   EditorSelection,
   EditorState,
   RangeSet,
@@ -30,10 +31,14 @@ import {
   Decoration,
   drawSelection,
   EditorView,
+  gutter,
   gutterLineClass,
   GutterMarker,
   lineNumbers,
+  ViewPlugin,
+  WidgetType,
   type DecorationSet,
+  type ViewUpdate,
 } from "@codemirror/view";
 import type { AnchorRole, FileLanguage, FocusRange } from "@xpl/core";
 
@@ -194,6 +199,204 @@ const focusField = StateField.define<Decorated>({
   ],
 });
 
+// ─── The change: what it added, rewrote and removed ─────────────────────────────────────────────
+
+/**
+ * What the change did to the file a pane shows (diff.ts computes it from the hunks):
+ *
+ * - a pane of the code as it is now: `lines` are the lines the change added (`added`) or rewrote (`changed`),
+ *   and `removed` the base lines it took out, shown between the head lines where they were, read-only;
+ * - a pane of the code before the change: `gone` are the base lines it removes or rewrites.
+ *
+ * Classes: `xpl-add` / `xpl-chg` on head lines, `xpl-gone` on base lines, `xpl-removed` on the block of removed
+ * lines; a narrow gutter (`xpl-diff-gutter`) says the same with + and − for people who do not see colour.
+ */
+export interface PaneDiff {
+  lines?: ReadonlyMap<number, "added" | "changed">;
+  removed?: readonly RemovedLines[];
+  gone?: ReadonlySet<number>;
+}
+
+/** Base lines the change removed, placed above (`before`) or below (`after`) head line `at`. */
+export interface RemovedLines {
+  at: number;
+  place: "before" | "after";
+  /** Base line number of the first of them. */
+  from: number;
+  /** Their text; undefined while the code before the change is not loaded (or not in the page). */
+  text: readonly string[] | undefined;
+  /** How many lines (also when `text` is missing). */
+  count: number;
+  /** Why the text is missing, when it is. */
+  missing?: string;
+}
+
+export const setDiff = StateEffect.define<PaneDiff | null>();
+
+/** The removed lines, as a read-only block between the lines of the code. */
+class RemovedWidget extends WidgetType {
+  constructor(readonly block: RemovedLines) {
+    super();
+  }
+  override eq(other: WidgetType): boolean {
+    if (!(other instanceof RemovedWidget)) return false;
+    const a = this.block;
+    const b = other.block;
+    return (
+      a.at === b.at &&
+      a.place === b.place &&
+      a.from === b.from &&
+      a.count === b.count &&
+      a.missing === b.missing &&
+      (a.text === b.text || (a.text?.join("\n") ?? "") === (b.text?.join("\n") ?? ""))
+    );
+  }
+  toDOM(): HTMLElement {
+    const { block } = this;
+    const dom = document.createElement("div");
+    dom.className = "xpl-removed";
+    dom.setAttribute("data-removed-from", String(block.from));
+    dom.setAttribute("data-at", `${block.place}:${block.at}`);
+    dom.setAttribute("data-removed-count", String(block.count));
+    const to = block.from + block.count - 1;
+    dom.title =
+      block.count === 1
+        ? `Removed by this change (line ${block.from} before the change)`
+        : `Removed by this change (lines ${block.from}–${to} before the change)`;
+    if (block.text) {
+      for (const text of block.text) {
+        const line = document.createElement("div");
+        line.className = "xpl-removed-line";
+        line.textContent = text === "" ? "\u200b" : text;
+        // the hanging indent of a wrapped code line (see `hangingIndent`); one row looks the same either way
+        const columns = indentColumns(text) + 2;
+        line.style.paddingLeft = `calc(8px + ${columns}ch)`;
+        line.style.textIndent = `-${columns}ch`;
+        dom.append(line);
+      }
+    } else {
+      const line = document.createElement("div");
+      line.className = "xpl-removed-line is-note";
+      line.textContent = `${block.count} line${block.count === 1 ? "" : "s"} removed${block.missing ? ` (${block.missing})` : ""}`;
+      dom.append(line);
+    }
+    return dom;
+  }
+  override get estimatedHeight(): number {
+    return -1;
+  }
+  override ignoreEvent(): boolean {
+    return false;
+  }
+}
+
+class DiffMarker extends GutterMarker {
+  constructor(
+    readonly text: string,
+    readonly kind: string,
+    readonly title: string,
+  ) {
+    super();
+    // the cell is tinted too (styles.css): a line in the focus keeps the focus colour, the cell says "changed"
+    this.elementClass = `xpl-diff-${kind}`;
+  }
+  override readonly elementClass: string;
+  override eq(other: GutterMarker): boolean {
+    return other instanceof DiffMarker && other.kind === this.kind;
+  }
+  override toDOM(): Node {
+    const span = document.createElement("span");
+    span.className = `xpl-diff-mark is-${this.kind}`;
+    span.textContent = this.text;
+    span.title = this.title;
+    return span;
+  }
+}
+const ADDED_MARKER = new DiffMarker("+", "added", "Added by this change");
+const CHANGED_MARKER = new DiffMarker(
+  "+",
+  "changed",
+  "Rewritten by this change (the old lines are shown above it)",
+);
+const GONE_MARKER = new DiffMarker("−", "gone", "Removed or rewritten by this change");
+const REMOVED_MARKER = new DiffMarker("−", "removed", "Removed by this change");
+const SPACER_MARKER = new DiffMarker("+", "spacer", "");
+
+interface Diffed {
+  decorations: DecorationSet;
+  markers: RangeSet<GutterMarker>;
+}
+
+const NO_DIFF: Diffed = { decorations: Decoration.none, markers: RangeSet.empty };
+
+function decorateDiff(doc: Text, diff: PaneDiff): Diffed {
+  const items: Range<Decoration>[] = [];
+  const markers: Range<GutterMarker>[] = [];
+  const total = doc.lines;
+  for (let n = 1; n <= total; n++) {
+    const mark = diff.lines?.get(n);
+    const gone = diff.gone?.has(n);
+    if (!mark && !gone) continue;
+    const line = doc.line(n);
+    const kind = mark === "added" ? "xpl-add" : mark === "changed" ? "xpl-chg" : "xpl-gone";
+    items.push(Decoration.line({ class: kind }).range(line.from));
+    markers.push(
+      (mark === "added" ? ADDED_MARKER : mark === "changed" ? CHANGED_MARKER : GONE_MARKER).range(
+        line.from,
+      ),
+    );
+  }
+  for (const block of diff.removed ?? []) {
+    if (block.count <= 0) continue;
+    const line = doc.line(Math.min(Math.max(1, block.at), total));
+    const before = block.place === "before";
+    items.push(
+      Decoration.widget({
+        widget: new RemovedWidget(block),
+        block: true,
+        side: before ? -1 : 1,
+      }).range(before ? line.from : line.to),
+    );
+  }
+  return {
+    decorations: Decoration.set(items, true),
+    markers: RangeSet.of(markers, true),
+  };
+}
+
+const diffField = StateField.define<Diffed>({
+  create: () => NO_DIFF,
+  update(value, tr) {
+    for (const effect of tr.effects) {
+      if (effect.is(setDiff))
+        return effect.value ? decorateDiff(tr.state.doc, effect.value) : NO_DIFF;
+    }
+    return value;
+  },
+  provide: (field) => EditorView.decorations.from(field, (value) => value.decorations),
+});
+
+/** The + and − column, only while a diff is shown. */
+const diffGutter = new Compartment();
+const diffGutterOn = gutter({
+  class: "xpl-diff-gutter",
+  markers: (view) => view.state.field(diffField).markers,
+  widgetMarker: (_view, widget) => (widget instanceof RemovedWidget ? REMOVED_MARKER : null),
+  initialSpacer: () => SPACER_MARKER,
+});
+
+/** Shows what the change did in this editor (null: the code as it is, with nothing marked). */
+export function applyDiff(view: EditorView, diff: PaneDiff | null): void {
+  const on = diff !== null;
+  const wasOn = view.state.field(diffField) !== NO_DIFF;
+  view.dispatch({
+    effects: [
+      setDiff.of(diff),
+      ...(on !== wasOn ? [diffGutter.reconfigure(on ? diffGutterOn : [])] : []),
+    ],
+  });
+}
+
 // ─── Caret <-> store ────────────────────────────────────────────────────────────────────────────
 
 /** The lines the main selection covers (a selection ending at the start of a line does not include it). */
@@ -210,6 +413,63 @@ export interface EditorHandlers {
   onCursor(fromLine: number, toLine: number): void;
 }
 
+/** Long lines wrap (Present: nobody scrolls sideways in a talk) or run on (elsewhere: code as written). */
+const wrapping = new Compartment();
+
+/** The columns of a line's leading whitespace (a tab counts 4). */
+export function indentColumns(text: string): number {
+  let columns = 0;
+  for (const char of text) {
+    if (char === " ") columns += 1;
+    else if (char === "\t") columns += 4;
+    else break;
+  }
+  return columns;
+}
+
+/**
+ * A wrapped line keeps the shape of the code: its continuation starts under the line's own indentation
+ * plus two columns, not at the left edge (a hanging indent, drawn with `text-indent` and `padding-left`).
+ * Only the lines in view are decorated.
+ */
+const hangingIndent = ViewPlugin.fromClass(
+  class {
+    decorations: DecorationSet;
+    constructor(view: EditorView) {
+      this.decorations = this.build(view);
+    }
+    update(update: ViewUpdate) {
+      if (update.docChanged || update.viewportChanged) this.decorations = this.build(update.view);
+    }
+    build(view: EditorView): DecorationSet {
+      const items: Range<Decoration>[] = [];
+      for (const { from, to } of view.visibleRanges) {
+        for (let pos = from; pos <= to;) {
+          const line = view.state.doc.lineAt(pos);
+          const columns = indentColumns(line.text) + 2;
+          items.push(
+            Decoration.line({
+              attributes: {
+                style: `padding-left: calc(8px + ${columns}ch); text-indent: -${columns}ch`,
+              },
+            }).range(line.from),
+          );
+          pos = line.to + 1;
+        }
+      }
+      return Decoration.set(items, true);
+    }
+  },
+  { decorations: (plugin) => plugin.decorations },
+);
+
+const wrapped = [EditorView.lineWrapping, hangingIndent];
+
+/** Turns line wrapping on or off in an editor made by `createReadOnlyEditor`. */
+export function setLineWrapping(view: EditorView, on: boolean): void {
+  view.dispatch({ effects: wrapping.reconfigure(on ? wrapped : []) });
+}
+
 /**
  * A read-only editor: the document cannot change, but the caret and selection still work. The caller
  * owns the view and must `destroy()` it.
@@ -219,10 +479,14 @@ export function createReadOnlyEditor(
   doc: string,
   language: FileLanguage,
   handlers?: EditorHandlers,
+  wrap = false,
 ): EditorView {
   const extensions: Extension[] = [
+    wrapping.of(wrap ? wrapped : []),
     EditorState.readOnly.of(true),
     lineNumbers(),
+    diffGutter.of([]),
+    diffField,
     drawSelection(),
     syntaxHighlighting(themedHighlight),
     baseTheme,
@@ -247,12 +511,33 @@ export function applyFocus(view: EditorView, focus: PaneFocus): void {
   view.dispatch({ effects: setFocus.of(focus) });
 }
 
-/** Scrolls so that `line` is near the top of the editor, `margin` px (default 44) below its edge. */
+/**
+ * Scrolls so that `line` is near the top of the editor, `margin` px (default 44) below its edge. Lines the
+ * change removed right above it (a block drawn before the line) are part of what to see: once they are drawn
+ * (their height is only known then, a long line wraps), the editor scrolls up again if they are cut off.
+ */
 export function scrollToLine(view: EditorView, line: number, margin = 44): void {
   const doc = view.state.doc;
-  const target = doc.line(Math.min(Math.max(1, line), doc.lines));
+  const n = Math.min(Math.max(1, line), doc.lines);
+  const target = doc.line(n);
   view.dispatch({
     effects: EditorView.scrollIntoView(target.from, { y: "start", yMargin: margin }),
+  });
+  if (view.state.field(diffField) === NO_DIFF) return;
+  requestAnimationFrame(() => {
+    if (!view.dom.isConnected) return;
+    view.requestMeasure({
+      read(v) {
+        const block = v.contentDOM.querySelector<HTMLElement>(
+          `.xpl-removed[data-at="before:${n}"]`,
+        );
+        if (!block) return 0;
+        return block.getBoundingClientRect().top - v.scrollDOM.getBoundingClientRect().top - 6;
+      },
+      write(cut, v) {
+        if (cut < 0) v.scrollDOM.scrollTop += cut;
+      },
+    });
   });
 }
 

@@ -1,8 +1,19 @@
-import { useEffect, useRef } from "react";
-import type { ExplainerModel, TourStep } from "@xpl/core";
+/**
+ * The Guide (Read mode): the tour as a page. Under the tour's title and summary, one section per step: its
+ * title, its note, a still picture of the step's diagram framed on what the step is about (with "Open in
+ * Map / Flow"), the interaction or the parts it focuses, and the tests it points at, gathered in one
+ * "Tests" list. A tour picker sits above the title when the explainer has several tours.
+ */
+import { useEffect, useMemo, useRef } from "react";
+import { codeFocus, isTestFile, type ExplainerModel, type TourStep } from "@xpl/core";
+import { overrideFocus } from "../derive.js";
+import { changeFiles, changeOf, STATUS_WORDS } from "../diff.js";
 import { useStore, useViewerState } from "../hooks.js";
 import { renderInline, renderMarkdown } from "../markdown.js";
+import { stepTests } from "../stepTests.js";
 import { stepText, stepTitle } from "../stepTitle.js";
+import { TourPicker } from "./Header.js";
+import { Snapshot } from "./Snapshot.js";
 
 export function Guide() {
   const store = useStore();
@@ -10,6 +21,8 @@ export function Guide() {
   const tour = store.currentTour() ?? state.model.tours[0];
   const body = useRef<HTMLDivElement>(null);
   const initialized = useRef(false);
+  /** The step the page opened on: the guide starts at its top (title, summary), not scrolled to it. */
+  const opening = useRef<string | undefined>(undefined);
   const active =
     state.applied && state.applied.tourId === tour?.id ? state.applied.stepId : undefined;
 
@@ -23,7 +36,9 @@ export function Guide() {
       !state.canGoForward
     ) {
       initialized.current = true;
-      store.previewStep(tour.id, state.tour?.step ?? 0);
+      const at = state.tour?.step ?? 0;
+      if (at === 0) opening.current = tour.steps[0]?.id;
+      store.previewStep(tour.id, at);
     }
   }, [
     store,
@@ -36,6 +51,13 @@ export function Guide() {
   ]);
 
   useEffect(() => {
+    if (active === undefined) return;
+    // The first section, applied as the page opens: the reader starts with the title and the summary.
+    if (active === opening.current) {
+      opening.current = undefined;
+      return;
+    }
+    opening.current = undefined;
     const section =
       active &&
       body.current?.querySelector<HTMLElement>(`[data-section-id="${CSS.escape(active)}"]`);
@@ -91,19 +113,6 @@ export function Guide() {
     <div className="guide-layout" data-testid="guide">
       <nav className="guide-contents" aria-label="Guide contents">
         <p className="eyebrow">In this guide</p>
-        {state.model.tours.length > 1 && (
-          <select
-            aria-label="Choose a guide"
-            value={tour.id}
-            onChange={(event) => store.previewStep(event.target.value, 0)}
-          >
-            {state.model.tours.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.title}
-              </option>
-            ))}
-          </select>
-        )}
         {tour.steps.map((step, index) => (
           <button
             key={step.id}
@@ -117,6 +126,13 @@ export function Guide() {
         ))}
       </nav>
       <div className="guide-body" ref={body}>
+        {/* Several tours: which one is read, above its title. */}
+        {state.model.tours.length > 1 && (
+          <div className="guide-tours">
+            <TourPicker testId="guide-tour-picker" />
+            <span className="guide-tours-count">{state.model.tours.length} tours</span>
+          </div>
+        )}
         <h2>{tour.title}</h2>
         {/* The summary comes first: what this is and why it matters, before any detail. */}
         {summary && (
@@ -126,6 +142,7 @@ export function Guide() {
             dangerouslySetInnerHTML={{ __html: renderMarkdown(summary) }}
           />
         )}
+        <ChangeFiles />
         {tour.steps.map((step, index) => (
           <GuideSection
             key={step.id}
@@ -142,8 +159,9 @@ export function Guide() {
 
 /**
  * One section of the guide: a tour step. Its title, then the rest of its note (the title is not said
- * twice), then what it shows: the interaction it focuses, the members of a group, what a concept applies
- * to. Each thing is said once: the summaries of the focused elements only stand in for a missing note.
+ * twice), then its diagram (a still picture framed on the focus), what it shows (the interaction it
+ * focuses, the members of a group, what a concept applies to) and its tests. Each thing is said once: the
+ * summaries of the focused elements only stand in for a missing note.
  */
 function GuideSection({
   step,
@@ -160,6 +178,18 @@ function GuideSection({
   const state = useViewerState();
   const { title, titleMarkdown, body } = stepText(step, state.model);
   const hasNote = typeof step.note === "string" && step.note.trim() !== "";
+  const view = state.model.view(step.view);
+  const tests = useMemo(
+    () =>
+      stepTests(
+        step.focus,
+        state.model,
+        Array.isArray(step.code) && step.code.length > 0
+          ? overrideFocus({ anchors: step.code, owner: `${tourId}/${step.id}` }, state.model)
+          : [],
+      ),
+    [step, state.model, tourId],
+  );
   const show = (perspective: "map" | "flow" | "code") => {
     store.previewStep(tourId, index);
     store.setPerspective(perspective);
@@ -189,6 +219,13 @@ function GuideSection({
             </p>
           ) : null;
         })}
+      {view && (
+        <Snapshot
+          view={view}
+          focus={step.focus}
+          onOpen={() => show(view.type === "graph" ? "map" : "flow")}
+        />
+      )}
       {step.focus.map((id) => {
         const element = state.model.element(id);
         const members =
@@ -197,23 +234,52 @@ function GuideSection({
             : element?.type === "concept"
               ? (element.concept.related ?? [])
               : [];
-        return element?.type === "step" ? (
-          <figure className="guide-mini" key={id} aria-label={`Interaction: ${element.step.label}`}>
-            <figcaption>This call</figcaption>
-            <div className="guide-mini-row">
-              <button className="guide-mini-node" onClick={() => store.select([element.step.from])}>
-                {state.model.label(element.step.from)}
-              </button>
-              <button className="guide-mini-link" onClick={() => store.previewStep(tourId, index)}>
-                {element.step.label}
-                <span aria-hidden="true">→</span>
-              </button>
-              <button className="guide-mini-node" onClick={() => store.select([element.step.to])}>
-                {state.model.label(element.step.to)}
-              </button>
-            </div>
-          </figure>
-        ) : members.length > 0 ? (
+        // A group of tests is listed once, under "Tests", not again as parts.
+        const onlyTests =
+          tests.length > 0 &&
+          members.length > 0 &&
+          members.every((member) =>
+            codeFocus([member], state.model).every((range) => isTestFile(range.file)),
+          );
+        if (element?.type === "step") {
+          const { from, to, label } = element.step;
+          // A step inside one part (from = to) is one box with what it does, not "X → X".
+          return from === to ? (
+            <figure className="guide-mini" key={id} aria-label={`Interaction: ${label}`}>
+              <figcaption>This step</figcaption>
+              <div className="guide-mini-row">
+                <button
+                  className="guide-mini-node is-self"
+                  data-testid="guide-mini-self"
+                  onClick={() => store.select([from])}
+                >
+                  <span className="guide-mini-name">inside {state.model.label(from)}:</span>{" "}
+                  <span className="guide-mini-what">{label}</span>
+                </button>
+              </div>
+            </figure>
+          ) : (
+            <figure className="guide-mini" key={id} aria-label={`Interaction: ${label}`}>
+              <figcaption>This call</figcaption>
+              <div className="guide-mini-row">
+                <button className="guide-mini-node" onClick={() => store.select([from])}>
+                  {state.model.label(from)}
+                </button>
+                <button
+                  className="guide-mini-link"
+                  onClick={() => store.previewStep(tourId, index)}
+                >
+                  {label}
+                  <span aria-hidden="true">→</span>
+                </button>
+                <button className="guide-mini-node" onClick={() => store.select([to])}>
+                  {state.model.label(to)}
+                </button>
+              </div>
+            </figure>
+          );
+        }
+        return members.length > 0 && !onlyTests ? (
           <figure className="guide-mini" key={id}>
             <figcaption>{element?.type === "concept" ? "Where this applies" : "Parts"}</figcaption>
             <div className="guide-mini-row">
@@ -230,13 +296,31 @@ function GuideSection({
           </figure>
         ) : null;
       })}
+      {tests.length > 0 && (
+        <section className="guide-tests" data-testid="guide-tests" aria-label="Tests">
+          <h4>Tests</h4>
+          <ul>
+            {tests.map((test) => (
+              <li key={`${test.file}:${test.name}`}>
+                <button
+                  type="button"
+                  className="guide-test"
+                  title={`Open ${test.file} at line ${test.line}`}
+                  onClick={() => {
+                    store.previewStep(tourId, index);
+                    store.openFile(test.file, test.line);
+                    store.setPerspective("code");
+                  }}
+                >
+                  <code>{test.name}</code>
+                  <span className="guide-test-file">{test.file}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
       <div className="section-actions">
-        <button className="btn" onClick={() => show("map")}>
-          Show on the map
-        </button>
-        <button className="btn" onClick={() => show("flow")}>
-          Show in the flow
-        </button>
         <button className="btn" onClick={() => show("code")}>
           Show the code
         </button>
@@ -260,4 +344,75 @@ function summaryOf(id: string, model: ExplainerModel): string | undefined {
     default:
       return undefined;
   }
+}
+
+/**
+ * A change explainer: the files the change touches, under the tour summary. Source files first, then tests;
+ * each row says what the change did (New, Changed, Removed, Renamed), how many lines it added and removed, and
+ * opens the file in the Code tab at its first change.
+ */
+function ChangeFiles() {
+  const store = useStore();
+  const state = useViewerState();
+  const change = changeOf(state.explainer);
+  const rows = useMemo(() => (change ? changeFiles(change) : []), [change]);
+  if (!change || rows.length === 0) return null;
+  const added = rows.reduce((sum, row) => sum + row.added, 0);
+  const deleted = rows.reduce((sum, row) => sum + row.deleted, 0);
+  return (
+    <section className="change-files" data-testid="change-files" aria-label="Files in this change">
+      <h3>
+        Files in this change{" "}
+        <span className="change-files-total">
+          {rows.length} {rows.length === 1 ? "file" : "files"},{" "}
+          <span className="is-plus">+{added}</span> <span className="is-minus">−{deleted}</span>
+        </span>
+      </h3>
+      <ul>
+        {rows.map((row) => {
+          const openable =
+            row.status === "deleted"
+              ? true
+              : state.serverMode || Object.hasOwn(state.files, row.path);
+          const slash = row.path.lastIndexOf("/");
+          return (
+            <li key={row.path}>
+              <button
+                type="button"
+                className="change-file"
+                data-testid="change-file"
+                data-path={row.path}
+                data-status={row.status}
+                disabled={!openable}
+                title={
+                  openable
+                    ? `Open ${row.path} in the code${row.status === "deleted" ? " (as it was before the change)" : ""}`
+                    : `${row.path} is not included in this page`
+                }
+                onClick={() => {
+                  store.openFile(row.path, row.line);
+                  store.setPerspective("code");
+                }}
+              >
+                <span className={`change-status is-${row.status}`}>{STATUS_WORDS[row.status]}</span>
+                <span className="change-path">
+                  {slash !== -1 && <span className="dir">{row.path.slice(0, slash + 1)}</span>}
+                  <b>{row.path.slice(slash + 1)}</b>
+                  {row.oldPath && <span className="change-old">from {row.oldPath}</span>}
+                </span>
+                {row.test && <span className="change-test">test</span>}
+                <span
+                  className="change-counts"
+                  aria-label={`${row.added} lines added, ${row.deleted} removed`}
+                >
+                  <span className="is-plus">+{row.added}</span>{" "}
+                  <span className="is-minus">−{row.deleted}</span>
+                </span>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
 }

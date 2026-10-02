@@ -2,11 +2,14 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App.js";
 import { loadBundle, readLaunchParams } from "./data.js";
+import { rememberPage } from "./saveHtml.js";
 import { ViewerStore } from "./store.js";
 import { installTestHooks } from "./testHooks.js";
 import { watchUrl } from "./url.js";
 import "./styles.css";
 
+// A copy of the page as loaded, for "Save as HTML", before anything renders into it.
+rememberPage();
 const root = createRoot(document.getElementById("root")!);
 const loaded = loadBundle();
 

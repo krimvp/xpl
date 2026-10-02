@@ -1,0 +1,106 @@
+{
+  "description": "A made-up change for the viewer's diff tests: the TS fixture as it is is the head; each edit says what head lines were in the base ('was'). head: [start, count] are head lines; a count of 0 means the base lines were removed after head line start (git's convention).",
+  "base": "1111111111111111111111111111111111111111",
+  "head": "2222222222222222222222222222222222222222",
+  "files": [
+    {
+      "path": "src/bus.ts",
+      "status": "renamed",
+      "oldPath": "src/events.ts",
+      "edits": [
+        {
+          "head": [1, 1],
+          "was": ["/** Payload of the \"job.completed\" event, sent by Worker.run. */"]
+        }
+      ]
+    },
+    {
+      "path": "src/legacy.ts",
+      "status": "deleted",
+      "was": [
+        "/** The old retry delay: a fixed step per attempt. Replaced by backoffDelay in runner.ts. */",
+        "export function linearDelay(attempt: number, stepMs: number): number {",
+        "  return attempt * stepMs;",
+        "}"
+      ]
+    },
+    { "path": "src/metrics.ts", "status": "added" },
+    {
+      "path": "src/runner.ts",
+      "status": "modified",
+      "edits": [
+        { "head": [65, 0], "was": ["      this.log(`finished ${job.id}`);"] },
+        {
+          "head": [75, 4],
+          "was": [
+            "        const backoff = this.config.retry.baseDelayMs * attempts;",
+            "        await this.queue.requeue(job, backoff);"
+          ]
+        },
+        { "head": [106, 5], "was": [] }
+      ]
+    },
+    {
+      "path": "test/retry.test.ts",
+      "status": "modified",
+      "edits": [
+        { "head": [8, 1], "was": ["import { Runner } from \"../src/runner.ts\";"] },
+        { "head": [81, 6], "was": [] }
+      ]
+    }
+  ],
+  "patch": {
+    "concepts": [
+      {
+        "id": "concept:retry-policy",
+        "anchors": [
+          {
+            "file": "src/runner.ts",
+            "symbol": "Runner.dispatch",
+            "span": { "from": 30, "to": 41 },
+            "role": "definition"
+          },
+          {
+            "file": "src/runner.ts",
+            "at": "base",
+            "find": "        const backoff = this.config.retry.baseDelayMs * attempts;\n        await this.queue.requeue(job, backoff);",
+            "role": "definition"
+          },
+          {
+            "file": "config/default.yaml",
+            "symbol": "retry",
+            "span": { "from": 0, "to": 3 },
+            "role": "config"
+          },
+          { "file": "test/retry.test.ts", "role": "test" }
+        ]
+      }
+    ],
+    "tours": [
+      {
+        "id": "tour:intro",
+        "summary": "The retry delay now **doubles** with every failure, up to a cap. Before, it grew by a fixed step.",
+        "stepsUpdate": [
+          {
+            "id": "t2",
+            "note": "### The delay now doubles\n\nBefore, the runner added a fixed step per attempt. Now it asks `backoffDelay`.",
+            "code": [
+              {
+                "file": "src/runner.ts",
+                "at": "base",
+                "find": "        const backoff = this.config.retry.baseDelayMs * attempts;",
+                "role": "usage"
+              },
+              {
+                "file": "src/runner.ts",
+                "symbol": "Runner.dispatch",
+                "span": { "from": 33, "to": 36 },
+                "role": "usage"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,12 +1,12 @@
-/** The diagram of the current view (graph or sequence) under a caption with its title and question. */
-import { DEFAULT_EDGE_KINDS, resolveStubPolicy } from "@xpl/core";
+/**
+ * The diagram of the current view (graph or sequence) under a caption with its title and question. (The
+ * stub and edge-kind toggles of a graph view are in the header's Edit menu, with the other author tools.)
+ */
 import { useDerived, useViewerState } from "../hooks.js";
-import { EdgeKindToggles } from "./EdgeKinds.js";
 import { ErrorBoundary } from "./ErrorBoundary.js";
 import { GraphView } from "./GraphView.js";
 import { FlowDiagram } from "./FlowDiagram.js";
 import { SequenceView } from "./SequenceView.js";
-import { StubsControl } from "./StubsControl.js";
 
 export function DiagramPane() {
   const state = useViewerState();
@@ -30,12 +30,6 @@ export function DiagramPane() {
       <div className="diagram-caption">
         <span className="caption-title">{view.title}</span>
         {question && <span className="caption-question">{question}</span>}
-        {view.type === "graph" && !present && (
-          <div className="caption-controls">
-            <StubsControl {...resolveStubPolicy(view.stubs)} />
-            <EdgeKindToggles kinds={view.edgeKinds ?? DEFAULT_EDGE_KINDS} />
-          </div>
-        )}
       </div>
       <div className="diagram-body">
         <ErrorBoundary

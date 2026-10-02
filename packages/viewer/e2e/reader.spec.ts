@@ -5,7 +5,7 @@
  * summary first, author tools behind "Edit", plain words, readable diagrams).
  */
 import { expect, test, type Page } from "@playwright/test";
-import { byId, readEmbeddedBundle, stateOf, watchProblems, withBundle } from "./helpers.js";
+import { byId, readEmbeddedBundle, stateOf, toRead, watchProblems, withBundle } from "./helpers.js";
 
 /** The embedded bundle is edited as loose JSON: many shapes, none worth typing here. */
 type Loose = Record<string, any>;
@@ -269,7 +269,7 @@ test.describe("round 2 of the review", () => {
     { width: 1280, height: 720 },
     { width: 1440, height: 900 },
   ]) {
-    test(`${size.width}x${size.height}: a long caption is never cut off (it fits, or it scrolls with the counter on top)`, async ({
+    test(`${size.width}x${size.height}: a long caption is never cut off (it fits, or it scrolls; the counter is in the header)`, async ({
       page,
     }) => {
       // A note of about 520 characters (a real step 1): it fits without scrolling.
@@ -290,7 +290,7 @@ test.describe("round 2 of the review", () => {
       expect((await page.locator(".diagram-body").boundingBox())!.height).toBeGreaterThan(150);
 
       // A note far too long for any box: it scrolls inside the caption, down to its last words, and the
-      // counter row stays in sight.
+      // counter (in the header) stays in sight.
       await page.keyboard.press("ArrowRight");
       await expect(page.getByTestId("tour-counter")).toHaveText("2 / 2");
       expect(await caption.evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true);
@@ -298,12 +298,11 @@ test.describe("round 2 of the review", () => {
       const last = await caption.evaluate((el) => {
         const box = el.getBoundingClientRect();
         const note = el.querySelector(".tour-note")!.getBoundingClientRect();
-        const nav = el.querySelector(".tour-nav")!.getBoundingClientRect();
-        return { noteBottom: note.bottom, boxBottom: box.bottom, navTop: nav.top, boxTop: box.top };
+        return { noteBottom: note.bottom, boxBottom: box.bottom };
       });
       expect(last.noteBottom).toBeLessThanOrEqual(last.boxBottom);
-      expect(last.navTop).toBeGreaterThanOrEqual(last.boxTop - 1);
       await expect(page.getByTestId("tour-counter")).toBeInViewport();
+      await expect(page.locator(".header").getByTestId("tour-counter")).toHaveText("2 / 2");
     });
   }
 
@@ -485,7 +484,7 @@ test.describe("the reader's screen", () => {
     });
   }
 
-  test("Edit holds the author tools: Explore, the tour editor, the download and the save status", async ({
+  test("Edit holds the author tools: Explore, the tour editor, saving and the save status", async ({
     page,
   }) => {
     await openVariant(page, () => undefined);
@@ -494,6 +493,7 @@ test.describe("the reader's screen", () => {
     await expect(menu.getByRole("menuitem")).toHaveText([
       /Explore the diagrams/,
       /Edit the guide's steps/,
+      /Save as HTML/,
       /Download explainer JSON/,
     ]);
     await expect(menu.getByRole("menuitem").first()).toBeFocused();
@@ -507,22 +507,26 @@ test.describe("the reader's screen", () => {
     await expect(page.getByTestId("tour-panel")).toBeVisible();
     await page.getByTestId("tour-step-note").first().fill("### Changed");
     await page.getByRole("button", { name: "Close the tour panel" }).click();
+    // "Unsaved" is beside Edit; the menu says what it means
+    await expect(page.locator(".header .save-status")).toHaveText("Unsaved");
     await page.getByTestId("edit-button").click();
-    await expect(page.getByTestId("edit-menu").locator(".save-status")).toHaveText("Unsaved");
+    await expect(page.getByTestId("edit-menu").locator(".edit-note")).toContainText(
+      "live only in this page",
+    );
     const [download] = await Promise.all([
       page.waitForEvent("download"),
       page.getByTestId("edit-download").click(),
     ]);
     expect(download.suggestedFilename()).toBe("jobrunner.explainer.json");
 
-    // Explore: the workbench, with its own controls (stubs, edge kinds, Explain this)
+    // Explore: the workbench, with its own tools in the same menu (stubs, edge kinds)
     await page.getByTestId("edit-button").click();
     await page.getByTestId("edit-explore").click();
     expect((await stateOf(page)).perspective).toBe("explore");
-    await expect(page.locator(".stubs-control")).toBeVisible();
-    await expect(page.getByTestId("tours-button")).toBeVisible();
+    await page.getByTestId("edit-button").click();
+    await expect(page.getByTestId("edit-menu").locator(".stubs-control")).toBeVisible();
     // and back to reading
-    await page.getByTestId("mode-read").click();
+    await page.getByTestId("edit-read").click();
     await expect(page.getByTestId("guide")).toBeVisible();
   });
 
@@ -578,7 +582,7 @@ test.describe("the reader's screen", () => {
 
     // Read > Map: a "calls ×N" label is quiet until its edge is hovered, or an end of it is selected
     await page.keyboard.press("Escape");
-    await page.getByTestId("mode-read").click();
+    await toRead(page);
     await page.getByTestId("perspective-map").click();
     const counted = page.locator(".workspace-diagram .edge:not(.is-stub)", {
       has: page.locator(".edge-label text", { hasText: /×\d+$/ }),

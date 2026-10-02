@@ -10,6 +10,7 @@
  *   matches    (view stage, cursor) -> ids whose code contains the caret
  */
 import {
+  baseAnchorFocus,
   buildReverseIndex,
   codeFocus,
   deriveGraph,
@@ -17,6 +18,7 @@ import {
   derivedEdgeMap,
   elementIdForSymbolId,
   excludedRefs,
+  isBaseAnchor,
   mergeFocusByFile,
   parseId,
   REF_TO_EDGE_KIND,
@@ -56,6 +58,15 @@ export interface ViewDerived {
 export interface SelectionDerived {
   /** Focus of the selected elements, in selection order (what `codeFocus` returns). */
   focus: readonly FocusRange[];
+  /**
+   * Base anchors (`at: "base"`) of the selected elements (or of the step's code override), as ranges of the
+   * code before the change (`baseAnchorFocus`): `file` is the changed file's path, the lines are base lines.
+   */
+  base: readonly FocusRange[];
+  /** The same, per file, overlapping ranges merged. */
+  baseFiles: readonly FileFocus[];
+  /** Head and base files in the order the focus names them: the order of the editor panes. */
+  order: readonly { file: FilePath; base: boolean }[];
   /** The same, per file (first appearance first) with overlapping ranges merged. */
   files: readonly FileFocus[];
   focusFiles: ReadonlySet<FilePath>;
@@ -65,6 +76,11 @@ export interface SelectionDerived {
 
 export interface PaneSpec {
   file: FilePath;
+  /**
+   * `base`: the code before the change of this file (a base anchor's lines, or a file the change removed),
+   * read-only and labelled as such. Absent: the code as it is now.
+   */
+  side?: "base";
   /** Focus ranges in this file (empty for a file that was only opened). */
   ranges: readonly FocusRange[];
   /** The file is in the current focus. */
@@ -206,10 +222,12 @@ export interface CodeOverride {
  * The focus range of one anchor of a code override: its resolved range (never a missing anchor), or,
  * for an anchor that was never resolved, computed from the index like core does for elements.
  */
-function overrideFocus(override: CodeOverride, model: ExplainerModel): FocusRange[] {
+export function overrideFocus(override: CodeOverride, model: ExplainerModel): FocusRange[] {
   const out: FocusRange[] = [];
   for (const anchor of override.anchors) {
     if (typeof anchor !== "object" || anchor === null) continue;
+    // Lines of the code before the change: they belong in a "before" pane (`overrideBaseFocus`).
+    if (isBaseAnchor(anchor)) continue;
     const resolved = anchor.resolved;
     if (resolved) {
       if (resolved.status === "missing") continue;
@@ -246,6 +264,57 @@ function overrideFocus(override: CodeOverride, model: ExplainerModel): FocusRang
   return out;
 }
 
+/** The anchors an element stores itself (base anchors live only there: nothing derives them). */
+function ownAnchors(id: ElementId, model: ExplainerModel): readonly Anchor[] {
+  const element = model.element(id);
+  if (!element) return [];
+  const anchors =
+    element.type === "node"
+      ? element.node.anchors
+      : element.type === "edge"
+        ? element.edge.anchors
+        : element.type === "concept"
+          ? element.concept.anchors
+          : element.type === "step"
+            ? element.step.anchors
+            : undefined;
+  return Array.isArray(anchors) ? anchors : [];
+}
+
+/**
+ * The base anchors of a list of anchors in their order, each with its place among the head anchors: the order
+ * of `entries` is the order the editor panes take (a step whose code names the old lines first shows them first).
+ */
+function sideOrder(
+  anchors: readonly Anchor[],
+  head: readonly FocusRange[],
+  base: readonly FocusRange[],
+): { file: FilePath; base: boolean }[] {
+  const order: { file: FilePath; base: boolean }[] = [];
+  let h = 0;
+  let b = 0;
+  for (const anchor of anchors) {
+    if (typeof anchor !== "object" || anchor === null) continue;
+    if (isBaseAnchor(anchor)) {
+      const range = base[b];
+      if (range && range.file === anchor.file) {
+        order.push({ file: range.file, base: true });
+        b++;
+      }
+    } else {
+      const range = head[h];
+      if (range && range.file === anchor.file) {
+        order.push({ file: range.file, base: false });
+        h++;
+      }
+    }
+  }
+  // Whatever the walk could not place (unresolved anchors computed from the index) follows in its own order.
+  for (; h < head.length; h++) order.push({ file: head[h]!.file, base: false });
+  for (; b < base.length; b++) order.push({ file: base[b]!.file, base: true });
+  return order;
+}
+
 function deriveSelection(
   vd: ViewDerived,
   model: ExplainerModel,
@@ -253,15 +322,33 @@ function deriveSelection(
   override: CodeOverride | undefined,
 ): SelectionDerived {
   const focus: FocusRange[] = [];
-  if (override) focus.push(...overrideFocus(override, model));
-  else {
+  const base: FocusRange[] = [];
+  const order: { file: FilePath; base: boolean }[] = [];
+  if (override) {
+    const head = overrideFocus(override, model);
+    const before = baseAnchorFocus(override.anchors, override.owner);
+    focus.push(...head);
+    base.push(...before);
+    order.push(...sideOrder(override.anchors, head, before));
+  } else {
     for (const id of selection) {
       const type = parseId(id).type;
       if (type === "stub") {
         const stub = vd.stubMap.get(id);
-        if (stub) focus.push(...stubFocus(stub, vd, model));
+        const head = stub ? stubFocus(stub, vd, model) : [];
+        focus.push(...head);
+        order.push(...head.map((r) => sideOf(r, false)));
       } else if (type !== "ghost") {
-        focus.push(...codeFocus([id], model, { derivedEdges: vd.edgeMap }));
+        const head = codeFocus([id], model, { derivedEdges: vd.edgeMap });
+        const anchors = ownAnchors(id, model);
+        const before = baseAnchorFocus(anchors, id);
+        focus.push(...head);
+        base.push(...before);
+        order.push(
+          ...(before.length > 0
+            ? sideOrder(anchors, head, before)
+            : head.map((r) => sideOf(r, false))),
+        );
       }
     }
   }
@@ -269,10 +356,15 @@ function deriveSelection(
   return {
     focus,
     files,
+    base,
+    baseFiles: mergeFocusByFile(base),
+    order,
     focusFiles: new Set(files.map((f) => f.file)),
     related: relatedIds(vd, model, selection),
   };
 }
+
+const sideOf = (range: FocusRange, base: boolean) => ({ file: range.file, base });
 
 // ─── Stage 3: the caret ─────────────────────────────────────────────────────────────────────────
 
@@ -292,6 +384,10 @@ function deriveMatches(vd: ViewDerived, cursor: Cursor | undefined): ElementId[]
 /** Options for the panes: what the user opened, and what the tour step asks of the editor. */
 interface PaneOptions {
   openedFile: FilePath | undefined;
+  /** The opened file is shown as its code before the change (`ViewerState.openedBase`). */
+  openedBase: boolean;
+  /** Where that "Before" pane opens (`ViewerState.openedLine`). */
+  openedLine: number | undefined;
   /** `editor.primary` of the applied tour step. */
   primary: FilePath | undefined;
   dimOthers: boolean;
@@ -303,32 +399,47 @@ interface PaneOptions {
  */
 function derivePanes(
   sel: SelectionDerived,
-  { openedFile, primary, dimOthers }: PaneOptions,
+  { openedFile, openedBase, openedLine, primary, dimOthers }: PaneOptions,
   hasFile: (file: FilePath) => boolean,
 ): { panes: PaneSpec[]; overflow: FilePath[] } {
-  const paneFor = (file: FilePath, opened: boolean): PaneSpec => {
-    const own = sel.files.find((f) => f.file === file);
-    const lead = sel.focus.find((range) => range.file === file)?.range.startLine;
+  const paneFor = (file: FilePath, opened: boolean, base: boolean): PaneSpec => {
+    const own = (base ? sel.baseFiles : sel.files).find((f) => f.file === file);
+    const focusLead = (base ? sel.base : sel.focus).find((range) => range.file === file)?.range
+      .startLine;
+    // A "Before" pane opened at a line (a base anchor's row) goes there; otherwise to the first range.
+    const lead =
+      opened && base && openedLine !== undefined
+        ? openedLine
+        : own !== undefined
+          ? focusLead
+          : undefined;
     return {
       file,
+      ...(base ? { side: "base" as const } : {}),
       ranges: own ? own.ranges.flatMap((r) => r.sources) : [],
       focused: own !== undefined,
       dim: own !== undefined && dimOthers,
       opened,
-      ...(own !== undefined && lead !== undefined ? { lead } : {}),
+      ...(lead !== undefined ? { lead } : {}),
     };
   };
   const all: PaneSpec[] = [];
-  const seen = new Set<FilePath>();
+  const seen = new Set<string>();
   // Files that are asked for by name must exist; focused files are shown whatever the index says.
-  const add = (file: FilePath | undefined, opened: boolean, mustExist: boolean) => {
-    if (file === undefined || seen.has(file) || (mustExist && !hasFile(file))) return;
-    seen.add(file);
-    all.push(paneFor(file, opened));
+  const add = (file: FilePath | undefined, opened: boolean, mustExist: boolean, base = false) => {
+    const key = `${base ? "base" : "head"}\0${file}`;
+    if (file === undefined || seen.has(key) || (mustExist && !base && !hasFile(file))) return;
+    seen.add(key);
+    all.push(paneFor(file, opened, base));
   };
-  add(openedFile, true, true);
+  add(openedFile, true, true, openedBase);
+  // The primary file first: as it is now, and before the change when the focus has both, in the focus's order.
+  for (const entry of sel.order)
+    if (entry.file === primary) add(entry.file, false, true, entry.base);
   add(primary, false, true);
+  for (const entry of sel.order) add(entry.file, false, false, entry.base);
   for (const focus of sel.files) add(focus.file, false, false);
+  for (const focus of sel.baseFiles) add(focus.file, false, false, true);
   return {
     panes: all.slice(0, MAX_PANES),
     overflow: all.slice(MAX_PANES).map((p) => p.file),
@@ -351,6 +462,8 @@ let lastPanes:
   | {
       sel: SelectionDerived;
       opened: FilePath | undefined;
+      openedBase: boolean;
+      openedLine: number | undefined;
       primary: FilePath | undefined;
       dimOthers: boolean;
       value: ReturnType<typeof derivePanes>;
@@ -423,16 +536,28 @@ export function getDerived(state: ViewerState): Derived {
     !lastPanes ||
     lastPanes.sel !== selection ||
     lastPanes.opened !== state.openedFile ||
+    lastPanes.openedBase !== state.openedBase ||
+    lastPanes.openedLine !== state.openedLine ||
     lastPanes.primary !== primary ||
     lastPanes.dimOthers !== dimOthers
   ) {
     lastPanes = {
       sel: selection,
       opened: state.openedFile,
+      openedBase: state.openedBase,
+      openedLine: state.openedLine,
       primary,
       dimOthers,
-      value: derivePanes(selection, { openedFile: state.openedFile, primary, dimOthers }, (file) =>
-        state.model.index.hasFile(file),
+      value: derivePanes(
+        selection,
+        {
+          openedFile: state.openedFile,
+          openedBase: state.openedBase,
+          openedLine: state.openedLine,
+          primary,
+          dimOthers,
+        },
+        (file) => state.model.index.hasFile(file),
       ),
     };
   }

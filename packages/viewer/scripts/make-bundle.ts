@@ -29,6 +29,11 @@
  * The defaults for b and c live in packages/viewer/dist/bundles/ (git- and prettier-ignored because
  * `dist` is; `emptyOutDir` is off in vite.config.ts so a viewer build does not delete them).
  * Run `npm run build -w @xpl/viewer` first: the viewer HTML is read from dist/index.html.
+ *
+ * --change <spec.json> makes a change explainer without git (the viewer's diff tests): the fixture as it is
+ * is the head, and the spec says what each changed file looked like before (`changeFromSpec`). The script sets
+ * `explainer.change` (what `xpl change` writes), applies the spec's `patch` as the user (base anchors resolve
+ * against the base texts) and embeds `baseFiles` (what `xpl bundle` embeds).
  */
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
@@ -38,6 +43,10 @@ import {
   BUNDLE_SCHEMA,
   createExplainer,
   injectBundle,
+  TextCache,
+  type ChangedFile,
+  type ChangeHunk,
+  type ChangeRecord,
   type Explainer,
   type ExplainerPatch,
   type Issue,
@@ -63,7 +72,91 @@ const USAGE = `usage: tsx scripts/make-bundle.ts <root> --patch <patch.json> [--
   --commit <id>        commit id override for the index
   --no-explainer       do not write <root>/.explainer/<name>.explainer.json
   --mode <mode>        initial viewer mode recorded in the bundle: explore (default) or present
+  --change <file>      a made-up change (see changeFromSpec): sets explainer.change, applies the spec's
+                       patch as the user and embeds the code before the change (baseFiles)
 `;
+
+/**
+ * A change described against the head (the fixture as it is). For a modified or renamed file, each edit names
+ * head lines `[start, count]` and the base lines they replaced (`was`); a count of 0 puts `was` after head
+ * line `start` (a pure deletion, git's convention). An added file needs nothing; a deleted one gives its base
+ * text as `was`.
+ */
+interface ChangeSpec {
+  base: string;
+  head: string;
+  files: {
+    path: string;
+    status: ChangedFile["status"];
+    oldPath?: string;
+    edits?: { head: [number, number]; was: string[] }[];
+    was?: string[];
+  }[];
+  patch?: ExplainerPatch;
+}
+
+/** Lines of a text, without the empty "line" after a final newline. */
+function linesOf(text: string): string[] {
+  const lines = text.split("\n");
+  if (lines.at(-1) === "") lines.pop();
+  return lines;
+}
+
+/**
+ * The change record and the base texts (by base path) of a spec. The hunks are what `git diff -U0` would print
+ * for the two texts: `oldStart`/`newStart` of a count of 0 are the line after which it happened.
+ */
+function changeFromSpec(
+  spec: ChangeSpec,
+  headText: (path: string) => string | undefined,
+): { change: ChangeRecord; baseTexts: Record<string, string>; baseFiles: Record<string, string> } {
+  const files: ChangedFile[] = [];
+  const baseTexts: Record<string, string> = {};
+  const baseFiles: Record<string, string> = {};
+  for (const file of spec.files) {
+    const hunks: ChangeHunk[] = [];
+    if (file.status === "added") {
+      const head = headText(file.path);
+      if (head === undefined) fail(`--change: ${file.path} is not in the fixture`);
+      hunks.push({ oldStart: 0, oldLines: 0, newStart: 1, newLines: linesOf(head).length });
+    } else if (file.status === "deleted") {
+      const was = file.was ?? [];
+      hunks.push({ oldStart: 1, oldLines: was.length, newStart: 0, newLines: 0 });
+      baseTexts[file.path] = was.join("\n") + "\n";
+      baseFiles[file.path] = baseTexts[file.path]!;
+    } else {
+      const head = headText(file.path);
+      if (head === undefined) fail(`--change: ${file.path} is not in the fixture`);
+      const lines = linesOf(head);
+      const base: string[] = [];
+      let next = 1;
+      const edits = [...(file.edits ?? [])].sort((a, b) => a.head[0] - b.head[0]);
+      for (const {
+        head: [start, count],
+        was,
+      } of edits) {
+        const until = count > 0 ? start - 1 : start;
+        base.push(...lines.slice(next - 1, until));
+        const oldStart = was.length > 0 ? base.length + 1 : base.length;
+        base.push(...was);
+        hunks.push({ oldStart, oldLines: was.length, newStart: start, newLines: count });
+        next = count > 0 ? start + count : start + 1;
+      }
+      base.push(...lines.slice(next - 1));
+      const text = base.join("\n") + (head.endsWith("\n") ? "\n" : "");
+      baseTexts[file.status === "renamed" && file.oldPath ? file.oldPath : file.path] = text;
+      baseFiles[file.path] = text;
+    }
+    files.push({
+      path: file.path,
+      status: file.status,
+      ...(file.status === "renamed" && file.oldPath ? { oldPath: file.oldPath } : {}),
+      hunks,
+    });
+  }
+  files.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+  return { change: { base: spec.base, head: spec.head, files }, baseTexts, baseFiles };
+}
 
 /** `scripts/x-example.patch.json` -> `scripts/x-example.user.patch.json` (undefined for other names). */
 function siblingUserPatch(patchFile: string): string | undefined {
@@ -100,10 +193,11 @@ function applyPatchFile(
   patchFile: string,
   actor: "llm" | "user",
   index: SymbolIndex,
-  getText: (file: string) => string | undefined,
+  getText: ((file: string) => string | undefined) | TextCache,
+  given?: ExplainerPatch,
 ): Explainer {
-  if (!existsSync(patchFile)) fail(`no such patch file: ${patchFile}`);
-  const patch = JSON.parse(readFileSync(patchFile, "utf8")) as ExplainerPatch;
+  if (!given && !existsSync(patchFile)) fail(`no such patch file: ${patchFile}`);
+  const patch = given ?? (JSON.parse(readFileSync(patchFile, "utf8")) as ExplainerPatch);
   const result = applyPatch(explainer, patch, index, getText, { actor });
   if (!result.ok) {
     console.error(`make-bundle: the ${actor} patch ${basename(patchFile)} did not apply:`);
@@ -135,6 +229,7 @@ async function main(): Promise<void> {
       viewer: { type: "string" },
       commit: { type: "string" },
       mode: { type: "string" },
+      change: { type: "string" },
       "no-explainer": { type: "boolean", default: false },
       help: { type: "boolean", short: "h", default: false },
     },
@@ -187,6 +282,23 @@ async function main(): Promise<void> {
   }
   if (userPatch) explainer = applyPatchFile(explainer, userPatch, "user", index, getText);
 
+  // A made-up change: the record, its patch (base anchors read the base texts), the code before it.
+  let baseFiles: Record<string, string> | undefined;
+  const changeFile = values.change ? resolve(values.change) : undefined;
+  if (changeFile) {
+    if (!existsSync(changeFile)) fail(`no such change spec: ${changeFile}`);
+    const spec = JSON.parse(readFileSync(changeFile, "utf8")) as ChangeSpec;
+    const made = changeFromSpec(spec, getText);
+    explainer = { ...explainer, change: made.change };
+    baseFiles = made.baseFiles;
+    if (spec.patch) {
+      const texts = new TextCache(getText, (commit, path) =>
+        commit === made.change.base ? made.baseTexts[path] : undefined,
+      );
+      explainer = applyPatchFile(explainer, changeFile, "user", index, texts, spec.patch);
+    }
+  }
+
   // 3. outputs
   const written: string[] = [];
   if (!values["no-explainer"]) {
@@ -201,6 +313,7 @@ async function main(): Promise<void> {
     explainer,
     index,
     files,
+    ...(baseFiles ? { baseFiles } : {}),
     mode: mode,
   };
   const html = injectBundle(readFileSync(viewerHtml, "utf8"), bundle);

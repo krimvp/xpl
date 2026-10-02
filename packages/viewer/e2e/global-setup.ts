@@ -9,7 +9,7 @@ const LANGUAGES = ["ts", "py", "go"] as const;
 
 /**
  * Builds the fixture bundles once per run, one `scripts/make-bundle.ts` process per language in
- * parallel: it indexes fixtures/<lang>-jobrunner, applies scripts/<lang>-example.patch.json (actor llm)
+ * parallel (plus `ts-change.html`: the TS fixture as a change explainer, see `--change`): it indexes fixtures/<lang>-jobrunner, applies scripts/<lang>-example.patch.json (actor llm)
  * and then scripts/<lang>-example.user.patch.json (actor user), which together are Appendix B of
  * docs/handoff.md for that language, and injects the result into the built viewer (dist/index.html)
  * -> dist/bundles/<lang>-jobrunner.html, which the specs open via file://.
@@ -18,7 +18,7 @@ const LANGUAGES = ["ts", "py", "go"] as const;
  * for TS; for Python and Go pass `--patch scripts/<lang>-example.patch.json`, which finds the sibling
  * `.user.patch.json` by itself).
  */
-function makeBundle(lang: (typeof LANGUAGES)[number]): Promise<void> {
+function makeBundle(lang: (typeof LANGUAGES)[number], change = false): Promise<void> {
   return new Promise((resolve, reject) => {
     const child = spawn(
       "npx",
@@ -37,6 +37,17 @@ function makeBundle(lang: (typeof LANGUAGES)[number]): Promise<void> {
         "--user-patch",
         `scripts/${lang}-example.user.patch.json`,
         "--no-explainer",
+        // The change explainer (diff view): the same fixture with a made-up change (scripts/ts-change.json).
+        ...(change
+          ? [
+              "--change",
+              `scripts/${lang}-change.json`,
+              "--out",
+              `dist/bundles/${lang}-change.html`,
+              "--dev-json",
+              `dist/bundles/${lang}-change.bundle.json`,
+            ]
+          : []),
       ],
       { cwd: viewerDir },
     );
@@ -55,7 +66,10 @@ export default async function globalSetup(): Promise<void> {
   if (!existsSync(new URL("../dist/index.html", import.meta.url))) {
     throw new Error("dist/index.html is missing: run `npm run build -w @xpl/viewer` first");
   }
-  const results = await Promise.allSettled(LANGUAGES.map(makeBundle));
+  const results = await Promise.allSettled([
+    ...LANGUAGES.map((lang) => makeBundle(lang)),
+    makeBundle("ts", true),
+  ]);
   const failures = results.flatMap((result) =>
     result.status === "rejected" ? [String(result.reason)] : [],
   );

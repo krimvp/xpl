@@ -7,6 +7,8 @@ import { expect, test, type Page } from "@playwright/test";
 import {
   byId,
   linesWith,
+  openEditMenu,
+  openTourEditor,
   readEmbeddedBundle,
   stateOf,
   watchProblems,
@@ -155,6 +157,7 @@ test("view edits are sent to PUT /api/views/<id> with the changed fields (coales
 
   // Two quick toggles arrive as one request carrying the final value. Both clicks happen in one task, so
   // that a slow machine cannot spread them beyond the delay that coalesces edits.
+  await openEditMenu(page);
   await page.evaluate(() => {
     for (const kind of ["imports", "reads"]) {
       document.querySelector<HTMLElement>(`[data-edge-kind="${kind}"]`)!.click();
@@ -179,11 +182,12 @@ test("a rejected save keeps the edit, says so, leaves the download available and
   await expect(status).toContainText("403");
   await expect(status).toContainText("the explainer is read-only");
   expect((await stateOf(page)).dirty).toBe(true);
-  await expect(page.getByRole("button", { name: "Download explainer JSON" })).toBeEnabled();
+  const menu = await openEditMenu(page);
+  await expect(menu.getByTestId("edit-download")).toBeEnabled();
 
-  // The server recovers: the retry sends the edit that failed.
+  // The server recovers: the retry (in the Edit menu) sends the edit that failed.
   recorded.putStatus = 200;
-  await page.getByRole("button", { name: "Retry save" }).click();
+  await menu.getByTestId("edit-retry").click();
   await expect(status).toHaveText("Saved");
   expect((await stateOf(page)).dirty).toBe(false);
   expect(recorded.puts.at(-1)!.body).toEqual({
@@ -217,7 +221,7 @@ test("tour edits are sent to PUT /api/tours/<id> with the whole tour, coalesced"
 }) => {
   const problems = watchProblems(page);
   const recorded = await serve(page);
-  await page.getByTestId("tours-button").click();
+  await openTourEditor(page);
   const rows = page.getByTestId("tour-step");
   await expect(rows).toHaveCount(2);
 
@@ -260,7 +264,7 @@ test("a new tour is created with PUT /api/tours/tour:<slug>, title and steps", a
   const recorded = await serve(page);
   await page.evaluate(() => window.__xpl!.setView("view:dispatch"));
   await byId(page, "dispatch:1").click();
-  await page.getByTestId("tours-button").click();
+  await openTourEditor(page);
   await page.getByTestId("tour-target").selectOption({ label: "New tour…" });
   await page.getByTestId("tour-new-title").fill("My talk");
   await page.getByTestId("tour-add").click();
@@ -290,7 +294,7 @@ test("a refused tour save keeps the edit, says why, does not hold back a view ed
 }) => {
   const recorded = await serve(page, { tourStatus: 400 });
   await byId(page, "ghost:file:src/bus.ts").click(); // a view edit, which the server accepts
-  await page.getByTestId("tours-button").click();
+  await openTourEditor(page);
   await page.getByTestId("tour-step-note").first().fill("Will be refused.");
   const status = page.locator(".save-status");
   await expect(status).toContainText("Not saved");
@@ -298,10 +302,11 @@ test("a refused tour save keeps the edit, says why, does not hold back a view ed
   await expect(status).toContainText("tour patch rejected: stale anchor");
   expect((await stateOf(page)).dirty).toBe(true);
   expect(recorded.puts).toHaveLength(1); // the view edit went through
-  await expect(page.getByRole("button", { name: "Download explainer JSON" })).toBeEnabled();
+  const menu = await openEditMenu(page);
+  await expect(menu.getByTestId("edit-download")).toBeEnabled();
 
   recorded.tourStatus = 200;
-  await page.getByRole("button", { name: "Retry save" }).click();
+  await menu.getByTestId("edit-retry").click();
   await expect(status).toHaveText("Saved");
   expect((await stateOf(page)).dirty).toBe(false);
   const steps = recorded.tourPuts.at(-1)!.body.steps as { note?: string }[];

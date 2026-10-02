@@ -69,6 +69,12 @@
   --hl-test: rgba(219, 39, 119, 0.12);
   --hl-test-bar: #db2777;
   --site-bg: rgba(217, 119, 6, 0.3);
+  /* The change (diff): lines added or rewritten, lines removed. */
+  --diff-add-bg: rgba(26, 127, 55, 0.13);
+  --diff-add-bar: #1a7f37;
+  --diff-del-bg: rgba(207, 34, 46, 0.1);
+  --diff-del-bar: #cf222e;
+  --diff-del-fg: #82071e;
 
   --syn-meta: #6b7785;
   --syn-keyword: #8250df;
@@ -146,6 +152,11 @@
     --hl-test: rgba(244, 114, 182, 0.17);
     --hl-test-bar: #f472b6;
     --site-bg: rgba(255, 180, 67, 0.36);
+    --diff-add-bg: rgba(63, 185, 80, 0.16);
+    --diff-add-bar: #3fb950;
+    --diff-del-bg: rgba(248, 81, 73, 0.14);
+    --diff-del-bar: #f85149;
+    --diff-del-fg: #ffb3ad;
 
     --syn-meta: #8b97a7;
     --syn-keyword: #c4a1ff;
@@ -238,19 +249,62 @@ code {
 .tours-btn,
 .segmented,
 .save,
+.save-status,
 .tour-picker,
+.step-progress,
 .present-btn,
 .edit-menu {
   flex: none;
 }
 
-/* Read: the title gives way before the reading tabs do (every tab stays whole at 1280px). */
-.header.is-reading .brand {
+/* Present: ‹ 3 / 10 › beside the tour picker, and the progress as a bar along the header's lower edge. */
+.step-progress {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.step-progress .tour-btn {
+  width: 30px;
+  height: 30px;
+  font-size: 20px;
+}
+
+.step-progress .tour-counter {
+  min-width: 3.6em;
+  font-size: 16px;
+}
+
+.step-progress .tour-detour {
+  margin-left: 6px;
+}
+
+.header .tour-progress {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 3px;
+  border-radius: 0;
+}
+
+.header .tour-progress span {
+  border-radius: 0;
+}
+
+/* Read and Present: the title gives way before the tabs or the tour controls do (all of them stay whole
+   at 1280px). */
+.header.is-reading .brand,
+.header.is-present .brand {
   flex: 0 1 auto;
 }
 
 .header.is-reading .title {
   max-width: 28ch;
+}
+
+.header.is-present .title {
+  max-width: 22ch;
 }
 
 /* "Edit": the author tools, in a menu under the button (right-aligned: the button is at the row's end). */
@@ -329,9 +383,47 @@ code {
   font-size: 12px;
 }
 
-.edit-list .save-status {
-  margin: 4px 10px;
-  max-width: none;
+/* What the Edit menu says about unsaved edits (the short state is beside the button). */
+.edit-note {
+  margin: 4px 10px 6px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+.edit-note.is-warn {
+  color: var(--warn);
+}
+
+.edit-note.is-error {
+  color: var(--danger);
+}
+
+/* Explore, a graph view: its stub and edge-kind toggles, as a group of the menu. */
+.edit-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 2px 0;
+  padding: 8px 10px 10px;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+
+.edit-group-title {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.edit-group .edge-kinds,
+.edit-group .stubs-control {
+  flex-wrap: wrap;
+}
+
+.edit-group .edge-kinds-label {
+  min-width: 3.6em;
 }
 
 .brand {
@@ -1167,6 +1259,29 @@ code {
   fill: hsl(var(--k-hue, 220) var(--pill-s) var(--pill-fg-l));
 }
 
+/* "New" / "Changed" on a box the explainer's change touches (GraphView `ChangePill`). */
+.change-pill rect {
+  fill: var(--diff-add-bg);
+  stroke: var(--diff-add-bar);
+  stroke-width: 1;
+}
+
+.change-pill text {
+  font-size: 12px;
+  font-weight: 700;
+  text-anchor: middle;
+  fill: var(--diff-add-bar);
+}
+
+.change-pill.is-changed rect {
+  fill: var(--warn-soft);
+  stroke: var(--warn);
+}
+
+.change-pill.is-changed text {
+  fill: var(--warn);
+}
+
 .node:hover > .box,
 .node:focus-visible > .box {
   stroke: var(--accent);
@@ -1961,6 +2076,16 @@ code {
   color: var(--fg);
 }
 
+.anchor-row .anchor-before {
+  flex: none;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--diff-del-bg);
+  color: var(--diff-del-fg);
+  font-size: 11px;
+  font-weight: 650;
+}
+
 .anchor-row .lines {
   color: var(--muted);
   font-size: 11.5px;
@@ -2321,6 +2446,141 @@ code {
   border-radius: 3px;
 }
 
+/* The change (editor.ts, "The change"): a tint over whatever the focus draws (a background image, so a line
+   that is both highlighted and added shows both), the + and − column, and the removed lines in between. */
+.cm-line.xpl-add:not(.xpl-hl),
+.cm-line.xpl-chg:not(.xpl-hl) {
+  background-color: var(--diff-add-bg);
+  box-shadow: inset 3px 0 0 var(--diff-add-bar);
+}
+
+.cm-line.xpl-gone:not(.xpl-hl) {
+  background-color: var(--diff-del-bg);
+  box-shadow: inset 3px 0 0 var(--diff-del-bar);
+}
+
+/* A changed line is never dimmed like context: what the change did is what a reviewer reads. */
+.cm-line.xpl-dim.xpl-add,
+.cm-line.xpl-dim.xpl-chg,
+.cm-line.xpl-dim.xpl-gone {
+  opacity: 1;
+}
+
+/* A changed line in the focus keeps the focus colour (the role says why it is shown); its + or − cell is
+   tinted instead, so that the two never mix into one muddy colour. */
+.cm-gutterElement.xpl-diff-added,
+.cm-gutterElement.xpl-diff-changed {
+  background: var(--diff-add-bg);
+}
+
+.cm-gutterElement.xpl-diff-gone,
+.cm-gutterElement.xpl-diff-removed {
+  background: var(--diff-del-bg);
+}
+
+.xpl-diff-gutter .cm-gutterElement {
+  padding: 0 4px;
+  min-width: 1.4em;
+  text-align: center;
+  font-weight: 700;
+}
+
+.xpl-diff-mark.is-added,
+.xpl-diff-mark.is-changed {
+  color: var(--diff-add-bar);
+}
+
+.xpl-diff-mark.is-gone,
+.xpl-diff-mark.is-removed {
+  color: var(--diff-del-bar);
+}
+
+.xpl-diff-mark.is-spacer {
+  visibility: hidden;
+}
+
+.xpl-removed {
+  padding: 1px 0;
+  background: var(--diff-del-bg);
+  box-shadow: inset 3px 0 0 var(--diff-del-bar);
+  color: var(--diff-del-fg);
+  cursor: default;
+  user-select: text;
+}
+
+.xpl-removed-line {
+  padding: 0 12px 0 8px;
+  white-space: pre;
+}
+
+.cm-lineWrapping .xpl-removed-line {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.xpl-removed-line.is-note {
+  font-family: var(--font-ui);
+  font-style: italic;
+}
+
+/* A pane's header: "Before (base 85c3b74)" on the code before the change, what the change did to the
+   file, and the "Show changes" toggle. */
+.pane-side {
+  flex: none;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--diff-del-bg);
+  color: var(--diff-del-fg);
+  font-size: 12px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.pane.is-base .pane-header {
+  box-shadow: inset 3px 0 0 var(--diff-del-bar);
+}
+
+.pane-change {
+  flex: none;
+  min-width: 0;
+  max-width: 40ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--diff-add-bg);
+  color: var(--fg);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.pane-change.is-deleted {
+  background: var(--diff-del-bg);
+}
+
+.pane-toggle {
+  flex: none;
+  padding: 2px 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.pane-toggle[aria-pressed="true"] {
+  border-color: var(--diff-add-bar);
+  background: var(--diff-add-bg);
+  color: var(--fg);
+}
+
+.pane-toggle:hover {
+  border-color: var(--accent);
+}
+
 /* ── Empty states, present stub ───────────────────────────────────────────────────────────────── */
 
 .no-data,
@@ -2345,13 +2605,21 @@ code {
 }
 
 .present {
-  --code-font-size: 15.5px;
+  /* The code grows with the screen: about 15px at 1280x720, 17px at 1440x900, 21px at 1920x1080. */
+  --code-font-size: clamp(14px, calc(4px + 0.45vw + 0.75vh), 22px);
   display: grid;
   grid-template-columns: minmax(340px, 40%) minmax(0, 1fr);
   gap: 8px;
   min-height: 0;
   min-width: 0;
   padding: 8px;
+  transition: grid-template-columns 0.2s ease;
+}
+
+/* A flow is tall and branches sideways: its step gives the diagram more of the width (the code beside it
+   wraps its long lines), so the whole width of a typical flow reads at 11px or more on a 1280px screen. */
+.present[data-view-type="flow"] {
+  grid-template-columns: minmax(340px, 57%) minmax(0, 1fr);
 }
 
 .present-left {
@@ -2411,8 +2679,8 @@ code {
 /* The caption: what the speaker says about this step, large enough to read from the back of the room. */
 /*
  * The caption grows with its text up to 62% of the window's height (the diagram keeps the rest); a note
- * longer than that scrolls inside it. The counter row stays on top while the text scrolls, and a shadow at
- * the bottom edge says that there is more (it disappears at the end: the "local" cover scrolls over it).
+ * longer than that scrolls inside it, and a shadow at the bottom edge says that there is more (it
+ * disappears at the end: the "local" cover scrolls over it). The step counter is in the header.
  */
 .tour-caption {
   display: flex;
@@ -2422,7 +2690,7 @@ code {
   min-height: 0;
   overflow: auto;
   overscroll-behavior: contain;
-  padding: 0 18px 16px;
+  padding: 14px 18px 16px;
   background:
     linear-gradient(var(--panel), var(--panel)) bottom / 100% 18px no-repeat local,
     linear-gradient(transparent, rgba(0, 0, 0, 0.16)) bottom / 100% 14px no-repeat scroll,

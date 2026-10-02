@@ -35,6 +35,7 @@ import {
   type ViewerBundle,
 } from "@xpl/core";
 import { messageOf, ServerApi, type LaunchParams } from "./data.js";
+import { changeAt, changeOf, hasBase } from "./diff.js";
 import { workspaceView } from "./workspace.js";
 import { serializeExplainer, withViewFields } from "./edits.js";
 import { clampStep, stepIndex, type Mode, type TourPosition } from "./modes.js";
@@ -86,7 +87,16 @@ export type Perspective = "guide" | "map" | "flow" | "code" | "explore";
 
 type Navigation = Pick<
   ViewerState,
-  "perspective" | "mode" | "viewId" | "selection" | "cursor" | "openedFile" | "tour" | "applied"
+  | "perspective"
+  | "mode"
+  | "viewId"
+  | "selection"
+  | "cursor"
+  | "openedFile"
+  | "openedBase"
+  | "openedLine"
+  | "tour"
+  | "applied"
 >;
 
 export interface ViewerState {
@@ -105,6 +115,13 @@ export interface ViewerState {
    * focused or not. Cleared when the selection changes.
    */
   openedFile: FilePath | undefined;
+  /**
+   * The opened file is shown as its code before the change (a file the change removed, a base anchor's row in
+   * the details), in a "Before" pane.
+   */
+  openedBase: boolean;
+  /** The line a "Before" pane opened by `openFile(file, line, "base")` scrolls to (base lines). */
+  openedLine: number | undefined;
   /** Bumped every time a file is opened explicitly, so the stack scrolls to it even if it was open. */
   openSeq: number;
   /** Explore or Present (see modes.ts). */
@@ -125,6 +142,18 @@ export interface ViewerState {
   files: Readonly<Record<FilePath, string>>;
   /** Files that could not be loaded, with the reason. */
   fileErrors: Readonly<Record<FilePath, string>>;
+  /**
+   * The code before the change (`ViewerBundle.baseFiles`, keyed by the changed file's path), and what was
+   * fetched from `GET {api}/base-file` under `xpl view`. Empty for an explainer without a change.
+   */
+  baseFiles: Readonly<Record<FilePath, string>>;
+  /** Base files that could not be loaded, with the reason. */
+  baseErrors: Readonly<Record<FilePath, string>>;
+  /**
+   * The editor marks what the change did (added and changed lines, removed lines in between): the "Show
+   * changes" toggle of a changed file's pane. On by default; only matters when the explainer has a change.
+   */
+  showChanges: boolean;
   /** Edits exist that are not persisted (always true after an edit without a server). */
   dirty: boolean;
   save: SaveState;
@@ -147,11 +176,14 @@ export class ViewerStore {
   private readonly api: ServerApi | undefined;
   private readonly indexModel: IndexModel;
   private readonly loading = new Set<FilePath>();
+  private readonly loadingBase = new Set<FilePath>();
   private readonly pending = new Map<string, Record<string, unknown>>();
   private saveTimer: ReturnType<typeof setTimeout> | undefined;
   private saving: Promise<void> | undefined;
   private readonly past: Navigation[] = [];
   private readonly future: Navigation[] = [];
+  /** The reading tab (Guide, Map, Flow, Code) last on screen: where "Back to reading" goes from Explore. */
+  private reading: Exclude<Perspective, "explore"> = "guide";
 
   constructor(bundle: ViewerBundle, launch: LaunchParams = {}) {
     this.indexModel = asIndexModel(bundle.index);
@@ -179,6 +211,8 @@ export class ViewerStore {
       selection: (launch.focus ?? []).filter((id) => model.hasElement(id)),
       cursor: undefined,
       openedFile: undefined,
+      openedBase: false,
+      openedLine: undefined,
       openSeq: 0,
       mode: "explore",
       tour: tour ? { tourId: tour.id, step: stepIndex(launch.step, tour.steps.length) } : undefined,
@@ -186,10 +220,14 @@ export class ViewerStore {
       stepSeq: 0,
       files: bundle.files,
       fileErrors: {},
+      baseFiles: bundle.baseFiles ?? {},
+      baseErrors: {},
+      showChanges: true,
       dirty: false,
       save: { status: "idle" },
       serverMode: this.api !== undefined,
     };
+    if (this.state.perspective !== "explore") this.reading = this.state.perspective;
     if (present) this.present();
     else if (launch.perspective && asked && launch.step) {
       this.applyStep(asked, stepIndex(launch.step, asked.steps.length));
@@ -222,12 +260,25 @@ export class ViewerStore {
 
   private set(patch: Partial<ViewerState>): void {
     this.state = { ...this.state, ...patch };
+    if (this.state.perspective !== "explore") this.reading = this.state.perspective;
     for (const listener of [...this.listeners]) listener();
   }
 
   private position(): Navigation {
-    const { perspective, mode, viewId, selection, cursor, openedFile, tour, applied } = this.state;
-    return { perspective, mode, viewId, selection, cursor, openedFile, tour, applied };
+    const { perspective, mode, viewId, selection, cursor, tour, applied } = this.state;
+    const { openedFile, openedBase, openedLine } = this.state;
+    return {
+      perspective,
+      mode,
+      viewId,
+      selection,
+      cursor,
+      openedFile,
+      openedBase,
+      openedLine,
+      tour,
+      applied,
+    };
   }
 
   private remember(): void {
@@ -275,6 +326,11 @@ export class ViewerStore {
     this.navigate({ perspective, mode: "explore", viewId: view?.id ?? this.state.viewId });
   }
 
+  /** The reading tab that was on screen last (the Guide when there was none). */
+  lastReading(): Exclude<Perspective, "explore"> {
+    return this.reading;
+  }
+
   readExplanation(): boolean {
     const { model, selection } = this.state;
     const files = new Set(codeFocus(selection, model).map((focus) => focus.file));
@@ -320,6 +376,7 @@ export class ViewerStore {
       selection: shared ? this.state.selection : [],
       cursor: shared ? this.state.cursor : undefined,
       openedFile: shared ? this.state.openedFile : undefined,
+      openedBase: shared && this.state.openedBase,
       applied: undefined,
     });
     return true;
@@ -338,7 +395,13 @@ export class ViewerStore {
     ) {
       return;
     }
-    this.navigate({ selection, cursor: undefined, openedFile: undefined, applied: undefined });
+    this.navigate({
+      selection,
+      cursor: undefined,
+      openedFile: undefined,
+      openedBase: false,
+      applied: undefined,
+    });
   }
 
   /** Shift-click: adds the element, or removes it when it is already selected. */
@@ -375,21 +438,33 @@ export class ViewerStore {
     if (this.state.cursor !== undefined) this.set({ cursor: undefined });
   }
 
-  /** Shows a file first in the editor stack (file tree, anchor list). `line` also moves the cursor there. */
-  openFile(file: FilePath, line?: number): void {
-    if (!this.indexModel.hasFile(file)) return;
-    void this.ensureFile(file);
-    const patch: Partial<ViewerState> = { openedFile: file, openSeq: this.state.openSeq + 1 };
-    if (line !== undefined) {
-      const at = Math.max(1, Math.floor(line));
-      patch.cursor = { file, fromLine: at, toLine: at };
-    }
+  /**
+   * Shows a file first in the editor stack (file tree, anchor list). `line` also moves the cursor there.
+   * `side: "base"` shows the code before the change instead (a base anchor's row), in a "Before" pane
+   * scrolled to `line` (a base line); a file the change removed always opens that way (the index does not
+   * know it).
+   */
+  openFile(file: FilePath, line?: number, side?: "base"): void {
+    const change = changeOf(this.state.explainer);
+    const base = side === "base" || this.isRemovedFile(file);
+    if (base ? !hasBase(change, file) : !this.indexModel.hasFile(file)) return;
+    if (base) void this.ensureBaseFile(file);
+    else void this.ensureFile(file);
+    const at = line !== undefined ? Math.max(1, Math.floor(line)) : undefined;
+    const patch: Partial<ViewerState> = {
+      openedFile: file,
+      openedBase: base,
+      openedLine: base ? at : undefined,
+      openSeq: this.state.openSeq + 1,
+    };
+    // The caret is in the code as it is now (its lines look up diagram elements): not in a "Before" pane.
+    if (at !== undefined && !base) patch.cursor = { file, fromLine: at, toLine: at };
     this.navigate(patch);
   }
 
   /** Closes the pane of a file that was opened but is not part of the focus. */
   closeOpenedFile(): void {
-    if (this.state.openedFile !== undefined) this.set({ openedFile: undefined });
+    if (this.state.openedFile !== undefined) this.set({ openedFile: undefined, openedBase: false });
   }
 
   /** Loads a file's text from the server when the bundle does not carry it. */
@@ -414,6 +489,48 @@ export class ViewerStore {
     } finally {
       this.loading.delete(file);
     }
+  }
+
+  /** A file the change deleted (its code before the change can be shown; the index does not know it). */
+  isRemovedFile(file: FilePath): boolean {
+    const changed = changeAt(changeOf(this.state.explainer), file);
+    return changed?.status === "deleted" && !this.indexModel.hasFile(file);
+  }
+
+  /**
+   * Loads the code before the change of a changed file (modified, renamed or deleted): from the bundle's
+   * `baseFiles`, else from `GET {api}/base-file` under `xpl view`. A static page without it says so.
+   */
+  async ensureBaseFile(file: FilePath): Promise<void> {
+    const change = changeOf(this.state.explainer);
+    if (!hasBase(change, file) || file in this.state.baseFiles || this.loadingBase.has(file))
+      return;
+    if (!this.api) {
+      if (!(file in this.state.baseErrors)) {
+        this.set({
+          baseErrors: {
+            ...this.state.baseErrors,
+            [file]: "the code before the change is not included in this page",
+          },
+        });
+      }
+      return;
+    }
+    this.loadingBase.add(file);
+    try {
+      const text = await this.api.baseFile(file);
+      const { [file]: _dropped, ...errors } = this.state.baseErrors;
+      this.set({ baseFiles: { ...this.state.baseFiles, [file]: text }, baseErrors: errors });
+    } catch (error) {
+      this.set({ baseErrors: { ...this.state.baseErrors, [file]: messageOf(error) } });
+    } finally {
+      this.loadingBase.delete(file);
+    }
+  }
+
+  /** The "Show changes" toggle: mark what the change did in the code, or show the code as it is. */
+  setShowChanges(on: boolean): void {
+    if (this.state.showChanges !== on) this.set({ showChanges: on });
   }
 
   // ─── Present mode: tours ─────────────────────────────────────────────────────────────────────
@@ -505,6 +622,7 @@ export class ViewerStore {
       selection: [...new Set(focus)],
       cursor: undefined,
       openedFile: undefined,
+      openedBase: false,
       stepSeq: this.state.stepSeq + 1,
       applied: {
         tourId: tour.id,

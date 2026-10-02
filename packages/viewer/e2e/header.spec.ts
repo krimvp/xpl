@@ -1,8 +1,8 @@
 /**
  * The header of an explainer with many views (the repo's own explainer has 16): still one row, whatever
  * the number of tabs. The tab strip takes the room the controls leave and scrolls sideways; a "Views" menu
- * lists every view by its full title and jumps to it; Tours, Explore / Present and the download stay on the
- * screen, at every desktop width and on a phone.
+ * lists every view by its full title and jumps to it; Present and the Edit menu (the tour editor, the
+ * download) stay on the screen, at every desktop width and on a phone.
  *
  * The page is the fixture explainer with 14 more views (16 in all), with titles as long as real ones.
  */
@@ -10,6 +10,7 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 import {
   byId,
   fitAll,
+  openTourEditor,
   readEmbeddedBundle,
   screenshotPath,
   stateOf,
@@ -108,13 +109,11 @@ const viewsButton = (page: Page) => page.getByTestId("views-button");
 const viewsMenu = (page: Page) => page.getByTestId("views-menu");
 const menuItem = (page: Page, id: string) => page.locator(`.views-item[data-view-id="${id}"]`);
 
-/** The controls of the header, all of them. */
+/** The controls of the header, all of them (the author tools are in the Edit menu). */
 const controls = (page: Page): Record<string, Locator> => ({
   views: viewsButton(page),
-  tours: page.getByTestId("tours-button"),
-  explore: page.getByTestId("mode-explore"),
   present: page.getByTestId("mode-present"),
-  download: page.getByRole("button", { name: "Download explainer JSON" }),
+  edit: page.getByTestId("edit-button"),
 });
 
 async function boxOf(locator: Locator) {
@@ -174,7 +173,7 @@ async function expectOneRowOnScreen(page: Page, size: { width: number; height: n
   const tabs = await boxOf(strip(page));
   const views = await boxOf(viewsButton(page));
   expect(tabs.x + tabs.width).toBeLessThanOrEqual(views.x);
-  expect(views.x + views.width).toBeLessThanOrEqual((await boxOf(controls(page).tours!)).x);
+  expect(views.x + views.width).toBeLessThanOrEqual((await boxOf(controls(page).present!)).x);
 }
 
 for (const size of [
@@ -209,7 +208,7 @@ for (const size of [
     }) => {
       const problems = watchProblems(page);
       await openMany(page, size);
-      // An edit: "Unsaved" appears and the download becomes the primary button.
+      // An edit: "Unsaved" appears beside Edit.
       await byId(page, "ghost:file:src/bus.ts").click();
       await expect(page.locator(".save-status")).toHaveText("Unsaved");
       await expectOneRowOnScreen(page, size);
@@ -395,16 +394,13 @@ for (const size of [
     }) => {
       const problems = watchProblems(page);
       await openMany(page, size);
-      const tours = page.getByTestId("tours-button");
-      await tours.click();
-      await expect(page.getByTestId("tour-panel")).toBeVisible();
+      await openTourEditor(page);
       const panel = await boxOf(page.getByTestId("tour-panel"));
       expect(panel.x + panel.width).toBeLessThanOrEqual(size.width);
       await viewsButton(page).click();
       await expect(viewsMenu(page)).toBeVisible();
       await expect(page.getByTestId("tour-panel")).toHaveCount(0);
-      await tours.click();
-      await expect(page.getByTestId("tour-panel")).toBeVisible();
+      await openTourEditor(page);
       await expect(viewsMenu(page)).toHaveCount(0);
       expect(problems).toEqual([]);
     });
@@ -465,7 +461,7 @@ test.describe("keyboard", () => {
     await expect(viewsMenu(page)).toBeVisible();
     await page.keyboard.press("Tab");
     await expect(viewsMenu(page)).toHaveCount(0);
-    await expect(page.getByTestId("tours-button")).toBeFocused();
+    await expect(page.getByTestId("mode-present")).toBeFocused();
 
     // A press outside closes it.
     await viewsButton(page).click();
@@ -655,7 +651,7 @@ test.describe("a phone", () => {
     await expect.poll(() => tabStartInSight(page, ids[1]!)).toBe(true);
 
     // Tours: the panel opens within the screen.
-    await page.getByTestId("tours-button").click();
+    await openTourEditor(page);
     const panel = await boxOf(page.getByTestId("tour-panel"));
     expect(panel.x).toBeGreaterThanOrEqual(0);
     expect(panel.x + panel.width).toBeLessThanOrEqual(size.width);
@@ -687,12 +683,12 @@ test.describe("a few views", () => {
     await expect(page.locator(".views-item")).toHaveText(["Overview", "How a job is dispatched"]);
     await page.keyboard.press("Escape");
 
-    // Present shows the tour picker instead of the tabs and the menu; Explore brings them back.
+    // Present shows the tour picker instead of the tabs and the menu; Exit brings them back.
     await page.getByRole("button", { name: "Present" }).click();
     await expect(page.locator(".view-tabs")).toHaveCount(0);
     await expect(viewsButton(page)).toHaveCount(0);
     await expect(page.getByTestId("tour-picker")).toBeVisible();
-    await page.getByRole("button", { name: "Explore" }).click();
+    await page.getByRole("button", { name: "Exit" }).click();
     await expect(page.locator(".view-tabs")).toHaveCount(1);
     await expect(viewsButton(page)).toHaveAccessibleName("Views (2)");
     expect(problems).toEqual([]);
@@ -706,7 +702,7 @@ test.describe("a few views", () => {
     // The tour of the last view is played: it is the view on screen when Explore comes back.
     await page.getByTestId("tour-picker").selectOption("tour:last");
     await expect(page.locator(`.diagram[data-view-id="${ids.at(-1)}"]`)).toBeVisible();
-    await page.getByRole("button", { name: "Explore" }).click();
+    await page.getByRole("button", { name: "Exit" }).click();
     await expect(page.locator(".view-tabs")).toHaveCount(1);
     await expect(tab(page, ids.at(-1)!)).toHaveAttribute("aria-selected", "true");
     await expect.poll(() => tabInSight(page, ids.at(-1)!)).toBe(true);

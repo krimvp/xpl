@@ -53,6 +53,11 @@ export const PRESENT_READABLE_ZOOM = 1;
  * even the width does not fit at this zoom, as in Present's narrow pane, Fit shows all of it anyway.)
  */
 export const FLOW_READABLE_ZOOM = 11 / 13;
+/**
+ * Present starts a flow at the zoom that shows its whole width, up to this (the flow's 13-unit text at 16px
+ * on a wide screen) and down to `FLOW_READABLE_ZOOM` (11px): a flow is read from the back of the room.
+ */
+export const PRESENT_FLOW_MAX_ZOOM = 16 / 13;
 const DRAG_THRESHOLD = 4;
 
 function zoomAt(t: Transform, factor: number, px: number, py: number): Transform {
@@ -86,6 +91,12 @@ export interface PanZoomProps {
    */
   readableZoom?: number;
   /**
+   * With this, a diagram too big to read whole starts at the zoom that shows its whole width, kept between
+   * `readableMin` and `readableZoom` (a wide pane shows a narrow diagram larger, a narrow one shows less of
+   * it). It is also the floor: a diagram that fits whole at `readableMin` or more starts fitted.
+   */
+  readableMin?: number;
+  /**
    * The smallest zoom "Fit" may use. A diagram that would fit only below it is fitted to its width instead,
    * from the top, and the mouse wheel scrolls it up and down (text stays readable). When even the width
    * does not fit at this zoom, Fit shows all of it anyway. Default: no floor.
@@ -114,6 +125,7 @@ export function PanZoom({
   maxFitZoom = MAX_FIT_ZOOM,
   fitPadding = FIT_PADDING,
   readableZoom,
+  readableMin,
   fitFloor,
   overlay,
   startBox,
@@ -142,11 +154,13 @@ export function PanZoom({
     () => ({
       padding: fitPadding,
       maxZoom: maxFitZoom,
-      ...(readableZoom !== undefined ? { floor: readableZoom, readable: readableZoom } : {}),
+      ...(readableZoom !== undefined
+        ? { floor: readableMin ?? readableZoom, readable: readableZoom, readableMin }
+        : {}),
     }),
-    [fitPadding, maxFitZoom, readableZoom],
+    [fitPadding, maxFitZoom, readableZoom, readableMin],
   );
-  const floor = readableZoom ?? READABLE_FLOOR;
+  const floor = readableZoom !== undefined ? (readableMin ?? readableZoom) : READABLE_FLOOR;
 
   /** True while a width fit is on screen: the wheel scrolls the diagram instead of zooming it. */
   const widthFit = useRef(false);
