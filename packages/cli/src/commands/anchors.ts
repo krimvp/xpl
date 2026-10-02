@@ -1,10 +1,12 @@
 import {
   ExplainerModel,
+  baseLines,
   codeFocus,
   collectAnchors,
   deriveGraph,
   derivedEdgeMap,
   describeAnchor,
+  isBaseAnchor,
   normalizeElementId,
   parseId,
   resolveWith,
@@ -12,6 +14,7 @@ import {
   type Anchor,
   type AnchorSite,
   type AnchorStatus,
+  type ChangeRecord,
   type Explainer,
   type FocusOptions,
   type FocusRange,
@@ -41,9 +44,11 @@ interface AnchorReport {
   path: string;
   role: Anchor["role"];
   file: string;
+  /** `base`: the anchor points at the code before the change; its lines and code are those of the base commit. */
+  at?: "base";
   symbol?: string;
   span?: { from: number; to: number };
-  /** `src/runner.ts#Runner.dispatch +34..36`. */
+  /** `src/runner.ts#Runner.dispatch +34..36` (`src/runner.ts@base +40..42` for a base anchor). */
   where: string;
   /** Resolved now, against the index and the working tree. */
   status: AnchorStatus;
@@ -255,10 +260,14 @@ function attachLines(
   base: number,
   range: { startLine: number; endLine: number },
   cap: number,
+  change?: ChangeRecord,
 ): void {
-  const lines = ws.texts.lines(file);
+  const lines = report.at === "base" ? baseLines(ws.texts, change, file) : ws.texts.lines(file);
   if (!lines) {
-    report.reason = `cannot read ${file} from the working tree`;
+    report.reason ??=
+      report.at === "base"
+        ? `cannot read ${file} at the base commit of the change`
+        : `cannot read ${file} from the working tree`;
     return;
   }
   const first = Math.max(1, range.startLine);
@@ -280,19 +289,27 @@ function attachLines(
   report.lines = shown;
 }
 
-function describeOne(site: AnchorSite, ws: Workspace, cap: number): AnchorReport {
+function describeOne(
+  site: AnchorSite,
+  ws: Workspace,
+  cap: number,
+  change: ChangeRecord | undefined,
+): AnchorReport {
   const { anchor } = site;
-  const resolved = resolveWith(anchor, ws.model, ws.texts);
+  const atBase = isBaseAnchor(anchor);
+  const resolved = resolveWith(anchor, ws.model, ws.texts, change);
   // a moved span has new offsets: show those (`xpl resolve --write` stores them)
   const shownSpan = resolved.span ?? anchor.span;
   const report: AnchorReport = {
     path: site.path,
     role: anchor.role,
     file: anchor.file,
+    ...(atBase ? { at: "base" as const } : {}),
     ...(anchor.symbol !== undefined ? { symbol: anchor.symbol } : {}),
     ...(shownSpan !== undefined ? { span: { ...shownSpan } } : {}),
     where: describeAnchor({
       file: anchor.file,
+      ...(atBase ? { at: "base" } : {}),
       ...(anchor.symbol !== undefined ? { symbol: anchor.symbol } : {}),
       ...(shownSpan !== undefined ? { span: shownSpan } : {}),
     }),
@@ -319,9 +336,10 @@ function describeOne(site: AnchorSite, ws: Workspace, cap: number): AnchorReport
     report.stored = { status: stored.status, range: { ...stored.range } };
   }
 
-  const base =
-    (anchor.symbol ? ws.model.symbolAt(anchor.file, anchor.symbol)?.range.startLine : 1) ?? 1;
-  attachLines(report, ws, anchor.file, base, resolved.range, cap);
+  const base = atBase
+    ? 1
+    : ((anchor.symbol ? ws.model.symbolAt(anchor.file, anchor.symbol)?.range.startLine : 1) ?? 1);
+  attachLines(report, ws, anchor.file, base, resolved.range, cap, change);
   return report;
 }
 
@@ -388,7 +406,11 @@ function renderCode(report: AnchorReport): string[] {
   const offWidth = String(Math.max(0, ...lines.map((l) => l.offset))).length;
   const elision = (): string => {
     const { startLine, endLine } = report.elided!;
-    return `... ${report.moreLines} lines elided (${startLine}-${endLine}); --full shows all, or \`xpl show ${report.file}${report.symbol ? `#${report.symbol}` : ""} --lines ${startLine}-${endLine}\``;
+    const show =
+      report.at === "base"
+        ? `xpl show --at base ${report.file}`
+        : `xpl show ${report.file}${report.symbol ? `#${report.symbol}` : ""}`;
+    return `... ${report.moreLines} lines elided (${startLine}-${endLine}); --full shows all, or \`${show} --lines ${startLine}-${endLine}\``;
   };
   const out: string[] = [];
   let elided = false;
@@ -416,6 +438,7 @@ function renderAnchor(a: AnchorReport, n: number, name: string): string[] {
     const label = a.status === "missing" ? "last known lines" : "lines";
     parts.push(`${label} ${rangeText(a.range)}`);
   }
+  if (a.at === "base") parts.push("[before the change]");
   if (a.derived) parts.push(`[derived from ${a.from}]`);
   const out = [`  ${parts.join("  ")}`];
   if (a.approximate) {
@@ -459,6 +482,8 @@ export const anchorsCommand: CommandSpec = {
     "resolved now against the index and the working tree (status ok, moved, drifted or missing), then the code at",
     "those lines as `<line> <offset>│ code` (the offsets are the ones `xpl show` prints and a span uses). Use it",
     "after `xpl apply` to confirm every span landed on the code you meant, and to re-read what drifted.",
+    'A base anchor (`at: "base"`) is printed as `<file>@base +<from>..<to>`, marked [before the change], with the',
+    "code of the base commit of the change (`xpl change`) and its offsets from line 1 of the base file.",
     "Ids: element ids as they are (concept:x, dispatch:3, edge:x, sym:src/a.ts#A.b, tour:intro/t2), a view (its",
     "steps), a tour (its steps), or the loose forms of the other commands. Without ids: every element with anchors.",
     "A tour step without a `code` override shows what the viewer will show for its focus: the code of the focused",
@@ -523,7 +548,7 @@ export const anchorsCommand: CommandSpec = {
         ...(first.viewId !== undefined ? { view: first.viewId } : {}),
         ...(first.origin !== undefined ? { origin: first.origin } : {}),
         ...(first.userFields.length > 0 ? { userFields: first.userFields } : {}),
-        anchors: sites.map((site) => describeOne(site, ws, cap)),
+        anchors: sites.map((site) => describeOne(site, ws, cap, loaded.explainer.change)),
       };
     });
     const counts: Record<AnchorStatus, number> = { ok: 0, moved: 0, drifted: 0, missing: 0 };

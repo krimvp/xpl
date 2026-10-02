@@ -6,6 +6,9 @@
  *   GET  /api/bundle          the same bundle as JSON
  *   GET  /api/file?path=      text of one indexed file (text/plain); 400 for a malformed path,
  *                             404 for anything that is not in the index
+ *   GET  /api/base-file?path= the code before the change of one changed file (text/plain): only for the
+ *                             modified, renamed and deleted files of the explainer's change record (`path` is
+ *                             `ChangedFile.path`); 400 for a malformed path, 404 for anything else
  *   PUT  /api/views/<id>      a view patch, applied as actor "user", written to disk; 200 with the
  *                             updated view, 400 with { error, issues } when rejected
  *   PUT  /api/tours/<id>      the same for a tour: { title?, steps? } (both for a new tour), applied as
@@ -21,8 +24,15 @@
  */
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
-import { applyPatch, injectBundle, type ExplainerPatch } from "@xpl/core";
-import { collectFiles, makeBundle } from "./bundle-data.js";
+import {
+  applyPatch,
+  baseFileOf,
+  basePathOf,
+  baseVersionFiles,
+  injectBundle,
+  type ExplainerPatch,
+} from "@xpl/core";
+import { collectBaseFiles, collectFiles, makeBundle } from "./bundle-data.js";
 import type { RepoEnv } from "./context.js";
 import { CliError, errorMessage } from "./errors.js";
 import { atomicWrite, withFileLock, displayPath, jsonFile } from "./fsutil.js";
@@ -173,10 +183,13 @@ export async function startViewServer(options: ViewServerOptions): Promise<ViewS
       measure: false,
       stubs: false,
     });
+    // the code before the change: only the changed files, so it is small enough to send whole
+    const base = collectBaseFiles(state.loaded.explainer, state.tree.texts);
     return makeBundle({
       explainer: state.loaded.explainer,
       index: state.index,
       files: collected.files,
+      ...(base !== undefined ? { baseFiles: base.files } : {}),
       mode: "explore",
       server: { api: API },
     });
@@ -239,6 +252,33 @@ export async function startViewServer(options: ViewServerOptions): Promise<ViewS
       const text = state.tree.texts.text(path);
       if (text === undefined)
         throw new HttpError(404, `${path} cannot be read from the working tree`);
+      send(req, res, 200, text, "text/plain; charset=utf-8");
+      return;
+    }
+    if (pathname === `${API}/base-file`) {
+      allow("GET", "HEAD");
+      const path = url.searchParams.get("path");
+      if (path === null || !wellFormedPath(path)) {
+        throw new HttpError(
+          400,
+          "need ?path=<repo-relative path of a changed file> (no absolute paths, no .. segments)",
+        );
+      }
+      const state = await loadState();
+      const change = state.loaded.explainer.change;
+      if (change === undefined) {
+        throw new HttpError(404, "the explainer records no change, so there is no code before it");
+      }
+      const changed = baseFileOf(change, path);
+      if (!changed || changed.path !== path) {
+        throw new HttpError(404, `${path} has no code before the change`, {
+          files: baseVersionFiles(change).map((file) => file.path),
+        });
+      }
+      const text = state.tree.texts.textAt(change.base, basePathOf(changed));
+      if (text === undefined) {
+        throw new HttpError(404, `${path} cannot be read at the base commit (git show failed)`);
+      }
       send(req, res, 200, text, "text/plain; charset=utf-8");
       return;
     }

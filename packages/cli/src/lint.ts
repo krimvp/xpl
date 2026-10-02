@@ -1,7 +1,7 @@
 /**
  * `xpl lint`: deterministic checks of the text a reader sees in an explainer. They apply the plain-language and
  * structure rules of the skill (reference/writing.md): a summary first, plain titles, short sentences that name
- * their subject, no marketing words, no absolute claims without evidence, say it once.
+ * their subject, no marketing words, no absolute claims without evidence, say it once, top-down order.
  *
  * The checks read the explainer only (no index): titles (the explainer's, the tours', the views', the
  * `### heading` line of a tour note, group and concept labels), tour summaries, tour notes, flow and sequence
@@ -10,15 +10,28 @@
  * absolute. Every finding names the element, the field, a short quote and a fix.
  *
  * Markdown fields and plain fields follow the viewer: it renders markdown in a tour `summary`, a step `note` (and
- * its `### title` line) and a `detail`; everything else (titles, labels, summaries of elements and steps) is shown
- * as plain text, where `**`, `__`, `# ` or `[text](link)` would show as-is (`markdown-in-plain`).
+ * its `### title` line) and a `detail`, and inline markdown (code spans, bold, emphasis) in the `summary` of
+ * elements and steps. Titles and labels are plain text, where `**`, `__`, `# ` or `[text](link)` would show as-is
+ * (`markdown-in-plain`). A summary is one or two sentences next to the code: a `# heading` there shows as-is and a
+ * link leads away from the code (`markdown-in-summary`).
+ *
+ * Order checks look at each tour as a whole: the first step shows the big picture (not a test, a concept alone or
+ * an edge case), a small map is covered by the steps, and a tour has at most `LINT_LIMITS.tourSteps` steps.
+ *
+ * A `TODO` left in any of these texts (or in a view's `scope.question`, which the viewer shows under its title) is
+ * the one error-level finding (`todo-left`): `xpl draft` fills every text a person must write with `TODO: ...`.
  *
  * The thresholds and the word lists live here, in one place (`LINT_LIMITS`, `FILLER_WORDS`, `ABSOLUTE_WORDS`).
  */
-import type { Explainer } from "@xpl/core";
+import { isTestFile, parseId, type Explainer } from "@xpl/core";
+import { plural } from "./format.js";
 
 export type LintRule =
+  | "todo-left"
   | "tour-summary"
+  | "tour-first-step"
+  | "tour-covers-map"
+  | "tour-length"
   | "note-heading"
   | "code-title"
   | "placeholder-title"
@@ -29,11 +42,16 @@ export type LintRule =
   | "absolute-word"
   | "repeats-summary"
   | "flow-label-code"
-  | "markdown-in-plain";
+  | "markdown-in-plain"
+  | "markdown-in-summary";
 
 /** The rules in the order the count line lists them, with a short name for people. */
 export const LINT_RULES: Record<LintRule, string> = {
+  "todo-left": "TODO placeholder left in the text",
   "tour-summary": "tour without a summary",
+  "tour-first-step": "tour that does not start with the big picture",
+  "tour-covers-map": "map box the tour never visits",
+  "tour-length": "tour with too many steps",
   "note-heading": 'note without a "### title" line',
   "code-title": "title that looks like code",
   "placeholder-title": "placeholder title",
@@ -44,7 +62,8 @@ export const LINT_RULES: Record<LintRule, string> = {
   "absolute-word": "absolute word that needs evidence",
   "repeats-summary": "note that repeats a summary",
   "flow-label-code": "flow step label written as code",
-  "markdown-in-plain": "markdown in a plain-text field",
+  "markdown-in-plain": "markdown in a title or label",
+  "markdown-in-summary": "heading or link in a summary",
 };
 
 export type LintElementKind =
@@ -52,12 +71,17 @@ export type LintElementKind =
 
 export interface LintFinding {
   rule: LintRule;
+  /** `error` for `todo-left` (text nobody wrote yet); absent for the other rules, which are warnings. */
+  severity?: "error";
   /** `(explainer)`, a tour id, `tour:x/t1` for a tour step, a view id, a step id, a node, edge or concept id. */
   elementId: string;
   kind: LintElementKind;
-  /** For a flow or sequence step: its view. */
+  /** For a flow or sequence step: its view. For `tour-covers-map`: the map. */
   view?: string;
-  /** `title`, `summary`, `note`, `note heading`, `label` or `detail`. */
+  /**
+   * `title`, `summary`, `note`, `note heading`, `label` or `detail`; for the order checks `steps` (the tour as a
+   * whole) or `focus` (what the first step focuses).
+   */
   field: string;
   /** A short excerpt of the text the finding is about. */
   quote: string;
@@ -65,6 +89,8 @@ export interface LintFinding {
   message: string;
   /** How to fix it. */
   hint: string;
+  /** `tour-covers-map`: the ids of the boxes the tour never visits. */
+  ids?: string[];
 }
 
 export interface LintResult {
@@ -78,7 +104,8 @@ export const LINT_LIMITS = {
   sentenceWords: 25,
   /** A field whose sentences (two or more) average more words than this is a finding. */
   averageWords: 20,
-  /** A tour summary of more sentences than this is a finding (the skill asks for 2-4). */
+  /** A tour summary of fewer or more sentences than these is a finding (the skill asks for 2-4). */
+  summaryMinSentences: 2,
   summarySentences: 4,
   /** Quotes are cut to about this many characters. */
   quoteChars: 72,
@@ -89,6 +116,10 @@ export const LINT_LIMITS = {
   repeatShare: 0.8,
   /** ...and it has at least this many content words (a shorter one must match the whole summary sentence). */
   repeatMinWords: 4,
+  /** A tour of more steps than this is a finding (the skill asks for 5-9, up to 12 for a change). */
+  tourSteps: 12,
+  /** `tour-covers-map` checks graph views of at most this many boxes (a bigger map is a reference, not a stop). */
+  mapBoxes: 10,
 };
 
 /**
@@ -195,6 +226,13 @@ const NOT_ABSOLUTE_AFTER = new Set(["not", "if", "unless", "whether", "when", "a
 /** Brand and product words in camelCase that are not code identifiers. */
 const CAMEL_WORDS = new Set(["iOS", "macOS", "iPadOS", "iPhone", "iPad", "eBay", "jQuery", "npm"]);
 
+/**
+ * "only" claims that nothing else does it when it starts a sentence or clause ("Only the router calls it"), follows
+ * one of these words ("the only caller") or comes before "by" or "from" ("called only by tests"). After a verb it
+ * narrows what one thing does ("compares only the host part"), which is a precise claim, not one about every case.
+ */
+const OWNER_BEFORE_ONLY = new Set(["the", "its", "their", "your", "our"]);
+
 /** "only" before one of these words states a condition ("only when the port is valid"), not an absolute claim. */
 const CONDITION_AFTER_ONLY = new Set([
   "when",
@@ -210,14 +248,27 @@ const CONDITION_AFTER_ONLY = new Set([
   "on",
 ]);
 
+interface MarkdownMark {
+  name: string;
+  pattern: RegExp;
+}
+
 /**
- * Markdown that a plain-text field would show as-is (the viewer renders markdown only in tour summaries, step notes,
- * the `### title` line of a note, and `detail`). Each needs the shape of real markup, so code does not match:
- * `**kwargs` and `2**8` have no closing pair, `__init__` has no space inside, `xs[0](y)` has no URL or path.
+ * Inline markup: the viewer renders it in summaries, and a title or label would show it as-is. Each needs the shape
+ * of real markup, so code does not match: `**kwargs` and `2**8` have no closing pair, `__init__` has no space
+ * inside.
  */
-const MARKDOWN_MARKS: readonly { name: string; pattern: RegExp }[] = [
+const EMPHASIS_MARKS: readonly MarkdownMark[] = [
   { name: "**bold**", pattern: /(?<![\w*])\*\*(?=\S)[^*\n]*?\S\*\*(?![\w*])/ },
   { name: "__bold__", pattern: /(?<!\w)__(?=\S)[^_\n]*\s[^_\n]*?\S__(?!\w)/ },
+];
+
+/**
+ * Markup a summary should not hold either: a heading line (a summary is one or two sentences, and inline rendering
+ * shows the `#`) and a link (a summary sits next to the code; it points at code with backticks). `xs[0](y)` has no
+ * URL or path, so it is not a link.
+ */
+const BLOCK_MARKS: readonly MarkdownMark[] = [
   { name: "# heading", pattern: /^ {0,3}#{1,6}[ \t]+\S/m },
   {
     name: "[text](link)",
@@ -225,6 +276,19 @@ const MARKDOWN_MARKS: readonly { name: string; pattern: RegExp }[] = [
       /\[[^\]\n]*[A-Za-z][^\]\n]*\]\((?:https?:\/\/|mailto:|\.{0,2}\/|#|[\w.-]+\.[A-Za-z]{2,}(?:[/#?][^)\s]*)?\))[^)\s]*\)/,
   },
 ];
+
+/** Markdown that a title or label would show as-is (titles and labels are plain text). */
+const MARKDOWN_MARKS: readonly MarkdownMark[] = [...EMPHASIS_MARKS, ...BLOCK_MARKS];
+
+/** The marks of `marks` found in `value` (code spans left out), in text order. */
+function findMarks(value: string, marks: readonly MarkdownMark[]): { name: string; at: number }[] {
+  const text = withoutCode(mask(value).text);
+  return marks
+    .map(({ name, pattern }) => ({ name, match: pattern.exec(text) }))
+    .filter((f): f is { name: string; match: RegExpExecArray } => f.match !== null)
+    .sort((a, b) => a.match.index - b.match.index)
+    .map(({ name, match }) => ({ name, at: Math.max(0, value.indexOf(match[0].trim())) }));
+}
 
 /** A title that says nothing: `Fix 1`, `Note`, `Step 3`, `Part 2:`, `TODO`, or a bare number. */
 const PLACEHOLDER =
@@ -248,6 +312,9 @@ const CODE_LITERALS = new Set([
 ]);
 
 const HEADING = /^ {0,3}#{1,6}[ \t]+(.*?)(?:[ \t]+#+)?[ \t]*$/;
+
+/** `TODO` as a word (not `TODOs` in a name such as `TODO_LIST`, not inside code spans: those are masked first). */
+const TODO_WORD = /(?<![\p{L}\p{N}_])TODO(?![\p{L}\p{N}_])/gu;
 
 /** Abbreviations whose period does not end a sentence. */
 const ABBREVIATIONS = new Set(["e.g", "i.e", "etc", "vs", "cf", "approx", "incl", "esp", "resp"]);
@@ -393,6 +460,91 @@ const IDIOM_PATTERNS = ABSOLUTE_IDIOMS.map(
       "giu",
     ),
 );
+
+/** What comes right before `index` in a masked text: the start of a clause, a word, or a code span. */
+type Before = { kind: "start" } | { kind: "code" } | { kind: "word"; word: string };
+
+function tokenBefore(text: string, index: number): Before {
+  const head = text.slice(0, index).trimEnd();
+  if (head === "" || /[.;:!?,(\[{"“—–-]$/.test(head)) return { kind: "start" };
+  if (head.endsWith(CLOSE) || head.endsWith("`")) return { kind: "code" };
+  const word = /([\p{L}\p{N}_'’.]+)$/u.exec(head)?.[1];
+  return word === undefined ? { kind: "start" } : { kind: "word", word: word.toLowerCase() };
+}
+
+/** The word right after `index` (lowercase), or undefined (code, punctuation, the end). */
+function wordAfter(text: string, index: number): string | undefined {
+  return /^\s+([\p{L}\p{N}'’]+)/u.exec(text.slice(index))?.[1]?.toLowerCase();
+}
+
+/**
+ * Words that open a clause: "only" after one of them claims that nothing else does it ("now only `URL` ..."). Not
+ * "that" or "which": "a helper that only reads the header" narrows what one thing does.
+ */
+const CLAUSE_WORDS = new Set(
+  "and but or so now then here there where because while since today yet".split(" "),
+);
+
+/**
+ * Is this "only" a claim about every case? Yes at the start of a clause ("Only the router calls it", "now only
+ * `URL` checks it"), after "the"/"its"/... ("the only caller") and before "by"/"from" ("called only by tests"). No
+ * after a verb or a noun ("compares only the host part", "the host part only") or after "otherwise" (the other
+ * branch of a condition): there it narrows the claim, which is what the rule asks for.
+ */
+function claimsOnly(text: string, from: number, to: number): boolean {
+  const next = wordAfter(text, to);
+  if (next === "by" || next === "from") return true;
+  const before = tokenBefore(text, from);
+  if (before.kind === "start") return true;
+  if (before.kind === "code") return false;
+  return OWNER_BEFORE_ONLY.has(before.word) || CLAUSE_WORDS.has(before.word);
+}
+
+/** Words before "all" that make it part of the claim ("of all", "now all", "calls all"), not a closing "all". */
+const NOT_LIST_END = new Set(
+  (
+    "of for to in on at by with from into about after before above below over under through across between " +
+    "is are was were be been being not now then and or but so that which who if when once while than as " +
+    "has have had do does did can will would should must may might almost nearly also still since"
+  ).split(" "),
+);
+/** Words after "all" that make it a quantifier of what follows ("all the routes", "all three", "all of them"). */
+const QUANTIFIED_AFTER_ALL = new Set(
+  "the of these those its their his her our your my two three four five six seven eight nine ten other".split(
+    " ",
+  ),
+);
+
+/**
+ * Does this "all" close a list that names the cases ("URL, `TrustedHostMiddleware` and `Host.matches` all call
+ * `parse_host_header`")? Then the sentence names every site, which is what the rule asks for. Needs an "and"
+ * earlier in the clause, code or a name right before "all" (a code span, a dotted name, an identifier with `_`, or
+ * a word with a capital inside or a capital that does not start the sentence), and a verb-like word after it (not
+ * "the", a number or a plural noun). "each route and each endpoint all have ..." still counts: categories are not
+ * named cases.
+ */
+function closesNamedList(text: string, from: number, to: number): boolean {
+  const before = tokenBefore(text, from);
+  if (before.kind === "start") return false;
+  if (before.kind === "word") {
+    if (NOT_LIST_END.has(before.word)) return false;
+    const raw = /([\p{L}\p{N}_'’.]+)$/u.exec(text.slice(0, from).trimEnd())?.[1] ?? "";
+    if (!/[._]|\p{Ll}\p{Lu}/u.test(raw) && !/^\p{Lu}/u.test(raw)) return false;
+  }
+  const next = wordAfter(text, to);
+  if (next === undefined || QUANTIFIED_AFTER_ALL.has(next) || /^\d/.test(next)) return false;
+  if (/[a-z]{3,}s$/.test(next) && !/(?:ss|us|is)$/.test(next)) return false; // "all routes"
+  // the clause so far: a dot inside a name (`Host.matches`) does not end it
+  const clause =
+    text
+      .slice(0, from)
+      .split(/[.;:!?](?=\s|$)/)
+      .at(-1) ?? "";
+  return /(?<![\p{L}\p{N}_])and\s+\S/u.test(clause);
+}
+
+/** "outside everything", "around everything": a position (the outermost layer), not a claim about every case. */
+const POSITION_BEFORE_EVERYTHING = new Set(["outside", "around"]);
 
 /** `text` with the absolute idioms blanked out (same length, so indexes still point into `text`). */
 function withoutIdioms(text: string): string {
@@ -572,11 +724,18 @@ class Linter {
     this.findings.push({ rule, ...where, quote, message, hint });
   }
 
-  /** Filler and absolute words of a masked text (code spans left out): one finding per rule and field. */
+  /**
+   * Filler and absolute words of a masked text: one finding per rule and field. The code spans stay as
+   * placeholders, which no word pattern matches, so code is left out and the word before a match can be code.
+   */
   words(where: Where, masked: Masked): void {
-    const text = withoutCode(masked.text);
+    const text = masked.text;
+    // the index into the masked text, moved to the same place in the text with its code back in
     const quoteAt = (index: number) =>
-      excerpt(unmask(masked.text, masked.spans).replace(/\n/g, " "), index);
+      excerpt(
+        unmask(text, masked.spans).replace(/\n/g, " "),
+        unmask(text.slice(0, index), masked.spans).length,
+      );
     const fillers: { phrase: string; index: number }[] = [];
     const taken: [number, number][] = [];
     for (const { phrase, pattern } of FILLER_PATTERNS) {
@@ -605,9 +764,16 @@ class Linter {
     for (const { word, pattern } of ABSOLUTE_PATTERNS) {
       pattern.lastIndex = 0;
       for (let m = pattern.exec(plainWords); m; m = pattern.exec(plainWords)) {
+        const end = m.index + m[0].length;
         if (word === "only") {
-          const next = /^\s+([A-Za-z]+)/.exec(text.slice(m.index + m[0].length))?.[1];
+          const next = /^\s+([A-Za-z]+)/.exec(text.slice(end))?.[1];
           if (next !== undefined && CONDITION_AFTER_ONLY.has(next.toLowerCase())) continue;
+          if (!claimsOnly(text, m.index, end)) continue;
+        }
+        if (word === "all" && closesNamedList(text, m.index, end)) continue;
+        if (word === "everything") {
+          const before = tokenBefore(text, m.index);
+          if (before.kind === "word" && POSITION_BEFORE_EVERYTHING.has(before.word)) continue;
         }
         const before = /([A-Za-z]+)\s+$/.exec(text.slice(0, m.index))?.[1];
         if (before !== undefined && NOT_ABSOLUTE_AFTER.has(before.toLowerCase())) continue;
@@ -627,10 +793,32 @@ class Linter {
     }
   }
 
+  /**
+   * `TODO` (as a word, outside code spans) left in a text: `xpl draft` puts `TODO: <what to write>` in every text a
+   * person must write. One error-level finding per field.
+   */
+  todos(where: Where, value: unknown): void {
+    if (typeof value !== "string" || !value.includes("TODO")) return;
+    const masked = mask(value);
+    const found = [...masked.text.matchAll(TODO_WORD)];
+    if (found.length === 0) return;
+    const text = unmask(masked.text, masked.spans).replace(/\n/g, " ");
+    const at = unmask(masked.text.slice(0, found[0]!.index), masked.spans).length;
+    this.findings.push({
+      rule: "todo-left",
+      severity: "error",
+      ...where,
+      quote: excerpt(text, at),
+      message: `${plural(found.length, "TODO placeholder")} left: text nobody has written yet`,
+      hint: "write what the TODO asks for, check it against the code, and remove the TODO",
+    });
+  }
+
   /** A title: code-like, placeholder, filler and absolute words. */
   title(where: Where, title: unknown): void {
     if (typeof title !== "string" || title.trim() === "") return;
     this.checked++;
+    this.todos(where, title);
     const why = codeLikeTitle(title);
     if (why !== undefined) {
       this.add(
@@ -654,25 +842,43 @@ class Linter {
   }
 
   /**
-   * A field the viewer shows as plain text: markdown marks in it (outside code spans) would show as-is. `count`:
-   * count the field as checked (when no other check reads it).
+   * A title or a label, which the viewer shows as plain text: markdown marks in it (outside code spans) would show
+   * as-is. `count`: count the field as checked (when no other check reads it).
    */
   plain(where: Where, value: unknown, count = false): void {
     if (typeof value !== "string" || value.trim() === "") return;
-    if (count) this.checked++;
-    const text = withoutCode(mask(value).text);
-    const found = MARKDOWN_MARKS.map(({ name, pattern }) => ({ name, match: pattern.exec(text) }))
-      .filter((f): f is { name: string; match: RegExpExecArray } => f.match !== null)
-      .sort((a, b) => a.match.index - b.match.index);
+    if (count) {
+      this.checked++;
+      this.todos(where, value);
+    }
+    const found = findMarks(value, MARKDOWN_MARKS);
     if (found.length === 0) return;
-    const first = found[0]!.match[0].trim();
-    const at = Math.max(0, value.indexOf(first));
     this.add(
       where,
       "markdown-in-plain",
-      excerpt(value, at),
-      `markdown (${found.map((f) => f.name).join(", ")}) in a field the viewer shows as plain text: the marks show as-is`,
-      "write it as plain text; markdown works in tour summaries, step notes and details",
+      excerpt(value, found[0]!.at),
+      `markdown (${found.map((f) => f.name).join(", ")}) in a ${where.field}, which the viewer shows as plain text: the marks show as-is`,
+      "write it as plain text (backticks around code are fine); markdown works in summaries, step notes and details",
+    );
+  }
+
+  /**
+   * The `summary` of an element or a step: inline markdown (code spans, bold, emphasis) is fine, a heading line or
+   * a link is not.
+   */
+  summaryMarks(where: Where, value: unknown): void {
+    if (typeof value !== "string" || value.trim() === "") return;
+    const found = findMarks(value, BLOCK_MARKS);
+    if (found.length === 0) return;
+    const names = found.map((f) => f.name);
+    this.add(
+      where,
+      "markdown-in-summary",
+      excerpt(value, found[0]!.at),
+      `${names.map((n) => (n === "# heading" ? "a heading line" : "a link")).join(" and ")} in a summary: ` +
+        "the viewer shows a summary inline, next to the code, where a # shows as-is and a link leads away",
+      "keep a summary to one or two plain sentences (code spans, bold and emphasis are fine); " +
+        "put headings and links in the `detail`",
     );
   }
 
@@ -680,6 +886,7 @@ class Linter {
   prose(where: Where, value: unknown): Masked | undefined {
     if (typeof value !== "string" || value.trim() === "") return undefined;
     this.checked++;
+    this.todos(where, value);
     const masked = mask(value);
     const list = sentences(masked.text);
     const counts = list.map((s) => words(s).length);
@@ -743,10 +950,238 @@ function storedSummaries(explainer: Explainer): Map<string, string> {
   return out;
 }
 
+// ─── Order checks ───────────────────────────────────────────────────────────────────────────────
+
+/** What the order checks need to know about the explainer, by id. */
+interface Lookup {
+  nodes: Map<string, Record<string, unknown>>;
+  views: Map<string, Record<string, unknown>>;
+  /** Flow and sequence steps. */
+  steps: Map<string, Record<string, unknown>>;
+  edges: Map<string, Record<string, unknown>>;
+  concepts: Map<string, Record<string, unknown>>;
+}
+
+function lookup(explainer: Explainer): Lookup {
+  const byId = (items: unknown, into = new Map<string, Record<string, unknown>>()) => {
+    for (const value of list(items)) {
+      const item = record(value);
+      const id = str(item.id);
+      if (id !== undefined && !into.has(id)) into.set(id, item);
+    }
+    return into;
+  };
+  const steps = new Map<string, Record<string, unknown>>();
+  for (const view of list(explainer.views)) byId(record(view).steps, steps);
+  return {
+    nodes: byId(explainer.nodes),
+    views: byId(explainer.views),
+    steps,
+    edges: byId(explainer.edges),
+    concepts: byId(explainer.concepts),
+  };
+}
+
+/** The members of a group, as stored. */
+function membersOf(id: string, at: Lookup): string[] {
+  return list<unknown>(at.nodes.get(id)?.members).filter((m): m is string => typeof m === "string");
+}
+
+/**
+ * Is `inner` the same as `outer` or inside it? A symbol is inside its file, its directories and its parent symbols;
+ * a file inside its directories; anything inside the repo; a member (and what is inside it) inside its group.
+ */
+function within(inner: string, outer: string, at: Lookup, seen = new Set<string>()): boolean {
+  if (inner === outer) return true;
+  const o = parseId(outer);
+  if (o.type === "repo") return true;
+  if (o.type === "group") {
+    if (seen.has(outer)) return false;
+    seen.add(outer);
+    return membersOf(outer, at).some((member) => within(inner, member, at, seen));
+  }
+  const i = parseId(inner);
+  const innerPath =
+    i.type === "symbol" ? i.file : i.type === "file" || i.type === "dir" ? i.path : "";
+  if (innerPath === "") return false;
+  if (o.type === "dir") return innerPath.startsWith(`${o.path}/`);
+  if (o.type === "file") return i.type === "symbol" && i.file === o.path;
+  if (o.type === "symbol") {
+    return i.type === "symbol" && i.file === o.file && i.path.startsWith(`${o.path}.`);
+  }
+  return false;
+}
+
+/** The boxes a tour step shows: its focus, the ends of a focused step or edge, the related ids of a concept. */
+function shownBy(focus: string, at: Lookup): string[] {
+  const out = [focus];
+  const step = at.steps.get(focus) ?? at.edges.get(focus);
+  if (step) {
+    for (const end of [step.from, step.to]) if (typeof end === "string") out.push(end);
+  }
+  const parsed = parseId(focus);
+  if (parsed.type === "derived-edge") out.push(parsed.from, parsed.to);
+  for (const related of list<unknown>(at.concepts.get(focus)?.related)) {
+    if (typeof related === "string") out.push(related);
+  }
+  return out;
+}
+
+/** The names a note may use for a box: its label, and for code its symbol path or file name. */
+function namesOf(id: string, at: Lookup): string[] {
+  const names: string[] = [];
+  const label = str(at.nodes.get(id)?.label);
+  if (label !== undefined && label.trim() !== "") names.push(label.trim());
+  const parsed = parseId(id);
+  if (parsed.type === "symbol") {
+    names.push(parsed.path, parsed.path.split(".").slice(-2).join("."));
+  } else if (parsed.type === "file" || parsed.type === "dir") {
+    const base = parsed.path.slice(parsed.path.lastIndexOf("/") + 1);
+    names.push(base);
+    const stem = base.replace(/\.[^.]+$/, "");
+    if (parsed.type === "file" && stem.length >= 4) names.push(stem);
+  }
+  return [...new Set(names)].filter((name) => name !== "");
+}
+
+/** The label a person sees for a box: its stored label, else the symbol path or file name from the id. */
+function labelOf(id: string, at: Lookup): string {
+  return namesOf(id, at)[0] ?? id;
+}
+
+/** Does `text` name `name` (whole words, case-insensitive)? */
+function names(text: string, name: string): boolean {
+  const body = name.split(/\s+/).map(escapeRegExp).join("\\s+");
+  return new RegExp(`(?<![\\p{L}\\p{N}_])${body}(?![\\p{L}\\p{N}_])`, "iu").test(text);
+}
+
+/** Is this a test: an id in a test file (`isTestFile`), or a group whose members are all tests? */
+function isTest(id: string, at: Lookup, seen = new Set<string>()): boolean {
+  const parsed = parseId(id);
+  if (parsed.type === "symbol") return isTestFile(parsed.file);
+  if (parsed.type === "file") return isTestFile(parsed.path);
+  if (parsed.type === "dir") return isTestFile(`${parsed.path}/x`);
+  if (parsed.type === "group" && !seen.has(id)) {
+    seen.add(id);
+    const members = membersOf(id, at);
+    return members.length > 0 && members.every((member) => isTest(member, at, seen));
+  }
+  return false;
+}
+
+/** Does concept `id` light up a box or lifeline of `view` (one of its `related` ids is in the picture)? */
+function lightsUp(id: string, view: Record<string, unknown> | undefined, at: Lookup): boolean {
+  if (view === undefined) return false;
+  const shown = list<unknown>(view.type === "graph" ? view.include : view.participants).filter(
+    (box): box is string => typeof box === "string",
+  );
+  return list<unknown>(at.concepts.get(id)?.related).some(
+    (related) =>
+      typeof related === "string" &&
+      shown.some((box) => within(related, box, at) || within(box, related, at)),
+  );
+}
+
+/** Words of a step title that mark what belongs at the end of a tour. */
+const LATE_WORDS = /\b(?:edge|corner)[ -]cases?\b|\bgotchas?\b|\bopen questions?\b/i;
+
+/** The title of a note: its `### heading` line, else its first line. */
+function noteTitle(note: unknown): string {
+  if (typeof note !== "string") return "";
+  const line = note.split("\n").find((l) => l.trim() !== "") ?? "";
+  return (HEADING.exec(line)?.[1] ?? line).trim();
+}
+
+/** `tour-first-step`, `tour-length` and `tour-covers-map` for one tour (see `LINT_RULES`). */
+function orderChecks(
+  lint: Linter,
+  tourId: string,
+  tour: Record<string, unknown>,
+  at: Lookup,
+): void {
+  const where: Where = { elementId: tourId, kind: "tour", field: "steps" };
+  const steps = list<unknown>(tour.steps).map(record);
+  const focusOf = (step: Record<string, unknown>) =>
+    list<unknown>(step.focus).filter((id): id is string => typeof id === "string");
+  const viewOf = (step: Record<string, unknown>) => at.views.get(str(step.view) ?? "");
+
+  // the first step shows the big picture
+  const first = steps[0];
+  if (first !== undefined) {
+    const reasons: string[] = [];
+    const focus = focusOf(first);
+    const main = focus.filter((id) => parseId(id).type !== "concept");
+    if (main.length > 0 && main.every((id) => isTest(id, at))) reasons.push("it focuses a test");
+    const late = LATE_WORDS.exec(noteTitle(first.note));
+    if (late) reasons.push(`its title says "${late[0]}"`);
+    const view = viewOf(first);
+    const usesMap = steps.some((step) => viewOf(step)?.type === "graph");
+    if (view !== undefined && view.type !== "graph" && usesMap) {
+      reasons.push(`it opens on the ${String(view.type)} ${str(view.id)}, not on the map`);
+    }
+    // a concept alone is fine when the picture lights up the boxes it relates to (the key idea, on the map)
+    if (focus.length > 0 && main.length === 0 && !focus.some((id) => lightsUp(id, view, at))) {
+      reasons.push("it focuses only a concept, and nothing in its picture lights up");
+    }
+    if (reasons.length > 0) {
+      lint.add(
+        where,
+        "tour-first-step",
+        excerpt(noteTitle(first.note) || focus.join(", ")),
+        `the first step (${str(first.id) ?? "?"}) does not show the big picture: ${reasons.join("; ")}`,
+        "start with the big picture: a step on the map that focuses the main box and says what the whole thing does; " +
+          "tests, edge cases and open questions come last",
+      );
+    }
+  }
+
+  if (steps.length > LINT_LIMITS.tourSteps) {
+    lint.add(
+      where,
+      "tour-length",
+      excerpt(str(tour.title) ?? tourId),
+      `${steps.length} steps (more than ${LINT_LIMITS.tourSteps})`,
+      "split the tour (one tour per part or question), or merge steps that make the same point",
+    );
+  }
+
+  // a small map: every box is visited by a step, or at least named in the text
+  const shown = steps.flatMap((step) => focusOf(step).flatMap((id) => shownBy(id, at)));
+  const text = [str(tour.summary) ?? "", ...steps.map((step) => str(step.note) ?? "")]
+    .join("\n")
+    .replace(/`/g, "");
+  const maps = [...new Set(steps.map((step) => str(step.view)))]
+    .map((id) => at.views.get(id ?? ""))
+    .filter((view) => view?.type === "graph");
+  for (const view of maps) {
+    const boxes = list<unknown>(view!.include).filter((id): id is string => typeof id === "string");
+    if (boxes.length === 0 || boxes.length > LINT_LIMITS.mapBoxes) continue;
+    const missed = boxes.filter(
+      (box) =>
+        !shown.some((id) => within(id, box, at) || within(box, id, at)) &&
+        !namesOf(box, at).some((name) => names(text, name)),
+    );
+    if (missed.length === 0) continue;
+    const labels = missed.map((box) => labelOf(box, at));
+    lint.findings.push({
+      rule: "tour-covers-map",
+      ...where,
+      view: str(view!.id),
+      quote: excerpt(labels.join(", ")),
+      message:
+        `${plural(missed.length, "box", "boxes")} of the map ${str(view!.id)} (${boxes.length} boxes) ` +
+        `never ${missed.length === 1 ? "comes" : "come"} up: no step focuses ${missed.length === 1 ? "it" : "them"}, no note names ${missed.length === 1 ? "it" : "them"}`,
+      hint: "give each a step, or name it in a note (say why the tour skips it), or take it off the map",
+      ids: missed,
+    });
+  }
+}
+
 /** The checks of `xpl lint` on one explainer, in document order (see the file comment). */
 export function lintExplainer(explainer: Explainer): LintResult {
   const lint = new Linter();
   const summaries = storedSummaries(explainer);
+  const byId = lookup(explainer);
 
   const explainerTitle: Where = { elementId: "(explainer)", kind: "explainer", field: "title" };
   lint.title(explainerTitle, explainer.title);
@@ -771,6 +1206,14 @@ export function lintExplainer(explainer: Explainer): LintResult {
           `${count} sentences (more than ${LINT_LIMITS.summarySentences})`,
           "keep the summary to 2-4 sentences; move the rest into the steps",
         );
+      } else if (count < LINT_LIMITS.summaryMinSentences) {
+        lint.add(
+          at("summary"),
+          "tour-summary",
+          excerpt(summary),
+          `${plural(count, "sentence")} (fewer than ${LINT_LIMITS.summaryMinSentences})`,
+          "write 2-4 sentences: what this is and why it matters; for a change: what behaves differently, the risk, the tests",
+        );
       }
     } else {
       lint.add(
@@ -781,6 +1224,7 @@ export function lintExplainer(explainer: Explainer): LintResult {
         "add 2-4 sentences: what this is and why it matters; for a change: what behaves differently, the risk, the tests",
       );
     }
+    orderChecks(lint, tourId, tour, byId);
     for (const stepValue of list(tour.steps)) {
       const step = record(stepValue);
       const note = str(step.note);
@@ -842,6 +1286,8 @@ export function lintExplainer(explainer: Explainer): LintResult {
     const viewTitle: Where = { elementId: viewId, kind: "view", field: "title" };
     lint.title(viewTitle, view.title);
     lint.plain(viewTitle, view.title);
+    // the viewer shows the question under the view's title
+    lint.todos({ elementId: viewId, kind: "view", field: "question" }, record(view.scope).question);
     if (view.type !== "sequence" && view.type !== "flow") continue;
     for (const stepValue of list(view.steps)) {
       const step = record(stepValue);
@@ -867,7 +1313,7 @@ export function lintExplainer(explainer: Explainer): LintResult {
       }
       lint.plain(at("label"), step.label, true);
       lint.prose(at("summary"), step.summary);
-      lint.plain(at("summary"), step.summary);
+      lint.summaryMarks(at("summary"), step.summary);
     }
   }
 
@@ -879,7 +1325,7 @@ export function lintExplainer(explainer: Explainer): LintResult {
     if (titled) lint.title({ elementId: id, kind, field: "label" }, item.label);
     lint.plain({ elementId: id, kind, field: "label" }, item.label, !titled);
     lint.prose({ elementId: id, kind, field: "summary" }, item.summary);
-    lint.plain({ elementId: id, kind, field: "summary" }, item.summary);
+    lint.summaryMarks({ elementId: id, kind, field: "summary" }, item.summary);
     lint.prose({ elementId: id, kind, field: "detail" }, item.detail);
   };
   for (const node of list(explainer.nodes)) element("node", node);

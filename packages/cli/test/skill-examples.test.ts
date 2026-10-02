@@ -51,6 +51,7 @@ describe("reference/patch-format.md", () => {
       '"includeAdd"',
       '"includeRemove"',
       '"excludeFiles"',
+      '"stepsUpdate"',
     ]) {
       expect(all, needle).toContain(needle);
     }
@@ -76,6 +77,17 @@ describe("reference/patch-format.md", () => {
     const anchors = await xpl(dir, "anchors", "doc");
     expect(anchors.code).toBe(0);
     expect(anchors.out).toMatch(/drifted 0, missing 0$/);
+  });
+
+  it("the base-anchor example (`json base`, it needs a change record) is a base anchor", () => {
+    const base = jsonBlocks(readFileSync(PATCH_FORMAT, "utf8")).filter(
+      (b) => b.info === "json base",
+    );
+    expect(base).toHaveLength(1);
+    const anchor = JSON.parse(base[0]!.text) as Record<string, unknown>;
+    expect(anchor).toMatchObject({ at: "base", role: expect.any(String) });
+    expect("symbol" in anchor).toBe(false);
+    expect("find" in anchor || "span" in anchor).toBe(true);
   });
 
   it("the other `json` blocks are valid too: the shape template applies, the anchor example anchors", async () => {

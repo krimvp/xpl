@@ -37,6 +37,7 @@ import type { RepoEnv } from "./context.js";
 import { CliError, errorMessage } from "./errors.js";
 import { listText, plural } from "./format.js";
 import { displayPath, parseJson, readTextFile, workingTreeReader } from "./fsutil.js";
+import { gitShowReader } from "./git.js";
 
 export const EXPLAINER_DIR = ".explainer";
 export const EXPLAINER_SUFFIX = ".explainer.json";
@@ -51,7 +52,8 @@ export class WorkingTree {
   private hashes: Promise<Map<string, string>> | undefined;
 
   constructor(readonly root: string) {
-    this.texts = new TextCache(workingTreeReader(root));
+    // files at a commit come from git: base anchors read the base commit of a change record with it
+    this.texts = new TextCache(workingTreeReader(root), gitShowReader(root));
   }
 
   private git(): Promise<GitInfo | undefined> {

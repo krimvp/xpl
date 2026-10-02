@@ -9,6 +9,9 @@ import { join } from "node:path";
 import {
   BUNDLE_SCHEMA,
   ExplainerModel,
+  baseVersionFiles,
+  basePathOf,
+  headPathsOf,
   REF_TO_EDGE_KIND,
   codeFocus,
   collectAnchors,
@@ -287,6 +290,11 @@ export interface CollectedFiles {
   referenced?: number;
   /** With `boundary`: what the boundary added, and what the cap cut. */
   boundary?: Boundary;
+  /**
+   * With a change record (`explainer.change`): the changed files that exist at head and are indexed, and how many of
+   * them the selection had left out (added so that every changed file is embedded, whatever `--files` says).
+   */
+  changed?: { files: number; added: string[] };
   /** Bytes of source text embedded (UTF-8). */
   embeddedBytes: number;
   /** Files in the index, and their total size on disk (0 unless measured): what `--files all` would embed. */
@@ -339,6 +347,15 @@ export function collectFiles(opts: {
       paths = [...paths, ...boundary.added.map((entry) => entry.file)].sort();
     }
   }
+  // a change is reviewed file by file: every changed file that exists at head goes in, whatever the selection
+  let changed: CollectedFiles["changed"];
+  if (opts.explainer.change !== undefined) {
+    const heads = headPathsOf(opts.explainer.change).filter((path) => opts.index.hasFile(path));
+    const have = new Set(paths);
+    const added = heads.filter((path) => !have.has(path));
+    if (added.length > 0) paths = [...paths, ...added].sort();
+    changed = { files: heads.length, added };
+  }
   const files: Record<string, string> = {};
   let embeddedBytes = 0;
   for (const path of paths) {
@@ -353,6 +370,7 @@ export function collectFiles(opts: {
     choice,
     ...(referenced !== undefined ? { referenced } : {}),
     ...(boundary !== undefined ? { boundary } : {}),
+    ...(changed !== undefined ? { changed } : {}),
     embeddedBytes,
     indexedFiles: opts.index.files.length,
     indexedBytes: opts.measure === false ? 0 : indexedBytes(opts.root, opts.index),
@@ -429,10 +447,37 @@ export function embedIndex(opts: {
   };
 }
 
+/**
+ * The code before the change (`ViewerBundle.baseFiles`): the base text of every changed file of `explainer.change`
+ * that is modified, renamed or deleted, keyed by its `ChangedFile.path`. `missing` lists the files whose base text
+ * could not be read (no git, a binary file). Undefined without a change record.
+ */
+export function collectBaseFiles(
+  explainer: Explainer,
+  texts: TextCache,
+): { files: Record<string, string>; bytes: number; missing: string[] } | undefined {
+  const change = explainer.change;
+  if (change === undefined) return undefined;
+  const files: Record<string, string> = {};
+  const missing: string[] = [];
+  let bytes = 0;
+  for (const file of baseVersionFiles(change)) {
+    const text = texts.textAt(change.base, basePathOf(file));
+    if (text === undefined) {
+      missing.push(file.path);
+      continue;
+    }
+    files[file.path] = text;
+    bytes += Buffer.byteLength(text);
+  }
+  return { files, bytes, missing };
+}
+
 export function makeBundle(parts: {
   explainer: Explainer;
   index: ViewerBundle["index"];
   files: Record<string, string>;
+  baseFiles?: Record<string, string>;
   mode?: "explore" | "present";
   tour?: string;
   server?: { api: string };
@@ -442,6 +487,7 @@ export function makeBundle(parts: {
     explainer: parts.explainer,
     index: parts.index,
     files: parts.files,
+    ...(parts.baseFiles !== undefined ? { baseFiles: parts.baseFiles } : {}),
     ...(parts.mode !== undefined ? { mode: parts.mode } : {}),
     ...(parts.tour !== undefined ? { tour: parts.tour } : {}),
     ...(parts.server !== undefined ? { server: parts.server } : {}),

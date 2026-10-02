@@ -9,6 +9,8 @@ import { anchorsCommand } from "./commands/anchors.js";
 import { applyCommand } from "./commands/apply.js";
 import { indexCommand } from "./commands/build-index.js";
 import { bundleCommand } from "./commands/bundle.js";
+import { changeCommand } from "./commands/change.js";
+import { draftCommand } from "./commands/draft.js";
 import { lintCommand } from "./commands/lint.js";
 import { newCommand } from "./commands/new.js";
 import { outlineCommand } from "./commands/outline.js";
@@ -25,7 +27,7 @@ import { CliError, UsageError, errorMessage } from "./errors.js";
 export type { CommandSpec } from "./command.js";
 export type { Io } from "./context.js";
 
-/** The commands of ARCHITECTURE.md §5, in the order of its table (`lint` added after `status`). */
+/** The commands of ARCHITECTURE.md §5, in the order of its table (`lint`, `change` and `draft` added after `status`). */
 export const COMMANDS: readonly CommandSpec[] = [
   indexCommand,
   outlineCommand,
@@ -39,6 +41,8 @@ export const COMMANDS: readonly CommandSpec[] = [
   resolveCommand,
   statusCommand,
   lintCommand,
+  changeCommand,
+  draftCommand,
   viewCommand,
   bundleCommand,
 ];
