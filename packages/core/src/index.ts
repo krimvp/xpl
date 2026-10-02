@@ -7,6 +7,7 @@ export * from "./ids.js";
 export * from "./index-model.js";
 export * from "./implementations.js";
 export * from "./anchors.js";
+export * from "./change.js";
 export * from "./model.js";
 export * from "./stubs.js";
 export * from "./graph.js";

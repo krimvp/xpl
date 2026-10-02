@@ -110,7 +110,7 @@ export function relatedFiles(
       files,
       resolution: edge.provenance.origin === "llm" ? "inferred" : "annotated",
       evidence: edge.anchors
-        .filter((anchor) => anchor.resolved?.status !== "missing")
+        .filter((anchor) => anchor.resolved?.status !== "missing" && anchor.at !== "base")
         .map((anchor) => ({ file: anchor.file, line: anchor.resolved?.range.startLine ?? 1 })),
     });
   }

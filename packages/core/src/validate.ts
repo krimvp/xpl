@@ -5,14 +5,17 @@
  */
 import { EXPLAINER_SCHEMA } from "./constants.js";
 import {
+  isBaseAnchor,
   resolveWith,
   storedSymbolHints,
   toTextCache,
   ANCHOR_ROLES,
   describeAnchor,
+  NO_CHANGE_RECORD,
   type GetText,
   type TextCache,
 } from "./anchors.js";
+import { changeShapeIssues, shortSha } from "./change.js";
 import {
   EDGE_KINDS,
   isSlug,
@@ -32,6 +35,7 @@ import { parseGhostKey, STUB_MODES } from "./stubs.js";
 import type {
   Anchor,
   AnchorStatus,
+  ChangeRecord,
   Concept,
   Edge,
   ElementId,
@@ -53,6 +57,7 @@ export type IssueSeverity = "error" | "warning";
  * - `anchor-drifted`, `anchor-missing`, `anchor-invalid`: anchor problems.
  * - `evidence`: an llm edge lacks an anchor inside `from` or `to`.
  * - `frame`, `cycle`, `step`, `commit`: the remaining structural rules.
+ * - `change`: the change record (`Explainer.change`) is malformed, or its head is not the commit of the index.
  * - `protected`: (patches only) a change was skipped because the element or field belongs to the user.
  */
 export type IssueCode =
@@ -68,6 +73,7 @@ export type IssueCode =
   | "cycle"
   | "step"
   | "commit"
+  | "change"
   | "protected";
 
 export interface Issue {
@@ -244,6 +250,7 @@ class Validator {
     for (const key of ["nodes", "edges", "concepts", "views", "tours"] as const) {
       if (!Array.isArray(ex[key])) this.error(key, `${key} must be an array`);
     }
+    this.checkChange();
 
     const claimed = new Map<string, string>();
     (Array.isArray(ex.nodes) ? ex.nodes : []).forEach((node, i) =>
@@ -264,6 +271,36 @@ class Validator {
       this.checkTour(tour, i, tourIds),
     );
     this.checkGroupCycles();
+  }
+
+  /** The change record, when it is well formed (base anchors resolve against it). */
+  private change: ChangeRecord | undefined;
+
+  /**
+   * `Explainer.change`: its shape (written by `xpl change`, so a problem means a hand edit), and its head, which must
+   * be the commit of the index in use (a warning: the base anchors still work, but the current code the explainer
+   * shows is not the head of the change).
+   */
+  private checkChange(): void {
+    const value = this.ex.change;
+    if (value === undefined) return;
+    const problems = changeShapeIssues(value);
+    for (const problem of problems) this.error(problem.path, problem.message, undefined, "change");
+    if (problems.length > 0) return;
+    const change = value as ChangeRecord;
+    this.change = change;
+    const commit = this.index.commit;
+    // an index of a directory below the git top level is named `wt-<hash>`: no commit to compare with
+    if (/^[0-9a-f]{7,}$/i.test(commit) && !change.head.startsWith(commit)) {
+      this.warn(
+        "change.head",
+        `the change ends at ${shortSha(change.head)}, but the explainer's index was built from ${commit}: ` +
+          `check out ${shortSha(change.head)}, run \`xpl index\` and \`xpl resolve <name> --write\`, ` +
+          `or write the change again with \`xpl change <name> <base>..${commit}\``,
+        undefined,
+        "change",
+      );
+    }
   }
 
   // ─── Ids ────────────────────────────────────────────────────────────────────────────────────
@@ -568,7 +605,22 @@ class Validator {
       if (typeof anchor.hash !== "string") {
         this.error(`${at}.hash`, "anchor.hash must be a string", elementId, "anchor-invalid");
       }
-      const result = resolveWith(anchor, this.index, this.texts);
+      if (anchor.at !== undefined) {
+        // what makes a base anchor unusable whatever the code does: errors in every mode
+        const bad =
+          anchor.at !== "base"
+            ? `anchor.at must be "base" or absent (got ${JSON.stringify(anchor.at)})`
+            : typeof anchor.symbol === "string" && anchor.symbol !== ""
+              ? `base anchor ${describeAnchor(anchor)}#${anchor.symbol}: a base anchor cannot name a symbol (only the head is indexed); use find or a span from line 1 of the base file`
+              : !this.change && this.ex.change === undefined
+                ? `base anchor ${describeAnchor(anchor)}: ${NO_CHANGE_RECORD}`
+                : undefined;
+        if (bad !== undefined) {
+          this.error(at, bad, elementId, "anchor-invalid");
+          return;
+        }
+      }
+      const result = resolveWith(anchor, this.index, this.texts, this.change);
       const where = describeAnchor(anchor);
       // Only the user can repair what the user owns: an llm patch skips it, so say who acts.
       const userFix = locked
@@ -792,12 +844,15 @@ class Validator {
         [edge.to, "to", toOk],
       ] as const) {
         if (!ok) continue;
-        const covered = checked.some((c) =>
-          this.model.containsCode(end, {
-            file: c.anchor.file,
-            ...(c.anchor.symbol !== undefined ? { symbol: c.anchor.symbol } : {}),
-            ...(c.range ? { range: c.range } : {}),
-          }),
+        // evidence is in the current code: an anchor in the code before the change does not count
+        const covered = checked.some(
+          (c) =>
+            !isBaseAnchor(c.anchor) &&
+            this.model.containsCode(end, {
+              file: c.anchor.file,
+              ...(c.anchor.symbol !== undefined ? { symbol: c.anchor.symbol } : {}),
+              ...(c.range ? { range: c.range } : {}),
+            }),
         );
         if (!covered) {
           this.error(

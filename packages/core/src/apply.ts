@@ -18,7 +18,9 @@
  * repair; the problem is kept as a warning.
  */
 import {
+  baseLines,
   describeAnchor,
+  isBaseAnchor,
   makeAnchor,
   storedSymbolHints,
   toTextCache,
@@ -182,6 +184,7 @@ const TOUR_SPEC: Spec = {
     title: "string",
     summary: "string",
     steps: "array",
+    stepsUpdate: "array",
     provenance: "object",
   },
   nullable: ["summary"],
@@ -223,6 +226,8 @@ const TOUR_STEP_SPEC: Spec = {
   },
   nullable: [],
 };
+/** An entry of a tour's `stepsUpdate`: the fields of a tour step, `null` clearing the optional ones. */
+const TOUR_STEP_UPDATE_SPEC: Spec = { ...TOUR_STEP_SPEC, nullable: ["note", "code", "editor"] };
 const SCOPE_SPEC: Spec = {
   fields: { root: "string", depth: "number", question: "string", entryPoints: "string[]" },
   nullable: [],
@@ -286,8 +291,10 @@ interface IncludeOps {
   add: string[];
   remove: string[];
 }
-/** `stepsUpdate` of a sequence view patch: the entries (checked for shape), with their path in the patch. */
+/** `stepsUpdate` of a sequence view or tour patch: the entries (checked for shape), with their path in the patch. */
 interface StepOps {
+  /** Whose steps: a sequence (or flow) view's, or a tour's. */
+  owner: "view" | "tour";
   updates: { id: string; fields: AnyRecord; path: string }[];
 }
 
@@ -335,9 +342,12 @@ class Applier {
   private readonly removeIndex = new Map<string, number>();
   /** `includeAdd` of the graph views the patch edits (view id -> ids), to point issues at the patch. */
   private readonly includeAdds = new Map<string, readonly string[]>();
-  /** Steps changed by `stepsUpdate` (view id -> step id -> its entry's path in the patch), to point issues at it. */
+  /**
+   * Steps changed by `stepsUpdate` (view or tour id -> step id -> its entry's path in the patch), to point issues at
+   * it.
+   */
   private readonly stepUpdatePaths = new Map<string, Map<string, string>>();
-  /** Views whose `stepsUpdate` the patch sends without `steps`: their step paths have nothing to map to. */
+  /** Views and tours whose `stepsUpdate` the patch sends without `steps`: their step paths have nothing to map to. */
   private readonly stepsUpdateOnly = new Set<string>();
   /** Every step a `stepsUpdate` entry names (step id -> its entry's path), changed or not. */
   private readonly updatedSteps = new Map<string, string>();
@@ -411,7 +421,12 @@ class Applier {
       return this.fail();
     }
     for (const key of Object.keys(patch)) {
-      if (!PATCH_KEYS.includes(key)) {
+      if (key === "change") {
+        this.error(
+          key,
+          "the change record is not part of a patch: `xpl change <name> <base>..<head>` writes it from git",
+        );
+      } else if (!PATCH_KEYS.includes(key)) {
         this.error(key, `unknown patch field "${key}" (allowed: ${PATCH_KEYS.join(", ")})`);
       }
     }
@@ -647,7 +662,10 @@ class Applier {
    * (a whole-symbol anchor keeps its old range and hash), which helps to find where it went.
    */
   private anchorOptions(): MakeAnchorOptions {
-    return (this.hintOptions ??= { symbolHint: storedSymbolHints(this.input) });
+    return (this.hintOptions ??= {
+      symbolHint: storedSymbolHints(this.input),
+      ...(this.input.change !== undefined ? { change: this.input.change } : {}),
+    });
   }
 
   /**
@@ -682,7 +700,9 @@ class Applier {
   private warnBlankSpanEdges(input: AnchorInput, anchor: Anchor, path: string, id: string): void {
     if (input.span === undefined || input.hash !== undefined || anchor.span === undefined) return;
     const range = anchor.resolved?.range;
-    const lines = this.texts.lines(anchor.file);
+    const lines = isBaseAnchor(anchor)
+      ? baseLines(this.texts, this.input.change, anchor.file)
+      : this.texts.lines(anchor.file);
     if (!range || !lines) return;
     const blank = (line: number): boolean => (lines[line - 1] ?? "").trim() === "";
     const base = range.startLine - anchor.span.from;
@@ -858,7 +878,9 @@ class Applier {
     for (const [key, value] of Object.entries(raw)) {
       if (key === "id" || key === "provenance" || value === undefined) continue;
       if (kind === "graph" && (key === "includeAdd" || key === "includeRemove")) continue; // see includeOps
-      if ((kind === "sequence" || kind === "flow") && key === "stepsUpdate") continue; // see stepOps
+      if ((kind === "sequence" || kind === "flow" || kind === "tour") && key === "stepsUpdate") {
+        continue; // see stepOps
+      }
       if (protectedKeys.has(key)) {
         this.warn(
           `${path}.${key}`,
@@ -1055,8 +1077,14 @@ class Applier {
    * `stepsUpdate` of a sequence view patch: the shape of the list (an array of objects with the `id` of a step
    * and fields the step has) is checked here. Undefined when the patch has none, null after an error.
    */
-  private stepOps(raw: AnyRecord, path: string, viewId: string): StepOps | undefined | null {
+  private stepOps(
+    raw: AnyRecord,
+    path: string,
+    viewId: string,
+    owner: StepOps["owner"] = "view",
+  ): StepOps | undefined | null {
     if (raw.stepsUpdate === undefined) return undefined;
+    const spec = owner === "tour" ? TOUR_STEP_UPDATE_SPEC : STEP_SPEC;
     if (!Array.isArray(raw.stepsUpdate)) {
       this.error(
         `${path}.stepsUpdate`,
@@ -1092,17 +1120,38 @@ class Applier {
         return;
       }
       first.set(entry.id, j);
-      if (!this.checkFields(entry, STEP_SPEC, at, viewId, true)) {
+      if (!this.checkFields(entry, spec, at, viewId, true)) {
+        ok = false;
+        return;
+      }
+      if (
+        owner === "tour" &&
+        isRecord(entry.editor) &&
+        !this.checkFields(entry.editor, EDITOR_SPEC, `${at}.editor`, viewId, false)
+      ) {
         ok = false;
         return;
       }
       updates.push({ id: entry.id, fields: entry, path: at });
     });
-    return ok ? { updates } : null;
+    return ok ? { owner, updates } : null;
   }
 
-  /** Why `stepId` is not a step of `viewId`, and what to use instead. */
-  private unknownStep(viewId: string, stepId: string, steps: readonly string[]): string {
+  /** Why `stepId` is not a step of `viewId` (or of a tour), and what to use instead. */
+  private unknownStep(
+    viewId: string,
+    stepId: string,
+    steps: readonly string[],
+    kind: StepOps["owner"] = "view",
+  ): string {
+    if (kind === "tour") {
+      const near = suggestIds(stepId, steps);
+      return (
+        `step ${stepId} is not a step of ${viewId} (its steps: ${steps.length > 0 ? listIds(steps) : "none"})` +
+        (near.length > 0 ? `. Did you mean: ${near.join(", ")}?` : "") +
+        ". To add a step, send the tour's steps whole"
+      );
+    }
     const views = this.work.views as unknown as AnyRecord[];
     const owner = views.find(
       (other) =>
@@ -1120,9 +1169,10 @@ class Applier {
 
   /**
    * Merges the `stepsUpdate` entries into `merged.steps` (after `steps`, when the patch sent both): each entry's
-   * fields go into the step with its id; `anchors` are built like anywhere else and replace the step's; `null`
-   * clears `summary` or `edge`. Skipped with a `protected` warning when the user edited the view's steps.
-   * False when an entry names no step or a field is wrong (every problem is reported).
+   * fields go into the step with its id. A sequence step's `anchors` (a tour step's `code`) are built like anywhere
+   * else and replace the step's; `null` clears `summary` or `edge` (a tour step's `note`, `code` or `editor`).
+   * Skipped with a `protected` warning when the user edited the view's (or tour's) steps. False when an entry
+   * names no step or a field is wrong (every problem is reported).
    */
   private applyStepUpdates(
     merged: AnyRecord,
@@ -1140,6 +1190,7 @@ class Applier {
       );
       return true;
     }
+    const tour = ops.owner === "tour";
     const steps: AnyRecord[] = Array.isArray(merged.steps)
       ? [...(merged.steps as AnyRecord[])]
       : [];
@@ -1150,23 +1201,25 @@ class Applier {
       if (at === -1) {
         this.error(
           `${update.path}.id`,
-          this.unknownStep(viewId, update.id, known),
+          this.unknownStep(viewId, update.id, known, ops.owner),
           viewId,
           "unknown-id",
         );
         ok = false;
         continue;
       }
-      this.updatedSteps.set(update.id, update.path);
+      // tour step ids are only unique inside their tour: they are not tracked for `remove`
+      if (!tour) this.updatedSteps.set(update.id, update.path);
       const next: AnyRecord = { ...steps[at]! };
       for (const [key, value] of Object.entries(update.fields)) {
         if (key === "id" || value === undefined) continue;
         if (value === null) delete next[key];
-        else if (key === "anchors") {
-          const anchors = this.anchors(value, `${update.path}.anchors`, update.id);
+        else if ((!tour && key === "anchors") || (tour && key === "code")) {
+          const owner = tour ? viewId : update.id;
+          const anchors = this.anchors(value, `${update.path}.${key}`, owner);
           if (anchors === undefined) ok = false;
-          else next.anchors = anchors;
-        } else next[key] = value;
+          else next[key] = anchors;
+        } else next[key] = cloneJson(value);
       }
       steps[at] = next;
     }
@@ -1192,8 +1245,13 @@ class Applier {
     for (const update of ops.updates) {
       const now = stepsOf(after).find((step) => step.id === update.id);
       if (!now || sameContent(old.get(update.id), now)) continue;
-      this.changed.push(update.id);
-      this.touched.set(update.id, update.path);
+      if (ops.owner === "tour") {
+        // a tour step's id is only unique in its tour: it is named `<tour id>/<step id>`, like its anchors' owner
+        this.changed.push(`${viewId}/${update.id}`);
+      } else {
+        this.changed.push(update.id);
+        this.touched.set(update.id, update.path);
+      }
       paths.set(update.id, update.path);
     }
     if (paths.size > 0) this.stepUpdatePaths.set(viewId, paths);
@@ -1539,7 +1597,17 @@ class Applier {
     if (!this.checkFields(raw, TOUR_SPEC, path, id, true)) return false;
     const tours = this.work.tours as unknown as AnyRecord[];
     const at = tours.findIndex((t) => t.id === id);
+    const stepOps = this.stepOps(raw, path, id, "tour");
+    if (stepOps === null) return false;
     if (at === -1) {
+      if (stepOps) {
+        this.error(
+          `${path}.stepsUpdate`,
+          `stepsUpdate changes steps that exist already, and ${id} is a new tour: send its steps whole`,
+          id,
+        );
+        return false;
+      }
       const fields = this.convertFields("tour", raw, path, id, new Set());
       const provenance = this.newProvenance(raw, path, id);
       if (!fields || !provenance) return false;
@@ -1562,12 +1630,22 @@ class Applier {
     }
     const existing = tours[at]!;
     if (this.skipUserOwned(existing, id, path)) return true;
-    const merged = this.mergeExisting("tour", existing, raw, path, id, undefined);
+    const merged = this.mergeExisting(
+      "tour",
+      existing,
+      raw,
+      path,
+      id,
+      undefined,
+      undefined,
+      stepOps,
+    );
     if (!merged) return false;
     if (merged === existing) return true;
     tours[at] = merged;
     this.touched.set(id, path);
     this.changed.push(id);
+    if (stepOps) this.noteStepUpdates(id, existing, merged, stepOps, raw.steps !== undefined);
     return true;
   }
 
@@ -1643,19 +1721,26 @@ class Applier {
     const w = this.work as unknown as Record<string, AnyRecord[]>;
     // A step that `stepsUpdate` changed is the entry of that list in the patch, not `steps[j]`; the other steps
     // of a view sent only `stepsUpdate` are not in the patch at all (the message names the step).
-    for (const [viewId, steps] of this.stepUpdatePaths) {
-      const at = w.views?.findIndex((view) => view.id === viewId) ?? -1;
-      const list: unknown = at === -1 ? undefined : w.views![at]!.steps;
-      if (!Array.isArray(list)) continue;
+    /** Where a view or tour sits in the merged explainer: `views[2]` / `tours[0]`, with its steps. */
+    const locate = (id: string): { prefix: string; steps: unknown } | undefined => {
+      for (const list of ["views", "tours"] as const) {
+        const at = w[list]?.findIndex((item) => item.id === id) ?? -1;
+        if (at !== -1) return { prefix: `${list}[${at}]`, steps: w[list]![at]!.steps };
+      }
+      return undefined;
+    };
+    for (const [ownerId, steps] of this.stepUpdatePaths) {
+      const found = locate(ownerId);
+      if (!found || !Array.isArray(found.steps)) continue;
       for (const [stepId, patchPath] of steps) {
-        const stepAt = (list as AnyRecord[]).findIndex((step) => step.id === stepId);
-        if (stepAt !== -1) prefixes.push([`views[${at}].steps[${stepAt}]`, patchPath]);
+        const stepAt = (found.steps as AnyRecord[]).findIndex((step) => step.id === stepId);
+        if (stepAt !== -1) prefixes.push([`${found.prefix}.steps[${stepAt}]`, patchPath]);
       }
     }
-    for (const viewId of this.stepsUpdateOnly) {
-      const at = w.views?.findIndex((view) => view.id === viewId) ?? -1;
-      const patchPath = this.touched.get(viewId);
-      if (at !== -1 && patchPath !== undefined) collapse.push([`views[${at}].steps[`, patchPath]);
+    for (const ownerId of this.stepsUpdateOnly) {
+      const found = locate(ownerId);
+      const patchPath = this.touched.get(ownerId);
+      if (found && patchPath !== undefined) collapse.push([`${found.prefix}.steps[`, patchPath]);
     }
     for (const [id, patchPath] of this.touched) {
       const list = patchPath.slice(0, patchPath.indexOf("["));

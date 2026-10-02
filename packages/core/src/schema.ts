@@ -219,7 +219,19 @@ export interface ResourceReference {
  * relative to the file (use for config files and other symbol-less text).
  */
 export interface Anchor {
+  /**
+   * For a base anchor (`at: "base"`): the changed file's `ChangedFile.path` (for a renamed file the new path; a
+   * patch may name the old one, it is stored as the new one), the key of `ViewerBundle.baseFiles`.
+   */
   file: FilePath;
+  /**
+   * `"base"`: the anchor points at the code before the change, the base commit of `Explainer.change`
+   * (read with `git show <base>:<file>`). It has no `symbol` (there is no index of the base commit): its
+   * `span` counts from line 1 of the base file, and `resolved.range` and `resolved.commit` are lines and
+   * commit of the base. Only allowed in a changed file that has a base version (modified, renamed,
+   * deleted). Absent: the current code (the head), like every other anchor.
+   */
+  at?: "base";
   symbol?: SymbolPath;
   /**
    * 0-based line offsets, inclusive. Omit = whole symbol / file.
@@ -493,11 +505,50 @@ export interface Explainer {
    * explicit `--commit`, or "wt-<hash>" for a dirty work tree).
    */
   index: { path: string; commit: string };
+  /**
+   * The change this explainer is about (a PR or MR), when there is one: written by `xpl change <name>
+   * <base>..<head>`, never by patches. `head` is the commit the index was built from.
+   */
+  change?: ChangeRecord;
   nodes: Node[];
   edges: Edge[];
   concepts: Concept[];
   views: View[];
   tours: Tour[];
+}
+
+// ─── Change record (Explainer.change) ───────────────────────────────────────────────────────────
+
+/** The change between two commits, as git computes it (`git diff -M`). */
+export interface ChangeRecord {
+  /** Full commit SHA of the code before the change. */
+  base: string;
+  /** Full commit SHA of the code after the change: the commit the index was built from. */
+  head: string;
+  /** Every changed file, in git's order (sorted by path). */
+  files: ChangedFile[];
+}
+
+export interface ChangedFile {
+  /** Path at head; for a deleted file the path it had at base. */
+  path: FilePath;
+  status: "added" | "modified" | "deleted" | "renamed";
+  /** Renamed files only: the path at base. */
+  oldPath?: FilePath;
+  /** `git diff -U0` hunks: 1-based lines as git prints them (`@@ -oldStart,oldLines +newStart,newLines @@`). */
+  hunks: ChangeHunk[];
+}
+
+/**
+ * One hunk of a diff without context lines. `oldLines` lines starting at `oldStart` in the base were replaced by
+ * `newLines` lines starting at `newStart` in the head. A count of 0 means a pure insertion or deletion; the start is
+ * then the line after which it happened (git's convention).
+ */
+export interface ChangeHunk {
+  oldStart: number;
+  oldLines: number;
+  newStart: number;
+  newLines: number;
 }
 
 /* ───────────────────────────────────────────────────────────────────────────────────────────────

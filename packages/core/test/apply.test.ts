@@ -10,6 +10,7 @@ import {
   type GraphView,
   type Issue,
   type SequenceView,
+  type Tour,
 } from "../src/index.js";
 import {
   anchor,
@@ -2879,5 +2880,120 @@ describe("applyPatch: a span that starts or ends on a blank line", () => {
     const r = applyTo([span(2, 2)]);
     expect(r.ok).toBe(false);
     expect(errorsOf(r)[0]!.message).toContain("covers only blank lines");
+  });
+});
+
+// ─── Tour stepsUpdate ───────────────────────────────────────────────────────────────────────────
+
+describe("applyPatch: tour stepsUpdate", () => {
+  /** The seed with a second step in tour:intro. */
+  const twoSteps = (provenance?: Tour["provenance"]): Explainer => {
+    const ex = seed();
+    const tour = ex.tours[0]!;
+    tour.steps.push({ id: "t2", view: "view:overview", focus: [F.worker], note: "### Old" });
+    if (provenance) tour.provenance = provenance;
+    return ex;
+  };
+  const tourOf = (r: ApplyResult) => r.explainer.tours[0]!;
+  const update = (stepsUpdate: unknown[], over: Record<string, unknown> = {}): ExplainerPatch => ({
+    tours: [{ id: "tour:intro", stepsUpdate, ...over } as never],
+  });
+
+  it("merges fields into the steps it names and leaves the others alone", () => {
+    const ex = twoSteps();
+    const r = apply(update([{ id: "t2", note: "### New\nBody.", focus: [F.queue] }]), {
+      explainer: ex,
+    });
+    expect(r.issues).toEqual([]);
+    expect(r.ok).toBe(true);
+    expect(r.changed).toEqual(["tour:intro", "tour:intro/t2"]);
+    expect(tourOf(r).steps[1]).toEqual({
+      id: "t2",
+      view: "view:overview",
+      focus: [F.queue],
+      note: "### New\nBody.",
+    });
+    expect(tourOf(r).steps[0]).toEqual(ex.tours[0]!.steps[0]);
+    expect("stepsUpdate" in tourOf(r)).toBe(false); // never stored
+  });
+
+  it("code takes AnchorInputs; null clears note, code and editor", () => {
+    const ex = twoSteps();
+    ex.tours[0]!.steps[1]!.editor = { primary: "src/worker.ts" };
+    const r = apply(
+      update([
+        { id: "t1", code: [{ file: "src/queue.ts", symbol: "Queue.pop", role: "definition" }] },
+        { id: "t2", note: null, editor: null },
+      ]),
+      { explainer: ex },
+    );
+    expect(r.ok).toBe(true);
+    expect(tourOf(r).steps[0]!.code).toEqual([A.popDef]);
+    expect(tourOf(r).steps[1]).toEqual({ id: "t2", view: "view:overview", focus: [F.worker] });
+    const cleared = apply(update([{ id: "t1", code: null }]), { explainer: r.explainer });
+    expect(cleared.ok).toBe(true);
+    expect("code" in tourOf(cleared).steps[0]!).toBe(false);
+  });
+
+  it("an unknown step id is an error that names the tour's steps", () => {
+    const r = apply(update([{ id: "t3", note: "x" }]), { explainer: twoSteps() });
+    expect(r.ok).toBe(false);
+    expect(errorsOf(r)[0]).toMatchObject({ path: "tours[0].stepsUpdate[0].id" });
+    expect(errorsOf(r)[0]!.message).toContain("its steps: t1, t2");
+    expect(errorsOf(r)[0]!.message).toContain("send the tour's steps whole");
+  });
+
+  it("checks fields like steps: unknown fields, editor fields, a bad view or focus", () => {
+    const r = apply(
+      update([
+        { id: "t1", nope: 1 },
+        { id: "t2", editor: { primary: 3 } },
+      ]),
+      { explainer: twoSteps() },
+    );
+    expect(errorsOf(r).map((i) => i.path)).toEqual([
+      "tours[0].stepsUpdate[0].nope",
+      "tours[0].stepsUpdate[1].editor.primary",
+    ]);
+    const view = apply(update([{ id: "t2", view: "view:nope" }]), { explainer: twoSteps() });
+    expect(view.ok).toBe(false);
+    expect(errorsOf(view)[0]).toMatchObject({ path: "tours[0].stepsUpdate[0].view" });
+  });
+
+  it("is skipped as protected when the user edited the tour's steps; a new tour sends steps whole", () => {
+    const locked = twoSteps({ origin: "llm", userFields: ["steps"] });
+    const r = apply(update([{ id: "t2", note: "### Mine now" }]), { explainer: locked });
+    expect(r.ok).toBe(true);
+    expect(r.changed).toEqual([]);
+    expect(warningsOf(r)).toEqual([
+      expect.objectContaining({ code: "protected", path: "tours[0].stepsUpdate" }),
+    ]);
+    const created = apply({
+      tours: [{ id: "tour:new", title: "New", stepsUpdate: [{ id: "t1", note: "x" }] } as never],
+    });
+    expect(created.ok).toBe(false);
+    expect(errorsOf(created)[0]!.message).toContain("send its steps whole");
+  });
+
+  it("applies after steps when both are sent, and is idempotent", () => {
+    const patch = update([{ id: "t1", note: "### After" }], {
+      steps: [{ id: "t1", view: "view:dispatch", focus: ["dispatch:1"] }],
+    });
+    const once = apply(patch);
+    expect(once.ok).toBe(true);
+    expect(tourOf(once).steps).toEqual([
+      { id: "t1", view: "view:dispatch", focus: ["dispatch:1"], note: "### After" },
+    ]);
+    const twice = apply(patch, { explainer: once.explainer });
+    expect(twice.changed).toEqual([]);
+  });
+
+  it("a user stepsUpdate marks the tour's steps as edited by the user", () => {
+    const r = apply(update([{ id: "t2", note: "### Mine" }]), {
+      explainer: twoSteps(),
+      actor: "user",
+    });
+    expect(r.ok).toBe(true);
+    expect(tourOf(r).provenance?.userFields).toEqual(["steps"]);
   });
 });
