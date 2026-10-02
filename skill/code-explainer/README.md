@@ -28,11 +28,12 @@ In the repo you want to understand, ask Claude in plain words or with the skill'
 
 - `explain how a failed job gets retried`: a tour that answers the question, with a map of the code involved and a flow of the decisions, anchored to code, config keys and tests.
 - `explain this repo`: what the project is, its parts on one map, and the main path; deeper nodes stay unexplained until you expand them.
-- `explain change main..my-branch` (or a PR or MR you name): what changes for users, where, who else is affected, the tests and the risks. Claude reads the diff locally with git and never posts anything.
+- Add "quickly" for a fast answer: one picture and a 5-step tour.
+- `explain change main..my-branch` (or a PR or MR you name): what changes for users, where, who else is affected, the tests and the risks. Claude reads the diff locally with git and never posts anything. The page shows the diff, the code before the change, and which boxes are new or changed.
 - `expand the queue package` (or click "Explain this" in `xpl view`; Claude drains the queue).
 - `make a tour` of the views for a talk (present mode).
 
-Claude indexes the repo, writes `.explainer/<name>.explainer.json`, and gives you an HTML bundle (`xpl bundle`, self-contained, the default in cloud sessions) or a local viewer (`xpl view`). `.explainer/index-*.json` is git-ignored automatically; commit the `*.explainer.json` files.
+Claude indexes the repo, starts from a draft that `xpl draft` builds from the index (the structure, with no text), writes and checks the text, saves `.explainer/<name>.explainer.json`, and gives you an HTML bundle (`xpl bundle`, self-contained, the default in cloud sessions) or a local viewer (`xpl view`). `.explainer/index-*.json` is git-ignored automatically; commit the `*.explainer.json` files.
 
 The index gets precise references from SCIP indexers when they can run (`npx` for TypeScript and Python, the Go toolchain for Go); without them it falls back to heuristic references and says so.
 
@@ -40,10 +41,10 @@ The index gets precise references from SCIP indexers when they can run (`npx` fo
 
 | Path                          | What                                                                         |
 | ----------------------------- | ---------------------------------------------------------------------------- |
-| `SKILL.md`                    | the skill: the three scopes, workflow, tour and writing rules, hard rules    |
+| `SKILL.md`                    | the skill: workflow, the three scopes, drafts, tour, accuracy, hard rules    |
 | `bin/xpl`                     | launcher for the built CLI (`packages/cli/dist/xpl.mjs`), symlink-safe       |
 | `reference/writing.md`        | plain-language rules, what goes in which field, before/after rewrites        |
-| `reference/explain-change.md` | how to explain a PR, MR or branch diff: before/after checks, blast radius    |
+| `reference/explain-change.md` | how to explain a PR, MR or branch diff: before/after checks, callers, tests  |
 | `reference/patch-format.md`   | every patch element with examples, merge rules, rejection messages and fixes |
 | `reference/cli.md`            | every command with options and sample output                                 |
 | `reference/examples/`         | worked patches to imitate: `go-retry` (a question), `py-overview` (a repo)   |

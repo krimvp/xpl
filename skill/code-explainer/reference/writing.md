@@ -13,24 +13,24 @@ Write the tour `summary` for the manager, the notes for the newcomer, and keep e
 
 Say each fact once, in the place where it belongs.
 
-| Field                          | Says                                                                                     | Length                         | Format   |
-| ------------------------------ | ---------------------------------------------------------------------------------------- | ------------------------------ | -------- |
-| tour `summary`                 | what this is and why it matters; for a change: the behaviour change, the risk, the tests | 2-4 sentences                  | markdown |
-| tour `title`                   | the question the tour answers, or what it covers; for a change, the change               | about 8 words                  | plain    |
-| note heading (`### ...`)       | the point of this step, as a statement                                                   | about 8 words                  | markdown |
-| note body                      | what to notice here and why it matters; what no summary says                             | 1-4 sentences                  | markdown |
-| element `summary`              | what this code does, with its conditions                                                 | 1-2 sentences                  | plain    |
-| element `detail`               | the cases, conditions and lists that do not fit in the summary                           | only when needed               | markdown |
-| view `title`                   | what the picture shows                                                                   | about 8 words                  | plain    |
-| flow step `label`              | the stage, in plain words ("Find a handler", "Answer 400")                               | 2-5 words                      | plain    |
-| sequence step `label`          | the call, as written in the code (`requeue(job, backoff)`)                               | the call text                  | plain    |
-| step `summary`                 | what happens at this step, with its condition                                            | 1-2 sentences                  | plain    |
-| group, concept and edge labels | a plain noun phrase; an edge label may be the topic or key (`job.completed`)             | 1-4 words                      | plain    |
-| frame `label`                  | when the steps inside run ("attempts left", "for each route")                            | a short condition, may be code | plain    |
+| Field                          | Says                                                                                     | Length                         | Format          |
+| ------------------------------ | ---------------------------------------------------------------------------------------- | ------------------------------ | --------------- |
+| tour `summary`                 | what this is and why it matters; for a change: the behaviour change, the risk, the tests | 2-4 sentences                  | markdown        |
+| tour `title`                   | the question the tour answers, or what it covers; for a change, the change               | about 8 words                  | plain           |
+| note heading (`### ...`)       | the point of this step, as a statement                                                   | about 8 words                  | plain           |
+| note body                      | what to notice here and why it matters; what no summary says                             | 1-4 sentences                  | markdown        |
+| element `summary`              | what this code does, with its conditions                                                 | 1-2 sentences                  | inline markdown |
+| element `detail`               | the cases, conditions and lists that do not fit in the summary                           | only when needed               | markdown        |
+| view `title`                   | what the picture shows                                                                   | about 8 words                  | plain           |
+| flow step `label`              | the stage, in plain words ("Find a handler", "Answer 400")                               | 2-5 words                      | plain           |
+| sequence step `label`          | the call, as written in the code (`requeue(job, backoff)`)                               | the call text                  | plain           |
+| step `summary`                 | what happens at this step, with its condition                                            | 1-2 sentences                  | inline markdown |
+| group, concept and edge labels | a plain noun phrase; an edge label may be the topic or key (`job.completed`)             | 1-4 words                      | plain           |
+| frame `label`                  | when the steps inside run ("attempts left", "for each route")                            | a short condition, may be code | plain           |
 
-**Plain** fields are shown as written: `**Changed:**` appears with its asterisks. Write `Changed: ...` there, with no markup; backticks around identifiers are fine (they read as code either way). Only the tour summary, notes and `detail` render markdown. The reply to the user is not a field: SKILL.md, "Show the result", says what it holds.
+**Formats.** _Markdown_ fields render markdown. Headings and links go only in a note body or a `detail`. _Inline markdown_ fields render code spans and emphasis (`` `Queue.requeue` ``, `**Changed:**`), but no headings or links. _Plain_ fields are shown as written, so `**Changed:**` appears with its asterisks: write no markup there. Backticks around identifiers are fine everywhere. The reply to the user is not a field: SKILL.md, "Show the result", says what it holds.
 
-A note never repeats the summary of what its step focuses: the viewer shows that summary already. When both need the same guard condition, the summary states the guard and the note says what it means for the reader ("with the default settings, the cap is not reached"). The note adds the "so what": why this step matters, what the reader should look at, or the condition that changes the outcome. A heading is not the first sentence of the body again.
+A summary is concrete and about this code ("requeues with `baseDelay * 2^attempt`, capped at `maxDelay`"), never generic ("handles retries"). A note never repeats the summary of what its step focuses: the viewer shows that summary already. When both need the same guard condition, the summary states the guard and the note says what it means for the reader ("with the default settings, the cap is not reached"). The note adds the "so what": why this step matters, what the reader should look at, or the condition that changes the outcome. A heading is not the first sentence of the body again.
 
 ## 2. The rules
 
@@ -42,12 +42,10 @@ A note never repeats the summary of what its step focuses: the viewer shows that
 6. **Identifiers in backticks** in summaries and notes: `backoffDelay`, `Queue.requeue`. Never as a title or heading.
 7. **No marketing or filler words**: powerful, robust, seamless, elegant, simply, just, basically, crucial, comprehensive, leverage, utilize, facilitate, intuitive, under the hood, it is worth noting. `xpl lint` has the full list, each with a plain replacement.
 8. **No slogans.** A title or note states one fact the code shows. Slogans like "the same way everywhere", "never loses a job", "everything is an event" or "now all three agree" are usually false in some case.
-9. **Absolute words need proof**: all, every, everything, never, always, only, everywhere, consistent, guaranteed, the same (the evidence rule is in SKILL.md, "Accuracy"). Otherwise name the cases ("`Runner.dispatch` and the retry test"), or narrow the claim ("the three callers in `src/`").
-10. **Keep the condition.** When the anchored lines only run under a guard (`if config.metrics.enabled`, `if (!job)`, a request type check), say so: "When X, Y does Z."
-11. **Say when a list is not complete.** Write "for example" or "among others", or check that the list is complete.
-12. **One concrete example** helps more than a general rule: "with the default settings, the three retries wait 500 ms, 1 s and 2 s".
-13. **Talk to the reader** about their own code: "your handler", "your config file". Do not use "we".
-14. **Plain words for the reader**, not tool words: say "box", "picture", "step", not "node", "view", "group", "stub", "llm", "call-site".
+9. **Claims you can prove.** Absolute words, guard conditions, complete lists and folklore follow the rules in SKILL.md, "Accuracy".
+10. **One concrete example** helps more than a general rule: "with the default settings, the three retries wait 500 ms, 1 s and 2 s".
+11. **Talk to the reader** about their own code: "your handler", "your config file". Do not use "we".
+12. **Plain words for the reader**, not tool words: say "box", "picture", "step", not "node", "view", "group", "stub", "llm", "call-site".
 
 ## 3. Titles and labels
 
@@ -143,12 +141,12 @@ Each pair shows a mistake that reviewers found in generated explainers. The exam
 Read every title, label, summary and note once more, in tour order, against these questions:
 
 - Does the tour start with a `summary` that says what this is and why it matters?
-- Does every note start with `### <plain title>`, about 8 words, no code? Is markup used only in markdown fields?
+- Does every note start with `### <plain title>`, about 8 words, no code? Is markup only where its field takes it (section 1)?
 - Is every sentence short (rule 1), active, with a named subject?
 - Is every term defined the first time it appears?
 - Does any note repeat the summary of what its step focuses? Cut it.
 - Does any title or note use an absolute word, a slogan or a marketing word? Prove it or rewrite it.
 - Does every branch you describe name its condition?
-- For a change: is every "before" claim checked in the base code (`explain-change.md` section 4)?
+- For a change: is every "before" claim checked and anchored in the base code (`explain-change.md` section 4)?
 
-`xpl lint <name>` finds the mechanical part of this: a missing tour summary, a note without a `###` title, code or placeholders as titles, long sentences, a bare "It" or "This", filler and absolute words, a note that repeats a summary, flow labels written as code. Fix each finding, or say in your reply why you kept it. The command cannot check meaning: the re-read can.
+`xpl lint <name>` finds the mechanical part of this (its rules: `cli.md`, `xpl lint`). It cannot check meaning: the re-read can.
