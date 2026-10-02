@@ -15,7 +15,7 @@ Say each fact once, in the place where it belongs.
 
 | Field                          | Says                                                                                     | Length                         | Format          |
 | ------------------------------ | ---------------------------------------------------------------------------------------- | ------------------------------ | --------------- |
-| tour `summary`                 | what this is and why it matters; for a change: the behaviour change, the risk, the tests | 2-4 sentences                  | markdown        |
+| tour `summary`                 | what this is and why it matters; for a change: the behaviour change, the risk, the tests | 2-4 sentences (a change: 2-5)  | markdown        |
 | tour `title`                   | the question the tour answers, or what it covers; for a change, the change               | about 8 words                  | plain           |
 | note heading (`### ...`)       | the point of this step, as a statement                                                   | about 8 words                  | plain           |
 | note body                      | what to notice here and why it matters; what no summary says                             | 1-4 sentences                  | markdown        |
@@ -39,7 +39,7 @@ A summary is concrete and about this code ("requeues with `baseDelay * 2^attempt
 3. **Name the subject.** No sentence starts with a bare "It", "This" or "They": repeat the noun (`Runner.dispatch` calls ...). An element `summary` may start with a verb ("Runs one attempt ..."), because the viewer shows the element's name next to it. Notes and the tour summary always name their subject.
 4. **Common words.** Use, start, end, check, send, keep. Not utilize, commence, leverage, facilitate. Use one word for one meaning: if "wrap" means "calls inside a `try`", do not also use it for "adds a layer".
 5. **Define each term the first time it appears**, in one clause: "a dead-letter list, where jobs with no retries left are kept, ...". This covers protocol names, acronyms, header fields and the project's own jargon (backoff, lease, in-flight). Define it in the tour summary or the first note that uses it, not later.
-6. **Identifiers in backticks** in summaries and notes: `backoffDelay`, `Queue.requeue`. Never as a title or heading.
+6. **Identifiers in backticks** in summaries and notes: `backoffDelay`, `Queue.requeue`. Titles: section 3.
 7. **No marketing or filler words**: powerful, robust, seamless, elegant, simply, just, basically, crucial, comprehensive, leverage, utilize, facilitate, intuitive, under the hood, it is worth noting. `xpl lint` has the full list, each with a plain replacement.
 8. **No slogans.** A title or note states one fact the code shows. Slogans like "the same way everywhere", "never loses a job", "everything is an event" or "now all three agree" are usually false in some case.
 9. **Claims you can prove.** Absolute words, guard conditions, complete lists and folklore follow the rules in SKILL.md, "Accuracy".
@@ -72,17 +72,13 @@ Flow step labels name a stage ("Take the next due job", "No retries left: park i
 
 ## 4. The tour summary
 
-2-4 sentences in plain words: the first thing on the screen. Use at most one or two code identifiers; example input values in backticks (`maxDelayMs: 100`, a sample header) are fine, and often the clearest way to show a behaviour change.
+2-4 sentences in plain words (a change: up to 5): the first thing on the screen. Use at most one or two code identifiers; example input values in backticks (`maxDelayMs: 100`, a sample header) are fine, and often the clearest way to show a behaviour change.
 
 - **Whole project:** what the project is (language and kind: "a Python web framework", "a Go command-line tool"), what it is for, and the main path in one sentence. Take what the project is from its README or package metadata (`xpl show file:README.md`, `pyproject.toml#project.description`), and say nothing the README or the code does not say.
   > go-jobrunner is a small Go program that runs background jobs from an in-memory queue. A runner takes each job, runs it on a worker, and retries a failed job with a growing delay. An event bus tells the metrics when a job finishes. This tour shows those parts and follows one job from the queue to the end.
 - **Part of a project:** the question, the answer in one or two sentences, and what the tour leaves out.
   > A failed job is retried with a growing delay until its retry budget is spent. After that, the runner parks it in a dead-letter list. The runner makes each decision, and the queue stores the job again. Metrics and the worker pool are left out.
-- **A change:** what changes for users (with one example), who is affected, the worst realistic failure (`explain-change.md` section 7), and what the tests cover.
-
-  > Before this change, a config file could set `retry.maxDelayMs` lower than `retry.baseDelayMs`, and every retry then waited `maxDelayMs`. Now `loadConfig` rejects such a file with an error that names both keys. Risk: a deployed config with such values now stops the program at start. Two new tests cover the check; no test covers a `maxDelayMs` of 0.
-
-  (An invented change to `fixtures/ts-jobrunner`.)
+- **A change:** what changes for users (with one example), who is affected, the worst realistic failure (`explain-change.md` section 7), and what the tests cover. Example: `explain-change.md` section 10.
 
 ## 5. Rewrites
 
@@ -138,15 +134,9 @@ Each pair shows a mistake that reviewers found in generated explainers. The exam
 
 ## 6. Checklist
 
-Read every title, label, summary and note once more, in tour order, against these questions:
+`xpl lint <name>` checks the mechanical rules (headings, markup, sentence length, bare "It", filler and absolute words, notes that repeat a summary; `cli.md`, `xpl lint`). SKILL.md, "Accuracy", covers the claims. Read every title, label, summary and note once more, in tour order, for what neither can check:
 
-- Does the tour start with a `summary` that says what this is and why it matters?
-- Does every note start with `### <plain title>`, about 8 words, no code? Is markup only where its field takes it (section 1)?
-- Is every sentence short (rule 1), active, with a named subject?
-- Is every term defined the first time it appears?
-- Does any note repeat the summary of what its step focuses? Cut it.
-- Does any title or note use an absolute word, a slogan or a marketing word? Prove it or rewrite it.
-- Does every branch you describe name its condition?
-- For a change: is every "before" claim checked and anchored in the base code (`explain-change.md` section 4)?
-
-`xpl lint <name>` finds the mechanical part of this (its rules: `cli.md`, `xpl lint`). It cannot check meaning: the re-read can.
+- Does the tour `summary` say what this is and why it matters, before any detail?
+- Is every term defined the first time it appears (rule 5), with one word for one meaning (rule 4)?
+- Does each title state one fact the code shows, with no slogan (rule 8)?
+- Does each note add the "so what" (section 1)? Is each sentence active (rule 2)?

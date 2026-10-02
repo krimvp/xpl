@@ -104,9 +104,11 @@ export const LINT_LIMITS = {
   sentenceWords: 25,
   /** A field whose sentences (two or more) average more words than this is a finding. */
   averageWords: 20,
-  /** A tour summary of fewer or more sentences than these is a finding (the skill asks for 2-4). */
+  /** A tour summary of fewer or more sentences than these is a finding (the skill asks for 2-4)... */
   summaryMinSentences: 2,
   summarySentences: 4,
+  /** ...or up to this many in an explainer of a change (its summary carries the behaviour, the risk and the tests). */
+  changeSummarySentences: 5,
   /** Quotes are cut to about this many characters. */
   quoteChars: 72,
   /**
@@ -222,6 +224,14 @@ export const ABSOLUTE_IDIOMS: readonly { phrase: string; only?: "end" | "connect
 
 /** An absolute word after one of these is not a claim about every case ("not all", "if every"). */
 const NOT_ABSOLUTE_AFTER = new Set(["not", "if", "unless", "whether", "when", "almost", "nearly"]);
+
+/**
+ * "all", "every" or "only" before a count in digits quotes a measured result ("all 22 new cases pass", "only 4 of
+ * the 22 fail"), which the test run proves. Words between them: "of", "the", "these", "those", "its", "their",
+ * "one". A count in words ("all three") still counts as a claim.
+ */
+const COUNTED = new Set(["all", "every", "only"]);
+const COUNT_AFTER = /^\s+(?:(?:of|the|these|those|its|their|one)\s+){0,3}\d/i;
 
 /** Brand and product words in camelCase that are not code identifiers. */
 const CAMEL_WORDS = new Set(["iOS", "macOS", "iPadOS", "iPhone", "iPad", "eBay", "jQuery", "npm"]);
@@ -765,6 +775,7 @@ class Linter {
       pattern.lastIndex = 0;
       for (let m = pattern.exec(plainWords); m; m = pattern.exec(plainWords)) {
         const end = m.index + m[0].length;
+        if (COUNTED.has(word) && COUNT_AFTER.test(text.slice(end))) continue;
         if (word === "only") {
           const next = /^\s+([A-Za-z]+)/.exec(text.slice(end))?.[1];
           if (next !== undefined && CONDITION_AFTER_ONLY.has(next.toLowerCase())) continue;
@@ -1195,16 +1206,20 @@ export function lintExplainer(explainer: Explainer): LintResult {
     lint.plain(at("title"), tour.title);
     // `summary` is optional (and newer than tours): read it defensively
     const summary = tour.summary;
+    const most = explainer.change
+      ? LINT_LIMITS.changeSummarySentences
+      : LINT_LIMITS.summarySentences;
+    const range = `${LINT_LIMITS.summaryMinSentences}-${most} sentences`;
     if (typeof summary === "string" && summary.trim() !== "") {
       const masked = lint.prose(at("summary"), summary);
       const count = masked ? sentences(masked.text).length : 0;
-      if (count > LINT_LIMITS.summarySentences) {
+      if (count > most) {
         lint.add(
           at("summary"),
           "tour-summary",
           excerpt(summary),
-          `${count} sentences (more than ${LINT_LIMITS.summarySentences})`,
-          "keep the summary to 2-4 sentences; move the rest into the steps",
+          `${count} sentences (more than ${most})`,
+          `keep the summary to ${range}; move the rest into the steps`,
         );
       } else if (count < LINT_LIMITS.summaryMinSentences) {
         lint.add(
@@ -1212,7 +1227,7 @@ export function lintExplainer(explainer: Explainer): LintResult {
           "tour-summary",
           excerpt(summary),
           `${plural(count, "sentence")} (fewer than ${LINT_LIMITS.summaryMinSentences})`,
-          "write 2-4 sentences: what this is and why it matters; for a change: what behaves differently, the risk, the tests",
+          `write ${range}: what this is and why it matters; for a change: what behaves differently, the risk, the tests`,
         );
       }
     } else {
@@ -1221,7 +1236,7 @@ export function lintExplainer(explainer: Explainer): LintResult {
         "tour-summary",
         excerpt(str(tour.title) ?? tourId),
         "no summary: readers see the summary first, under the tour title",
-        "add 2-4 sentences: what this is and why it matters; for a change: what behaves differently, the risk, the tests",
+        `add ${range}: what this is and why it matters; for a change: what behaves differently, the risk, the tests`,
       );
     }
     orderChecks(lint, tourId, tour, byId);

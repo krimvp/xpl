@@ -31,7 +31,7 @@ The examples use an invented change to `fixtures/ts-jobrunner` in the xpl repo: 
 
 `xpl change` prints the changed files with `+/-` counts, the **changed symbols** (`new` or `changed`), the **direct callers** of each outside tests, the **tests** that reference each, the symbols with **no test found**, and the changed lines outside any symbol. `xpl change <name>` prints it again. Read the intent too: `git log --format='%h %s%n%b' <base>..<head>`, and the PR or MR description when the user gave one. The text may say why the change was made only from these sources, and says so ("The commit message says ...").
 
-Then `xpl draft change <name> -o change.json`. The draft holds the map, the tour in review order (section 7) and an anchor in every changed file.
+Then `xpl draft change <name> -o change.json`. The draft holds the map, the tour in review order (section 7, steps `t10`, `t20`, ...) and an anchor in every changed file.
 
 ## 3. Read each changed piece
 
@@ -43,16 +43,15 @@ A "before" claim is any sentence about the old code: "used to", "no longer", "al
 
 - **Read what decided the old behaviour,** not only the removed lines: the callers (`git grep -n <name> <base> -- <dir>`), the defaults, the exception paths, and the library calls that can fail. In the example, the hunk only adds a check to `loadConfig`. What happened before is in `backoffDelay`, which the diff does not touch: `Math.min(baseDelayMs * 2 ** (attempt - 1), maxDelayMs)` returned `maxDelayMs` for every retry.
 - **Never infer old behaviour from the hunk alone.** Removed lines show what the old code said, not what it did for every input. A removed `split(":")[0]` cuts at the first `:`, not the last. An old lookup may have raised an exception that a caller turned into a 500. Run the base when the result depends on a library or on input values (section 1).
-- **Anchor it in the base.** A base anchor points at the old lines of a modified, renamed or deleted file: `{"file": "src/config.ts", "at": "base", "find": "<text from the old file>", "role": "usage"}`, or a `span` counted from line 1 of the old file (the offsets `xpl show --at base` prints). No `symbol`: the base is not indexed. Put the base anchor next to the head anchor of the same claim, old lines first. Code that the change does not touch is anchored without `at`: its old code is its current code. Format: `patch-format.md` section 1.
+- **Anchor it in the base.** A base anchor points at the old lines of a modified, renamed or deleted file: `{"file": "src/config.ts", "at": "base", "find": "<text from the old file>", "role": "usage"}`, or a `span` counted from line 1 of the old file (the offsets `xpl show --at base` prints). No `symbol`: the base is not indexed. Put it next to the head anchor of the same claim, in the order of SKILL.md, "The tour" (range order). Code that the change does not touch is anchored without `at`: its old code is its current code. Format: `patch-format.md` section 1.
 - **Write it "Before: ... Now: ..."**, with the input that shows the difference: "Before: `maxDelayMs: 100` with `baseDelayMs: 500` made each retry wait 100 ms. Now: `loadConfig` throws `config: retry.maxDelayMs must be at least retry.baseDelayMs`."
-- **The bundle shows the diff,** the code before in its own pane, and New or Changed on each box. So the text explains what the change means, and does not retell which lines moved.
-- When you could neither read nor run what decides a claim, leave the claim out and list it as not checked in the reply.
+- **The bundle shows the diff** (SKILL.md, "Show the result"), so the text explains what the change means, not which lines moved.
 
 ## 5. Who else is affected
 
 Start from the callers and tests `xpl change` printed. It sees direct calls only, so check, for each changed symbol:
 
-1. **Direct callers.** Read each one, anchor each caller that now behaves differently, and say why. List the others in one note as unaffected, with the reason. "Callers via instance" are a guess: the code builds the class, and the changed method runs when the instance is called. Confirm each one before you claim it. "Callers: none found" is common for a method reached through a variable or a framework: find the callers with `search` (SKILL.md, "Reading the code").
+1. **Direct callers.** Read each one, anchor each caller that now behaves differently, and say why. List the others in one note as unaffected, with the reason. "Callers via instance" are a guess (SKILL.md, hard rule 2): the code builds the class, and the changed method runs when the instance is called. "Callers: none found" is common for a method reached through a variable, a framework or a library: find the callers with `search` (SKILL.md, "Reading the code", which also says when you may name a library as the caller).
 2. **Consumers of a changed result.** When the change alters what a function returns or builds (a value, a URL, a status, an error), follow one more level: `xpl refs <caller> --in`. (Example: `runnerConfig` passes the retry settings to `Runner`, so `backoffDelay` sees only valid values now.)
 3. **Public entry points.** `search` for the name in `index.ts`, `__init__.py`, `__all__` and `export {`. A change to an exported function affects users outside the repo.
 4. **Siblings.** Other code that does the same job without the changed helper: `search -i` for the key, header, error text or concept. Say whether each one already behaves the new way, and anchor it.
@@ -71,14 +70,14 @@ Unchanged code that you show for context is described as unchanged: "Unchanged: 
 
 Understanding the change is the main review task, and files shown last get fewer comments. The draft builds the tour in this order:
 
-| Step | Title says                        | Shows                                                                           |
-| ---- | --------------------------------- | ------------------------------------------------------------------------------- |
-| 1    | what changes for users            | the map of the change; `code`: the 1-2 hunks that make the change               |
-| 2    | where the change enters           | the public function, command or route that reaches the change (often unchanged) |
-| 3+   | each changed piece, one step each | the hunk in call order, with the base lines next to it; "Before: ... Now: ..."  |
-| next | who else is affected              | callers, consumers, public exports and siblings (section 5)                     |
-| next | tests and gaps                    | the changed test files; what no test covers                                     |
-| last | risks and open questions          | the worst realistic failure, edge cases, inputs that still behave the old way   |
+| Step | Title says                        | Shows                                                                                     |
+| ---- | --------------------------------- | ----------------------------------------------------------------------------------------- |
+| 1    | what changes for users            | the map of the change; `code`: the 1-2 hunks that make the change                         |
+| 2    | where the change enters           | the code that calls the change (often unchanged); none found: the changed public function |
+| 3+   | each changed piece, one step each | the hunk in call order, with the base lines next to it; "Before: ... Now: ..."            |
+| next | who else is affected              | callers, consumers, public exports and siblings (section 5)                               |
+| next | tests and gaps                    | the changed test files; what no test covers                                               |
+| last | risks and open questions          | the worst realistic failure, edge cases, inputs that still behave the old way             |
 
 Keep the first step and the last in place. To fit a small change, merge the rest:
 

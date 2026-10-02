@@ -63,7 +63,7 @@ Where the index shows less than runs:
 - A method reached through a variable (`await response(...)` runs `__call__`) has no callers in `refs --in`: `search` for the name, or find where the object is built (`refs <class> --in`).
 - A call to a base-class method with no body runs a subclass method: anchor the one that runs, and link them with an `llm` `calls` edge.
 - Event buses, DI, callbacks, HTTP handlers, queues and config keys read by name: `search` for `emit`, `on(`, `register` and the topic, route or key, then link with an `llm` edge.
-- Calls into dependencies are not indexed: anchor the call site and claim nothing about the library.
+- Calls into dependencies are not indexed: anchor the call site and describe nothing inside the library. You may name a library as the caller of your code when a line in the repo shows it (a class passed as `httpx.Client(transport=...)`): anchor that line.
 - Stay at `--depth 1` on a hub. Stop when the question is answered.
 
 ## explain <question>: part of a project
@@ -86,11 +86,7 @@ Where the index shows less than runs:
 
 ## explain change <base>..<head>: a PR, an MR or a branch diff
 
-Follow `reference/explain-change.md`. In short:
-
-1. `xpl change <name> <base>..<head>` prints the changed files, the changed symbols, their direct callers outside tests, the tests that reference them, and what has no test. Use it instead of finding callers and tests by hand.
-2. `xpl draft change <name> -o change.json`: a map of the change and a tour in review order, every changed file anchored.
-3. `xpl show --at base <path> --lines a-b` prints the old code. How to anchor and write "before" claims: `explain-change.md` section 4.
+Follow `reference/explain-change.md`: recording the change, its callers and tests (use `xpl change` instead of finding them by hand), the old code (`xpl show --at base`), "before" claims, and the tour order.
 
 ## Working from a draft
 
@@ -99,14 +95,14 @@ A draft applies as it is. Each text holds `TODO: <what to write>`; each note sta
 - **Write every `TODO`** after you have read the code it anchors.
 - **Fix the structure only where the code shows the draft is wrong:** a caller marked "a guess" that never runs the changed code, a call that does not matter, a box with two responsibilities. Otherwise keep its ids, anchors and view settings.
 - **Add what the tour needs:** groups, flows, concepts, `llm` edges. `reference/patch-format.md` has a template per element: read sections 1 and 2, then only what you add. `reference/examples/` shows finished text.
-- **New anchors** follow `patch-format.md` section 1 (a step: 3.8). Anchor context code you only show with a file-relative `span` (no `symbol`), so it does not widen the bundle's boundary.
+- **New anchors** follow `patch-format.md` section 1 (a tour step: 3.9). Anchor context code you only show with a file-relative `span` (no `symbol`), so it does not widen the bundle's boundary.
 
 ## The tour
 
 - 5-9 steps, up to 12 for a change.
 - Top-down: the first step shows the big picture (the map). Then the main path in execution order, then the details that change the outcome. Edge cases and open questions come last. A repo tour visits every overview box or names the ones it skips.
 - Each step focuses one main element, plus at most one concept that explains it.
-- `code` on every step: at most 2 ranges, the one the note is about first, and `editor.primary` on its file.
+- `code` on every step: at most 2 ranges, and `editor.primary` on the file the note is about. **Range order:** the range the note talks about first; when the note is about a before and after, the before range (a base anchor), then the after range.
 - 4-8 boxes on a map. Every graph view a tour uses has `"stubs": {"mode": "none"}`; an overview has `excludeFiles` for tests, examples and docs. The drafts set both.
 
 ## Writing
@@ -122,7 +118,6 @@ The viewer shows each claim next to its code, so a wrong claim looks checked. Ch
 - **Absolute words** (all, every, never, only, "the same everywhere") need proof in the anchored code. "Every caller" needs `refs --in` and an anchor for each site. Otherwise name the sites or narrow the claim.
 - **Lists** read as complete: check that they are, or write "for example".
 - **Code, not folklore:** "stops waiting after the timeout", not "kills the job", when the code only races a timer.
-- **Guesses:** a caller or test that `xpl change` or a draft marks as a guess becomes a claim only after you read it.
 - **Changes:** "before" claims and test claims follow `reference/explain-change.md` sections 4 and 6.
 
 ## Apply and check
@@ -173,10 +168,10 @@ A talk built from existing views, by the rules of "The tour". Default: the newes
 ## Hard rules
 
 1. **You cannot invent code.** Every anchor must resolve. Never write hashes. Copy offsets from `show`, `refs` or `search` output of this session, or use `find`.
-2. **Read before you claim.** A ref or a draft's guess is a hint until you have seen the call. For a change, read old behaviour in the base code.
+2. **Read before you claim.** A ref, or a caller or test that `xpl change` or a draft marks as a guess, is a hint until you have seen the call.
 3. **Read-only on the user's repo and remotes.** Never post, comment, push or change their checkout (`.explainer/` aside).
 4. **`llm` edges only for what the index cannot see**, anchored at both ends.
-5. **Stable ids.** Slugs are chosen once, in kebab-case. Step ids are never renumbered or reused.
+5. **Stable ids.** Slugs are chosen once, in kebab-case. Step ids are never renumbered or reused. A change draft numbers its tour steps `t10`, `t20`, ...: a step you insert takes a free number between its neighbours (`t15`).
 6. **The user's edits win.** Never overwrite `origin: "user"` elements or `userFields`; for a view or tour they edited, make a new one or ask. `--actor user` only for text the user dictates.
 7. **Few things at the same level.** One primary tour; views only when a tour step uses them; 0-3 concepts; groups only as map boxes.
 8. **Lazy.** Explain what a view shows; leave the rest for `expand`.
