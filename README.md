@@ -5,6 +5,8 @@ and the editor highlights exactly the code it is about, across as many files as 
 dimmed. Put the cursor in the code and the diagram elements and concepts that cover that line light up.
 Claude writes the explanation as data, checked against a static index of your repo so it cannot point at
 code that is not there; a fixed viewer renders it, live or as one HTML file you can share or present.
+The page opens on a guide: a short summary, then the steps, each with a picture and its code. For a change
+(a PR or a branch), it also shows the diff, and claims about the old code are checked against the base commit.
 
 ![Explore mode: the step requeue(job, backoff) is selected; its call site in runner.ts and the method it calls in queue.ts are highlighted, the rest of both files is dimmed](docs/images/dispatch-step-selected-light.png)
 
@@ -30,9 +32,10 @@ TypeScript, Python or Go repository, ask Claude Code:
 Claude indexes the repo, writes `.explainer/<name>.explainer.json` (commit it; the indexes beside it are
 git-ignored) and gives you the result. Open it yourself with `xpl bundle <name> -o <name>.html` (one
 self-contained file that carries the source files the explainer shows: works offline, easy to share;
-`--files all` embeds every file of the repo) or `xpl view <name>` (a local server with live repo access:
-your edits are saved and "Explain this" clicks are queued for Claude). Other things to ask for: `explain this
-repo`, `expand <node>`, `make a tour` (Present mode: arrow keys step through it). More in
+`--files boundary` adds the callers, callees and tests around them, `--files all` every file of the repo) or
+`xpl view <name>` (a local server with live repo access: your edits are saved and "Explain this" clicks are
+queued for Claude). Other things to ask for: `explain this repo`, `explain change main...HEAD` (a PR or a
+branch), `expand <node>`, `make a tour` (Present mode: arrow keys step through it). More in
 [skill/code-explainer/README.md](skill/code-explainer/README.md).
 
 No Claude at hand? Every fixture ships an explainer:
@@ -53,15 +56,40 @@ xpl outline --depth 2                           # dirs, files, symbols: exact id
 xpl show src/runner.ts#Runner.dispatch --refs   # code with the 0-based offsets anchors use, and its calls
 xpl refs src/queue.ts#Queue.requeue --in        # who calls it (hops through interfaces)
 xpl new myrepo --title "My repo"                # .explainer/myrepo.explainer.json, bound to the index
+xpl draft repo myrepo -o /tmp/draft.json        # a patch skeleton from the index; you write the TODO text
+xpl lint myrepo --patch patch.json              # check the reader text as it would be after the patch
 xpl apply myrepo patch.json                     # check a patch against the index, then merge it: all or nothing
 xpl validate myrepo                             # every id and anchor still resolves?
+xpl lint myrepo                                 # plain-language and tour-order checks (--strict: exit 1 on any)
 xpl view myrepo                                 # http://127.0.0.1:4747 (falls back to a free port)
-xpl bundle myrepo -o myrepo.html                # one self-contained HTML file (--files all: every file; --tour <id>: a tour)
+xpl bundle myrepo -o myrepo.html                # one self-contained HTML file (--files boundary|all; --tour <id>)
 ```
 
-`xpl search`, `xpl anchors`, `xpl resolve` (after the code changed) and `xpl status` (what still needs
-explaining) complete the set: [skill/code-explainer/reference/cli.md](skill/code-explainer/reference/cli.md).
+`xpl search`, `xpl anchors`, `xpl resolve` (after the code changed), `xpl status` (what still needs
+explaining), `xpl change` and `xpl draft change|path` (below) complete the set:
+[skill/code-explainer/reference/cli.md](skill/code-explainer/reference/cli.md).
 The format of `patch.json`: [skill/code-explainer/reference/patch-format.md](skill/code-explainer/reference/patch-format.md).
+
+### Explaining a change
+
+A change explainer describes the head of a PR or a branch, and records the diff from git. Check out the
+head first: the index must be built from it.
+
+```sh
+xpl index                                       # index the head
+xpl new myrepo-pr-42 --title "PR 42: what it does"
+xpl change myrepo-pr-42 main...HEAD             # record the diff; print changed symbols, callers, tests
+xpl show --at base src/queue.ts --lines 80-95   # the old code, with the offsets a base anchor uses
+xpl draft change myrepo-pr-42 -o /tmp/pr-42.json   # map, anchors, a review-order tour; fill in every TODO
+xpl lint myrepo-pr-42 --patch /tmp/pr-42.json   # nothing written; fix what it reports
+xpl apply myrepo-pr-42 /tmp/pr-42.json
+xpl bundle myrepo-pr-42 -o pr-42.html --files boundary   # before and after, callers, callees, tests
+```
+
+Keep patch files outside the repo: a new file there makes the index stale. `main...HEAD` starts from the merge
+base; `A..B` takes two commits. A "before" claim is anchored in the old code with `"at": "base"` (and `find`,
+or a span from line 1 of the base file), so `xpl validate` checks it like any other claim. The viewer shows
+added and removed lines, a "Before" pane, New and Changed badges on the map, and the list of changed files.
 
 ## Languages and precision
 
@@ -124,10 +152,12 @@ build step between packages in development. After `npm run build`, `node package
 
 ## Docs
 
-- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): how it is built: schema, indexer, anchors and patches, CLI and
-  server API, viewer, known limitations.
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): how it is built: schema (change records and base anchors
+  included), indexer, anchors and patches, CLI (`change`, `draft`, `lint`) and server API, viewer (Read,
+  Explore, Present, the diff view), known limitations.
 - [docs/handoff.md](docs/handoff.md): the original design brief (schema draft and worked example).
 - [docs/review-2026-10-01.md](docs/review-2026-10-01.md): review of four generated explainers (two PRs,
   a whole repo, a subsystem), what that iteration changed, a validation run on an unseen PR, and the
   roadmap.
-- [skill/code-explainer/](skill/code-explainer/): what Claude reads: `SKILL.md`, `reference/`.
+- [skill/code-explainer/](skill/code-explainer/): what Claude reads: `SKILL.md`, `reference/` (the CLI,
+  the patch format, the writing rules, the guide for changes).
