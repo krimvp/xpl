@@ -2,7 +2,7 @@
 
 Everything you write goes into a JSON **patch**. `xpl apply <name> patch.json` (or `-` for stdin) merges it into `.explainer/<name>.explainer.json`, fills in hashes and resolved ranges, validates the result, and either writes everything or nothing.
 
-**Read only what the task needs.** Always: section 1 (anchors) and 2 (ids). Then the template of each element you write: 3.1 groups, 3.2 overlays (summaries of files and symbols), 3.3-3.4 edges, 3.5 concepts, 3.6 graph views, 3.7 flow views, 3.8 sequence views, 3.9 tours. The rest is for when a command points you there: 4 merge rules (what a resend replaces), 5 provenance (a `protected` warning), 6 the apply output, 7 rejection messages, 8 repair after the code changed.
+A draft (`xpl draft`) is a patch in this format: start from it, and use these templates for what you add. **Read only what the task needs.** Always: section 1 (anchors) and 2 (ids). Then the template of each element you write: 3.1 groups, 3.2 overlays (summaries of files and symbols), 3.3-3.4 edges, 3.5 concepts, 3.6 graph views, 3.7 flow views, 3.8 sequence views, 3.9 tours. The rest is for when a command points you there: 4 merge rules (what a resend replaces), 5 provenance (a `protected` warning), 6 the apply output, 7 rejection messages, 8 repair after the code changed.
 
 ```json
 {
@@ -134,7 +134,7 @@ In a graph view, include the group **and** its members to draw it as a container
 }
 ```
 
-The participants of a sequence or flow view and the boxes of a graph view count as "unexplained" (`xpl status`) until they have a `summary`, so write overlays for them in the same patch. Keep a summary to 1-2 sentences about what the code does, with its conditions; put longer lists and the remaining cases in `detail`. A summary is plain text, not markdown (`writing.md`, section 1): in a change explainer, write `Changed: ...` as plain words, without asterisks.
+The participants of a sequence or flow view and the boxes of a graph view count as "unexplained" (`xpl status`) until they have a `summary`, so write overlays for them in the same patch. What a summary says, how long it is and which markdown it takes: `writing.md`, section 1.
 
 ### 3.3 `llm` edge (only for links static analysis cannot see)
 
@@ -199,7 +199,7 @@ Calls, imports and inheritance appear in graph views on their own. To label or e
 
 ### 3.5 Concept (a cross-cutting idea)
 
-Required: `label`. Anchor the implementing code, the config keys and the tests; `related` lists elements to co-highlight (any element id).
+Required: `label`. Anchor the lines that decide (not the whole function), the config keys and the tests; `related` lists elements to co-highlight (any element id).
 
 ```json patch
 {
@@ -271,7 +271,7 @@ Edit `include` without resending it with `includeAdd` (ids to append; those alre
 }
 ```
 
-`excludeFiles` is a list of globs on repo paths: `**` crosses directories, `*` stays inside one path segment, `?` is one character, and a pattern without a `/` also matches the file name at any depth. Derived edges and stubs are computed without the references that start or end in a matching file, so an edge that exists only through test files disappears (and the others count only their remaining references). Nodes in `include` always show, the edges of a file or symbol you include by name stay, stored (`llm`/`user`) edges are never filtered. Use it on every overview, for tests, examples and docs (they add edges and ghosts that are not the design):
+`excludeFiles` is a list of globs on repo paths: `**` crosses directories, `*` stays inside one path segment, `?` is one character, and a pattern without a `/` also matches the file name at any depth. Derived edges and stubs are computed without the references that start or end in a matching file, so an edge that exists only through test files disappears (and the others count only their remaining references). Nodes in `include` always show, the edges of a file or symbol you include by name stay, stored (`llm`/`user`) edges are never filtered. On an overview, tests, examples and docs add edges and ghosts that are not the design; `xpl draft repo` sets a list like this one:
 
 ```json patch
 {
@@ -293,7 +293,7 @@ Edit `include` without resending it with `includeAdd` (ids to append; those alre
 }
 ```
 
-**Crowded views (stubs).** A graph view that a tour shows uses `"stubs": {"mode": "none"}` (SKILL.md, "Maps"). The rest of this section is for views used to explore. Edges that leave a graph view are dashed stubs to ghost boxes. By default (`"stubs": {"mode": "top", "max": 8}`) a view draws only the 8 ghosts that the most references lead to. The outside symbols of a file the view shows in part fold into one `ghost:rest:file:<path>` ("rest of <file>"), and the ghosts beyond the 8 into `ghost:more:in` / `ghost:more:out` ("+N more"). A folded ghost is not an element and cannot go in `include`: `xpl status` prints up to 3 of the elements each one stands for (`ghost:rest:file:src/runner.ts ×6 → sym:src/runner.ts#Runner.log ×3, ...`), `xpl status --json` (`views[].ghosts.list[].targets`) lists all of them with their reference counts, the viewer's menu (click the ghost) lists them too, and `xpl refs <shown id> --out` prints what leaves a box. To expand, `includeAdd` one of those elements, or `file:<path>` for the whole file as one box (`ghost:file:x` and `ghost:dir:x`, the names the viewer gives plain ghosts, still mean `file:x` and `dir:x`).
+**Crowded views (stubs).** A graph view that a tour shows uses `"stubs": {"mode": "none"}` (SKILL.md, "The tour"). The rest of this section is for views used to explore. Edges that leave a graph view are dashed stubs to ghost boxes. By default (`"stubs": {"mode": "top", "max": 8}`) a view draws only the 8 ghosts that the most references lead to. The outside symbols of a file the view shows in part fold into one `ghost:rest:file:<path>` ("rest of <file>"), and the ghosts beyond the 8 into `ghost:more:in` / `ghost:more:out` ("+N more"). A folded ghost is not an element and cannot go in `include`: `xpl status` prints up to 3 of the elements each one stands for (`ghost:rest:file:src/runner.ts ×6 → sym:src/runner.ts#Runner.log ×3, ...`), `xpl status --json` (`views[].ghosts.list[].targets`) lists all of them with their reference counts, the viewer's menu (click the ghost) lists them too, and `xpl refs <shown id> --out` prints what leaves a box. To expand, `includeAdd` one of those elements, or `file:<path>` for the whole file as one box (`ghost:file:x` and `ghost:dir:x`, the names the viewer gives plain ghosts, still mean `file:x` and `dir:x`).
 
 Keep a graph view readable: `"none"` for no stubs at all (every graph view a tour shows), `"mode": "all"` (one ghost per outside element) only for small views, `{"mode": "top", "max": 6}` for another cap, and `hidden` for the ghost and stub ids you do not need (`status --json` lists both: `views[].ghosts.list[].id` and `views[].ghosts.stubIds`). `xpl status` prints each view's ghosts and stubs and warns above 12. An arrow from a box to its own container is never drawn. In a src layout start the overview at `dir:src/<pkg>`, not `dir:src` (that is one box for the whole tree).
 
@@ -307,7 +307,7 @@ Keep a graph view readable: `"none"` for no stubs at all (every graph view a tou
 
 Use `type: "flow"` when the point is what the code decides: stages, conditions, and where each path ends. It takes the same fields as a sequence view (3.8): `title`, `participants`, `steps`, `scope`, anchors. Each step may add `shape` (`"stage"`, `"decision"` or `"terminal"`) and `next: [{"step": "<id>", "label": "<when>"}]`. Without `next`, a step goes on to the next step in the list, unless it is a `terminal`; `next: []` ends a path. Every `next` target must be a step of the same view. Model each branch and loop explicitly, and anchor the condition that decides it. A stage or decision inside one function uses that function's participant as both `from` and `to`, with `kind: "call"`; the box shows the label, not the two ends. `shape` and `next` are also accepted by `stepsUpdate` (`null` clears them).
 
-The flow box shows the step's `label` in large type, so a flow label is a plain stage name ("Requeue with a delay"), not the call text; the call goes in the anchors. A `decision` label is a short question or condition ("Did the attempt succeed?"), and each `next` label says when that branch is taken ("yes", "attempts left").
+The box shows the `label` in large type, so a flow label names a stage (`writing.md`, section 3), and the call goes in the anchors. A `decision` label is a short question ("Did the attempt succeed?"), and each `next` label says when that branch is taken ("yes", "attempts left").
 
 ```json patch
 {
@@ -428,7 +428,7 @@ The flow box shows the step's `label` in large type, so a flow label is a plain 
 
 A sequence view also appears in the reader's Process flow tab, as an ordered list of its calls; that list is not a model of the decisions. Write a flow view when the decisions are the point.
 
-**Supporting files.** For configuration and files that code loads by name, use configuration-key anchors (`role: "config"`) and edges with `kind: "loads"`, `"discovers"`, `"configures"` or `"overrides"`, anchored at both ends. A loader points to the loaded file or plugin directory (or group); configuration points to the code that reads it; an overriding file points to the file it overrides. Say the conditions and the order of precedence in the edge summary. Index `resources` records resolve literal paths and supported globs, with `static` or `inferred` labels; a matching file does not prove that it is loaded at runtime.
+**Supporting files.** For configuration and files that code loads by name, use configuration-key anchors (`role: "config"`) and edges with `kind: "loads"`, `"discovers"`, `"configures"` or `"overrides"`, anchored at both ends. A loader points to the loaded file or plugin directory (or group); configuration points to the code that reads it; an overriding file points to the file it overrides. Say the conditions and the order of precedence in the edge summary, as the code shows them: file names and reading order do not prove precedence. Index `resources` records resolve literal paths and supported globs, with `static` or `inferred` labels; a matching file does not prove that it is loaded at runtime.
 
 ### 3.8 Sequence view (steps, frames)
 
@@ -595,17 +595,17 @@ Required: `type: "sequence"`, `title`, `participants` (lifelines, left to right)
 
 ### 3.9 Tour (the guide)
 
-The tour is what the reader sees first: its `title`, its `summary`, then its steps in order. Required: `title`, `steps`. Optional: `summary`, 2-4 sentences of markdown that say what this is and why it matters (for a change: the behaviour change, the risk, what the tests cover); `null` clears it. Write one on every tour (`writing.md`, section 4).
+The tour is what the reader sees first: its `title`, its `summary`, then its steps in order. Required: `title`, `steps`. Optional: `summary` (markdown; `null` clears it). Write one on every tour (`writing.md`, section 4).
 
 A tour step has:
 
 - `id` (`t1`, `t2`, ...; unique in the tour, never renumbered) and `view` (the picture the step shows);
-- `focus`: one main element (a box, a flow or sequence step, an edge), plus at most one concept that explains it. A step id must belong to that tour step's `view`, else a warning;
-- `note` (markdown): the first line is `### <plain title>`, about 8 words, a statement, no code. The viewer shows that line as the step title (contents, guide, Present) and does not repeat it. The body, 1-4 sentences, says what no summary says: why this step matters, what to look at, the condition that changes the outcome;
-- `code`: `AnchorInput[]` that replaces the code the focus would show. Give it on every step: at most 2 ranges, the range the note talks about first. A group, file or directory focus without it shows whole files (focusing `grp:retry-engine` alone shows runner.go 1-146, queue.go 1-154 and deadletter.go 1-35);
-- `editor`: `primary` (the file shown first: the file of the first `code` range), `dimOthers`, `hideFileTree`.
+- `focus`: element ids to highlight. A flow or sequence step id must belong to that tour step's `view`, else a warning;
+- `note` (markdown): the first line is `### <plain title>`, which the viewer shows as the step title and does not repeat; then the body (`writing.md`, sections 1 and 3);
+- `code`: `AnchorInput[]` that replaces the code the focus would show (base anchors too). Without it, a group, file or directory focus shows whole files (focusing `grp:retry-engine` alone shows runner.go 1-146, queue.go 1-154 and deadletter.go 1-35);
+- `editor`: `primary` (the file shown first), `dimOthers`, `hideFileTree`.
 
-Order the steps top-down: the big picture first, then the main path, then the details, then edge cases and open questions.
+How many steps, in which order, and how many code ranges: SKILL.md, "The tour".
 
 ```json patch
 {
@@ -703,7 +703,7 @@ To change some steps of a tour, send `stepsUpdate` instead of the whole `steps`:
 }
 ```
 
-A tour has provenance like an element: what the user edits in the tour panel (`title`, `summary`, `steps`) becomes theirs (section 5), and an `llm` patch can then neither change those fields nor remove the tour. A `stepsUpdate` of a tour whose steps the user edited is skipped with a `protected` warning, like `steps`. Once the user has edited the tour, make a new tour (new slug) or ask.
+A tour has provenance like an element: what the user edits in the tour panel (`title`, `summary`, `steps`) becomes theirs (section 5), and an `llm` patch can then neither change those fields nor remove the tour. A `stepsUpdate` of a tour whose steps the user edited is skipped with a `protected` warning, like `steps`.
 
 ### 3.10 `title` and `remove`
 
@@ -821,7 +821,7 @@ A rejection lists **every** error of the patch at once (anchors, ids and referen
 
 ## 8. Repairing after code changes
 
-`xpl resolve <name> --write` (after `xpl index`) marks every anchor `ok`, `moved` (span updated automatically), `drifted` (text changed) or `missing`. A drifted anchor stays drifted until you resend it: re-read the code (`xpl anchors <name> <id>` shows what the anchor points at now), resend the element with fresh anchors (no `hash`) and a summary that matches the new code. A missing anchor means the symbol is gone or renamed: its message says where the code went when it can tell (`the anchored lines now sit in sym:… (anchor: file: …, symbol: …, span: {from, to})`, or a same-sized symbol as a `did you mean`); report it to the user and ask before re-anchoring or removing (see SKILL.md, "After the code changed"). Ids that vanished from a view (`xpl status`: broken references) are fixed with `includeRemove`, or by resending `members` / `participants` / `steps` without them. To repair **one step**, use `stepsUpdate` (3.8): the other steps stay as they are.
+`xpl resolve <name> --write` (after `xpl index`) marks every anchor `ok`, `moved` (span updated automatically), `drifted` (text changed) or `missing`. A drifted anchor stays drifted until you resend it: re-read the code (`xpl anchors <name> <id>` shows what the anchor points at now), resend the element with fresh anchors (no `hash`) and a summary that matches the new code. A missing anchor means the symbol is gone or renamed: its message says where the code went when it can tell (`the anchored lines now sit in sym:… (anchor: file: …, symbol: …, span: {from, to})`, or a same-sized symbol as a `did you mean`); report it to the user and ask before re-anchoring or removing; never drop one silently or retarget it to something merely similar. Never change a field listed in `userFields`, and never touch `origin: "user"` elements: `xpl status` counts their drift apart, for the user. Ids that vanished from a view (`xpl status`: broken references) are fixed with `includeRemove`, or by resending `members` / `participants` / `steps` without them. To repair **one step**, use `stepsUpdate` (3.8): the other steps stay as they are.
 
 1. `xpl anchors <name> dispatch:4` shows what the step's anchors point at now (`xpl status` names the drifted steps);
 2. rewrite the drifted or missing anchors from `xpl show` output (`find` or `span`, no `hash`), and the summary if the new code says something else;
