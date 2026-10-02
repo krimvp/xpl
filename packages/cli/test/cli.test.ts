@@ -19,6 +19,8 @@ describe("xpl cli", () => {
       "resolve",
       "status",
       "lint",
+      "change",
+      "draft",
       "view",
       "bundle",
     ]);

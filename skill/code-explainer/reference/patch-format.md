@@ -39,6 +39,7 @@ An anchor says "this element is about that code". You give a place; the CLI chec
 | `find`   | alternative to `span` (give one): text that occurs **exactly once** in the symbol (or file). May be multi-line; matched exactly, then ignoring whitespace differences. It is stored as the span of the lines it touches |
 | `role`   | `definition` where it lives · `call-site` where it is invoked (the caller side of an arrow) · `usage` other notable references · `config` config that shapes behaviour · `test` tests that exercise it                  |
 | `hash`   | optional; if given it must equal the current hash, else the anchor is rejected as stale. Leave it out                                                                                                                   |
+| `at`     | `"base"`: the code **before** the change the explainer records (`xpl change`), not the current code. Only with `find` or a file-relative `span`, never `symbol`; see "Anchors in the code before the change" below      |
 
 Forms you will use (all verified against the TS fixture):
 
@@ -53,6 +54,24 @@ Forms you will use (all verified against the TS fixture):
 | text in a file without symbols    | `{"file": "README.md", "find": "A failed one is requeued", "role": "usage"}`                                    |
 
 `find` anchors exactly the lines its text touches: a one-line `find` on the first line of a three-line call anchors one line. For a whole call or block use `span` (`+34..36` from `show --refs`) or a multi-line `find`. Prefer `find` for one-line call sites (it checks itself) and `span` for blocks (copy the numbers, never compute them). `symbol` can point at any indexed symbol, including class fields and config keys (`xpl outline --keys`).
+
+### Anchors in the code before the change (`at: "base"`)
+
+For a change, a claim about the old code ("before this PR, the file was sent at once") needs an anchor in the old code. Run `xpl change <name> <base>..<head>` first: it records the change. Then:
+
+```json base
+{
+  "file": "starlette/responses.py",
+  "at": "base",
+  "find": "await self._handle_simple(send, send_header_only, send_pathsend)\n        else:",
+  "role": "usage"
+}
+```
+
+- The file must be changed by the change and have an old version: modified, renamed or deleted. An added file has no old version, and an unchanged file's old code is its current code (anchor it without `at`). A renamed file may be named by its old or new path; it is stored under the new one.
+- No `symbol`: only the current code is indexed. Use `find` (text that occurs once in the old file) or a `span` counted from line 1 of the old file. `xpl show --at base <path> [--lines a-b]` prints the old file with those offsets.
+- `xpl validate` checks base anchors against the recorded change; `xpl anchors` prints them as `<file>@base +a..b` with the old code.
+- Base anchors do not count as evidence for an `llm` edge, and the code view of the current code does not highlight them.
 
 ## 2. Ids
 
@@ -666,7 +685,25 @@ Order the steps top-down: the big picture first, then the main path, then the de
 }
 ```
 
-A tour has provenance like an element: what the user edits in the tour panel (`title`, `summary`, `steps`) becomes theirs (section 5), and an `llm` patch can then neither change those fields nor remove the tour. Tours have no `stepsUpdate`: to change one step, resend that tour's `steps` whole (other tours are not touched). Once the user has edited the tour, make a new tour (new slug) or ask.
+To change some steps of a tour, send `stepsUpdate` instead of the whole `steps`: `[{id, ...fields}]` is merged into the steps with those ids. The fields are a step's (`view`, `focus`, `note`, `code`, `editor`); `code` takes `AnchorInput`s and replaces that step's code; `null` clears `note`, `code` or `editor`. An id that is not a step of the tour is an error that names its steps. To add or remove a step, send `steps` whole. A new tour sends `steps`.
+
+```json patch
+{
+  "tours": [
+    {
+      "id": "tour:retries",
+      "stepsUpdate": [
+        {
+          "id": "t2",
+          "note": "### Each pass runs one attempt\n\nThe loop leases a free worker and runs the job once. The timeout comes from the runner's config."
+        }
+      ]
+    }
+  ]
+}
+```
+
+A tour has provenance like an element: what the user edits in the tour panel (`title`, `summary`, `steps`) becomes theirs (section 5), and an `llm` patch can then neither change those fields nor remove the tour. A `stepsUpdate` of a tour whose steps the user edited is skipped with a `protected` warning, like `steps`. Once the user has edited the tour, make a new tour (new slug) or ask.
 
 ### 3.10 `title` and `remove`
 
@@ -679,6 +716,8 @@ A tour has provenance like an element: what the user edits in the tour panel (`t
 - **Arrays and objects replace wholesale:** `members`, `include`, `hidden`, `excludeFiles`, `participants`, `steps`, `frames`, `anchors`, `related`, `scope`, `layout`. To add one member, resend the whole list (read the current one from the explainer JSON, which you may read but never edit). The exception is a graph view's `include`, which also has `includeAdd` / `includeRemove` (3.6): no list to resend.
 - **`null` clears** an optional field: `summary` (of an element or a tour), `detail`, `members`, `related`, `edgeKinds`, `hidden`, `excludeFiles`, `stubs`, `layout`, `frames` (in a `stepsUpdate` entry: a step's `summary` and `edge`). Anything else rejects `null` (`label cannot be null`), and a group without members is invalid anyway.
 - **Sequence and flow `steps` are sent whole**, every step with its id. Keep ids; insert with the next free number at the right array position. Dropping a step warns (`steps … were dropped`) and then fails if a frame or tour still points at it. To change one step, use `stepsUpdate` (3.8) instead of resending the list: `[{id, ...fields}]` is merged into the steps with those ids (`anchors` replace that step's anchors, `null` clears `summary` or `edge`), after `steps` when both are sent; an id that is not a step of the view is an error; the user's edits of the view's `steps` protect it as they protect `steps`.
+- **Tour `steps` are sent whole too**, or edited by id with the tour's `stepsUpdate` (3.9): `note`, `code` and `editor` take `null`.
+- **The change record (`change`) is not part of a patch:** `xpl change` writes it from git.
 - **Stored anchors resend verbatim**, but a `hash` in them must still equal the current text: for anchors whose code changed, resend without `hash` (or as `find`/`span`).
 - **`kind` of a node and `type` of a view cannot change.**
 - **Provenance is managed for you** (section 5): new elements, views and tours get `{origin: "llm", commit}`; you cannot set `origin: "user"`; user-owned elements, fields and tours are left alone.

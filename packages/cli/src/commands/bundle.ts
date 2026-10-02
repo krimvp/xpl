@@ -1,7 +1,8 @@
 import { resolve } from "node:path";
-import { injectBundle, suggestIds } from "@xpl/core";
+import { describeChange as describeChangeRange, injectBundle, suggestIds } from "@xpl/core";
 import {
   BOUNDARY_MAX,
+  collectBaseFiles,
   collectFiles,
   defaultIndexChoice,
   embedIndex,
@@ -66,6 +67,28 @@ function describeFiles(c: CollectedFiles): string {
   );
 }
 
+/**
+ * `change 85c3b74..2284ff0: 2 changed files in (1 added to the selection), code before the change of 2 (14.1 KB)`.
+ */
+function describeChange(
+  c: CollectedFiles,
+  base: { files: Record<string, string>; bytes: number; missing: string[] },
+  range: string,
+): string {
+  const changed = c.changed;
+  const parts = [
+    `change ${range}: ${plural(changed?.files ?? 0, "changed file")} in` +
+      (changed && changed.added.length > 0
+        ? ` (${changed.added.length} added to the selection: ${listText(changed.added)})`
+        : ""),
+    `code before the change of ${plural(Object.keys(base.files).length, "file")} (${formatBytes(base.bytes)})`,
+  ];
+  if (base.missing.length > 0) {
+    parts.push(`base text unreadable for ${listText(base.missing)}`);
+  }
+  return parts.join(", ");
+}
+
 /** `index 1.3 MB (pruned from 9.4 MB)`, or just `index 9.4 MB` when the whole index is embedded. */
 function describeIndex(e: EmbeddedIndex): string {
   const size = formatBytes(e.bytes);
@@ -102,6 +125,9 @@ export const bundleCommand: CommandSpec = {
     "index carries `pruned` with the counts of the whole one. --embed-index full keeps the whole index (the default with",
     "--files all); --embed-index pruned prunes for whichever files are embedded (with --files all there is nothing to",
     "prune). (--index still picks the index file to read, as for every command.)",
+    "With a change recorded (`xpl change`), every changed file that exists at head is embedded whatever --files says",
+    "(the summary says how many the selection had left out), and so is the code before the change of every modified,",
+    "renamed or deleted file (`baseFiles`, read from git), so the reader can compare before and after.",
     "--mode present opens in present mode; --tour <id> starts that tour (and implies --mode present).",
     "The output path is printed as given (absolute when you gave it absolute); -o is relative to the working",
     "directory.",
@@ -178,10 +204,17 @@ export const bundleCommand: CommandSpec = {
       files: collected.paths,
       choice: indexOption ?? defaultIndexChoice(collected.choice),
     });
+    const base = collectBaseFiles(loaded.explainer, ws.texts);
+    if (base && base.missing.length > 0) {
+      ctx.warn(
+        `the code before the change could not be read for ${listText(base.missing)} (git show failed): the reader will see no "before" for ${base.missing.length === 1 ? "it" : "them"}`,
+      );
+    }
     const bundle = makeBundle({
       explainer: loaded.explainer,
       index: embeddedIndex.index,
       files: collected.files,
+      ...(base !== undefined ? { baseFiles: base.files } : {}),
       mode,
       ...(tour !== undefined ? { tour } : {}),
     });
@@ -216,6 +249,19 @@ export const bundleCommand: CommandSpec = {
           indexed: collected.indexedFiles,
           indexedBytes: collected.indexedBytes,
         },
+        ...(base !== undefined && collected.changed !== undefined
+          ? {
+              change: {
+                base: loaded.explainer.change!.base,
+                head: loaded.explainer.change!.head,
+                changedFiles: collected.changed.files,
+                addedToSelection: collected.changed.added,
+                baseFiles: Object.keys(base.files),
+                baseBytes: base.bytes,
+                ...(base.missing.length > 0 ? { baseMissing: base.missing } : {}),
+              },
+            }
+          : {}),
         index: {
           path: ws.indexRel,
           commit: ws.index.commit,
@@ -229,8 +275,13 @@ export const bundleCommand: CommandSpec = {
       });
       return 0;
     }
+    const change = loaded.explainer.change;
+    const changeText =
+      base !== undefined && change !== undefined
+        ? `, ${describeChange(collected, base, describeChangeRange(change))}`
+        : "";
     ctx.out(
-      `wrote ${out} (${formatBytes(bytes)}): ${loaded.rel}, ${describeFiles(collected)}, ${describeIndex(embeddedIndex)}, mode ${mode}${tour !== undefined ? `, tour ${tour}` : ""}`,
+      `wrote ${out} (${formatBytes(bytes)}): ${loaded.rel}, ${describeFiles(collected)}${changeText}, ${describeIndex(embeddedIndex)}, mode ${mode}${tour !== undefined ? `, tour ${tour}` : ""}`,
     );
     return 0;
   },

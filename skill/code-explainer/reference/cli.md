@@ -85,7 +85,7 @@ file:config/default.yaml  yaml  1-22  in=0 out=0
     sym:config/default.yaml#retry.maxRetries  key  14-14  in=0 out=0
 ```
 
-## `xpl show <id> [--refs] [--context n] [--lines a-b] [--max-lines n]`
+## `xpl show <id> [--refs] [--context n] [--lines a-b] [--max-lines n]` · `xpl show --at base <path> [--lines a-b]`
 
 Code with **0-based offsets from the symbol's first line**: the numbers `span` uses (for a file, offset = line − 1). Header: `<id> (<kind>) <file>:<first>-<last> <hash>`. Directories and the repo list their children. `--context n` adds n lines around a symbol (marked `┆`, no offsets). `--lines a-b` selects absolute file lines within the element. Output is cut after 400 lines (`--max-lines 0` = all).
 
@@ -113,6 +113,17 @@ incoming refs: 1 (call 1)
 ```
 
 A config key shows like any symbol: `xpl show config/default.yaml#retry` prints `13 0│ retry:` … `16 3│   maxDelayMs: 30000`.
+
+`--at base <path>` prints a changed file as it was **before** the change the explainer records (`xpl change`, below). The offsets count from line 1 of the old file: they are what a base anchor's `span` uses. `-` marks the lines the change removes or rewrites. Paths only (the old code is not indexed). A renamed file takes its old or new path. With several explainers that record a change, pick one with `--explainer <name>`.
+
+```
+$ xpl show --at base src/runner.ts --lines 80-82
+src/runner.ts before the change 5774f2c..349730f (modified, base 5774f2c): lines 1-110; spans count from line 1
+80 79│-        await this.queue.deadLetter(job, result.error);
+81 80│         this.stats.deadLettered += 1;
+82 81│         this.log(`dead-lettered ${job.id} after ${attempts} attempts`);
+(- marks lines the change removes or rewrites)
+```
 
 ## `xpl refs <id> [--in|--out] [--kind k] [--depth n] [--max-children n] [--limit n] [--tests]`
 
@@ -225,7 +236,7 @@ Validates and applies a patch (format: `patch-format.md`; `xpl apply --help` pri
 
 **A rejection lists every error of the patch at once**: anchors, ids and references are checked in one pass (an element whose anchor failed is still checked for its other problems; checks that depend on the failed anchor, like the evidence an `llm` edge needs at both ends, wait until it is fixed), so fix them all before applying again. Warnings that matter now are listed with them: a span that starts or ends on a blank line is most likely off by one (the message gives the offset where the code starts or ends), an id that names nothing carries `Did you mean: ...`. Results and rejections print on stdout; fatal errors (`error: patch … is not valid JSON`, unknown explainer, unreadable patch file) go to stderr.
 
-`changed:` lists every id the patch added, changed or removed. A `stepsUpdate` names the view and each step it updated; an upsert that changes nothing is not listed (`no changes: the patch matches …`).
+`changed:` lists every id the patch added, changed or removed. A `stepsUpdate` names the view and each step it updated (for a tour: the tour and `<tour id>/<step id>`); an upsert that changes nothing is not listed (`no changes: the patch matches …`).
 
 ```
 $ xpl apply jobrunner steps.json
@@ -294,6 +305,17 @@ Shows what an explainer's anchors point at, so you can verify spans without read
 A long anchor is cut to 12 lines (`--max-lines n`; `--full` or `--max-lines 0` prints all): its first lines, a `... N lines elided (a-b)` line with the `xpl show … --lines a-b` that reads them, and its **last** lines, because the end of a span is where an off-by-one hides.
 
 Ids: element ids as they are (`concept:retry-policy`, `dispatch:3`, `edge:job-completed`, `sym:src/runner.ts#Runner.dispatch`, `tour:intro/t2` for one tour step), a view (`view:dispatch`: its steps), a tour (`tour:intro`: every step), or the loose forms the other commands take (`src/runner.ts#Runner.dispatch`). No ids: every element with anchors. An element that exists but has no stored anchors is listed as such (the viewer falls back to its symbol, file or members); an unknown id fails with suggestions.
+
+A base anchor (`at: "base"`, an anchor in the code before the change) prints as `<file>@base +a..b`, marked `[before the change]`, with the old code and its offsets from line 1:
+
+```
+$ xpl anchors jobrunner concept:dead-letter-reason
+concept:dead-letter-reason  (concept, llm)  2 anchors
+  1. usage  src/runner.ts@base +79..79  ok  lines 80-80  [before the change]
+     80 79│         await this.queue.deadLetter(job, result.error);
+  2. usage  src/runner.ts#Runner.dispatch +38..38  ok  lines 80-80
+     80 38│         await this.queue.deadLetter(job, `${result.error} (after ${attempts} attempts)`);
+```
 
 A tour step with a `code` override shows its stored anchors. One without shows what the viewer will derive from its `focus`: the code of the focused elements, each range marked `[derived from <element>]` (`no code for <id>` when a focused element has none to show). A group, file or directory focus derives to whole files: that is the sign a step needs a `code` override. Derived ranges are not stored anchors and are counted apart.
 
@@ -437,35 +459,44 @@ view:dispatch-code (graph): Runner.dispatch and its neighbours
 
 `.explainer/requests.json` is a JSON array of `{elementId, note?, kind?, view?, label?, at, explainer?}`; the element may be a node, edge, concept, step or ghost id. Delete the file after handling.
 
-## `xpl lint <explainer> [--strict]`
+## `xpl lint <explainer> [--patch <file|->] [--strict]`
 
-Checks the text a reader sees, without the index: the explainer title, tour titles, tour `summary`, tour step notes, view titles, flow and sequence step labels and summaries, the `summary` and `detail` of nodes, edges and concepts, and the labels of groups and concepts. It applies the rules of `reference/writing.md`. Run it before `xpl bundle`, and fix what it finds with a patch.
+Checks the text a reader sees, without the index: the explainer title, tour titles, tour `summary`, tour step notes, view titles, flow and sequence step labels and summaries, the `summary` and `detail` of nodes, edges and concepts, and the labels of groups and concepts. It also checks the order of each tour. It applies the rules of `reference/writing.md`. Run it before `xpl bundle`, and fix what it finds with a patch.
 
-| Rule                | Finds                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `tour-summary`      | a tour without a `summary`, or one of more than 4 sentences                                                                                                                                                                                                                                                                                                                                                                    |
-| `note-heading`      | a tour note that does not start with a `### Plain title` line (and says so when it starts with a placeholder such as `Fix 1:`)                                                                                                                                                                                                                                                                                                 |
-| `code-title`        | a title that looks like code: a call `f(`, an identifier with `_`, a dotted name `a.b`, a `#` in a name, code operators, a code keyword first (`return x`), one camelCase identifier. Code in backticks inside a plain title is fine (``How `Host.matches` reads the header``)                                                                                                                                                 |
-| `placeholder-title` | a title such as `Fix 1`, `Note`, `Step 3`                                                                                                                                                                                                                                                                                                                                                                                      |
-| `long-sentence`     | a sentence over 25 words                                                                                                                                                                                                                                                                                                                                                                                                       |
-| `long-average`      | a field whose sentences average over 20 words                                                                                                                                                                                                                                                                                                                                                                                  |
-| `bare-it`           | a sentence that starts with `It` or `This` and a verb (`It calls ...`, `This is ...`): name the subject                                                                                                                                                                                                                                                                                                                        |
-| `filler-word`       | marketing and filler words (seamless, robust, leverage, elegant, powerful, simply, just, basically, delve, crucial, comprehensive, cutting-edge, ...), each with a replacement                                                                                                                                                                                                                                                 |
-| `absolute-word`     | all, every, everything, everywhere, everyone, anything, never, always, only, consistent(ly), guaranteed: check every case and anchor it, or narrow the claim. Not counted: `only when/if/after ...` (a condition), `not all`, `if every`, and idioms (`not ... at all`, `after all.`, `once and for all`, `all of a sudden`; `at all times` still counts)                                                                      |
-| `repeats-summary`   | a note sentence that repeats the summary of an element the step focuses (the reader sees both)                                                                                                                                                                                                                                                                                                                                 |
-| `flow-label-code`   | a flow step label written as code; flows name stages in plain words. Sequence views may keep call text                                                                                                                                                                                                                                                                                                                         |
-| `markdown-in-plain` | `**bold**`, `__bold text__`, a `# heading` line or a `[text](link)` in a field the viewer shows as plain text, where the marks show as-is: the explainer, tour and view titles, labels, and the `summary` of nodes, edges, concepts and steps. Markdown works only in a tour `summary`, a step `note` (with its `### title` line) and a `detail`. Code spans and code shapes (`**kwargs`, `__init__`, `xs[0](y)`) do not count |
+**Before you apply.** `--patch <file|->` lints the explainer as it would be after `xpl apply <explainer> <file>`. The patch is merged in memory the way `apply` merges it (same checks, actor `llm`), and nothing is written. Fix the findings in the patch, then apply it once. A patch that `apply` would reject prints the same rejection lines and exits 1. `-` reads the patch from stdin.
 
-Code spans (`` `...` ``) are left out of the word checks and count as one word. Every finding names the element, the field, a short quote and a fix. Exit codes: 0 (findings are warnings), 1 with `--strict` when there is any finding, 2 usage error.
+| Rule                  | Finds                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `tour-summary`        | a tour without a `summary`, or one of fewer than 2 or more than 4 sentences                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `tour-first-step`     | the first step does not show the big picture: it focuses a test (a file the index counts as a test, or a group of them), or only a concept that lights up nothing in its picture; it opens on a flow or sequence when the tour has a map; or its title says "edge case", "corner case", "gotcha" or "open question"                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `tour-covers-map`     | a map (graph view) of at most 10 boxes that the tour uses has boxes that never come up: no step focuses the box, something inside it, a group it belongs to, a step or edge that starts or ends there, or a concept related to it, and no note or the summary names it (by its label, symbol or file name). Lists the boxes (`ids` in `--json`). Give each a step, name it in a note, or take it off the map                                                                                                                                                                                                                                                                                                                                     |
+| `tour-length`         | a tour of more than 12 steps: split it, or merge steps that make the same point                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `note-heading`        | a tour note that does not start with a `### Plain title` line (and says so when it starts with a placeholder such as `Fix 1:`)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `code-title`          | a title that looks like code: a call `f(`, an identifier with `_`, a dotted name `a.b`, a `#` in a name, code operators, a code keyword first (`return x`), one camelCase identifier. Code in backticks inside a plain title is fine (``How `Host.matches` reads the header``)                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `placeholder-title`   | a title such as `Fix 1`, `Note`, `Step 3`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `long-sentence`       | a sentence over 25 words                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `long-average`        | a field whose sentences average over 20 words                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `bare-it`             | a sentence that starts with `It` or `This` and a verb (`It calls ...`, `This is ...`): name the subject                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `filler-word`         | marketing and filler words (seamless, robust, leverage, elegant, powerful, simply, just, basically, delve, crucial, comprehensive, cutting-edge, ...), each with a replacement                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `absolute-word`       | all, every, everything, everywhere, everyone, anything, never, always, only, consistent(ly), guaranteed: check every case and anchor it, or narrow the claim. Not counted: `only when/if/after ...` (a condition); `only` after a verb or a noun, which narrows a claim (`compares only the host part`); `all` after a list of named cases (``URL, `TrustedHostMiddleware` and `Host.matches` all call ...``); `outside everything` (a position); `not all`, `if every`; and idioms (`not ... at all`, `after all.`, `once and for all`, `all of a sudden`; `at all times` still counts). Still counted: `only` that opens a clause (`Only the router ...`, `now only URL ...`), `the only`, `only by`; `all three`, `each x and each y all ...` |
+| `repeats-summary`     | a note sentence that repeats the summary of an element the step focuses (the reader sees both)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `flow-label-code`     | a flow step label written as code; flows name stages in plain words. Sequence views may keep call text                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `markdown-in-plain`   | `**bold**`, `__bold text__`, a `# heading` line or a `[text](link)` in a title or a label, which the viewer shows as plain text: the explainer, tour and view titles, and the labels of elements, steps and edges. Code spans and code shapes (`**kwargs`, `__init__`, `xs[0](y)`) do not count                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `markdown-in-summary` | a `# heading` line or a `[text](link)` in the `summary` of a node, edge, concept or step. Inline markdown is fine there (code spans, `**bold**`, `*emphasis*`, as in `**Changed:** ...`): the viewer renders it. A summary is one or two sentences next to the code: put headings and links in the `detail`                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+
+Markdown fields: a tour `summary`, a step `note` (with its `### title` line) and a `detail` take any markdown; the `summary` of an element or a step takes inline markdown; titles and labels are plain text. Code spans (`` `...` ``) are left out of the word checks and count as one word. Every finding names the element, the field, a short quote and a fix. Exit codes: 0 (findings are warnings), 1 with `--strict` when there is any finding, or a rejected patch, 2 usage error.
 
 ```
 $ xpl lint jobrunner
-.explainer/jobrunner.explainer.json: 12 texts checked
+.explainer/jobrunner.explainer.json: 17 texts checked
 
 tour:intro (tour)
   summary  tour-summary: no summary: readers see the summary first, under the tour title
     "Intro talk"
     fix: add 2-4 sentences: what this is and why it matters; for a change: what behaves differently, the risk, the tests
+  steps  tour-covers-map: 2 boxes of the map view:overview (3 boxes) never come up: no step focuses them, no note names them
+    "worker.ts, metrics.ts"
+    fix: give each a step, or name it in a note (say why the tour skips it), or take it off the map
 
 tour:intro/t1 (tour step)
   note  note-heading: no "### title" line: the viewer has to make a title from the text
@@ -477,10 +508,99 @@ tour:intro/t2 (tour step)
     "Where failures go: requeue with backoff."
     fix: start the note with "### <plain title>", a short phrase that says what happens here
 
-3 findings in 3 elements (tour-summary 1, note-heading 2); warnings only, --strict exits 1
+4 findings in 3 elements (tour-summary 1, tour-covers-map 1, note-heading 2); warnings only, --strict exits 1
+
+$ xpl lint jobrunner --patch fix.json
+.explainer/jobrunner.explainer.json with patch fix.json (1 id changed, nothing written): 18 texts checked
+...
+3 findings in 3 elements (tour-covers-map 1, note-heading 2); warnings only, --strict exits 1
+
+$ xpl lint jobrunner --patch bad.json
+rejected: 1 error, nothing was applied to .explainer/jobrunner.explainer.json (patch from bad.json)
+error   tours[0].sumary [tour:intro]: unknown field "sumary" (allowed: id, title, summary, steps, stepsUpdate, provenance)
+nothing linted: fix the patch, then run `xpl lint --patch` again
 ```
 
-A flow step is named with its view (`host-check:1 (step in view:host-check)`). `--json`: `{ok, path, strict, checked, total, counts: {<rule>: n}, findings: [{rule, elementId, kind: explainer|tour|tour-step|view|step|node|edge|concept, view?, field, quote, message, hint}]}` (`ok` is false only with `--strict` and findings; `field` is `title`, `summary`, `note`, `note heading`, `label` or `detail`).
+A flow step is named with its view (`host-check:1 (step in view:host-check)`). `--json`: `{ok, path, patch?, changed?, protectedIds?, strict, checked, total, counts: {<rule>: n}, findings: [{rule, elementId, kind: explainer|tour|tour-step|view|step|node|edge|concept, view?, field, quote, message, hint, ids?}]}` (`ok` is false only with `--strict` and findings, or a rejected patch, which gives `{ok: false, path, patch, changed: [], issues, error}` as `apply` does; `field` is `title`, `summary`, `note`, `note heading`, `label`, `detail`, or `steps` for the order checks; `view` names the map of a `tour-covers-map` finding).
+
+## `xpl change <explainer> [<base>..<head>]`
+
+Records the change an explainer is about, from git, and prints what it touches. Run it once, at the start of explaining a PR or MR, on a checkout of the head with the index built (`xpl index`). Nothing is written to the repository.
+
+- `<base>..<head>` takes any git revisions (`main..HEAD`, `2284ff0^..2284ff0`); `<base>...<head>` starts from their merge base; `<base>` alone ends at the commit of the index. The head must be the commit the index was built from, else it stops: `the head HEAD~1 (85c3b74) is not the commit the index was built from (2284ff0). Check out 85c3b74, run xpl index, then run this again`.
+- It stores `change: {base, head, files: [{path, status: added|modified|deleted|renamed, oldPath?, hunks: [{oldStart, oldLines, newStart, newLines}]}]}` in the explainer (full SHAs; hunks as `git diff -U0` prints them). Patches cannot change it.
+- It prints the changed files with `+added -removed`; the **changed symbols** (index symbols that hold an added or edited line; `new` when every line is new; a function nested in a function counts as part of it); for each, its **direct callers** outside test files and the **tests** that reference it (a test function, or a test file for an import), or `no test found`. A method that runs when an instance is called (`__call__`, `handle`) gets `callers via instance`: the code that builds its class. That is a guess, and the output says so. Lines outside any symbol (imports, module-level code) are listed apart, and so are the test files the change touches with their new and changed tests.
+- `xpl change <explainer>` without a range prints the analysis of the recorded change again.
+
+```
+$ xpl change jobrunner HEAD~1..HEAD
+change jobrunner: 5774f2c..349730f (1 file, +1 -1), index 349730f
+written to .explainer/jobrunner.explainer.json
+
+files (1):
+  M  src/runner.ts  +1 -1
+
+changed symbols outside tests (1):
+  sym:src/runner.ts#Runner.dispatch  (method, lines 42-88)  changed at 80
+    callers outside tests (1):
+      sym:src/runner.ts#Runner.start  (src/runner.ts:32; heuristic)
+    tests: no test found (no test references it by name; tests of other code may still run it)
+
+no test found for 1 changed symbol: sym:src/runner.ts#Runner.dispatch
+Callers are direct (depth 1) and come from the index: ...
+```
+
+The callers and tests come from the index: a call through a variable, a callback or a framework is not seen, and "a test references it" does not mean the test checks the change. Read the tests before you say what they cover. With the change recorded, anchors may point at the code before it (`"at": "base"`, `patch-format.md` section 1), `xpl show --at base` prints that code, `xpl validate` checks it, and `xpl bundle` embeds it.
+
+`--json`: `{ok, path, written, change, analysis: {base, head, files: [{path, status, oldPath?, added, removed, hunks, test, indexed, outside: [lines]}], totals: {files, added, removed}, symbols: [{id, symbolId, file, kind, range, status: new|changed, lines, callers: [{id, file, lines, kinds, resolution, changed?, via?}], viaInstance: [same], tests: [{id, file, refs, kinds, changed?, via?}]}], testSymbols: [{id, symbolId, file, kind, range, status, lines}], untested: [ids]}}`.
+
+## `xpl draft change|repo|path <explainer> [<entry id>] [-o <file>]`
+
+Prints a patch skeleton for one of the three scopes, built from the index (and the change record) with no LLM: the structure the index proves, with `TODO: <what to write>` in every text you must write. `xpl apply` accepts the draft as it is. Use it to start an explainer, then write the text and check it against the code.
+
+| Draft                   | Structure                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `change <explainer>`    | Needs the change record (`xpl change <explainer> <base>..<head>` first). A map "What this change touches" (`stubs: none`): the changed symbols (small changes to methods of one class share a group box; their files when there are many), their direct callers outside tests, and one group box for the changed tests. Box summaries start with `New:`, `Changed:` or `Unchanged:`. A tour in review order: what changes for users, where the change enters, one step per changed piece in call order, the other changed files, who else is affected, tests and gaps (the symbols with no test found are named), risks. At most 12 steps. Every changed file is anchored, test files too; a deleted file is anchored in the code before the change (`at: "base"`). |
+| `repo <explainer>`      | An overview map (`stubs: none`, `excludeFiles` for tests, docs, examples and benchmarks) of the top-level folders, or of the files of a one-package project (in a `src/` layout it starts below `src`), at most 8 boxes. A tour that visits every box; its first step shows the README and asks what the project is. When files are left off the map, the first step lists them with the box each shares the most references with: a start for your groups.                                                                                                                                                                                                                                                                                                         |
+| `path <explainer> <id>` | A sequence of the calls the entry symbol makes (depth 1, in source order; at most 6 participants and 12 calls), each with the call site and the callee's definition as anchors. Calls into the entry's own class and helper functions of its file stay on the entry's lifeline; a call through an interface goes to its one implementation. A tour: the big picture, then one step per main call (at most 8). A summary names the subclasses that override a called method. No flow view: decide the stages yourself.                                                                                                                                                                                                                                               |
+
+Every tour step has at most 2 code ranges, and the note is `### TODO: ...` plus the body. Ids already in the explainer are not reused (`view:change-map-2`), and a box the explainer already explains gets no new summary. The draft is checked the way `apply` checks it before it is printed.
+
+```
+$ xpl draft path jobrunner sym:src/runner.ts#Runner.dispatch -o path.json
+wrote path.json
+draft path for jobrunner: a sequence of 10 calls between 5 participants, 5 summaries, a tour of 9 steps, 37 anchors, 39 TODOs to write
+note: calls without a tour step of their own (at most 8): sym:src/runner.ts#backoffDelay, sym:src/runner.ts#Runner.log
+next: write each TODO, then `xpl lint jobrunner --patch path.json` and `xpl apply jobrunner path.json`
+$ xpl draft change jobrunner
+error: .explainer/jobrunner.explainer.json has no change recorded: run `xpl change jobrunner <base>..<head>` first (e.g. main..HEAD), then `xpl draft change jobrunner`
+```
+
+A step of that sequence and its tour step:
+
+```json
+{
+  "id": "runner-dispatch:1",
+  "from": "sym:src/runner.ts#Runner.dispatch",
+  "to": "sym:src/queue.ts#Queue",
+  "label": "pop()",
+  "kind": "call",
+  "summary": "TODO: what happens at this call, with its condition.",
+  "anchors": [
+    {
+      "file": "src/runner.ts",
+      "symbol": "Runner.dispatch",
+      "span": { "from": 4, "to": 4 },
+      "role": "call-site"
+    },
+    { "file": "src/queue.ts", "symbol": "Queue.pop", "role": "definition" }
+  ]
+}
+```
+
+What the draft cannot know, you write: every title, summary and note; the groups of a repo map (one box per responsibility); which caller matters and why; "before" claims (read the base with `xpl show --at base`); what the tests check; the risk. The draft names what it left out (`note:` lines). Write the patch outside the repo, then `xpl lint <explainer> --patch <file>`: `todo-left` lists each placeholder still there (an error-level finding; exit 0 unless `--strict`). Without `-o` the patch goes to stdout and the summary to stderr.
+
+`--json`: `{ok, kind, path, out?, counts: {views, boxes, participants, sequenceSteps, overlays, groups, tourSteps, anchors, todos}, notes: [text], applyWarnings?, patch}`. Exit codes: 0 ok, 1 no change recorded, an entry that is not a symbol, or nothing to draft, 2 usage error.
 
 ## `xpl view <explainer> [--port p] [--host h] [--no-open]`
 
@@ -491,7 +611,7 @@ $ xpl view jobrunner --no-open --port 0
 serving .explainer/jobrunner.explainer.json at http://127.0.0.1:34971/  (Ctrl-C to stop)
 ```
 
-API (for scripts): `GET /api/bundle`, `GET /api/file?path=`, `PUT /api/views/<id>`, `PUT /api/tours/<id>`, `GET|POST /api/requests`.
+API (for scripts): `GET /api/bundle`, `GET /api/file?path=`, `GET /api/base-file?path=` (the code before the recorded change of a modified, renamed or deleted file), `PUT /api/views/<id>`, `PUT /api/tours/<id>`, `GET|POST /api/requests`.
 
 ## `xpl bundle <explainer> -o out.html [--mode explore|present] [--tour id] [--files referenced|boundary|all] [--boundary-max n] [--embed-index full|pruned]`
 
@@ -521,14 +641,17 @@ $ xpl bundle jobrunner -o all.html --files all
 wrote all.html (2.3 MB): .explainer/jobrunner.explainer.json, 12 files embedded (all: 25.1 KB of source), index 82.2 KB, mode explore
 ```
 
-`--json`: `{ok, path, absolutePath, bytes, mode, tour?, files: {embedded, choice, referenced?, boundary?: {added: [{file, reason: caller|callee|test, refs}], cut: [same], max, symbols}, embeddedBytes, indexed, indexedBytes}, index: {path, commit, choice: "full"|"pruned", pruned, bytes, fullBytes, symbols: {embedded, indexed}, refs: {embedded, indexed}}}` (`index.bytes` and `fullBytes`: the embedded and the whole index as compact JSON).
+**With a change recorded** (`xpl change`), every changed file that exists after the change is embedded, whatever `--files` says, and so is the code before the change of every modified, renamed or deleted file (`baseFiles` in the page, read from git). The summary line adds `change 5774f2c..349730f: 1 changed file in, code before the change of 1 file (3.2 KB)`, and names the changed files the selection had left out (`(2 added to the selection: ...)`).
+
+`--json`: `{ok, path, absolutePath, bytes, mode, tour?, files: {embedded, choice, referenced?, boundary?: {added: [{file, reason: caller|callee|test, refs}], cut: [same], max, symbols}, embeddedBytes, indexed, indexedBytes}, change?: {base, head, changedFiles, addedToSelection: [paths], baseFiles: [paths], baseBytes, baseMissing?}, index: {path, commit, choice: "full"|"pruned", pruned, bytes, fullBytes, symbols: {embedded, indexed}, refs: {embedded, indexed}}}` (`index.bytes` and `fullBytes`: the embedded and the whole index as compact JSON).
 
 ## `--json` shapes (the ones worth scripting)
 
 - `index`: `{ok, path, commit, files, symbols, refs, languages: {<lang>: {files, symbols, refs: "precise"|"heuristic"|"none", tool?, heuristicFiles?}}}` (`heuristicFiles`: files of a precise language whose references stayed heuristic)
-- `apply`: `{ok, applied, dryRun, actor, path, changed: [ids], issues: [{severity, path, elementId?, message, code}], protectedIds?: [ids], error?}`; issue `code`s: `schema duplicate-id bad-id unknown-id anchor-invalid anchor-drifted anchor-missing evidence frame cycle step commit protected`. `ok: false` with `applied: false` also when everything the patch touched is protected.
+- `apply`: `{ok, applied, dryRun, actor, path, changed: [ids], issues: [{severity, path, elementId?, message, code}], protectedIds?: [ids], error?}`; issue `code`s: `schema duplicate-id bad-id unknown-id anchor-invalid anchor-drifted anchor-missing evidence frame cycle step commit change protected` (`change`: the change record is malformed, or its head is not the index commit). A tour step changed by `stepsUpdate` is listed as `<tour id>/<step id>`. `ok: false` with `applied: false` also when everything the patch touched is protected.
 - `validate`: `{ok, mode, index, errors, warnings, issues[]}`
 - `lint`: see its section
+- `change`: see its section
 - `status`: `{ok, todo: {unexplained, drifted, driftedUserOwned, missing, requests, broken}, views: [{id, type, nodes: {total, unexplained[]}, edges: {total, unexplained: [{id, stored}]}, ghosts?: {mode, max, total, stubs, crowded, list: [{id, kind, label, count, direction, targets: [{id, count}]}], stubIds[]}, steps: {total, unexplained[]}}], concepts: {unexplained[]}, tours: [{id, title, steps, unresolved: [{step, focus[], missingView?}]}], anchors: {total, counts}, drifted[], driftedOther[], missing[], broken: [issues], staleOverlays: [ids], requests[]}` (`ghosts` on graph views only) (`todo.drifted` counts every drifted element, `driftedUserOwned` those of it the user owns)
 - `anchors`: see its section
 - `new`: `{ok, path, name, title, repo: {name, source, url?}, index: {path, commit}}`

@@ -1,0 +1,544 @@
+/**
+ * `xpl draft`: the drafts of the three fixtures and of a change in a small git repository apply as they are
+ * (`xpl apply`), leave a valid explainer (`xpl validate`), and `xpl lint` reports nothing but `todo-left` on them.
+ * The change draft anchors every changed file. And the `todo-left` lint rule itself.
+ */
+import { readFileSync, renameSync, rmSync } from "node:fs";
+import { join } from "node:path";
+import { beforeAll, describe, expect, it } from "vitest";
+import type { Explainer, ExplainerPatch } from "@xpl/core";
+import { patchAnchors } from "../src/commands/draft.js";
+import { DRAFT_LIMITS } from "../src/draft.js";
+import { lintExplainer, type LintFinding } from "../src/lint.js";
+import {
+  cloneDir,
+  git,
+  indexedFixture,
+  makeTempDir,
+  readJson,
+  writeFile,
+  xpl,
+  xplJson,
+} from "./helpers.js";
+
+interface DraftJson {
+  kind: string;
+  counts: Record<string, number>;
+  notes: string[];
+  patch: ExplainerPatch;
+}
+
+interface LintJson {
+  total: number;
+  counts: Record<string, number>;
+  findings: LintFinding[];
+}
+
+/** Runs a draft into a file, applies it, validates, and lints; returns the patch and the lint result. */
+async function draftApplyCheck(
+  dir: string,
+  name: string,
+  args: string[],
+): Promise<{ patch: ExplainerPatch; lint: LintJson; notes: string[] }> {
+  const out = join(makeTempDir("xpl-draft-out-"), "draft.json");
+  const drafted = await xpl(dir, "draft", ...args, "-o", out);
+  expect(drafted.code, drafted.err + drafted.out).toBe(0);
+  expect(drafted.out).toMatch(/^wrote /);
+  const json = await xplJson<DraftJson>(dir, "draft", ...args);
+  expect(json.code).toBe(0);
+  const patch = JSON.parse(readFileSync(out, "utf8")) as ExplainerPatch;
+  expect(json.json.patch).toEqual(patch);
+
+  const before = await xplJson<LintJson>(dir, "lint", name, "--patch", out);
+  expect(before.code).toBe(0);
+  const applied = await xpl(dir, "apply", name, out);
+  expect(applied.code, applied.out).toBe(0);
+  expect(applied.out).toMatch(/^applied to /);
+  expect(applied.out, "no warnings from apply").not.toContain("warning");
+  const validated = await xpl(dir, "validate", name);
+  expect(validated.code, validated.out).toBe(0);
+  expect(validated.out).toMatch(/no errors, no warnings$/);
+  const anchors = await xpl(dir, "anchors", name);
+  expect(anchors.out).toMatch(/drifted 0, missing 0$/);
+  const lint = await xplJson<LintJson>(dir, "lint", name);
+  expect(lint.code).toBe(0);
+  expect(Object.keys(lint.json.counts)).toEqual(["todo-left"]);
+  expect(lint.json.findings.every((f) => f.severity === "error")).toBe(true);
+  expect(lint.json.total).toBe(before.json.total);
+  return { patch, lint: lint.json, notes: json.json.notes };
+}
+
+/** The skill's shape rules every draft keeps. */
+function checkShape(patch: ExplainerPatch): void {
+  const tour = patch.tours![0]!;
+  expect(tour.title).toMatch(/^TODO: /);
+  expect(tour.summary).toMatch(/^TODO: /);
+  for (const step of tour.steps!) {
+    expect(step.note).toMatch(/^### TODO: .+\n\n.*TODO: /);
+    expect((step.code ?? []).length).toBeLessThanOrEqual(DRAFT_LIMITS.codeRanges);
+    expect((step.code ?? []).length).toBeGreaterThan(0);
+    expect(step.focus.length).toBeGreaterThan(0);
+  }
+  for (const view of patch.views ?? []) {
+    if (view.type === "graph") {
+      expect(view.stubs).toEqual({ mode: "none" });
+      expect(view.include!.length).toBeLessThanOrEqual(DRAFT_LIMITS.mapBoxes);
+    } else {
+      expect(view.participants!.length).toBeLessThanOrEqual(DRAFT_LIMITS.participants);
+    }
+  }
+  for (const node of patch.nodes ?? []) expect(node.summary).toContain("TODO");
+}
+
+const ENTRIES: Record<string, string> = {
+  "ts-jobrunner": "sym:src/runner.ts#Runner.dispatch",
+  "py-jobrunner": "sym:jobrunner/runner.py#Runner.dispatch",
+  "go-jobrunner": "sym:internal/runner/runner.go#Runner.Dispatch",
+};
+
+describe.each(Object.keys(ENTRIES))("xpl draft on %s", (fixture) => {
+  let dir: string;
+  beforeAll(async () => {
+    dir = await indexedFixture(fixture);
+    expect((await xpl(dir, "new", "d")).code).toBe(0);
+  });
+
+  it("draft repo: an overview of 4-8 boxes, every box visited by the tour", async () => {
+    const copy = cloneDir(dir);
+    const { patch } = await draftApplyCheck(copy, "d", ["repo", "d"]);
+    checkShape(patch);
+    const view = patch.views![0]!;
+    expect(view.type).toBe("graph");
+    if (view.type !== "graph") return;
+    expect(view.include!.length).toBeGreaterThanOrEqual(4);
+    expect(view.excludeFiles).toContain("**/tests/**");
+    // no test, doc or config box
+    expect(view.include!.every((id) => !/test|README|\.ya?ml/.test(id))).toBe(true);
+    const focused = patch.tours![0]!.steps!.flatMap((s) => s.focus);
+    for (const box of view.include!) expect(focused).toContain(box);
+    // the first step shows what the project is: the README
+    expect(patch.tours![0]!.steps![0]!.code![0]!.file).toBe("README.md");
+  });
+
+  it("draft path: the calls of the entry in source order, one tour step each after the big picture", async () => {
+    const copy = cloneDir(dir);
+    const { patch } = await draftApplyCheck(copy, "d", ["path", "d", ENTRIES[fixture]!]);
+    checkShape(patch);
+    const view = patch.views![0]!;
+    expect(view.type).toBe("sequence");
+    if (view.type === "graph") return;
+    expect(view.participants![0]).toBe(ENTRIES[fixture]);
+    const steps = view.steps!;
+    expect(steps.length).toBeGreaterThanOrEqual(5);
+    expect(steps.length).toBeLessThanOrEqual(DRAFT_LIMITS.pathCalls);
+    // source order: the call sites go down the entry
+    const offsets = steps.map((s) => s.anchors![0]!.span!.from);
+    expect([...offsets].sort((a, b) => a - b)).toEqual(offsets);
+    for (const step of steps) {
+      expect(step.from).toBe(ENTRIES[fixture]);
+      expect(step.anchors![0]!.role).toBe("call-site");
+      expect(step.anchors![1]!.role).toBe("definition");
+      expect(step.label).toMatch(/\(|\{/);
+    }
+    // the queue's requeue is on the path of every fixture
+    expect(steps.map((s) => s.label.toLowerCase())).toContainEqual(
+      expect.stringMatching(/^requeue\(/),
+    );
+    const tour = patch.tours![0]!.steps!;
+    expect(tour[0]!.focus).toEqual([ENTRIES[fixture]]);
+    expect(tour.length).toBeLessThanOrEqual(DRAFT_LIMITS.pathSteps + 1);
+    for (const step of tour.slice(1)) {
+      expect(steps.map((s) => s.id)).toContain(step.focus[0]);
+    }
+  });
+});
+
+describe("xpl draft: refusals and reuse", () => {
+  let dir: string;
+  beforeAll(async () => {
+    dir = await indexedFixture("ts-jobrunner");
+    expect((await xpl(dir, "new", "d")).code).toBe(0);
+  });
+
+  it("draft change without a change record names xpl change", async () => {
+    const r = await xpl(dir, "draft", "change", "d");
+    expect(r.code).toBe(1);
+    expect(r.err).toContain("no change recorded");
+    expect(r.err).toContain("xpl change d <base>..<head>");
+  });
+
+  it("usage errors: an unknown kind, a missing or extra entry, an entry that is not a symbol", async () => {
+    expect((await xpl(dir, "draft", "tour", "d")).code).toBe(2);
+    expect((await xpl(dir, "draft", "path", "d")).code).toBe(2);
+    expect((await xpl(dir, "draft", "repo", "d", "sym:src/runner.ts#Runner")).code).toBe(2);
+    const notSymbol = await xpl(dir, "draft", "path", "d", "file:src/runner.ts");
+    expect(notSymbol.code).toBe(1);
+    expect(notSymbol.err).toContain("the entry must be a symbol");
+    const unknown = await xpl(dir, "draft", "path", "d", "sym:src/runner.ts#Runner.dispatchh");
+    expect(unknown.code).toBe(1);
+    expect(unknown.err).toContain("Runner.dispatch");
+  });
+
+  it("prints the patch on stdout and the summary on stderr", async () => {
+    const r = await xpl(dir, "draft", "path", "d", "src/runner.ts#Runner.dispatch");
+    expect(r.code).toBe(0);
+    expect(JSON.parse(r.out).views[0].id).toBe("view:runner-dispatch");
+    expect(r.err).toMatch(/^draft path for d: a sequence of \d+ calls between \d+ participants/);
+    expect(r.err).toContain("next: save the patch to a file outside the repo (or use -o)");
+    expect(r.err).toContain("called more than once, drawn once at the first call");
+  });
+
+  it("a second draft takes new ids and leaves what the explainer explains alone", async () => {
+    const copy = cloneDir(dir);
+    const first = await draftApplyCheck(copy, "d", ["repo", "d"]);
+    const second = await xplJson<DraftJson>(copy, "draft", "repo", "d");
+    expect(second.json.patch.views![0]!.id).toBe("view:overview-2");
+    expect(second.json.patch.tours![0]!.id).toBe("tour:overview-2");
+    // the boxes already have summaries: no new overlay for them
+    expect(second.json.patch.nodes).toEqual([]);
+    expect(first.patch.nodes!.length).toBeGreaterThan(0);
+  });
+});
+
+// ─── draft change on a git repository ────────────────────────────────────────────────────────────
+
+const RUNNER_V1 = `from helpers import fmt
+
+
+def backoff(attempt, base):
+    return base * 2 ** (attempt - 1)
+
+
+class Runner:
+    def __init__(self, queue):
+        self.queue = queue
+
+    def dispatch(self, job):
+        delay = backoff(job.attempts, 100)
+        self.queue.requeue(job, delay)
+        return fmt(job)
+`;
+
+const RUNNER_V2 = `from helpers import fmt, clamp
+
+LIMIT = 5000
+
+
+def backoff(attempt, base):
+    if attempt < 1:
+        raise ValueError("attempt starts at 1")
+    return clamp(base * 2 ** (attempt - 1), 0, LIMIT)
+
+
+def jitter(delay):
+    return delay + delay // 10
+
+
+class Runner:
+    def __init__(self, queue):
+        self.queue = queue
+
+    def dispatch(self, job):
+        delay = jitter(backoff(job.attempts, 100))
+        self.queue.requeue(job, delay)
+        return fmt(job)
+`;
+
+const HELPERS_V1 = `def fmt(job):
+    return str(job)
+`;
+
+const HELPERS_V2 = `def fmt(job):
+    return str(job)
+
+
+def clamp(value, low, high):
+    return max(low, min(value, high))
+`;
+
+const MAIN = `from runner import Runner
+
+
+def main(queue, job):
+    runner = Runner(queue)
+    return runner.dispatch(job)
+`;
+
+const TEST_V1 = `from runner import backoff
+
+
+def test_backoff():
+    assert backoff(1, 100) == 100
+`;
+
+const TEST_V2 = `from runner import backoff, jitter
+
+
+def test_backoff():
+    assert backoff(1, 100) == 100
+
+
+def test_jitter():
+    assert jitter(100) == 110
+`;
+
+/** Base: runner, helpers, main, a test and an old module. Head: edits, a new function, a deleted and a renamed file. */
+async function changeRepo(): Promise<string> {
+  const dir = makeTempDir("xpl-draft-change-");
+  writeFile(dir, "runner.py", RUNNER_V1);
+  writeFile(dir, "helpers.py", HELPERS_V1);
+  writeFile(dir, "main.py", MAIN);
+  writeFile(dir, "old.py", "def gone():\n    return 1\n");
+  writeFile(dir, "names.py", "def first():\n    return 'a'\n\n\ndef second():\n    return 'b'\n");
+  writeFile(dir, "tests/test_runner.py", TEST_V1);
+  writeFile(
+    dir,
+    "tests/test_old.py",
+    "from old import gone\n\n\ndef test_gone():\n    assert gone() == 1\n",
+  );
+  git(dir, "init", "-q", "-b", "main");
+  git(dir, "add", "-A");
+  git(dir, "commit", "-q", "-m", "base");
+  writeFile(dir, "runner.py", RUNNER_V2);
+  writeFile(dir, "helpers.py", HELPERS_V2);
+  writeFile(dir, "tests/test_runner.py", TEST_V2);
+  rmSync(join(dir, "old.py"));
+  rmSync(join(dir, "tests/test_old.py"));
+  renameSync(join(dir, "names.py"), join(dir, "labels.py"));
+  git(dir, "add", "-A");
+  git(dir, "commit", "-q", "-m", "head");
+  const indexed = await xpl(dir, "index", "--precise", "off");
+  if (indexed.code !== 0) throw new Error(indexed.err);
+  expect((await xpl(dir, "new", "pr")).code).toBe(0);
+  return dir;
+}
+
+describe("xpl draft change", () => {
+  let repo: string;
+  beforeAll(async () => {
+    repo = await changeRepo();
+    const recorded = await xpl(repo, "change", "pr", "HEAD~1..HEAD");
+    expect(recorded.code, recorded.err).toBe(0);
+  });
+
+  it("applies as it is, validates, lints only todo-left, and anchors every changed file", async () => {
+    const dir = cloneDir(repo);
+    const { patch, notes } = await draftApplyCheck(dir, "pr", ["change", "pr"]);
+    checkShape(patch);
+    const explainer = readJson<Explainer>(dir, ".explainer/pr.explainer.json");
+    const changed = explainer.change!.files.map((f) => f.path).sort();
+    expect(changed).toEqual(
+      [
+        "helpers.py",
+        "labels.py",
+        "old.py",
+        "runner.py",
+        "tests/test_old.py",
+        "tests/test_runner.py",
+      ].sort(),
+    );
+    const anchored = new Set(patchAnchors(patch).map((a) => a.file));
+    for (const file of changed) expect(anchored, file).toContain(file);
+    // the deleted files are anchored in the code before the change
+    const base = patchAnchors(patch).filter((a) => a.at === "base");
+    expect([...new Set(base.map((a) => a.file))].sort()).toEqual(["old.py", "tests/test_old.py"]);
+    expect(notes.filter((n) => n.startsWith("no anchor"))).toEqual([]);
+    // `xpl anchors --json` agrees: every changed file has an anchor in the stored explainer
+    const listed = await xplJson<{ elements: { anchors: { file: string }[] }[] }>(
+      dir,
+      "anchors",
+      "pr",
+    );
+    const stored = new Set(listed.json.elements.flatMap((e) => e.anchors.map((a) => a.file)));
+    for (const file of changed) expect(stored, file).toContain(file);
+  });
+
+  it("the map: changed symbols, their caller outside tests, one box for the tests", async () => {
+    const { json } = await xplJson<DraftJson>(repo, "draft", "change", "pr");
+    const patch = json.patch;
+    const view = patch.views![0]!;
+    expect(view).toMatchObject({ id: "view:change-map", type: "graph", stubs: { mode: "none" } });
+    if (view.type !== "graph") return;
+    expect(view.include).toEqual(
+      expect.arrayContaining([
+        "sym:runner.py#backoff",
+        "sym:runner.py#jitter",
+        "sym:runner.py#Runner.dispatch",
+        "sym:helpers.py#clamp",
+        "sym:main.py#main",
+        "grp:change-tests",
+      ]),
+    );
+    const byId = new Map(patch.nodes!.map((n) => [n.id, n]));
+    expect(byId.get("sym:runner.py#jitter")!.summary).toMatch(/^New: TODO: /);
+    expect(byId.get("sym:runner.py#backoff")!.summary).toMatch(/^Changed: TODO: /);
+    expect(byId.get("sym:main.py#main")!.summary).toMatch(/^Unchanged: TODO: /);
+    expect(byId.get("sym:main.py#main")!.summary).toContain("calls `Runner.dispatch`");
+    expect(byId.get("grp:change-tests")).toMatchObject({
+      label: "Tests of this change",
+      members: ["sym:tests/test_runner.py#test_jitter"],
+    });
+    // a changed symbol's anchor is its changed lines, not the whole function
+    expect(byId.get("sym:runner.py#backoff")!.anchors![0]).toEqual({
+      file: "runner.py",
+      symbol: "backoff",
+      span: { from: 1, to: 3 },
+      role: "definition",
+    });
+  });
+
+  it("the tour in review order: users, entry, pieces in call order, other files, tests, risks", async () => {
+    const { json } = await xplJson<DraftJson>(repo, "draft", "change", "pr");
+    const steps = json.patch.tours![0]!.steps!;
+    const titles = steps.map((s) => s.note!.split("\n")[0]);
+    expect(titles[0]).toContain("what changes for users");
+    expect(titles[1]).toContain("where the change enters");
+    expect(steps[1]!.focus).toEqual(["sym:main.py#main"]);
+    expect(titles.at(-2)).toContain("what the tests cover");
+    expect(titles.at(-1)).toContain("the worst realistic failure");
+    expect(steps.length).toBeLessThanOrEqual(DRAFT_LIMITS.changeSteps);
+    // the pieces follow the calls from the entry: dispatch, then what it calls
+    const pieces = steps
+      .filter((s) => /what this piece does|what the new code does/.test(s.note!))
+      .map((s) => s.focus[0]);
+    expect(pieces.indexOf("sym:runner.py#Runner.dispatch")).toBe(0);
+    expect(pieces.indexOf("sym:runner.py#backoff")).toBeLessThan(
+      pieces.indexOf("sym:helpers.py#clamp"),
+    );
+    // the tests step names the changed symbols no test references
+    const tests = steps.at(-2)!.note!;
+    expect(tests).toContain("No test found for");
+    expect(tests).toContain("`clamp`");
+    // the steps cite changed lines: no step shows more than 2 ranges
+    for (const step of steps) expect(step.code!.length).toBeLessThanOrEqual(2);
+  });
+});
+
+describe("xpl draft change: small changes to methods of one class", () => {
+  it("share one group box and one tour step", async () => {
+    const dir = makeTempDir("xpl-draft-siblings-");
+    const v1 = [
+      "class Sender:",
+      "    def simple(self, send):",
+      "        return send(open('a'))",
+      "",
+      "    def ranged(self, send):",
+      "        return send(open('b'))",
+      "",
+      "    def multi(self, send):",
+      "        return send(open('c'))",
+      "",
+    ].join("\n");
+    writeFile(dir, "sender.py", v1);
+    writeFile(
+      dir,
+      "app.py",
+      "from sender import Sender\n\n\ndef serve(send):\n    return Sender().simple(send)\n",
+    );
+    git(dir, "init", "-q", "-b", "main");
+    git(dir, "add", "-A");
+    git(dir, "commit", "-q", "-m", "base");
+    writeFile(dir, "sender.py", v1.replace(/open\('(\w)'\)/g, "self._open('$1')"));
+    git(dir, "commit", "-q", "-am", "head");
+    expect((await xpl(dir, "index", "--precise", "off")).code).toBe(0);
+    expect((await xpl(dir, "new", "pr")).code).toBe(0);
+    expect((await xpl(dir, "change", "pr", "HEAD~1..HEAD")).code).toBe(0);
+    const { patch } = await draftApplyCheck(dir, "pr", ["change", "pr"]);
+    const group = patch.nodes!.find((n) => n.id === "grp:sender-changes")!;
+    expect(group.members).toEqual([
+      "sym:sender.py#Sender.simple",
+      "sym:sender.py#Sender.ranged",
+      "sym:sender.py#Sender.multi",
+    ]);
+    expect(group.label).toMatch(/^TODO: /);
+    const view = patch.views![0]!;
+    if (view.type !== "graph") throw new Error("a map");
+    expect(view.include).toContain("grp:sender-changes");
+    expect(view.include).toContain("sym:app.py#serve");
+    const steps = patch.tours![0]!.steps!;
+    // the group is the main box (the first and the last step focus it) and gets one step of its own
+    const pieces = steps.filter((s) => s.note!.includes("what this piece does differently"));
+    expect(pieces.map((s) => s.focus[0])).toEqual(["grp:sender-changes"]);
+    const piece = pieces[0]!;
+    expect(piece.note).toContain(
+      "`Sender.simple`, `Sender.ranged` and `Sender.multi` change in a few lines each",
+    );
+    expect(piece.code).toHaveLength(2);
+  });
+});
+
+// ─── lint: todo-left ─────────────────────────────────────────────────────────────────────────────
+
+describe("lint todo-left", () => {
+  const base = {
+    schema: "code-explainer@0",
+    title: "Job runner",
+    repo: { name: "demo", commit: "c" },
+    index: { path: ".explainer/index-c.json", commit: "c" },
+    edges: [],
+    concepts: [],
+  };
+
+  it("an error-level finding per field with a TODO, code spans and names left out", () => {
+    const { findings } = lintExplainer({
+      ...base,
+      nodes: [
+        { id: "sym:a#x", summary: "TODO: one line: what this does." },
+        { id: "sym:a#y", summary: "Reads `TODO` markers from the file and the `TODO_LIST` key." },
+        { id: "sym:a#z", summary: "Collects TODOs and todo items." },
+      ],
+      views: [
+        {
+          id: "view:m",
+          type: "graph",
+          title: "TODO: what the map shows",
+          scope: { root: "repo", depth: 1, question: "TODO: the question" },
+          include: [],
+        },
+      ],
+      tours: [
+        {
+          id: "tour:t",
+          title: "How a job runs",
+          summary: "A job goes from the queue to a worker. TODO: the risk.",
+          steps: [
+            {
+              id: "t1",
+              view: "view:m",
+              focus: [],
+              note: "### TODO: a title\n\nTODO: the body. TODO: more.",
+            },
+          ],
+        },
+      ],
+    } as unknown as Explainer);
+    const todo = findings.filter((f) => f.rule === "todo-left");
+    expect(todo.map((f) => [f.elementId, f.field])).toEqual([
+      ["tour:t", "summary"],
+      ["tour:t/t1", "note heading"],
+      ["tour:t/t1", "note"],
+      ["view:m", "title"],
+      ["view:m", "question"],
+      ["sym:a#x", "summary"],
+    ]);
+    expect(todo.every((f) => f.severity === "error")).toBe(true);
+    expect(todo[2]!.message).toBe("2 TODO placeholders left: text nobody has written yet");
+    expect(todo[0]!.quote).toContain("TODO: the risk.");
+    // the other rules stay warnings (no severity)
+    expect(findings.filter((f) => f.rule !== "todo-left").every((f) => !f.severity)).toBe(true);
+  });
+
+  it("xpl lint: todo-left is an error in the output, exit 0 unless --strict", async () => {
+    const dir = await indexedFixture("ts-jobrunner");
+    expect((await xpl(dir, "new", "d")).code).toBe(0);
+    const out = join(makeTempDir("xpl-draft-out-"), "repo.json");
+    expect((await xpl(dir, "draft", "repo", "d", "-o", out)).code).toBe(0);
+    const r = await xpl(dir, "lint", "d", "--patch", out);
+    expect(r.code).toBe(0);
+    expect(r.out).toContain("  summary  error todo-left: 1 TODO placeholder left");
+    expect(r.out.split("\n").at(-1)).toMatch(
+      /^\d+ findings in \d+ elements \(todo-left \d+\); \d+ errors \(todo-left\), --strict exits 1$/,
+    );
+    expect((await xpl(dir, "lint", "d", "--patch", out, "--strict")).code).toBe(1);
+  });
+});

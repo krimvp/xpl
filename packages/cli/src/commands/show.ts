@@ -1,4 +1,11 @@
-import { hashText } from "@xpl/core";
+import {
+  baseFileOf,
+  basePathOf,
+  describeChange,
+  describeNoBase,
+  hashText,
+  shortSha,
+} from "@xpl/core";
 import type { Args } from "../args.js";
 import type { CommandSpec } from "../command.js";
 import type { Ctx } from "../context.js";
@@ -14,7 +21,7 @@ import {
   type RefDirection,
   type RefEntry,
 } from "../ref-data.js";
-import { openWorkspace, type Workspace } from "../repo.js";
+import { loadExplainer, listExplainerNames, openWorkspace, type Workspace } from "../repo.js";
 import { detectRepoName } from "../repo-name.js";
 import { resolveTarget, type Target } from "../target.js";
 
@@ -291,9 +298,133 @@ async function showCode(
   return 0;
 }
 
+/**
+ * `xpl show --at base <path>`: the code of a changed file before the change (its base version, read with
+ * `git show <base>:<path>`), with the offsets a base anchor's `span` uses (0-based from line 1). Which change: the
+ * explainer's record (`--explainer`, else the only explainer that has one).
+ */
+async function showBase(ctx: Ctx, args: Args, options: CodeOptions): Promise<number> {
+  const input = args.positionals[0]!;
+  const explainerName = args.str("explainer");
+  let loaded;
+  if (explainerName !== undefined) loaded = loadExplainer(ctx, explainerName);
+  else {
+    const withChange = listExplainerNames(ctx.root)
+      .map((name) => loadExplainer(ctx, name))
+      .filter((candidate) => candidate.explainer.change !== undefined);
+    if (withChange.length === 0) {
+      throw new CliError(
+        "no explainer here records a change, so there is no code before it: run `xpl change <name> <base>..<head>` first",
+      );
+    }
+    if (withChange.length > 1) {
+      throw new UsageError(
+        `several explainers record a change (${withChange.map((c) => c.name).join(", ")}): pick one with --explainer <name>`,
+      );
+    }
+    loaded = withChange[0]!;
+  }
+  const change = loaded.explainer.change;
+  if (!change) {
+    throw new CliError(
+      `${loaded.rel} records no change, so there is no code before it: run \`xpl change ${loaded.name} <base>..<head>\` first`,
+    );
+  }
+  // `file:src/a.py`, `src/a.py`, `./src/a.py` all name the file; a symbol is not available in the base
+  let path = input.replace(/^file:/, "").replace(/^\.\//, "");
+  if (path.includes("#")) {
+    throw new UsageError(
+      `--at base shows whole files (there is no index of the base commit): give the path, e.g. xpl show --at base ${path.slice(0, path.indexOf("#"))} --lines 40-80`,
+    );
+  }
+  const changed = baseFileOf(change, path);
+  if (!changed) throw new CliError(describeNoBase(change, path));
+  path = changed.path;
+  const basePath = basePathOf(changed);
+  const ws = await openWorkspace(ctx, { explainer: loaded, skipFreshnessCheck: true });
+  const lines = ws.texts.linesAt(change.base, basePath);
+  if (!lines) {
+    throw new CliError(
+      `cannot read ${basePath} at the base commit ${shortSha(change.base)} (\`git show ${shortSha(change.base)}:${basePath}\` failed)`,
+    );
+  }
+  let end = lines.length;
+  if (end > 1 && lines[end - 1] === "") end--;
+  let shownFrom = 1;
+  let shownTo = end;
+  const { selection, selectionText, maxLines } = options;
+  if (selection !== undefined) {
+    shownFrom = Math.max(1, selection.from);
+    shownTo = Math.min(end, selection.to);
+    if (shownFrom > shownTo) {
+      throw new CliError(
+        `--lines ${selectionText} is outside ${basePath} at base, which has lines 1-${end}`,
+      );
+    }
+  }
+  let cut = false;
+  if (maxLines > 0 && shownTo - shownFrom + 1 > maxLines) {
+    shownTo = shownFrom + maxLines - 1;
+    cut = true;
+  }
+  const shown: ShownLine[] = [];
+  for (let line = shownFrom; line <= shownTo; line++) {
+    shown.push({ line, offset: line - 1, text: lines[line - 1]! });
+  }
+  const hunks = changed.hunks.map((h) => ({ ...h }));
+  if (ctx.json) {
+    ctx.emit({
+      at: "base",
+      file: path,
+      ...(basePath !== path ? { basePath } : {}),
+      status: changed.status,
+      commit: change.base,
+      explainer: loaded.rel,
+      range: { startLine: 1, endLine: end },
+      lines: shown,
+      hunks,
+      ...(cut || selection !== undefined
+        ? {
+            shown: { startLine: shownFrom, endLine: shownTo },
+            total: { startLine: 1, endLine: end },
+          }
+        : {}),
+    });
+    return 0;
+  }
+  // lines the change removes or replaces are marked `-` (the hunks' old side)
+  const removed = new Set<number>();
+  for (const h of hunks) for (let l = h.oldStart; l < h.oldStart + h.oldLines; l++) removed.add(l);
+  const absWidth = String(Math.max(1, ...shown.map((s) => s.line))).length;
+  const offsetWidth = String(Math.max(0, ...shown.map((s) => s.offset ?? 0))).length;
+  const out = [
+    `${path}${basePath !== path ? ` (was ${basePath})` : ""} before the change ${describeChange(change)} ` +
+      `(${changed.status}, base ${shortSha(change.base)}): lines 1-${end}; spans count from line 1`,
+  ];
+  for (const s of shown) {
+    const text =
+      s.text.length > MAX_LINE_CHARS
+        ? `${s.text.slice(0, MAX_LINE_CHARS)}…[+${s.text.length - MAX_LINE_CHARS} chars]`
+        : s.text;
+    const mark = removed.has(s.line) ? "-" : " ";
+    out.push(
+      `${String(s.line).padStart(absWidth)} ${String(s.offset).padStart(offsetWidth)}│${mark}${text}`.trimEnd(),
+    );
+  }
+  if (cut) {
+    const next = shownTo + 1;
+    out.push(
+      `... ${end - shownTo} more lines (${next}-${end}); use --lines ${next}-${Math.min(end, next + maxLines - 1)} or --max-lines 0`,
+    );
+  }
+  if (removed.size > 0) out.push("(- marks lines the change removes or rewrites)");
+  ctx.out(out.join("\n"));
+  return 0;
+}
+
 export const showCommand: CommandSpec = {
   name: "show",
-  usage: "xpl show <id> [--refs] [--context n]",
+  usage: "xpl show <id> [--refs] [--context n] | xpl show --at base <path> [--lines a-b]",
   summary: "Code with 0-based offsets relative to the symbol (what spans use), plus refs",
   details: [
     "Header: <id> (<kind>) <file>:<first>-<last> <hash>. Then one line per code line:",
@@ -306,6 +437,10 @@ export const showCommand: CommandSpec = {
     "  <kind>  <other id>  (<file>:<line>, <precise|heuristic>)  +<offset>",
     "where +<offset> counts lines from the start of the referencing symbol: a call-site anchor's span.",
     `Long symbols are cut after ${DEFAULT_MAX_LINES} lines (--max-lines 0 prints all; --lines 401-800 selects a part).`,
+    "--at base <path> prints a changed file as it was before the change the explainer records (`xpl change`): the",
+    "  offsets are those a base anchor's span uses (0-based from line 1 of the base file), and `-` marks the lines",
+    "  the change removes or rewrites. Paths only (the base commit is not indexed); --explainer picks the explainer",
+    "  when more than one records a change.",
   ],
   options: {
     refs: { type: "boolean", desc: "Append outgoing and incoming references grouped by kind" },
@@ -324,10 +459,28 @@ export const showCommand: CommandSpec = {
       arg: "<n>",
       desc: `Cut after n code lines (default ${DEFAULT_MAX_LINES}, 0 = no limit)`,
     },
+    at: {
+      type: "string",
+      arg: "base",
+      desc: "base: the file before the change the explainer records (see xpl change)",
+    },
+    explainer: {
+      type: "string",
+      arg: "<name>",
+      desc: "With --at base: the explainer whose change to use (default: the only one with a change)",
+    },
   },
   positionals: [{ name: "id" }],
   async run(ctx, args) {
     const options = codeOptions(args); // usage errors before any work
+    const at = args.choice("at", ["base"] as const);
+    if (at === "base") {
+      if (options.refs)
+        throw new UsageError("--refs needs the index; the base commit is not indexed");
+      return showBase(ctx, args, options);
+    }
+    if (args.str("explainer") !== undefined)
+      throw new UsageError("--explainer goes with --at base");
     const ws = await openWorkspace(ctx);
     const target = resolveTarget(ws.model, args.positionals[0]!);
     if (target.type === "repo" || target.type === "dir") return showListing(ctx, ws, target, args);
