@@ -70,6 +70,12 @@ export interface StartOptions extends FitOptions {
   floor?: number;
   /** The zoom of that first view (default `READABLE_ZOOM`). */
   readable?: number;
+  /**
+   * With this, the first view's zoom follows the pane: the zoom that shows the diagram's whole width,
+   * kept between `readableMin` and `readable`. A wide pane shows a narrow diagram larger, a narrow pane
+   * shows less of it, and the text never gets smaller than `readableMin` allows.
+   */
+  readableMin?: number;
 }
 
 export interface StartView {
@@ -113,8 +119,12 @@ export function startView(
   const raw = rawFitScale(size, content, options.padding);
   if (raw >= floor) return { transform: fit, partial: false };
 
-  const k = options.readable ?? READABLE_ZOOM;
   const { padding } = options;
+  const most = options.readable ?? READABLE_ZOOM;
+  const k =
+    options.readableMin === undefined
+      ? most
+      : clamp((size.w - 2 * padding) / content.width, Math.min(options.readableMin, most), most);
   const axis = (
     pane: number,
     total: number,
@@ -191,4 +201,59 @@ export function scrollDown(
   const top = padding;
   const bottom = Math.min(top, size.h - padding - content.height * t.k);
   return { ...t, y: clamp(t.y - dy, bottom, top) };
+}
+
+/** The zoom a still picture is drawn at when the whole diagram is too small to read in it. */
+export const SNAPSHOT_ZOOM = 0.85;
+/** A still picture never shows a diagram smaller than this (to fit a big focus in). */
+export const SNAPSHOT_MIN_ZOOM = 0.5;
+/** Room around a still picture's diagram, px. */
+const SNAPSHOT_PADDING = 10;
+
+export interface SnapshotView {
+  transform: Transform;
+  /** The picture's height: `maxHeight`, or less for a short diagram (no empty band under it). */
+  height: number;
+}
+
+/**
+ * Where a diagram sits in a still picture `width` px wide and at most `maxHeight` tall (the Guide's inline
+ * diagram): all of it when that reads well (zoom `SNAPSHOT_ZOOM` or more, never enlarged), else zoomed to
+ * `SNAPSHOT_ZOOM` (less, down to `SNAPSHOT_MIN_ZOOM`, when `focus` would not fit) with `focus` in the middle,
+ * as far as the diagram allows. Undefined before the picture has a width.
+ */
+export function snapshotView(
+  width: number,
+  maxHeight: number,
+  content: Pick<Box, "width" | "height">,
+  focus: Box | undefined,
+): SnapshotView | undefined {
+  const pad = SNAPSHOT_PADDING;
+  const room = { w: width - 2 * pad, h: maxHeight - 2 * pad };
+  if (room.w <= 0 || room.h <= 0 || content.width <= 0 || content.height <= 0) return undefined;
+  const fit = Math.min(room.w / content.width, room.h / content.height);
+  let k: number;
+  if (fit >= SNAPSHOT_ZOOM) k = Math.min(fit, 1);
+  else {
+    const fitsFocus = focus
+      ? Math.min(room.w / (focus.width + 40), room.h / (focus.height + 40))
+      : SNAPSHOT_ZOOM;
+    k = clamp(Math.min(SNAPSHOT_ZOOM, fitsFocus), Math.max(fit, SNAPSHOT_MIN_ZOOM), 1);
+  }
+  const height = Math.min(maxHeight, content.height * k + 2 * pad);
+  const axis = (pane: number, total: number, start: number | undefined, size: number) => {
+    if (total * k <= pane - 2 * pad) return (pane - total * k) / 2;
+    const visible = (pane - 2 * pad) / k;
+    const from =
+      start === undefined ? 0 : clamp(start + size / 2 - visible / 2, 0, total - visible);
+    return pad - from * k;
+  };
+  return {
+    transform: {
+      k,
+      x: axis(width, content.width, focus?.x, focus?.width ?? 0),
+      y: axis(height, content.height, focus?.y, focus?.height ?? 0),
+    },
+    height,
+  };
 }

@@ -11,8 +11,10 @@ import { readFile } from "node:fs/promises";
 import { expect, test, type Page } from "@playwright/test";
 import {
   byId,
+  downloadJson,
   focusOf,
   linesWith,
+  openTourEditor,
   readEmbeddedBundle,
   screenshotPath,
   stateOf,
@@ -118,9 +120,11 @@ test.describe("tour:intro of the TS fixture", () => {
     // the file tree is out of the way, the editors are not
     await expect(page.locator(".tree-panel")).toHaveCount(0);
     await expect(page.locator('[data-file="src/runner.ts"] .cm-editor')).toBeVisible();
-    // the header: the tour picker instead of the view tabs and the save controls
+    // the header: the tour picker and the step progress instead of the view tabs, then Exit and Edit
     await expect(page.getByTestId("tour-picker")).toHaveValue("tour:intro");
     await expect(page.locator(".view-tabs")).toHaveCount(0);
+    await expect(page.getByTestId("present-exit")).toBeVisible();
+    await expect(page.getByTestId("mode-present")).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Download explainer JSON" })).toHaveCount(0);
     // and the address bar names the slide (this is a file:// page)
     expect(searchOf(page)).toBe("?mode=present&tour=tour:intro&step=1");
@@ -204,7 +208,7 @@ test.describe("tour:intro of the TS fixture", () => {
     );
     await expect(byId(page, "dispatch:3")).toHaveClass(/is-selected/);
     await expect(page.locator(".details")).toContainText("Retry policy");
-    await expect(page.getByTestId("mode-explore")).toHaveAttribute("aria-pressed", "true");
+    await expect(page.locator(".header")).toHaveAttribute("data-mode", "explore");
     // Explore's own Escape (clear the selection) does not fire for the same key press; a second one does
     expect((await stateOf(page)).selection).toHaveLength(2);
     await page.keyboard.press("Escape");
@@ -213,7 +217,7 @@ test.describe("tour:intro of the TS fixture", () => {
     expect(searchOf(page)).toBe("");
   });
 
-  test("the toggle and the tour picker switch between the modes and the tours", async ({
+  test("Present, Exit and the tour picker switch between the modes and the tours", async ({
     page,
   }) => {
     await open(page);
@@ -221,7 +225,7 @@ test.describe("tour:intro of the TS fixture", () => {
     await expect(counter(page)).toHaveText("1 / 2");
     await page.getByTestId("tour-next").click();
     await expect(counter(page)).toHaveText("2 / 2");
-    await page.getByTestId("mode-explore").click();
+    await page.getByTestId("present-exit").click();
     await expect(present(page)).toHaveCount(0);
     // Present again resumes at the step it was on
     await page.getByTestId("mode-present").click();
@@ -588,7 +592,7 @@ test.describe("without tours", () => {
     expect(await page.evaluate(() => window.__xpl!.present("tour:intro"))).toBe(false);
     expect((await stateOf(page)).mode).toBe("explore");
     // the toolbar of the tour panel is still there to make one
-    await page.getByTestId("tours-button").click();
+    await openTourEditor(page);
     await expect(page.getByTestId("tour-panel")).toContainText("There is no tour yet");
   });
 });
@@ -613,7 +617,7 @@ test.describe("hand-edited tours", () => {
     await page.getByTestId("tour-picker").selectOption("tour:broken");
     await expect(present(page)).toContainText("has no steps yet");
     await page.getByRole("button", { name: "Back to Explore" }).click();
-    await page.getByTestId("tours-button").click();
+    await openTourEditor(page);
     await page.getByTestId("tour-target").selectOption("tour:broken");
     await expect(page.getByTestId("tour-panel")).toContainText("No steps yet");
     await page.getByTestId("tour-add").click();
@@ -663,7 +667,7 @@ test.describe("adding to a tour (in memory: this page has no server)", () => {
     await expect(byId(page, "dispatch:1")).toBeVisible();
 
     await byId(page, "dispatch:1").click();
-    await page.getByTestId("tours-button").click();
+    await openTourEditor(page);
     const panel = page.getByTestId("tour-panel");
     await expect(panel).toBeVisible();
     // the tour of the explainer is offered; the new tour is one choice away
@@ -757,10 +761,7 @@ test.describe("adding to a tour (in memory: this page has no server)", () => {
 
     // the download has the tour (the only place it lives without a server)
     await page.keyboard.press("Escape");
-    const [download] = await Promise.all([
-      page.waitForEvent("download"),
-      page.getByRole("button", { name: "Download explainer JSON" }).click(),
-    ]);
+    const download = await downloadJson(page);
     const explainer = JSON.parse(await readFile((await download.path())!, "utf8")) as {
       tours: {
         id: string;
@@ -792,7 +793,7 @@ test.describe("adding to a tour (in memory: this page has no server)", () => {
     await open(page);
     await page.evaluate(() => window.__xpl!.setView("view:dispatch"));
     await byId(page, "dispatch:2").click();
-    await page.getByTestId("tours-button").click();
+    await openTourEditor(page);
     await expect(page.getByTestId("tour-target")).toHaveValue("tour:intro");
     const rows = page.getByTestId("tour-step");
     await expect(rows).toHaveCount(2);
@@ -815,7 +816,7 @@ test.describe("adding to a tour (in memory: this page has no server)", () => {
 
     // Escape inside the panel closes the panel, not the selection
     await byId(page, "dispatch:1").click();
-    await page.getByTestId("tours-button").click();
+    await openTourEditor(page);
     await page.getByTestId("tour-step-note").first().focus();
     await page.keyboard.press("Escape");
     await expect(page.getByTestId("tour-panel")).toHaveCount(0);
@@ -829,7 +830,7 @@ test.describe("adding to a tour (in memory: this page has no server)", () => {
     // click a stub edge of the overview: it is selected, but it is a picture, not an element
     await page.locator("[data-stub-id]").first().click();
     expect((await stateOf(page)).selection[0]).toMatch(/^stub:/);
-    await page.getByTestId("tours-button").click();
+    await openTourEditor(page);
     await expect(page.getByTestId("tour-add")).toContainText("nothing selected");
     await page.getByTestId("tour-add").click();
     const rows = page.getByTestId("tour-step");
@@ -868,7 +869,7 @@ for (const scheme of ["light", "dark"] as const) {
 
       // Explore with the tour panel open
       await page.keyboard.press("Escape");
-      await page.getByTestId("tours-button").click();
+      await openTourEditor(page);
       await expect(page.getByTestId("tour-panel")).toBeVisible();
       await page.screenshot({ path: screenshotPath(`tour-panel-${scheme}`) });
       expect(problems).toEqual([]);

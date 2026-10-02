@@ -1,11 +1,13 @@
 /**
  * Present mode: a tour played step by step (ARCHITECTURE.md section 6). Every step has already been
  * applied by the store (its view, its focus as the selection, the code override and editor options);
- * this lays it out for a room: the diagram and, under it, a large caption with the step counter and
- * the note (markdown) on the left, the code on the right with the file tree out of the way.
+ * this lays it out for a room: the diagram and, under it, a large caption (the step's title and note) on
+ * the left, the code on the right with the file tree out of the way. The step counter, the arrows and
+ * the tour picker are in the header (Header.tsx). A flow step gives the diagram more of the width (a flow
+ * is tall and branches sideways; the code beside it wraps its long lines).
  *
  * Keys live in App.tsx (arrows, PageUp/PageDown, Space, Home/End, Esc). Clicking around the diagram is
- * a detour: the selection follows the click and the caption says so; the next arrow key applies the
+ * a detour: the selection follows the click and the header says so; the next arrow key applies the
  * next step again.
  */
 import { useMemo } from "react";
@@ -50,7 +52,6 @@ export function PresentMode() {
     );
   }
 
-  const detour = state.applied === undefined;
   // What the step asked for, not what a detour left of it: the tree must not pop in and out.
   const tree = step.editor?.hideFileTree === false ? "open" : "hidden";
 
@@ -61,6 +62,7 @@ export function PresentMode() {
       data-tour={tour.id}
       data-step={stepNumber(index)}
       data-step-id={step.id}
+      data-view-type={store.view()?.type}
     >
       <section className="present-left" aria-label="Diagram and caption">
         <DiagramPane />
@@ -69,53 +71,6 @@ export function PresentMode() {
           aria-label="Caption"
           data-testid="tour-caption"
         >
-          <div className="tour-nav">
-            <button
-              type="button"
-              className="tour-btn"
-              data-testid="tour-prev"
-              aria-label="Previous step"
-              title="Previous step (←, Page Up)"
-              disabled={index === 0}
-              onClick={() => store.prevStep()}
-            >
-              ‹
-            </button>
-            <span className="tour-counter" data-testid="tour-counter" aria-live="polite">
-              {stepNumber(index)} / {count}
-            </span>
-            <button
-              type="button"
-              className="tour-btn"
-              data-testid="tour-next"
-              aria-label="Next step"
-              title="Next step (→, Page Down, Space)"
-              disabled={index >= count - 1}
-              onClick={() => store.nextStep()}
-            >
-              ›
-            </button>
-            {detour ? (
-              <p
-                className="tour-detour"
-                role="status"
-                data-testid="tour-detour"
-                title="A click took the screen off the tour: an arrow key applies the next step again"
-              >
-                Exploring ·{" "}
-                <button type="button" className="link" onClick={() => store.goToStep(index)}>
-                  Back to step {stepNumber(index)}
-                </button>
-              </p>
-            ) : (
-              <span className="tour-keys" aria-hidden="true">
-                ← → step · Esc leave
-              </span>
-            )}
-          </div>
-          <div className="tour-progress" aria-hidden="true">
-            <span style={{ width: `${(stepNumber(index) / count) * 100}%` }} />
-          </div>
           {text!.titleMarkdown !== undefined ? (
             <h2
               className="tour-title"

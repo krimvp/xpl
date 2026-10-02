@@ -13,11 +13,14 @@ import { readFileSync } from "node:fs";
 import { expect, test, type Page } from "@playwright/test";
 import {
   byId,
+  downloadJson,
   fitAll,
+  openEditMenu,
   readEmbeddedBundle,
   screenshotPath,
   selectionOf,
   stateOf,
+  viewToggle,
   watchProblems,
   withBundle,
 } from "./helpers.js";
@@ -186,9 +189,13 @@ test.describe("the default policy", () => {
     // folded ghosts say so: they open a list instead of adding something
     await expect(byId(page, "ghost:more:out")).toHaveAttribute("aria-haspopup", "menu");
     await expect(byId(page, "ghost:file:src/f11.ts")).not.toHaveAttribute("aria-haspopup", "menu");
-    // the caption says which mode it is
-    await expect(page.locator('[data-stub-mode="top"]')).toHaveAttribute("aria-pressed", "true");
+    // the Edit menu says which mode it is
+    await expect(await viewToggle(page, '[data-stub-mode="top"]')).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
     await expect(page.locator('[data-stub-mode="all"]')).toHaveAttribute("aria-pressed", "false");
+    await page.keyboard.press("Escape");
     await page.locator(".diagram").screenshot({ path: screenshotPath("crowded-top") });
     expect(problems).toEqual([]);
   });
@@ -357,7 +364,9 @@ test.describe("the ghost menu", () => {
     await byId(page, "ghost:rest:file:src/hub.ts").click();
     await expect(menu(page)).toHaveCount(0);
     expect((await stateOf(page)).include).toEqual([RUN, MAIN]);
-    // and the caption has no controls to edit the view with
+    // and nothing on screen, not even the Edit menu, edits the view
+    await expect(page.getByTestId("stubs-control")).toHaveCount(0);
+    await openEditMenu(page);
     await expect(page.getByTestId("stubs-control")).toHaveCount(0);
   });
 });
@@ -368,6 +377,8 @@ test.describe("the Stubs control", () => {
   }) => {
     const problems = watchProblems(page);
     await openCrowded(page);
+    // (in the Edit menu, which stays open while the toggles are flipped)
+    await openEditMenu(page);
     const mode = (m: string) => page.locator(`[data-stub-mode="${m}"]`);
 
     await mode("all").click();
@@ -393,10 +404,7 @@ test.describe("the Stubs control", () => {
 
     // an edit like the others: unsaved without a server, exported with the view, marked as the user's
     await expect(page.locator(".save-status")).toHaveText("Unsaved");
-    const [download] = await Promise.all([
-      page.waitForEvent("download"),
-      page.getByRole("button", { name: "Download explainer JSON" }).click(),
-    ]);
+    const download = await downloadJson(page);
     const saved = JSON.parse(readFileSync((await download.path())!, "utf8")) as {
       views: { id: string; stubs?: unknown; provenance: { userFields?: string[] } }[];
     };
@@ -410,7 +418,8 @@ test.describe("the Stubs control", () => {
     page,
   }) => {
     await openCrowded(page);
-    await page.locator('[data-stub-mode="all"]').click();
+    await (await viewToggle(page, '[data-stub-mode="all"]')).click();
+    await page.keyboard.press("Escape");
     // all ghosts make a big diagram, which starts zoomed in: fit it to reach the last one
     await fitAll(page);
     await byId(page, "ghost:file:src/f11.ts").click();
@@ -424,9 +433,12 @@ test.describe("the Stubs control", () => {
       new URL("../dist/bundles/ts-jobrunner.html", import.meta.url).href + "?mode=explore",
     );
     await page.waitForFunction(() => window.__xpl !== undefined);
+    await openEditMenu(page);
     await expect(page.getByTestId("stubs-control")).toBeVisible();
+    await page.keyboard.press("Escape");
     await page.evaluate(() => window.__xpl!.setView("view:dispatch"));
     await expect(page.locator(".diagram[data-view-id='view:dispatch']")).toBeVisible();
+    await openEditMenu(page);
     await expect(page.getByTestId("stubs-control")).toHaveCount(0);
   });
 });

@@ -15,9 +15,14 @@ export function RelatedFiles({ onOpen }: { onOpen: () => void }) {
   const store = useStore();
   const state = useViewerState();
   const derived = useDerived();
+  // In the Guide, a section lists its tests itself ("Tests", under the section): not again here.
+  const guide = state.perspective === "guide";
   const links = useMemo(
-    () => relatedFiles(state.selection, state.model, derived.selection.focus),
-    [state.selection, state.model, derived.selection.focus],
+    () =>
+      relatedFiles(state.selection, state.model, derived.selection.focus).filter(
+        (link) => !(guide && link.kind === "test"),
+      ),
+    [state.selection, state.model, derived.selection.focus, guide],
   );
   const anchors = [
     ...state.selection.flatMap((id) => {

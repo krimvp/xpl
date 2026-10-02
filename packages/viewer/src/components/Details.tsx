@@ -187,12 +187,13 @@ function Anchors({ rows, reader }: { rows: AnchorRow[]; reader: boolean }) {
               type="button"
               className="anchor-row"
               data-status={row.status}
-              title={`Open ${row.file}${row.startLine ? ` at line ${row.startLine}` : ""}`}
-              onClick={() => store.openFile(row.file, row.startLine)}
+              title={`Open ${row.base ? "the code before the change of " : ""}${row.file}${row.startLine ? ` at line ${row.startLine}` : ""}`}
+              onClick={() => store.openFile(row.file, row.startLine, row.base ? "base" : undefined)}
             >
               <span className={`role role-${row.role}`}>
                 {reader ? roleWords(row.role) : row.role}
               </span>
+              {row.base && <span className="anchor-before">before</span>}
               <span className="where">{row.where}</span>
               {row.startLine !== undefined && (
                 <span className="lines">

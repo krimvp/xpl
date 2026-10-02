@@ -6,6 +6,8 @@
  * - when `bundle.server?.api` is set the viewer runs under `xpl view` and talks to that API:
  *     GET  {api}/file?path=<file>     source text of a file missing from `bundle.files`
  *                                     (plain text; JSON `"..."` or `{ "text": "..." }` also works)
+ *     GET  {api}/base-file?path=<file> the code before the change of a changed file missing from
+ *                                     `bundle.baseFiles` (plain text, like `/file`)
  *     PUT  {api}/views/<view id>      persist a view edit: JSON `{ "type": <view type>, ...changed fields }`
  *     PUT  {api}/tours/<tour id>      persist a tour edit: JSON `{ "title": ..., "steps": [...] }` (the whole tour;
  *                                     a new tour is created the same way)
@@ -92,6 +94,14 @@ export class ServerApi {
           (json as { content?: unknown } | null)?.content);
     if (typeof text !== "string") throw new Error(`no text in the response for ${path}`);
     return text;
+  }
+
+  /** The code before the change of a changed file (`ChangedFile.path`), like `file`. */
+  async baseFile(path: string): Promise<string> {
+    const response = await this.check(
+      await fetch(this.url(`/base-file?path=${encodeURIComponent(path)}`)),
+    );
+    return response.text();
   }
 
   /** Persists changed view fields; `fields` always carries the view's `type`. */

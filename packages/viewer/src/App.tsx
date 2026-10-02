@@ -15,7 +15,7 @@ import { Workspace } from "./components/Workspace.js";
 import "./workspace.css";
 import { Splitter } from "./components/Splitter.js";
 import { StoreContext, useStore, useViewerState } from "./hooks.js";
-import { isFormField, tourKeyAction } from "./present/keys.js";
+import { isFormField, ownsKeys, tourKeyAction } from "./present/keys.js";
 import { PresentMode } from "./present/PresentMode.js";
 import type { ViewerStore } from "./store.js";
 
@@ -80,7 +80,7 @@ function Shell() {
     const onKeyDown = (event: KeyboardEvent) => {
       if (store.getState().mode !== "present") return;
       const action = tourKeyAction(event);
-      if (!action || isFormField(event.target)) return;
+      if (!action || ownsKeys(event.target)) return;
       event.preventDefault();
       event.stopPropagation();
       if (event.repeat) return;

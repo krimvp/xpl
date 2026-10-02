@@ -5,11 +5,21 @@
  * are pushed into the live editor instead.
  */
 import type { EditorView } from "@codemirror/view";
-import type { AnchorRole, FileLanguage, FocusRange } from "@xpl/core";
-import { memo, useEffect, useRef, type CSSProperties } from "react";
-import type { PaneSpec } from "../derive.js";
 import {
+  shortSha,
+  splitLines,
+  type AnchorRole,
+  type ChangedFile,
+  type FileLanguage,
+  type FocusRange,
+} from "@xpl/core";
+import { memo, useEffect, useMemo, useRef, type CSSProperties } from "react";
+import type { PaneSpec } from "../derive.js";
+import { changeAt, changeOf, fileDiff, languageOfPath, needsBase, paneDiff } from "../diff.js";
+import {
+  applyDiff,
   applyFocus,
+  setLineWrapping,
   createReadOnlyEditor,
   firstFocusLine,
   placeCaret,
@@ -25,10 +35,18 @@ export function EditorStack() {
   const derived = useDerived();
   const { panes, overflow } = derived;
 
-  // Server mode: fetch what the panes need.
+  const change = changeOf(state.explainer);
+  // Server mode: fetch what the panes need (the code before the change too: a "before" pane, and the
+  // removed lines a changed file shows between its own).
   useEffect(() => {
-    for (const pane of panes) void store.ensureFile(pane.file);
-  }, [panes, store]);
+    for (const pane of panes) {
+      if (pane.side === "base") void store.ensureBaseFile(pane.file);
+      else {
+        void store.ensureFile(pane.file);
+        if (state.showChanges && needsBase(change, pane.file)) void store.ensureBaseFile(pane.file);
+      }
+    }
+  }, [panes, store, change, state.showChanges]);
 
   if (panes.length === 0) {
     return (
@@ -54,20 +72,34 @@ export function EditorStack() {
     <div className="editor-stack">
       {panes.map((pane, i) => {
         const info = state.model.index.file(pane.file);
+        const base = pane.side === "base";
+        const changed = changeAt(change, pane.file);
+        const text = base ? state.baseFiles[pane.file] : state.files[pane.file];
         return (
           <EditorPane
-            key={pane.file}
+            key={`${base ? "base" : "head"}:${pane.file}`}
             pane={pane}
-            wantLines={present ? paneLines(pane) : undefined}
+            wantLines={
+              present
+                ? paneLines(pane) + (state.showChanges ? removedInFocus(pane, changed) : 0)
+                : undefined
+            }
             reader={reader}
             shrink={paneShrink(i)}
-            language={info?.language ?? "text"}
-            lines={info?.lines ?? 0}
-            text={state.files[pane.file]}
-            error={state.fileErrors[pane.file]}
-            cursor={state.cursor?.file === pane.file ? state.cursor : undefined}
+            language={info?.language ?? languageOfPath(pane.file)}
+            lines={info && !base ? info.lines : text !== undefined ? splitLines(text).length : 0}
+            text={text}
+            error={base ? state.baseErrors[pane.file] : state.fileErrors[pane.file]}
+            cursor={!base && state.cursor?.file === pane.file ? state.cursor : undefined}
             focusToken={derived.selection}
-            openToken={state.openedFile === pane.file ? state.openSeq : 0}
+            openToken={
+              state.openedFile === pane.file && state.openedBase === base ? state.openSeq : 0
+            }
+            changed={changed}
+            baseSha={change ? shortSha(change.base) : undefined}
+            baseText={changed && !base ? state.baseFiles[pane.file] : undefined}
+            baseError={changed && !base ? state.baseErrors[pane.file] : undefined}
+            showChanges={state.showChanges}
           />
         );
       })}
@@ -113,6 +145,21 @@ export function paneLines(pane: PaneSpec): number {
 }
 
 /**
+ * Present: the removed lines a changed file shows between the lines of a pane's focus (they take rows too),
+ * so that the pane is tall enough for both; at most 8.
+ */
+function removedInFocus(pane: PaneSpec, changed: ChangedFile | undefined): number {
+  if (!changed || changed.status === "added" || pane.side === "base" || !pane.focused) return 0;
+  const first = firstFocusLine(pane.ranges) ?? 0;
+  const last = Math.max(...pane.ranges.map((r) => r.range.endLine));
+  let count = 0;
+  for (const block of fileDiff(changed).removed) {
+    if (block.at >= first && block.at <= last) count += block.to - block.from + 1;
+  }
+  return Math.min(8, count);
+}
+
+/**
  * flex-shrink of the i-th pane: 0 for the first, then 1, 100, 10000, ...: when the column is too short the
  * last pane gives way first (down to its minimum), then the one above it, and the first pane never does.
  */
@@ -139,6 +186,15 @@ interface PaneProps {
   focusToken: unknown;
   /** Changes when the file is opened again explicitly. */
   openToken: number;
+  /** The file's entry in the explainer's change record, when the change touched it. */
+  changed: ChangedFile | undefined;
+  /** `85c3b74`: the base commit of the change, for the "Before" label. */
+  baseSha: string | undefined;
+  /** A head pane of a changed file: the code before the change (for the removed lines), when loaded. */
+  baseText: string | undefined;
+  baseError: string | undefined;
+  /** The "Show changes" toggle. */
+  showChanges: boolean;
 }
 
 const ROLE_ORDER: AnchorRole[] = ["definition", "call-site", "usage", "config", "test"];
@@ -155,34 +211,66 @@ const EditorPane = memo(function EditorPane({
   cursor,
   focusToken,
   openToken,
+  changed,
+  baseSha,
+  baseText,
+  baseError,
+  showChanges,
 }: PaneProps) {
   const store = useStore();
+  const base = pane.side === "base";
+  const baseLines = useMemo(
+    () => (baseText !== undefined ? splitLines(baseText) : undefined),
+    [baseText],
+  );
+  const diff = useMemo(
+    () => (showChanges ? paneDiff(pane.side, changed, baseLines, baseError) : null),
+    [showChanges, pane.side, changed, baseLines, baseError],
+  );
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
   /** Counts editors created; lets the caret effect tell "just created" from "moved later". */
   const generation = useRef(0);
   const caretApplied = useRef(0);
+  const wrap = wantLines !== undefined;
+  // (read when an editor is created: it starts wrapped or not, the effect below follows changes)
+  const wrapRef = useRef(wrap);
+  wrapRef.current = wrap;
 
   // The editor itself: created once the text is there, rebuilt only when file or text change.
   useEffect(() => {
     const parent = host.current;
     if (text === undefined || !parent) return;
-    const editor = createReadOnlyEditor(parent, text, language, {
-      onCursor: (from, to) => store.setCursor(pane.file, from, to),
-    });
+    const editor = createReadOnlyEditor(
+      parent,
+      text,
+      language,
+      // The lines of a "before" pane are lines of the old code: the caret there looks nothing up.
+      base ? undefined : { onCursor: (from, to) => store.setCursor(pane.file, from, to) },
+      wrapRef.current,
+    );
     view.current = editor;
     generation.current += 1;
     return () => {
       editor.destroy();
       view.current = null;
     };
-  }, [pane.file, text, language, store]);
+  }, [pane.file, text, language, store, base]);
 
-  // Decorations follow the focus.
+  // Present wraps long lines (nobody scrolls sideways in a talk); elsewhere code runs on as written.
+  useEffect(() => {
+    if (view.current) setLineWrapping(view.current, wrap);
+  }, [wrap, text]);
+
+  // Decorations follow the focus, and the change.
   useEffect(() => {
     const editor = view.current;
     if (editor) applyFocus(editor, { ranges: pane.ranges, dim: pane.dim });
   }, [pane.ranges, pane.dim, text, pane.file, language]);
+  useEffect(() => {
+    const editor = view.current;
+    if (editor) applyDiff(editor, diff);
+  }, [diff, text, pane.file, language]);
 
   // Scroll to the range the step is about when the focus changes (or the file is opened again): the first
   // one in the step's order (`pane.lead`), else the lowest.
@@ -190,9 +278,16 @@ const EditorPane = memo(function EditorPane({
     const editor = view.current;
     if (!editor) return;
     const first = pane.lead ?? firstFocusLine(pane.ranges);
-    if (first !== undefined) scrollToLine(editor, first, wantLines !== undefined ? 22 : undefined);
+    // Lines the change removed just above that line are part of what to see: leave room for them.
+    const above =
+      diff?.removed
+        ?.filter((block) => block.place === "before" && block.at === first)
+        .reduce((sum, block) => sum + (block.text ? block.count : 1), 0) ?? 0;
+    const margin = (wantLines !== undefined ? 22 : 44) + above * editor.defaultLineHeight;
+    if (first !== undefined) scrollToLine(editor, first, margin);
     else if (openToken > 0) scrollToLine(editor, 1);
-    // `pane.ranges` belongs to this very `focusToken`; the token is what says "the focus changed".
+    // `pane.ranges` belongs to this very `focusToken`; the token is what says "the focus changed". (The
+    // diff is applied by the effect above in the same commit; turning it on or off does not scroll.)
   }, [focusToken, openToken, text, pane.file, language, wantLines !== undefined]);
 
   // The caret follows the store (window.__xpl.setCursor, anchor clicks); a real click already is the store.
@@ -208,11 +303,22 @@ const EditorPane = memo(function EditorPane({
 
   const roles = ROLE_ORDER.filter((role) => pane.ranges.some((r) => r.role === role));
   const stale = pane.ranges.filter((r) => r.status === "drifted" || r.status === "moved");
-  const slash = pane.file.lastIndexOf("/");
+  // A "before" pane of a renamed file shows the path it had then.
+  const shown =
+    base && changed?.status === "renamed" && changed.oldPath ? changed.oldPath : pane.file;
+  const slash = shown.lastIndexOf("/");
+  const status =
+    changed && (!base || changed.status === "deleted") ? changeLabel(changed) : undefined;
   return (
     <section
-      className={"pane" + (pane.focused ? " is-focused" : "") + (pane.opened ? " is-opened" : "")}
+      className={
+        "pane" +
+        (pane.focused ? " is-focused" : "") +
+        (pane.opened ? " is-opened" : "") +
+        (base ? " is-base" : "")
+      }
       data-file={pane.file}
+      data-side={base ? "base" : "head"}
       style={
         wantLines !== undefined
           ? ({ "--pane-lines": wantLines, "--pane-shrink": shrink } as CSSProperties)
@@ -220,14 +326,48 @@ const EditorPane = memo(function EditorPane({
       }
     >
       <header className="pane-header">
-        <span className="pane-file" title={pane.file}>
-          {slash !== -1 && <span className="dir">{pane.file.slice(0, slash + 1)}</span>}
-          <b>{pane.file.slice(slash + 1)}</b>
+        {base && (
+          <span
+            className="pane-side"
+            data-testid="pane-before"
+            title="The code before the change, read-only. Its line numbers are the old ones."
+          >
+            Before{baseSha ? ` (base ${baseSha})` : ""}
+          </span>
+        )}
+        <span className="pane-file" title={shown}>
+          {slash !== -1 && <span className="dir">{shown.slice(0, slash + 1)}</span>}
+          <b>{shown.slice(slash + 1)}</b>
         </span>
+        {status && (
+          <span
+            className={`pane-change is-${changed!.status}`}
+            data-testid="pane-change"
+            title={status.title}
+          >
+            {status.text}
+          </span>
+        )}
         {!reader && (
           <span className="pane-meta">
             {language} · {lines} lines
           </span>
+        )}
+        {changed && !base && changed.status !== "deleted" && (
+          <button
+            type="button"
+            className="pane-toggle"
+            data-testid="show-changes"
+            aria-pressed={showChanges}
+            title={
+              showChanges
+                ? "Hide what the change added and removed: show the code as it is"
+                : "Mark the lines the change added and show the lines it removed"
+            }
+            onClick={() => store.setShowChanges(!showChanges)}
+          >
+            Show changes
+          </button>
         )}
         <span className="pane-roles">
           {roles.map((role) => (
@@ -256,7 +396,9 @@ const EditorPane = memo(function EditorPane({
       <div className="pane-body">
         {text === undefined ? (
           <div className={"pane-message" + (error ? " is-error" : "")}>
-            {error ? `Source unavailable: ${error}` : "Loading…"}
+            {error
+              ? `${base ? "Code before the change unavailable" : "Source unavailable"}: ${error}`
+              : "Loading…"}
           </div>
         ) : (
           <div className="editor-host" ref={host} />
@@ -265,3 +407,20 @@ const EditorPane = memo(function EditorPane({
     </section>
   );
 });
+
+/** What the change did to a file, in a pane's header: "New file", "Changed", "Renamed from old/path". */
+function changeLabel(file: ChangedFile): { text: string; title: string } {
+  switch (file.status) {
+    case "added":
+      return { text: "New file", title: "This change adds the file" };
+    case "modified":
+      return { text: "Changed", title: "This change edits the file" };
+    case "renamed":
+      return {
+        text: `Renamed from ${file.oldPath ?? "?"}`,
+        title: `This change moves ${file.oldPath ?? "the file"} here`,
+      };
+    case "deleted":
+      return { text: "Removed", title: "This change removes the file" };
+  }
+}

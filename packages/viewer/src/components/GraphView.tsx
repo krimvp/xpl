@@ -26,17 +26,21 @@ import {
 } from "react";
 import {
   badgeWidth,
+  changeText,
   EDGE_BOUNDS_PAD,
   labelWidth,
   layoutGraphFitting,
+  PILL_GAP,
   startAnchor,
+  type ChangeMarks,
   type GraphLayout,
   type LayoutEdge,
   type LayoutNode,
 } from "../layout/graphLayout.js";
 import { arrowHeadPath, distanceToSegment, roundedPath, routeBox, type Box } from "../svg.js";
 import { unionBox } from "../viewport.js";
-import { useStore } from "../hooks.js";
+import { changeMarks, changeOf } from "../diff.js";
+import { useStore, useViewerState } from "../hooks.js";
 import { readerBadge } from "../readerWords.js";
 import { GhostTargetList } from "./GhostTargets.js";
 import {
@@ -54,6 +58,11 @@ const ReadOnly = createContext(false);
  * the edge or one of its ends is selected.
  */
 const Reader = createContext(false);
+/**
+ * True in a still picture (the Guide's inline diagram, `GraphPicture`): the same shapes, but no element
+ * ids (the live diagram keeps those to itself) and nothing to click or focus.
+ */
+const Still = createContext(false);
 
 /** Where a ghost box is on screen, relative to the diagram pane (the menu of a folded ghost opens beside it). */
 interface Anchor {
@@ -182,6 +191,7 @@ export function GraphView({
 }: GraphViewProps) {
   const store = useStore();
   const host = useRef<HTMLDivElement>(null);
+  const changes = useGraphChanges(graph);
   const [layout, setLayout] = useState<GraphLayout | undefined>();
   const [error, setError] = useState<string | undefined>();
   const [menu, setMenu] = useState<GhostMenuState | undefined>();
@@ -207,6 +217,7 @@ export function GraphView({
       viewport,
       present ? PRESENT_MAX_FIT_ZOOM : undefined,
       present ? PRESENT_FIT_PADDING : undefined,
+      changes,
     ).then(
       (result) => {
         if (cancelled) return;
@@ -220,7 +231,7 @@ export function GraphView({
     return () => {
       cancelled = true;
     };
-  }, [graph, present]);
+  }, [graph, present, changes]);
 
   // The menu belongs to the layout it was opened on.
   useEffect(() => setMenu(undefined), [graph, present, viewId]);
@@ -327,6 +338,67 @@ export function GraphView({
   );
 }
 
+/**
+ * What the explainer's change did to the boxes of a graph ("New", "Changed"), stable while the change record,
+ * the index and the graph stay the same (a tour edit makes a new model, not a new layout).
+ */
+export function useGraphChanges(graph: DerivedGraph): ChangeMarks | undefined {
+  const state = useViewerState();
+  const change = changeOf(state.explainer);
+  const index = state.model.index;
+  return useMemo(
+    () =>
+      change
+        ? changeMarks(
+            graph.nodes.map((node) => node.id),
+            index,
+            change,
+          )
+        : undefined,
+    [graph, change, index],
+  );
+}
+
+/**
+ * A still picture of a laid-out graph (the Guide's inline diagram): the shapes of the live diagram in their
+ * reader form, with the selection and the related boxes marked. The caller draws it in its own frame
+ * (Snapshot.tsx) and keeps it from taking clicks.
+ */
+export function GraphPicture({
+  layout,
+  selection,
+  related,
+}: {
+  layout: GraphLayout;
+  selection: readonly string[];
+  related: ReadonlySet<string>;
+}) {
+  const marks = useMemo<Marks>(
+    () => ({ selected: new Set(selection), matches: new Set(), related }),
+    [selection, related],
+  );
+  return (
+    <ReadOnly.Provider value={true}>
+      <Reader.Provider value={true}>
+        <Still.Provider value={true}>
+          <g className="graph" data-direction={layout.direction}>
+            <g className="edges">
+              {layout.edges.map((edge) => (
+                <EdgeShape key={edge.id} edge={edge} marks={marks} />
+              ))}
+            </g>
+            <g className="nodes">
+              {layout.nodes.map((node) => (
+                <NodeShape key={node.id} node={node} marks={marks} />
+              ))}
+            </g>
+          </g>
+        </Still.Provider>
+      </Reader.Provider>
+    </ReadOnly.Provider>
+  );
+}
+
 // ─── Nodes ──────────────────────────────────────────────────────────────────────────────────────
 
 const NodeShape = memo(function NodeShape({ node, marks }: { node: LayoutNode; marks: Marks }) {
@@ -342,18 +414,19 @@ function BoxShape({ node, marks }: { node: LayoutNode; marks: Marks }) {
   const readOnly = useContext(ReadOnly);
   const reader = useContext(Reader);
   const container = node.children.length > 0;
+  const still = useContext(Still);
   const select = (event: MouseEvent | KeyboardEvent) => store.click(node.id, additive(event));
   const badgeText = reader ? readerBadge(node.badge) : node.badge;
   const badge = badgeWidth(badgeText ?? "");
   return (
     <g
       className={`node kind-${node.kindClass}${container ? " is-container" : ""}${stateClasses(node.id, marks)}`}
-      data-element-id={node.id}
+      data-element-id={still ? undefined : node.id}
       transform={`translate(${node.x} ${node.y})`}
-      role="button"
-      tabIndex={0}
-      aria-label={`${node.badge} ${node.label}`}
-      aria-pressed={marks.selected.has(node.id)}
+      role={still ? undefined : "button"}
+      tabIndex={still ? undefined : 0}
+      aria-label={still ? undefined : `${node.badge} ${node.label}`}
+      aria-pressed={still ? undefined : marks.selected.has(node.id)}
       onClick={(event) => {
         event.stopPropagation();
         select(event);
@@ -386,6 +459,13 @@ function BoxShape({ node, marks }: { node: LayoutNode; marks: Marks }) {
           </text>
           {badgeText && (
             <Badge x={14 + labelWidth(node.label) + 8} y={9} text={badgeText} width={badge} />
+          )}
+          {node.change && (
+            <ChangePill
+              x={14 + labelWidth(node.label) + 8 + (badgeText ? badge + PILL_GAP : 0)}
+              y={9}
+              change={node.change}
+            />
           )}
           {/* What the container holds: its own edges under its children. */}
           <g className="edges">
@@ -422,10 +502,13 @@ function BoxShape({ node, marks }: { node: LayoutNode; marks: Marks }) {
         </>
       ) : (
         <>
-          <text className="label" x={14} y={badgeText ? 19 : node.height / 2 + 5}>
+          <text className="label" x={14} y={badgeText || node.change ? 19 : node.height / 2 + 5}>
             {node.label}
           </text>
           {badgeText && <Badge x={14} y={27} text={badgeText} width={badge} />}
+          {node.change && (
+            <ChangePill x={14 + (badgeText ? badge + PILL_GAP : 0)} y={27} change={node.change} />
+          )}
         </>
       )}
     </g>
@@ -464,6 +547,25 @@ function centerIsCovered(node: LayoutNode): boolean {
   );
 }
 
+/** "New" or "Changed": what the explainer's change did to this box, in plain words. */
+function ChangePill({ x, y, change }: { x: number; y: number; change: "new" | "changed" }) {
+  const text = changeText(change);
+  const width = badgeWidth(text);
+  return (
+    <g
+      className={`change-pill is-${change}`}
+      transform={`translate(${x} ${y})`}
+      data-change={change}
+    >
+      <title>{change === "new" ? "Added by this change" : "This change edits its code"}</title>
+      <rect width={width} height={16} rx={8} />
+      <text x={width / 2} y={12}>
+        {text}
+      </text>
+    </g>
+  );
+}
+
 function Badge({ x, y, text, width }: { x: number; y: number; text: string; width: number }) {
   return (
     <g className="badge" transform={`translate(${x} ${y})`} aria-hidden="true">
@@ -478,6 +580,7 @@ function Badge({ x, y, text, width }: { x: number; y: number; text: string; widt
 function GhostShape({ node, marks }: { node: LayoutNode; marks: Marks }) {
   const store = useStore();
   const readOnly = useContext(ReadOnly);
+  const still = useContext(Still);
   const menu = useContext(GhostMenuContext);
   const fold = node.ghostFold;
   const open = fold !== undefined && menu.openId === node.id;
@@ -495,11 +598,11 @@ function GhostShape({ node, marks }: { node: LayoutNode; marks: Marks }) {
   return (
     <g
       className={`node ghost${fold ? " is-fold" : ""}${open ? " is-open" : ""}${stateClasses(node.id, marks)}`}
-      data-element-id={node.id}
+      data-element-id={still ? undefined : node.id}
       transform={`translate(${node.x} ${node.y})`}
-      role="button"
-      tabIndex={0}
-      aria-label={label}
+      role={still ? undefined : "button"}
+      tabIndex={still ? undefined : 0}
+      aria-label={still ? undefined : label}
       aria-haspopup={fold && !readOnly ? "menu" : undefined}
       aria-expanded={fold && !readOnly ? open : undefined}
       onClick={(event) => {
@@ -652,6 +755,7 @@ function GhostMenu({
 const EdgeShape = memo(function EdgeShape({ edge, marks }: { edge: LayoutEdge; marks: Marks }) {
   const store = useStore();
   const reader = useContext(Reader);
+  const still = useContext(Still);
   const points = edge.points;
   if (points.length < 2) return null;
   const path = roundedPath(points);
@@ -677,11 +781,11 @@ const EdgeShape = memo(function EdgeShape({ edge, marks }: { edge: LayoutEdge; m
   return (
     <g
       className={classes.join(" ") + stateClasses(edge.id, marks)}
-      data-element-id={edge.id}
-      data-stub-id={edge.stub ? edge.id : undefined}
-      role="button"
-      tabIndex={0}
-      aria-label={`${edge.stub ? "stub" : "edge"} ${edge.title}`}
+      data-element-id={still ? undefined : edge.id}
+      data-stub-id={edge.stub && !still ? edge.id : undefined}
+      role={still ? undefined : "button"}
+      tabIndex={still ? undefined : 0}
+      aria-label={still ? undefined : `${edge.stub ? "stub" : "edge"} ${edge.title}`}
       onClick={(event) => {
         event.stopPropagation();
         select(event);

@@ -5,6 +5,7 @@
 import {
   codeFocus,
   describeAnchor,
+  isBaseAnchor,
   type Anchor,
   type AnchorRole,
   type AnchorStatus,
@@ -21,6 +22,8 @@ import type { ViewDerived } from "./derive.js";
 export interface AnchorRow {
   role: AnchorRole;
   file: string;
+  /** A base anchor (`at: "base"`): its lines are lines of the code before the change. */
+  base?: boolean;
   /** `src/runner.ts#Runner.dispatch +34..36`. */
   where: string;
   /** Resolved lines, when the anchor has been resolved. */
@@ -56,6 +59,7 @@ function anchorRow(anchor: Anchor): AnchorRow {
     file: anchor.file,
     where: describeAnchor(anchor),
     status: anchor.resolved?.status ?? "unresolved",
+    ...(isBaseAnchor(anchor) ? { base: true } : {}),
   };
   if (anchor.resolved && anchor.resolved.range.startLine > 0) {
     row.startLine = anchor.resolved.range.startLine;
@@ -255,7 +259,11 @@ function buildInfo(id: ElementId, model: ExplainerModel, vd: ViewDerived): Eleme
         type: "step",
         title: step.label,
         kind: `${step.kind} step`,
-        where: `${model.label(step.from)} → ${model.label(step.to)}`,
+        // A step inside one part is not a call to itself: "inside X", never "X → X".
+        where:
+          step.from === step.to
+            ? `inside ${model.label(step.from)}`
+            : `${model.label(step.from)} → ${model.label(step.to)}`,
         facts: [
           { label: "From", value: model.label(step.from) },
           { label: "To", value: model.label(step.to) },

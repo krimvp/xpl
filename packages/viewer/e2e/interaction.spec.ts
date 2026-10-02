@@ -3,15 +3,18 @@ import { readFileSync } from "node:fs";
 import { expect, test } from "@playwright/test";
 import {
   byId,
+  downloadJson,
   fitAll,
   linesWith,
   matchesOf,
   openBundle,
+  openEditMenu,
   readEmbeddedBundle,
   screenshotPath,
   selectionOf,
   stateOf,
   TS_BUNDLE,
+  viewToggle,
   watchProblems,
   withBundle,
 } from "./helpers.js";
@@ -207,11 +210,16 @@ test.describe("graph view", () => {
     await openBundle(page);
     // runner.ts only has `import type` from queue.ts, which the indexer records as type references
     // (a runtime `imports` edge would be wrong), so toggle the `references` kind.
-    const references = page.locator('[data-edge-kind="references"]');
-    await expect(references).toHaveAttribute("aria-checked", "false");
+    // (the toggles are in the Edit menu, under "This view"; the menu stays open while they are flipped)
+    await expect(await viewToggle(page, '[data-edge-kind="references"]')).toHaveAttribute(
+      "aria-checked",
+      "false",
+    );
+    await page.keyboard.press("Escape");
     await expect(page.locator('[data-element-id^="edge:references:"]')).toHaveCount(0);
     await page.evaluate(() => window.__xpl!.select([]));
     await byId(page, "grp:scheduling").dblclick();
+    const references = await viewToggle(page, '[data-edge-kind="references"]');
     await references.click();
     await expect(references).toHaveAttribute("aria-checked", "true");
     const state = await stateOf(page);
@@ -342,7 +350,7 @@ test.describe("header", () => {
     );
   });
 
-  test("view switcher, Explore/Present toggle and the explainer download", async ({ page }) => {
+  test("view switcher, Present and Exit, and the explainer download", async ({ page }) => {
     await openBundle(page);
     await expect(page.locator("h1.title")).toHaveText("Job runner");
     await expect(page.locator('.tab[data-view-id="view:overview"]')).toHaveAttribute(
@@ -353,29 +361,22 @@ test.describe("header", () => {
     await expect(page.locator(".diagram")).toHaveAttribute("data-view-id", "view:dispatch");
     expect((await stateOf(page)).viewType).toBe("sequence");
     // The edge kind toggles are for graph views only.
+    await openEditMenu(page);
     await expect(page.locator(".edge-kinds")).toHaveCount(0);
+    await page.keyboard.press("Escape");
     // The explainer has a tour, so Present is on offer (tours.spec.ts plays it); Explore is the start.
-    await expect(page.getByRole("button", { name: "Explore" })).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
+    await expect(page.locator(".header")).toHaveAttribute("data-mode", "explore");
     await expect(page.getByRole("button", { name: "Present" })).toBeEnabled();
     await page.getByRole("button", { name: "Present" }).click();
-    await expect(page.getByRole("button", { name: "Present" })).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
+    await expect(page.locator(".header")).toHaveAttribute("data-mode", "present");
     await expect(page.locator(".tab")).toHaveCount(0);
-    await page.getByRole("button", { name: "Explore" }).click();
+    await page.getByRole("button", { name: "Exit" }).click();
     await expect(page.locator(".tab")).toHaveCount(2);
 
     // Download: the explainer including this session's view edits.
     await page.locator('.tab[data-view-id="view:overview"]').click();
     await byId(page, "ghost:file:src/bus.ts").click();
-    const [download] = await Promise.all([
-      page.waitForEvent("download"),
-      page.getByRole("button", { name: "Download explainer JSON" }).click(),
-    ]);
+    const download = await downloadJson(page);
     expect(download.suggestedFilename()).toBe("jobrunner.explainer.json");
     const saved = JSON.parse(readFileSync((await download.path())!, "utf8")) as {
       title: string;

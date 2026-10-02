@@ -48,3 +48,12 @@ export function isFormField(target: EventTarget | null): boolean {
   if (/^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return true;
   return target.isContentEditable && target.closest(".cm-editor") === null;
 }
+
+/**
+ * True for elements whose keys are their own while presenting: form fields, and anything inside an open
+ * menu (the Edit menu: ↑ ↓ Esc) or the tour editor (it opens over the talk from the Edit menu).
+ */
+export function ownsKeys(target: EventTarget | null): boolean {
+  if (isFormField(target)) return true;
+  return target instanceof Element && target.closest('[role="menu"], .tour-panel') !== null;
+}

@@ -258,6 +258,231 @@
   gap: 6px;
   margin-top: 16px;
 }
+/* A change explainer: the files of the change, under the tour summary (Guide.tsx `ChangeFiles`). */
+.change-files {
+  margin: 18px 0 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel);
+}
+.change-files h3 {
+  margin: 0 0 8px;
+  font-size: 14px;
+  font-weight: 650;
+}
+.change-files-total {
+  margin-left: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+.change-files ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.change-file {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 5px 8px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.change-file:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: var(--panel-2);
+}
+.change-file:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+.change-status {
+  flex: none;
+  min-width: 5.6em;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--panel-2);
+  font-size: 12px;
+  font-weight: 650;
+  text-align: center;
+}
+.change-status.is-added {
+  background: var(--diff-add-bg);
+  color: var(--diff-add-bar);
+}
+.change-status.is-modified,
+.change-status.is-renamed {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+.change-status.is-deleted {
+  background: var(--diff-del-bg);
+  color: var(--diff-del-fg);
+}
+.change-path {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 8px;
+  min-width: 0;
+  font: 13px var(--font-mono);
+  overflow-wrap: anywhere;
+}
+.change-path .dir {
+  color: var(--muted);
+  margin-right: -8px;
+}
+.change-old {
+  color: var(--muted);
+  font: 12px var(--font-ui);
+}
+.change-test {
+  flex: none;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: var(--hl-test);
+  font-size: 11px;
+  font-weight: 650;
+}
+.change-counts {
+  flex: none;
+  margin-left: auto;
+  font: 12px var(--font-mono);
+  white-space: nowrap;
+}
+.is-plus {
+  color: var(--diff-add-bar);
+}
+.is-minus {
+  color: var(--diff-del-bar);
+}
+/* Several tours: the picker above the tour's title. */
+.guide-tours {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 0 6px;
+}
+.guide-tours .tour-picker select {
+  max-width: min(46ch, 100%);
+}
+.guide-tours-count {
+  color: var(--muted);
+  font-size: 12px;
+}
+/* The step's diagram, inline: a still picture framed on the focus, and the way to the live one. */
+.guide-snapshot {
+  margin: 20px 0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--canvas);
+}
+.guide-snapshot > figcaption {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 7px 8px 7px 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+  font-size: 12px;
+}
+.guide-snapshot-title {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.snapshot-frame {
+  position: relative;
+  width: 100%;
+  background-image: radial-gradient(var(--border) 1px, transparent 1px);
+  background-size: 22px 22px;
+}
+.snapshot-frame > svg {
+  display: block;
+  pointer-events: none;
+}
+.snapshot-placeholder {
+  width: 100%;
+}
+.snapshot-message {
+  margin: 0;
+  padding: 18px;
+  color: var(--muted);
+  font-size: 13px;
+}
+/* A step inside one part: the part, and what happens in it. */
+.guide-mini-node.is-self {
+  text-align: left;
+}
+.guide-mini-name {
+  color: var(--muted);
+  font-size: 12px;
+}
+.guide-mini-what {
+  font-weight: 600;
+  font-size: 13px;
+}
+/* The tests of the section, in one list. */
+.guide-tests {
+  margin: 18px 0 0;
+}
+.guide-tests h4 {
+  margin: 0 0 8px;
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.guide-tests ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.guide-test {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 10px;
+  width: 100%;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--panel-2);
+  color: var(--fg);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.guide-test:hover {
+  border-color: var(--accent);
+}
+.guide-test code {
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.guide-test-file {
+  color: var(--muted);
+  font-size: 12px;
+}
 .workspace-caption {
   display: flex;
   gap: 16px;

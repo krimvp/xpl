@@ -7,6 +7,12 @@ export const TS_BUNDLE = new URL("../dist/bundles/ts-jobrunner.html", import.met
 /** The Python and Go fixture bundles built by global-setup.ts (same design, other languages). */
 export const PY_BUNDLE = new URL("../dist/bundles/py-jobrunner.html", import.meta.url);
 export const GO_BUNDLE = new URL("../dist/bundles/go-jobrunner.html", import.meta.url);
+/**
+ * The TS fixture as a change explainer (scripts/ts-change.json): a record with a renamed, a deleted, an added
+ * and two modified files, the code before the change embedded, and a base anchor on the retry concept and in
+ * the second tour step.
+ */
+export const CHANGE_BUNDLE = new URL("../dist/bundles/ts-change.html", import.meta.url);
 /** The viewer without any data. */
 export const EMPTY_VIEWER = new URL("../dist/index.html", import.meta.url);
 
@@ -82,4 +88,50 @@ export function withBundle(html: string, bundle: Record<string, unknown>): strin
     /<script id="xpl-data" type="application\/json">[\s\S]*?<\/script>/,
     () => `<script id="xpl-data" type="application/json">${json}</script>`,
   );
+}
+
+/**
+ * The header's Edit menu holds every author tool (in Read, Explore and Present): the tour editor, the stub
+ * and edge-kind toggles of a graph view (Explore), Save as HTML and the JSON download. Opens it (when it is
+ * not open) and resolves to the menu.
+ */
+export async function openEditMenu(page: Page): Promise<Locator> {
+  const menu = page.getByTestId("edit-menu");
+  if ((await menu.count()) === 0) await page.getByTestId("edit-button").click();
+  await expect(menu).toBeVisible();
+  return menu;
+}
+
+/** Opens the tour editor (Edit > Edit the guide's steps). */
+export async function openTourEditor(page: Page): Promise<void> {
+  if ((await page.getByTestId("tour-panel").count()) > 0) return;
+  await (await openEditMenu(page)).getByTestId("edit-tours").click();
+  await expect(page.getByTestId("tour-panel")).toBeVisible();
+}
+
+/** Edit > Download explainer JSON; resolves to the download. */
+export async function downloadJson(page: Page) {
+  const menu = await openEditMenu(page);
+  const [download] = await Promise.all([
+    page.waitForEvent("download"),
+    menu.getByTestId("edit-download").click(),
+  ]);
+  return download;
+}
+
+/** A stub-mode or edge-kind toggle of the current graph view, in the Edit menu (opened when needed). */
+export async function viewToggle(page: Page, selector: string): Promise<Locator> {
+  return (await openEditMenu(page)).locator(selector);
+}
+
+/** Explore (from Read: Edit > Explore the diagrams). */
+export async function toExplore(page: Page): Promise<void> {
+  await (await openEditMenu(page)).getByTestId("edit-explore").click();
+  await expect(page.locator(".header")).toHaveAttribute("data-mode", "explore");
+}
+
+/** Back to reading from Explore (Edit > Back to reading). */
+export async function toRead(page: Page): Promise<void> {
+  await (await openEditMenu(page)).getByTestId("edit-read").click();
+  await expect(page.locator(".header")).toHaveAttribute("data-mode", "read");
 }

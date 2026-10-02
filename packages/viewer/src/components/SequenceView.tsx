@@ -13,6 +13,7 @@ import {
   type FrameBox,
   type Lifeline,
   type Row,
+  type SequenceLayout,
 } from "../layout/sequenceLayout.js";
 import { useStore } from "../hooks.js";
 import { arrowHeadPath, openArrowHeadPath, roundedPath, type Box } from "../svg.js";
@@ -127,7 +128,54 @@ export function SequenceView({
   );
 }
 
-function LifelineShape({ lifeline, classes }: { lifeline: Lifeline; classes: string }) {
+/**
+ * A still picture of a laid-out sequence (the Guide's inline diagram, Snapshot.tsx): the frames, lifelines
+ * and arrows with the selection marked, no element ids and nothing to click.
+ */
+export function SequencePicture({
+  layout,
+  selection,
+}: {
+  layout: SequenceLayout;
+  selection: readonly string[];
+}) {
+  const selected = new Set(selection);
+  const states = (id: string) => (selected.has(id) ? " is-selected" : "");
+  return (
+    <g className="sequence is-still">
+      <g className="frames">
+        {layout.frames.map((box) => (
+          <FrameShape key={box.frame.id} box={box} />
+        ))}
+      </g>
+      <g className="lifelines">
+        {layout.lifelines.map((lifeline) => (
+          <LifelineShape
+            key={lifeline.id}
+            lifeline={lifeline}
+            classes={states(lifeline.id)}
+            still
+          />
+        ))}
+      </g>
+      <g className="steps">
+        {layout.rows.map((row) => (
+          <StepShape key={row.step.id} row={row} classes={states(row.step.id)} still />
+        ))}
+      </g>
+    </g>
+  );
+}
+
+function LifelineShape({
+  lifeline,
+  classes,
+  still = false,
+}: {
+  lifeline: Lifeline;
+  classes: string;
+  still?: boolean;
+}) {
   const store = useStore();
   const select = (event: MouseEvent | KeyboardEvent) => store.click(lifeline.id, additive(event));
   const left = lifeline.x - lifeline.headWidth / 2;
@@ -149,9 +197,9 @@ function LifelineShape({ lifeline, classes }: { lifeline: Lifeline; classes: str
       </g>
       <g
         className={`lifeline-head${classes}`}
-        data-element-id={lifeline.id}
-        role="button"
-        tabIndex={0}
+        data-element-id={still ? undefined : lifeline.id}
+        role={still ? undefined : "button"}
+        tabIndex={still ? undefined : 0}
         aria-label={`Participant ${lifeline.label}`}
         onClick={(event) => {
           event.stopPropagation();
@@ -246,7 +294,15 @@ function FrameShape({ box }: { box: FrameBox }) {
   );
 }
 
-function StepShape({ row, classes }: { row: Row; classes: string }) {
+function StepShape({
+  row,
+  classes,
+  still = false,
+}: {
+  row: Row;
+  classes: string;
+  still?: boolean;
+}) {
   const store = useStore();
   const { step } = row;
   const select = (event: MouseEvent | KeyboardEvent) => store.click(step.id, additive(event));
@@ -272,9 +328,9 @@ function StepShape({ row, classes }: { row: Row; classes: string }) {
   return (
     <g
       className={`step kind-${kind}${row.detached ? " is-detached" : ""}${classes}`}
-      data-element-id={step.id}
-      role="button"
-      tabIndex={0}
+      data-element-id={still ? undefined : step.id}
+      role={still ? undefined : "button"}
+      tabIndex={still ? undefined : 0}
       aria-label={`${kind} ${step.label ?? ""}`}
       onClick={(event) => {
         event.stopPropagation();

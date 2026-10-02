@@ -23,6 +23,7 @@ import {
   type GraphNode,
   type Stub,
 } from "@xpl/core";
+import type { ChangeStatus } from "../diff.js";
 import { textWidth } from "../measure.js";
 import { nearRoute, routeAnchor, type Box, type Point } from "../svg.js";
 import { unionBox } from "../viewport.js";
@@ -50,6 +51,8 @@ export interface LayoutNode {
   detail?: string;
   /** Ghosts: the same with every kind named, for the tooltip. */
   hint?: string;
+  /** What the explainer's change did to it (diff.ts `changeStatus`): a "New" or "Changed" pill. */
+  change?: ChangeStatus;
   /** Position relative to the container (or to the canvas for top-level nodes). */
   x: number;
   y: number;
@@ -136,15 +139,34 @@ function nodeBadge(node: GraphNode): string {
   return node.symbolKind ?? node.kind;
 }
 
-function leafWidth(label: string, badge: string): number {
-  const content = Math.max(textWidth(label, NODE_LABEL_FONT, 600), badgeWidth(badge));
+/** The words of the change pill. */
+export function changeText(change: ChangeStatus): string {
+  return change === "new" ? "New" : "Changed";
+}
+
+/** The gap between the kind badge and the change pill. */
+export const PILL_GAP = 6;
+
+/** Width of the change pill (with the gap before it), 0 without one. */
+function changeWidth(change: ChangeStatus | undefined): number {
+  return change ? badgeWidth(changeText(change)) + PILL_GAP : 0;
+}
+
+function leafWidth(label: string, badge: string, change?: ChangeStatus): number {
+  const content = Math.max(
+    textWidth(label, NODE_LABEL_FONT, 600),
+    badgeWidth(badge) + changeWidth(change),
+  );
   return Math.max(104, Math.ceil(content) + 2 * PAD_X);
 }
 
-function containerMinWidth(label: string, badge: string): number {
-  // label, badge and the collapse button in one header row
+function containerMinWidth(label: string, badge: string, change?: ChangeStatus): number {
+  // label, badge, the change pill and the collapse button in one header row
   return (
-    Math.ceil(textWidth(label, NODE_LABEL_FONT, 600) + badgeWidth(badge) + 10 + 24) + 2 * PAD_X
+    Math.ceil(
+      textWidth(label, NODE_LABEL_FONT, 600) + badgeWidth(badge) + changeWidth(change) + 10 + 24,
+    ) +
+    2 * PAD_X
   );
 }
 
@@ -189,6 +211,7 @@ interface ModelNode {
   hint?: string;
   /** Ghosts: `in` when every stub enters the view there, `out` when every stub leaves it. */
   side?: "in" | "out";
+  change?: ChangeStatus;
 }
 
 interface Model {
@@ -209,17 +232,19 @@ interface Model {
   }[];
 }
 
-function buildModel(graph: DerivedGraph): Model {
+function buildModel(graph: DerivedGraph, changes: ChangeMarks | undefined): Model {
   const nodes: Model["nodes"] = new Map();
   const children = new Map<string, string[]>();
   const parent = new Map<string, string>();
   const roots: string[] = [];
   const known = new Set(graph.nodes.map((n) => n.id));
   for (const node of graph.nodes) {
+    const change = changes?.get(node.id);
     nodes.set(node.id, {
       label: node.label,
       badge: nodeBadge(node),
       kindClass: node.symbolKind ?? node.kind,
+      ...(change ? { change } : {}),
     });
   }
   for (const node of graph.nodes) {
@@ -323,7 +348,7 @@ function leafSize(model: Model, id: string): { width: number; height: number } {
   if (isGhost(node)) {
     return { width: ghostWidth(node.label, node.detail ?? ""), height: GHOST_HEIGHT };
   }
-  return { width: leafWidth(node.label, node.badge), height: LEAF_HEIGHT };
+  return { width: leafWidth(node.label, node.badge, node.change), height: LEAF_HEIGHT };
 }
 
 function makeNode(
@@ -348,6 +373,7 @@ function makeNode(
   if (node.ghostFold !== undefined) out.ghostFold = node.ghostFold;
   if (node.detail !== undefined) out.detail = node.detail;
   if (node.hint !== undefined) out.hint = node.hint;
+  if (node.change !== undefined) out.change = node.change;
   return out;
 }
 
@@ -411,7 +437,7 @@ function toElk(model: Model, id: string, registry: Map<string, ElkNode>): ElkNod
       layoutOptions: {
         "elk.padding": `[top=${HEADER_HEIGHT + 8},left=${CONTAINER_PAD},bottom=${CONTAINER_PAD},right=${CONTAINER_PAD}]`,
         "elk.nodeSize.constraints": "MINIMUM_SIZE",
-        "elk.nodeSize.minimum": `(${containerMinWidth(node.label, node.badge)}, ${HEADER_HEIGHT + 60})`,
+        "elk.nodeSize.minimum": `(${containerMinWidth(node.label, node.badge, node.change)}, ${HEADER_HEIGHT + 60})`,
       },
       children: kids.map((kid) => toElk(model, kid, registry)),
       edges: [],
@@ -539,12 +565,16 @@ function placeAnchors(
   visit(nodes, { x: 0, y: 0 });
 }
 
+/** What the explainer's change did to the nodes of a graph, by node id (only the changed ones). */
+export type ChangeMarks = ReadonlyMap<string, ChangeStatus>;
+
 export async function layoutGraph(
   graph: DerivedGraph,
   options: Record<string, string> = {},
   labelOptions: Record<string, string> = {},
+  changes?: ChangeMarks,
 ): Promise<GraphLayout> {
-  const model = buildModel(graph);
+  const model = buildModel(graph, changes);
   const registry = new Map<string, ElkNode>();
   const root: ElkNode = {
     id: "root",
@@ -650,11 +680,13 @@ export async function layoutGraphFitting(
   viewport: { width: number; height: number } | undefined,
   maxZoom = 1.25,
   padding = 24,
+  changes?: ChangeMarks,
 ): Promise<GraphLayout> {
-  if (!viewport || viewport.width <= 0 || viewport.height <= 0) return layoutGraph(graph);
+  if (!viewport || viewport.width <= 0 || viewport.height <= 0)
+    return layoutGraph(graph, {}, {}, changes);
   const suggested: Direction = viewport.width / viewport.height < 1 ? "DOWN" : "RIGHT";
   const other: Direction = suggested === "RIGHT" ? "DOWN" : "RIGHT";
-  const first = await layoutGraph(graph, { "elk.direction": suggested });
+  const first = await layoutGraph(graph, { "elk.direction": suggested }, {}, changes);
   if (
     first.fallback ||
     // shown at its natural size or larger: turning it would not make the text read better
@@ -663,7 +695,7 @@ export async function layoutGraphFitting(
   ) {
     return first;
   }
-  const second = await layoutGraph(graph, { "elk.direction": other });
+  const second = await layoutGraph(graph, { "elk.direction": other }, {}, changes);
   if (second.fallback) return first;
   return fitScale(second, viewport, maxZoom, padding) >
     fitScale(first, viewport, maxZoom, padding) * OTHER_DIRECTION_MARGIN
@@ -693,7 +725,10 @@ function gridLayout(
       const grid = gridLayout(model, kids, 2);
       const node = model.nodes.get(id)!;
       size = {
-        width: Math.max(containerMinWidth(node.label, node.badge), grid.width + 2 * CONTAINER_PAD),
+        width: Math.max(
+          containerMinWidth(node.label, node.badge, node.change),
+          grid.width + 2 * CONTAINER_PAD,
+        ),
         height: grid.height + HEADER_HEIGHT + 8 + CONTAINER_PAD,
       };
       inner = grid.nodes.map((n) => ({ ...n, x: n.x + CONTAINER_PAD, y: n.y + HEADER_HEIGHT + 8 }));
