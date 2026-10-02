@@ -8,7 +8,7 @@
  * - `draftChange`: a map of the change (changed symbols, or their files when there are many; direct callers outside
  *   tests; one group box for the tests), `stubs: none`, overlays whose summaries start with `New:`, `Changed:` or
  *   `Unchanged:`, and a tour in review order (what changes for users, where it enters, one step per changed piece,
- *   who else is affected, tests, risks). Every changed file gets at least one anchor (test files too; a deleted file
+ *   who else is affected, tests, risks), with step ids t10, t20, ... so inserted steps keep their order. Every changed file gets at least one anchor (test files too; a deleted file
  *   gets an anchor in the code before the change).
  * - `draftRepo`: an overview map of 4-8 boxes (top-level directories, or files; in a src layout below src), with
  *   `excludeFiles` and `stubs: none`, and a tour that visits every box.
@@ -247,6 +247,14 @@ function symbolLines(
     span: { from: lines[0] - sym.range.startLine, to: lines[1] - sym.range.startLine },
     role,
   };
+}
+
+/** The first line of a symbol after its decorators (`def handle(...)`, `async send(...)`). */
+function signature(texts: TextCache, sym: IndexedSymbol): AnchorInput | undefined {
+  const text = texts.lines(sym.file);
+  let line = sym.range.startLine;
+  while (line < sym.range.endLine && /^\s*(@|$)/.test(text?.[line - 1] ?? "")) line++;
+  return symbolLines(texts, sym, line, line, "definition");
 }
 
 /** Lines `start..end` of a file, as a span from line 1 (no symbol). */
@@ -811,6 +819,16 @@ export function draftChange(input: DraftInput, change: ChangeRecord): Draft {
       : undefined;
   const entryUnit = callsInto(ordered[0]) ?? callsInto(mainBox) ?? callerUnits[0];
   const otherCallers = allCallers.filter((c) => !entryUnit?.callers.includes(c));
+  // no caller outside tests (a framework, a library or a variable calls it): the changed public function or
+  // method closest to callers, else the first changed symbol (the boxes hold no tests)
+  const callable = (sym: ChangedSymbol) => sym.kind === "method" || sym.kind === "function";
+  const isPublic = (sym: ChangedSymbol) =>
+    !/^[_#]/.test(displayName(sym.id).split(".").at(-1) ?? "");
+  const entrySymbol = entryUnit
+    ? undefined
+    : (ordered.flatMap((b) => b.symbols).find((sym) => callable(sym) && isPublic(sym)) ??
+      ordered[0]?.symbols[0]);
+  const entryBox = entrySymbol && ordered.find((b) => b.symbols.includes(entrySymbol));
 
   const small = (box: ChangeBox) =>
     box.symbols.length === 1 &&
@@ -858,7 +876,8 @@ export function draftChange(input: DraftInput, change: ChangeRecord): Draft {
   }
   const otherSteps = Math.min(2, Math.ceil(leftovers.length / L.codeRanges));
 
-  const fixed = 1 + (entryUnit ? 1 : 0) + (otherCallers.length > 0 ? 1 : 0) + 1 + 1 + otherSteps;
+  const fixed =
+    1 + (entryUnit || entryBox ? 1 : 0) + (otherCallers.length > 0 ? 1 : 0) + 1 + 1 + otherSteps;
   const pieceBudget = Math.max(0, L.changeSteps - fixed);
   const skipped: ChangeBox[] = [];
   while (pieces.length > pieceBudget) {
@@ -874,7 +893,8 @@ export function draftChange(input: DraftInput, change: ChangeRecord): Draft {
   }
 
   const steps: PatchTourStep[] = [];
-  const next = () => `t${steps.length + 1}`;
+  // t10, t20, ...: a step inserted later takes a free number between its neighbours (t15)
+  const next = () => `t${(steps.length + 1) * 10}`;
 
   // 1. what changes for users
   const topRuns = boxes
@@ -933,6 +953,24 @@ export function draftChange(input: DraftInput, change: ChangeRecord): Draft {
         entryUnit.callers.flatMap((c) =>
           c.sites.slice(0, 1).map((s) => callerSite(model, texts, c, s.line)),
         ),
+      ),
+    );
+  } else if (entrySymbol && entryBox) {
+    const sym = model.symbol(entrySymbol.symbolId);
+    steps.push(
+      tourStep(
+        model,
+        next(),
+        mapId,
+        [entryBox.id],
+        note(
+          todo("where the change enters, as a plain statement"),
+          `The index shows no caller of ${tick(displayName(entrySymbol.id))} outside tests.`,
+          todo(
+            "who calls it. Search for its name, or for the line that hands it to a framework or a library. Anchor that line.",
+          ),
+        ),
+        [sym ? signature(texts, sym) : undefined],
       ),
     );
   }

@@ -116,6 +116,21 @@ describe("lintExplainer", () => {
     expect(only(short.findings, "tour-summary")[0]!.message).toBe("1 sentence (fewer than 2)");
   });
 
+  it("the tour summary of a change may have 5 sentences (behaviour, risk and tests), not 6", () => {
+    const change = { base: "a", head: "b", files: [] };
+    const five = lintExplainer(
+      explainer({ change, tours: [tour([], { summary: "One. Two. Three. Four. Five." })] }),
+    );
+    expect(only(five.findings, "tour-summary")).toEqual([]);
+    const six = lintExplainer(
+      explainer({ change, tours: [tour([], { summary: "One. Two. Three. Four. Five. Six." })] }),
+    );
+    expect(only(six.findings, "tour-summary")[0]).toMatchObject({
+      message: "6 sentences (more than 5)",
+      hint: "keep the summary to 2-5 sentences; move the rest into the steps",
+    });
+  });
+
   it('notes without a "### title" line; placeholders such as "Fix 1:"', () => {
     const { findings } = lintExplainer(
       explainer({
@@ -403,6 +418,35 @@ describe("lintExplainer", () => {
         (f) => f.elementId,
       ),
     ).toEqual(vague.map((_, i) => `sym:a#n${i}`));
+  });
+
+  it('"all", "every" or "only" before a count in digits quotes a measured result', () => {
+    const measured = [
+      "All 22 new cases pass on the head.",
+      "18 of the 22 cases fail on the base, and all of the 22 pass now.",
+      "Only 4 of the 22 cases pass on the base.",
+      "Every one of the 3 tests fails on the base.",
+    ];
+    const claims = [
+      "Now all three agree.",
+      "All callers pass 2 arguments.",
+      "The delay is never 0.",
+      "The parser always returns 1 value.",
+    ];
+    const node = (summary: string, i: number) => ({
+      id: `sym:a#n${i}`,
+      label: "n",
+      summary,
+      anchors: [],
+    });
+    expect(
+      only(lintExplainer(explainer({ nodes: measured.map(node) })).findings, "absolute-word"),
+    ).toEqual([]);
+    expect(
+      only(lintExplainer(explainer({ nodes: claims.map(node) })).findings, "absolute-word").map(
+        (f) => f.elementId,
+      ),
+    ).toEqual(claims.map((_, i) => `sym:a#n${i}`));
   });
 
   it('"outside everything" is a position, not a claim; the quote points at the word', () => {

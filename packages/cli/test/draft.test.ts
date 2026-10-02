@@ -394,6 +394,8 @@ describe("xpl draft change", () => {
     expect(titles[0]).toContain("what changes for users");
     expect(titles[1]).toContain("where the change enters");
     expect(steps[1]!.focus).toEqual(["sym:main.py#main"]);
+    // ids leave room for the steps Claude inserts (t15 between t10 and t20)
+    expect(steps.map((s) => s.id)).toEqual(steps.map((_, i) => `t${(i + 1) * 10}`));
     expect(titles.at(-2)).toContain("what the tests cover");
     expect(titles.at(-1)).toContain("the worst realistic failure");
     expect(steps.length).toBeLessThanOrEqual(DRAFT_LIMITS.changeSteps);
@@ -464,6 +466,65 @@ describe("xpl draft change: small changes to methods of one class", () => {
       "`Sender.simple`, `Sender.ranged` and `Sender.multi` change in a few lines each",
     );
     expect(piece.code).toHaveLength(2);
+  });
+});
+
+describe("xpl draft change: no caller outside tests", () => {
+  it("the entry step shows the changed public method and asks who calls it", async () => {
+    const dir = makeTempDir("xpl-draft-entry-");
+    const v1 = [
+      "class Transport:",
+      "    @staticmethod",
+      "    def make():",
+      "        return Transport()",
+      "",
+      "    def handle_request(self, request):",
+      "        return request",
+      "",
+    ].join("\n");
+    const v2 = v1.replace(
+      "        return request\n",
+      [
+        "        self._log(request)",
+        "        return request",
+        "",
+        "    def _log(self, request):",
+        "        print(request)",
+        "",
+      ].join("\n"),
+    );
+    writeFile(dir, "transport.py", v1);
+    writeFile(
+      dir,
+      "tests/test_transport.py",
+      "from transport import Transport\n\n\ndef test_send():\n    assert Transport().handle_request(1) == 1\n",
+    );
+    git(dir, "init", "-q", "-b", "main");
+    git(dir, "add", "-A");
+    git(dir, "commit", "-q", "-m", "base");
+    writeFile(dir, "transport.py", v2);
+    git(dir, "commit", "-q", "-am", "head");
+    expect((await xpl(dir, "index", "--precise", "off")).code).toBe(0);
+    expect((await xpl(dir, "new", "pr")).code).toBe(0);
+    expect((await xpl(dir, "change", "pr", "HEAD~1..HEAD")).code).toBe(0);
+    const { patch } = await draftApplyCheck(dir, "pr", ["change", "pr"]);
+    checkShape(patch);
+    const steps = patch.tours![0]!.steps!;
+    expect(steps[0]!.note).toContain("what changes for users");
+    const entry = steps[1]!;
+    expect(entry.id).toBe("t20");
+    expect(entry.note).toContain("where the change enters");
+    expect(entry.note).toContain("no caller of `Transport.handle_request` outside tests");
+    expect(entry.focus).toEqual(["sym:transport.py#Transport.handle_request"]);
+    // its code is the line with the name, not the whole method
+    expect(entry.code).toEqual([
+      {
+        file: "transport.py",
+        symbol: "Transport.handle_request",
+        span: { from: 0, to: 0 },
+        role: "definition",
+      },
+    ]);
   });
 });
 
