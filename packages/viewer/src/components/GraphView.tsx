@@ -46,6 +46,7 @@ import { arrowHeadPath, distanceToSegment, roundedPath, routeBox, type Box } fro
 import { unionBox } from "../viewport.js";
 import { changeMarks, changeOf } from "../diff.js";
 import { useStore, useViewerState } from "../hooks.js";
+import { mapKeyShows } from "../keyMarks.js";
 import { readerBadge } from "../readerWords.js";
 import { GhostTargetList } from "./GhostTargets.js";
 import { Legend } from "./Legend.js";
@@ -364,14 +365,11 @@ export function GraphView({
         onBackgroundClick={() => store.clearSelection()}
         tools={
           <Legend
-            shows={{
-              outside: layout.edges.some((edge) => edge.stub),
-              authored: layout.edges.some(
-                (edge) => !edge.stub && (edge.resolution === "llm" || edge.resolution === "user"),
-              ),
-              heuristic: layout.edges.some((edge) => edge.resolution === "heuristic"),
-              change: (changes?.size ?? 0) > 0,
-            }}
+            shows={mapKeyShows(layout.nodes, layout.edges, {
+              canZoomInto: (id) => store.canZoomInto(id),
+              canExpandInPlace: (id) => store.canExpandInPlace(id),
+              changed: (changes?.size ?? 0) > 0,
+            })}
           />
         }
       >

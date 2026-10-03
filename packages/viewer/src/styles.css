@@ -1253,6 +1253,75 @@ code {
   stroke-dasharray: 4 3;
 }
 
+/* a11y: the Key's rows for architecture boxes, icons, counts, flows and sequences (M9) */
+.lg-box.is-outside {
+  fill: var(--panel-2);
+  stroke-dasharray: 5 3;
+}
+
+.lg-box.is-system {
+  stroke-width: 2.2;
+}
+
+.lg-box.is-store {
+  fill: var(--store-bg);
+}
+
+.lg-count {
+  font-size: 9px;
+  font-weight: 600;
+  text-anchor: middle;
+  fill: var(--muted);
+}
+
+.lg-frame {
+  font-size: 11px;
+  text-anchor: middle;
+  fill: var(--purple);
+}
+
+.lg-lifeline {
+  stroke: var(--border-strong);
+  stroke-width: 1.3;
+  stroke-dasharray: 2 2;
+}
+
+.legend-panel .flow-stage,
+.legend-panel .step,
+.legend-panel .corner-button {
+  cursor: default;
+}
+
+.legend-panel {
+  max-height: 70vh;
+  overflow-y: auto;
+}
+
+.legend-icons {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.legend-icons ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.legend-icons li {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.legend-icons svg {
+  overflow: visible;
+}
+
 .lg-edge line {
   stroke: var(--edge);
   stroke-width: 1.6;
