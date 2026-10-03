@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { relatedFiles, type RelatedFileSet } from "@xpl/core";
 import { useDerived, useStore, useViewerState } from "../hooks.js";
+import { repeatsShownCode } from "../relatedCards.js";
 
 const LABELS: Record<RelatedFileSet["kind"], string> = {
   loads: "Reads",
@@ -24,7 +25,8 @@ export function RelatedFiles({ onOpen }: { onOpen: () => void }) {
   const links = useMemo(
     () =>
       relatedFiles(state.selection, state.model, derived.selection.focus).filter(
-        (link) => !(guide && link.kind === "test"),
+        (link) =>
+          !(guide && link.kind === "test") && !repeatsShownCode(link, derived.selection.focus),
       ),
     [state.selection, state.model, derived.selection.focus, guide],
   );

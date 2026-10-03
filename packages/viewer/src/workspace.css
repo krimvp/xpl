@@ -62,6 +62,23 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* r3-copy: what a double-click that changed the tab says (newcomer V6); takes no room while empty. */
+.switch-notice {
+  flex: 0 1 auto;
+  min-width: 0;
+  margin: 0;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--fg);
+  font-size: 12.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.switch-notice:empty {
+  padding: 0;
+}
 .workspace-columns {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 280px;
@@ -725,7 +742,8 @@
   min-width: 0;
 }
 .resource-kind {
-  font-size: 11px;
+  /* r3-copy: card text at 12px at least (designer V15) */
+  font-size: 12px;
   line-height: 16px;
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -736,11 +754,11 @@
   font-size: 12px;
 }
 .resource-set .count {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--muted);
 }
 .resource-key {
-  font-size: 11px;
+  font-size: 12px;
   overflow-wrap: anywhere;
   color: var(--related);
 }
@@ -750,7 +768,7 @@
 }
 .resource-trust,
 .resource-disclaimer {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--muted);
   line-height: 1.5;
 }
@@ -777,7 +795,10 @@
 .resource-evidence > summary {
   cursor: pointer;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
+}
+.resource-key code {
+  font-size: 12px;
 }
 .flow-diagram {
   flex: 1;

@@ -12,6 +12,7 @@ import {
 import { makeBundle, TEXTS } from "./world.js";
 import { workspaceMap, workspaceView } from "../src/workspace.js";
 import { ViewerStore } from "../src/store.js";
+import { repeatsShownCode } from "../src/relatedCards.js";
 
 describe("process flows and related files", () => {
   it("supports explicit decisions, labeled branches, terminal outcomes and code anchors", () => {
@@ -161,6 +162,22 @@ describe("process flows and related files", () => {
       summary: "The override replaces matching default keys.",
       resolution: "annotated",
     });
+  });
+
+  it("leaves out a setting card for a file whose code the step already shows", () => {
+    const model = new ExplainerModel(makeBundle().explainer, makeBundle().index);
+    const focus = codeFocus(["concept:retry"], model);
+    const config = relatedFiles(["concept:retry"], model).find(
+      (link) => link.kind === "configuration",
+    )!;
+    expect(config.files).toEqual(["config/c.yaml"]);
+    // config/c.yaml is shown only as the setting: the card is the way to it
+    expect(repeatsShownCode(config, focus)).toBe(false);
+    // the same file also shown as code (a definition there): the card would only repeat it
+    const shown = [...focus, { ...focus[0]!, file: "config/c.yaml", role: "definition" as const }];
+    expect(repeatsShownCode(config, shown)).toBe(true);
+    // a card from an edge or the index says how the files connect: kept
+    expect(repeatsShownCode({ ...config, id: "edge:x" }, shown)).toBe(false);
   });
 
   it("does not truncate annotated file collections at the editor focus limit", () => {
