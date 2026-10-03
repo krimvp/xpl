@@ -54,6 +54,7 @@ describe("reference/patch-format.md", () => {
       '"stepsUpdate"',
       '"view:system"',
       '"opens"',
+      '"via"',
       '"role"',
     ]) {
       expect(all, needle).toContain(needle);

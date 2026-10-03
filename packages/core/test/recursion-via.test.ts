@@ -5,6 +5,8 @@
 import { describe, expect, it } from "vitest";
 import {
   applyPatch,
+  codeFocus,
+  derivedEdgeMap,
   deriveGraph,
   ExplainerModel,
   hopRefs,
@@ -220,6 +222,12 @@ describe("edges: via", () => {
     ]);
     // the references through Runner.dispatch are the arrow, not stubs to a ghost Runner.dispatch
     expect(graph.stubs.filter((s) => s.ghost.includes("Runner.dispatch"))).toEqual([]);
+    // clicked, it shows that code too (with or without the view's derived edges at hand)
+    for (const opts of [{}, { derivedEdges: derivedEdgeMap(graph) }]) {
+      const focus = codeFocus(["edge:start-pops"], model, opts);
+      expect(focus.map((f) => f.file)).toContain("src/runner.ts");
+      expect(focus.map((f) => f.file)).toContain("src/queue.ts");
+    }
   });
 
   it("is accepted by a patch, and cleared by null", () => {

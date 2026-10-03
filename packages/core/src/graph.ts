@@ -207,6 +207,17 @@ export function hopRefs(model: ExplainerModel, a: ElementId, b: ElementId): Refe
   });
 }
 
+/** The code of an edge with `via` and no anchors of its own: the references of its hops, as for a derived edge. */
+export function viaAnchors(
+  edge: Pick<Edge, "from" | "to" | "via">,
+  model: ExplainerModel,
+): Anchor[] {
+  return derivedEdgeAnchors(
+    viaHops(edge).flatMap(([a, b]) => hopRefs(model, a, b)),
+    model.index,
+  );
+}
+
 /** The hops of an edge with `via`: `from` → via[0] → … → `to`. */
 export function viaHops(edge: Pick<Edge, "from" | "to" | "via">): [ElementId, ElementId][] {
   const path = [edge.from, ...(Array.isArray(edge.via) ? edge.via : []), edge.to];
@@ -556,13 +567,7 @@ export function deriveGraph(
         const via = stored.via.filter((id) => typeof id === "string" && model.hasNode(id));
         edge.via = via.map((id) => ({ id, label: model.label(id) }));
         // without anchors of its own, the arrow's code is the references of its hops (those the index shows)
-        if (edge.anchors.length === 0)
-          edge.anchors = derivedEdgeAnchors(
-            viaHops({ from: stored.from, to: stored.to, via }).flatMap(([x, y]) =>
-              hopRefs(model, x, y),
-            ),
-            index,
-          );
+        if (edge.anchors.length === 0) edge.anchors = viaAnchors({ ...stored, via }, model);
       }
       if (a !== stored.from || b !== stored.to) {
         const key = `${edge.kind}\0${a}\0${b}`;

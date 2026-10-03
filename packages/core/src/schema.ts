@@ -16,6 +16,9 @@
  *      references that start or end in a matching file (test files in an overview, say).
  *  11. GraphView adds `stubs` ({ mode, max }): how many of the places where the view stops are drawn as
  *      ghost boxes. Default: the 8 most referenced, with the rest folded into "N more".
+ *  12. Edge adds `via` (what the link passes through without a box); an llm edge's evidence is then per hop.
+ *  13. A flow step's `next` links (FlowLink) add `kind`: "recurse" (one level down) or "return" (up one level).
+ *  14. SequenceView adds `layout` ("code-first" or "diagram"): how Read and Explore lay the view out.
  *
  * Two files per repo:
  *   index-<commit>.json    SymbolIndex. Static analysis of one commit. Built once, shared by every view.

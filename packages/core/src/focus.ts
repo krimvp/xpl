@@ -4,7 +4,13 @@
  * code -> elements direction (`buildReverseIndex`: innermost range wins, ties return all).
  */
 import { isBaseAnchor } from "./anchors.js";
-import { deriveGraph, derivedEdgeAnchors, type DerivedEdge, type DerivedGraph } from "./graph.js";
+import {
+  deriveGraph,
+  derivedEdgeAnchors,
+  viaAnchors,
+  type DerivedEdge,
+  type DerivedGraph,
+} from "./graph.js";
 import { EDGE_TO_REF_KIND, elementIdForSymbolId, parseId } from "./ids.js";
 import type { ExplainerModel, ModelNode } from "./model.js";
 import type {
@@ -91,6 +97,13 @@ function focusOf(
     case "edge": {
       const own = anchorRanges(ref.edge.anchors, owner, model);
       if (own.length > 0) return own;
+      // an edge via code without a box, and no anchors: the references of its hops
+      if (Array.isArray(ref.edge.via) && ref.edge.via.length > 0)
+        return anchorRanges(
+          opts.derivedEdges?.get(id)?.anchors ?? viaAnchors(ref.edge, model),
+          owner,
+          model,
+        );
       const parsed = parseId(id);
       return parsed.type === "derived-edge"
         ? derivedFocus(id, parsed.kind, parsed.from, parsed.to, owner, model, opts)

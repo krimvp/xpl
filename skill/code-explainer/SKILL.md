@@ -66,6 +66,8 @@ Where the index shows less than runs:
 - A method reached through a variable (`await response(...)` runs `__call__`) has no callers in `refs --in`: `search` for the name, or find where the object is built (`refs <class> --in`).
 - A call to a base-class method with no body runs a subclass method: anchor the one that runs, and link them with an `llm` `calls` edge.
 - Event buses, DI, callbacks, HTTP handlers, queues and config keys read by name: `search` for `emit`, `on(`, `register` and the topic, route or key, then link with an `llm` edge.
+- A reaches C through B, and B is not a box on the map: one edge from A to C with `via: [B]` (drawn "via B"). A hop the index shows needs no anchors; anchor the others at both ends (`patch-format.md` 3.3).
+- A recursive function: in its flow, a `next` link with `kind: "recurse"` back to the step the call starts at (drawn "one level down"), and `kind: "return"` where a call hands its result back up (`patch-format.md` 3.7).
 - Calls into dependencies are not indexed: anchor the call site and describe nothing inside the library. You may name a library as the caller of your code when a line in the repo shows it (a class passed as `httpx.Client(transport=...)`): anchor that line.
 - Stay at `--depth 1` on a hub. Stop when the question is answered.
 
@@ -191,7 +193,7 @@ A talk built from existing views, by the rules of "The tour". Default: the newes
 1. **You cannot invent code.** Every anchor must resolve. Never write hashes. Copy offsets from `show`, `refs` or `search` output of this session, or use `find`.
 2. **Read before you claim.** A ref, or a caller or test that `xpl change` or a draft marks as a guess, is a hint until you have seen the call.
 3. **Read-only on the user's repo and remotes.** Never post, comment, push or change their checkout (`.explainer/` aside).
-4. **`llm` edges only for what the index cannot see**, anchored at both ends.
+4. **`llm` edges only for what the index cannot see**, anchored at both ends (with `via`: each hop the index does not show).
 5. **Stable ids.** Slugs are chosen once, in kebab-case. Step ids are never renumbered or reused. A change draft numbers its tour steps `t10`, `t20`, ...: a step you insert takes a free number between its neighbours (`t15`).
 6. **The user's edits win.** Never overwrite `origin: "user"` elements or `userFields`; for a view or tour they edited, make a new one or ask. `--actor user` only for text the user dictates.
 7. **Few things at the same level.** One primary tour; views only when a tour step uses them or a box `opens` them; 0-3 concepts; groups only as map boxes.

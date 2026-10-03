@@ -149,5 +149,8 @@ test("a map draws an edge via code without a box as one arrow named after it", a
   await expect(edge).toHaveCount(1);
   await expect(edge.locator("title")).toContainText("which this map does not draw as a box");
   await expect(page.locator(".edge-label text", { hasText: "reports jobs (via" })).toBeVisible();
+  // picked, its details name what it passes through
+  await page.evaluate(() => window.__xpl!.select(["edge:reports-through-worker"]));
+  await expect(page.locator("dl.facts dt", { hasText: "Through" })).toBeVisible();
   expect(problems).toEqual([]);
 });
