@@ -9,7 +9,7 @@
  * - An id that exists: the patch is shallow-merged onto it. Fields absent from the patch keep their
  *   values, arrays and nested objects (`members`, `include`, `steps`, `layout`, `scope`, ...) are
  *   replaced wholesale, and `null` clears an optional field (`summary` of an element or a tour, `detail`,
- *   `members`, `related`, `edgeKinds`, `hidden`, `excludeFiles`, `stubs`, `layout`, `frames`). In particular a
+ *   `members`, `related`, `via`, `edgeKinds`, `hidden`, `excludeFiles`, `stubs`, `layout`, `frames`). In particular a
  *   sequence view's `steps` are sent whole (keep every step id: tours and frames point at them; `remove` deletes single steps).
  * - A graph view's `include` can also be edited incrementally, with `includeAdd` and `includeRemove` (patch-only
  *   fields, never stored). They apply after `include` (when that is given too): the ids in `includeRemove` leave

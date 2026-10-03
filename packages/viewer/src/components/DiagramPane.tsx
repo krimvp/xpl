@@ -8,6 +8,7 @@ import { GraphView } from "./GraphView.js";
 import { FlowDiagram } from "./FlowDiagram.js";
 import { SequenceView } from "./SequenceView.js";
 import { ZoomTrail } from "./ZoomTrail.js";
+import { codeFirstView } from "../workspace.js";
 
 export function DiagramPane() {
   const state = useViewerState();
@@ -54,7 +55,7 @@ export function DiagramPane() {
               present={present}
             />
           ) : view.type === "flow" ? (
-            <FlowDiagram view={view} />
+            <FlowDiagram view={view} outline={!present && codeFirstView(view)} />
           ) : view.type === "sequence" ? (
             <SequenceView
               view={view}

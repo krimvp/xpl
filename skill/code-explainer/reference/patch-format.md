@@ -173,6 +173,24 @@ Event bus, DI, HTTP, queues, config keys read by name. Required: `from`, `to`, `
 
 "Inside" means: file → same file; dir → under it; symbol → that symbol or a descendant; group → any member.
 
+**A reaches C through B** (B not a box on the map): one edge from A to C with `via: [B]`, the ids it passes through in order (nodes: symbols, files, groups; not `from` or `to`). The map draws one arrow labelled "(via B)" and names B in its tooltip, and the references from A to B and from B to C are part of that arrow, not stubs to a ghost B. Evidence is per hop (A → B, B → C): a hop the index shows (a reference from inside one end to inside the other: `refs <A> --out`) needs no anchors, and the arrow's code is then those references; any other hop needs an anchor inside each of its ends. `via: null` clears it. A derived edge's id cannot take `via`.
+
+```json patch
+{
+  "edges": [
+    {
+      "id": "edge:start-runs-jobs",
+      "from": "sym:src/runner.ts#Runner.start",
+      "to": "sym:src/worker.ts#Worker.run",
+      "kind": "calls",
+      "label": "runs each job",
+      "via": ["sym:src/runner.ts#Runner.dispatch"],
+      "summary": "`Runner.start` starts the dispatch loop, which hands each popped job to a worker."
+    }
+  ]
+}
+```
+
 ### 3.4 Overlay on a derived (static) edge
 
 Calls, imports and inheritance appear in graph views on their own. To label or explain one, store an edge whose id is the derived id; `kind`, `from`, `to` come from the id and must not contradict it. It is still an `llm` edge, so it needs anchors at both ends, and give it a `label` (an empty one warns). The ends of a derived id are what the view shows, so they change when the view's `include` changes: after adding `sym:internal/worker/worker.go#Worker` to the `include` of the go-jobrunner view, the call to `Worker.Run` is `edge:calls:file:internal/runner/runner.go->sym:internal/worker/worker.go#Worker`, and an overlay left on the old `...->file:internal/worker/worker.go` id now sits on an edge that stands for other references. Write these overlays after the `include` list is final and copy the id from `xpl status <name> --json` (`views[].edges.unexplained[].id`).
@@ -312,6 +330,12 @@ Use `type: "flow"` when the point is what the code decides: stages, conditions, 
 The box shows the `label` in large type, so a flow label names a stage (`writing.md`, section 3), and the call goes in the anchors. A `decision` label is a short question ("Did the attempt succeed?"), and each `next` label says when that branch is taken ("yes", "attempts left").
 
 **Participants need a summary.** Each participant counts as unexplained (`xpl status`) until its node has a `summary`: put an overlay (3.2) for every participant in the same patch as the view.
+
+**Who does the step.** The box names the step's `from` under its label. Draw a step from the participant whose code it is: when the step's first anchor (in the current code) is not inside `from`, validation warns and names the participant that holds it. (A `return` step whose code is in `to`, the caller getting the answer, is fine.)
+
+**Recursion.** A `next` link may say how it changes the level of a recursive function. `{"step": "match:2", "kind": "recurse", "label": "the child"}` means: the function calls itself, and the steps from `match:2` run again, one level down; point it at an earlier step, the first one the call runs (a later one warns). It does not end the step: a step whose `next` has only recurse links still goes on to the next step in the list. `{"step": "match:17", "kind": "return", "label": "found"}` means: the call returns, back up one level, and the caller goes on at `match:17`; a `terminal` may have return links (and no others). Both are drawn dashed, with "one level down" or "up one level" after their label. A link from a step to itself (the next item of a loop) is drawn as a loop on the box.
+
+**Code first.** A flow or sequence whose steps' code is all in one file (the steps of one function) is read code first: the code is the main pane and the flow a narrow outline beside it that follows the caret. `"layout": "diagram"` keeps the diagram as the main pane; `"layout": "code-first"` asks for the code-first layout for any flow; `null` goes back to the default.
 
 ```json patch
 {

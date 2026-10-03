@@ -106,6 +106,8 @@ export interface LayoutEdge {
   /** Route (start, bends, end) relative to the container that holds the edge, or the canvas. */
   points: Point[];
   label?: { text: string; x: number; y: number; width: number; height: number };
+  /** What the edge passes through without a box (`Edge.via`), by name: the tooltip says so. */
+  via?: string[];
   /**
    * A point of the route that no box drawn above the edge covers: where a click on the edge lands
    * (the edge's group is built around it, so automated clicks at its centre hit the route).
@@ -249,7 +251,11 @@ function ghostWidth(label: string, detail: string): number {
 }
 
 function edgeLabelText(edge: DerivedEdge): string {
-  return edge.label ? edge.label : `${edge.kind} ×${edge.count}`;
+  const text = edge.label ? edge.label : `${edge.kind} ×${edge.count}`;
+  // "A reaches C through B": one arrow, which names what it passes through
+  const via = edge.via?.map((item) => item.label) ?? [];
+  if (via.length === 0) return text;
+  return edge.label ? `${text} (via ${via.join(", ")})` : `via ${via.join(", ")}`;
 }
 
 /**
@@ -328,6 +334,7 @@ interface Model {
     stub: boolean;
     resolution: string;
     kind: string;
+    via?: string[];
   }[];
 }
 
@@ -389,7 +396,8 @@ function buildModel(graph: DerivedGraph, changes: ChangeMarks | undefined): Mode
       from: edge.from,
       to: edge.to,
       label: edgeLabelText(edge),
-      counted: !edge.label,
+      counted: !edge.label && !edge.via?.length,
+      ...(edge.via?.length ? { via: edge.via.map((item) => item.label) } : {}),
       stub: false,
       resolution: edge.resolution,
       kind: edge.kind,
@@ -810,6 +818,7 @@ function layeredLayout(model: Model, direction: Direction): GraphLayout {
       resolution: edge.resolution,
       kind: edge.kind,
       title: edge.label,
+      ...(edge.via ? { via: edge.via } : {}),
       from: edge.from,
       to: edge.to,
       counted: edge.counted,
@@ -861,6 +870,7 @@ function loopEdge(edge: EdgeMeta, box: Box): LayoutEdge {
     resolution: edge.resolution,
     kind: edge.kind,
     title: edge.label,
+    ...(edge.via ? { via: edge.via } : {}),
     from: edge.from,
     to: edge.to,
     counted: edge.counted,
@@ -1303,6 +1313,7 @@ function fallbackLayout(model: Model): GraphLayout {
       resolution: edge.resolution,
       kind: edge.kind,
       title: edge.label,
+      ...(edge.via ? { via: edge.via } : {}),
       from: edge.from,
       to: edge.to,
       counted: edge.counted,

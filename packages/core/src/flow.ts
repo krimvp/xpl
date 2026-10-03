@@ -1,11 +1,22 @@
-import type { SequenceStep, SequenceView } from "./schema.js";
+import type { FlowLink, SequenceStep, SequenceView } from "./schema.js";
 import { resolveFrames } from "./sequence.js";
 
 export interface ProcessFlow {
   stages: { step: SequenceStep; frames: string[]; shape: "stage" | "decision" | "terminal" }[];
-  transitions: { id: string; from: string; to: string; label?: string }[];
+  transitions: {
+    id: string;
+    from: string;
+    to: string;
+    label?: string;
+    /** A transition that changes the level of a recursive function (`FlowLink.kind`). */
+    kind?: "recurse" | "return";
+  }[];
   projected: boolean;
 }
+
+/** A link that changes the level of a recursion (`recurse`, `return`): see `FlowLink.kind`. */
+export const levelLink = (link: FlowLink | undefined): boolean =>
+  link?.kind === "recurse" || link?.kind === "return";
 
 export function processFlow(view: SequenceView): ProcessFlow {
   const steps = Array.isArray(view.steps)
@@ -15,16 +26,29 @@ export function processFlow(view: SequenceView): ProcessFlow {
   const frames = resolveFrames(view);
   const stages = steps.map((step, index) => ({
     step,
-    shape: step.shape ?? (step.next?.length && step.next.length > 1 ? "decision" : "stage"),
+    // a step is a choice when it has more than one way on at its own level
+    shape:
+      step.shape ??
+      ((Array.isArray(step.next) ? step.next.filter((link) => !levelLink(link)).length : 0) > 1
+        ? "decision"
+        : "stage"),
     frames: frames
       .filter((frame) => frame.from <= index && index <= frame.to)
       .map(({ frame }) => `${frame.kind}: ${frame.label}`),
   }));
   const transitions = steps.flatMap((step, index) => {
-    const next =
+    const following = steps[index + 1] ? [{ step: steps[index + 1]!.id } as FlowLink] : [];
+    const given = Array.isArray(step.next) ? step.next : undefined;
+    const next: FlowLink[] =
       step.shape === "terminal"
-        ? []
-        : (step.next ?? (steps[index + 1] ? [{ step: steps[index + 1]!.id }] : []));
+        ? // a terminal ends its path at this level; the call may still return to its caller
+          (given ?? []).filter((link) => link?.kind === "return")
+        : given === undefined
+          ? following
+          : // a recursive call does not end the step: with nothing else, it goes on to the next one
+            given.length > 0 && given.every((link) => link?.kind === "recurse")
+            ? [...given, ...following]
+            : given;
     return next
       .filter((target) => target && known.has(target.step))
       .map((target, i) => ({
@@ -32,6 +56,7 @@ export function processFlow(view: SequenceView): ProcessFlow {
         from: step.id,
         to: target.step,
         ...(target.label !== undefined ? { label: target.label } : {}),
+        ...(levelLink(target) ? { kind: target.kind } : {}),
       }));
   });
   return { stages, transitions, projected: view.type === "sequence" };

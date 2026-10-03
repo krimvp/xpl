@@ -1037,6 +1037,12 @@ code {
   min-height: 0;
 }
 
+/* l3: a code-first view: the diagram column is a narrow outline, so its two panels sit one above the other. */
+.explore.is-code-first .lower {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 35%) minmax(0, 1fr);
+}
+
 .lower > section {
   min-height: 0;
   overflow: auto;
@@ -1407,6 +1413,24 @@ code {
 
 .lg-edge.is-stub path {
   fill: var(--edge-stub);
+}
+
+/* l3: the key's recurse (one level down) and return (up one level) arrows, as FlowDiagram draws them. */
+.lg-edge.is-recurse line,
+.lg-edge.is-return line {
+  stroke: var(--purple);
+  stroke-width: 2;
+  stroke-dasharray: 5 3;
+}
+
+.lg-edge.is-return line {
+  stroke-dasharray: 1.5 3;
+  stroke-linecap: round;
+}
+
+.lg-edge.is-recurse path,
+.lg-edge.is-return path {
+  fill: var(--purple);
 }
 
 .lg-pill.is-new {

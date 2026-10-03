@@ -92,6 +92,26 @@
     display: block;
   }
 }
+/* l3: a code-first flow (the steps of one function): the flow is a narrow outline on the left, the code the main
+   pane; the topic column joins them on a wide screen. */
+.workspace.is-code-first.has-source .workspace-columns {
+  grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
+}
+@media (min-width: 1680px) {
+  .workspace.is-code-first.has-source .workspace-columns {
+    grid-template-columns: minmax(320px, 420px) minmax(0, 1fr) 280px;
+  }
+}
+.workspace.is-code-first .workspace-caption {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.workspace.is-code-first .workspace-caption select {
+  max-width: 100%;
+}
+.workspace.is-code-first .workspace-caption h2 {
+  font-size: 17px;
+}
 .workspace-primary {
   min-width: 0;
   min-height: 0;
@@ -842,6 +862,18 @@
 }
 .flow-transition.is-projected polyline {
   stroke-dasharray: 5 4;
+}
+/* l3: a recursive call (one level down) and a return (up one level): dashed, in purple, with purple words. */
+.flow-transition.is-recurse polyline {
+  stroke-dasharray: 8 5;
+}
+.flow-transition.is-return polyline {
+  stroke-dasharray: 2 4;
+  stroke-linecap: round;
+}
+.flow-transition.is-recurse text,
+.flow-transition.is-return text {
+  fill: var(--purple);
 }
 .guide-path {
   overflow-y: auto;

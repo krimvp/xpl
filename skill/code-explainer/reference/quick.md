@@ -24,7 +24,7 @@ Keep a finding on purpose: `xpl lint ... --warn-only` (a `todo-left` error still
 - **Notes** that start with `### Plain title`, then 1-3 short sentences (60 words at most; 280 characters in a talk).
 - **`code` on every step**: at most 2 ranges, the one the note talks about first, close together in one file (a slide shows one range; 40 lines apart is too far).
 - **Maps** of 4-8 boxes (3-7 on a system map), `"stubs": {"mode": "none"}`, at most about 2 arrows per box (hide the rest with `hidden`).
-- **`llm` edges** only for what the index cannot see, anchored at both ends, between two different boxes (a map does not draw an edge from a box to itself; show recursion in a flow or sequence step).
+- **`llm` edges** only for what the index cannot see, anchored at both ends (an edge from a box to itself draws as a loop on it; in a flow, show recursion with a `recurse` link). A path through code that is not a box: one edge with `via`; a hop the index shows needs no anchors.
 
 ## Writing in one breath
 

@@ -16,6 +16,9 @@
  *      references that start or end in a matching file (test files in an overview, say).
  *  11. GraphView adds `stubs` ({ mode, max }): how many of the places where the view stops are drawn as
  *      ghost boxes. Default: the 8 most referenced, with the rest folded into "N more".
+ *  12. Edge adds `via` (what the link passes through without a box); an llm edge's evidence is then per hop.
+ *  13. A flow step's `next` links (FlowLink) add `kind`: "recurse" (one level down) or "return" (up one level).
+ *  14. SequenceView adds `layout` ("code-first" or "diagram"): how Read and Explore lay the view out.
  *
  * Two files per repo:
  *   index-<commit>.json    SymbolIndex. Static analysis of one commit. Built once, shared by every view.
@@ -364,6 +367,14 @@ export interface Edge extends ElementBase {
     | "configures"
     | "overrides"
     | "custom";
+  /**
+   * (amended) "A reaches C through B": elements (nodes: symbols, files, groups) the link passes through, in
+   * order, that the view does not draw as boxes. The map draws one arrow from `from` to `to`, marked "via B".
+   * Evidence of an llm edge with `via` is per hop (`from` → via[0] → … → `to`): a hop that the index shows (a
+   * reference from inside one end to inside the other) needs no anchors; any other hop needs an anchor inside
+   * each of its two ends, like an llm edge without `via`.
+   */
+  via?: ElementId[];
 }
 
 /** A cross-cutting idea that isn't one box: "retry policy", "idempotency", "backpressure". */
@@ -459,6 +470,13 @@ export interface SequenceView extends ViewBase {
   participants: ElementId[];
   steps: SequenceStep[];
   frames?: SequenceFrame[];
+  /**
+   * (amended) How Read and Explore lay the view out. `"code-first"`: the code is the main pane and the diagram
+   * a narrow outline beside it that follows the selection and the caret (made for the steps of one function).
+   * `"diagram"`: the diagram is the main pane. Absent: code-first when every step's code is in one function,
+   * else the diagram.
+   */
+  layout?: "code-first" | "diagram";
 }
 
 /**
@@ -473,11 +491,28 @@ export interface SequenceStep {
   label: string;
   kind: "call" | "return" | "async";
   shape?: "stage" | "decision" | "terminal";
-  next?: { step: string; label?: string }[];
+  next?: FlowLink[];
   /** The edge this message instantiates, if any. */
   edge?: ElementId;
   anchors: Anchor[];
   summary?: string;
+}
+
+/**
+ * A transition of a flow step (`SequenceStep.next`): to `step`, taken when `label` says.
+ *
+ * (amended) `kind` marks a transition that changes the level of a recursive function:
+ * - `"recurse"`: the step calls the function again, and the steps from `step` (an earlier step, often the
+ *   first of the function) run again, one level down. It does not end the step: a step whose `next` has only
+ *   recurse links still goes on to the next step in the list.
+ * - `"return"`: the call returns, back up one level, and the caller goes on at `step` (the step that made the
+ *   call, or the step that uses the result). A terminal step may have return links.
+ * Absent: an ordinary transition, at the same level.
+ */
+export interface FlowLink {
+  step: string;
+  label?: string;
+  kind?: "recurse" | "return";
 }
 
 /** loop / alt / opt / par block spanning a run of steps. */

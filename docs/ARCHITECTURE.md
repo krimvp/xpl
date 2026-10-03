@@ -185,7 +185,14 @@ Conventions (all packages):
 17. `SequenceView.type` may be `"flow"`: the same fields as a sequence, drawn as stages and decisions. A step
     adds `shape?: "stage" | "decision" | "terminal"` and `next?: { step, label? }[]` (labelled branches to
     steps of the same view; without `next` a step goes on to the next one, a `terminal` ends a path). A
-    sequence view can be drawn as a flow too, in reading order (`processFlow`, `projected: true`).
+    sequence view can be drawn as a flow too, in reading order (`processFlow`, `projected: true`). A `next`
+    link may add `kind: "recurse"` (the steps from an earlier step run again, one level down; a step with only
+    recurse links still goes on to the next one) or `kind: "return"` (back up one level, to the caller; a
+    terminal may have these). `SequenceView.layout?: "code-first" | "diagram"` overrides `codeFirstView`
+    (viewer `workspace.ts`: code first when every step's code is in one file). A flow step whose first anchor
+    is not inside its `from` gets a warning (a `return` step whose code is in `to` excepted).
+    `Edge.via?: ElementId[]`: what an edge passes through without a box; an llm edge's evidence is per hop,
+    and a hop the index shows (`hopRefs`) needs no anchors.
 18. `SymbolIndex` adds `resources?: ResourceReference[]`: files that code loads or discovers by a literal path
     or glob (`readFile("x.json")`, `glob("plugins/*.py")`, an import of a `.json`), with `kind` (`loads`,
     `discovers`), the call `site` and `resolution: "static" | "inferred"`. The viewer lists them as related
@@ -1115,7 +1122,11 @@ Both splits (diagram / panels, diagram / code) are resizable. Below 900 px the h
   decision or a terminal shows the actor alone, and so does a step inside one part (the Guide and the details
   say "inside X", never "X → X"). A sequence view in the Flow tab is drawn the same way, in reading order,
   with a note that says so. A flow never zooms below 11 px text (`FLOW_READABLE_ZOOM`, Read's start and the
-  floor of "Fit").
+  floor of "Fit"). Recurse and return links are dashed and purple, with "one level down" / "up one level"
+  after their label; a link of a stage to itself is a loop on its right side; labels are drawn after all
+  lines. A code-first view (`codeFirstView`) puts the code in the main pane (Read: the flow is a narrow
+  outline column; Explore: the diagram column is narrow) and the outline keeps the caret's step (else the
+  selection) near its middle (`PanZoom.revealMargin`).
 - **Selection and code focus:** clicking any element (node, edge, stub, step, concept) selects it; the editors
   show the code focus (§4.5), one pane per focused file (a file opened from the tree or an anchor row first,
   then the step's `primary`, then focus order; at most 10 panes, the rest are listed): lines carry `xpl-hl`

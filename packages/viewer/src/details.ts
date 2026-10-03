@@ -195,19 +195,25 @@ function buildInfo(id: ElementId, model: ExplainerModel, vd: ViewDerived): Eleme
     case "edge": {
       const edge = ref.edge;
       const derived = vd.edgeMap.get(id);
+      const via = Array.isArray(edge.via) ? edge.via.filter((end) => model.hasNode(end)) : [];
       const info: ElementInfo = {
         id,
         type: "edge",
         title: edge.label || edge.kind,
         kind: edge.kind,
-        where: `${model.label(edge.from)} → ${model.label(edge.to)}`,
+        where: [edge.from, ...via, edge.to].map((end) => model.label(end)).join(" → "),
         facts:
           edge.from === edge.to
             ? []
             : [
                 { label: "From", value: model.label(edge.from) },
+                // what the arrow passes through without a box of its own
+                ...(via.length > 0
+                  ? [{ label: "Through", value: via.map((end) => model.label(end)).join(", ") }]
+                  : []),
                 { label: "To", value: model.label(edge.to) },
               ],
+        // (an edge via code with no anchors of its own: its code focus is the references of its hops)
         anchors: rowsFor(edge.anchors, id, model, vd),
         related: [],
         provenance: edge.provenance,

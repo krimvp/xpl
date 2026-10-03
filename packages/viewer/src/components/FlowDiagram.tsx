@@ -6,6 +6,7 @@ import {
   EDGE_LABEL_LINE,
   EDGE_LABEL_CHARS,
   layoutFlow,
+  levelTitle,
   type FlowLayout,
   placedStages,
   STAGE_LABEL_CHARS,
@@ -24,6 +25,9 @@ import {
   PRESENT_MAX_FIT_ZOOM,
 } from "./PanZoom.js";
 
+/** How far the outline keeps the step it follows from the pane's edge, px: near the middle, with its neighbours. */
+const OUTLINE_MARGIN = 140;
+
 export interface FlowDiagramProps {
   view: SequenceView;
   /**
@@ -31,9 +35,14 @@ export interface FlowDiagramProps {
    * the picture framed on it. Default: the live diagram of the current mode.
    */
   snapshot?: { selection: readonly ElementId[] };
+  /**
+   * The narrow outline beside the code of a code-first view (`codeFirstView`): it follows the caret, panning to
+   * the step whose code it is in (else to the selection).
+   */
+  outline?: boolean;
 }
 
-export function FlowDiagram({ view, snapshot }: FlowDiagramProps) {
+export function FlowDiagram({ view, snapshot, outline = false }: FlowDiagramProps) {
   const store = useStore();
   const state = useViewerState();
   const flow = useMemo(() => processFlow(view), [view]);
@@ -57,6 +66,14 @@ export function FlowDiagram({ view, snapshot }: FlowDiagramProps) {
       ),
     [reverse, state.cursor],
   );
+  // An outline follows what moved last: the caret in the code, or the selection (a click on a step).
+  const [followCaret, setFollowCaret] = useState(false);
+  useEffect(() => {
+    if (state.cursor) setFollowCaret(true);
+  }, [state.cursor]);
+  useEffect(() => {
+    setFollowCaret(false);
+  }, [state.selection]);
   useEffect(() => {
     let cancelled = false;
     setError(undefined);
@@ -113,6 +130,7 @@ export function FlowDiagram({ view, snapshot }: FlowDiagramProps) {
     if (focusIds.has(edge.to) && !focusIds.has(edge.from)) nextTo.add(edge.from);
   }
   const nodes = new Map(placed.map(({ node }) => [node.id, node] as const));
+  const stageLabels = new Map(flow.stages.map(({ step }) => [step.id, step.label] as const));
   const focus: Focus | undefined =
     focused.length > 0
       ? {
@@ -123,6 +141,12 @@ export function FlowDiagram({ view, snapshot }: FlowDiagramProps) {
           }),
         }
       : undefined;
+  // An outline follows the caret: the step whose code the caret is in, kept in view as the caret moves.
+  const caretStage =
+    outline && followCaret ? placed.find(({ node }) => matches.has(node.id)) : undefined;
+  const followed = caretStage ? boxOf(caretStage.node) : undefined;
+  const transitionClass = (edge: FlowLayout["edges"][number]) =>
+    `flow-transition${flow.projected ? " is-projected" : ""}${edge.kind ? ` is-${edge.kind}` : ""}`;
   const select = (id: string, additive: boolean) => {
     if (!snapshot) store.click(id, additive);
   };
@@ -140,9 +164,21 @@ export function FlowDiagram({ view, snapshot }: FlowDiagramProps) {
         >
           <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--edge)" />
         </marker>
+        <marker
+          id={`${arrow}-level`}
+          viewBox="0 0 10 10"
+          refX="9"
+          refY="5"
+          markerWidth="7"
+          markerHeight="7"
+          orient="auto-start-reverse"
+        >
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--purple)" />
+        </marker>
       </defs>
       {(layout.edges ?? []).map((edge) => (
-        <g key={edge.id} className={`flow-transition${flow.projected ? " is-projected" : ""}`}>
+        <g key={edge.id} className={transitionClass(edge)} data-transition-kind={edge.kind}>
+          {edge.kind && <title>{levelTitle(edge.kind, stageLabels.get(edge.to) ?? "")}</title>}
           {(edge.sections ?? []).map((section, i) => (
             <polyline
               key={i}
@@ -150,36 +186,43 @@ export function FlowDiagram({ view, snapshot }: FlowDiagramProps) {
                 .map((point) => `${point.x},${point.y}`)
                 .join(" ")}
               fill="none"
-              stroke="var(--edge)"
+              stroke={edge.kind ? "var(--purple)" : "var(--edge)"}
               strokeWidth="2"
-              markerEnd={`url(#${arrow})`}
+              markerEnd={`url(#${edge.kind ? `${arrow}-level` : arrow})`}
             />
           ))}
-          {(edge.labels ?? []).map((label, i) => {
-            const lines = wrapWords(label.text ?? "", EDGE_LABEL_CHARS);
-            const x = (label.x ?? 0) + (label.width ?? 0) / 2;
-            return (
-              <g key={i}>
-                <rect
-                  x={label.x ?? 0}
-                  y={label.y ?? 0}
-                  width={label.width ?? 0}
-                  height={label.height ?? 24}
-                  rx="5"
-                  fill="var(--panel)"
-                />
-                <text x={x} y={(label.y ?? 0) + 17} textAnchor="middle">
-                  {lines.map((line, n) => (
-                    <tspan key={n} x={x} dy={n === 0 ? 0 : EDGE_LABEL_LINE}>
-                      {line}
-                    </tspan>
-                  ))}
-                </text>
-              </g>
-            );
-          })}
         </g>
       ))}
+      {/* The labels after all the lines: no line runs over a label. */}
+      {(layout.edges ?? []).map((edge) =>
+        (edge.labels ?? []).length === 0 ? null : (
+          <g key={`${edge.id}:label`} className={transitionClass(edge)} aria-hidden="true">
+            {(edge.labels ?? []).map((label, i) => {
+              const lines = wrapWords(label.text ?? "", EDGE_LABEL_CHARS);
+              const x = (label.x ?? 0) + (label.width ?? 0) / 2;
+              return (
+                <g key={i}>
+                  <rect
+                    x={label.x ?? 0}
+                    y={label.y ?? 0}
+                    width={label.width ?? 0}
+                    height={label.height ?? 24}
+                    rx="5"
+                    fill="var(--panel)"
+                  />
+                  <text x={x} y={(label.y ?? 0) + 17} textAnchor="middle">
+                    {lines.map((line, n) => (
+                      <tspan key={n} x={x} dy={n === 0 ? 0 : EDGE_LABEL_LINE}>
+                        {line}
+                      </tspan>
+                    ))}
+                  </text>
+                </g>
+              );
+            })}
+          </g>
+        ),
+      )}
       {placed.map(({ node, stage }, index) => {
         const { step, shape, frames } = stage;
         // A loop or a branch is named once, over the first box it covers, not again over every box in it.
@@ -264,7 +307,7 @@ export function FlowDiagram({ view, snapshot }: FlowDiagramProps) {
       </SnapshotFrame>
     );
   return (
-    <div className="flow-diagram" data-testid="process-flow">
+    <div className={`flow-diagram${outline ? " is-outline" : ""}`} data-testid="process-flow">
       {flow.projected && (
         <p className="flow-projection" role="note">
           Read from top to bottom. Each box is one call. The arrows show the order, not every
@@ -276,7 +319,8 @@ export function FlowDiagram({ view, snapshot }: FlowDiagramProps) {
         height={layout.height ?? 300}
         resetKey={`${view.id}:${state.stepSeq}`}
         focus={focus}
-        keepInView={focus?.boxes[0]}
+        keepInView={followed ?? focus?.boxes[0]}
+        revealMargin={outline ? OUTLINE_MARGIN : undefined}
         label="Process flow"
         maxFitZoom={present ? PRESENT_MAX_FIT_ZOOM : undefined}
         fitPadding={present ? PRESENT_FIT_PADDING : undefined}
@@ -292,6 +336,8 @@ export function FlowDiagram({ view, snapshot }: FlowDiagramProps) {
               terminal: placed.some(({ stage }) => stage.shape === "terminal"),
               frames: placed.some(({ stage }) => stage.frames.length > 0),
               projected: Boolean(flow.projected),
+              recurse: flow.transitions.some((edge) => edge.kind === "recurse"),
+              returns: flow.transitions.some((edge) => edge.kind === "return"),
             }}
           />
         }

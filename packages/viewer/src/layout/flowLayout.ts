@@ -22,7 +22,29 @@ export interface FlowLayout {
     to: string;
     sections: { startPoint: Point; bendPoints: Point[]; endPoint: Point }[];
     labels: { text: string; x: number; y: number; width: number; height: number }[];
+    /** A link that changes the level of a recursion (`FlowLink.kind`): drawn dashed, its label says which way. */
+    kind?: "recurse" | "return";
   }[];
+}
+
+/** The words a recurse or return link adds to its label: which way the level changes. */
+export const LEVEL_WORDS = { recurse: "one level down", return: "up one level" } as const;
+
+/** The tooltip of a recurse or return link: what it means, in words. */
+export function levelTitle(kind: "recurse" | "return", target: string): string {
+  return kind === "recurse"
+    ? `The function calls itself: the steps from "${target}" run again, one level down.`
+    : `The call returns, back up one level: its caller goes on at "${target}".`;
+}
+
+/** The label drawn on a transition: its own words, and for a recurse or return link the way the level changes. */
+export function transitionText(edge: {
+  label?: string;
+  kind?: "recurse" | "return";
+}): string | undefined {
+  if (!edge.kind) return edge.label || undefined;
+  const words = LEVEL_WORDS[edge.kind];
+  return edge.label ? `${edge.label} (${words})` : words;
 }
 
 /**
@@ -65,13 +87,14 @@ export async function layoutFlow(flow: ProcessFlow): Promise<FlowLayout> {
   }));
   const labels = new Map(
     flow.transitions.flatMap((edge) => {
-      if (!edge.label) return [];
-      const lines = wrapWords(edge.label, EDGE_LABEL_CHARS);
+      const text = transitionText(edge);
+      if (!text) return [];
+      const lines = wrapWords(text, EDGE_LABEL_CHARS);
       const size = {
         width: Math.max(...lines.map((line) => textWidth(line, FLOW_FONT))) + 16,
         height: 8 + EDGE_LABEL_LINE * lines.length,
       };
-      return [[edge.id, { text: edge.label, ...size }] as const];
+      return [[edge.id, { text, ...size }] as const];
     }),
   );
   const result = layered(
@@ -125,37 +148,99 @@ export async function layoutFlow(flow: ProcessFlow): Promise<FlowLayout> {
     ),
   );
   separateTracks(routed, "DOWN");
+  const loops = flow.transitions
+    .filter((edge) => edge.from === edge.to && result.boxes.has(edge.from))
+    .map((edge) => loopTransition(edge, result.boxes.get(edge.from)!, labels.get(edge.id)));
+  const right = Math.max(
+    result.width,
+    ...loops.flatMap((loop) => [
+      ...loop.sections[0]!.bendPoints.map((point) => point.x + 24),
+      ...loop.labels.map((label) => label.x + label.width + 12),
+    ]),
+  );
   return {
-    width: result.width,
+    width: right,
     height: result.height,
     children: children.map((child) => ({ ...child, ...result.boxes.get(child.id)! })),
-    edges: transitions.map((edge, n) => {
-      const route = result.routes.get(edge.id);
-      const points = routed[n]!;
-      const label = labels.get(edge.id);
-      return {
-        id: edge.id,
-        from: edge.from,
-        to: edge.to,
-        sections: [
+    edges: [
+      ...transitions.map((edge, n) => {
+        const route = result.routes.get(edge.id);
+        const points = routed[n]!;
+        const label = labels.get(edge.id);
+        return {
+          id: edge.id,
+          from: edge.from,
+          to: edge.to,
+          sections: [
+            {
+              startPoint: points[0]!,
+              bendPoints: points.slice(1, -1),
+              endPoint: points[points.length - 1]!,
+            },
+          ],
+          labels:
+            label && route?.label
+              ? [
+                  {
+                    ...label,
+                    x: route.label.x - label.width / 2,
+                    y: route.label.y - label.height / 2,
+                  },
+                ]
+              : [],
+          ...(edge.kind ? { kind: edge.kind } : {}),
+        };
+      }),
+      ...loops,
+    ],
+  };
+}
+
+/** How far a loop reaches out of the right side of its box. */
+const LOOP_REACH = 22;
+
+/**
+ * A transition of a stage to itself (the next item of a loop, a call of the same steps one level down): a loop out
+ * of the right side of the box and back into it, a little higher, its label to the right of the loop. For a
+ * decision, the loop leaves the right corner and comes back onto the upper right edge.
+ */
+function loopTransition(
+  edge: ProcessFlow["transitions"][number],
+  box: { x: number; y: number; width: number; height: number },
+  label: { text: string; width: number; height: number } | undefined,
+): FlowLayout["edges"][number] {
+  const right = box.x + box.width;
+  const diamond = box.height === DECISION_HEIGHT && box.width === DECISION_WIDTH;
+  const start = { x: right, y: box.y + (diamond ? box.height / 2 : box.height * 0.68) };
+  const end = diamond
+    ? { x: box.x + box.width * 0.75 + 6, y: box.y + box.height / 4 + 3 }
+    : { x: right, y: box.y + box.height * 0.32 };
+  const top = Math.min(end.y - (diamond ? 18 : 0), start.y - 30);
+  const bend = diamond
+    ? [
+        { x: right + LOOP_REACH, y: start.y },
+        { x: right + LOOP_REACH, y: top },
+        { x: end.x, y: top },
+      ]
+    : [
+        { x: right + LOOP_REACH, y: start.y },
+        { x: right + LOOP_REACH, y: end.y },
+      ];
+  return {
+    id: edge.id,
+    from: edge.from,
+    to: edge.to,
+    sections: [{ startPoint: start, bendPoints: bend, endPoint: end }],
+    labels: label
+      ? [
           {
-            startPoint: points[0]!,
-            bendPoints: points.slice(1, -1),
-            endPoint: points[points.length - 1]!,
+            ...label,
+            x: right + LOOP_REACH + 6,
+            y: (start.y + top) / 2 - label.height / 2,
           },
-        ],
-        labels:
-          label && route?.label
-            ? [
-                {
-                  ...label,
-                  x: route.label.x - label.width / 2,
-                  y: route.label.y - label.height / 2,
-                },
-              ]
-            : [],
-      };
-    }),
+        ]
+      : [],
+    ...(edge.kind ? { kind: edge.kind } : {}),
   };
 }
 

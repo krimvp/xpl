@@ -5,7 +5,13 @@ import { describeElement } from "../details.js";
 import { renderInline } from "../markdown.js";
 import { stepTitle } from "../stepTitle.js";
 import { useDerived, useStore, useViewerState } from "../hooks.js";
-import { topicElements, topicMatches, workspaceMap, workspaceView } from "../workspace.js";
+import {
+  codeFirstView,
+  topicElements,
+  topicMatches,
+  workspaceMap,
+  workspaceView,
+} from "../workspace.js";
 import { CodeArea } from "./CodeArea.js";
 import { Details, TopicFacts } from "./Details.js";
 import { ErrorBoundary } from "./ErrorBoundary.js";
@@ -81,9 +87,11 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
       ? map.graph.nodes.filter((node) => store.canZoomInto(node.id)).slice(0, 3)
       : [];
   const code = state.perspective === "code";
+  // The steps of one function: the code is the main pane, the flow a narrow outline beside it.
+  const codeFirst = state.perspective === "flow" && codeFirstView(flow);
   // The topic column names the picked element (not in the guide while its section is the topic).
   const topicShown = !!info && onScreen && !(state.perspective === "guide" && appliedStep);
-  const showSource = code || sourceOpen;
+  const showSource = code || sourceOpen || codeFirst;
   useEffect(() => {
     if (!showSource) columns.current?.scrollTo({ top: 0, behavior: "instant" });
   }, [showSource, state.perspective]);
@@ -94,7 +102,7 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
 
   return (
     <main
-      className={`workspace${showSource ? " has-source" : ""}`}
+      className={`workspace${showSource ? " has-source" : ""}${codeFirst ? " is-code-first" : ""}`}
       data-perspective={state.perspective}
     >
       <div className="workspace-location">
@@ -137,7 +145,7 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
             Read its explanation
           </button>
         )}
-        {!code && (
+        {!code && !codeFirst && (
           <button
             className="btn"
             aria-expanded={sourceOpen}
@@ -230,7 +238,7 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
                       />
                     </div>
                   ) : flow ? (
-                    <FlowDiagram key={flow.id} view={flow} />
+                    <FlowDiagram key={flow.id} view={flow} outline={codeFirst} />
                   ) : (
                     <div className="guide-path">
                       <p>
