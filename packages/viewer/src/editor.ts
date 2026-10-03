@@ -372,7 +372,8 @@ class RemovedWidget extends WidgetType {
       for (const text of block.text) {
         const line = document.createElement("div");
         line.className = "xpl-removed-line";
-        line.textContent = text === "" ? "\u200b" : text;
+        if (text === "") line.textContent = "\u200b";
+        else appendBreakable(line, text);
         // the hanging indent of a wrapped code line (see `hangingIndent`); one row looks the same either way
         const columns = indentColumns(text) + 2;
         line.style.paddingLeft = `calc(8px + ${columns}ch)`;
@@ -741,6 +742,26 @@ export function indentColumns(text: string): number {
  */
 const keepIndent = Decoration.mark({ class: "xpl-indent" });
 
+/**
+ * Where a wrapped line may break besides its spaces: after punctuation that is followed by more code
+ * (`a.b`, `f(x`, `[i`, `a,b`, `=x`), so a long chain wraps at a dot or a bracket and never in the middle
+ * of a name (the browser breaks inside a word only when a run has no such place at all). Drawn as a
+ * zero-width space after the character (`.xpl-wbr` in styles.css): nothing is added to the text.
+ */
+const BREAK_AFTER = /[.,;:=([{|&?](?=[\w$#@"'`([{])/g;
+const breakAfter = Decoration.mark({ class: "xpl-wbr" });
+
+/** `text` appended to `parent` with a `<wbr>` at each place `BREAK_AFTER` finds (a removed line's text). */
+function appendBreakable(parent: HTMLElement, text: string): void {
+  let last = 0;
+  for (const match of text.matchAll(BREAK_AFTER)) {
+    const end = match.index + 1;
+    parent.append(text.slice(last, end), document.createElement("wbr"));
+    last = end;
+  }
+  parent.append(text.slice(last));
+}
+
 const hangingIndent = ViewPlugin.fromClass(
   class {
     decorations: DecorationSet;
@@ -768,6 +789,10 @@ const hangingIndent = ViewPlugin.fromClass(
           const indent = line.text.length - line.text.trimStart().length;
           if (indent > 0 && indent < line.text.length)
             items.push(keepIndent.range(line.from, line.from + indent + 1));
+          for (const match of line.text.matchAll(BREAK_AFTER)) {
+            if (match.index > indent)
+              items.push(breakAfter.range(line.from + match.index, line.from + match.index + 1));
+          }
           pos = line.to + 1;
         }
       }

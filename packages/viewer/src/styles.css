@@ -3138,6 +3138,12 @@ code {
   overflow-wrap: anywhere;
 }
 
+/* r3-frame: a wrapped code line breaks after punctuation before it breaks inside a name (editor.ts
+   `BREAK_AFTER`): a zero-width space after the character, which is not part of the text. */
+.cm-lineWrapping .xpl-wbr::after {
+  content: "\200b";
+}
+
 .xpl-removed-line.is-note {
   font-family: var(--font-ui);
   font-style: italic;
@@ -3298,6 +3304,20 @@ code {
    code beside it wraps its long lines), for all of its steps (PresentMode: one split per tour). */
 .present[data-split="wide"] {
   grid-template-columns: minmax(340px, 52%) minmax(0, 1fr);
+}
+
+/* r3-frame: ... but the code keeps room for the lines the tour focuses (`--code-columns`, present/split.ts:
+   a monospace column is about 0.6em, plus the line numbers and padding): the diagram gives back up to
+   the plain split's 40% rather than wrap those lines on every step. */
+@media (min-width: 641px) {
+  .present[data-split="wide"][style*="--code-columns"] {
+    grid-template-columns:
+      minmax(
+        340px,
+        max(40%, min(52%, 100% - (var(--code-columns) * 0.6 * var(--code-font-size) + 96px)))
+      )
+      minmax(0, 1fr);
+  }
 }
 
 /* present: the slide takes the keyboard focus when a talk starts; no ring around the whole screen. */

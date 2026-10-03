@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { PaneSpec } from "../src/derive.js";
 import { captionCap, captionFit } from "../src/present/caption.js";
 import { rangePlaces, talkPanes } from "../src/present/ranges.js";
+import { focusColumns } from "../src/present/split.js";
 import { ViewerStore } from "../src/store.js";
 import { searchFor, watchUrl } from "../src/url.js";
 import { makeBundle } from "./world.js";
@@ -166,5 +167,25 @@ describe("Back, Forward and a talk", () => {
     expect(store.getState().mode).toBe("present");
     expect(store.getState().tour!.step).toBe(1);
     expect(page.win.location.search).toBe("?mode=present&tour=tour:demo&step=2");
+  });
+});
+
+describe("the one split of a talk", () => {
+  it("is as wide as most of the lines the tour focuses, not its longest one", () => {
+    const store = new ViewerStore(makeBundle(), {});
+    const { model, files } = store.getState();
+    const tour = model.explainer.tours!.find((t) => t.id === "tour:demo")!;
+    const plain = focusColumns(tour, model, files);
+    expect(plain).toBeGreaterThan(0);
+    expect(plain).toBeLessThan(20);
+    // one odd long line does not decide; when most of the focused code is long, the split follows it
+    const one = { ...files, "src/a.ts": files["src/a.ts"]!.replace("line 7;", "x".repeat(150)) };
+    expect(focusColumns(tour, model, one)).toBe(plain);
+    const long = Object.fromEntries(
+      Object.entries(files).map(([path, text]) => [path, text.replace(/line/g, "line".repeat(20))]),
+    );
+    expect(focusColumns(tour, model, long)).toBeGreaterThan(60);
+    // code that is not loaded says nothing
+    expect(focusColumns(tour, model, {})).toBe(0);
   });
 });

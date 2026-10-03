@@ -5,7 +5,8 @@
  * the left, the code on the right with the file tree out of the way. The step counter, the arrows and
  * the tour picker are in the header (Header.tsx). A tour with a flow step gives the diagram more of the
  * width, for all of its steps (a flow is tall and branches sideways; the code beside it wraps its long
- * lines): the screen is split once per tour, so it does not jump between a map step and a flow step.
+ * lines): the screen is split once per tour, so it does not jump between a map step and a flow step. The
+ * diagram takes less of that extra width when the tour's code needs it (present/split.ts).
  *
  * The caption keeps one height and one type size for the whole tour: as tall as its tallest step needs,
  * measured off-screen, so the diagram above it does not jump from step to step. The diagram keeps a
@@ -16,7 +17,7 @@
  * a detour: the selection follows the click and the header says so; the next arrow key applies the
  * next step again (← and Esc go back to the step that was interrupted).
  */
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import type { TourStep } from "@xpl/core";
 import { CodeArea } from "../components/CodeArea.js";
 import { DiagramPane } from "../components/DiagramPane.js";
@@ -25,6 +26,7 @@ import { renderInline, renderMarkdown } from "../markdown.js";
 import { stepNumber } from "../modes.js";
 import { stepText } from "../stepTitle.js";
 import { captionCap, captionFit } from "./caption.js";
+import { focusColumns } from "./split.js";
 
 /** A note body longer than this (characters of markdown): the tour's captions start one size smaller. */
 const LONG_NOTE = 280;
@@ -50,6 +52,11 @@ export function PresentMode() {
   );
   // One split for the tour: the widest diagram column any of its steps needs.
   const wide = tour?.steps.some((other) => state.model.view(other.view)?.type === "flow") ?? false;
+  // ... but not the width the tour's code needs: the code keeps room for its focused lines (styles.css).
+  const columns = useMemo(
+    () => (tour && wide ? focusColumns(tour, state.model, state.files) : 0),
+    [tour, wide, state.model, state.files],
+  );
 
   // One caption height for the tour: the tallest step's, measured on hidden copies of every caption, at the
   // largest type size that leaves the diagram its room.
@@ -161,6 +168,7 @@ export function PresentMode() {
       data-step-id={step.id}
       data-view-type={store.view()?.type}
       data-split={wide ? "wide" : undefined}
+      style={columns > 0 ? ({ "--code-columns": columns } as CSSProperties) : undefined}
       data-pointer={pointer ? "moved" : undefined}
     >
       <section className="present-left" aria-label="Diagram and caption" ref={left}>
