@@ -46,29 +46,34 @@
       "id": "grp:scheduling",
       "label": "Scheduling",
       "summary": "Decides which job runs next and what happens after each attempt: done, retried with a delay, or dead-lettered.",
-      "members": ["file:jobrunner/runner.py", "file:jobrunner/queue.py"]
+      "members": ["file:jobrunner/runner.py", "file:jobrunner/queue.py"],
+      "role": "component"
     },
     {
       "id": "grp:events",
       "label": "Events and metrics",
       "summary": "A bus that delivers events by topic name, and the metrics that count finished jobs from those events.",
-      "members": ["file:jobrunner/bus.py", "file:jobrunner/metrics.py"]
+      "members": ["file:jobrunner/bus.py", "file:jobrunner/metrics.py"],
+      "role": "component"
     },
     {
       "id": "grp:configuration",
       "label": "Settings",
       "summary": "The default settings in YAML, and the loader that turns them into typed config objects.",
-      "members": ["file:config/default.yaml", "file:jobrunner/config.py"]
+      "members": ["file:config/default.yaml", "file:jobrunner/config.py"],
+      "role": "component"
     },
     {
       "id": "file:jobrunner/__main__.py",
       "label": "Startup",
-      "summary": "`python -m jobrunner` starts here: `run` loads the settings, connects the parts and runs a short demo."
+      "summary": "`python -m jobrunner` starts here: `run` loads the settings, connects the parts and runs a short demo.",
+      "role": "component"
     },
     {
       "id": "file:jobrunner/worker.py",
       "label": "Workers",
-      "summary": "A worker runs one attempt of a job with a timeout and returns the outcome. A pool lends out one free worker at a time."
+      "summary": "A worker runs one attempt of a job with a timeout and returns the outcome. A pool lends out one free worker at a time.",
+      "role": "component"
     },
     {
       "id": "file:jobrunner/config.py",

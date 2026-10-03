@@ -1546,11 +1546,13 @@ export function draftRepo(input: DraftInput): Draft {
             : "one line: what this file does, in plain words.",
         ),
       );
-      // a reader of the map knows the part by what it does ("Payments"), not by its folder name ("pay")
+      // a reader of the map knows the part by what it does ("Payments"), not by its folder name ("pay"),
+      // and sees it is one component of the service (the level between the service and its code)
       if (node)
         nodes.push({
           ...node,
           label: todo(`1-3 plain words for this part (now: ${baseName(unit.path)})`),
+          role: "component",
         });
     }
   }

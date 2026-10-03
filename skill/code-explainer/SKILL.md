@@ -80,11 +80,11 @@ Where the index shows less than runs:
 
 Three levels, each a zoom into a box of the one above (`opens`):
 
-| Level          | Shows                                                                              | Boxes                                         |
-| -------------- | ---------------------------------------------------------------------------------- | --------------------------------------------- |
-| 1. System map  | the service(s), who uses them, and the databases, queues and outside APIs they use | 3-7, each with a `role` and a `tech`          |
-| 2. Inside      | the parts of one service, and the outside boxes each part talks to                 | 4-8 parts with plain labels, plus those boxes |
-| 3. Code (lazy) | the main path through a part: a sequence or a flow                                 | on `expand`                                   |
+| Level          | Shows                                                                              | Boxes                                                |
+| -------------- | ---------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| 1. System map  | the service(s), who uses them, and the databases, queues and outside APIs they use | 3-7, each with a `role` and a `tech`                 |
+| 2. Inside      | the parts of one service, and the outside boxes each part talks to                 | 4-8 `component`s with plain labels, plus those boxes |
+| 3. Code (lazy) | the main path through a part: a sequence or a flow                                 | on `expand`                                          |
 
 1. **What it is:** the README and package metadata (`xpl show file:README.md`, `outline --keys` on `pyproject.toml`, `package.json`, `go.mod`): language, kind, purpose.
 2. **Draft:** `xpl draft repo <name> -o repo.json`: the system map (`view:system`), a map of the inside of each service, edges from each part to the outside systems it imports, and a tour from the top. The first step on the inside lists the files left off the map.
