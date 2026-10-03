@@ -2120,6 +2120,22 @@ code {
   margin: 0 0 8px;
 }
 
+/* What the user wants Claude to change about the selected element (Details `feedback`). */
+.details textarea.feedback {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  margin: 6px 0 0;
+  padding: 6px 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--fg);
+  font: inherit;
+  font-size: 12.5px;
+  resize: vertical;
+}
+
 .note {
   color: var(--muted);
   font-size: 12px;

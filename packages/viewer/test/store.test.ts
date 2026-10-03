@@ -351,4 +351,49 @@ describe("under xpl view (server mode)", () => {
     respond = () => new Response("busy", { status: 503, statusText: "Unavailable" });
     await expect(store.requestExplain("concept:retry")).rejects.toThrow("503 Unavailable: busy");
   });
+
+  it("sends what the user wants changed as the request's note", async () => {
+    const store = graphStore(true);
+    await store.requestExplain("concept:retry", "  too long  ");
+    expect(body(0)).toMatchObject({ kind: "expand", id: "concept:retry", note: "too long" });
+    await store.requestExplain("concept:retry", "   ");
+    expect(body(1)).not.toHaveProperty("note");
+  });
+
+  it("polls GET /explainer and shows what changed on disk, keeping the view and the selection", async () => {
+    const store = graphStore(true);
+    store.select(["concept:retry"]);
+    const changed = structuredClone(store.getState().explainer);
+    changed.concepts.find((c) => c.id === "concept:retry")!.summary = "Shorter now.";
+    let served: Response = new Response(JSON.stringify(changed), {
+      headers: { "content-type": "application/json", etag: '"v2"' },
+    });
+    respond = () => served;
+    const stop = store.watchExplainer(1000);
+
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(calls.map((c) => c.url)).toEqual(["/api/explainer"]);
+    expect(store.getState().model.concept("concept:retry")?.summary).toBe("Shorter now.");
+    expect(store.getState().selection).toEqual(["concept:retry"]);
+    expect(store.getState().viewId).toBe("view:overview");
+
+    served = new Response(null, { status: 304 });
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(new Headers(calls[1]!.init!.headers).get("if-none-match")).toBe('"v2"');
+
+    // an older `xpl view` has no such endpoint: stop asking
+    respond = () => new Response("not found", { status: 404, statusText: "Not Found" });
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(calls).toHaveLength(3);
+    stop();
+  });
+
+  it("does not replace the explainer while an edit made here is not saved yet", () => {
+    const store = graphStore(true);
+    store.expandStub({ ghost: GHOST_TARGET });
+    const changed = structuredClone(store.getState().explainer);
+    changed.concepts.find((c) => c.id === "concept:retry")!.summary = "From disk.";
+    expect(store.adoptExplainer(changed)).toBe(false);
+    expect(store.getState().model.concept("concept:retry")?.summary).not.toBe("From disk.");
+  });
 });
