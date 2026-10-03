@@ -43,7 +43,7 @@ import {
   type DecorationSet,
   type ViewUpdate,
 } from "@codemirror/view";
-import type { AnchorRole, FileLanguage, FocusRange } from "@xpl/core";
+import type { AnchorRole, FileLanguage, FilePath, FocusRange, IndexModel } from "@xpl/core";
 
 /** CodeMirror language support for an `IndexedFile.language`. */
 export function languageSupport(language: FileLanguage): Extension {
@@ -765,4 +765,34 @@ export function firstFocusLine(ranges: readonly FocusRange[]): number | undefine
     if (first === undefined || range.startLine < first) first = range.startLine;
   }
   return first;
+}
+
+/** A run of lines, `from` to `to`. */
+export interface Span {
+  from: number;
+  to: number;
+}
+
+/**
+ * The function a pane's "in X" chip names: the one that holds the code the pane is about, when its first line
+ * is off screen. The code it is about: the first focus range on screen (from its first visible line), else the
+ * first change on screen, else the top line. Context lines above the focus do not count: they are often the end
+ * of the function before it. Undefined when that function's first line is on screen (it names itself).
+ */
+export function insideSymbol(
+  index: Pick<IndexModel, "innermostSymbolAt">,
+  file: FilePath,
+  top: number,
+  bottom: number,
+  ranges: readonly Span[],
+  hunks: readonly Span[],
+): string | undefined {
+  const firstOnScreen = (spans: readonly Span[]) =>
+    spans
+      .filter((span) => span.to >= top && span.from <= bottom)
+      .map((span) => Math.max(span.from, top))
+      .sort((a, b) => a - b)[0];
+  const line = firstOnScreen(ranges) ?? firstOnScreen(hunks) ?? top;
+  const symbol = index.innermostSymbolAt(file, line);
+  return symbol && symbol.range.startLine < top ? symbol.path : undefined;
 }

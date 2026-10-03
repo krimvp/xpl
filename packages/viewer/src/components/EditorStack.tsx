@@ -42,6 +42,8 @@ import {
   firstFocusLine,
   placeCaret,
   scrollToLine,
+  insideSymbol,
+  type Span,
   type SymbolHandlers,
 } from "../editor.js";
 import { symbolAtWord } from "../callers.js";
@@ -429,21 +431,32 @@ const EditorPane = memo(function EditorPane({
     }
   };
 
-  // Which function the top of the pane is inside, when its first line has scrolled away.
+  // Which function the code on screen is inside, when its first line has scrolled away (`insideSymbol`).
   const [inside, setInside] = useState<string | undefined>(undefined);
+  const spans = useRef<{ ranges: readonly Span[]; hunks: readonly Span[] }>({
+    ranges: [],
+    hunks: [],
+  });
+  spans.current = {
+    ranges: pane.ranges.map((r) => ({ from: r.range.startLine, to: r.range.endLine })),
+    hunks,
+  };
   useEffect(() => {
     const editor = view.current;
     if (!editor || base) return;
     const update = () => {
-      const block = editor.lineBlockAtHeight(editor.scrollDOM.scrollTop);
-      const top = editor.state.doc.lineAt(block.from).number;
-      const symbol = top > 1 ? index.innermostSymbolAt(pane.file, top) : undefined;
-      setInside(symbol && symbol.range.startLine < top ? symbol.path : undefined);
+      const scroller = editor.scrollDOM;
+      const lineAt = (height: number) =>
+        editor.state.doc.lineAt(editor.lineBlockAtHeight(height).from).number;
+      const top = lineAt(scroller.scrollTop);
+      const bottom = lineAt(scroller.scrollTop + Math.max(0, scroller.clientHeight - 1));
+      const { ranges, hunks } = spans.current;
+      setInside(insideSymbol(index, pane.file, top, bottom, ranges, hunks));
     };
     update();
     editor.scrollDOM.addEventListener("scroll", update, { passive: true });
     return () => editor.scrollDOM.removeEventListener("scroll", update);
-  }, [text, pane.file, language, base, index]);
+  }, [text, pane.file, language, base, index, pane.ranges, hunks]);
 
   const roles = ROLE_ORDER.filter((role) => pane.ranges.some((r) => r.role === role));
   const stale = pane.ranges.filter((r) => r.status === "drifted" || r.status === "moved");
@@ -503,7 +516,7 @@ const EditorPane = memo(function EditorPane({
           <span
             className="pane-inside"
             data-testid="pane-inside"
-            title="The code at the top is inside"
+            title="The code shown is inside this function"
           >
             in <code>{inside}</code>
           </span>
