@@ -569,12 +569,8 @@ class Mapper {
     }
 
     for (const definition of definitions) {
-      const entry = this.lookup.innermostEntry(
-        definition.file,
-        definition.span.startLine,
-        definition.span.startCol,
-      );
-      if (entry && !entry.anchorOnly && namesSymbol(entry, definition.text)) {
+      const entry = this.namedEntry(definition);
+      if (entry && this.firstNaming().get(entry.symbol.id) === definition) {
         return this.target(parsed, entry, definition, typeLike);
       }
     }
@@ -587,6 +583,40 @@ class Mapper {
       }
     }
     return null;
+  }
+
+  /** The innermost symbol at a definition, when the definition's identifier is that symbol's name. */
+  private namedEntry(definition: Definition): SymbolEntry | undefined {
+    const entry = this.lookup.innermostEntry(
+      definition.file,
+      definition.span.startLine,
+      definition.span.startCol,
+    );
+    return entry && !entry.anchorOnly && namesSymbol(entry, definition.text) ? entry : undefined;
+  }
+
+  private firstNamings: Map<SymbolId, Definition> | undefined;
+
+  /**
+   * Per symbol, the first definition that names it. A symbol's own name comes before anything declared in its
+   * body, and something declared there can have the same name: a Go function `ExprCall` with a local
+   * `interface { ExprCall() }`, a Python parameter named like its function. Those are not the symbol (a call of
+   * the local interface's method is no recursion).
+   */
+  private firstNaming(): Map<SymbolId, Definition> {
+    if (this.firstNamings) return this.firstNamings;
+    const first = new Map<SymbolId, Definition>();
+    for (const list of this.definitions.values()) {
+      for (const definition of list) {
+        const entry = this.namedEntry(definition);
+        if (!entry) continue;
+        const known = first.get(entry.symbol.id);
+        if (!known || compareDefinitions(definition, known) < 0)
+          first.set(entry.symbol.id, definition);
+      }
+    }
+    this.firstNamings = first;
+    return first;
   }
 
   private target(

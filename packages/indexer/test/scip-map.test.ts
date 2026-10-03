@@ -421,6 +421,37 @@ export function ⟦load⟧(): void {
     ]);
   });
 
+  it("a local declared in a function with the function's own name is not the function: no invented recursion", async () => {
+    const src = marked(`export function ⟦walk⟧(⟦node⟧: unknown): number {
+  const ⟦walk⟧ = (n: unknown) => 1;
+  return ⟦walk⟧(⟦node⟧);
+}
+export function ⟦fact⟧(n: number): number {
+  return n ? ⟦fact⟧(n - 1) : 1;
+}
+`);
+    const { refs } = await run({ "a.ts": src.text }, [
+      source([
+        {
+          path: "a.ts",
+          occurrences: [
+            moduleDef("a.ts"),
+            ...occs(src, [
+              [0, ts("a.ts", "walk()."), DEF],
+              [1, ts("a.ts", "walk().(node)"), DEF],
+              [2, "local 0", DEF], // the local `walk`, same name as its function
+              [3, "local 0"], // a call of the local
+              [4, ts("a.ts", "walk().(node)")],
+              [5, ts("a.ts", "fact()."), DEF],
+              [6, ts("a.ts", "fact().")], // real recursion
+            ]),
+          ],
+        },
+      ]),
+    ]);
+    expect(triples(refs)).toEqual(["call a.ts#fact -> a.ts#fact"]);
+  });
+
   it("does not attribute definitions nested in another symbol to that symbol (Python-style instance attributes)", async () => {
     // `self.count = 0` in __init__ defines the attribute `Counter#count.`; the index has no symbol for it
     const py = marked(`class ⟦Counter⟧:
