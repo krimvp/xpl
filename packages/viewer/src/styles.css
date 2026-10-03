@@ -43,6 +43,7 @@
 
   --node-bg: #ffffff;
   --node-border: #b3bdca;
+  --store-bg: #fdf3e6;
   --container-bg: rgba(43, 106, 224, 0.05);
   --edge: #566270;
   --edge-heuristic: #a0abb8;
@@ -126,6 +127,7 @@
     --pill-fg-l: 82%;
 
     --node-bg: #1c2129;
+    --store-bg: #2b2319;
     --node-border: #4a5566;
     --container-bg: rgba(110, 162, 255, 0.07);
     --edge: #9ba7b6;
@@ -3095,4 +3097,101 @@ code {
   .code-area {
     grid-template-columns: 150px minmax(0, 1fr);
   }
+}
+
+/* Architecture boxes (`Node.role`, GraphView `RoleBox`): shapes say what a box is before its label does. */
+.node.role-service > .box,
+.node.role-system > .box {
+  stroke-width: 2;
+}
+
+.node.role-service,
+.node.role-system {
+  --k-hue: 215;
+}
+
+.node.role-component {
+  --k-hue: 190;
+}
+
+.node.role-database,
+.node.role-cache,
+.node.role-storage,
+.node.role-queue {
+  --k-hue: 32;
+}
+
+.node.role-database > .box,
+.node.role-cache > .box,
+.node.role-storage > .box,
+.node.role-queue > .box {
+  fill: var(--store-bg);
+}
+
+.node > .lid {
+  fill: none;
+  stroke: var(--node-border);
+  stroke-width: 1.2;
+}
+
+.node.role-external > .box,
+.node.role-person > .box {
+  fill: var(--panel-2);
+  stroke-dasharray: 6 4;
+}
+
+.node.role-external,
+.node.role-person {
+  --k-hue: 268;
+}
+
+.node .person-icon {
+  fill: var(--muted);
+}
+
+/* "See what is inside": the zoom button of a box that opens a more detailed view. */
+.node .zoom {
+  cursor: zoom-in;
+}
+
+.node .zoom rect {
+  fill: var(--panel);
+  stroke: var(--border-strong);
+}
+
+.node .zoom circle,
+.node .zoom path {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+}
+
+.node .zoom:hover rect,
+.node .zoom:focus-visible rect {
+  fill: var(--accent-soft);
+  stroke: var(--accent);
+}
+
+/* The way back up from a view that a box opened ("System › API service"). */
+.zoom-trail {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.zoom-trail button {
+  font: inherit;
+  color: var(--accent);
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+
+.zoom-trail button:hover {
+  text-decoration: underline;
 }

@@ -7,7 +7,7 @@ description: Generate an interactive code explainer, meaning a short guided tour
 
 You turn a question about code, a whole repo, or a change into an **explainer**: a guided tour with diagrams linked both ways to the code, rendered by a fixed viewer. `xpl draft` builds the structure from a static index, with `TODO` where text belongs. You write the text as JSON **patches** and check every claim; `xpl` rejects anchors it cannot resolve.
 
-The reader sees the tour title and its **summary** first, then the steps (a title, a short note, one picture and its code), then the maps and the code on demand. Put the most important thing first, then go down one level at a time.
+The reader sees the tour title and its **summary** first, then the steps (a title, a short note, one picture and its code), then the maps and the code on demand. Put the most important thing first, then go down one level at a time: **the system** (services, data stores, outside systems), **inside a service** (its parts and what each talks to), then **the code**. Explain each part by what it is for, in everyday words, before you name any code.
 
 ## Workflow
 
@@ -26,6 +26,7 @@ The reader sees the tour title and its **summary** first, then the steps (a titl
 - **Index** `.explainer/index-<commit>.json`: symbols, ranges and references from static analysis.
 - **Explainer** `.explainer/<name>.explainer.json`: written only by `xpl apply` and `xpl change`; never edit it.
 - **Tour**: a `summary` and a few steps. **Views**: `graph` (a map), `flow` (decisions and branches), `sequence` (calls between participants). **Elements**: boxes, edges, concepts and steps.
+- **Architecture boxes**: a box with a `role` (`service`, `database`, `queue`, `external`, `person`, ...) and a `tech` is drawn as what it is; a box with `opens` zooms into the view that shows its inside. A database or an outside API is a group with a role and no members, anchored at the code that talks to it (`patch-format.md` 3.10).
 - **Anchor**: a file, a symbol path, and a `span` (0-based line offsets from the symbol's first line) or `find` text, stored with a hash. A **base anchor** (`"at": "base"`) points at the code before a recorded change.
 
 ## Setup
@@ -71,18 +72,27 @@ Where the index shows less than runs:
 1. **Entry point:** `search -i` the nouns and verbs of the question; `outline --depth 2`. Pick the function where the flow starts or the decision is made.
 2. **Draft:** `xpl draft path <name> <entry id> -o q.json`: a sequence of the entry's direct calls in source order, and one tour step per main call.
 3. **Trace:** `show <entry> --refs`, then the callees that matter. Note every guard on the path (`if`, early `return`, type checks).
-4. **Shape:** the draft sees one level of calls. Drop the calls that do not matter. Add a map when the answer spans several files, and start the tour on it. Add a flow when the point is a decision, a second process view when the question has two halves, concepts for ideas that cross files.
+4. **Shape:** the draft sees one level of calls. Drop the calls that do not matter. Add a map when the answer spans several files, and start the tour on it: the parts involved as plain boxes, with the outside systems they touch (a database, an API) as role boxes, so the reader sees where the answer sits before the calls. Add a flow when the point is a decision, a second process view when the question has two halves, concepts for ideas that cross files.
 5. **Boundary:** anchor the target code, its direct callers, the callees that change the answer, and the tests that pin the behaviour.
 6. **Reply:** answer the question and name the key functions.
 
 ## explain repo: the whole project
 
+Three levels, each a zoom into a box of the one above (`opens`):
+
+| Level          | Shows                                                                              | Boxes                                         |
+| -------------- | ---------------------------------------------------------------------------------- | --------------------------------------------- |
+| 1. System map  | the service(s), who uses them, and the databases, queues and outside APIs they use | 3-7, each with a `role` and a `tech`          |
+| 2. Inside      | the parts of one service, and the outside boxes each part talks to                 | 4-8 parts with plain labels, plus those boxes |
+| 3. Code (lazy) | the main path through a part: a sequence or a flow                                 | on `expand`                                   |
+
 1. **What it is:** the README and package metadata (`xpl show file:README.md`, `outline --keys` on `pyproject.toml`, `package.json`, `go.mod`): language, kind, purpose.
-2. **Draft:** `xpl draft repo <name> -o repo.json`: a map of the top-level folders or files (at most 8 boxes) and one tour step per box. The first step lists the files left off the map.
-3. **Parts:** make each box one responsibility. Merge folders into a group (`grp:<slug>` with `members`) where one responsibility spans several; split a box that holds two. Each box gets a one-line summary.
-4. **Main path:** when there is an obvious entry point (`main`, `cmd/`, a server), run `xpl draft path` on it. Copy its view, its nodes and the tour steps you keep into the repo patch, with the next free step ids.
-5. **Tour:** the overview, the main path, then each remaining box, or one step that names the boxes it skips.
-6. **Lazy:** leave deeper nodes unexplained; offer 2-3 expansions in the reply.
+2. **Draft:** `xpl draft repo <name> -o repo.json`: the system map (`view:system`), a map of the inside of each service, edges from each part to the outside systems it imports, and a tour from the top. The first step on the inside lists the files left off the map.
+3. **Outside systems:** the draft finds them from import lines; each is a hint. Read the code that builds the client or reads its address: name the real system ("Orders database", not "SQL database"), merge two boxes for one system, drop a library that is only imported, and add what the imports miss (a service called through plain HTTP: `search` for its URL or config key). Each arrow gets a 1-4 word label: what passes ("stores orders", "charges cards").
+4. **Parts:** make each box one responsibility, with a label a manager understands ("Payments", not `pay_svc`). Merge folders into a group (`grp:<slug>` with `members`) where one responsibility spans several; split a box that holds two. Each box gets a one-line summary of what it is for.
+5. **Main path:** when there is an obvious entry point (`main`, `cmd/`, a server), run `xpl draft path` on it, and let its part `opens` the sequence. Copy its view, its nodes and the tour steps you keep into the repo patch, with the next free step ids.
+6. **Tour:** the system map (what it is, who uses it), what it relies on, the inside, the main path, then each remaining part, or one step that names the parts it skips.
+7. **Lazy:** leave deeper nodes unexplained; offer 2-3 expansions in the reply.
 
 ## explain change <base>..<head>: a PR, an MR or a branch diff
 
@@ -101,9 +111,10 @@ A draft applies as it is. Each text holds `TODO: <what to write>`; each note sta
 
 - 5-9 steps, up to 12 for a change.
 - Top-down: the first step shows the big picture (the map). Then the main path in execution order, then the details that change the outcome. Edge cases and open questions come last. A repo tour visits every overview box or names the ones it skips.
+- Concepts before code: a step on the system map or the inside of a service names at most one piece of code; it says what the part is for and what it relies on. Code names belong to the steps about code (`xpl lint`: `code-heavy`, `long-note`).
 - Each step focuses one main element, plus at most one concept that explains it.
 - `code` on every step: at most 2 ranges, and `editor.primary` on the file the note is about. **Range order:** the range the note talks about first; when the note is about a before and after, the before range (a base anchor), then the after range.
-- 4-8 boxes on a map. Every graph view a tour uses has `"stubs": {"mode": "none"}`; an overview has `excludeFiles` for tests, examples and docs. The drafts set both.
+- 4-8 boxes on a map (3-7 on a system map). Every graph view a tour uses has `"stubs": {"mode": "none"}`; an overview has `excludeFiles` for tests, examples and docs. The drafts set both.
 
 ## Writing
 
@@ -130,7 +141,7 @@ The viewer shows each claim next to its code, so a wrong claim looks checked. Ch
 
 1. **Accuracy pass** (a change): if you can start a fresh subagent, give it the `xpl` path, the repo, the explainer name and path, and the range. Ask it to check each title, summary, note and detail against its anchors (`xpl anchors <name>`), each "before" claim against the base (`xpl show --at base <path>`, `git show <base>:<path>`), and what each cited test asserts. It rates each claim correct, imprecise, overstated, unanchored or wrong, quotes the lines, and changes no file. Without a subagent, do a second, separate pass yourself, one claim at a time. Fix what the pass finds.
 2. `xpl lint <name>`: `todo-left` must be zero before you bundle. Fix the other findings, or say in the reply why you kept one.
-3. Re-read the tour in order as a newcomer, with the checklist in `reference/writing.md` section 6.
+3. Re-read the tour in order as a newcomer, with the checklist in `reference/writing.md` section 7.
 
 ## Show the result
 
@@ -173,7 +184,7 @@ A talk built from existing views, by the rules of "The tour". Default: the newes
 4. **`llm` edges only for what the index cannot see**, anchored at both ends.
 5. **Stable ids.** Slugs are chosen once, in kebab-case. Step ids are never renumbered or reused. A change draft numbers its tour steps `t10`, `t20`, ...: a step you insert takes a free number between its neighbours (`t15`).
 6. **The user's edits win.** Never overwrite `origin: "user"` elements or `userFields`; for a view or tour they edited, make a new one or ask. `--actor user` only for text the user dictates.
-7. **Few things at the same level.** One primary tour; views only when a tour step uses them; 0-3 concepts; groups only as map boxes.
+7. **Few things at the same level.** One primary tour; views only when a tour step uses them or a box `opens` them; 0-3 concepts; groups only as map boxes.
 8. **Lazy.** Explain what a view shows; leave the rest for `expand`.
 9. **Ask, do not guess** when the scope is ambiguous or an anchor cannot be found.
 
@@ -183,4 +194,4 @@ A talk built from existing views, by the rules of "The tour". Default: the newes
 - `reference/explain-change.md`: the guide for a PR, MR or branch.
 - `reference/patch-format.md`: a template per element, merge rules, provenance, rejections, repair.
 - `reference/cli.md`: every command and option.
-- `reference/examples/go-retry.patch.json` (a question) and `py-overview.patch.json` (a repo): finished patches for `fixtures/go-jobrunner` and `fixtures/py-jobrunner`. Read them for the text.
+- `reference/examples/go-retry.patch.json` (a question) and `py-overview.patch.json` (a repo, with a system map and the inside of the service): finished patches for `fixtures/go-jobrunner` and `fixtures/py-jobrunner`. Read them for the text.

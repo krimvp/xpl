@@ -187,6 +187,20 @@ Conventions (all packages):
     or glob (`readFile("x.json")`, `glob("plugins/*.py")`, an import of a `.json`), with `kind` (`loads`,
     `discovers`), the call `site` and `resolution: "static" | "inferred"`. The viewer lists them as related
     files of the selection; a matching file does not prove it is loaded at run time.
+19. `Node` adds three architecture fields, so an overview can read top-down like the C4 model (a system map,
+    then the inside of one service, then code):
+    - `role?: NodeRole`: `person | system | service | component | database | cache | queue | storage |
+      external` (`NODE_ROLES` in `constants.ts`). The viewer draws each role with its own shape and shows the
+      role (or `tech`) as the box's badge instead of the kind of code.
+    - `tech?: string`: the technology in 1-3 words ("PostgreSQL", "REST API").
+    - `opens?: string`: a view id, the next level down. The viewer zooms into it from the box and shows a
+      trail back up (`levels.ts`: `opensView`, `parentLevel`, `zoomTrail`; the level above a view is the first
+      graph view that includes a box opening it).
+
+    A group with a `role` may have no `members` (a database or an outside API is not code of the repo); it is
+    then anchored at the code that talks to it, and `containsCode` counts its own anchors as its code, so an
+    `llm` edge to it finds its evidence there. On a view that shows a group instead of the boxes a stored edge
+    ends on, stored edges lifted to the same pair of boxes and kind are drawn as one (§4.4).
 
 Patch-side types (never stored) live in `packages/core/src/patch.ts`; its header holds the authoritative
 merge rules and `skill/code-explainer/reference/patch-format.md` is the practical guide. What Claude writes:
@@ -576,7 +590,9 @@ id wins (validation reports the duplicates).
   (an edge between a group and one of its members, or from a box to its own group, is not drawn) and give
   stubs when they leave the view; a stored edge that ends on a group is drawn between the boxes that show its
   ends, the group box being its end when the group is included, and leaves through `ghost:grp:<slug>` when
-  it is not.
+  it is not. Stored edges **lifted** to other boxes than their own ends (the parts of a service, drawn as one
+  service box on a system map) merge per `(kind, a, b)`: the first by id keeps its id and gains the others'
+  anchors and `count`; its label is dropped when theirs differ.
 - **Stubs:** references (and stored edges) with exactly one end inside. Ghost target = the highest structural
   ancestor of the outside end, below `repo`, that contains no included node (a group is its own target); a
   target that holds the inside node itself (a stored edge to one's own file) is dropped. Aggregate per
@@ -831,9 +847,17 @@ file; `--json` adds the counts and what was left out.
   the review order, at most 12 steps: what changes for users, where it enters, one step per changed piece in
   call order ("Before/Now" TODOs), other changed files, who else is affected, tests and gaps, risks. Anchors
   come from the hunks; every changed file gets one, a deleted file in the base (`at: "base"`).
-- `repo`: an overview map of 4-8 boxes (top-level folders with code, a single root folder opened, tests,
-  docs, examples and dot folders left out), `excludeFiles` for tests and docs, and a tour with one step per
-  box, the main box first.
+- `repo`: two levels. A system map (`view:system`): the project as one service group (`role: service`,
+  members = the parts), or one `dir:` box per program when `services/`, `apps/` or `cmd/` (at the root or
+  under `src`) hold two or more; who reaches it (web and CLI frameworks, `role: person`) and what it relies on
+  (database drivers and ORMs, caches, queues, file stores, HTTP clients and SDKs), found from the import lines
+  of code files (`outside.ts`: a catalog per language family) and drawn as groups with a role, a `tech` and no
+  members, anchored at one import line per part that imports them. Each service box `opens` the map of its
+  inside: 4-8 parts (top-level folders with code, a single root folder opened, tests, docs, examples and dot
+  folders left out; label and summary TODOs) plus the outside systems they use, with an `llm` edge (`kind:
+  custom`, label TODO) from each part to each system it imports, anchored at that import. `excludeFiles` for
+  tests and docs on both. The tour: the system map, what it relies on, the inside of the biggest service,
+  then one step per part, the main part first. The service and outside boxes keep their ids across drafts.
 - `path <entry>`: a sequence of the calls the entry symbol makes (depth 1, source order, at most 6
   participants and 12 calls), and a tour with a big-picture step and one step per main call (at most 8).
 
@@ -855,7 +879,10 @@ field, a short quote and a fix. Rules (thresholds and word lists live in `LINT_L
 - Sentences: `long-sentence` (over 25 words), `long-average` (a field averaging over 20), `bare-it` ("It" or
   "This" and a verb), `filler-word`, `absolute-word` ("all", "never", "only" … that needs evidence; idioms
   such as "at all" and narrowing uses such as "compares only the host part" do not count),
-  `repeats-summary` (a note sentence that repeats a focused element's summary).
+  `repeats-summary` (a note sentence that repeats a focused element's summary), `long-note` (a note body over
+  60 words), `code-heavy` (more different code spans than 3 in a note, 1 in a note on an architecture map, a
+  graph view with a box that has a `role`, or 2 in a tour summary). Neither judges text that still holds a
+  `TODO`.
 - Form: `flow-label-code` (a flow stage label written as code), `markdown-in-plain` (markdown in a title or
   label), `markdown-in-summary` (a heading or link in a summary; inline markdown is fine there).
 
@@ -1041,7 +1068,13 @@ Both splits (diagram / panels, diagram / code) are resizable. Below 900 px the h
   beside it: its elements with kind and reference count, most referenced first (a "rest of" menu starts with
   "The whole file", which adds the file as one box), and picking one adds it to the view (`expandStub` on that
   element); Escape, a click elsewhere or a turn of the wheel over the diagram closes it, the arrow keys move
-  in it. Double-clicking a node calls `drillIn`; a container has a collapse button. Pan by dragging, zoom with
+  in it. Double-clicking a node calls `drillIn`; a container has a collapse button. A box with a `role` is
+  drawn as what it is (`RoleBox`: a cylinder for `database`, `cache` and `storage`, a pipe for `queue`, a
+  dashed box for `external` and `person`, with a person icon, a heavier border for `service` and `system`) and
+  its badge is its `tech` or its role. A box with `opens` has a zoom button ("See what is inside"; a
+  double-click does the same, and Details offers it too): `store.zoomInto` shows that view, in the map or flow
+  perspective that draws it, as a navigation step (Back returns). Above the diagram, `ZoomTrail` lists the
+  levels above the current view (`zoomTrail`), each a link (`store.goToLevel`). Not while presenting. Pan by dragging, zoom with
   the wheel, the buttons or `+`/`-`, "Fit" (or `0`) for all of it. The first view is the fit, unless the
   diagram is too big to read fitted (a fit scale below 0.6, as for seventeen boxes with groups): then it
   starts at zoom 0.75 on the selection, else on the first box of `view.include` that is drawn, and a badge

@@ -103,13 +103,25 @@ describe.each(Object.keys(ENTRIES))("xpl draft on %s", (fixture) => {
     expect((await xpl(dir, "new", "d")).code).toBe(0);
   });
 
-  it("draft repo: an overview of 4-8 boxes, every box visited by the tour", async () => {
+  it("draft repo: a system map, then the inside of the service: 4-8 boxes, every box visited by the tour", async () => {
     const copy = cloneDir(dir);
     const { patch } = await draftApplyCheck(copy, "d", ["repo", "d"]);
     checkShape(patch);
-    const view = patch.views![0]!;
+    // level 1: the project as one service box, which opens the map of its parts
+    const system = patch.views![0]!;
+    expect(system.id).toBe("view:system");
+    if (system.type !== "graph") throw new Error("the system map is a graph");
+    const service = patch.nodes!.find((n) => n.role === "service")!;
+    expect(service.id).toMatch(/^grp:[a-z-]+$/);
+    expect(system.include).toContain(service.id);
+    expect(service.opens).toBe("view:overview");
+    expect(patch.tours![0]!.steps![0]!.view).toBe("view:system");
+    expect(patch.tours![0]!.steps![0]!.focus).toEqual([service.id]);
+    // level 2: the parts
+    const view = patch.views!.find((v) => v.id === "view:overview")!;
     expect(view.type).toBe("graph");
     if (view.type !== "graph") return;
+    expect(service.members).toEqual(view.include!.filter((id) => !id.startsWith("grp:")));
     expect(view.include!.length).toBeGreaterThanOrEqual(4);
     expect(view.excludeFiles).toContain("**/tests/**");
     // no test, doc or config box
@@ -192,7 +204,8 @@ describe("xpl draft: refusals and reuse", () => {
     const copy = cloneDir(dir);
     const first = await draftApplyCheck(copy, "d", ["repo", "d"]);
     const second = await xplJson<DraftJson>(copy, "draft", "repo", "d");
-    expect(second.json.patch.views![0]!.id).toBe("view:overview-2");
+    expect(second.json.patch.views![0]!.id).toBe("view:system-2");
+    expect(second.json.patch.views![1]!.id).toBe("view:overview-2");
     expect(second.json.patch.tours![0]!.id).toBe("tour:overview-2");
     // the boxes already have summaries: no new overlay for them
     expect(second.json.patch.nodes).toEqual([]);

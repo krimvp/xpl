@@ -705,7 +705,113 @@ To change some steps of a tour, send `stepsUpdate` instead of the whole `steps`:
 
 A tour has provenance like an element: what the user edits in the tour panel (`title`, `summary`, `steps`) becomes theirs (section 5), and an `llm` patch can then neither change those fields nor remove the tour. A `stepsUpdate` of a tour whose steps the user edited is skipped with a `protected` warning, like `steps`.
 
-### 3.10 `title` and `remove`
+### 3.10 Architecture maps (system map, inside a service)
+
+An overview reads top-down, like the C4 model: first a **system map** (the service, who uses it, what it relies on: databases, queues, other systems' APIs), then the **inside** of each service (its parts, and the outside systems each part talks to), then code. Three node fields make that work:
+
+- `role`: what the box is. `person`, `system`, `service`, `component`, `database`, `cache`, `queue`, `storage` or `external`. The viewer gives each its own shape (a cylinder for a database, a dashed box for something outside the repo) and names the role or the `tech` on the box instead of the kind of code.
+- `tech`: the technology in 1-3 words ("PostgreSQL", "REST API", "Go service").
+- `opens`: the view that shows what is inside the box. The reader zooms in with the button on the box (or a double-click), and a trail above the map leads back up.
+
+A box for something outside the repo is a group with a `role` and **no `members`**: it is not code of the repo. Anchor it at the code that talks to it (where its client is built, where its address is configured). An `llm` edge to it counts that code as the evidence at its end, so one anchor can be the evidence at both ends. `role`, `tech` and `opens` also go on overlays (`dir:`, `file:`): `{"id": "dir:services/api", "role": "service", "opens": "view:api-inside"}`. `null` clears each.
+
+`xpl draft repo` builds both levels: it finds outside systems from the import lines (database drivers, caches, queues, HTTP clients, SDKs, web and CLI frameworks) and anchors each at its import. Those are hints: check each in the code, name the real system when the code says, and merge or drop boxes.
+
+```json patch
+{
+  "nodes": [
+    {
+      "id": "grp:operator",
+      "label": "Operator",
+      "role": "person",
+      "tech": "command line",
+      "summary": "Starts the job runner, and may pass the path of a config file.",
+      "anchors": [
+        { "file": "src/main.ts", "symbol": "main", "find": "process.argv[2]", "role": "usage" }
+      ]
+    },
+    {
+      "id": "grp:jobrunner",
+      "label": "Job runner",
+      "role": "service",
+      "tech": "Node.js",
+      "opens": "view:inside",
+      "summary": "Runs background jobs from an in-memory queue and retries the ones that fail.",
+      "members": [
+        "file:src/main.ts",
+        "file:src/runner.ts",
+        "file:src/queue.ts",
+        "file:src/worker.ts",
+        "file:src/bus.ts",
+        "file:src/metrics.ts",
+        "file:src/config.ts"
+      ]
+    },
+    {
+      "id": "grp:config-file",
+      "label": "Config file",
+      "role": "storage",
+      "tech": "YAML",
+      "summary": "Holds the settings: queue size, worker count, retry delays and metrics.",
+      "anchors": [{ "file": "config/default.yaml", "role": "config" }]
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge:operator-starts",
+      "from": "grp:operator",
+      "to": "file:src/main.ts",
+      "kind": "custom",
+      "label": "starts it",
+      "anchors": [
+        { "file": "src/main.ts", "symbol": "main", "find": "process.argv[2]", "role": "usage" }
+      ]
+    },
+    {
+      "id": "edge:reads-config",
+      "from": "file:src/config.ts",
+      "to": "grp:config-file",
+      "kind": "custom",
+      "label": "reads settings",
+      "anchors": [
+        { "file": "src/config.ts", "symbol": "loadConfig", "role": "definition" },
+        { "file": "config/default.yaml", "role": "config" }
+      ]
+    }
+  ],
+  "views": [
+    {
+      "id": "view:system",
+      "type": "graph",
+      "title": "The job runner, who starts it and what it reads",
+      "include": ["grp:operator", "grp:jobrunner", "grp:config-file"],
+      "stubs": { "mode": "none" }
+    },
+    {
+      "id": "view:inside",
+      "type": "graph",
+      "title": "Inside the job runner",
+      "include": [
+        "grp:operator",
+        "file:src/main.ts",
+        "file:src/runner.ts",
+        "file:src/queue.ts",
+        "file:src/worker.ts",
+        "file:src/bus.ts",
+        "file:src/metrics.ts",
+        "file:src/config.ts",
+        "grp:config-file"
+      ],
+      "excludeFiles": ["**/test/**"],
+      "stubs": { "mode": "none" }
+    }
+  ]
+}
+```
+
+On the system map the service is one box, so the arrows of its parts are drawn there as one arrow per outside box (with the anchors of all; when their labels differ the arrow shows none). Write a tour that goes down a level at a time: a step on the system map, then the inside, then the code (SKILL.md, "explain repo"). Keep 3-7 boxes on a system map. A part with one job is a `component` only when the reader gains from the word; most boxes of code need no role.
+
+### 3.11 `title` and `remove`
 
 `"title"` renames the explainer. `"remove"` deletes elements, views, tours and steps by id; an unknown id is a warning, not an error. Removing what something else points at (a step a frame or tour uses, a group a view includes, a concept a tour focuses) is rejected until the same patch fixes the pointer. An `llm` patch cannot remove what the user owns: an element, view or tour with `origin: "user"` or with any `userFields` (they edited part of it), nor a single step of a view whose `steps` they edited; those ids are skipped with a `protected` warning.
 

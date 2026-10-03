@@ -27,6 +27,10 @@ import {
 import {
   badgeWidth,
   changeText,
+  CYLINDER_LID,
+  CYLINDER_ROLES,
+  PERSON_ICON,
+  ZOOM_SIZE,
   EDGE_BOUNDS_PAD,
   labelWidth,
   layoutGraphFitting,
@@ -416,11 +420,16 @@ function BoxShape({ node, marks }: { node: LayoutNode; marks: Marks }) {
   const container = node.children.length > 0;
   const still = useContext(Still);
   const select = (event: MouseEvent | KeyboardEvent) => store.click(node.id, additive(event));
-  const badgeText = reader ? readerBadge(node.badge) : node.badge;
+  const badgeText = reader || node.role ? readerBadge(node.badge) : node.badge;
   const badge = badgeWidth(badgeText ?? "");
+  // A box that opens a more detailed view zooms into it; while presenting, the tour decides what is shown.
+  const zoomable = node.opens !== undefined && !still && store.canZoomInto(node.id);
+  const zoom = () => store.zoomInto(node.id);
+  const role = node.role ? ` role-${node.role}` : "";
+  const textX = 14 + (node.role === "person" && !container ? PERSON_ICON + 6 : 0);
   return (
     <g
-      className={`node kind-${node.kindClass}${container ? " is-container" : ""}${stateClasses(node.id, marks)}`}
+      className={`node kind-${node.kindClass}${role}${container ? " is-container" : ""}${zoomable ? " is-zoomable" : ""}${stateClasses(node.id, marks)}`}
       data-element-id={still ? undefined : node.id}
       transform={`translate(${node.x} ${node.y})`}
       role={still ? undefined : "button"}
@@ -433,14 +442,17 @@ function BoxShape({ node, marks }: { node: LayoutNode; marks: Marks }) {
       }}
       onDoubleClick={(event) => {
         event.stopPropagation();
-        if (!readOnly) store.drillIn(node.id);
+        if (zoomable) zoom();
+        else if (!readOnly) store.drillIn(node.id);
       }}
       onKeyDown={(event) => activate(event, () => select(event))}
     >
       <title>
-        {!readOnly && store.canDrillIn(node.id)
-          ? `${node.label} (${node.badge}): double-click to open what it contains`
-          : `${node.label} (${node.badge})`}
+        {zoomable
+          ? `${node.label} (${node.badge}): double-click to see what is inside`
+          : !readOnly && store.canDrillIn(node.id)
+            ? `${node.label} (${node.badge}): double-click to open what it contains`
+            : `${node.label} (${node.badge})`}
       </title>
       {container && (
         <rect
@@ -451,7 +463,11 @@ function BoxShape({ node, marks }: { node: LayoutNode; marks: Marks }) {
           height={node.height + 2 * CONTAINER_BOUNDS_PAD}
         />
       )}
-      <rect className="box" width={node.width} height={node.height} rx={container ? 10 : 8} />
+      {node.role && !container ? (
+        <RoleBox role={node.role} width={node.width} height={node.height} />
+      ) : (
+        <rect className="box" width={node.width} height={node.height} rx={container ? 10 : 8} />
+      )}
       {container ? (
         <>
           <text className="label" x={14} y={22}>
@@ -502,15 +518,145 @@ function BoxShape({ node, marks }: { node: LayoutNode; marks: Marks }) {
         </>
       ) : (
         <>
-          <text className="label" x={14} y={badgeText || node.change ? 19 : node.height / 2 + 5}>
-            {node.label}
-          </text>
-          {badgeText && <Badge x={14} y={27} text={badgeText} width={badge} />}
-          {node.change && (
-            <ChangePill x={14 + (badgeText ? badge + PILL_GAP : 0)} y={27} change={node.change} />
-          )}
+          <LeafText
+            node={node}
+            x={textX}
+            badgeText={badgeText}
+            badge={badge}
+            lid={node.role && CYLINDER_ROLES.has(node.role) ? CYLINDER_LID : 0}
+          />
+          {node.role === "person" && <PersonIcon x={12} y={node.height / 2} />}
         </>
       )}
+      {zoomable && (
+        <ZoomButton
+          x={node.width - ZOOM_SIZE - 6}
+          y={container ? 8 : node.height - ZOOM_SIZE - 6}
+          label={node.label}
+          onZoom={zoom}
+          offset={container && !readOnly ? 30 : 0}
+        />
+      )}
+    </g>
+  );
+}
+
+/** The label, badge and change pill of a box that is not a container, centred under a cylinder's lid. */
+function LeafText({
+  node,
+  x,
+  badgeText,
+  badge,
+  lid,
+}: {
+  node: LayoutNode;
+  x: number;
+  badgeText: string | undefined;
+  badge: number;
+  lid: number;
+}) {
+  const two = Boolean(badgeText || node.change);
+  // A box of code keeps its fixed rows. An architecture box is taller (and a cylinder has a lid): the text
+  // block (label, gap, badge: 35 px; a label alone: 14 px) is centred in what is left.
+  const top = node.role
+    ? lid + (node.height - lid - (two ? 35 : 14)) / 2
+    : two
+      ? 6
+      : node.height / 2 - 8;
+  const labelY = top + 13;
+  const badgeY = node.role ? top + 19 : 27;
+  return (
+    <>
+      <text className="label" x={x} y={labelY}>
+        {node.label}
+      </text>
+      {badgeText && <Badge x={x} y={badgeY} text={badgeText} width={badge} />}
+      {node.change && (
+        <ChangePill x={x + (badgeText ? badge + PILL_GAP : 0)} y={badgeY} change={node.change} />
+      )}
+    </>
+  );
+}
+
+/**
+ * The outline of an architecture box (`Node.role`): a cylinder for what keeps data (a database, a cache, a
+ * file store), a pipe for a queue, a dashed box for a system outside the repo, a heavier box for a service.
+ * The main shape keeps the `box` class, so selection and hover style it like any box.
+ */
+function RoleBox({ role, width, height }: { role: string; width: number; height: number }) {
+  if (CYLINDER_ROLES.has(role as never)) {
+    const ry = CYLINDER_LID / 2 + 1;
+    const top = ry;
+    const bottom = height - ry;
+    const rx = width / 2;
+    return (
+      <>
+        <path
+          className="box"
+          d={`M0 ${top} A${rx} ${ry} 0 0 1 ${width} ${top} V${bottom} A${rx} ${ry} 0 0 1 0 ${bottom} Z`}
+        />
+        <path className="lid" d={`M0 ${top} A${rx} ${ry} 0 0 0 ${width} ${top}`} />
+      </>
+    );
+  }
+  if (role === "queue") {
+    const r = height / 2;
+    const ex = 7;
+    return (
+      <>
+        <path
+          className="box"
+          d={`M${ex} 0 H${width - ex} A${ex} ${r} 0 0 1 ${width - ex} ${height} H${ex} A${ex} ${r} 0 0 1 ${ex} 0 Z`}
+        />
+        <path className="lid" d={`M${width - ex} 0 A${ex} ${r} 0 0 0 ${width - ex} ${height}`} />
+      </>
+    );
+  }
+  return <rect className="box" width={width} height={height} rx={role === "person" ? 20 : 8} />;
+}
+
+function PersonIcon({ x, y }: { x: number; y: number }) {
+  return (
+    <g className="person-icon" transform={`translate(${x} ${y - 10})`} aria-hidden="true">
+      <circle cx={PERSON_ICON / 2} cy={5} r={4.5} />
+      <path d={`M2 ${PERSON_ICON} a8 8 0 0 1 16 0 Z`} />
+    </g>
+  );
+}
+
+/** The button of a box that opens a more detailed view: "see what is inside". */
+function ZoomButton({
+  x,
+  y,
+  label,
+  onZoom,
+  offset,
+}: {
+  x: number;
+  y: number;
+  label: string;
+  onZoom: () => void;
+  offset: number;
+}) {
+  return (
+    <g
+      className="zoom"
+      role="button"
+      tabIndex={0}
+      aria-label={`See what is inside ${label}`}
+      transform={`translate(${x - offset} ${y})`}
+      onClick={(event) => {
+        event.stopPropagation();
+        onZoom();
+      }}
+      onDoubleClick={(event) => event.stopPropagation()}
+      onKeyDown={(event) => activate(event, onZoom)}
+    >
+      <title>See what is inside</title>
+      <rect width={ZOOM_SIZE} height={ZOOM_SIZE} rx={5} />
+      {/* a magnifier with a plus: zoom in */}
+      <circle cx={9.5} cy={9.5} r={5} />
+      <path d="M13.2 13.2 L17.5 17.5 M7 9.5 H12 M9.5 7 V12" />
     </g>
   );
 }

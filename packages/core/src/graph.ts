@@ -44,6 +44,12 @@ export interface GraphNode {
   container: boolean;
   /** The included element this node renders inside (its container), if any. */
   parent?: ElementId;
+  /** What the box is in the architecture (`Node.role`), when the explainer says. */
+  role?: Node["role"];
+  /** Its technology (`Node.tech`). */
+  tech?: string;
+  /** The view that shows what is inside it (`Node.opens`). */
+  opens?: string;
 }
 
 /**
@@ -460,6 +466,9 @@ export function deriveGraph(
 
   // Stored edges: overlay a derived edge with the same id, else shown as their own edge.
   const seenStored = new Set<ElementId>();
+  // Stored edges lifted to a box that stands for their ends (a service box on a system map, for the
+  // edges of its components): one arrow per pair of boxes and kind, which carries the anchors of all.
+  const lifted = new Map<string, DerivedEdge>();
   for (const stored of [...model.storedEdges].sort((a, b) => cmp(a.id, b.id))) {
     if (typeof stored.id !== "string" || seenStored.has(stored.id)) continue;
     seenStored.add(stored.id);
@@ -494,6 +503,19 @@ export function deriveGraph(
       };
       if (stored.label) edge.label = stored.label;
       if (stored.summary) edge.summary = stored.summary;
+      if (a !== stored.from || b !== stored.to) {
+        const key = `${edge.kind}\0${a}\0${b}`;
+        const first = lifted.get(key);
+        if (first) {
+          first.count += 1;
+          first.anchors = [...first.anchors, ...edge.anchors];
+          // several labels make none: the arrow then says what kind it is, and how many it stands for
+          if (first.label !== edge.label) delete first.label;
+          delete first.summary;
+          continue;
+        }
+        lifted.set(key, edge);
+      }
       edges.set(stored.id, edge);
     } else if (a !== undefined) addStub("out", a, stored.to, stored.kind);
     else if (b !== undefined) addStub("in", b, stored.from, stored.kind);
@@ -525,6 +547,9 @@ export function deriveGraph(
       container: containers.has(id),
     };
     if (node.symbolKind !== undefined) out.symbolKind = node.symbolKind;
+    if (node.role !== undefined) out.role = node.role;
+    if (node.tech !== undefined) out.tech = node.tech;
+    if (node.opens !== undefined) out.opens = node.opens;
     const parent = finalParent.get(id);
     if (parent !== undefined) out.parent = parent;
     return out;

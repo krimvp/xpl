@@ -41,6 +41,8 @@ export type LintRule =
   | "filler-word"
   | "absolute-word"
   | "repeats-summary"
+  | "long-note"
+  | "code-heavy"
   | "flow-label-code"
   | "markdown-in-plain"
   | "markdown-in-summary";
@@ -61,6 +63,8 @@ export const LINT_RULES: Record<LintRule, string> = {
   "filler-word": "marketing or filler word",
   "absolute-word": "absolute word that needs evidence",
   "repeats-summary": "note that repeats a summary",
+  "long-note": "note that is too long to take in at a glance",
+  "code-heavy": "text that leans on code names instead of ideas",
   "flow-label-code": "flow step label written as code",
   "markdown-in-plain": "markdown in a title or label",
   "markdown-in-summary": "heading or link in a summary",
@@ -118,6 +122,14 @@ export const LINT_LIMITS = {
   repeatShare: 0.8,
   /** ...and it has at least this many content words (a shorter one must match the whole summary sentence). */
   repeatMinWords: 4,
+  /** A note body (the text under its `### title`) of more words than this is a finding (the skill: 1-3 sentences). */
+  noteWords: 60,
+  /** Different code names (code spans) a note body may use... */
+  noteCodeNames: 3,
+  /** ...a note on an architecture map (a view with a box that has a `role`): the idea first, the code on the right... */
+  architectureCodeNames: 1,
+  /** ...and the tour summary, which a manager reads (the skill: one or two). */
+  summaryCodeNames: 2,
   /** A tour of more steps than this is a finding (the skill asks for 5-9, up to 12 for a change). */
   tourSteps: 12,
   /** `tour-covers-map` checks graph views of at most this many boxes (a bigger map is a reference, not a stop). */
@@ -1096,6 +1108,39 @@ function lightsUp(id: string, view: Record<string, unknown> | undefined, at: Loo
 /** Words of a step title that mark what belongs at the end of a tour. */
 const LATE_WORDS = /\b(?:edge|corner)[ -]cases?\b|\bgotchas?\b|\bopen questions?\b/i;
 
+/** A graph view with at least one box that has a `role`: a system map, or the inside of one service. */
+function isArchitectureView(view: Record<string, unknown> | undefined, at: Lookup): boolean {
+  if (view === undefined || view.type !== "graph") return false;
+  return list<unknown>(view.include).some(
+    (id) => typeof id === "string" && typeof at.nodes.get(id)?.role === "string",
+  );
+}
+
+/**
+ * `code-heavy`: a text that names more different pieces of code (code spans) than `limit`. A reader who does not
+ * know the code learns the idea from plain words; the code is one click away.
+ */
+function codeHeavy(
+  lint: Linter,
+  where: Where,
+  text: string,
+  masked: Masked,
+  limit: number,
+  what: string,
+): void {
+  // a draft's placeholder lists names as hints for the writer: judge the text once it is written
+  if (/\bTODO\b/.test(text)) return;
+  const names = [...new Set(masked.spans.map((span) => span.trim()))];
+  if (names.length <= limit) return;
+  lint.add(
+    where,
+    "code-heavy",
+    excerpt(text.trim()),
+    `${names.length} code names (${names.slice(0, 4).join(", ")}${names.length > 4 ? ", ..." : ""}); ${what} takes at most ${limit}`,
+    "say what happens in everyday words first (what the part is for, what it keeps or decides); name only the one piece of code the reader should open",
+  );
+}
+
 /** The title of a note: its `### heading` line, else its first line. */
 function noteTitle(note: unknown): string {
   if (typeof note !== "string") return "";
@@ -1213,6 +1258,15 @@ export function lintExplainer(explainer: Explainer): LintResult {
     if (typeof summary === "string" && summary.trim() !== "") {
       const masked = lint.prose(at("summary"), summary);
       const count = masked ? sentences(masked.text).length : 0;
+      if (masked)
+        codeHeavy(
+          lint,
+          at("summary"),
+          summary,
+          masked,
+          LINT_LIMITS.summaryCodeNames,
+          "the summary",
+        );
       if (count > most) {
         lint.add(
           at("summary"),
@@ -1270,6 +1324,25 @@ export function lintExplainer(explainer: Explainer): LintResult {
       }
       const masked = lint.prose(where, body);
       if (masked === undefined) continue;
+      const bodyWords = words(masked.text).length;
+      if (bodyWords > LINT_LIMITS.noteWords && !/\bTODO\b/.test(body)) {
+        lint.add(
+          where,
+          "long-note",
+          excerpt(body.trim()),
+          `${bodyWords} words (more than ${LINT_LIMITS.noteWords})`,
+          "keep the one point of this step in 1-3 short sentences; move details into the summary or detail of a box",
+        );
+      }
+      const architecture = isArchitectureView(byId.views.get(str(step.view) ?? ""), byId);
+      codeHeavy(
+        lint,
+        where,
+        body,
+        masked,
+        architecture ? LINT_LIMITS.architectureCodeNames : LINT_LIMITS.noteCodeNames,
+        architecture ? "a note on an architecture map" : "a note",
+      );
       // say it once: a note sentence that repeats the summary of something the step focuses
       const noteSentences = sentences(masked.text).map((s) => ({
         text: s,

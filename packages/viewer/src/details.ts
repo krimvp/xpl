@@ -169,13 +169,15 @@ function buildInfo(id: ElementId, model: ExplainerModel, vd: ViewDerived): Eleme
             .join(", "),
         });
       }
+      if (node.tech) facts.unshift({ label: "Technology", value: node.tech });
       const nested = node.kind === "group" ? 0 : model.children(id).length;
       if (nested > 0) facts.push({ label: "Contains", value: `${nested} nested elements` });
       const info: ElementInfo = {
         id,
         type: "node",
         title: node.label,
-        kind: node.symbolKind ?? node.kind,
+        // an architecture box is what it is ("database"), not the kind of code it groups
+        kind: node.role ?? node.symbolKind ?? node.kind,
         facts,
         anchors: rowsFor(node.anchors, id, model, vd),
         related: [],

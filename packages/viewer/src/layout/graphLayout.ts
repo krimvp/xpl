@@ -21,6 +21,7 @@ import {
   type Ghost,
   type GhostTarget,
   type GraphNode,
+  type NodeRole,
   type Stub,
 } from "@xpl/core";
 import type { ChangeStatus } from "../diff.js";
@@ -53,6 +54,10 @@ export interface LayoutNode {
   hint?: string;
   /** What the explainer's change did to it (diff.ts `changeStatus`): a "New" or "Changed" pill. */
   change?: ChangeStatus;
+  /** What the box is in the architecture (`Node.role`): it picks the shape (a cylinder for a database). */
+  role?: NodeRole;
+  /** The view that shows what is inside the box (`Node.opens`): the box offers to zoom into it. */
+  opens?: string;
   /** Position relative to the container (or to the canvas for top-level nodes). */
   x: number;
   y: number;
@@ -135,9 +140,35 @@ export function labelWidth(label: string): number {
   return Math.ceil(textWidth(label, NODE_LABEL_FONT, 600));
 }
 
+/**
+ * The badge of a box: its technology or its role on an architecture map ("PostgreSQL", "database"), else
+ * the kind of code it is.
+ */
 function nodeBadge(node: GraphNode): string {
+  if (node.role !== undefined) return node.tech ?? ROLE_WORDS[node.role];
   return node.symbolKind ?? node.kind;
 }
+
+/** The plain name of each role, for the badge of a box without a `tech`. */
+export const ROLE_WORDS: Record<NodeRole, string> = {
+  person: "person",
+  system: "system",
+  service: "service",
+  component: "component",
+  database: "database",
+  cache: "cache",
+  queue: "queue",
+  storage: "storage",
+  external: "external system",
+};
+
+/** Roles drawn as a cylinder: they keep data, and need room for its lid. */
+export const CYLINDER_ROLES: ReadonlySet<NodeRole> = new Set(["database", "cache", "storage"]);
+/** The height of a cylinder's lid (the ellipse on top). */
+export const CYLINDER_LID = 9;
+/** Room for the zoom button of a box that opens a view, and for a person's icon. */
+export const ZOOM_SIZE = 22;
+export const PERSON_ICON = 20;
 
 /** The words of the change pill. */
 export function changeText(change: ChangeStatus): string {
@@ -152,12 +183,27 @@ function changeWidth(change: ChangeStatus | undefined): number {
   return change ? badgeWidth(changeText(change)) + PILL_GAP : 0;
 }
 
-function leafWidth(label: string, badge: string, change?: ChangeStatus): number {
+function leafWidth(
+  label: string,
+  badge: string,
+  change?: ChangeStatus,
+  extra: { role?: NodeRole; opens?: string } = {},
+): number {
   const content = Math.max(
     textWidth(label, NODE_LABEL_FONT, 600),
     badgeWidth(badge) + changeWidth(change),
   );
-  return Math.max(104, Math.ceil(content) + 2 * PAD_X);
+  const icon = extra.role === "person" ? PERSON_ICON + 6 : 0;
+  const zoom = extra.opens !== undefined ? ZOOM_SIZE + 6 : 0;
+  // an architecture box is a little wider: it is read on its own, from a distance
+  const min = extra.role !== undefined ? 150 : 104;
+  return Math.max(min, Math.ceil(content) + 2 * PAD_X + icon + zoom);
+}
+
+/** The height of a box that is not a container. */
+function leafHeight(role: NodeRole | undefined): number {
+  if (role === undefined) return LEAF_HEIGHT;
+  return LEAF_HEIGHT + 8 + (CYLINDER_ROLES.has(role) ? CYLINDER_LID : 0);
 }
 
 function containerMinWidth(label: string, badge: string, change?: ChangeStatus): number {
@@ -212,6 +258,8 @@ interface ModelNode {
   /** Ghosts: `in` when every stub enters the view there, `out` when every stub leaves it. */
   side?: "in" | "out";
   change?: ChangeStatus;
+  role?: NodeRole;
+  opens?: string;
 }
 
 interface Model {
@@ -245,6 +293,8 @@ function buildModel(graph: DerivedGraph, changes: ChangeMarks | undefined): Mode
       badge: nodeBadge(node),
       kindClass: node.symbolKind ?? node.kind,
       ...(change ? { change } : {}),
+      ...(node.role !== undefined ? { role: node.role } : {}),
+      ...(node.opens !== undefined ? { opens: node.opens } : {}),
     });
   }
   for (const node of graph.nodes) {
@@ -348,7 +398,10 @@ function leafSize(model: Model, id: string): { width: number; height: number } {
   if (isGhost(node)) {
     return { width: ghostWidth(node.label, node.detail ?? ""), height: GHOST_HEIGHT };
   }
-  return { width: leafWidth(node.label, node.badge, node.change), height: LEAF_HEIGHT };
+  return {
+    width: leafWidth(node.label, node.badge, node.change, node),
+    height: leafHeight(node.role),
+  };
 }
 
 function makeNode(
@@ -374,6 +427,8 @@ function makeNode(
   if (node.detail !== undefined) out.detail = node.detail;
   if (node.hint !== undefined) out.hint = node.hint;
   if (node.change !== undefined) out.change = node.change;
+  if (node.role !== undefined) out.role = node.role;
+  if (node.opens !== undefined) out.opens = node.opens;
   return out;
 }
 
