@@ -30,6 +30,24 @@ describe("explanation workspace", () => {
     });
   });
 
+  it("says so when opening a box on the Map switches to the Flow tab, until the next move", () => {
+    const bundle = makeBundle();
+    const core = bundle.explainer.nodes.find((n) => n.id === "grp:core")!;
+    Object.assign(core, { opens: "view:flow" });
+    const store = new ViewerStore(bundle, { perspective: "map", view: "view:overview" });
+    expect(store.getState().perspective).toBe("map");
+    expect(store.getState().switchNotice).toBeUndefined();
+    store.zoomInto("grp:core");
+    expect(store.getState()).toMatchObject({
+      perspective: "flow",
+      viewId: "view:flow",
+      switchNotice: "Now in the Flow tab: opened from Core on the Map.",
+    });
+    store.back();
+    expect(store.getState().perspective).toBe("map");
+    expect(store.getState().switchNotice).toBeUndefined();
+  });
+
   it("restores topics, perspectives, file positions and tour context through history", () => {
     const store = new ViewerStore(makeBundle());
     store.previewStep("tour:demo", 1);

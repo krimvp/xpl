@@ -166,6 +166,11 @@ export interface ViewerState {
   save: SaveState;
   /** Running under `xpl view`. */
   serverMode: boolean;
+  /**
+   * Said once when opening a box switched the reading tab (a double-click on the Map that opened a flow):
+   * which tab the reader is in now and why. Gone at the next move.
+   */
+  switchNotice?: string;
 }
 
 /** How often `xpl view` pages look for changes to the explainer on disk. */
@@ -300,7 +305,7 @@ export class ViewerStore {
 
   private navigate(patch: Partial<ViewerState>): void {
     this.remember();
-    this.set({ ...patch, canGoBack: true, canGoForward: false });
+    this.set({ switchNotice: undefined, ...patch, canGoBack: true, canGoForward: false });
   }
 
   private travel(from: Navigation[], to: Navigation[]): void {
@@ -309,6 +314,7 @@ export class ViewerStore {
     to.push(this.position());
     this.set({
       ...position,
+      switchNotice: undefined,
       selection: position.selection.filter((id) => this.state.model.hasElement(id)),
       applied:
         position.applied && this.state.model.tour(position.applied.tourId)
@@ -703,7 +709,16 @@ export class ViewerStore {
   zoomInto(id: ElementId): void {
     if (!this.canZoomInto(id)) return;
     const target = opensView(this.state.model, id)!;
+    const from = this.state.perspective;
     this.goToLevel(target.id);
+    const now = this.state.perspective;
+    if (now !== from && (now === "map" || now === "flow") && (from === "map" || from === "flow")) {
+      // The tab changed under the reader's pointer: say so (shown in the caption, read out politely).
+      const tab = (p: Perspective) => (p === "map" ? "Map" : "Flow");
+      this.set({
+        switchNotice: `Now in the ${tab(now)} tab: opened from ${this.state.model.label(id)} on the ${tab(from)}.`,
+      });
+    }
   }
 
   /** Shows a level of the zoom trail (or any view), in the perspective that draws it. */

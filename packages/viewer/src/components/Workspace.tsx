@@ -140,6 +140,10 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
                 : (info?.title ?? tour?.title ?? "Overview")}
           </span>
         </nav>
+        {/* A double-click that changed the tab says so (always mounted, so a screen reader hears it). */}
+        <p className="switch-notice" role="status" data-testid="switch-notice">
+          {state.switchNotice}
+        </p>
         {active && state.perspective !== "guide" && (
           <button className="btn" onClick={() => store.readExplanation()}>
             Read its explanation
