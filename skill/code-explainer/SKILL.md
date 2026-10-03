@@ -145,7 +145,7 @@ The viewer shows each claim next to its code, so a wrong claim looks checked. Ch
 
 ## Show the result
 
-- `xpl bundle <name> -o <name>.html --files boundary`: one self-contained HTML file that works offline; for a change it shows the diff, the code before, New and Changed badges and the file list. It is **the default in remote or cloud sessions**: give the user the path. Attach or publish it only when asked: it holds their source code. `--tour tour:<slug>` opens the tour as a presentation.
+- `xpl bundle <name> -o <name>.html --files boundary`: one self-contained HTML file that works offline; for a change it shows the diff, the code before, New and Changed badges and the file list. It is **the default in remote or cloud sessions**: give the user the path. It refuses while anchors are drifted or missing: fix them ("After the code changed"); `--allow-drift` only when the user asks for the page as it is, and say so in the reply. Attach or publish it only when asked: it holds their source code. `--tour tour:<slug>` opens the tour as a presentation.
 - `xpl view <name>`: a local server for a user at the machine who keeps iterating; run it in the background.
 - **The reply:** first the answer in 3-6 sentences (for a change: the behaviour change, then the risk). Then one line each: the scope and any assumption; for a change, the changed files with `+/-` counts; what you checked by running code; what you left out or could not check; the bundle path and what it embeds. Say that `.explainer/` was written into the repo. Do not retell the tour.
 

@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
-import { BUNDLE_SCHEMA, parseBundle, type ViewerBundle } from "@xpl/core";
+import { BUNDLE_SCHEMA, collectAnchors, parseBundle, type ViewerBundle } from "@xpl/core";
 import { findViewerHtml, viewerHtmlCandidates } from "../src/viewer-html.js";
 import {
   cloneDir,
@@ -11,9 +11,11 @@ import {
   makeTempDir,
   PATCH_PATH,
   readFile,
+  readJson,
   STUB_VIEWER_HTML,
   writeViewerStub,
   xpl,
+  xplJson,
 } from "./helpers.js";
 
 let demo: string;
@@ -37,6 +39,22 @@ function bundleOf(html: string): ViewerBundle {
 
 function bundle(dir: string, ...argv: string[]) {
   return invoke(["bundle", "demo", ...argv, "--root", dir], { cwd: dir, env: viewerEnv });
+}
+
+/** Indexes the edited tree; returns the new index file (the explainer stays bound to its old one). */
+async function reindex(dir: string): Promise<string> {
+  const { code, json } = await xplJson<{ path: string }>(dir, "index", "--precise", "off");
+  expect(code).toBe(0);
+  return json.path;
+}
+
+/** The first anchor of the explainer at `symbol` (with no span), wherever it is stored. */
+function anchorOf(explainer: any, symbol: string): any {
+  const found = collectAnchors(explainer).find(
+    (site) => site.anchor.symbol === symbol && site.anchor.span === undefined,
+  );
+  expect(found, `an anchor at ${symbol}`).toBeDefined();
+  return found!.anchor;
 }
 
 /** What the demo explainer needs: its anchors' files, its views' nodes and participants, and its ghosts. */
@@ -301,6 +319,67 @@ describe("xpl bundle", () => {
     expect(json.files.indexedBytes).toBeGreaterThan(json.files.embeddedBytes);
     expect(json.bytes).toBe(Buffer.byteLength(readFile(demo, "j.html")));
     expect(json.index.commit).toMatch(/^wt-/);
+  });
+
+  it("re-resolves the anchors: code that moved is highlighted at its new lines (status moved, not a stale ok)", async () => {
+    const dir = cloneDir(demo);
+    // three lines above onJobCompleted: its text (and hash) is the same, at new lines
+    editFile(dir, "src/metrics.ts", (text) => `// one\n// two\n// three\n${text}`);
+    const index = await reindex(dir);
+    const stored = readJson<any>(dir, ".explainer/demo.explainer.json");
+    const before = anchorOf(stored, "onJobCompleted");
+    expect(before.resolved.status).toBe("ok"); // the cache in the file still says the old lines
+
+    const { code, err } = await bundle(dir, "-o", "moved.html", "--index", index);
+    expect(err).toBe("");
+    expect(code).toBe(0);
+    const data = bundleOf(readFile(dir, "moved.html"));
+    const after = anchorOf(data.explainer, "onJobCompleted");
+    const symbol = data.index.symbols.find((s) => s.id === "src/metrics.ts#onJobCompleted")!;
+    expect(after.hash).toBe(symbol.hash);
+    expect(after.resolved.status).toBe("moved");
+    expect(after.resolved.range.startLine).toBe(symbol.range.startLine);
+    expect(after.resolved.range.startLine).toBe(before.resolved.range.startLine + 3);
+    // nothing is written back
+    expect(readJson<any>(dir, ".explainer/demo.explainer.json")).toEqual(stored);
+  });
+
+  it("refuses an explainer whose anchors drifted, and --allow-drift writes it with the drift on the page", async () => {
+    const dir = cloneDir(demo);
+    editFile(dir, "src/queue.ts", (text) =>
+      text.replace(
+        "const job: Job | undefined = due[0];",
+        "const job: Job | undefined = due.at(0);",
+      ),
+    );
+    const index = await reindex(dir);
+
+    const refused = await bundle(dir, "-o", "drift.html", "--index", index);
+    expect(refused.code).toBe(1);
+    expect(refused.err).toContain(
+      ".explainer/demo.explainer.json does not match the code: 1 anchor drifted (its code changed), so the page would point at the wrong code",
+    );
+    expect(refused.err).toContain("run `xpl resolve demo --write`");
+    expect(refused.err).toContain("--allow-drift");
+    expect(existsSync(join(dir, "drift.html"))).toBe(false);
+
+    const allowed = await bundle(
+      dir,
+      "-o",
+      "drift.html",
+      "--index",
+      index,
+      "--allow-drift",
+      "--json",
+    );
+    expect(allowed.code).toBe(0);
+    const json = JSON.parse(allowed.out);
+    expect(json.anchors).toMatchObject({ drifted: 1, missing: 0 });
+    expect(json.warnings.join("\n")).toContain(
+      "1 anchor drifted (its code changed): the page says so",
+    );
+    const data = bundleOf(readFile(dir, "drift.html"));
+    expect(anchorOf(data.explainer, "Queue.pop").resolved.status).toBe("drifted");
   });
 
   it("usage and environment errors", async () => {

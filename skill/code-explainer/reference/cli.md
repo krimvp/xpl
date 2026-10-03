@@ -607,7 +607,7 @@ What the draft cannot know, you write: every title, summary and note; the groups
 
 ## `xpl view <explainer> [--port p] [--host h] [--no-open]`
 
-Serves the viewer with live repo access at `http://127.0.0.1:<port>/` (default 4747, else a free port; `--port 0` = any) and tries to open a browser. The explainer is re-read from disk on every request, and the page checks for changes every 2 seconds: what `xpl apply` writes shows up without a reload. Edits in the viewer (layout, expanded nodes, the stubs control, tour steps) are saved as `user` edits; "Explain this" clicks, with what the user typed above the button as the `note`, are appended to `.explainer/requests.json`. Runs until Ctrl-C. It binds to 127.0.0.1; `--host` other than that exposes the source code.
+Serves the viewer with live repo access at `http://127.0.0.1:<port>/` (default 4747, else a free port; `--port 0` = any) and tries to open a browser. The explainer is re-read from disk on every request, and the page checks for changes every 2 seconds: what `xpl apply` writes shows up without a reload. Edits in the viewer (layout, expanded nodes, the stubs control, tour steps) are saved as `user` edits; "Explain this" clicks, with what the user typed above the button as the `note`, are appended to `.explainer/requests.json`. Runs until Ctrl-C. It binds to 127.0.0.1; `--host` other than that exposes the source code. The anchors are re-resolved as for `xpl bundle`; drifted or missing anchors do not stop it (it is where you fix them), but it warns, and the page shows the same banner.
 
 ```
 $ xpl view jobrunner --no-open --port 0
@@ -616,9 +616,16 @@ serving .explainer/jobrunner.explainer.json at http://127.0.0.1:34971/  (Ctrl-C 
 
 API (for scripts): `GET /api/bundle`, `GET /api/file?path=`, `GET /api/base-file?path=` (the code before the recorded change of a modified, renamed or deleted file), `PUT /api/views/<id>`, `PUT /api/tours/<id>`, `GET|POST /api/requests`.
 
-## `xpl bundle <explainer> -o out.html [--mode explore|present] [--tour id] [--files referenced|boundary|all] [--boundary-max n] [--embed-index full|pruned]`
+## `xpl bundle <explainer> -o out.html [--mode explore|present] [--tour id] [--files referenced|boundary|all] [--boundary-max n] [--embed-index full|pruned] [--allow-drift]`
 
 Writes one self-contained HTML file: the viewer, the explainer, the index and source files inline. Works offline and can be shared. `--tour <id>` (`tour:intro` or `intro`) starts that tour and implies `--mode present`.
+
+Every anchor is **re-resolved** first, against the index and the code that go into the page, so an anchor whose code moved is highlighted at its new lines (`moved`), whatever the explainer file's cached `resolved` says; nothing is written back. When anchors **drifted** (their code changed) or are **missing** (their code is gone), bundle **refuses** (exit 1): the page would point at the wrong code. Run `xpl resolve <explainer> --write` and fix what it lists, then bundle again. `--allow-drift` writes the page anyway: it warns, the page shows a banner with the counts, and the drifted code is marked on its pane.
+
+```
+$ xpl bundle jobrunner -o jobrunner.html
+error: .explainer/jobrunner.explainer.json does not match the code: 3 anchors drifted (their code changed) and 2 are missing (their code is gone), so the page would point at the wrong code. To fix it, run `xpl resolve jobrunner --write` and fix what it lists: re-explain the drifted elements, re-anchor or drop the missing anchors, then bundle again; --allow-drift writes the page anyway, with a warning on it
+```
 
 `--files referenced` (the **default**) embeds the files the explainer needs: those of every anchor, of the nodes its graph views include (a directory or group: its files), of a sequence view's participants, of the sites and definitions behind its derived edges, and the code behind the dashed stubs of graph views (what the viewer shows when one is clicked; none for `"stubs": {"mode": "none"}`, and references from `excludeFiles` do not count). The viewer's file tree lists only the embedded files, with an "N of M files included" footer (under `xpl view` every indexed file is listed and fetched when opened). `--files all` embeds every indexed file. The command says what went in and what `--files all` would add; the output path is printed as given.
 
@@ -646,7 +653,7 @@ wrote all.html (2.3 MB): .explainer/jobrunner.explainer.json, 12 files embedded 
 
 **With a change recorded** (`xpl change`), every changed file that exists after the change is embedded, whatever `--files` says, and so is the code before the change of every modified, renamed or deleted file (`baseFiles` in the page, read from git). The summary line adds `change 5774f2c..349730f: 1 changed file in, code before the change of 1 file (3.2 KB)`, and names the changed files the selection had left out (`(2 added to the selection: ...)`).
 
-`--json`: `{ok, path, absolutePath, bytes, mode, tour?, files: {embedded, choice, referenced?, boundary?: {added: [{file, reason: caller|callee|test, refs}], cut: [same], max, symbols}, embeddedBytes, indexed, indexedBytes}, change?: {base, head, changedFiles, addedToSelection: [paths], baseFiles: [paths], baseBytes, baseMissing?}, index: {path, commit, choice: "full"|"pruned", pruned, bytes, fullBytes, symbols: {embedded, indexed}, refs: {embedded, indexed}}}` (`index.bytes` and `fullBytes`: the embedded and the whole index as compact JSON).
+`--json`: `{ok, path, absolutePath, bytes, mode, tour?, anchors: {total, drifted, missing}, files: {embedded, choice, referenced?, boundary?: {added: [{file, reason: caller|callee|test, refs}], cut: [same], max, symbols}, embeddedBytes, indexed, indexedBytes}, change?: {base, head, changedFiles, addedToSelection: [paths], baseFiles: [paths], baseBytes, baseMissing?}, index: {path, commit, choice: "full"|"pruned", pruned, bytes, fullBytes, symbols: {embedded, indexed}, refs: {embedded, indexed}}}` (`index.bytes` and `fullBytes`: the embedded and the whole index as compact JSON).
 
 ## `--json` shapes (the ones worth scripting)
 
