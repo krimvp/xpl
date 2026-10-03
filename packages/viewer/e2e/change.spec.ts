@@ -614,6 +614,64 @@ test.describe("who calls this, and what the change did to it", () => {
     expect(problems).toEqual([]);
   });
 
+  test("beside the code on a 1440 screen, Who calls it opens the topic panel over the code; a caller row centres its line", async ({
+    page,
+  }) => {
+    const problems = watchProblems(page);
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await open(page, "?perspective=map");
+    await page.getByRole("button", { name: "Show source" }).click();
+    await page.evaluate(() => window.__xpl!.setCursor("src/runner.ts", 32));
+    const line = pane(page, "src/runner.ts").locator('.cm-line[data-line="32"]');
+    await expect(line).toBeVisible();
+    // the topic column is folded away beside the code at this width
+    await expect(page.locator(".workspace-context")).toBeHidden();
+    const wordAt = () =>
+      line.evaluate((element) => {
+        const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+        for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+          const i = node.textContent!.indexOf("dispatch");
+          if (i < 0) continue;
+          const range = document.createRange();
+          range.setStart(node, i + 2);
+          range.setEnd(node, i + 3);
+          const box = range.getBoundingClientRect();
+          return { x: box.x + 1, y: box.y + box.height / 2 };
+        }
+        return undefined;
+      });
+    const at = await wordAt();
+    await page.mouse.click(at!.x, at!.y);
+    await page.keyboard.press("Shift+F12");
+    const panel = page.locator(".workspace.is-context-open .workspace-context");
+    await expect(panel).toBeVisible();
+    const callers = panel.getByTestId("callers");
+    await expect(callers).toContainText("Runner.start");
+    await expect(callers.getByRole("button").first()).toBeFocused();
+    // Esc closes it; Shift+F12 again, then a caller row: the code comes back, its line in the middle
+    await page.keyboard.press("Escape");
+    await expect(page.locator(".workspace.is-context-open")).toHaveCount(0);
+    await line.scrollIntoViewIfNeeded();
+    const again = await wordAt();
+    await page.mouse.click(again!.x, again!.y);
+    await page.keyboard.press("Shift+F12");
+    await panel.getByTestId("callers").getByRole("button").first().click();
+    await expect(page.locator(".workspace.is-context-open")).toHaveCount(0);
+    const target = (await stateOf(page)).cursor!;
+    expect(target.file).toBe("src/runner.ts");
+    const scroller = pane(page, "src/runner.ts").locator(".cm-scroller");
+    await expect
+      .poll(async () => {
+        const box = (await scroller.boundingBox())!;
+        const row = await pane(page, "src/runner.ts")
+          .locator(`.cm-line[data-line="${target.fromLine}"]`)
+          .boundingBox();
+        return !!row && row.y > box.y && row.y + row.height < box.y + box.height;
+      })
+      .toBe(true);
+    expect(problems).toEqual([]);
+  });
+
   test("a change's guide step lists the code outside it that calls what changed", async ({
     page,
   }) => {

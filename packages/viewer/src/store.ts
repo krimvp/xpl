@@ -127,6 +127,8 @@ export interface ViewerState {
   openedLine: number | undefined;
   /** Bumped every time a file is opened explicitly, so the stack scrolls to it even if it was open. */
   openSeq: number;
+  /** Bumped by "Who calls it" (`showCallers`): the callers list is brought on screen, even where it is folded away. */
+  callersSeq: number;
   /** Explore or Present (see modes.ts). */
   mode: Mode;
   /**
@@ -225,6 +227,7 @@ export class ViewerStore {
       openedBase: false,
       openedLine: undefined,
       openSeq: 0,
+      callersSeq: 0,
       expanded: new Set(),
       mode: "explore",
       tour: tour ? { tourId: tour.id, step: stepIndex(launch.step, tour.steps.length) } : undefined,
@@ -475,6 +478,12 @@ export class ViewerStore {
 
   clearSelection(): void {
     this.select([]);
+  }
+
+  /** "Who calls it" on a name in the code: picks it, and asks for its callers list to be shown. */
+  showCallers(id: ElementId): void {
+    this.select([id]);
+    this.set({ callersSeq: this.state.callersSeq + 1 });
   }
 
   // ─── Code side ───────────────────────────────────────────────────────────────────────────────

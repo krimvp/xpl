@@ -140,6 +140,8 @@ test("the code-first outline: a bar resizes it (mouse or keys, kept per flow); t
   await page.evaluate((id) => window.__xpl!.select([id]), second!.id);
   const around = page.getByTestId("step-neighbours");
   await expect(around).toContainText("This step");
+  // the step's code is "this step" to a reader, not a call site
+  await expect(page.locator(".workspace-source .pane-roles .role").first()).toHaveText("this step");
   await expect(around.locator(".flow-around-link.is-recurse")).toContainText(
     "again, one level down",
   );

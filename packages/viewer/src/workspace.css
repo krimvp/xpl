@@ -92,6 +92,33 @@
     display: block;
   }
 }
+/* r3-code: "Who calls it" in the code opens the folded topic column over the code, until closed. */
+.workspace-columns {
+  position: relative;
+}
+.workspace.has-source.is-context-open:not([data-perspective="code"]) .workspace-context {
+  display: block;
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(340px, 90vw);
+  z-index: 20;
+  box-shadow: -8px 0 24px rgb(0 0 0 / 0.18);
+}
+.context-close {
+  float: right;
+  margin: -12px -8px 0 8px;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel-2);
+  color: var(--fg);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
 /* l3: a code-first flow (the steps of one function): the flow is a narrow outline on the left, the code the main
    pane; the topic column joins them on a wide screen. */
 /* r3-code: the outline's width is the reader's (a bar between the two, --outline-width per flow). */
@@ -141,6 +168,13 @@
   margin: 5px 0 12px;
   font-size: 18px;
   overflow-wrap: anywhere;
+}
+/* r3-code: a topic whose title is code (a call, a name) reads as code, not as a heading sentence. */
+.workspace-context h2.is-code {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.45;
 }
 .workspace-context h3 {
   font-size: 14px;
@@ -320,6 +354,10 @@
   flex-wrap: wrap;
   gap: 8px;
   align-items: center;
+}
+/* r3-code: one "This step" card, a row per step */
+.guide-mini-row + .guide-mini-row {
+  margin-top: 6px;
 }
 .guide-mini-node {
   padding: 10px 14px;
@@ -837,7 +875,7 @@
   border: 0;
   border-radius: 6px;
   background: none;
-  color: var(--text);
+  color: var(--fg);
   font: inherit;
   text-align: left;
   cursor: pointer;

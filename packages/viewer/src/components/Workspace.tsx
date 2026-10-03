@@ -3,6 +3,7 @@ import { derivedEdgeMap, type SequenceView } from "@xpl/core";
 import { viewReverseIndex } from "../derive.js";
 import { describeElement } from "../details.js";
 import { renderInline } from "../markdown.js";
+import { looksLikeCode } from "../readerWords.js";
 import { stepTitle } from "../stepTitle.js";
 import { useDerived, useStore, useViewerState } from "../hooks.js";
 import {
@@ -103,9 +104,27 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
     if (state.openSeq > 0 && state.openedFile) setSourceOpen(true);
   }, [state.openSeq, state.openedFile]);
 
+  // "Who calls it" in the code: the callers are listed in the topic column. Beside the code on a screen too
+  // narrow for three columns that column is folded away: it then opens over the code, until closed.
+  const context = useRef<HTMLElement>(null);
+  const [contextOpen, setContextOpen] = useState(false);
+  useEffect(() => {
+    const aside = context.current;
+    if (state.callersSeq === 0 || !aside) return;
+    const folded = getComputedStyle(aside).display === "none";
+    if (folded) setContextOpen(true);
+    requestAnimationFrame(() => {
+      const list = aside.querySelector<HTMLElement>('[data-testid="callers"]');
+      list?.scrollIntoView({ block: "nearest" });
+      if (folded) list?.querySelector<HTMLElement>("button")?.focus({ preventScroll: true });
+    });
+  }, [state.callersSeq]);
+  // (it gives the code back when the reader goes to a caller, or elsewhere)
+  useEffect(() => setContextOpen(false), [state.perspective, showSource, state.openSeq]);
+
   return (
     <main
-      className={`workspace${showSource ? " has-source" : ""}${codeFirst ? " is-code-first" : ""}`}
+      className={`workspace${showSource ? " has-source" : ""}${codeFirst ? " is-code-first" : ""}${contextOpen ? " is-context-open" : ""}`}
       data-perspective={state.perspective}
       style={
         codeFirst && outlineWidth !== undefined
@@ -290,7 +309,29 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
             <CodeArea tree="collapsible" />
           </section>
         )}
-        <aside className="workspace-context" aria-label="Topic context">
+        <aside
+          className="workspace-context"
+          aria-label="Topic context"
+          ref={context}
+          onKeyDown={(event) => {
+            if (event.key === "Escape" && contextOpen) {
+              event.stopPropagation();
+              setContextOpen(false);
+            }
+          }}
+        >
+          {contextOpen && (
+            <button
+              type="button"
+              className="context-close"
+              data-testid="context-close"
+              aria-label="Close the topic panel"
+              title="Close (Esc)"
+              onClick={() => setContextOpen(false)}
+            >
+              ×
+            </button>
+          )}
           {/* In the guide, the open section is the topic: its summary would say it again. A box picked from
               a section (a member chip, a call) is another topic, and gets its summary here. */}
           {info && !onScreen && diagramTitle && (
@@ -307,7 +348,7 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
             <section className="topic-summary" data-testid="topic-summary">
               {/* While a step is applied the breadcrumb names the step: this is the box picked in it. */}
               <p className="eyebrow">{appliedStep ? "Picked" : "Current topic"}</p>
-              <h2>{info.title}</h2>
+              <h2 className={looksLikeCode(info.title) ? "is-code" : undefined}>{info.title}</h2>
               {info.summary && (
                 <p dangerouslySetInnerHTML={{ __html: renderInline(info.summary) }} />
               )}

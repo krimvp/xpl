@@ -19,6 +19,7 @@ import {
   type IndexModel,
   type AnchorRole,
   type ChangedFile,
+  type ExplainerModel,
   type FileLanguage,
   type FocusRange,
 } from "@xpl/core";
@@ -68,6 +69,7 @@ export function EditorStack() {
   );
 
   const change = changeOf(state.explainer);
+  const steps = useMemo(() => algorithmSteps(state.model), [state.model]);
   // Which pane has the column to itself, and which are folded to their headers: a way of looking, reset when
   // the selection changes. A file opened on purpose next to the focus takes the column.
   // A "Before" pane next to the same file's pane, which already shows the removed lines inline, starts folded
@@ -183,6 +185,7 @@ export function EditorStack() {
             baseText={changed && !base ? state.baseFiles[pane.file] : undefined}
             baseError={changed && !base ? state.baseErrors[pane.file] : undefined}
             showChanges={state.showChanges}
+            steps={steps}
           />
         );
       })}
@@ -201,6 +204,20 @@ export function EditorStack() {
       )}
     </div>
   );
+}
+
+/**
+ * The steps of a flow, and steps inside one part (from = to) of any view: stages of an algorithm, whose code
+ * is "this step" to a reader rather than a call site.
+ */
+export function algorithmSteps(model: ExplainerModel): ReadonlySet<string> {
+  const out = new Set<string>();
+  for (const view of model.views) {
+    if (view.type === "graph" || !Array.isArray(view.steps)) continue;
+    for (const step of view.steps)
+      if (step && (view.type === "flow" || step.from === step.to)) out.add(step.id);
+  }
+  return out;
 }
 
 const paneKey = (pane: TalkPane) =>
@@ -291,6 +308,8 @@ interface PaneProps {
   baseError: string | undefined;
   /** The "Show changes" toggle. */
   showChanges: boolean;
+  /** Steps whose code a reader's chip calls "this step" (`algorithmSteps`). */
+  steps: ReadonlySet<string>;
 }
 
 const ROLE_ORDER: AnchorRole[] = ["definition", "call-site", "usage", "config", "test"];
@@ -318,6 +337,7 @@ const EditorPane = memo(function EditorPane({
   baseText,
   baseError,
   showChanges,
+  steps,
 }: PaneProps) {
   const store = useStore();
   const base = pane.side === "base";
@@ -334,6 +354,8 @@ const EditorPane = memo(function EditorPane({
   /** Counts editors created; lets the caret effect tell "just created" from "moved later". */
   const generation = useRef(0);
   const caretApplied = useRef(0);
+  /** The open (`openToken`) whose line was last put in the middle. */
+  const centered = useRef(0);
   // Readers (Read mode, Present) get long lines wrapped: a narrow column never hides the end of a line,
   // and a click never scrolls the start of every line out of view. Explore keeps code as written.
   const wrap = wantLines !== undefined || reader;
@@ -422,7 +444,10 @@ const EditorPane = memo(function EditorPane({
     // above, unless the file was just opened on purpose); a later move is shown where it happens.
     const fresh = caretApplied.current !== generation.current;
     caretApplied.current = generation.current;
-    placeCaret(editor, cursor.fromLine, cursor.toLine, !fresh || openToken > 0);
+    // A jump (the file opened at a line: a caller, a definition) puts the line in the middle, once.
+    const jump = openToken > 0 && openToken !== centered.current;
+    centered.current = openToken;
+    placeCaret(editor, cursor.fromLine, cursor.toLine, jump ? "center" : !fresh);
     // A file opened at a change ("Files in this change", the tree): the whole change in view, not its edge.
     if (openToken > 0) {
       const hunk = hunks.find((h) => h.to >= cursor.fromLine);
@@ -442,8 +467,10 @@ const EditorPane = memo(function EditorPane({
     }
   };
 
-  // Which function the code on screen is inside, when its first line has scrolled away (`insideSymbol`).
+  // Which function the code on screen is inside, when its first line has scrolled away (`insideSymbol`), and
+  // which lines are on screen (a role chip names only ranges that are).
   const [inside, setInside] = useState<string | undefined>(undefined);
+  const [onScreen, setOnScreen] = useState<Span | undefined>(undefined);
   const spans = useRef<{ ranges: readonly Span[]; hunks: readonly Span[] }>({
     ranges: [],
     hunks: [],
@@ -452,6 +479,8 @@ const EditorPane = memo(function EditorPane({
     ranges: pane.ranges.map((r) => ({ from: r.range.startLine, to: r.range.endLine })),
     hunks,
   };
+  const caretLine = useRef<number | undefined>(undefined);
+  caretLine.current = cursor?.fromLine;
   useEffect(() => {
     const editor = view.current;
     if (!editor || base) return;
@@ -462,16 +491,38 @@ const EditorPane = memo(function EditorPane({
       const top = lineAt(scroller.scrollTop);
       const bottom = lineAt(scroller.scrollTop + Math.max(0, scroller.clientHeight - 1));
       const { ranges, hunks } = spans.current;
-      setInside(insideSymbol(index, pane.file, top, bottom, ranges, hunks));
+      setInside(insideSymbol(index, pane.file, top, bottom, ranges, hunks, caretLine.current));
+      // (a folded pane shows no lines: its chips stay)
+      const shown = scroller.clientHeight > 0 ? { from: top, to: bottom } : undefined;
+      setOnScreen((now) => (now?.from === shown?.from && now?.to === shown?.to ? now : shown));
     };
     update();
     editor.scrollDOM.addEventListener("scroll", update, { passive: true });
     return () => editor.scrollDOM.removeEventListener("scroll", update);
-  }, [text, pane.file, language, base, index, pane.ranges, hunks]);
+  }, [text, pane.file, language, base, index, pane.ranges, hunks, cursor?.fromLine]);
 
   // A "before" pane is labelled "Before" already: its anchors' roles ("used here") say nothing about old code.
+  // A chip names ranges on screen only ("defined here" over code scrolled away claims what is not shown). A
+  // reader sees the code of a step inside one function as "this step": "called here" over a 30-line stage of
+  // an algorithm says nothing true.
+  const shownRanges = onScreen
+    ? pane.ranges.filter(
+        (r) => r.range.endLine >= onScreen.from && r.range.startLine <= onScreen.to,
+      )
+    : pane.ranges;
   const roles =
-    base && reader ? [] : ROLE_ORDER.filter((role) => pane.ranges.some((r) => r.role === role));
+    base && reader
+      ? []
+      : ROLE_ORDER.flatMap((role) => {
+          const of = shownRanges.filter((r) => r.role === role);
+          if (of.length === 0) return [];
+          const words = !reader
+            ? role
+            : of.every((r) => steps.has(r.elementId))
+              ? "this step"
+              : roleWords(role);
+          return [{ role, words }];
+        }).filter((chip, i, all) => all.findIndex((c) => c.words === chip.words) === i);
   const stale = pane.ranges.filter((r) => r.status === "drifted" || r.status === "moved");
   // A "before" pane of a renamed file shows the path it had then.
   const shown =
@@ -620,9 +671,9 @@ const EditorPane = memo(function EditorPane({
           />
         )}
         <span className="pane-roles">
-          {roles.map((role) => (
+          {roles.map(({ role, words }) => (
             <span key={role} className={`role role-${role}`} data-role={role}>
-              {reader ? roleWords(role) : role}
+              {words}
             </span>
           ))}
           {stale.some((r) => r.status === "drifted") && (
@@ -676,7 +727,8 @@ const EditorPane = memo(function EditorPane({
 });
 
 /**
- * Names in a pane's code: "Who calls it" picks the symbol (the topic column then lists its callers), "Go to
+ * Names in a pane's code: "Who calls it" picks the symbol and shows its callers (the topic column, brought on
+ * screen where it is folded away), "Go to
  * definition" opens its code when this page has the file. Read from the store when used, so an editor made
  * once keeps up with files loaded later.
  */
@@ -699,7 +751,7 @@ function codeSymbols(store: ViewerStore, file: FilePath): SymbolHandlers {
     },
     callers(line, word) {
       const symbol = find(line, word);
-      if (symbol) store.select([elementIdForSymbolId(symbol.id)]);
+      if (symbol) store.showCallers(elementIdForSymbolId(symbol.id));
     },
     definition(line, word) {
       const symbol = find(line, word);

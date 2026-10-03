@@ -51,3 +51,16 @@ describe("the pane's 'in X' chip", () => {
     expect(at(1, 30)).toBeUndefined();
   });
 });
+
+describe("the 'in X' chip after a jump", () => {
+  it("names the function at the caret when the caret is on screen", () => {
+    // a jump to line 30 (in verify_signature) of a pane whose focus is in dispatch, both on screen
+    expect(insideSymbol(index, "a.py", 25, 115, [{ from: 110, to: 120 }], [], 30)).toBe(
+      "verify_signature",
+    );
+    // the caret off screen: the focus, as before
+    expect(insideSymbol(index, "a.py", 100, 140, [{ from: 110, to: 120 }], [], 30)).toBe(
+      "dispatch",
+    );
+  });
+});
