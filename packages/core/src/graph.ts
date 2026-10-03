@@ -487,7 +487,10 @@ export function deriveGraph(
     const a = rep.repr(stored.from);
     const b = rep.repr(stored.to);
     if (a !== undefined && b !== undefined) {
-      if (a === b || nested(a, b)) continue;
+      // An edge of an element to itself (recursion) is drawn as a loop on its own box; one that only lands
+      // in the same box because the box stands for both of its ends is not.
+      const loop = a === stored.from && b === stored.to && a === b;
+      if ((a === b && !loop) || nested(a, b)) continue;
       const edge: DerivedEdge = {
         id: stored.id,
         from: a,

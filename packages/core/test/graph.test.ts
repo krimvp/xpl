@@ -459,6 +459,15 @@ describe("deriveGraph: stored edges", () => {
     expect(lifted.edges[0]).toMatchObject({ from: "grp:g", to: F.queue });
   });
 
+  it("keeps a stored edge of an element to itself (recursion), drawn on its own box only", () => {
+    const loop = edge("edge:loop", F.worker, F.worker, [], { label: "recurses" });
+    const shown = derive([F.worker], {}, { edges: [loop] }).graph.edges;
+    expect(shown).toMatchObject([{ id: "edge:loop", from: F.worker, to: F.worker }]);
+    // lifted to a group that stands for it, it is no loop of the group
+    const g = group("grp:g", [F.worker, F.metrics]);
+    expect(derive(["grp:g"], {}, { nodes: [g], edges: [loop] }).graph.edges).toEqual([]);
+  });
+
   it("reports resolution from the edge's provenance", () => {
     const { graph } = derive(
       [F.worker, F.metrics],
