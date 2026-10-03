@@ -410,7 +410,8 @@ a variable, and the attribute below it is out of reach). An import binding marke
 `type-ref` reference instead of an `import`.
 
 Receivers whose type is known but outside the repository (`Map`, `Promise`, a bare npm import) are opaque:
-nothing is guessed. Unresolved sites and self-references are dropped. Module resolution (`resolveModule`):
+nothing is guessed. Unresolved sites and self-references are dropped, except a call of a symbol from inside itself:
+recursion is a `call` reference with `from === to`. Module resolution (`resolveModule`):
 TS relative specifiers with extension and `index` probing (`.js` → `.ts`), `tsconfig`/`jsconfig` `paths` and
 `baseUrl` (with relative `extends`), workspace packages by `package.json` name (entry through `exports`/
 `types`/`module`/`main`, build output mapped back to source) and `imports`; Python dotted and relative
@@ -453,8 +454,9 @@ into a `write`. When the pack does not classify an occurrence: a quoted module s
 module scope (dropped when the same statement imports names), role Import → `import`, WriteAccess → `write`, a
 type-like symbol → `type-ref`; anything else, declarations included, is dropped. Also dropped: references to
 definitions nested in something that is not one of our symbols (parameters, local variables, instance
-attributes), occurrences that do not fit the file text (a warning counts them), self-references. `local N`
-symbols follow the same rules, so calls to functions nested in functions stay. SCIP `is_implementation`
+attributes), occurrences that do not fit the file text (a warning counts them), self-references other than a call
+(recursion stays a `call`). `local N` symbols follow the same rules, so calls to functions nested in functions
+stay. SCIP `is_implementation`
 relationships become `implements` references (Go interfaces are satisfied implicitly, so this is where precise
 Go gets them), unless an occurrence already said `extends`/`implements` or the member merely overrides a
 base-class member. SCIP ranges (0-based, end-exclusive, in the document's encoding: UTF-16 for scip-typescript

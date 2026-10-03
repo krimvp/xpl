@@ -4,7 +4,7 @@
  * Language-agnostic: it consumes the facts the language packs extracted (sites, import bindings, type
  * facts, exports) plus the built symbols, and turns every syntactic site into a `Reference` when it can
  * find the target. Sites it cannot resolve are dropped. Every reference has `resolution: "heuristic"`;
- * self-references (`from === to`) are dropped.
+ * self-references (`from === to`) are dropped, except a call: recursion (`fact(n - 1)` in `fact`) is a `call`.
  *
  * What is resolved, in order, for a site `qualifier.name`:
  *
@@ -280,7 +280,8 @@ class Resolver {
 
   private add(ctx: Ctx, to: SymbolId, kind: Reference["kind"], span: Span): void {
     const from = ctx.from?.id ?? moduleScopeId(ctx.file);
-    if (from === to) return;
+    // a symbol naming itself is no reference, unless it calls itself (recursion)
+    if (from === to && kind !== "call") return;
     const key = `${from}\0${to}\0${kind}\0${span.startLine}:${span.startCol}-${span.endLine}:${span.endCol}`;
     if (this.seenRefs.has(key)) return;
     this.seenRefs.add(key);
