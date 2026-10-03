@@ -5,7 +5,9 @@
  *   open          Present, for a tour step that asks for the tree (`editor.hideFileTree: false`)
  *   hidden        Present by default: the code gets the whole width
  */
-import { useState } from "react";
+import { useState, type CSSProperties } from "react";
+import { changeOf, changeTreeWidth } from "../diff.js";
+import { useViewerState } from "../hooks.js";
 import { EditorStack } from "./EditorStack.js";
 import { FileTree } from "./FileTree.js";
 
@@ -13,13 +15,22 @@ export type TreeMode = "collapsible" | "open" | "hidden";
 
 export function CodeArea({ tree }: { tree: TreeMode }) {
   const [folded, setFolded] = useState(false);
+  // A change explainer's tree is as wide as the names of its changed files need (`changeTreeWidth`).
+  const treeWidth = changeTreeWidth(changeOf(useViewerState().explainer));
   const collapsible = tree === "collapsible";
   const treeOpen = !collapsible || !folded;
   const classes =
     "code-area" + (tree === "hidden" ? " has-no-tree" : treeOpen ? "" : " is-tree-closed");
 
   return (
-    <div className={classes}>
+    <div
+      className={classes}
+      style={
+        treeWidth !== undefined
+          ? ({ "--tree-width": `${treeWidth}px` } as CSSProperties)
+          : undefined
+      }
+    >
       {tree !== "hidden" && (
         <aside className="tree-panel">
           <div className="tree-head">

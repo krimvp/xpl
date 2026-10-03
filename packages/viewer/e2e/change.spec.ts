@@ -38,7 +38,9 @@ test.describe("the code of a change", () => {
     await page.evaluate(() => window.__xpl!.setCursor("src/runner.ts", 75));
     const runner = pane(page, "src/runner.ts");
     await expect(runner.locator(".cm-editor")).toBeVisible();
-    await expect(runner.getByTestId("pane-change")).toHaveText("Changed");
+    // a changed file's "Show changes" toggle says it: no "Changed" pill next to it
+    await expect(runner.getByTestId("show-changes")).toBeVisible();
+    await expect(runner.getByTestId("pane-change")).toHaveCount(0);
     await expect.poll(() => marked(page, "src/runner.ts", "xpl-chg")).toEqual([75, 76, 77, 78]);
     // the two old lines, above head line 75, taken from the code before the change
     const removed = runner.locator('.xpl-removed[data-removed-from="76"]');
@@ -142,6 +144,9 @@ test.describe("base anchors", () => {
     await expect(before).toHaveClass(/is-folded/);
     await before.getByTestId("pane-fold").click();
     await expect(before).not.toHaveClass(/is-folded/);
+    // its header says "Before" once (no "used here" role), and counts the places with removed lines
+    await expect(before.locator(".pane-roles .role")).toHaveCount(0);
+    await expect(before.getByTestId("pane-hunks")).toContainText("removed in 2 places");
     // the anchor's base lines are highlighted, and they are the lines the change rewrote
     await expect.poll(() => marked(page, "src/runner.ts", "xpl-hl", "base")).toEqual([76, 77]);
     await expect
@@ -191,7 +196,7 @@ test.describe("base anchors", () => {
     const row = page.locator(".anchor-row", { has: page.locator(".anchor-before") });
     await expect(row).toHaveCount(1);
     // a reader's narrow column names the file, the tooltip the whole path
-    await expect(row).toContainText("runner.ts@base");
+    await expect(row).toContainText("runner.ts, lines 76–77");
     await expect(row).toHaveAttribute("title", /src\/runner\.ts/);
     await row.click();
     const before = pane(page, "src/runner.ts", "base");
@@ -249,6 +254,11 @@ test.describe("the change in the reading screens", () => {
     await expect(list.locator('[data-path="src/metrics.ts"]')).toContainText("New");
     await expect(list.locator('[data-path="src/legacy.ts"]')).toContainText("Removed");
     await expect(list.locator('[data-path="src/bus.ts"]')).toContainText("from src/events.ts");
+    // one width for every status pill, so the paths start in one column
+    const widths = await list
+      .locator(".change-status")
+      .evaluateAll((pills) => pills.map((pill) => Math.round(pill.getBoundingClientRect().width)));
+    expect(new Set(widths).size).toBe(1);
     // a file opens in the Code tab at its first change
     await list.locator('[data-path="src/runner.ts"]').click();
     const state = await stateOf(page);
@@ -371,6 +381,25 @@ test.describe("reading a changed file", () => {
     expect(problems).toEqual([]);
   });
 
+  test("a narrow pane keeps the file name whole and puts the change controls on a second row", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 900, height: 700 });
+    await open(page, "?perspective=map");
+    await page.getByRole("button", { name: "Show source" }).click();
+    await page.evaluate(() => window.__xpl!.setCursor("src/runner.ts", 75));
+    const runner = pane(page, "src/runner.ts");
+    const header = runner.locator(".pane-header");
+    await expect(runner.getByTestId("show-changes")).toBeVisible();
+    expect((await header.boundingBox())!.width).toBeLessThan(600);
+    const name = (await runner.locator(".pane-file b").boundingBox())!;
+    const file = (await runner.locator(".pane-file").boundingBox())!;
+    expect(file.width).toBeGreaterThanOrEqual(name.width - 1);
+    const toggle = (await runner.getByTestId("show-changes").boundingBox())!;
+    expect(toggle.y).toBeGreaterThan(name.y + name.height - 1);
+    expect(await header.evaluate((h) => h.scrollWidth <= h.clientWidth + 1)).toBe(true);
+  });
+
   test("the tree marks what the change did to each file, lists removed files and filters by path", async ({
     page,
   }) => {
@@ -385,6 +414,9 @@ test.describe("reading a changed file", () => {
     await expect(mark("src/worker.ts")).toHaveCount(0);
     await page.getByTestId("tree-filter").fill("leg");
     await expect(page.locator(".tree-row.is-file")).toHaveCount(1);
+    // a result: the name, and its folder under it
+    await expect(page.locator(".tree-row.is-file .name")).toHaveText("legacy.ts");
+    await expect(page.locator(".tree-row.is-file .tree-dir")).toHaveText("src");
     await page.locator('.tree-row[data-path="src/legacy.ts"]').click();
     await expect(pane(page, "src/legacy.ts", "base")).toBeVisible();
     expect(problems).toEqual([]);
@@ -516,13 +548,69 @@ test.describe("who calls this, and what the change did to it", () => {
     const problems = watchProblems(page);
     await open(page, "?perspective=map");
     await byId(page, "file:src/metrics.ts").click();
+    // under the topic summary, not folded away in "Where this is in the code"
+    const facts = page.getByTestId("topic-summary").getByTestId("topic-facts");
+    await expect(facts.getByTestId("element-change")).toContainText("Added by this change");
+    await expect(facts.getByTestId("element-change")).toContainText("+36 −0");
     await page.locator(".workspace-inspector > summary").click();
-    await expect(page.getByTestId("element-change")).toContainText("Added by this change: +36 −0");
-    const callers = page.getByTestId("callers");
+    await expect(page.getByTestId("element-change")).toHaveCount(1);
+    const callers = facts.getByTestId("callers");
     await expect(callers).toContainText("Called from");
     await expect(callers).toContainText("main");
     await callers.getByRole("button").first().click();
     await expect(pane(page, "src/main.ts")).toBeVisible();
+    expect(problems).toEqual([]);
+  });
+
+  test("an edited symbol says how many lines the change added and removed in it", async ({
+    page,
+  }) => {
+    await open(page, "?perspective=map");
+    await page.evaluate(() => window.__xpl!.select(["sym:src/runner.ts#Runner.dispatch"]));
+    const change = page.getByTestId("topic-summary").getByTestId("element-change");
+    await expect(change).toContainText("Edited by this change");
+    await expect(change).toContainText("+4 −3");
+  });
+
+  test("a name in the code offers who calls it and its definition", async ({ page }) => {
+    const problems = watchProblems(page);
+    await open(page, "?perspective=code");
+    await page.evaluate(() => window.__xpl!.setCursor("src/runner.ts", 32));
+    const runner = pane(page, "src/runner.ts");
+    const line = runner.locator('.cm-line[data-line="32"]');
+    await expect(line).toBeVisible();
+    // the "dispatch" of `this.dispatch()`
+    const wordAt = () =>
+      line.evaluate((element) => {
+        const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+        for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+          const i = node.textContent!.indexOf("dispatch");
+          if (i < 0) continue;
+          const range = document.createRange();
+          range.setStart(node, i + 2);
+          range.setEnd(node, i + 3);
+          const box = range.getBoundingClientRect();
+          return { x: box.x + 1, y: box.y + box.height / 2 };
+        }
+        return undefined;
+      });
+    const at = await wordAt();
+    await page.mouse.move(at!.x, at!.y);
+    const actions = page.getByTestId("symbol-actions");
+    await expect(actions).toContainText("Runner.dispatch");
+    await actions.getByRole("button", { name: "Who calls it" }).click();
+    expect((await stateOf(page)).selection).toEqual(["sym:src/runner.ts#Runner.dispatch"]);
+    await expect(page.getByTestId("topic-summary").getByTestId("callers")).toContainText(
+      "Runner.start",
+    );
+    // Ctrl+click on the name: its definition
+    await page.getByRole("button", { name: "Back" }).click();
+    await line.scrollIntoViewIfNeeded();
+    const again = await wordAt();
+    await page.keyboard.down("Control");
+    await page.mouse.click(again!.x, again!.y);
+    await page.keyboard.up("Control");
+    await expect.poll(async () => (await stateOf(page)).cursor?.fromLine).toBe(42);
     expect(problems).toEqual([]);
   });
 

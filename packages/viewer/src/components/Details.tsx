@@ -6,9 +6,9 @@
  * id, no provenance, no author actions, the kind only for a piece of code, roles as "defined here" /
  * "called here", and a status only when it is not "ok".
  */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { opensView } from "@xpl/core";
-import { callersOf, changeSummary, type Caller } from "../callers.js";
+import { callersOf, callerSubject, changeSummary, type Caller } from "../callers.js";
 import { describeElement, type AnchorRow, type ElementInfo } from "../details.js";
 import { changeOf } from "../diff.js";
 import { explainCommand, messageOf } from "../data.js";
@@ -29,9 +29,12 @@ const AUTHOR_FACTS = new Set(["Origin", "Resolution"]);
 export function Details({
   reader = false,
   untitled = false,
+  factsAbove = false,
 }: {
   reader?: boolean;
   untitled?: boolean;
+  /** What the change did and who calls it are already on screen above (`TopicFacts`). */
+  factsAbove?: boolean;
 }) {
   const store = useStore();
   const state = useViewerState();
@@ -185,7 +188,7 @@ export function Details({
         </dl>
       )}
 
-      <ChangeOfElement id={info.id} />
+      {!factsAbove && <ChangeOfElement id={info.id} />}
 
       {info.related.length > 0 && (
         <div className="related">
@@ -207,7 +210,7 @@ export function Details({
       )}
 
       <Anchors rows={info.anchors} reader={reader} />
-      <CallersList id={info.id} />
+      {!factsAbove && <CallersList id={info.id} />}
     </section>
   );
 }
@@ -247,11 +250,10 @@ function Anchors({ rows, reader }: { rows: AnchorRow[]; reader: boolean }) {
                 {reader ? roleWords(row.role) : row.role}
               </span>
               {row.base && <span className="anchor-before">before</span>}
-              {/* A reader's narrow column: the file's name, not the start of its path (the title has it all). */}
-              <span className="where">
-                {reader ? row.where.replace(/^(?:[^/\s]+\/)+/, "") : row.where}
-              </span>
-              {row.startLine !== undefined && (
+              {/* A reader's narrow column: "Ky.ts, lines 612–634 in Ky.#retry", not the anchor's notation
+                  (the title has the whole path). */}
+              <span className="where">{reader ? readerWhere(row) : row.where}</span>
+              {!reader && row.startLine !== undefined && (
                 <span className="lines">
                   {row.endLine !== row.startLine
                     ? `L${row.startLine}–${row.endLine}`
@@ -273,6 +275,29 @@ function Anchors({ rows, reader }: { rows: AnchorRow[]; reader: boolean }) {
         </button>
       )}
     </div>
+  );
+}
+
+/** An anchor in a reader's words: "Ky.ts, lines 612–634 in Ky.#retry", "config.yaml, line 3". */
+export function readerWhere(row: AnchorRow): ReactNode {
+  const name = row.file.slice(row.file.lastIndexOf("/") + 1);
+  const lines =
+    row.startLine === undefined
+      ? ""
+      : row.endLine !== undefined && row.endLine !== row.startLine
+        ? `, lines ${row.startLine}–${row.endLine}`
+        : `, line ${row.startLine}`;
+  return (
+    <>
+      {name}
+      {lines}
+      {row.symbol && (
+        <span className="anchor-in">
+          {" "}
+          in <code>{row.symbol}</code>
+        </span>
+      )}
+    </>
   );
 }
 
@@ -375,6 +400,19 @@ function ExplainNote({ id, phase, note }: { id: string; phase: ExplainPhase; not
   }
 }
 
+/**
+ * What the picked element is in the code that a reader asks first, shown unfolded under the topic summary:
+ * what the change did to it, and who calls it.
+ */
+export function TopicFacts({ id }: { id: string }) {
+  return (
+    <div className="topic-facts" data-testid="topic-facts">
+      <ChangeOfElement id={id} />
+      <CallersList id={id} />
+    </div>
+  );
+}
+
 /** What the explainer's change did to the picked file or symbol, with a way to the lines. */
 function ChangeOfElement({ id }: { id: string }) {
   const store = useStore();
@@ -386,14 +424,22 @@ function ChangeOfElement({ id }: { id: string }) {
   if (!summary) return null;
   return (
     <div className="element-change" data-testid="element-change">
-      <span>{summary.text}</span>
-      <button
-        type="button"
-        className="link"
-        onClick={() => store.openFile(summary.file, summary.line)}
-      >
-        Show the change
-      </button>
+      <span>{summary.words}</span>
+      <span aria-hidden="true">·</span>
+      <span className="element-change-count">
+        <span className="is-add">+{summary.added}</span>{" "}
+        <span className="is-del">−{summary.deleted}</span>
+      </span>
+      <span className="element-change-open">
+        <span aria-hidden="true">· </span>
+        <button
+          type="button"
+          className="link"
+          onClick={() => store.openFile(summary.file, summary.line)}
+        >
+          Show the change
+        </button>
+      </span>
     </div>
   );
 }
@@ -401,16 +447,31 @@ function ChangeOfElement({ id }: { id: string }) {
 /** How many callers are listed before "N more". */
 const CALLERS_SHOWN = 6;
 
-/** "Called from": the code that calls the picked file or symbol, each row opening the call. */
+/**
+ * "Called from": the code that calls the picked file or symbol (for a flow step, the symbol that holds it),
+ * each row opening the call.
+ */
 function CallersList({ id }: { id: string }) {
   const state = useViewerState();
-  const callers = useMemo(() => callersOf(id, state.model.index), [id, state.model.index]);
+  const subject = useMemo(() => callerSubject(id, state.model), [id, state.model]);
+  const callers = useMemo(
+    () => (subject ? callersOf(subject, state.model.index) : []),
+    [subject, state.model.index],
+  );
   const [all, setAll] = useState(false);
-  if (callers.length === 0) return null;
+  if (!subject || callers.length === 0) return null;
   const shown = all ? callers : callers.slice(0, CALLERS_SHOWN);
   return (
     <div className="callers" data-testid="callers">
-      <h3>Called from</h3>
+      <h3>
+        Called from
+        {subject !== id && (
+          <>
+            {" "}
+            (who calls <code>{state.model.label(subject)}</code>)
+          </>
+        )}
+      </h3>
       <CallerRows callers={shown} />
       {callers.length > shown.length && (
         <button className="link" onClick={() => setAll(true)}>

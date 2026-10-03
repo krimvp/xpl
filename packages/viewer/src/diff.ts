@@ -167,7 +167,7 @@ export interface ChangeFileRow {
   oldPath?: FilePath;
   added: number;
   deleted: number;
-  /** A test file (core's `isTestFile`). */
+  /** A test file (`isTestPath`). */
   test: boolean;
   /** The line the code view opens it at (the first change), in the head file; base line 1 for a deleted file. */
   line: number;
@@ -183,11 +183,40 @@ export function changeFiles(change: ChangeRecord): ChangeFileRow[] {
       ...(file.status === "renamed" && file.oldPath ? { oldPath: file.oldPath } : {}),
       added: diff.added,
       deleted: diff.deleted,
-      test: isTestFile(file.path),
+      test: isTestPath(file.path),
       line: file.status === "deleted" ? 1 : firstChangedLine(file),
     };
   });
   return [...rows.filter((row) => !row.test), ...rows.filter((row) => row.test)];
+}
+
+/**
+ * A test file, for the "test" tag: core's `isTestFile`, plus type tests (a `test-d/` directory, `*.test-d.ts`),
+ * which tsd and vitest run as tests.
+ */
+export function isTestPath(path: FilePath): boolean {
+  return isTestFile(path) || /(^|\/)test-d\//.test(path) || /\.test-d\.[cm]?tsx?$/.test(path);
+}
+
+/** Most changed files a change can have for the tree to widen to their names. */
+const WIDE_TREE_FILES = 40;
+
+/**
+ * How wide the file tree of a change explainer should be (px) so that the names of the changed files show
+ * whole: `test-d/response-size.ts` and `test/response-size.ts` must not both read "response-siz…". Undefined
+ * without a change, or with too many files to make room for all; at most 300.
+ */
+export function changeTreeWidth(change: ChangeRecord | undefined): number | undefined {
+  if (!change || change.files.length === 0 || change.files.length > WIDE_TREE_FILES)
+    return undefined;
+  // a row: its indent (14px a level, the file's own 14px), the name at about 7.2px a character, the mark
+  const widest = Math.max(
+    ...change.files.map((file) => {
+      const parts = file.path.split("/");
+      return 8 + parts.length * 14 + parts[parts.length - 1]!.length * 7.2 + 36;
+    }),
+  );
+  return Math.min(300, Math.ceil(widest));
 }
 
 /** The words for a file's status, as a reader sees them. */

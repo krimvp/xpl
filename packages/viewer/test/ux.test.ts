@@ -114,6 +114,25 @@ describe("the flow box's actor", () => {
       "x".repeat(33) + "…",
     );
   });
+  it("is `to` when the step's code is inside `to`, not `from`", () => {
+    const model = {
+      ...names,
+      subtreeContains: (ancestor: string, id: string) => id.startsWith(ancestor + "."),
+    };
+    const step = {
+      from: "sym:a.ts#Ky",
+      to: "sym:b.ts#limit",
+      anchors: [{ file: "b.ts", symbol: "limit.transform", role: "usage" }],
+    };
+    expect(stageActor(step, model, 34, "terminal")).toBe("limit");
+    expect(stageActor(step, model)).toBe("limit");
+    // the code in `from`: `from` does it
+    const inFrom = { ...step, anchors: [{ file: "a.ts", symbol: "Ky.fetch", role: "call-site" }] };
+    expect(stageActor(inFrom, model, 34, "terminal")).toBe("Ky");
+    // a base anchor says nothing about who does it now
+    const base = { ...step, anchors: [{ ...step.anchors[0], at: "base" }] };
+    expect(stageActor(base, model, 34, "terminal")).toBe("Ky");
+  });
 });
 
 describe("flow text and code lines", () => {

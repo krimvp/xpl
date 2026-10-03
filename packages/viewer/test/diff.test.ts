@@ -14,11 +14,13 @@ import { describe, expect, it } from "vitest";
 import { getDerived } from "../src/derive.js";
 import {
   changeFiles,
+  changeTreeWidth,
   changeOf,
   changeMarks,
   changeStatus,
   fileDiff,
   firstChangedLine,
+  isTestPath,
   languageOfPath,
   needsBase,
   paneDiff,
@@ -210,6 +212,21 @@ describe("the files in a change", () => {
     expect(needsBase(record, "src/b.ts")).toBe(false);
     expect(languageOfPath("src/old.ts")).toBe("typescript");
     expect(languageOfPath("README")).toBe("text");
+  });
+
+  it("tags type tests as tests, and widens the tree to the longest changed name", () => {
+    expect(isTestPath("test-d/response-size.ts")).toBe(true);
+    expect(isTestPath("source/index.test-d.ts")).toBe(true);
+    expect(isTestPath("source/test-data.ts")).toBe(false);
+    // "a.test.ts" two levels down: 8 + 2 * 14 + 9 * 7.2 + 36 = 136.8 (the CSS keeps the column at 160 or more)
+    expect(changeTreeWidth(record)).toBe(137);
+    const long: ChangeRecord = {
+      ...record,
+      files: [{ path: "test-d/a-really-long-file-name-for-a-test.ts", status: "added", hunks: [] }],
+    };
+    // at most 300
+    expect(changeTreeWidth(long)).toBe(300);
+    expect(changeTreeWidth(undefined)).toBeUndefined();
   });
 
   it("ignores a change record that validate would reject (a hand edit)", () => {

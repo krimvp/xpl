@@ -1,12 +1,6 @@
 import { useEffect, useId, useMemo, useState } from "react";
-import {
-  buildReverseIndex,
-  processFlow,
-  viewCandidates,
-  type ElementId,
-  type ProcessFlow,
-  type SequenceView,
-} from "@xpl/core";
+import { processFlow, type ElementId, type ProcessFlow, type SequenceView } from "@xpl/core";
+import { viewReverseIndex } from "../derive.js";
 import { useStore, useViewerState } from "../hooks.js";
 import {
   EDGE_LABEL_LINE,
@@ -18,7 +12,7 @@ import {
   stageActor,
   wrapWords,
 } from "../layout/flowLayout.js";
-import { topicElements, topicMatches } from "../workspace.js";
+import { flowRelated, topicElements, topicMatches } from "../workspace.js";
 import { FlowKey } from "./Legend.js";
 import type { Focus } from "../viewport.js";
 import { SnapshotFrame } from "./SnapshotFrame.js";
@@ -51,17 +45,17 @@ export function FlowDiagram({ view, snapshot }: FlowDiagramProps) {
   const arrow = useId().replace(/:/g, "");
   const present = state.mode === "present" && !snapshot;
   const topics = topicElements(snapshot?.selection ?? state.selection, state.model);
+  // The index once per flow; a caret move only looks a line up in it.
+  const reverse = useMemo(
+    () => (snapshot ? undefined : viewReverseIndex(view, state.model)),
+    [view, state.model, snapshot],
+  );
   const matches = useMemo(
     () =>
-      state.cursor && !snapshot
-        ? new Set(
-            buildReverseIndex(viewCandidates(view, state.model), state.model).lookup(
-              state.cursor.file,
-              state.cursor.fromLine,
-            ),
-          )
-        : new Set<string>(),
-    [view, state.model, state.cursor, snapshot],
+      new Set<string>(
+        state.cursor && reverse ? reverse.lookup(state.cursor.file, state.cursor.fromLine) : [],
+      ),
+    [reverse, state.cursor],
   );
   useEffect(() => {
     let cancelled = false;
@@ -88,6 +82,12 @@ export function FlowDiagram({ view, snapshot }: FlowDiagramProps) {
   if (flow.stages.length === 0)
     return <div className="diagram-message">This process has no stages yet.</div>;
   const placed = placedStages(flow, layout);
+  const relatedStages = flowRelated(
+    flow,
+    snapshot?.selection ?? state.selection,
+    topics,
+    state.model,
+  );
   // What the step is about: the selected stages, else the stages that involve the selection (a concept,
   // a part of the code), framed with the stages next to them (viewport.ts frameView).
   const boxOf = (node: FlowLayout["children"][number]) => ({
@@ -189,9 +189,7 @@ export function FlowDiagram({ view, snapshot }: FlowDiagramProps) {
         const width = node.width ?? 250,
           height = node.height ?? 100;
         const active = topics.has(step.id),
-          related =
-            topicMatches(step.from, topics, state.model) ||
-            topicMatches(step.to, topics, state.model);
+          related = relatedStages.has(step.id);
         const label = wrapWords(step.label, STAGE_LABEL_CHARS, 3);
         return (
           <g

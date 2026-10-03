@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { buildReverseIndex, derivedEdgeMap, viewCandidates, type SequenceView } from "@xpl/core";
+import { derivedEdgeMap, type SequenceView } from "@xpl/core";
+import { viewReverseIndex } from "../derive.js";
 import { describeElement } from "../details.js";
 import { renderInline } from "../markdown.js";
 import { stepTitle } from "../stepTitle.js";
 import { useDerived, useStore, useViewerState } from "../hooks.js";
 import { topicElements, topicMatches, workspaceMap, workspaceView } from "../workspace.js";
 import { CodeArea } from "./CodeArea.js";
-import { Details } from "./Details.js";
+import { Details, TopicFacts } from "./Details.js";
 import { ErrorBoundary } from "./ErrorBoundary.js";
 import { FlowDiagram } from "./FlowDiagram.js";
 import { GraphView } from "./GraphView.js";
@@ -31,9 +32,10 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
   const mapMatches = useMemo(
     () =>
       state.cursor
-        ? buildReverseIndex(viewCandidates(map.view, state.model, map.graph), state.model, {
-            derivedEdges: derivedEdgeMap(map.graph),
-          }).lookup(state.cursor.file, state.cursor.fromLine)
+        ? viewReverseIndex(map.view, state.model, map.graph, derivedEdgeMap(map.graph)).lookup(
+            state.cursor.file,
+            state.cursor.fromLine,
+          )
         : [],
     [map, state.model, state.cursor],
   );
@@ -79,6 +81,8 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
       ? map.graph.nodes.filter((node) => store.canZoomInto(node.id)).slice(0, 3)
       : [];
   const code = state.perspective === "code";
+  // The topic column names the picked element (not in the guide while its section is the topic).
+  const topicShown = !!info && onScreen && !(state.perspective === "guide" && appliedStep);
   const showSource = code || sourceOpen;
   useEffect(() => {
     if (!showSource) columns.current?.scrollTo({ top: 0, behavior: "instant" });
@@ -269,7 +273,7 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
               </p>
             </section>
           )}
-          {info && onScreen && !(state.perspective === "guide" && appliedStep) && (
+          {info && topicShown && (
             <section className="topic-summary" data-testid="topic-summary">
               {/* While a step is applied the breadcrumb names the step: this is the box picked in it. */}
               <p className="eyebrow">{appliedStep ? "Picked" : "Current topic"}</p>
@@ -277,6 +281,7 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
               {info.summary && (
                 <p dangerouslySetInnerHTML={{ __html: renderInline(info.summary) }} />
               )}
+              <TopicFacts id={info.id} />
               {state.perspective === "guide" && (
                 <div className="section-actions">
                   <button className="btn" onClick={() => store.setPerspective("map")}>
@@ -293,7 +298,11 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
           {active && (
             <details className="workspace-inspector">
               <summary>Where this is in the code</summary>
-              <Details reader untitled={!(state.perspective === "guide" && appliedStep)} />
+              <Details
+                reader
+                untitled={!(state.perspective === "guide" && appliedStep)}
+                factsAbove={topicShown}
+              />
             </details>
           )}
         </aside>

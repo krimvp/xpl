@@ -12,8 +12,10 @@
  */
 import type { EditorView } from "@codemirror/view";
 import {
+  elementIdForSymbolId,
   shortSha,
   splitLines,
+  type FilePath,
   type IndexModel,
   type AnchorRole,
   type ChangedFile,
@@ -41,11 +43,16 @@ import {
   firstFocusLine,
   placeCaret,
   scrollToLine,
+  hunkWords,
+  insideSymbol,
+  type Span,
+  type SymbolHandlers,
 } from "../editor.js";
+import { symbolAtWord } from "../callers.js";
 import { useDerived, useStore, useViewerState } from "../hooks.js";
 import { talkPanes, type TalkPane } from "../present/ranges.js";
 import { roleWords } from "../readerWords.js";
-import type { Cursor } from "../store.js";
+import type { Cursor, ViewerStore } from "../store.js";
 import { RangeStepper } from "./RangeStepper.js";
 
 export function EditorStack() {
@@ -343,7 +350,12 @@ const EditorPane = memo(function EditorPane({
       text,
       language,
       // The lines of a "before" pane are lines of the old code: the caret there looks nothing up.
-      base ? undefined : { onCursor: (from, to) => store.setCursor(pane.file, from, to) },
+      base
+        ? undefined
+        : {
+            onCursor: (from, to) => store.setCursor(pane.file, from, to),
+            symbols: codeSymbols(store, pane.file),
+          },
       wrapRef.current,
       `${pane.file}${base ? ", before the change" : ""}: source code`,
     );
@@ -430,30 +442,48 @@ const EditorPane = memo(function EditorPane({
     }
   };
 
-  // Which function the top of the pane is inside, when its first line has scrolled away.
+  // Which function the code on screen is inside, when its first line has scrolled away (`insideSymbol`).
   const [inside, setInside] = useState<string | undefined>(undefined);
+  const spans = useRef<{ ranges: readonly Span[]; hunks: readonly Span[] }>({
+    ranges: [],
+    hunks: [],
+  });
+  spans.current = {
+    ranges: pane.ranges.map((r) => ({ from: r.range.startLine, to: r.range.endLine })),
+    hunks,
+  };
   useEffect(() => {
     const editor = view.current;
     if (!editor || base) return;
     const update = () => {
-      const block = editor.lineBlockAtHeight(editor.scrollDOM.scrollTop);
-      const top = editor.state.doc.lineAt(block.from).number;
-      const symbol = top > 1 ? index.innermostSymbolAt(pane.file, top) : undefined;
-      setInside(symbol && symbol.range.startLine < top ? symbol.path : undefined);
+      const scroller = editor.scrollDOM;
+      const lineAt = (height: number) =>
+        editor.state.doc.lineAt(editor.lineBlockAtHeight(height).from).number;
+      const top = lineAt(scroller.scrollTop);
+      const bottom = lineAt(scroller.scrollTop + Math.max(0, scroller.clientHeight - 1));
+      const { ranges, hunks } = spans.current;
+      setInside(insideSymbol(index, pane.file, top, bottom, ranges, hunks));
     };
     update();
     editor.scrollDOM.addEventListener("scroll", update, { passive: true });
     return () => editor.scrollDOM.removeEventListener("scroll", update);
-  }, [text, pane.file, language, base, index]);
+  }, [text, pane.file, language, base, index, pane.ranges, hunks]);
 
-  const roles = ROLE_ORDER.filter((role) => pane.ranges.some((r) => r.role === role));
+  // A "before" pane is labelled "Before" already: its anchors' roles ("used here") say nothing about old code.
+  const roles =
+    base && reader ? [] : ROLE_ORDER.filter((role) => pane.ranges.some((r) => r.role === role));
   const stale = pane.ranges.filter((r) => r.status === "drifted" || r.status === "moved");
   // A "before" pane of a renamed file shows the path it had then.
   const shown =
     base && changed?.status === "renamed" && changed.oldPath ? changed.oldPath : pane.file;
   const slash = shown.lastIndexOf("/");
+  const toggle = changed !== undefined && !base && changed.status !== "deleted";
+  // "Changed" says no more than the "Show changes" toggle next to it.
   const status =
-    changed && (!base || changed.status === "deleted") ? changeLabel(changed) : undefined;
+    changed && (!base || changed.status === "deleted") && !(toggle && changed.status === "modified")
+      ? changeLabel(changed)
+      : undefined;
+  const basename = shown.slice(slash + 1);
   return (
     <section
       className={
@@ -496,15 +526,20 @@ const EditorPane = memo(function EditorPane({
             <span aria-hidden="true">{folded ? "▸" : "▾"}</span>
           </button>
         )}
-        <span className="pane-file" title={shown}>
+        {/* The file name never gives way (its width in ch: the font is monospace); the directory does. */}
+        <span
+          className="pane-file"
+          title={shown}
+          style={{ minWidth: `${Math.min(basename.length, 40)}ch` }}
+        >
           {slash !== -1 && <span className="dir">{shown.slice(0, slash + 1)}</span>}
-          <b>{shown.slice(slash + 1)}</b>
+          <b>{basename}</b>
         </span>
         {inside && !folded && (
           <span
             className="pane-inside"
             data-testid="pane-inside"
-            title="The code at the top is inside"
+            title="The code shown is inside this function"
           >
             in <code>{inside}</code>
           </span>
@@ -523,47 +558,51 @@ const EditorPane = memo(function EditorPane({
             {language} · {lines} lines
           </span>
         )}
-        {changed && !base && changed.status !== "deleted" && (
-          <button
-            type="button"
-            className="pane-toggle"
-            data-testid="show-changes"
-            aria-pressed={showChanges}
-            title={
-              showChanges
-                ? "Hide what the change added and removed: show the code as it is"
-                : "Mark the lines the change added and show the lines it removed"
-            }
-            onClick={() => store.setShowChanges(!showChanges)}
-          >
-            Show changes
-          </button>
-        )}
-        {hunks.length > 0 && !folded && (
-          <span className="pane-hunks" data-testid="pane-hunks">
-            <button
-              type="button"
-              aria-label="Previous change"
-              title="Previous change (p)"
-              disabled={hunkAt <= 0}
-              onClick={() => goToHunk(-1)}
-            >
-              ‹
-            </button>
-            <span aria-live="polite">
-              {hunkAt < 0
-                ? `${hunks.length} ${hunks.length === 1 ? "change" : "changes"}`
-                : `change ${hunkAt + 1} / ${hunks.length}`}
-            </span>
-            <button
-              type="button"
-              aria-label="Next change"
-              title="Next change (n)"
-              disabled={hunkAt >= hunks.length - 1}
-              onClick={() => goToHunk(1)}
-            >
-              ›
-            </button>
+        {(toggle || (hunks.length > 0 && !folded)) && (
+          // The change controls: on a second row when the pane is narrow.
+          <span className="pane-changes">
+            {toggle && (
+              <button
+                type="button"
+                className="pane-toggle"
+                data-testid="show-changes"
+                aria-pressed={showChanges}
+                title={
+                  showChanges
+                    ? "Changes are shown: click to see the code as it is, without marks"
+                    : "Changes are hidden: click to mark the added lines and show the removed ones"
+                }
+                onClick={() => store.setShowChanges(!showChanges)}
+              >
+                <span className="pane-toggle-box" aria-hidden="true">
+                  {showChanges ? "✓" : ""}
+                </span>
+                Show changes
+              </button>
+            )}
+            {hunks.length > 0 && !folded && (
+              <span className="pane-hunks" data-testid="pane-hunks">
+                <button
+                  type="button"
+                  aria-label="Previous change"
+                  title="Previous change (p)"
+                  disabled={hunkAt <= 0}
+                  onClick={() => goToHunk(-1)}
+                >
+                  ‹
+                </button>
+                <span aria-live="polite">{hunkWords(hunkAt, hunks.length, base)}</span>
+                <button
+                  type="button"
+                  aria-label="Next change"
+                  title="Next change (n)"
+                  disabled={hunkAt >= hunks.length - 1}
+                  onClick={() => goToHunk(1)}
+                >
+                  ›
+                </button>
+              </span>
+            )}
           </span>
         )}
         {!folded && (
@@ -635,6 +674,39 @@ const EditorPane = memo(function EditorPane({
     </section>
   );
 });
+
+/**
+ * Names in a pane's code: "Who calls it" picks the symbol (the topic column then lists its callers), "Go to
+ * definition" opens its code when this page has the file. Read from the store when used, so an editor made
+ * once keeps up with files loaded later.
+ */
+function codeSymbols(store: ViewerStore, file: FilePath): SymbolHandlers {
+  const find = (line: number, word: string) =>
+    symbolAtWord(store.getState().model.index, file, line, word);
+  return {
+    resolve(line, word) {
+      const symbol = find(line, word);
+      if (!symbol) return undefined;
+      const state = store.getState();
+      const here =
+        symbol.file === file &&
+        symbol.range.startLine <= line &&
+        line <= symbol.range.startLine + 3;
+      return {
+        label: symbol.path,
+        canGo: !here && (symbol.file in state.files || state.serverMode),
+      };
+    },
+    callers(line, word) {
+      const symbol = find(line, word);
+      if (symbol) store.select([elementIdForSymbolId(symbol.id)]);
+    },
+    definition(line, word) {
+      const symbol = find(line, word);
+      if (symbol) store.openFile(symbol.file, symbol.range.startLine);
+    },
+  };
+}
 
 /** What the change did to a file, in a pane's header: "New file", "Changed", "Renamed from old/path". */
 function changeLabel(file: ChangedFile): { text: string; title: string } {

@@ -123,7 +123,7 @@ test("keeps discovered file collections collapsed and exposes loader evidence", 
   await expect(collection).not.toHaveAttribute("open", "");
   await expect(collection).toContainText("2 files");
   await collection.locator("summary").first().click();
-  await expect(collection).toContainText("files that match a pattern, not checked one by one");
+  await expect(collection).toContainText("Files that match a pattern, not checked one by one");
   await expect(page.locator(".editor-host")).toHaveCount(0);
   await collection.getByRole("button", { name: "src/worker.ts", exact: true }).click();
   await expect(page.locator('.workspace-source .pane[data-file="src/worker.ts"]')).toBeVisible();
@@ -216,4 +216,50 @@ test("offers the map, guide and code even without a tour or process model", asyn
   await expect(page.locator(".guide-path")).toContainText("no flow diagram");
   await page.getByTestId("perspective-code").click();
   await expect(page.locator(".workspace-source .tree-panel")).toBeVisible();
+});
+
+test("Ctrl+F finds in a file, in the page's colours, counts the matches and Enter goes to the next", async ({
+  page,
+}) => {
+  const problems = watchProblems(page);
+  await page.emulateMedia({ colorScheme: "dark" });
+  await page.goto(TS_BUNDLE.href + "?perspective=code");
+  await page.waitForFunction(() => window.__xpl !== undefined);
+  await page.evaluate(() => window.__xpl!.setCursor("src/runner.ts", 42));
+  const runner = page.locator('.pane[data-file="src/runner.ts"]');
+  await runner.locator('.cm-line[data-line="42"]').click();
+  await page.keyboard.press("Control+f");
+  const field = runner.getByRole("textbox", { name: "Find in this file" });
+  await expect(field).toBeFocused();
+  // in dark mode the field is dark, not the browser's white
+  expect(await field.evaluate((input) => getComputedStyle(input).backgroundColor)).not.toBe(
+    "rgb(255, 255, 255)",
+  );
+  await page.keyboard.type("this.config");
+  const count = runner.locator(".xpl-find-count");
+  await expect(count).toHaveText(/^\d+ matches$/);
+  const total = Number((await count.textContent())!.split(" ")[0]);
+  expect(total).toBeGreaterThan(1);
+  await page.keyboard.press("Enter");
+  await expect(count).toHaveText(new RegExp(`^\\d+ of ${total}$`));
+  const first = Number((await count.textContent())!.split(" ")[0]);
+  await page.keyboard.press("Enter");
+  await expect(count).toHaveText(`${(first % total) + 1} of ${total}`);
+  await page.keyboard.press("Escape");
+  await expect(field).toHaveCount(0);
+  expect(problems).toEqual([]);
+});
+
+test("Related files: the triangle sits in the heading, a file's path shows once", async ({
+  page,
+}) => {
+  await page.goto(TS_BUNDLE.href);
+  await expect(page.getByTestId("guide")).toBeVisible();
+  await page.getByRole("navigation", { name: "Guide contents" }).getByRole("button").nth(1).click();
+  const card = page.getByRole("region", { name: "Related files" }).locator(".resource-set").first();
+  const chevron = (await card.locator(".resource-chevron").boundingBox())!;
+  const kind = (await card.locator(".resource-kind").boundingBox())!;
+  expect(Math.abs(chevron.y - kind.y)).toBeLessThan(8);
+  await expect(card.getByText("config/default.yaml", { exact: true })).toHaveCount(1);
+  await expect(card.locator(".resource-key")).toContainText("Setting:");
 });

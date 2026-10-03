@@ -101,7 +101,10 @@ export interface PaneSpec {
 export interface Derived {
   view: ViewDerived;
   selection: SelectionDerived;
-  /** Elements (diagram elements and concepts) whose code contains the caret; sorted. */
+  /**
+   * Elements whose code contains the caret, sorted: the innermost of the elements the view draws, plus the
+   * innermost concepts (`viewReverseIndex`).
+   */
   matches: readonly ElementId[];
   panes: readonly PaneSpec[];
   /** Files in the focus that did not fit into `MAX_PANES` panes. */
@@ -136,14 +139,46 @@ function deriveView(
     stubMap,
     include,
     reverse() {
-      if (!reverse) {
-        const candidates = view
-          ? viewCandidates(view, model, graph)
-          : model.concepts.map((concept) => concept.id);
-        reverse = buildReverseIndex(candidates, model, { derivedEdges: edgeMap });
-      }
+      reverse ??= view
+        ? viewReverseIndex(view, model, graph, edgeMap)
+        : buildReverseIndex(
+            model.concepts.map((concept) => concept.id),
+            model,
+          );
       return reverse;
     },
+  };
+}
+
+/**
+ * The reverse index of what a view draws, for the caret: the innermost range wins among the elements the view
+ * draws, and the innermost concepts are added on top. Concepts do not compete with the drawn elements: a concept
+ * anchored on two lines inside a flow step must not hide the step (the pop on chi's `tree.go:500`).
+ */
+export function viewReverseIndex(
+  view: View,
+  model: ExplainerModel,
+  graph?: DerivedGraph,
+  edgeMap?: ReadonlyMap<string, DerivedEdge>,
+): ReverseIndex {
+  const concepts = new Set(model.concepts.map((concept) => concept.id));
+  const candidates = viewCandidates(view, model, graph);
+  const opts = edgeMap ? { derivedEdges: edgeMap } : {};
+  const drawn = buildReverseIndex(
+    candidates.filter((id) => !concepts.has(id)),
+    model,
+    opts,
+  );
+  const ideas = buildReverseIndex(
+    candidates.filter((id) => concepts.has(id)),
+    model,
+    opts,
+  );
+  return {
+    lookup: (file, line) =>
+      [...drawn.lookup(file, line), ...ideas.lookup(file, line)].sort((a, b) =>
+        a < b ? -1 : a > b ? 1 : 0,
+      ),
   };
 }
 

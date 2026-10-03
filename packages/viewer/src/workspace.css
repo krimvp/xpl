@@ -125,6 +125,41 @@
   color: var(--muted);
   line-height: 1.6;
 }
+/* details: what the change did and who calls it, unfolded under the topic summary (TopicFacts). */
+.topic-facts:empty {
+  display: none;
+}
+.topic-facts .element-change {
+  margin: 12px 0 0;
+}
+.topic-facts .callers h3 {
+  margin: 14px 0 6px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--faint);
+}
+.topic-facts .callers h3 code {
+  text-transform: none;
+  letter-spacing: 0;
+}
+.anchor-row .anchor-in {
+  color: var(--muted);
+}
+.element-change-open {
+  white-space: nowrap;
+}
+.element-change-count {
+  font: 12px var(--font-mono);
+  white-space: nowrap;
+}
+.element-change-count .is-add {
+  color: var(--diff-add-bar);
+}
+.element-change-count .is-del {
+  color: var(--diff-del-bar);
+}
 .eyebrow {
   color: var(--muted);
   font-size: 10px;
@@ -340,7 +375,9 @@
 }
 .change-status {
   flex: none;
-  min-width: 5.6em;
+  /* details: one width for every status, so the paths line up in a column */
+  box-sizing: border-box;
+  width: 6.8em;
   padding: 1px 8px;
   border-radius: 999px;
   background: var(--panel-2);
@@ -598,7 +635,7 @@
 .workspace-source .code-area {
   flex: 1;
   min-width: 0;
-  grid-template-columns: 160px minmax(0, 1fr);
+  grid-template-columns: max(160px, var(--tree-width, 0px)) minmax(0, 1fr);
 }
 .workspace-source .code-area.is-tree-closed {
   grid-template-columns: 34px minmax(0, 1fr);
@@ -640,22 +677,47 @@
   cursor: pointer;
   overflow-wrap: anywhere;
 }
+/* details: the disclosure triangle inline with the card's heading, not alone on its own line. */
+.resource-set > summary {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  list-style: none;
+}
+.resource-set > summary::-webkit-details-marker {
+  display: none;
+}
+.resource-chevron::before {
+  content: "▸";
+  display: inline-block;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 16px;
+  transition: transform 0.12s;
+}
+.resource-set[open] > summary .resource-chevron::before {
+  transform: rotate(90deg);
+}
+.resource-head {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
 .resource-kind {
-  display: block;
-  font-size: 10px;
+  font-size: 11px;
+  line-height: 16px;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--related);
-  margin-bottom: 5px;
 }
 .resource-label {
-  display: block;
   font-weight: 600;
   font-size: 12px;
-  margin-bottom: 4px;
 }
 .resource-set .count {
-  font-size: 10px;
+  font-size: 11px;
+  color: var(--muted);
 }
 .resource-key {
   font-size: 11px;
@@ -682,7 +744,7 @@
   border: 0;
   background: transparent;
   color: var(--accent);
-  font: 11px/1.55 var(--font-mono);
+  font: 12px/1.55 var(--font-mono);
   text-align: left;
   width: 100%;
   padding: 5px 0;

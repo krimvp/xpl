@@ -255,7 +255,7 @@ export function defineAcceptance(fx: JobrunnerFixture): void {
       expect(problems).toEqual([]);
     });
 
-    test("the caret maps back to the innermost diagram element: dispatch:3 on the requeue call, the concept elsewhere in the retry block", async ({
+    test("the caret maps back to the innermost drawn element, the concept on top: dispatch:3 on the requeue call, the lifeline elsewhere in the retry block", async ({
       page,
     }) => {
       const at = expectations(fx);
@@ -269,11 +269,12 @@ export function defineAcceptance(fx: JobrunnerFixture): void {
       const requeueLine = runner.locator(`.cm-line[data-line="${at.requeue}"]`);
       await expect(requeueLine).toContainText(fx.markers.requeue);
       await requeueLine.click({ position: { x: 96, y: 9 } });
-      await expect.poll(() => matchesOf(page)).toEqual(["dispatch:3"]);
+      // the innermost drawn element, and the concept around the line on top (it does not hide the step)
+      await expect.poll(() => matchesOf(page)).toEqual(["concept:retry-policy", "dispatch:3"]);
       await expect(byId(page, "dispatch:3")).toHaveClass(/is-match/);
-      await expect(byId(page, "concept:retry-policy")).not.toHaveClass(/is-match/);
-      // ... and it is the only element on the page that is marked as a match.
-      await expect(page.locator(".is-match")).toHaveCount(1);
+      await expect(byId(page, "concept:retry-policy")).toHaveClass(/is-match/);
+      // ... and they are the only elements on the page marked as a match.
+      await expect(page.locator(".is-match")).toHaveCount(2);
       expect((await stateOf(page)).cursor).toMatchObject({
         file: files.runner,
         fromLine: at.requeue,
@@ -284,21 +285,23 @@ export function defineAcceptance(fx: JobrunnerFixture): void {
       expect(at.retryInner).toBeLessThanOrEqual(at.retry.endLine);
       expect(at.retryInner).not.toBe(at.requeue);
       await setCursor(page, files.runner, at.retryInner);
-      await expect.poll(() => matchesOf(page)).toEqual(["concept:retry-policy"]);
+      await expect
+        .poll(() => matchesOf(page))
+        .toEqual(["concept:retry-policy", at.dispatchId].sort());
       await expect(byId(page, "concept:retry-policy")).toHaveClass(/is-match/);
       await expect(byId(page, "dispatch:3")).not.toHaveClass(/is-match/);
-      await expect(page.locator(".is-match")).toHaveCount(1);
 
       await setCursor(page, files.runner, at.requeue);
-      await expect.poll(() => matchesOf(page)).toEqual(["dispatch:3"]);
+      await expect.poll(() => matchesOf(page)).toEqual(["concept:retry-policy", "dispatch:3"]);
       await expect(byId(page, "dispatch:3")).toHaveClass(/is-match/);
-      await expect(byId(page, "concept:retry-policy")).not.toHaveClass(/is-match/);
 
       // ... and a real click on the other retry line agrees with the hook.
       await runner
         .locator(`.cm-line[data-line="${at.retryInner}"]`)
         .click({ position: { x: 60, y: 9 } });
-      await expect.poll(() => matchesOf(page)).toEqual(["concept:retry-policy"]);
+      await expect
+        .poll(() => matchesOf(page))
+        .toEqual(["concept:retry-policy", at.dispatchId].sort());
 
       // The other calls of the sequence and the lifeline itself.
       await setCursor(page, files.runner, at.pop);

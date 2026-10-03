@@ -2529,7 +2529,7 @@ code {
 
 .code-area {
   display: grid;
-  grid-template-columns: clamp(140px, 22%, 210px) minmax(0, 1fr);
+  grid-template-columns: max(clamp(140px, 22%, 210px), var(--tree-width, 0px)) minmax(0, 1fr);
   height: 100%;
   min-height: 0;
   overflow: hidden;
@@ -2687,6 +2687,43 @@ code {
 
 .tree-row.is-open {
   box-shadow: inset 2px 0 0 var(--accent);
+}
+
+/* details: rows a finger or a pointer can hit (axe target-size); a change's tree as wide as its changed names
+   (CodeArea's --tree-width); files carried only for context; filter results as name + dim folder, the folder
+   cut from the left so its end shows. */
+.tree-row {
+  min-height: 24px;
+}
+.tree-context {
+  flex: none;
+  margin-left: auto;
+  padding: 0 4px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 4px;
+  color: var(--muted);
+  font-size: 10.5px;
+  line-height: 1.4;
+}
+.tree-row.is-context .name {
+  color: var(--muted);
+  font-style: italic;
+}
+.tree-match {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.3;
+}
+.tree-match .tree-dir {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+  text-align: left;
+  color: var(--faint);
+  font-size: 11px;
 }
 
 .tree-foot {
@@ -3138,6 +3175,64 @@ code {
 
 .pane-toggle:hover {
   border-color: var(--accent);
+}
+
+/* details: the toggle shows its state as a box that is ticked or not; the change controls stay together and
+   go to a second row when the pane is narrow; the file name never gives way to the pills. */
+.pane-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.pane-toggle-box {
+  display: inline-grid;
+  place-items: center;
+  width: 12px;
+  height: 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 3px;
+  background: var(--panel);
+  font-size: 10px;
+  line-height: 1;
+}
+.pane-toggle[aria-pressed="true"] .pane-toggle-box {
+  border-color: var(--diff-add-bar);
+  background: var(--diff-add-bar);
+  color: var(--panel);
+}
+.pane {
+  container: pane / inline-size;
+}
+.pane-changes {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 10px;
+}
+.pane-change {
+  flex: 0 1 auto;
+}
+@container pane (max-width: 600px) {
+  .pane-header {
+    flex-wrap: wrap;
+    row-gap: 4px;
+  }
+  /* The change controls and the range stepper share a second row: a full-width break before them. */
+  .pane-header:has(.pane-changes, .pane-ranges)::after {
+    content: "";
+    order: 9;
+    flex-basis: 100%;
+  }
+  .pane-changes {
+    order: 10;
+  }
+  .pane-ranges {
+    order: 11;
+  }
+  /* "in X" takes what is left of the first row (ellipsized) instead of pushing the roles down. */
+  .pane-inside {
+    flex: 1 1 0;
+  }
 }
 
 /* ── Empty states, present stub ───────────────────────────────────────────────────────────────── */

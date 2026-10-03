@@ -6,6 +6,7 @@ import {
   type ElementId,
   type ExplainerModel,
   type GraphView,
+  type ProcessFlow,
   type SequenceView,
   type View,
 } from "@xpl/core";
@@ -40,6 +41,33 @@ export function topicMatches(
       (topic) => model.hasNode(topic) && model.hasNode(id) && model.subtreeContains(topic, id),
     )
   );
+}
+
+/**
+ * The stages drawn as "related" to the selection: those of a selected participant (a box picked on the map,
+ * or a concept's related symbol). A selected stage does not make the other stages of its own participant
+ * related: in a flow inside one function every box would light up. And when every other stage is related,
+ * none is marked, as the mark would say nothing.
+ */
+export function flowRelated(
+  flow: ProcessFlow,
+  selection: readonly ElementId[],
+  topics: ReadonlySet<ElementId>,
+  model: ExplainerModel,
+): Set<ElementId> {
+  const stageIds = new Set(flow.stages.map((stage) => stage.step.id));
+  const owners = topicElements(
+    selection.filter((id) => !stageIds.has(id)),
+    model,
+  );
+  const out = new Set<ElementId>();
+  for (const { step } of flow.stages) {
+    if (topics.has(step.id)) continue;
+    if (topicMatches(step.from, owners, model) || topicMatches(step.to, owners, model))
+      out.add(step.id);
+  }
+  const others = flow.stages.filter((stage) => !topics.has(stage.step.id)).length;
+  return others > 1 && out.size === others ? new Set() : out;
 }
 
 export function workspaceView(state: ViewerState, type: "map" | "flow"): View | undefined {

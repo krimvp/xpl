@@ -3,6 +3,7 @@ import {
   createExplainer,
   hashText,
   INDEX_SCHEMA,
+  type Anchor,
   type SymbolIndex,
   type ViewerBundle,
 } from "@xpl/core";
@@ -216,8 +217,9 @@ describe("reverse lookup", () => {
     const { store, derived } = storeFor("view:flow");
     store.setCursor("src/a.ts", 12);
     expect(derived().matches).toEqual(["flow:1"]); // the step (1 line) beats the lifeline (16 lines)
+    // the concept (3 lines) does not hide the drawn lifeline around it: concepts are added on top
     store.setCursor("src/a.ts", 8);
-    expect(derived().matches).toEqual(["concept:retry"]);
+    expect(derived().matches).toEqual(["concept:retry", RUN]);
     store.setCursor("src/a.ts", 15);
     expect(derived().matches).toEqual([RUN]);
     store.setCursor("src/a.ts", 29);
@@ -232,7 +234,24 @@ describe("reverse lookup", () => {
     store.setCursor("src/a.ts", 8, 12);
     expect(derived().matches).toEqual(["concept:retry", "flow:1", RUN]);
     store.setCursor("src/a.ts", 8, 9);
-    expect(derived().matches).toEqual(["concept:retry"]);
+    expect(derived().matches).toEqual(["concept:retry", RUN]);
+  });
+
+  it("a concept inside a step does not hide the step (chi: the pop at tree.go:500)", () => {
+    const { store, derived } = storeFor("view:flow", (bundle) => {
+      const concept = bundle.explainer.concepts.find((c) => c.id === "concept:retry")!;
+      // one line, inside the step's line 12 range widened to 11-13
+      concept.anchors = [
+        { file: "src/a.ts", symbol: "A.run", span: { from: 6, to: 6 }, role: "definition" },
+      ] as Anchor[];
+      const step = (bundle.explainer.views[1] as { steps: { id: string; anchors: unknown[] }[] })
+        .steps[0]!;
+      step.anchors = [
+        { file: "src/a.ts", symbol: "A.run", span: { from: 5, to: 7 }, role: "call-site" },
+      ];
+    });
+    store.setCursor("src/a.ts", 11);
+    expect(derived().matches).toEqual(["concept:retry", "flow:1"]);
   });
 
   it("uses the elements of the current view only (plus the concepts)", () => {
