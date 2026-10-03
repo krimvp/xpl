@@ -45,7 +45,7 @@ for (const scheme of ["light", "dark"] as const) {
       await shot(page, `${tag}-03-${p}`);
     }
     await page.getByTestId("perspective-map").click();
-    const box = page.locator("svg g[data-id]").first();
+    const box = page.locator(".nodes g[data-element-id]").nth(1);
     if (await box.count()) {
       await box.click();
       await shot(page, `${tag}-04-map-selected`);
