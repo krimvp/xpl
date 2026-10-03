@@ -1484,6 +1484,22 @@ code {
   color: var(--accent-fg);
 }
 
+/* r3-frame: in a short pane "Fit all" and "+N more" sit among the zoom buttons (PanZoom `SHORT_PANE`). */
+.pz-toolbar .pz-badge,
+.pz-toolbar .pz-more {
+  position: static;
+  min-width: 0;
+  height: 24px;
+  padding: 0 10px;
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  color: var(--fg);
+  box-shadow: none;
+}
+.pz-toolbar .pz-badge {
+  background: var(--accent-soft);
+}
+
 .pz-toolbar button:hover {
   background: var(--hover);
   color: var(--fg);

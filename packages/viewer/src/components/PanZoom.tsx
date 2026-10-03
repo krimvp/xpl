@@ -69,6 +69,8 @@ export const PRESENT_FLOW_MAX_ZOOM = 16 / 13;
  */
 export const PRESENT_FLOW_FOCUS_ZOOM = 10 / 13;
 const DRAG_THRESHOLD = 4;
+/** A pane shorter than this, px, shows "Fit all" and "+N more" among the zoom buttons. */
+const SHORT_PANE = 240;
 /** Room kept between the selection and the pane's edge when it is panned into view, px. */
 const REVEAL_MARGIN = 32;
 
@@ -380,34 +382,12 @@ export function PanZoom({
   const raw = rawFitScale(size, { width, height }, fitPadding);
   const big = raw > 0 && raw < floor;
   const allInSight = big && Math.abs(t.k - clamp(raw, MIN_ZOOM, maxFitZoom)) < 0.005;
+  // In a short pane (a laptop at 200%) "Fit all" and "+N more" join the zoom buttons: a pill in the bottom
+  // corner would sit on the boxes, which then fill the pane.
+  const short = size.h > 0 && size.h < SHORT_PANE;
 
-  return (
-    <div
-      ref={wrap}
-      className="panzoom"
-      tabIndex={0}
-      role="group"
-      aria-label={label}
-      data-zoom={t.k.toFixed(3)}
-      onPointerDown={onPointerDown}
-      onPointerMove={onPointerMove}
-      onPointerUp={endDrag}
-      onPointerCancel={endDrag}
-      onKeyDown={onKeyDown}
-      onClick={(event) => {
-        if (suppressClick.current) return;
-        if (
-          event.target === event.currentTarget ||
-          (event.target as Element).classList?.contains("pz-svg")
-        ) {
-          onBackgroundClick?.();
-        }
-      }}
-    >
-      <svg className="pz-svg" width="100%" height="100%" role="presentation">
-        <g transform={`translate(${t.x} ${t.y}) scale(${t.k})`}>{children}</g>
-        {overlay?.(t, size)}
-      </svg>
+  const cues = (
+    <>
       {big && (
         <button
           type="button"
@@ -441,7 +421,39 @@ export function PanZoom({
           +{more} more
         </button>
       )}
+    </>
+  );
+
+  return (
+    <div
+      ref={wrap}
+      className="panzoom"
+      tabIndex={0}
+      role="group"
+      aria-label={label}
+      data-zoom={t.k.toFixed(3)}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={endDrag}
+      onPointerCancel={endDrag}
+      onKeyDown={onKeyDown}
+      onClick={(event) => {
+        if (suppressClick.current) return;
+        if (
+          event.target === event.currentTarget ||
+          (event.target as Element).classList?.contains("pz-svg")
+        ) {
+          onBackgroundClick?.();
+        }
+      }}
+    >
+      <svg className="pz-svg" width="100%" height="100%" role="presentation">
+        <g transform={`translate(${t.x} ${t.y}) scale(${t.k})`}>{children}</g>
+        {overlay?.(t, size)}
+      </svg>
+      {!short && cues}
       <div className="pz-toolbar" onPointerDown={(event) => event.stopPropagation()}>
+        {short && cues}
         <button type="button" aria-label="Zoom in" title="Zoom in (+)" onClick={() => zoomBy(1.25)}>
           +
         </button>
