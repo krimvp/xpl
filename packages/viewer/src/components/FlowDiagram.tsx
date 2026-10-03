@@ -126,6 +126,7 @@ export function FlowDiagram({ view, snapshot, outline = false }: FlowDiagramProp
   const focusIds = new Set(focused);
   const nextTo = new Set<string>();
   for (const edge of layout.edges ?? []) {
+    if (edge.to === undefined) continue;
     if (focusIds.has(edge.from) && !focusIds.has(edge.to)) nextTo.add(edge.to);
     if (focusIds.has(edge.to) && !focusIds.has(edge.from)) nextTo.add(edge.from);
   }
@@ -178,7 +179,14 @@ export function FlowDiagram({ view, snapshot, outline = false }: FlowDiagramProp
       </defs>
       {(layout.edges ?? []).map((edge) => (
         <g key={edge.id} className={transitionClass(edge)} data-transition-kind={edge.kind}>
-          {edge.kind && <title>{levelTitle(edge.kind, stageLabels.get(edge.to) ?? "")}</title>}
+          {edge.kind && (
+            <title>
+              {levelTitle(
+                edge.kind,
+                edge.to === undefined ? undefined : (stageLabels.get(edge.to) ?? ""),
+              )}
+            </title>
+          )}
           {(edge.sections ?? []).map((section, i) => (
             <polyline
               key={i}

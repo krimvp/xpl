@@ -6,7 +6,8 @@ export interface ProcessFlow {
   transitions: {
     id: string;
     from: string;
-    to: string;
+    /** Absent for a `return` link without a step: back up one level, to whoever made the call. */
+    to?: string;
     label?: string;
     /** A transition that changes the level of a recursive function (`FlowLink.kind`). */
     kind?: "recurse" | "return";
@@ -50,11 +51,14 @@ export function processFlow(view: SequenceView): ProcessFlow {
             ? [...given, ...following]
             : given;
     return next
-      .filter((target) => target && known.has(target.step))
+      .filter(
+        (target) =>
+          target && (target.step === undefined ? target.kind === "return" : known.has(target.step)),
+      )
       .map((target, i) => ({
-        id: `${step.id}->${target.step}:${i}`,
+        id: `${step.id}->${target.step ?? "caller"}:${i}`,
         from: step.id,
-        to: target.step,
+        ...(target.step !== undefined ? { to: target.step } : {}),
         ...(target.label !== undefined ? { label: target.label } : {}),
         ...(levelLink(target) ? { kind: target.kind } : {}),
       }));

@@ -195,7 +195,7 @@ export function FlowKey({ shows }: { shows: FlowKeyShows }) {
         </Row>
       )}
       {shows.returns && (
-        <Row label="Up one level: the call returns, and its caller goes on at the arrow's end">
+        <Row label="Up one level: the call returns, to the box at the arrow's end (an arrow that ends on no box: to whoever made the call)">
           <Arrow className="lg-edge is-return" />
         </Row>
       )}

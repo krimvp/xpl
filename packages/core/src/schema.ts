@@ -17,7 +17,8 @@
  *  11. GraphView adds `stubs` ({ mode, max }): how many of the places where the view stops are drawn as
  *      ghost boxes. Default: the 8 most referenced, with the rest folded into "N more".
  *  12. Edge adds `via` (what the link passes through without a box); an llm edge's evidence is then per hop.
- *  13. A flow step's `next` links (FlowLink) add `kind`: "recurse" (one level down) or "return" (up one level).
+ *  13. A flow step's `next` links (FlowLink) add `kind`: "recurse" (one level down) or "return" (up one level,
+ *      to `step` or, without one, the caller).
  *  14. SequenceView adds `layout` ("code-first" or "diagram"): how Read and Explore lay the view out.
  *
  * Two files per repo:
@@ -506,11 +507,14 @@ export interface SequenceStep {
  *   first of the function) run again, one level down. It does not end the step: a step whose `next` has only
  *   recurse links still goes on to the next step in the list.
  * - `"return"`: the call returns, back up one level, and the caller goes on at `step` (the step that made the
- *   call, or the step that uses the result). A terminal step may have return links.
+ *   call, or the step that uses the result). Without `step`, back to whoever made the call: the step that
+ *   recursed one level up, or at the top the code that first called the function (drawn as an arrow out of
+ *   the step). A terminal step may have return links.
  * Absent: an ordinary transition, at the same level.
  */
 export interface FlowLink {
-  step: string;
+  /** The step it goes to; only a `return` link may leave it out (back to the caller). */
+  step?: string;
   label?: string;
   kind?: "recurse" | "return";
 }

@@ -187,7 +187,7 @@ Conventions (all packages):
     steps of the same view; without `next` a step goes on to the next one, a `terminal` ends a path). A
     sequence view can be drawn as a flow too, in reading order (`processFlow`, `projected: true`). A `next`
     link may add `kind: "recurse"` (the steps from an earlier step run again, one level down; a step with only
-    recurse links still goes on to the next one) or `kind: "return"` (back up one level, to the caller; a
+    recurse links still goes on to the next one) or `kind: "return"` (back up one level, to `step`, or with no `step` to the caller; a
     terminal may have these). `SequenceView.layout?: "code-first" | "diagram"` overrides `codeFirstView`
     (viewer `workspace.ts`: code first when every step's code is in one file). A flow step whose first anchor
     is not inside its `from` gets a warning (a `return` step whose code is in `to` excepted).

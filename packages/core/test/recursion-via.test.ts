@@ -97,6 +97,26 @@ describe("flow: recurse and return links", () => {
     expect(errors(terminal)[0]!.message).toContain('only "return" links');
   });
 
+  it("a return may leave out its step (back to the caller); no other link may", () => {
+    const back = flow([
+      { next: [{ step: "walk:1", kind: "recurse" }] },
+      { shape: "terminal", next: [{ kind: "return", label: "found" }] },
+    ]);
+    expect(errors(back)).toEqual([]);
+    expect(warnings(back)).toEqual([]);
+    const f = processFlow(back.views[0] as SequenceView);
+    expect(f.transitions.map(({ from, to, kind }) => [from, to, kind])).toEqual([
+      ["walk:1", "walk:1", "recurse"],
+      ["walk:1", "walk:2", undefined],
+      ["walk:2", undefined, "return"],
+    ]);
+    const bare = flow([{ next: [{ label: "on" }] }, { next: [{ kind: "recurse" }] }]);
+    expect(errors(bare).map((i) => i.path)).toEqual([
+      "views[0].steps[0].next[0]",
+      "views[0].steps[1].next[0]",
+    ]);
+  });
+
   it("warns when a recurse link points forward", () => {
     const forward = flow([{ next: [{ step: "walk:2", kind: "recurse" }] }, {}]);
     expect(warnings(forward).map((i) => i.message)).toEqual([

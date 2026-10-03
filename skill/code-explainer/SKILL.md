@@ -67,7 +67,7 @@ Where the index shows less than runs:
 - A call to a base-class method with no body runs a subclass method: anchor the one that runs, and link them with an `llm` `calls` edge.
 - Event buses, DI, callbacks, HTTP handlers, queues and config keys read by name: `search` for `emit`, `on(`, `register` and the topic, route or key, then link with an `llm` edge.
 - A reaches C through B, and B is not a box on the map: one edge from A to C with `via: [B]` (drawn "via B"). A hop the index shows needs no anchors; anchor the others at both ends (`patch-format.md` 3.3).
-- A recursive function: in its flow, a `next` link with `kind: "recurse"` back to the step the call starts at (drawn "one level down"), and `kind: "return"` where a call hands its result back up (`patch-format.md` 3.7).
+- A recursive function: in its flow, a `next` link with `kind: "recurse"` back to the step the call starts at (drawn "one level down"), and `kind: "return"` where a call hands its result back up, with no `step` when it goes back to whoever made the call (`patch-format.md` 3.7).
 - Calls into dependencies are not indexed: anchor the call site and describe nothing inside the library. You may name a library as the caller of your code when a line in the repo shows it (a class passed as `httpx.Client(transport=...)`): anchor that line.
 - Stay at `--depth 1` on a hub. Stop when the question is answered.
 
