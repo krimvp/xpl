@@ -298,7 +298,9 @@ function stubLabelText(stub: Stub): string {
 function labelBox(text: string): { text: string; width: number; height: number } {
   return {
     text,
-    width: Math.ceil(textWidth(text, EDGE_LABEL_FONT, 500)) + 10,
+    // measured bold: an authored label is drawn at 650 and a selected one at 700, and the box behind
+    // it must hide the line under every letter (people N7: "races fetch with a timer" on its own line)
+    width: Math.ceil(textWidth(text, EDGE_LABEL_FONT, 700)) + 10,
     height: LABEL_HEIGHT,
   };
 }

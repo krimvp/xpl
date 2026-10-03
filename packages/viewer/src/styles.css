@@ -1892,7 +1892,6 @@ code {
 
 .edge-label rect {
   fill: var(--canvas);
-  opacity: 0.94;
 }
 
 .edge-label text {
