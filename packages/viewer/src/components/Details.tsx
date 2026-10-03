@@ -321,8 +321,8 @@ function ExplainNote({ id, phase, note }: { id: string; phase: ExplainPhase; not
     case "queued":
       return (
         <p className="note explain-note" role="status">
-          Queued. Run <code>/code-explainer feedback</code> in Claude Code: this page updates by itself
-          once the change is applied.
+          Queued. Run <code>/code-explainer feedback</code> in Claude Code: this page updates by
+          itself once the change is applied.
         </p>
       );
     case "error":
