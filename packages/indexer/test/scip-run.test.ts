@@ -1066,7 +1066,7 @@ export function ⟦use⟧(): void {
     expect(calls.map((c) => c.command)).toEqual(["npx", "npx"]);
   });
 
-  it("warns about occurrences that do not fit their files (the files changed while indexing)", async () => {
+  it("a file with occurrences that do not fit it (changed while indexing, `//line` directives) keeps heuristic references", async () => {
     const dir = makeDir(tsProject);
     const { run } = fakeRunner((call) =>
       writeIndexTo(call, {
@@ -1081,7 +1081,8 @@ export function ⟦use⟧(): void {
       resolvers: createScipResolvers({ run }),
     });
     expect(warnings).toEqual([
-      "scip-typescript@0.4.0: 1 occurrence(s) do not fit the files they describe and were ignored (did the files change while indexing?)",
+      "scip-typescript@0.4.0: 1 file(s) have positions outside their text (changed while indexing, or `//line` directives of generated code); they keep heuristic references: a.ts",
+      'precise resolver "scip-typescript" failed (the tool described none of the 1 typescript file(s)); using heuristic references for typescript',
     ]);
   });
 

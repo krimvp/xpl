@@ -79,12 +79,28 @@ async function finish(
       `${tool}: the ${input.languages.join("/")} language pack failed on ${classifyErrors} occurrence(s); they use fallback kinds`,
     );
   }
-  if (outOfRange + malformed > 0) {
+  if (outOfRange + malformed > 0 && result.misplaced.length === 0) {
     input.warn(
       `${tool}: ${outOfRange + malformed} occurrence(s) do not fit the files they describe and were ignored (did the files change while indexing?)`,
     );
   }
-  return { refs: result.refs, tool, describedFiles: result.described };
+  // A file whose positions point outside it (`//line` directives of generated Go code: the tool reports the
+  // source the code was generated from) is not described: it keeps its heuristic references.
+  const misplaced = new Set(result.misplaced);
+  if (misplaced.size > 0) {
+    input.warn(
+      `${tool}: ${misplaced.size} file(s) have positions outside their text (changed while indexing, or \`//line\` directives of generated code); they keep heuristic references: ${[...misplaced].slice(0, 5).join(", ")}${misplaced.size > 5 ? ", ..." : ""}`,
+    );
+  }
+  return {
+    refs:
+      misplaced.size > 0
+        ? result.refs.filter((r) => !misplaced.has(r.from.slice(0, r.from.indexOf("#"))))
+        : result.refs,
+    tool,
+    describedFiles: result.described.filter((f) => !misplaced.has(f)),
+    blind: result.blind,
+  };
 }
 
 function runConfig(options: ScipOptions): ScipRunConfig {

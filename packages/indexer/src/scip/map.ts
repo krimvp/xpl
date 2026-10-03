@@ -81,6 +81,14 @@ export type MapInput = Pick<
 
 export interface MapResult {
   refs: Reference[];
+  /**
+   * Occurrences the tool could not link: a `local` symbol with no definition in its document (scip-typescript
+   * gives `ns.f` that way when `f` is an aliased re-export, `export { g as f }`), or a symbol whose definition
+   * does not fit its file (`misplaced`). See `PreciseOutput.blind`.
+   */
+  blind: { file: FilePath; line: number; col: number }[];
+  /** Described files with occurrences outside their text, or malformed (`//line` directives of generated Go code). */
+  misplaced: FilePath[];
   /** Indexed files of the covered languages that a SCIP document described (sorted). */
   described: FilePath[];
   /** Indexed files of the covered languages that no SCIP document described (sorted). */
@@ -363,6 +371,10 @@ class Mapper {
   /** Module symbols by package (`scheme manager name`): dotted module name and where it is defined. */
   private readonly modules = new Map<string, ModuleEntry[]>();
   private readonly refs = new Map<string, Reference>();
+  private readonly blind: MapResult["blind"] = [];
+  private readonly misplaced = new Set<FilePath>();
+  /** Symbols whose definition did not fit its file: their occurrences elsewhere are `blind`. */
+  private readonly lostDefinitions = new Set<string>();
   private repo: RepoView | undefined;
   readonly stats: MapStats = {
     documents: 0,
@@ -387,6 +399,8 @@ class Mapper {
     const refs = [...this.refs.values()].sort(compareRefs);
     return {
       refs,
+      blind: this.blind,
+      misplaced: [...this.misplaced].sort(),
       described: this.describedFiles(),
       uncovered: this.uncoveredFiles(),
       stats: this.stats,
@@ -447,13 +461,12 @@ class Mapper {
       for (const occ of view.doc.occurrences) {
         if ((occ.symbolRoles & SymbolRole.Definition) === 0 || occ.symbol === "") continue;
         const range = parseScipRange(occ.range);
-        if (!range) {
-          this.stats.malformed++;
-          continue;
-        }
-        const span = view.span(range);
+        const span = range && view.span(range);
         if (!span) {
-          this.stats.outOfRange++;
+          if (range) this.stats.outOfRange++;
+          else this.stats.malformed++;
+          this.misplaced.add(view.path);
+          this.lostDefinitions.add(this.key(view, occ.symbol));
           continue;
         }
         const definition: Definition = {
@@ -685,16 +698,23 @@ class Mapper {
         (this.definitions.has(key) ? null : this.relativeModule(view, occ.symbol));
       if (!target) {
         if (this.definitions.has(key)) this.stats.unresolvedTargets++;
+        else if (isLocalSymbol(occ.symbol) || this.lostDefinitions.has(key)) {
+          const range = parseScipRange(occ.range);
+          const span = range && view.span(range);
+          if (span) this.blind.push({ file: view.path, line: span.startLine, col: span.startCol });
+        }
         continue;
       }
       const range = parseScipRange(occ.range);
       if (!range) {
         this.stats.malformed++;
+        this.misplaced.add(view.path);
         continue;
       }
       const span = view.span(range);
       if (!span) {
         this.stats.outOfRange++;
+        this.misplaced.add(view.path);
         continue;
       }
       const from = this.lookup.fromId(view.path, span.startLine, span.startCol);

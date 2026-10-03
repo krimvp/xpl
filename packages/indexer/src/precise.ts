@@ -54,6 +54,11 @@ export interface PreciseInput {
 export interface PreciseOutput {
   /** References with `resolution: "precise"`, all from files of `PreciseInput.languages`. */
   refs: Reference[];
+  /**
+   * Positions (1-based line and column) of occurrences the tool saw but could not link to a definition. At each,
+   * the innermost heuristic reference whose site holds it is kept: the heuristic resolver may know the target.
+   */
+  blind?: readonly { file: FilePath; line: number; col: number }[];
   /** Tool and version, e.g. "scip-typescript@0.4.0" (goes to `SymbolIndex.languages[lang].tool`). */
   tool: string;
   /**

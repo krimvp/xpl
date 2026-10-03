@@ -464,6 +464,27 @@ describe("precise resolvers (registry and modes)", () => {
     expect(calls).toBe(0);
   });
 
+  it("keeps the innermost heuristic reference at a position the tool saw but could not link", async () => {
+    const files = {
+      "src/api.ts":
+        "export function lte(n: number) { return n; }\nexport function wrap(n: number) { return n; }\n",
+      "src/use.ts":
+        "import * as api from './api';\nexport function go() { return api.wrap(api.lte(1)); }\n",
+    };
+    // the tool links neither call; it saw `lte` (line 2, column 44) but not `wrap`
+    const blindAt = fake({
+      async resolve() {
+        return { refs: [], tool: "fake-scip@1", blind: [{ file: "src/use.ts", line: 2, col: 44 }] };
+      },
+    });
+    const { index } = await indexFiles(files, { precise: "auto", resolvers: [blindAt] });
+    expect(
+      index.refs
+        .filter((r) => r.kind === "call")
+        .map((r) => `${r.from} -> ${r.to} (${r.resolution})`),
+    ).toEqual(["src/use.ts#go -> src/api.ts#lte (heuristic)"]);
+  });
+
   it("a resolver replaces the heuristic references of its languages and marks them precise", async () => {
     const { index, warnings } = await indexFiles(project, { precise: "auto", resolvers: [fake()] });
     expect(warnings).toEqual([]);

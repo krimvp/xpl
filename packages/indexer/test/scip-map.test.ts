@@ -421,6 +421,43 @@ export function ⟦load⟧(): void {
     ]);
   });
 
+  it("reports a file whose positions do not fit it as misplaced, and calls of what it defines as blind", async () => {
+    const use = marked(`import { ⟦scan⟧ } from ⟦"./gen.ts"⟧;
+export function ⟦lex⟧(): number {
+  return ⟦scan⟧();
+}
+`);
+    const { result } = await run(
+      { "gen.ts": "export function scan(): number {\n  return 1;\n}\n", "use.ts": use.text },
+      [
+        source([
+          // generated code whose positions point into the file it was generated from
+          {
+            path: "gen.ts",
+            occurrences: [{ range: [40, 16, 20], symbol: ts("gen.ts", "scan()."), roles: DEF }],
+          },
+          {
+            path: "use.ts",
+            occurrences: [
+              moduleDef("use.ts"),
+              ...occs(use, [
+                [0, ts("gen.ts", "scan().")],
+                [1, ts("gen.ts", "")],
+                [2, ts("use.ts", "lex()."), DEF],
+                [3, ts("gen.ts", "scan().")],
+              ]),
+            ],
+          },
+        ]),
+      ],
+    );
+    expect(result.misplaced).toEqual(["gen.ts"]);
+    expect(result.blind).toEqual([
+      { file: "use.ts", line: 1, col: 10 },
+      { file: "use.ts", line: 3, col: 10 },
+    ]);
+  });
+
   it("a local declared in a function with the function's own name is not the function: no invented recursion", async () => {
     const src = marked(`export function ⟦walk⟧(⟦node⟧: unknown): number {
   const ⟦walk⟧ = (n: unknown) => 1;

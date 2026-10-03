@@ -33,6 +33,7 @@ import { resolveHeuristic } from "./resolve/heuristic.js";
 import type { ResolverFile } from "./resolve/heuristic.js";
 import { SymbolLookup, assembleSymbols } from "./symbols.js";
 import type { SymbolEntry } from "./symbols.js";
+import { spanContains } from "./ast.js";
 import { findSyntaxErrors, significantSyntaxErrors, syntaxErrorWarning } from "./syntax-errors.js";
 import type { SyntaxErrorFile } from "./syntax-errors.js";
 import { GRAMMAR_WASM } from "./wasm-files.js";
@@ -137,6 +138,45 @@ function grammarVersions(
 }
 
 /** File a reference belongs to: the file part of its `from` id. */
+/**
+ * The heuristic references to keep where the precise tool saw an occurrence it could not link
+ * (`PreciseOutput.blind`): per position, the reference with the smallest site that holds it.
+ */
+function keptAtBlind(
+  refs: readonly Reference[],
+  blind: readonly { file: FilePath; line: number; col: number }[],
+): Set<Reference> {
+  const kept = new Set<Reference>();
+  if (blind.length === 0) return kept;
+  const byFile = new Map<FilePath, Reference[]>();
+  for (const ref of refs) {
+    const file = fileOfId(ref.from);
+    const list = byFile.get(file);
+    if (list) list.push(ref);
+    else byFile.set(file, [ref]);
+  }
+  const size = (r: Reference) =>
+    (r.site.endLine - r.site.startLine) * 100_000 + ((r.site.endCol ?? 0) - (r.site.startCol ?? 0));
+  for (const at of blind) {
+    let best: Reference | undefined;
+    for (const ref of byFile.get(at.file) ?? []) {
+      if (ref.kind === "import" || !spanContains(siteSpan(ref), at.line, at.col)) continue;
+      if (!best || size(ref) < size(best)) best = ref;
+    }
+    if (best) kept.add(best);
+  }
+  return kept;
+}
+
+function siteSpan(ref: Reference) {
+  return {
+    startLine: ref.site.startLine,
+    startCol: ref.site.startCol ?? 1,
+    endLine: ref.site.endLine,
+    endCol: ref.site.endCol ?? Number.MAX_SAFE_INTEGER,
+  };
+}
+
 function fileOfId(id: string): FilePath {
   return id.slice(0, id.indexOf("#"));
 }
@@ -327,9 +367,10 @@ export async function buildIndex(opts: BuildIndexOptions): Promise<BuildIndexRes
               `the tool described none of the ${total} ${languages.join("/")} file(s)`,
             );
           }
+          const kept = keptAtBlind(refs, output.blind ?? []);
           refs = refs.filter((ref) => {
             const file = fileOfId(ref.from);
-            return !(covered.has(languageOfFile.get(file)!) && replaces(file));
+            return kept.has(ref) || !(covered.has(languageOfFile.get(file)!) && replaces(file));
           });
           for (const ref of preciseRefs) refs.push(ref);
           for (const language of preciseLanguages) preciseTools.set(language, output.tool);
