@@ -358,10 +358,11 @@ test.describe("the Guide", () => {
     const arrow = (await second.locator(".step.is-selected .label").boundingBox())!;
     expect(arrow.y).toBeGreaterThanOrEqual(frame.y);
     expect(arrow.y + arrow.height).toBeLessThanOrEqual(frame.y + frame.height);
-    // "Open in Flow" opens the live diagram on the step
+    // "Open in Flow" opens the live diagram on the step: the flow's own step stays picked (the section's
+    // concept would mark other boxes as related)
     await second.getByTestId("snapshot-open").click();
     expect((await stateOf(page)).perspective).toBe("flow");
-    expect((await stateOf(page)).selection).toEqual(["dispatch:3", "concept:retry-policy"]);
+    expect((await stateOf(page)).selection).toEqual(["dispatch:3"]);
     expect(problems).toEqual([]);
   });
 
