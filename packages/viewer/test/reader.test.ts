@@ -71,6 +71,12 @@ describe("step titles", () => {
     expect(noteParts("It calls `self.app(scope)` here. Then more.").title).toBe(
       "It calls self.app(scope) here",
     );
+    // emphasis marks go, but a "*" inside a code span is text
+    expect(noteParts("Literal text beats a param, a param beats `*`. Then more.").title).toBe(
+      "Literal text beats a param, a param beats *",
+    );
+    expect(noteParts("A **bold** `a*b` word").title).toBe("A bold a*b word");
+    expect(shortTitle("Matches `/*` last")).toBe("Matches /* last");
     expect(noteParts("Ports above 65535.5 fail, e.g. foo:65536. Then more.").title).toBe(
       "Ports above 65535.5 fail, e.g. foo:65536",
     );
