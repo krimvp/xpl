@@ -75,6 +75,30 @@ describe("who calls this", () => {
     expect(callersOf("grp:x", index())).toEqual([]);
   });
 
+  it("a function that calls itself: one 'itself (recursion)' row first, with every line", () => {
+    const raw = {
+      version: 1,
+      commit: "c",
+      files: [{ path: "tree.go", language: "go", lines: 600, hash: "h" }],
+      symbols: [
+        sym("tree.go", "node.findRoute", 450, 560),
+        sym("tree.go", "node.FindRoute", 380, 400),
+      ],
+      refs: [
+        ref("tree.go#node.FindRoute", "tree.go#node.findRoute", 390),
+        ref("tree.go#node.findRoute", "tree.go#node.findRoute", 542),
+        ref("tree.go#node.findRoute", "tree.go#node.findRoute", 494),
+      ],
+    } as unknown as SymbolIndex;
+    const callers = callersOf("sym:tree.go#node.findRoute", new IndexModel(raw));
+    expect(callers.map((c) => [c.label, c.line, c.recursion])).toEqual([
+      ["itself (recursion)", 494, [494, 542]],
+      ["node.FindRoute", 390, undefined],
+    ]);
+    // a class whose method calls the class: still a call from inside, not recursion
+    expect(callersOf("sym:src/a.ts#A", index()).some((c) => c.recursion)).toBe(false);
+  });
+
   it("says what a change did to a file or a symbol, and where to look", () => {
     const change = {
       base: "b".repeat(40),
