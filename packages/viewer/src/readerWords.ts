@@ -35,3 +35,16 @@ export function readerBadge(badge: string): string | undefined {
       return badge;
   }
 }
+
+/**
+ * A title that is code, not words: a name (`node.findRoute`, `FindRoute`, `max_age`) or a call
+ * (`super().unsign(signed_value)`). Shown in the code font, smaller: a long call set as a heading wraps over
+ * several lines and reads as a sentence.
+ */
+export function looksLikeCode(text: string): boolean {
+  const t = text.trim();
+  // a name, dotted or not, then any calls: no space before the first "("
+  if (!/^[A-Za-z_$#][\w$#.]*(\(.*\)[\w$#.()]*)?$/.test(t)) return false;
+  // a single plain word ("Overview") is a word
+  return /[().#_$]|[a-z][A-Z]/.test(t);
+}
