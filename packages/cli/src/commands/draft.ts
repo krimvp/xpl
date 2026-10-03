@@ -11,6 +11,7 @@ import {
   DRAFT_LIMITS,
   draftChange,
   draftPath,
+  draftProblems,
   draftRepo,
   type Draft,
   type DraftKind,
@@ -207,6 +208,14 @@ export const draftCommand: CommandSpec = {
         ].join("\n"),
         1,
         { issues: check.issues },
+      );
+    }
+    // and what apply does not check: no id named that exists nowhere, every focus on its step's view
+    const problems = draftProblems(draft, loaded.explainer, ws.model);
+    if (problems.length > 0) {
+      throw new CliError(
+        ["the draft is not sound (a bug in xpl draft; please report it):", ...problems].join("\n"),
+        1,
       );
     }
     const warnings = check.issues.map((issue) => `${issue.path}: ${issue.message}`);

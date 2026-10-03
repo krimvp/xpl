@@ -364,17 +364,68 @@ const PY_IMPORT = /^\s*import\s+([\w.]+(?:\s*,\s*[\w.]+)*)/;
 const PY_FROM = /^\s*from\s+([\w.]+)\s+import\b/;
 const GO_SPEC = /^\s*(?:[\w.]+\s+)?"([^"]+)"/;
 
-/** The modules a file imports, each with its 1-based line. */
+/**
+ * Each line with its comments blanked out: from `//` to the end of the line, and block comments across lines. Quoted
+ * strings on one line are kept whole, so a glob in a string opens no comment. A JSDoc `@example` that shows
+ * `import ky from 'ky'` is documentation, not an import.
+ */
+function withoutComments(lines: readonly string[]): string[] {
+  let block = false;
+  return lines.map((text) => {
+    let out = "";
+    let quote: string | undefined;
+    for (let i = 0; i < text.length; i++) {
+      const c = text[i]!;
+      if (block) {
+        if (c === "*" && text[i + 1] === "/") {
+          block = false;
+          i++;
+        }
+        continue;
+      }
+      if (quote) {
+        out += c;
+        if (c === "\\") out += text[++i] ?? "";
+        else if (c === quote) quote = undefined;
+        continue;
+      }
+      if (c === "/" && text[i + 1] === "/") break;
+      if (c === "/" && text[i + 1] === "*") {
+        block = true;
+        i++;
+        continue;
+      }
+      if (c === '"' || c === "'" || c === "`") quote = c;
+      out += c;
+    }
+    return out;
+  });
+}
+
+/** Python lines inside a triple-quoted string (a docstring that shows `>>> import x`) blanked out. */
+function withoutDocstrings(lines: readonly string[]): string[] {
+  let open: string | undefined;
+  return lines.map((text) => {
+    const inside = open !== undefined;
+    for (const m of text.matchAll(/"""|'''/g)) {
+      if (open === undefined) open = m[0];
+      else if (open === m[0]) open = undefined;
+    }
+    return inside ? "" : text;
+  });
+}
+
+/** The modules a file imports, each with its 1-based line. Imports inside comments and docstrings do not count. */
 export function importsOf(
-  lines: readonly string[],
+  source: readonly string[],
   family: Family,
 ): { module: string; line: number }[] {
   const out: { module: string; line: number }[] = [];
+  const lines = family === "py" ? withoutDocstrings(source) : withoutComments(source);
   let goBlock = false;
   lines.forEach((text, i) => {
     const line = i + 1;
     if (family === "js") {
-      if (/^\s*(?:\/\/|\*)/.test(text)) return;
       for (const re of JS_IMPORTS) {
         const m = re.exec(text);
         if (m) {
@@ -417,6 +468,7 @@ export function findOutsideSystems(
   maxSites = 6,
 ): OutsideSystem[] {
   const found = new Map<string, OutsideSystem & { files: Set<string> }>();
+  const own = ownModules(model, texts);
   const files = model.files
     .map((f) => f.path)
     .filter(isCode)
@@ -426,6 +478,8 @@ export function findOutsideSystems(
     const lines = family ? texts.lines(file) : undefined;
     if (!family || !lines) continue;
     for (const { module, line } of importsOf(lines, family)) {
+      // a package importing itself (chi's middleware imports chi) is not an outside system
+      if (own.some((name) => within(module, name, family))) continue;
       const kind = lookup(module, family);
       if (!kind) continue;
       let system = found.get(kind.slug);
@@ -444,4 +498,120 @@ export function findOutsideSystems(
   return [...found.values()]
     .sort((a, b) => b.files.size - a.files.size || a.label.localeCompare(b.label))
     .map(({ files: _files, ...system }) => system);
+}
+
+/** Manifest files that name a package, at any depth (a monorepo has one per package). */
+const MANIFESTS = /(?:^|\/)(?:package\.json|pyproject\.toml|go\.mod)$/;
+
+/**
+ * The module names the repository's own code is imported by: the `name` of each package.json, the name in each
+ * pyproject.toml and the top-level Python packages (folders with an `__init__.py`), the `module` of each go.mod.
+ * An import of one of them is the project itself, or another package of the same repository.
+ */
+export function ownModules(model: IndexModel, texts: TextCache): string[] {
+  const names = new Set<string>();
+  const paths = model.files.map((f) => f.path);
+  for (const path of paths.filter((p) => MANIFESTS.test(p))) {
+    const text = texts.text(path);
+    if (text === undefined) continue;
+    if (path.endsWith("package.json")) {
+      try {
+        const name = (JSON.parse(text) as { name?: unknown }).name;
+        if (typeof name === "string" && name !== "") names.add(name);
+      } catch {
+        // not JSON: no name
+      }
+    } else if (path.endsWith("pyproject.toml")) {
+      const name = /^\s*name\s*=\s*["']([^"']+)["']/m.exec(text)?.[1];
+      if (name) names.add(name.replace(/[-.]/g, "_").toLowerCase());
+    } else {
+      const module = /^\s*module\s+(\S+)/m.exec(text)?.[1];
+      if (module) names.add(module);
+    }
+  }
+  const inits = new Set(
+    paths
+      .filter((p) => p === "__init__.py" || p.endsWith("/__init__.py"))
+      .map((p) => p.slice(0, Math.max(0, p.length - "/__init__.py".length))),
+  );
+  for (const dir of inits) {
+    if (dir === "") continue;
+    const slash = dir.lastIndexOf("/");
+    if (!inits.has(dir.slice(0, Math.max(0, slash)))) names.add(dir.slice(slash + 1));
+  }
+  return [...names];
+}
+
+/**
+ * Is the project a library: it has package metadata, and nothing in it is a program people run (no `bin` or `start`
+ * script in package.json, no scripts in pyproject.toml or setup.py, no `__main__.py`, no Go `package main`, no script with a
+ * `#!` line among the code files)? A library's main user is the code of an app that calls it.
+ */
+export function isLibrary(
+  model: IndexModel,
+  texts: TextCache,
+  codeFiles: readonly string[],
+): boolean {
+  const root = model.dirChildren("").files;
+  const text = (file: string) => (root.includes(file) ? texts.text(file) : undefined);
+  const pkg = text("package.json");
+  const pyproject = text("pyproject.toml");
+  const setup = text("setup.py");
+  const gomod = text("go.mod");
+  if ([pkg, pyproject, setup, gomod].every((t) => t === undefined)) return false;
+  if (pkg !== undefined) {
+    try {
+      const json = JSON.parse(pkg) as { bin?: unknown; scripts?: { start?: unknown } };
+      if (json.bin !== undefined || json.scripts?.start !== undefined) return false;
+    } catch {
+      return false;
+    }
+  }
+  const scripts = /^\s*\[(?:project\.(?:gui-)?scripts|tool\.poetry\.scripts)\]/m;
+  if (pyproject !== undefined && scripts.test(pyproject)) return false;
+  if (setup !== undefined && /entry_points|scripts\s*=/.test(setup)) return false;
+  for (const file of codeFiles) {
+    if (file === "__main__.py" || file.endsWith("/__main__.py")) return false;
+    const head = texts.lines(file)?.slice(0, 40) ?? [];
+    if (head[0]?.startsWith("#!")) return false;
+    const go = model.file(file)?.language === "go";
+    if (go && head.some((line) => /^package main\b/.test(line))) return false;
+  }
+  return true;
+}
+
+/**
+ * The first line of a README code block that imports the project (`import ky from 'ky'`, `from itsdangerous import
+ * ...`, a Go import path), 1-based, and the names the block uses from there on, in order (`ky`, `post`, ...);
+ * undefined when no block does. It shows what the code of an app writes.
+ */
+export function readmeUsage(
+  lines: readonly string[],
+  own: readonly string[],
+): { line: number; names: string[] } | undefined {
+  let start: number | undefined;
+  for (let i = 0; i < lines.length; i++) {
+    if (!/^\s*(?:```|~~~)/.test(lines[i]!)) continue;
+    if (start === undefined) {
+      start = i + 1;
+      continue;
+    }
+    const block = lines.slice(start, i);
+    for (const family of ["js", "py", "go"] as const) {
+      const hit = importsOf(block, family).find(({ module }) =>
+        own.some((name) => within(module, name, family)),
+      );
+      if (hit) {
+        // the code after the import, without its strings (a URL, an import path)
+        const rest = block
+          .slice(hit.line - 1)
+          .join("\n")
+          .replace(/(["'`])(?:\\.|(?!\1).)*\1/g, "");
+        const names = [...new Set(rest.match(/[A-Za-z_]\w*/g) ?? [])];
+        return { line: start + hit.line, names };
+      }
+    }
+    start = undefined;
+  }
+  return undefined;
 }

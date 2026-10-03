@@ -52,7 +52,7 @@ import {
   type Reference,
   type TextCache,
 } from "@xpl/core";
-import { findOutsideSystems } from "./outside.js";
+import { findOutsideSystems, isLibrary, ownModules, readmeUsage } from "./outside.js";
 
 export const DRAFT_LIMITS = {
   /** Boxes on a drafted map (the skill: 4-8). */
@@ -85,8 +85,11 @@ export const OVERVIEW_EXCLUDE: readonly string[] = [
   "**/test/**",
   "**/tests/**",
   "**/*.test.*",
+  "**/test-d/**",
+  "**/*.test-d.*",
   "**/test_*.py",
   "**/examples/**",
+  "**/_examples/**",
   "docs/**",
   "benchmarks/**",
 ];
@@ -95,6 +98,8 @@ export const OVERVIEW_EXCLUDE: readonly string[] = [
 const NOT_DESIGN: readonly string[] = [
   "**/examples/**",
   "**/example/**",
+  "**/_examples/**",
+  "**/testdata/**",
   "**/benchmarks/**",
   "**/benchmark/**",
   "**/docs/**",
@@ -431,6 +436,97 @@ function tourStep(
   };
 }
 
+// ─── Self-check ─────────────────────────────────────────────────────────────────────────────────
+
+/** An element id written in a text (`grp:ky-changes`, `sym:a.py#f`), up to a space, a quote or a bracket. */
+const ID_IN_TEXT = /\b(?:sym|file|dir|grp|view|tour|edge|concept):[^\s`'",;()[\]]+/g;
+/** Fields of a patch that hold text for a reader (ids in them are written by hand, so nothing checks them). */
+const TEXT_FIELDS: ReadonlySet<string> = new Set([
+  "label",
+  "summary",
+  "detail",
+  "title",
+  "note",
+  "question",
+]);
+
+/**
+ * What `xpl apply` does not catch in a draft, and a reader would trip over: an id named in a text or a note that
+ * exists nowhere (not in the draft, the explainer or the index), and a tour step whose focus is not on its view (a
+ * map's boxes; a sequence's participants and steps). Empty when the draft is sound.
+ */
+export function draftProblems(draft: Draft, explainer: Explainer, model: IndexModel): string[] {
+  const { patch } = draft;
+  const problems: string[] = [];
+  const known = new Set<string>(["repo"]);
+  const views = new Map<string, PatchView>();
+  const addAll = (items: unknown) => {
+    for (const item of Array.isArray(items) ? items : []) {
+      const id = (item as { id?: unknown } | null)?.id;
+      if (typeof id === "string") known.add(id);
+    }
+  };
+  for (const source of [explainer, patch] as const) {
+    addAll(source.nodes);
+    addAll(source.edges);
+    addAll(source.concepts);
+    addAll(source.tours);
+    addAll(source.views);
+    for (const view of (Array.isArray(source.views) ? source.views : []) as PatchView[]) {
+      views.set(view.id, view);
+      if (view.type !== "graph") addAll(view.steps);
+    }
+  }
+  const exists = (id: string): boolean => {
+    if (known.has(id)) return true;
+    const parsed = parseId(id);
+    if (parsed.type === "file") return model.hasFile(parsed.path);
+    if (parsed.type === "dir") return model.hasDirectory(parsed.path);
+    if (parsed.type !== "symbol") return false;
+    if (model.symbol(symbolIdForElementId(id) ?? "") !== undefined) return true;
+    // a test named in words ("sym:test/a.ts#limits the body") ends at the first space in a text
+    return model.symbolsInFile(parsed.file).some((s) => s.path.startsWith(`${parsed.path} `));
+  };
+  // the texts a person reads: summaries, labels, titles, notes, and what the command prints
+  const texts: string[] = [...draft.notes];
+  const collect = (value: unknown, key = ""): void => {
+    if (typeof value === "string") {
+      if (TEXT_FIELDS.has(key)) texts.push(value);
+    } else if (Array.isArray(value)) for (const item of value) collect(item, key);
+    else if (value !== null && typeof value === "object")
+      for (const [k, v] of Object.entries(value)) collect(v, k);
+  };
+  collect(patch);
+  const dangling = new Set<string>();
+  for (const text of texts) {
+    for (const match of text.match(ID_IN_TEXT) ?? []) {
+      const id = match.replace(/[.:]+$/, "");
+      if (!exists(id)) dangling.add(id);
+    }
+  }
+  for (const id of dangling) problems.push(`${id} is named but exists nowhere`);
+  for (const tour of patch.tours ?? []) {
+    for (const step of tour.steps ?? []) {
+      const view = views.get(step.view);
+      if (!view) {
+        problems.push(`${tour.id} step ${step.id}: its view ${step.view} does not exist`);
+        continue;
+      }
+      const on = new Set<string>(
+        view.type === "graph"
+          ? (view.include ?? [])
+          : [...(view.participants ?? []), ...(view.steps ?? []).map((s) => s.id)],
+      );
+      if (view.type === "graph" && view.include === undefined) continue;
+      for (const id of step.focus ?? []) {
+        if (!on.has(id))
+          problems.push(`${tour.id} step ${step.id}: focus ${id} is not on ${view.id}`);
+      }
+    }
+  }
+  return problems;
+}
+
 // ─── draft change ───────────────────────────────────────────────────────────────────────────────
 
 /** A box of the change map made from changed code: one symbol, a group of small siblings, or a file. */
@@ -455,10 +551,15 @@ interface Caller {
   precise: boolean;
 }
 
+/** Reference kinds that only name a type or import a name: code with only these does not call anything. */
+const TYPE_ONLY: ReadonlySet<Reference["kind"]> = new Set(["type-ref", "import"]);
+
 function callersOf(analysis: ChangeAnalysis): Caller[] {
   const byId = new Map<string, Caller>();
   const add = (entry: CallerEntry, target: ChangedSymbol, guess: boolean) => {
-    if (entry.changed) return;
+    if (entry.changed || isTestFile(entry.file)) return;
+    // a type annotation or an `import type` line uses the name, but runs nothing: not a caller
+    if (entry.kinds.every((kind) => TYPE_ONLY.has(kind))) return;
     let caller = byId.get(entry.id);
     if (!caller) {
       caller = { id: entry.id, file: entry.file, sites: [], guess, precise: false };
@@ -680,14 +781,16 @@ export function draftChange(input: DraftInput, change: ChangeRecord): Draft {
     boxes = boxes.filter((b) => !group.includes(b));
     boxes.splice(at, 0, merged);
   }
+  // too many boxes: the file with the most changed pieces becomes one box (its group boxes too)
+  const piece = (box: ChangeBox) => box.id.startsWith("sym:") || box.id.startsWith("grp:");
   while (boxes.length > changeSlots) {
     const counts = new Map<string, number>();
     for (const box of boxes) {
-      if (box.id.startsWith("sym:")) counts.set(box.file, (counts.get(box.file) ?? 0) + 1);
+      if (piece(box)) counts.set(box.file, (counts.get(box.file) ?? 0) + 1);
     }
     const [file, count] = [...counts].sort((a, b) => b[1] - a[1])[0] ?? ["", 0];
     if (count < 2) break;
-    const inFile = boxes.filter((b) => b.file === file && b.id.startsWith("sym:"));
+    const inFile = boxes.filter((b) => b.file === file && piece(b));
     const added = analysis.files.find((f) => f.path === file)?.status === "added";
     const merged: ChangeBox = {
       id: `file:${file}`,
@@ -700,13 +803,16 @@ export function draftChange(input: DraftInput, change: ChangeRecord): Draft {
     boxes = boxes.filter((b) => !inFile.includes(b));
     boxes.splice(at, 0, merged);
   }
+  // a group box left off the map is never written: name its members
+  const pieceIds = (box: ChangeBox) =>
+    box.id.startsWith("grp:") ? box.symbols.map((sym) => sym.id) : [box.id];
   let offMap: ChangeBox[] = [];
   if (boxes.length > changeSlots) {
     const keep = new Set([...boxes].sort((a, b) => b.lines - a.lines).slice(0, changeSlots));
     offMap = boxes.filter((b) => !keep.has(b));
     boxes = boxes.filter((b) => keep.has(b));
     notes.push(
-      `${offMap.length} changed ${offMap.length === 1 ? "piece is" : "pieces are"} left off the map (at most ${L.mapBoxes} boxes): ${offMap.map((b) => b.id).join(", ")}`,
+      `${offMap.length} changed ${offMap.length === 1 ? "piece is" : "pieces are"} left off the map (at most ${L.mapBoxes} boxes): ${offMap.flatMap(pieceIds).join(", ")}`,
     );
   }
 
@@ -927,7 +1033,7 @@ export function draftChange(input: DraftInput, change: ChangeRecord): Draft {
     const whole = box.status === "new";
     return [whole ? definition(sym) : symbolLines(texts, sym, run.start, run.end, "definition")];
   });
-  const alsoChanged = [...offMap, ...skipped].map((b) => displayName(b.id));
+  const alsoChanged = [...offMap, ...skipped].flatMap(pieceIds).map(displayName);
   steps.push(
     tourStep(
       model,
@@ -1037,7 +1143,8 @@ export function draftChange(input: DraftInput, change: ChangeRecord): Draft {
         model,
         next(),
         mapId,
-        [model.hasFile(firstPath) ? `file:${firstPath}` : mainFocus],
+        // a step focuses a box of its map: the file when it is one, else the main box
+        [include.includes(`file:${firstPath}`) ? `file:${firstPath}` : mainFocus],
         note(
           todo("what the other changed files do, as a plain statement"),
           `Changed outside the boxes of the map: ${nameList(chunk.map((c) => baseName(c.path)))}.`,
@@ -1613,6 +1720,52 @@ export function draftRepo(input: DraftInput): Draft {
       .slice(0, n);
   const mainTop = topSymbols(mainUnit, 1)[0];
 
+  // ── A library: nobody reaches it through a web server or a command line; the code of an app calls it. A box
+  // for that app, anchored where the README shows an import of the project, with an arrow to the service.
+  let appId: string | undefined;
+  const codeFiles = model.files.map((f) => f.path).filter(isCode);
+  if (!multi && inbound.length === 0 && mainTop && isLibrary(model, texts, codeFiles)) {
+    const readme = model.dirChildren("").files.find((f) => /^readme(?:\.[a-z]+)?$/i.test(f));
+    const shown = readme
+      ? readmeUsage(texts.lines(readme) ?? [], ownModules(model, texts))
+      : undefined;
+    const usage =
+      readme && shown ? fileLines(texts, readme, shown.line, shown.line, "usage") : undefined;
+    // what the app calls: the first name of the README example that is a top-level symbol of the service
+    const top = new Map<string, IndexedSymbol>();
+    // (in the files of the boxes: the arrow's evidence must lie inside the service)
+    for (const sym of main.units.flatMap((u) => u.files).flatMap((f) => model.topLevelSymbols(f)))
+      if (!top.has(sym.path) && sym.kind !== "key") top.set(sym.path, sym);
+    const named = shown?.names.map((n) => top.get(n)).find((s) => s !== undefined);
+    const callee = signature(texts, named ?? mainTop);
+    if (usage && callee) {
+      appId = reuse("grp", "your-app");
+      if (!stored.has(appId)) {
+        nodes.push({
+          id: appId,
+          label: "Your app",
+          role: "system",
+          parent: "repo",
+          summary: todo(`one line: how an app uses ${repoName}, in plain words.`),
+          anchors: [usage],
+        });
+        edges.push({
+          id: ids.get("edge", `your-app-${slugOf(repoName)}`),
+          from: appId,
+          to: main.service,
+          kind: "calls",
+          label: todo("1-4 words: what the app calls (for example: ky.get(), ky.post())"),
+          anchors: [usage, callee],
+        });
+      }
+      const system = views[0]!;
+      if (system.type === "graph") system.include = [appId, ...(system.include ?? [])];
+      notes.push(
+        `${repoName} looks like a library (no program to run, no web server or command line): "Your app" stands for the code that calls it`,
+      );
+    }
+  }
+
   const steps: PatchTourStep[] = [];
   const nextId = () => `t${steps.length + 1}`;
   const otherServices = insides.filter((i) => i !== main).map((i) => baseName(i.root));
@@ -1621,7 +1774,7 @@ export function draftRepo(input: DraftInput): Draft {
       model,
       nextId(),
       systemViewId,
-      [main.service],
+      appId ? [main.service, appId] : [main.service],
       note(
         todo("what the project is, as a plain statement anyone can follow"),
         todo("its language, its kind and what it is for, from the README; no code names."),
@@ -1629,7 +1782,9 @@ export function draftRepo(input: DraftInput): Draft {
           ? todo(
               `who uses it and how (${plainList(inbound.map((s) => s.label))}), in one sentence.`,
             )
-          : todo("who uses it and how, in one sentence."),
+          : appId
+            ? todo("how an app uses it (Your app): what the app calls, in one sentence.")
+            : todo("who uses it and how, in one sentence."),
         otherServices.length > 0
           ? todo(
               `what each of the other services does, one short sentence each: ${nameList(otherServices, 10)}.`,
