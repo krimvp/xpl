@@ -50,6 +50,8 @@ export interface GraphNode {
   tech?: string;
   /** The view that shows what is inside it (`Node.opens`). */
   opens?: string;
+  /** It opens a map, whose boxes can be shown inside it on this one (`expandInPlace`). */
+  expandable?: boolean;
 }
 
 /**
@@ -549,7 +551,10 @@ export function deriveGraph(
     if (node.symbolKind !== undefined) out.symbolKind = node.symbolKind;
     if (node.role !== undefined) out.role = node.role;
     if (node.tech !== undefined) out.tech = node.tech;
-    if (node.opens !== undefined) out.opens = node.opens;
+    if (node.opens !== undefined) {
+      out.opens = node.opens;
+      if (model.view(node.opens)?.type === "graph") out.expandable = true;
+    }
     const parent = finalParent.get(id);
     if (parent !== undefined) out.parent = parent;
     return out;

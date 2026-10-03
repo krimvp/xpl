@@ -96,7 +96,9 @@ added and removed lines, a "Before" pane, New and Changed badges on the map, and
 An overview starts at the top, like the C4 model: a system map with your service, who uses it, and what it
 relies on (databases, caches, queues, other systems' APIs, each drawn with its own shape), then the inside of
 each service (its parts, and which part talks to which outside system), then the code. A box with `opens`
-zooms into the next level; a trail above the map leads back up. `xpl draft repo` drafts both levels and finds
+zooms into the next level, or shows that level inside itself on the same map; a trail above the map leads
+back up. Every box has an icon for what it is: a person, a service, a component, a database, an outside
+system, or a folder, a file, a class or a function. `xpl draft repo` drafts both levels and finds
 the outside systems from the import lines. The text follows the same order: what each part is for, in plain
 words, before any code name (`xpl lint` flags notes that are long or lean on code names).
 

@@ -711,7 +711,7 @@ An overview reads top-down, like the C4 model: first a **system map** (the servi
 
 - `role`: what the box is. `person`, `system`, `service`, `component`, `database`, `cache`, `queue`, `storage` or `external`. The viewer gives each its own shape (a cylinder for a database, a dashed box for something outside the repo) and names the role or the `tech` on the box instead of the kind of code.
 - `tech`: the technology in 1-3 words ("PostgreSQL", "REST API", "Go service").
-- `opens`: the view that shows what is inside the box. The reader zooms in with the button on the box (or a double-click), and a trail above the map leads back up.
+- `opens`: the view that shows what is inside the box. The reader zooms in with the button on the box (or a double-click), and a trail above the map leads back up. When that view is a map, the reader can also show its boxes inside this one, on the same map ("Show the inside here"): the parts of a service are drawn in its box, with their arrows to the outside systems. Nothing is stored, so one system map serves both the executive picture and the nested one.
 
 A box for something outside the repo is a group with a `role` and **no `members`**: it is not code of the repo. Anchor it at the code that talks to it (where its client is built, where its address is configured). An `llm` edge to it counts that code as the evidence at its end, so one anchor can be the evidence at both ends. `role`, `tech` and `opens` also go on overlays (`dir:`, `file:`): `{"id": "dir:services/api", "role": "service", "opens": "view:api-inside"}`. `null` clears each.
 

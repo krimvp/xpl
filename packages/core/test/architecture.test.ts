@@ -6,7 +6,9 @@
 import { describe, expect, it } from "vitest";
 import {
   applyPatch,
+  canExpandInPlace,
   deriveGraph,
+  expandInPlace,
   ExplainerModel,
   parentLevel,
   validateExplainer,
@@ -227,5 +229,36 @@ describe("zoom levels", () => {
     });
     const model = new ExplainerModel(ex, w.model);
     expect(zoomTrail(model, "view:inside").map((l) => l.view.id)).toEqual(["view:system"]);
+  });
+});
+
+describe("opening a box in place", () => {
+  it("adds the boxes of the view it opens to this one, without changing the view", () => {
+    const ex = applied();
+    const model = new ExplainerModel(ex, w.model);
+    const system = ex.views.find((v) => v.id === "view:system") as GraphView;
+    expect(canExpandInPlace(model, "grp:app")).toBe(true);
+    expect(canExpandInPlace(model, "grp:db")).toBe(false);
+    expect(expandInPlace(system, model, new Set())).toBe(system);
+    const opened = expandInPlace(system, model, new Set(["grp:app"]));
+    expect(opened.include).toEqual(["grp:app", "grp:db", F.runner, F.queue, F.worker, F.metrics]);
+    expect(system.include).toEqual(["grp:app", "grp:db"]);
+    // the parts are members of the service: drawn inside its box, their arrows cross its border
+    const graph = deriveGraph(opened, model);
+    expect(graph.nodes.find((n) => n.id === F.queue)!.parent).toBe("grp:app");
+    expect(graph.nodes.find((n) => n.id === "grp:app")!.container).toBe(true);
+    expect(graph.edges.filter((e) => e.stored).map((e) => [e.from, e.to])).toEqual([
+      [F.queue, "grp:db"],
+      [F.worker, "grp:db"],
+    ]);
+    // the derived graph says which boxes can be opened in place
+    expect(deriveGraph(system, model).nodes.find((n) => n.id === "grp:app")!.expandable).toBe(true);
+  });
+
+  it("ignores a box the view does not show", () => {
+    const ex = applied();
+    const model = new ExplainerModel(ex, w.model);
+    const inside = ex.views.find((v) => v.id === "view:inside") as GraphView;
+    expect(expandInPlace(inside, model, new Set(["grp:app"]))).toBe(inside);
   });
 });

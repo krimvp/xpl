@@ -27,6 +27,10 @@ export interface LayeredEdge {
   to: string;
   /** The size of the label, when the arrow has one: dagre keeps room for it between the layers. */
   label?: { width: number; height: number };
+  /** How many layers the arrow spans at least (default 1). */
+  minlen?: number;
+  /** How much dagre tries to keep the arrow short and straight (default 1). */
+  weight?: number;
 }
 
 export interface LayeredOptions {
@@ -51,6 +55,17 @@ export interface LayeredResult {
    * boxes), and the centre of its label.
    */
   routes: Map<string, { via: Point[]; label?: Point }>;
+}
+
+/**
+ * The layer index of each box (0 = the first layer), read off the positions: dagre puts the centres of the
+ * boxes of one layer on one line.
+ */
+export function layerIndex(result: LayeredResult, direction: Direction): Map<string, number> {
+  const { main } = axes(direction);
+  const centre = (b: Box) => Math.round(main === "x" ? b.x + b.width / 2 : b.y + b.height / 2);
+  const lines = [...new Set([...result.boxes.values()].map(centre))].sort((a, b) => a - b);
+  return new Map([...result.boxes].map(([id, box]) => [id, lines.indexOf(centre(box))]));
 }
 
 /** Space kept free around an arrow's label along the arrow. */
@@ -82,8 +97,8 @@ export function layered(
       edge.from,
       edge.to,
       {
-        minlen: 1,
-        weight: 1,
+        minlen: edge.minlen ?? 1,
+        weight: edge.weight ?? 1,
         labelpos: "c",
         // room around the label, so that the arrow shows on both sides of it
         width: edge.label ? edge.label.width + LABEL_AIR : 0,
@@ -194,6 +209,7 @@ export function orthogonalRoute(
   via: readonly Point[],
   ports: { from: number; to: number },
   direction: Direction,
+  sides: { from?: Side; to?: Side } = {},
 ): Point[] {
   const { main, cross } = axes(direction);
   const lo = (b: Box) => (main === "x" ? b.x : b.y);
@@ -201,8 +217,10 @@ export function orthogonalRoute(
   const centre = (b: Box) => (main === "x" ? b.x + b.width / 2 : b.y + b.height / 2);
   const first = via[0] ?? at(main, centre(to), ports.to);
   const last = via[via.length - 1] ?? at(main, centre(from), ports.from);
-  const start = at(main, first[main] >= centre(from) ? hi(from) : lo(from), ports.from);
-  const end = at(main, last[main] <= centre(to) ? lo(to) : hi(to), ports.to);
+  const fromSide = sides.from ?? (first[main] >= centre(from) ? "end" : "start");
+  const toSide = sides.to ?? (last[main] <= centre(to) ? "start" : "end");
+  const start = at(main, fromSide === "end" ? hi(from) : lo(from), ports.from);
+  const end = at(main, toSide === "start" ? lo(to) : hi(to), ports.to);
   const points = [start, ...via, end];
   const out: Point[] = [start];
   for (let i = 1; i < points.length; i++) {
