@@ -1,5 +1,5 @@
 /**
- * Graph view: `DerivedGraph` -> ELK layout (async) -> our own SVG inside a pan/zoom canvas.
+ * Graph view: `DerivedGraph` -> layered layout (graphLayout.ts, async) -> our own SVG inside a pan/zoom canvas.
  *
  * Every clickable piece is a `<g data-element-id="...">`: nodes and containers (containers nest their
  * children so a click on a child never also selects the container), derived and stored edges, stubs

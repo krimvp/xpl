@@ -45,7 +45,10 @@ between two commits. For a change, `xpl change` records the diff in the explaine
    file (sharing, presenting, offline; the default in cloud sessions).
 5. **Editor: CodeMirror 6**, not Monaco. Read-only viewing plus line decorations is exactly CM6's model;
    Monaco's workers and ~5 MB don't fit a single-file bundle.
-6. **Layout: elkjs** (layered, compound nodes → containers) plus our own SVG with stable element IDs.
+6. **Layout: dagre** (`@dagrejs/dagre`, MIT; layered) plus our own SVG with stable element IDs. Containers are
+   laid out inside-out: each container's children as a level of their own, then the container as one box of
+   the level above; edges get right-angled routes, spread ports and separate tracks (`layout/layered.ts`).
+   (elkjs, the first choice, was replaced for its EPL-2.0 licence; dagre is about 40 KB against 1.6 MB.)
    Sequence diagrams use a small custom layout (lifelines are trivial). No Mermaid, no D2.
 7. **Lazy explanations** are realised by the skill, and asynchronously: views get summaries for what they
    show; other nodes are explained on `expand`. The viewer cannot generate text itself. Its "Explain this"
@@ -73,7 +76,7 @@ packages/
   indexer/  @xpl/indexer  file discovery, tree-sitter language packs (WASM), heuristic resolver, SCIP importer.
   cli/      @xpl/cli      `xpl` command; esbuild bundle → packages/cli/dist/xpl.mjs, with dist/wasm/ (the
                           tree-sitter .wasm files) and dist/viewer.html (a copy of the built viewer) beside it
-  viewer/   @xpl/viewer   React 19 + CodeMirror 6 + elkjs; vite single-file build → packages/viewer/dist/index.html
+  viewer/   @xpl/viewer   React 19 + CodeMirror 6 + dagre; vite single-file build → packages/viewer/dist/index.html
 skill/code-explainer/   Claude skill: SKILL.md, README.md, reference/ (cli.md, patch-format.md, writing.md,
                         explain-change.md, examples/), bin/xpl (a symlink-safe node launcher for the built CLI)
 fixtures/{ts,py,go}-jobrunner/   tiny real repos + committed explainers in .explainer/
@@ -1056,11 +1059,12 @@ static bundle lists only the files it embeds, with a footer "N of M files includ
 CodeMirror editors (language modes for TS/TSX/JS, Python, Go, YAML and JSON; TOML and other text are plain).
 Both splits (diagram / panels, diagram / code) are resizable. Below 900 px the halves stack.
 
-- **Graph view:** elkjs `layered`, direction RIGHT, or DOWN when the pane is taller than wide; when the result
+- **Graph view:** a layered layout (dagre, `layout/layered.ts`), direction RIGHT, or DOWN when the pane is taller than wide; when the result
   would have to be scaled down to fit, the other direction is tried too (graphs of at most 150 elements) and
-  kept if it fits at least 8% larger. The direction is on the graph as `data-direction`. `hierarchyHandling:
-  INCLUDE_CHILDREN`, containers for nested includes, edges routed inside their lowest common container. If ELK
-  throws, a grid layout keeps the diagram usable (`data-fallback`). Edges are styled by resolution: precise,
+  kept if it fits at least 8% larger. The direction is on the graph as `data-direction`. Containers
+  for nested includes, laid out inside-out with room for their header; edges routed inside their lowest common
+  container, right-angled, with the ends that share a side of a box spread along it and the turns in one gap
+  between layers on separate tracks. If the layout throws, a grid layout keeps the diagram usable (`data-fallback`). Edges are styled by resolution: precise,
   heuristic (thinner and lighter), `llm`, `user`; stubs are dashed and lead to ghost boxes (at most 8 by
   default plus one "+N more" per direction, see §4.4; ghosts that stand for several elements have a dotted
   border and a list icon). Click selects (shift/ctrl/cmd adds, the background clears); clicking a ghost for
@@ -1088,7 +1092,7 @@ Both splits (diagram / panels, diagram / code) are resizable. Below 900 px the h
   as loops, frames (`loop`/`alt`/`opt`/`par`) as labelled rectangles around their steps, nested by
   `resolveFrames`. A step's hit area covers its label and arrow. When the view has moved down, a copy of the
   participant names stays at the top of the pane (`sticky-heads`).
-- **Flow view:** `processFlow` (§4.8) laid out by elkjs top to bottom: stages as boxes, decisions as diamonds,
+- **Flow view:** `processFlow` (§4.8) laid out by the same layered layout, top to bottom: stages as boxes, decisions as diamonds,
   terminals, and the labelled `next` branches. A box shows the step's label large and, under it, the actor:
   the step's `from`, plus "→ B" when a stage hands work to another part and that fits (`stageActor`); a
   decision or a terminal shows the actor alone, and so does a step inside one part (the Guide and the details
@@ -1371,7 +1375,7 @@ base anchors and a diff view, and example explainers for the three fixtures.
 - `GraphView.layout` (hand-pinned positions) is validated and accepted in patches but the viewer never reads
   it, and `GraphView.hidden` is honoured by derivation but has no UI: hiding an edge or node is a patch
   (`xpl status --json` lists the derived edge ids).
-- elkjs runs on the main thread (the bundled build): laying out a very large graph blocks the page, so views
+- The layout runs on the main thread: laying out a very large graph blocks the page, so views
   should stay coarse (whole-repo views start at packages) and are expanded by hand.
 - No live reload: `xpl view` re-reads everything per request, but an open page needs a manual reload after
   `xpl apply`.
@@ -1405,7 +1409,7 @@ base anchors and a diff view, and example explainers for the three fixtures.
 **Next steps, roughly by value** (the review in `docs/review-2026-10-01.md` has the roadmap): an independent
 accuracy pass for change explainers; a word-level diff in rewritten lines; editable step titles and code in
 the viewer; live reload for `xpl view` (poll `/api/bundle`, or a server-sent event when the explainer file
-changes); a UI for hiding and pinning, or dropping the unused `layout` field; ELK in a Web Worker; more
+changes); a UI for hiding and pinning, or dropping the unused `layout` field; the layout in a Web Worker; more
 language packs (each needs `extract`, `classifySite`, `resolveModule`, and optionally a SCIP resolver);
 publishing the CLI and packaging the skill so that install is one step; a regeneration mode in the skill that
 walks `xpl status` on its own.

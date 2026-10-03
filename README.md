@@ -133,7 +133,7 @@ Go files, for one) keep their heuristic references and are named in a warning; t
 | `packages/core`        | `@xpl/core`: schema types and pure logic (anchors, graph derivation, validation, patches). Browser-safe. |
 | `packages/indexer`     | `@xpl/indexer`: file discovery, tree-sitter (WASM) language packs, heuristic resolver, SCIP import.      |
 | `packages/cli`         | `@xpl/cli`: the `xpl` command, bundled to `packages/cli/dist/xpl.mjs`.                                   |
-| `packages/viewer`      | `@xpl/viewer`: React + CodeMirror 6 + elkjs, built to one `index.html`.                                  |
+| `packages/viewer`      | `@xpl/viewer`: React + CodeMirror 6 + dagre, built to one `index.html`.                                  |
 | `skill/code-explainer` | The Claude skill: `SKILL.md`, CLI and patch references, worked examples, launcher.                       |
 | `fixtures/`            | Tiny real repos (a job runner in TS, Python and Go) with committed explainers.                           |
 | `docs/`                | Architecture, the original design brief, images.                                                         |
