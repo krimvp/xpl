@@ -240,3 +240,87 @@ All four authors did the accuracy pass themselves, since no subagent tool was av
    line, fix the pane header symbol, contrast without opacity, a focus ring, header overflow.
 6. **L3 layout (A6, senior §5):** a code-first layout with an outline flow that follows the selection, and recursion
    notation. This is the largest piece and can come last.
+
+## 10. After the fixes
+
+The findings above were worked through in three rounds on `main` (`fbc1126..1f24d8a`: 73 commits, 154 files).
+Each work stream ran in its own branch with typecheck, unit and e2e tests, and was merged with the conflicts
+resolved by hand. The final state passes typecheck, 2243 unit tests and 237 e2e tests.
+
+**Round 1** (seven branches) took on every finding in sections 3 and 5:
+
+| Area                       | Findings                 | What changed                                                                                                                                                                                                                                                                                                                                                     |
+| -------------------------- | ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Trust                      | B1                       | `xpl bundle` re-resolves every anchor and refuses drifted or missing ones (`--allow-drift` writes the page with a banner); code that only moved follows its new lines. `xpl view` re-resolves too. xpl's own explainer was refreshed, with plain headings for every step.                                                                                           |
+| Present                    | B2, M4                   | The diagram keeps at least 200 px; the caption steps down in size first. Far-apart places in one file get a pane each in Present and a "range 1 / 2" stepper in Read. One split and one caption size per tour. ← after a detour returns to the step; Esc and Back keep the address and the screen in step; focus moves into and out of a talk.            |
+| Pictures and framing       | M1-M3, M5                | One framing rule (`frameView`) for guide pictures, canvases and Present: whole when readable, else the focus with its neighbours, else "+N more". Fit all really fits. The selection stays in view on resize. Self-loops are drawn; edge labels sit above lines; duplicate derived edges are merged.                                                       |
+| Details and code           | M6, M7, M11, M14         | The caret lights the innermost drawn box, concepts on top. "Called from" and "Added / Edited by this change · +n −m · Show the change" sit unfolded. A name in the code offers "Who calls it" and "Go to definition". The pane header names the function in focus. Headers no longer overflow.                                                          |
+| Words and accessibility    | M9, M10, M12, M13, M15   | The Key covers outside boxes, icons, the "see inside" buttons and counts, in the Map, Flow and Sequence. `scope.audience` shows under the title. Dimmed code uses a palette that stays at 4.5:1 or more per syntax colour. A focus ring of its own, reading order, label-first names, no nested buttons. Short screens, phones and tablets.            |
+| Drafts                     | A1                       | No outside systems from imports in comments; type tests count as tests; a library gets "Your app"; change drafts start at real code and name only existing ids; `draft path` starts from inherited methods, takes several entries, leaves out type conversions; recursive self-calls are kept in the index.                                          |
+| Lint and docs              | A2-A5, M8                | Literals are not code names; anchored claims pass `absolute-word`; labels match by stem; hints name the competing limit. `xpl lint` exits 1 on any finding (`--warn-only` to relax). Reader checks: `untitled-step`, `change-not-shown`, `far-ranges`, `long-talk-note`, `big-map`, `crowded-map`. One bundle default; `reference/quick.md`. A step title never falls back to a code label. |
+
+**Round 2** added the algorithm-level pieces (A6): flow links that recurse ("one level down") and return ("up one
+level"), `via` edges that reach C through B, a warning when a flow step is drawn from a part that does not hold
+its code, and a code-first layout for views whose steps all sit in one file. The three explainers were
+corrected (section 6), and xpl's explainer was refreshed again.
+
+**Re-check.** Three agents re-ran the six personas' tasks on rebuilt bundles and checked every round-1 finding
+(reports in [review-2026-10-03-real-runs/](review-2026-10-03-real-runs/), `recheck-*.md`):
+
+| Personas              | Fixed  | Partly | Not fixed | Regressed |
+| --------------------- | ------ | ------ | --------- | --------- |
+| Presenter, designer   | 29     | 8      | 1         | 0         |
+| Staff eng., newcomer  | 20     | 7      | 9         | 0         |
+| Reviewer, manager     | 24     | 12     | 1         | 0         |
+| **All**               | **73** | **27** | **11**    | **0**     |
+
+| Persona and level                | Round 1 | Round 2 |
+| -------------------------------- | ------- | ------- |
+| Newcomer, L1 ky                  | 3.5     | 4       |
+| Newcomer, xpl itself             | 2.5     | 4       |
+| Staff engineer, L3 chi           | 3.5     | 4       |
+| Staff engineer, L2 itsdangerous  | 4       | 4.5     |
+| PR reviewer, L4                  | 4       | 4.5     |
+| Presenter, L3 chi                | 2.5     | 3.5     |
+| Presenter, L4                    | 3.5     | 4       |
+| Presenter, any bundle at 150%    | 1.5     | 2.5     |
+| Manager, L1 ky                   | 3.5     | 4.5     |
+| Manager, phone                   | 3       | 4       |
+| Designer, accessibility          | 3       | 4       |
+
+Task times dropped where the fixes aimed: "who calls the retry code" took about 1 minute (was 6), the chi proof
+about 10 minutes (was 25), and finding where params are pushed and popped about 2 (was 10). xpl's bundle went from
+16.9 MB to 5.9 MB, with its index stored packed.
+
+**Round 3** worked through what the re-check left open or found new:
+
+- **Present and framing:** a flow step shows all of its focus (down to 10 px when it must), neighbours only at the
+  promised size, and a box is never larger than its pane. Sequences keep both participant heads with each
+  message. Wrapped code breaks at punctuation (mid-word breaks at 1280 px: 7/2/2 → 0/0/0). Fit uses what is drawn
+  (xpl's map 0.67 → 0.89). A guide picture grows rather than cut a box its step names. Busy flow ends are
+  drawn again under each branch. Fit all and "+N more" join the zoom buttons in short panes. Guide pictures fade
+  what their frame cuts.
+- **Code panes:** "Who calls it" opens the callers beside the code when the topic column is folded. The
+  code-first outline has a keyboard-resizable splitter and lists the steps one arrow away. Jumps land mid-pane, and
+  the header names the function at the caret. Entering the Flow keeps only the flow's own steps picked. The xpl
+  Code tab opens in about 0.65 s (was 1.48 s).
+- **Labels:** titles keep code spans (`*`); a notice says when a box opened the Flow tab; Related files cards
+  are quieter; a flow's shared owner is named once; long flow labels wrap.
+- **Tool:** `change-not-shown` needs a step that shows the code; `far-ranges` fires only past what Present can
+  show; a `return` may leave out its step (back to the caller); `xpl status --view` lists what a map draws; a
+  `self-explainer` unit test fails when xpl's own explainer drifts.
+
+**Still open, known:**
+
+- chi step 9 at 1280×720: the second of two arrows gets "+1 more" instead of being framed.
+- ky's ten-question retry flow: Fit all is still about 4 px (the lines no longer converge).
+- After "Show the change", one box of the ky-change map is still cut at the edge (was 4).
+- `code-heavy` still counts short literal words in code spans (`d`, `near`) as code names.
+- A flow step that ends up with no arrow in (chi `match:17` after its returns lost their step) gets no warning.
+- `long-talk-note` decides what a talk is from the tour's id or title (the schema has no talk flag).
+- xpl's own explainer has about 330 lint warnings, mostly long sentences in older text, so `xpl lint xpl`
+  exits 1. The `self-explainer` test checks drift, not lint.
+- The drift test means every change to code that xpl's explainer anchors must refresh it in the same change.
+- Groups that contain each other overflow the stack in `ExplainerModel.buildNode`. Validation rejects such
+  cycles, so only a hand-edited file can reach it.
+- Round 3 was checked by tests and the agents' own screenshots, not by a fourth persona pass.
