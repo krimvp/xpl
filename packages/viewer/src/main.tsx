@@ -17,6 +17,7 @@ if (loaded.ok) {
   const store = new ViewerStore(loaded.bundle, readLaunchParams());
   installTestHooks(store);
   watchUrl(store, loaded.bundle.mode);
+  store.watchExplainer();
   root.render(
     <StrictMode>
       <App store={store} />

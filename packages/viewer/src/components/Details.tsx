@@ -26,10 +26,11 @@ export function Details({ reader = false }: { reader?: boolean }) {
   const derived = useDerived();
   const selection = state.selection;
   const [chosen, setChosen] = useState<string | undefined>();
-  const [explain, setExplain] = useState<{ id: string; phase: ExplainPhase }>({
+  const [explain, setExplain] = useState<{ id: string; phase: ExplainPhase; note?: string }>({
     id: "",
     phase: { kind: "idle" },
   });
+  const [feedback, setFeedback] = useState({ id: "", text: "" });
   const activeId =
     chosen !== undefined && selection.includes(chosen) ? chosen : selection[selection.length - 1];
 
@@ -82,8 +83,26 @@ export function Details({ reader = false }: { reader?: boolean }) {
       )}
 
       {!reader && (
+        <textarea
+          className="feedback"
+          data-testid="feedback"
+          aria-label="What should Claude change?"
+          placeholder="What should Claude change? Empty: explain this in more depth."
+          rows={2}
+          value={feedback.id === info.id ? feedback.text : ""}
+          onChange={(event) => setFeedback({ id: info.id, text: event.target.value })}
+        />
+      )}
+      {!reader && (
         <div className="actions">
-          <ExplainButton id={info.id} onPhase={(phase) => setExplain({ id: info.id, phase })} />
+          <ExplainButton
+            id={info.id}
+            note={feedback.id === info.id ? feedback.text : ""}
+            onPhase={(phase, note) => {
+              setExplain({ id: info.id, phase, ...(note ? { note } : {}) });
+              if (phase.kind === "queued") setFeedback({ id: "", text: "" });
+            }}
+          />
           {info.stub && !info.targets && (
             <button type="button" className="btn" onClick={() => store.expandStub(info.stub!)}>
               Add {info.stub.ghostLabel} to the view
@@ -102,7 +121,9 @@ export function Details({ reader = false }: { reader?: boolean }) {
         </div>
       )}
 
-      {!reader && explain.id === info.id && <ExplainNote id={info.id} phase={explain.phase} />}
+      {!reader && explain.id === info.id && (
+        <ExplainNote id={info.id} phase={explain.phase} note={explain.note} />
+      )}
 
       {selection.length > 1 && (
         <div className="selected-chips" aria-label="Selected elements">
@@ -254,28 +275,38 @@ type ExplainPhase =
   { kind: "idle" } | { kind: "queued" } | { kind: "command" } | { kind: "error"; message: string };
 
 /**
- * "Explain this": with a server the request is queued (`xpl status` shows the queue and the skill
- * drains it); without one the button shows the command to run in Claude (see ExplainNote).
+ * "Explain this", or with feedback typed above it "Send to Claude": with a server the request (and the
+ * feedback as its note) is queued (`xpl status` shows the queue and the skill drains it); without one
+ * the button shows the command to run in Claude (see ExplainNote).
  */
-function ExplainButton({ id, onPhase }: { id: string; onPhase: (phase: ExplainPhase) => void }) {
+function ExplainButton({
+  id,
+  note,
+  onPhase,
+}: {
+  id: string;
+  note: string;
+  onPhase: (phase: ExplainPhase, note: string) => void;
+}) {
   const store = useStore();
+  const text = note.trim();
   return (
     <button
       type="button"
       className="btn is-primary"
       onClick={() => {
-        store.requestExplain(id).then(
-          (result) => onPhase({ kind: result }),
-          (error: unknown) => onPhase({ kind: "error", message: messageOf(error) }),
+        store.requestExplain(id, text).then(
+          (result) => onPhase({ kind: result }, text),
+          (error: unknown) => onPhase({ kind: "error", message: messageOf(error) }, text),
         );
       }}
     >
-      Explain this
+      {text ? "Send to Claude" : "Explain this"}
     </button>
   );
 }
 
-function ExplainNote({ id, phase }: { id: string; phase: ExplainPhase }) {
+function ExplainNote({ id, phase, note }: { id: string; phase: ExplainPhase; note?: string }) {
   const [copied, setCopied] = useState(false);
   useEffect(() => {
     if (!copied) return;
@@ -283,14 +314,15 @@ function ExplainNote({ id, phase }: { id: string; phase: ExplainPhase }) {
     return () => clearTimeout(timer);
   }, [copied]);
 
-  const command = explainCommand(id);
+  const command = explainCommand(id, note);
   switch (phase.kind) {
     case "idle":
       return null;
     case "queued":
       return (
         <p className="note explain-note" role="status">
-          Queued. Claude picks the request up the next time it runs the code-explainer skill.
+          Queued. Run <code>/code-explainer feedback</code> in Claude Code: this page updates by
+          itself once the change is applied.
         </p>
       );
     case "error":

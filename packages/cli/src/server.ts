@@ -4,6 +4,8 @@
  *   GET  /                    the viewer HTML with the bundle injected (`server: { api: "/api" }`,
  *                             `files` = the files the explainer references; others are fetched lazily)
  *   GET  /api/bundle          the same bundle as JSON
+ *   GET  /api/explainer       the explainer alone, with an ETag; 304 when If-None-Match still matches (the
+ *                             viewer polls it, so changes made by `xpl apply` show up without a reload)
  *   GET  /api/file?path=      text of one indexed file (text/plain); 400 for a malformed path,
  *                             404 for anything that is not in the index
  *   GET  /api/base-file?path= the code before the change of one changed file (text/plain): only for the
@@ -22,6 +24,8 @@
  * It binds to 127.0.0.1 by default. Against DNS rebinding and cross-site writes it checks the Host
  * header (loopback binds), and requires an application/json body and a same-origin Origin for PUT/POST.
  */
+import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import {
@@ -232,6 +236,18 @@ export async function startViewServer(options: ViewServerOptions): Promise<ViewS
     if (pathname === `${API}/bundle`) {
       allow("GET", "HEAD");
       sendJson(req, res, 200, await bundleOf());
+      return;
+    }
+    if (pathname === `${API}/explainer`) {
+      allow("GET", "HEAD");
+      const text = readFileSync(explainerPath, "utf8");
+      const etag = `"${createHash("sha1").update(text).digest("hex")}"`;
+      if (req.headers["if-none-match"] === etag) {
+        res.writeHead(304, { ETag: etag, "Cache-Control": "no-store" });
+        res.end();
+        return;
+      }
+      send(req, res, 200, text, "application/json; charset=utf-8", { ETag: etag });
       return;
     }
     if (pathname === `${API}/file`) {

@@ -168,6 +168,9 @@ export interface ViewerState {
   serverMode: boolean;
 }
 
+/** How often `xpl view` pages look for changes to the explainer on disk. */
+const WATCH_INTERVAL_MS = 2000;
+
 /** Delay before queued edits are sent to the server (coalesces rapid toggling and typing). */
 const SAVE_DELAY_MS = 250;
 
@@ -974,15 +977,73 @@ export class ViewerStore {
    * "Explain this": queues a request on the server (`"queued"`); without one the caller shows the
    * command to run instead (`"command"`). Rejects with a readable message when the server refuses.
    */
-  async requestExplain(id: ElementId): Promise<"queued" | "command"> {
+  async requestExplain(id: ElementId, note?: string): Promise<"queued" | "command"> {
     if (!this.api) return "command";
+    const text = note?.trim();
     await this.api.postRequest({
       kind: "expand",
       id,
+      ...(text ? { note: text } : {}),
       ...(this.state.viewId !== undefined ? { view: this.state.viewId } : {}),
       label: this.state.model.label(id),
     });
     return "queued";
+  }
+
+  // ─── Changes made on disk (Claude's `xpl apply`) ──────────────────────────────────────────────
+
+  /**
+   * Under `xpl view`, polls `GET {api}/explainer` and shows what changed on disk without a reload, so
+   * feedback given with "Explain this" comes back on the page once Claude has applied it. Stops for
+   * good on a server that has no such endpoint. Returns the function that stops it.
+   */
+  watchExplainer(intervalMs = WATCH_INTERVAL_MS): () => void {
+    const api = this.api;
+    if (!api) return () => undefined;
+    let etag: string | undefined;
+    let busy = false;
+    const poll = async () => {
+      if (busy || (typeof document !== "undefined" && document.hidden)) return;
+      busy = true;
+      try {
+        const fresh = await api.getExplainer(etag);
+        if (fresh) {
+          etag = fresh.etag;
+          this.adoptExplainer(fresh.explainer);
+        }
+      } catch (error) {
+        if (/^404\b/.test(messageOf(error))) stop();
+      } finally {
+        busy = false;
+      }
+    };
+    const timer = setInterval(() => void poll(), intervalMs);
+    const stop = () => clearInterval(timer);
+    return stop;
+  }
+
+  /**
+   * Shows `explainer` (a newer version from disk) in place of the current one, keeping where the user
+   * is: the view, the tour step and the selection, as far as they still exist. Skipped while edits made
+   * here are not saved yet: they would be lost, and the next poll after the save brings both.
+   */
+  adoptExplainer(explainer: Explainer): boolean {
+    if (this.state.dirty || this.pending.size > 0 || this.saving) return false;
+    if (serializeExplainer(explainer) === serializeExplainer(this.state.explainer)) return false;
+    const model = this.modelOf(explainer);
+    const { viewId, tour, applied } = this.state;
+    const tourNow = tour ? model.tour(tour.tourId) : undefined;
+    const selection = this.state.selection.filter((id) => model.hasElement(id));
+    this.set({
+      explainer,
+      model,
+      viewId: viewId !== undefined && model.view(viewId) ? viewId : model.views[0]?.id,
+      tour:
+        tour && tourNow ? { ...tour, step: clampStep(tour.step, tourNow.steps.length) } : undefined,
+      applied: applied && model.tour(applied.tourId) ? applied : undefined,
+      ...(selection.length !== this.state.selection.length ? { selection } : {}),
+    });
+    return true;
   }
 
   /** The explainer as pretty JSON, including the view and tour edits made in this session. */

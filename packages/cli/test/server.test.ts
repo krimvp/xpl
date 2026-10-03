@@ -3,7 +3,7 @@ import { request } from "node:http";
 import { createServer as createNetServer } from "node:net";
 import { join } from "node:path";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
-import { BUNDLE_SCHEMA, parseBundle, type ViewerBundle } from "@xpl/core";
+import { BUNDLE_SCHEMA, parseBundle, type Explainer, type ViewerBundle } from "@xpl/core";
 import { run } from "../src/cli.js";
 import { DEFAULT_PORT } from "../src/commands/view.js";
 import { startViewServer, type ViewServer } from "../src/server.js";
@@ -790,6 +790,31 @@ describe("xpl view", () => {
     });
     const saved = readJson(dir, ".explainer/demo.explainer.json");
     expect(saved.concepts.map((c: any) => c.id)).toContain("concept:queue");
+  });
+
+  it("GET /api/explainer answers 304 until the explainer on disk changes", async () => {
+    const dir = cloneDir(demo);
+    const view = await serve(dir);
+    const first = await fetch(`${view.url}/api/explainer`);
+    expect(first.status).toBe(200);
+    const etag = first.headers.get("etag")!;
+    expect(etag).toMatch(/^"[0-9a-f]{40}"$/);
+    expect(((await first.json()) as Explainer).concepts.map((c) => c.id)).toEqual([
+      "concept:retry-policy",
+    ]);
+    const same = await fetch(`${view.url}/api/explainer`, { headers: { "If-None-Match": etag } });
+    expect(same.status).toBe(304);
+
+    const patch = { concepts: [{ id: "concept:retry-policy", summary: "Shorter now." }] };
+    expect(
+      (await invoke(["apply", "demo", "-"], { cwd: dir, stdin: JSON.stringify(patch) })).code,
+    ).toBe(0);
+    const changed = await fetch(`${view.url}/api/explainer`, {
+      headers: { "If-None-Match": etag },
+    });
+    expect(changed.status).toBe(200);
+    expect(changed.headers.get("etag")).not.toBe(etag);
+    expect(((await changed.json()) as Explainer).concepts[0]!.summary).toBe("Shorter now.");
   });
 
   it("serves the working tree: edits to a file show up in /api/file", async () => {
