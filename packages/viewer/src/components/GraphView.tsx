@@ -1,5 +1,5 @@
 /**
- * Graph view: `DerivedGraph` -> ELK layout (async) -> our own SVG inside a pan/zoom canvas.
+ * Graph view: `DerivedGraph` -> layered layout (graphLayout.ts, async) -> our own SVG inside a pan/zoom canvas.
  *
  * Every clickable piece is a `<g data-element-id="...">`: nodes and containers (containers nest their
  * children so a click on a child never also selects the container), derived and stored edges, stubs
@@ -22,11 +22,16 @@ import {
   type KeyboardEvent,
   type MouseEvent,
   type PointerEvent,
+  type ReactNode,
   type WheelEvent,
 } from "react";
 import {
   badgeWidth,
   changeText,
+  CYLINDER_LID,
+  CYLINDER_ROLES,
+  ICON_ROOM,
+  ZOOM_SIZE,
   EDGE_BOUNDS_PAD,
   labelWidth,
   layoutGraphFitting,
@@ -43,6 +48,7 @@ import { changeMarks, changeOf } from "../diff.js";
 import { useStore, useViewerState } from "../hooks.js";
 import { readerBadge } from "../readerWords.js";
 import { GhostTargetList } from "./GhostTargets.js";
+import { BoxIcon, iconName } from "./icons.js";
 import {
   PanZoom,
   PRESENT_FIT_PADDING,
@@ -103,6 +109,52 @@ const BOUNDS_PAD = EDGE_BOUNDS_PAD;
 /** The same for a container, which holds edges whose padded boxes may stick out of its body. */
 const CONTAINER_BOUNDS_PAD = 40;
 
+/** How far the invisible bounds rect of an edge reaches from its anchor, each way (see EdgeShape). */
+function edgeReach(edge: LayoutEdge): { x: number; y: number } {
+  const box = routeBox(edge.points, edge.label);
+  return {
+    x: Math.max(edge.anchor.x - box.x, box.x + box.width - edge.anchor.x) + BOUNDS_PAD,
+    y: Math.max(edge.anchor.y - box.y, box.y + box.height - edge.anchor.y) + BOUNDS_PAD,
+  };
+}
+
+const containerPads = new WeakMap<LayoutNode, number>();
+/**
+ * The padding of a container's bounds rect: at least CONTAINER_BOUNDS_PAD, and enough to hold the bounds of
+ * everything drawn in it (its edges, and its children's own bounds), the same on every side, so that the
+ * centre of the container's group stays the centre of its box.
+ */
+function containerPad(node: LayoutNode): number {
+  const known = containerPads.get(node);
+  if (known !== undefined) return known;
+  let pad = CONTAINER_BOUNDS_PAD;
+  const fit = (left: number, top: number, right: number, bottom: number) => {
+    pad = Math.max(pad, -left, -top, right - node.width, bottom - node.height);
+  };
+  for (const edge of node.edges) {
+    const reach = edgeReach(edge);
+    fit(
+      edge.anchor.x - reach.x,
+      edge.anchor.y - reach.y,
+      edge.anchor.x + reach.x,
+      edge.anchor.y + reach.y,
+    );
+  }
+  for (const child of node.children) {
+    if (child.children.length === 0) continue;
+    const inner = containerPad(child);
+    fit(
+      child.x - inner,
+      child.y - inner,
+      child.x + child.width + inner,
+      child.y + child.height + inner,
+    );
+  }
+  pad = Math.ceil(pad) + 1;
+  containerPads.set(node, pad);
+  return pad;
+}
+
 const additive = (event: MouseEvent | KeyboardEvent) =>
   event.shiftKey || event.metaKey || event.ctrlKey;
 
@@ -125,7 +177,7 @@ function canvasBounds(layout: GraphLayout): Box {
   const visit = (list: LayoutNode[], x: number, y: number) => {
     for (const node of list) {
       const at = { x: x + node.x, y: y + node.y };
-      const pad = node.children.length > 0 ? CONTAINER_BOUNDS_PAD : 0;
+      const pad = node.children.length > 0 ? containerPad(node) : 0;
       boxes.push({
         x: at.x - pad,
         y: at.y - pad,
@@ -416,11 +468,23 @@ function BoxShape({ node, marks }: { node: LayoutNode; marks: Marks }) {
   const container = node.children.length > 0;
   const still = useContext(Still);
   const select = (event: MouseEvent | KeyboardEvent) => store.click(node.id, additive(event));
-  const badgeText = reader ? readerBadge(node.badge) : node.badge;
+  const badgeText = reader || node.role ? readerBadge(node.badge) : node.badge;
   const badge = badgeWidth(badgeText ?? "");
+  // A box that opens a more detailed view zooms into it; while presenting, the tour decides what is shown.
+  const zoomable = node.opens !== undefined && !still && store.canZoomInto(node.id);
+  // opened in place: the boxes of the map it opens are drawn inside it, until the reader folds it back
+  const expandedHere = !still && store.isExpanded(node.id);
+  const expandable =
+    node.expandable === true && !container && !still && store.canExpandInPlace(node.id);
+  const showCollapse = container && !still && (!readOnly || expandedHere);
+  const zoom = () => store.zoomInto(node.id);
+  const role = node.role ? ` role-${node.role}` : "";
+  const textX = 14 + ICON_ROOM;
+  const icon = iconName(node);
+  const lid = node.role && CYLINDER_ROLES.has(node.role) && !container ? CYLINDER_LID : 0;
   return (
     <g
-      className={`node kind-${node.kindClass}${container ? " is-container" : ""}${stateClasses(node.id, marks)}`}
+      className={`node kind-${node.kindClass}${role}${container ? " is-container" : ""}${zoomable ? " is-zoomable" : ""}${stateClasses(node.id, marks)}`}
       data-element-id={still ? undefined : node.id}
       transform={`translate(${node.x} ${node.y})`}
       role={still ? undefined : "button"}
@@ -433,36 +497,44 @@ function BoxShape({ node, marks }: { node: LayoutNode; marks: Marks }) {
       }}
       onDoubleClick={(event) => {
         event.stopPropagation();
-        if (!readOnly) store.drillIn(node.id);
+        if (zoomable) zoom();
+        else if (!readOnly) store.drillIn(node.id);
       }}
       onKeyDown={(event) => activate(event, () => select(event))}
     >
       <title>
-        {!readOnly && store.canDrillIn(node.id)
-          ? `${node.label} (${node.badge}): double-click to open what it contains`
-          : `${node.label} (${node.badge})`}
+        {zoomable
+          ? `${node.label} (${node.badge}): double-click to see what is inside`
+          : !readOnly && store.canDrillIn(node.id)
+            ? `${node.label} (${node.badge}): double-click to open what it contains`
+            : `${node.label} (${node.badge})`}
       </title>
       {container && (
         <rect
           className="bounds"
-          x={-CONTAINER_BOUNDS_PAD}
-          y={-CONTAINER_BOUNDS_PAD}
-          width={node.width + 2 * CONTAINER_BOUNDS_PAD}
-          height={node.height + 2 * CONTAINER_BOUNDS_PAD}
+          x={-containerPad(node)}
+          y={-containerPad(node)}
+          width={node.width + 2 * containerPad(node)}
+          height={node.height + 2 * containerPad(node)}
         />
       )}
-      <rect className="box" width={node.width} height={node.height} rx={container ? 10 : 8} />
+      {node.role && !container ? (
+        <RoleBox role={node.role} width={node.width} height={node.height} />
+      ) : (
+        <rect className="box" width={node.width} height={node.height} rx={container ? 10 : 8} />
+      )}
       {container ? (
         <>
-          <text className="label" x={14} y={22}>
+          <BoxIcon name={icon} x={13} y={9} />
+          <text className="label" x={textX} y={22}>
             {node.label}
           </text>
           {badgeText && (
-            <Badge x={14 + labelWidth(node.label) + 8} y={9} text={badgeText} width={badge} />
+            <Badge x={textX + labelWidth(node.label) + 8} y={9} text={badgeText} width={badge} />
           )}
           {node.change && (
             <ChangePill
-              x={14 + labelWidth(node.label) + 8 + (badgeText ? badge + PILL_GAP : 0)}
+              x={textX + labelWidth(node.label) + 8 + (badgeText ? badge + PILL_GAP : 0)}
               y={9}
               change={node.change}
             />
@@ -476,22 +548,31 @@ function BoxShape({ node, marks }: { node: LayoutNode; marks: Marks }) {
           {node.children.map((child) => (
             <NodeShape key={child.id} node={child} marks={marks} />
           ))}
-          {!readOnly && (
+          {showCollapse && (
             <g
               className="collapse"
               role="button"
               tabIndex={0}
-              aria-label={`Collapse ${node.label}`}
+              aria-label={expandedHere ? `Fold ${node.label} back` : `Collapse ${node.label}`}
               data-collapse-id={node.id}
               transform={`translate(${node.width - 30} 8)`}
               onClick={(event) => {
                 event.stopPropagation();
-                store.collapse(node.id);
+                if (expandedHere) store.toggleExpanded(node.id);
+                else store.collapse(node.id);
               }}
               onDoubleClick={(event) => event.stopPropagation()}
-              onKeyDown={(event) => activate(event, () => store.collapse(node.id))}
+              onKeyDown={(event) =>
+                activate(event, () =>
+                  expandedHere ? store.toggleExpanded(node.id) : store.collapse(node.id),
+                )
+              }
             >
-              <title>Collapse: remove what is inside</title>
+              <title>
+                {expandedHere
+                  ? "Fold back: show it as one box again"
+                  : "Collapse: remove what is inside"}
+              </title>
               <rect width={20} height={18} rx={4} />
               <path d="M5 9h10" />
             </g>
@@ -502,15 +583,154 @@ function BoxShape({ node, marks }: { node: LayoutNode; marks: Marks }) {
         </>
       ) : (
         <>
-          <text className="label" x={14} y={badgeText || node.change ? 19 : node.height / 2 + 5}>
-            {node.label}
-          </text>
-          {badgeText && <Badge x={14} y={27} text={badgeText} width={badge} />}
-          {node.change && (
-            <ChangePill x={14 + (badgeText ? badge + PILL_GAP : 0)} y={27} change={node.change} />
-          )}
+          <LeafText node={node} x={textX} badgeText={badgeText} badge={badge} lid={lid} />
+          {/* centred on the text block beside it */}
+          <BoxIcon name={icon} x={13} y={lid + (node.height - lid) / 2 - 8} />
         </>
       )}
+      {zoomable && (
+        <CornerButton
+          className="zoom"
+          x={node.width - ZOOM_SIZE - 6 - (showCollapse ? 30 : 0)}
+          y={container ? 8 : node.height - ZOOM_SIZE - 6}
+          label={`See what is inside ${node.label}`}
+          title="See what is inside"
+          onPress={zoom}
+        >
+          {/* a magnifier with a plus: zoom in */}
+          <circle cx={9.5} cy={9.5} r={5} />
+          <path d="M13.2 13.2 L17.5 17.5 M7 9.5 H12 M9.5 7 V12" />
+        </CornerButton>
+      )}
+      {expandable && (
+        <CornerButton
+          className="expand-here"
+          x={node.width - ZOOM_SIZE - 6 - (zoomable ? ZOOM_SIZE + 4 : 0)}
+          y={node.height - ZOOM_SIZE - 6}
+          label={`Show the inside of ${node.label} here`}
+          title="Show the inside here"
+          onPress={() => store.toggleExpanded(node.id)}
+        >
+          {/* a box with boxes in it: open it on this map */}
+          <rect x={3.5} y={3.5} width={15} height={15} rx={2.5} />
+          <rect x={6.5} y={9} width={4} height={4} rx={1} />
+          <rect x={11.5} y={9} width={4} height={4} rx={1} />
+          <path d="M6.5 6.5h9" />
+        </CornerButton>
+      )}
+    </g>
+  );
+}
+
+/** The label, badge and change pill of a box that is not a container, centred under a cylinder's lid. */
+function LeafText({
+  node,
+  x,
+  badgeText,
+  badge,
+  lid,
+}: {
+  node: LayoutNode;
+  x: number;
+  badgeText: string | undefined;
+  badge: number;
+  lid: number;
+}) {
+  const two = Boolean(badgeText || node.change);
+  // A box of code keeps its fixed rows. An architecture box is taller (and a cylinder has a lid): the text
+  // block (label, gap, badge: 35 px; a label alone: 14 px) is centred in what is left.
+  const top = node.role
+    ? lid + (node.height - lid - (two ? 35 : 14)) / 2
+    : two
+      ? 6
+      : node.height / 2 - 8;
+  const labelY = top + 13;
+  const badgeY = node.role ? top + 19 : 27;
+  return (
+    <>
+      <text className="label" x={x} y={labelY}>
+        {node.label}
+      </text>
+      {badgeText && <Badge x={x} y={badgeY} text={badgeText} width={badge} />}
+      {node.change && (
+        <ChangePill x={x + (badgeText ? badge + PILL_GAP : 0)} y={badgeY} change={node.change} />
+      )}
+    </>
+  );
+}
+
+/**
+ * The outline of an architecture box (`Node.role`): a cylinder for what keeps data (a database, a cache, a
+ * file store), a pipe for a queue, a dashed box for a system outside the repo, a heavier box for a service.
+ * The main shape keeps the `box` class, so selection and hover style it like any box.
+ */
+function RoleBox({ role, width, height }: { role: string; width: number; height: number }) {
+  if (CYLINDER_ROLES.has(role as never)) {
+    const ry = CYLINDER_LID / 2 + 1;
+    const top = ry;
+    const bottom = height - ry;
+    const rx = width / 2;
+    return (
+      <>
+        <path
+          className="box"
+          d={`M0 ${top} A${rx} ${ry} 0 0 1 ${width} ${top} V${bottom} A${rx} ${ry} 0 0 1 0 ${bottom} Z`}
+        />
+        <path className="lid" d={`M0 ${top} A${rx} ${ry} 0 0 0 ${width} ${top}`} />
+      </>
+    );
+  }
+  if (role === "queue") {
+    const r = height / 2;
+    const ex = 7;
+    return (
+      <>
+        <path
+          className="box"
+          d={`M${ex} 0 H${width - ex} A${ex} ${r} 0 0 1 ${width - ex} ${height} H${ex} A${ex} ${r} 0 0 1 ${ex} 0 Z`}
+        />
+        <path className="lid" d={`M${width - ex} 0 A${ex} ${r} 0 0 0 ${width - ex} ${height}`} />
+      </>
+    );
+  }
+  return <rect className="box" width={width} height={height} rx={role === "person" ? 20 : 8} />;
+}
+
+/** A small button in the corner of a box: zoom into what it opens, or show that inside it, here. */
+function CornerButton({
+  className,
+  x,
+  y,
+  label,
+  title,
+  onPress,
+  children,
+}: {
+  className: string;
+  x: number;
+  y: number;
+  label: string;
+  title: string;
+  onPress: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <g
+      className={`corner-button ${className}`}
+      role="button"
+      tabIndex={0}
+      aria-label={label}
+      transform={`translate(${x} ${y})`}
+      onClick={(event) => {
+        event.stopPropagation();
+        onPress();
+      }}
+      onDoubleClick={(event) => event.stopPropagation()}
+      onKeyDown={(event) => activate(event, onPress)}
+    >
+      <title>{title}</title>
+      <rect className="corner-button-face" width={ZOOM_SIZE} height={ZOOM_SIZE} rx={5} />
+      {children}
     </g>
   );
 }
@@ -764,9 +984,7 @@ const EdgeShape = memo(function EdgeShape({ edge, marks }: { edge: LayoutEdge; m
   const label = edge.label;
   // A click on the edge lands on its anchor, a point of the route (see BOUNDS_PAD): the invisible
   // `bounds` rect is centred on it and reaches around the whole route.
-  const box = routeBox(points, label);
-  const reachX = Math.max(edge.anchor.x - box.x, box.x + box.width - edge.anchor.x) + BOUNDS_PAD;
-  const reachY = Math.max(edge.anchor.y - box.y, box.y + box.height - edge.anchor.y) + BOUNDS_PAD;
+  const { x: reachX, y: reachY } = edgeReach(edge);
   const select = (event: MouseEvent | KeyboardEvent) => store.click(edge.id, additive(event));
   const classes = ["edge", edge.stub ? "is-stub" : `res-${edge.resolution}`, `kind-${edge.kind}`];
   // A count label in a reader view: shown on hover (CSS) and when the edge or an end of it is selected.

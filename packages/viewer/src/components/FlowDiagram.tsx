@@ -1,5 +1,4 @@
 import { useEffect, useId, useMemo, useState } from "react";
-import type { ElkNode } from "elkjs/lib/elk.bundled.js";
 import {
   buildReverseIndex,
   processFlow,
@@ -13,6 +12,7 @@ import {
   EDGE_LABEL_LINE,
   EDGE_LABEL_CHARS,
   layoutFlow,
+  type FlowLayout,
   placedStages,
   STAGE_LABEL_CHARS,
   stageActor,
@@ -43,7 +43,7 @@ export function FlowDiagram({ view, snapshot }: FlowDiagramProps) {
   const flow = useMemo(() => processFlow(view), [view]);
   // The layout remembers the flow it belongs to: after a switch to another view, the old layout is not
   // drawn with the new flow (that used to crash) while the new one is computed.
-  const [laidOut, setLaidOut] = useState<{ flow: ProcessFlow; layout: ElkNode }>();
+  const [laidOut, setLaidOut] = useState<{ flow: ProcessFlow; layout: FlowLayout }>();
   const layout = laidOut?.flow === flow ? laidOut.layout : undefined;
   const [error, setError] = useState<string>();
   const arrow = useId().replace(/:/g, "");

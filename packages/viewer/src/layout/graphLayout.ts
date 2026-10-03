@@ -1,19 +1,19 @@
 /**
- * Graph views: `DerivedGraph` (core) -> boxes and routed edges (elkjs) that GraphView draws as SVG.
+ * Graph views: `DerivedGraph` (core) -> boxes and routed edges that GraphView draws as SVG.
  *
- * ELK `layered` (direction RIGHT by default; `layoutGraphFitting` picks RIGHT or DOWN by what reads larger
- * in the pane), `hierarchyHandling: INCLUDE_CHILDREN`: one pass lays out the whole
- * containment tree, so edges may cross container borders. Included nodes with included children are
- * containers (ELK compound nodes). Ghost boxes (where a view stops) are plain nodes at the top level;
- * stubs are edges to them.
+ * A layered layout (layered.ts, on dagre; direction RIGHT by default, `layoutGraphFitting` picks RIGHT or
+ * DOWN by what reads larger in the pane). Included nodes with included children are containers: each
+ * container's inside is laid out first, as a level of its own with room for the container's header, and
+ * the container then takes part in the level above as one box of that size. Ghost boxes (where a view
+ * stops) are plain nodes at the top level; stubs are edges to them.
  *
  * Every edge belongs to the lowest container that holds both of its ends (the canvas for top-level
- * ones) and is declared there, so ELK returns its route and label relative to that container
- * (`elk.json.edgeCoords: CONTAINER`) and GraphView draws it inside the container's group. Node
- * positions are relative to their container too. If ELK throws, a simple grid layout keeps the diagram
- * usable (all edges on the canvas, in canvas coordinates).
+ * ones). It is laid out in that container's level between the two boxes its ends are drawn in there, and
+ * routed relative to that container's top-left corner, with right-angled ends on the boxes it joins (which
+ * may sit deeper inside those two): GraphView draws it inside the container's group. Node positions are
+ * relative to their container too. If the layout throws, a simple grid keeps the diagram usable (all edges
+ * on the canvas, in canvas coordinates).
  */
-import ELKModule, { type ElkExtendedEdge, type ElkNode } from "elkjs/lib/elk.bundled.js";
 import {
   ghostId,
   type DerivedEdge,
@@ -21,12 +21,28 @@ import {
   type Ghost,
   type GhostTarget,
   type GraphNode,
+  type NodeRole,
   type Stub,
 } from "@xpl/core";
 import type { ChangeStatus } from "../diff.js";
 import { textWidth } from "../measure.js";
 import { nearRoute, routeAnchor, type Box, type Point } from "../svg.js";
 import { unionBox } from "../viewport.js";
+import {
+  layered,
+  layerIndex,
+  orthogonalRoute,
+  separateTracks,
+  sideToward,
+  spreadPorts,
+  type Direction,
+  type LayeredEdge,
+  type LayeredNode,
+  type LayeredOptions,
+  type LayeredResult,
+  type Port,
+  type Side,
+} from "./layered.js";
 
 export type { Point } from "../svg.js";
 
@@ -53,6 +69,12 @@ export interface LayoutNode {
   hint?: string;
   /** What the explainer's change did to it (diff.ts `changeStatus`): a "New" or "Changed" pill. */
   change?: ChangeStatus;
+  /** What the box is in the architecture (`Node.role`): it picks the shape (a cylinder for a database). */
+  role?: NodeRole;
+  /** The view that shows what is inside the box (`Node.opens`): the box offers to zoom into it. */
+  opens?: string;
+  /** The box opens a map, whose boxes it can also show inside itself, on this map. */
+  expandable?: boolean;
   /** Position relative to the container (or to the canvas for top-level nodes). */
   x: number;
   y: number;
@@ -91,15 +113,14 @@ export interface LayoutEdge {
   anchor: Point;
 }
 
-/** Which way the layers run: `RIGHT` (columns, left to right) or `DOWN` (rows, top to bottom). */
-export type Direction = "RIGHT" | "DOWN";
+export type { Direction } from "./layered.js";
 
 export interface GraphLayout {
   width: number;
   height: number;
   nodes: LayoutNode[];
   edges: LayoutEdge[];
-  /** True when ELK failed and the grid fallback was used. */
+  /** True when the layered layout failed and the grid fallback was used. */
   fallback: boolean;
   direction: Direction;
 }
@@ -135,9 +156,36 @@ export function labelWidth(label: string): number {
   return Math.ceil(textWidth(label, NODE_LABEL_FONT, 600));
 }
 
+/**
+ * The badge of a box: its technology or its role on an architecture map ("PostgreSQL", "database"), else
+ * the kind of code it is.
+ */
 function nodeBadge(node: GraphNode): string {
+  if (node.role !== undefined) return node.tech ?? ROLE_WORDS[node.role];
   return node.symbolKind ?? node.kind;
 }
+
+/** The plain name of each role, for the badge of a box without a `tech`. */
+export const ROLE_WORDS: Record<NodeRole, string> = {
+  person: "person",
+  system: "system",
+  service: "service",
+  component: "component",
+  database: "database",
+  cache: "cache",
+  queue: "queue",
+  storage: "storage",
+  external: "external system",
+};
+
+/** Roles drawn as a cylinder: they keep data, and need room for its lid. */
+export const CYLINDER_ROLES: ReadonlySet<NodeRole> = new Set(["database", "cache", "storage"]);
+/** The height of a cylinder's lid (the ellipse on top). */
+export const CYLINDER_LID = 9;
+/** Room for the zoom button of a box that opens a view. */
+export const ZOOM_SIZE = 22;
+/** Room for the icon left of a box's label (components/icons.tsx: 16 units and a gap). */
+export const ICON_ROOM = 23;
 
 /** The words of the change pill. */
 export function changeText(change: ChangeStatus): string {
@@ -152,12 +200,28 @@ function changeWidth(change: ChangeStatus | undefined): number {
   return change ? badgeWidth(changeText(change)) + PILL_GAP : 0;
 }
 
-function leafWidth(label: string, badge: string, change?: ChangeStatus): number {
+function leafWidth(
+  label: string,
+  badge: string,
+  change?: ChangeStatus,
+  extra: { role?: NodeRole; opens?: string; expandable?: boolean } = {},
+): number {
   const content = Math.max(
     textWidth(label, NODE_LABEL_FONT, 600),
     badgeWidth(badge) + changeWidth(change),
   );
-  return Math.max(104, Math.ceil(content) + 2 * PAD_X);
+  const icon = ICON_ROOM;
+  const zoom =
+    (extra.opens !== undefined ? ZOOM_SIZE + 6 : 0) + (extra.expandable ? ZOOM_SIZE + 4 : 0);
+  // an architecture box is a little wider: it is read on its own, from a distance
+  const min = extra.role !== undefined ? 150 : 104;
+  return Math.max(min, Math.ceil(content) + 2 * PAD_X + icon + zoom);
+}
+
+/** The height of a box that is not a container. */
+function leafHeight(role: NodeRole | undefined): number {
+  if (role === undefined) return LEAF_HEIGHT;
+  return LEAF_HEIGHT + 8 + (CYLINDER_ROLES.has(role) ? CYLINDER_LID : 0);
 }
 
 function containerMinWidth(label: string, badge: string, change?: ChangeStatus): number {
@@ -166,7 +230,8 @@ function containerMinWidth(label: string, badge: string, change?: ChangeStatus):
     Math.ceil(
       textWidth(label, NODE_LABEL_FONT, 600) + badgeWidth(badge) + changeWidth(change) + 10 + 24,
     ) +
-    2 * PAD_X
+    2 * PAD_X +
+    ICON_ROOM
   );
 }
 
@@ -199,7 +264,7 @@ function labelBox(text: string): { text: string; width: number; height: number }
   };
 }
 
-// ─── Model shared by ELK and the fallback ───────────────────────────────────────────────────────
+// ─── Model shared by the layered layout and the fallback ───────────────────────────────────────────────────────
 
 interface ModelNode {
   label: string;
@@ -209,9 +274,10 @@ interface ModelNode {
   ghostFold?: LayoutNode["ghostFold"];
   detail?: string;
   hint?: string;
-  /** Ghosts: `in` when every stub enters the view there, `out` when every stub leaves it. */
-  side?: "in" | "out";
   change?: ChangeStatus;
+  role?: NodeRole;
+  opens?: string;
+  expandable?: boolean;
 }
 
 interface Model {
@@ -245,6 +311,9 @@ function buildModel(graph: DerivedGraph, changes: ChangeMarks | undefined): Mode
       badge: nodeBadge(node),
       kindClass: node.symbolKind ?? node.kind,
       ...(change ? { change } : {}),
+      ...(node.role !== undefined ? { role: node.role } : {}),
+      ...(node.opens !== undefined ? { opens: node.opens } : {}),
+      ...(node.expandable ? { expandable: true } : {}),
     });
   }
   for (const node of graph.nodes) {
@@ -316,7 +385,6 @@ function buildModel(graph: DerivedGraph, changes: ChangeMarks | undefined): Mode
         // One kind is named; several are left to the tooltip and the details panel.
         detail: `${kinds.length === 1 ? `${kinds[0]} ` : ""}×${ghost.count}`,
         hint: `${kinds.join(", ")} ×${ghost.count}`,
-        ...(ghost.direction !== "both" ? { side: ghost.direction } : {}),
       });
       roots.push(box);
     }
@@ -348,7 +416,10 @@ function leafSize(model: Model, id: string): { width: number; height: number } {
   if (isGhost(node)) {
     return { width: ghostWidth(node.label, node.detail ?? ""), height: GHOST_HEIGHT };
   }
-  return { width: leafWidth(node.label, node.badge, node.change), height: LEAF_HEIGHT };
+  return {
+    width: leafWidth(node.label, node.badge, node.change, node),
+    height: leafHeight(node.role),
+  };
 }
 
 function makeNode(
@@ -374,35 +445,28 @@ function makeNode(
   if (node.detail !== undefined) out.detail = node.detail;
   if (node.hint !== undefined) out.hint = node.hint;
   if (node.change !== undefined) out.change = node.change;
+  if (node.role !== undefined) out.role = node.role;
+  if (node.opens !== undefined) out.opens = node.opens;
+  if (node.expandable) out.expandable = true;
   return out;
 }
 
-// ─── ELK ────────────────────────────────────────────────────────────────────────────────────────
+// ─── Layered layout, one container at a time ────────────────────────────────────────────────────
 
-// elkjs ships an ES-style d.ts for a CommonJS file: with a bundler `ELKModule` is the class, under Node's
-// own module resolution it is `module.exports`, which carries the class as `.default`.
-type ElkConstructor = new () => { layout(graph: ElkNode): Promise<ElkNode> };
-const ELK = ((ELKModule as unknown as { default?: unknown }).default ??
-  ELKModule) as ElkConstructor;
-const elk = new ELK();
+/** Where a layout starts: the reading direction. */
+export interface LayoutOptions {
+  /** Default `RIGHT`. */
+  direction?: Direction;
+}
 
-const ROOT_OPTIONS: Record<string, string> = {
-  "elk.algorithm": "layered",
-  "elk.direction": "RIGHT",
-  "elk.hierarchyHandling": "INCLUDE_CHILDREN",
-  "elk.edgeRouting": "ORTHOGONAL",
-  "elk.json.edgeCoords": "CONTAINER",
-  "elk.padding": "[top=24,left=24,bottom=24,right=24]",
-  // Tight on purpose: a layout is fitted into its pane, so every pixel of air between boxes shrinks the
-  // text. These spacings read about 20% larger than ELK's roomy ones on the fixture's overview.
-  "elk.spacing.nodeNode": "24",
-  "elk.spacing.edgeNode": "14",
-  "elk.spacing.edgeEdge": "10",
-  "elk.spacing.edgeLabel": "4",
-  "elk.layered.spacing.nodeNodeBetweenLayers": "30",
-  "elk.layered.spacing.edgeNodeBetweenLayers": "14",
-  "elk.layered.spacing.edgeEdgeBetweenLayers": "10",
-  "elk.layered.considerModelOrder.strategy": "NODES_AND_EDGES",
+/** Spacing. Tight on purpose: a layout is fitted into its pane, so every pixel of air between boxes shrinks the text. */
+const SPACING = { nodeGap: 24, layerGap: 48, edgeGap: 10 };
+const CANVAS_PAD = 24;
+const CONTAINER_PADDING = {
+  top: HEADER_HEIGHT + 8,
+  right: CONTAINER_PAD,
+  bottom: CONTAINER_PAD,
+  left: CONTAINER_PAD,
 };
 
 /** The container that holds an edge: the lowest one around both ends, "" for the canvas. */
@@ -417,87 +481,326 @@ function holderOf(model: Model, from: string, to: string): string {
   return above(from).find((id) => around.has(id)) ?? "";
 }
 
-function toElk(model: Model, id: string, registry: Map<string, ElkNode>): ElkNode {
-  const kids = model.children.get(id) ?? [];
-  const node = model.nodes.get(id)!;
-  let out: ElkNode;
-  if (kids.length === 0) {
-    // Where a view stops: what only enters it sits in the first layer, what only leaves it in the last.
-    const constraint = node.side === "in" ? "FIRST" : node.side === "out" ? "LAST" : undefined;
-    out = {
-      id,
-      ...leafSize(model, id),
-      ...(constraint
-        ? { layoutOptions: { "elk.layered.layering.layerConstraint": constraint } }
-        : {}),
-    };
-  } else {
-    out = {
-      id,
-      layoutOptions: {
-        "elk.padding": `[top=${HEADER_HEIGHT + 8},left=${CONTAINER_PAD},bottom=${CONTAINER_PAD},right=${CONTAINER_PAD}]`,
-        "elk.nodeSize.constraints": "MINIMUM_SIZE",
-        "elk.nodeSize.minimum": `(${containerMinWidth(node.label, node.badge, node.change)}, ${HEADER_HEIGHT + 60})`,
-      },
-      children: kids.map((kid) => toElk(model, kid, registry)),
-      edges: [],
-    };
+/** The box at the level of `holder` that `id` is drawn in: `id` itself or the ancestor right below `holder`. */
+function liftTo(model: Model, id: string, holder: string): string {
+  let cur = id;
+  for (
+    let parent = model.parent.get(cur);
+    (parent ?? "") !== holder;
+    parent = model.parent.get(cur)
+  ) {
+    if (parent === undefined) return cur;
+    cur = parent;
   }
-  registry.set(id, out);
-  return out;
-}
-
-function routeOf(edge: ElkExtendedEdge): Point[] {
-  const points: Point[] = [];
-  for (const section of edge.sections ?? []) {
-    points.push(section.startPoint, ...(section.bendPoints ?? []), section.endPoint);
-  }
-  return points.map((p) => ({ x: p.x, y: p.y }));
+  return cur;
 }
 
 type EdgeMeta = Model["edges"][number];
 
-function layoutEdgeOf(edge: ElkExtendedEdge, meta: EdgeMeta): LayoutEdge {
-  const points = routeOf(edge);
-  const laidOut: LayoutEdge = {
-    id: edge.id,
-    stub: meta.stub,
-    resolution: meta.resolution,
-    kind: meta.kind,
-    title: meta.label,
-    from: meta.from,
-    to: meta.to,
-    counted: meta.counted,
-    points,
-    anchor: points[0] ?? { x: 0, y: 0 },
+interface Level {
+  /** The container's id, "" for the canvas. */
+  id: string;
+  /** The box of the level: a container's own node, or undefined for the canvas. */
+  node: LayoutNode | undefined;
+  routes: LayeredResult["routes"];
+}
+
+/**
+ * Lays out the graph: every container's inside first (its children as one layered level, with room for its
+ * header), then the container as one box of the level above, up to the canvas. Then every edge is routed in
+ * the container that holds it: dagre's points between the two boxes of that level its ends are drawn in, and
+ * right-angled ends on the boxes it actually joins, which may sit deeper inside them.
+ */
+function layeredLayout(model: Model, direction: Direction): GraphLayout {
+  const cross = direction === "RIGHT" ? "y" : "x";
+  const ancestors = (id: string, holder: string): string[] => {
+    const out: string[] = [];
+    for (
+      let cur = model.parent.get(id);
+      cur !== undefined && cur !== holder;
+      cur = model.parent.get(cur)
+    )
+      out.push(cur);
+    return out;
   };
-  const label = edge.labels?.[0];
-  if (label && label.text !== undefined && label.x !== undefined && label.y !== undefined) {
-    laidOut.label = {
-      text: label.text,
-      x: label.x,
-      y: label.y,
-      width: label.width ?? 0,
-      height: label.height ?? 0,
-    };
+  // Per edge: the container that holds it, and the containers it crosses on the way to each end (innermost
+  // first). Per container: the edges that cross its border.
+  const held = new Map<string, EdgeMeta[]>();
+  const chains = new Map<string, { from: string[]; to: string[] }>();
+  const crossing = new Map<string, { edge: EdgeMeta; end: "from" | "to" }[]>();
+  for (const edge of model.edges) {
+    const holder = holderOf(model, edge.from, edge.to);
+    const list = held.get(holder);
+    if (list) list.push(edge);
+    else held.set(holder, [edge]);
+    const chain = { from: ancestors(edge.from, holder), to: ancestors(edge.to, holder) };
+    chains.set(edge.id, chain);
+    for (const end of ["from", "to"] as const) {
+      for (const container of chain[end]) {
+        const crossings = crossing.get(container);
+        if (crossings) crossings.push({ edge, end });
+        else crossing.set(container, [{ edge, end }]);
+      }
+    }
   }
-  return laidOut;
+  const portId = (edge: EdgeMeta) => `\0port:${edge.id}`;
+  const innerId = (edge: EdgeMeta) => `\0inner:${edge.id}`;
+
+  /** Where an edge crosses a container's border: on which side, and where along it (container coordinates). */
+  const entries = new Map<string, Map<string, { side: Side; cross: number }>>();
+  const levels: Level[] = [];
+
+  const level = (
+    ids: readonly string[],
+    holder: string,
+    pad: LayeredOptions["pad"],
+  ): { nodes: LayoutNode[]; result: LayeredResult } => {
+    const nodes = ids.map(build);
+    const boxes = nodes.map((n) => ({ id: n.id, width: n.width, height: n.height }));
+    const edges: LayeredEdge[] = (held.get(holder) ?? []).map((edge) => ({
+      id: edge.id,
+      from: liftTo(model, edge.from, holder),
+      to: liftTo(model, edge.to, holder),
+      // Stubs carry no label of their own: their ghost box tells what leaves or enters there.
+      ...(edge.stub ? {} : { label: labelBox(edge.label) }),
+    }));
+    const options = { direction, ...SPACING, pad };
+    let result = layered(boxes, edges, options);
+    // Edges that cross the border: a port in a layer of its own before (or after) everything, so the part
+    // inside is routed around the boxes, from the border to the box it joins.
+    const crossings = holder === "" ? [] : (crossing.get(holder) ?? []);
+    if (crossings.length > 0) {
+      const layers = layerIndex(result, direction);
+      const last = Math.max(0, ...layers.values());
+      const ports: LayeredNode[] = [];
+      const inner: LayeredEdge[] = [];
+      for (const { edge, end } of crossings) {
+        const box = liftTo(model, edge[end], holder);
+        const layer = layers.get(box) ?? 0;
+        ports.push({ id: portId(edge), width: 2, height: 2 });
+        inner.push(
+          end === "to"
+            ? { id: innerId(edge), from: portId(edge), to: box, minlen: layer + 1 }
+            : { id: innerId(edge), from: box, to: portId(edge), minlen: last - layer + 1 },
+        );
+      }
+      result = layered([...boxes, ...ports], [...edges, ...inner], options);
+      const own = new Map<string, { side: Side; cross: number }>();
+      for (const { edge, end } of crossings) {
+        const port = result.boxes.get(portId(edge))!;
+        own.set(edge.id, {
+          side: end === "to" ? "start" : "end",
+          cross: cross === "y" ? port.y + port.height / 2 : port.x + port.width / 2,
+        });
+      }
+      entries.set(holder, own);
+    }
+    for (const node of nodes) {
+      const box = result.boxes.get(node.id)!;
+      node.x = box.x;
+      node.y = box.y;
+    }
+    return { nodes, result };
+  };
+  function build(id: string): LayoutNode {
+    const kids = model.children.get(id) ?? [];
+    if (kids.length === 0) return makeNode(model, id, { x: 0, y: 0, ...leafSize(model, id) }, []);
+    const inner = level(kids, id, CONTAINER_PADDING);
+    const info = model.nodes.get(id)!;
+    const node = makeNode(
+      model,
+      id,
+      {
+        x: 0,
+        y: 0,
+        width: Math.max(inner.result.width, containerMinWidth(info.label, info.badge, info.change)),
+        height: Math.max(inner.result.height, HEADER_HEIGHT + 60),
+      },
+      inner.nodes,
+    );
+    levels.push({ id, node, routes: inner.result.routes });
+    return node;
+  }
+  const pad = { top: CANVAS_PAD, right: CANVAS_PAD, bottom: CANVAS_PAD, left: CANVAS_PAD };
+  const top = level(model.roots, "", pad);
+  levels.push({ id: "", node: undefined, routes: top.result.routes });
+
+  // Boxes relative to each container (and to the canvas), to route what it holds.
+  const parentOf = new Map<string, LayoutNode>();
+  const nodeOf = new Map<string, LayoutNode>();
+  const index = (list: LayoutNode[], parent: LayoutNode | undefined) => {
+    for (const node of list) {
+      nodeOf.set(node.id, node);
+      if (parent) parentOf.set(node.id, parent);
+      index(node.children, node);
+    }
+  };
+  index(top.nodes, undefined);
+  const boxIn = (id: string, holder: LayoutNode | undefined): Box => {
+    const node = nodeOf.get(id)!;
+    let x = node.x;
+    let y = node.y;
+    for (let up = parentOf.get(id); up && up !== holder; up = parentOf.get(up.id)) {
+      x += up.x;
+      y += up.y;
+    }
+    return { x, y, width: node.width, height: node.height };
+  };
+
+  // Route every level: the edges it holds (from border to border where an end lies deeper) and, in a
+  // container, the inner part of each edge that crosses its border (from the border to the box inside).
+  const outer = new Map<string, { points: Point[]; level: Level }>();
+  const inner = new Map<string, Point[]>(); // `${container}\0${edge id}`, container coordinates
+  for (const lvl of levels) {
+    const holder = lvl.node;
+    interface End {
+      box: Box;
+      key: string;
+      fixed?: { side: Side; cross: number };
+    }
+    const items: { id: string; from: End; to: End; via: Point[]; store: (p: Point[]) => void }[] =
+      [];
+    /** One end of a routed edge at this level: `id` drawn here, or the container it lies in. */
+    const endOf = (edge: EdgeMeta, end: "from" | "to", id: string): End => {
+      const box = boxIn(id, holder);
+      const entry = id !== edge[end] ? entries.get(id)?.get(edge.id) : undefined;
+      return {
+        box,
+        key: id,
+        ...(entry
+          ? { fixed: { side: entry.side, cross: entry.cross + (cross === "y" ? box.y : box.x) } }
+          : {}),
+      };
+    };
+    for (const edge of held.get(lvl.id) ?? []) {
+      items.push({
+        id: edge.id,
+        from: endOf(edge, "from", liftTo(model, edge.from, lvl.id)),
+        to: endOf(edge, "to", liftTo(model, edge.to, lvl.id)),
+        via: lvl.routes.get(edge.id)?.via ?? [],
+        store: (points) => outer.set(edge.id, { points, level: lvl }),
+      });
+    }
+    for (const { edge, end } of lvl.id === "" ? [] : (crossing.get(lvl.id) ?? [])) {
+      const entry = entries.get(lvl.id)!.get(edge.id)!;
+      const size = holder!;
+      const at = entry.side === "start" ? 0 : cross === "y" ? size.width : size.height;
+      const border: End = {
+        box:
+          cross === "y"
+            ? { x: at, y: entry.cross, width: 0, height: 0 }
+            : { x: entry.cross, y: at, width: 0, height: 0 },
+        key: portId(edge),
+        fixed: entry,
+      };
+      const inside = endOf(edge, end, liftTo(model, edge[end], lvl.id));
+      items.push({
+        id: innerId(edge),
+        from: end === "to" ? border : inside,
+        to: end === "to" ? inside : border,
+        via: lvl.routes.get(innerId(edge))?.via ?? [],
+        store: (points) => inner.set(`${lvl.id}\0${edge.id}`, points),
+      });
+    }
+    // the free ends of a side are spread along it; fixed ones (at a port) stay where the port is
+    const boxes = new Map<string, Box>();
+    const ports = new Map<string, Port>();
+    const centre = (b: Box): Point => ({ x: b.x + b.width / 2, y: b.y + b.height / 2 });
+    for (const item of items) {
+      boxes.set(item.from.key, item.from.box);
+      boxes.set(item.to.key, item.to.box);
+      const next = item.via[0] ?? centre(item.to.box);
+      const previous = item.via[item.via.length - 1] ?? centre(item.from.box);
+      if (!item.from.fixed)
+        ports.set(`${item.id}\0from`, {
+          box: item.from.key,
+          side: sideToward(item.from.box, next, direction),
+          toward: next[cross],
+        });
+      if (!item.to.fixed)
+        ports.set(`${item.id}\0to`, {
+          box: item.to.key,
+          side: sideToward(item.to.box, previous, direction),
+          toward: previous[cross],
+        });
+    }
+    const spread = spreadPorts(ports, boxes, direction);
+    const routed = items.map((item) =>
+      orthogonalRoute(
+        item.from.box,
+        item.to.box,
+        item.via,
+        {
+          from: item.from.fixed?.cross ?? spread.get(`${item.id}\0from`)!,
+          to: item.to.fixed?.cross ?? spread.get(`${item.id}\0to`)!,
+        },
+        direction,
+        {
+          ...(item.from.fixed ? { from: item.from.fixed.side } : {}),
+          ...(item.to.fixed ? { to: item.to.fixed.side } : {}),
+        },
+      ),
+    );
+    separateTracks(routed, direction);
+    items.forEach((item, n) => item.store(routed[n]!));
+  }
+
+  // Each edge, whole: the inner parts on its way out of the containers around its start, the part its holder
+  // routes, and the inner parts on its way into the containers around its end.
+  const canvasEdges: LayoutEdge[] = [];
+  for (const edge of model.edges) {
+    const route = outer.get(edge.id);
+    if (!route) continue;
+    const holder = route.level.node;
+    const chain = chains.get(edge.id)!;
+    const moved = (container: string): Point[] => {
+      const box = boxIn(container, holder);
+      return (inner.get(`${container}\0${edge.id}`) ?? []).map((p) => ({
+        x: p.x + box.x,
+        y: p.y + box.y,
+      }));
+    };
+    const points = joined([
+      ...chain.from.map(moved),
+      route.points,
+      ...[...chain.to].reverse().map(moved),
+    ]);
+    const laidOut: LayoutEdge = {
+      id: edge.id,
+      stub: edge.stub,
+      resolution: edge.resolution,
+      kind: edge.kind,
+      title: edge.label,
+      from: edge.from,
+      to: edge.to,
+      counted: edge.counted,
+      points,
+      anchor: points[0] ?? { x: 0, y: 0 },
+    };
+    const centre = route.level.routes.get(edge.id)?.label;
+    if (!edge.stub && centre) {
+      const box = labelBox(edge.label);
+      laidOut.label = { ...box, x: centre.x - box.width / 2, y: centre.y - box.height / 2 };
+    }
+    (holder ? holder.edges : canvasEdges).push(laidOut);
+  }
+  const width = top.result.width;
+  const height = top.result.height;
+  placeAnchors(top.nodes, canvasEdges, { width, height });
+  return { width, height, nodes: top.nodes, edges: canvasEdges, fallback: false, direction };
 }
 
-function fromElk(model: Model, node: ElkNode, described: Map<string, EdgeMeta>): LayoutNode {
-  return makeNode(
-    model,
-    node.id,
-    { x: node.x ?? 0, y: node.y ?? 0, width: node.width ?? 0, height: node.height ?? 0 },
-    (node.children ?? []).map((child) => fromElk(model, child, described)),
-    edgesOf(node, described),
-  );
-}
-
-function edgesOf(node: ElkNode, described: Map<string, EdgeMeta>): LayoutEdge[] {
-  return ((node.edges ?? []) as ElkExtendedEdge[]).map((edge) =>
-    layoutEdgeOf(edge, described.get(edge.id)!),
-  );
+/** Routes laid end to end: where one ends the next starts, so the shared point is kept once. */
+function joined(parts: readonly Point[][]): Point[] {
+  const out: Point[] = [];
+  for (const part of parts) {
+    for (const p of part) {
+      const last = out[out.length - 1];
+      if (last && Math.abs(last.x - p.x) < 0.01 && Math.abs(last.y - p.y) < 0.01) continue;
+      out.push(p);
+    }
+  }
+  return out;
 }
 
 // ─── Anchors: where a click on an edge lands ────────────────────────────────────────────────────
@@ -570,43 +873,21 @@ export type ChangeMarks = ReadonlyMap<string, ChangeStatus>;
 
 export async function layoutGraph(
   graph: DerivedGraph,
-  options: Record<string, string> = {},
-  labelOptions: Record<string, string> = {},
+  options: LayoutOptions = {},
   changes?: ChangeMarks,
 ): Promise<GraphLayout> {
   const model = buildModel(graph, changes);
-  const registry = new Map<string, ElkNode>();
-  const root: ElkNode = {
-    id: "root",
-    layoutOptions: { ...ROOT_OPTIONS, ...options },
-    children: model.roots.map((id) => toElk(model, id, registry)),
-    edges: [],
-  };
-  for (const edge of model.edges) {
-    const holder = holderOf(model, edge.from, edge.to);
-    const elkEdge: ElkExtendedEdge = {
-      id: edge.id,
-      sources: [edge.from],
-      targets: [edge.to],
-      // Stubs carry no label of their own: their ghost box tells what leaves or enters there.
-      ...(edge.stub ? {} : { labels: [{ ...labelBox(edge.label), layoutOptions: labelOptions }] }),
-    };
-    (holder === "" ? root : registry.get(holder)!).edges!.push(elkEdge);
-  }
   try {
-    const out = await elk.layout(root);
-    const described = new Map(model.edges.map((e) => [e.id, e] as const));
-    const nodes = (out.children ?? []).map((child) => fromElk(model, child, described));
-    const edges = edgesOf(out, described);
-    const width = out.width ?? 0;
-    const height = out.height ?? 0;
-    placeAnchors(nodes, edges, { width, height });
-    const direction = (options["elk.direction"] ?? ROOT_OPTIONS["elk.direction"]) as Direction;
-    return { width, height, nodes, edges, fallback: false, direction };
+    return layeredLayout(model, options.direction ?? "RIGHT");
   } catch (error) {
-    console.warn("xpl: ELK layout failed, using a grid", error);
+    console.warn("xpl: layout failed, using a grid", error);
     return fallbackLayout(model);
   }
+}
+
+/** The grid that stands in when the layered layout fails: every box, every edge straight between centres. */
+export function gridLayoutOf(graph: DerivedGraph, changes?: ChangeMarks): GraphLayout {
+  return fallbackLayout(buildModel(graph, changes));
 }
 
 // ─── Where a diagram too big to fit starts ──────────────────────────────────────────────────────
@@ -683,10 +964,10 @@ export async function layoutGraphFitting(
   changes?: ChangeMarks,
 ): Promise<GraphLayout> {
   if (!viewport || viewport.width <= 0 || viewport.height <= 0)
-    return layoutGraph(graph, {}, {}, changes);
+    return layoutGraph(graph, {}, changes);
   const suggested: Direction = viewport.width / viewport.height < 1 ? "DOWN" : "RIGHT";
   const other: Direction = suggested === "RIGHT" ? "DOWN" : "RIGHT";
-  const first = await layoutGraph(graph, { "elk.direction": suggested }, {}, changes);
+  const first = await layoutGraph(graph, { direction: suggested }, changes);
   if (
     first.fallback ||
     // shown at its natural size or larger: turning it would not make the text read better
@@ -695,7 +976,7 @@ export async function layoutGraphFitting(
   ) {
     return first;
   }
-  const second = await layoutGraph(graph, { "elk.direction": other }, {}, changes);
+  const second = await layoutGraph(graph, { direction: other }, changes);
   if (second.fallback) return first;
   return fitScale(second, viewport, maxZoom, padding) >
     fitScale(first, viewport, maxZoom, padding) * OTHER_DIRECTION_MARGIN

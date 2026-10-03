@@ -45,7 +45,10 @@ between two commits. For a change, `xpl change` records the diff in the explaine
    file (sharing, presenting, offline; the default in cloud sessions).
 5. **Editor: CodeMirror 6**, not Monaco. Read-only viewing plus line decorations is exactly CM6's model;
    Monaco's workers and ~5 MB don't fit a single-file bundle.
-6. **Layout: elkjs** (layered, compound nodes → containers) plus our own SVG with stable element IDs.
+6. **Layout: dagre** (`@dagrejs/dagre`, MIT; layered) plus our own SVG with stable element IDs. Containers are
+   laid out inside-out: each container's children as a level of their own, then the container as one box of
+   the level above; edges get right-angled routes, spread ports and separate tracks (`layout/layered.ts`).
+   (elkjs, the first choice, was replaced for its EPL-2.0 licence; dagre is about 40 KB against 1.6 MB.)
    Sequence diagrams use a small custom layout (lifelines are trivial). No Mermaid, no D2.
 7. **Lazy explanations** are realised by the skill, and asynchronously: views get summaries for what they
    show; other nodes are explained on `expand`. The viewer cannot generate text itself. Its "Explain this"
@@ -73,7 +76,7 @@ packages/
   indexer/  @xpl/indexer  file discovery, tree-sitter language packs (WASM), heuristic resolver, SCIP importer.
   cli/      @xpl/cli      `xpl` command; esbuild bundle → packages/cli/dist/xpl.mjs, with dist/wasm/ (the
                           tree-sitter .wasm files) and dist/viewer.html (a copy of the built viewer) beside it
-  viewer/   @xpl/viewer   React 19 + CodeMirror 6 + elkjs; vite single-file build → packages/viewer/dist/index.html
+  viewer/   @xpl/viewer   React 19 + CodeMirror 6 + dagre; vite single-file build → packages/viewer/dist/index.html
 skill/code-explainer/   Claude skill: SKILL.md, README.md, reference/ (cli.md, patch-format.md, writing.md,
                         explain-change.md, examples/), bin/xpl (a symlink-safe node launcher for the built CLI)
 fixtures/{ts,py,go}-jobrunner/   tiny real repos + committed explainers in .explainer/
@@ -187,6 +190,20 @@ Conventions (all packages):
     or glob (`readFile("x.json")`, `glob("plugins/*.py")`, an import of a `.json`), with `kind` (`loads`,
     `discovers`), the call `site` and `resolution: "static" | "inferred"`. The viewer lists them as related
     files of the selection; a matching file does not prove it is loaded at run time.
+19. `Node` adds three architecture fields, so an overview can read top-down like the C4 model (a system map,
+    then the inside of one service, then code):
+    - `role?: NodeRole`: `person | system | service | component | database | cache | queue | storage |
+      external` (`NODE_ROLES` in `constants.ts`). The viewer draws each role with its own shape and shows the
+      role (or `tech`) as the box's badge instead of the kind of code.
+    - `tech?: string`: the technology in 1-3 words ("PostgreSQL", "REST API").
+    - `opens?: string`: a view id, the next level down. The viewer zooms into it from the box and shows a
+      trail back up (`levels.ts`: `opensView`, `parentLevel`, `zoomTrail`; the level above a view is the first
+      graph view that includes a box opening it).
+
+    A group with a `role` may have no `members` (a database or an outside API is not code of the repo); it is
+    then anchored at the code that talks to it, and `containsCode` counts its own anchors as its code, so an
+    `llm` edge to it finds its evidence there. On a view that shows a group instead of the boxes a stored edge
+    ends on, stored edges lifted to the same pair of boxes and kind are drawn as one (§4.4).
 
 Patch-side types (never stored) live in `packages/core/src/patch.ts`; its header holds the authoritative
 merge rules and `skill/code-explainer/reference/patch-format.md` is the practical guide. What Claude writes:
@@ -576,7 +593,9 @@ id wins (validation reports the duplicates).
   (an edge between a group and one of its members, or from a box to its own group, is not drawn) and give
   stubs when they leave the view; a stored edge that ends on a group is drawn between the boxes that show its
   ends, the group box being its end when the group is included, and leaves through `ghost:grp:<slug>` when
-  it is not.
+  it is not. Stored edges **lifted** to other boxes than their own ends (the parts of a service, drawn as one
+  service box on a system map) merge per `(kind, a, b)`: the first by id keeps its id and gains the others'
+  anchors and `count`; its label is dropped when theirs differ.
 - **Stubs:** references (and stored edges) with exactly one end inside. Ghost target = the highest structural
   ancestor of the outside end, below `repo`, that contains no included node (a group is its own target); a
   target that holds the inside node itself (a stored edge to one's own file) is dropped. Aggregate per
@@ -831,9 +850,17 @@ file; `--json` adds the counts and what was left out.
   the review order, at most 12 steps: what changes for users, where it enters, one step per changed piece in
   call order ("Before/Now" TODOs), other changed files, who else is affected, tests and gaps, risks. Anchors
   come from the hunks; every changed file gets one, a deleted file in the base (`at: "base"`).
-- `repo`: an overview map of 4-8 boxes (top-level folders with code, a single root folder opened, tests,
-  docs, examples and dot folders left out), `excludeFiles` for tests and docs, and a tour with one step per
-  box, the main box first.
+- `repo`: two levels. A system map (`view:system`): the project as one service group (`role: service`,
+  members = the parts), or one `dir:` box per program when `services/`, `apps/` or `cmd/` (at the root or
+  under `src`) hold two or more; who reaches it (web and CLI frameworks, `role: person`) and what it relies on
+  (database drivers and ORMs, caches, queues, file stores, HTTP clients and SDKs), found from the import lines
+  of code files (`outside.ts`: a catalog per language family) and drawn as groups with a role, a `tech` and no
+  members, anchored at one import line per part that imports them. Each service box `opens` the map of its
+  inside: 4-8 parts (top-level folders with code, a single root folder opened, tests, docs, examples and dot
+  folders left out; label and summary TODOs) plus the outside systems they use, with an `llm` edge (`kind:
+  custom`, label TODO) from each part to each system it imports, anchored at that import. `excludeFiles` for
+  tests and docs on both. The tour: the system map, what it relies on, the inside of the biggest service,
+  then one step per part, the main part first. The service and outside boxes keep their ids across drafts.
 - `path <entry>`: a sequence of the calls the entry symbol makes (depth 1, source order, at most 6
   participants and 12 calls), and a tour with a big-picture step and one step per main call (at most 8).
 
@@ -855,7 +882,10 @@ field, a short quote and a fix. Rules (thresholds and word lists live in `LINT_L
 - Sentences: `long-sentence` (over 25 words), `long-average` (a field averaging over 20), `bare-it` ("It" or
   "This" and a verb), `filler-word`, `absolute-word` ("all", "never", "only" … that needs evidence; idioms
   such as "at all" and narrowing uses such as "compares only the host part" do not count),
-  `repeats-summary` (a note sentence that repeats a focused element's summary).
+  `repeats-summary` (a note sentence that repeats a focused element's summary), `long-note` (a note body over
+  60 words), `code-heavy` (more different code spans than 3 in a note, 1 in a note on an architecture map, a
+  graph view with a box that has a `role`, or 2 in a tour summary). Neither judges text that still holds a
+  `TODO`.
 - Form: `flow-label-code` (a flow stage label written as code), `markdown-in-plain` (markdown in a title or
   label), `markdown-in-summary` (a heading or link in a summary; inline markdown is fine there).
 
@@ -1029,11 +1059,13 @@ static bundle lists only the files it embeds, with a footer "N of M files includ
 CodeMirror editors (language modes for TS/TSX/JS, Python, Go, YAML and JSON; TOML and other text are plain).
 Both splits (diagram / panels, diagram / code) are resizable. Below 900 px the halves stack.
 
-- **Graph view:** elkjs `layered`, direction RIGHT, or DOWN when the pane is taller than wide; when the result
+- **Graph view:** a layered layout (dagre, `layout/layered.ts`), direction RIGHT, or DOWN when the pane is taller than wide; when the result
   would have to be scaled down to fit, the other direction is tried too (graphs of at most 150 elements) and
-  kept if it fits at least 8% larger. The direction is on the graph as `data-direction`. `hierarchyHandling:
-  INCLUDE_CHILDREN`, containers for nested includes, edges routed inside their lowest common container. If ELK
-  throws, a grid layout keeps the diagram usable (`data-fallback`). Edges are styled by resolution: precise,
+  kept if it fits at least 8% larger. The direction is on the graph as `data-direction`. Containers
+  for nested includes, laid out inside-out with room for their header; an edge that crosses a container's
+  border gets a port there (a node of its own in the container's first or last layer), so the part inside
+  is routed around the boxes; edges routed inside their lowest common container, right-angled, with the ends that share a side of a box spread along it and the turns in one gap
+  between layers on separate tracks. If the layout throws, a grid layout keeps the diagram usable (`data-fallback`). Edges are styled by resolution: precise,
   heuristic (thinner and lighter), `llm`, `user`; stubs are dashed and lead to ghost boxes (at most 8 by
   default plus one "+N more" per direction, see §4.4; ghosts that stand for several elements have a dotted
   border and a list icon). Click selects (shift/ctrl/cmd adds, the background clears); clicking a ghost for
@@ -1041,7 +1073,19 @@ Both splits (diagram / panels, diagram / code) are resizable. Below 900 px the h
   beside it: its elements with kind and reference count, most referenced first (a "rest of" menu starts with
   "The whole file", which adds the file as one box), and picking one adds it to the view (`expandStub` on that
   element); Escape, a click elsewhere or a turn of the wheel over the diagram closes it, the arrow keys move
-  in it. Double-clicking a node calls `drillIn`; a container has a collapse button. Pan by dragging, zoom with
+  in it. Double-clicking a node calls `drillIn`; a container has a collapse button. A box with a `role` is
+  drawn as what it is (`RoleBox`: a cylinder for `database`, `cache` and `storage`, a pipe for `queue`, a
+  dashed box for `external` and `person`, with a person icon, a heavier border for `service` and `system`) and
+  its badge is its `tech` or its role. A box with `opens` has a zoom button ("See what is inside"; a
+  double-click does the same, and Details offers it too): `store.zoomInto` shows that view, in the map or flow
+  perspective that draws it, as a navigation step (Back returns). Above the diagram, `ZoomTrail` lists the
+  levels above the current view (`zoomTrail`), each a link (`store.goToLevel`). A box that opens a graph
+  view (`GraphNode.expandable`) also offers "Show the inside here": `store.toggleExpanded` adds it to
+  `state.expanded`, and the view is drawn through `expandInPlace` (core `levels.ts`), with the boxes of the
+  view it opens added, so the parts of a service sit inside its box and their arrows cross its border; its
+  collapse button folds it back. Nothing is stored. Every box has an icon left of its label
+  (`components/icons.tsx`): its role, else the kind of code (folder, file, group, a letter per symbol kind).
+  Not while presenting. Pan by dragging, zoom with
   the wheel, the buttons or `+`/`-`, "Fit" (or `0`) for all of it. The first view is the fit, unless the
   diagram is too big to read fitted (a fit scale below 0.6, as for seventeen boxes with groups): then it
   starts at zoom 0.75 on the selection, else on the first box of `view.include` that is drawn, and a badge
@@ -1055,7 +1099,7 @@ Both splits (diagram / panels, diagram / code) are resizable. Below 900 px the h
   as loops, frames (`loop`/`alt`/`opt`/`par`) as labelled rectangles around their steps, nested by
   `resolveFrames`. A step's hit area covers its label and arrow. When the view has moved down, a copy of the
   participant names stays at the top of the pane (`sticky-heads`).
-- **Flow view:** `processFlow` (§4.8) laid out by elkjs top to bottom: stages as boxes, decisions as diamonds,
+- **Flow view:** `processFlow` (§4.8) laid out by the same layered layout, top to bottom: stages as boxes, decisions as diamonds,
   terminals, and the labelled `next` branches. A box shows the step's label large and, under it, the actor:
   the step's `from`, plus "→ B" when a stage hands work to another part and that fits (`stageActor`); a
   decision or a terminal shows the actor alone, and so does a step inside one part (the Guide and the details
@@ -1338,7 +1382,7 @@ base anchors and a diff view, and example explainers for the three fixtures.
 - `GraphView.layout` (hand-pinned positions) is validated and accepted in patches but the viewer never reads
   it, and `GraphView.hidden` is honoured by derivation but has no UI: hiding an edge or node is a patch
   (`xpl status --json` lists the derived edge ids).
-- elkjs runs on the main thread (the bundled build): laying out a very large graph blocks the page, so views
+- The layout runs on the main thread: laying out a very large graph blocks the page, so views
   should stay coarse (whole-repo views start at packages) and are expanded by hand.
 - No live reload: `xpl view` re-reads everything per request, but an open page needs a manual reload after
   `xpl apply`.
@@ -1372,7 +1416,7 @@ base anchors and a diff view, and example explainers for the three fixtures.
 **Next steps, roughly by value** (the review in `docs/review-2026-10-01.md` has the roadmap): an independent
 accuracy pass for change explainers; a word-level diff in rewritten lines; editable step titles and code in
 the viewer; live reload for `xpl view` (poll `/api/bundle`, or a server-sent event when the explainer file
-changes); a UI for hiding and pinning, or dropping the unused `layout` field; ELK in a Web Worker; more
+changes); a UI for hiding and pinning, or dropping the unused `layout` field; the layout in a Web Worker; more
 language packs (each needs `extract`, `classifySite`, `resolveModule`, and optionally a SCIP resolver);
 publishing the CLI and packaging the skill so that install is one step; a regeneration mode in the skill that
 walks `xpl status` on its own.

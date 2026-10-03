@@ -52,6 +52,9 @@ describe("reference/patch-format.md", () => {
       '"includeRemove"',
       '"excludeFiles"',
       '"stepsUpdate"',
+      '"view:system"',
+      '"opens"',
+      '"role"',
     ]) {
       expect(all, needle).toContain(needle);
     }

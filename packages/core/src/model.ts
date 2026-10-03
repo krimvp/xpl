@@ -383,10 +383,33 @@ export class ExplainerModel {
         );
       }
       case "group":
-        return this.members(id).some((m) => this.containsCode(m, where, seen));
+        return (
+          this.members(id).some((m) => this.containsCode(m, where, seen)) ||
+          this.ownAnchorsCover(id, where)
+        );
       default:
         return false;
     }
+  }
+
+  /**
+   * A group's own anchors as its code: a box for an outside system (a database) has no members, and the
+   * code that talks to it is what its anchors point at. True when `where` is on, inside or around one of them.
+   */
+  private ownAnchorsCover(
+    id: ElementId,
+    where: { file: FilePath; symbol?: SymbolPath; range?: Range },
+  ): boolean {
+    const group = this.storedNodes.get(id);
+    return arr(group?.anchors).some((anchor) => {
+      if (!isRecord(anchor) || anchor.at === "base" || anchor.file !== where.file) return false;
+      const range = anchor.resolved?.range;
+      if (where.range && range)
+        return where.range.startLine <= range.endLine && where.range.endLine >= range.startLine;
+      if (where.symbol !== undefined && anchor.symbol !== undefined)
+        return where.symbol === anchor.symbol || where.symbol.startsWith(`${anchor.symbol}.`);
+      return anchor.symbol === undefined && anchor.span === undefined;
+    });
   }
 
   // ─── Labels ───────────────────────────────────────────────────────────────────────────────────
@@ -480,6 +503,9 @@ function derived(
   if (stored?.summary !== undefined) node.summary = stored.summary;
   if (stored?.detail !== undefined) node.detail = stored.detail;
   if (stored?.members !== undefined) node.members = stored.members;
+  if (stored?.role !== undefined) node.role = stored.role;
+  if (stored?.tech !== undefined) node.tech = stored.tech;
+  if (stored?.opens !== undefined) node.opens = stored.opens;
   return node;
 }
 

@@ -1,32 +1,79 @@
 {
   "nodes": [
     {
+      "id": "grp:operator",
+      "label": "Operator",
+      "role": "person",
+      "tech": "command line",
+      "summary": "Starts the job runner with `python -m jobrunner`, and may pass the path of a settings file.",
+      "anchors": [
+        {
+          "file": "jobrunner/__main__.py",
+          "symbol": "main",
+          "role": "definition"
+        }
+      ]
+    },
+    {
+      "id": "grp:job-runner",
+      "label": "Job runner",
+      "role": "service",
+      "tech": "Python program",
+      "opens": "view:overview",
+      "summary": "Keeps jobs in a queue in memory, runs each one on a worker, and retries the ones that fail.",
+      "members": [
+        "file:jobrunner/__main__.py",
+        "grp:configuration",
+        "grp:scheduling",
+        "file:jobrunner/worker.py",
+        "grp:events"
+      ]
+    },
+    {
+      "id": "grp:settings-file",
+      "label": "Settings file",
+      "role": "storage",
+      "tech": "YAML",
+      "summary": "Holds the queue, worker, retry and metrics settings that the job runner reads when it starts.",
+      "anchors": [
+        {
+          "file": "config/default.yaml",
+          "role": "config"
+        }
+      ]
+    },
+    {
       "id": "grp:scheduling",
       "label": "Scheduling",
       "summary": "Decides which job runs next and what happens after each attempt: done, retried with a delay, or dead-lettered.",
-      "members": ["file:jobrunner/runner.py", "file:jobrunner/queue.py"]
+      "members": ["file:jobrunner/runner.py", "file:jobrunner/queue.py"],
+      "role": "component"
     },
     {
       "id": "grp:events",
       "label": "Events and metrics",
       "summary": "A bus that delivers events by topic name, and the metrics that count finished jobs from those events.",
-      "members": ["file:jobrunner/bus.py", "file:jobrunner/metrics.py"]
+      "members": ["file:jobrunner/bus.py", "file:jobrunner/metrics.py"],
+      "role": "component"
     },
     {
       "id": "grp:configuration",
       "label": "Settings",
       "summary": "The default settings in YAML, and the loader that turns them into typed config objects.",
-      "members": ["file:config/default.yaml", "file:jobrunner/config.py"]
+      "members": ["file:config/default.yaml", "file:jobrunner/config.py"],
+      "role": "component"
     },
     {
       "id": "file:jobrunner/__main__.py",
       "label": "Startup",
-      "summary": "`python -m jobrunner` starts here: `run` loads the settings, connects the parts and runs a short demo."
+      "summary": "`python -m jobrunner` starts here: `run` loads the settings, connects the parts and runs a short demo.",
+      "role": "component"
     },
     {
       "id": "file:jobrunner/worker.py",
       "label": "Workers",
-      "summary": "A worker runs one attempt of a job with a timeout and returns the outcome. A pool lends out one free worker at a time."
+      "summary": "A worker runs one attempt of a job with a timeout and returns the outcome. A pool lends out one free worker at a time.",
+      "role": "component"
     },
     {
       "id": "file:jobrunner/config.py",
@@ -50,6 +97,40 @@
     }
   ],
   "edges": [
+    {
+      "id": "edge:operator-starts",
+      "from": "grp:operator",
+      "to": "file:jobrunner/__main__.py",
+      "kind": "custom",
+      "label": "starts it",
+      "anchors": [
+        {
+          "file": "jobrunner/__main__.py",
+          "symbol": "main",
+          "role": "definition"
+        }
+      ],
+      "summary": "`python -m jobrunner` runs `main`, which takes an optional path to a settings file."
+    },
+    {
+      "id": "edge:reads-settings",
+      "from": "file:jobrunner/config.py",
+      "to": "grp:settings-file",
+      "kind": "custom",
+      "label": "reads settings",
+      "anchors": [
+        {
+          "file": "jobrunner/config.py",
+          "symbol": "load_config",
+          "role": "definition"
+        },
+        {
+          "file": "config/default.yaml",
+          "role": "config"
+        }
+      ],
+      "summary": "`load_config` reads the YAML settings file and checks each value."
+    },
     {
       "id": "edge:job-completed",
       "from": "file:jobrunner/worker.py",
@@ -79,6 +160,19 @@
     }
   ],
   "views": [
+    {
+      "id": "view:system",
+      "type": "graph",
+      "title": "The job runner, who starts it and what it reads",
+      "scope": {
+        "root": "repo",
+        "depth": 1
+      },
+      "include": ["grp:operator", "grp:job-runner", "grp:settings-file"],
+      "stubs": {
+        "mode": "none"
+      }
+    },
     {
       "id": "view:overview",
       "type": "graph",
@@ -248,8 +342,28 @@
     {
       "id": "tour:overview",
       "title": "What the job runner is made of",
-      "summary": "py-jobrunner is a small Python job runner, written as a fixture for the xpl code explainer. The program keeps jobs in an in-memory queue and runs each one on a worker. A failed job is retried with a growing delay, and an event bus tells the metrics when a job finishes. This tour shows the five parts, then how `python -m jobrunner` starts and stops a short demo.",
+      "summary": "py-jobrunner is a small Python job runner, written as a fixture for the xpl code explainer. The program keeps jobs in an in-memory queue and runs each one on a worker. A failed job is retried with a growing delay, and an event bus tells the metrics when a job finishes. This tour starts with the whole program, then its five parts, then how a short demo starts and stops.",
       "steps": [
+        {
+          "id": "t0",
+          "view": "view:system",
+          "focus": ["grp:job-runner"],
+          "note": "### A program that runs jobs in the background\n\nAn operator starts the job runner from the command line. The program reads a settings file in YAML, then keeps its jobs in memory while it runs them. Zoom into the box to see its five parts.",
+          "code": [
+            {
+              "file": "jobrunner/__main__.py",
+              "symbol": "main",
+              "role": "definition"
+            },
+            {
+              "file": "config/default.yaml",
+              "role": "config"
+            }
+          ],
+          "editor": {
+            "primary": "jobrunner/__main__.py"
+          }
+        },
         {
           "id": "t1",
           "view": "view:overview",
@@ -346,7 +460,7 @@
           "id": "t5",
           "view": "view:overview",
           "focus": ["grp:events"],
-          "note": "### Finished jobs reach metrics through the bus\n\nThe worker and the metrics code do not import each other. The two share the topic name `job.completed` and the `JobCompleted` type from `bus.py`. When `metrics.enabled` is false, the metrics handler is not subscribed, and the counters stay at zero.",
+          "note": "### Finished jobs reach metrics through the bus\n\nThe worker and the metrics code do not import each other. The worker announces each finished job on the bus under the name `job.completed`, and the metrics listen for it. When metrics are turned off in the settings, nothing listens, and the counters stay at zero.",
           "code": [
             {
               "file": "jobrunner/worker.py",
