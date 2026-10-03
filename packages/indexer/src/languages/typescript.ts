@@ -1706,7 +1706,10 @@ class Extractor {
       return;
     }
     const parts = calleeParts(fn);
-    if (parts) this.pushSite("call", parts, callSpan(n, fn, this.lines));
+    if (!parts) return;
+    this.pushSite("call", parts, callSpan(n, fn, this.lines));
+    if (fn.type === "identifier" && this.scopes.isBound(fn, fn.text))
+      this.sites.at(-1)!.local = true;
   }
 
   private onNew(n: Node): void {
@@ -1718,13 +1721,19 @@ class Extractor {
   private onAssignment(n: Node): void {
     const left = n.childForFieldName("left");
     const parts = calleeParts(left);
-    if (parts && left) this.pushSite("write", parts, writeSpan(n, left, this.lines));
+    if (!parts || !left) return;
+    this.pushSite("write", parts, writeSpan(n, left, this.lines));
+    if (left.type === "identifier" && this.scopes.isBound(left, left.text))
+      this.sites.at(-1)!.local = true;
   }
 
   private onUpdate(n: Node): void {
     const argument = n.childForFieldName("argument");
     const parts = calleeParts(argument);
-    if (parts && argument) this.pushSite("write", parts, writeSpan(n, argument, this.lines));
+    if (!parts || !argument) return;
+    this.pushSite("write", parts, writeSpan(n, argument, this.lines));
+    if (argument.type === "identifier" && this.scopes.isBound(argument, argument.text))
+      this.sites.at(-1)!.local = true;
   }
 
   private heritage(kind: "extends" | "implements", node: Node): void {

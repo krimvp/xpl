@@ -2032,12 +2032,38 @@ function callLabel(texts: TextCache, file: string, site: Reference["site"], name
     }
     text = parts.join(" ").replace(/\s+/g, " ").trim();
   }
-  const paren = text.lastIndexOf(`${name}(`);
+  // the first `name(` that is a whole name (`f(f(x))`, `new Node([new Node()])`: the outer call), to its own `)`
+  let paren = -1;
+  for (let at = text.indexOf(`${name}(`); at !== -1; at = text.indexOf(`${name}(`, at + 1)) {
+    if (at === 0 || !/[\p{L}\p{N}_$]/u.test(text[at - 1]!)) {
+      paren = at;
+      break;
+    }
+  }
   if (paren === -1) return text.includes(`${name}{`) ? `${name}{…}` : `${name}()`;
   const open = paren + name.length;
-  const close = text.lastIndexOf(")");
+  const close = matchingClose(text, open);
   const args = close > open ? text.slice(open + 1, close).trim() : "";
-  return `${name}(${args.length > 32 || args.includes("\n") ? "…" : args})`;
+  return `${name}(${args.length > 32 || args.includes("\n") || close === -1 ? "…" : args})`;
+}
+
+/** The index of the bracket that closes the one at `open` (strings skipped), or -1 when the text ends first. */
+function matchingClose(text: string, open: number): number {
+  let depth = 0;
+  let quote = "";
+  for (let i = open; i < text.length; i++) {
+    const c = text[i]!;
+    if (quote) {
+      if (c === "\\") i++;
+      else if (c === quote) quote = "";
+    } else if (c === '"' || c === "'" || c === "`") quote = c;
+    else if (c === "(" || c === "[" || c === "{") depth++;
+    else if (c === ")" || c === "]" || c === "}") {
+      depth--;
+      if (depth === 0) return i;
+    }
+  }
+  return -1;
 }
 
 /** The symbol whose code runs for a callee: a class's constructor when it has one. */
@@ -2260,7 +2286,10 @@ function pathSequence(
   }
   if (calls.length === 0) {
     return {
-      error: `${entryId} makes no call the index knows (calls into libraries outside the repository are not indexed): there is nothing to draw`,
+      error:
+        built.length + helpers.length > 0
+          ? `${entryId} makes no call worth drawing, every call it makes is left out (${notes.join("; ")}): start from a callee with more code, or explain it in a guide step`
+          : `${entryId} makes no call the index knows (calls into libraries outside the repository are not indexed): there is nothing to draw`,
     };
   }
 

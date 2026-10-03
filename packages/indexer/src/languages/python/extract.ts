@@ -476,7 +476,13 @@ export class Extractor implements Env {
     } else if (shape.qualifierText) {
       qualifier = collapseDotted(shape.qualifierText, this);
     }
-    this.sites.push({ kind: shape.kind, name: shape.name, qualifier, site: shape.site });
+    const site: SiteDraft = { kind: shape.kind, name: shape.name, qualifier, site: shape.site };
+    if (shape.kind === "call" && qualifier.length === 0 && shape.nameNode.type === "identifier") {
+      // a parameter, a local or a nested `def`: never the module-level function of the same name
+      const binder = this.scopes.bindingScope(shape.nameNode, shape.name)?.type;
+      if (binder === "function_definition" || binder === "lambda") site.local = true;
+    }
+    this.sites.push(site);
   }
 
   private onCall(call: Node): void {

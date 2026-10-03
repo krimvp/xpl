@@ -11,7 +11,9 @@
  * 1. no qualifier: the lexical scope chain (nested functions, namespaces), then top-level symbols of the
  *    file, then import bindings (via `LanguagePack.resolveModule`, following re-exports), then
  *    `from x import *`-style star exports, then - for `packageScope: "directory"` languages (Go) - top-level
- *    symbols of the other files of the same directory;
+ *    symbols of the other files of the same directory. A name the pack marks `local` (a local, a parameter
+ *    or a nested function binds it around the site) only resolves through the scope chain: a callback
+ *    parameter `fact` is not the module's `fact`;
  * 2. qualifier `this` (`self`/receiver): a member of the enclosing class, then of its base classes;
  *    `this.f.m()`: the declared type of field `f` (field facts, constructor parameter properties), then
  *    a member of that type; `super.m()`: a member of the base class;
@@ -471,6 +473,22 @@ class Resolver {
     return result;
   }
 
+  /** A bare name bound locally (`SiteDraft.local`): only a symbol nested in an enclosing function can be meant. */
+  private nested(
+    file: FilePath,
+    name: string,
+    scope: string,
+    want: Want,
+  ): IndexedSymbol | undefined {
+    const index = this.files.get(file);
+    if (!index) return undefined;
+    for (const s of this.scopeChain(file, scope)) {
+      const nested = this.pick(index.symbols.get(`${s}.${name}`), want);
+      if (nested) return nested;
+    }
+    return undefined;
+  }
+
   private lexicalUncached(
     file: FilePath,
     name: string,
@@ -874,7 +892,10 @@ class Resolver {
       site.kind === "call" || site.kind === "write"
         ? site.qualifier[site.qualifier.length - 1]
         : undefined;
-    let target = this.resolveName(ctx, site.qualifier, site.name, want, wantKey, guess);
+    let target =
+      site.local && site.qualifier.length === 0
+        ? this.nested(file.path, site.name, ctx.scope, want)
+        : this.resolveName(ctx, site.qualifier, site.name, want, wantKey, guess);
     if (!target && site.kind === "type-ref" && site.qualifier.length > 0) {
       // `Color.Red` in a type position: enum members are not symbols, the enum is the best target.
       const owner = this.qualifiedValue(site.qualifier, ctx, 0);

@@ -300,6 +300,76 @@ describe("calls: scope chain and same-file symbols", () => {
     expect(r).toEqual(["a.ts#fact -> a.ts#fact (call)", "a.ts#other -> a.ts#fact (call)"]);
   });
 
+  it("a call of a local or parameter that shadows a module function is not a call of that function", async () => {
+    const r = await refs(
+      {
+        "a.ts": src(
+          "export function fact(n: number): number { return n; }",
+          "function local(n: number) { const fact = (x: number) => x; return fact(n); }",
+          "function param(fact: (x: number) => number) { return fact(1); }",
+          "function block(n: number) { if (n) { let fact = (x: number) => x; fact = (x) => x; fact(n); } }",
+          "function outer(d: number) {",
+          "  function fact(x: number): number { return x ? fact(x - 1) : 0; }",
+          "  return fact(d);",
+          "}",
+          "function plain() { return fact(2); }",
+        ),
+      },
+      "call",
+    );
+    expect(r).toEqual([
+      "a.ts#outer.fact -> a.ts#outer.fact (call)",
+      "a.ts#outer -> a.ts#outer.fact (call)",
+      "a.ts#plain -> a.ts#fact (call)",
+    ]);
+  });
+
+  it("an assignment to a local is not a write of the module variable of the same name", async () => {
+    const r = await refs(
+      {
+        "a.ts": src(
+          "export let count = 0;",
+          "function local() { let count = 1; count = 2; count++; }",
+          "function global() { count = 3; }",
+        ),
+      },
+      "write",
+    );
+    expect(r).toEqual(["a.ts#global -> a.ts#count (write)"]);
+  });
+
+  it("a call of a Python local, parameter or lambda is not a call of the module function", async () => {
+    const r = await refs(
+      {
+        "a.py": src(
+          "def fact(n):",
+          "    return n",
+          "def local(n):",
+          "    fact = lambda x: x",
+          "    return fact(n)",
+          "def param(fact):",
+          "    return fact(1)",
+          "def outer(d):",
+          "    def fact(x):",
+          "        return fact(x - 1) if x else 0",
+          "    return fact(d)",
+          "def plain():",
+          "    return fact(2)",
+          "def uses_global():",
+          "    global fact",
+          "    return fact(3)",
+        ),
+      },
+      "call",
+    );
+    expect(r).toEqual([
+      "a.py#outer.fact -> a.py#outer.fact (call)",
+      "a.py#outer -> a.py#outer.fact (call)",
+      "a.py#plain -> a.py#fact (call)",
+      "a.py#uses_global -> a.py#fact (call)",
+    ]);
+  });
+
   it("resolves calls to overloaded functions to the implementation", async () => {
     const r = await refs(
       {

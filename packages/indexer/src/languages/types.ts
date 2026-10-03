@@ -135,6 +135,13 @@ export interface SiteDraft {
   site: Span;
   /** Optional and ignored: the pack-space path of the enclosing symbol, if a pack happens to know it. */
   fromPath?: SymbolPath;
+  /**
+   * A bare name (no qualifier) that a function, block, loop or parameter around the site binds: a local
+   * callable (`const f = () => 1; f()`, a callback parameter) or a nested function. The resolver then only
+   * looks among the symbols nested in the enclosing functions, never at a module-level symbol or an import
+   * of the same name.
+   */
+  local?: boolean;
 }
 
 /** A name a file brings into scope from another module. */

@@ -468,6 +468,29 @@ describe("deriveGraph: stored edges", () => {
     expect(derive(["grp:g"], {}, { nodes: [g], edges: [loop] }).graph.edges).toEqual([]);
   });
 
+  it("draws a call of a symbol to itself (recursion) as a loop on its box, and nothing on a box around it", () => {
+    const world = makeWorld({
+      files: [{ path: "src/t.ts", lines: 20 }],
+      symbols: [
+        { id: "src/t.ts#fact", start: 1, end: 3 },
+        { id: "src/t.ts#walk", start: 5, end: 9 },
+        { id: "src/t.ts#walk.inner", start: 6, end: 8 },
+      ],
+      refs: [
+        { from: "src/t.ts#fact", to: "src/t.ts#fact", line: 2 },
+        { from: "src/t.ts#walk.inner", to: "src/t.ts#walk.inner", line: 7 },
+        { from: "src/t.ts#fact", to: "src/t.ts#fact", line: 2, kind: "read" },
+      ],
+    });
+    const edges = (include: string[]) => derive(include, {}, {}, world).graph.edges;
+    expect(edges(["sym:src/t.ts#fact"])).toMatchObject([
+      { from: "sym:src/t.ts#fact", to: "sym:src/t.ts#fact", kind: "calls", count: 1 },
+    ]);
+    // `walk` stands for `walk.inner`: the inner function's recursion is no loop of `walk`
+    expect(edges(["sym:src/t.ts#walk"])).toEqual([]);
+    expect(edges(["file:src/t.ts"])).toEqual([]);
+  });
+
   it("reports resolution from the edge's provenance", () => {
     const { graph } = derive(
       [F.worker, F.metrics],

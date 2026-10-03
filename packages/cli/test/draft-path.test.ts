@@ -158,6 +158,56 @@ const SERIALIZER = [
   "",
 ].join("\n");
 
+describe("xpl draft path: nested calls of the same function", () => {
+  it("labels the outer call with its own arguments, brackets balanced", async () => {
+    const dir = await repo({
+      "a.ts": [
+        "export class Box {",
+        "  constructor(readonly kids: Box[]) {",
+        "    for (const k of kids) console.log(k);",
+        "    console.log(kids.length);",
+        "  }",
+        "}",
+        "export function wrap(n: number): number {",
+        "  if (n <= 0) return 0;",
+        "  console.log(n);",
+        "  return wrap(wrap(n - 1) - 1);",
+        "}",
+        "export function build(): Box {",
+        "  wrap(2);",
+        "  return new Box([new Box([])]);",
+        "}",
+        "",
+      ].join("\n"),
+    });
+    const labels = sequence((await drafted(dir, "a.ts#build", "a.ts#wrap")).patch, 0).steps.map(
+      (s) => s.label,
+    );
+    expect(labels).toEqual(["wrap(2)", "Box([new Box([])])"]);
+    const rec = sequence((await drafted(dir, "a.ts#wrap")).patch).steps.map((s) => s.label);
+    expect(rec).toEqual(["wrap(wrap(n - 1) - 1)", "wrap(n - 1)"]);
+  });
+
+  it("says which calls it left out when none is worth drawing", async () => {
+    const dir = await repo({
+      "a.ts": [
+        "export abstract class Node {",
+        "  abstract visit(): void;",
+        "  walk(): void {",
+        "    this.visit();",
+        "  }",
+        "}",
+        "",
+      ].join("\n"),
+    });
+    const r = await xpl(dir, "draft", "path", "d", "a.ts#Node.walk");
+    expect(r.code).toBe(1);
+    expect(r.err).toMatch(
+      /every call it makes is left out .*one-line helpers that call nothing: Node\.visit/,
+    );
+  });
+});
+
 describe("xpl draft path: a method a class inherits", () => {
   it("starts at the base that defines it, says so, and sends self calls where the method order finds them", async () => {
     const dir = await repo({ "ser.py": SERIALIZER });

@@ -493,7 +493,9 @@ export function deriveGraph(
     const a = rep.repr(fromEl);
     const b = rep.repr(toEl);
     if (a !== undefined && b !== undefined) {
-      if (a === b || nested(a, b)) continue;
+      // a call of a symbol to itself (recursion) is a loop on its box, when the box is that symbol
+      const loop = a === b && kind === "calls" && a === fromEl && b === toEl;
+      if (a === b ? !loop : nested(a, b)) continue;
       const id = derivedEdgeId(kind, a, b);
       let agg = edgeAggs.get(id);
       if (!agg) {
