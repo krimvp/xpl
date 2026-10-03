@@ -65,14 +65,38 @@ const FLOW_FONT = 13;
 /** Line height of a transition label. */
 export const EDGE_LABEL_LINE = 17;
 
-/** Words into lines of about `width` characters; `max` lines at most (the last one ends with "…"). */
+/**
+ * A word longer than a line (code: `ky.#runAfterResponseHooks(response)`) in pieces of at most `width`
+ * characters, cut after a `.`, `,` or `/` or before a `(` where it can be, else at `width`.
+ */
+function splitWord(word: string, width: number): string[] {
+  const pieces: string[] = [];
+  let rest = word;
+  while (rest.length > width) {
+    let cut = 0;
+    for (let i = 1; i < width; i++) {
+      if (/[.,/]/.test(rest[i - 1]!) || rest[i] === "(") cut = i;
+    }
+    // a cut that leaves only a mark or two on the line is no better than a hard one
+    if (cut < width / 3) cut = width;
+    pieces.push(rest.slice(0, cut));
+    rest = rest.slice(cut);
+  }
+  if (rest) pieces.push(rest);
+  return pieces;
+}
+
+/**
+ * Words into lines of about `width` characters; `max` lines at most (the last one ends with "…"). A word that
+ * does not fit on a line of its own is cut in pieces (`splitWord`), so no line runs past the box.
+ */
 export function wrapWords(text: string, width: number, max = Infinity): string[] {
   const lines: string[] = [];
   for (const word of text.split(/\s+/).filter(Boolean)) {
     const last = lines[lines.length - 1];
     if (last !== undefined && last.length + word.length < width)
       lines[lines.length - 1] += ` ${word}`;
-    else lines.push(word);
+    else lines.push(...splitWord(word, width));
   }
   if (lines.length <= max) return lines;
   return lines.slice(0, max).map((line, index) => (index === max - 1 ? `${line}…` : line));
@@ -278,12 +302,30 @@ export function stageActor(
   model: Pick<ExplainerModel, "label"> & Partial<Pick<ExplainerModel, "subtreeContains">>,
   max = 34,
   shape: "stage" | "decision" | "terminal" = "stage",
+  shared?: ElementId,
 ): string {
   const actor = anchorOwner(step, model) ?? step.from;
+  // The owner every box shares is said once, over the flow: a box names only where its work goes.
+  if (actor === shared) {
+    if (step.to === actor || shape !== "stage") return "";
+    const to = `→ ${model.label(step.to)}`;
+    return to.length <= max ? to : `${to.slice(0, max - 1)}…`;
+  }
   const from = model.label(actor);
   const text = step.to === actor || shape !== "stage" ? from : `${from} → ${model.label(step.to)}`;
   if (text.length <= max) return text;
   return from.length <= max ? from : `${from.slice(0, max - 1)}…`;
+}
+
+/**
+ * The one part every step of the flow starts from (the steps of one function), when there are two steps or
+ * more: named once with the flow (its caption), not under every box. A box whose code is in another part
+ * (`anchorOwner`) still names that part.
+ */
+export function sharedActor(flow: Pick<ProcessFlow, "stages">): ElementId | undefined {
+  if (flow.stages.length < 2) return undefined;
+  const actors = new Set(flow.stages.map(({ step }) => step.from));
+  return actors.size === 1 ? [...actors][0] : undefined;
 }
 
 /** `to`, when the step's first anchor is inside it and not inside `from`. */

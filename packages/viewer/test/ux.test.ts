@@ -12,7 +12,7 @@ import {
   type IndexedSymbol,
 } from "@xpl/core";
 import { indentColumns } from "../src/editor.js";
-import { stageActor, wrapWords } from "../src/layout/flowLayout.js";
+import { sharedActor, stageActor, wrapWords } from "../src/layout/flowLayout.js";
 import { withExplainer } from "../src/saveHtml.js";
 import { stepTests } from "../src/stepTests.js";
 import {
@@ -135,7 +135,46 @@ describe("the flow box's actor", () => {
   });
 });
 
+describe("a flow done by one part", () => {
+  const names = { label: (id: string) => id.replace(/^.*#/, "") };
+  const stage = (from: string, to: string) => ({
+    step: { id: `${from}>${to}`, from, to, label: "x", kind: "call" as const, anchors: [] },
+    frames: [] as string[],
+    shape: "stage" as const,
+  });
+  it("names that part once: the boxes say only where the work goes", () => {
+    const own = "sym:Ky.ts#Ky.#calculateRetryDelay";
+    const flow = { stages: [stage(own, own), stage(own, "sym:Ky.ts#Ky.#retry"), stage(own, own)] };
+    expect(sharedActor(flow)).toBe(own);
+    expect(stageActor(flow.stages[0]!.step, names, 34, "stage", own)).toBe("");
+    expect(stageActor(flow.stages[1]!.step, names, 34, "stage", own)).toBe("→ retry");
+    expect(stageActor(flow.stages[1]!.step, names, 34, "decision", own)).toBe("");
+  });
+  it("is none when two parts do the work, or there is one box", () => {
+    expect(
+      sharedActor({ stages: [stage("sym:a#A", "sym:a#B"), stage("sym:a#B", "sym:a#A")] }),
+    ).toBe(undefined);
+    expect(sharedActor({ stages: [stage("sym:a#A", "sym:a#A")] })).toBe(undefined);
+  });
+});
+
 describe("flow text and code lines", () => {
+  it("cuts a word longer than a line after a dot or before a bracket, so no line runs past the box", () => {
+    expect(wrapWords("ky.#runAfterResponseHooks(response)", 28)).toEqual([
+      "ky.#runAfterResponseHooks",
+      "(response)",
+    ]);
+    expect(wrapWords("Ky.create(input, validateAndMerge(defaults, options))", 28, 3)).toEqual([
+      "Ky.create(input,",
+      "validateAndMerge(defaults,",
+      "options))",
+    ]);
+    // no place to cut: at the width
+    expect(wrapWords("a".repeat(30), 28)).toEqual(["a".repeat(28), "aa"]);
+    for (const line of wrapWords("self._request_body_parts_with_timeout.read_all()", 18))
+      expect(line.length).toBeLessThanOrEqual(18);
+  });
+
   it("wraps words into lines, and cuts at the last line with an ellipsis", () => {
     expect(wrapWords("no: HEAD, pathsend, not HTTP or ASGI 2.4+", 18)).toEqual([
       "no: HEAD,",

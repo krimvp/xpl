@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { derivedEdgeMap, type SequenceView } from "@xpl/core";
+import { derivedEdgeMap, processFlow, type SequenceView } from "@xpl/core";
 import { viewReverseIndex } from "../derive.js";
+import { sharedActor } from "../layout/flowLayout.js";
 import { describeElement } from "../details.js";
 import { renderInline } from "../markdown.js";
 import { stepTitle } from "../stepTitle.js";
 import { useDerived, useStore, useViewerState } from "../hooks.js";
 import {
+  aroundFlow,
   codeFirstView,
   topicElements,
   topicMatches,
@@ -80,7 +82,16 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
       flow.participants.some(shows)
     );
   }, [active, state.perspective, state.model, map.graph, flow]);
+  // A box that holds the whole flow (ky, around a flow of ky's calls) is not what this flow is about: the
+  // panel names the flow on screen, not the box picked before the tab changed.
+  const wholeFlow =
+    !!active && state.perspective === "flow" && !!flow && aroundFlow(active, flow, state.model);
   const diagramTitle = state.perspective === "map" ? map.view.title : flow?.title;
+  // A flow whose every box is done by one part (the steps of one function) names it here, once.
+  const flowOwner = useMemo(
+    () => (flow ? sharedActor(processFlow(flow)) : undefined),
+    [flow, state.model],
+  );
   // Boxes on this map that open a map of their own: reachable without the topic list.
   const insides =
     state.perspective === "map"
@@ -90,7 +101,8 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
   // The steps of one function: the code is the main pane, the flow a narrow outline beside it.
   const codeFirst = state.perspective === "flow" && codeFirstView(flow);
   // The topic column names the picked element (not in the guide while its section is the topic).
-  const topicShown = !!info && onScreen && !(state.perspective === "guide" && appliedStep);
+  const topicShown =
+    !!info && onScreen && !wholeFlow && !(state.perspective === "guide" && appliedStep);
   const showSource = code || sourceOpen || codeFirst;
   useEffect(() => {
     if (!showSource) columns.current?.scrollTo({ top: 0, behavior: "instant" });
@@ -140,6 +152,10 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
                 : (info?.title ?? tour?.title ?? "Overview")}
           </span>
         </nav>
+        {/* A double-click that changed the tab says so (always mounted, so a screen reader hears it). */}
+        <p className="switch-notice" role="status" data-testid="switch-notice">
+          {state.switchNotice}
+        </p>
         {active && state.perspective !== "guide" && (
           <button className="btn" onClick={() => store.readExplanation()}>
             Read its explanation
@@ -184,6 +200,11 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
                           ? map.view.title
                           : (flow?.title ?? "The guide's steps")}
                       </h2>
+                      {state.perspective === "flow" && flowOwner && (
+                        <p className="caption-owner" data-testid="caption-owner">
+                          The steps of <code>{state.model.label(flowOwner)}</code>
+                        </p>
+                      )}
                       {insides.length > 0 && (
                         <p className="caption-insides" data-testid="caption-insides">
                           {insides.map((node) => (
@@ -279,6 +300,14 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
                 {info.title}, which you picked, is not in this{" "}
                 {state.perspective === "map" ? "map" : "flow"}.
               </p>
+            </section>
+          )}
+          {info && wholeFlow && diagramTitle && (
+            <section className="topic-summary" data-testid="topic-summary">
+              <p className="eyebrow">This flow</p>
+              <h2>{diagramTitle}</h2>
+              {flow?.scope?.question && <p>{flow.scope.question}</p>}
+              <p data-testid="topic-around-flow">It all happens inside {info.title}.</p>
             </section>
           )}
           {info && topicShown && (

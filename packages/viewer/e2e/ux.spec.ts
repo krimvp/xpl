@@ -268,6 +268,25 @@ test.describe("Present: a flow step", () => {
     // the decision is the runner's
     await expect(owner("dispatch:2")).toHaveText("Runner.dispatch");
   });
+
+  test("a flow whose every step starts in one part names it once, over the flow", async ({
+    page,
+  }) => {
+    await openVariant(
+      page,
+      (bundle) => {
+        withEightStageFlow(bundle);
+        const view = bundle.explainer.views.find((v: Loose) => v.id === "view:dispatch");
+        view.steps[3].from = RUNNER;
+      },
+      "?perspective=flow&view=view:dispatch",
+    );
+    await expect(page.getByTestId("caption-owner")).toHaveText("The steps of Runner.dispatch");
+    const owner = (id: string) => byId(page, id).locator(".flow-owner");
+    // the runner's own boxes say nothing more; a box that hands work on says where it goes
+    await expect(owner("dispatch:2")).toHaveCount(0);
+    await expect(owner("dispatch:5")).toHaveText("→ queue.ts");
+  });
 });
 
 test.describe("Present: the code", () => {

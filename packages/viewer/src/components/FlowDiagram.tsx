@@ -9,6 +9,7 @@ import {
   levelTitle,
   type FlowLayout,
   placedStages,
+  sharedActor,
   STAGE_LABEL_CHARS,
   stageActor,
   wrapWords,
@@ -99,6 +100,9 @@ export function FlowDiagram({ view, snapshot, outline = false }: FlowDiagramProp
   if (flow.stages.length === 0)
     return <div className="diagram-message">This process has no stages yet.</div>;
   const placed = placedStages(flow, layout);
+  // The steps of one function: its name is said once over the flow (the caption), not under every box.
+  // A still picture and Present have no caption with it, so their boxes keep it.
+  const owner = snapshot || present ? undefined : sharedActor(flow);
   const relatedStages = flowRelated(
     flow,
     snapshot?.selection ?? state.selection,
@@ -234,6 +238,7 @@ export function FlowDiagram({ view, snapshot, outline = false }: FlowDiagramProp
         const active = topics.has(step.id),
           related = relatedStages.has(step.id);
         const label = wrapWords(step.label, STAGE_LABEL_CHARS, 3);
+        const actor = stageActor(step, state.model, shape === "decision" ? 26 : 34, shape, owner);
         return (
           <g
             key={node.id}
@@ -266,7 +271,10 @@ export function FlowDiagram({ view, snapshot, outline = false }: FlowDiagramProp
             <text
               className="flow-stage-label"
               x={width / 2}
-              y={height / 2 - (label.length - 1) * 10 - (shape === "decision" ? 8 : 4)}
+              // without an actor line under it, the label sits in the middle of the box
+              y={
+                height / 2 - (label.length - 1) * 10 - (!actor ? -5 : shape === "decision" ? 8 : 4)
+              }
               textAnchor="middle"
             >
               {label.map((line, i) => (
@@ -276,14 +284,16 @@ export function FlowDiagram({ view, snapshot, outline = false }: FlowDiagramProp
               ))}
             </text>
             {/* In a diamond the actor sits just under the label, where the shape is still wide. */}
-            <text
-              className="flow-owner"
-              x={width / 2}
-              y={shape === "decision" ? height / 2 + 12 + label.length * 10 : height - 13}
-              textAnchor="middle"
-            >
-              {stageActor(step, state.model, shape === "decision" ? 26 : 34, shape)}
-            </text>
+            {actor && (
+              <text
+                className="flow-owner"
+                x={width / 2}
+                y={shape === "decision" ? height / 2 + 12 + label.length * 10 : height - 13}
+                textAnchor="middle"
+              >
+                {actor}
+              </text>
+            )}
             {newFrame && (
               // Above the arrowhead (it ends at the box), on a halo: the dashed line runs behind it.
               <text className="flow-frame" x={width / 2} y="-18" textAnchor="middle">

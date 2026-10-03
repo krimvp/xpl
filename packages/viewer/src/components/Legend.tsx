@@ -42,12 +42,12 @@ export function Legend({ shows }: { shows: LegendShows }) {
         </Row>
       )}
       {shows.outsideSystems && (
-        <Row label="Something outside this code: your app, the browser, a server">
+        <Row label="Something outside this code: the browser, a server, a person">
           <rect className="lg-box is-outside" x="1" y="3" width="30" height="16" rx="4" />
         </Row>
       )}
       {shows.systems && (
-        <Row label="A whole system, this one or one it works with">
+        <Row label="A whole system: this one, your app, or another it works with">
           <rect className="lg-box is-system" x="1" y="3" width="30" height="16" rx="4" />
         </Row>
       )}

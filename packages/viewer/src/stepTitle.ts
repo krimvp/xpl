@@ -22,11 +22,16 @@ export const SHORT_TITLE = 60;
 
 const HEADING = /^ {0,3}#{1,6}[ \t]+(.*?)(?:[ \t]+#+)?[ \t]*$/;
 
-/** Markdown a title is shown without: links keep their text, emphasis and code marks go. */
+/**
+ * Markdown a title is shown without: links keep their text, emphasis and code marks go. A code span keeps
+ * what is inside it as written ("`*`" stays "*").
+ */
 const plain = (text: string) =>
   text
     .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
-    .replace(/[*`]/g, "")
+    .replace(/(`+)(.*?)\1|[*`]+/g, (_mark, ticks: string | undefined, code: string | undefined) =>
+      ticks ? code! : "",
+    )
     .replace(/\s+/g, " ")
     .trim();
 
