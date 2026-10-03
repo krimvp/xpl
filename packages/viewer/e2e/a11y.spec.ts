@@ -231,3 +231,16 @@ test.describe("finding the way between maps and topics", () => {
     await expect(page.getByTestId("topic-off-view")).toHaveCount(0);
   });
 });
+
+test("every code pane can be reached with the keyboard (its code is a tab stop, named after the file)", async ({
+  page,
+}) => {
+  await page.goto(TS_BUNDLE.href);
+  await page.getByTestId("perspective-code").click();
+  const content = page.locator(".workspace-source .cm-content").first();
+  await expect(content).toBeVisible();
+  for (const each of await page.locator(".cm-content").all()) {
+    await expect(each).toHaveAttribute("tabindex", "0");
+    await expect(each).toHaveAttribute("aria-label", /source code/);
+  }
+});

@@ -802,6 +802,9 @@ export function createReadOnlyEditor(
     // Ctrl/Cmd+F finds in the file (read-only: the panel finds, it never replaces).
     search({ top: true, createPanel: findPanel }),
     keymap.of(searchKeymap),
+    // An explicit tab stop on the code (it is one already, being editable): the scrolling area around it then
+    // has focusable content, which checkers such as axe look for (scrollable-region-focusable).
+    EditorView.contentAttributes.of({ tabindex: "0" }),
     ...(label
       ? [EditorView.contentAttributes.of({ "aria-label": label, "aria-readonly": "true" })]
       : []),
