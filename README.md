@@ -174,5 +174,8 @@ build step between packages in development. After `npm run build`, `node package
 - [docs/review-2026-10-01.md](docs/review-2026-10-01.md): review of four generated explainers (two PRs,
   a whole repo, a subsystem), what that iteration changed, a validation run on an unseen PR, and the
   roadmap.
+- [docs/review-2026-10-03-stress.md](docs/review-2026-10-03-stress.md): a stress test on seven large repositories
+  (zod, vue, django, sympy, jinja, prometheus, hcl) and on recursive edge cases: accuracy, speed, what was fixed
+  and what is still open.
 - [skill/code-explainer/](skill/code-explainer/): what Claude reads: `SKILL.md`, `reference/` (the CLI,
   the patch format, the writing rules, the guide for changes).
