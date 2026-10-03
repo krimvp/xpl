@@ -7,7 +7,8 @@
  * Reading a pane: its header can expand it to the whole column (the others fold to their headers) or fold it;
  * a file opened on purpose (the tree, "Files in this change") takes the column by itself until the selection
  * changes. A changed file's header steps through its changes (‹ change 2 / 3 ›, or n / p in the code), and a
- * pane scrolled into the middle of a function says which one ("in Runner.dispatch").
+ * pane scrolled into the middle of a function says which one ("in Runner.dispatch"). Places of one file far
+ * apart step the same way (‹ range 1 / 2 ›, RangeStepper); a talk gives each of them a pane of its own.
  */
 import type { EditorView } from "@codemirror/view";
 import {
@@ -42,14 +43,22 @@ import {
   scrollToLine,
 } from "../editor.js";
 import { useDerived, useStore, useViewerState } from "../hooks.js";
+import { talkPanes, type TalkPane } from "../present/ranges.js";
 import { roleWords } from "../readerWords.js";
 import type { Cursor } from "../store.js";
+import { RangeStepper } from "./RangeStepper.js";
 
 export function EditorStack() {
   const store = useStore();
   const state = useViewerState();
   const derived = useDerived();
-  const { panes, overflow } = derived;
+  const { overflow } = derived;
+  // A talk shows far-apart places of one file in panes of their own (present/ranges.ts).
+  const talk = state.mode === "present";
+  const panes: readonly TalkPane[] = useMemo(
+    () => (talk ? talkPanes(derived.panes) : derived.panes),
+    [derived.panes, talk],
+  );
 
   const change = changeOf(state.explainer);
   // Which pane has the column to itself, and which are folded to their headers: a way of looking, reset when
@@ -187,7 +196,8 @@ export function EditorStack() {
   );
 }
 
-const paneKey = (pane: PaneSpec) => `${pane.side === "base" ? "base" : "head"}:${pane.file}`;
+const paneKey = (pane: TalkPane) =>
+  `${pane.side === "base" ? "base" : "head"}:${pane.file}${pane.part ? `#${pane.part}` : ""}`;
 
 /** Lines covered by the ranges, overlaps counted once. */
 export function focusedLineCount(ranges: readonly FocusRange[]): number {
@@ -555,6 +565,20 @@ const EditorPane = memo(function EditorPane({
               ›
             </button>
           </span>
+        )}
+        {!folded && (
+          <RangeStepper
+            ranges={pane.ranges}
+            lead={pane.lead}
+            view={view}
+            focusToken={focusToken}
+            keys={hunks.length === 0}
+            part={
+              (pane as TalkPane).parts
+                ? [(pane as TalkPane).part!, (pane as TalkPane).parts!]
+                : undefined
+            }
+          />
         )}
         <span className="pane-roles">
           {roles.map((role) => (
