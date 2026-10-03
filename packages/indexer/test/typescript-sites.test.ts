@@ -352,6 +352,7 @@ describe("imports", () => {
       "* (type) <- ./star",
       "ns (type) <- ./ns",
       "* <- ./star2",
+      "Local (type) <- -",
     ]);
   });
 
@@ -382,6 +383,8 @@ describe("imports", () => {
       { name: "*", module: "./star", site: "export * from './star';" },
       { name: "nsx", module: "./nsx", site: "export * as nsx from './nsx';" },
       { name: "default", localName: "local" },
+      { name: "T", localName: "T", typeOnly: true },
+      { name: "local1", localName: "local1" },
       { name: "renamed", localName: "local2" },
       { name: "default", localName: "Foo" },
     ]);

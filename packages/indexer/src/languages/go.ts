@@ -51,6 +51,7 @@ import { extractGo } from "./go/extract.js";
 import { inferGoImplements } from "./go/implements.js";
 import { resolveGoModule } from "./go/modules.js";
 import type { LanguagePack } from "./types.js";
+import { offByDefault } from "./go/build.js";
 
 export const goPack: LanguagePack = {
   id: "go",
@@ -59,6 +60,7 @@ export const goPack: LanguagePack = {
     return "go";
   },
   packageScope: "directory",
+  offByDefault: (path, repo) => offByDefault(path, repo.readText(path)),
   refs: "heuristic",
 
   extract: extractGo,

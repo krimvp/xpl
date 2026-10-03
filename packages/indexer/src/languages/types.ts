@@ -284,6 +284,17 @@ export interface LanguagePack {
    * every file of a package directory shares one namespace).
    */
   readonly packageScope: "file" | "directory";
+  /**
+   * Optional. A module's imports are names other modules can import from it (Python: `from .a import x` in
+   * `__init__.py` makes `pkg.x`). Without it (TS, Go), only what the module exports is, `export { x } from`.
+   */
+  readonly importsReexport?: boolean;
+  /**
+   * Optional. The file is left out of a default build (Go: a `//go:build` line or a `_GOOS` / `_GOARCH` file
+   * name that a linux/amd64 build without custom tags does not match). When several files of a package declare
+   * a name, the resolver tries these last.
+   */
+  offByDefault?(path: FilePath, repo: RepoView): boolean;
   /** `"heuristic"` if `extract` produces sites (refs are derived), `"none"` for config formats and stubs. */
   readonly refs: "heuristic" | "none";
   /** Extract symbols, sites, bindings and type facts from a parsed file. Must not throw on syntax errors. */

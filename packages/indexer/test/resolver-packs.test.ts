@@ -115,6 +115,7 @@ const pyLike: LanguagePack = {
   languages: ["python"],
   grammarFor: () => "python",
   packageScope: "file",
+  importsReexport: true,
   refs: "heuristic",
   extract: () => ({ symbols: [], sites: [], imports: [], typeFacts: [] }),
   classifySite: () => undefined,

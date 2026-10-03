@@ -1499,8 +1499,14 @@ class Extractor {
         if (spec.type !== "export_specifier") continue;
         const name = spec.childForFieldName("name");
         const alias = spec.childForFieldName("alias");
-        if (name && alias && alias.text !== name.text)
-          this.exports.push({ name: alias.text, localName: name.text });
+        // `export { X }` too: an imported `X` is exported only by such a clause
+        if (!name) continue;
+        const typeOnly = isTypeStatement(stmt) || isTypeSpecifier(spec);
+        this.exports.push({
+          name: alias?.text ?? name.text,
+          localName: name.text,
+          ...(typeOnly ? { typeOnly: true as const } : {}),
+        });
       }
       return;
     }

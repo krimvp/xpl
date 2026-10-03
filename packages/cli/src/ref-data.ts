@@ -132,8 +132,11 @@ export function collectRefs(
   const out: RefEntry[] = [];
   for (const id of ids) {
     for (const ref of direction === "out" ? model.refsFrom(id) : model.refsTo(id)) {
-      // a call of the target from inside itself (recursion) is listed; other references inside it are not
-      if (ref.from !== ref.to && inside.has(direction === "out" ? ref.to : ref.from)) continue;
+      // a call of the target symbol to itself (recursion) is listed; other references inside it are not,
+      // the recursion of a function nested in it included
+      const recursion =
+        target.type === "symbol" && ref.from === target.symbolId && ref.to === ref.from;
+      if (!recursion && inside.has(direction === "out" ? ref.to : ref.from)) continue;
       if (kinds && !kinds.has(ref.kind)) continue;
       out.push(toEntry(model, ref, direction));
     }

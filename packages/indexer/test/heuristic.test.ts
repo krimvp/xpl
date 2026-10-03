@@ -200,6 +200,24 @@ describe("imports", () => {
     expect(r).toContain("a.ts# -> y.ts#Why (import)");
   });
 
+  it("a name a barrel imports for its own use is not what it exports: its `export *` is", async () => {
+    const r = await refs(
+      {
+        "core/vmodel.ts": src("export function tm() {}"),
+        "core/index.ts": src("export { tm } from './vmodel';"),
+        "dom/vmodel.ts": src("export function tm() {}"),
+        "dom/index.ts": src(
+          "import { tm } from './vmodel';",
+          "export const opts = { model: tm };",
+          "export * from '../core/index';",
+        ),
+        "use.ts": src("import { tm } from './dom/index';", "function go() { tm(); }"),
+      },
+      "call",
+    );
+    expect(r).toEqual(["use.ts#go -> core/vmodel.ts#tm (call)"]);
+  });
+
   it("uses the import's own position: an import inside a function comes from that function", async () => {
     const r = await refs(
       {

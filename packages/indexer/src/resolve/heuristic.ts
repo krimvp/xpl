@@ -25,7 +25,8 @@
  *    the facts of its own file give it (`bus = new EventBus()`);
  * 5. last resort, only when the receiver's type is completely unknown: a class named like the qualifier
  *    (case-insensitive) that has the member (`queue.pop()` -> `Queue.pop`), preferring the same file, then
- *    a class the file imports, then the same directory; ambiguity drops the site. Calls and writes only.
+ *    a class the file imports, then the same directory (for Go, the same package comes before the imports);
+ *    ambiguity drops the site. Calls and writes only.
  *
  * A `read` site resolves the same way (1-4) but only to variables: package-level variables and constants,
  * fields and properties. `import type` / `TYPE_CHECKING` bindings (`ImportBinding.typeOnly`) are `type-ref`
@@ -221,6 +222,11 @@ class Resolver {
       this.files.set(file.path, index);
       pushTo(this.byDir, index.dir, index);
     }
+    // the files of a default build first: a package's other variants declare the same names
+    for (const list of this.byDir.values()) {
+      const off = new Set(list.filter((f) => this.isOffByDefault(f.file)));
+      if (off.size > 0) list.sort((a, b) => Number(off.has(a)) - Number(off.has(b)));
+    }
     for (const entry of input.entries) {
       if (entry.anchorOnly) continue; // a test block: its title is not a name in the code
       const index = this.files.get(entry.symbol.file);
@@ -337,9 +343,27 @@ class Resolver {
     let files = this.moduleCache.get(key);
     if (!files) {
       files = this.files.get(file)!.file.pack.resolveModule(spec, file, this.input.repo);
+      if (files.length > 1) {
+        const off = new Set(files.filter((f) => this.isOffByDefault(this.files.get(f)?.file)));
+        if (off.size > 0)
+          files = [...files].sort((a, b) => Number(off.has(a)) - Number(off.has(b)));
+      }
       this.moduleCache.set(key, files);
     }
     return files;
+  }
+
+  private readonly offCache = new Map<FilePath, boolean>();
+
+  /** `LanguagePack.offByDefault`, once per file. */
+  private isOffByDefault(file: ResolverFile | undefined): boolean {
+    if (!file?.pack.offByDefault) return false;
+    let off = this.offCache.get(file.path);
+    if (off === undefined) {
+      off = file.pack.offByDefault(file.path, this.input.repo);
+      this.offCache.set(file.path, off);
+    }
+    return off;
   }
 
   /**
@@ -402,7 +426,11 @@ class Resolver {
           }
         }
       }
-      for (const binding of index.bindings.get(name) ?? []) {
+      // a plain import is not an export in TS or Go (`import { tm }` for the file's own use, while an
+      // `export *` provides another `tm`); in Python it is
+      for (const binding of index.file.pack.importsReexport
+        ? (index.bindings.get(name) ?? [])
+        : []) {
         const entity = this.bindingEntity(path, binding, WANT.any, visited, depth + 1);
         if (entity.k !== "missing") return entity;
       }
@@ -990,15 +1018,22 @@ class Resolver {
     return top[0]!.member;
   }
 
-  /** Closeness of a candidate class to the site: same file, imported by the file, same directory, elsewhere. */
+  /**
+   * Closeness of a candidate class to the site: same file, imported by the file, same directory, elsewhere. For
+   * a language whose package is the directory (Go), the same directory is the file's own package: it comes
+   * before what the file imports.
+   */
   private rank(cls: IndexedSymbol, ctx: Ctx): number {
     if (cls.file === ctx.file) return 0;
     const index = this.files.get(ctx.file)!;
+    const sameDir = dirOf(cls.file) === index.dir;
+    const packageDir = index.file.pack.packageScope === "directory";
+    if (sameDir && packageDir) return 1;
     for (const bindings of index.bindings.values()) {
       for (const binding of bindings)
-        if (this.modules(ctx.file, binding.module).includes(cls.file)) return 1;
+        if (this.modules(ctx.file, binding.module).includes(cls.file)) return packageDir ? 2 : 1;
     }
-    return dirOf(cls.file) === index.dir ? 2 : 3;
+    return sameDir ? 2 : 3;
   }
 }
 

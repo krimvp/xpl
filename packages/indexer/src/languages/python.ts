@@ -89,6 +89,7 @@ export const pythonPack: LanguagePack = {
     return "python";
   },
   packageScope: "file",
+  importsReexport: true,
   refs: "heuristic",
 
   extract(ctx: FileContext): FileFacts {

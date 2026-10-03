@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it } from "vitest";
-import { indexedFixture, xpl, xplJson } from "./helpers.js";
+import { indexedFixture, makeTempDir, writeFile, xpl, xplJson } from "./helpers.js";
 
 let dir: string;
 beforeAll(async () => {
@@ -372,5 +372,35 @@ describe("xpl search", () => {
     const { code, err } = await xpl(dir, "search", "");
     expect(code).toBe(2);
     expect(err).toContain("pattern is empty");
+  });
+});
+
+describe("xpl refs: recursion", () => {
+  it("lists a symbol's own recursion, but not that of a function nested in it or in a file", async () => {
+    const repo = makeTempDir("xpl-refs-rec-");
+    writeFile(
+      repo,
+      "a.ts",
+      [
+        "export function outer(d: number): number {",
+        "  function inner(x: number): number {",
+        "    return x ? inner(x - 1) : 0;",
+        "  }",
+        "  return inner(d) + (d ? outer(d - 1) : 0);",
+        "}",
+        "",
+      ].join("\n"),
+    );
+    expect((await xpl(repo, "index", "--precise", "off")).code).toBe(0);
+    const calls = async (...args: string[]) =>
+      (await xplJson<{ in?: { id: string }[]; out?: { id: string }[] }>(repo, "refs", ...args))
+        .json;
+    const ids = (list: { id: string }[] | undefined) => (list ?? []).map((r) => r.id);
+    expect(ids((await calls("a.ts#outer", "--in")).in)).toEqual(["sym:a.ts#outer"]);
+    expect(ids((await calls("a.ts#outer.inner", "--in")).in)).toEqual([
+      "sym:a.ts#outer.inner",
+      "sym:a.ts#outer",
+    ]);
+    expect(ids((await calls("file:a.ts", "--out", "--kind", "call")).out)).toEqual([]);
   });
 });

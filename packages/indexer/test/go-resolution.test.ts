@@ -644,3 +644,68 @@ describe("properties of the references", () => {
     expect(index.tool).toContain("tree-sitter-go@");
   });
 });
+
+describe("files of other builds", () => {
+  it("a name declared in several files of a package resolves to the file of a default build", async () => {
+    const { index } = await indexFiles({
+      "go.mod": GO_MOD,
+      // sorted first, but only built with a custom tag, for another system or for another architecture
+      "lab/a_dedupe.go": src(
+        "//go:build dedupelabels",
+        "",
+        "package lab",
+        "func Get() int { return 1 }",
+      ),
+      "lab/b_js.go": src("package lab", "func Map() int { return 1 }"),
+      "lab/c_windows_arm64.go": src("package lab", "func Arch() int { return 1 }"),
+      "lab/d_default.go": src(
+        "//go:build !dedupelabels && (linux || darwin) && go1.21",
+        "",
+        "package lab",
+        "func Get() int { return 2 }",
+      ),
+      "lab/e_linux_amd64.go": src(
+        "package lab",
+        "func Map() int { return 2 }",
+        "func Arch() int { return 2 }",
+      ),
+      "lab/use.go": src("package lab", "func Use() int { return Get() + Map() + Arch() }"),
+      "app/main.go": src(
+        "package app",
+        'import "example.com/app/lab"',
+        "func Main() int { return lab.Get() }",
+      ),
+    });
+    expect(refsFrom(index, "lab/use.go#", "call")).toEqual([
+      "Use -> lab/d_default.go#Get (call)",
+      "Use -> lab/e_linux_amd64.go#Arch (call)",
+      "Use -> lab/e_linux_amd64.go#Map (call)",
+    ]);
+    expect(refsFrom(index, "app/main.go#", "call")).toEqual([
+      "Main -> lab/d_default.go#Get (call)",
+    ]);
+  });
+});
+
+describe("the last-resort guess by receiver name", () => {
+  it("prefers a type of the file's own package to one of a package it imports", async () => {
+    const { index } = await indexFiles({
+      "go.mod": GO_MOD,
+      "root/body.go": src("package root", "type Body interface { Content() int }"),
+      "syn/body.go": src(
+        "package syn",
+        "type Body struct{}",
+        "func (b *Body) Content() int { return 1 }",
+      ),
+      "syn/use.go": src(
+        "package syn",
+        'import "example.com/app/root"',
+        "var _ root.Body",
+        "func Use(x any) int { body := x.(interface{ Content() int }); return body.Content() }",
+      ),
+    });
+    expect(refsFrom(index, "syn/use.go#Use", "call")).toEqual([
+      "Use -> syn/body.go#Body.Content (call)",
+    ]);
+  });
+});
