@@ -147,6 +147,10 @@ export interface FlowKeyShows {
   frames: boolean;
   /** Arrows drawn dashed: the order of the calls, read from the code (a projected flow). */
   projected: boolean;
+  /** A recursive call: the same steps again, one level down. */
+  recurse?: boolean;
+  /** A return to the caller, up one level. */
+  returns?: boolean;
 }
 
 /** The key of a process flow (FlowDiagram). */
@@ -185,6 +189,16 @@ export function FlowKey({ shows }: { shows: FlowKeyShows }) {
       <Row label={shows.projected ? "Then: the order the steps run in" : "Then: what runs next"}>
         <Arrow className={`lg-edge${shows.projected ? " is-stub" : ""}`} />
       </Row>
+      {shows.recurse && (
+        <Row label="One level down: the function calls itself, and the steps from the arrow's end run again for the smaller piece">
+          <Arrow className="lg-edge is-recurse" />
+        </Row>
+      )}
+      {shows.returns && (
+        <Row label="Up one level: the call returns, and its caller goes on at the arrow's end">
+          <Arrow className="lg-edge is-return" />
+        </Row>
+      )}
       {shows.frames && (
         <Row label="When it runs: the purple words above a box hold for it and the boxes after it">
           <text className="lg-frame" x="16" y="15">

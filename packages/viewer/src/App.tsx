@@ -15,7 +15,8 @@ import { Header } from "./components/Header.js";
 import { Workspace } from "./components/Workspace.js";
 import "./workspace.css";
 import { Splitter } from "./components/Splitter.js";
-import { StoreContext, useStore, useViewerState } from "./hooks.js";
+import { StoreContext, useDerived, useStore, useViewerState } from "./hooks.js";
+import { codeFirstView } from "./workspace.js";
 import { isFormField, ownsKeys, tourKeyAction } from "./present/keys.js";
 import { PresentMode } from "./present/PresentMode.js";
 import type { ViewerStore } from "./store.js";
@@ -47,6 +48,10 @@ function Shell() {
   // The splits live here, not in ExploreLayout, so that a round trip through Present keeps them.
   const [leftWidth, setLeftWidth] = useState(() =>
     Math.round(clamp(window.innerWidth * 0.52, 420, 900)),
+  );
+  // The narrow outline column of a code-first view (the code takes the rest), sized apart from the diagram's.
+  const [outlineWidth, setOutlineWidth] = useState(() =>
+    Math.round(clamp(window.innerWidth * 0.27, 340, 480)),
   );
   const [lowerHeight, setLowerHeight] = useState(() =>
     Math.round(clamp(window.innerHeight * 0.36, 220, 380)),
@@ -126,6 +131,8 @@ function Shell() {
         <ExploreLayout
           leftWidth={leftWidth}
           setLeftWidth={setLeftWidth}
+          outlineWidth={outlineWidth}
+          setOutlineWidth={setOutlineWidth}
           lowerHeight={lowerHeight}
           setLowerHeight={setLowerHeight}
         />
@@ -139,6 +146,8 @@ const clamp = (value: number, lo: number, hi: number) => Math.min(hi, Math.max(l
 interface ExploreLayoutProps {
   leftWidth: number;
   setLeftWidth: (update: (width: number) => number) => void;
+  outlineWidth: number;
+  setOutlineWidth: (update: (width: number) => number) => void;
   lowerHeight: number;
   setLowerHeight: (update: (height: number) => number) => void;
 }
@@ -146,15 +155,24 @@ interface ExploreLayoutProps {
 function ExploreLayout({
   leftWidth,
   setLeftWidth,
+  outlineWidth,
+  setOutlineWidth,
   lowerHeight,
   setLowerHeight,
 }: ExploreLayoutProps) {
+  // A code-first view (the steps of one function): the diagram is a narrow outline, the code the main pane.
+  const view = useDerived().view.view;
+  const codeFirst =
+    codeFirstView(view) &&
+    (view?.type === "flow" || (view?.type === "sequence" && view.layout === "code-first"));
+  const width = codeFirst ? outlineWidth : leftWidth;
+  const setWidth = codeFirst ? setOutlineWidth : setLeftWidth;
   return (
     <main
-      className="explore"
+      className={`explore${codeFirst ? " is-code-first" : ""}`}
       style={
         {
-          "--left-width": `${leftWidth}px`,
+          "--left-width": `${width}px`,
           "--lower-height": `${lowerHeight}px`,
         } as React.CSSProperties
       }
@@ -174,7 +192,7 @@ function ExploreLayout({
       <Splitter
         orientation="col"
         label="Resize the diagram and the code"
-        onResize={(d) => setLeftWidth((w) => clamp(w + d, 320, window.innerWidth - 360))}
+        onResize={(d) => setWidth((w) => clamp(w + d, 280, window.innerWidth - 360))}
       />
       <section className="right" aria-label="Code">
         <CodeArea tree="collapsible" />

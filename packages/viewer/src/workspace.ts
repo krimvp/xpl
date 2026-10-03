@@ -141,3 +141,28 @@ export function workspaceMap(state: ViewerState) {
   }
   return { view, graph, related, generated: authored === undefined };
 }
+
+/**
+ * Is this view read code first (`SequenceView.layout`)? Then Read and Explore show the code as the main pane and
+ * the flow as a narrow outline beside it, which follows the selection and the caret. Without a setting: a flow or
+ * sequence of three steps or more whose code (every step's anchors in the current code) is all in one file, the
+ * steps of one function, where the question lives in the code and a big canvas only repeats it (review
+ * 2026-10-03, senior §5).
+ */
+export function codeFirstView(view: View | undefined): boolean {
+  if (!view || view.type === "graph") return false;
+  if (view.layout === "code-first") return true;
+  if (view.layout === "diagram") return false;
+  const steps = Array.isArray(view.steps) ? view.steps : [];
+  if (steps.length < 3) return false;
+  const files = new Set<string>();
+  for (const step of steps) {
+    const anchors = (Array.isArray(step?.anchors) ? step.anchors : []).filter(
+      (anchor) => anchor && typeof anchor.file === "string" && anchor.at !== "base",
+    );
+    if (anchors.length === 0) return false;
+    for (const anchor of anchors) files.add(anchor.file);
+    if (files.size > 1) return false;
+  }
+  return true;
+}

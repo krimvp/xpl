@@ -1166,7 +1166,13 @@ const EdgeShape = memo(function EdgeShape({
       }}
       onKeyDown={(event) => activate(event, () => select(event))}
     >
-      <title>{edge.stub ? `${edge.title} (leaves or enters the view here)` : edge.title}</title>
+      <title>
+        {edge.stub
+          ? `${edge.title} (leaves or enters the view here)`
+          : edge.via
+            ? `${edge.title}\nThrough ${edge.via.join(", then ")}, which this map does not draw as a box`
+            : edge.title}
+      </title>
       <rect
         className="bounds"
         x={edge.anchor.x - reachX}

@@ -123,6 +123,12 @@ export interface PanZoomProps {
    * enough to show it (when it is out of sight), and the zoom buttons zoom about it.
    */
   keepInView?: Box | undefined;
+  /**
+   * Room kept between the selection and the pane's edge when it is panned into view, px (default 32). With it,
+   * the selection is kept that far in (nearer the middle) on every change: the outline beside the code of a
+   * code-first flow follows the caret.
+   */
+  revealMargin?: number;
   children: ReactNode;
 }
 
@@ -140,6 +146,7 @@ export function PanZoom({
   tools,
   focus,
   keepInView,
+  revealMargin,
   children,
 }: PanZoomProps) {
   const wrap = useRef<HTMLDivElement>(null);
@@ -213,8 +220,14 @@ export function PanZoom({
   useLayoutEffect(() => {
     const box = keepRef.current;
     if (!box || size.w <= 0 || size.h <= 0) return;
-    setT((cur) => (boxInView(cur, size, box) ? cur : reveal(cur, size, box, REVEAL_MARGIN)));
-  }, [keep, size, resetKey]);
+    setT((cur) =>
+      revealMargin !== undefined
+        ? reveal(cur, size, box, revealMargin)
+        : boxInView(cur, size, box)
+          ? cur
+          : reveal(cur, size, box, REVEAL_MARGIN),
+    );
+  }, [keep, size, resetKey, revealMargin]);
 
   // (the wheel listener is installed once: it reads the current pane and diagram size from here)
   const sizeRef = useRef(size);

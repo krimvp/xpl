@@ -110,6 +110,7 @@ describe("flow: recurse and return links", () => {
         views: [
           {
             id: "view:walk",
+            type: "flow",
             stepsUpdate: [
               { id: "walk:4", shape: "stage", next: [{ step: "walk:1", kind: "recurse" }] },
             ],
