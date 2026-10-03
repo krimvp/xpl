@@ -33,6 +33,7 @@ import {
   type StubPolicy,
   type Tour,
   type TourStep,
+  type SequenceView,
   type View,
   type ViewerBundle,
 } from "@xpl/core";
@@ -242,11 +243,19 @@ export class ViewerStore {
     if (present) this.present();
     else if (launch.perspective && asked && launch.step) {
       this.applyStep(asked, stepIndex(launch.step, asked.steps.length));
-      if (launch.focus && JSON.stringify(this.state.selection) !== JSON.stringify(launch.focus))
-        this.set({
-          selection: launch.focus.filter((id) => model.hasElement(id)),
-          applied: undefined,
-        });
+      const same = (ids: readonly string[] | undefined) =>
+        JSON.stringify(ids) === JSON.stringify(launch.focus);
+      // The section's focus as entering its flow left it (`flowEntry`): still the section, applied.
+      const flow = launch.perspective === "flow" ? workspaceView(this.state, "flow") : undefined;
+      const entry = flow && flow.type !== "graph" ? this.flowEntry(flow) : undefined;
+      if (launch.focus && !same(this.state.selection)) {
+        if (entry?.selection && same(entry.selection)) this.set(entry);
+        else
+          this.set({
+            selection: launch.focus.filter((id) => model.hasElement(id)),
+            applied: undefined,
+          });
+      }
     }
     const perspective = this.state.perspective;
     if (!present && (perspective === "map" || perspective === "flow"))
@@ -334,7 +343,44 @@ export class ViewerStore {
       perspective === "map" || perspective === "flow"
         ? workspaceView(this.state, perspective)
         : undefined;
-    this.navigate({ perspective, mode: "explore", viewId: view?.id ?? this.state.viewId });
+    const patch: Partial<ViewerState> = {
+      perspective,
+      mode: "explore",
+      viewId: view?.id ?? this.state.viewId,
+    };
+    // From the guide to a flow: a guide section's focus (often the function the whole flow is inside) would
+    // mark nearly every box. Keep only the flow's own steps; with none, keep the code on screen, unpicked. A
+    // box the reader picked in the guide stays picked: they asked where it is in the flow.
+    if (
+      perspective === "flow" &&
+      this.state.perspective === "guide" &&
+      this.state.applied &&
+      view &&
+      view.type !== "graph"
+    ) {
+      Object.assign(patch, this.flowEntry(view));
+    }
+    this.navigate(patch);
+  }
+
+  private flowEntry(view: SequenceView): Partial<ViewerState> {
+    const { selection, model, applied } = this.state;
+    const steps = new Set((Array.isArray(view.steps) ? view.steps : []).map((step) => step?.id));
+    const own = selection.filter((id) => steps.has(id));
+    if (own.length === selection.length) return {};
+    const patch: Partial<ViewerState> = { selection: own };
+    const lead = codeFocus(selection, model)[0];
+    if (own.length === 0 && !applied?.code && lead) {
+      patch.openedFile = lead.file;
+      patch.openedBase = false;
+      patch.openSeq = this.state.openSeq + 1;
+      patch.cursor = {
+        file: lead.file,
+        fromLine: lead.range.startLine,
+        toLine: lead.range.startLine,
+      };
+    }
+    return patch;
   }
 
   /** The reading tab that was on screen last (the Guide when there was none). */
