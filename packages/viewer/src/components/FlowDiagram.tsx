@@ -249,9 +249,10 @@ export function FlowDiagram({ view, snapshot }: FlowDiagramProps) {
         label="Process flow"
         maxFitZoom={present ? PRESENT_MAX_FIT_ZOOM : undefined}
         fitPadding={present ? PRESENT_FIT_PADDING : undefined}
-        // Present: the flow starts at the zoom that shows its whole width (text 11 to 16px), on its focus.
+        // Present: a flow is read from the back of the room: it starts fitted only when its text comes out
+        // at 16px or more, else at that size on its focus ("Fit all" shows the rest).
         readableZoom={present ? PRESENT_FLOW_MAX_ZOOM : FLOW_READABLE_ZOOM}
-        readableMin={present ? FLOW_READABLE_ZOOM : undefined}
+        readableMin={present ? PRESENT_FLOW_MAX_ZOOM : undefined}
         fitFloor={FLOW_READABLE_ZOOM}
         onBackgroundClick={() => store.clearSelection()}
       >

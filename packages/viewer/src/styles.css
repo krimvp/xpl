@@ -2969,10 +2969,15 @@ code {
   transition: grid-template-columns 0.2s ease;
 }
 
-/* A flow is tall and branches sideways: its step gives the diagram more of the width (the code beside it
-   wraps its long lines), so the whole width of a typical flow reads at 11px or more on a 1280px screen. */
-.present[data-view-type="flow"] {
-  grid-template-columns: minmax(340px, 57%) minmax(0, 1fr);
+/* A flow is tall and branches sideways: a tour with a flow step gives the diagram more of the width (the
+   code beside it wraps its long lines), for all of its steps (PresentMode: one split per tour). */
+.present[data-split="wide"] {
+  grid-template-columns: minmax(340px, 52%) minmax(0, 1fr);
+}
+
+/* present: the slide takes the keyboard focus when a talk starts; no ring around the whole screen. */
+.present:focus {
+  outline: none;
 }
 
 .present-left {
@@ -2986,11 +2991,45 @@ code {
 .present-right {
   min-height: 0;
   min-width: 0;
+  container: present-code / inline-size;
+}
+
+/* present: a narrow code column (a zoomed-in laptop) takes a slightly smaller code font rather than
+   breaking names in the middle. */
+@container present-code (max-width: 420px) {
+  .code-area {
+    --code-font-size: 14px;
+    --code-line-height: calc(14px * 1.6);
+  }
 }
 
 .present .diagram-caption {
   padding: 9px 14px;
   font-size: 15px;
+}
+
+/* present: the diagram's title bar is one line on every step (PresentMode measures the room it leaves). */
+.present .diagram-caption {
+  flex-wrap: nowrap;
+}
+
+.present .caption-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.present .caption-question {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.present .diagram-caption .zoom-trail {
+  flex-wrap: nowrap;
+  max-width: 40%;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
 }
 
 .present .pz-toolbar {
@@ -3001,6 +3040,28 @@ code {
 .present .panzoom:hover .pz-toolbar,
 .present .pz-toolbar:focus-within {
   opacity: 1;
+}
+
+/* present: "Fit all" and the zoom buttons sit on the picture: they show once the mouse moves over it
+   (PresentMode `data-pointer`), or when focused. */
+.present .pz-badge {
+  transition: opacity 0.15s;
+}
+
+.present:not([data-pointer]) .pz-badge:not(:focus-visible),
+.present:not([data-pointer]) .panzoom:hover .pz-toolbar:not(:focus-within) {
+  opacity: 0;
+}
+
+/* present: on a short screen the diagram's title bar keeps to one line. */
+@media (max-height: 560px) {
+  .present .caption-question {
+    display: none;
+  }
+
+  .present .diagram-caption {
+    padding: 5px 12px;
+  }
 }
 
 .present .pane-header {
@@ -3059,6 +3120,7 @@ code {
 .tour-caption {
   display: flex;
   flex-direction: column;
+  flex: none;
   gap: 8px;
   max-height: 62vh;
   min-height: 0;
@@ -3171,14 +3233,45 @@ code {
   line-height: 1.4;
 }
 
-/* A long note: smaller, so that it fits more often (still large enough for a room). */
-.tour-caption.is-long .tour-title {
+/* Smaller sizes, one per tour (PresentMode `captionFit`): a tour with a long note starts at 1; captions
+   that do not fit the room the diagram leaves go down to 2 and 3 before they scroll. */
+.tour-caption[data-size="1"] .tour-title,
+.tour-caption-measure[data-size="1"] .tour-title {
   font-size: clamp(19px, 1.6vw, 26px);
 }
 
-.tour-caption.is-long .tour-note.markdown {
+.tour-caption[data-size="1"] .tour-note.markdown,
+.tour-caption-measure[data-size="1"] .tour-note.markdown {
   font-size: clamp(16px, 1.25vw, 21px);
   line-height: 1.38;
+}
+
+.tour-caption[data-size="2"] .tour-title,
+.tour-caption-measure[data-size="2"] .tour-title {
+  font-size: 17px;
+}
+
+.tour-caption[data-size="2"] .tour-note.markdown,
+.tour-caption-measure[data-size="2"] .tour-note.markdown {
+  font-size: 15px;
+  line-height: 1.36;
+}
+
+.tour-caption[data-size="3"],
+.tour-caption-measure[data-size="3"] > .tour-caption {
+  gap: 4px;
+  padding: 8px 12px 10px;
+}
+
+.tour-caption[data-size="3"] .tour-title,
+.tour-caption-measure[data-size="3"] .tour-title {
+  font-size: 16px;
+}
+
+.tour-caption[data-size="3"] .tour-note.markdown,
+.tour-caption-measure[data-size="3"] .tour-note.markdown {
+  font-size: 14px;
+  line-height: 1.32;
 }
 
 .tour-note.markdown p + p,

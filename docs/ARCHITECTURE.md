@@ -1128,28 +1128,37 @@ its `editor` options (`dimOthers`, `hideFileTree`, `primary`), and shows a capti
 Guide) and the rest of its note. The counter and the progress bar are in the header. The diagram is
 read-only: no drill-in, expand or collapse, and ghosts are pictures. Framing rules:
 
-- Layout: the diagram over the caption on the left (40% of the width, at least 340 px; 57% for a flow step,
-  since a flow is tall and branches sideways), the code on the right, no file tree unless a step sets
-  `hideFileTree: false`.
+- Layout: the diagram over the caption on the left (40% of the width, at least 340 px; 52% for a tour with
+  a flow step, since a flow is tall and branches sideways: the split is chosen once per tour, so the slide does
+  not re-split between steps), the code on the right, no file tree unless a step sets `hideFileTree: false`.
 - A diagram never starts below a readable zoom: graphs and sequences at zoom 1 (`PRESENT_READABLE_ZOOM`, so
-  the smallest 12-unit text is 12 px or more); a flow at the zoom that shows its whole width, between 11 and
-  16 px text. A diagram too big for that starts on the step's focus, and a badge offers "Fit all". A flow is
+  the smallest 12-unit text is 12 px or more); a flow with its text at 16 px (`PRESENT_FLOW_MAX_ZOOM`), fitted
+  only when that shows all of it. A diagram too big for that starts on the step's focus, and a badge offers "Fit all". A flow is
   never fitted below 11 px text (`FLOW_READABLE_ZOOM`): too tall, it is fitted to its width and the wheel
   scrolls it (`data-fit="width"`; when even the width does not fit, Fit shows all of it anyway).
-- The caption grows with its text up to 62% of the window's height; a note over 280 characters is set a
-  little smaller; what still does not fit scrolls inside the caption, with a shadow at the bottom.
-- The code font grows with the screen (`clamp(14px, 4px + 0.45vw + 0.75vh, 22px)`: about 15 px at 1280×720,
-  17 px at 1440×900). Long lines wrap with a hanging indent (Present only). A pane is as tall as its focus,
+- The diagram keeps at least 200 px (45% of the left column on a very short screen); the caption gets the
+  rest. It has one height and one type size per tour (present/caption.ts): the tallest caption, measured
+  off-screen, at the largest of four sizes at which it fits (a tour with a note over 280 characters starts one
+  size down). Only at the smallest size does a caption scroll, with a shadow at the bottom. "Fit all" and the
+  zoom buttons stay hidden until the mouse moves.
+- Two places far apart in one file (more than about a pane apart, present/ranges.ts) get a pane each, the
+  step's first one on top, like two files. Read mode shows "‹ range 1 / 2 ›" in the pane header instead.
+- The code font grows with the screen (`clamp(15px, 4px + 0.45vw + 0.75vh, 22px)`: about 15 px at 1280×720,
+  17 px at 1440×900; 14 px in a code column under 420 px). Long lines wrap with a hanging indent (Present
+  only) that keeps the first row of a line from being empty. A pane is as tall as its focus,
   plus the removed lines of a change shown inside it, and scrolls so that removed lines just above the focus
   stay in sight.
 
 Keys: `→` `PageDown` `Space` next, `←` `PageUp` `Shift+Space` previous, `Home`/`End` first/last,
 `Esc` leaves Present (in Explore, `Esc` clears the selection); they win over the diagram, the editors and
 focused buttons, while text fields and menus keep their own keys. **A click during a talk is a detour:** the
-selection follows the click, the caption says "Exploring · Back to step n", and the next key applies the next
-step again. URL: `?mode=present&tour=<id>&step=<n>` (`n` counts from 1; `tour=intro` finds `tour:intro`;
+selection follows the click, the caption says "Exploring · Back to step n", the next `→` applies the next
+step, and `←` or `Esc` first return to step n. URL: `?mode=present&tour=<id>&step=<n>` (`n` counts from 1; `tour=intro` finds `tour:intro`;
 `?view=<id>` picks the starting view). The address bar follows the tour with `history.replaceState`, so a
-reload or a shared link lands on the same slide. A step past the end is clamped; an unknown tour falls back
+reload or a shared link lands on the same slide. A talk started on the page pushes one history entry: Back
+leaves the talk, and `Esc` goes back over that entry too, so the address always says what is on screen. A
+page that opens in a talk pushes an entry when it is left (`?mode=explore&tour=<id>&step=<n>`), so Back
+returns to the talk. A step past the end is clamped; an unknown tour falls back
 to the first one when the page opens in Present. `xpl bundle --tour` or `--mode present` sets the bundle's
 defaults, which the URL overrides. Exit (or `Esc`) goes back to where the talk was started from.
 
