@@ -114,11 +114,13 @@ export function FlowDiagram({ view, snapshot, outline = false }: FlowDiagramProp
     width: node.width ?? 250,
     height: node.height ?? 100,
   });
-  const selectedStages = placed.filter(({ node }) => topics.has(node.id));
+  // (a repeated end is framed by its first box: its copies are only drawn)
+  const originals = placed.filter(({ node }) => !node.copyOf);
+  const selectedStages = originals.filter(({ node }) => topics.has(node.id));
   const focused = (
     selectedStages.length > 0
       ? selectedStages
-      : placed.filter(
+      : originals.filter(
           ({ stage: { step } }) =>
             topicMatches(step.from, topics, state.model) ||
             topicMatches(step.to, topics, state.model),
@@ -144,7 +146,7 @@ export function FlowDiagram({ view, snapshot, outline = false }: FlowDiagramProp
       : undefined;
   // An outline follows the caret: the step whose code the caret is in, kept in view as the caret moves.
   const caretStage =
-    outline && followCaret ? placed.find(({ node }) => matches.has(node.id)) : undefined;
+    outline && followCaret ? originals.find(({ node }) => matches.has(node.id)) : undefined;
   const followed = caretStage ? boxOf(caretStage.node) : undefined;
   const transitionClass = (edge: FlowLayout["edges"][number]) =>
     `flow-transition${flow.projected ? " is-projected" : ""}${edge.kind ? ` is-${edge.kind}` : ""}`;
@@ -179,7 +181,11 @@ export function FlowDiagram({ view, snapshot, outline = false }: FlowDiagramProp
       </defs>
       {(layout.edges ?? []).map((edge) => (
         <g key={edge.id} className={transitionClass(edge)} data-transition-kind={edge.kind}>
-          {edge.kind && <title>{levelTitle(edge.kind, stageLabels.get(edge.to) ?? "")}</title>}
+          {edge.kind && (
+            <title>
+              {levelTitle(edge.kind, stageLabels.get(nodes.get(edge.to)?.copyOf ?? edge.to) ?? "")}
+            </title>
+          )}
           {(edge.sections ?? []).map((section, i) => (
             <polyline
               key={i}
@@ -240,10 +246,11 @@ export function FlowDiagram({ view, snapshot, outline = false }: FlowDiagramProp
             key={node.id}
             transform={`translate(${node.x ?? 0},${node.y ?? 0})`}
             className={`flow-stage${active ? " is-selected" : related ? " is-related" : ""}${matches.has(step.id) ? " is-matched" : ""}`}
-            data-element-id={snapshot ? undefined : step.id}
+            data-element-id={snapshot || node.copyOf ? undefined : step.id}
+            data-copy-of={node.copyOf}
             data-stage-id={step.id}
             role={snapshot ? undefined : "button"}
-            tabIndex={snapshot ? undefined : 0}
+            tabIndex={snapshot ? undefined : node.copyOf ? -1 : 0}
             aria-label={snapshot ? undefined : step.label}
             onClick={(event) => {
               event.stopPropagation();

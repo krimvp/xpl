@@ -4,7 +4,13 @@
  */
 import { processFlow, type DerivedGraph, type SequenceView } from "@xpl/core";
 import { describe, expect, it } from "vitest";
-import { layoutFlow, levelTitle, transitionText } from "../src/layout/flowLayout.js";
+import {
+  layoutFlow,
+  levelTitle,
+  placedStages,
+  repeatEnds,
+  transitionText,
+} from "../src/layout/flowLayout.js";
 import { layoutGraph } from "../src/layout/graphLayout.js";
 import { codeFirstView } from "../src/workspace.js";
 
@@ -153,5 +159,81 @@ describe("code-first views", () => {
     expect(codeFirstView({ ...steps(["a.go", "b.go"]), layout: "code-first" })).toBe(true);
     expect(codeFirstView({ ...steps(["a.go", "a.go", "a.go"]), layout: "diagram" })).toBe(false);
     expect(codeFirstView(undefined)).toBe(false);
+  });
+});
+
+describe("flow: an end many branches lead into", () => {
+  // four questions in a row; each "no" gives up, the last "yes" goes on
+  const chain = () =>
+    view([
+      {
+        shape: "decision",
+        next: [
+          { step: "match:2", label: "yes" },
+          { step: "match:6", label: "no" },
+        ],
+      },
+      {
+        shape: "decision",
+        next: [
+          { step: "match:3", label: "yes" },
+          { step: "match:6", label: "no" },
+        ],
+      },
+      {
+        shape: "decision",
+        next: [
+          { step: "match:4", label: "yes" },
+          { step: "match:6", label: "no" },
+        ],
+      },
+      {
+        shape: "decision",
+        next: [
+          { step: "match:5", label: "yes" },
+          { step: "match:6", label: "no" },
+        ],
+      },
+      { label: "Go on", next: [] },
+      { shape: "terminal", label: "Give up" },
+    ]);
+
+  it("is drawn again under each branch, one element", async () => {
+    const flow = processFlow(chain());
+    const { boxes, transitions } = repeatEnds(flow);
+    expect(boxes.filter((box) => box.copyOf === "match:6")).toHaveLength(3);
+    // every "no" goes to a box of its own
+    const ends = transitions.filter((edge) => edge.label === "no").map((edge) => edge.to);
+    expect(new Set(ends).size).toBe(4);
+    const layout = await layoutFlow(flow);
+    const placed = placedStages(flow, layout);
+    expect(placed.filter(({ stage }) => stage.step.id === "match:6")).toHaveLength(4);
+    // each copy sits just under the question that leads to it, not at the bottom of the flow
+    for (const edge of layout.edges.filter((e) => e.to.startsWith("match:6"))) {
+      const from = layout.children.find((child) => child.id === edge.from)!;
+      const to = layout.children.find((child) => child.id === edge.to)!;
+      expect(to.y - (from.y + from.height)).toBeLessThan(200);
+    }
+  });
+
+  it("is drawn once when few branches lead into it, or when it leads on", () => {
+    const few = view([
+      {
+        shape: "decision",
+        next: [
+          { step: "match:2", label: "yes" },
+          { step: "match:3", label: "no" },
+        ],
+      },
+      { next: [{ step: "match:3" }] },
+      { shape: "terminal", label: "Done" },
+    ]);
+    expect(repeatEnds(processFlow(few)).boxes).toHaveLength(3);
+    const on = chain();
+    on.steps[5] = {
+      ...on.steps[5]!,
+      next: [{ step: "match:5", kind: "return" }],
+    } as (typeof on.steps)[number];
+    expect(repeatEnds(processFlow(on)).boxes.some((box) => box.copyOf)).toBe(false);
   });
 });
