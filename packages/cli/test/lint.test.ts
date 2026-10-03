@@ -1220,6 +1220,31 @@ describe("lintExplainer: concrete text passes", () => {
     expect(only(findings, "absolute-word")[0]!.hint).toContain("name the part the step focuses");
   });
 
+  it("absolute-word: in an explainer of a change, a tour's claim about what changes has the diff as its evidence", () => {
+    const summary =
+      "A new option caps the body size. Without the option, only download progress changes. Only the router checks the cap.";
+    const notes = [
+      "### Download progress\nThe only change here is that progress reads the body itself.",
+    ];
+    const lintWith = (change: unknown) =>
+      only(
+        lintExplainer(
+          explainer({ ...(change ? { change } : {}), tours: [tour(notes, { summary })] }),
+        ).findings,
+        "absolute-word",
+      ).map((f) => [f.elementId, f.field, f.quote]);
+    const change = { base: "b", head: "h", files: [] };
+    // a claim about the change passes; one about the code still needs its evidence
+    expect(lintWith(change)).toEqual([
+      ["tour:t", "summary", expect.stringContaining("Only the router checks")],
+    ]);
+    // without a change, the same sentences are claims about the code
+    expect(lintWith(undefined)).toEqual([
+      ["tour:t", "summary", expect.stringContaining("only download progress changes")],
+      ["tour:t/t1", "note", expect.stringContaining("The only change here")],
+    ]);
+  });
+
   it("absolute-word: the same words get the same verdict in a title, a heading, a summary and a note", () => {
     const sentences = [
       "A token expires only if you ask for an age limit",

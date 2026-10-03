@@ -806,20 +806,36 @@ function names(text: string, name: string): boolean {
 interface Evidence {
   anchored?: boolean;
   names?: readonly string[];
+  /**
+   * The text is a tour's, in an explainer of a change: a claim about what the change changes ("only download
+   * progress changes") has the diff as its evidence, which the explainer holds and `change-not-shown` puts on the
+   * tour, file by file.
+   */
+  change?: boolean;
 }
 
-/** Does the sentence around `index` (in a masked text) name one of `names`? */
+/** Words that make a sentence about what a change changes. */
+const CHANGE_WORDS = /\b(?:chang(?:e|es|ed|ing)|unchanged|differ(?:s|ent|ently)?)\b/i;
+
+/** The sentence around `index` in a masked text, its code back in. */
+function sentenceAt(text: string, spans: readonly string[], index: number): string {
+  const starts = [...text.slice(0, index).matchAll(/[.!?]\s|\n\s*\n/g)];
+  const start = starts.length > 0 ? starts.at(-1)!.index! + 1 : 0;
+  const end = /[.!?](?:\s|$)|\n\s*\n/.exec(text.slice(index));
+  return unmask(text.slice(start, end ? index + end.index : undefined), spans);
+}
+
+/** Is the sentence around `index` (in a masked text) its own evidence: it names one of `names`, or a change. */
 function provedBy(
   text: string,
   spans: readonly string[],
   index: number,
-  list: readonly string[] | undefined,
+  evidence: Evidence,
 ): boolean {
-  if (list === undefined || list.length === 0) return false;
-  const starts = [...text.slice(0, index).matchAll(/[.!?]\s|\n\s*\n/g)];
-  const start = starts.length > 0 ? starts.at(-1)!.index! + 1 : 0;
-  const end = /[.!?](?:\s|$)|\n\s*\n/.exec(text.slice(index));
-  const sentence = unmask(text.slice(start, end ? index + end.index : undefined), spans);
+  const list = evidence.names ?? [];
+  if (list.length === 0 && !evidence.change) return false;
+  const sentence = sentenceAt(text, spans, index);
+  if (evidence.change && CHANGE_WORDS.test(sentence)) return true;
   return list.some((name) => names(sentence, name));
 }
 
@@ -903,7 +919,7 @@ class Linter {
         }
         const before = /([A-Za-z]+)\s+$/.exec(text.slice(0, m.index))?.[1];
         if (before !== undefined && NOT_ABSOLUTE_AFTER.has(before.toLowerCase())) continue;
-        if (evidence.anchored || provedBy(text, masked.spans, m.index, evidence.names)) continue;
+        if (evidence.anchored || provedBy(text, masked.spans, m.index, evidence)) continue;
         absolutes.push({ word: m[0].toLowerCase(), index: m.index });
       }
     }
@@ -1724,7 +1740,10 @@ export function lintExplainer(explainer: Explainer, model?: ExplainerModel): Lin
     const range = `${LINT_LIMITS.summaryMinSentences}-${most} sentences`;
     if (typeof summary === "string" && summary.trim() !== "") {
       const room = most - sentences(mask(summary).text).length;
-      const masked = lint.prose(at("summary"), summary, { sentenceRoom: room });
+      const masked = lint.prose(at("summary"), summary, {
+        sentenceRoom: room,
+        evidence: { change: explainer.change !== undefined },
+      });
       const count = masked ? sentences(masked.text).length : 0;
       if (masked)
         codeHeavy(
@@ -1783,7 +1802,10 @@ export function lintExplainer(explainer: Explainer, model?: ExplainerModel): Lin
         );
         return;
       }
-      const evidence: Evidence = { names: evidenceNames(step, byId) };
+      const evidence: Evidence = {
+        names: evidenceNames(step, byId),
+        change: explainer.change !== undefined,
+      };
       const lines = note.split("\n");
       const first = lines.findIndex((line) => line.trim() !== "");
       const heading = HEADING.exec(lines[first] ?? "");
