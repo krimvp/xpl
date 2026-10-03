@@ -26,6 +26,8 @@ export interface AnchorRow {
   base?: boolean;
   /** `src/runner.ts#Runner.dispatch +34..36`. */
   where: string;
+  /** The symbol the anchor names (`Runner.dispatch`), for a reader's "in Runner.dispatch". */
+  symbol?: string;
   /** Resolved lines, when the anchor has been resolved. */
   startLine?: number;
   endLine?: number;
@@ -58,6 +60,7 @@ function anchorRow(anchor: Anchor): AnchorRow {
     role: anchor.role,
     file: anchor.file,
     where: describeAnchor(anchor),
+    ...(anchor.symbol ? { symbol: anchor.symbol } : {}),
     status: anchor.resolved?.status ?? "unresolved",
     ...(isBaseAnchor(anchor) ? { base: true } : {}),
   };
@@ -198,10 +201,13 @@ function buildInfo(id: ElementId, model: ExplainerModel, vd: ViewDerived): Eleme
         title: edge.label || edge.kind,
         kind: edge.kind,
         where: `${model.label(edge.from)} → ${model.label(edge.to)}`,
-        facts: [
-          { label: "From", value: model.label(edge.from) },
-          { label: "To", value: model.label(edge.to) },
-        ],
+        facts:
+          edge.from === edge.to
+            ? []
+            : [
+                { label: "From", value: model.label(edge.from) },
+                { label: "To", value: model.label(edge.to) },
+              ],
         anchors: rowsFor(edge.anchors, id, model, vd),
         related: [],
         provenance: edge.provenance,
@@ -267,9 +273,14 @@ function buildInfo(id: ElementId, model: ExplainerModel, vd: ViewDerived): Eleme
           step.from === step.to
             ? `inside ${model.label(step.from)}`
             : `${model.label(step.from)} → ${model.label(step.to)}`,
+        // "From X To X" says nothing the "inside X" line does not.
         facts: [
-          { label: "From", value: model.label(step.from) },
-          { label: "To", value: model.label(step.to) },
+          ...(step.from === step.to
+            ? []
+            : [
+                { label: "From", value: model.label(step.from) },
+                { label: "To", value: model.label(step.to) },
+              ]),
           { label: "Sequence", value: ref.view.title },
         ],
         anchors: rowsFor(step.anchors, id, model, vd),

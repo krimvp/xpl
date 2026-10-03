@@ -144,6 +144,9 @@
   text-transform: none;
   letter-spacing: 0;
 }
+.anchor-row .anchor-in {
+  color: var(--muted);
+}
 .element-change-open {
   white-space: nowrap;
 }
@@ -645,22 +648,47 @@
   cursor: pointer;
   overflow-wrap: anywhere;
 }
+/* details: the disclosure triangle inline with the card's heading, not alone on its own line. */
+.resource-set > summary {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  list-style: none;
+}
+.resource-set > summary::-webkit-details-marker {
+  display: none;
+}
+.resource-chevron::before {
+  content: "▸";
+  display: inline-block;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 16px;
+  transition: transform 0.12s;
+}
+.resource-set[open] > summary .resource-chevron::before {
+  transform: rotate(90deg);
+}
+.resource-head {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
 .resource-kind {
-  display: block;
-  font-size: 10px;
+  font-size: 11px;
+  line-height: 16px;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--related);
-  margin-bottom: 5px;
 }
 .resource-label {
-  display: block;
   font-weight: 600;
   font-size: 12px;
-  margin-bottom: 4px;
 }
 .resource-set .count {
-  font-size: 10px;
+  font-size: 11px;
+  color: var(--muted);
 }
 .resource-key {
   font-size: 11px;
@@ -687,7 +715,7 @@
   border: 0;
   background: transparent;
   color: var(--accent);
-  font: 11px/1.55 var(--font-mono);
+  font: 12px/1.55 var(--font-mono);
   text-align: left;
   width: 100%;
   padding: 5px 0;

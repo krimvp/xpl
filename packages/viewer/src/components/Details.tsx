@@ -6,7 +6,7 @@
  * id, no provenance, no author actions, the kind only for a piece of code, roles as "defined here" /
  * "called here", and a status only when it is not "ok".
  */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { opensView } from "@xpl/core";
 import { callersOf, callerSubject, changeSummary, type Caller } from "../callers.js";
 import { describeElement, type AnchorRow, type ElementInfo } from "../details.js";
@@ -250,11 +250,10 @@ function Anchors({ rows, reader }: { rows: AnchorRow[]; reader: boolean }) {
                 {reader ? roleWords(row.role) : row.role}
               </span>
               {row.base && <span className="anchor-before">before</span>}
-              {/* A reader's narrow column: the file's name, not the start of its path (the title has it all). */}
-              <span className="where">
-                {reader ? row.where.replace(/^(?:[^/\s]+\/)+/, "") : row.where}
-              </span>
-              {row.startLine !== undefined && (
+              {/* A reader's narrow column: "Ky.ts, lines 612–634 in Ky.#retry", not the anchor's notation
+                  (the title has the whole path). */}
+              <span className="where">{reader ? readerWhere(row) : row.where}</span>
+              {!reader && row.startLine !== undefined && (
                 <span className="lines">
                   {row.endLine !== row.startLine
                     ? `L${row.startLine}–${row.endLine}`
@@ -276,6 +275,29 @@ function Anchors({ rows, reader }: { rows: AnchorRow[]; reader: boolean }) {
         </button>
       )}
     </div>
+  );
+}
+
+/** An anchor in a reader's words: "Ky.ts, lines 612–634 in Ky.#retry", "config.yaml, line 3". */
+export function readerWhere(row: AnchorRow): ReactNode {
+  const name = row.file.slice(row.file.lastIndexOf("/") + 1);
+  const lines =
+    row.startLine === undefined
+      ? ""
+      : row.endLine !== undefined && row.endLine !== row.startLine
+        ? `, lines ${row.startLine}–${row.endLine}`
+        : `, line ${row.startLine}`;
+  return (
+    <>
+      {name}
+      {lines}
+      {row.symbol && (
+        <span className="anchor-in">
+          {" "}
+          in <code>{row.symbol}</code>
+        </span>
+      )}
+    </>
   );
 }
 

@@ -16,7 +16,16 @@ import { json } from "@codemirror/lang-json";
 import { python } from "@codemirror/lang-python";
 import { yaml } from "@codemirror/lang-yaml";
 import { defaultHighlightStyle, HighlightStyle, syntaxHighlighting } from "@codemirror/language";
-import { search, searchKeymap } from "@codemirror/search";
+import {
+  closeSearchPanel,
+  findNext,
+  findPrevious,
+  getSearchQuery,
+  search,
+  searchKeymap,
+  SearchQuery,
+  setSearchQuery,
+} from "@codemirror/search";
 import {
   Compartment,
   EditorSelection,
@@ -38,6 +47,7 @@ import {
   hoverTooltip,
   keymap,
   lineNumbers,
+  type Panel,
   ViewPlugin,
   WidgetType,
   type DecorationSet,
@@ -117,6 +127,54 @@ const baseTheme = EditorView.theme({
   ".cm-cursor, .cm-dropCursor": { borderLeftColor: "var(--code-fg)", borderLeftWidth: "2px" },
   "&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, .cm-selectionBackground":
     { background: "var(--code-selection)" },
+  // The find panel (`findPanel`) and its matches, in the page's colours (dark mode too).
+  ".cm-panels": { backgroundColor: "var(--panel-2)", color: "var(--fg)" },
+  ".cm-panels.cm-panels-top": { borderBottom: "1px solid var(--border)" },
+  ".xpl-find": {
+    display: "flex",
+    alignItems: "center",
+    gap: "6px",
+    padding: "5px 8px",
+    fontFamily: "var(--font-ui)",
+    fontSize: "12.5px",
+  },
+  ".xpl-find-field": {
+    flex: "0 1 240px",
+    minWidth: "80px",
+    padding: "3px 8px",
+    border: "1px solid var(--border-strong)",
+    borderRadius: "6px",
+    background: "var(--panel)",
+    color: "var(--fg)",
+    font: "inherit",
+  },
+  ".xpl-find-field:focus": { outline: "2px solid var(--accent)", outlineOffset: "-1px" },
+  ".xpl-find-count": { minWidth: "6em", color: "var(--muted)", whiteSpace: "nowrap" },
+  ".xpl-find-button": {
+    minWidth: "24px",
+    height: "24px",
+    padding: "0 6px",
+    border: "1px solid transparent",
+    borderRadius: "6px",
+    background: "transparent",
+    color: "var(--muted)",
+    font: "inherit",
+    fontSize: "14px",
+    lineHeight: "1",
+    cursor: "pointer",
+  },
+  ".xpl-find-button:hover, .xpl-find-button:focus-visible": {
+    borderColor: "var(--border-strong)",
+    background: "var(--panel)",
+    color: "var(--fg)",
+  },
+  ".cm-searchMatch": {
+    backgroundColor: "var(--find-match, rgba(255, 196, 0, 0.3))",
+    outline: "1px solid rgba(214, 160, 0, 0.6)",
+  },
+  ".cm-searchMatch.cm-searchMatch-selected": {
+    backgroundColor: "var(--find-current, rgba(255, 140, 0, 0.5))",
+  },
   // A name's actions (`symbolActions`), in the page's colours.
   ".cm-tooltip.cm-tooltip-hover": {
     backgroundColor: "var(--panel)",
@@ -453,6 +511,101 @@ export interface EditorHandlers {
   symbols?: SymbolHandlers;
 }
 
+// ─── Find (Ctrl/Cmd+F) ──────────────────────────────────────────────────────────────────────────
+
+/** Matches counted before "N+" is shown instead (a count, not a scan of a huge file on every key). */
+const FIND_COUNT_MAX = 999;
+
+/** Where the selection is among the matches: "3 of 12", "12 matches", "No matches". */
+export function findCountWords(state: EditorState, query: SearchQuery): string {
+  if (!query.search || !query.valid) return "";
+  const main = state.selection.main;
+  let total = 0;
+  let current = 0;
+  const cursor = query.getCursor(state);
+  for (let next = cursor.next(); !next.done; next = cursor.next()) {
+    total++;
+    if (next.value.from === main.from && next.value.to === main.to) current = total;
+    if (total > FIND_COUNT_MAX) break;
+  }
+  if (total === 0) return "No matches";
+  if (total > FIND_COUNT_MAX) return `${FIND_COUNT_MAX}+ matches`;
+  return current > 0 ? `${current} of ${total}` : `${total} ${total === 1 ? "match" : "matches"}`;
+}
+
+/**
+ * The find panel, in the page's colours: a field (Enter: next match, Shift+Enter: previous, Escape: close),
+ * "3 of 12", previous / next and close. Read-only: it finds, it never replaces.
+ */
+function findPanel(view: EditorView): Panel {
+  const dom = document.createElement("div");
+  dom.className = "xpl-find";
+  dom.setAttribute("role", "search");
+  const field = document.createElement("input");
+  field.type = "text";
+  field.className = "xpl-find-field";
+  field.placeholder = "Find in this file";
+  field.setAttribute("aria-label", "Find in this file");
+  field.setAttribute("main-field", "true");
+  field.value = getSearchQuery(view.state).search;
+  const count = document.createElement("span");
+  count.className = "xpl-find-count";
+  count.setAttribute("aria-live", "polite");
+  const button = (text: string, label: string, run: () => void) => {
+    const element = document.createElement("button");
+    element.type = "button";
+    element.className = "xpl-find-button";
+    element.textContent = text;
+    element.setAttribute("aria-label", label);
+    element.title = label;
+    element.addEventListener("click", run);
+    return element;
+  };
+  const query = () => new SearchQuery({ search: field.value });
+  field.addEventListener("input", () => {
+    view.dispatch({ effects: setSearchQuery.of(query()) });
+  });
+  field.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      (event.shiftKey ? findPrevious : findNext)(view);
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      closeSearchPanel(view);
+      view.focus();
+    }
+  });
+  dom.append(
+    field,
+    count,
+    button("‹", "Previous match (Shift+Enter)", () => findPrevious(view)),
+    button("›", "Next match (Enter)", () => findNext(view)),
+    button("×", "Close (Escape)", () => {
+      closeSearchPanel(view);
+      view.focus();
+    }),
+  );
+  const refresh = (state: EditorState) => {
+    count.textContent = findCountWords(state, getSearchQuery(state));
+  };
+  refresh(view.state);
+  return {
+    dom,
+    top: true,
+    mount() {
+      field.focus();
+      field.select();
+    },
+    update(update) {
+      for (const tr of update.transactions)
+        for (const effect of tr.effects)
+          if (effect.is(setSearchQuery) && effect.value.search !== field.value)
+            field.value = effect.value.search;
+      refresh(update.state);
+    },
+  };
+}
+
 // ─── Names in the code ──────────────────────────────────────────────────────────────────────────
 
 /** A name in the code that the index knows (`SymbolHandlers.resolve`). */
@@ -631,7 +784,7 @@ export function createReadOnlyEditor(
     wrapping.of(wrap ? wrapped : []),
     EditorState.readOnly.of(true),
     // Ctrl/Cmd+F finds in the file (read-only: the panel finds, it never replaces).
-    search({ top: true }),
+    search({ top: true, createPanel: findPanel }),
     keymap.of(searchKeymap),
     ...(label
       ? [EditorView.contentAttributes.of({ "aria-label": label, "aria-readonly": "true" })]

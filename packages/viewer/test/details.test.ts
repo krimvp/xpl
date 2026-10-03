@@ -51,3 +51,27 @@ describe("details of a stub", () => {
     expect(out.facts).toContainEqual({ label: "Outside", value: "+1 more" });
   });
 });
+
+describe("details of a step", () => {
+  it("a step inside one part has no 'From X To X'; its anchors name their symbol", () => {
+    const bundle = makeBundle();
+    const view = bundle.explainer.views.find((v) => v.id === "view:flow")!;
+    if (view.type === "sequence")
+      view.steps.push({
+        id: "flow:inner",
+        from: "sym:src/a.ts#A.run",
+        to: "sym:src/a.ts#A.run",
+        label: "inner",
+        kind: "call",
+        anchors: [],
+      });
+    const state = new ViewerStore(bundle).getState();
+    const vd = getDerived(state).view;
+    const inner = describeElement("flow:inner", state.model, vd);
+    expect(inner.where).toBe("inside A.run");
+    expect(inner.facts.map((f) => f.label)).not.toContain("From");
+    const call = describeElement("flow:1", state.model, vd);
+    expect(call.facts.map((f) => f.label)).toEqual(expect.arrayContaining(["From", "To"]));
+    expect(call.anchors[0]).toMatchObject({ file: "src/a.ts", symbol: "A.run" });
+  });
+});

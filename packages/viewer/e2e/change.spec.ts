@@ -196,7 +196,7 @@ test.describe("base anchors", () => {
     const row = page.locator(".anchor-row", { has: page.locator(".anchor-before") });
     await expect(row).toHaveCount(1);
     // a reader's narrow column names the file, the tooltip the whole path
-    await expect(row).toContainText("runner.ts@base");
+    await expect(row).toContainText("runner.ts, lines 76–77");
     await expect(row).toHaveAttribute("title", /src\/runner\.ts/);
     await row.click();
     const before = pane(page, "src/runner.ts", "base");
