@@ -179,16 +179,39 @@ export function placedStages(
  *   else the actor alone;
  * - decision and terminal: the actor alone. A decision is a question the actor asks (its branches say where
  *   the work goes next), and a terminal is where the actor's flow ends.
+ *
+ * When the step's code (its first anchor) is inside `to` and not inside `from`, `to` is the one that does it: a
+ * terminal "Throw a size error" drawn from the caller but anchored in the stream that throws names the stream.
  */
 export function stageActor(
-  step: { from: ElementId; to: ElementId },
-  model: Pick<ExplainerModel, "label">,
+  step: { from: ElementId; to: ElementId; anchors?: readonly unknown[] },
+  model: Pick<ExplainerModel, "label"> & Partial<Pick<ExplainerModel, "subtreeContains">>,
   max = 34,
   shape: "stage" | "decision" | "terminal" = "stage",
 ): string {
-  const from = model.label(step.from);
-  const text =
-    step.to === step.from || shape !== "stage" ? from : `${from} → ${model.label(step.to)}`;
+  const actor = anchorOwner(step, model) ?? step.from;
+  const from = model.label(actor);
+  const text = step.to === actor || shape !== "stage" ? from : `${from} → ${model.label(step.to)}`;
   if (text.length <= max) return text;
   return from.length <= max ? from : `${from.slice(0, max - 1)}…`;
+}
+
+/** `to`, when the step's first anchor is inside it and not inside `from`. */
+function anchorOwner(
+  step: { from: ElementId; to: ElementId; anchors?: readonly unknown[] },
+  model: Partial<Pick<ExplainerModel, "subtreeContains">>,
+): ElementId | undefined {
+  const contains = model.subtreeContains?.bind(model);
+  if (!contains || step.from === step.to) return undefined;
+  const anchor = (step.anchors ?? []).find(
+    (a): a is { file: string; symbol?: string } =>
+      typeof a === "object" &&
+      a !== null &&
+      typeof (a as { file?: unknown }).file === "string" &&
+      (a as { at?: unknown }).at !== "base",
+  );
+  if (!anchor) return undefined;
+  const id = anchor.symbol ? `sym:${anchor.file}#${anchor.symbol}` : `file:${anchor.file}`;
+  const inside = (participant: ElementId) => participant === id || contains(participant, id);
+  return inside(step.to) && !inside(step.from) ? step.to : undefined;
 }

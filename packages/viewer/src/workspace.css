@@ -361,7 +361,9 @@
 }
 .change-status {
   flex: none;
-  min-width: 5.6em;
+  /* details: one width for every status, so the paths line up in a column */
+  box-sizing: border-box;
+  width: 6.8em;
   padding: 1px 8px;
   border-radius: 999px;
   background: var(--panel-2);
@@ -601,7 +603,7 @@
 .workspace-source .code-area {
   flex: 1;
   min-width: 0;
-  grid-template-columns: 160px minmax(0, 1fr);
+  grid-template-columns: max(160px, var(--tree-width, 0px)) minmax(0, 1fr);
 }
 .workspace-source .code-area.is-tree-closed {
   grid-template-columns: 34px minmax(0, 1fr);

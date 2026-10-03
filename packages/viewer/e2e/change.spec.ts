@@ -254,6 +254,11 @@ test.describe("the change in the reading screens", () => {
     await expect(list.locator('[data-path="src/metrics.ts"]')).toContainText("New");
     await expect(list.locator('[data-path="src/legacy.ts"]')).toContainText("Removed");
     await expect(list.locator('[data-path="src/bus.ts"]')).toContainText("from src/events.ts");
+    // one width for every status pill, so the paths start in one column
+    const widths = await list
+      .locator(".change-status")
+      .evaluateAll((pills) => pills.map((pill) => Math.round(pill.getBoundingClientRect().width)));
+    expect(new Set(widths).size).toBe(1);
     // a file opens in the Code tab at its first change
     await list.locator('[data-path="src/runner.ts"]').click();
     const state = await stateOf(page);
@@ -409,6 +414,9 @@ test.describe("reading a changed file", () => {
     await expect(mark("src/worker.ts")).toHaveCount(0);
     await page.getByTestId("tree-filter").fill("leg");
     await expect(page.locator(".tree-row.is-file")).toHaveCount(1);
+    // a result: the name, and its folder under it
+    await expect(page.locator(".tree-row.is-file .name")).toHaveText("legacy.ts");
+    await expect(page.locator(".tree-row.is-file .tree-dir")).toHaveText("src");
     await page.locator('.tree-row[data-path="src/legacy.ts"]').click();
     await expect(pane(page, "src/legacy.ts", "base")).toBeVisible();
     expect(problems).toEqual([]);

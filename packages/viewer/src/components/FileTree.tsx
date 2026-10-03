@@ -11,6 +11,7 @@
  */
 import type { IndexedFile } from "@xpl/core";
 import { useEffect, useMemo, useState } from "react";
+import { contextFiles } from "../callers.js";
 import { changeFiles, changeOf, STATUS_WORDS, type ChangeFileRow } from "../diff.js";
 import { useDerived, useStore, useViewerState } from "../hooks.js";
 
@@ -68,6 +69,18 @@ export function FileTree() {
   const changed = useMemo(
     () => new Map((change ? changeFiles(change) : []).map((row) => [row.path, row])),
     [change],
+  );
+  // A static page that carries files only for context (`xpl bundle --files boundary`) says which, and why.
+  const context = useMemo(
+    () =>
+      serverMode
+        ? new Map<string, string>()
+        : contextFiles(
+            model,
+            listed.map((file) => file.path),
+            change,
+          ),
+    [model, listed, serverMode, change],
   );
   const tree = useMemo(() => {
     const removed = [...changed.values()]
@@ -147,15 +160,20 @@ export function FileTree() {
     );
   };
 
-  const renderFile = (file: TreeFile, depth: number, fullPath = false) => {
+  const renderFile = (file: TreeFile, depth: number, match = false) => {
     const inFocus = focusFiles.has(file.path);
     const row = changed.get(file.path);
+    const why = context.get(file.path);
+    const slash = file.path.lastIndexOf("/");
     const classes =
       "tree-row is-file" +
       (hasFocus && !inFocus ? " is-dimmed" : "") +
       (inFocus ? " is-focus" : "") +
       (row ? ` is-${row.status}` : "") +
+      (why !== undefined ? " is-context" : "") +
+      (match ? " is-filter-result" : "") +
       (state.openedFile === file.path ? " is-open" : "");
+    const contextWords = `Context: not part of the explanation${why ? `; ${why}` : ""}`;
     return (
       <li key={"f:" + file.path} role="none">
         <button
@@ -169,11 +187,25 @@ export function FileTree() {
               ? `${file.path}: ${STATUS_WORDS[row.status].toLowerCase()}` +
                 (row.oldPath ? ` from ${row.oldPath}` : "") +
                 `, +${row.added} −${row.deleted}`
-              : file.path
+              : why !== undefined
+                ? `${file.path}. ${contextWords}`
+                : file.path
           }
           onClick={() => store.openFile(file.path, row?.line)}
         >
-          <span className="name">{fullPath ? file.path : base(file.path)}</span>
+          {match ? (
+            // A filter result: the name, and under it its folder, dim, cut from the left so its end shows.
+            <span className="tree-match">
+              <span className="name">{base(file.path)}</span>
+              {slash !== -1 && (
+                <span className="tree-dir">
+                  <bdi>{file.path.slice(0, slash)}</bdi>
+                </span>
+              )}
+            </span>
+          ) : (
+            <span className="name">{base(file.path)}</span>
+          )}
           {row && (
             <span
               className={`tree-change-mark is-${row.status}`}
@@ -181,6 +213,11 @@ export function FileTree() {
               aria-label={STATUS_WORDS[row.status]}
             >
               {MARK_LETTERS[row.status]}
+            </span>
+          )}
+          {why !== undefined && !row && (
+            <span className="tree-context" data-testid="tree-context" aria-label={contextWords}>
+              context
             </span>
           )}
         </button>

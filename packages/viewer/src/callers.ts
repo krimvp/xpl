@@ -8,8 +8,13 @@
  */
 import {
   codeFocus,
+  deriveGraph,
+  derivedEdgeMap,
   elementIdForSymbolId,
   parseId,
+  relatedFiles,
+  viewCandidates,
+  type FocusOptions,
   type ChangeRecord,
   type ElementId,
   type ExplainerModel,
@@ -184,4 +189,85 @@ export function symbolAtWord(
         nameOf(sym.path) === name && sym.range.startLine <= line && line <= sym.range.startLine + 3,
     )
     .sort((a, b) => b.range.startLine - a.range.startLine)[0];
+}
+
+/** The files the explainer itself points at: its boxes, anchors, steps' code, and the change. */
+function explainedFiles(model: ExplainerModel, change: ChangeRecord | undefined): Set<FilePath> {
+  const out = new Set<FilePath>();
+  const addId = (id: unknown) => {
+    if (typeof id !== "string") return;
+    const parsed = parseId(id);
+    if (parsed.type === "file") out.add(parsed.path);
+    else if (parsed.type === "symbol") out.add(parsed.file);
+  };
+  const addAnchors = (anchors: unknown) => {
+    if (!Array.isArray(anchors)) return;
+    for (const anchor of anchors as { file?: unknown }[])
+      if (typeof anchor?.file === "string") out.add(anchor.file);
+  };
+  const { nodes, edges, concepts, views, tours } = model.explainer;
+  for (const node of nodes) {
+    addId(node.id);
+    addAnchors(node.anchors);
+    for (const member of node.members ?? []) addId(member);
+  }
+  for (const element of [...edges, ...concepts]) addAnchors(element.anchors);
+  for (const view of views)
+    if (view.type !== "graph") for (const step of view.steps ?? []) addAnchors(step.anchors);
+  for (const tour of tours) for (const step of tour.steps) addAnchors(step.code);
+  for (const file of change?.files ?? []) out.add(file.path);
+  // What the views and the tours show: the code of their boxes, arrows and steps, and their related files.
+  const add = (ids: readonly ElementId[], options: FocusOptions = {}) => {
+    for (const focus of codeFocus(ids, model, options)) out.add(focus.file);
+    for (const link of relatedFiles(ids, model)) for (const file of link.files) out.add(file);
+  };
+  for (const view of model.views) {
+    const graph = view.type === "graph" ? deriveGraph(view, model) : undefined;
+    add(viewCandidates(view, model, graph), graph ? { derivedEdges: derivedEdgeMap(graph) } : {});
+  }
+  for (const tour of model.tours) for (const step of tour.steps) add(step.focus ?? []);
+  return out;
+}
+
+/**
+ * Files the page carries for context only (`xpl bundle --files boundary`): nothing in the explainer points at
+ * them. Each with why it is there, in a reader's words ("Ky.create calls it", "it calls Ky.create"), or ""
+ * when the index does not say.
+ */
+export function contextFiles(
+  model: ExplainerModel,
+  files: readonly FilePath[],
+  change: ChangeRecord | undefined,
+): Map<FilePath, string> {
+  const explained = explainedFiles(model, change);
+  const index = model.index;
+  const out = new Map<FilePath, string>();
+  for (const file of files) {
+    if (explained.has(file)) continue;
+    const ids = [index.moduleScopeId(file), ...index.symbolsInFile(file).map((sym) => sym.id)];
+    const label = (id: SymbolId) => index.symbol(id)?.path ?? base(id.slice(0, id.indexOf("#")));
+    const outside = (id: SymbolId) => {
+      const at = index.fileOfSymbolId(id);
+      return at !== undefined && at !== file && explained.has(at);
+    };
+    let why = "";
+    for (const id of ids) {
+      const caller = index.refsTo(id).find((ref) => USES.has(ref.kind) && outside(ref.from));
+      if (caller) {
+        why = `${label(caller.from)} calls it`;
+        break;
+      }
+    }
+    if (!why) {
+      for (const id of ids) {
+        const callee = index.refsFrom(id).find((ref) => USES.has(ref.kind) && outside(ref.to));
+        if (callee) {
+          why = `it calls ${label(callee.to)}`;
+          break;
+        }
+      }
+    }
+    out.set(file, why);
+  }
+  return out;
 }

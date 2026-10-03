@@ -2343,7 +2343,7 @@ code {
 
 .code-area {
   display: grid;
-  grid-template-columns: clamp(140px, 22%, 210px) minmax(0, 1fr);
+  grid-template-columns: max(clamp(140px, 22%, 210px), var(--tree-width, 0px)) minmax(0, 1fr);
   height: 100%;
   min-height: 0;
   overflow: hidden;
@@ -2500,6 +2500,43 @@ code {
 
 .tree-row.is-open {
   box-shadow: inset 2px 0 0 var(--accent);
+}
+
+/* details: rows a finger or a pointer can hit (axe target-size); a change's tree as wide as its changed names
+   (CodeArea's --tree-width); files carried only for context; filter results as name + dim folder, the folder
+   cut from the left so its end shows. */
+.tree-row {
+  min-height: 24px;
+}
+.tree-context {
+  flex: none;
+  margin-left: auto;
+  padding: 0 4px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 4px;
+  color: var(--muted);
+  font-size: 10.5px;
+  line-height: 1.4;
+}
+.tree-row.is-context .name {
+  color: var(--muted);
+  font-style: italic;
+}
+.tree-match {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.3;
+}
+.tree-match .tree-dir {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+  text-align: left;
+  color: var(--faint);
+  font-size: 11px;
 }
 
 .tree-foot {

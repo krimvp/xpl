@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { IndexModel, type SequenceView, type SymbolIndex } from "@xpl/core";
-import { callersOf, callerSubject, changeSummary, symbolAtWord } from "../src/callers.js";
+import {
+  callersOf,
+  callerSubject,
+  changeSummary,
+  contextFiles,
+  symbolAtWord,
+} from "../src/callers.js";
 import { ViewerStore } from "../src/store.js";
 import { makeBundle } from "./world.js";
 
@@ -135,5 +141,32 @@ describe("whose callers a picked element asks for", () => {
     // a call between two parts, a concept: no one subject
     expect(callerSubject("flow:1", model)).toBeUndefined();
     expect(callerSubject("concept:retry", model)).toBeUndefined();
+  });
+});
+
+describe("files the page carries for context", () => {
+  it("are the ones nothing in the explainer points at, with who calls them", () => {
+    const bundle = makeBundle();
+    // a new index object (the model of the old one is cached)
+    bundle.index = {
+      ...bundle.index,
+      files: [
+        ...bundle.index.files,
+        { path: "src/util.ts", language: "typescript", hash: "h", lines: 5 },
+      ],
+      symbols: [...bundle.index.symbols, sym("src/util.ts", "helper", 1, 5)],
+      refs: [...bundle.index.refs, ref("src/a.ts#A.run", "src/util.ts#helper", 13)],
+    };
+    const model = new ViewerStore(bundle).getState().model;
+    expect([...contextFiles(model, ["src/a.ts", "src/util.ts"], undefined)]).toEqual([
+      ["src/util.ts", "A.run calls it"],
+    ]);
+    // a file the change touches is part of what is explained
+    const change = {
+      base: "b".repeat(40),
+      head: "c".repeat(40),
+      files: [{ path: "src/util.ts", status: "added" as const, hunks: [] }],
+    };
+    expect(contextFiles(model, ["src/util.ts"], change).size).toBe(0);
   });
 });
