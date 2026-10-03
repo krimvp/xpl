@@ -7,7 +7,7 @@ import { stepTitle } from "../stepTitle.js";
 import { useDerived, useStore, useViewerState } from "../hooks.js";
 import { workspaceMap, workspaceView } from "../workspace.js";
 import { CodeArea } from "./CodeArea.js";
-import { Details } from "./Details.js";
+import { Details, TopicFacts } from "./Details.js";
 import { ErrorBoundary } from "./ErrorBoundary.js";
 import { FlowDiagram } from "./FlowDiagram.js";
 import { GraphView } from "./GraphView.js";
@@ -51,6 +51,8 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
       ? tour?.steps.find((s) => s.id === reading)
       : undefined;
   const code = state.perspective === "code";
+  // The topic column names the picked element (not in the guide while its section is the topic).
+  const topicShown = !!info && !(state.perspective === "guide" && appliedStep);
   const showSource = code || sourceOpen;
   useEffect(() => {
     if (!showSource) columns.current?.scrollTo({ top: 0, behavior: "instant" });
@@ -217,13 +219,14 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
         <aside className="workspace-context" aria-label="Topic context">
           {/* In the guide, the open section is the topic: its summary would say it again. A box picked from
               a section (a member chip, a call) is another topic, and gets its summary here. */}
-          {info && !(state.perspective === "guide" && appliedStep) && (
+          {topicShown && (
             <section className="topic-summary" data-testid="topic-summary">
               <p className="eyebrow">Current topic</p>
               <h2>{info.title}</h2>
               {info.summary && (
                 <p dangerouslySetInnerHTML={{ __html: renderInline(info.summary) }} />
               )}
+              <TopicFacts id={info.id} />
               {state.perspective === "guide" && (
                 <div className="section-actions">
                   <button className="btn" onClick={() => store.setPerspective("map")}>
@@ -240,7 +243,11 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
           {active && (
             <details className="workspace-inspector">
               <summary>Where this is in the code</summary>
-              <Details reader untitled={!(state.perspective === "guide" && appliedStep)} />
+              <Details
+                reader
+                untitled={!(state.perspective === "guide" && appliedStep)}
+                factsAbove={topicShown}
+              />
             </details>
           )}
         </aside>

@@ -494,13 +494,69 @@ test.describe("who calls this, and what the change did to it", () => {
     const problems = watchProblems(page);
     await open(page, "?perspective=map");
     await byId(page, "file:src/metrics.ts").click();
+    // under the topic summary, not folded away in "Where this is in the code"
+    const facts = page.getByTestId("topic-summary").getByTestId("topic-facts");
+    await expect(facts.getByTestId("element-change")).toContainText("Added by this change");
+    await expect(facts.getByTestId("element-change")).toContainText("+36 −0");
     await page.locator(".workspace-inspector > summary").click();
-    await expect(page.getByTestId("element-change")).toContainText("Added by this change: +36 −0");
-    const callers = page.getByTestId("callers");
+    await expect(page.getByTestId("element-change")).toHaveCount(1);
+    const callers = facts.getByTestId("callers");
     await expect(callers).toContainText("Called from");
     await expect(callers).toContainText("main");
     await callers.getByRole("button").first().click();
     await expect(pane(page, "src/main.ts")).toBeVisible();
+    expect(problems).toEqual([]);
+  });
+
+  test("an edited symbol says how many lines the change added and removed in it", async ({
+    page,
+  }) => {
+    await open(page, "?perspective=map");
+    await page.evaluate(() => window.__xpl!.select(["sym:src/runner.ts#Runner.dispatch"]));
+    const change = page.getByTestId("topic-summary").getByTestId("element-change");
+    await expect(change).toContainText("Edited by this change");
+    await expect(change).toContainText("+4 −3");
+  });
+
+  test("a name in the code offers who calls it and its definition", async ({ page }) => {
+    const problems = watchProblems(page);
+    await open(page, "?perspective=code");
+    await page.evaluate(() => window.__xpl!.setCursor("src/runner.ts", 32));
+    const runner = pane(page, "src/runner.ts");
+    const line = runner.locator('.cm-line[data-line="32"]');
+    await expect(line).toBeVisible();
+    // the "dispatch" of `this.dispatch()`
+    const wordAt = () =>
+      line.evaluate((element) => {
+        const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+        for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+          const i = node.textContent!.indexOf("dispatch");
+          if (i < 0) continue;
+          const range = document.createRange();
+          range.setStart(node, i + 2);
+          range.setEnd(node, i + 3);
+          const box = range.getBoundingClientRect();
+          return { x: box.x + 1, y: box.y + box.height / 2 };
+        }
+        return undefined;
+      });
+    const at = await wordAt();
+    await page.mouse.move(at!.x, at!.y);
+    const actions = page.getByTestId("symbol-actions");
+    await expect(actions).toContainText("Runner.dispatch");
+    await actions.getByRole("button", { name: "Who calls it" }).click();
+    expect((await stateOf(page)).selection).toEqual(["sym:src/runner.ts#Runner.dispatch"]);
+    await expect(page.getByTestId("topic-summary").getByTestId("callers")).toContainText(
+      "Runner.start",
+    );
+    // Ctrl+click on the name: its definition
+    await page.getByRole("button", { name: "Back" }).click();
+    await line.scrollIntoViewIfNeeded();
+    const again = await wordAt();
+    await page.keyboard.down("Control");
+    await page.mouse.click(again!.x, again!.y);
+    await page.keyboard.up("Control");
+    await expect.poll(async () => (await stateOf(page)).cursor?.fromLine).toBe(42);
     expect(problems).toEqual([]);
   });
 

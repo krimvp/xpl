@@ -649,7 +649,8 @@ id wins (validation reports the duplicates).
   `lookup(file, line)` returns every element whose entries contain the line with the minimal line span (an
   element counts with its smallest range around the line; innermost wins; ties return all). Candidates
   (`viewCandidates`) = the active view's elements (included nodes and shown edges, or participants and
-  steps) plus all concepts.
+  steps) plus all concepts. The viewer (`viewReverseIndex`) looks the drawn elements and the concepts up
+  separately and joins the two answers, so a concept anchored inside a drawn step never hides the step.
 - `baseAnchorFocus(anchors, elementId) → FocusRange[]`: the base anchors of a list as ranges of the base file
   (`file` = the key into `baseFiles`; missing and never-resolved ones skipped). This is what the viewer's
   "Before" pane shows (§6).

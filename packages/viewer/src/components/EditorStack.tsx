@@ -11,8 +11,10 @@
  */
 import type { EditorView } from "@codemirror/view";
 import {
+  elementIdForSymbolId,
   shortSha,
   splitLines,
+  type FilePath,
   type IndexModel,
   type AnchorRole,
   type ChangedFile,
@@ -40,10 +42,12 @@ import {
   firstFocusLine,
   placeCaret,
   scrollToLine,
+  type SymbolHandlers,
 } from "../editor.js";
+import { symbolAtWord } from "../callers.js";
 import { useDerived, useStore, useViewerState } from "../hooks.js";
 import { roleWords } from "../readerWords.js";
-import type { Cursor } from "../store.js";
+import type { Cursor, ViewerStore } from "../store.js";
 
 export function EditorStack() {
   const store = useStore();
@@ -333,7 +337,12 @@ const EditorPane = memo(function EditorPane({
       text,
       language,
       // The lines of a "before" pane are lines of the old code: the caret there looks nothing up.
-      base ? undefined : { onCursor: (from, to) => store.setCursor(pane.file, from, to) },
+      base
+        ? undefined
+        : {
+            onCursor: (from, to) => store.setCursor(pane.file, from, to),
+            symbols: codeSymbols(store, pane.file),
+          },
       wrapRef.current,
       `${pane.file}${base ? ", before the change" : ""}: source code`,
     );
@@ -607,6 +616,39 @@ const EditorPane = memo(function EditorPane({
     </section>
   );
 });
+
+/**
+ * Names in a pane's code: "Who calls it" picks the symbol (the topic column then lists its callers), "Go to
+ * definition" opens its code when this page has the file. Read from the store when used, so an editor made
+ * once keeps up with files loaded later.
+ */
+function codeSymbols(store: ViewerStore, file: FilePath): SymbolHandlers {
+  const find = (line: number, word: string) =>
+    symbolAtWord(store.getState().model.index, file, line, word);
+  return {
+    resolve(line, word) {
+      const symbol = find(line, word);
+      if (!symbol) return undefined;
+      const state = store.getState();
+      const here =
+        symbol.file === file &&
+        symbol.range.startLine <= line &&
+        line <= symbol.range.startLine + 3;
+      return {
+        label: symbol.path,
+        canGo: !here && (symbol.file in state.files || state.serverMode),
+      };
+    },
+    callers(line, word) {
+      const symbol = find(line, word);
+      if (symbol) store.select([elementIdForSymbolId(symbol.id)]);
+    },
+    definition(line, word) {
+      const symbol = find(line, word);
+      if (symbol) store.openFile(symbol.file, symbol.range.startLine);
+    },
+  };
+}
 
 /** What the change did to a file, in a pane's header: "New file", "Changed", "Renamed from old/path". */
 function changeLabel(file: ChangedFile): { text: string; title: string } {

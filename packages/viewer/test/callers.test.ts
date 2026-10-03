@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { IndexModel, type SymbolIndex } from "@xpl/core";
-import { callersOf, changeSummary } from "../src/callers.js";
+import { IndexModel, type SequenceView, type SymbolIndex } from "@xpl/core";
+import { callersOf, callerSubject, changeSummary, symbolAtWord } from "../src/callers.js";
+import { ViewerStore } from "../src/store.js";
+import { makeBundle } from "./world.js";
 
 const sym = (file: string, path: string, startLine: number, endLine: number) => ({
   id: `${file}#${path}`,
@@ -75,17 +77,63 @@ describe("who calls this", () => {
         {
           path: "src/a.ts",
           status: "modified" as const,
-          hunks: [{ oldStart: 12, oldLines: 1, newStart: 12, newLines: 2 }],
+          hunks: [
+            { oldStart: 12, oldLines: 1, newStart: 12, newLines: 2 },
+            // two lines removed after head line 15 (inside A.run), one after line 20 (A.run's last line)
+            { oldStart: 15, oldLines: 2, newStart: 15, newLines: 0 },
+            { oldStart: 21, oldLines: 1, newStart: 20, newLines: 0 },
+          ],
         },
       ],
     };
     expect(changeSummary("file:src/a.ts", index(), change)).toEqual({
-      text: "Edited by this change: +2 −1",
+      words: "Edited by this change",
+      added: 2,
+      deleted: 4,
+      text: "Edited by this change · +2 −4",
       file: "src/a.ts",
       line: 12,
     });
-    expect(changeSummary("sym:src/a.ts#A.run", index(), change)?.line).toBe(12);
+    // a symbol counts the lines inside it: not the line removed below its last line
+    expect(changeSummary("sym:src/a.ts#A.run", index(), change)).toMatchObject({
+      text: "Edited by this change · +2 −3",
+      line: 12,
+    });
     expect(changeSummary("sym:src/b.ts#go", index(), change)).toBeUndefined();
     expect(changeSummary("file:src/a.ts", index(), undefined)).toBeUndefined();
+  });
+});
+
+describe("a name in the code", () => {
+  it("is the symbol a reference on that line points at, or the one declared there", () => {
+    // line 4 of go calls A.run: "run" there is A.run (a private name's # is dropped)
+    expect(symbolAtWord(index(), "src/b.ts", 4, "run")?.id).toBe("src/a.ts#A.run");
+    expect(symbolAtWord(index(), "src/b.ts", 4, "#run")?.id).toBe("src/a.ts#A.run");
+    // a declaration
+    expect(symbolAtWord(index(), "src/b.ts", 12, "stop")?.id).toBe("src/b.ts#stop");
+    // an import is not a use; an unknown name is nothing
+    expect(symbolAtWord(index(), "src/b.ts", 15, "run")).toBeUndefined();
+    expect(symbolAtWord(index(), "src/b.ts", 4, "nothing")).toBeUndefined();
+  });
+});
+
+describe("whose callers a picked element asks for", () => {
+  it("a file or a symbol itself; a step inside one part, the symbol that holds its code", () => {
+    const bundle = makeBundle();
+    const view = bundle.explainer.views.find((v) => v.id === "view:flow") as SequenceView;
+    view.steps.push({
+      id: "flow:inner",
+      from: "sym:src/a.ts#A.run",
+      to: "sym:src/a.ts#A.run",
+      label: "inner",
+      kind: "call",
+      anchors: [{ file: "src/a.ts", symbol: "A.run", span: { from: 2, to: 3 }, role: "usage" }],
+    } as SequenceView["steps"][number]);
+    const model = new ViewerStore(bundle).getState().model;
+    expect(callerSubject("file:src/b.ts", model)).toBe("file:src/b.ts");
+    expect(callerSubject("flow:inner", model)).toBe("sym:src/a.ts#A.run");
+    // a call between two parts, a concept: no one subject
+    expect(callerSubject("flow:1", model)).toBeUndefined();
+    expect(callerSubject("concept:retry", model)).toBeUndefined();
   });
 });

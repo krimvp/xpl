@@ -125,6 +125,38 @@
   color: var(--muted);
   line-height: 1.6;
 }
+/* details: what the change did and who calls it, unfolded under the topic summary (TopicFacts). */
+.topic-facts:empty {
+  display: none;
+}
+.topic-facts .element-change {
+  margin: 12px 0 0;
+}
+.topic-facts .callers h3 {
+  margin: 14px 0 6px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--faint);
+}
+.topic-facts .callers h3 code {
+  text-transform: none;
+  letter-spacing: 0;
+}
+.element-change-open {
+  white-space: nowrap;
+}
+.element-change-count {
+  font: 12px var(--font-mono);
+  white-space: nowrap;
+}
+.element-change-count .is-add {
+  color: var(--diff-add-bar);
+}
+.element-change-count .is-del {
+  color: var(--diff-del-bar);
+}
 .eyebrow {
   color: var(--muted);
   font-size: 10px;

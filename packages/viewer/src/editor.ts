@@ -35,6 +35,7 @@ import {
   gutter,
   gutterLineClass,
   GutterMarker,
+  hoverTooltip,
   keymap,
   lineNumbers,
   ViewPlugin,
@@ -116,6 +117,35 @@ const baseTheme = EditorView.theme({
   ".cm-cursor, .cm-dropCursor": { borderLeftColor: "var(--code-fg)", borderLeftWidth: "2px" },
   "&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, .cm-selectionBackground":
     { background: "var(--code-selection)" },
+  // A name's actions (`symbolActions`), in the page's colours.
+  ".cm-tooltip.cm-tooltip-hover": {
+    backgroundColor: "var(--panel)",
+    color: "var(--fg)",
+    border: "1px solid var(--border)",
+    borderRadius: "8px",
+    boxShadow: "0 4px 14px rgba(0, 0, 0, 0.16)",
+  },
+  ".xpl-symbol-tip": {
+    display: "flex",
+    alignItems: "center",
+    gap: "6px",
+    padding: "4px 6px",
+    fontFamily: "var(--font-ui)",
+    fontSize: "12px",
+  },
+  ".xpl-symbol-tip code": { fontFamily: "var(--font-mono)", marginRight: "2px" },
+  ".xpl-symbol-action": {
+    font: "inherit",
+    color: "var(--accent)",
+    background: "transparent",
+    border: "1px solid var(--border)",
+    borderRadius: "6px",
+    padding: "2px 8px",
+    cursor: "pointer",
+  },
+  ".xpl-symbol-action:hover, .xpl-symbol-action:focus-visible": {
+    backgroundColor: "var(--hover)",
+  },
 });
 
 // ─── Focus decorations ──────────────────────────────────────────────────────────────────────────
@@ -419,6 +449,113 @@ export function selectionLines(state: EditorState): { from: number; to: number }
 export interface EditorHandlers {
   /** The caret or selection moved (also when the editor is focused again). */
   onCursor(fromLine: number, toLine: number): void;
+  /** Names in the code the index knows: who calls them, where they are defined. */
+  symbols?: SymbolHandlers;
+}
+
+// ─── Names in the code ──────────────────────────────────────────────────────────────────────────
+
+/** A name in the code that the index knows (`SymbolHandlers.resolve`). */
+export interface CodeSymbol {
+  /** `Ky.#calculateRetryDelay`. */
+  label: string;
+  /** Its definition is in a file this page can show, somewhere else than here. */
+  canGo: boolean;
+}
+
+/**
+ * What a reader can do with a name in the code: hovering it offers "Who calls it" and "Go to definition";
+ * Ctrl/Cmd+click goes to the definition (or, when the page cannot show it, to who calls it); with the caret on
+ * the name, F12 goes to the definition and Shift+F12 shows who calls it.
+ */
+export interface SymbolHandlers {
+  resolve(line: number, word: string): CodeSymbol | undefined;
+  callers(line: number, word: string): void;
+  definition(line: number, word: string): void;
+}
+
+/** The name at a position: the word there and its line. */
+function nameAt(
+  state: EditorState,
+  pos: number,
+): { word: string; line: number; from: number; to: number } | undefined {
+  const range = state.wordAt(pos);
+  if (!range) return undefined;
+  return {
+    word: state.sliceDoc(range.from, range.to),
+    line: state.doc.lineAt(pos).number,
+    from: range.from,
+    to: range.to,
+  };
+}
+
+function symbolActions(handlers: SymbolHandlers): Extension {
+  const act = (view: EditorView, pos: number, how: "callers" | "definition" | "best"): boolean => {
+    const name = nameAt(view.state, pos);
+    const symbol = name && handlers.resolve(name.line, name.word);
+    if (!name || !symbol) return false;
+    if (how === "callers" || (how === "best" && !symbol.canGo))
+      handlers.callers(name.line, name.word);
+    else handlers.definition(name.line, name.word);
+    return true;
+  };
+  const button = (text: string, title: string, run: () => void) => {
+    const element = document.createElement("button");
+    element.type = "button";
+    element.className = "xpl-symbol-action";
+    element.textContent = text;
+    element.title = title;
+    element.addEventListener("click", run);
+    return element;
+  };
+  return [
+    hoverTooltip(
+      (view, pos) => {
+        const name = nameAt(view.state, pos);
+        const symbol = name && handlers.resolve(name.line, name.word);
+        if (!name || !symbol) return null;
+        return {
+          pos: name.from,
+          end: name.to,
+          above: true,
+          create() {
+            const dom = document.createElement("div");
+            dom.className = "xpl-symbol-tip";
+            dom.setAttribute("data-testid", "symbol-actions");
+            const code = document.createElement("code");
+            code.textContent = symbol.label;
+            dom.append(
+              code,
+              button("Who calls it", "Show what calls it (Shift+F12)", () =>
+                handlers.callers(name.line, name.word),
+              ),
+            );
+            if (symbol.canGo)
+              dom.append(
+                button("Go to definition", "Open its code (F12, or Ctrl/Cmd+click the name)", () =>
+                  handlers.definition(name.line, name.word),
+                ),
+              );
+            return { dom };
+          },
+        };
+      },
+      { hoverTime: 400 },
+    ),
+    EditorView.domEventHandlers({
+      mousedown(event, view) {
+        if (event.button !== 0 || !(event.ctrlKey || event.metaKey)) return false;
+        const pos = view.posAtCoords({ x: event.clientX, y: event.clientY });
+        if (pos === null || !act(view, pos, "best")) return false;
+        event.preventDefault();
+        return true;
+      },
+    }),
+    keymap.of([
+      { key: "F12", run: (view) => act(view, view.state.selection.main.head, "best") },
+      { key: "Shift-F12", run: (view) => act(view, view.state.selection.main.head, "callers") },
+    ]),
+  ];
 }
 
 /** Long lines wrap (Present: nobody scrolls sideways in a talk) or run on (elsewhere: code as written). */
@@ -517,6 +654,7 @@ export function createReadOnlyEditor(
         }
       }),
     );
+    if (handlers.symbols) extensions.push(symbolActions(handlers.symbols));
   }
   return new EditorView({ parent, state: EditorState.create({ doc, extensions }) });
 }
