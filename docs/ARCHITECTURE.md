@@ -1062,8 +1062,9 @@ Both splits (diagram / panels, diagram / code) are resizable. Below 900 px the h
 - **Graph view:** a layered layout (dagre, `layout/layered.ts`), direction RIGHT, or DOWN when the pane is taller than wide; when the result
   would have to be scaled down to fit, the other direction is tried too (graphs of at most 150 elements) and
   kept if it fits at least 8% larger. The direction is on the graph as `data-direction`. Containers
-  for nested includes, laid out inside-out with room for their header; edges routed inside their lowest common
-  container, right-angled, with the ends that share a side of a box spread along it and the turns in one gap
+  for nested includes, laid out inside-out with room for their header; an edge that crosses a container's
+  border gets a port there (a node of its own in the container's first or last layer), so the part inside
+  is routed around the boxes; edges routed inside their lowest common container, right-angled, with the ends that share a side of a box spread along it and the turns in one gap
   between layers on separate tracks. If the layout throws, a grid layout keeps the diagram usable (`data-fallback`). Edges are styled by resolution: precise,
   heuristic (thinner and lighter), `llm`, `user`; stubs are dashed and lead to ghost boxes (at most 8 by
   default plus one "+N more" per direction, see §4.4; ghosts that stand for several elements have a dotted
@@ -1078,7 +1079,13 @@ Both splits (diagram / panels, diagram / code) are resizable. Below 900 px the h
   its badge is its `tech` or its role. A box with `opens` has a zoom button ("See what is inside"; a
   double-click does the same, and Details offers it too): `store.zoomInto` shows that view, in the map or flow
   perspective that draws it, as a navigation step (Back returns). Above the diagram, `ZoomTrail` lists the
-  levels above the current view (`zoomTrail`), each a link (`store.goToLevel`). Not while presenting. Pan by dragging, zoom with
+  levels above the current view (`zoomTrail`), each a link (`store.goToLevel`). A box that opens a graph
+  view (`GraphNode.expandable`) also offers "Show the inside here": `store.toggleExpanded` adds it to
+  `state.expanded`, and the view is drawn through `expandInPlace` (core `levels.ts`), with the boxes of the
+  view it opens added, so the parts of a service sit inside its box and their arrows cross its border; its
+  collapse button folds it back. Nothing is stored. Every box has an icon left of its label
+  (`components/icons.tsx`): its role, else the kind of code (folder, file, group, a letter per symbol kind).
+  Not while presenting. Pan by dragging, zoom with
   the wheel, the buttons or `+`/`-`, "Fit" (or `0`) for all of it. The first view is the fit, unless the
   diagram is too big to read fitted (a fit scale below 0.6, as for seventeen boxes with groups): then it
   starts at zoom 0.75 on the selection, else on the first box of `view.include` that is drawn, and a badge

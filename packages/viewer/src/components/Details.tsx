@@ -66,11 +66,18 @@ export function Details({ reader = false }: { reader?: boolean }) {
           <code>{info.id}</code>
         </p>
       )}
-      {store.canZoomInto(info.id) && (
+      {(store.canZoomInto(info.id) || store.canExpandInPlace(info.id)) && (
         <div className="actions">
-          <button type="button" className="btn" onClick={() => store.zoomInto(info.id)}>
-            See what is inside: {opensView(state.model, info.id)?.title}
-          </button>
+          {store.canZoomInto(info.id) && (
+            <button type="button" className="btn" onClick={() => store.zoomInto(info.id)}>
+              See what is inside: {opensView(state.model, info.id)?.title}
+            </button>
+          )}
+          {store.canExpandInPlace(info.id) && (
+            <button type="button" className="btn" onClick={() => store.toggleExpanded(info.id)}>
+              {store.isExpanded(info.id) ? "Fold back into one box" : "Show the inside here"}
+            </button>
+          )}
         </div>
       )}
 

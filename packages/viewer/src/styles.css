@@ -3174,26 +3174,30 @@ code {
   stroke: none;
 }
 
-/* "See what is inside": the zoom button of a box that opens a more detailed view. */
-.node .zoom {
+/* The corner buttons of a box that opens a more detailed view: zoom into it ("See what is inside"), or show
+   its inside on this map ("Show the inside here"). */
+.node .corner-button {
+  cursor: pointer;
+}
+
+.node .corner-button.zoom {
   cursor: zoom-in;
 }
 
-.node .zoom rect {
+.node .corner-button .corner-button-face {
   fill: var(--panel);
   stroke: var(--border-strong);
 }
 
-.node .zoom circle,
-.node .zoom path {
+.node .corner-button > :not(.corner-button-face) {
   fill: none;
   stroke: var(--accent);
   stroke-width: 1.6;
   stroke-linecap: round;
 }
 
-.node .zoom:hover rect,
-.node .zoom:focus-visible rect {
+.node .corner-button:hover .corner-button-face,
+.node .corner-button:focus-visible .corner-button-face {
   fill: var(--accent-soft);
   stroke: var(--accent);
 }

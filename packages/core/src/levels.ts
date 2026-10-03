@@ -45,3 +45,40 @@ export function zoomTrail(model: ExplainerModel, viewId: string): ZoomLevel[] {
   }
   return trail;
 }
+
+/**
+ * A graph view with some of its boxes opened in place: for each box in `expanded` that the view shows and
+ * that opens a graph view, the boxes of that view join this one. The parts of a service (its members, or the
+ * folders under it) are then drawn inside the service's box, and their arrows cross its border. A box that is
+ * shown only because another was opened can be opened too. The view itself is not changed; nothing is stored.
+ */
+export function expandInPlace(
+  view: GraphView,
+  model: ExplainerModel,
+  expanded: ReadonlySet<ElementId>,
+): GraphView {
+  const own = Array.isArray(view.include) ? view.include : [];
+  if (expanded.size === 0) return view;
+  const include = [...own];
+  const shown = new Set(include);
+  const opened = new Set<ElementId>();
+  for (let i = 0; i < include.length; i++) {
+    const id = include[i]!;
+    if (!expanded.has(id) || opened.has(id)) continue;
+    opened.add(id);
+    const inner = opensView(model, id);
+    if (!inner || inner.type !== "graph" || inner.id === view.id) continue;
+    for (const part of Array.isArray(inner.include) ? inner.include : []) {
+      if (typeof part === "string" && !shown.has(part)) {
+        shown.add(part);
+        include.push(part);
+      }
+    }
+  }
+  return include.length === own.length ? view : { ...view, include };
+}
+
+/** True when the box opens a graph view whose boxes can be shown inside it (`expandInPlace`). */
+export function canExpandInPlace(model: ExplainerModel, id: ElementId): boolean {
+  return opensView(model, id)?.type === "graph";
+}

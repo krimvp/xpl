@@ -74,4 +74,23 @@ test.describe("architecture maps", () => {
     await expect(page.locator('.diagram[data-view-id="view:overview"]')).toBeVisible();
     expect((await stateOf(page)).viewId).toBe("view:overview");
   });
+
+  test("a box shows its inside in place, and folds back", async ({ page }) => {
+    await openBundle(page, "view:system", ARCHITECTURE_BUNDLE);
+    const service = box(page, "grp:job-runner");
+    await expect(page.locator('.diagram [data-element-id="grp:scheduling"]')).toHaveCount(0);
+    await service.locator(".expand-here").click();
+    // the same map, with the service drawn as a container around its components
+    await expect(page.locator('.diagram[data-view-id="view:system"]')).toBeVisible();
+    await expect(service).toHaveClass(/is-container/);
+    await expect(service.locator('[data-element-id="grp:scheduling"]')).toHaveCount(1);
+    await expect(service.locator('[data-element-id="file:jobrunner/worker.py"]')).toHaveCount(1);
+    // drawn, not stored: the view still includes only its own boxes
+    const state = await stateOf(page);
+    expect(state.graph!.nodes).toContain("grp:scheduling");
+    expect(state.include).toEqual(["grp:operator", "grp:job-runner", "grp:settings-file"]);
+    await page.locator('[data-collapse-id="grp:job-runner"]').click();
+    await expect(page.locator('.diagram [data-element-id="grp:scheduling"]')).toHaveCount(0);
+    await expect(service).not.toHaveClass(/is-container/);
+  });
 });

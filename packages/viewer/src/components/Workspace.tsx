@@ -20,7 +20,10 @@ export function Workspace() {
   const derived = useDerived();
   const [sourceOpen, setSourceOpen] = useState(false);
   const columns = useRef<HTMLDivElement>(null);
-  const map = useMemo(() => workspaceMap(state), [state.model, state.selection, state.viewId]);
+  const map = useMemo(
+    () => workspaceMap(state),
+    [state.model, state.selection, state.viewId, state.expanded],
+  );
   const flow = workspaceView(state, "flow") as SequenceView | undefined;
   const mapMatches = useMemo(
     () =>

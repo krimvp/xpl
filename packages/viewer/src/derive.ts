@@ -18,6 +18,7 @@ import {
   derivedEdgeMap,
   elementIdForSymbolId,
   excludedRefs,
+  expandInPlace,
   isBaseAnchor,
   mergeFocusByFile,
   parseId,
@@ -109,14 +110,20 @@ export interface Derived {
 
 // ─── Stage 1: the view ──────────────────────────────────────────────────────────────────────────
 
-function deriveView(model: ExplainerModel, viewId: string | undefined): ViewDerived {
+function deriveView(
+  model: ExplainerModel,
+  viewId: string | undefined,
+  expanded: ReadonlySet<ElementId> = new Set(),
+): ViewDerived {
   const view = viewId === undefined ? undefined : model.view(viewId);
   let graph: DerivedGraph | undefined;
   let include: ReadonlySet<ElementId> = new Set();
   if (view?.type === "graph") {
-    graph = deriveGraph(view, model);
+    // boxes the reader opened in place show the boxes of the view they open, inside them
+    const drawn = expandInPlace(view, model, expanded);
+    graph = deriveGraph(drawn, model);
     include = new Set(
-      (Array.isArray(view.include) ? view.include : []).filter((id) => model.hasNode(id)),
+      (Array.isArray(drawn.include) ? drawn.include : []).filter((id) => model.hasNode(id)),
     );
   }
   const edgeMap = graph ? derivedEdgeMap(graph) : new Map<string, DerivedEdge>();
@@ -448,7 +455,14 @@ function derivePanes(
 
 // ─── Memoised entry point ───────────────────────────────────────────────────────────────────────
 
-let lastView: { model: ExplainerModel; viewId: string | undefined; value: ViewDerived } | undefined;
+let lastView:
+  | {
+      model: ExplainerModel;
+      viewId: string | undefined;
+      expanded: ReadonlySet<ElementId>;
+      value: ViewDerived;
+    }
+  | undefined;
 let lastSelection:
   | {
       view: ViewDerived;
@@ -493,11 +507,17 @@ export function getDerived(state: ViewerState): Derived {
   const known = byState.get(state);
   if (known) return known;
 
-  if (!lastView || !sameDrawing(lastView.model, state.model) || lastView.viewId !== state.viewId) {
+  if (
+    !lastView ||
+    !sameDrawing(lastView.model, state.model) ||
+    lastView.viewId !== state.viewId ||
+    lastView.expanded !== state.expanded
+  ) {
     lastView = {
       model: state.model,
       viewId: state.viewId,
-      value: deriveView(state.model, state.viewId),
+      expanded: state.expanded,
+      value: deriveView(state.model, state.viewId, state.expanded),
     };
   }
   const view = lastView.value;

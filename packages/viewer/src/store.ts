@@ -15,6 +15,7 @@ import {
   drillChildren,
   drillIn as drillInView,
   EDGE_KINDS,
+  canExpandInPlace,
   expandStub as expandStubView,
   opensView,
   ExplainerModel,
@@ -139,6 +140,11 @@ export interface ViewerState {
    * whenever this changes, even when the step stays in the same view.
    */
   stepSeq: number;
+  /**
+   * Boxes the reader opened in place (`expandInPlace`): each shows the boxes of the view it opens inside it.
+   * A way of looking, like the zoom: never stored in the explainer.
+   */
+  expanded: ReadonlySet<ElementId>;
   /** Source text of the files loaded so far (all of them in a static bundle). */
   files: Readonly<Record<FilePath, string>>;
   /** Files that could not be loaded, with the reason. */
@@ -215,6 +221,7 @@ export class ViewerStore {
       openedBase: false,
       openedLine: undefined,
       openSeq: 0,
+      expanded: new Set(),
       mode: "explore",
       tour: tour ? { tourId: tour.id, step: stepIndex(launch.step, tour.steps.length) } : undefined,
       applied: undefined,
@@ -699,6 +706,26 @@ export class ViewerStore {
       openedBase: false,
       applied: undefined,
     });
+  }
+
+  /** True when the box can show the boxes of the view it opens inside itself, on this map. */
+  canExpandInPlace(id: ElementId): boolean {
+    if (this.state.mode === "present") return false;
+    return canExpandInPlace(this.state.model, id);
+  }
+
+  /** True when the box shows the inside of the view it opens, on this map. */
+  isExpanded(id: ElementId): boolean {
+    return this.state.expanded.has(id);
+  }
+
+  /** Shows (or folds back) the inside of a box on the current map: the boxes of the view it opens. */
+  toggleExpanded(id: ElementId): void {
+    if (!this.isExpanded(id) && !this.canExpandInPlace(id)) return;
+    const expanded = new Set(this.state.expanded);
+    if (expanded.has(id)) expanded.delete(id);
+    else expanded.add(id);
+    this.set({ expanded });
   }
 
   /** Removes what is included below a container. */
