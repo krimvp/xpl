@@ -40,6 +40,6 @@ Plain words first, code names second: a note names at most 3 pieces of code (1 o
 | Sentences        | `long-sentence`, `long-average`, `bare-it`, `filler-word`, `absolute-word`, `repeats-summary` | one fact per sentence; evidence next to the claim |
 | Load             | `long-note`, `long-talk-note`, `code-heavy`, `flow-label-code`                                | say the idea in plain words; keep one code name   |
 | Markup           | `markdown-in-plain`, `markdown-in-summary`                                                    | plain titles; headings and links only in `detail` |
-| What readers see | `change-not-shown`, `far-ranges`, `big-map`, `crowded-map`, `self-loop`                       | add a step; split a step; group boxes; hide edges |
+| What readers see | `change-not-shown`, `far-ranges`, `big-map`, `crowded-map`                                    | add a step; split a step; group boxes; hide edges |
 
 The hints name the limit a fix could trip: a full tour summary wants a long sentence shortened, not split.

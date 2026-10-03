@@ -115,8 +115,8 @@ export function SequenceView({
       maxFitZoom={present ? PRESENT_MAX_FIT_ZOOM : undefined}
       fitPadding={present ? PRESENT_FIT_PADDING : undefined}
       readableZoom={present ? PRESENT_READABLE_ZOOM : undefined}
-      startBox={startBox}
-      startCore={startCore}
+      focus={startBox && { boxes: [startBox], core: startCore }}
+      keepInView={startCore}
       overlay={(t, size) => <StickyHeads lifelines={layout.lifelines} t={t} paneWidth={size.w} />}
       onBackgroundClick={() => store.clearSelection()}
       tools={

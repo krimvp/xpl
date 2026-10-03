@@ -15,7 +15,13 @@ import { indentColumns } from "../src/editor.js";
 import { stageActor, wrapWords } from "../src/layout/flowLayout.js";
 import { withExplainer } from "../src/saveHtml.js";
 import { stepTests } from "../src/stepTests.js";
-import { SNAPSHOT_MIN_ZOOM, SNAPSHOT_ZOOM, snapshotView, startView } from "../src/viewport.js";
+import {
+  frameView,
+  SNAPSHOT_MIN_ZOOM,
+  SNAPSHOT_WHOLE,
+  SNAPSHOT_ZOOM,
+  snapshotView,
+} from "../src/viewport.js";
 import { makeBundle, makeIndex } from "./world.js";
 
 describe("the tests of a guide section", () => {
@@ -130,21 +136,21 @@ describe("Present starts a flow at the zoom that shows its whole width (readable
   const options = {
     padding: 10,
     maxZoom: 1.6,
-    floor: 11 / 13,
+    whole: 11 / 13,
     readable: 16 / 13,
     readableMin: 11 / 13,
   };
   const flow = { width: 700, height: 1500 };
   it("a wide pane shows the whole width, up to the most", () => {
-    const view = startView({ w: 718, h: 424 }, flow, undefined, options)!;
+    const view = frameView({ w: 718, h: 424 }, flow, undefined, options)!;
     expect(view.partial).toBe(true);
     expect(view.transform.k).toBeCloseTo(698 / 700, 3);
-    const wide = startView({ w: 1083, h: 775 }, flow, undefined, options)!;
+    const wide = frameView({ w: 1083, h: 775 }, flow, undefined, options)!;
     expect(wide.transform.k).toBeCloseTo(16 / 13, 5);
   });
   it("a narrow pane never goes below the least (the text stays readable), and frames the focus", () => {
     const focus = { x: 400, y: 1200, width: 250, height: 100 };
-    const view = startView({ w: 400, h: 300 }, flow, focus, options)!;
+    const view = frameView({ w: 400, h: 300 }, flow, { boxes: [focus] }, options)!;
     expect(view.transform.k).toBeCloseTo(11 / 13, 5);
     const left = (0 - view.transform.x) / view.transform.k;
     const top = (0 - view.transform.y) / view.transform.k;
@@ -159,25 +165,49 @@ describe("the guide's still pictures", () => {
     const view = snapshotView(800, 260, { width: 300, height: 120 }, undefined)!;
     expect(view.transform.k).toBe(1);
     expect(view.height).toBe(140);
+    expect(view.partial).toBe(false);
   });
-  it("show a big diagram at a readable zoom, centred on the focus as far as the diagram allows", () => {
+  it("show a diagram whole when its text comes out at about 10px or more (no cut end boxes)", () => {
+    // 1000 wide in 780: 0.78, above the 10px line
+    const view = snapshotView(
+      800,
+      260,
+      { width: 1000, height: 150 },
+      {
+        boxes: [{ x: 400, y: 20, width: 200, height: 60 }],
+      },
+    )!;
+    expect(view.transform.k).toBeCloseTo(780 / 1000, 5);
+    expect(view.transform.k).toBeGreaterThanOrEqual(SNAPSHOT_WHOLE);
+    expect(view.partial).toBe(false);
+  });
+  it("show a big diagram at a readable zoom, on the focus, as far as the diagram allows", () => {
     const focus = { x: 1200, y: 900, width: 200, height: 80 };
-    const view = snapshotView(600, 260, { width: 1500, height: 1600 }, focus)!;
+    const view = snapshotView(600, 260, { width: 1500, height: 1600 }, { boxes: [focus] })!;
     expect(view.transform.k).toBe(SNAPSHOT_ZOOM);
-    const centreX = (300 - view.transform.x) / view.transform.k;
     const centreY = (130 - view.transform.y) / view.transform.k;
     expect(centreY).toBeCloseTo(940, 0);
-    // the window cannot go past the right edge of the diagram
+    const centreX = (300 - view.transform.x) / view.transform.k;
     expect(centreX).toBeLessThanOrEqual(1500 - (300 - 10) / view.transform.k + 1);
   });
-  it("zoom out to get a big focus in, but not below a floor", () => {
+  it("take in the focus' neighbours, down to a floor, and count focused boxes left out", () => {
     const content = { width: 3000, height: 3000 };
-    // a focus 1000 wide fits at (600 - 20) / 1040
-    const fits = snapshotView(600, 260, content, { x: 0, y: 0, width: 1000, height: 100 })!;
-    expect(fits.transform.k).toBeCloseTo(580 / 1040, 5);
-    // a focus 2000 wide would need less than the floor
-    const floor = snapshotView(600, 260, content, { x: 0, y: 0, width: 2000, height: 100 })!;
-    expect(floor.transform.k).toBe(SNAPSHOT_MIN_ZOOM);
+    const focus = { x: 1000, y: 1000, width: 250, height: 100 };
+    const below = { x: 1000, y: 1170, width: 250, height: 100 };
+    const view = snapshotView(600, 260, content, { boxes: [focus], neighbours: [below] })!;
+    expect(view.transform.k).toBeGreaterThanOrEqual(SNAPSHOT_MIN_ZOOM - 1e-9);
+    const top = (0 - view.transform.y) / view.transform.k;
+    expect(top).toBeLessThanOrEqual(focus.y);
+    expect(top + 260 / view.transform.k).toBeGreaterThanOrEqual(below.y + below.height);
+    const far = { x: 2800, y: 2800, width: 100, height: 100 };
+    expect(snapshotView(600, 260, content, { boxes: [focus, far] })!.hidden).toBe(1);
+  });
+  it("grow taller when that shows the whole diagram", () => {
+    // 700 x 380: cut at 260 tall (0.63), whole at 420 tall (0.82)
+    const view = snapshotView(600, 260, { width: 700, height: 380 }, undefined, 420)!;
+    expect(view.partial).toBe(false);
+    expect(view.height).toBeGreaterThan(260);
+    expect(view.height).toBeLessThanOrEqual(420);
   });
   it("have nothing to show before they have a width", () => {
     expect(snapshotView(0, 260, { width: 100, height: 100 }, undefined)).toBeUndefined();

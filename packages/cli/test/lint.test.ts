@@ -1431,7 +1431,7 @@ describe("lintExplainer: reader checks", () => {
     }
   });
 
-  it("big-map (on include without an index) and self-loop (an edge from a box to itself is not drawn)", () => {
+  it("big-map (on include without an index); an edge from a box to itself is drawn, so it is not a finding", () => {
     const include = Array.from({ length: 9 }, (_, i) => `file:src/f${i}.ts`);
     const { findings } = lintExplainer(
       explainer({
@@ -1446,13 +1446,6 @@ describe("lintExplainer: reader checks", () => {
             from: "sym:src/f1.ts#walk",
             to: "sym:src/f1.ts#walk",
             summary: "It walks down.",
-            anchors: [],
-          },
-          {
-            id: "edge:other",
-            kind: "calls",
-            from: "sym:other.ts#a",
-            to: "sym:other.ts#a",
             anchors: [],
           },
         ],
@@ -1478,13 +1471,10 @@ describe("lintExplainer: reader checks", () => {
         "9 boxes (more than 8) on a map a tour shows: a guide picture or a slide of it is too small to read",
       ],
     ]);
-    // edge:other is on no map
-    expect(only(findings, "self-loop").map((f) => [f.elementId, f.message])).toEqual([
-      [
-        "edge:recurse",
-        "an edge from walk to itself is not drawn on the map (view:big, view:ref): readers see it only from a step that names it",
-      ],
-    ]);
+    // the map draws a recursion as a loop on its box
+    expect(findings.filter((f) => f.elementId === "edge:recurse" && f.field === "from")).toEqual(
+      [],
+    );
   });
 
   it("crowded-map: more than 2 arrows per box, with the least used drawn edges to hide (needs the index)", () => {

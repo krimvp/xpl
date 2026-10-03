@@ -215,7 +215,7 @@ test.describe("Present: a flow step", () => {
     { width: 1280, height: 720 },
     { width: 1440, height: 900 },
   ]) {
-    test(`${size.width}x${size.height}: a typical 8-stage flow reads at 16px or more, framed on the step, Fit all included`, async ({
+    test(`${size.width}x${size.height}: a typical 8-stage flow reads at 16px or more, framed on the step, Fit all shows it all`, async ({
       page,
     }) => {
       const problems = watchProblems(page);
@@ -227,7 +227,7 @@ test.describe("Present: a flow step", () => {
       // read from the back of the room: the flow starts with its text at 16px
       expect(await smallestDiagramText(page)).toBeGreaterThanOrEqual(15.9);
       await expect.poll(() => selectedInPane(page)).toBe(true);
-      // "Fit all", when it is offered, keeps the text readable (the whole width, scrolling down)
+      // "Fit all", when it is offered, shows every stage
       const badge = page.getByTestId("pz-badge");
       if ((await badge.count()) > 0 && (await badge.textContent()) === "Fit all") {
         // it stays off the picture until the mouse moves
@@ -236,7 +236,17 @@ test.describe("Present: a flow step", () => {
         await page.mouse.move(size.width / 4, size.height / 3);
         await expect.poll(opacity).toBe("1");
         await badge.click();
-        expect(await smallestDiagramText(page)).toBeGreaterThanOrEqual(11);
+        await expect
+          .poll(() =>
+            page.evaluate(() => {
+              const pane = document.querySelector(".panzoom")!.getBoundingClientRect();
+              return [...document.querySelectorAll(".flow-stage")].every((el) => {
+                const r = el.getBoundingClientRect();
+                return r.top >= pane.top - 1 && r.bottom <= pane.bottom + 1;
+              });
+            }),
+          )
+          .toBe(true);
       }
       // one split for the whole tour: a graph step keeps the same columns (the slide does not jump)
       await page.keyboard.press("ArrowLeft");

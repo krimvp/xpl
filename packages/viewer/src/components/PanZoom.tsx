@@ -2,10 +2,12 @@
  * An SVG canvas with pan (drag), zoom (wheel, buttons, + / - keys) and fit-to-view. Content is drawn in
  * its own coordinates (0..width, 0..height); this component owns the viewport transform.
  *
- * The first view is the fit, unless the diagram is too big to read when fitted (fit scale below
- * `READABLE_FLOOR`): then it starts at a readable zoom, looking at the top-left corner or at `startBox`, and
- * a badge says so and offers "Fit all" (and, once everything is fitted, "Readable size" to come back). The
- * Fit button and the 0 key always fit all of it. See viewport.ts for the maths.
+ * The first view follows one rule (viewport.ts `frameView`): the fit, unless the diagram is too big to read
+ * when fitted; then what the step is about (`focus`, with its neighbours when there is room) at a readable
+ * zoom, a "+N more" cue for focused elements left out, and a badge that offers "Fit all" (and, once
+ * everything is fitted, "Readable size" to come back). The Fit button, the 0 key and "Fit all" always fit all
+ * of it, however small. Zooming keeps the selection where it is, and the selection (`keepInView`) is panned
+ * into view when it changes or the pane is resized.
  *
  * A drag never turns into a click: pointer capture only starts once the pointer has moved a few
  * pixels, so a plain click still reaches the element under it. A click on the empty background calls
@@ -23,15 +25,19 @@ import {
   type ReactNode,
 } from "react";
 import {
+  boxInView,
   clamp,
+  fitTransform,
+  frameView,
   MAX_ZOOM,
   MIN_ZOOM,
   rawFitScale,
   READABLE_FLOOR,
-  readableFit,
-  scrollDown,
-  startView,
+  reveal,
+  settle,
+  unionBox,
   type Box,
+  type Focus,
   type Transform,
 } from "../viewport.js";
 
@@ -48,9 +54,8 @@ export const PRESENT_FIT_PADDING = 10;
  */
 export const PRESENT_READABLE_ZOOM = 1;
 /**
- * A flow never gets smaller than this, not even for "Fit all" (its smallest text, 13 units, stays at 11px):
- * a flow too tall for that is fitted to its width and scrolls. Read mode starts flows at this zoom too. (When
- * even the width does not fit at this zoom, as in Present's narrow pane, Fit shows all of it anyway.)
+ * A flow starts no smaller than this (its smallest text, 13 units, comes out at 11px): a flow too big for
+ * that starts on its focus. "Fit all" still shows all of it.
  */
 export const FLOW_READABLE_ZOOM = 11 / 13;
 /**
@@ -59,6 +64,8 @@ export const FLOW_READABLE_ZOOM = 11 / 13;
  */
 export const PRESENT_FLOW_MAX_ZOOM = 16 / 13;
 const DRAG_THRESHOLD = 4;
+/** Room kept between the selection and the pane's edge when it is panned into view, px. */
+const REVEAL_MARGIN = 32;
 
 function zoomAt(t: Transform, factor: number, px: number, py: number): Transform {
   const k = clamp(t.k * factor, MIN_ZOOM, MAX_ZOOM);
@@ -86,8 +93,9 @@ export interface PanZoomProps {
   /** Room fitting leaves around the diagram, in px (default 24). */
   fitPadding?: number;
   /**
-   * The smallest zoom the first view may have (default `READABLE_FLOOR`, and then the readable zoom is
-   * `READABLE_ZOOM`): a diagram whose fit is smaller starts at this zoom on `startBox` instead.
+   * The zoom a first view that cannot show all of the diagram is drawn at (default `READABLE_ZOOM`, and
+   * then a diagram that fits at `READABLE_FLOOR` or more starts fitted). With it, a diagram that fits at
+   * this zoom (or `readableMin`) or more starts fitted.
    */
   readableZoom?: number;
   /**
@@ -97,12 +105,6 @@ export interface PanZoomProps {
    */
   readableMin?: number;
   /**
-   * The smallest zoom "Fit" may use. A diagram that would fit only below it is fitted to its width instead,
-   * from the top, and the mouse wheel scrolls it up and down (text stays readable). When even the width
-   * does not fit at this zoom, Fit shows all of it anyway. Default: no floor.
-   */
-  fitFloor?: number;
-  /**
    * Drawn over the diagram, outside its transform (the current one is passed in): what must stay in sight
    * while the diagram moves, such as the participant names of a sequence.
    */
@@ -110,13 +112,17 @@ export interface PanZoomProps {
   /** More controls at the end of the zoom toolbar (a map's Key). */
   tools?: ReactNode;
   /**
-   * What to look at first when the diagram is too big to fit at a readable size (a box in the content's
-   * coordinates: the selection, the first box of the view). Read when the first view is set, not on every
-   * render, so a click that changes the selection does not move the viewport. Default: the top-left corner.
+   * What the first view frames when the diagram is too big to fit at a readable size (boxes in the content's
+   * coordinates: the step's elements and their neighbours, or the first box of the view). Read when the
+   * first view is set, not on every render, so a click that changes the selection does not move the
+   * viewport. Default: the top-left corner.
    */
-  startBox?: Box | undefined;
-  /** What of `startBox` must be in view when all of it cannot be (viewport.ts `startView`'s `core`). */
-  startCore?: Box | undefined;
+  focus?: Focus | undefined;
+  /**
+   * The selection, in the content's coordinates: when it changes, or the pane is resized, the view pans just
+   * enough to show it (when it is out of sight), and the zoom buttons zoom about it.
+   */
+  keepInView?: Box | undefined;
   children: ReactNode;
 }
 
@@ -130,19 +136,19 @@ export function PanZoom({
   fitPadding = FIT_PADDING,
   readableZoom,
   readableMin,
-  fitFloor,
   overlay,
   tools,
-  startBox,
-  startCore,
+  focus,
+  keepInView,
   children,
 }: PanZoomProps) {
   const wrap = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 0, h: 0 });
   const [t, setT] = useState<Transform>({ k: 1, x: 0, y: 0 });
+  /** Focused elements the first view leaves out ("+N more"); 0 once the user moves the view. */
+  const [more, setMore] = useState(0);
   const follow = useRef<Follow>("start");
-  const start = useRef<Box | undefined>(startBox);
-  const startCoreRef = useRef<Box | undefined>(startCore);
+  const start = useRef<Focus | undefined>(focus);
   const lastReset = useRef(resetKey);
   const drag = useRef<{ x: number; y: number; moved: boolean; id: number } | null>(null);
   const suppressClick = useRef(false);
@@ -162,38 +168,30 @@ export function PanZoom({
       padding: fitPadding,
       maxZoom: maxFitZoom,
       ...(readableZoom !== undefined
-        ? { floor: readableMin ?? readableZoom, readable: readableZoom, readableMin }
+        ? { whole: readableMin ?? readableZoom, readable: readableZoom, readableMin }
         : {}),
     }),
     [fitPadding, maxFitZoom, readableZoom, readableMin],
   );
   const floor = readableZoom !== undefined ? (readableMin ?? readableZoom) : READABLE_FLOOR;
 
-  /** True while a width fit is on screen: the wheel scrolls the diagram instead of zooming it. */
-  const widthFit = useRef(false);
-  const [scrolling, setScrolling] = useState(false);
-
-  /** All of the diagram in the pane (or all of its width, when all of it would be too small to read). */
+  /** All of the diagram in the pane, however small that makes it. */
   const fitAll = useCallback(() => {
-    const next = readableFit(size, { width, height }, options, fitFloor);
-    if (!next) return;
-    widthFit.current = next.width;
-    setScrolling(next.width);
-    setT(next.transform);
-  }, [size, width, height, options, fitFloor]);
-
-  /** The first view: the fit, or for a diagram too big to read whole, a readable zoom on its start. */
-  const showStart = useCallback(() => {
-    const next = startView(size, { width, height }, start.current, options, startCoreRef.current);
-    widthFit.current = false;
-    setScrolling(false);
-    if (next) setT(next.transform);
+    const next = fitTransform(size, { width, height }, options);
+    if (next) setT(next);
   }, [size, width, height, options]);
 
-  // Read the caller's start box before the effect below uses it.
+  /** The first view: the fit, or for a diagram too big to read whole, a readable frame of the focus. */
+  const showStart = useCallback(() => {
+    const next = frameView(size, { width, height }, start.current, options);
+    if (!next) return;
+    setT(next.transform);
+    setMore(next.hidden);
+  }, [size, width, height, options]);
+
+  // Read the caller's focus before the effect below uses it.
   useLayoutEffect(() => {
-    start.current = startBox;
-    startCoreRef.current = startCore;
+    start.current = focus;
   });
 
   useLayoutEffect(() => {
@@ -205,6 +203,25 @@ export function PanZoom({
     else if (follow.current === "fit") fitAll();
   }, [showStart, fitAll, resetKey]);
 
+  // The selection stays in sight: after it changes, and after the pane changes size (Show source narrows
+  // it). Runs after the effect above, so it corrects the view that effect set.
+  const keep = keepInView
+    ? `${keepInView.x},${keepInView.y},${keepInView.width},${keepInView.height}`
+    : "";
+  const keepRef = useRef(keepInView);
+  keepRef.current = keepInView;
+  useLayoutEffect(() => {
+    const box = keepRef.current;
+    if (!box || size.w <= 0 || size.h <= 0) return;
+    setT((cur) => (boxInView(cur, size, box) ? cur : reveal(cur, size, box, REVEAL_MARGIN)));
+  }, [keep, size, resetKey]);
+
+  // (the wheel listener is installed once: it reads the current pane and diagram size from here)
+  const sizeRef = useRef(size);
+  sizeRef.current = size;
+  const contentRef = useRef({ width, height, padding: fitPadding });
+  contentRef.current = { width, height, padding: fitPadding };
+
   // Wheel = zoom about the pointer. React attaches wheel listeners as passive, so use a native one.
   useEffect(() => {
     const el = wrap.current;
@@ -213,37 +230,56 @@ export function PanZoom({
       event.preventDefault();
       const rect = el.getBoundingClientRect();
       const delta = event.deltaMode === 1 ? event.deltaY * 16 : event.deltaY;
-      // A width fit scrolls (it is as wide as the pane and only too tall); a pinch still zooms.
-      if (widthFit.current && !event.ctrlKey) {
-        setT((cur) => scrollDown(cur, delta, sizeRef.current, { height: heightRef.current }, 0));
-        return;
-      }
       // a trackpad pinch arrives as a wheel with ctrlKey and small deltas
       const factor = Math.exp(-delta * (event.ctrlKey ? 0.01 : 0.0018));
       follow.current = "free";
-      widthFit.current = false;
-      setScrolling(false);
-      setT((cur) => zoomAt(cur, factor, event.clientX - rect.left, event.clientY - rect.top));
+      setMore(0);
+      const { width: w, height: h, padding } = contentRef.current;
+      setT((cur) =>
+        settle(
+          zoomAt(cur, factor, event.clientX - rect.left, event.clientY - rect.top),
+          sizeRef.current,
+          { width: w, height: h },
+          padding,
+        ),
+      );
     };
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
   }, []);
-  // (the wheel listener is installed once: it reads the current pane and diagram size from here)
-  const sizeRef = useRef(size);
-  sizeRef.current = size;
-  const heightRef = useRef(height);
-  heightRef.current = height;
 
+  /** Zoom about the selection when it is in sight, else about the middle of the pane. */
   const zoomBy = (factor: number) => {
     follow.current = "free";
-    widthFit.current = false;
-    setScrolling(false);
-    setT((cur) => zoomAt(cur, factor, size.w / 2, size.h / 2));
+    setMore(0);
+    setT((cur) => {
+      const box = keepRef.current;
+      const about =
+        box && boxInView(cur, size, box)
+          ? {
+              x: cur.x + (box.x + box.width / 2) * cur.k,
+              y: cur.y + (box.y + box.height / 2) * cur.k,
+            }
+          : { x: size.w / 2, y: size.h / 2 };
+      return settle(zoomAt(cur, factor, about.x, about.y), size, { width, height }, fitPadding);
+    });
   };
 
   const fitEverything = () => {
     follow.current = "fit";
+    setMore(0);
     fitAll();
+  };
+
+  /** "+N more": all of the focused elements in view, at whatever zoom that takes. */
+  const showFocus = () => {
+    const all = unionBox(start.current?.boxes ?? []);
+    if (!all) return;
+    const fitted = fitTransform(size, all, { padding: fitPadding, maxZoom: maxFitZoom });
+    if (!fitted) return;
+    follow.current = "free";
+    setMore(0);
+    setT({ k: fitted.k, x: fitted.x - all.x * fitted.k, y: fitted.y - all.y * fitted.k });
   };
 
   const onPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -265,6 +301,7 @@ export function PanZoom({
     d.x = event.clientX;
     d.y = event.clientY;
     follow.current = "free";
+    setMore(0);
     setT((cur) => ({ ...cur, x: cur.x + dx, y: cur.y + dy }));
   };
   const endDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -303,6 +340,7 @@ export function PanZoom({
         const dx = event.key === "ArrowLeft" ? step : event.key === "ArrowRight" ? -step : 0;
         const dy = event.key === "ArrowUp" ? step : event.key === "ArrowDown" ? -step : 0;
         follow.current = "free";
+        setMore(0);
         setT((cur) => ({ ...cur, x: cur.x + dx, y: cur.y + dy }));
         break;
       }
@@ -316,8 +354,7 @@ export function PanZoom({
   // out of sight and how to see all of it (and, once all of it is in sight, how to get back).
   const raw = rawFitScale(size, { width, height }, fitPadding);
   const big = raw > 0 && raw < floor;
-  // After Fit: all of it in sight, or (a width fit) as much of it as stays readable.
-  const allInSight = big && (scrolling || Math.abs(t.k - clamp(raw, MIN_ZOOM, maxFitZoom)) < 0.005);
+  const allInSight = big && Math.abs(t.k - clamp(raw, MIN_ZOOM, maxFitZoom)) < 0.005;
 
   return (
     <div
@@ -327,7 +364,6 @@ export function PanZoom({
       role="group"
       aria-label={label}
       data-zoom={t.k.toFixed(3)}
-      data-fit={scrolling ? "width" : undefined}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={endDrag}
@@ -353,11 +389,9 @@ export function PanZoom({
           className="pz-badge"
           data-testid="pz-badge"
           title={
-            scrolling
-              ? "The diagram is as wide as the view: scroll to see the rest of it. Go back to where it started."
-              : allInSight
-                ? `The whole diagram is in view at ${Math.round(t.k * 100)}%, too small to read comfortably. Zoom back to a readable size.`
-                : "This diagram is too big to read at once, so it starts zoomed in and part of it is out of sight. Fit all of it in the view."
+            allInSight
+              ? `The whole diagram is in view at ${Math.round(t.k * 100)}%, too small to read comfortably. Zoom back to a readable size.`
+              : "This diagram is too big to read at once, so it starts zoomed in and part of it is out of sight. Fit all of it in the view."
           }
           onPointerDown={(event) => event.stopPropagation()}
           onClick={() => {
@@ -367,7 +401,19 @@ export function PanZoom({
             } else fitEverything();
           }}
         >
-          {scrolling ? "Back to the start" : allInSight ? "Readable size" : "Fit all"}
+          {allInSight ? "Readable size" : "Fit all"}
+        </button>
+      )}
+      {more > 0 && (
+        <button
+          type="button"
+          className="pz-more"
+          data-testid="pz-more"
+          title="Part of what this step is about is out of sight. Show all of it."
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={showFocus}
+        >
+          +{more} more
         </button>
       )}
       <div className="pz-toolbar" onPointerDown={(event) => event.stopPropagation()}>

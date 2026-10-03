@@ -20,9 +20,8 @@
  *
  * Reader checks look at what the viewer will show: a step it has to title itself (`untitled-step`), changed files
  * no step shows (`change-not-shown`), two far-apart ranges of a step in one file (`far-ranges`), a talk note set in
- * small type (`long-talk-note`), maps too big or too crowded for a picture (`big-map`, `crowded-map`) and an edge
- * from a box to itself, which a map does not draw (`self-loop`). The box and arrow counts need the index: pass an
- * `ExplainerModel` to get them (`xpl lint` does when there is an index).
+ * small type (`long-talk-note`) and maps too big or too crowded for a picture (`big-map`, `crowded-map`). The box
+ * and arrow counts need the index: pass an `ExplainerModel` to get them (`xpl lint` does when there is an index).
  *
  * The rules are meant not to fight: example values in code spans are not code names, an absolute word next to its
  * evidence (anchors) passes, box names match by word stems, and a hint names the limit a fix could trip.
@@ -69,8 +68,7 @@ export type LintRule =
   | "far-ranges"
   | "long-talk-note"
   | "big-map"
-  | "crowded-map"
-  | "self-loop";
+  | "crowded-map";
 
 /** The rules in the order the count line lists them, with a short name for people. */
 export const LINT_RULES: Record<LintRule, string> = {
@@ -99,7 +97,6 @@ export const LINT_RULES: Record<LintRule, string> = {
   "long-talk-note": "talk note set in small type",
   "big-map": "map with too many boxes for a tour",
   "crowded-map": "map with too many arrows",
-  "self-loop": "edge from a box to itself, not drawn on the map",
 };
 
 export type LintElementKind =
@@ -1593,9 +1590,8 @@ function changeChecks(lint: Linter, explainer: Explainer, at: Lookup): void {
 
 /**
  * The map checks: `big-map` (a graph view a tour shows with more than `tourMapBoxes` boxes), `crowded-map` (more
- * arrows than `edgesPerBox` per box, with the ids of the least used drawn edges to hide) and `self-loop` (a stored
- * edge from a box to itself, which a map does not draw). The box and arrow counts come from the index when there is
- * one (`model`), else from the view's `include` (and no `crowded-map`).
+ * arrows than `edgesPerBox` per box, with the ids of the least used drawn edges to hide). The box and arrow counts
+ * come from the index when there is one (`model`), else from the view's `include` (and no `crowded-map`).
  */
 function mapChecks(
   lint: Linter,
@@ -1649,25 +1645,6 @@ function mapChecks(
         ids: hide,
       });
     }
-  }
-  for (const edgeValue of list(explainer.edges)) {
-    const edge = record(edgeValue);
-    const from = str(edge.from);
-    if (from === undefined || from !== str(edge.to)) continue;
-    const id = str(edge.id) ?? "(edge)";
-    const shown = graphs.filter((view) =>
-      list<unknown>(view.include).some(
-        (box) => typeof box === "string" && (within(from, box, at) || within(box, from, at)),
-      ),
-    );
-    if (shown.length === 0) continue;
-    lint.add(
-      { elementId: id, kind: "edge", field: "from" },
-      "self-loop",
-      excerpt(`${from} -> ${from}`),
-      `an edge from ${labelOf(from, at)} to itself is not drawn on the map (${shown.map((view) => str(view.id)).join(", ")}): readers see it only from a step that names it`,
-      "say it in the box's summary or in a flow or sequence step (a call to itself shows there), or make it an edge between two boxes",
-    );
   }
 }
 

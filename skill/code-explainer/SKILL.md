@@ -142,7 +142,7 @@ The viewer shows each claim next to its code, so a wrong claim looks checked. Ch
 ## Check before you show it
 
 1. **Accuracy pass** (a change): if you can start a fresh subagent, give it the `xpl` path, the repo, the explainer name and path, and the range. Ask it to check each title, summary, note and detail against its anchors (`xpl anchors <name>`), each "before" claim against the base (`xpl show --at base <path>`, `git show <base>:<path>`), and what each cited test asserts. It rates each claim correct, imprecise, overstated, unanchored or wrong, quotes the lines, and changes no file. Without a subagent, do a second, separate pass yourself, one claim at a time. Fix what the pass finds.
-2. `xpl lint <name>`: `todo-left` must be zero before you bundle. Fix the other findings, including what the reader will see (`untitled-step`, `far-ranges`, `big-map`, `crowded-map`, `self-loop`), or say in the reply why you kept one.
+2. `xpl lint <name>`: `todo-left` must be zero before you bundle. Fix the other findings, including what the reader will see (`untitled-step`, `far-ranges`, `big-map`, `crowded-map`), or say in the reply why you kept one.
 3. Re-read the tour in order as a newcomer, with the checklist in `reference/writing.md` section 7.
 
 ## Show the result

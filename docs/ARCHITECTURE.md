@@ -894,8 +894,7 @@ field, a short quote and a fix. Rules (thresholds and word lists live in `LINT_L
 - What readers will see: `untitled-step` (no note, or no heading and a first sentence too long for a title),
   `change-not-shown` (changed files no step shows or names), `far-ranges` (two ranges of a step in one file
   over 40 lines apart), `long-talk-note` (a talk note over Present's `LONG_NOTE`), `big-map` (over 8 boxes on
-  a map a tour shows), `crowded-map` (over 2 arrows per box, with the edge ids to hide; needs the index),
-  `self-loop` (a stored edge from a box to itself, which `deriveGraph` drops).
+  a map a tour shows), `crowded-map` (over 2 arrows per box, with the edge ids to hide; needs the index).
 
 `--patch <file|->` merges the patch in memory with core `applyPatch`, the call `xpl apply` makes, so the
 findings are those of the explainer after apply; nothing is written. `--json`: `{ ok, path, strict, checked,

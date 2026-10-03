@@ -20,6 +20,7 @@ import {
 } from "../layout/flowLayout.js";
 import { topicElements, topicMatches } from "../workspace.js";
 import { FlowKey } from "./Legend.js";
+import type { Focus } from "../viewport.js";
 import { SnapshotFrame } from "./SnapshotFrame.js";
 import {
   FLOW_READABLE_ZOOM,
@@ -87,16 +88,41 @@ export function FlowDiagram({ view, snapshot }: FlowDiagramProps) {
   if (flow.stages.length === 0)
     return <div className="diagram-message">This process has no stages yet.</div>;
   const placed = placedStages(flow, layout);
-  const focal = (
-    placed.find(({ node }) => topics.has(node.id)) ??
-    placed.find(
-      ({ stage: { step } }) =>
-        topicMatches(step.from, topics, state.model) || topicMatches(step.to, topics, state.model),
-    )
-  )?.node;
-  const startBox = focal
-    ? { x: focal.x ?? 0, y: focal.y ?? 0, width: focal.width ?? 250, height: focal.height ?? 100 }
-    : undefined;
+  // What the step is about: the selected stages, else the stages that involve the selection (a concept,
+  // a part of the code), framed with the stages next to them (viewport.ts frameView).
+  const boxOf = (node: FlowLayout["children"][number]) => ({
+    x: node.x ?? 0,
+    y: node.y ?? 0,
+    width: node.width ?? 250,
+    height: node.height ?? 100,
+  });
+  const selectedStages = placed.filter(({ node }) => topics.has(node.id));
+  const focused = (
+    selectedStages.length > 0
+      ? selectedStages
+      : placed.filter(
+          ({ stage: { step } }) =>
+            topicMatches(step.from, topics, state.model) ||
+            topicMatches(step.to, topics, state.model),
+        )
+  ).map(({ node }) => node.id);
+  const focusIds = new Set(focused);
+  const nextTo = new Set<string>();
+  for (const edge of layout.edges ?? []) {
+    if (focusIds.has(edge.from) && !focusIds.has(edge.to)) nextTo.add(edge.to);
+    if (focusIds.has(edge.to) && !focusIds.has(edge.from)) nextTo.add(edge.from);
+  }
+  const nodes = new Map(placed.map(({ node }) => [node.id, node] as const));
+  const focus: Focus | undefined =
+    focused.length > 0
+      ? {
+          boxes: focused.map((id) => boxOf(nodes.get(id)!)),
+          neighbours: [...nextTo].flatMap((id) => {
+            const node = nodes.get(id);
+            return node ? [boxOf(node)] : [];
+          }),
+        }
+      : undefined;
   const select = (id: string, additive: boolean) => {
     if (!snapshot) store.click(id, additive);
   };
@@ -230,7 +256,12 @@ export function FlowDiagram({ view, snapshot }: FlowDiagramProps) {
   );
   if (snapshot)
     return (
-      <SnapshotFrame width={layout.width ?? 400} height={layout.height ?? 300} focus={startBox}>
+      <SnapshotFrame
+        width={layout.width ?? 400}
+        height={layout.height ?? 300}
+        focus={focus}
+        where="Flow"
+      >
         {content}
       </SnapshotFrame>
     );
@@ -246,7 +277,8 @@ export function FlowDiagram({ view, snapshot }: FlowDiagramProps) {
         width={layout.width ?? 400}
         height={layout.height ?? 300}
         resetKey={`${view.id}:${state.stepSeq}`}
-        startBox={startBox}
+        focus={focus}
+        keepInView={focus?.boxes[0]}
         label="Process flow"
         maxFitZoom={present ? PRESENT_MAX_FIT_ZOOM : undefined}
         fitPadding={present ? PRESENT_FIT_PADDING : undefined}
@@ -254,7 +286,6 @@ export function FlowDiagram({ view, snapshot }: FlowDiagramProps) {
         // at 16px or more, else at that size on its focus ("Fit all" shows the rest).
         readableZoom={present ? PRESENT_FLOW_MAX_ZOOM : FLOW_READABLE_ZOOM}
         readableMin={present ? PRESENT_FLOW_MAX_ZOOM : undefined}
-        fitFloor={FLOW_READABLE_ZOOM}
         onBackgroundClick={() => store.clearSelection()}
         tools={
           <FlowKey

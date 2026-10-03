@@ -115,7 +115,6 @@ export const lintCommand: CommandSpec = {
     `  big-map              a graph view a tour shows with more than ${LINT_LIMITS.tourMapBoxes} boxes`,
     `  crowded-map          a graph view with more than ${LINT_LIMITS.edgesPerBox} arrows (derived and stored) per box; the hint and`,
     "                       --json (ids) list the least used drawn edges to put in the view's `hidden`",
-    "  self-loop            a stored edge from a box to itself, on a box a graph view shows: the map does not draw it",
     "Code spans (`...`) are left out of the word checks, and example values in code spans (`503`, `-1`, `null`,",
     '`/admin/*`, `"utf-8"`) do not count as code names. An absolute word has its evidence in the text of an',
     "element with anchors, and in a tour note sentence that names a part the step shows (a focused element with",

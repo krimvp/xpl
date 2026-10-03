@@ -1414,6 +1414,26 @@ code {
   color: var(--accent-fg);
 }
 
+/* framing: "+N more", the step's elements the first view leaves out (PanZoom, viewport.ts frameView). */
+.pz-more {
+  position: absolute;
+  left: 10px;
+  bottom: 42px;
+  padding: 3px 12px;
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--fg);
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.14);
+}
+.pz-more:hover {
+  background: var(--accent);
+  color: var(--accent-fg);
+}
+
 .pz-toolbar button:hover {
   background: var(--hover);
   color: var(--fg);
@@ -1839,6 +1859,7 @@ code {
 }
 
 .edge.is-quiet:hover .edge-label,
+.edge.is-quiet.is-hover .edge-label,
 .edge.is-quiet:focus-visible .edge-label {
   opacity: 1;
 }

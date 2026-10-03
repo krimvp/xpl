@@ -18,29 +18,42 @@ import {
 } from "@xpl/core";
 import { useViewerState } from "../hooks.js";
 import {
-  absoluteBoxes,
-  layoutGraph,
+  frameFocus,
+  layoutGraphFitting,
   type ChangeMarks,
   type GraphLayout,
 } from "../layout/graphLayout.js";
 import { layoutSequence } from "../layout/sequenceLayout.js";
-import { unionBox, type Box } from "../viewport.js";
+import { SNAPSHOT_WHOLE, type Box } from "../viewport.js";
 import { FlowDiagram } from "./FlowDiagram.js";
 import { GraphPicture, useGraphChanges } from "./GraphView.js";
 import { SequencePicture } from "./SequenceView.js";
-import { SNAPSHOT_HEIGHT, SnapshotFrame } from "./SnapshotFrame.js";
+import { SNAPSHOT_HEIGHT, SNAPSHOT_TALL_HEIGHT, SnapshotFrame } from "./SnapshotFrame.js";
 
 /** Graph layouts by view, for the page's life: a guide shows the same view in many sections. */
 const graphLayouts = new WeakMap<View, Promise<GraphLayout>>();
 
+/**
+ * The layout of a picture `width` px wide: laid out to the right or downwards, whichever shows larger in a
+ * picture of that width and the tallest height a picture may take (a tall map in a wide column reads better
+ * turned). Kept for the view, laid out for the first width asked.
+ */
 function graphLayoutOf(
   view: GraphView,
   graph: ReturnType<typeof deriveGraph>,
   changes: ChangeMarks | undefined,
+  width: number,
 ) {
   let known = graphLayouts.get(view);
   if (!known) {
-    known = layoutGraph(graph, {}, changes);
+    known = layoutGraphFitting(
+      graph,
+      width > 0 ? { width, height: SNAPSHOT_TALL_HEIGHT } : undefined,
+      // the picture is whole at this zoom or more: a direction that reaches it is as good as any
+      SNAPSHOT_WHOLE,
+      10,
+      changes,
+    );
     graphLayouts.set(view, known);
   }
   return known;
@@ -60,6 +73,7 @@ export function Snapshot({
 }) {
   const host = useRef<HTMLDivElement>(null);
   const [near, setNear] = useState(false);
+  const [width, setWidth] = useState(0);
 
   // Laid out only once the section comes near the screen.
   useEffect(() => {
@@ -71,7 +85,10 @@ export function Snapshot({
     }
     const observer = new IntersectionObserver(
       (entries) => {
-        if (entries.some((entry) => entry.isIntersecting)) setNear(true);
+        if (entries.some((entry) => entry.isIntersecting)) {
+          setWidth(el.clientWidth);
+          setNear(true);
+        }
       },
       { rootMargin: "400px 0px" },
     );
@@ -106,7 +123,7 @@ export function Snapshot({
       </figcaption>
       {near ? (
         view.type === "graph" ? (
-          <GraphSnapshot view={view} focus={focus} />
+          <GraphSnapshot view={view} focus={focus} width={width} />
         ) : view.type === "flow" ? (
           <FlowDiagram view={view} snapshot={{ selection: focus }} />
         ) : view.type === "sequence" ? (
@@ -119,7 +136,15 @@ export function Snapshot({
   );
 }
 
-function GraphSnapshot({ view, focus }: { view: GraphView; focus: readonly ElementId[] }) {
+function GraphSnapshot({
+  view,
+  focus,
+  width,
+}: {
+  view: GraphView;
+  focus: readonly ElementId[];
+  width: number;
+}) {
   const state = useViewerState();
   const graph = useMemo(() => deriveGraph(view, state.model), [view, state.model]);
   const changes = useGraphChanges(graph);
@@ -127,14 +152,14 @@ function GraphSnapshot({ view, focus }: { view: GraphView; focus: readonly Eleme
   const [failed, setFailed] = useState(false);
   useEffect(() => {
     let cancelled = false;
-    graphLayoutOf(view, graph, changes).then(
+    graphLayoutOf(view, graph, changes, width).then(
       (result) => !cancelled && setLayout(result),
       () => !cancelled && setFailed(true),
     );
     return () => {
       cancelled = true;
     };
-  }, [view, graph, changes]);
+  }, [view, graph, changes, width]);
   // What the step is about, as this view draws it: the focused boxes, or the boxes that stand for them.
   const marked = useMemo(() => {
     const include = new Set(
@@ -160,15 +185,13 @@ function GraphSnapshot({ view, focus }: { view: GraphView; focus: readonly Eleme
   }, [view, focus, state.model]);
   if (failed) return <p className="snapshot-message">This diagram could not be drawn.</p>;
   if (!layout) return <div className="snapshot-placeholder" style={{ height: SNAPSHOT_HEIGHT }} />;
-  const boxes = absoluteBoxes(layout.nodes);
-  const focusBox = unionBox(
-    [...focus, ...marked].flatMap((id) => {
-      const box = boxes.get(id);
-      return box ? [box] : [];
-    }),
-  );
   return (
-    <SnapshotFrame width={layout.width} height={layout.height} focus={focusBox}>
+    <SnapshotFrame
+      width={layout.width}
+      height={layout.height}
+      focus={frameFocus(layout, [...focus, ...marked])}
+      where="Map"
+    >
       <GraphPicture layout={layout} selection={focus} related={marked} />
     </SnapshotFrame>
   );
@@ -179,7 +202,9 @@ function SequenceSnapshot({ view, focus }: { view: SequenceView; focus: readonly
   const layout = useMemo(() => layoutSequence(view, state.model), [view, state.model]);
   const selected = new Set(focus);
   const boxes: Box[] = [];
-  // The names at the top of the lifelines a step joins come with it: an arrow means nothing without its ends.
+  const heads: Box[] = [];
+  // The names at the top of the lifelines a step joins come with it when there is room: an arrow means
+  // little without its ends.
   const ends = new Set<string>();
   for (const row of layout.rows) {
     if (selected.has(row.step.id)) {
@@ -194,16 +219,22 @@ function SequenceSnapshot({ view, focus }: { view: SequenceView; focus: readonly
     }
   }
   for (const lifeline of layout.lifelines) {
-    if (selected.has(lifeline.id) || ends.has(lifeline.id))
-      boxes.push({
-        x: lifeline.x - lifeline.headWidth / 2,
-        y: lifeline.headTop,
-        width: lifeline.headWidth,
-        height: lifeline.headHeight,
-      });
+    const head = {
+      x: lifeline.x - lifeline.headWidth / 2,
+      y: lifeline.headTop,
+      width: lifeline.headWidth,
+      height: lifeline.headHeight,
+    };
+    if (selected.has(lifeline.id)) boxes.push(head);
+    else if (ends.has(lifeline.id)) heads.push(head);
   }
   return (
-    <SnapshotFrame width={layout.width} height={layout.height} focus={unionBox(boxes)}>
+    <SnapshotFrame
+      width={layout.width}
+      height={layout.height}
+      focus={boxes.length > 0 ? { boxes, neighbours: heads } : undefined}
+      where="Flow"
+    >
       <SequencePicture layout={layout} selection={focus} />
     </SnapshotFrame>
   );
