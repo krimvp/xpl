@@ -166,17 +166,22 @@ function SequenceSnapshot({ view, focus }: { view: SequenceView; focus: readonly
   const layout = useMemo(() => layoutSequence(view, state.model), [view, state.model]);
   const selected = new Set(focus);
   const boxes: Box[] = [];
+  // The names at the top of the lifelines a step joins come with it: an arrow means nothing without its ends.
+  const ends = new Set<string>();
   for (const row of layout.rows) {
-    if (selected.has(row.step.id))
+    if (selected.has(row.step.id)) {
       boxes.push({
         x: row.bandLeft,
         y: row.bandTop,
         width: row.bandRight - row.bandLeft,
         height: row.bandBottom - row.bandTop,
       });
+      ends.add(row.step.from);
+      ends.add(row.step.to);
+    }
   }
   for (const lifeline of layout.lifelines) {
-    if (selected.has(lifeline.id))
+    if (selected.has(lifeline.id) || ends.has(lifeline.id))
       boxes.push({
         x: lifeline.x - lifeline.headWidth / 2,
         y: lifeline.headTop,

@@ -153,8 +153,12 @@ export function FlowDiagram({ view, snapshot }: FlowDiagramProps) {
           })}
         </g>
       ))}
-      {placed.map(({ node, stage }) => {
+      {placed.map(({ node, stage }, index) => {
         const { step, shape, frames } = stage;
+        // A loop or a branch is named once, over the first box it covers, not again over every box in it.
+        const frameText = frames.join(" · ");
+        const newFrame =
+          frames.length > 0 && placed[index - 1]?.stage.frames.join(" · ") !== frameText;
         const width = node.width ?? 250,
           height = node.height ?? 100;
         const active = topics.has(step.id),
@@ -212,9 +216,10 @@ export function FlowDiagram({ view, snapshot }: FlowDiagramProps) {
             >
               {stageActor(step, state.model, shape === "decision" ? 26 : 34, shape)}
             </text>
-            {frames.length > 0 && (
-              <text className="flow-frame" x={width / 2} y="-10" textAnchor="middle">
-                {frames.join(" · ").slice(0, 60)}
+            {newFrame && (
+              // Above the arrowhead (it ends at the box), on a halo: the dashed line runs behind it.
+              <text className="flow-frame" x={width / 2} y="-18" textAnchor="middle">
+                {frameText.slice(0, 60)}
               </text>
             )}
           </g>
@@ -233,7 +238,7 @@ export function FlowDiagram({ view, snapshot }: FlowDiagramProps) {
       {flow.projected && (
         <p className="flow-projection" role="note">
           Read from top to bottom. Each box is one call. The arrows show the order, not every
-          possible path. A label above a box says when it runs.
+          possible path. A purple label above a box says when it, and the boxes after it, run.
         </p>
       )}
       <PanZoom

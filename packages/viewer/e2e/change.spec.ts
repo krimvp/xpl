@@ -382,3 +382,45 @@ test.describe("reading a changed file", () => {
     expect(problems).toEqual([]);
   });
 });
+
+test.describe("reading the diagrams", () => {
+  test("the map's Key explains its marks, the change pills among them, and closes with Escape", async ({
+    page,
+  }) => {
+    const problems = watchProblems(page);
+    await open(page, "?perspective=map");
+    await page.getByTestId("legend-button").click();
+    const legend = page.getByTestId("legend");
+    await expect(legend).toBeVisible();
+    await expect(legend).toContainText("The one you picked");
+    await expect(legend).toContainText("What the change did");
+    await page.keyboard.press("Escape");
+    await expect(legend).toHaveCount(0);
+    // a picked box keeps its solid outline, even when the map also marks it related
+    await byId(page, "grp:scheduling").click();
+    const dash = await byId(page, "grp:scheduling")
+      .locator(":scope > .box")
+      .evaluate((el) => getComputedStyle(el).strokeDasharray);
+    expect(dash).toBe("none");
+    expect(problems).toEqual([]);
+  });
+
+  test("Present keeps one caption height for the whole tour, so the diagram does not jump", async ({
+    page,
+  }) => {
+    const problems = watchProblems(page);
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await open(page, "?mode=present");
+    const caption = page.getByTestId("tour-caption");
+    const counter = page.getByTestId("tour-counter");
+    const total = Number((await counter.innerText()).split("/")[1]);
+    const heights = new Set<number>();
+    for (let step = 1; step <= total; step++) {
+      await expect(counter).toHaveText(`${step} / ${total}`);
+      heights.add(Math.round((await caption.boundingBox())!.height));
+      await page.keyboard.press("ArrowRight");
+    }
+    expect(heights.size).toBe(1);
+    expect(problems).toEqual([]);
+  });
+});

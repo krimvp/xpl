@@ -32,10 +32,19 @@ export function SnapshotFrame({
     return () => observer.disconnect();
   }, []);
   const placed = snapshotView(paneWidth, SNAPSHOT_HEIGHT, { width, height }, focus);
+  // The sides where the picture goes on out of sight fade out: there is more of it in the Map or the Flow.
+  const cut: string[] = [];
+  if (placed) {
+    const { x, y, k } = placed.transform;
+    if (x < -1) cut.push("left");
+    if (x + width * k > paneWidth + 1) cut.push("right");
+    if (y < -1) cut.push("top");
+    if (y + height * k > placed.height + 1) cut.push("bottom");
+  }
   return (
     <div
       ref={box}
-      className="snapshot-frame"
+      className={"snapshot-frame" + cut.map((side) => ` is-cut-${side}`).join("")}
       style={{ height: placed?.height ?? SNAPSHOT_HEIGHT }}
       data-zoom={placed?.transform.k.toFixed(3)}
     >

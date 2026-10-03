@@ -1153,6 +1153,115 @@ code {
   cursor: pointer;
 }
 
+/* The map's Key (Legend.tsx): beside the zoom buttons, its marks drawn with the diagram's own colours. */
+.legend {
+  position: relative;
+  display: flex;
+  border-left: 1px solid var(--border);
+  padding-left: 4px;
+}
+
+.legend-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: -4px;
+  z-index: 20;
+  width: 300px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.16);
+  font-size: 12.5px;
+  line-height: 1.35;
+}
+
+.legend-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 3px 0;
+}
+
+.legend-row svg {
+  flex: none;
+}
+
+.legend-foot {
+  margin: 6px 0 0;
+  color: var(--muted);
+}
+
+.lg-box {
+  fill: var(--node-bg);
+  stroke: var(--node-border);
+  stroke-width: 1.4;
+}
+
+.lg-box.is-selected {
+  fill: var(--accent-soft);
+  stroke: var(--accent);
+  stroke-width: 2.2;
+}
+
+.lg-box.is-related {
+  fill: var(--related-soft);
+  stroke: var(--related);
+  stroke-width: 2.2;
+  stroke-dasharray: 5 2;
+}
+
+.lg-box.is-ghost {
+  fill: transparent;
+  stroke: var(--ghost-border);
+  stroke-dasharray: 4 3;
+}
+
+.lg-edge line {
+  stroke: var(--edge);
+  stroke-width: 1.6;
+}
+
+.lg-edge path {
+  fill: var(--edge);
+}
+
+.lg-edge.is-authored line {
+  stroke: var(--edge-llm);
+  stroke-width: 2.2;
+}
+
+.lg-edge.is-authored path {
+  fill: var(--edge-llm);
+}
+
+.lg-edge.is-heuristic line {
+  stroke: var(--edge-heuristic);
+}
+
+.lg-edge.is-heuristic path {
+  fill: var(--edge-heuristic);
+}
+
+.lg-edge.is-stub line {
+  stroke: var(--edge-stub);
+  stroke-dasharray: 4 3;
+}
+
+.lg-edge.is-stub path {
+  fill: var(--edge-stub);
+}
+
+.lg-pill.is-new {
+  fill: var(--diff-add-bg);
+  stroke: var(--diff-add-bar);
+}
+
+.lg-pill.is-changed {
+  fill: var(--warn-soft);
+  stroke: var(--warn);
+}
+
 /* "Fit all" / "Readable size": a diagram too big to read whole starts zoomed in (PanZoom, viewport.ts). */
 .pz-badge {
   position: absolute;
@@ -1310,7 +1419,8 @@ code {
   fill-opacity: 0.55;
 }
 
-.node.is-related > .box {
+/* Related, and not the one picked: the picked box keeps its own solid outline (the map marks it related too). */
+.node.is-related:not(.is-selected) > .box {
   fill: var(--related-soft);
   stroke: var(--related);
   stroke-width: 2.4;
@@ -2873,6 +2983,27 @@ code {
  * longer than that scrolls inside it, and a shadow at the bottom edge says that there is more (it
  * disappears at the end: the "local" cover scrolls over it). The step counter is in the header.
  */
+/* Hidden copies of every caption of the tour (PresentMode): their tallest sets the caption's height. */
+.present-left {
+  position: relative;
+}
+
+.tour-caption-measure {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  visibility: hidden;
+  pointer-events: none;
+  overflow: hidden;
+  height: 0;
+}
+
+.tour-caption-measure > .tour-caption {
+  max-height: none;
+  overflow: visible;
+}
+
 .tour-caption {
   display: flex;
   flex-direction: column;

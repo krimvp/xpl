@@ -107,6 +107,8 @@ export interface PanZoomProps {
    * while the diagram moves, such as the participant names of a sequence.
    */
   overlay?: (t: Transform, size: { w: number; h: number }) => ReactNode;
+  /** More controls at the end of the zoom toolbar (a map's Key). */
+  tools?: ReactNode;
   /**
    * What to look at first when the diagram is too big to fit at a readable size (a box in the content's
    * coordinates: the selection, the first box of the view). Read when the first view is set, not on every
@@ -128,6 +130,7 @@ export function PanZoom({
   readableMin,
   fitFloor,
   overlay,
+  tools,
   startBox,
   children,
 }: PanZoomProps) {
@@ -382,6 +385,7 @@ export function PanZoom({
         >
           Fit
         </button>
+        {tools}
       </div>
     </div>
   );

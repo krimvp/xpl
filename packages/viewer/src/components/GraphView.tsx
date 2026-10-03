@@ -48,6 +48,7 @@ import { changeMarks, changeOf } from "../diff.js";
 import { useStore, useViewerState } from "../hooks.js";
 import { readerBadge } from "../readerWords.js";
 import { GhostTargetList } from "./GhostTargets.js";
+import { Legend } from "./Legend.js";
 import { BoxIcon, iconName } from "./icons.js";
 import {
   PanZoom,
@@ -347,6 +348,18 @@ export function GraphView({
         readableZoom={present ? PRESENT_READABLE_ZOOM : undefined}
         startBox={startBox}
         onBackgroundClick={() => store.clearSelection()}
+        tools={
+          <Legend
+            shows={{
+              outside: layout.edges.some((edge) => edge.stub),
+              authored: layout.edges.some(
+                (edge) => !edge.stub && (edge.resolution === "llm" || edge.resolution === "user"),
+              ),
+              heuristic: layout.edges.some((edge) => edge.resolution === "heuristic"),
+              change: (changes?.size ?? 0) > 0,
+            }}
+          />
+        }
       >
         <g
           className="graph"

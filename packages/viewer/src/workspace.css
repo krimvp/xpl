@@ -435,6 +435,39 @@
 .snapshot-frame > svg {
   display: block;
   pointer-events: none;
+  /* A side where the picture is cut fades out (SnapshotFrame: is-cut-left, ...). */
+  --fade-l: 0px;
+  --fade-r: 0px;
+  --fade-t: 0px;
+  --fade-b: 0px;
+  mask-image:
+    linear-gradient(
+      to right,
+      transparent 0,
+      #000 var(--fade-l),
+      #000 calc(100% - var(--fade-r)),
+      transparent 100%
+    ),
+    linear-gradient(
+      to bottom,
+      transparent 0,
+      #000 var(--fade-t),
+      #000 calc(100% - var(--fade-b)),
+      transparent 100%
+    );
+  mask-composite: intersect;
+}
+.snapshot-frame.is-cut-left > svg {
+  --fade-l: 40px;
+}
+.snapshot-frame.is-cut-right > svg {
+  --fade-r: 40px;
+}
+.snapshot-frame.is-cut-top > svg {
+  --fade-t: 28px;
+}
+.snapshot-frame.is-cut-bottom > svg {
+  --fade-b: 28px;
 }
 .snapshot-placeholder {
   width: 100%;
@@ -711,6 +744,10 @@
 .flow-stage .flow-frame {
   fill: var(--purple);
   font-size: 13px;
+  paint-order: stroke;
+  stroke: var(--canvas);
+  stroke-width: 5px;
+  stroke-linejoin: round;
 }
 .flow-transition.is-projected polyline {
   stroke-dasharray: 5 4;
