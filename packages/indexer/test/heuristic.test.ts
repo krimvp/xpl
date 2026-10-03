@@ -287,7 +287,7 @@ describe("calls: scope chain and same-file symbols", () => {
     expect(r).toEqual(["a.ts# -> a.ts#main (call)"]);
   });
 
-  it("drops self-references (recursion) but keeps calls between different symbols", async () => {
+  it("keeps recursion as a call of the function itself, and calls between different symbols", async () => {
     const r = await refs(
       {
         "a.ts": src(
@@ -297,7 +297,7 @@ describe("calls: scope chain and same-file symbols", () => {
       },
       "call",
     );
-    expect(r).toEqual(["a.ts#other -> a.ts#fact (call)"]);
+    expect(r).toEqual(["a.ts#fact -> a.ts#fact (call)", "a.ts#other -> a.ts#fact (call)"]);
   });
 
   it("resolves calls to overloaded functions to the implementation", async () => {

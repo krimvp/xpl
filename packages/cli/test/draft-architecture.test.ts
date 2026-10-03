@@ -172,7 +172,109 @@ describe("xpl draft repo: several services", () => {
   });
 });
 
+describe("xpl draft repo: a library", () => {
+  const dir = makeTempDir("xpl-arch-lib-");
+  writeFile(
+    dir,
+    "README.md",
+    "# fetchy\n\nA tiny HTTP client.\n\n## Usage\n\n```js\nimport fetchy from 'fetchy';\n\nconst body = await fetchy.get('https://example.com');\n```\n",
+  );
+  writeFile(dir, "package.json", '{ "name": "fetchy", "description": "A tiny HTTP client" }\n');
+  writeFile(
+    dir,
+    "source/index.ts",
+    [
+      'import { request } from "./core/request.js";',
+      "",
+      "/**",
+      "Makes requests.",
+      "",
+      "@example",
+      "```",
+      "import fetchy from 'fetchy';",
+      "import axios from 'axios';",
+      "```",
+      "*/",
+      "export function create(prefix: string) {",
+      "  return { get: (url: string) => request(prefix + url) };",
+      "}",
+      'export const fetchy = create("");',
+      "export default fetchy;",
+      "",
+    ].join("\n"),
+  );
+  writeFile(
+    dir,
+    "source/core/request.ts",
+    'import { retry } from "../utils/retry.js";\n\n// import got from "got";\nexport function request(url: string) {\n  return retry(() => fetch(url));\n}\n',
+  );
+  writeFile(
+    dir,
+    "source/utils/retry.ts",
+    "/* const glob = 'src/**' */\nexport function retry<T>(run: () => T): T {\n  return run();\n}\n",
+  );
+  writeFile(dir, "source/errors/http.ts", "export class HTTPError extends Error {}\n");
+  writeFile(
+    dir,
+    "test-d/get.ts",
+    "import fetchy from 'fetchy';\nimport got from 'got';\nexport const x = fetchy.get('a');\nexport const y = got;\n",
+  );
+  writeFile(dir, "source/index.test-d.ts", "import fetchy from './index.js';\nfetchy.get('a');\n");
+
+  it("draws Your app calling it, and no outside system from doc comments, type tests or itself", async () => {
+    const { patch, notes } = await drafted(dir);
+    const system = graph(patch, "view:system")!;
+    expect(system.include).toEqual(["grp:your-app", "grp:fetchy"]);
+    const app = patch.nodes!.find((n) => n.id === "grp:your-app")!;
+    expect(app).toMatchObject({ label: "Your app", role: "system" });
+    // anchored at the README line that imports the library
+    expect(app.anchors).toEqual([{ file: "README.md", span: { from: 7, to: 7 }, role: "usage" }]);
+    const edge = patch.edges!.find((e) => e.from === "grp:your-app")!;
+    expect(edge).toMatchObject({ to: "grp:fetchy", kind: "calls" });
+    // the other end: what the README calls, a top-level symbol of the library
+    expect(edge.anchors![1]).toMatchObject({ file: "source/index.ts", symbol: "fetchy" });
+    expect(notes.join("\n")).toContain('"Your app" stands for the code that calls it');
+    expect(notes.join("\n")).not.toContain("outside systems found");
+    // type tests are tests: no box, and the maps leave them out
+    const inside = graph(patch, "view:overview")!;
+    expect(inside.include!.some((id) => id.includes("test-d"))).toBe(false);
+    expect(inside.excludeFiles).toEqual(expect.arrayContaining(["**/test-d/**", "**/*.test-d.*"]));
+  });
+});
+
 describe("importsOf", () => {
+  it("skips imports inside comments and docstrings", () => {
+    expect(
+      importsOf(
+        [
+          "/**",
+          "@example",
+          "import ky from 'ky';",
+          " * import pg from 'pg';",
+          "*/",
+          'const glob = "src/**/*.ts";',
+          'import Redis from "ioredis";',
+          'import stripe from "stripe"; /* import got from "got"',
+          'import axios from "axios";',
+          "*/ export {};",
+          "// import mysql from 'mysql';",
+        ],
+        "js",
+      ).map((i) => `${i.module}@${i.line}`),
+    ).toEqual(["ioredis@7", "stripe@8"]);
+    expect(
+      importsOf(
+        ['"""Sign data.', "", ">>> import requests", "import redis", '"""', "import psycopg2"],
+        "py",
+      ).map((i) => i.module),
+    ).toEqual(["psycopg2"]);
+    expect(
+      importsOf(["/*", 'import "github.com/lib/pq"', "*/", 'import "flag"'], "go").map(
+        (i) => i.module,
+      ),
+    ).toEqual(["flag"]);
+  });
+
   it("reads the imports of each language, not the code around them", () => {
     expect(
       importsOf(
