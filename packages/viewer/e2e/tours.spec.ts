@@ -558,8 +558,8 @@ test.describe("during a talk", () => {
     );
     await expect(counter(page)).toHaveText("1 / 2");
     await expect(note(page)).toHaveCount(0);
-    // the title of a step without a note: the first element it focuses
-    await expect(page.getByTestId("tour-title")).toHaveText("Scheduling");
+    // the title of a step without a note: its place in the tour (never the label of what it focuses)
+    await expect(page.getByTestId("tour-title")).toHaveText("Step 1");
 
     await page.unroute("http://xpl.test/**");
     await openVariant(
@@ -807,8 +807,8 @@ test.describe("adding to a tour (in memory: this page has no server)", () => {
     await rows.first().getByTestId("tour-step-note").fill("");
     await page.getByTestId("tour-present").click();
     await expect(counter(page)).toHaveText("1 / 3");
-    // no note: the title is what the step focuses, and there is no caption text under it
-    await expect(page.getByTestId("tour-title")).toHaveText("Scheduling");
+    // no note: the title is "Step N", and there is no caption text under it
+    await expect(page.getByTestId("tour-title")).toHaveText("Step 1");
     await expect(note(page)).toHaveCount(0);
     await page.keyboard.press("ArrowRight");
     await expect.poll(() => captionText(page)).toBe("Edited note");
