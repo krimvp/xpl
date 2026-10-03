@@ -4,6 +4,8 @@
  *
  *   xpl-hl, xpl-hl-<role>   line decorations for the lines of a focus range (a line can carry several
  *                           roles); xpl-site marks the exact call / usage expression when the range has columns
+ *   xpl-hl-drifted          also on the lines of a drifted anchor: its code changed after the text was written,
+ *                           so the lines may not be what the text describes
  *   xpl-dim                 every other line of a focused file
  *   data-line="<n>"         on every line, for tests and tooling
  *
@@ -157,9 +159,13 @@ function decorate(doc: Text, focus: PaneFocus): Decorated {
     ({ range }) => !(range.startLine <= 1 && range.endLine >= lines && lines > 1),
   );
   const dim = focus.dim && ranges.length === focus.ranges.length;
-  for (const { range, role } of ranges) {
+  const drifted = new Set<number>();
+  for (const { range, role, status } of ranges) {
     const to = Math.min(lines, range.endLine);
-    for (let n = Math.max(1, range.startLine); n <= to; n++) (roles[n] ??= new Set()).add(role);
+    for (let n = Math.max(1, range.startLine); n <= to; n++) {
+      (roles[n] ??= new Set()).add(role);
+      if (status === "drifted") drifted.add(n);
+    }
   }
   const items: Range<Decoration>[] = [];
   const markers: Range<GutterMarker>[] = [];
@@ -169,6 +175,7 @@ function decorate(doc: Text, focus: PaneFocus): Decorated {
     let className = "";
     if (set) {
       className = "xpl-hl " + [...set].map((role) => `xpl-hl-${role}`).join(" ");
+      if (drifted.has(n)) className += " xpl-hl-drifted";
       markers.push(HL_MARKER.range(line.from));
     } else if (dim) {
       className = "xpl-dim";

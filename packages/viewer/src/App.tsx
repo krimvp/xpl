@@ -9,6 +9,7 @@ import { CodeArea } from "./components/CodeArea.js";
 import { ConceptList } from "./components/ConceptList.js";
 import { Details } from "./components/Details.js";
 import { DiagramPane } from "./components/DiagramPane.js";
+import { DriftBanner } from "./components/DriftBanner.js";
 import { ErrorBoundary } from "./components/ErrorBoundary.js";
 import { Header } from "./components/Header.js";
 import { Workspace } from "./components/Workspace.js";
@@ -116,6 +117,7 @@ function Shell() {
   return (
     <div className="app" data-mode={state.mode}>
       <Header />
+      {state.mode !== "present" && <DriftBanner explainer={state.explainer} />}
       {state.mode === "present" ? (
         <PresentMode />
       ) : state.perspective !== "explore" ? (

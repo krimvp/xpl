@@ -587,8 +587,12 @@ const EditorPane = memo(function EditorPane({
             </span>
           ))}
           {stale.some((r) => r.status === "drifted") && (
-            <span className="badge status-drifted" title="An anchor in this file drifted">
-              drifted
+            <span
+              className="badge status-drifted"
+              data-testid="pane-drifted"
+              title="This code changed after the text was written: the marked lines may not match it"
+            >
+              {reader ? "changed since" : "drifted"}
             </span>
           )}
         </span>

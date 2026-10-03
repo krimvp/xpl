@@ -24,6 +24,7 @@ import {
   parseId,
   pruneIndex,
   repr,
+  reresolveExplainer,
   relatedFiles,
   viewCandidates,
   type DerivedGraph,
@@ -37,6 +38,7 @@ import {
   type TextCache,
   type ViewerBundle,
 } from "@xpl/core";
+import { plural } from "./format.js";
 
 export type FilesChoice = "all" | "referenced" | "boundary";
 
@@ -471,6 +473,56 @@ export function collectBaseFiles(
     bytes += Buffer.byteLength(text);
   }
   return { files, bytes, missing };
+}
+
+/** Anchors that no longer match the code: `drifted` (their text changed) and `missing` (their code is gone). */
+export interface Drift {
+  total: number;
+  drifted: number;
+  missing: number;
+}
+
+/**
+ * The explainer as the page must show it: every anchor re-resolved against the index and the code that go into
+ * the page. The `resolved` stored in the file is a cache from the last `xpl resolve --write`; code that moved
+ * since then would otherwise be highlighted at its old lines with status `ok`. Here an anchor whose text is found
+ * at new lines gets them (status `moved`), and one whose text changed or is gone says so (`drifted`, `missing`).
+ * Nothing is written back.
+ */
+export function freshAnchors(
+  explainer: Explainer,
+  index: IndexModel,
+  texts: TextCache,
+): { explainer: Explainer; drift: Drift } {
+  const { explainer: fresh, report } = reresolveExplainer(explainer, index, texts, {
+    ...(explainer.index?.path ? { indexPath: explainer.index.path } : {}),
+  });
+  return {
+    explainer: fresh,
+    drift: { total: report.total, drifted: report.counts.drifted, missing: report.counts.missing },
+  };
+}
+
+/**
+ * `92 anchors drifted (their code changed) and 2 are missing (their code is gone)`, the part of a drift message that
+ * says how much; "" when nothing drifted.
+ */
+export function describeDrift(drift: Drift): string {
+  const parts: string[] = [];
+  if (drift.drifted > 0) {
+    parts.push(
+      `${plural(drift.drifted, "anchor")} drifted (${drift.drifted === 1 ? "its" : "their"} code changed)`,
+    );
+  }
+  if (drift.missing > 0) {
+    const what = `missing (${drift.missing === 1 ? "its" : "their"} code is gone)`;
+    parts.push(
+      parts.length > 0
+        ? `${drift.missing} ${drift.missing === 1 ? "is" : "are"} ${what}`
+        : `${plural(drift.missing, "anchor")} ${drift.missing === 1 ? "is" : "are"} ${what}`,
+    );
+  }
+  return parts.join(" and ");
 }
 
 export function makeBundle(parts: {

@@ -1000,8 +1000,10 @@ export function collectAnchors(explainer: Explainer): AnchorSite[] {
       }
     });
   };
+  // A hand-edited explainer may hold null or text where an item belongs (the viewer counts its drift too):
+  // such an item has no anchors, and the indexes of the others stay what the paths say.
   const list = <T>(value: readonly T[] | undefined): readonly T[] =>
-    Array.isArray(value) ? value : [];
+    Array.isArray(value) ? value.map((item) => (isRecord(item) ? item : ({} as T)) as T) : [];
 
   list(explainer.nodes).forEach((node, i) =>
     add(

@@ -6,6 +6,7 @@
  *   GET  /api/bundle          the same bundle as JSON
  *   GET  /api/explainer       the explainer alone, with an ETag; 304 when If-None-Match still matches (the
  *                             viewer polls it, so changes made by `xpl apply` show up without a reload)
+
  *   GET  /api/file?path=      text of one indexed file (text/plain); 400 for a malformed path,
  *                             404 for anything that is not in the index
  *   GET  /api/base-file?path= the code before the change of one changed file (text/plain): only for the
@@ -18,6 +19,9 @@
  *   GET  /api/requests        queued "explain this" requests
  *   POST /api/requests        { elementId, note? } appended to .explainer/requests.json (the viewer's
  *                             { kind, id, view?, label? } is accepted too: id is the elementId)
+ *
+ * Both the bundle and /api/explainer carry the explainer with its anchors re-resolved against the index and the
+ * working tree (`freshAnchors`, as `xpl bundle` does), never the stale `resolved` cache of the file.
  *
  * The server keeps no explainer state: every request re-reads the explainer from disk, so edits made by
  * `xpl apply` while the viewer is open show up on the next fetch, and viewer edits never overwrite them.
@@ -36,7 +40,7 @@ import {
   injectBundle,
   type ExplainerPatch,
 } from "@xpl/core";
-import { collectBaseFiles, collectFiles, makeBundle } from "./bundle-data.js";
+import { collectBaseFiles, collectFiles, freshAnchors, makeBundle } from "./bundle-data.js";
 import type { RepoEnv } from "./context.js";
 import { CliError, errorMessage } from "./errors.js";
 import { atomicWrite, withFileLock, displayPath, jsonFile } from "./fsutil.js";
@@ -175,22 +179,28 @@ export async function startViewServer(options: ViewServerOptions): Promise<ViewS
     return { loaded, tree, index, model };
   }
 
+  /** The explainer with its anchors re-resolved against the index and the working tree, as `xpl bundle` does. */
+  function freshExplainer(state: Awaited<ReturnType<typeof loadState>>) {
+    return freshAnchors(state.loaded.explainer, state.model, state.tree.texts).explainer;
+  }
+
   async function bundleOf() {
     const state = await loadState();
+    const explainer = freshExplainer(state);
     const collected = collectFiles({
       root: env.root,
       index: state.model,
       texts: state.tree.texts,
-      explainer: state.loaded.explainer,
+      explainer,
       choice: "referenced",
       // the viewer fetches what is not here on demand, so what lies behind a stub can wait for its click
       measure: false,
       stubs: false,
     });
     // the code before the change: only the changed files, so it is small enough to send whole
-    const base = collectBaseFiles(state.loaded.explainer, state.tree.texts);
+    const base = collectBaseFiles(explainer, state.tree.texts);
     return makeBundle({
-      explainer: state.loaded.explainer,
+      explainer,
       index: state.index,
       files: collected.files,
       ...(base !== undefined ? { baseFiles: base.files } : {}),
@@ -247,7 +257,11 @@ export async function startViewServer(options: ViewServerOptions): Promise<ViewS
         res.end();
         return;
       }
-      send(req, res, 200, text, "application/json; charset=utf-8", { ETag: etag });
+      // what the page shows: the anchors re-resolved, like the bundle (a stale cache would undo that)
+      const fresh = freshExplainer(await loadState());
+      send(req, res, 200, JSON.stringify(fresh, null, 2), "application/json; charset=utf-8", {
+        ETag: etag,
+      });
       return;
     }
     if (pathname === `${API}/file`) {

@@ -5,7 +5,9 @@ import {
   collectBaseFiles,
   collectFiles,
   defaultIndexChoice,
+  describeDrift,
   embedIndex,
+  freshAnchors,
   makeBundle,
   type Boundary,
   type BoundaryReason,
@@ -98,7 +100,7 @@ function describeIndex(e: EmbeddedIndex): string {
 export const bundleCommand: CommandSpec = {
   name: "bundle",
   usage:
-    "xpl bundle <explainer> -o out.html [--mode explore|present] [--tour id] [--files referenced|boundary|all] [--boundary-max n] [--embed-index full|pruned]",
+    "xpl bundle <explainer> -o out.html [--mode explore|present] [--tour id] [--files referenced|boundary|all] [--boundary-max n] [--embed-index full|pruned] [--allow-drift]",
   summary: "Write one self-contained HTML file",
   details: [
     "Writes the viewer with the explainer, the symbol index and the source files inlined, so the file works",
@@ -128,6 +130,11 @@ export const bundleCommand: CommandSpec = {
     "With a change recorded (`xpl change`), every changed file that exists at head is embedded whatever --files says",
     "(the summary says how many the selection had left out), and so is the code before the change of every modified,",
     "renamed or deleted file (`baseFiles`, read from git), so the reader can compare before and after.",
+    "Every anchor is re-resolved against the index and the code first, so the page highlights where the code is",
+    "now (an anchor whose text moved gets its new lines). When some anchors drifted (their code changed) or are",
+    "missing (their code is gone), the command refuses: the page would point at the wrong code. Run",
+    "`xpl resolve <explainer> --write` and re-explain what it lists. --allow-drift writes the page anyway; it warns,",
+    "and the page tells the reader which parts may be out of date.",
     "--mode present opens in present mode; --tour <id> starts that tour (and implies --mode present).",
     "The output path is printed as given (absolute when you gave it absolute); -o is relative to the working",
     "directory.",
@@ -149,6 +156,10 @@ export const bundleCommand: CommandSpec = {
       type: "string",
       arg: "<n>",
       desc: `With --files boundary: add at most n files (default ${BOUNDARY_MAX})`,
+    },
+    "allow-drift": {
+      type: "boolean",
+      desc: "Write the page even when anchors drifted or are missing (the page says so)",
     },
     "embed-index": {
       type: "string",
@@ -189,18 +200,33 @@ export const bundleCommand: CommandSpec = {
 
     const html = readViewerHtml(ctx.env);
     const ws = await openWorkspace(ctx, { explainer: loaded });
+    const { explainer, drift } = freshAnchors(loaded.explainer, ws.model, ws.texts);
+    const stale = describeDrift(drift);
+    if (stale !== "") {
+      const fix = `run \`xpl resolve ${loaded.name} --write\` and fix what it lists: re-explain the drifted elements, re-anchor or drop the missing anchors`;
+      if (!args.flag("allow-drift")) {
+        throw new CliError(
+          `${loaded.rel} does not match the code: ${stale}, so the page would point at the wrong code. To fix it, ${fix}, then bundle again; --allow-drift writes the page anyway, with a warning on it`,
+          1,
+          { drift },
+        );
+      }
+      ctx.warn(
+        `${stale}: the page says so, but the reader will see code that may not match the text (to fix it, ${fix})`,
+      );
+    }
     const collected = collectFiles({
       root: ctx.root,
       index: ws.model,
       texts: ws.texts,
-      explainer: loaded.explainer,
+      explainer,
       ...(choice !== undefined ? { choice } : {}),
       ...(boundaryMax !== undefined ? { boundaryMax } : {}),
     });
     const embeddedIndex = embedIndex({
       index: ws.index,
       model: ws.model,
-      explainer: loaded.explainer,
+      explainer,
       files: collected.paths,
       choice: indexOption ?? defaultIndexChoice(collected.choice),
     });
@@ -211,7 +237,7 @@ export const bundleCommand: CommandSpec = {
       );
     }
     const bundle = makeBundle({
-      explainer: loaded.explainer,
+      explainer,
       index: embeddedIndex.index,
       files: collected.files,
       ...(base !== undefined ? { baseFiles: base.files } : {}),
@@ -231,6 +257,7 @@ export const bundleCommand: CommandSpec = {
         bytes,
         mode,
         ...(tour !== undefined ? { tour } : {}),
+        anchors: drift,
         files: {
           embedded,
           choice: collected.choice,

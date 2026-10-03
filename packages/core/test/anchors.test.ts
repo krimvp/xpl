@@ -984,6 +984,15 @@ describe("reresolveExplainer", () => {
     expect(site).toMatchObject({ owner: "tour-step", origin: "llm", userFields: ["steps"] });
   });
 
+  it("collectAnchors skips null or text where a step belongs, and keeps the paths of the others", () => {
+    const ex = explainer();
+    ex.tours[0]!.steps[0]!.code = [anchors.runDef];
+    (ex.tours[0]!.steps as unknown[]).unshift(null, "text");
+    (ex.tours as unknown[]).push({ id: "tour:broken", title: "Broken", steps: "nope" });
+    const site = collectAnchors(ex).find((s) => s.elementId === "tour:t/t1");
+    expect(site?.path).toBe("tours[0].steps[2].code[0]");
+  });
+
   it("uses the view's origin for sequence steps", () => {
     const ex = explainer();
     const view = ex.views[0]!;
