@@ -171,7 +171,11 @@ export function frameView(
           Math.min(options.readableMin, readable),
           readable,
         );
-  const least = most * (options.shrink ?? FRAME_SHRINK);
+  // a frame shrinks to get more of the focus in, but never below the text size `readableMin` promises
+  const least = Math.max(
+    most * (options.shrink ?? FRAME_SHRINK),
+    Math.min(options.readableMin ?? 0, most),
+  );
   const boxes = focus?.boxes ?? [];
 
   const place = (k: number, target: Box | undefined, core?: Box): Transform => {

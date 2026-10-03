@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { describeDrift, freshAnchors } from "../bundle-data.js";
 import type { CommandSpec } from "../command.js";
 import type { Ctx } from "../context.js";
 import { CliError } from "../errors.js";
@@ -71,6 +72,9 @@ export const viewCommand: CommandSpec = {
     '(layout, expanded nodes) are saved to the explainer as user edits; "explain this" clicks are queued in',
     ".explainer/requests.json (see `xpl status`). The explainer is re-read from disk on every request, so",
     "`xpl apply` while the viewer is open shows up after a reload. Stop with Ctrl-C.",
+    "Anchors are re-resolved against the index and the working tree, as for `xpl bundle`. Unlike bundle, view",
+    "does not refuse an explainer whose anchors drifted or are missing: it warns, and the page says which parts",
+    "may be out of date.",
     "The server binds to 127.0.0.1 unless --host says otherwise: anything else exposes your source code.",
     "Needs the viewer build (`npm run build`), or XPL_VIEWER_HTML=<viewer html file>.",
   ],
@@ -89,7 +93,15 @@ export const viewCommand: CommandSpec = {
     const host = args.str("host") ?? "127.0.0.1";
     const loaded = loadExplainer(ctx, args.positionals[0]!);
     readViewerHtml(ctx.env); // fail early, with the "run npm run build" hint
-    await openWorkspace(ctx, { explainer: loaded }); // fail early when there is no index; warns if stale
+    const ws = await openWorkspace(ctx, { explainer: loaded }); // fail early when there is no index; warns if stale
+    // The page re-resolves the anchors as `xpl bundle` does. It is a tool for fixing drift, so it does not refuse;
+    // it says so here and on the page.
+    const stale = describeDrift(freshAnchors(loaded.explainer, ws.model, ws.texts).drift);
+    if (stale !== "") {
+      ctx.warn(
+        `${stale}: the page says so; to fix it, run \`xpl resolve ${loaded.name} --write\` and fix what it lists`,
+      );
+    }
     const server = await listen(ctx, loaded.abs, host, port);
     if (!["127.0.0.1", "localhost", "::1"].includes(host)) {
       ctx.warn(

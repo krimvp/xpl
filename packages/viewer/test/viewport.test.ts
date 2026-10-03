@@ -141,6 +141,21 @@ describe("frameView: the first view of a diagram", () => {
     expect(near.transform.k).toBeLessThanOrEqual(READABLE_ZOOM);
   });
 
+  it("never shrinks a frame below the text size readableMin promises (a Present flow)", () => {
+    const focus = { x: 2000, y: 1500, width: 200, height: 100 };
+    const left = { x: 1700, y: 1500, width: 200, height: 100 };
+    const right = { x: 2300, y: 1500, width: 200, height: 100 };
+    const view = frameView(
+      PANE,
+      { width: 4000, height: 3000 },
+      { boxes: [focus], neighbours: [left, right] },
+      { ...OPTIONS, readable: 1, readableMin: 1 },
+    )!;
+    // both neighbours would fit at 0.7, but the promise is 1: the frame stays at 1 and keeps fewer of them
+    expect(view.transform.k).toBeCloseTo(1, 5);
+    expect(boxInView(view.transform, PANE, focus)).toBe(true);
+  });
+
   it("frames the union of several focused elements when it fits, else the first and counts the rest", () => {
     const a = { x: 1000, y: 1000, width: 200, height: 100 };
     const b = { x: 1500, y: 1100, width: 200, height: 100 };

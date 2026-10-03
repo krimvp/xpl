@@ -7,6 +7,7 @@ import { expect, test, type Page } from "@playwright/test";
 import {
   byId,
   focusOf,
+  linesWith,
   readEmbeddedBundle,
   screenshotPath,
   stateOf,
@@ -65,7 +66,28 @@ test("anchors that drifted or went missing are badged; missing ones are not draw
     page.locator('[data-file="config/default.yaml"] .pane-header .badge.status-drifted'),
   ).toBeVisible();
   await expect(page.locator('[data-path="test/retry.test.ts"]')).toHaveClass(/is-dimmed/);
+  // trust: the drifted lines carry a warning bar of their own, not just the role tint; moved lines do not.
+  const yaml = page.locator('[data-file="config/default.yaml"]');
+  const drifted = await linesWith(yaml, ".xpl-hl-drifted");
+  expect(drifted.length).toBeGreaterThan(0);
+  expect(drifted).toEqual(await linesWith(yaml, ".xpl-hl"));
+  expect(await linesWith(page.locator('[data-file="src/runner.ts"]'), ".xpl-hl-drifted")).toEqual(
+    [],
+  );
+
+  // A banner under the header says the page may be out of date, until the reader hides it.
+  const banner = page.getByTestId("drift-banner");
+  await expect(banner).toContainText("Parts of this page may be out of date.");
+  await expect(banner).toContainText("1 place it points to has changed, and 1 is gone.");
+  await banner.getByRole("button", { name: "Hide this warning" }).click();
+  await expect(banner).toHaveCount(0);
   expect(problems).toEqual([]);
+});
+
+test("no drift banner while every anchor matches the code", async ({ page }) => {
+  await openVariant(page, () => undefined);
+  await expect(page.locator(".header")).toBeVisible();
+  await expect(page.getByTestId("drift-banner")).toHaveCount(0);
 });
 
 test("sequence diagrams: call, return and async arrows, self-calls, nested frames", async ({

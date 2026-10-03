@@ -3,7 +3,13 @@ import { request } from "node:http";
 import { createServer as createNetServer } from "node:net";
 import { join } from "node:path";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
-import { BUNDLE_SCHEMA, parseBundle, type Explainer, type ViewerBundle } from "@xpl/core";
+import {
+  BUNDLE_SCHEMA,
+  collectAnchors,
+  parseBundle,
+  type Explainer,
+  type ViewerBundle,
+} from "@xpl/core";
 import { run } from "../src/cli.js";
 import { DEFAULT_PORT } from "../src/commands/view.js";
 import { startViewServer, type ViewServer } from "../src/server.js";
@@ -815,6 +821,36 @@ describe("xpl view", () => {
     expect(changed.status).toBe(200);
     expect(changed.headers.get("etag")).not.toBe(etag);
     expect(((await changed.json()) as Explainer).concepts[0]!.summary).toBe("Shorter now.");
+  });
+
+  it("re-resolves the anchors like xpl bundle, and warns about drift but still serves", async () => {
+    const dir = cloneDir(demo);
+    // onJobCompleted moves down 2 lines (same text); Queue.pop changes
+    editFile(dir, "src/metrics.ts", (text) => `// one\n// two\n${text}`);
+    editFile(dir, "src/queue.ts", (text) =>
+      text.replace(
+        "const job: Job | undefined = due[0];",
+        "const job: Job | undefined = due.at(0);",
+      ),
+    );
+    const indexed = await invoke(["index", "--precise", "off", "--json"], { cwd: dir });
+    const index = JSON.parse(indexed.out).path as string;
+    const view = await serve(dir, "--index", index);
+    const statusOf = (explainer: Explainer, symbol: string) =>
+      collectAnchors(explainer).find((s) => s.anchor.symbol === symbol && !s.anchor.span)!.anchor
+        .resolved!;
+    const bundle = parseBundle(await (await fetch(`${view.url}/api/bundle`)).text());
+    const polled = (await (await fetch(`${view.url}/api/explainer`)).json()) as Explainer;
+    for (const explainer of [bundle.explainer, polled]) {
+      expect(statusOf(explainer, "onJobCompleted").status).toBe("moved");
+      expect(statusOf(explainer, "Queue.pop").status).toBe("drifted");
+    }
+    // the same explainer both ways, so the page's poll does not bring the stale cache back
+    expect(polled).toEqual(bundle.explainer);
+    const { err } = await view.stop();
+    expect(err).toContain(
+      "1 anchor drifted (its code changed): the page says so; to fix it, run `xpl resolve demo --write`",
+    );
   });
 
   it("serves the working tree: edits to a file show up in /api/file", async () => {

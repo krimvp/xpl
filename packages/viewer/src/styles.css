@@ -280,6 +280,32 @@ code {
   grid-template-rows: auto minmax(0, 1fr);
 }
 
+/* trust: the drift warning under the header takes a row of its own when it is there. */
+.app:has(> .drift-banner) {
+  grid-template-rows: auto auto minmax(0, 1fr);
+}
+
+.drift-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 16px;
+  background: var(--warn-soft);
+  color: var(--fg);
+  border-bottom: 1px solid var(--warn);
+  font-size: 13px;
+}
+
+.drift-banner p {
+  margin: 0;
+  flex: 1;
+  min-width: 0;
+}
+
+.drift-banner button {
+  flex-shrink: 0;
+}
+
 /* ── Header ───────────────────────────────────────────────────────────────────────────────────── */
 
 .header {
@@ -2964,6 +2990,17 @@ code {
 .cm-line.xpl-hl-call-site {
   background: var(--hl-call-site);
   box-shadow: inset 3px 0 0 var(--hl-call-site-bar);
+}
+
+/* trust: a drifted anchor's lines, after the role rules so the warning bar wins: its code changed after the
+   text was written. A striped warning bar, not a role colour, so it never reads as a normal highlight. */
+.cm-line.xpl-hl-drifted {
+  box-shadow: inset 3px 0 0 var(--warn);
+  background-image: repeating-linear-gradient(
+    135deg,
+    transparent 0 6px,
+    color-mix(in srgb, var(--warn) 14%, transparent) 6px 12px
+  );
 }
 
 /* a11y: dimmed, not hidden. Context code takes the dim palette (each colour mixed toward the background, never
