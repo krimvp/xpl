@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { derivedEdgeMap, type SequenceView } from "@xpl/core";
+import { derivedEdgeMap, processFlow, type SequenceView } from "@xpl/core";
 import { viewReverseIndex } from "../derive.js";
+import { sharedActor } from "../layout/flowLayout.js";
 import { describeElement } from "../details.js";
 import { renderInline } from "../markdown.js";
 import { stepTitle } from "../stepTitle.js";
@@ -86,6 +87,11 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
   const wholeFlow =
     !!active && state.perspective === "flow" && !!flow && aroundFlow(active, flow, state.model);
   const diagramTitle = state.perspective === "map" ? map.view.title : flow?.title;
+  // A flow whose every box is done by one part (the steps of one function) names it here, once.
+  const flowOwner = useMemo(
+    () => (flow ? sharedActor(processFlow(flow)) : undefined),
+    [flow, state.model],
+  );
   // Boxes on this map that open a map of their own: reachable without the topic list.
   const insides =
     state.perspective === "map"
@@ -194,6 +200,11 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
                           ? map.view.title
                           : (flow?.title ?? "The guide's steps")}
                       </h2>
+                      {state.perspective === "flow" && flowOwner && (
+                        <p className="caption-owner" data-testid="caption-owner">
+                          The steps of <code>{state.model.label(flowOwner)}</code>
+                        </p>
+                      )}
                       {insides.length > 0 && (
                         <p className="caption-insides" data-testid="caption-insides">
                           {insides.map((node) => (

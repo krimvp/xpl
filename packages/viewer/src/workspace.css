@@ -656,6 +656,13 @@
   margin: 6px 0 0;
   font-size: 13px;
 }
+/* r3-copy: the one part every box of a flow runs in, said once (newcomer K3) */
+.caption-owner {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
 .workspace-diagram {
   display: flex;
   flex-direction: column;
