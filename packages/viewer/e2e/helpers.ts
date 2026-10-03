@@ -12,6 +12,8 @@ export const GO_BUNDLE = new URL("../dist/bundles/go-jobrunner.html", import.met
  * and two modified files, the code before the change embedded, and a base anchor on the retry concept and in
  * the second tour step.
  */
+/** The Python fixture with the skill's worked overview: a system map that zooms into the parts. */
+export const ARCHITECTURE_BUNDLE = new URL("../dist/bundles/py-architecture.html", import.meta.url);
 export const CHANGE_BUNDLE = new URL("../dist/bundles/ts-change.html", import.meta.url);
 /** The viewer without any data. */
 export const EMPTY_VIEWER = new URL("../dist/index.html", import.meta.url);

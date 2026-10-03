@@ -7,6 +7,7 @@ import { ErrorBoundary } from "./ErrorBoundary.js";
 import { GraphView } from "./GraphView.js";
 import { FlowDiagram } from "./FlowDiagram.js";
 import { SequenceView } from "./SequenceView.js";
+import { ZoomTrail } from "./ZoomTrail.js";
 
 export function DiagramPane() {
   const state = useViewerState();
@@ -28,6 +29,7 @@ export function DiagramPane() {
   return (
     <div className="diagram" data-view-id={view.id} data-view-type={view.type}>
       <div className="diagram-caption">
+        <ZoomTrail viewId={view.id} />
         <span className="caption-title">{view.title}</span>
         {question && <span className="caption-question">{question}</span>}
       </div>

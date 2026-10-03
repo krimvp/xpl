@@ -7,6 +7,7 @@
  * "called here", and a status only when it is not "ok".
  */
 import { useEffect, useMemo, useState } from "react";
+import { opensView } from "@xpl/core";
 import { describeElement, type AnchorRow, type ElementInfo } from "../details.js";
 import { explainCommand, messageOf } from "../data.js";
 import { useDerived, useStore, useViewerState } from "../hooks.js";
@@ -64,6 +65,20 @@ export function Details({ reader = false }: { reader?: boolean }) {
         <p className="element-id">
           <code>{info.id}</code>
         </p>
+      )}
+      {(store.canZoomInto(info.id) || store.canExpandInPlace(info.id)) && (
+        <div className="actions">
+          {store.canZoomInto(info.id) && (
+            <button type="button" className="btn" onClick={() => store.zoomInto(info.id)}>
+              See what is inside: {opensView(state.model, info.id)?.title}
+            </button>
+          )}
+          {store.canExpandInPlace(info.id) && (
+            <button type="button" className="btn" onClick={() => store.toggleExpanded(info.id)}>
+              {store.isExpanded(info.id) ? "Fold back into one box" : "Show the inside here"}
+            </button>
+          )}
+        </div>
       )}
 
       {!reader && (

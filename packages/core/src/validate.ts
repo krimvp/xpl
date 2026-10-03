@@ -3,7 +3,7 @@
  * JSON-pointer-ish `path` (`views[1].steps[2].anchors[0]`) and, where there is one, the id of the
  * element it belongs to. Messages are written for Claude to read and fix its patch from.
  */
-import { EXPLAINER_SCHEMA } from "./constants.js";
+import { EXPLAINER_SCHEMA, NODE_ROLES } from "./constants.js";
 import {
   isBaseAnchor,
   resolveWith,
@@ -699,6 +699,7 @@ class Validator {
     this.checkLabel(node.label, path, id, !structural);
     this.checkStringField(node.summary, path, id, "summary");
     this.checkStringField(node.detail, path, id, "detail");
+    this.checkArchitecture(node, path, id);
     if (node.provenance === undefined)
       this.error(`${path}.provenance`, "provenance is required", id);
     else this.checkProvenance(node.provenance, `${path}.provenance`, id);
@@ -738,8 +739,15 @@ class Validator {
             );
           else this.refNode(member, `${path}.members[${j}]`, id, "member");
         });
-        if (node.members.length === 0)
+        // a box with a role may stand for something outside the repo (a database): its anchors are its code
+        if (node.members.length === 0 && node.role === undefined)
           this.warn(`${path}.members`, `group ${id} has no members`, id);
+        if (node.members.length === 0 && node.role !== undefined && arrLength(node.anchors) === 0)
+          this.warn(
+            `${path}.anchors`,
+            `${id} has no members and no anchors, so it points at no code: anchor the code that talks to it (where it is configured, or where its client is built)`,
+            id,
+          );
       }
     } else if (node.members !== undefined) {
       this.warn(`${path}.members`, "members only apply to groups and are ignored here", id);
@@ -749,6 +757,28 @@ class Validator {
       provenance: node.provenance,
       field: "anchors",
     });
+  }
+
+  /** `role`, `tech` and `opens`: the architecture fields of a box. */
+  private checkArchitecture(node: Node, path: string, id: string): void {
+    if (node.role !== undefined && !NODE_ROLES.includes(node.role)) {
+      this.error(
+        `${path}.role`,
+        `role ${JSON.stringify(node.role)} is not one of ${NODE_ROLES.join(", ")}`,
+        id,
+      );
+    }
+    this.checkStringField(node.tech, path, id, "tech");
+    if (node.opens === undefined) return;
+    if (typeof node.opens !== "string" || node.opens === "") {
+      this.error(`${path}.opens`, "opens must be a view id", id);
+    } else if (!this.model.view(node.opens) && !this.assumed.has(node.opens)) {
+      this.error(
+        `${path}.opens`,
+        `opens ${JSON.stringify(node.opens)} is not a view of this explainer${this.viewHint(node.opens)}`,
+        id,
+      );
+    }
   }
 
   /** Groups must not (transitively) contain themselves. */
@@ -1469,8 +1499,12 @@ function describeInside(end: ElementId): string {
     case "symbol":
       return `a place in ${parsed.symbolId} (or a symbol inside it)`;
     case "group":
-      return "a place in one of the group's members";
+      return "a place in one of the group's members, or in one of its own anchors";
     default:
       return "a place in the code it stands for";
   }
+}
+
+function arrLength(value: unknown): number {
+  return Array.isArray(value) ? value.length : 0;
 }

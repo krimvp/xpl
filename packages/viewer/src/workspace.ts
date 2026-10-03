@@ -1,6 +1,7 @@
 import {
   codeFocus,
   deriveGraph,
+  expandInPlace,
   repr,
   type ElementId,
   type ExplainerModel,
@@ -84,12 +85,16 @@ export function workspaceMap(state: ViewerState) {
   const authored = workspaceView(state, "map") as GraphView | undefined;
   const process = workspaceView(state, "flow") as SequenceView | undefined;
   const view: GraphView = authored
-    ? {
-        ...authored,
-        include: Array.isArray(authored.include)
-          ? authored.include.filter((id) => typeof id === "string")
-          : [],
-      }
+    ? expandInPlace(
+        {
+          ...authored,
+          include: Array.isArray(authored.include)
+            ? authored.include.filter((id) => typeof id === "string")
+            : [],
+        },
+        state.model,
+        state.expanded,
+      )
     : {
         id: "view:workspace-map",
         type: "graph",

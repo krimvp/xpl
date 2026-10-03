@@ -15,7 +15,9 @@ import {
   drillChildren,
   drillIn as drillInView,
   EDGE_KINDS,
+  canExpandInPlace,
   expandStub as expandStubView,
+  opensView,
   ExplainerModel,
   parseId,
   resolveStubPolicy,
@@ -138,6 +140,11 @@ export interface ViewerState {
    * whenever this changes, even when the step stays in the same view.
    */
   stepSeq: number;
+  /**
+   * Boxes the reader opened in place (`expandInPlace`): each shows the boxes of the view it opens inside it.
+   * A way of looking, like the zoom: never stored in the explainer.
+   */
+  expanded: ReadonlySet<ElementId>;
   /** Source text of the files loaded so far (all of them in a static bundle). */
   files: Readonly<Record<FilePath, string>>;
   /** Files that could not be loaded, with the reason. */
@@ -214,6 +221,7 @@ export class ViewerStore {
       openedBase: false,
       openedLine: undefined,
       openSeq: 0,
+      expanded: new Set(),
       mode: "explore",
       tour: tour ? { tourId: tour.id, step: stepIndex(launch.step, tour.steps.length) } : undefined,
       applied: undefined,
@@ -660,6 +668,64 @@ export class ViewerStore {
     if (!view) return;
     const next = drillInView(view, id, this.state.model);
     if (next !== view) this.editView(view.id, { include: next.include });
+  }
+
+  /**
+   * True when the box opens a more detailed view (`Node.opens`) that the reader can go to: not while
+   * presenting (the tour decides what is on screen), and not when that view is already shown.
+   */
+  canZoomInto(id: ElementId): boolean {
+    if (this.state.mode === "present") return false;
+    const target = opensView(this.state.model, id);
+    return target !== undefined && target.id !== this.state.viewId;
+  }
+
+  /**
+   * Shows the view a box opens: the next level down (the inside of a service). In the reader's map or flow,
+   * the perspective follows the kind of view; Back returns to the level above.
+   */
+  zoomInto(id: ElementId): void {
+    if (!this.canZoomInto(id)) return;
+    const target = opensView(this.state.model, id)!;
+    this.goToLevel(target.id);
+  }
+
+  /** Shows a level of the zoom trail (or any view), in the perspective that draws it. */
+  goToLevel(viewId: string): void {
+    const target = this.state.model.view(viewId);
+    if (!target || this.state.mode === "present") return;
+    const perspective: Perspective =
+      this.state.perspective === "explore" ? "explore" : target.type === "graph" ? "map" : "flow";
+    this.navigate({
+      perspective,
+      mode: "explore",
+      viewId: target.id,
+      selection: [],
+      cursor: undefined,
+      openedFile: undefined,
+      openedBase: false,
+      applied: undefined,
+    });
+  }
+
+  /** True when the box can show the boxes of the view it opens inside itself, on this map. */
+  canExpandInPlace(id: ElementId): boolean {
+    if (this.state.mode === "present") return false;
+    return canExpandInPlace(this.state.model, id);
+  }
+
+  /** True when the box shows the inside of the view it opens, on this map. */
+  isExpanded(id: ElementId): boolean {
+    return this.state.expanded.has(id);
+  }
+
+  /** Shows (or folds back) the inside of a box on the current map: the boxes of the view it opens. */
+  toggleExpanded(id: ElementId): void {
+    if (!this.isExpanded(id) && !this.canExpandInPlace(id)) return;
+    const expanded = new Set(this.state.expanded);
+    if (expanded.has(id)) expanded.delete(id);
+    else expanded.add(id);
+    this.set({ expanded });
   }
 
   /** Removes what is included below a container. */

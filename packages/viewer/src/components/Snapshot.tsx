@@ -4,7 +4,7 @@
  * boxes, flow stages, sequence arrows) but takes no clicks and holds no element ids: the reader looks at
  * it while reading, and opens the real diagram to explore.
  *
- * Laying out a graph or a flow is asynchronous (ELK) and not free, so a picture is only laid out once its
+ * Laying out a graph or a flow is asynchronous and not free, so a picture is only laid out once its
  * section is near the screen (an IntersectionObserver), and a layout is kept per view for the page's life.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -40,7 +40,7 @@ function graphLayoutOf(
 ) {
   let known = graphLayouts.get(view);
   if (!known) {
-    known = layoutGraph(graph, {}, {}, changes);
+    known = layoutGraph(graph, {}, changes);
     graphLayouts.set(view, known);
   }
   return known;

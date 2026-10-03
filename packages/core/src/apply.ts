@@ -28,7 +28,7 @@ import {
   type MakeAnchorOptions,
   type TextCache,
 } from "./anchors.js";
-import { EXPLAINER_SCHEMA } from "./constants.js";
+import { EXPLAINER_SCHEMA, NODE_ROLES } from "./constants.js";
 import { EDGE_KINDS, listIds, nodeKindOfId, parseId, REPO_ID, suggestIds } from "./ids.js";
 import { asIndexModel, type IndexModel } from "./index-model.js";
 import { defaultLabel, ExplainerModel } from "./model.js";
@@ -115,10 +115,13 @@ const NODE_SPEC: Spec = {
     detail: "string",
     parent: "string",
     members: "string[]",
+    role: NODE_ROLES,
+    tech: "string",
+    opens: "string",
     anchors: "array",
     provenance: "object",
   },
-  nullable: ["summary", "detail", "members"],
+  nullable: ["summary", "detail", "members", "role", "tech", "opens"],
 };
 const EDGE_SPEC: Spec = {
   fields: {
@@ -1365,7 +1368,9 @@ class Applier {
       let parent: string | null;
       if (expected === "group") {
         if (label === undefined) return this.missing(path, id, "label");
-        if (f.members === undefined) return this.missing(path, id, "members");
+        // a box with a role (a database, an external API) may stand for no code of the repo at all
+        if (f.members === undefined && f.role === undefined)
+          return this.missing(path, id, "members");
         parent = (f.parent as string | undefined) ?? REPO_ID;
       } else {
         if (!this.structure.hasNode(id)) {
@@ -1387,7 +1392,14 @@ class Applier {
         ...(f.summary !== undefined ? { summary: f.summary } : {}),
         ...(f.detail !== undefined ? { detail: f.detail } : {}),
         parent,
-        ...(f.members !== undefined ? { members: f.members } : {}),
+        ...(f.members !== undefined
+          ? { members: f.members }
+          : expected === "group"
+            ? { members: [] }
+            : {}),
+        ...(f.role !== undefined ? { role: f.role } : {}),
+        ...(f.tech !== undefined ? { tech: f.tech } : {}),
+        ...(f.opens !== undefined ? { opens: f.opens } : {}),
         anchors,
         provenance,
       };

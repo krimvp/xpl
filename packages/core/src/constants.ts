@@ -1,4 +1,4 @@
-import type { Edge } from "./schema.js";
+import type { Edge, NodeRole } from "./schema.js";
 
 /** Value of `SymbolIndex.schema`. */
 export const INDEX_SCHEMA = "code-explainer/index@0" as const;
@@ -26,4 +26,28 @@ export const TEST_FILE_GLOBS: readonly string[] = [
   "**/test_*.py",
   "**/*_test.py",
   "**/conftest.py",
+];
+
+/** Every `Node.role`, in the order the skill and the docs list them. */
+export const NODE_ROLES: readonly NodeRole[] = [
+  "person",
+  "system",
+  "service",
+  "component",
+  "database",
+  "cache",
+  "queue",
+  "storage",
+  "external",
+];
+
+/** Roles of boxes that stand for something outside the repo's code: a group with one of them may have no members. */
+export const OUTSIDE_ROLES: readonly NodeRole[] = [
+  "person",
+  "system",
+  "database",
+  "cache",
+  "queue",
+  "storage",
+  "external",
 ];

@@ -295,9 +295,48 @@ export interface Node extends ElementBase {
   kind: "repo" | "dir" | "file" | "symbol" | "group";
   /** Null only for "repo". */
   parent: ElementId | null;
-  /** Groups only: what the group clusters. Members keep their structural parent. */
+  /**
+   * Groups only: what the group clusters. Members keep their structural parent. A group with a `role` may
+   * have none: an outside system (a database, an external API) is not code in the repo, so its box is
+   * anchored at the code that talks to it (its `anchors`) instead.
+   */
   members?: ElementId[];
+  /**
+   * (amended) What the box is in the architecture, for architecture maps (a system map, the inside of one
+   * service). The viewer draws each role with its own shape (a cylinder for a database, a dashed box for
+   * an outside system) and names the role instead of the kind of code. Absent: a box of code.
+   */
+  role?: NodeRole;
+  /** (amended) The technology, in 1-3 words ("PostgreSQL", "REST API", "Go service"). Shown on the box. */
+  tech?: string;
+  /**
+   * (amended) A view that shows what is inside this box: the next level down (a service's components, a
+   * component's code). The viewer opens it when the reader zooms into the box, and shows the way back.
+   */
+  opens?: string;
 }
+
+/**
+ * (amended) The role of a box on an architecture map (`Node.role`), in the spirit of the C4 model: a
+ * system map shows people, services and data stores; the map of one service shows its components.
+ *
+ * - `person`: a user or another team that uses the system.
+ * - `system`: a whole system, yours or a neighbour's, drawn as one box.
+ * - `service`: a program that runs on its own (a web server, a worker, a CLI).
+ * - `component`: a part of a service with one responsibility (handlers, domain logic, a client).
+ * - `database`, `cache`, `queue`, `storage`: where data is kept or passed on.
+ * - `external`: a system outside the repo that the code calls (a payment API, an identity provider).
+ */
+export type NodeRole =
+  | "person"
+  | "system"
+  | "service"
+  | "component"
+  | "database"
+  | "cache"
+  | "queue"
+  | "storage"
+  | "external";
 
 /**
  * An arrow that static analysis can't produce, or a static one you want to label/explain.
