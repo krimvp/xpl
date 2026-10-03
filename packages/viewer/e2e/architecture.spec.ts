@@ -8,6 +8,9 @@ import { ARCHITECTURE_BUNDLE, openBundle, stateOf } from "./helpers.js";
 
 const box = (page: import("@playwright/test").Page, id: string) =>
   page.locator(`.diagram [data-element-id="${id}"]`).first();
+/** The corner buttons of a box: drawn beside it, not inside it (a box is a button itself). */
+const buttonsOf = (page: import("@playwright/test").Page, id: string) =>
+  page.locator(`.diagram [data-buttons-of="${id}"]`);
 
 test.describe("architecture maps", () => {
   test("boxes of code show their level: a folder, a file, a class, a method", async ({ page }) => {
@@ -42,14 +45,14 @@ test.describe("architecture maps", () => {
       "person",
     );
     // only the service opens a level below
-    await expect(box(page, "grp:job-runner").locator(".zoom")).toHaveCount(1);
-    await expect(box(page, "grp:settings-file").locator(".zoom")).toHaveCount(0);
+    await expect(buttonsOf(page, "grp:job-runner").locator(".zoom")).toHaveCount(1);
+    await expect(buttonsOf(page, "grp:settings-file").locator(".zoom")).toHaveCount(0);
     await expect(page.getByTestId("zoom-trail")).toHaveCount(0);
   });
 
   test("the zoom button opens the inside, and the trail leads back up", async ({ page }) => {
     await openBundle(page, "view:system", ARCHITECTURE_BUNDLE);
-    await box(page, "grp:job-runner").locator(".zoom").click();
+    await buttonsOf(page, "grp:job-runner").locator(".zoom").click();
     await expect(page.locator('.diagram[data-view-id="view:overview"]')).toBeVisible();
     // one level down: the parts are components, and the icon says so
     await expect(box(page, "grp:scheduling").locator(":scope > .box-icon")).toHaveAttribute(
@@ -68,7 +71,7 @@ test.describe("architecture maps", () => {
     await openBundle(page, "view:system", ARCHITECTURE_BUNDLE);
     await box(page, "grp:job-runner").click();
     await expect(
-      page.getByRole("button", { name: /See what is inside: The five parts/ }),
+      page.getByRole("button", { name: /Open its own map: The five parts/ }),
     ).toBeVisible();
     await box(page, "grp:job-runner").dblclick();
     await expect(page.locator('.diagram[data-view-id="view:overview"]')).toBeVisible();
@@ -79,7 +82,7 @@ test.describe("architecture maps", () => {
     await openBundle(page, "view:system", ARCHITECTURE_BUNDLE);
     const service = box(page, "grp:job-runner");
     await expect(page.locator('.diagram [data-element-id="grp:scheduling"]')).toHaveCount(0);
-    await service.locator(".expand-here").click();
+    await buttonsOf(page, "grp:job-runner").locator(".expand-here").click();
     // the same map, with the service drawn as a container around its components
     await expect(page.locator('.diagram[data-view-id="view:system"]')).toBeVisible();
     await expect(service).toHaveClass(/is-container/);

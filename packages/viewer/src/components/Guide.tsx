@@ -112,6 +112,7 @@ export function Guide({ onReading }: { onReading?: (stepId: string | undefined) 
       <div className="guide-fallback">
         <p className="eyebrow">Start here</p>
         <h2>{state.explainer.title}</h2>
+        <Audience />
         <p>Choose a topic below, or open the map to see the parts of the code.</p>
         {state.model.views.map((view) => (
           <section className="guide-section" key={view.id}>
@@ -160,6 +161,24 @@ export function Guide({ onReading }: { onReading?: (stepId: string | undefined) 
         ))}
       </nav>
       <div className="guide-body" ref={body}>
+        {/* A phone: the steps as one picker that scrolls away with the text (the list above is hidden). */}
+        <label className="guide-step-picker">
+          <span className="sr-only">Go to a step</span>
+          <select
+            data-testid="guide-step-picker"
+            value={Math.max(
+              0,
+              tour.steps.findIndex((step) => step.id === current),
+            )}
+            onChange={(event) => store.previewStep(tour.id, Number(event.target.value))}
+          >
+            {tour.steps.map((step, index) => (
+              <option key={step.id} value={index}>
+                Step {index + 1} of {tour.steps.length}: {title(step)}
+              </option>
+            ))}
+          </select>
+        </label>
         {/* Several tours: which one is read, above its title. */}
         {state.model.tours.length > 1 && (
           <div className="guide-tours">
@@ -168,6 +187,7 @@ export function Guide({ onReading }: { onReading?: (stepId: string | undefined) 
           </div>
         )}
         <h2>{tour.title}</h2>
+        <Audience />
         {/* The summary comes first: what this is and why it matters, before any detail. */}
         {summary && (
           <div
@@ -188,6 +208,17 @@ export function Guide({ onReading }: { onReading?: (stepId: string | undefined) 
         ))}
       </div>
     </div>
+  );
+}
+
+/** Who the page is for (`scope.audience`), under the title; nothing when the author did not say. */
+function Audience() {
+  const audience = useViewerState().explainer.scope?.audience?.trim();
+  if (!audience) return null;
+  return (
+    <p className="guide-audience" data-testid="audience">
+      {audience}
+    </p>
   );
 }
 
@@ -251,6 +282,8 @@ function GuideSection({
     store.previewStep(tourId, index);
     store.setPerspective(perspective);
   };
+  // a11y: every step has the same buttons and lists; their names say which step they belong to
+  const where = `step ${index + 1}: ${title}`;
   return (
     <section className={`guide-section${active ? " is-active" : ""}`} data-section-id={step.id}>
       <span className="section-number">Step {index + 1}</span>
@@ -281,6 +314,7 @@ function GuideSection({
           view={view}
           focus={step.focus}
           onOpen={() => show(view.type === "graph" ? "map" : "flow")}
+          context={where}
         />
       )}
       {step.focus.map((id) => {
@@ -354,7 +388,11 @@ function GuideSection({
         ) : null;
       })}
       {tests.length > 0 && (
-        <section className="guide-tests" data-testid="guide-tests" aria-label="Tests">
+        <section
+          className="guide-tests"
+          data-testid="guide-tests"
+          aria-label={`Tests, step ${index + 1}`}
+        >
           <h4>Tests</h4>
           <ul>
             {tests.map((test) => (
@@ -381,7 +419,7 @@ function GuideSection({
         <section
           className="guide-tests"
           data-testid="guide-callers"
-          aria-label="Code that calls what changed"
+          aria-label={`Code that calls what changed, step ${index + 1}`}
         >
           <h4>Code that calls what changed</h4>
           <ul>
@@ -408,7 +446,7 @@ function GuideSection({
         </section>
       )}
       <div className="section-actions">
-        <button className="btn" onClick={() => show("code")}>
+        <button className="btn" aria-label={`Show the code, ${where}`} onClick={() => show("code")}>
           Show the code
         </button>
       </div>

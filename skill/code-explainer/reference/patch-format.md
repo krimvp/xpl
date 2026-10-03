@@ -7,6 +7,7 @@ A draft (`xpl draft`) is a patch in this format: start from it, and use these te
 ```json
 {
   "title": "…",
+  "scope": { "audience": "…" },
   "nodes": [],
   "edges": [],
   "concepts": [],
@@ -814,9 +815,9 @@ A box for something outside the repo is a group with a `role` and **no `members`
 
 On the system map the service is one box, so the arrows of its parts are drawn there as one arrow per outside box (with the anchors of all; when their labels differ the arrow shows none). Write a tour that goes down a level at a time: a step on the system map, then the inside, then the code (SKILL.md, "explain repo"). Keep 3-7 boxes on a system map. The parts on the map of a service's inside are its `component`s (`xpl draft repo` sets the role): with the role icons, the reader always sees which level a map is at (system, service, component, then code). Boxes on maps of code need no role: the viewer shows their kind (folder, file, class, function) with an icon of its own.
 
-### 3.11 `title` and `remove`
+### 3.11 `title`, `scope` and `remove`
 
-`"title"` renames the explainer. `"remove"` deletes elements, views, tours and steps by id; an unknown id is a warning, not an error. Removing what something else points at (a step a frame or tour uses, a group a view includes, a concept a tour focuses) is rejected until the same patch fixes the pointer. An `llm` patch cannot remove what the user owns: an element, view or tour with `origin: "user"` or with any `userFields` (they edited part of it), nor a single step of a view whose `steps` they edited; those ids are skipped with a `protected` warning.
+`"title"` renames the explainer. `"scope": {"audience": "…"}` is one short line (at most 120 characters) that the viewer shows under the title: who the page is for and how deep it goes, such as `"Overview, for anyone new to ky"` or `"Deep dive, for engineers working on chi's router"`. `{"audience": null}` or `"scope": null` removes it. `"remove"` deletes elements, views, tours and steps by id; an unknown id is a warning, not an error. Removing what something else points at (a step a frame or tour uses, a group a view includes, a concept a tour focuses) is rejected until the same patch fixes the pointer. An `llm` patch cannot remove what the user owns: an element, view or tour with `origin: "user"` or with any `userFields` (they edited part of it), nor a single step of a view whose `steps` they edited; those ids are skipped with a `protected` warning.
 
 ## 4. Merge semantics
 

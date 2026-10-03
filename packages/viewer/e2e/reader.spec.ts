@@ -432,8 +432,11 @@ test.describe("the reader's screen", () => {
     await expect(summary.locator("strong")).toHaveText("tried again");
     await expect(body).not.toContainText("Read the story");
     // the summary is between the title and the first section
+    // (what is on screen: the phone's step picker is hidden here)
     const order = await body.evaluate((el) =>
-      [...el.children].map((c) => c.getAttribute("data-testid") ?? c.tagName.toLowerCase()),
+      [...el.children]
+        .filter((c) => getComputedStyle(c).display !== "none")
+        .map((c) => c.getAttribute("data-testid") ?? c.tagName.toLowerCase()),
     );
     expect(order.slice(0, 3)).toEqual(["h2", "tour-summary", "section"]);
 

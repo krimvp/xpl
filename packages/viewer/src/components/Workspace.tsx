@@ -4,7 +4,7 @@ import { describeElement } from "../details.js";
 import { renderInline } from "../markdown.js";
 import { stepTitle } from "../stepTitle.js";
 import { useDerived, useStore, useViewerState } from "../hooks.js";
-import { workspaceMap, workspaceView } from "../workspace.js";
+import { topicElements, topicMatches, workspaceMap, workspaceView } from "../workspace.js";
 import { CodeArea } from "./CodeArea.js";
 import { Details } from "./Details.js";
 import { ErrorBoundary } from "./ErrorBoundary.js";
@@ -48,6 +48,36 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
     state.perspective === "guide" && reading
       ? tour?.steps.find((s) => s.id === reading)
       : undefined;
+  // The topic panel follows the diagram on screen: a box picked on the Map that the Flow does not show is
+  // not this Flow's topic (the panel says so, and shows the Flow's own title).
+  const onScreen = useMemo(() => {
+    if (!active || (state.perspective !== "map" && state.perspective !== "flow")) return true;
+    const model = state.model;
+    const topics = topicElements([active], model);
+    // drawn itself, inside a box that is drawn, or around one
+    const shows = (id: string) =>
+      topicMatches(id, topics, model) ||
+      [...topics].some(
+        (topic) => model.hasNode(topic) && model.hasNode(id) && model.subtreeContains(id, topic),
+      );
+    if (state.perspective === "map") {
+      return (
+        map.graph.edges.some((edge) => edge.id === active) ||
+        map.graph.nodes.some((node) => shows(node.id))
+      );
+    }
+    return (
+      !flow ||
+      flow.steps.some((step) => step.id === active || shows(step.from) || shows(step.to)) ||
+      flow.participants.some(shows)
+    );
+  }, [active, state.perspective, state.model, map.graph, flow]);
+  const diagramTitle = state.perspective === "map" ? map.view.title : flow?.title;
+  // Boxes on this map that open a map of their own: reachable without the topic list.
+  const insides =
+    state.perspective === "map"
+      ? map.graph.nodes.filter((node) => store.canZoomInto(node.id)).slice(0, 3)
+      : [];
   const code = state.perspective === "code";
   const showSource = code || sourceOpen;
   useEffect(() => {
@@ -142,6 +172,20 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
                           ? map.view.title
                           : (flow?.title ?? "The guide's steps")}
                       </h2>
+                      {insides.length > 0 && (
+                        <p className="caption-insides" data-testid="caption-insides">
+                          {insides.map((node) => (
+                            <button
+                              key={node.id}
+                              type="button"
+                              className="link"
+                              onClick={() => store.zoomInto(node.id)}
+                            >
+                              Inside {state.model.label(node.id)} →
+                            </button>
+                          ))}
+                        </p>
+                      )}
                     </div>
                     <select
                       aria-label="Choose a topic"
@@ -215,9 +259,20 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
         <aside className="workspace-context" aria-label="Topic context">
           {/* In the guide, the open section is the topic: its summary would say it again. A box picked from
               a section (a member chip, a call) is another topic, and gets its summary here. */}
-          {info && !(state.perspective === "guide" && appliedStep) && (
+          {info && !onScreen && diagramTitle && (
             <section className="topic-summary" data-testid="topic-summary">
-              <p className="eyebrow">Current topic</p>
+              <p className="eyebrow">{state.perspective === "map" ? "This map" : "This flow"}</p>
+              <h2>{diagramTitle}</h2>
+              <p data-testid="topic-off-view">
+                {info.title}, which you picked, is not in this{" "}
+                {state.perspective === "map" ? "map" : "flow"}.
+              </p>
+            </section>
+          )}
+          {info && onScreen && !(state.perspective === "guide" && appliedStep) && (
+            <section className="topic-summary" data-testid="topic-summary">
+              {/* While a step is applied the breadcrumb names the step: this is the box picked in it. */}
+              <p className="eyebrow">{appliedStep ? "Picked" : "Current topic"}</p>
               <h2>{info.title}</h2>
               {info.summary && (
                 <p dangerouslySetInnerHTML={{ __html: renderInline(info.summary) }} />

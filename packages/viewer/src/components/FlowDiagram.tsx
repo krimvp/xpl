@@ -19,6 +19,7 @@ import {
   wrapWords,
 } from "../layout/flowLayout.js";
 import { topicElements, topicMatches } from "../workspace.js";
+import { FlowKey } from "./Legend.js";
 import { SnapshotFrame } from "./SnapshotFrame.js";
 import {
   FLOW_READABLE_ZOOM,
@@ -255,6 +256,16 @@ export function FlowDiagram({ view, snapshot }: FlowDiagramProps) {
         readableMin={present ? PRESENT_FLOW_MAX_ZOOM : undefined}
         fitFloor={FLOW_READABLE_ZOOM}
         onBackgroundClick={() => store.clearSelection()}
+        tools={
+          <FlowKey
+            shows={{
+              decision: placed.some(({ stage }) => stage.shape === "decision"),
+              terminal: placed.some(({ stage }) => stage.shape === "terminal"),
+              frames: placed.some(({ stage }) => stage.frames.length > 0),
+              projected: Boolean(flow.projected),
+            }}
+          />
+        }
       >
         {content}
       </PanZoom>

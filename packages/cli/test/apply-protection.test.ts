@@ -210,7 +210,7 @@ describe("xpl apply --help", () => {
       expect(code).toBe(0);
       for (const text of [
         "Usage: xpl apply <explainer> <patch.json|-> [--actor llm|user] [--dry-run]",
-        '"title"?, "nodes"?, "edges"?, "concepts"?, "views"?, "tours"?, "remove"?',
+        '"title"?, "scope"?: {"audience"}, "nodes"?, "edges"?, "concepts"?, "views"?, "tours"?,',
         '"symbol"?: "Runner.dispatch"',
         '"find"?',
         "definition|call-site|usage|config|test",

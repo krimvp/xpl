@@ -18,6 +18,7 @@ import {
 import { useStore } from "../hooks.js";
 import { arrowHeadPath, openArrowHeadPath, roundedPath, type Box } from "../svg.js";
 import { unionBox } from "../viewport.js";
+import { SequenceKey } from "./Legend.js";
 import {
   PanZoom,
   PRESENT_FIT_PADDING,
@@ -118,6 +119,15 @@ export function SequenceView({
       startCore={startCore}
       overlay={(t, size) => <StickyHeads lifelines={layout.lifelines} t={t} paneWidth={size.w} />}
       onBackgroundClick={() => store.clearSelection()}
+      tools={
+        <SequenceKey
+          shows={{
+            returns: layout.rows.some((row) => row.step.kind === "return"),
+            async: layout.rows.some((row) => row.step.kind === "async"),
+            frames: layout.frames.length > 0,
+          }}
+        />
+      }
     >
       <g className="sequence">
         <g className="frames">

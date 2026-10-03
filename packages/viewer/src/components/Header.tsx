@@ -43,7 +43,12 @@ export function Header() {
         <span className="logo" aria-hidden="true">
           xpl
         </span>
-        <h1 className="title" title={state.explainer.title}>
+        <h1
+          className="title"
+          title={[state.explainer.title, state.explainer.scope?.audience?.trim()]
+            .filter(Boolean)
+            .join("\n")}
+        >
           {state.explainer.title}
         </h1>
       </div>

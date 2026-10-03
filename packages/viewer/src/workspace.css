@@ -175,6 +175,10 @@
   background: var(--accent-soft);
   color: var(--accent);
 }
+/* a11y: the current step's number in the step's colour (--faint is under 4.5:1 on the tint) */
+.guide-contents > button[aria-current] > span {
+  color: inherit;
+}
 .guide-contents > button:hover {
   background: var(--hover);
 }
@@ -189,6 +193,13 @@
   font-size: 30px;
   line-height: 1.2;
   margin: 8px 0 14px;
+}
+/* a11y: who the page is for (scope.audience), between the title and the summary (M10) */
+.guide-audience {
+  max-width: 680px;
+  margin: -6px 0 18px;
+  color: var(--muted);
+  font-size: 14px;
 }
 /* The tour's summary: the first thing a reader sees, under the title. */
 .guide-summary {
@@ -339,7 +350,7 @@
 }
 .change-status.is-added {
   background: var(--diff-add-bg);
-  color: var(--diff-add-bar);
+  color: var(--diff-add-fg);
 }
 .change-status.is-modified,
 .change-status.is-renamed {
@@ -396,6 +407,35 @@
 }
 .guide-tours .tour-picker select {
   max-width: min(46ch, 100%);
+}
+/* a11y: on a phone the picker shrinks to the screen and the count wraps under it (M15) */
+.guide-tours {
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.guide-tours .tour-picker {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
+}
+.guide-tours .tour-picker select {
+  min-width: 0;
+}
+/* The step picker stands in for the list of steps on a phone only (see the 760px block). */
+.guide-step-picker {
+  display: none;
+}
+.guide-step-picker select {
+  width: 100%;
+  max-width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--fg);
+  font: inherit;
+  font-weight: 600;
+  text-overflow: ellipsis;
 }
 .guide-tours-count {
   color: var(--muted);
@@ -552,6 +592,14 @@
 .workspace-caption select {
   max-width: 260px;
   min-width: 0;
+}
+/* a11y: the maps a box on this one opens, as plain links under the title (manager V4) */
+.caption-insides {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin: 6px 0 0;
+  font-size: 13px;
 }
 .workspace-diagram {
   display: flex;
@@ -855,9 +903,17 @@
   .guide-layout {
     grid-template-columns: minmax(0, 1fr);
   }
+  /* a11y: no pinned list of steps (it took about 180px): a "Step 1 of 9" picker in the text instead (M15) */
   .guide-contents {
-    max-height: 180px;
-    border-bottom: 1px solid var(--border);
+    display: none;
+  }
+  .guide-step-picker {
+    display: block;
+    margin: 0 0 16px;
+  }
+  /* the topic column under the text: a handle-sized bar while it holds only a closed "Where this is" */
+  .workspace-context {
+    padding: 8px 16px;
   }
   .guide-body {
     overflow-y: auto;
@@ -874,5 +930,50 @@
   }
   .workspace-caption {
     flex-wrap: wrap;
+  }
+}
+
+/* a11y: a short screen (200% zoom on a laptop, a phone on its side): the view's caption is one line and the
+   location bar is slim, so the diagram gets the height (M15). */
+@media (max-height: 560px) {
+  .workspace-caption {
+    padding: 6px 16px;
+    gap: 10px;
+    flex-wrap: nowrap;
+  }
+  .workspace-caption > div {
+    min-width: 0;
+  }
+  .workspace-caption .eyebrow,
+  .workspace-caption .zoom-trail,
+  .workspace-caption .caption-insides {
+    display: none;
+  }
+  .workspace-caption h2 {
+    font-size: 15px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .workspace-location {
+    min-height: 0;
+    padding: 4px 12px;
+  }
+  .workspace-columns {
+    grid-template-rows: minmax(0, 1fr);
+  }
+  .workspace-primary {
+    min-height: 0;
+  }
+}
+@media (max-height: 560px) and (max-width: 760px) {
+  /* one column: the diagram takes what is left, the topic below it is a bar that scrolls on its own */
+  .workspace-columns {
+    grid-template-rows: minmax(0, 1fr) auto;
+    overflow: hidden;
+  }
+  .workspace-context {
+    max-height: 30vh;
+    overflow-y: auto;
   }
 }
