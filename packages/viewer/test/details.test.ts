@@ -74,4 +74,20 @@ describe("details of a step", () => {
     expect(call.facts.map((f) => f.label)).toEqual(expect.arrayContaining(["From", "To"]));
     expect(call.anchors[0]).toMatchObject({ file: "src/a.ts", symbol: "A.run" });
   });
+
+  it("names the view by its type: a flow is a Flow, not a Sequence", () => {
+    const seq = new ViewerStore(makeBundle()).getState();
+    expect(
+      describeElement("flow:1", seq.model, getDerived(seq).view).facts.map((f) => f.label),
+    ).toContain("Sequence");
+    const asFlow = makeBundle();
+    Object.assign(
+      asFlow.explainer.views.find((v) => v.id === "view:flow")!,
+      { type: "flow" },
+    );
+    const flowState = new ViewerStore(asFlow).getState();
+    const facts = describeElement("flow:1", flowState.model, getDerived(flowState).view).facts;
+    expect(facts.map((f) => f.label)).toContain("Flow");
+    expect(facts.map((f) => f.label)).not.toContain("Sequence");
+  });
 });
