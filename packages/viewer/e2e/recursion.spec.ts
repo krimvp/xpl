@@ -10,7 +10,7 @@ interface Step {
   id: string;
   shape?: string;
   anchors: { file: string }[];
-  next?: { step: string; label?: string; kind?: string }[];
+  next?: { step?: string; label?: string; kind?: string }[];
 }
 interface Explainer {
   views: { id: string; type: string; layout?: string; steps?: Step[]; include?: string[] }[];
@@ -71,6 +71,30 @@ test("a flow draws recurse and return links dashed, with their way, a tooltip an
   await page.getByRole("button", { name: "Key" }).click();
   await expect(page.getByText("One level down: the function calls itself")).toBeVisible();
   await expect(page.getByText("Up one level: the call returns")).toBeVisible();
+  expect(problems).toEqual([]);
+});
+
+test("a return without a step is an arrow out of its box, back to whoever made the call", async ({
+  page,
+}) => {
+  const problems = watchProblems(page);
+  const { html, bundle, flow } = recursiveBundle("diagram");
+  flow.steps![2]!.next = [{ kind: "return", label: "done" }];
+  await open(page, html, bundle, "?perspective=flow");
+  const back = page.locator('.flow-transition[data-transition-kind="return"]');
+  await expect(back.locator("polyline")).toHaveCount(1);
+  await expect(back.locator("title")).toContainText("to whoever made the call");
+  const words = await page
+    .locator(".flow-transition.is-return text")
+    .evaluate((text) => [...text.querySelectorAll("tspan")].map((t) => t.textContent).join(" "));
+  expect(words).toBe("done (up one level)");
+  // it leaves the box and ends above it, on no other box
+  const box = (await page
+    .locator(`.flow-stage[data-stage-id="${flow.steps![2]!.id}"]`)
+    .boundingBox())!;
+  const line = (await back.locator("polyline").boundingBox())!;
+  expect(line.x).toBeGreaterThan(box.x + box.width / 2);
+  expect(line.y).toBeLessThan(box.y);
   expect(problems).toEqual([]);
 });
 

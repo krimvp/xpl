@@ -77,7 +77,7 @@ describe("xpl bundle", () => {
     // the default embeds what the explainer needs, and says how much that is and what --files all would add,
     // and how much of the symbol index it kept
     expect(out).toMatch(
-      /^wrote out\.html \(\d+(\.\d)? KB\): \.explainer\/demo\.explainer\.json, 8 of 12 files embedded \(referenced: \d+(\.\d)? KB of source; --files all adds 4 files, \d+(\.\d)? KB\), index \d+(\.\d)? KB \(pruned from \d+(\.\d)? KB\), mode explore$/,
+      /^wrote out\.html \(\d+(\.\d)? KB\): \.explainer\/demo\.explainer\.json, 8 of 12 files embedded \(referenced: \d+(\.\d)? KB of source; --files all adds 4 files, \d+(\.\d)? KB\), index \d+(\.\d)? KB \(\d+(\.\d)? KB as plain JSON, pruned from \d+(\.\d)? KB\), mode explore$/,
     );
 
     const html = readFile(demo, "out.html");
@@ -105,7 +105,7 @@ describe("xpl bundle", () => {
     expect(code).toBe(0);
     // --files all embeds the whole index as well: nothing to say about pruning
     expect(out).toMatch(
-      /^wrote all\.html \(\d+(\.\d)? KB\): \.explainer\/demo\.explainer\.json, 12 files embedded \(all: \d+(\.\d)? KB of source\), index \d+(\.\d)? KB, mode explore$/,
+      /^wrote all\.html \(\d+(\.\d)? KB\): \.explainer\/demo\.explainer\.json, 12 files embedded \(all: \d+(\.\d)? KB of source\), index \d+(\.\d)? KB \(\d+(\.\d)? KB as plain JSON\), mode explore$/,
     );
     const data = bundleOf(readFile(demo, "all.html"));
     expect(Object.keys(data.files).sort()).toEqual(data.index.files.map((f) => f.path).sort());

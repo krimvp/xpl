@@ -16,6 +16,7 @@ export * from "./validate.js";
 export * from "./apply.js";
 export * from "./sequence.js";
 export * from "./bundle.js";
+export * from "./index-pack.js";
 export * from "./prune.js";
 export * from "./related-files.js";
 export * from "./flow.js";

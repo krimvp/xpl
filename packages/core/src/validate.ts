@@ -1409,20 +1409,22 @@ class Validator {
           step.next.forEach((link: unknown, k: number) => {
             if (
               !isRecord(link) ||
-              typeof link.step !== "string" ||
-              !stepIds.has(link.step) ||
+              // a return link may leave out its step: back up one level, to whoever made the call
+              (link.step === undefined
+                ? link.kind !== "return"
+                : typeof link.step !== "string" || !stepIds.has(link.step)) ||
               (link.label !== undefined && typeof link.label !== "string") ||
               Object.keys(link).some((key) => key !== "step" && key !== "label" && key !== "kind")
             )
               this.error(
                 `${at}.next[${k}]`,
-                "transition must reference a step of this view and have an optional string label (and an optional kind: recurse or return)",
+                "transition must reference a step of this view and have an optional string label (and an optional kind: recurse or return; a return may leave out its step, back to the caller)",
                 id,
               );
             else if (link.kind !== undefined && link.kind !== "recurse" && link.kind !== "return")
               this.error(
                 `${at}.next[${k}].kind`,
-                'kind must be "recurse" (the steps from the target run again, one level down) or "return" (back up one level, to the target)',
+                'kind must be "recurse" (the steps from the target run again, one level down) or "return" (back up one level, to the target, or with no step to the caller)',
                 id,
               );
             else if (

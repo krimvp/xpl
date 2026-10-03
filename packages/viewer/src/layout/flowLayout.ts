@@ -17,9 +17,9 @@ export interface FlowLayout {
   children: { id: string; x: number; y: number; width: number; height: number }[];
   edges: {
     id: string;
-    /** The stages the transition joins. */
+    /** The stages the transition joins (no `to`: a return to the caller, an arrow out of `from`). */
     from: string;
-    to: string;
+    to?: string;
     sections: { startPoint: Point; bendPoints: Point[]; endPoint: Point }[];
     labels: { text: string; x: number; y: number; width: number; height: number }[];
     /** A link that changes the level of a recursion (`FlowLink.kind`): drawn dashed, its label says which way. */
@@ -30,11 +30,16 @@ export interface FlowLayout {
 /** The words a recurse or return link adds to its label: which way the level changes. */
 export const LEVEL_WORDS = { recurse: "one level down", return: "up one level" } as const;
 
-/** The tooltip of a recurse or return link: what it means, in words. */
-export function levelTitle(kind: "recurse" | "return", target: string): string {
-  return kind === "recurse"
-    ? `The function calls itself: the steps from "${target}" run again, one level down.`
-    : `The call returns, back up one level: its caller goes on at "${target}".`;
+/**
+ * The tooltip of a recurse or return link: what it means, in words. A return without a target goes back to
+ * whoever made the call, which differs by level: the step that recursed, or at the top the first caller.
+ */
+export function levelTitle(kind: "recurse" | "return", target: string | undefined): string {
+  if (kind === "recurse")
+    return `The function calls itself: the steps from "${target ?? ""}" run again, one level down.`;
+  return target === undefined
+    ? "The call returns, back up one level, to whoever made the call: the step that called it one level up, or, at the top, the code that first called the function."
+    : `The call returns, back up one level, to "${target}".`;
 }
 
 /** The label drawn on a transition: its own words, and for a recurse or return link the way the level changes. */
@@ -121,9 +126,12 @@ export async function layoutFlow(flow: ProcessFlow): Promise<FlowLayout> {
       return [[edge.id, { text, ...size }] as const];
     }),
   );
+  const joins = flow.transitions.flatMap((edge) =>
+    edge.to === undefined ? [] : [{ ...edge, to: edge.to }],
+  );
   const result = layered(
     children,
-    flow.transitions.map((edge) => ({
+    joins.map((edge) => ({
       id: edge.id,
       from: edge.from,
       to: edge.to,
@@ -138,7 +146,7 @@ export async function layoutFlow(flow: ProcessFlow): Promise<FlowLayout> {
     },
   );
   const ports = new Map<string, Port>();
-  const transitions = flow.transitions.filter(
+  const transitions = joins.filter(
     (edge) => result.boxes.has(edge.from) && result.boxes.has(edge.to) && edge.from !== edge.to,
   );
   for (const edge of transitions) {
@@ -175,9 +183,12 @@ export async function layoutFlow(flow: ProcessFlow): Promise<FlowLayout> {
   const loops = flow.transitions
     .filter((edge) => edge.from === edge.to && result.boxes.has(edge.from))
     .map((edge) => loopTransition(edge, result.boxes.get(edge.from)!, labels.get(edge.id)));
+  const exits = flow.transitions
+    .filter((edge) => edge.to === undefined && result.boxes.has(edge.from))
+    .map((edge) => exitTransition(edge, result.boxes.get(edge.from)!, labels.get(edge.id)));
   const right = Math.max(
     result.width,
-    ...loops.flatMap((loop) => [
+    ...[...loops, ...exits].flatMap((loop) => [
       ...loop.sections[0]!.bendPoints.map((point) => point.x + 24),
       ...loop.labels.map((label) => label.x + label.width + 12),
     ]),
@@ -216,6 +227,7 @@ export async function layoutFlow(flow: ProcessFlow): Promise<FlowLayout> {
         };
       }),
       ...loops,
+      ...exits,
     ],
   };
 }
@@ -264,6 +276,30 @@ function loopTransition(
           },
         ]
       : [],
+    ...(edge.kind ? { kind: edge.kind } : {}),
+  };
+}
+
+/**
+ * A return to the caller (a `return` link without a step): an arrow out of the right side of the box and up,
+ * past its top edge, toward the level above; its label to the right.
+ */
+function exitTransition(
+  edge: ProcessFlow["transitions"][number],
+  box: { x: number; y: number; width: number; height: number },
+  label: { text: string; width: number; height: number } | undefined,
+): FlowLayout["edges"][number] {
+  const right = box.x + box.width;
+  const diamond = box.height === DECISION_HEIGHT && box.width === DECISION_WIDTH;
+  const start = diamond
+    ? { x: box.x + box.width * 0.75, y: box.y + box.height / 4 }
+    : { x: right, y: box.y + box.height / 2 };
+  const end = { x: right + LOOP_REACH, y: box.y - 24 };
+  return {
+    id: edge.id,
+    from: edge.from,
+    sections: [{ startPoint: start, bendPoints: [{ x: end.x, y: start.y }], endPoint: end }],
+    labels: label ? [{ ...label, x: right + LOOP_REACH + 6, y: start.y - label.height - 4 }] : [],
     ...(edge.kind ? { kind: edge.kind } : {}),
   };
 }

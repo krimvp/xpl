@@ -2,6 +2,7 @@ import {
   ExplainerModel,
   deriveGraph,
   parseId,
+  processFlow,
   reresolveExplainer,
   resolveStubPolicy,
   validateExplainer,
@@ -10,8 +11,10 @@ import {
   type Ghost,
   type ResolveReport,
   type StubMode,
+  type View,
 } from "@xpl/core";
 import type { CommandSpec } from "../command.js";
+import { CliError } from "../errors.js";
 import { listText, plural, renderIssues } from "../format.js";
 import { readRequests, type QueuedRequest } from "../requests.js";
 import { loadExplainer, openWorkspace } from "../repo.js";
@@ -267,9 +270,171 @@ function unexplainedConcepts(model: ExplainerModel): string[] {
     .map((c) => c.id);
 }
 
+/** An edge a graph view draws, or one its `hidden` takes out (`status --view`). */
+interface DrawnEdge {
+  id: string;
+  kind: string;
+  from: string;
+  to: string;
+  /** Index references it stands for (1 for a stored edge). */
+  count: number;
+  /** `stored`: an edge of the explainer (llm or user); `derived`: from the index, `overlay` when it has a stored overlay. */
+  origin: "stored" | "derived";
+  overlay?: boolean;
+  label?: string;
+  summary: boolean;
+}
+
+/** A link a flow or sequence view draws: a step to the next (flow `next`), or a message (sequence). */
+interface DrawnLink {
+  id: string;
+  from: string;
+  to?: string;
+  kind?: string;
+  label?: string;
+}
+
+interface ViewEdges {
+  /** Graph views: the edges drawn, most references first. */
+  drawn?: DrawnEdge[];
+  /**
+   * Graph views: each `hidden` id, with the arrow it takes out (`edge`), else what it is: a box, a stub or a ghost
+   * box it hides, a stored edge that is no arrow of its own on this view (hiding it does nothing), or nothing.
+   */
+  hidden?: {
+    id: string;
+    edge?: DrawnEdge;
+    is?: "box" | "stub" | "ghost" | "folded edge" | "unknown";
+  }[];
+  /** Flow and sequence views: the links between steps. */
+  links?: DrawnLink[];
+}
+
+function drawnEdge(edge: DerivedGraph["edges"][number]): DrawnEdge {
+  const derived = parseId(edge.id).type === "derived-edge";
+  return {
+    id: edge.id,
+    kind: edge.kind,
+    from: edge.from,
+    to: edge.to,
+    count: edge.count,
+    origin: derived ? "derived" : "stored",
+    ...(derived && edge.stored ? { overlay: true } : {}),
+    ...(edge.label ? { label: edge.label } : {}),
+    summary: typeof edge.summary === "string" && edge.summary.trim() !== "",
+  };
+}
+
+/** What one view draws (`status --view`): its edges and hidden ids, or its step links. */
+function viewEdges(view: View, model: ExplainerModel): ViewEdges {
+  if (view.type === "graph") {
+    const graph = deriveGraph(view, model);
+    const all = deriveGraph({ ...view, hidden: [] }, model);
+    const byCount = (a: DrawnEdge, b: DrawnEdge) =>
+      b.count - a.count || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+    const edges = new Map(all.edges.map((edge) => [edge.id, drawnEdge(edge)] as const));
+    const stubs = new Set(all.stubs.map((stub) => stub.id));
+    const ghosts = new Set(all.ghosts.map((ghost) => ghost.id));
+    return {
+      drawn: graph.edges.map(drawnEdge).sort(byCount),
+      hidden: (Array.isArray(view.hidden) ? view.hidden : []).map((id) => {
+        const edge = edges.get(id);
+        if (edge) return { id, edge };
+        const is = model.hasNode(id)
+          ? "box"
+          : stubs.has(id)
+            ? "stub"
+            : ghosts.has(id)
+              ? "ghost"
+              : model.storedEdges.some((stored) => stored.id === id)
+                ? "folded edge"
+                : "unknown";
+        return { id, is };
+      }),
+    };
+  }
+  if (view.type === "flow") {
+    return {
+      links: processFlow(view).transitions.map((t) => ({
+        id: t.id,
+        from: t.from,
+        ...(t.to !== undefined ? { to: t.to } : {}),
+        ...(t.kind ? { kind: t.kind } : {}),
+        ...(t.label !== undefined ? { label: t.label } : {}),
+      })),
+    };
+  }
+  return {
+    links: (Array.isArray(view.steps) ? view.steps : []).map((step) => ({
+      id: step.id,
+      from: step.from,
+      to: step.to,
+      kind: step.kind,
+      ...(step.label ? { label: step.label } : {}),
+    })),
+  };
+}
+
+/** What a hidden id that is no arrow of the view hides. */
+const HIDDEN_WORDS = {
+  box: "a box",
+  stub: "a stub",
+  ghost: "a ghost box",
+  "folded edge":
+    "a stored edge that is no arrow of its own here: on this map it is part of another arrow between the same boxes, or its ends are not on it; hiding it does nothing, hide that arrow instead",
+  unknown: "matches nothing this view would draw now: remove it from hidden",
+} as const;
+
+/** `edge:calls:a->b  calls  a → b  ×3  derived (overlay)  "label"  no summary` */
+function drawnEdgeLine(edge: DrawnEdge): string {
+  return [
+    edge.id,
+    edge.kind,
+    `${edge.from} → ${edge.to}`,
+    `×${edge.count}`,
+    edge.origin === "stored" ? "stored" : edge.overlay ? "derived (stored overlay)" : "derived",
+    ...(edge.label ? [`"${edge.label}"`] : []),
+    ...(edge.summary ? [] : ["no summary"]),
+  ].join("  ");
+}
+
+function viewEdgeLines(edges: ViewEdges): string[] {
+  const lines: string[] = [];
+  if (edges.drawn) {
+    const stored = edges.drawn.filter((e) => e.origin === "stored").length;
+    lines.push(
+      `  edges drawn (${edges.drawn.length}: ${stored} stored, ${edges.drawn.length - stored} derived), most references first:`,
+      ...edges.drawn.map((edge) => `    ${drawnEdgeLine(edge)}`),
+    );
+  }
+  if (edges.hidden) {
+    lines.push(
+      edges.hidden.length === 0 ? "  hidden: none" : `  hidden (${edges.hidden.length}):`,
+      ...edges.hidden.map(
+        (h) =>
+          `    ${h.edge ? drawnEdgeLine(h.edge) : `${h.id}  (${HIDDEN_WORDS[h.is ?? "unknown"]})`}`,
+      ),
+    );
+  }
+  if (edges.links) {
+    lines.push(
+      `  links (${edges.links.length}):`,
+      ...edges.links.map((link) =>
+        [
+          `    ${link.id}`,
+          `${link.from} → ${link.to ?? "(back to the caller)"}`,
+          ...(link.kind ? [link.kind] : []),
+          ...(link.label ? [`"${link.label}"`] : []),
+        ].join("  "),
+      ),
+    );
+  }
+  return lines;
+}
+
 export const statusCommand: CommandSpec = {
   name: "status",
-  usage: "xpl status <explainer>",
+  usage: "xpl status <explainer> [--view <id>]",
   summary: "To-do list: unexplained elements, drifted, missing, queued requests, ghosts, tours",
   details: [
     "The skill's to-do list for an explainer, without changing anything:",
@@ -286,13 +451,52 @@ export const statusCommand: CommandSpec = {
     "  - broken references: ids that vanished from the index (overlays of deleted symbols, include, members,",
     "    related, participants, step ends), and stored derived-edge overlays that no graph view derives now,",
     "  - explain-this requests the viewer queued in .explainer/requests.json (delete the file once handled).",
+    "",
+    "--view <id>: only that view, and what it draws: a graph view's edges (id, kind, ends, references, stored or",
+    "derived, label, whether it has a summary) and each id in its `hidden` with the edge it takes out; a flow's",
+    "links between steps (a return with no step goes back to the caller); a sequence's messages. --json adds",
+    "`edges: {drawn, hidden}` or `edges: {links}` to the view.",
   ],
-  options: {},
+  options: {
+    view: {
+      type: "string",
+      arg: "<id>",
+      desc: "Only this view, with the edges (or step links) it draws and what its hidden takes out",
+    },
+  },
   positionals: [{ name: "explainer" }],
   async run(ctx, args) {
     const loaded = loadExplainer(ctx, args.positionals[0]!);
     const ws = await openWorkspace(ctx, { explainer: loaded });
     const model = new ExplainerModel(loaded.explainer, ws.model);
+    const viewId = args.str("view");
+    if (viewId !== undefined) {
+      const view = model.view(viewId);
+      if (view === undefined) {
+        throw new CliError(
+          `no view ${viewId} in ${loaded.rel}; its views: ${model.views.map((v) => v.id).join(", ") || "none"}`,
+        );
+      }
+      const status = viewStatuses(model).find((v) => v.id === viewId)!;
+      const edges = viewEdges(view, model);
+      if (ctx.json) {
+        ctx.emit({ path: loaded.rel, view: { ...status, edges } });
+        return 0;
+      }
+      ctx.out(
+        [
+          `${view.id} (${view.type}): ${view.title}`,
+          `  ${view.type === "graph" ? "boxes" : "participants"}: ${status.nodes.total}${
+            status.nodes.unexplained.length > 0
+              ? ` (${status.nodes.unexplained.length} without summary: ${listText(status.nodes.unexplained, 8)})`
+              : ""
+          }`,
+          ...viewEdgeLines(edges),
+          ...(status.ghosts ? ghostLines(status.ghosts) : []),
+        ].join("\n"),
+      );
+      return 0;
+    }
     const views = viewStatuses(model);
     const concepts = unexplainedConcepts(model);
     const { report } = reresolveExplainer(loaded.explainer, ws.model, ws.texts);

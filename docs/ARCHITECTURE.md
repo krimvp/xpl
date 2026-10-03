@@ -187,7 +187,7 @@ Conventions (all packages):
     steps of the same view; without `next` a step goes on to the next one, a `terminal` ends a path). A
     sequence view can be drawn as a flow too, in reading order (`processFlow`, `projected: true`). A `next`
     link may add `kind: "recurse"` (the steps from an earlier step run again, one level down; a step with only
-    recurse links still goes on to the next one) or `kind: "return"` (back up one level, to the caller; a
+    recurse links still goes on to the next one) or `kind: "return"` (back up one level, to `step`, or with no `step` to the caller; a
     terminal may have these). `SequenceView.layout?: "code-first" | "diagram"` overrides `codeFirstView`
     (viewer `workspace.ts`: code first when every step's code is in one file). A flow step whose first anchor
     is not inside its `from` gets a warning (a `return` step whose code is in `to` excepted).
@@ -798,12 +798,12 @@ stdout (a rejection exits 1); fatal errors (`error: …`) and warnings (`warning
 | `xpl validate <explainer> [--lenient]` | §4.6 |
 | `xpl anchors <explainer> [id...] [--full] [--max-lines n]` | each anchor of an element (or of every element) resolved now: role, `file#symbol +span`, status, lines, and the code at them with offsets (a long anchor: its first lines, an elision line, its last lines); a base anchor prints as `<file>@base +a..b … [before the change]` with the base code; `tour:<id>` (or `tour:<id>/<step>`) also shows what a step without `code` derives from its `focus`, marked derived; verifies spans without reading JSON |
 | `xpl resolve <explainer> [--write] [--allow-stale]` | §4.2 re-resolve against the index of the current code; report drifted llm elements, missing anchors; `--write` saves |
-| `xpl status <explainer>` | the skill's to-do list, read-only: per view the shown nodes, stored edges and steps without a summary (static edges optional), concepts without one, drift (user-owned drift counted apart), missing anchors, broken references (ids gone from the index), stale derived-edge overlays, queued requests; per graph view the ghosts and stubs it draws (counts, the most referenced ghost ids, and for each folded ghost up to 3 of the elements it stands for with their counts; `--json`: every ghost with its count and all its `targets` (`{id, count}`), and every stub id, in `views[].ghosts`) with a warning above 12 ghosts; the tours (id, step count, steps whose focus ids or view are gone) |
+| `xpl status <explainer> [--view <id>]` | the skill's to-do list, read-only: per view the shown nodes, stored edges and steps without a summary (static edges optional), concepts without one, drift (user-owned drift counted apart), missing anchors, broken references (ids gone from the index), stale derived-edge overlays, queued requests; per graph view the ghosts and stubs it draws (counts, the most referenced ghost ids, and for each folded ghost up to 3 of the elements it stands for with their counts; `--json`: every ghost with its count and all its `targets` (`{id, count}`), and every stub id, in `views[].ghosts`) with a warning above 12 ghosts; the tours (id, step count, steps whose focus ids or view are gone); `--view <id>`: that view only, with what it draws (each arrow: id, kind, ends, references, stored or derived, label; each `hidden` id and what it takes out; a flow's step links) |
 | `xpl lint <explainer> [--patch <file\|->] [--warn-only]` | checks the text a reader sees (the index, when there is one, counts the boxes and arrows of maps): rules below; `--patch` lints the explainer as it would be after `xpl apply` of that patch (merged in memory as actor `llm`, nothing written; a patch apply would reject prints the rejection and exits 1); exit 1 with any finding (so `lint --patch && apply` stops on one), 0 with `--warn-only` unless a `todo-left` error |
 | `xpl change <explainer> [<base>..<head>]` | records the change from git in the explainer and prints its analysis (§4.8; below); without a range, prints the analysis of the change already recorded |
 | `xpl draft change\|repo\|path <explainer> [<entry id>] [-o file]` | prints a patch skeleton built from the index (and the change record) with no LLM, `TODO:` in every text to write (below); the summary goes to stderr |
 | `xpl view <explainer> [--port p] [--host h] [--no-open]` | local server (below) |
-| `xpl bundle <explainer> -o out.html [--mode explore\|present] [--tour id] [--files referenced\|boundary\|all] [--boundary-max n] [--embed-index full\|pruned]` | self-contained HTML; `--tour` (`tour:intro` or `intro`) implies present mode; embeds the files the explainer references by default and prints what went in (`8 of 12 files embedded (referenced: 18.4 KB of source; --files all adds 4 files, 6.7 KB)`), `--files boundary` adds the direct callers, callees and tests of anchored symbols (at most `--boundary-max`, default 40), `--files all` every indexed file; with a change recorded, every changed file at head and the base text of the changed files go in too; the symbol index in it is pruned to what the viewer can draw with `--files referenced` or `boundary` and whole with `--files all` (`--embed-index` overrides; the summary line says `index 1.3 MB (pruned from 9.0 MB)`) |
+| `xpl bundle <explainer> -o out.html [--mode explore\|present] [--tour id] [--files referenced\|boundary\|all] [--boundary-max n] [--embed-index full\|pruned]` | self-contained HTML; `--tour` (`tour:intro` or `intro`) implies present mode; embeds the files the explainer references by default and prints what went in (`8 of 12 files embedded (referenced: 18.4 KB of source; --files all adds 4 files, 6.7 KB)`), `--files boundary` adds the direct callers, callees and tests of anchored symbols (at most `--boundary-max`, default 40), `--files all` every indexed file; with a change recorded, every changed file at head and the base text of the changed files go in too; the symbol index in it is pruned to what the viewer can draw with `--files referenced` or `boundary` and whole with `--files all` (`--embed-index` overrides) and packed (the summary line says `index 0.3 MB (1.3 MB as plain JSON, pruned from 9.0 MB)`) |
 
 **Exit codes.** 0 ok (warnings allowed); 1 rejected or failed: unknown id, no index, a rejected patch, a patch
 that changed nothing because the user owns everything it touched, validation errors, `resolve --write` on a
@@ -900,8 +900,9 @@ field, a short quote and a fix. Rules (thresholds and word lists live in `LINT_L
 - Form: `flow-label-code` (a flow stage label written as code), `markdown-in-plain` (markdown in a title or
   label), `markdown-in-summary` (a heading or link in a summary; inline markdown is fine there).
 - What readers will see: `untitled-step` (no note, or no heading and a first sentence too long for a title),
-  `change-not-shown` (changed files no step shows or names), `far-ranges` (two ranges of a step in one file
-  over 40 lines apart), `long-talk-note` (a talk note over Present's `LONG_NOTE`), `big-map` (over 8 boxes on
+  `change-not-shown` (changed files whose code no step shows; docs, tests, lock files and renames may be
+  named instead), `far-ranges` (a step whose ranges in one file make more than 3 places over 40 lines apart:
+  Present's panes per file), `long-talk-note` (a talk note over Present's `LONG_NOTE`), `big-map` (over 8 boxes on
   a map a tour shows), `crowded-map` (over 2 arrows per box, with the edge ids to hide; needs the index).
 
 `--patch <file|->` merges the patch in memory with core `applyPatch`, the call `xpl apply` makes, so the
@@ -980,10 +981,18 @@ kept references end, with their parent chains. The viewer derives the same nodes
 focus and reverse lookup from it as from the whole index, whatever the edge-kind selection and stub mode; the
 tests compare the two. `SymbolIndex.pruned` (§2) records what the full index had.
 
-The summary line says what was saved, `…, index 1.3 MB (pruned from 9.0 MB), …` (just `index 9.0 MB` when
-nothing was dropped). With `--json` the `index` field is `{ path, commit, choice: "full"|"pruned", pruned, bytes,
-fullBytes, symbols: { embedded, indexed }, refs: { embedded, indexed } }` (`bytes` and `fullBytes`: the embedded
-and the whole index as compact JSON).
+**Packed index.** `xpl bundle` (and the viewer's Save as HTML) writes the index **packed** (core
+`index-pack.ts`, `serializeBundle(bundle, { packIndex: true })`): each symbol id once, in `ids`, and every symbol
+and reference a short array of numbers (`packing: "xpl-index-pack@1"`), about a fifth of the plain JSON (xpl's
+own page: 17.8 MB to 6.1 MB, its index 13.5 MB to 2.3 MB). It is lossless (an entry of an unknown shape stays an
+object) and `parseBundle` unpacks it, so the viewer only sees a `SymbolIndex`. `xpl view` and the e2e fixture
+pages keep it plain.
+
+The summary line says what was saved, `…, index 0.3 MB (1.3 MB as plain JSON, pruned from 9.0 MB), …` (the size
+in the page first; `index 2.1 MB (9.0 MB as plain JSON)` when nothing was dropped). With `--json` the `index` field
+is `{ path, commit, choice: "full"|"pruned", pruned, bytes, fullBytes, packedBytes, symbols: { embedded, indexed
+}, refs: { embedded, indexed } }` (`bytes` and `fullBytes`: the embedded and the whole index as compact JSON;
+`packedBytes`: the embedded one as the page holds it).
 
 **Known limit:** exploring past the embedded code is not exact. A ghost added there, one that leads into a file
 whose code is not embedded, opens only into the symbols the kept references end in, not all the symbols of the

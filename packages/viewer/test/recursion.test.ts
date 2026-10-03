@@ -60,6 +60,35 @@ describe("flow: recurse and return links", () => {
     );
   });
 
+  it("draws a return without a step as an arrow out of the box and up, to whoever made the call", async () => {
+    const flow = processFlow(
+      view([
+        { next: [{ step: "match:2" }, { step: "match:1", kind: "recurse" }] },
+        { shape: "terminal", next: [{ kind: "return", label: "found" }] },
+      ]),
+    );
+    expect(flow.transitions.find((t) => t.from === "match:2")).toEqual({
+      id: "match:2->caller:0",
+      from: "match:2",
+      kind: "return",
+      label: "found",
+    });
+    const layout = await layoutFlow(flow);
+    const exit = layout.edges.find((edge) => edge.from === "match:2")!;
+    expect(exit.to).toBeUndefined();
+    expect(exit.kind).toBe("return");
+    expect(exit.labels[0]!.text).toBe("found (up one level)");
+    const box = layout.children.find((child) => child.id === "match:2")!;
+    const { startPoint, endPoint } = exit.sections[0]!;
+    expect(startPoint.x).toBeCloseTo(box.x + box.width, 0);
+    expect(endPoint.y).toBeLessThan(box.y);
+    expect(layout.width).toBeGreaterThanOrEqual(exit.labels[0]!.x + exit.labels[0]!.width);
+    expect(levelTitle("return", undefined)).toContain("to whoever made the call");
+    expect(levelTitle("return", "Found it")).toBe(
+      'The call returns, back up one level, to "Found it".',
+    );
+  });
+
   it("draws a stage's link to itself as a loop on its right side, inside the picture", async () => {
     const flow = processFlow(
       view([

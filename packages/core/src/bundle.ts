@@ -3,6 +3,7 @@
  * self-contained file; `xpl view` injects it too, with `server` set and `files` possibly partial (the
  * viewer then fetches missing files from `${server.api}/file?path=`).
  */
+import { isPackedIndex, packIndex, unpackIndex } from "./index-pack.js";
 import type { Explainer, FilePath, SymbolIndex } from "./schema.js";
 
 export const BUNDLE_SCHEMA = "code-explainer/bundle@0";
@@ -31,11 +32,23 @@ export interface ViewerBundle {
   server?: { api: string };
 }
 
+export interface SerializeOptions {
+  /**
+   * Write the index packed (`packIndex`): about a fifth of the size, for a page that is a file of its own (`xpl
+   * bundle`, Save as HTML). `parseBundle` unpacks it.
+   */
+  packIndex?: boolean;
+}
+
 /** JSON that is safe inside a `<script>` element (`<` escaped, plus the JS line separators). */
-export function serializeBundle(bundle: ViewerBundle): string {
+export function serializeBundle(bundle: ViewerBundle, options: SerializeOptions = {}): string {
   const LS = String.fromCharCode(0x2028);
   const PS = String.fromCharCode(0x2029);
-  return JSON.stringify(bundle)
+  const data =
+    options.packIndex && !isPackedIndex(bundle.index)
+      ? { ...bundle, index: packIndex(bundle.index) }
+      : bundle;
+  return JSON.stringify(data)
     .replace(/</g, "\\u003c")
     .split(LS)
     .join("\\u2028")
@@ -44,8 +57,12 @@ export function serializeBundle(bundle: ViewerBundle): string {
 }
 
 /** Inserts the bundle script right before `</head>` (or `</body>`, or at the end). Replaces an existing one. */
-export function injectBundle(html: string, bundle: ViewerBundle): string {
-  const script = `<script id="${BUNDLE_SCRIPT_ID}" type="application/json">${serializeBundle(bundle)}</script>`;
+export function injectBundle(
+  html: string,
+  bundle: ViewerBundle,
+  options: SerializeOptions = {},
+): string {
+  const script = `<script id="${BUNDLE_SCRIPT_ID}" type="application/json">${serializeBundle(bundle, options)}</script>`;
   const existing = new RegExp(`<script id="${BUNDLE_SCRIPT_ID}"[^>]*>[\\s\\S]*?</script>`);
   if (existing.test(html)) return html.replace(existing, () => script);
   for (const tag of ["</head>", "</body>"]) {
@@ -55,11 +72,12 @@ export function injectBundle(html: string, bundle: ViewerBundle): string {
   return html + script;
 }
 
-/** Parses the text content of the bundle script. Throws on a wrong schema. */
+/** Parses the text content of the bundle script, a packed index unpacked. Throws on a wrong schema. */
 export function parseBundle(text: string): ViewerBundle {
   const bundle = JSON.parse(text) as ViewerBundle;
   if (bundle?.schema !== BUNDLE_SCHEMA) {
     throw new Error(`not a ${BUNDLE_SCHEMA} payload (schema: ${String(bundle?.schema)})`);
   }
+  if (isPackedIndex(bundle.index)) bundle.index = unpackIndex(bundle.index);
   return bundle;
 }

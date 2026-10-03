@@ -6,6 +6,7 @@
  */
 import { readFileSync } from "node:fs";
 import { expect, test, type Page } from "@playwright/test";
+import { packIndex, type SymbolIndex } from "@xpl/core";
 import {
   byId,
   openEditMenu,
@@ -429,6 +430,30 @@ test.describe("the Guide", () => {
   });
 });
 
+test("a page with its index packed (as xpl bundle writes it) draws what the plain page draws", async ({
+  page,
+}) => {
+  const problems = watchProblems(page);
+  const drawn = async () => {
+    await page.getByTestId("perspective-map").click();
+    await expect(page.locator('[data-element-id^="edge:"]').first()).toBeVisible();
+    return page
+      .locator('[data-element-id^="edge:"], [data-element-id^="stub:"]')
+      .evaluateAll((els) => els.map((el) => el.getAttribute("data-element-id")).sort());
+  };
+  await openVariant(page, () => undefined);
+  const plain = await drawn();
+  await page.unroute("http://xpl.test/**");
+  await openVariant(page, (bundle) => {
+    bundle.index = packIndex(bundle.index as SymbolIndex);
+  });
+  expect(await page.evaluate(() => document.getElementById("xpl-data")!.textContent)).toContain(
+    '"packing":"xpl-index-pack@1"',
+  );
+  expect(await drawn()).toEqual(plain);
+  expect(problems).toEqual([]);
+});
+
 test.describe("Save as HTML", () => {
   test("a presenter's edit survives: edit a step, save the page, open the saved file, the edit is there", async ({
     page,
@@ -449,6 +474,8 @@ test.describe("Save as HTML", () => {
     // the page is the viewer as loaded (not the rendered page): one data script, the app, no render
     expect(saved.match(/<script id="xpl-data"/g)).toHaveLength(1);
     expect(saved).toContain('<div id="root"></div>');
+    // a page of its own, like `xpl bundle` writes: the index packed
+    expect(saved).toContain('"packing":"xpl-index-pack@1"');
 
     // open the saved file: the edit is there, and nothing else changed
     await page.unroute("http://xpl.test/**");
