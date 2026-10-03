@@ -85,7 +85,7 @@ export function Legend({ shows }: { shows: LegendShows }) {
         </div>
       )}
       {shows.zoom && (
-        <Row label="See what is inside: opens the map of its parts (or double-click the box)">
+        <Row label="Open its own map: what is inside it (or double-click the box)">
           <CornerMark>
             <circle cx={9.5} cy={9.5} r={5} />
             <path d="M13.2 13.2 L17.5 17.5 M7 9.5 H12 M9.5 7 V12" />
@@ -93,7 +93,7 @@ export function Legend({ shows }: { shows: LegendShows }) {
         </Row>
       )}
       {shows.expandHere && (
-        <Row label="Show its parts inside the box, on this map">
+        <Row label="Show its parts in this box, on this map">
           <CornerMark>
             <rect x={3.5} y={3.5} width={15} height={15} rx={2.5} />
             <rect x={6.5} y={9} width={4} height={4} rx={1} />

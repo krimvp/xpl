@@ -71,7 +71,7 @@ test.describe("architecture maps", () => {
     await openBundle(page, "view:system", ARCHITECTURE_BUNDLE);
     await box(page, "grp:job-runner").click();
     await expect(
-      page.getByRole("button", { name: /See what is inside: The five parts/ }),
+      page.getByRole("button", { name: /Open its own map: The five parts/ }),
     ).toBeVisible();
     await box(page, "grp:job-runner").dblclick();
     await expect(page.locator('.diagram[data-view-id="view:overview"]')).toBeVisible();

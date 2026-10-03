@@ -534,8 +534,8 @@ function BoxShape({ node, marks }: { node: LayoutNode; marks: Marks }) {
           className="expand-here"
           x={node.width - ZOOM_SIZE - 6 - (zoomable ? ZOOM_SIZE + 4 : 0)}
           y={node.height - ZOOM_SIZE - 6}
-          label={`Show the parts of ${node.label} inside its box, on this map`}
-          title="Show its parts inside the box, on this map"
+          label={`Show the parts of ${node.label} in its box`}
+          title="Show its parts in this box, on this map"
           onPress={() => store.toggleExpanded(node.id)}
         >
           {/* a box with boxes in it: open it on this map */}
@@ -550,8 +550,8 @@ function BoxShape({ node, marks }: { node: LayoutNode; marks: Marks }) {
           className="zoom"
           x={node.width - ZOOM_SIZE - 6 - (showCollapse ? 30 : 0)}
           y={container ? 8 : node.height - ZOOM_SIZE - 6}
-          label={`See what is inside ${node.label}: open its map`}
-          title="See what is inside: open its map"
+          label={`Open the map of what is inside ${node.label}`}
+          title="Open its own map: what is inside it"
           onPress={zoom}
         >
           {/* a magnifier with a plus: zoom in */}

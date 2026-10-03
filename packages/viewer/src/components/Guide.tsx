@@ -161,6 +161,24 @@ export function Guide({ onReading }: { onReading?: (stepId: string | undefined) 
         ))}
       </nav>
       <div className="guide-body" ref={body}>
+        {/* A phone: the steps as one picker that scrolls away with the text (the list above is hidden). */}
+        <label className="guide-step-picker">
+          <span className="sr-only">Go to a step</span>
+          <select
+            data-testid="guide-step-picker"
+            value={Math.max(
+              0,
+              tour.steps.findIndex((step) => step.id === current),
+            )}
+            onChange={(event) => store.previewStep(tour.id, Number(event.target.value))}
+          >
+            {tour.steps.map((step, index) => (
+              <option key={step.id} value={index}>
+                Step {index + 1} of {tour.steps.length}: {title(step)}
+              </option>
+            ))}
+          </select>
+        </label>
         {/* Several tours: which one is read, above its title. */}
         {state.model.tours.length > 1 && (
           <div className="guide-tours">
