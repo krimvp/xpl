@@ -421,9 +421,18 @@ describe("moving through a tour", () => {
     expect(store.getState().applied!.stepId).toBe("t3");
     expect(panes(store)).toEqual(["config/c.yaml"]);
     store.click("flow:1");
-    store.prevStep(); // an arrow key returns to the tour, one step back
+    store.prevStep(); // ← after a detour returns to the step that was interrupted ...
+    expect(store.getState().tour!.step).toBe(2);
+    expect(store.getState().applied!.stepId).toBe("t3");
+    store.prevStep(); // ... and the next ← goes one step back
     expect(store.getState().tour!.step).toBe(1);
     expect(store.getState().selection).toEqual(["flow:1", "concept:retry"]);
+    // Esc does the same first (`returnFromDetour`), and says whether it did
+    expect(store.returnFromDetour()).toBe(false);
+    store.click("concept:retry");
+    expect(store.returnFromDetour()).toBe(true);
+    expect(store.getState().tour!.step).toBe(1);
+    expect(store.getState().applied).toBeDefined();
     // clicking the selection again is not a detour
     store.select(["flow:1", "concept:retry"]);
     expect(store.getState().applied).toBeDefined();
@@ -751,6 +760,10 @@ describe("the address bar", () => {
     expect(searchFor(explore, talk, undefined)).toBe("");
     expect(searchFor(explore, talk, "explore")).toBe("");
     expect(searchFor(explore, talk, "present")).toBe("?mode=explore");
+    // a bundle that opens in Present keeps the tour and step: a reload stays in Explore, Present resumes there
+    expect(searchFor({ ...explore, tour: present.tour }, talk, "present")).toBe(
+      "?mode=explore&tour=tour:intro&step=2",
+    );
     expect(searchFor(explore, `${talk}&view=view:x`, undefined)).toBe("?view=view:x");
     expect(searchFor({ mode: "present", tour: undefined }, "", undefined)).toBe("");
   });

@@ -593,9 +593,22 @@ export class ViewerStore {
     if (at) this.goToStep(at.step + 1);
   }
 
+  /** The previous step; after a detour, first the step that was interrupted (`returnFromDetour`). */
   prevStep(): void {
     const at = this.state.tour;
-    if (at) this.goToStep(at.step - 1);
+    if (at && !this.returnFromDetour()) this.goToStep(at.step - 1);
+  }
+
+  /**
+   * While presenting, after a detour (a click on the diagram): applies the interrupted step again, and says
+   * so. ← and Esc do this first, so that a stray click is one key away from the slide.
+   */
+  returnFromDetour(): boolean {
+    const at = this.state.tour;
+    if (this.state.mode !== "present" || !at || this.state.applied !== undefined) return false;
+    if ((this.currentTour()?.steps.length ?? 0) === 0) return false;
+    this.goToStep(at.step);
+    return true;
   }
 
   /** Shows a step's view and selection without switching to Present (the tour panel's "show"). */

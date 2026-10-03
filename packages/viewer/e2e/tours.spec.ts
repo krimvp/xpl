@@ -373,7 +373,7 @@ test.describe("the address bar", () => {
     await expect(counter(page)).toHaveText("2 / 2");
   });
 
-  test("the bundle's mode and tour are the defaults; Esc says mode=explore so a reload stays in Explore", async ({
+  test("the bundle's mode and tour are the defaults; Esc says mode=explore so a reload stays in Explore, and Back returns to the talk", async ({
     page,
   }) => {
     await openVariant(page, (bundle) => {
@@ -382,9 +382,16 @@ test.describe("the address bar", () => {
     });
     await expect(counter(page)).toHaveText("1 / 2");
     expect(searchOf(page)).toBe("?mode=present&tour=tour:intro&step=1");
+    await page.keyboard.press("ArrowRight");
     await page.keyboard.press("Escape");
     await expect(present(page)).toHaveCount(0);
-    expect(searchOf(page)).toBe("?mode=explore");
+    // the tour and the step stay in the address: Present resumes there
+    expect(searchOf(page)).toBe("?mode=explore&tour=tour:intro&step=2");
+    // Back returns to the talk, at that step (not to the page before this file)
+    await page.goBack();
+    await expect(counter(page)).toHaveText("2 / 2");
+    expect(searchOf(page)).toBe("?mode=present&tour=tour:intro&step=2");
+    await page.keyboard.press("Escape");
     await page.reload();
     await page.waitForFunction(() => window.__xpl !== undefined);
     expect((await stateOf(page)).mode).toBe("explore");
@@ -422,7 +429,19 @@ test.describe("during a talk", () => {
     // the note stays: it belongs to the step
     await expect(page.getByTestId("tour-title")).toHaveText(asTitle(NOTE_2));
 
-    // the arrow key applies a step again
+    // ← first returns to the step that was interrupted ...
+    await page.keyboard.press("ArrowLeft");
+    await expect(counter(page)).toHaveText("2 / 2");
+    expect(await stateOf(page)).toMatchObject({
+      detour: false,
+      selection: ["dispatch:3", "concept:retry-policy"],
+    });
+    // ... so does Esc, which leaves the talk only when there is no detour
+    await byId(page, "dispatch:1").click();
+    expect((await stateOf(page)).detour).toBe(true);
+    await page.keyboard.press("Escape");
+    expect(await stateOf(page)).toMatchObject({ mode: "present", step: 2, detour: false });
+    // ... then ← goes one step back
     await page.keyboard.press("ArrowLeft");
     await expect(counter(page)).toHaveText("1 / 2");
     expect(await stateOf(page)).toMatchObject({

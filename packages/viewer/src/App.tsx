@@ -104,7 +104,8 @@ function Shell() {
           store.goToStep(Number.MAX_SAFE_INTEGER);
           break;
         case "exit":
-          store.exitPresent();
+          // after a detour, Esc first goes back to the step
+          if (!store.returnFromDetour()) store.exitPresent();
           break;
       }
     };
