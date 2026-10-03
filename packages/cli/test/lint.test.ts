@@ -1369,7 +1369,7 @@ describe("lintExplainer: reader checks", () => {
     expect(only(findings, "untitled-step")[2]!.message).toContain('"Step 4"');
   });
 
-  it("far-ranges: two ranges in one file far apart (a slide shows only one); close ones and a draft's TODO are fine", () => {
+  it("far-ranges: more far-apart places in one file than a slide has panes; two or three places, close ones and a draft's TODO are fine", () => {
     const range = (file: string, startLine: number, endLine: number) => ({
       file,
       role: "definition",
@@ -1382,24 +1382,29 @@ describe("lintExplainer: reader checks", () => {
       note,
       code,
     });
+    const four = [
+      range("tree.go", 414, 428),
+      range("tree.go", 90, 95),
+      range("tree.go", 600, 610),
+      range("tree.go", 850, 868),
+    ];
     const { findings } = lintExplainer(
       explainer({
         tours: [
           {
             ...tour([]),
             steps: [
-              step("t1", [range("tree.go", 414, 428), range("tree.go", 90, 95)]),
+              step("t1", four),
+              // three places (Present: a pane each), and ranges close together are one place
               step("t2", [
+                range("tree.go", 90, 95),
                 range("tree.go", 414, 428),
                 range("tree.go", 440, 450),
+                range("tree.go", 850, 868),
                 range("mux.go", 1, 5),
               ]),
-              step("t3", [range("tree.go", 1, 5), { ...range("tree.go", 400, 410), at: "base" }]),
-              step(
-                "t4",
-                [range("tree.go", 1, 5), range("tree.go", 400, 410)],
-                "### TODO: say what this shows",
-              ),
+              step("t3", [...four.slice(0, 3), { ...range("tree.go", 850, 868), at: "base" }]),
+              step("t4", four, "### TODO: say what this shows"),
             ],
           },
         ],
@@ -1411,8 +1416,8 @@ describe("lintExplainer: reader checks", () => {
       [
         "tour:t/t1",
         "code",
-        "tree.go:90-95 and 414-428",
-        "two ranges in tree.go are 319 lines apart: the code pane scrolls to one of them, and a slide shows only one",
+        "tree.go:90-95, 414-428, 600-610, 850-868",
+        "the ranges in tree.go are 4 places over 40 lines apart: a slide shows 3 panes of one file, so its last pane holds 600-610 and 850-868, 240 lines apart, and opens at the first",
       ],
     ]);
   });
@@ -1539,13 +1544,23 @@ describe("lintExplainer: reader checks", () => {
     expect(crowded[0]!.hint).toContain(crowded[0]!.ids![0]!);
   });
 
-  it("change-not-shown: changed files no tour step shows or names", () => {
+  it("change-not-shown: a code file needs a step that shows its code; docs, tests and lock files may be named", () => {
     const change = {
       base: "b",
       head: "h",
-      files: ["src/a.ts", "src/b.ts", "src/c.ts", "src/d.ts", "src/e.ts", "pnpm-lock.yaml"].map(
-        (path) => ({ path, status: "modified", hunks: [] }),
-      ),
+      files: [
+        "src/a.ts",
+        "src/b.ts",
+        "src/c.ts",
+        "src/d.ts",
+        "src/e.ts",
+        "src/f.ts",
+        "pnpm-lock.yaml",
+        "readme.md",
+        "docs/guide.md",
+        "test/size.ts",
+        "test-d/size.ts",
+      ].map((path) => ({ path, status: "modified", hunks: [] })),
     };
     const { findings } = lintExplainer(
       explainer({
@@ -1568,13 +1583,19 @@ describe("lintExplainer: reader checks", () => {
                 id: "t1",
                 view: "view:v",
                 focus: ["sym:src/a.ts#f"],
-                note: "### A\nThe runner takes a job.",
+                note: "### A\nThe runner takes a job. f.ts only renames a type.",
               },
               {
                 id: "t2",
                 view: "view:v",
                 focus: ["grp:tests", "edge:x"],
-                note: "### B\nThe lock file pnpm-lock.yaml only moves versions.",
+                note: "### B\nThe lock file pnpm-lock.yaml only moves versions; readme.md documents it.",
+              },
+              {
+                id: "t3",
+                view: "view:v",
+                focus: ["dir:docs"],
+                note: "### C\nThe new test in test/size.ts covers it.",
               },
             ],
           },
@@ -1584,8 +1605,8 @@ describe("lintExplainer: reader checks", () => {
     expect(only(findings, "change-not-shown").map((f) => [f.elementId, f.ids, f.message])).toEqual([
       [
         "(explainer)",
-        ["src/b.ts"],
-        "1 changed file of 6 is on no tour step: no step shows its code, no note names it",
+        ["src/b.ts", "src/f.ts", "test-d/size.ts"],
+        "3 changed files of 11 are on no tour step: no step shows the code of src/b.ts, src/f.ts (naming a code file in a note is not enough); no step shows or names test-d/size.ts (test)",
       ],
     ]);
   });

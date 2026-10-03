@@ -64,7 +64,7 @@ Unchanged code that you show for context is described as unchanged: "Unchanged: 
 - For each behaviour change and each new branch (every `if`, early return or skip condition the change adds or moves), name the test that covers it, new or old. Name each branch that no test covers ("no test sends a non-HTTP scope through the new check"). Check a gap with `search` in the tests before you claim it.
 - "No test found" means no test names the symbol. Tests of other code may still run it: check before you call it untested.
 - A test that also passes on the base **does not show the old bug**. It can still guard the new code: say what it checks. Do not call a test useless or redundant without evidence, such as a change to the new code that the test does not catch.
-- The draft anchors every changed file, test files too. Keep at least one anchor in each when you edit the draft.
+- The draft anchors every changed file, test files too. Keep at least one anchor in each when you edit the draft. A tour step must show the code of each changed code file (a range in its `code`, or a symbol in its focus; a one-line change is a one-line range): naming a code file in a note does not pass `change-not-shown`. Docs (readme, `*.md`), tests, lock files and renames may instead be named in a note.
 
 ## 7. The tour: review order
 

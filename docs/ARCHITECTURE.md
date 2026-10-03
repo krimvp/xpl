@@ -900,8 +900,9 @@ field, a short quote and a fix. Rules (thresholds and word lists live in `LINT_L
 - Form: `flow-label-code` (a flow stage label written as code), `markdown-in-plain` (markdown in a title or
   label), `markdown-in-summary` (a heading or link in a summary; inline markdown is fine there).
 - What readers will see: `untitled-step` (no note, or no heading and a first sentence too long for a title),
-  `change-not-shown` (changed files no step shows or names), `far-ranges` (two ranges of a step in one file
-  over 40 lines apart), `long-talk-note` (a talk note over Present's `LONG_NOTE`), `big-map` (over 8 boxes on
+  `change-not-shown` (changed files whose code no step shows; docs, tests, lock files and renames may be
+  named instead), `far-ranges` (a step whose ranges in one file make more than 3 places over 40 lines apart:
+  Present's panes per file), `long-talk-note` (a talk note over Present's `LONG_NOTE`), `big-map` (over 8 boxes on
   a map a tour shows), `crowded-map` (over 2 arrows per box, with the edge ids to hide; needs the index).
 
 `--patch <file|->` merges the patch in memory with core `applyPatch`, the call `xpl apply` makes, so the

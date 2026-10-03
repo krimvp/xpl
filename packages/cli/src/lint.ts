@@ -19,7 +19,7 @@
  * an edge case), a small map is covered by the steps, and a tour has at most `LINT_LIMITS.tourSteps` steps.
  *
  * Reader checks look at what the viewer will show: a step it has to title itself (`untitled-step`), changed files
- * no step shows (`change-not-shown`), two far-apart ranges of a step in one file (`far-ranges`), a talk note set in
+ * no step shows the code of (`change-not-shown`), more far-apart places of a step in one file than a slide has panes for (`far-ranges`), a talk note set in
  * small type (`long-talk-note`) and maps too big or too crowded for a picture (`big-map`, `crowded-map`). The box
  * and arrow counts need the index: pass an `ExplainerModel` to get them (`xpl lint` does when there is an index).
  *
@@ -165,8 +165,10 @@ export const LINT_LIMITS = {
   mapBoxes: 10,
   /** The viewer makes a title of a note's first sentence up to this many characters (`MAX_SENTENCE_TITLE`). */
   titleSentenceChars: 80,
-  /** Two ranges of one step in one file further apart than this many lines: a slide shows only the first. */
+  /** Ranges of one step in one file further apart than this many lines are separate places in that file... */
   farRangeLines: 40,
+  /** ...and a slide shows at most this many places of a file, one pane each (viewer `MAX_PLACES`). */
+  placesPerFile: 3,
   /** Present sets a note body over this many characters in its smaller caption size (viewer `LONG_NOTE`). */
   talkNoteChars: 280,
   /** A map a tour shows has at most this many boxes (`big-map`)... */
@@ -1482,8 +1484,10 @@ function anchorRanges(anchors: unknown): LineRange[] {
 }
 
 /**
- * `far-ranges`: a tour step whose code (its `code` ranges, else the anchors of what it focuses) has two ranges in one
- * file more than `farRangeLines` lines apart. The code pane opens at the first; a slide shows only one.
+ * `far-ranges`: a tour step whose code (its `code` ranges, else the anchors of what it focuses) makes more than
+ * `placesPerFile` places in one file, places being ranges more than `farRangeLines` lines apart. Present shows each
+ * place of a file in a pane of its own, up to `placesPerFile`; the last pane holds the rest, far apart, and opens at
+ * the first of them. (Read steps through the places of a pane one by one, any number.)
  */
 function farRanges(lint: Linter, where: Where, step: Record<string, unknown>, at: Lookup): void {
   let ranges = anchorRanges(step.code);
@@ -1496,26 +1500,31 @@ function farRanges(lint: Linter, where: Where, step: Record<string, unknown>, at
   for (const range of ranges) byFile.set(range.file, [...(byFile.get(range.file) ?? []), range]);
   for (const [file, inFile] of byFile) {
     const sorted = [...inFile].sort((a, b) => a.startLine - b.startLine);
-    let end = sorted[0]!.endLine;
-    for (const next of sorted.slice(1)) {
-      const gap = next.startLine - end;
-      if (gap > LINT_LIMITS.farRangeLines) {
-        const first = sorted.find((r) => r.endLine === end)!;
-        lint.add(
-          { ...where, field: "code" },
-          "far-ranges",
-          `${file}:${first.startLine}-${first.endLine} and ${next.startLine}-${next.endLine}`,
-          `two ranges in ${file} are ${gap} lines apart: the code pane scrolls to one of them, and a slide shows only one`,
-          "keep the range the note is about, or split the step in two (one range each); two ranges that sit close together are fine",
-        );
-        return;
-      }
-      end = Math.max(end, next.endLine);
+    const places: { from: number; to: number }[] = [];
+    for (const range of sorted) {
+      const last = places[places.length - 1];
+      if (last && range.startLine - last.to <= LINT_LIMITS.farRangeLines)
+        last.to = Math.max(last.to, range.endLine);
+      else places.push({ from: range.startLine, to: range.endLine });
+    }
+    if (places.length > LINT_LIMITS.placesPerFile) {
+      const rest = places.slice(LINT_LIMITS.placesPerFile - 1);
+      lint.add(
+        { ...where, field: "code" },
+        "far-ranges",
+        `${file}:${places.map((p) => `${p.from}-${p.to}`).join(", ")}`,
+        `the ranges in ${file} are ${places.length} places over ${LINT_LIMITS.farRangeLines} lines apart: a slide shows ${LINT_LIMITS.placesPerFile} panes of one file, so its last pane holds ${rest.map((p) => `${p.from}-${p.to}`).join(" and ")}, ${rest[1]!.from - rest[0]!.to} lines apart, and opens at the first`,
+        `keep the places the note is about (at most ${LINT_LIMITS.placesPerFile} in one file), or split the step in two; ranges close together are one place`,
+      );
+      return;
     }
   }
 }
 
-/** The files a tour step shows: its ranges, what it focuses (and the members, ends and anchors of that). */
+/**
+ * The files a tour step shows code of: its ranges, and what it focuses (a symbol or a file, and the members, ends
+ * and anchors of what it focuses); `dirs`: the folders it focuses, which show the files in them as boxes only.
+ */
 function filesShown(
   step: Record<string, unknown>,
   at: Lookup,
@@ -1548,14 +1557,38 @@ function filesShown(
 }
 
 /**
- * `change-not-shown`: the changed files of a change explainer that no tour step shows (by its ranges or what it
- * focuses) and no tour text names. A reviewer reads the tour, not the file list.
+ * Why a changed file needs no code on a step, when it has none: docs (`readme`, `*.md`), a test, a lock file, or
+ * a rename with no edits. A note that names it is enough; any other changed file needs a step that shows its code.
+ */
+function nameIsEnough(file: Record<string, unknown>, path: string): string | undefined {
+  const base = path.slice(path.lastIndexOf("/") + 1).toLowerCase();
+  if (
+    /\.(md|mdx|markdown|rst|txt|adoc)$/.test(base) ||
+    /^(readme|changelog|changes|license|licence|contributing|authors)\b/.test(base) ||
+    path.startsWith("docs/")
+  )
+    return "docs";
+  if (isTestFile(path)) return "test";
+  if (/^(package-lock\.json|npm-shrinkwrap\.json|pnpm-lock\.yaml|go\.sum|.*\.lock)$/.test(base))
+    return "lock file";
+  if (file.status === "renamed" && list(file.hunks).length === 0) return "rename";
+  return undefined;
+}
+
+/**
+ * `change-not-shown`: the changed files of a change explainer that no tour step shows the code of (its ranges, or
+ * what it focuses). A reviewer reads the tour, not the file list, and a file named in a note is still unseen. Docs,
+ * tests, lock files and renames may instead be named in a tour text (by file name, or by path when two changed
+ * files share a name).
  */
 function changeChecks(lint: Linter, explainer: Explainer, at: Lookup): void {
   const change = record(explainer.change);
   const changed = list<unknown>(change.files)
-    .map((file) => str(record(file).path))
-    .filter((path): path is string => path !== undefined);
+    .map(record)
+    .flatMap((file) => {
+      const path = str(file.path);
+      return path === undefined ? [] : [{ path, nameable: nameIsEnough(file, path) }];
+    });
   if (changed.length === 0) return;
   const files = new Set<string>();
   const dirs: string[] = [];
@@ -1572,22 +1605,38 @@ function changeChecks(lint: Linter, explainer: Explainer, at: Lookup): void {
     }
   }
   const prose = text.join("\n");
-  const missed = changed.filter(
-    (path) =>
-      !files.has(path) &&
-      !dirs.some((dir) => path.startsWith(dir)) &&
-      !prose.includes(path.slice(path.lastIndexOf("/") + 1)),
-  );
+  const baseName = (path: string) => path.slice(path.lastIndexOf("/") + 1);
+  const named = (path: string) =>
+    prose.includes(path) ||
+    (changed.filter((other) => baseName(other.path) === baseName(path)).length === 1 &&
+      prose.includes(baseName(path)));
+  const code: string[] = [];
+  const other: string[] = [];
+  for (const { path, nameable } of changed) {
+    if (files.has(path)) continue;
+    if (nameable === undefined) code.push(path);
+    else if (!named(path) && !dirs.some((dir) => path.startsWith(dir)))
+      other.push(`${path} (${nameable})`);
+  }
+  const missed = [...code, ...other];
   if (missed.length === 0) return;
+  const parts = [
+    ...(code.length > 0
+      ? [
+          `no step shows the code of ${code.join(", ")} (naming a code file in a note is not enough)`,
+        ]
+      : []),
+    ...(other.length > 0 ? [`no step shows or names ${other.join(", ")}`] : []),
+  ];
   lint.findings.push({
     rule: "change-not-shown",
     elementId: "(explainer)",
     kind: "explainer",
     field: "change",
     quote: excerpt(missed.join(", ")),
-    message: `${plural(missed.length, "changed file")} of ${changed.length} ${missed.length === 1 ? "is" : "are"} on no tour step: no step shows ${missed.length === 1 ? "its" : "their"} code, no note names ${missed.length === 1 ? "it" : "them"}`,
-    hint: "give each a step (or add it to a step's focus or code), or name it in a note and say why the tour skips it (a lock file, a rename)",
-    ids: missed,
+    message: `${plural(missed.length, "changed file")} of ${changed.length} ${missed.length === 1 ? "is" : "are"} on no tour step: ${parts.join("; ")}`,
+    hint: "show each code file on a step: a range of it in the step's `code`, or a symbol of it in its focus (a one-line change is a one-line range). Docs, tests, lock files and renames may instead be named in a note that says why the tour skips them",
+    ids: [...code, ...other.map((entry) => entry.slice(0, entry.lastIndexOf(" (")))],
   });
 }
 
