@@ -6,7 +6,7 @@ import { processFlow, type DerivedGraph, type SequenceView } from "@xpl/core";
 import { describe, expect, it } from "vitest";
 import { layoutFlow, levelTitle, transitionText } from "../src/layout/flowLayout.js";
 import { layoutGraph } from "../src/layout/graphLayout.js";
-import { codeFirstView } from "../src/workspace.js";
+import { codeFirstView, stepLinks } from "../src/workspace.js";
 
 const F = "sym:tree.go#node.findRoute";
 function view(steps: Partial<SequenceView["steps"][number]>[]): SequenceView {
@@ -153,5 +153,26 @@ describe("code-first views", () => {
     expect(codeFirstView({ ...steps(["a.go", "b.go"]), layout: "code-first" })).toBe(true);
     expect(codeFirstView({ ...steps(["a.go", "a.go", "a.go"]), layout: "diagram" })).toBe(false);
     expect(codeFirstView(undefined)).toBe(false);
+  });
+});
+
+describe("the outline's 'Around this step' list", () => {
+  it("lists the steps one arrow away, arrows in first, recurse and return links with their kind", () => {
+    const flow = processFlow(
+      view([
+        { shape: "decision", next: [{ step: "match:2", label: "yes" }, { step: "match:3" }] },
+        { next: [{ step: "match:1", kind: "recurse", label: "the child" }] },
+        { shape: "terminal", next: [{ step: "match:2", kind: "return", label: "found" }] },
+      ]),
+    );
+    const links = stepLinks(flow, "match:2");
+    expect(links.map((l) => [l.side, l.id, l.words ?? "", l.kind ?? ""])).toEqual([
+      ["before", "match:1", "yes", ""],
+      ["before", "match:3", "found", "return"],
+      ["after", "match:1", "the child", "recurse"],
+      ["after", "match:3", "", ""],
+    ]);
+    expect(links[0]!.label).toBe("Stage 1");
+    expect(stepLinks(flow, "nope")).toEqual([]);
   });
 });

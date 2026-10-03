@@ -9,11 +9,12 @@ import {
   levelTitle,
   type FlowLayout,
   placedStages,
+  LEVEL_WORDS,
   STAGE_LABEL_CHARS,
   stageActor,
   wrapWords,
 } from "../layout/flowLayout.js";
-import { flowRelated, topicElements, topicMatches } from "../workspace.js";
+import { flowRelated, stepLinks, topicElements, topicMatches } from "../workspace.js";
 import { FlowKey } from "./Legend.js";
 import type { Focus } from "../viewport.js";
 import { SnapshotFrame } from "./SnapshotFrame.js";
@@ -344,6 +345,78 @@ export function FlowDiagram({ view, snapshot, outline = false }: FlowDiagramProp
       >
         {content}
       </PanZoom>
+      {outline && (
+        <StepNeighbours
+          flow={flow}
+          stepId={caretStage?.node.id ?? selectedStages[0]?.node.id}
+          onPick={(id) => select(id, false)}
+        />
+      )}
     </div>
+  );
+}
+
+/**
+ * Under a narrow outline: the step being read (picked, or holding the caret) and the steps one arrow away, in
+ * words that stay readable at any zoom, recurse and return links included (on the canvas they often run off
+ * the side). Each one picks that step.
+ */
+function StepNeighbours({
+  flow,
+  stepId,
+  onPick,
+}: {
+  flow: ProcessFlow;
+  stepId: string | undefined;
+  onPick: (id: string) => void;
+}) {
+  const stage = stepId ? flow.stages.find(({ step }) => step.id === stepId) : undefined;
+  if (!stage) return null;
+  const links = stepLinks(flow, stage.step.id);
+  const row = (link: (typeof links)[number]) => (
+    <li key={`${link.side}:${link.id}:${link.kind ?? ""}:${link.words ?? ""}`}>
+      <button
+        type="button"
+        className={`flow-around-link${link.kind ? ` is-${link.kind}` : ""}`}
+        onClick={() => onPick(link.id)}
+      >
+        <span className="flow-around-arrow" aria-hidden="true">
+          {link.kind === "recurse"
+            ? "↻"
+            : link.kind === "return"
+              ? "↩"
+              : link.side === "before"
+                ? "↑"
+                : "↓"}
+        </span>
+        <span className="flow-around-label">{link.label}</span>
+        {(link.words || link.kind) && (
+          <span className="flow-around-words">
+            {[link.words, link.kind && LEVEL_WORDS[link.kind]].filter(Boolean).join(", ")}
+          </span>
+        )}
+      </button>
+    </li>
+  );
+  const before = links.filter((link) => link.side === "before");
+  const after = links.filter((link) => link.side === "after");
+  return (
+    <section className="flow-around" data-testid="step-neighbours" aria-label="Around this step">
+      <p className="flow-around-step">
+        <span className="eyebrow">This step</span> {stage.step.label}
+      </p>
+      {before.length > 0 && (
+        <>
+          <h4>Comes from</h4>
+          <ul>{before.map(row)}</ul>
+        </>
+      )}
+      {after.length > 0 && (
+        <>
+          <h4>Goes on to</h4>
+          <ul>{after.map(row)}</ul>
+        </>
+      )}
+    </section>
   );
 }

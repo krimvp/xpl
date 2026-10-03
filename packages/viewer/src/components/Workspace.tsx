@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { derivedEdgeMap, type SequenceView } from "@xpl/core";
 import { viewReverseIndex } from "../derive.js";
 import { describeElement } from "../details.js";
@@ -19,6 +19,7 @@ import { FlowDiagram } from "./FlowDiagram.js";
 import { GraphView } from "./GraphView.js";
 import { Guide } from "./Guide.js";
 import { RelatedFiles } from "./RelatedFiles.js";
+import { Splitter } from "./Splitter.js";
 import { ZoomTrail } from "./ZoomTrail.js";
 
 /** `showSource`: open with the code shown (back from Present, where the code was on the slide). */
@@ -89,6 +90,8 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
   const code = state.perspective === "code";
   // The steps of one function: the code is the main pane, the flow a narrow outline beside it.
   const codeFirst = state.perspective === "flow" && codeFirstView(flow);
+  // Its width: the reader drags the bar between them (or uses the arrow keys); kept per flow.
+  const [outlineWidth, setOutlineWidth] = useOutlineWidth(codeFirst ? flow?.id : undefined);
   // The topic column names the picked element (not in the guide while its section is the topic).
   const topicShown = !!info && onScreen && !(state.perspective === "guide" && appliedStep);
   const showSource = code || sourceOpen || codeFirst;
@@ -104,6 +107,11 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
     <main
       className={`workspace${showSource ? " has-source" : ""}${codeFirst ? " is-code-first" : ""}`}
       data-perspective={state.perspective}
+      style={
+        codeFirst && outlineWidth !== undefined
+          ? ({ "--outline-width": `${outlineWidth}px` } as CSSProperties)
+          : undefined
+      }
     >
       <div className="workspace-location">
         <div className="navigation-history" aria-label="Navigation history">
@@ -263,6 +271,20 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
             </ErrorBoundary>
           </section>
         )}
+        {codeFirst && showSource && (
+          <Splitter
+            orientation="col"
+            label="Resize the flow and the code"
+            value={outlineWidth ?? defaultOutlineWidth()}
+            min={OUTLINE_MIN}
+            max={outlineMax()}
+            onResize={(delta) =>
+              setOutlineWidth((width) =>
+                Math.round(clampWidth((width ?? defaultOutlineWidth()) + delta)),
+              )
+            }
+          />
+        )}
         {showSource && (
           <section className="workspace-source" aria-label="Source code">
             <CodeArea tree="collapsible" />
@@ -317,4 +339,48 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
       </div>
     </main>
   );
+}
+
+/** The narrowest a code-first outline gets, px; the code keeps at least `CODE_MIN`. */
+const OUTLINE_MIN = 260;
+const CODE_MIN = 420;
+/** Below this width the page lays the columns out its own way (one column on a phone): no bar. */
+const outlineMax = () => Math.max(OUTLINE_MIN, window.innerWidth - CODE_MIN);
+const clampWidth = (width: number) => Math.min(outlineMax(), Math.max(OUTLINE_MIN, width));
+/** The width the stylesheet gives the outline before anyone drags: 360px, 420px on a wide screen. */
+const defaultOutlineWidth = () => (window.innerWidth >= 1680 ? 420 : 360);
+
+/**
+ * The width of a code-first flow's outline, per flow, remembered in this browser (localStorage, when it can
+ * be used: a private window or blocked storage just forgets). Undefined until the reader resizes it: the
+ * stylesheet's default.
+ */
+function useOutlineWidth(
+  viewId: string | undefined,
+): [number | undefined, (update: (width: number | undefined) => number) => void] {
+  const key = viewId ? `xpl.outline-width.${viewId}` : undefined;
+  const read = (): number | undefined => {
+    if (!key) return undefined;
+    try {
+      const stored = Number(window.localStorage.getItem(key));
+      return stored > 0 ? clampWidth(stored) : undefined;
+    } catch {
+      return undefined;
+    }
+  };
+  const [width, setWidth] = useState<{ key: string | undefined; value: number | undefined }>(
+    () => ({ key, value: read() }),
+  );
+  const value = width.key === key ? width.value : read();
+  const update = (change: (width: number | undefined) => number) => {
+    const next = change(value);
+    setWidth({ key, value: next });
+    if (!key) return;
+    try {
+      window.localStorage.setItem(key, String(next));
+    } catch {
+      // storage unavailable: the width lasts as long as the page
+    }
+  };
+  return [value, update];
 }
