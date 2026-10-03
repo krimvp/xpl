@@ -118,6 +118,8 @@ interface Marks {
   selected: ReadonlySet<string>;
   matches: ReadonlySet<string>;
   related: ReadonlySet<string>;
+  /** In a still picture: what the frame cuts (graphLayout `cutAt`), drawn faded. */
+  cut?: ReadonlySet<string>;
 }
 
 /**
@@ -221,7 +223,8 @@ function stateClasses(id: string, marks: Marks): string {
   return (
     (marks.selected.has(id) ? " is-selected" : "") +
     (marks.matches.has(id) ? " is-match" : "") +
-    (marks.related.has(id) ? " is-related" : "")
+    (marks.related.has(id) ? " is-related" : "") +
+    (marks.cut?.has(id) ? " is-cut" : "")
   );
 }
 
@@ -485,14 +488,17 @@ export function GraphPicture({
   layout,
   selection,
   related,
+  cut,
 }: {
   layout: GraphLayout;
   selection: readonly string[];
   related: ReadonlySet<string>;
+  /** What the picture's frame cuts (graphLayout `cutAt`): drawn faded. */
+  cut?: ReadonlySet<string>;
 }) {
   const marks = useMemo<Marks>(
-    () => ({ selected: new Set(selection), matches: new Set(), related }),
-    [selection, related],
+    () => ({ selected: new Set(selection), matches: new Set(), related, ...(cut ? { cut } : {}) }),
+    [selection, related, cut],
   );
   return (
     <ReadOnly.Provider value={true}>

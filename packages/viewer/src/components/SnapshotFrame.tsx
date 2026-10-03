@@ -1,6 +1,6 @@
 /** The frame of the Guide's still pictures (Snapshot.tsx), shared by every kind of diagram. */
 import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
-import { snapshotView, type Focus } from "../viewport.js";
+import { snapshotView, type Box, type Focus } from "../viewport.js";
 
 /** The picture's height at most, px. */
 export const SNAPSHOT_HEIGHT = 260;
@@ -28,7 +28,8 @@ export function SnapshotFrame({
   focus: Focus | undefined;
   /** Where the rest is: "Map" or "Flow". */
   where: string;
-  children: ReactNode;
+  /** The picture, or a function of the part of the diagram it shows (diagram units). */
+  children: ReactNode | ((window: Box) => ReactNode);
 }) {
   const box = useRef<HTMLDivElement>(null);
   const [paneWidth, setPaneWidth] = useState(0);
@@ -62,7 +63,14 @@ export function SnapshotFrame({
           <g
             transform={`translate(${placed.transform.x} ${placed.transform.y}) scale(${placed.transform.k})`}
           >
-            {children}
+            {typeof children === "function"
+              ? children({
+                  x: -placed.transform.x / placed.transform.k,
+                  y: -placed.transform.y / placed.transform.k,
+                  width: paneWidth / placed.transform.k,
+                  height: placed.height / placed.transform.k,
+                })
+              : children}
           </g>
         </svg>
       )}
