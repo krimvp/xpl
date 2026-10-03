@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { buildReverseIndex, derivedEdgeMap, viewCandidates, type SequenceView } from "@xpl/core";
+import { derivedEdgeMap, type SequenceView } from "@xpl/core";
+import { viewReverseIndex } from "../derive.js";
 import { describeElement } from "../details.js";
 import { renderInline } from "../markdown.js";
 import { stepTitle } from "../stepTitle.js";
@@ -31,9 +32,10 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
   const mapMatches = useMemo(
     () =>
       state.cursor
-        ? buildReverseIndex(viewCandidates(map.view, state.model, map.graph), state.model, {
-            derivedEdges: derivedEdgeMap(map.graph),
-          }).lookup(state.cursor.file, state.cursor.fromLine)
+        ? viewReverseIndex(map.view, state.model, map.graph, derivedEdgeMap(map.graph)).lookup(
+            state.cursor.file,
+            state.cursor.fromLine,
+          )
         : [],
     [map, state.model, state.cursor],
   );
