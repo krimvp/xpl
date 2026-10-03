@@ -260,6 +260,50 @@ describe("xpl status: ghosts and stubs", () => {
   });
 });
 
+describe("xpl status --view: what one view draws", () => {
+  it("lists a graph view's edges (kind, ends, references, stored or derived) and what its hidden takes out", async () => {
+    const dir = cloneDir(crowd);
+    const before = (await xplJson<any>(dir, "status", "crowd", "--view", "view:crowd")).json;
+    expect(before.view.id).toBe("view:crowd");
+    const drawn = before.view.edges.drawn;
+    expect(drawn.length).toBeGreaterThan(0);
+    expect(drawn[0]).toMatchObject({ kind: "calls", origin: "derived", summary: false });
+    expect(drawn[0].count).toBeGreaterThan(0);
+    expect(before.view.edges.hidden).toEqual([]);
+
+    const first = drawn[0].id;
+    const explainer = readJson(dir, EXPLAINER);
+    explainer.views.find((v: any) => v.id === "view:crowd").hidden = [first, "edge:gone"];
+    writeFile(dir, EXPLAINER, JSON.stringify(explainer, null, 2));
+    const after = (await xplJson<any>(dir, "status", "crowd", "--view", "view:crowd")).json;
+    expect(after.view.edges.drawn.map((e: any) => e.id)).not.toContain(first);
+    expect(after.view.edges.hidden).toEqual([
+      { id: first, edge: drawn[0] },
+      { id: "edge:gone", is: "unknown" },
+    ]);
+    const { out } = await ok(dir, "status", "crowd", "--view", "view:crowd");
+    expect(out).toContain("view:crowd (graph): Around run");
+    expect(out).toMatch(/edges drawn \(\d+: 0 stored, \d+ derived\), most references first:/);
+    expect(out).toContain(`hidden (2):\n    ${first}  calls  `);
+    expect(out).toContain(
+      "edge:gone  (matches nothing this view would draw now: remove it from hidden)",
+    );
+    // only that view
+    expect(out).not.toContain("tours (");
+  });
+
+  it("lists a sequence view's messages, and names the views when the id is unknown", async () => {
+    const { json } = await xplJson<any>(demo, "status", "demo");
+    const sequence = json.views.find((v: any) => v.type === "sequence");
+    const { out } = await ok(demo, "status", "demo", "--view", sequence.id);
+    expect(out).toContain(`links (${sequence.steps.total}):`);
+    const wrong = await xpl(demo, "status", "demo", "--view", "view:nope");
+    expect(wrong.code).toBe(1);
+    expect(wrong.err).toContain("no view view:nope");
+    expect(wrong.err).toContain("view:overview");
+  });
+});
+
 describe("xpl status: tours", () => {
   const EDITED = ".explainer/demo.explainer.json";
 

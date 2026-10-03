@@ -392,7 +392,7 @@ error: refusing to write .explainer/jobrunner.explainer.json: index wt-3fa2f32c4
 
 `--json` gives `counts`, `drifted[]` (`elementId`, `owner`, `view?` for a step, `userFields`, `anchors[]` with `reason`), `driftedOther[]` (user-owned), `missing[]` (`view?` too).
 
-## `xpl status <explainer>`
+## `xpl status <explainer> [--view <id>]`
 
 The skill's to-do list, read-only: per view, the shown nodes, participants, stored edges and steps without a `summary` (and the ids of the static edges without one, which you need to overlay them); per graph view, where it stops (its ghosts and stubs); concepts without a summary; the tours; drifted llm elements; missing anchors; **broken references**; stale edge overlays; requests queued by the viewer. Static edges are optional. `status` reads the explainer through the index it is bound to: after `xpl index`, run `xpl resolve <name> --write` first so that it sees the new code.
 
@@ -401,6 +401,21 @@ The skill's to-do list, read-only: per view, the shown nodes, participants, stor
 - `tours (n)`: each tour with its step count, and the steps whose `focus` ids or `view` no longer exist (`1 step points at something that is gone: t2 (focus: sym:src/queue.ts#Queue.pop)`): fix them with the tour's `stepsUpdate` (that step's `view` and `focus`), unless the user edited the tour (then make a new one).
 - `broken references (n)`: ids that no longer exist in the index (lenient validation): the overlay of a deleted symbol, an `include`, `members`, `related` or `participants` entry, a step end, a tour's `focus`. The line `, n broken references` is appended to `to do:` only when there are some.
 - `warning: stale edge overlays (n)`: stored `edge:<kind>:<a>-><b>` overlays that no graph view derives any more (the ends of a derived id follow the view's `include`, or the code changed). They are ignored until re-created on a current id; hidden edges do not count.
+- `--view <id>`: only that view, and what it draws. A graph view lists each arrow (`edge:calls:...  calls  grp:ky → grp:fetch  ×2  derived  "label"  no summary`: id, kind, ends, references, `stored` or `derived` (`derived (stored overlay)` when you overlaid it), label, whether it has a summary), most references first, then each id in its `hidden` with the arrow it takes out. A hidden id that is no arrow says what it is: a box, a stub, a ghost box, a stored edge that on this map is part of another arrow between the same boxes (hiding it does nothing: hide that arrow), or nothing (remove it). A flow lists the links between its steps (`(back to the caller)` for a return without a step); a sequence its messages. `--json`: `{path, view: {...the view's status, edges: {drawn, hidden} | {links}}}`.
+
+```
+$ xpl status ky --view view:system
+view:system (graph): ky between your app and the web
+  boxes: 4
+  edges drawn (3: 3 stored, 0 derived), most references first:
+    edge:app-ky  calls  grp:your-app → grp:ky  ×1  stored  "ky.get(), ky.post()"
+    edge:fetch-http-api  custom  grp:fetch → grp:http-api  ×1  stored  "HTTP requests"
+    edge:ky-fetch  calls  grp:ky → grp:fetch  ×1  stored  "hands over requests"
+  hidden (2):
+    edge:engine-fetch  calls  grp:ky → grp:fetch  ×2  stored  no summary
+    edge:timing-fetch  (a stored edge that is no arrow of its own here: on this map it is part of another arrow between the same boxes, or its ends are not on it; hiding it does nothing, hide that arrow instead)
+  ghosts: none drawn (stubs: none)
+```
 
 ```
 $ xpl status jobrunner
