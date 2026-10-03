@@ -133,9 +133,10 @@ const EDGE_SPEC: Spec = {
     summary: "string",
     detail: "string",
     anchors: "array",
+    via: "string[]",
     provenance: "object",
   },
-  nullable: ["summary", "detail"],
+  nullable: ["summary", "detail", "via"],
 };
 const CONCEPT_SPEC: Spec = {
   fields: {
@@ -178,8 +179,9 @@ const SEQUENCE_SPEC: Spec = {
     steps: "array",
     stepsUpdate: "array",
     frames: "array",
+    layout: ["code-first", "diagram"],
   },
-  nullable: ["frames"],
+  nullable: ["frames", "layout"],
 };
 const TOUR_SPEC: Spec = {
   fields: {
@@ -1462,6 +1464,7 @@ class Applier {
         label,
         ...(f.summary !== undefined ? { summary: f.summary } : {}),
         ...(f.detail !== undefined ? { detail: f.detail } : {}),
+        ...(f.via !== undefined ? { via: f.via } : {}),
         anchors,
         provenance,
       };
@@ -1619,6 +1622,7 @@ class Applier {
       participants: f.participants,
       steps: f.steps,
       ...(f.frames !== undefined ? { frames: f.frames } : {}),
+      ...(f.layout !== undefined ? { layout: f.layout } : {}),
       provenance,
     };
   }

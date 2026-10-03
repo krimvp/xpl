@@ -29,6 +29,7 @@ import {
   type ParsedId,
 } from "./ids.js";
 import { asIndexModel, type IndexModel } from "./index-model.js";
+import { hopRefs, viaHops } from "./graph.js";
 import { ExplainerModel } from "./model.js";
 import { resolveFrames } from "./sequence.js";
 import { parseGhostKey, STUB_MODES } from "./stubs.js";
@@ -890,7 +891,11 @@ class Validator {
       field: "anchors",
     });
 
-    if (isRecord(edge.provenance) && edge.provenance.origin === "llm") {
+    const via = this.checkVia(edge, path, id, fromOk && toOk);
+    // (a bad via list is reported already: its evidence is checked once it is fixed)
+    if (via && isRecord(edge.provenance) && edge.provenance.origin === "llm") {
+      this.checkViaEvidence(edge, via, checked, path, id);
+    } else if (via === undefined && isRecord(edge.provenance) && edge.provenance.origin === "llm") {
       for (const [end, label, ok] of [
         [edge.from, "from", fromOk],
         [edge.to, "to", toOk],
@@ -916,6 +921,131 @@ class Validator {
         }
       }
     }
+  }
+
+  /**
+   * `edge.via`: node ids that resolve, not an end of the edge, each once. The list when it is good and both
+   * ends resolve (its evidence can then be checked hop by hop), `false` when it is not, `undefined` without.
+   */
+  private checkVia(
+    edge: Edge,
+    path: string,
+    id: string,
+    endsOk: boolean,
+  ): ElementId[] | false | undefined {
+    const via: unknown = edge.via;
+    if (via === undefined) return undefined;
+    if (!Array.isArray(via) || via.length === 0) {
+      this.error(
+        `${path}.via`,
+        "via must be a non-empty array of node ids (what the link passes through)",
+        id,
+      );
+      return false;
+    }
+    if (parseId(edge.id).type === "derived-edge") {
+      this.error(
+        `${path}.via`,
+        `edge ${id} overlays a derived edge, whose ends are what the index joins; give the path through other code a stored edge (edge:<slug>) instead`,
+        id,
+      );
+      return false;
+    }
+    let ok = endsOk;
+    const seen = new Set<string>();
+    via.forEach((item: unknown, j: number) => {
+      if (!this.refNode(item, `${path}.via[${j}]`, id, "via")) ok = false;
+      else if (item === edge.from || item === edge.to || seen.has(item as string)) {
+        this.error(
+          `${path}.via[${j}]`,
+          `${String(item)} is ${seen.has(item as string) ? "listed twice in via" : "an end of the edge"}; via lists only what the link passes through`,
+          id,
+        );
+        ok = false;
+      }
+      seen.add(item as string);
+    });
+    return ok ? (via as ElementId[]) : false;
+  }
+
+  /**
+   * The evidence of an llm edge with `via`, hop by hop: a hop the index shows (a reference from inside one end
+   * to inside the other) is its own evidence; any other hop needs an anchor inside each of its ends.
+   */
+  private checkViaEvidence(
+    edge: Edge,
+    via: readonly ElementId[],
+    checked: readonly CheckedAnchor[],
+    path: string,
+    id: string,
+  ): void {
+    const inside = (end: ElementId) =>
+      checked.some(
+        (c) =>
+          !isBaseAnchor(c.anchor) &&
+          this.model.containsCode(end, {
+            file: c.anchor.file,
+            ...(c.anchor.symbol !== undefined ? { symbol: c.anchor.symbol } : {}),
+            ...(c.range ? { range: c.range } : {}),
+          }),
+      );
+    for (const [a, b] of viaHops({ from: edge.from, to: edge.to, via: [...via] })) {
+      if (hopRefs(this.model, a, b).length > 0) continue;
+      const missing = [a, b].filter((end) => !inside(end));
+      if (missing.length === 0) continue;
+      this.error(
+        `${path}.anchors`,
+        `llm edge ${id}: the index shows no reference from ${a} to ${b} (one hop of its via path), so that hop needs an anchor inside ${missing.map((end) => `${end} (${describeInside(end)})`).join(" and inside ")}`,
+        id,
+        "evidence",
+      );
+    }
+  }
+
+  /**
+   * A flow box names who does the step: its `from`. When the step's code (its first anchor in the current code)
+   * is not inside `from`, the box names the wrong part (the review found a check drawn from the caller whose
+   * code was in the stream it called): a warning that says which participant holds the code.
+   */
+  private checkStepOwner(
+    step: Record<string, unknown>,
+    at: string,
+    participants: readonly ElementId[],
+  ): void {
+    if (typeof step.from !== "string" || !this.model.hasNode(step.from)) return;
+    const anchor = (Array.isArray(step.anchors) ? step.anchors : []).find(
+      (a: unknown) => isRecord(a) && typeof a.file === "string" && a.at !== "base",
+    ) as Anchor | undefined;
+    if (!anchor) return;
+    const where = {
+      file: anchor.file,
+      ...(typeof anchor.symbol === "string" ? { symbol: anchor.symbol } : {}),
+      ...(anchor.resolved?.range ? { range: anchor.resolved.range } : {}),
+    };
+    if (this.model.containsCode(step.from, where)) return;
+    // an answer coming back is handled by the one it comes back to
+    if (
+      step.kind === "return" &&
+      typeof step.to === "string" &&
+      this.model.hasNode(step.to) &&
+      this.model.containsCode(step.to, where)
+    )
+      return;
+    const holder = participants.find(
+      (p) => p !== step.from && this.model.hasNode(p) && this.model.containsCode(p, where),
+    );
+    const sid = typeof step.id === "string" ? step.id : at;
+    const code = anchor.symbol ? `${anchor.file}#${anchor.symbol}` : anchor.file;
+    this.warn(
+      `${at}.from`,
+      `step ${sid} is drawn from ${step.from}, but its code (first anchor, ${code}) is not there; ${
+        holder
+          ? `it is in ${holder}: make that the step's "from"`
+          : `make "from" the participant whose code it is, or put an anchor inside ${step.from} first`
+      }`,
+      sid,
+      "step",
+    );
   }
 
   // ─── Concepts ───────────────────────────────────────────────────────────────────────────────
@@ -1282,18 +1412,45 @@ class Validator {
               typeof link.step !== "string" ||
               !stepIds.has(link.step) ||
               (link.label !== undefined && typeof link.label !== "string") ||
-              Object.keys(link).some((key) => key !== "step" && key !== "label")
+              Object.keys(link).some((key) => key !== "step" && key !== "label" && key !== "kind")
             )
               this.error(
                 `${at}.next[${k}]`,
-                "transition must reference a step of this view and have an optional string label",
+                "transition must reference a step of this view and have an optional string label (and an optional kind: recurse or return)",
                 id,
+              );
+            else if (link.kind !== undefined && link.kind !== "recurse" && link.kind !== "return")
+              this.error(
+                `${at}.next[${k}].kind`,
+                'kind must be "recurse" (the steps from the target run again, one level down) or "return" (back up one level, to the target)',
+                id,
+              );
+            else if (
+              link.kind === "recurse" &&
+              view.steps.findIndex((s) => isRecord(s) && s.id === link.step) > j
+            )
+              this.warn(
+                `${at}.next[${k}]`,
+                `a recurse link runs earlier steps again, one level down, but ${String(link.step)} comes after ${String(step.id)}; point it at the first step the recursive call runs`,
+                id,
+                "step",
               );
           });
       }
-      if (step.shape === "terminal" && Array.isArray(step.next) && step.next.length > 0)
-        this.error(`${at}.next`, "terminal stages cannot have outgoing transitions", id);
+      if (
+        step.shape === "terminal" &&
+        Array.isArray(step.next) &&
+        step.next.some((link: unknown) => !isRecord(link) || link.kind !== "return")
+      )
+        this.error(
+          `${at}.next`,
+          'terminal stages cannot have outgoing transitions (only "return" links, back up to the caller)',
+          id,
+        );
+      if (view.type === "flow") this.checkStepOwner(step, at, participants);
     });
+    if (view.layout !== undefined && view.layout !== "code-first" && view.layout !== "diagram")
+      this.error(`${path}.layout`, 'layout must be "code-first" or "diagram"', id);
 
     // frames
     if (view.frames === undefined) return;

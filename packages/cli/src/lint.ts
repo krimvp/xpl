@@ -1393,9 +1393,12 @@ function orderChecks(
 
 // ─── Reader checks: what the viewer will show ───────────────────────────────────────────────────
 
-/** Does this element (or flow / sequence step) carry anchors of its own? */
+/**
+ * Does this element (or flow / sequence step) carry anchors of its own? An edge with `via` counts: the index
+ * references of its hops are its code (validate checks that each hop has them, or anchors).
+ */
 function hasAnchors(item: Record<string, unknown>): boolean {
-  return list(item.anchors).length > 0;
+  return list(item.anchors).length > 0 || list(item.via).length > 0;
 }
 
 /** Any element by id: a node, an edge, a concept or a flow / sequence step. */

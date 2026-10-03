@@ -78,6 +78,8 @@ export interface DerivedEdge {
   stored: boolean;
   /** Ref sites (`call-site` for calls, else `usage`) plus the targets' definitions. Never persisted. */
   anchors: Anchor[];
+  /** A stored edge's `via`: what the arrow passes through without a box of its own, with their labels. */
+  via?: { id: ElementId; label: string }[];
 }
 
 export interface DerivedGraph {
@@ -183,6 +185,33 @@ export function repr(
 }
 
 // ─── Derived anchors ────────────────────────────────────────────────────────────────────────────
+
+/**
+ * The index references from code inside `a` to code inside `b` (one hop of an edge's `via` path): `a` and `b`
+ * are elements (a symbol holds its descendants, a file its symbols, a group its members), as for the evidence
+ * of an llm edge (`ExplainerModel.containsCode`). Calls, reads, writes, type references, imports and
+ * inheritance all count. In index order.
+ */
+export function hopRefs(model: ExplainerModel, a: ElementId, b: ElementId): Reference[] {
+  const where = (id: SymbolId) => {
+    const file = model.index.fileOfSymbolId(id);
+    if (file === undefined) return undefined;
+    const sym = model.index.symbol(id);
+    return sym ? { file, symbol: sym.path } : { file };
+  };
+  return model.index.refs.filter((ref) => {
+    const from = where(ref.from);
+    if (!from || !model.containsCode(a, from)) return false;
+    const to = where(ref.to);
+    return !!to && model.containsCode(b, to);
+  });
+}
+
+/** The hops of an edge with `via`: `from` → via[0] → … → `to`. */
+export function viaHops(edge: Pick<Edge, "from" | "to" | "via">): [ElementId, ElementId][] {
+  const path = [edge.from, ...(Array.isArray(edge.via) ? edge.via : []), edge.to];
+  return path.slice(1).map((to, i) => [path[i]!, to]);
+}
 
 /**
  * Anchors for a derived edge: each reference site (`call-site` for calls, `usage` otherwise; sorted,
@@ -429,6 +458,20 @@ export function deriveGraph(
   const endpoint = (id: SymbolId): ElementId | undefined =>
     index.fileOfSymbolId(id) === undefined ? undefined : elementIdForSymbolId(id);
 
+  // A stored edge "A reaches C via B" with both ends shown says what the references from A to B and from B to
+  // C are: they are part of its arrow, not stubs to a ghost B.
+  const viaEnds = new Map<ElementId, ElementId[]>();
+  for (const stored of model.storedEdges) {
+    if (!Array.isArray(stored.via) || stored.via.length === 0) continue;
+    if (!model.hasNode(stored.from) || !model.hasNode(stored.to)) continue;
+    const a = rep.repr(stored.from);
+    const b = rep.repr(stored.to);
+    if (a === undefined || b === undefined) continue;
+    for (const end of [a, b]) viaEnds.set(end, [...(viaEnds.get(end) ?? []), ...stored.via]);
+  }
+  const throughVia = (inside: ElementId, outside: ElementId) =>
+    viaEnds.get(inside)?.some((via) => model.subtreeContains(via, outside)) ?? false;
+
   for (const ref of index.refs) {
     const kind = REF_TO_EDGE_KIND[ref.kind];
     if (!kind || !kinds.has(kind)) continue;
@@ -448,8 +491,9 @@ export function deriveGraph(
       }
       agg.refs.push(ref);
       if (ref.resolution === "precise") agg.precise = true;
-    } else if (a !== undefined) addStub("out", a, toEl, kind);
-    else if (b !== undefined) addStub("in", b, fromEl, kind);
+    } else if (a !== undefined) {
+      if (!throughVia(a, toEl)) addStub("out", a, toEl, kind);
+    } else if (b !== undefined && !throughVia(b, fromEl)) addStub("in", b, fromEl, kind);
   }
 
   const edges = new Map<ElementId, DerivedEdge>();
@@ -508,6 +552,18 @@ export function deriveGraph(
       };
       if (stored.label) edge.label = stored.label;
       if (stored.summary) edge.summary = stored.summary;
+      if (Array.isArray(stored.via) && stored.via.length > 0) {
+        const via = stored.via.filter((id) => typeof id === "string" && model.hasNode(id));
+        edge.via = via.map((id) => ({ id, label: model.label(id) }));
+        // without anchors of its own, the arrow's code is the references of its hops (those the index shows)
+        if (edge.anchors.length === 0)
+          edge.anchors = derivedEdgeAnchors(
+            viaHops({ from: stored.from, to: stored.to, via }).flatMap(([x, y]) =>
+              hopRefs(model, x, y),
+            ),
+            index,
+          );
+      }
       if (a !== stored.from || b !== stored.to) {
         const key = `${edge.kind}\0${a}\0${b}`;
         const first = lifted.get(key);
