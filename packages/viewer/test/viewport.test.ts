@@ -5,9 +5,11 @@ import {
   rawFitScale,
   READABLE_FLOOR,
   READABLE_ZOOM,
-  readableFit,
-  scrollDown,
-  startView,
+  boxInView,
+  FRAME_SHRINK,
+  frameView,
+  reveal,
+  settle,
   unionBox,
   type Box,
 } from "../src/viewport.js";
@@ -46,102 +48,149 @@ describe("fitTransform", () => {
   });
 });
 
-describe("startView", () => {
+describe("frameView: the first view of a diagram", () => {
+  const at = (box: Box | undefined, content = { width: 4000, height: 3000 }) =>
+    frameView(PANE, content, box && { boxes: [box] }, OPTIONS)!;
+
   it("is the fit for a diagram that fits at a readable size", () => {
     // 1000 x 400: fit scale 0.692, above the floor
     const content = { width: 1000, height: 400 };
-    const view = startView(PANE, content, undefined, OPTIONS)!;
-    expect(view.partial).toBe(false);
+    const view = frameView(PANE, content, undefined, OPTIONS)!;
+    expect(view).toMatchObject({ partial: false, hidden: 0 });
     expect(view.transform).toEqual(fitTransform(PANE, content, OPTIONS));
     // just above the floor still fits; just below it does not
     const edge = 692 / READABLE_FLOOR;
-    expect(startView(PANE, { width: edge - 1, height: 100 }, undefined, OPTIONS)!.partial).toBe(
+    expect(frameView(PANE, { width: edge - 1, height: 100 }, undefined, OPTIONS)!.partial).toBe(
       false,
     );
-    expect(startView(PANE, { width: edge + 1, height: 100 }, undefined, OPTIONS)!.partial).toBe(
+    expect(frameView(PANE, { width: edge + 1, height: 100 }, undefined, OPTIONS)!.partial).toBe(
       true,
     );
   });
 
-  it("starts at the readable zoom, on the top-left corner, when the fit scale is below the floor", () => {
-    // 2500 x 300: fits at 0.277
+  it("without a focus, starts at the readable zoom on the top-left corner", () => {
     const content = { width: 2500, height: 1800 };
     expect(rawFitScale(PANE, content, 24)).toBeLessThan(READABLE_FLOOR);
-    const view = startView(PANE, content, undefined, OPTIONS)!;
+    const view = frameView(PANE, content, undefined, OPTIONS)!;
     expect(view.partial).toBe(true);
-    expect(view.transform.k).toBe(READABLE_ZOOM);
-    // the corner of the diagram sits at the padding
-    expect(view.transform.x).toBeCloseTo(24, 5);
-    expect(view.transform.y).toBeCloseTo(24, 5);
+    expect(view.transform).toEqual({ k: READABLE_ZOOM, x: 24, y: 24 });
   });
 
-  it("the floor and the zoom can be chosen", () => {
+  it("the whole-diagram floor and the zoom can be chosen", () => {
     const content = { width: 1000, height: 400 };
-    const view = startView(PANE, content, undefined, { ...OPTIONS, floor: 0.8, readable: 1 })!;
+    const view = frameView(PANE, content, undefined, { ...OPTIONS, whole: 0.8, readable: 1 })!;
     expect(view.partial).toBe(true);
     expect(view.transform.k).toBe(1);
-    expect(startView(PANE, content, undefined, { ...OPTIONS, floor: 0.5 })!.partial).toBe(false);
+    expect(frameView(PANE, content, undefined, { ...OPTIONS, whole: 0.5 })!.partial).toBe(false);
   });
 
-  it("an axis on which the diagram fits at that zoom is centred, like a fit", () => {
-    // tall and narrow: 300 wide fits at 0.75 (225 <= 692), 3000 tall does not
-    const view = startView(PANE, { width: 300, height: 3000 }, undefined, OPTIONS)!;
-    expect(view.partial).toBe(true);
+  it("centres an axis on which the diagram fits at that zoom, like a fit", () => {
+    const view = frameView(PANE, { width: 300, height: 3000 }, undefined, OPTIONS)!;
     expect(view.transform.x).toBeCloseTo((740 - 300 * READABLE_ZOOM) / 2, 5);
     expect(view.transform.y).toBeCloseTo(24, 5);
-    // wide and flat: the other way round
-    const flat = startView(PANE, { width: 4000, height: 200 }, undefined, OPTIONS)!;
-    expect(flat.transform.x).toBeCloseTo(24, 5);
-    expect(flat.transform.y).toBeCloseTo((460 - 200 * READABLE_ZOOM) / 2, 5);
   });
 
-  const content = { width: 4000, height: 3000 };
-  const at = (box: Box) => startView(PANE, content, box, OPTIONS)!.transform;
-  /** Diagram unit at the pane's left / top edge padding, i.e. where the window starts. */
-  const windowLeft = (x: number) => (24 - x) / READABLE_ZOOM;
-  const windowTop = (y: number) => (24 - y) / READABLE_ZOOM;
-
-  it("stays at the corner when what should be seen is in the first window", () => {
-    const view = at({ x: 100, y: 80, width: 200, height: 100 });
-    expect(view.x).toBeCloseTo(24, 5);
-    expect(view.y).toBeCloseTo(24, 5);
+  it("stays at the corner when the focus is in the first window", () => {
+    expect(at({ x: 100, y: 80, width: 200, height: 100 }).transform).toMatchObject({
+      x: 24,
+      y: 24,
+    });
   });
 
-  it("moves the window to what should be seen when it is out of sight: centred on it", () => {
+  it("moves the window to a focus out of sight, centred on it, never past the end", () => {
     const box = { x: 2000, y: 1500, width: 200, height: 100 };
     const view = at(box);
-    expect(windowLeft(view.x)).toBeCloseTo(2100 - VISIBLE.w / 2, 5);
-    expect(windowTop(view.y)).toBeCloseTo(1550 - VISIBLE.h / 2, 5);
-    // the box is inside the window on screen
-    const left = view.x + box.x * READABLE_ZOOM;
-    const right = left + box.width * READABLE_ZOOM;
-    expect(left).toBeGreaterThanOrEqual(24);
-    expect(right).toBeLessThanOrEqual(740 - 24);
-    const top = view.y + box.y * READABLE_ZOOM;
-    expect(top).toBeGreaterThanOrEqual(24);
-    expect(top + box.height * READABLE_ZOOM).toBeLessThanOrEqual(460 - 24);
+    expect(view.transform.k).toBe(READABLE_ZOOM);
+    expect(boxInView(view.transform, PANE, box)).toBe(true);
+    expect((24 - view.transform.x) / READABLE_ZOOM).toBeCloseTo(2100 - VISIBLE.w / 2, 5);
+    const end = at({ x: 3900, y: 2950, width: 100, height: 50 });
+    expect((24 - end.transform.x) / READABLE_ZOOM).toBeCloseTo(4000 - VISIBLE.w, 5);
+    expect((24 - end.transform.y) / READABLE_ZOOM).toBeCloseTo(3000 - VISIBLE.h, 5);
   });
 
-  it("does not move past the end of the diagram", () => {
-    const view = at({ x: 3900, y: 2950, width: 100, height: 50 });
-    expect(windowLeft(view.x)).toBeCloseTo(4000 - VISIBLE.w, 5);
-    expect(windowTop(view.y)).toBeCloseTo(3000 - VISIBLE.h, 5);
+  it("frames the focus and its neighbours together, down to 0.7 of the readable zoom", () => {
+    const focus = { x: 2000, y: 1500, width: 200, height: 100 };
+    const left = { x: 1400, y: 1500, width: 200, height: 100 };
+    const right = { x: 2600, y: 1500, width: 200, height: 100 };
+    const view = frameView(
+      PANE,
+      { width: 4000, height: 3000 },
+      { boxes: [focus], neighbours: [left, right] },
+      OPTIONS,
+    )!;
+    // 1400 units wide: (740 - 48) / 1400 = 0.494, not below 0.75 * 0.7 = 0.525: only one neighbour fits
+    expect(view.transform.k).toBeGreaterThanOrEqual(READABLE_ZOOM * FRAME_SHRINK - 1e-9);
+    expect(boxInView(view.transform, PANE, focus)).toBe(true);
+    const shown = [left, right].filter((box) => boxInView(view.transform, PANE, box));
+    expect(shown).toHaveLength(1);
+    expect(view).toMatchObject({ hidden: 0, context: 1 });
+    // with room for both, both are in, at the readable zoom or less
+    const near = frameView(
+      PANE,
+      { width: 4000, height: 3000 },
+      {
+        boxes: [focus],
+        neighbours: [
+          { ...left, x: 1700 },
+          { ...right, x: 2300 },
+        ],
+      },
+      OPTIONS,
+    )!;
+    expect(near.context).toBe(2);
+    expect(near.transform.k).toBeLessThanOrEqual(READABLE_ZOOM);
   });
 
-  it("moves only along the axis on which the box is out of sight", () => {
-    const view = at({ x: 100, y: 2000, width: 200, height: 100 });
-    expect(view.x).toBeCloseTo(24, 5);
-    expect(windowTop(view.y)).toBeCloseTo(2050 - VISIBLE.h / 2, 5);
+  it("frames the union of several focused elements when it fits, else the first and counts the rest", () => {
+    const a = { x: 1000, y: 1000, width: 200, height: 100 };
+    const b = { x: 1500, y: 1100, width: 200, height: 100 };
+    const both = frameView(PANE, { width: 4000, height: 3000 }, { boxes: [a, b] }, OPTIONS)!;
+    expect(both.hidden).toBe(0);
+    expect(boxInView(both.transform, PANE, a) && boxInView(both.transform, PANE, b)).toBe(true);
+    const far = { x: 3500, y: 2800, width: 200, height: 100 };
+    const apart = frameView(PANE, { width: 4000, height: 3000 }, { boxes: [a, far] }, OPTIONS)!;
+    expect(apart.hidden).toBe(1);
+    expect(boxInView(apart.transform, PANE, a)).toBe(true);
   });
 
-  it("aligns the start of a box that is larger than the window", () => {
-    const view = at({ x: 1000, y: 700, width: 2000, height: 2000 });
-    expect(windowLeft(view.x)).toBeCloseTo(1000, 5);
-    expect(windowTop(view.y)).toBeCloseTo(700, 5);
+  it("shows the whole diagram when a frame would be no larger", () => {
+    // fits whole at 0.55 (below the floor), the two far corners need less than that
+    const content = { width: 1258, height: 700 };
+    const view = frameView(
+      PANE,
+      content,
+      {
+        boxes: [
+          { x: 0, y: 0, width: 50, height: 50 },
+          { x: 1208, y: 650, width: 50, height: 50 },
+        ],
+      },
+      OPTIONS,
+    )!;
+    expect(view.partial).toBe(false);
+    expect(view.transform).toEqual(fitTransform(PANE, content, OPTIONS));
+  });
+
+  it("a focus too big for the pane shows its core", () => {
+    const size = { w: 400, h: 300 };
+    const content = { width: 3000, height: 2000 };
+    const options = { padding: 20, readable: 1, whole: 0.9, maxZoom: 1.25 };
+    const core = { x: 1500, y: 100, width: 100, height: 40 };
+    const far = frameView(
+      size,
+      content,
+      { boxes: [{ x: 0, y: 100, width: 2000, height: 40 }], core },
+      options,
+    )!;
+    expect(far.transform.k).toBe(1);
+    expect(-far.transform.x).toBeLessThanOrEqual(1500);
+    expect(-far.transform.x + 400).toBeGreaterThanOrEqual(1600);
   });
 
   it("has nothing to say about a pane that is not measured yet", () => {
-    expect(startView({ w: 0, h: 0 }, content, undefined, OPTIONS)).toBeUndefined();
+    expect(
+      frameView({ w: 0, h: 0 }, { width: 10, height: 10 }, undefined, OPTIONS),
+    ).toBeUndefined();
   });
 });
 
@@ -163,54 +212,26 @@ describe("unionBox", () => {
   });
 });
 
-describe("readableFit (Fit of a diagram whose text must stay readable)", () => {
-  const options = { padding: 24, maxZoom: 1.25 };
-  it("fits all of it when that keeps the floor, or when there is no floor", () => {
-    expect(readableFit(PANE, { width: 400, height: 300 }, options, 0.85)).toEqual({
-      transform: fitTransform(PANE, { width: 400, height: 300 }, options),
-      width: false,
-    });
-    expect(readableFit(PANE, { width: 1000, height: 1500 }, options, undefined)!.width).toBe(false);
+describe("settle and reveal (zooming, and the selection kept in sight)", () => {
+  it("centres a diagram that fits, and leaves no empty band beside one that does not", () => {
+    const small = settle({ k: 0.5, x: 0, y: 300 }, PANE, { width: 400, height: 400 }, 24);
+    expect(small).toEqual({ k: 0.5, x: (740 - 200) / 2, y: (460 - 200) / 2 });
+    // zoomed out towards the top: the diagram (2000 x 1000 at 0.4 = 800 x 400) moves up, not down
+    const tall = settle({ k: 0.4, x: -20, y: 250 }, PANE, { width: 2000, height: 1000 }, 24);
+    expect(tall.y).toBeCloseTo((460 - 400) / 2, 5);
+    expect(tall.x).toBe(-20);
+    const big = settle({ k: 1, x: 100, y: -5000 }, PANE, { width: 2000, height: 1000 }, 24);
+    expect(big).toEqual({ k: 1, x: 24, y: 460 - 24 - 1000 });
   });
 
-  it("a tall diagram is fitted to its width, from the top, when all of it would be too small", () => {
-    // all of it: 412 / 1500 = 0.27; its width: 692 / 1000 = 0.69 (above a 0.6 floor)
-    const fit = readableFit(PANE, { width: 1000, height: 1500 }, options, 0.6)!;
-    expect(fit.width).toBe(true);
-    expect(fit.transform.k).toBeCloseTo(0.692, 3);
-    expect(fit.transform.y).toBe(24);
-    // the width does not fit at the floor either: all of it anyway
-    expect(readableFit(PANE, { width: 2000, height: 3000 }, options, 0.6)!.width).toBe(false);
-  });
-
-  it("scrolls a width fit down and back, never past the top or the bottom", () => {
-    const t = { k: 0.5, x: 10, y: 24 };
-    expect(scrollDown(t, 100, PANE, { height: 1500 }, 24).y).toBe(-76);
-    // bottom: the end of the diagram (1500 * 0.5 = 750) at the bottom of the pane (460 - 24)
-    expect(scrollDown(t, 10_000, PANE, { height: 1500 }, 24).y).toBe(460 - 24 - 750);
-    expect(scrollDown(t, -10_000, PANE, { height: 1500 }, 24).y).toBe(24);
-  });
-});
-
-describe("the first view of a big diagram, with a core that must stay in view", () => {
-  it("frames the whole anchor when it fits at the readable zoom, else its core", () => {
-    const size = { w: 400, h: 300 };
-    const content = { width: 3000, height: 2000 };
-    const options = { padding: 20, readable: 1, floor: 0.9, maxZoom: 1.25 };
-    const core = { x: 1500, y: 100, width: 100, height: 40 };
-    // the anchor (both ends of an arrow) fits in 360px: it is in view
-    const near = startView(
-      size,
-      content,
-      { x: 1450, y: 100, width: 300, height: 40 },
-      options,
-      core,
-    )!;
-    expect(-near.transform.x).toBeLessThanOrEqual(1450);
-    expect(-near.transform.x + 400).toBeGreaterThanOrEqual(1750);
-    // an anchor 2000px wide cannot be: the core is, not the middle of the anchor
-    const far = startView(size, content, { x: 0, y: 100, width: 2000, height: 40 }, options, core)!;
-    expect(-far.transform.x).toBeLessThanOrEqual(1500);
-    expect(-far.transform.x + 400).toBeGreaterThanOrEqual(1600);
+  it("pans just enough to show a box out of sight, and leaves a box in sight alone", () => {
+    const t = { k: 1, x: 0, y: 0 };
+    const inside = { x: 100, y: 100, width: 100, height: 50 };
+    expect(reveal(t, PANE, inside, 32)).toEqual(t);
+    const right = reveal(t, PANE, { x: 1000, y: 100, width: 100, height: 50 }, 32);
+    expect(right).toEqual({ k: 1, x: 740 - 32 - 1100, y: 0 });
+    expect(boxInView(right, PANE, { x: 1000, y: 100, width: 100, height: 50 })).toBe(true);
+    const above = reveal(t, PANE, { x: 100, y: -300, width: 100, height: 50 }, 32);
+    expect(above.y).toBe(332);
   });
 });

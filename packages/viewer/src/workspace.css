@@ -435,39 +435,20 @@
 .snapshot-frame > svg {
   display: block;
   pointer-events: none;
-  /* A side where the picture is cut fades out (SnapshotFrame: is-cut-left, ...). */
-  --fade-l: 0px;
-  --fade-r: 0px;
-  --fade-t: 0px;
-  --fade-b: 0px;
-  mask-image:
-    linear-gradient(
-      to right,
-      transparent 0,
-      #000 var(--fade-l),
-      #000 calc(100% - var(--fade-r)),
-      transparent 100%
-    ),
-    linear-gradient(
-      to bottom,
-      transparent 0,
-      #000 var(--fade-t),
-      #000 calc(100% - var(--fade-b)),
-      transparent 100%
-    );
-  mask-composite: intersect;
 }
-.snapshot-frame.is-cut-left > svg {
-  --fade-l: 40px;
-}
-.snapshot-frame.is-cut-right > svg {
-  --fade-r: 40px;
-}
-.snapshot-frame.is-cut-top > svg {
-  --fade-t: 28px;
-}
-.snapshot-frame.is-cut-bottom > svg {
-  --fade-b: 28px;
+/* framing: the step's elements a still picture leaves out (SnapshotFrame). It replaces the fade the cut
+   sides had: readers took the fade for a broken picture. */
+.snapshot-more {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  padding: 2px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--fg);
+  font-size: 12px;
+  font-weight: 600;
 }
 .snapshot-placeholder {
   width: 100%;

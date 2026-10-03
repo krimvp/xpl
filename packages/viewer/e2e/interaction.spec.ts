@@ -225,12 +225,15 @@ test.describe("graph view", () => {
     const state = await stateOf(page);
     expect(state.edgeKinds).toEqual(expect.arrayContaining(["calls", "references"]));
     expect(state.edgeKinds).not.toContain("imports");
-    // Elements that reference each other's types now show `references ×n` edges.
-    await expect(
-      page.locator('[data-element-id="edge:references:file:src/runner.ts->file:src/queue.ts"]'),
-    ).toBeVisible();
+    // Elements that reference each other's types now show `references ×n`: on the one arrow between
+    // the two boxes, with the calls (a map draws one arrow per pair, its label names each kind).
+    const pair = page.locator('[data-element-id$=":file:src/runner.ts->file:src/queue.ts"]');
+    await expect(pair).toHaveCount(1);
+    await expect(pair).toBeVisible();
+    await expect(pair.locator("title")).toContainText(/references ×\d/);
     await references.click();
     await expect(page.locator('[data-element-id^="edge:references:"]')).toHaveCount(0);
+    await expect(pair.locator("title")).not.toContainText("references");
   });
 
   test("the pan/zoom canvas: wheel zooms about the pointer, dragging pans, Fit restores", async ({

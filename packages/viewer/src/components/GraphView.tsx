@@ -37,6 +37,7 @@ import {
   layoutGraphFitting,
   PILL_GAP,
   startAnchor,
+  startFocus,
   type ChangeMarks,
   type GraphLayout,
   type LayoutEdge,
@@ -70,6 +71,9 @@ const Reader = createContext(false);
  * ids (the live diagram keeps those to itself) and nothing to click or focus.
  */
 const Still = createContext(false);
+/** The edge under the pointer (its label is drawn apart from it, and shows while it is hovered). */
+const Hovered = createContext<string | undefined>(undefined);
+const SetHovered = createContext<(id: string | undefined) => void>(() => undefined);
 /** The names of the boxes drawn, by render id: an edge's accessible name says which two it joins. */
 const BoxNames = createContext<ReadonlyMap<string, string>>(new Map());
 
@@ -176,15 +180,12 @@ function canvasBounds(layout: GraphLayout): Box {
   const boxes: Box[] = [{ x: 0, y: 0, width: layout.width, height: layout.height }];
   const edges = (list: LayoutEdge[], x: number, y: number) => {
     for (const edge of list) {
-      const box = routeBox(edge.points, edge.label);
-      const width = Math.max(edge.anchor.x - box.x, box.x + box.width - edge.anchor.x) + BOUNDS_PAD;
-      const height =
-        Math.max(edge.anchor.y - box.y, box.y + box.height - edge.anchor.y) + BOUNDS_PAD;
+      const { x: reachX, y: reachY } = edgeReach(edge);
       boxes.push({
-        x: x + edge.anchor.x - width,
-        y: y + edge.anchor.y - height,
-        width: 2 * width,
-        height: 2 * height,
+        x: x + edge.anchor.x - reachX,
+        y: y + edge.anchor.y - reachY,
+        width: 2 * reachX,
+        height: 2 * reachY,
       });
     }
   };
@@ -261,6 +262,7 @@ export function GraphView({
   const [layout, setLayout] = useState<GraphLayout | undefined>();
   const [error, setError] = useState<string | undefined>();
   const [menu, setMenu] = useState<GhostMenuState | undefined>();
+  const [hovered, setHovered] = useState<string | undefined>();
   // Stable while nothing selected, matched or related changes, so unchanged shapes are not re-rendered.
   const marks = useMemo<Marks>(
     () => ({ selected: new Set(selection), matches: new Set(matches), related }),
@@ -268,10 +270,25 @@ export function GraphView({
   );
 
   const canvas = useMemo(() => (layout ? canvasBounds(layout) : undefined), [layout]);
-  const startBox = useMemo(() => {
-    const box = layout ? startAnchor(layout, selection, order) : undefined;
-    return box && canvas ? { ...box, x: box.x - canvas.x, y: box.y - canvas.y } : box;
-  }, [layout, canvas, selection, order]);
+  // The first view frames the selection and its neighbours (or the first box of the view); the selection
+  // is kept in sight when it changes or the pane is resized. Both in the canvas' coordinates.
+  const shift = useCallback(
+    (box: Box): Box => (canvas ? { ...box, x: box.x - canvas.x, y: box.y - canvas.y } : box),
+    [canvas],
+  );
+  const focus = useMemo(() => {
+    const found = layout ? startFocus(layout, selection, order) : undefined;
+    return (
+      found && {
+        boxes: found.boxes.map(shift),
+        neighbours: (found.neighbours ?? []).map(shift),
+      }
+    );
+  }, [layout, shift, selection, order]);
+  const selectionBox = useMemo(() => {
+    const box = layout && selection.length > 0 ? startAnchor(layout, selection, []) : undefined;
+    return box && shift(box);
+  }, [layout, shift, selection]);
 
   // The layout direction (right or down) is chosen for the pane the diagram is drawn in.
   useEffect(() => {
@@ -360,7 +377,8 @@ export function GraphView({
         maxFitZoom={present ? PRESENT_MAX_FIT_ZOOM : undefined}
         fitPadding={present ? PRESENT_FIT_PADDING : undefined}
         readableZoom={present ? PRESENT_READABLE_ZOOM : undefined}
-        startBox={startBox}
+        focus={focus}
+        keepInView={selectionBox}
         onBackgroundClick={() => store.clearSelection()}
         tools={
           <Legend
@@ -387,6 +405,7 @@ export function GraphView({
               <EdgeShape key={edge.id} edge={edge} marks={marks} focusable={false} />
             ))}
           </g>
+          <EdgeLabels edges={layout.edges} marks={marks} />
           <g className="nodes">
             {layout.nodes.map((node) => (
               <NodeShape key={node.id} node={node} marks={marks} />
@@ -406,19 +425,23 @@ export function GraphView({
     <ReadOnly.Provider value={present}>
       <Reader.Provider value={present || reader}>
         <BoxNames.Provider value={names}>
-          <GhostMenuContext.Provider value={menuApi}>
-            <div
-              className="graph-host"
-              ref={host}
-              onPointerDownCapture={dismiss}
-              onWheelCapture={menu ? dismissOnWheel : undefined}
-            >
-              {body}
-              {menu && menuGhost?.ghostFold && (
-                <GhostMenu node={menuGhost} anchor={menu.anchor} onClose={closeMenu} />
-              )}
-            </div>
-          </GhostMenuContext.Provider>
+          <SetHovered.Provider value={setHovered}>
+            <Hovered.Provider value={hovered}>
+              <GhostMenuContext.Provider value={menuApi}>
+                <div
+                  className="graph-host"
+                  ref={host}
+                  onPointerDownCapture={dismiss}
+                  onWheelCapture={menu ? dismissOnWheel : undefined}
+                >
+                  {body}
+                  {menu && menuGhost?.ghostFold && (
+                    <GhostMenu node={menuGhost} anchor={menu.anchor} onClose={closeMenu} />
+                  )}
+                </div>
+              </GhostMenuContext.Provider>
+            </Hovered.Provider>
+          </SetHovered.Provider>
         </BoxNames.Provider>
       </Reader.Provider>
     </ReadOnly.Provider>
@@ -475,6 +498,7 @@ export function GraphPicture({
                 <EdgeShape key={edge.id} edge={edge} marks={marks} />
               ))}
             </g>
+            <EdgeLabels edges={layout.edges} marks={marks} />
             <g className="nodes">
               {layout.nodes.map((node) => (
                 <NodeShape key={node.id} node={node} marks={marks} />
@@ -581,6 +605,7 @@ function BoxShape({ node, marks }: { node: LayoutNode; marks: Marks }) {
               <EdgeShape key={edge.id} edge={edge} marks={marks} />
             ))}
           </g>
+          <EdgeLabels edges={node.edges} marks={marks} />
           {node.children.map((child) => (
             <NodeShape key={child.id} node={child} marks={marks} />
           ))}
@@ -1034,6 +1059,21 @@ function EdgeKey({ edge }: { edge: LayoutEdge }) {
   );
 }
 
+/** The classes of an edge (and of its label): kind, trust, state, and quiet in a reader view. */
+function edgeClasses(edge: LayoutEdge, marks: Marks, reader: boolean): string {
+  const classes = ["edge", edge.stub ? "is-stub" : `res-${edge.resolution}`, `kind-${edge.kind}`];
+  // A count label in a reader view: shown on hover and when the edge or an end of it is selected.
+  if (
+    reader &&
+    edge.counted &&
+    !marks.selected.has(edge.id) &&
+    !marks.selected.has(edge.from) &&
+    !marks.selected.has(edge.to)
+  )
+    classes.push("is-quiet");
+  return classes.join(" ") + stateClasses(edge.id, marks);
+}
+
 const EdgeShape = memo(function EdgeShape({
   edge,
   marks,
@@ -1053,24 +1093,16 @@ const EdgeShape = memo(function EdgeShape({
   const path = roundedPath(points);
   const tip = points[points.length - 1]!;
   const before = points[points.length - 2]!;
-  const label = edge.label;
+  const hover = useContext(SetHovered);
   // A click on the edge lands on its anchor, a point of the route (see BOUNDS_PAD): the invisible
   // `bounds` rect is centred on it and reaches around the whole route.
   const { x: reachX, y: reachY } = edgeReach(edge);
   const select = (event: MouseEvent | KeyboardEvent) => store.click(edge.id, additive(event));
-  const classes = ["edge", edge.stub ? "is-stub" : `res-${edge.resolution}`, `kind-${edge.kind}`];
-  // A count label in a reader view: shown on hover (CSS) and when the edge or an end of it is selected.
-  if (
-    reader &&
-    edge.counted &&
-    !marks.selected.has(edge.id) &&
-    !marks.selected.has(edge.from) &&
-    !marks.selected.has(edge.to)
-  )
-    classes.push("is-quiet");
   return (
     <g
-      className={classes.join(" ") + stateClasses(edge.id, marks)}
+      className={edgeClasses(edge, marks, reader)}
+      onPointerEnter={edge.label ? () => hover(edge.id) : undefined}
+      onPointerLeave={edge.label ? () => hover(undefined) : undefined}
       data-element-id={still ? undefined : edge.id}
       data-stub-id={edge.stub && !still ? edge.id : undefined}
       role={still || !focusable ? undefined : "button"}
@@ -1100,14 +1132,46 @@ const EdgeShape = memo(function EdgeShape({
       <path className="line" d={path} />
       <path className="head" d={arrowHeadPath(before, tip)} />
       <path className="hit" d={path} />
-      {label && (
-        <g className="edge-label">
-          <rect x={label.x} y={label.y} width={label.width} height={label.height} rx={4} />
-          <text x={label.x + label.width / 2} y={label.y + label.height / 2 + 4}>
-            {label.text}
-          </text>
-        </g>
-      )}
     </g>
   );
 });
+
+/**
+ * The labels of a level's edges, drawn after all of its lines: a line never runs over a label (not even the
+ * selected edge's line). A label takes its edge's classes (colour, quiet, selected) and its click; a quiet
+ * label shows while its edge is hovered (`Hovered`) or the label itself is.
+ */
+function EdgeLabels({ edges, marks }: { edges: readonly LayoutEdge[]; marks: Marks }) {
+  if (!edges.some((edge) => edge.label)) return null;
+  return (
+    <g className="edge-labels">
+      {edges.map((edge) =>
+        edge.label ? <EdgeLabel key={edge.id} edge={edge} marks={marks} /> : null,
+      )}
+    </g>
+  );
+}
+
+function EdgeLabel({ edge, marks }: { edge: LayoutEdge; marks: Marks }) {
+  const store = useStore();
+  const still = useContext(Still);
+  const hovered = useContext(Hovered) === edge.id;
+  const label = edge.label!;
+  return (
+    <g
+      className={edgeClasses(edge, marks, useContext(Reader)) + (hovered ? " is-hover" : "")}
+      aria-hidden="true"
+      onClick={(event) => {
+        event.stopPropagation();
+        if (!still) store.click(edge.id, additive(event));
+      }}
+    >
+      <g className="edge-label">
+        <rect x={label.x} y={label.y} width={label.width} height={label.height} rx={4} />
+        <text x={label.x + label.width / 2} y={label.y + label.height / 2 + 4}>
+          {label.text}
+        </text>
+      </g>
+    </g>
+  );
+}

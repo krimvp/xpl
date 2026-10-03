@@ -215,7 +215,7 @@ test.describe("Present: a flow step", () => {
     { width: 1280, height: 720 },
     { width: 1440, height: 900 },
   ]) {
-    test(`${size.width}x${size.height}: a typical 8-stage flow reads at 11px or more, framed on the step, Fit all included`, async ({
+    test(`${size.width}x${size.height}: a typical 8-stage flow reads at 11px or more, framed on the step, Fit all shows it all`, async ({
       page,
     }) => {
       const problems = watchProblems(page);
@@ -226,11 +226,21 @@ test.describe("Present: a flow step", () => {
       expect(flowPane).toBeGreaterThan(size.width * 0.52);
       expect(await smallestDiagramText(page)).toBeGreaterThanOrEqual(11);
       await expect.poll(() => selectedInPane(page)).toBe(true);
-      // "Fit all", when it is offered, keeps the text readable (the whole width, scrolling down)
+      // "Fit all", when it is offered, shows every stage
       const badge = page.getByTestId("pz-badge");
       if ((await badge.count()) > 0 && (await badge.textContent()) === "Fit all") {
         await badge.click();
-        expect(await smallestDiagramText(page)).toBeGreaterThanOrEqual(11);
+        await expect
+          .poll(() =>
+            page.evaluate(() => {
+              const pane = document.querySelector(".panzoom")!.getBoundingClientRect();
+              return [...document.querySelectorAll(".flow-stage")].every((el) => {
+                const r = el.getBoundingClientRect();
+                return r.top >= pane.top - 1 && r.bottom <= pane.bottom + 1;
+              });
+            }),
+          )
+          .toBe(true);
       }
       // a graph step keeps the narrower diagram column
       await page.keyboard.press("ArrowLeft");

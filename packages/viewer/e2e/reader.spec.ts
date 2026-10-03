@@ -306,7 +306,7 @@ test.describe("round 2 of the review", () => {
     });
   }
 
-  test("Read > Flow: Fit all keeps a tall flow's text at 11px or more (fits the width, then scrolls)", async ({
+  test("Read > Flow: a tall flow starts readable, and Fit all really shows all of it", async ({
     page,
   }) => {
     const problems = watchProblems(page);
@@ -316,24 +316,15 @@ test.describe("round 2 of the review", () => {
     const badge = page.getByTestId("pz-badge");
     await expect(badge).toHaveText("Fit all");
     await badge.click();
-    await expect(page.locator(".panzoom")).toHaveAttribute("data-fit", "width");
-    await expect(badge).toHaveText("Back to the start");
+    // every stage in the pane (the text gets as small as that takes)
+    await expect.poll(() => stagesInPane(page)).toBe(10);
+    await expect(badge).toHaveText("Readable size");
+    // and back to a readable first view
+    await badge.click();
     expect(await smallestDiagramText(page)).toBeGreaterThanOrEqual(10.9);
-    // the wheel scrolls it (the zoom stays), down to the last stage
-    const zoom = await page.locator(".panzoom").getAttribute("data-zoom");
-    const box = (await page.locator(".panzoom").boundingBox())!;
-    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-    await page.mouse.wheel(0, 5000);
-    await expect(page.locator(".panzoom")).toHaveAttribute("data-zoom", zoom!);
-    await expect
-      .poll(async () => {
-        const last = (await byId(page, "dispatch:10").boundingBox())!;
-        return last.y + last.height <= box.y + box.height + 1;
-      })
-      .toBe(true);
-    // the Fit button of the toolbar still shows all of it
+    // the Fit button of the toolbar shows all of it too
     await page.getByRole("button", { name: "Fit to view" }).click();
-    await expect(page.locator(".panzoom")).toHaveAttribute("data-fit", "width");
+    await expect.poll(() => stagesInPane(page)).toBe(10);
     expect(problems).toEqual([]);
   });
 
@@ -612,3 +603,19 @@ test.describe("the reader's screen", () => {
     );
   });
 });
+
+/** How many flow stages lie wholly inside the diagram's pane. */
+async function stagesInPane(page: Page): Promise<number> {
+  return page.evaluate(() => {
+    const pane = document.querySelector(".panzoom")!.getBoundingClientRect();
+    return [...document.querySelectorAll(".flow-stage")].filter((el) => {
+      const r = el.getBoundingClientRect();
+      return (
+        r.left >= pane.left - 1 &&
+        r.right <= pane.right + 1 &&
+        r.top >= pane.top - 1 &&
+        r.bottom <= pane.bottom + 1
+      );
+    }).length;
+  });
+}

@@ -26,8 +26,8 @@ import {
 } from "@xpl/core";
 import type { ChangeStatus } from "../diff.js";
 import { textWidth } from "../measure.js";
-import { nearRoute, routeAnchor, type Box, type Point } from "../svg.js";
-import { unionBox } from "../viewport.js";
+import { distanceToSegment, nearRoute, routeAnchor, type Box, type Point } from "../svg.js";
+import { unionBox, type Focus } from "../viewport.js";
 import {
   layered,
   layerIndex,
@@ -252,6 +252,39 @@ function edgeLabelText(edge: DerivedEdge): string {
   return edge.label ? edge.label : `${edge.kind} ×${edge.count}`;
 }
 
+/**
+ * The edges a map draws, fewer than it derives: a derived edge between two boxes that an authored edge already
+ * joins (the same way) is left out, the authored one says it in words; and derived edges of several kinds
+ * between the same two boxes become one arrow ("calls ×5 · references ×2"), under the id of the first. A
+ * small map no longer gets an arrow per kind of reference.
+ */
+export function drawnEdges(edges: readonly DerivedEdge[]): DerivedEdge[] {
+  const pair = (edge: DerivedEdge) => `${edge.from}\0${edge.to}`;
+  const authored = new Set(edges.filter((edge) => edge.stored).map(pair));
+  const merged = new Map<string, DerivedEdge>();
+  const out: DerivedEdge[] = [];
+  for (const edge of edges) {
+    if (edge.stored) {
+      out.push(edge);
+      continue;
+    }
+    if (authored.has(pair(edge))) continue;
+    const first = merged.get(pair(edge));
+    if (!first) {
+      const copy = { ...edge };
+      merged.set(pair(edge), copy);
+      out.push(copy);
+      continue;
+    }
+    first.label = `${first.label ?? `${first.kind} ×${first.count}`} · ${edge.kind} ×${edge.count}`;
+    if (edge.resolution === "precise") first.resolution = "precise";
+  }
+  // a merged arrow's label is still a count made up by the viewer, not words someone wrote
+  return out.map((edge) =>
+    !edge.stored && edge.label !== undefined ? { ...edge, label: edge.label } : edge,
+  );
+}
+
 function stubLabelText(stub: Stub): string {
   return `${stub.kinds.join(" & ")} ×${stub.count}`;
 }
@@ -348,8 +381,8 @@ function buildModel(graph: DerivedGraph, changes: ChangeMarks | undefined): Mode
     ghosts.set(stub.ghost, made);
     return made;
   };
-  for (const edge of graph.edges) {
-    if (!known.has(edge.from) || !known.has(edge.to) || seen.has(edge.id)) continue;
+  for (const edge of drawnEdges(graph.edges.filter((e) => known.has(e.from) && known.has(e.to)))) {
+    if (seen.has(edge.id)) continue;
     seen.add(edge.id);
     edges.push({
       id: edge.id,
@@ -529,6 +562,7 @@ function layeredLayout(model: Model, direction: Direction): GraphLayout {
   const chains = new Map<string, { from: string[]; to: string[] }>();
   const crossing = new Map<string, { edge: EdgeMeta; end: "from" | "to" }[]>();
   for (const edge of model.edges) {
+    if (edge.from === edge.to) continue; // a loop: drawn on its box once the boxes are placed
     const holder = holderOf(model, edge.from, edge.to);
     const list = held.get(holder);
     if (list) list.push(edge);
@@ -749,6 +783,11 @@ function layeredLayout(model: Model, direction: Direction): GraphLayout {
   // routes, and the inner parts on its way into the containers around its end.
   const canvasEdges: LayoutEdge[] = [];
   for (const edge of model.edges) {
+    if (edge.from === edge.to && nodeOf.has(edge.from)) {
+      const parent = parentOf.get(edge.from);
+      (parent ? parent.edges : canvasEdges).push(loopEdge(edge, boxIn(edge.from, parent)));
+      continue;
+    }
     const route = outer.get(edge.id);
     if (!route) continue;
     const holder = route.level.node;
@@ -786,9 +825,122 @@ function layeredLayout(model: Model, direction: Direction): GraphLayout {
   }
   const width = top.result.width;
   const height = top.result.height;
+  spreadLabels(canvasEdges);
+  const spreadInside = (list: LayoutNode[]) => {
+    for (const node of list) {
+      spreadLabels(node.edges);
+      spreadInside(node.children);
+    }
+  };
+  spreadInside(top.nodes);
   placeAnchors(top.nodes, canvasEdges, { width, height });
   return { width, height, nodes: top.nodes, edges: canvasEdges, fallback: false, direction };
 }
+
+/** How far a loop reaches out of its box, px. */
+const LOOP_REACH = 16;
+
+/**
+ * An edge of a box to itself (a function that calls itself): a loop out of the top of the box, round its
+ * top-right corner, and back into its right side, its label over the loop. `box` is in the
+ * coordinates the edge is drawn in.
+ */
+function loopEdge(edge: EdgeMeta, box: Box): LayoutEdge {
+  const right = box.x + box.width;
+  const start = { x: right - Math.min(36, box.width / 3), y: box.y };
+  const points = [
+    start,
+    { x: start.x, y: box.y - LOOP_REACH },
+    { x: right + LOOP_REACH, y: box.y - LOOP_REACH },
+    { x: right + LOOP_REACH, y: box.y + Math.min(14, box.height / 3) },
+    { x: right, y: box.y + Math.min(14, box.height / 3) },
+  ];
+  const laidOut: LayoutEdge = {
+    id: edge.id,
+    stub: edge.stub,
+    resolution: edge.resolution,
+    kind: edge.kind,
+    title: edge.label,
+    from: edge.from,
+    to: edge.to,
+    counted: edge.counted,
+    points,
+    anchor: points[2]!,
+  };
+  if (!edge.stub) {
+    const label = labelBox(edge.label);
+    laidOut.label = {
+      ...label,
+      x: (start.x + right + LOOP_REACH) / 2 - label.width / 2,
+      y: box.y - LOOP_REACH - label.height - 2,
+    };
+  }
+  return laidOut;
+}
+
+const extent = (box: Box, axis: "x" | "y") => (axis === "x" ? box.width : box.height);
+
+/** Room kept between two edge labels, px. */
+const LABEL_GAP = 4;
+
+const overlap = (a: Box, b: Box, gap: number) =>
+  a.x < b.x + b.width + gap &&
+  b.x < a.x + a.width + gap &&
+  a.y < b.y + b.height + gap &&
+  b.y < a.y + a.height + gap;
+
+/**
+ * Labels of one level that would overlap ("calls ×5" over "calls ×15", where two edges share a gap) are
+ * moved apart: the later one slides along its own line, as far as that line goes, else steps off it
+ * across the line. Each label stays on or beside its edge.
+ */
+export function spreadLabels(edges: readonly Pick<LayoutEdge, "points" | "label">[]): void {
+  const placed: Box[] = [];
+  for (const edge of edges) {
+    const label = edge.label;
+    if (!label) continue;
+    // The segment the label sits on: the one nearest its centre.
+    const centre = { x: label.x + label.width / 2, y: label.y + label.height / 2 };
+    let best: [Point, Point] | undefined;
+    let nearest = Infinity;
+    for (let i = 1; i < edge.points.length; i++) {
+      const a = edge.points[i - 1]!;
+      const b = edge.points[i]!;
+      const d = distanceToSegment(centre, a, b);
+      if (d < nearest) {
+        nearest = d;
+        best = [a, b];
+      }
+    }
+    const along: "x" | "y" =
+      best && Math.abs(best[1].x - best[0].x) >= Math.abs(best[1].y - best[0].y) ? "x" : "y";
+    const across = along === "x" ? "y" : "x";
+    const lo = best ? Math.min(best[0][along], best[1][along]) : -Infinity;
+    const hi = best ? Math.max(best[0][along], best[1][along]) : Infinity;
+    for (let pass = 0; pass < 8; pass++) {
+      const hit = placed.find((other) => overlap(label, other, LABEL_GAP));
+      if (!hit) break;
+      // the way that moves it least, along its line, kept on the segment
+      const forward = hit[along] + extent(hit, along) + LABEL_GAP - label[along];
+      const back = hit[along] - LABEL_GAP - extent(label, along) - label[along];
+      const fits = (shift: number) => {
+        const middle = label[along] + shift + extent(label, along) / 2;
+        return middle >= lo && middle <= hi;
+      };
+      const options = [forward, back].filter(fits).sort((a, b) => Math.abs(a) - Math.abs(b));
+      if (options.length > 0) label[along] += options[0]!;
+      else {
+        // off the line: just past the other label, on the side that moves it least
+        const after = hit[across] + extent(hit, across) + LABEL_GAP - label[across];
+        const before = hit[across] - LABEL_GAP - extent(label, across) - label[across];
+        label[across] += Math.abs(after) <= Math.abs(before) ? after : before;
+      }
+    }
+    placed.push(label);
+  }
+}
+
+const size2 = (box: Box, axis: "x" | "y") => (axis === "x" ? box.width : box.height);
 
 /** Routes laid end to end: where one ends the next starts, so the shared point is kept once. */
 function joined(parts: readonly Point[][]): Point[] {
@@ -836,16 +988,32 @@ function placeAnchors(
     const routes = edges.map((edge) =>
       edge.points.map((p) => ({ x: p.x + origin.x, y: p.y + origin.y })),
     );
+    // the labels of the level are drawn above all of its lines (GraphView EdgeLabels)
+    const labels = edges.flatMap((edge) =>
+      edge.label ? [{ ...edge.label, x: edge.label.x + origin.x, y: edge.label.y + origin.y }] : [],
+    );
     edges.forEach((edge, i) => {
-      // Not under a box, and not where another edge of the same layer runs (they share tracks).
-      const found = routeAnchor(
-        routes[i]!,
-        (p) =>
-          obstacles.some((b) => inside(b, p, 3)) ||
-          routes.some((route, j) => j !== i && nearRoute(p, route, 9)),
-        { limits, pad: EDGE_BOUNDS_PAD },
-      );
-      edge.anchor = { x: found.x - origin.x, y: found.y - origin.y };
+      // Not under a box or a label (they take the click), and not where another edge of the same layer
+      // runs (they share tracks); when no point is that free, the edges are given up first, then the labels.
+      const underBox = (p: Point) => obstacles.some((b) => inside(b, p, 3));
+      const underLabel = (p: Point) => labels.some((b) => inside(b, p, 3));
+      const onTrack = (p: Point) => routes.some((route, j) => j !== i && nearRoute(p, route, 9));
+      const vetoes = [
+        (p: Point) => underBox(p) || underLabel(p) || onTrack(p),
+        (p: Point) => underBox(p) || underLabel(p),
+        (p: Point) => underBox(p) || onTrack(p),
+        underBox,
+      ];
+      let found: Point | undefined;
+      for (const veto of vetoes) {
+        const point = routeAnchor(routes[i]!, veto, { limits, pad: EDGE_BOUNDS_PAD });
+        found ??= point;
+        if (!veto(point)) {
+          found = point;
+          break;
+        }
+      }
+      edge.anchor = { x: found!.x - origin.x, y: found!.y - origin.y };
     });
   };
   const all: Box[] = [];
@@ -924,6 +1092,65 @@ export function startAnchor(
     if (box) return box;
   }
   return undefined;
+}
+
+/** Every edge of the layout, at any level (an edge inside a container joins boxes by their render ids). */
+function allEdges(layout: Pick<GraphLayout, "nodes" | "edges">): LayoutEdge[] {
+  const out = [...layout.edges];
+  const walk = (list: readonly LayoutNode[]) => {
+    for (const node of list) {
+      out.push(...node.edges);
+      walk(node.children);
+    }
+  };
+  walk(layout.nodes);
+  return out;
+}
+
+/**
+ * What the first view frames for `ids` (render ids of boxes or edges, in order; see viewport.ts
+ * `frameView`): the box of each (an edge stands for the two boxes it joins), and their neighbours, the
+ * boxes at the other end of an edge from one of them. Undefined when none of them is drawn.
+ */
+export function frameFocus(
+  layout: Pick<GraphLayout, "nodes" | "edges">,
+  ids: readonly string[],
+): Focus | undefined {
+  const boxes = absoluteBoxes(layout.nodes);
+  const edges = allEdges(layout);
+  const byId = new Map(edges.map((edge) => [edge.id, edge] as const));
+  const focused: string[] = [];
+  for (const id of ids) {
+    const edge = byId.get(id);
+    for (const one of edge ? [edge.from, edge.to] : [id])
+      if (boxes.has(one) && !focused.includes(one)) focused.push(one);
+  }
+  if (focused.length === 0) return undefined;
+  const inFocus = new Set(focused);
+  const near = new Set<string>();
+  for (const edge of edges) {
+    if (inFocus.has(edge.from) && !inFocus.has(edge.to)) near.add(edge.to);
+    if (inFocus.has(edge.to) && !inFocus.has(edge.from)) near.add(edge.from);
+  }
+  return {
+    boxes: focused.map((id) => boxes.get(id)!),
+    neighbours: [...near].flatMap((id) => boxes.get(id) ?? []),
+  };
+}
+
+/**
+ * What a diagram too big to be shown whole frames first: the selection and its neighbours (`frameFocus`),
+ * else the first box of the view's include list that is drawn, alone.
+ */
+export function startFocus(
+  layout: Pick<GraphLayout, "nodes" | "edges">,
+  selection: readonly string[],
+  order: readonly string[],
+): Focus | undefined {
+  const selected = frameFocus(layout, selection);
+  if (selected) return selected;
+  const first = startAnchor(layout, [], order);
+  return first ? { boxes: [first] } : undefined;
 }
 
 // ─── Direction: whichever reads larger in the pane ──────────────────────────────────────────────
@@ -1063,6 +1290,10 @@ function fallbackLayout(model: Model): GraphLayout {
     const a = boxes.get(edge.from);
     const b = boxes.get(edge.to);
     if (!a || !b) continue;
+    if (edge.from === edge.to) {
+      edges.push(loopEdge(edge, a));
+      continue;
+    }
     const ca = { x: a.x + a.width / 2, y: a.y + a.height / 2 };
     const cb = { x: b.x + b.width / 2, y: b.y + b.height / 2 };
     const label = labelBox(edge.label);
