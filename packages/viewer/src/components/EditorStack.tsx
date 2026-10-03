@@ -663,6 +663,7 @@ const EditorPane = memo(function EditorPane({
             view={view}
             focusToken={focusToken}
             keys={hunks.length === 0}
+            ownRow={hunks.length > 0}
             part={
               (pane as TalkPane).parts
                 ? [(pane as TalkPane).part!, (pane as TalkPane).parts!]

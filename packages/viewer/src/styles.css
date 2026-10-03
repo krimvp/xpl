@@ -2875,6 +2875,20 @@ code {
   white-space: nowrap;
 }
 
+/* r3-code: next to the change stepper, the places stepper takes a row of its own, named (visual N7). */
+.pane-header:has(.pane-ranges.is-own-row) {
+  flex-wrap: wrap;
+  row-gap: 2px;
+}
+.pane-ranges.is-own-row {
+  order: 20;
+  flex-basis: 100%;
+  justify-content: flex-end;
+}
+.pane-ranges-name {
+  margin-right: 4px;
+}
+
 /* "in Runner.dispatch": where the top of a scrolled pane is. */
 .pane-inside {
   min-width: 0;

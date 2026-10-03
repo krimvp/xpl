@@ -17,6 +17,7 @@ export function RangeStepper({
   focusToken,
   keys,
   part,
+  ownRow = false,
 }: {
   ranges: readonly FocusRange[];
   /** The line the pane scrolls to first: its place is the one shown. */
@@ -28,6 +29,11 @@ export function RangeStepper({
   keys: boolean;
   /** A talk's pane showing one place of the file: `[1, 2]`. */
   part?: readonly [number, number];
+  /**
+   * The change stepper is in the header too: this one goes on a row of its own, named, so that the two
+   * "‹ … ›" do not read as one control.
+   */
+  ownRow?: boolean;
 }) {
   const places = useMemo(() => rangePlaces(ranges), [ranges]);
   const [at, setAt] = useState(() => placeOf(places, lead));
@@ -76,7 +82,12 @@ export function RangeStepper({
   }
   if (places.length < 2) return null;
   return (
-    <span className="pane-hunks pane-ranges" data-testid="pane-ranges" ref={self}>
+    <span
+      className={`pane-hunks pane-ranges${ownRow ? " is-own-row" : ""}`}
+      data-testid="pane-ranges"
+      ref={self}
+    >
+      {ownRow && <span className="pane-ranges-name">Highlighted places:</span>}
       <button
         type="button"
         aria-label="Previous range"
@@ -87,7 +98,8 @@ export function RangeStepper({
         ‹
       </button>
       <span aria-live="polite" title={`Lines ${places[at]!.from}-${places[at]!.to}`}>
-        range {at + 1} / {places.length}
+        {ownRow ? "" : "range "}
+        {at + 1} / {places.length}
       </span>
       <button
         type="button"

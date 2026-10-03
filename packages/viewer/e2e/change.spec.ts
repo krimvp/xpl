@@ -672,6 +672,27 @@ test.describe("who calls this, and what the change did to it", () => {
     expect(problems).toEqual([]);
   });
 
+  test("a changed file with two highlighted places far apart: the places stepper gets a row of its own, named", async ({
+    page,
+  }) => {
+    const problems = watchProblems(page);
+    await open(page, "?perspective=code");
+    await page.evaluate(() =>
+      window.__xpl!.select(["sym:src/runner.ts#Runner.start", "sym:src/runner.ts#backoffDelay"]),
+    );
+    const header = pane(page, "src/runner.ts").locator(".pane-header");
+    const changes = header.getByTestId("pane-hunks");
+    const places = header.getByTestId("pane-ranges");
+    await expect(changes).toBeVisible();
+    await expect(places).toContainText("Highlighted places:");
+    await expect(places).toContainText("1 / 2");
+    // below the change stepper, not beside it
+    const a = (await changes.boundingBox())!;
+    const b = (await places.boundingBox())!;
+    expect(b.y).toBeGreaterThanOrEqual(a.y + a.height - 1);
+    expect(problems).toEqual([]);
+  });
+
   test("a change's guide step lists the code outside it that calls what changed", async ({
     page,
   }) => {
