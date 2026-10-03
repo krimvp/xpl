@@ -35,7 +35,7 @@ export function PresentMode() {
   const index = state.tour?.step ?? 0;
   const step = tour?.steps[index];
   const count = tour?.steps.length ?? 0;
-  // The step's title (the heading of its note, its short first sentence, else what it focuses), then the
+  // The step's title (the heading of its note, its first sentence, cut short when long, else "Step N"), then the
   // rest of the note: the same title as in the guide, and nothing said twice.
   const text = step ? stepText(step, state.model) : undefined;
   const note = text?.body;

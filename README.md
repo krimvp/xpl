@@ -60,7 +60,7 @@ xpl draft repo myrepo -o /tmp/draft.json        # a patch skeleton from the inde
 xpl lint myrepo --patch patch.json              # check the reader text as it would be after the patch
 xpl apply myrepo patch.json                     # check a patch against the index, then merge it: all or nothing
 xpl validate myrepo                             # every id and anchor still resolves?
-xpl lint myrepo                                 # plain-language and tour-order checks (--strict: exit 1 on any)
+xpl lint myrepo                                 # plain-language, tour and reader checks (exit 1 on any; --warn-only)
 xpl view myrepo                                 # http://127.0.0.1:4747 (falls back to a free port)
 xpl bundle myrepo -o myrepo.html                # one self-contained HTML file (--files boundary|all; --tour <id>)
 ```

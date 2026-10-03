@@ -3,7 +3,7 @@
  * structure rules of the skill (reference/writing.md): a summary first, plain titles, short sentences that name
  * their subject, no marketing words, no absolute claims without evidence, say it once, top-down order.
  *
- * The checks read the explainer only (no index): titles (the explainer's, the tours', the views', the
+ * The text checks read the explainer only (no index): titles (the explainer's, the tours', the views', the
  * `### heading` line of a tour note, group and concept labels), tour summaries, tour notes, flow and sequence
  * step labels and summaries, and the summaries and details of nodes, edges and concepts. Code spans (`...`) are
  * left out of the word checks, so a backticked identifier never counts as a long word, a filler word or an
@@ -18,12 +18,30 @@
  * Order checks look at each tour as a whole: the first step shows the big picture (not a test, a concept alone or
  * an edge case), a small map is covered by the steps, and a tour has at most `LINT_LIMITS.tourSteps` steps.
  *
+ * Reader checks look at what the viewer will show: a step it has to title itself (`untitled-step`), changed files
+ * no step shows (`change-not-shown`), two far-apart ranges of a step in one file (`far-ranges`), a talk note set in
+ * small type (`long-talk-note`), maps too big or too crowded for a picture (`big-map`, `crowded-map`) and an edge
+ * from a box to itself, which a map does not draw (`self-loop`). The box and arrow counts need the index: pass an
+ * `ExplainerModel` to get them (`xpl lint` does when there is an index).
+ *
+ * The rules are meant not to fight: example values in code spans are not code names, an absolute word next to its
+ * evidence (anchors) passes, box names match by word stems, and a hint names the limit a fix could trip.
+ *
  * A `TODO` left in any of these texts (or in a view's `scope.question`, which the viewer shows under its title) is
  * the one error-level finding (`todo-left`): `xpl draft` fills every text a person must write with `TODO: ...`.
  *
  * The thresholds and the word lists live here, in one place (`LINT_LIMITS`, `FILLER_WORDS`, `ABSOLUTE_WORDS`).
  */
-import { isTestFile, parseId, type Explainer } from "@xpl/core";
+import {
+  deriveGraph,
+  isBaseAnchor,
+  isTestFile,
+  parseId,
+  type DerivedGraph,
+  type Explainer,
+  type ExplainerModel,
+  type GraphView,
+} from "@xpl/core";
 import { plural } from "./format.js";
 
 export type LintRule =
@@ -45,7 +63,14 @@ export type LintRule =
   | "code-heavy"
   | "flow-label-code"
   | "markdown-in-plain"
-  | "markdown-in-summary";
+  | "markdown-in-summary"
+  | "untitled-step"
+  | "change-not-shown"
+  | "far-ranges"
+  | "long-talk-note"
+  | "big-map"
+  | "crowded-map"
+  | "self-loop";
 
 /** The rules in the order the count line lists them, with a short name for people. */
 export const LINT_RULES: Record<LintRule, string> = {
@@ -68,6 +93,13 @@ export const LINT_RULES: Record<LintRule, string> = {
   "flow-label-code": "flow step label written as code",
   "markdown-in-plain": "markdown in a title or label",
   "markdown-in-summary": "heading or link in a summary",
+  "untitled-step": "tour step whose title the viewer has to make up",
+  "change-not-shown": "changed file no tour step shows",
+  "far-ranges": "step with two far-apart ranges in one file",
+  "long-talk-note": "talk note set in small type",
+  "big-map": "map with too many boxes for a tour",
+  "crowded-map": "map with too many arrows",
+  "self-loop": "edge from a box to itself, not drawn on the map",
 };
 
 export type LintElementKind =
@@ -134,6 +166,16 @@ export const LINT_LIMITS = {
   tourSteps: 12,
   /** `tour-covers-map` checks graph views of at most this many boxes (a bigger map is a reference, not a stop). */
   mapBoxes: 10,
+  /** The viewer makes a title of a note's first sentence up to this many characters (`MAX_SENTENCE_TITLE`). */
+  titleSentenceChars: 80,
+  /** Two ranges of one step in one file further apart than this many lines: a slide shows only the first. */
+  farRangeLines: 40,
+  /** Present sets a note body over this many characters in its smaller caption size (viewer `LONG_NOTE`). */
+  talkNoteChars: 280,
+  /** A map a tour shows has at most this many boxes (`big-map`)... */
+  tourMapBoxes: 8,
+  /** ...and at most this many arrows per box (`crowded-map`). */
+  edgesPerBox: 2,
 };
 
 /**
@@ -729,7 +771,69 @@ function repeats(a: readonly string[], b: readonly string[]): boolean {
   return common / setA.size >= LINT_LIMITS.repeatShare;
 }
 
+/** A word without its plural or possessive ending: "servers" -> "server", "classes" -> "class", "ky's" -> "ky". */
+function stem(word: string): string {
+  const w = word.toLowerCase().replace(/['’]s$/, "");
+  if (w.length > 4 && w.endsWith("ies")) return `${w.slice(0, -3)}y`;
+  if (w.length > 4 && /(?:ss|x|ch|sh)es$/.test(w)) return w.slice(0, -2);
+  if (w.length > 3 && /[^su]s$/.test(w)) return w.slice(0, -1);
+  return w;
+}
+
+/** The stems of the words of `text` (letters, digits and `_`; `nodes.findEdge` is two words). */
+function stems(text: string): string[] {
+  return (text.match(/[\p{L}\p{N}_]+(?:['’]s)?/gu) ?? []).map(stem);
+}
+
+/**
+ * Does `text` name `name`? Its words, in order, with the same stems, case-insensitive: "web server" names "Web
+ * servers", "findEdge" names "findEdge" and "the parsers" names "Parser". Backticks do not matter.
+ */
+function names(text: string, name: string): boolean {
+  const want = stems(name);
+  if (want.length === 0) return false;
+  const have = stems(text);
+  for (let i = 0; i + want.length <= have.length; i++) {
+    if (want.every((w, j) => have[i + j] === w)) return true;
+  }
+  return false;
+}
+
+/**
+ * The evidence next to a text, for `absolute-word`. `anchored`: the text belongs to an element with anchors (the
+ * code that proves the claim is one click away). `names`: the names of the anchored parts a tour step focuses; a
+ * claim in a sentence that names one of them points at its evidence.
+ */
+interface Evidence {
+  anchored?: boolean;
+  names?: readonly string[];
+}
+
+/** Does the sentence around `index` (in a masked text) name one of `names`? */
+function provedBy(
+  text: string,
+  spans: readonly string[],
+  index: number,
+  list: readonly string[] | undefined,
+): boolean {
+  if (list === undefined || list.length === 0) return false;
+  const starts = [...text.slice(0, index).matchAll(/[.!?]\s|\n\s*\n/g)];
+  const start = starts.length > 0 ? starts.at(-1)!.index! + 1 : 0;
+  const end = /[.!?](?:\s|$)|\n\s*\n/.exec(text.slice(index));
+  const sentence = unmask(text.slice(start, end ? index + end.index : undefined), spans);
+  return list.some((name) => names(sentence, name));
+}
+
 // ─── The checks ─────────────────────────────────────────────────────────────────────────────────
+
+interface ProseOptions {
+  evidence?: Evidence;
+  /**
+   * How many more sentences the field may hold (a tour summary has a cap): when there is no room, a long sentence
+   * is to be shortened, not split, so that one fix does not trip `tour-summary`.
+   */
+  sentenceRoom?: number;
+}
 
 interface Where {
   elementId: string;
@@ -750,7 +854,7 @@ class Linter {
    * Filler and absolute words of a masked text: one finding per rule and field. The code spans stay as
    * placeholders, which no word pattern matches, so code is left out and the word before a match can be code.
    */
-  words(where: Where, masked: Masked): void {
+  words(where: Where, masked: Masked, evidence: Evidence = {}): void {
     const text = masked.text;
     // the index into the masked text, moved to the same place in the text with its code back in
     const quoteAt = (index: number) =>
@@ -800,6 +904,7 @@ class Linter {
         }
         const before = /([A-Za-z]+)\s+$/.exec(text.slice(0, m.index))?.[1];
         if (before !== undefined && NOT_ABSOLUTE_AFTER.has(before.toLowerCase())) continue;
+        if (evidence.anchored || provedBy(text, masked.spans, m.index, evidence.names)) continue;
         absolutes.push({ word: m[0].toLowerCase(), index: m.index });
       }
     }
@@ -810,8 +915,13 @@ class Linter {
         where,
         "absolute-word",
         quoteAt(absolutes[0]!.index),
-        `${unique.map((w) => `"${w}"`).join(", ")}: an absolute claim that needs evidence`,
-        "check every case in the code and anchor it, or narrow the claim (name the places, add the condition)",
+        `${unique.map((w) => `"${w}"`).join(", ")}: an absolute claim that needs evidence` +
+          (unique.includes("only")
+            ? ' ("only" that opens a clause, follows "the" or comes before "by" says nothing else does it)'
+            : ""),
+        where.kind === "tour-step"
+          ? "check every case in the code, then name the part the step focuses in the same sentence (its anchors are the evidence); or narrow the claim (name the places, add the condition)"
+          : "check every case in the code and anchor it (an element with anchors may say it), or narrow the claim (name the places, add the condition)",
       );
     }
   }
@@ -838,7 +948,7 @@ class Linter {
   }
 
   /** A title: code-like, placeholder, filler and absolute words. */
-  title(where: Where, title: unknown): void {
+  title(where: Where, title: unknown, evidence?: Evidence): void {
     if (typeof title !== "string" || title.trim() === "") return;
     this.checked++;
     this.todos(where, title);
@@ -861,7 +971,7 @@ class Linter {
         'say what this part is about ("Matching drops rejected types")',
       );
     }
-    this.words(where, mask(title));
+    this.words(where, mask(title), evidence);
   }
 
   /**
@@ -906,7 +1016,7 @@ class Linter {
   }
 
   /** Prose: sentence length, bare "It"/"This", filler and absolute words. */
-  prose(where: Where, value: unknown): Masked | undefined {
+  prose(where: Where, value: unknown, opts: ProseOptions = {}): Masked | undefined {
     if (typeof value !== "string" || value.trim() === "") return undefined;
     this.checked++;
     this.todos(where, value);
@@ -920,7 +1030,9 @@ class Linter {
           "long-sentence",
           excerpt(unmask(sentence, masked.spans)),
           `${counts[i]} words (more than ${LINT_LIMITS.sentenceWords})`,
-          "split it: one fact per sentence, aim for 15-20 words",
+          opts.sentenceRoom !== undefined && opts.sentenceRoom <= 0
+            ? `shorten it (drop a detail, the steps can carry it) rather than split it: this field already has the most sentences tour-summary allows (${list.length})`
+            : "split it: one fact per sentence, aim for 15-20 words",
         );
       }
       const subject = bareSubject(sentence);
@@ -947,7 +1059,7 @@ class Linter {
         );
       }
     }
-    this.words(where, masked);
+    this.words(where, masked, opts.evidence);
     return masked;
   }
 }
@@ -1057,12 +1169,15 @@ function namesOf(id: string, at: Lookup): string[] {
   if (label !== undefined && label.trim() !== "") names.push(label.trim());
   const parsed = parseId(id);
   if (parsed.type === "symbol") {
-    names.push(parsed.path, parsed.path.split(".").slice(-2).join("."));
+    const last = parsed.path.split(".");
+    names.push(parsed.path, last.slice(-2).join("."));
+    // the method name alone ("findEdge" for nodes.findEdge), when it is long enough not to be a common word
+    if (last.length > 1 && last.at(-1)!.length >= 4) names.push(last.at(-1)!);
   } else if (parsed.type === "file" || parsed.type === "dir") {
     const base = parsed.path.slice(parsed.path.lastIndexOf("/") + 1);
     names.push(base);
-    const stem = base.replace(/\.[^.]+$/, "");
-    if (parsed.type === "file" && stem.length >= 4) names.push(stem);
+    const bare = base.replace(/\.[^.]+$/, "");
+    if (parsed.type === "file" && bare.length >= 4) names.push(bare);
   }
   return [...new Set(names)].filter((name) => name !== "");
 }
@@ -1070,12 +1185,6 @@ function namesOf(id: string, at: Lookup): string[] {
 /** The label a person sees for a box: its stored label, else the symbol path or file name from the id. */
 function labelOf(id: string, at: Lookup): string {
   return namesOf(id, at)[0] ?? id;
-}
-
-/** Does `text` name `name` (whole words, case-insensitive)? */
-function names(text: string, name: string): boolean {
-  const body = name.split(/\s+/).map(escapeRegExp).join("\\s+");
-  return new RegExp(`(?<![\\p{L}\\p{N}_])${body}(?![\\p{L}\\p{N}_])`, "iu").test(text);
 }
 
 /** Is this a test: an id in a test file (`isTestFile`), or a group whose members are all tests? */
@@ -1116,9 +1225,60 @@ function isArchitectureView(view: Record<string, unknown> | undefined, at: Looku
   );
 }
 
+/** Code values that name no code: `null`, `Infinity`, `-1` (see `isLiteral`). */
+const LITERAL_WORDS = new Set([...CODE_LITERALS, "Infinity", "-Infinity", "NULL", "nullptr"]);
+
+/**
+ * Is a code span an example value rather than the name of a piece of code? Numbers (`503`, `-1`, `1.5`, `0x1f`,
+ * `10_000`, `30s`, `5%`), `null`, `true`, `Infinity` and the like, quoted strings (`"utf-8"`, `'a'`), and URLs or
+ * route paths (`/admin/*`, `users/{id}`, `lots/of/:fun`). The skill asks for concrete inputs (writing.md section
+ * 4, explain-change.md section 4), so they do not count as code names.
+ */
+export function isLiteral(span: string): boolean {
+  const text = span.replace(/^`+|`+$/g, "").trim();
+  if (text === "" || LITERAL_WORDS.has(text)) return true;
+  // a number, with a sign, a fraction, digit groups, an exponent, a base prefix or a short unit (10ms, 2x, 5%)
+  if (/^[-+]?(?:0[xob][\da-f_]+|\d[\d_,]*(?:\.\d+)?(?:e[-+]?\d+)?)(?:[a-z]{1,3}|%)?$/i.test(text)) {
+    return true;
+  }
+  if (/^(["'])[^"'\n]*\1$/.test(text)) return true; // a quoted string
+  if (/^[a-z][a-z+.-]*:\/\//i.test(text)) return true; // a URL
+  // a path or a route: one word that starts with `/`, or has a `{param}`, a `:param` or a `*` segment
+  if (!/[\s(]/.test(text) && /^\/|\{[^}]*\}|(?:^|\/):\w+|(?:^|\/)\*+(?:$|\/)/.test(text))
+    return true;
+  return !/[\p{L}\p{N}]/u.test(text); // punctuation alone (`-`, `/`, `*`)
+}
+
+/** A sentence that says which files a map leaves off ("Two helper files, `is.ts` and `types.ts`, are left off"). */
+const LEFT_OFF =
+  /\b(?:left (?:off|out)|leaves? (?:off|out)|off (?:the|this) map|not on (?:the|this) map)\b/i;
+
+/** A code span that names a file (`is.ts`, `src/types.ts`): one word with an extension. */
+const FILE_NAME = /^`+[\w./-]+\.[A-Za-z]\w{0,5}`+$/;
+
+/**
+ * The code names of a masked text that `code-heavy` counts: its different code spans, without example values
+ * (`isLiteral`) and without the file names in a sentence that lists what a map leaves off (the skill asks for
+ * that list).
+ */
+function countedCodeNames(masked: Masked): string[] {
+  const exempt = new Set<number>();
+  for (const sentence of sentences(masked.text)) {
+    if (!LEFT_OFF.test(withoutCode(sentence))) continue;
+    for (const m of sentence.matchAll(new RegExp(`${OPEN}(\\d+)${CLOSE}`, "g"))) {
+      const index = Number(m[1]);
+      if (FILE_NAME.test(masked.spans[index]!.trim())) exempt.add(index);
+    }
+  }
+  const names = masked.spans
+    .filter((span, i) => !exempt.has(i) && !isLiteral(span))
+    .map((span) => span.trim());
+  return [...new Set(names)];
+}
+
 /**
  * `code-heavy`: a text that names more different pieces of code (code spans) than `limit`. A reader who does not
- * know the code learns the idea from plain words; the code is one click away.
+ * know the code learns the idea from plain words; the code is one click away. Example values do not count.
  */
 function codeHeavy(
   lint: Linter,
@@ -1130,14 +1290,15 @@ function codeHeavy(
 ): void {
   // a draft's placeholder lists names as hints for the writer: judge the text once it is written
   if (/\bTODO\b/.test(text)) return;
-  const names = [...new Set(masked.spans.map((span) => span.trim()))];
+  const names = countedCodeNames(masked);
   if (names.length <= limit) return;
   lint.add(
     where,
     "code-heavy",
     excerpt(text.trim()),
     `${names.length} code names (${names.slice(0, 4).join(", ")}${names.length > 4 ? ", ..." : ""}); ${what} takes at most ${limit}`,
-    "say what happens in everyday words first (what the part is for, what it keeps or decides); name only the one piece of code the reader should open",
+    "say what happens in everyday words first (what the part is for, what it keeps or decides); name only the one piece of code the reader should open. " +
+      "Example values (`503`, `-1`, `/admin/*`) do not count; a box you name for tour-covers-map counts when you name it by its label in plain words, without backticks",
   );
 }
 
@@ -1227,14 +1388,291 @@ function orderChecks(
       message:
         `${plural(missed.length, "box", "boxes")} of the map ${str(view!.id)} (${boxes.length} boxes) ` +
         `never ${missed.length === 1 ? "comes" : "come"} up: no step focuses ${missed.length === 1 ? "it" : "them"}, no note names ${missed.length === 1 ? "it" : "them"}`,
-      hint: "give each a step, or name it in a note (say why the tour skips it), or take it off the map",
+      hint: 'give each a step, or name it in a note by its label in plain words ("web server" counts for "Web servers"; no backticks needed, and code names count toward code-heavy) and say why the tour skips it, or take it off the map',
       ids: missed,
     });
   }
 }
 
+// ─── Reader checks: what the viewer will show ───────────────────────────────────────────────────
+
+/** Does this element (or flow / sequence step) carry anchors of its own? */
+function hasAnchors(item: Record<string, unknown>): boolean {
+  return list(item.anchors).length > 0;
+}
+
+/** Any element by id: a node, an edge, a concept or a flow / sequence step. */
+function elementOf(id: string, at: Lookup): Record<string, unknown> | undefined {
+  return at.nodes.get(id) ?? at.edges.get(id) ?? at.concepts.get(id) ?? at.steps.get(id);
+}
+
+/**
+ * The names of what a tour step shows with its code (`Evidence.names`): every element it focuses when the step has
+ * `code` ranges, else the focused elements with anchors and the focused code (symbols, files). Their labels, and
+ * for code the symbol path or file name.
+ */
+function evidenceNames(step: Record<string, unknown>, at: Lookup): string[] {
+  const code = list(step.code).length > 0;
+  const out: string[] = [];
+  for (const id of list<unknown>(step.focus)) {
+    if (typeof id !== "string") continue;
+    const item = elementOf(id, at);
+    const type = parseId(id).type;
+    if (!code && !(item && hasAnchors(item)) && type !== "symbol" && type !== "file") continue;
+    out.push(...namesOf(id, at));
+    const label = str(item?.label);
+    if (label !== undefined && label.trim() !== "") out.push(label.trim());
+  }
+  return [...new Set(out)];
+}
+
+/** Is this tour a talk (its id or title says talk, presentation, demo or slides)? Present shows it. */
+function isTalk(tour: Record<string, unknown>): boolean {
+  return /\b(?:talks?|present(?:ation)?|demo|slides?)\b/i.test(
+    `${str(tour.id) ?? ""} ${str(tour.title) ?? ""}`.replace(/[:_-]/g, " "),
+  );
+}
+
+/**
+ * Would the viewer make a title of this note without a heading (`stepTitle.ts` in the viewer)? Its first sentence
+ * (not a list, a quote, a table or code) of at most `titleSentenceChars` characters, markdown marks left out.
+ */
+function sentenceTitle(note: string): boolean {
+  const text = note.trimStart();
+  if (/^(?:[-+>|]|\*\s|\d+[.)]\s|```|~~~)/.test(text)) return false;
+  const paragraph = text.split(/\n[ \t]*\n/)[0]!;
+  let end = paragraph.length;
+  let inCode = false;
+  for (let i = 0; i < paragraph.length; i++) {
+    const c = paragraph[i]!;
+    if (c === "`") inCode = !inCode;
+    if (inCode || (c !== "." && c !== "!" && c !== "?")) continue;
+    if (c === "." && /(?:^|[\s(])(?:e\.g|i\.e|etc|vs|cf)$/i.test(paragraph.slice(0, i))) continue;
+    let after = i + 1;
+    while (after < paragraph.length && /["')\]*]/.test(paragraph[after]!)) after++;
+    if (after === paragraph.length || /\s/.test(paragraph[after]!)) {
+      end = after;
+      break;
+    }
+  }
+  const title = plainText(paragraph.slice(0, end)).replace(/\.(["')\]*]*)$/, "$1");
+  return title !== "" && title.length <= LINT_LIMITS.titleSentenceChars;
+}
+
+interface LineRange {
+  file: string;
+  startLine: number;
+  endLine: number;
+}
+
+/** The resolved ranges of anchors (base anchors left out: they show in a pane of their own). */
+function anchorRanges(anchors: unknown): LineRange[] {
+  const out: LineRange[] = [];
+  for (const value of list<unknown>(anchors)) {
+    const anchor = record(value);
+    if (isBaseAnchor(anchor)) continue;
+    const range = record(record(anchor.resolved).range);
+    const file = str(anchor.file);
+    if (record(anchor.resolved).status === "missing") continue;
+    if (file && typeof range.startLine === "number" && typeof range.endLine === "number") {
+      out.push({ file, startLine: range.startLine, endLine: range.endLine });
+    }
+  }
+  return out;
+}
+
+/**
+ * `far-ranges`: a tour step whose code (its `code` ranges, else the anchors of what it focuses) has two ranges in one
+ * file more than `farRangeLines` lines apart. The code pane opens at the first; a slide shows only one.
+ */
+function farRanges(lint: Linter, where: Where, step: Record<string, unknown>, at: Lookup): void {
+  let ranges = anchorRanges(step.code);
+  if (ranges.length === 0) {
+    ranges = list<unknown>(step.focus).flatMap((id) =>
+      typeof id === "string" ? anchorRanges(elementOf(id, at)?.anchors) : [],
+    );
+  }
+  const byFile = new Map<string, LineRange[]>();
+  for (const range of ranges) byFile.set(range.file, [...(byFile.get(range.file) ?? []), range]);
+  for (const [file, inFile] of byFile) {
+    const sorted = [...inFile].sort((a, b) => a.startLine - b.startLine);
+    let end = sorted[0]!.endLine;
+    for (const next of sorted.slice(1)) {
+      const gap = next.startLine - end;
+      if (gap > LINT_LIMITS.farRangeLines) {
+        const first = sorted.find((r) => r.endLine === end)!;
+        lint.add(
+          { ...where, field: "code" },
+          "far-ranges",
+          `${file}:${first.startLine}-${first.endLine} and ${next.startLine}-${next.endLine}`,
+          `two ranges in ${file} are ${gap} lines apart: the code pane scrolls to one of them, and a slide shows only one`,
+          "keep the range the note is about, or split the step in two (one range each); two ranges that sit close together are fine",
+        );
+        return;
+      }
+      end = Math.max(end, next.endLine);
+    }
+  }
+}
+
+/** The files a tour step shows: its ranges, what it focuses (and the members, ends and anchors of that). */
+function filesShown(
+  step: Record<string, unknown>,
+  at: Lookup,
+): { files: Set<string>; dirs: string[] } {
+  const files = new Set<string>();
+  const dirs: string[] = [];
+  for (const anchor of list<unknown>(step.code)) {
+    const file = str(record(anchor).file);
+    if (file) files.add(file);
+  }
+  const visit = (id: string, seen: Set<string>) => {
+    if (seen.has(id)) return;
+    seen.add(id);
+    const parsed = parseId(id);
+    if (parsed.type === "symbol") files.add(parsed.file);
+    else if (parsed.type === "file") files.add(parsed.path);
+    else if (parsed.type === "dir") dirs.push(`${parsed.path}/`);
+    for (const anchor of list<unknown>(elementOf(id, at)?.anchors)) {
+      const file = str(record(anchor).file);
+      if (file) files.add(file);
+    }
+    for (const member of membersOf(id, at)) visit(member, seen);
+  };
+  for (const focus of list<unknown>(step.focus)) {
+    if (typeof focus !== "string") continue;
+    const seen = new Set<string>();
+    for (const id of shownBy(focus, at)) visit(id, seen);
+  }
+  return { files, dirs };
+}
+
+/**
+ * `change-not-shown`: the changed files of a change explainer that no tour step shows (by its ranges or what it
+ * focuses) and no tour text names. A reviewer reads the tour, not the file list.
+ */
+function changeChecks(lint: Linter, explainer: Explainer, at: Lookup): void {
+  const change = record(explainer.change);
+  const changed = list<unknown>(change.files)
+    .map((file) => str(record(file).path))
+    .filter((path): path is string => path !== undefined);
+  if (changed.length === 0) return;
+  const files = new Set<string>();
+  const dirs: string[] = [];
+  const text: string[] = [];
+  for (const tourValue of list(explainer.tours)) {
+    const tour = record(tourValue);
+    text.push(str(tour.summary) ?? "");
+    for (const stepValue of list(tour.steps)) {
+      const step = record(stepValue);
+      const shown = filesShown(step, at);
+      for (const file of shown.files) files.add(file);
+      dirs.push(...shown.dirs);
+      text.push(str(step.note) ?? "");
+    }
+  }
+  const prose = text.join("\n");
+  const missed = changed.filter(
+    (path) =>
+      !files.has(path) &&
+      !dirs.some((dir) => path.startsWith(dir)) &&
+      !prose.includes(path.slice(path.lastIndexOf("/") + 1)),
+  );
+  if (missed.length === 0) return;
+  lint.findings.push({
+    rule: "change-not-shown",
+    elementId: "(explainer)",
+    kind: "explainer",
+    field: "change",
+    quote: excerpt(missed.join(", ")),
+    message: `${plural(missed.length, "changed file")} of ${changed.length} ${missed.length === 1 ? "is" : "are"} on no tour step: no step shows ${missed.length === 1 ? "its" : "their"} code, no note names ${missed.length === 1 ? "it" : "them"}`,
+    hint: "give each a step (or add it to a step's focus or code), or name it in a note and say why the tour skips it (a lock file, a rename)",
+    ids: missed,
+  });
+}
+
+/**
+ * The map checks: `big-map` (a graph view a tour shows with more than `tourMapBoxes` boxes), `crowded-map` (more
+ * arrows than `edgesPerBox` per box, with the ids of the least used drawn edges to hide) and `self-loop` (a stored
+ * edge from a box to itself, which a map does not draw). The box and arrow counts come from the index when there is
+ * one (`model`), else from the view's `include` (and no `crowded-map`).
+ */
+function mapChecks(
+  lint: Linter,
+  explainer: Explainer,
+  at: Lookup,
+  model: ExplainerModel | undefined,
+): void {
+  const toured = new Set(
+    list(explainer.tours).flatMap((tour) =>
+      list(record(tour).steps).map((step) => str(record(step).view)),
+    ),
+  );
+  const graphs = [...at.views.values()].filter((view) => view.type === "graph");
+  for (const view of graphs) {
+    const viewId = str(view.id) ?? "(view)";
+    const where: Where = { elementId: viewId, kind: "view", field: "include" };
+    let graph: DerivedGraph | undefined;
+    try {
+      graph = model ? deriveGraph(view as unknown as GraphView, model) : undefined;
+    } catch {
+      graph = undefined;
+    }
+    const boxes = graph ? graph.nodes.length : list(view.include).length;
+    if (toured.has(viewId) && boxes > LINT_LIMITS.tourMapBoxes) {
+      lint.add(
+        where,
+        "big-map",
+        excerpt(str(view.title) ?? viewId),
+        `${boxes} boxes (more than ${LINT_LIMITS.tourMapBoxes}) on a map a tour shows: a guide picture or a slide of it is too small to read`,
+        "show fewer boxes: put boxes that work together in a group, leave helpers off the map (and say so in a note), or open the detail on a map of its own (`opens`)",
+      );
+    }
+    if (graph && graph.edges.length > LINT_LIMITS.edgesPerBox * Math.max(boxes, 1)) {
+      const most = LINT_LIMITS.edgesPerBox * Math.max(boxes, 1);
+      const extra = graph.edges.length - most;
+      const hide = graph.edges
+        .filter((edge) => !edge.stored)
+        .sort((a, b) => a.count - b.count || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+        .slice(0, extra)
+        .map((edge) => edge.id);
+      lint.findings.push({
+        rule: "crowded-map",
+        ...where,
+        field: "hidden",
+        quote: excerpt(str(view.title) ?? viewId),
+        message: `${graph.edges.length} arrows on ${plural(boxes, "box", "boxes")} (more than ${LINT_LIMITS.edgesPerBox} per box): the arrows cross and hide each other`,
+        hint:
+          hide.length > 0
+            ? `hide the least used ones: add ${hide.length === 1 ? "this id" : "these ids"} to the view's "hidden" (the ids are in --json): ${hide.slice(0, 4).join(", ")}${hide.length > 4 ? ", ..." : ""}`
+            : 'drop some stored edges, or narrow "edgeKinds"',
+        ids: hide,
+      });
+    }
+  }
+  for (const edgeValue of list(explainer.edges)) {
+    const edge = record(edgeValue);
+    const from = str(edge.from);
+    if (from === undefined || from !== str(edge.to)) continue;
+    const id = str(edge.id) ?? "(edge)";
+    const shown = graphs.filter((view) =>
+      list<unknown>(view.include).some(
+        (box) => typeof box === "string" && (within(from, box, at) || within(box, from, at)),
+      ),
+    );
+    if (shown.length === 0) continue;
+    lint.add(
+      { elementId: id, kind: "edge", field: "from" },
+      "self-loop",
+      excerpt(`${from} -> ${from}`),
+      `an edge from ${labelOf(from, at)} to itself is not drawn on the map (${shown.map((view) => str(view.id)).join(", ")}): readers see it only from a step that names it`,
+      "say it in the box's summary or in a flow or sequence step (a call to itself shows there), or make it an edge between two boxes",
+    );
+  }
+}
+
 /** The checks of `xpl lint` on one explainer, in document order (see the file comment). */
-export function lintExplainer(explainer: Explainer): LintResult {
+export function lintExplainer(explainer: Explainer, model?: ExplainerModel): LintResult {
   const lint = new Linter();
   const summaries = storedSummaries(explainer);
   const byId = lookup(explainer);
@@ -1256,7 +1694,8 @@ export function lintExplainer(explainer: Explainer): LintResult {
       : LINT_LIMITS.summarySentences;
     const range = `${LINT_LIMITS.summaryMinSentences}-${most} sentences`;
     if (typeof summary === "string" && summary.trim() !== "") {
-      const masked = lint.prose(at("summary"), summary);
+      const room = most - sentences(mask(summary).text).length;
+      const masked = lint.prose(at("summary"), summary, { sentenceRoom: room });
       const count = masked ? sentences(masked.text).length : 0;
       if (masked)
         codeHeavy(
@@ -1273,7 +1712,7 @@ export function lintExplainer(explainer: Explainer): LintResult {
           "tour-summary",
           excerpt(summary),
           `${count} sentences (more than ${most})`,
-          `keep the summary to ${range}; move the rest into the steps`,
+          `keep the summary to ${range}; move the rest into the steps (two sentences joined into one over ${LINT_LIMITS.sentenceWords} words is a long-sentence finding)`,
         );
       } else if (count < LINT_LIMITS.summaryMinSentences) {
         lint.add(
@@ -1294,22 +1733,44 @@ export function lintExplainer(explainer: Explainer): LintResult {
       );
     }
     orderChecks(lint, tourId, tour, byId);
-    for (const stepValue of list(tour.steps)) {
+    const talk = isTalk(tour);
+    list<unknown>(tour.steps).forEach((stepValue, index) => {
       const step = record(stepValue);
-      const note = str(step.note);
-      if (note === undefined || note.trim() === "") continue;
       const where: Where = {
         elementId: `${tourId}/${str(step.id) ?? "?"}`,
         kind: "tour-step",
         field: "note",
       };
+      const note = str(step.note);
+      // a draft's step (its note a TODO) is judged once it is written, like code-heavy and long-note
+      if (!/\bTODO\b/.test(note ?? "")) farRanges(lint, where, step, byId);
+      if (note === undefined || note.trim() === "") {
+        lint.add(
+          where,
+          "untitled-step",
+          `step ${index + 1}`,
+          `no note: the viewer can only call it "Step ${index + 1}"`,
+          'write a note that starts with "### <plain title>", a short phrase that says what happens here',
+        );
+        return;
+      }
+      const evidence: Evidence = { names: evidenceNames(step, byId) };
       const lines = note.split("\n");
       const first = lines.findIndex((line) => line.trim() !== "");
       const heading = HEADING.exec(lines[first] ?? "");
       let body = note;
       if (heading && heading[1]!.trim() !== "") {
-        lint.title({ ...where, field: "note heading" }, heading[1]);
+        lint.title({ ...where, field: "note heading" }, heading[1], evidence);
         body = lines.slice(first + 1).join("\n");
+      } else if (!sentenceTitle(note)) {
+        lint.add(
+          where,
+          "untitled-step",
+          excerpt(note),
+          `no "### title" line, and the first sentence is too long to be a title (over ${LINT_LIMITS.titleSentenceChars} characters) or is not a sentence: ` +
+            'the viewer shows it cut short, or "Step N"',
+          'start the note with "### <plain title>", a short phrase that says what happens here',
+        );
       } else {
         const prefix = PLACEHOLDER_PREFIX.exec(note);
         lint.add(
@@ -1322,8 +1783,17 @@ export function lintExplainer(explainer: Explainer): LintResult {
             (prefix ? ` (instead of "${prefix[1]}:")` : ""),
         );
       }
-      const masked = lint.prose(where, body);
-      if (masked === undefined) continue;
+      const masked = lint.prose(where, body, { evidence });
+      if (masked === undefined) return;
+      if (talk && body.trim().length > LINT_LIMITS.talkNoteChars && !/\bTODO\b/.test(body)) {
+        lint.add(
+          where,
+          "long-talk-note",
+          excerpt(body.trim()),
+          `${body.trim().length} characters under the title (more than ${LINT_LIMITS.talkNoteChars}): Present sets this caption in its smaller type, and it may scroll`,
+          "in a talk, say one thing per step in one or two short sentences; the speaker says the rest",
+        );
+      }
       const bodyWords = words(masked.text).length;
       if (bodyWords > LINT_LIMITS.noteWords && !/\bTODO\b/.test(body)) {
         lint.add(
@@ -1365,7 +1835,7 @@ export function lintExplainer(explainer: Explainer): LintResult {
           );
         }
       }
-    }
+    });
   }
 
   for (const viewValue of list(explainer.views)) {
@@ -1400,7 +1870,7 @@ export function lintExplainer(explainer: Explainer): LintResult {
         }
       }
       lint.plain(at("label"), step.label, true);
-      lint.prose(at("summary"), step.summary);
+      lint.prose(at("summary"), step.summary, { evidence: { anchored: hasAnchors(step) } });
       lint.summaryMarks(at("summary"), step.summary);
     }
   }
@@ -1410,15 +1880,20 @@ export function lintExplainer(explainer: Explainer): LintResult {
     const id = str(item.id) ?? `(${kind})`;
     // the labels of groups and concepts are titles a person chose; other labels name code
     const titled = kind === "concept" || id.startsWith("grp:");
-    if (titled) lint.title({ elementId: id, kind, field: "label" }, item.label);
+    // an element with anchors carries its evidence: the reader opens the code from the text
+    const evidence: Evidence = { anchored: hasAnchors(item) };
+    if (titled) lint.title({ elementId: id, kind, field: "label" }, item.label, evidence);
     lint.plain({ elementId: id, kind, field: "label" }, item.label, !titled);
-    lint.prose({ elementId: id, kind, field: "summary" }, item.summary);
+    lint.prose({ elementId: id, kind, field: "summary" }, item.summary, { evidence });
     lint.summaryMarks({ elementId: id, kind, field: "summary" }, item.summary);
-    lint.prose({ elementId: id, kind, field: "detail" }, item.detail);
+    lint.prose({ elementId: id, kind, field: "detail" }, item.detail, { evidence });
   };
   for (const node of list(explainer.nodes)) element("node", node);
   for (const edge of list(explainer.edges)) element("edge", edge);
   for (const concept of list(explainer.concepts)) element("concept", concept);
+
+  mapChecks(lint, explainer, byId, model);
+  changeChecks(lint, explainer, byId);
 
   return { findings: lint.findings, checked: lint.checked };
 }

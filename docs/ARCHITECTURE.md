@@ -789,7 +789,7 @@ stdout (a rejection exits 1); fatal errors (`error: …`) and warnings (`warning
 | `xpl anchors <explainer> [id...] [--full] [--max-lines n]` | each anchor of an element (or of every element) resolved now: role, `file#symbol +span`, status, lines, and the code at them with offsets (a long anchor: its first lines, an elision line, its last lines); a base anchor prints as `<file>@base +a..b … [before the change]` with the base code; `tour:<id>` (or `tour:<id>/<step>`) also shows what a step without `code` derives from its `focus`, marked derived; verifies spans without reading JSON |
 | `xpl resolve <explainer> [--write] [--allow-stale]` | §4.2 re-resolve against the index of the current code; report drifted llm elements, missing anchors; `--write` saves |
 | `xpl status <explainer>` | the skill's to-do list, read-only: per view the shown nodes, stored edges and steps without a summary (static edges optional), concepts without one, drift (user-owned drift counted apart), missing anchors, broken references (ids gone from the index), stale derived-edge overlays, queued requests; per graph view the ghosts and stubs it draws (counts, the most referenced ghost ids, and for each folded ghost up to 3 of the elements it stands for with their counts; `--json`: every ghost with its count and all its `targets` (`{id, count}`), and every stub id, in `views[].ghosts`) with a warning above 12 ghosts; the tours (id, step count, steps whose focus ids or view are gone) |
-| `xpl lint <explainer> [--patch <file\|->] [--strict]` | checks the text a reader sees (no index needed): rules below; `--patch` lints the explainer as it would be after `xpl apply` of that patch (merged in memory as actor `llm`, nothing written; a patch apply would reject prints the rejection and exits 1); exit 0 with findings, 1 with `--strict` and any finding |
+| `xpl lint <explainer> [--patch <file\|->] [--warn-only]` | checks the text a reader sees (the index, when there is one, counts the boxes and arrows of maps): rules below; `--patch` lints the explainer as it would be after `xpl apply` of that patch (merged in memory as actor `llm`, nothing written; a patch apply would reject prints the rejection and exits 1); exit 1 with any finding (so `lint --patch && apply` stops on one), 0 with `--warn-only` unless a `todo-left` error |
 | `xpl change <explainer> [<base>..<head>]` | records the change from git in the explainer and prints its analysis (§4.8; below); without a range, prints the analysis of the change already recorded |
 | `xpl draft change\|repo\|path <explainer> [<entry id>] [-o file]` | prints a patch skeleton built from the index (and the change record) with no LLM, `TODO:` in every text to write (below); the summary goes to stderr |
 | `xpl view <explainer> [--port p] [--host h] [--no-open]` | local server (below) |
@@ -798,7 +798,7 @@ stdout (a rejection exits 1); fatal errors (`error: …`) and warnings (`warning
 **Exit codes.** 0 ok (warnings allowed); 1 rejected or failed: unknown id, no index, a rejected patch, a patch
 that changed nothing because the user owns everything it touched, validation errors, `resolve --write` on a
 stale index, port in use, `xpl change` without git or with a head that is not the index commit, `xpl draft
-change` without a change record, `xpl lint --strict` with findings; 2 usage error. **Environment:**
+change` without a change record, `xpl lint` with findings; 2 usage error. **Environment:**
 `XPL_VIEWER_HTML` (viewer page for `view` and `bundle`), `XPL_SKIP_STALE_CHECK=1`, `XPL_WASM_DIR`,
 `XPL_SCIP_TIMEOUT_MS`, `XPL_DEBUG=1` (stack traces), `XPL_CLI` (the skill launcher: an `xpl.mjs` to run).
 
@@ -867,13 +867,13 @@ file; `--json` adds the counts and what was left out.
 A draft gives structure, not understanding: the concepts, flows, `llm` edges and base anchors that explain
 why the code is as it is are left to Claude.
 
-**`xpl lint`** reads only the explainer and checks the text a reader sees, against the skill's writing rules
+**`xpl lint`** reads the explainer (and the index when there is one, for map counts) and checks the text a reader sees, against the skill's writing rules
 (`reference/writing.md`). Code spans are left out of the word checks. Each finding names the element, the
 field, a short quote and a fix. Rules (thresholds and word lists live in `LINT_LIMITS`, `FILLER_WORDS`,
 `ABSOLUTE_WORDS` in `packages/cli/src/lint.ts`):
 
-- `todo-left`: a `TODO` left in reader text or a view's question; the one error-level finding (still exit 0
-  without `--strict`).
+- `todo-left`: a `TODO` left in reader text or a view's question; the one error-level finding (exit 1 even
+  with `--warn-only`; any other finding exits 1 without it).
 - Tours: `tour-summary` (missing, or not 2-4 sentences), `tour-first-step` (the first step focuses a test, a
   concept that lights up nothing, or a flow when the tour has a map, or its title says "edge case"),
   `tour-covers-map` (a box of a used map of at most 10 boxes that no step focuses and no note names),
@@ -881,13 +881,19 @@ field, a short quote and a fix. Rules (thresholds and word lists live in `LINT_L
 - Titles: `code-title` (a title that looks like code), `placeholder-title` ("Fix 1", "Note", "Step 3").
 - Sentences: `long-sentence` (over 25 words), `long-average` (a field averaging over 20), `bare-it` ("It" or
   "This" and a verb), `filler-word`, `absolute-word` ("all", "never", "only" … that needs evidence; idioms
-  such as "at all" and narrowing uses such as "compares only the host part" do not count),
+  such as "at all" and narrowing uses such as "compares only the host part" do not count, nor a claim next to
+  its evidence: the text of an element with anchors, a note sentence that names a part the step shows),
   `repeats-summary` (a note sentence that repeats a focused element's summary), `long-note` (a note body over
   60 words), `code-heavy` (more different code spans than 3 in a note, 1 in a note on an architecture map, a
-  graph view with a box that has a `role`, or 2 in a tour summary). Neither judges text that still holds a
-  `TODO`.
+  graph view with a box that has a `role`, or 2 in a tour summary; example values such as `503` or `/admin/*`
+  do not count). Neither judges text that still holds a `TODO`. `tour-covers-map` matches names by word stems.
 - Form: `flow-label-code` (a flow stage label written as code), `markdown-in-plain` (markdown in a title or
   label), `markdown-in-summary` (a heading or link in a summary; inline markdown is fine there).
+- What readers will see: `untitled-step` (no note, or no heading and a first sentence too long for a title),
+  `change-not-shown` (changed files no step shows or names), `far-ranges` (two ranges of a step in one file
+  over 40 lines apart), `long-talk-note` (a talk note over Present's `LONG_NOTE`), `big-map` (over 8 boxes on
+  a map a tour shows), `crowded-map` (over 2 arrows per box, with the edge ids to hide; needs the index),
+  `self-loop` (a stored edge from a box to itself, which `deriveGraph` drops).
 
 `--patch <file|->` merges the patch in memory with core `applyPatch`, the call `xpl apply` makes, so the
 findings are those of the explainer after apply; nothing is written. `--json`: `{ ok, path, strict, checked,
@@ -1048,8 +1054,10 @@ in plain words ("defined here", "called here", "used here", "setting", "test"). 
 the breadcrumb, the Flow tab's step list, the tour panel and the Present caption. A note that starts with a
 heading line (`### Plain title`) takes that whole line as its title, and the body is the rest. Otherwise a
 first sentence of at most 80 characters is the title (a stop inside code, a number or after "e.g." does not
-end it). Otherwise the title is the label of the first focused element, else the title of the step's view.
-The title is never printed again in the body.
+end it). Otherwise the title is that first sentence cut at a word boundary to about 60 characters and "…",
+else (no note, or a note that opens with code) "Step N". Never the label of a focused element: that is often
+a code signature. The title is never printed again in the body (a cut title aside: the body keeps the whole
+note). `xpl lint` reports such a step (`untitled-step`).
 
 **Explore.** The header holds the view tabs (the tooltip of a tab is its title and question) and the Views
 menu. Left: the diagram (caption: title and question), below it the concept list and the details panel. Right:
