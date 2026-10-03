@@ -3,6 +3,7 @@
  * files in it are marked (`is-focus`). Click a file to show it in the editor stack. In a change explainer each
  * changed file carries a mark (A new, M changed, R renamed, D removed: the removed files are listed too, and
  * open as they were before the change), and its directories a dot, so the tree says where the change is.
+ * A filter above the tree lists the files whose path contains what is typed, flat.
  *
  * A static bundle (no server) lists only the files it embeds: `xpl bundle` puts in what the explainer
  * needs, and a file that is not there cannot be opened. A footer says how many of the indexed files that is
@@ -76,6 +77,16 @@ export function FileTree() {
     return buildTree(all);
   }, [listed, changed]);
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
+  const [query, setQuery] = useState("");
+  const matches = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    if (!needle) return undefined;
+    const all: TreeFile[] = [
+      ...listed,
+      ...[...changed.values()].filter((row) => row.status === "deleted"),
+    ];
+    return all.filter((file) => file.path.toLowerCase().includes(needle));
+  }, [query, listed, changed]);
   const focusFiles = derived.selection.focusFiles;
   const hasFocus = focusFiles.size > 0;
 
@@ -136,7 +147,7 @@ export function FileTree() {
     );
   };
 
-  const renderFile = (file: TreeFile, depth: number) => {
+  const renderFile = (file: TreeFile, depth: number, fullPath = false) => {
     const inFocus = focusFiles.has(file.path);
     const row = changed.get(file.path);
     const classes =
@@ -162,7 +173,7 @@ export function FileTree() {
           }
           onClick={() => store.openFile(file.path, row?.line)}
         >
-          <span className="name">{base(file.path)}</span>
+          <span className="name">{fullPath ? file.path : base(file.path)}</span>
           {row && (
             <span
               className={`tree-change-mark is-${row.status}`}
@@ -179,11 +190,33 @@ export function FileTree() {
 
   return (
     <>
+      <input
+        type="search"
+        className="tree-filter"
+        data-testid="tree-filter"
+        placeholder="Filter files"
+        aria-label="Filter files"
+        value={query}
+        onChange={(event) => setQuery(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Escape" && query) {
+            event.stopPropagation();
+            setQuery("");
+          }
+        }}
+      />
       <nav className="tree" aria-label="Files">
-        <ul role="tree">
-          {tree.dirs.map((dir) => renderDir(dir, 0))}
-          {tree.files.map((file) => renderFile(file, 0))}
-        </ul>
+        {matches ? (
+          <ul role="tree">
+            {matches.map((file) => renderFile(file, 0, true))}
+            {matches.length === 0 && <li className="tree-none">No file matches</li>}
+          </ul>
+        ) : (
+          <ul role="tree">
+            {tree.dirs.map((dir) => renderDir(dir, 0))}
+            {tree.files.map((file) => renderFile(file, 0))}
+          </ul>
+        )}
       </nav>
       {listed.length < indexed.length && (
         <p

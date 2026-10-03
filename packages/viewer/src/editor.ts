@@ -16,6 +16,7 @@ import { json } from "@codemirror/lang-json";
 import { python } from "@codemirror/lang-python";
 import { yaml } from "@codemirror/lang-yaml";
 import { defaultHighlightStyle, HighlightStyle, syntaxHighlighting } from "@codemirror/language";
+import { search, searchKeymap } from "@codemirror/search";
 import {
   Compartment,
   EditorSelection,
@@ -34,6 +35,7 @@ import {
   gutter,
   gutterLineClass,
   GutterMarker,
+  keymap,
   lineNumbers,
   ViewPlugin,
   WidgetType,
@@ -486,10 +488,17 @@ export function createReadOnlyEditor(
   language: FileLanguage,
   handlers?: EditorHandlers,
   wrap = false,
+  label?: string,
 ): EditorView {
   const extensions: Extension[] = [
     wrapping.of(wrap ? wrapped : []),
     EditorState.readOnly.of(true),
+    // Ctrl/Cmd+F finds in the file (read-only: the panel finds, it never replaces).
+    search({ top: true }),
+    keymap.of(searchKeymap),
+    ...(label
+      ? [EditorView.contentAttributes.of({ "aria-label": label, "aria-readonly": "true" })]
+      : []),
     lineNumbers(),
     diffGutter.of([]),
     diffField,
@@ -510,6 +519,48 @@ export function createReadOnlyEditor(
     );
   }
   return new EditorView({ parent, state: EditorState.create({ doc, extensions }) });
+}
+
+/** One stretch of what the change did in a pane: lines `from` to `to` (rows `rows`, removed lines included). */
+export interface Hunk {
+  from: number;
+  to: number;
+  rows: number;
+}
+
+/**
+ * The changes in a pane, top to bottom: runs of added or rewritten lines with the removed lines next to them (a
+ * head pane), or runs of removed lines (a "Before" pane). Each is where "next change" goes.
+ */
+export function paneHunks(diff: PaneDiff | null | undefined): Hunk[] {
+  if (!diff) return [];
+  // Every row the change touched, by the head (or base) line it sits at; removed lines count as rows there.
+  const rows = new Map<number, number>();
+  for (const line of diff.lines?.keys() ?? []) rows.set(line, (rows.get(line) ?? 0) + 1);
+  for (const line of diff.gone ?? []) rows.set(line, (rows.get(line) ?? 0) + 1);
+  for (const block of diff.removed ?? []) {
+    rows.set(block.at, (rows.get(block.at) ?? 0) + Math.max(1, block.count));
+  }
+  const hunks: Hunk[] = [];
+  for (const line of [...rows.keys()].sort((a, b) => a - b)) {
+    const last = hunks[hunks.length - 1];
+    if (last && line <= last.to + 1) {
+      last.to = line;
+      last.rows += rows.get(line)!;
+    } else hunks.push({ from: line, to: line, rows: rows.get(line)! });
+  }
+  return hunks;
+}
+
+/**
+ * Scrolls a change into view whole: its first line about a third of the way down, higher when the change is
+ * too tall for that, never above the top edge.
+ */
+export function scrollToHunk(view: EditorView, hunk: Hunk): void {
+  const height = view.scrollDOM.clientHeight;
+  const tall = hunk.rows * view.defaultLineHeight;
+  const margin = Math.max(22, Math.min(height / 3, height - tall - 22));
+  scrollToLine(view, hunk.from, margin);
 }
 
 /** Applies focus decorations. */

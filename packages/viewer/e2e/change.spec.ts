@@ -328,3 +328,57 @@ test.describe("under xpl view", () => {
     ).toContainText("2 lines removed (the code before the change is not included in this page)");
   });
 });
+
+test.describe("reading a changed file", () => {
+  test("a file opened from the change list takes the column, shows its first change whole, and steps through the rest", async ({
+    page,
+  }) => {
+    const problems = watchProblems(page);
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await open(page);
+    await page.locator('[data-testid="change-file"][data-path="src/runner.ts"]').click();
+    const runner = pane(page, "src/runner.ts");
+    await expect(runner).toHaveClass(/is-expanded/);
+    // the other panes fold to their names
+    await expect(page.locator(".pane.is-folded").first()).toBeVisible();
+    await expect(page.locator(".pane.is-folded .pane-body").first()).toBeHidden();
+    // the first change (a line removed after 65) is in view, not at the edge
+    await expect(runner.locator('.xpl-removed[data-at="after:65"]')).toBeInViewport();
+    const hunks = runner.getByTestId("pane-hunks");
+    await expect(hunks).toContainText("change 1 / 3");
+    // n steps to the next change; its added lines are in view
+    await runner.locator('.cm-line[data-line="65"]').click();
+    await page.keyboard.press("n");
+    await expect(hunks).toContainText("change 2 / 3");
+    for (const line of [75, 76, 77, 78]) {
+      await expect(runner.locator(`.cm-line[data-line="${line}"]`)).toBeInViewport();
+    }
+    await runner.getByRole("button", { name: "Next change" }).click();
+    await expect(hunks).toContainText("change 3 / 3");
+    await expect(runner.locator('.cm-line[data-line="110"]')).toBeInViewport();
+    await expect(runner.getByRole("button", { name: "Next change" })).toBeDisabled();
+    // the expand button gives the other files back
+    await runner.getByTestId("pane-expand").click();
+    await expect(page.locator(".pane.is-folded")).toHaveCount(0);
+    expect(problems).toEqual([]);
+  });
+
+  test("the tree marks what the change did to each file, lists removed files and filters by path", async ({
+    page,
+  }) => {
+    const problems = watchProblems(page);
+    await open(page, "?perspective=code");
+    const mark = (path: string) =>
+      page.locator(`.tree-row[data-path="${path}"] [data-testid="tree-change-mark"]`);
+    await expect(mark("src/runner.ts")).toHaveText("M");
+    await expect(mark("src/metrics.ts")).toHaveText("A");
+    await expect(mark("src/bus.ts")).toHaveText("R");
+    await expect(mark("src/legacy.ts")).toHaveText("D");
+    await expect(mark("src/worker.ts")).toHaveCount(0);
+    await page.getByTestId("tree-filter").fill("leg");
+    await expect(page.locator(".tree-row.is-file")).toHaveCount(1);
+    await page.locator('.tree-row[data-path="src/legacy.ts"]').click();
+    await expect(pane(page, "src/legacy.ts", "base")).toBeVisible();
+    expect(problems).toEqual([]);
+  });
+});

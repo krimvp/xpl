@@ -2229,6 +2229,24 @@ code {
   padding: 6px 0 10px;
 }
 
+.tree-filter {
+  margin: 6px 8px 0;
+  padding: 4px 8px;
+  min-width: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--fg);
+  font: inherit;
+  font-size: 12.5px;
+}
+
+.tree-none {
+  padding: 4px 12px;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
 .tree ul {
   list-style: none;
   padding: 0;
@@ -2376,7 +2394,97 @@ code {
   border-bottom: 0;
 }
 
+/* A pane folded to its name, and one given the whole column (EditorStack: the fold and expand buttons, and a
+   file opened on purpose). */
+.pane.is-folded,
+.present .pane.is-folded {
+  flex: 0 0 auto;
+  min-height: 0;
+}
+
+.pane.is-folded .pane-body {
+  display: none;
+}
+
+.pane.is-folded .pane-header {
+  border-bottom: 0;
+}
+
+.pane.is-expanded,
+.present .pane.is-expanded {
+  flex: 1 1 auto;
+}
+
+.pane-fold,
+.pane-expand,
+.pane-hunks button {
+  flex: none;
+  min-width: 24px;
+  height: 24px;
+  padding: 0 4px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.pane-fold {
+  margin-left: -4px;
+  margin-right: -6px;
+}
+
+.pane-fold:hover,
+.pane-expand:hover,
+.pane-hunks button:hover:not(:disabled) {
+  border-color: var(--border-strong);
+  background: var(--panel);
+  color: var(--fg);
+}
+
+.pane-hunks button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.pane-expand[aria-pressed="true"] {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.pane-hunks {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+/* "in Runner.dispatch": where the top of a scrolled pane is. */
+.pane-inside {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.pane-inside code {
+  font-family: var(--font-mono);
+  color: var(--fg);
+}
+
+/* Sticky: a pane scrolled partly out of the stack keeps its file name in view. */
 .pane-header {
+  position: sticky;
+  top: 0;
+  z-index: 3;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -2528,6 +2636,18 @@ code {
 .cm-line.xpl-gone:not(.xpl-hl) {
   background-color: var(--diff-del-bg);
   box-shadow: inset 3px 0 0 var(--diff-del-bar);
+}
+
+/* A changed line inside the focus keeps the focus colour, and a green bar along its right edge says that the
+   change added or rewrote it (with the + cell: never colour alone). */
+.cm-line.xpl-hl.xpl-add,
+.cm-line.xpl-hl.xpl-chg {
+  background-image: linear-gradient(
+    to left,
+    var(--diff-add-bar) 4px,
+    var(--diff-add-bg) 4px,
+    transparent 40%
+  );
 }
 
 /* A changed line is never dimmed like context: what the change did is what a reviewer reads. */

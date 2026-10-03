@@ -3,22 +3,38 @@
  * primary file first), each under a file header. A pane keeps its editor while the file stays in the
  * focus, so the code does not flicker when the selection changes; decorations, scrolling and the caret
  * are pushed into the live editor instead.
+ *
+ * Reading a pane: its header can expand it to the whole column (the others fold to their headers) or fold it;
+ * a file opened on purpose (the tree, "Files in this change") takes the column by itself until the selection
+ * changes. A changed file's header steps through its changes (‹ change 2 / 3 ›, or n / p in the code), and a
+ * pane scrolled into the middle of a function says which one ("in Runner.dispatch").
  */
 import type { EditorView } from "@codemirror/view";
 import {
   shortSha,
   splitLines,
+  type IndexModel,
   type AnchorRole,
   type ChangedFile,
   type FileLanguage,
   type FocusRange,
 } from "@xpl/core";
-import { memo, useEffect, useMemo, useRef, type CSSProperties } from "react";
+import {
+  memo,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type KeyboardEvent,
+} from "react";
 import type { PaneSpec } from "../derive.js";
 import { changeAt, changeOf, fileDiff, languageOfPath, needsBase, paneDiff } from "../diff.js";
 import {
   applyDiff,
   applyFocus,
+  paneHunks,
+  scrollToHunk,
   setLineWrapping,
   createReadOnlyEditor,
   firstFocusLine,
@@ -36,6 +52,20 @@ export function EditorStack() {
   const { panes, overflow } = derived;
 
   const change = changeOf(state.explainer);
+  // Which pane has the column to itself, and which are folded to their headers: a way of looking, reset when
+  // the selection changes. A file opened on purpose next to the focus takes the column.
+  const [expanded, setExpanded] = useState<string | undefined>(undefined);
+  const [folded, setFolded] = useState<ReadonlySet<string>>(new Set());
+  useEffect(() => {
+    setExpanded(undefined);
+    setFolded(new Set());
+  }, [derived.selection]);
+  useEffect(() => {
+    if (state.openSeq === 0 || !state.openedFile) return;
+    const opened = panes.find((pane) => pane.opened);
+    setExpanded(opened && panes.length > 1 ? paneKey(opened) : undefined);
+    setFolded(new Set());
+  }, [state.openSeq]);
   // Server mode: fetch what the panes need (the code before the change too: a "before" pane, and the
   // removed lines a changed file shows between its own).
   useEffect(() => {
@@ -69,16 +99,38 @@ export function EditorStack() {
   // Read mode and Present are for readers: plain words on the panes.
   const reader = present || state.perspective !== "explore";
   return (
-    <div className="editor-stack">
+    <div className={"editor-stack" + (expanded ? " has-expanded" : "")}>
       {panes.map((pane, i) => {
+        const key = paneKey(pane);
         const info = state.model.index.file(pane.file);
         const base = pane.side === "base";
         const changed = changeAt(change, pane.file);
         const text = base ? state.baseFiles[pane.file] : state.files[pane.file];
         return (
           <EditorPane
-            key={`${base ? "base" : "head"}:${pane.file}`}
+            key={key}
             pane={pane}
+            index={state.model.index}
+            expanded={expanded === key}
+            folded={expanded ? expanded !== key : folded.has(key)}
+            canExpand={panes.length > 1}
+            onExpand={() => {
+              setExpanded((current) => (current === key ? undefined : key));
+              setFolded(new Set());
+            }}
+            onFold={() => {
+              // While one pane has the column: folding it shows the others; a folded one takes its place.
+              if (expanded) {
+                setExpanded(expanded === key ? undefined : key);
+                setFolded(expanded === key ? new Set([key]) : new Set());
+                return;
+              }
+              setFolded((current) => {
+                const next = new Set(current);
+                if (!next.delete(key)) next.add(key);
+                return next;
+              });
+            }}
             wantLines={
               present
                 ? paneLines(pane) + (state.showChanges ? removedInFocus(pane, changed) : 0)
@@ -119,6 +171,8 @@ export function EditorStack() {
     </div>
   );
 }
+
+const paneKey = (pane: PaneSpec) => `${pane.side === "base" ? "base" : "head"}:${pane.file}`;
 
 /** Lines covered by the ranges, overlaps counted once. */
 export function focusedLineCount(ranges: readonly FocusRange[]): number {
@@ -169,6 +223,16 @@ export function paneShrink(index: number): number {
 
 interface PaneProps {
   pane: PaneSpec;
+  /** The index: which symbol a scrolled pane is inside. */
+  index: IndexModel;
+  /** The pane has the column to itself. */
+  expanded: boolean;
+  /** The pane is folded to its header (by hand, or because another one is expanded). */
+  folded: boolean;
+  /** There are other panes to give way. */
+  canExpand: boolean;
+  onExpand: () => void;
+  onFold: () => void;
   /**
    * Present mode only: how many lines of code the pane wants to show (its focus plus context). `shrink` is
    * its flex-shrink: 0 for the first pane, more for each one below, so the first pane keeps its focus in view.
@@ -201,6 +265,12 @@ const ROLE_ORDER: AnchorRole[] = ["definition", "call-site", "usage", "config", 
 
 const EditorPane = memo(function EditorPane({
   pane,
+  index,
+  expanded,
+  folded,
+  canExpand,
+  onExpand,
+  onFold,
   wantLines,
   shrink,
   reader,
@@ -250,6 +320,7 @@ const EditorPane = memo(function EditorPane({
       // The lines of a "before" pane are lines of the old code: the caret there looks nothing up.
       base ? undefined : { onCursor: (from, to) => store.setCursor(pane.file, from, to) },
       wrapRef.current,
+      `${pane.file}${base ? ", before the change" : ""}: source code`,
     );
     view.current = editor;
     generation.current += 1;
@@ -292,6 +363,20 @@ const EditorPane = memo(function EditorPane({
     // diff is applied by the effect above in the same commit; turning it on or off does not scroll.)
   }, [focusToken, openToken, text, pane.file, language, wantLines !== undefined]);
 
+  // ‹ change 2 / 3 ›: steps through the changes of the file, whole ones in view.
+  const hunks = useMemo(() => paneHunks(diff), [diff]);
+  const [hunkAt, setHunkAt] = useState(-1);
+  useEffect(() => setHunkAt(-1), [hunks, focusToken]);
+  const goToHunk = (step: 1 | -1) => {
+    const editor = view.current;
+    if (!editor || hunks.length === 0) return;
+    const next = Math.min(
+      hunks.length - 1,
+      Math.max(0, hunkAt < 0 && step > 0 ? 0 : hunkAt + step),
+    );
+    scrollToHunk(editor, hunks[next]!);
+    setHunkAt(next);
+  };
   // The caret follows the store (window.__xpl.setCursor, anchor clicks); a real click already is the store.
   useEffect(() => {
     const editor = view.current;
@@ -301,7 +386,40 @@ const EditorPane = memo(function EditorPane({
     const fresh = caretApplied.current !== generation.current;
     caretApplied.current = generation.current;
     placeCaret(editor, cursor.fromLine, cursor.toLine, !fresh || openToken > 0);
+    // A file opened at a change ("Files in this change", the tree): the whole change in view, not its edge.
+    if (openToken > 0) {
+      const hunk = hunks.find((h) => h.to >= cursor.fromLine);
+      if (hunk && hunk.from <= cursor.fromLine + 1) {
+        scrollToHunk(editor, hunk);
+        setHunkAt(hunks.indexOf(hunk));
+      }
+    }
   }, [cursor, text, pane.file, language, openToken]);
+
+  const onKeyDown = (event: KeyboardEvent<HTMLElement>) => {
+    if (event.ctrlKey || event.metaKey || event.altKey || hunks.length === 0) return;
+    if (!(event.target as HTMLElement).closest(".cm-content")) return;
+    if (event.key === "n" || event.key === "p") {
+      event.preventDefault();
+      goToHunk(event.key === "n" ? 1 : -1);
+    }
+  };
+
+  // Which function the top of the pane is inside, when its first line has scrolled away.
+  const [inside, setInside] = useState<string | undefined>(undefined);
+  useEffect(() => {
+    const editor = view.current;
+    if (!editor || base) return;
+    const update = () => {
+      const block = editor.lineBlockAtHeight(editor.scrollDOM.scrollTop);
+      const top = editor.state.doc.lineAt(block.from).number;
+      const symbol = top > 1 ? index.innermostSymbolAt(pane.file, top) : undefined;
+      setInside(symbol && symbol.range.startLine < top ? symbol.path : undefined);
+    };
+    update();
+    editor.scrollDOM.addEventListener("scroll", update, { passive: true });
+    return () => editor.scrollDOM.removeEventListener("scroll", update);
+  }, [text, pane.file, language, base, index]);
 
   const roles = ROLE_ORDER.filter((role) => pane.ranges.some((r) => r.role === role));
   const stale = pane.ranges.filter((r) => r.status === "drifted" || r.status === "moved");
@@ -317,8 +435,11 @@ const EditorPane = memo(function EditorPane({
         "pane" +
         (pane.focused ? " is-focused" : "") +
         (pane.opened ? " is-opened" : "") +
+        (expanded ? " is-expanded" : "") +
+        (folded ? " is-folded" : "") +
         (base ? " is-base" : "")
       }
+      onKeyDown={onKeyDown}
       data-file={pane.file}
       data-side={base ? "base" : "head"}
       style={
@@ -337,10 +458,32 @@ const EditorPane = memo(function EditorPane({
             Before{baseSha ? ` (base ${baseSha})` : ""}
           </span>
         )}
+        {canExpand && (
+          <button
+            type="button"
+            className="pane-fold"
+            data-testid="pane-fold"
+            aria-expanded={!folded}
+            aria-label={`${folded ? "Show" : "Fold"} ${shown}`}
+            title={folded ? "Show this file's code" : "Fold this file to its name"}
+            onClick={onFold}
+          >
+            <span aria-hidden="true">{folded ? "▸" : "▾"}</span>
+          </button>
+        )}
         <span className="pane-file" title={shown}>
           {slash !== -1 && <span className="dir">{shown.slice(0, slash + 1)}</span>}
           <b>{shown.slice(slash + 1)}</b>
         </span>
+        {inside && !folded && (
+          <span
+            className="pane-inside"
+            data-testid="pane-inside"
+            title="The code at the top is inside"
+          >
+            in <code>{inside}</code>
+          </span>
+        )}
         {status && (
           <span
             className={`pane-change is-${changed!.status}`}
@@ -371,6 +514,33 @@ const EditorPane = memo(function EditorPane({
             Show changes
           </button>
         )}
+        {hunks.length > 0 && !folded && (
+          <span className="pane-hunks" data-testid="pane-hunks">
+            <button
+              type="button"
+              aria-label="Previous change"
+              title="Previous change (p)"
+              disabled={hunkAt <= 0}
+              onClick={() => goToHunk(-1)}
+            >
+              ‹
+            </button>
+            <span aria-live="polite">
+              {hunkAt < 0
+                ? `${hunks.length} ${hunks.length === 1 ? "change" : "changes"}`
+                : `change ${hunkAt + 1} / ${hunks.length}`}
+            </span>
+            <button
+              type="button"
+              aria-label="Next change"
+              title="Next change (n)"
+              disabled={hunkAt >= hunks.length - 1}
+              onClick={() => goToHunk(1)}
+            >
+              ›
+            </button>
+          </span>
+        )}
         <span className="pane-roles">
           {roles.map((role) => (
             <span key={role} className={`role role-${role}`} data-role={role}>
@@ -383,6 +553,19 @@ const EditorPane = memo(function EditorPane({
             </span>
           )}
         </span>
+        {canExpand && (
+          <button
+            type="button"
+            className="pane-expand"
+            data-testid="pane-expand"
+            aria-pressed={expanded}
+            aria-label={expanded ? `Show all files` : `Give ${shown} the whole column`}
+            title={expanded ? "Show the other files again" : "Give this file the whole column"}
+            onClick={onExpand}
+          >
+            <span aria-hidden="true">{expanded ? "⤡" : "⤢"}</span>
+          </button>
+        )}
         {pane.opened && !pane.focused && (
           <button
             type="button"
