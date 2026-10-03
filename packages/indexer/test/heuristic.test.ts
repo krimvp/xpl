@@ -335,7 +335,9 @@ describe("calls: scope chain and same-file symbols", () => {
       },
       "call",
     );
+    // `local`'s arrow is a nested function of its own (`local.fact`); the parameter and the block's `let` are not
     expect(r).toEqual([
+      "a.ts#local -> a.ts#local.fact (call)",
       "a.ts#outer.fact -> a.ts#outer.fact (call)",
       "a.ts#outer -> a.ts#outer.fact (call)",
       "a.ts#plain -> a.ts#fact (call)",

@@ -197,25 +197,32 @@ describe("TypeScript symbols: kinds and paths (ARCHITECTURE.md §3 table)", () =
     ]);
   });
 
-  it("nested function declarations get `outer.inner` paths at any depth", async () => {
+  it("nested function declarations and function-valued consts get `outer.inner` paths at any depth", async () => {
     const source = src(
       "function outer() {", // 1
       "  function inner() {", // 2
       "    function innermost() {}", // 3
       "  }", // 4
-      "  const notASymbol = () => {};", // 5
-      "  class AlsoNot {}", // 6
-      "}", // 7
-      "const arrow = () => {", // 8
-      "  function viaArrow() {}", // 9
-      "};", // 10
+      "  const viaConst = () => {", // 5
+      "    let deeper = function () {};", // 6
+      "  };", // 7
+      "  const notAFunction = 1, alsoArrow = async (x: number) => x;", // 8
+      "  class AlsoNot {}", // 9
+      "  if (inner) { const inBlock = () => {}; }", // 10
+      "}", // 11
+      "const arrow = () => {", // 12
+      "  function viaArrow() {}", // 13
+      "};", // 14
     );
     expect(await symbolsOf(source)).toEqual([
-      "function outer 1-7",
+      "function outer 1-11",
       "function outer.inner 2-4",
       "function outer.inner.innermost 3-3",
-      "function arrow 8-10",
-      "function arrow.viaArrow 9-9",
+      "function outer.viaConst 5-7",
+      "function outer.viaConst.deeper 6-6",
+      "function outer.alsoArrow 8-8",
+      "function arrow 12-14",
+      "function arrow.viaArrow 13-13",
     ]);
   });
 

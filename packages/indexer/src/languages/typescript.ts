@@ -13,7 +13,8 @@
  *   fields initialised with an arrow/function, which are methods in every way that matters -> `method`;
  *   path `Class.member`; `#private` names keep their `#`
  * - interface members: method signatures -> `method`, property signatures -> `variable`
- * - function declarations nested in functions/methods -> `function`, path `outer.inner`
+ * - function declarations nested in functions/methods, and `const/let/var` with an arrow/function initialiser
+ *   that are statements of a function body -> `function`, path `outer.inner`
  * - methods and function-valued properties of top-level object literals -> `method`, path `obj.key`
  * - namespaces -> `other`, members are `NS.name`; the declarations of `declare module "x" { }` and
  *   `declare global { }` are listed as if they were top-level (those blocks have no addressable name)
@@ -1345,6 +1346,10 @@ class Extractor {
     if (fact) this.typeFacts.push(fact);
     if (body?.type === "statement_block") {
       for (const stmt of body.namedChildren) {
+        if (stmt.type === "lexical_declaration" || stmt.type === "variable_declaration") {
+          this.nestedFunctionValues(stmt, path);
+          continue;
+        }
         if (stmt.type !== "function_declaration" && stmt.type !== "generator_function_declaration")
           continue;
         const name = stmt.childForFieldName("name");
@@ -1354,6 +1359,25 @@ class Extractor {
         this.functionLike(stmt, nested);
       }
     }
+  }
+
+  /**
+   * `const patch = (n) => { ... }` in a function body: a nested function like a declaration (`outer.patch`).
+   * Closure-style code keeps its whole logic in these (vue's renderer: `patch`, `patchChildren`, ... inside
+   * `baseCreateRenderer`). Other locals are not symbols.
+   */
+  private nestedFunctionValues(declaration: Node, path: string): void {
+    const list = declaration.namedChildren.filter((c) => c.type === "variable_declarator");
+    list.forEach((declarator, i) => {
+      const name = declarator.childForFieldName("name");
+      const fn = functionValue(unwrapValue(declarator.childForFieldName("value")));
+      if (name?.type !== "identifier" || !fn) return;
+      const nested = `${path}.${name.text}`;
+      const first = i === 0 ? declaration : declarator;
+      const last = i === list.length - 1 ? declaration : declarator;
+      this.ownDeclarators.set(declarator.id, this.emit(nested, "function", first, last, path));
+      this.functionLike(fn, nested);
+    });
   }
 
   /**

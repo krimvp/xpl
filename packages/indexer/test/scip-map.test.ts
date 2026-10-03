@@ -449,7 +449,11 @@ export function ⟦fact⟧(n: number): number {
         },
       ]),
     ]);
-    expect(triples(refs)).toEqual(["call a.ts#fact -> a.ts#fact"]);
+    // the local `walk` is a nested function of ours (`walk.walk`): a call of it, not of `walk` itself
+    expect(triples(refs)).toEqual([
+      "call a.ts#fact -> a.ts#fact",
+      "call a.ts#walk -> a.ts#walk.walk",
+    ]);
   });
 
   it("does not attribute definitions nested in another symbol to that symbol (Python-style instance attributes)", async () => {
