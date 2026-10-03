@@ -69,7 +69,7 @@ test.describe("view:dispatch", () => {
     expect(problems).toEqual([]);
   });
 
-  test("the caret maps back to the innermost diagram element: dispatch:3 on the call, the concept elsewhere in the retry block", async ({
+  test("the caret maps back to the innermost drawn element, the concept on top: dispatch:3 on the call, the lifeline elsewhere in the retry block", async ({
     page,
   }) => {
     const problems = watchProblems(page);
@@ -82,29 +82,28 @@ test.describe("view:dispatch", () => {
     const line77 = runner.locator('.cm-line[data-line="77"]');
     await expect(line77).toHaveText(/^\s*job,\s*$/);
     await line77.click({ position: { x: 96, y: 9 } });
-    await expect.poll(() => matchesOf(page)).toEqual(["dispatch:3"]);
+    // the innermost drawn element, and the concept around the line on top (it does not hide the step)
+    await expect.poll(() => matchesOf(page)).toEqual(["concept:retry-policy", "dispatch:3"]);
     await expect(byId(page, "dispatch:3")).toHaveClass(/is-match/);
-    await expect(byId(page, "concept:retry-policy")).not.toHaveClass(/is-match/);
-    // ... and it is the only element on the page that is marked as a match.
-    await expect(page.locator(".is-match")).toHaveCount(1);
+    await expect(byId(page, "concept:retry-policy")).toHaveClass(/is-match/);
+    // ... and they are the only elements on the page marked as a match.
+    await expect(page.locator(".is-match")).toHaveCount(2);
     expect((await stateOf(page)).cursor).toMatchObject({ file: "src/runner.ts", fromLine: 77 });
 
     // The same through the test hook.
     await page.evaluate(() => window.__xpl!.setCursor("src/runner.ts", 73));
-    await expect.poll(() => matchesOf(page)).toEqual(["concept:retry-policy"]);
+    await expect.poll(() => matchesOf(page)).toEqual(["concept:retry-policy", DISPATCH]);
     await expect(byId(page, "concept:retry-policy")).toHaveClass(/is-match/);
     await expect(byId(page, "dispatch:3")).not.toHaveClass(/is-match/);
-    await expect(page.locator(".is-match")).toHaveCount(1);
 
     await page.evaluate(() => window.__xpl!.setCursor("src/runner.ts", 77));
-    await expect.poll(() => matchesOf(page)).toEqual(["dispatch:3"]);
+    await expect.poll(() => matchesOf(page)).toEqual(["concept:retry-policy", "dispatch:3"]);
     await expect(byId(page, "dispatch:3")).toHaveClass(/is-match/);
-    await expect(byId(page, "concept:retry-policy")).not.toHaveClass(/is-match/);
 
     // ... and a real click on line 73 (offset 31) agrees with the hook.
     const line73 = runner.locator('.cm-line[data-line="73"]');
     await line73.click({ position: { x: 60, y: 9 } });
-    await expect.poll(() => matchesOf(page)).toEqual(["concept:retry-policy"]);
+    await expect.poll(() => matchesOf(page)).toEqual(["concept:retry-policy", DISPATCH]);
 
     // Other lines of the sequence: the pop() call, the run(job) call and the lifeline elsewhere.
     await page.evaluate(() => window.__xpl!.setCursor("src/runner.ts", 46));

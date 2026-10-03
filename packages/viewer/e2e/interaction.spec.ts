@@ -147,14 +147,16 @@ test.describe("file tree and editor stack", () => {
     await byId(page, "dispatch:3").click();
     const runner = page.locator('[data-file="src/runner.ts"]');
     await expect.poll(() => linesWith(runner, ".xpl-hl")).toEqual([76, 77, 78]);
-    // Drag from line 74 to line 77: the concept (72-83) and the step (76-78).
+    // Drag from line 74 to line 77: the lifeline at 74 (the concept 72-83 on top) and the step (76-78).
     const from = await runner.locator('.cm-line[data-line="74"]').boundingBox();
     const to = await runner.locator('.cm-line[data-line="77"]').boundingBox();
     await page.mouse.move(from!.x + 90, from!.y + 9);
     await page.mouse.down();
     await page.mouse.move(to!.x + 120, to!.y + 9, { steps: 6 });
     await page.mouse.up();
-    await expect.poll(() => matchesOf(page)).toEqual(["concept:retry-policy", "dispatch:3"]);
+    await expect
+      .poll(() => matchesOf(page))
+      .toEqual(["concept:retry-policy", "dispatch:3", "sym:src/runner.ts#Runner.dispatch"]);
   });
 });
 
