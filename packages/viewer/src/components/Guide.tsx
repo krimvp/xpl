@@ -112,6 +112,7 @@ export function Guide({ onReading }: { onReading?: (stepId: string | undefined) 
       <div className="guide-fallback">
         <p className="eyebrow">Start here</p>
         <h2>{state.explainer.title}</h2>
+        <Audience />
         <p>Choose a topic below, or open the map to see the parts of the code.</p>
         {state.model.views.map((view) => (
           <section className="guide-section" key={view.id}>
@@ -168,6 +169,7 @@ export function Guide({ onReading }: { onReading?: (stepId: string | undefined) 
           </div>
         )}
         <h2>{tour.title}</h2>
+        <Audience />
         {/* The summary comes first: what this is and why it matters, before any detail. */}
         {summary && (
           <div
@@ -188,6 +190,17 @@ export function Guide({ onReading }: { onReading?: (stepId: string | undefined) 
         ))}
       </div>
     </div>
+  );
+}
+
+/** Who the page is for (`scope.audience`), under the title; nothing when the author did not say. */
+function Audience() {
+  const audience = useViewerState().explainer.scope?.audience?.trim();
+  if (!audience) return null;
+  return (
+    <p className="guide-audience" data-testid="audience">
+      {audience}
+    </p>
   );
 }
 

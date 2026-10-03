@@ -4,7 +4,36 @@
  * screens.
  */
 import { expect, test } from "@playwright/test";
-import { ARCHITECTURE_BUNDLE, openBundle, TS_BUNDLE } from "./helpers.js";
+import {
+  ARCHITECTURE_BUNDLE,
+  openBundle,
+  readEmbeddedBundle,
+  TS_BUNDLE,
+  withBundle,
+} from "./helpers.js";
+
+test.describe("who the page is for", () => {
+  test("the author's audience line shows under the guide's title", async ({ page }) => {
+    const { html, bundle } = readEmbeddedBundle();
+    (bundle.explainer as { scope?: unknown }).scope = {
+      audience: "Deep dive, for engineers working on the job runner",
+    };
+    await page.route("http://xpl.test/**", (route) =>
+      route.fulfill({ contentType: "text/html", body: withBundle(html, bundle) }),
+    );
+    await page.goto("http://xpl.test/");
+    await expect(page.getByTestId("audience")).toHaveText(
+      "Deep dive, for engineers working on the job runner",
+    );
+    await expect(page.locator(".header .title")).toHaveAttribute("title", /Deep dive/);
+  });
+
+  test("without one, nothing is shown", async ({ page }) => {
+    await page.goto(TS_BUNDLE.href);
+    await expect(page.getByTestId("guide")).toBeVisible();
+    await expect(page.getByTestId("audience")).toHaveCount(0);
+  });
+});
 
 test.describe("the Key covers what is on screen", () => {
   test("a system map: outside systems, stores, icons and the see-inside button", async ({

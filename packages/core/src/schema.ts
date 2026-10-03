@@ -544,6 +544,8 @@ export interface Explainer {
    * explicit `--commit`, or "wt-<hash>" for a dirty work tree).
    */
   index: { path: string; commit: string };
+  /** (amended) Who the page is for and how deep it goes: shown under the title. */
+  scope?: ExplainerScope;
   /**
    * The change this explainer is about (a PR or MR), when there is one: written by `xpl change <name>
    * <base>..<head>`, never by patches. `head` is the commit the index was built from.
@@ -554,6 +556,15 @@ export interface Explainer {
   concepts: Concept[];
   views: View[];
   tours: Tour[];
+}
+
+/** (amended) The explainer as a whole (`Explainer.scope`); not a view's `Scope`. */
+export interface ExplainerScope {
+  /**
+   * One short line: who the page is for and at what level ("Overview, for anyone new to ky", "Deep dive, for
+   * engineers working on chi's router"). The viewer shows it under the title; absent, it shows nothing.
+   */
+  audience?: string;
 }
 
 // ─── Change record (Explainer.change) ───────────────────────────────────────────────────────────

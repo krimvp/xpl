@@ -33,7 +33,7 @@ The reader sees the tour title and its **summary** first, then the steps (a titl
 
 1. **The CLI** is `bin/xpl` in this skill's directory (else `ls -d ~/.claude/skills/code-explainer .claude/skills/code-explainer`). Below, `xpl` means that path, written in full. Run it from the repo root, or pass `--root <dir>`. If it says "the CLI is not built", tell the user to run `npm install && npm run build` in the xpl repo.
 2. **Index:** `xpl index`. Run it again when the code changed or a command warns that the index `does not match the working tree`. A language with `refs: heuristic` has hints, not facts: confirm each call with `show`. `--precise off` is fast, for a big repo.
-3. **Name it:** `xpl new <name> --title "..."` unless the explainer exists. One explainer per repo (the repo name, kebab-case); a new question adds views and a tour to it. A change gets its own explainer, titled after it: `xpl new <repo>-pr-42 --title "PR 42: <what it does>"`.
+3. **Name it:** `xpl new <name> --title "..."` unless the explainer exists. One explainer per repo (the repo name, kebab-case); a new question adds views and a tour to it. A change gets its own explainer, titled after it: `xpl new <repo>-pr-42 --title "PR 42: <what it does>"`. Say who the page is for, fit to its level, in one short line: `"scope": {"audience": "Overview, for anyone new to ky"}` (a repo), `"Deep dive, for engineers working on the router"` (an algorithm), `"For reviewers of this change, and anyone who uses the option"` (a change); the viewer shows it under the title (patch-format.md 3.11).
 4. **Patch files** go outside the repo (the scratchpad or `$TMPDIR`).
 
 ## Choose the scope

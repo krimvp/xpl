@@ -194,6 +194,13 @@
   line-height: 1.2;
   margin: 8px 0 14px;
 }
+/* a11y: who the page is for (scope.audience), between the title and the summary (M10) */
+.guide-audience {
+  max-width: 680px;
+  margin: -6px 0 18px;
+  color: var(--muted);
+  font-size: 14px;
+}
 /* The tour's summary: the first thing a reader sees, under the title. */
 .guide-summary {
   max-width: 680px;

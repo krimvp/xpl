@@ -243,7 +243,7 @@ const PROVENANCE_SPEC: Spec = {
   fields: { origin: ORIGINS, userFields: "string[]", commit: "string" },
   nullable: [],
 };
-const PATCH_KEYS = ["title", "nodes", "edges", "concepts", "views", "tours", "remove"];
+const PATCH_KEYS = ["title", "scope", "nodes", "edges", "concepts", "views", "tours", "remove"];
 
 function matches(value: unknown, type: FieldType): boolean {
   if (typeof type !== "string") return typeof value === "string" && type.includes(value);
@@ -409,6 +409,33 @@ class Applier {
     return { ok: false, explainer: this.input, issues: this.issues, changed: [] };
   }
 
+  /** `scope` of the explainer: `{audience}` merged in; `null` (for the whole or the field) clears. */
+  private setScope(raw: unknown): void {
+    const before = this.work.scope;
+    if (raw === null) {
+      delete this.work.scope;
+    } else if (!isRecord(raw)) {
+      this.error("scope", "scope must be an object {audience?: string} or null");
+      return;
+    } else {
+      const next: { audience?: string } = { ...this.work.scope };
+      for (const [key, value] of Object.entries(raw)) {
+        if (key !== "audience") {
+          this.error(`scope.${key}`, `unknown scope field "${key}" (allowed: audience)`);
+        } else if (value === null) {
+          delete next.audience;
+        } else if (typeof value !== "string" || value.trim() === "") {
+          this.error("scope.audience", "audience must be a non-empty string (one short line)");
+        } else {
+          next.audience = value;
+        }
+      }
+      if (Object.keys(next).length > 0) this.work.scope = next;
+      else delete this.work.scope;
+    }
+    if (!deepEqual(before, this.work.scope)) this.changed.push("scope");
+  }
+
   // ─── Driver ─────────────────────────────────────────────────────────────────────────────────
 
   run(patch: ExplainerPatch): ApplyResult {
@@ -419,7 +446,7 @@ class Applier {
     if (!isRecord(patch)) {
       this.error(
         "",
-        "patch must be an object {title?, nodes?, edges?, concepts?, views?, tours?, remove?}",
+        "patch must be an object {title?, scope?, nodes?, edges?, concepts?, views?, tours?, remove?}",
       );
       return this.fail();
     }
@@ -493,6 +520,7 @@ class Applier {
         this.changed.push("title");
       }
     }
+    if (patch.scope !== undefined) this.setScope(patch.scope);
     this.remove(removals);
     // Validation runs whatever went wrong above: it is what finds the references that are wrong too.
     return this.validate();
