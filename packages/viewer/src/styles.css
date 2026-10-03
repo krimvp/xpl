@@ -2934,6 +2934,56 @@ code {
   border-color: var(--accent);
 }
 
+/* details: the toggle shows its state as a box that is ticked or not; the change controls stay together and
+   go to a second row when the pane is narrow; the file name never gives way to the pills. */
+.pane-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.pane-toggle-box {
+  display: inline-grid;
+  place-items: center;
+  width: 12px;
+  height: 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 3px;
+  background: var(--panel);
+  font-size: 10px;
+  line-height: 1;
+}
+.pane-toggle[aria-pressed="true"] .pane-toggle-box {
+  border-color: var(--diff-add-bar);
+  background: var(--diff-add-bar);
+  color: var(--panel);
+}
+.pane {
+  container: pane / inline-size;
+}
+.pane-changes {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 10px;
+}
+.pane-change {
+  flex: 0 1 auto;
+}
+@container pane (max-width: 600px) {
+  .pane-header {
+    flex-wrap: wrap;
+    row-gap: 4px;
+  }
+  .pane-changes {
+    order: 10;
+    flex-basis: 100%;
+  }
+  /* "in X" takes what is left of the first row (ellipsized) instead of pushing the roles down. */
+  .pane-inside {
+    flex: 1 1 0;
+  }
+}
+
 /* ── Empty states, present stub ───────────────────────────────────────────────────────────────── */
 
 .no-data,

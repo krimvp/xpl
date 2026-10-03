@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { paneHunks } from "../src/editor.js";
+import { hunkWords, paneHunks } from "../src/editor.js";
 
 describe("the changes of a pane, for ‹ change 2 / 3 ›", () => {
   it("joins added lines and the removed lines next to them into one change, top to bottom", () => {
@@ -29,5 +29,15 @@ describe("the changes of a pane, for ‹ change 2 / 3 ›", () => {
     ]);
     expect(paneHunks(null)).toEqual([]);
     expect(paneHunks({})).toEqual([]);
+  });
+});
+
+describe("the change stepper's words", () => {
+  it("counts changes on the code now, places with removed lines on the code before", () => {
+    expect(hunkWords(-1, 12, false)).toBe("12 changes");
+    expect(hunkWords(1, 12, false)).toBe("change 2 / 12");
+    expect(hunkWords(-1, 1, false)).toBe("1 change");
+    expect(hunkWords(-1, 7, true)).toBe("removed in 7 places");
+    expect(hunkWords(0, 1, true)).toBe("place 1 / 1");
   });
 });

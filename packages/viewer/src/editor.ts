@@ -796,3 +796,15 @@ export function insideSymbol(
   const symbol = index.innermostSymbolAt(file, line);
   return symbol && symbol.range.startLine < top ? symbol.path : undefined;
 }
+
+/**
+ * The change stepper's words: "12 changes", "change 2 / 12". A "Before" pane counts the places where lines were
+ * removed (fewer than its head pane's changes, which also count pure additions): "removed in 7 places", "place 2 / 7".
+ */
+export function hunkWords(at: number, count: number, base: boolean): string {
+  if (base)
+    return at < 0
+      ? `removed in ${count} ${count === 1 ? "place" : "places"}`
+      : `place ${at + 1} / ${count}`;
+  return at < 0 ? `${count} ${count === 1 ? "change" : "changes"}` : `change ${at + 1} / ${count}`;
+}

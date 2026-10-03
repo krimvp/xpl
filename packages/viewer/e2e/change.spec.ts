@@ -38,7 +38,9 @@ test.describe("the code of a change", () => {
     await page.evaluate(() => window.__xpl!.setCursor("src/runner.ts", 75));
     const runner = pane(page, "src/runner.ts");
     await expect(runner.locator(".cm-editor")).toBeVisible();
-    await expect(runner.getByTestId("pane-change")).toHaveText("Changed");
+    // a changed file's "Show changes" toggle says it: no "Changed" pill next to it
+    await expect(runner.getByTestId("show-changes")).toBeVisible();
+    await expect(runner.getByTestId("pane-change")).toHaveCount(0);
     await expect.poll(() => marked(page, "src/runner.ts", "xpl-chg")).toEqual([75, 76, 77, 78]);
     // the two old lines, above head line 75, taken from the code before the change
     const removed = runner.locator('.xpl-removed[data-removed-from="76"]');
@@ -142,6 +144,9 @@ test.describe("base anchors", () => {
     await expect(before).toHaveClass(/is-folded/);
     await before.getByTestId("pane-fold").click();
     await expect(before).not.toHaveClass(/is-folded/);
+    // its header says "Before" once (no "used here" role), and counts the places with removed lines
+    await expect(before.locator(".pane-roles .role")).toHaveCount(0);
+    await expect(before.getByTestId("pane-hunks")).toContainText("removed in 2 places");
     // the anchor's base lines are highlighted, and they are the lines the change rewrote
     await expect.poll(() => marked(page, "src/runner.ts", "xpl-hl", "base")).toEqual([76, 77]);
     await expect
@@ -369,6 +374,25 @@ test.describe("reading a changed file", () => {
     await runner.getByTestId("pane-expand").click();
     await expect(page.locator(".pane.is-folded")).toHaveCount(0);
     expect(problems).toEqual([]);
+  });
+
+  test("a narrow pane keeps the file name whole and puts the change controls on a second row", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 900, height: 700 });
+    await open(page, "?perspective=map");
+    await page.getByRole("button", { name: "Show source" }).click();
+    await page.evaluate(() => window.__xpl!.setCursor("src/runner.ts", 75));
+    const runner = pane(page, "src/runner.ts");
+    const header = runner.locator(".pane-header");
+    await expect(runner.getByTestId("show-changes")).toBeVisible();
+    expect((await header.boundingBox())!.width).toBeLessThan(600);
+    const name = (await runner.locator(".pane-file b").boundingBox())!;
+    const file = (await runner.locator(".pane-file").boundingBox())!;
+    expect(file.width).toBeGreaterThanOrEqual(name.width - 1);
+    const toggle = (await runner.getByTestId("show-changes").boundingBox())!;
+    expect(toggle.y).toBeGreaterThan(name.y + name.height - 1);
+    expect(await header.evaluate((h) => h.scrollWidth <= h.clientWidth + 1)).toBe(true);
   });
 
   test("the tree marks what the change did to each file, lists removed files and filters by path", async ({
