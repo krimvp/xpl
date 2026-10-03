@@ -309,3 +309,35 @@ describe("importsOf", () => {
     ).toEqual(["fmt@3", "github.com/jackc/pgx/v5@4", "flag@6"]);
   });
 });
+
+describe("xpl draft repo: a library with its programs in cmd/", () => {
+  it("is one project whose parts include the programs, when they hold less than half of the code", async () => {
+    const dir = makeTempDir("xpl-arch-lib-");
+    writeFile(dir, "go.mod", "module example.com/lib\n\ngo 1.22\n");
+    for (const pkg of ["parse", "eval", "format", "walk"]) {
+      for (const file of ["a", "b", "c"]) {
+        writeFile(
+          dir,
+          `${pkg}/${file}.go`,
+          `package ${pkg}\n\nfunc ${file.toUpperCase()}() int { return 1 }\n`,
+        );
+      }
+    }
+    for (const tool of ["fmt", "check"]) {
+      writeFile(
+        dir,
+        `cmd/${tool}/main.go`,
+        'package main\n\nimport "example.com/lib/parse"\n\nfunc main() { parse.A() }\n',
+      );
+    }
+    const { patch, notes } = await drafted(dir);
+    expect(notes).toContainEqual(
+      expect.stringMatching(
+        /^2 programs under `cmd` hold 2 of 14 code files: drafted as one project/,
+      ),
+    );
+    expect(graph(patch, "view:overview")?.include).toEqual(
+      expect.arrayContaining(["dir:cmd", "dir:parse", "dir:eval", "dir:format", "dir:walk"]),
+    );
+  });
+});

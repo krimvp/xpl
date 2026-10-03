@@ -1475,7 +1475,16 @@ export function draftRepo(input: DraftInput): Draft {
       }
     }
   }
-  const multi = serviceRoots.length >= 2;
+  // Programs that hold less than half of the code are the tools of a library (Go's `cmd/` next to the packages
+  // they use: hcl, prometheus): the repository stays one service, and its programs are one of its parts.
+  const inServices = serviceRoots.reduce((n, root) => n + codeUnder(root).length, 0);
+  const total = codeUnder("").length;
+  const multi = serviceRoots.length >= 2 && inServices * 2 >= total;
+  if (serviceRoots.length >= 2 && !multi) {
+    notes.push(
+      `${serviceRoots.length} programs under ${nameList([...new Set(serviceRoots.map(dirOf))])} hold ${inServices} of ${total} code files: drafted as one project whose parts include them, not as separate services`,
+    );
+  }
   const repoName = explainer.repo?.name ?? "the project";
 
   const insides: Inside[] = [];
