@@ -10,6 +10,7 @@ import {
   openEditMenu,
   openTourEditor,
   readEmbeddedBundle,
+  selectionOf,
   stateOf,
   watchProblems,
   withBundle,
@@ -24,6 +25,8 @@ interface Recorded {
   /** Status PUT answers with; a test may change it while the page is open. */
   putStatus: number;
   tourStatus: number;
+  /** What GET /api/explainer serves; until a test sets it, the explainer is unchanged (304). */
+  explainer?: unknown;
 }
 
 async function serve(
@@ -91,6 +94,14 @@ async function serve(
         });
       }
       return route.fulfill({ contentType: "application/json", body: "{}" });
+    }
+    if (url.pathname === "/api/explainer" && request.method() === "GET") {
+      if (recorded.explainer === undefined) return route.fulfill({ status: 304 });
+      return route.fulfill({
+        contentType: "application/json",
+        headers: { etag: '"changed"' },
+        body: JSON.stringify(recorded.explainer),
+      });
     }
     if (url.pathname === "/api/requests" && request.method() === "POST") {
       recorded.posts.push(JSON.parse(request.postData() ?? "null") as Record<string, unknown>);
@@ -207,6 +218,42 @@ test("Explain this queues a request with POST /api/requests", async ({ page }) =
   ]);
   // No command box when the request was queued.
   await expect(page.getByTestId("explain-command")).toHaveCount(0);
+});
+
+test("feedback typed under Explain this is queued as the note, and the change comes back by itself", async ({
+  page,
+}) => {
+  const problems = watchProblems(page);
+  const recorded = await serve(page);
+  await page.evaluate(() => window.__xpl!.setView("view:dispatch"));
+  await byId(page, "concept:retry-policy").click();
+  await page.getByTestId("feedback").fill("Too long: one sentence is enough.");
+  await page.getByRole("button", { name: "Send to Claude" }).click();
+  await expect(page.locator(".explain-note")).toContainText("Queued");
+  expect(recorded.posts).toEqual([
+    {
+      kind: "expand",
+      id: "concept:retry-policy",
+      note: "Too long: one sentence is enough.",
+      view: "view:dispatch",
+      label: "Retry policy",
+    },
+  ]);
+  await expect(page.getByTestId("feedback")).toHaveValue("");
+
+  // Claude applies a patch; the next poll brings it in, with the same element still selected.
+  const explainer = structuredClone(readEmbeddedBundle().bundle.explainer) as {
+    concepts: { id: string; summary?: string }[];
+  };
+  explainer.concepts.find((c) => c.id === "concept:retry-policy")!.summary =
+    "A failed job waits longer before each new try.";
+  recorded.explainer = explainer;
+  await expect(page.locator(".details")).toContainText(
+    "A failed job waits longer before each new try.",
+    { timeout: 10_000 },
+  );
+  expect(await selectionOf(page)).toEqual(["concept:retry-policy"]);
+  expect(problems).toEqual([]);
 });
 
 /** The fixture's tour:intro as the page embeds it. */

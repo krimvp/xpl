@@ -11,10 +11,12 @@
  *     PUT  {api}/views/<view id>      persist a view edit: JSON `{ "type": <view type>, ...changed fields }`
  *     PUT  {api}/tours/<tour id>      persist a tour edit: JSON `{ "title": ..., "steps": [...] }` (the whole tour;
  *                                     a new tour is created the same way)
- *     POST {api}/requests             queue an "explain this" request: JSON `{ kind, id, view?, label? }`
+ *     GET  {api}/explainer            the explainer as it is on disk now, with an ETag (304 while unchanged):
+ *                                     polled, so what Claude applies shows up without a reload
+ *     POST {api}/requests             queue an "explain this" request: JSON `{ kind, id, note?, view?, label? }`
  * - without `server` every edit stays in memory (the header offers "Download explainer JSON").
  */
-import { BUNDLE_SCRIPT_ID, parseBundle, type ViewerBundle } from "@xpl/core";
+import { BUNDLE_SCRIPT_ID, parseBundle, type Explainer, type ViewerBundle } from "@xpl/core";
 
 export type LoadedBundle = { ok: true; bundle: ViewerBundle } | { ok: false; error: string };
 
@@ -46,6 +48,8 @@ export interface ExplainRequest {
   kind: "expand";
   /** The element to explain (a node, edge, concept or sequence step id). */
   id: string;
+  /** What the user wants changed, in their words ("too long", "show the caller"); none = expand it. */
+  note?: string;
   /** The view the user was looking at. */
   view?: string;
   /** Display label of the element, for humans reading the queue. */
@@ -129,6 +133,25 @@ export class ServerApi {
     );
   }
 
+  /**
+   * The explainer on disk, or undefined while it still has the ETag `etag` (a 304). Rejects when the
+   * server cannot serve it (an older `xpl view` answers 404).
+   */
+  async getExplainer(
+    etag: string | undefined,
+  ): Promise<{ explainer: Explainer; etag: string | undefined } | undefined> {
+    const response = await fetch(this.url("/explainer"), {
+      headers: etag !== undefined ? { "if-none-match": etag } : {},
+      cache: "no-store",
+    });
+    if (response.status === 304) return undefined;
+    await this.check(response);
+    return {
+      explainer: (await response.json()) as Explainer,
+      etag: response.headers.get("etag") ?? undefined,
+    };
+  }
+
   async postRequest(request: ExplainRequest): Promise<void> {
     await this.check(
       await fetch(this.url("/requests"), {
@@ -141,8 +164,9 @@ export class ServerApi {
 }
 
 /** The command that does what "Explain this" queues, for people without a server. */
-export function explainCommand(id: string): string {
-  return `/code-explainer expand ${id}`;
+export function explainCommand(id: string, note?: string): string {
+  const text = note?.trim().replace(/\s+/g, " ");
+  return text ? `/code-explainer feedback ${id} ${text}` : `/code-explainer expand ${id}`;
 }
 
 /**

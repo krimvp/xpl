@@ -1,6 +1,6 @@
 ---
 name: code-explainer
-description: Generate an interactive code explainer, meaning a short guided tour with linked diagrams (box-and-arrow map, process flow, sequence diagram) next to a code viewer, where clicking a box, arrow or step highlights the exact code and selecting code lights up the matching diagram elements. Use when the user wants to understand how code works ("how does X work", "how does a failed job get retried"), get an architecture overview of a repo, understand or review a change (a PR, MR, branch or commit range, read locally), explore an unfamiliar codebase, or prepare a code walkthrough, demo or presentation. Operations - explain <question> (part of a project), explain repo (architecture), explain change <base>..<head> (a diff), expand (grow a view), make tour (a talk).
+description: Generate an interactive code explainer, meaning a short guided tour with linked diagrams (box-and-arrow map, process flow, sequence diagram) next to a code viewer, where clicking a box, arrow or step highlights the exact code and selecting code lights up the matching diagram elements. Use when the user wants to understand how code works ("how does X work", "how does a failed job get retried"), get an architecture overview of a repo, understand or review a change (a PR, MR, branch or commit range, read locally), explore an unfamiliar codebase, or prepare a code walkthrough, demo or presentation. Operations - explain <question> (part of a project), explain repo (architecture), explain change <base>..<head> (a diff), expand (grow a view), feedback (do what the user asked for in the viewer), make tour (a talk).
 ---
 
 # Code explainer
@@ -166,7 +166,15 @@ Patch only what changes, and lint the patch first.
 1. Resolve it to an id and read it: `show <id> --refs`, `outline --under <id> --depth 1`.
 2. Add it and the children worth showing with `includeAdd` on the graph view. A view with `origin: "user"` takes no `llm` edit: use a new view.
 3. `status <name>` names what became visible and has no summary: explain those and only those.
-4. `status` also lists `requests queued by the viewer`: do 1-3 for each, then `rm .explainer/requests.json`.
+4. `status` also lists `requests queued by the viewer`: do 1-3 for each (one with a note: `feedback`), then `rm .explainer/requests.json`.
+
+## feedback [<id> <what to change>]
+
+What the user typed under "Explain this" in `xpl view`: the queued requests with a note in `xpl status <name>` (or the one `<id>` given). The note says what to change about that element, in their words: "too long", "wrong, it retries 3 times", "show the caller".
+
+1. For each request: read the element and its code (`show <id> --refs`), then make the smallest patch that does what the note asks, by the rules of `writing.md`. More to show is `expand`; a claim the code contradicts is fixed in the text, never by bending the anchor. If the note is wrong about the code, change nothing and say why.
+2. Put all of them in one patch: `xpl lint <name> --patch <file>`, then `xpl apply`. A request without a note is an `expand`.
+3. `rm .explainer/requests.json`, then reply with one line per request: what changed, or why not. The open page shows the change by itself within a few seconds.
 
 ## make tour
 
