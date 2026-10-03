@@ -282,6 +282,13 @@ function GuideSection({
     store.previewStep(tourId, index);
     store.setPerspective(perspective);
   };
+  // The steps inside one part that the section is about (from = to): one "This step" card lists them all.
+  const selfSteps = step.focus.flatMap((id) => {
+    const element = state.model.element(id);
+    return element?.type === "step" && element.step.from === element.step.to
+      ? [{ id, from: element.step.from, label: element.step.label }]
+      : [];
+  });
   // a11y: every step has the same buttons and lists; their names say which step they belong to
   const where = `step ${index + 1}: ${title}`;
   return (
@@ -334,22 +341,35 @@ function GuideSection({
           );
         if (element?.type === "step") {
           const { from, to, label } = element.step;
-          // A step inside one part (from = to) is one box with what it does, not "X → X".
-          return from === to ? (
-            <figure className="guide-mini" key={id} aria-label={`Interaction: ${label}`}>
-              <figcaption>This step</figcaption>
-              <div className="guide-mini-row">
-                <button
-                  className="guide-mini-node is-self"
-                  data-testid="guide-mini-self"
-                  onClick={() => store.select([from])}
-                >
-                  <span className="guide-mini-name">inside {state.model.label(from)}:</span>{" "}
-                  <span className="guide-mini-what">{label}</span>
-                </button>
-              </div>
-            </figure>
-          ) : (
+          // A step inside one part (from = to) is one box with what it does, not "X → X". The section's steps
+          // of that kind share one card (two cards both called "This step" read as a repeat).
+          if (from === to) {
+            if (selfSteps[0]?.id !== id) return null;
+            return (
+              <figure
+                className="guide-mini"
+                key={id}
+                aria-label={`Interaction: ${selfSteps.map((s) => s.label).join("; ")}`}
+              >
+                <figcaption>This step</figcaption>
+                {selfSteps.map((self) => (
+                  <div className="guide-mini-row" key={self.id}>
+                    <button
+                      className="guide-mini-node is-self"
+                      data-testid="guide-mini-self"
+                      onClick={() => store.select([self.from])}
+                    >
+                      <span className="guide-mini-name">
+                        inside {state.model.label(self.from)}:
+                      </span>{" "}
+                      <span className="guide-mini-what">{self.label}</span>
+                    </button>
+                  </div>
+                ))}
+              </figure>
+            );
+          }
+          return (
             <figure className="guide-mini" key={id} aria-label={`Interaction: ${label}`}>
               <figcaption>This call</figcaption>
               <div className="guide-mini-row">
