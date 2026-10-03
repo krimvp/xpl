@@ -1,11 +1,26 @@
-import ELKModule, { type ElkNode } from "elkjs/lib/elk.bundled.js";
 import type { ElementId, ExplainerModel, ProcessFlow } from "@xpl/core";
 import { textWidth } from "../measure.js";
+import type { Point } from "../svg.js";
+import {
+  layered,
+  orthogonalRoute,
+  separateTracks,
+  sideToward,
+  spreadPorts,
+  type Port,
+} from "./layered.js";
 
-const ELK = ((ELKModule as unknown as { default?: unknown }).default ?? ELKModule) as new () => {
-  layout(graph: ElkNode): Promise<ElkNode>;
-};
-const elk = new ELK();
+/** A laid-out flow: its size, its boxes (top-left corners), and each transition's route and label box. */
+export interface FlowLayout {
+  width: number;
+  height: number;
+  children: { id: string; x: number; y: number; width: number; height: number }[];
+  edges: {
+    id: string;
+    sections: { startPoint: Point; bendPoints: Point[]; endPoint: Point }[];
+    labels: { text: string; x: number; y: number; width: number; height: number }[];
+  }[];
+}
 
 /**
  * Box sizes, in the diagram's units. Kept compact: a flow is fitted to the width of its pane, so every unit
@@ -38,50 +53,116 @@ export function wrapWords(text: string, width: number, max = Infinity): string[]
   return lines.slice(0, max).map((line, index) => (index === max - 1 ? `${line}…` : line));
 }
 
-export function layoutFlow(flow: ProcessFlow): Promise<ElkNode> {
-  return elk.layout({
-    id: "process",
-    layoutOptions: {
-      "elk.algorithm": "layered",
-      "elk.direction": "DOWN",
-      "elk.edgeRouting": "ORTHOGONAL",
-      "elk.spacing.nodeNode": "36",
-      "elk.layered.spacing.nodeNodeBetweenLayers": "70",
-      "elk.padding": "[top=30,left=24,bottom=30,right=24]",
-    },
-    children: flow.stages.map(({ step, shape }) => ({
-      id: step.id,
-      width: shape === "decision" ? DECISION_WIDTH : STAGE_WIDTH,
-      height: shape === "decision" ? DECISION_HEIGHT : STAGE_HEIGHT,
-    })),
-    edges: flow.transitions.map((edge) => {
-      if (!edge.label) return { id: edge.id, sources: [edge.from], targets: [edge.to] };
+/** Lays out a flow top-down: stages in layers, right-angled transitions with their labels between them. */
+export async function layoutFlow(flow: ProcessFlow): Promise<FlowLayout> {
+  const children = flow.stages.map(({ step, shape }) => ({
+    id: step.id,
+    width: shape === "decision" ? DECISION_WIDTH : STAGE_WIDTH,
+    height: shape === "decision" ? DECISION_HEIGHT : STAGE_HEIGHT,
+  }));
+  const labels = new Map(
+    flow.transitions.flatMap((edge) => {
+      if (!edge.label) return [];
       const lines = wrapWords(edge.label, EDGE_LABEL_CHARS);
+      const size = {
+        width: Math.max(...lines.map((line) => textWidth(line, FLOW_FONT))) + 16,
+        height: 8 + EDGE_LABEL_LINE * lines.length,
+      };
+      return [[edge.id, { text: edge.label, ...size }] as const];
+    }),
+  );
+  const result = layered(
+    children,
+    flow.transitions.map((edge) => ({
+      id: edge.id,
+      from: edge.from,
+      to: edge.to,
+      ...(labels.has(edge.id) ? { label: labels.get(edge.id)! } : {}),
+    })),
+    {
+      direction: "DOWN",
+      nodeGap: 36,
+      layerGap: 70,
+      edgeGap: 14,
+      pad: { top: 30, right: 24, bottom: 30, left: 24 },
+    },
+  );
+  const ports = new Map<string, Port>();
+  const transitions = flow.transitions.filter(
+    (edge) => result.boxes.has(edge.from) && result.boxes.has(edge.to) && edge.from !== edge.to,
+  );
+  for (const edge of transitions) {
+    const from = result.boxes.get(edge.from)!;
+    const to = result.boxes.get(edge.to)!;
+    const via = result.routes.get(edge.id)?.via ?? [];
+    const next = via[0] ?? { x: to.x + to.width / 2, y: to.y + to.height / 2 };
+    const previous = via[via.length - 1] ?? {
+      x: from.x + from.width / 2,
+      y: from.y + from.height / 2,
+    };
+    ports.set(`${edge.id}\0from`, {
+      box: edge.from,
+      side: sideToward(from, next, "DOWN"),
+      toward: next.x,
+    });
+    ports.set(`${edge.id}\0to`, {
+      box: edge.to,
+      side: sideToward(to, previous, "DOWN"),
+      toward: previous.x,
+    });
+  }
+  const spread = spreadPorts(ports, result.boxes, "DOWN");
+  const routed = transitions.map((edge) =>
+    orthogonalRoute(
+      result.boxes.get(edge.from)!,
+      result.boxes.get(edge.to)!,
+      result.routes.get(edge.id)?.via ?? [],
+      { from: spread.get(`${edge.id}\0from`)!, to: spread.get(`${edge.id}\0to`)! },
+      "DOWN",
+    ),
+  );
+  separateTracks(routed, "DOWN");
+  return {
+    width: result.width,
+    height: result.height,
+    children: children.map((child) => ({ ...child, ...result.boxes.get(child.id)! })),
+    edges: transitions.map((edge, n) => {
+      const route = result.routes.get(edge.id);
+      const points = routed[n]!;
+      const label = labels.get(edge.id);
       return {
         id: edge.id,
-        sources: [edge.from],
-        targets: [edge.to],
-        labels: [
+        sections: [
           {
-            text: edge.label,
-            width: Math.max(...lines.map((line) => textWidth(line, FLOW_FONT))) + 16,
-            height: 8 + EDGE_LABEL_LINE * lines.length,
+            startPoint: points[0]!,
+            bendPoints: points.slice(1, -1),
+            endPoint: points[points.length - 1]!,
           },
         ],
+        labels:
+          label && route?.label
+            ? [
+                {
+                  ...label,
+                  x: route.label.x - label.width / 2,
+                  y: route.label.y - label.height / 2,
+                },
+              ]
+            : [],
       };
     }),
-  });
+  };
 }
 
 /**
- * The laid-out boxes of a flow, each with its stage. ELK answers after the render that asked for it: a
+ * The laid-out boxes of a flow, each with its stage. The layout answers after the render that asked for it: a
  * node the flow does not have (from the layout of another view, still on screen while the new one is
  * computed) is skipped, never drawn from a missing stage.
  */
 export function placedStages(
   flow: ProcessFlow,
-  layout: ElkNode,
-): { node: ElkNode; stage: ProcessFlow["stages"][number] }[] {
+  layout: Pick<FlowLayout, "children">,
+): { node: FlowLayout["children"][number]; stage: ProcessFlow["stages"][number] }[] {
   const stages = new Map(flow.stages.map((stage) => [stage.step.id, stage] as const));
   return (layout.children ?? []).flatMap((node) => {
     const stage = stages.get(node.id);

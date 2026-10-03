@@ -1,19 +1,19 @@
 /**
- * Graph views: `DerivedGraph` (core) -> boxes and routed edges (elkjs) that GraphView draws as SVG.
+ * Graph views: `DerivedGraph` (core) -> boxes and routed edges that GraphView draws as SVG.
  *
- * ELK `layered` (direction RIGHT by default; `layoutGraphFitting` picks RIGHT or DOWN by what reads larger
- * in the pane), `hierarchyHandling: INCLUDE_CHILDREN`: one pass lays out the whole
- * containment tree, so edges may cross container borders. Included nodes with included children are
- * containers (ELK compound nodes). Ghost boxes (where a view stops) are plain nodes at the top level;
- * stubs are edges to them.
+ * A layered layout (layered.ts, on dagre; direction RIGHT by default, `layoutGraphFitting` picks RIGHT or
+ * DOWN by what reads larger in the pane). Included nodes with included children are containers: each
+ * container's inside is laid out first, as a level of its own with room for the container's header, and
+ * the container then takes part in the level above as one box of that size. Ghost boxes (where a view
+ * stops) are plain nodes at the top level; stubs are edges to them.
  *
  * Every edge belongs to the lowest container that holds both of its ends (the canvas for top-level
- * ones) and is declared there, so ELK returns its route and label relative to that container
- * (`elk.json.edgeCoords: CONTAINER`) and GraphView draws it inside the container's group. Node
- * positions are relative to their container too. If ELK throws, a simple grid layout keeps the diagram
- * usable (all edges on the canvas, in canvas coordinates).
+ * ones). It is laid out in that container's level between the two boxes its ends are drawn in there, and
+ * routed relative to that container's top-left corner, with right-angled ends on the boxes it joins (which
+ * may sit deeper inside those two): GraphView draws it inside the container's group. Node positions are
+ * relative to their container too. If the layout throws, a simple grid keeps the diagram usable (all edges
+ * on the canvas, in canvas coordinates).
  */
-import ELKModule, { type ElkExtendedEdge, type ElkNode } from "elkjs/lib/elk.bundled.js";
 import {
   ghostId,
   type DerivedEdge,
@@ -28,6 +28,17 @@ import type { ChangeStatus } from "../diff.js";
 import { textWidth } from "../measure.js";
 import { nearRoute, routeAnchor, type Box, type Point } from "../svg.js";
 import { unionBox } from "../viewport.js";
+import {
+  layered,
+  orthogonalRoute,
+  separateTracks,
+  sideToward,
+  spreadPorts,
+  type Direction,
+  type LayeredOptions,
+  type LayeredResult,
+  type Port,
+} from "./layered.js";
 
 export type { Point } from "../svg.js";
 
@@ -96,15 +107,14 @@ export interface LayoutEdge {
   anchor: Point;
 }
 
-/** Which way the layers run: `RIGHT` (columns, left to right) or `DOWN` (rows, top to bottom). */
-export type Direction = "RIGHT" | "DOWN";
+export type { Direction } from "./layered.js";
 
 export interface GraphLayout {
   width: number;
   height: number;
   nodes: LayoutNode[];
   edges: LayoutEdge[];
-  /** True when ELK failed and the grid fallback was used. */
+  /** True when the layered layout failed and the grid fallback was used. */
   fallback: boolean;
   direction: Direction;
 }
@@ -245,7 +255,7 @@ function labelBox(text: string): { text: string; width: number; height: number }
   };
 }
 
-// ─── Model shared by ELK and the fallback ───────────────────────────────────────────────────────
+// ─── Model shared by the layered layout and the fallback ───────────────────────────────────────────────────────
 
 interface ModelNode {
   label: string;
@@ -255,8 +265,6 @@ interface ModelNode {
   ghostFold?: LayoutNode["ghostFold"];
   detail?: string;
   hint?: string;
-  /** Ghosts: `in` when every stub enters the view there, `out` when every stub leaves it. */
-  side?: "in" | "out";
   change?: ChangeStatus;
   role?: NodeRole;
   opens?: string;
@@ -366,7 +374,6 @@ function buildModel(graph: DerivedGraph, changes: ChangeMarks | undefined): Mode
         // One kind is named; several are left to the tooltip and the details panel.
         detail: `${kinds.length === 1 ? `${kinds[0]} ` : ""}×${ghost.count}`,
         hint: `${kinds.join(", ")} ×${ghost.count}`,
-        ...(ghost.direction !== "both" ? { side: ghost.direction } : {}),
       });
       roots.push(box);
     }
@@ -432,32 +439,22 @@ function makeNode(
   return out;
 }
 
-// ─── ELK ────────────────────────────────────────────────────────────────────────────────────────
+// ─── Layered layout, one container at a time ────────────────────────────────────────────────────
 
-// elkjs ships an ES-style d.ts for a CommonJS file: with a bundler `ELKModule` is the class, under Node's
-// own module resolution it is `module.exports`, which carries the class as `.default`.
-type ElkConstructor = new () => { layout(graph: ElkNode): Promise<ElkNode> };
-const ELK = ((ELKModule as unknown as { default?: unknown }).default ??
-  ELKModule) as ElkConstructor;
-const elk = new ELK();
+/** Where a layout starts: the reading direction. */
+export interface LayoutOptions {
+  /** Default `RIGHT`. */
+  direction?: Direction;
+}
 
-const ROOT_OPTIONS: Record<string, string> = {
-  "elk.algorithm": "layered",
-  "elk.direction": "RIGHT",
-  "elk.hierarchyHandling": "INCLUDE_CHILDREN",
-  "elk.edgeRouting": "ORTHOGONAL",
-  "elk.json.edgeCoords": "CONTAINER",
-  "elk.padding": "[top=24,left=24,bottom=24,right=24]",
-  // Tight on purpose: a layout is fitted into its pane, so every pixel of air between boxes shrinks the
-  // text. These spacings read about 20% larger than ELK's roomy ones on the fixture's overview.
-  "elk.spacing.nodeNode": "24",
-  "elk.spacing.edgeNode": "14",
-  "elk.spacing.edgeEdge": "10",
-  "elk.spacing.edgeLabel": "4",
-  "elk.layered.spacing.nodeNodeBetweenLayers": "30",
-  "elk.layered.spacing.edgeNodeBetweenLayers": "14",
-  "elk.layered.spacing.edgeEdgeBetweenLayers": "10",
-  "elk.layered.considerModelOrder.strategy": "NODES_AND_EDGES",
+/** Spacing. Tight on purpose: a layout is fitted into its pane, so every pixel of air between boxes shrinks the text. */
+const SPACING = { nodeGap: 24, layerGap: 48, edgeGap: 10 };
+const CANVAS_PAD = 24;
+const CONTAINER_PADDING = {
+  top: HEADER_HEIGHT + 8,
+  right: CONTAINER_PAD,
+  bottom: CONTAINER_PAD,
+  left: CONTAINER_PAD,
 };
 
 /** The container that holds an edge: the lowest one around both ends, "" for the canvas. */
@@ -472,87 +469,178 @@ function holderOf(model: Model, from: string, to: string): string {
   return above(from).find((id) => around.has(id)) ?? "";
 }
 
-function toElk(model: Model, id: string, registry: Map<string, ElkNode>): ElkNode {
-  const kids = model.children.get(id) ?? [];
-  const node = model.nodes.get(id)!;
-  let out: ElkNode;
-  if (kids.length === 0) {
-    // Where a view stops: what only enters it sits in the first layer, what only leaves it in the last.
-    const constraint = node.side === "in" ? "FIRST" : node.side === "out" ? "LAST" : undefined;
-    out = {
-      id,
-      ...leafSize(model, id),
-      ...(constraint
-        ? { layoutOptions: { "elk.layered.layering.layerConstraint": constraint } }
-        : {}),
-    };
-  } else {
-    out = {
-      id,
-      layoutOptions: {
-        "elk.padding": `[top=${HEADER_HEIGHT + 8},left=${CONTAINER_PAD},bottom=${CONTAINER_PAD},right=${CONTAINER_PAD}]`,
-        "elk.nodeSize.constraints": "MINIMUM_SIZE",
-        "elk.nodeSize.minimum": `(${containerMinWidth(node.label, node.badge, node.change)}, ${HEADER_HEIGHT + 60})`,
-      },
-      children: kids.map((kid) => toElk(model, kid, registry)),
-      edges: [],
-    };
+/** The box at the level of `holder` that `id` is drawn in: `id` itself or the ancestor right below `holder`. */
+function liftTo(model: Model, id: string, holder: string): string {
+  let cur = id;
+  for (
+    let parent = model.parent.get(cur);
+    (parent ?? "") !== holder;
+    parent = model.parent.get(cur)
+  ) {
+    if (parent === undefined) return cur;
+    cur = parent;
   }
-  registry.set(id, out);
-  return out;
-}
-
-function routeOf(edge: ElkExtendedEdge): Point[] {
-  const points: Point[] = [];
-  for (const section of edge.sections ?? []) {
-    points.push(section.startPoint, ...(section.bendPoints ?? []), section.endPoint);
-  }
-  return points.map((p) => ({ x: p.x, y: p.y }));
+  return cur;
 }
 
 type EdgeMeta = Model["edges"][number];
 
-function layoutEdgeOf(edge: ElkExtendedEdge, meta: EdgeMeta): LayoutEdge {
-  const points = routeOf(edge);
-  const laidOut: LayoutEdge = {
-    id: edge.id,
-    stub: meta.stub,
-    resolution: meta.resolution,
-    kind: meta.kind,
-    title: meta.label,
-    from: meta.from,
-    to: meta.to,
-    counted: meta.counted,
-    points,
-    anchor: points[0] ?? { x: 0, y: 0 },
-  };
-  const label = edge.labels?.[0];
-  if (label && label.text !== undefined && label.x !== undefined && label.y !== undefined) {
-    laidOut.label = {
-      text: label.text,
-      x: label.x,
-      y: label.y,
-      width: label.width ?? 0,
-      height: label.height ?? 0,
-    };
+interface Level {
+  /** The box of the level: a container's own node, or undefined for the canvas. */
+  node: LayoutNode | undefined;
+  routes: LayeredResult["routes"];
+  edges: EdgeMeta[];
+}
+
+/**
+ * Lays out the graph: every container's inside first (its children as one layered level, with room for its
+ * header), then the container as one box of the level above, up to the canvas. Then every edge is routed in
+ * the container that holds it: dagre's points between the two boxes of that level its ends are drawn in, and
+ * right-angled ends on the boxes it actually joins, which may sit deeper inside them.
+ */
+function layeredLayout(model: Model, direction: Direction): GraphLayout {
+  const held = new Map<string, EdgeMeta[]>();
+  for (const edge of model.edges) {
+    const holder = holderOf(model, edge.from, edge.to);
+    const list = held.get(holder);
+    if (list) list.push(edge);
+    else held.set(holder, [edge]);
   }
-  return laidOut;
-}
+  const levels: Level[] = [];
+  const level = (
+    ids: readonly string[],
+    holder: string,
+    pad: LayeredOptions["pad"],
+  ): { nodes: LayoutNode[]; result: LayeredResult; edges: EdgeMeta[] } => {
+    const nodes = ids.map(build);
+    const edges = held.get(holder) ?? [];
+    const result = layered(
+      nodes.map((n) => ({ id: n.id, width: n.width, height: n.height })),
+      edges.map((edge) => ({
+        id: edge.id,
+        from: liftTo(model, edge.from, holder),
+        to: liftTo(model, edge.to, holder),
+        // Stubs carry no label of their own: their ghost box tells what leaves or enters there.
+        ...(edge.stub ? {} : { label: labelBox(edge.label) }),
+      })),
+      { direction, ...SPACING, pad },
+    );
+    for (const node of nodes) {
+      const box = result.boxes.get(node.id)!;
+      node.x = box.x;
+      node.y = box.y;
+    }
+    return { nodes, result, edges };
+  };
+  function build(id: string): LayoutNode {
+    const kids = model.children.get(id) ?? [];
+    if (kids.length === 0) return makeNode(model, id, { x: 0, y: 0, ...leafSize(model, id) }, []);
+    const inner = level(kids, id, CONTAINER_PADDING);
+    const info = model.nodes.get(id)!;
+    const node = makeNode(
+      model,
+      id,
+      {
+        x: 0,
+        y: 0,
+        width: Math.max(inner.result.width, containerMinWidth(info.label, info.badge, info.change)),
+        height: Math.max(inner.result.height, HEADER_HEIGHT + 60),
+      },
+      inner.nodes,
+    );
+    levels.push({ node, routes: inner.result.routes, edges: inner.edges });
+    return node;
+  }
+  const pad = { top: CANVAS_PAD, right: CANVAS_PAD, bottom: CANVAS_PAD, left: CANVAS_PAD };
+  const top = level(model.roots, "", pad);
+  levels.push({ node: undefined, routes: top.result.routes, edges: top.edges });
 
-function fromElk(model: Model, node: ElkNode, described: Map<string, EdgeMeta>): LayoutNode {
-  return makeNode(
-    model,
-    node.id,
-    { x: node.x ?? 0, y: node.y ?? 0, width: node.width ?? 0, height: node.height ?? 0 },
-    (node.children ?? []).map((child) => fromElk(model, child, described)),
-    edgesOf(node, described),
-  );
-}
-
-function edgesOf(node: ElkNode, described: Map<string, EdgeMeta>): LayoutEdge[] {
-  return ((node.edges ?? []) as ElkExtendedEdge[]).map((edge) =>
-    layoutEdgeOf(edge, described.get(edge.id)!),
-  );
+  // Boxes relative to each container (and to the canvas), to route the edges it holds.
+  const parentOf = new Map<string, LayoutNode>();
+  const nodeOf = new Map<string, LayoutNode>();
+  const index = (list: LayoutNode[], parent: LayoutNode | undefined) => {
+    for (const node of list) {
+      nodeOf.set(node.id, node);
+      if (parent) parentOf.set(node.id, parent);
+      index(node.children, node);
+    }
+  };
+  index(top.nodes, undefined);
+  const boxIn = (id: string, holder: LayoutNode | undefined): Box => {
+    const node = nodeOf.get(id)!;
+    let x = node.x;
+    let y = node.y;
+    for (let up = parentOf.get(id); up && up !== holder; up = parentOf.get(up.id)) {
+      x += up.x;
+      y += up.y;
+    }
+    return { x, y, width: node.width, height: node.height };
+  };
+  const canvasEdges: LayoutEdge[] = [];
+  for (const { node: holder, routes, edges } of levels) {
+    const boxes = new Map<string, Box>();
+    const ports = new Map<string, Port>();
+    const vias = new Map<string, Point[]>();
+    for (const edge of edges) {
+      const from = boxIn(edge.from, holder);
+      const to = boxIn(edge.to, holder);
+      boxes.set(edge.from, from);
+      boxes.set(edge.to, to);
+      const via = routes.get(edge.id)?.via ?? [];
+      vias.set(edge.id, via);
+      const centre = (b: Box): Point => ({ x: b.x + b.width / 2, y: b.y + b.height / 2 });
+      const next = via[0] ?? centre(to);
+      const previous = via[via.length - 1] ?? centre(from);
+      const cross = direction === "RIGHT" ? "y" : "x";
+      ports.set(`${edge.id}\0from`, {
+        box: edge.from,
+        side: sideToward(from, next, direction),
+        toward: next[cross],
+      });
+      ports.set(`${edge.id}\0to`, {
+        box: edge.to,
+        side: sideToward(to, previous, direction),
+        toward: previous[cross],
+      });
+    }
+    const spread = spreadPorts(ports, boxes, direction);
+    const out = holder ? holder.edges : canvasEdges;
+    const routed = edges.map((edge) =>
+      orthogonalRoute(
+        boxes.get(edge.from)!,
+        boxes.get(edge.to)!,
+        vias.get(edge.id)!,
+        { from: spread.get(`${edge.id}\0from`)!, to: spread.get(`${edge.id}\0to`)! },
+        direction,
+      ),
+    );
+    separateTracks(routed, direction);
+    edges.forEach((edge, n) => {
+      const points = routed[n]!;
+      const laidOut: LayoutEdge = {
+        id: edge.id,
+        stub: edge.stub,
+        resolution: edge.resolution,
+        kind: edge.kind,
+        title: edge.label,
+        from: edge.from,
+        to: edge.to,
+        counted: edge.counted,
+        points,
+        anchor: points[0] ?? { x: 0, y: 0 },
+      };
+      const centre = routes.get(edge.id)?.label;
+      if (!edge.stub && centre) {
+        const box = labelBox(edge.label);
+        laidOut.label = { ...box, x: centre.x - box.width / 2, y: centre.y - box.height / 2 };
+      }
+      out.push(laidOut);
+    });
+  }
+  const width = top.result.width;
+  const height = top.result.height;
+  placeAnchors(top.nodes, canvasEdges, { width, height });
+  return { width, height, nodes: top.nodes, edges: canvasEdges, fallback: false, direction };
 }
 
 // ─── Anchors: where a click on an edge lands ────────────────────────────────────────────────────
@@ -625,43 +713,21 @@ export type ChangeMarks = ReadonlyMap<string, ChangeStatus>;
 
 export async function layoutGraph(
   graph: DerivedGraph,
-  options: Record<string, string> = {},
-  labelOptions: Record<string, string> = {},
+  options: LayoutOptions = {},
   changes?: ChangeMarks,
 ): Promise<GraphLayout> {
   const model = buildModel(graph, changes);
-  const registry = new Map<string, ElkNode>();
-  const root: ElkNode = {
-    id: "root",
-    layoutOptions: { ...ROOT_OPTIONS, ...options },
-    children: model.roots.map((id) => toElk(model, id, registry)),
-    edges: [],
-  };
-  for (const edge of model.edges) {
-    const holder = holderOf(model, edge.from, edge.to);
-    const elkEdge: ElkExtendedEdge = {
-      id: edge.id,
-      sources: [edge.from],
-      targets: [edge.to],
-      // Stubs carry no label of their own: their ghost box tells what leaves or enters there.
-      ...(edge.stub ? {} : { labels: [{ ...labelBox(edge.label), layoutOptions: labelOptions }] }),
-    };
-    (holder === "" ? root : registry.get(holder)!).edges!.push(elkEdge);
-  }
   try {
-    const out = await elk.layout(root);
-    const described = new Map(model.edges.map((e) => [e.id, e] as const));
-    const nodes = (out.children ?? []).map((child) => fromElk(model, child, described));
-    const edges = edgesOf(out, described);
-    const width = out.width ?? 0;
-    const height = out.height ?? 0;
-    placeAnchors(nodes, edges, { width, height });
-    const direction = (options["elk.direction"] ?? ROOT_OPTIONS["elk.direction"]) as Direction;
-    return { width, height, nodes, edges, fallback: false, direction };
+    return layeredLayout(model, options.direction ?? "RIGHT");
   } catch (error) {
-    console.warn("xpl: ELK layout failed, using a grid", error);
+    console.warn("xpl: layout failed, using a grid", error);
     return fallbackLayout(model);
   }
+}
+
+/** The grid that stands in when the layered layout fails: every box, every edge straight between centres. */
+export function gridLayoutOf(graph: DerivedGraph, changes?: ChangeMarks): GraphLayout {
+  return fallbackLayout(buildModel(graph, changes));
 }
 
 // ─── Where a diagram too big to fit starts ──────────────────────────────────────────────────────
@@ -738,10 +804,10 @@ export async function layoutGraphFitting(
   changes?: ChangeMarks,
 ): Promise<GraphLayout> {
   if (!viewport || viewport.width <= 0 || viewport.height <= 0)
-    return layoutGraph(graph, {}, {}, changes);
+    return layoutGraph(graph, {}, changes);
   const suggested: Direction = viewport.width / viewport.height < 1 ? "DOWN" : "RIGHT";
   const other: Direction = suggested === "RIGHT" ? "DOWN" : "RIGHT";
-  const first = await layoutGraph(graph, { "elk.direction": suggested }, {}, changes);
+  const first = await layoutGraph(graph, { direction: suggested }, changes);
   if (
     first.fallback ||
     // shown at its natural size or larger: turning it would not make the text read better
@@ -750,7 +816,7 @@ export async function layoutGraphFitting(
   ) {
     return first;
   }
-  const second = await layoutGraph(graph, { "elk.direction": other }, {}, changes);
+  const second = await layoutGraph(graph, { direction: other }, changes);
   if (second.fallback) return first;
   return fitScale(second, viewport, maxZoom, padding) >
     fitScale(first, viewport, maxZoom, padding) * OTHER_DIRECTION_MARGIN

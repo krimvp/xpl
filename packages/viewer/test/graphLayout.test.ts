@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   absoluteBoxes,
   fitScale,
+  gridLayoutOf,
   layoutGraph,
   layoutGraphFitting,
   startAnchor,
@@ -56,6 +57,8 @@ describe("layoutGraph", () => {
     expect(cls.x).toBeGreaterThanOrEqual(0);
     expect(cls.x + cls.width).toBeLessThanOrEqual(file.width);
     expect(cls.y + cls.height).toBeLessThanOrEqual(file.height);
+    // below the container's header (its label and badge)
+    expect(cls.y).toBeGreaterThanOrEqual(34);
     expect(file.badge).toBe("file");
     expect(cls.badge).toBe("class");
     const boxes = all(layout.nodes).filter((n) => !n.ghost);
@@ -155,9 +158,9 @@ describe("layoutGraph", () => {
     ]);
   });
 
-  it("falls back to a grid when ELK cannot lay the graph out", async () => {
+  it("has a grid to fall back on when the layered layout fails", async () => {
     const { graph } = graphOf(["file:src/a.ts", "file:src/b.ts"]);
-    const layout = await layoutGraph(graph, { "elk.algorithm": "no.such.algorithm" });
+    const layout = gridLayoutOf(graph);
     expect(layout.fallback).toBe(true);
     expect(layout.nodes.filter((n) => !n.ghost)).toHaveLength(2);
     const edge = layout.edges.find((e) => !e.stub)!;
@@ -268,8 +271,8 @@ describe("layoutGraphFitting", () => {
     expect(wide.direction).toBe("RIGHT");
     expect(tall.direction).toBe("DOWN");
     // whichever it picked is the one that fits at the larger scale
-    const right = await layoutGraph(graph, { "elk.direction": "RIGHT" });
-    const down = await layoutGraph(graph, { "elk.direction": "DOWN" });
+    const right = await layoutGraph(graph, { direction: "RIGHT" });
+    const down = await layoutGraph(graph, { direction: "DOWN" });
     expect(right.direction).toBe("RIGHT");
     expect(down.direction).toBe("DOWN");
     const fits = (l: { width: number; height: number }, v: { width: number; height: number }) =>
