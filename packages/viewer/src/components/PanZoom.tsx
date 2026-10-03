@@ -63,6 +63,11 @@ export const FLOW_READABLE_ZOOM = 11 / 13;
  * on a wide screen) and down to `FLOW_READABLE_ZOOM` (11px): a flow is read from the back of the room.
  */
 export const PRESENT_FLOW_MAX_ZOOM = 16 / 13;
+/**
+ * In Present, all of a flow step's focus (two boxes far apart, or a box taller than a short pane) is shown
+ * down to this zoom (10px text) rather than half of it at 16px: neighbours still come in only at 16px.
+ */
+export const PRESENT_FLOW_FOCUS_ZOOM = 10 / 13;
 const DRAG_THRESHOLD = 4;
 /** Room kept between the selection and the pane's edge when it is panned into view, px. */
 const REVEAL_MARGIN = 32;
@@ -105,6 +110,11 @@ export interface PanZoomProps {
    */
   readableMin?: number;
   /**
+   * The zoom the step's focus may go down to, to have all of it in view (and no box of it larger than the
+   * pane), below `readableMin`: neighbours are only added at the size the focus needs (viewport.ts).
+   */
+  focusMin?: number;
+  /**
    * Drawn over the diagram, outside its transform (the current one is passed in): what must stay in sight
    * while the diagram moves, such as the participant names of a sequence.
    */
@@ -142,6 +152,7 @@ export function PanZoom({
   fitPadding = FIT_PADDING,
   readableZoom,
   readableMin,
+  focusMin,
   overlay,
   tools,
   focus,
@@ -177,8 +188,9 @@ export function PanZoom({
       ...(readableZoom !== undefined
         ? { whole: readableMin ?? readableZoom, readable: readableZoom, readableMin }
         : {}),
+      ...(focusMin !== undefined ? { focusMin } : {}),
     }),
-    [fitPadding, maxFitZoom, readableZoom, readableMin],
+    [fitPadding, maxFitZoom, readableZoom, readableMin, focusMin],
   );
   const floor = readableZoom !== undefined ? (readableMin ?? readableZoom) : READABLE_FLOOR;
 

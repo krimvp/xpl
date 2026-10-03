@@ -156,6 +156,52 @@ describe("frameView: the first view of a diagram", () => {
     expect(boxInView(view.transform, PANE, focus)).toBe(true);
   });
 
+  it("with focusMin, shows all of the focus below the frame's floor, and neighbours only at that size", () => {
+    // a Present flow: 16px is the floor of a frame with neighbours, but two focused stages too far apart
+    // for it are both shown, smaller (down to focusMin), rather than one of them and "+1 more"
+    const a = { x: 1000, y: 1700, width: 250, height: 100 };
+    const b = { x: 1600, y: 1950, width: 250, height: 100 };
+    const between = { x: 1300, y: 1950, width: 250, height: 100 };
+    const far = { x: 200, y: 200, width: 250, height: 100 };
+    const options = { ...OPTIONS, readable: 16 / 13, readableMin: 16 / 13, focusMin: 10 / 13 };
+    const view = frameView(
+      PANE,
+      { width: 4000, height: 3000 },
+      { boxes: [a, b], neighbours: [between, far] },
+      options,
+    )!;
+    // (740 - 48) / 850 = 0.814: below 16/13, above 10/13
+    expect(view.transform.k).toBeCloseTo(692 / 850, 5);
+    expect(view.hidden).toBe(0);
+    expect(boxInView(view.transform, PANE, a) && boxInView(view.transform, PANE, b)).toBe(true);
+    // a neighbour that fits at that size comes in; one that would need it smaller does not
+    expect(view.context).toBe(1);
+    expect(boxInView(view.transform, PANE, between)).toBe(true);
+    // without focusMin: the first at 16/13, and the second counted
+    const without = frameView(
+      PANE,
+      { width: 4000, height: 3000 },
+      { boxes: [a, b] },
+      { ...options, focusMin: undefined },
+    )!;
+    expect(without.transform.k).toBeCloseTo(16 / 13, 5);
+    expect(without.hidden).toBe(1);
+  });
+
+  it("with focusMin, a single box taller than the pane is drawn small enough to fit it", () => {
+    // 150% zoom: a 150-unit diamond at 16/13 is 185px, in a 176px pane
+    const size = { w: 433, h: 176 };
+    const diamond = { x: 1000, y: 1000, width: 300, height: 150 };
+    const view = frameView(
+      size,
+      { width: 2000, height: 2500 },
+      { boxes: [diamond] },
+      { padding: 10, maxZoom: 1.6, readable: 16 / 13, readableMin: 16 / 13, focusMin: 10 / 13 },
+    )!;
+    expect(view.transform.k).toBeCloseTo(156 / 150, 5);
+    expect(boxInView(view.transform, size, diamond)).toBe(true);
+  });
+
   it("frames the union of several focused elements when it fits, else the first and counts the rest", () => {
     const a = { x: 1000, y: 1000, width: 200, height: 100 };
     const b = { x: 1500, y: 1100, width: 200, height: 100 };

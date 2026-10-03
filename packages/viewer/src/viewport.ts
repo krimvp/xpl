@@ -93,6 +93,13 @@ export interface FrameOptions extends FitOptions {
   readableMin?: number;
   /** A frame of several boxes may go down to this share of the readable zoom (default `FRAME_SHRINK`). */
   shrink?: number;
+  /**
+   * The focus itself (every box the step names) may be drawn down to this zoom, below the floor
+   * `readableMin` / `shrink` set for a frame with neighbours: all of what the step is about at a smaller size
+   * reads better than half of it at a large one. No single focus box is drawn larger than the pane either,
+   * down to this zoom. Default: the frame's floor (no lower).
+   */
+  focusMin?: number;
 }
 
 export interface FramedView {
@@ -140,9 +147,10 @@ export function boxInView(t: Transform, size: Size, box: Box): boolean {
  *
  * 1. All of it, when it fits at `whole` or more (its text stays readable).
  * 2. Else the focus with as many of its neighbours as fit with it (nearest first), when the focus fits at
- *    `shrink` × the readable zoom or more; else as many of the focus boxes as fit, from the first. A frame is
- *    drawn at the readable zoom when it fits at that, else smaller (down to the `shrink` share), and is
- *    placed as the first window of the diagram when it is in it (the start of a diagram matters most).
+ *    `shrink` × the readable zoom or more (or `focusMin`: then the neighbours only come in at the zoom the
+ *    focus needs); else as many of the focus boxes as fit, from the first. A frame is drawn at the readable
+ *    zoom when it fits at that, else smaller (down to the `shrink` share), and is placed as the first window
+ *    of the diagram when it is in it (the start of a diagram matters most).
  * 3. Else the first focus box at the readable zoom (its `core` when it is bigger than the pane), or the
  *    top-left corner when there is no focus.
  *
@@ -216,16 +224,25 @@ export function frameView(
       context,
     };
   };
-  /** The frame of `group`: at the readable zoom, or as much smaller as it needs (not below `least`). */
-  const frame = (group: readonly Box[]): Transform | undefined => {
+  /** The zoom `group` is framed at: the readable zoom, or as much smaller as it needs (undefined below `low`). */
+  const zoomFor = (group: readonly Box[], low: number): number | undefined => {
     const union = unionBox(group);
     if (!union) return undefined;
     const k = Math.min(most, rawFitScale(size, union, padding) || most);
-    return k >= least - 1e-9 ? place(k, union) : undefined;
+    return k >= low - 1e-9 ? k : undefined;
   };
+  const frame = (group: readonly Box[], low = least): Transform | undefined => {
+    const k = zoomFor(group, low);
+    return k === undefined ? undefined : place(k, unionBox(group));
+  };
+  // The focus alone may go below the frame's floor, down to `focusMin` (all of it in view).
+  const focusLeast = Math.min(least, options.focusMin ?? least);
 
-  // The focus, then as many of its neighbours as fit, nearest first.
-  if (boxes.length > 0 && frame(boxes)) {
+  // The focus, then as many of its neighbours as fit, nearest first: down to the floor, and never smaller
+  // than the focus alone needs.
+  const focusZoom = zoomFor(boxes, focusLeast);
+  if (boxes.length > 0 && focusZoom !== undefined) {
+    const low = Math.min(least, focusZoom);
     const group = [...boxes];
     const centre = unionBox(boxes)!;
     const cx = centre.x + centre.width / 2;
@@ -235,17 +252,18 @@ export function frameView(
     const near = [...(focus?.neighbours ?? [])].sort((a, b) => distance(a) - distance(b));
     let context = 0;
     for (const box of near) {
-      if (!frame([...group, box])) continue;
+      if (!frame([...group, box], low)) continue;
       group.push(box);
       context++;
     }
-    return result(frame(group)!, context);
+    return result(frame(group, low)!, context);
   }
   // Else as many of the focus boxes as fit, from the first.
   for (let n = boxes.length - 1; n >= 1; n--) {
-    const framed = frame(boxes.slice(0, n));
+    const framed = frame(boxes.slice(0, n), focusLeast);
     if (framed) return result(framed, 0);
   }
+  // Else the first box (too big for the pane even at `focusMin`): its core at the readable zoom.
   return result(place(most, boxes[0], focus?.core), 0);
 }
 
