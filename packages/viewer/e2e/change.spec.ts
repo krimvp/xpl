@@ -206,9 +206,12 @@ test.describe("the change in the reading screens", () => {
     const label = (await metrics.locator(".label").boundingBox())!;
     expect(pill.x + pill.width).toBeLessThanOrEqual(box.x + box.width);
     expect(pill.y).toBeGreaterThanOrEqual(label.y + label.height - 2);
-    // unchanged boxes have none; a group holding changed files is not marked itself
+    // unchanged boxes have none; a group holding changed files is marked "Changed", so the map shows where
+    // the change is before any box is opened
     await expect(byId(page, "file:src/worker.ts").locator(".change-pill")).toHaveCount(0);
-    await expect(byId(page, "grp:scheduling").locator(":scope > .change-pill")).toHaveCount(0);
+    await expect(byId(page, "grp:scheduling").locator(":scope > .change-pill text")).toHaveText(
+      "Changed",
+    );
     // inside the group: runner.ts changed
     await byId(page, "grp:scheduling").dblclick();
     await expect(byId(page, "file:src/runner.ts").locator(".change-pill text")).toHaveText(

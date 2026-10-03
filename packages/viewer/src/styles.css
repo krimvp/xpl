@@ -16,7 +16,7 @@
   --canvas: #f8f9fb;
   --fg: #1c2127;
   --muted: #55616f;
-  --faint: #8b95a3;
+  --faint: #6b7583;
   --border: #dbe0e7;
   --border-strong: #bcc5d0;
   --hover: rgba(28, 33, 39, 0.06);
@@ -57,9 +57,9 @@
   --code-bg: #ffffff;
   --code-fg: #1c2127;
   --code-gutter-bg: #f5f6f8;
-  --code-gutter-fg: #9aa3af;
+  --code-gutter-fg: #7d8794;
   --code-selection: rgba(43, 106, 224, 0.25);
-  --hl-definition: rgba(43, 106, 224, 0.11);
+  --hl-definition: rgba(43, 106, 224, 0.14);
   --hl-definition-bar: #2b6ae0;
   --hl-call-site: rgba(217, 119, 6, 0.2);
   --hl-call-site-bar: #d97706;
@@ -808,8 +808,13 @@ code {
   white-space: nowrap;
 }
 
-.btn:hover {
+.btn:hover:not(:disabled) {
   background: var(--hover);
+}
+
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .btn.is-primary {
@@ -871,6 +876,7 @@ code {
 }
 
 .tour-picker select,
+.workspace-caption select,
 .tp-target select,
 .tp-target input {
   padding: 4px 8px;
@@ -2246,6 +2252,53 @@ code {
   background: var(--hover);
 }
 
+/* A change explainer: what the change did to each file (FileTree), in the diff's colours; a letter, so the
+   mark does not rely on colour alone. */
+.tree-row .name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tree-change-mark {
+  margin-left: auto;
+  padding: 0 4px;
+  border-radius: 4px;
+  font: 700 10.5px/1.5 var(--font-mono);
+}
+
+.tree-change-mark.is-added {
+  color: var(--diff-add-bar);
+  background: var(--diff-add-bg);
+}
+
+.tree-change-mark.is-modified {
+  color: var(--warn);
+  background: var(--warn-soft);
+}
+
+.tree-change-mark.is-renamed {
+  color: var(--purple);
+  background: var(--purple-soft);
+}
+
+.tree-change-mark.is-deleted {
+  color: var(--diff-del-bar);
+  background: var(--diff-del-bg);
+}
+
+.tree-row.is-deleted .name {
+  text-decoration: line-through;
+}
+
+.tree-change-dot {
+  width: 6px;
+  height: 6px;
+  margin-left: auto;
+  border-radius: 50%;
+  background: var(--diff-add-bar);
+}
+
 .tree-row .chevron {
   width: 10px;
   color: var(--faint);
@@ -2257,8 +2310,7 @@ code {
 }
 
 .tree-row.is-dimmed {
-  color: var(--faint);
-  opacity: 0.55;
+  color: var(--muted);
 }
 
 .tree-row.is-focus {
@@ -2446,12 +2498,13 @@ code {
   box-shadow: inset 3px 0 0 var(--hl-call-site-bar);
 }
 
+/* Dimmed, not hidden: context code stays readable (about 4.3:1 in light, 6:1 in dark). */
 .cm-line.xpl-dim {
-  opacity: 0.36;
+  opacity: 0.6;
 }
 
 .cm-gutterElement.xpl-gutter-dim {
-  opacity: 0.36;
+  opacity: 0.6;
 }
 
 .cm-gutterElement.xpl-gutter-hl {
@@ -2624,9 +2677,9 @@ code {
 
 .present {
   /* The code grows with the screen: about 15px at 1280x720, 17px at 1440x900, 21px at 1920x1080. */
-  --code-font-size: clamp(14px, calc(4px + 0.45vw + 0.75vh), 22px);
+  --code-font-size: clamp(15px, calc(4px + 0.45vw + 0.75vh), 22px);
   display: grid;
-  grid-template-columns: minmax(340px, 40%) minmax(0, 1fr);
+  grid-template-columns: minmax(300px, 40%) minmax(0, 1fr);
   gap: 8px;
   min-height: 0;
   min-width: 0;
@@ -3094,6 +3147,28 @@ code {
     overflow: auto;
   }
 
+  .tour-panel {
+    right: 8px;
+  }
+
+  .code-area {
+    grid-template-columns: 150px minmax(0, 1fr);
+  }
+}
+
+/* Present keeps its two columns on a laptop zoomed in (1280px at 150% is 853px wide): a talk stacks only
+   on a screen too narrow for both. */
+@media (min-width: 641px) and (max-width: 900px) {
+  body:has(.app[data-mode="present"]) {
+    overflow: hidden;
+  }
+
+  .app[data-mode="present"] {
+    height: 100%;
+  }
+}
+
+@media (max-width: 640px) {
   .present {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -3104,14 +3179,6 @@ code {
 
   .present-right {
     height: 90vh;
-  }
-
-  .tour-panel {
-    right: 8px;
-  }
-
-  .code-area {
-    grid-template-columns: 150px minmax(0, 1fr);
   }
 }
 

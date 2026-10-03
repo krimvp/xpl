@@ -69,8 +69,28 @@
   flex: 1;
   overflow: hidden;
 }
+/* The explanation beside its code: the code gets the larger share (it is what is read), and the topic column
+   folds away until the screen is wide enough for all three. */
 .workspace.has-source:not([data-perspective="code"]) .workspace-columns {
-  grid-template-columns: minmax(300px, 1fr) minmax(360px, 1fr) 260px;
+  grid-template-columns: minmax(300px, 2fr) minmax(420px, 3fr);
+}
+.workspace.has-source:not([data-perspective="code"]) .workspace-context {
+  display: none;
+}
+/* The guide's own contents column too: beside the code, the text keeps the room. */
+.workspace.has-source:not([data-perspective="code"]) .guide-layout {
+  grid-template-columns: minmax(0, 1fr);
+}
+.workspace.has-source:not([data-perspective="code"]) .guide-contents {
+  display: none;
+}
+@media (min-width: 1680px) {
+  .workspace.has-source:not([data-perspective="code"]) .workspace-columns {
+    grid-template-columns: minmax(300px, 2fr) minmax(480px, 3fr) 260px;
+  }
+  .workspace.has-source:not([data-perspective="code"]) .workspace-context {
+    display: block;
+  }
 }
 .workspace-primary {
   min-width: 0;
@@ -526,7 +546,8 @@
   border-top: 1px solid var(--border);
   padding-top: 18px;
 }
-/* Alone in the column (nothing above it to set it apart from): no rule above it. */
+/* Alone in the column, or right under the topic (which already ends with a rule): no rule above it. */
+.topic-summary + .workspace-inspector,
 .workspace-inspector:first-child {
   margin-top: 0;
   border-top: 0;
@@ -757,12 +778,6 @@
     grid-column: 1 / -1;
     max-height: 180px;
     border-top: 1px solid var(--border);
-  }
-  .workspace.has-source:not([data-perspective="code"]) .guide-layout {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .workspace.has-source:not([data-perspective="code"]) .guide-contents {
-    display: none;
   }
 }
 @media (max-width: 760px) {

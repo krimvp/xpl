@@ -160,9 +160,12 @@ test.describe("view:dispatch", () => {
     await expect
       .poll(() => linesWith(page.locator('[data-file="config/default.yaml"]'), ".xpl-hl-config"))
       .toEqual([13, 14, 15, 16]);
-    await expect(
-      page.locator('[data-file="test/retry.test.ts"] .cm-line.xpl-hl-test').first(),
-    ).toBeVisible();
+    // The whole test file is the anchor: its pane says "test" and tints no line (a tint on every line says
+    // nothing), and dims none.
+    const test = page.locator('[data-file="test/retry.test.ts"]');
+    await expect(test.locator(".pane-roles .role-test")).toBeVisible();
+    await expect(test.locator(".cm-line").first()).toBeVisible();
+    await expect(test.locator(".cm-line.xpl-hl, .cm-line.xpl-dim")).toHaveCount(0);
     // The config file dims everything but the retry key.
     await expect(
       page.locator('[data-file="config/default.yaml"] .cm-line:not(.xpl-hl):not(.xpl-dim)'),

@@ -274,17 +274,30 @@ export function languageOfPath(path: FilePath): import("@xpl/core").FileLanguage
   }
 }
 
-/** The change status of each node of a graph that the change touched (the map's "New" / "Changed" pills). */
+/**
+ * The change status of each node of a graph that the change touched (the map's "New" / "Changed" pills). A box
+ * that holds code without being a file or a symbol (a group, a directory) is "changed" when one of the files
+ * it covers (`filesOf`) is: a reader sees which part of the map the change is in without opening each box.
+ */
 export function changeMarks(
   nodeIds: readonly ElementId[],
   index: Pick<IndexModel, "symbol">,
   change: ChangeRecord | undefined,
+  filesOf?: (id: ElementId) => Iterable<FilePath>,
 ): Map<ElementId, ChangeStatus> {
   const marks = new Map<ElementId, ChangeStatus>();
   if (!change) return marks;
   for (const id of nodeIds) {
     const status = changeStatus(id, index, change);
     if (status) marks.set(id, status);
+    else if (filesOf && !["file", "symbol"].includes(parseId(id).type)) {
+      for (const file of filesOf(id)) {
+        if (changeAt(change, file)) {
+          marks.set(id, "changed");
+          break;
+        }
+      }
+    }
   }
   return marks;
 }

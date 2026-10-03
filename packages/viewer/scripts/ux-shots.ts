@@ -49,7 +49,10 @@ for (const scheme of ["light", "dark"] as const) {
     if (await box.count()) {
       await box.click();
       await shot(page, `${tag}-04-map-selected`);
-      await page.getByRole("button", { name: "Show source" }).click().catch(() => {});
+      await page
+        .getByRole("button", { name: "Show source" })
+        .click()
+        .catch(() => {});
       await shot(page, `${tag}-05-map-with-source`);
     }
     await page.getByTestId("edit-button").click();

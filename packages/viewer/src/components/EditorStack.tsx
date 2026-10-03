@@ -232,7 +232,9 @@ const EditorPane = memo(function EditorPane({
   /** Counts editors created; lets the caret effect tell "just created" from "moved later". */
   const generation = useRef(0);
   const caretApplied = useRef(0);
-  const wrap = wantLines !== undefined;
+  // Readers (Read mode, Present) get long lines wrapped: a narrow column never hides the end of a line,
+  // and a click never scrolls the start of every line out of view. Explore keeps code as written.
+  const wrap = wantLines !== undefined || reader;
   // (read when an editor is created: it starts wrapped or not, the effect below follows changes)
   const wrapRef = useRef(wrap);
   wrapRef.current = wrap;
@@ -257,7 +259,7 @@ const EditorPane = memo(function EditorPane({
     };
   }, [pane.file, text, language, store, base]);
 
-  // Present wraps long lines (nobody scrolls sideways in a talk); elsewhere code runs on as written.
+  // Wrapping follows the mode (see `wrap`).
   useEffect(() => {
     if (view.current) setLineWrapping(view.current, wrap);
   }, [wrap, text]);

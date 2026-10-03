@@ -1,6 +1,8 @@
 /**
  * The repo's files as a collapsible tree. With a focus, files outside it are greyed (`is-dimmed`);
- * files in it are marked (`is-focus`). Click a file to show it in the editor stack.
+ * files in it are marked (`is-focus`). Click a file to show it in the editor stack. In a change explainer each
+ * changed file carries a mark (A new, M changed, R renamed, D removed: the removed files are listed too, and
+ * open as they were before the change), and its directories a dot, so the tree says where the change is.
  *
  * A static bundle (no server) lists only the files it embeds: `xpl bundle` puts in what the explainer
  * needs, and a file that is not there cannot be opened. A footer says how many of the indexed files that is
@@ -8,17 +10,28 @@
  */
 import type { IndexedFile } from "@xpl/core";
 import { useEffect, useMemo, useState } from "react";
+import { changeFiles, changeOf, STATUS_WORDS, type ChangeFileRow } from "../diff.js";
 import { useDerived, useStore, useViewerState } from "../hooks.js";
+
+/** A row of the tree: an indexed file, or a file the change removed (not in the head index). */
+type TreeFile = Pick<IndexedFile, "path">;
 
 interface TreeDir {
   type: "dir";
   name: string;
   path: string;
   dirs: TreeDir[];
-  files: IndexedFile[];
+  files: TreeFile[];
 }
 
-function buildTree(files: readonly IndexedFile[]): TreeDir {
+const MARK_LETTERS: Record<ChangeFileRow["status"], string> = {
+  added: "A",
+  modified: "M",
+  renamed: "R",
+  deleted: "D",
+};
+
+function buildTree(files: readonly TreeFile[]): TreeDir {
   const root: TreeDir = { type: "dir", name: "", path: "", dirs: [], files: [] };
   const dirs = new Map<string, TreeDir>([["", root]]);
   const dirFor = (path: string): TreeDir => {
@@ -50,7 +63,18 @@ export function FileTree() {
     () => (serverMode ? indexed : indexed.filter((file) => Object.hasOwn(files, file.path))),
     [indexed, files, serverMode],
   );
-  const tree = useMemo(() => buildTree(listed), [listed]);
+  const change = changeOf(state.explainer);
+  const changed = useMemo(
+    () => new Map((change ? changeFiles(change) : []).map((row) => [row.path, row])),
+    [change],
+  );
+  const tree = useMemo(() => {
+    const removed = [...changed.values()]
+      .filter((row) => row.status === "deleted" && !listed.some((file) => file.path === row.path))
+      .map((row) => ({ path: row.path }));
+    const all = [...listed, ...removed].sort((a, b) => a.path.localeCompare(b.path));
+    return buildTree(all);
+  }, [listed, changed]);
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
   const focusFiles = derived.selection.focusFiles;
   const hasFocus = focusFiles.size > 0;
@@ -78,6 +102,8 @@ export function FileTree() {
 
   const dirHasFocus = (dir: TreeDir) =>
     [...focusFiles].some((file) => file.startsWith(dir.path + "/"));
+  const dirHasChange = (dir: TreeDir) =>
+    [...changed.keys()].some((file) => file.startsWith(dir.path + "/"));
 
   const renderDir = (dir: TreeDir, depth: number) => {
     const open = !collapsed.has(dir.path);
@@ -96,6 +122,9 @@ export function FileTree() {
             {open ? "▾" : "▸"}
           </span>
           <span className="name">{dir.name}</span>
+          {dirHasChange(dir) && (
+            <span className="tree-change-dot" title="Has changed files" aria-label="has changes" />
+          )}
         </button>
         {open && (
           <ul role="group">
@@ -107,12 +136,14 @@ export function FileTree() {
     );
   };
 
-  const renderFile = (file: IndexedFile, depth: number) => {
+  const renderFile = (file: TreeFile, depth: number) => {
     const inFocus = focusFiles.has(file.path);
+    const row = changed.get(file.path);
     const classes =
       "tree-row is-file" +
       (hasFocus && !inFocus ? " is-dimmed" : "") +
       (inFocus ? " is-focus" : "") +
+      (row ? ` is-${row.status}` : "") +
       (state.openedFile === file.path ? " is-open" : "");
     return (
       <li key={"f:" + file.path} role="none">
@@ -122,10 +153,25 @@ export function FileTree() {
           style={{ paddingLeft: 8 + depth * 14 + 14 }}
           role="treeitem"
           data-path={file.path}
-          title={file.path}
-          onClick={() => store.openFile(file.path)}
+          title={
+            row
+              ? `${file.path}: ${STATUS_WORDS[row.status].toLowerCase()}` +
+                (row.oldPath ? ` from ${row.oldPath}` : "") +
+                `, +${row.added} −${row.deleted}`
+              : file.path
+          }
+          onClick={() => store.openFile(file.path, row?.line)}
         >
           <span className="name">{base(file.path)}</span>
+          {row && (
+            <span
+              className={`tree-change-mark is-${row.status}`}
+              data-testid="tree-change-mark"
+              aria-label={STATUS_WORDS[row.status]}
+            >
+              {MARK_LETTERS[row.status]}
+            </span>
+          )}
         </button>
       </li>
     );

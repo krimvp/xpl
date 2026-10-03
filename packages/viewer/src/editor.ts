@@ -147,7 +147,13 @@ const NO_DECORATIONS: Decorated = { decorations: Decoration.none, gutter: RangeS
 function decorate(doc: Text, focus: PaneFocus): Decorated {
   const lines = doc.lines;
   const roles: (Set<AnchorRole> | undefined)[] = new Array<Set<AnchorRole> | undefined>(lines + 1);
-  for (const { range, role } of focus.ranges) {
+  // A range over the whole file (a file box, a file opened on its own) tints nothing: a tint on every line
+  // says nothing about any of them. The pane header still names the role.
+  const ranges = focus.ranges.filter(
+    ({ range }) => !(range.startLine <= 1 && range.endLine >= lines && lines > 1),
+  );
+  const dim = focus.dim && ranges.length === focus.ranges.length;
+  for (const { range, role } of ranges) {
     const to = Math.min(lines, range.endLine);
     for (let n = Math.max(1, range.startLine); n <= to; n++) (roles[n] ??= new Set()).add(role);
   }
@@ -160,7 +166,7 @@ function decorate(doc: Text, focus: PaneFocus): Decorated {
     if (set) {
       className = "xpl-hl " + [...set].map((role) => `xpl-hl-${role}`).join(" ");
       markers.push(HL_MARKER.range(line.from));
-    } else if (focus.dim) {
+    } else if (dim) {
       className = "xpl-dim";
       markers.push(DIM_MARKER.range(line.from));
     }

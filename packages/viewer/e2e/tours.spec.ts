@@ -848,9 +848,8 @@ for (const scheme of ["light", "dark"] as const) {
       await open(page, "?mode=present&tour=tour:intro&step=1");
       await expect(counter(page)).toHaveText("1 / 2");
       await expect(byId(page, "grp:scheduling")).toHaveClass(/is-selected/);
-      await expect(
-        page.locator('[data-file="src/runner.ts"] .cm-line.xpl-hl').first(),
-      ).toBeVisible();
+      // the group covers the whole of runner.ts: the pane shows it untinted
+      await expect(page.locator('[data-file="src/runner.ts"] .cm-line').first()).toBeVisible();
       await page.screenshot({ path: screenshotPath(`tour-step-1-${scheme}`) });
 
       await page.keyboard.press("ArrowRight");

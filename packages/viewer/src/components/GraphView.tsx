@@ -8,7 +8,7 @@
  * A ghost that stands for several elements ("rest of <file>", "N more") opens a menu of them instead
  * (GhostMenu), and adding one of them expands the view.
  */
-import type { DerivedGraph } from "@xpl/core";
+import { codeFocus, type DerivedGraph } from "@xpl/core";
 import {
   createContext,
   memo,
@@ -405,9 +405,10 @@ export function useGraphChanges(graph: DerivedGraph): ChangeMarks | undefined {
             graph.nodes.map((node) => node.id),
             index,
             change,
+            (id) => codeFocus([id], state.model).map((range) => range.file),
           )
         : undefined,
-    [graph, change, index],
+    [graph, change, index, state.model],
   );
 }
 

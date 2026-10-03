@@ -358,7 +358,12 @@ export function defineAcceptance(fx: JobrunnerFixture): void {
       await expect
         .poll(() => linesWith(pane(page, files.config), ".xpl-hl-config"))
         .toEqual(range(at.retryKey));
-      await expect(pane(page, files.test).locator(".cm-line.xpl-hl-test").first()).toBeVisible();
+      // The whole test file is the anchor: its pane says "test" and neither tints nor dims a line.
+      await expect(pane(page, files.test).locator(".pane-roles .role-test")).toBeVisible();
+      await expect(pane(page, files.test).locator(".cm-line").first()).toBeVisible();
+      await expect(pane(page, files.test).locator(".cm-line.xpl-hl, .cm-line.xpl-dim")).toHaveCount(
+        0,
+      );
       // The config file dims everything but the retry key.
       await expect(
         pane(page, files.config).locator(".cm-line:not(.xpl-hl):not(.xpl-dim)"),

@@ -15,6 +15,7 @@ import { getDerived } from "../src/derive.js";
 import {
   changeFiles,
   changeOf,
+  changeMarks,
   changeStatus,
   fileDiff,
   firstChangedLine,
@@ -119,6 +120,28 @@ describe("the change on the map", () => {
     expect(changeStatus("sym:src/b.ts#B.go", model, record)).toBeUndefined();
     expect(changeStatus("file:src/b.ts", model, record)).toBeUndefined();
     expect(changeStatus("grp:core", model, record)).toBeUndefined();
+  });
+
+  it("a group or directory is changed when a file it covers is; files and symbols keep their own status", () => {
+    const record = change([modified([{ oldStart: 12, oldLines: 1, newStart: 12, newLines: 1 }])]);
+    const files: Record<string, string[]> = {
+      "grp:core": ["src/b.ts", "src/a.ts"],
+      "grp:other": ["src/b.ts"],
+      "dir:src": ["src/a.ts"],
+    };
+    const marks = changeMarks(
+      ["grp:core", "grp:other", "dir:src", "sym:src/b.ts#B.go", "file:src/a.ts"],
+      model,
+      record,
+      (id) => files[id] ?? ["src/a.ts"],
+    );
+    expect(Object.fromEntries(marks)).toEqual({
+      "grp:core": "changed",
+      "dir:src": "changed",
+      "file:src/a.ts": "changed",
+    });
+    // without `filesOf`, as before: only files and symbols
+    expect([...changeMarks(["grp:core"], model, record).keys()]).toEqual([]);
   });
 
   it("lines removed inside a symbol change it; an added file is new, with all it holds", () => {
