@@ -194,8 +194,52 @@ test.describe("bugs of the review", () => {
       },
       "?mode=present&tour=tour:intro&step=2",
     );
+    // The two places are far apart: each has a pane of its own, the step's first one on top.
+    const panes = page.locator('.pane[data-file="src/runner.ts"]');
+    await expect(panes).toHaveCount(2);
+    await expect(panes.nth(0).locator('.cm-line[data-line="76"]')).toBeInViewport();
+    await expect(panes.nth(1).locator('.cm-line[data-line="46"]')).toBeInViewport();
+    await expect(panes.nth(0).getByTestId("pane-ranges")).toHaveText("range 1 / 2");
+    await expect(panes.nth(1).getByTestId("pane-ranges")).toHaveText("range 2 / 2");
+    expect(problems).toEqual([]);
+  });
+
+  test("Read: two places far apart in one file get a ‹ range 1 / 2 › stepper in the pane header (and n / p)", async ({
+    page,
+  }) => {
+    const problems = watchProblems(page);
+    await openVariant(
+      page,
+      (bundle) => {
+        bundle.explainer.tours[0].steps[1].code = [
+          {
+            file: "src/runner.ts",
+            symbol: "Runner.dispatch",
+            span: { from: 34, to: 36 },
+            role: "call-site",
+          },
+          {
+            file: "src/runner.ts",
+            symbol: "Runner.dispatch",
+            span: { from: 4, to: 4 },
+            role: "call-site",
+          },
+        ].map((a) => ({ ...a, hash: "x", resolved: undefined }));
+      },
+      "?perspective=code&tour=tour:intro&step=2",
+    );
     const pane = page.locator('.pane[data-file="src/runner.ts"]');
-    await expect(pane.locator('.cm-line[data-line="76"]')).toBeVisible();
+    await expect(pane).toHaveCount(1);
+    const stepper = pane.getByTestId("pane-ranges");
+    await expect(stepper).toContainText("range 2 / 2");
+    await expect(pane.locator('.cm-line[data-line="76"]')).toBeInViewport();
+    await stepper.getByRole("button", { name: "Previous range" }).click();
+    await expect(stepper).toContainText("range 1 / 2");
+    await expect(pane.locator('.cm-line[data-line="46"]')).toBeInViewport();
+    // n / p in the code do the same
+    await pane.locator('.cm-line[data-line="46"]').click();
+    await page.keyboard.press("n");
+    await expect(stepper).toContainText("range 2 / 2");
     await expect(pane.locator('.cm-line[data-line="76"]')).toBeInViewport();
     expect(problems).toEqual([]);
   });
@@ -277,7 +321,7 @@ test.describe("round 2 of the review", () => {
         page,
         (bundle) => {
           bundle.explainer.tours[0].steps[0].note = LONG_NOTE;
-          bundle.explainer.tours[0].steps[1].note = `### A very long note\n\n${"This sentence is here to make the note far too long. ".repeat(30)}The last words.`;
+          bundle.explainer.tours[0].steps[1].note = `### A very long note\n\n${"This sentence is here to make the note far too long. ".repeat(80)}The last words.`;
         },
         "?mode=present&tour=tour:intro&step=1",
         size,
