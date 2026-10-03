@@ -287,7 +287,7 @@ function buildInfo(id: ElementId, model: ExplainerModel, vd: ViewDerived): Eleme
                 { label: "From", value: model.label(step.from) },
                 { label: "To", value: model.label(step.to) },
               ]),
-          { label: "Sequence", value: ref.view.title },
+          { label: ref.view.type === "flow" ? "Flow" : "Sequence", value: ref.view.title },
         ],
         anchors: rowsFor(step.anchors, id, model, vd),
         related: [],

@@ -8,11 +8,18 @@ export function Splitter({
   orientation,
   label,
   onResize,
+  value,
+  min,
+  max,
 }: {
   /** `col`: a vertical bar between two columns; `row`: a horizontal bar between two rows. */
   orientation: "col" | "row";
   label: string;
   onResize: (deltaPx: number) => void;
+  /** The size it sets now, and its bounds, px: read out by screen readers. */
+  value?: number;
+  min?: number;
+  max?: number;
 }) {
   const last = useRef<number | null>(null);
   const position = (event: PointerEvent) => (orientation === "col" ? event.clientX : event.clientY);
@@ -22,6 +29,9 @@ export function Splitter({
       role="separator"
       aria-orientation={orientation === "col" ? "vertical" : "horizontal"}
       aria-label={label}
+      aria-valuenow={value}
+      aria-valuemin={min}
+      aria-valuemax={max}
       tabIndex={0}
       onPointerDown={(event) => {
         last.current = position(event);

@@ -5,7 +5,7 @@
 import { describe, expect, it } from "vitest";
 import { ExplainerModel, processFlow, type SequenceView, type TourStep } from "@xpl/core";
 import { placedStages } from "../src/layout/flowLayout.js";
-import { readerBadge, roleWords } from "../src/readerWords.js";
+import { looksLikeCode, readerBadge, roleWords } from "../src/readerWords.js";
 import {
   MAX_SENTENCE_TITLE,
   noteParts,
@@ -170,5 +170,27 @@ describe("tour summary", () => {
     expect(JSON.parse(store.explainerJson()).tours[0].summary).toBe(
       "What this is. Why it matters.",
     );
+  });
+});
+
+describe("titles that are code", () => {
+  it("names and calls are code; sentences and single words are not", () => {
+    for (const code of [
+      "super().unsign(signed_value)",
+      "unsign(s, max_age=max_age, return_timestamp=True)",
+      "node.findRoute",
+      "FindRoute",
+      "max_age",
+      "Ky.#retry",
+    ])
+      expect(looksLikeCode(code), code).toBe(true);
+    for (const words of [
+      "Overview",
+      "Sign the value (with a key)",
+      "A rejected patch leaves the explainer untouched",
+      "Retry, then give up",
+      "",
+    ])
+      expect(looksLikeCode(words), words).toBe(false);
   });
 });

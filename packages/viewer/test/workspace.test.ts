@@ -60,6 +60,26 @@ describe("explanation workspace", () => {
     expect(aroundFlow("concept:retry", flow, model)).toBe(false);
   });
 
+  it("entering the Flow from a guide section keeps only the flow's own steps picked", () => {
+    const store = new ViewerStore(makeBundle());
+    store.previewStep("tour:demo", 1); // focus: flow:1 and a concept
+    store.setPerspective("flow");
+    expect(store.getState().selection).toEqual(["flow:1"]);
+    // a section about a group: nothing in the flow is its own; its code stays on screen, unpicked
+    const other = new ViewerStore(makeBundle());
+    other.previewStep("tour:demo", 0);
+    other.setPerspective("flow");
+    const state = other.getState();
+    expect(state.selection).toEqual([]);
+    expect(state.openedFile).toBeDefined();
+    expect(state.cursor?.file).toBe(state.openedFile);
+    // a box the reader picked in the guide stays picked
+    const picked = new ViewerStore(makeBundle());
+    picked.select(["sym:src/a.ts#A.run"]);
+    picked.setPerspective("flow");
+    expect(picked.getState().selection).toEqual(["sym:src/a.ts#A.run"]);
+  });
+
   it("restores topics, perspectives, file positions and tour context through history", () => {
     const store = new ViewerStore(makeBundle());
     store.previewStep("tour:demo", 1);

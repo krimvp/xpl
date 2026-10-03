@@ -802,6 +802,9 @@ export function createReadOnlyEditor(
     // Ctrl/Cmd+F finds in the file (read-only: the panel finds, it never replaces).
     search({ top: true, createPanel: findPanel }),
     keymap.of(searchKeymap),
+    // An explicit tab stop on the code (it is one already, being editable): the scrolling area around it then
+    // has focusable content, which checkers such as axe look for (scrollable-region-focusable).
+    EditorView.contentAttributes.of({ tabindex: "0" }),
     ...(label
       ? [EditorView.contentAttributes.of({ "aria-label": label, "aria-readonly": "true" })]
       : []),
@@ -908,22 +911,26 @@ export function scrollToLine(view: EditorView, line: number, margin = 44): void 
 /**
  * Puts the caret (one line) or a selection (several) where the store says, unless it already is
  * there. Goes through a normal transaction, so the update listener reports it like a user's move.
+ * `scroll: "center"` (a jump: a caller row, go to definition) puts the line in the middle of the pane, with
+ * the code around it; `true` scrolls just enough.
  */
 export function placeCaret(
   view: EditorView,
   fromLine: number,
   toLine: number,
-  scroll: boolean,
+  scroll: boolean | "center",
 ): void {
   const doc = view.state.doc;
   const a = doc.line(Math.min(Math.max(1, fromLine), doc.lines));
   const b = doc.line(Math.min(Math.max(a.number, toLine), doc.lines));
   const now = selectionLines(view.state);
-  if (now.from === a.number && now.to === b.number) return;
+  if (now.from === a.number && now.to === b.number && scroll !== "center") return;
   view.dispatch({
     selection:
       a.number === b.number ? EditorSelection.cursor(a.from) : EditorSelection.range(a.from, b.to),
-    scrollIntoView: scroll,
+    ...(scroll === "center"
+      ? { effects: EditorView.scrollIntoView(a.from, { y: "center" }) }
+      : { scrollIntoView: scroll }),
   });
 }
 
@@ -946,7 +953,8 @@ export interface Span {
  * The function a pane's "in X" chip names: the one that holds the code the pane is about, when its first line
  * is off screen. The code it is about: the first focus range on screen (from its first visible line), else the
  * first change on screen, else the top line. Context lines above the focus do not count: they are often the end
- * of the function before it. Undefined when that function's first line is on screen (it names itself).
+ * of the function before it. The caret, when it is on screen (after a jump to a caller, say), comes first: the
+ * pane is about where the reader is. Undefined when that function's first line is on screen (it names itself).
  */
 export function insideSymbol(
   index: Pick<IndexModel, "innermostSymbolAt">,
@@ -955,13 +963,15 @@ export function insideSymbol(
   bottom: number,
   ranges: readonly Span[],
   hunks: readonly Span[],
+  caret?: number,
 ): string | undefined {
   const firstOnScreen = (spans: readonly Span[]) =>
     spans
       .filter((span) => span.to >= top && span.from <= bottom)
       .map((span) => Math.max(span.from, top))
       .sort((a, b) => a - b)[0];
-  const line = firstOnScreen(ranges) ?? firstOnScreen(hunks) ?? top;
+  const atCaret = caret !== undefined && caret >= top && caret <= bottom ? caret : undefined;
+  const line = atCaret ?? firstOnScreen(ranges) ?? firstOnScreen(hunks) ?? top;
   const symbol = index.innermostSymbolAt(file, line);
   return symbol && symbol.range.startLine < top ? symbol.path : undefined;
 }

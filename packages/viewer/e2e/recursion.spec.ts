@@ -133,6 +133,49 @@ test("a flow of one file reads code first: the code is the main pane, the flow a
   expect(problems).toEqual([]);
 });
 
+test("the code-first outline: a bar resizes it (mouse or keys, kept per flow); the picked step's neighbours in words", async ({
+  page,
+}) => {
+  const problems = watchProblems(page);
+  const { html, bundle, flow } = recursiveBundle();
+  await open(page, html, bundle, "?perspective=flow");
+  const width = async () => (await page.locator(".workspace-primary").boundingBox())!.width;
+  const start = await width();
+  const bar = page.getByRole("separator", { name: "Resize the flow and the code" });
+  await bar.focus();
+  await page.keyboard.press("Shift+ArrowRight");
+  await page.keyboard.press("Shift+ArrowRight");
+  await expect.poll(width).toBeGreaterThan(start + 100);
+  await expect(bar).toHaveAttribute("aria-valuenow", String(Math.round(await width())));
+  const box = (await bar.boundingBox())!;
+  await page.mouse.move(box.x + 4, box.y + 200);
+  await page.mouse.down();
+  await page.mouse.move(box.x - 96, box.y + 200, { steps: 4 });
+  await page.mouse.up();
+  const dragged = await width();
+  expect(dragged).toBeLessThan(start + 100);
+  // kept for this flow
+  await page.reload();
+  await expect(page.locator(".flow-diagram.is-outline")).toBeVisible();
+  await expect.poll(width).toBe(dragged);
+
+  // the second step: where it comes from, and its recurse link, in words; a click picks that step
+  const [first, second, third] = flow.steps!;
+  await page.evaluate((id) => window.__xpl!.select([id]), second!.id);
+  const around = page.getByTestId("step-neighbours");
+  await expect(around).toContainText("This step");
+  // the step's code is "this step" to a reader, not a call site
+  await expect(page.locator(".workspace-source .pane-roles .role").first()).toHaveText("this step");
+  await expect(around.locator(".flow-around-link.is-recurse")).toContainText(
+    "again, one level down",
+  );
+  await expect(around.locator(".flow-around-link.is-return")).toContainText("done, up one level");
+  await around.locator(".flow-around-link.is-recurse").click();
+  expect((await stateOf(page)).selection).toEqual([first!.id]);
+  expect(third).toBeDefined();
+  expect(problems).toEqual([]);
+});
+
 test("Explore gives a code-first flow a narrow diagram column; layout: diagram turns it off", async ({
   page,
 }) => {

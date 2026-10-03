@@ -1,7 +1,8 @@
 /**
  * "Who calls this": the code that calls (or extends, implements) a file or a symbol, from the index's
  * references, one row per calling symbol (its first call site). Calls from inside the element itself are
- * left out: a method calling its own class is not an answer to "who uses this".
+ * left out: a method calling its own class is not an answer to "who uses this". A function that calls itself
+ * gets one "itself (recursion)" row with every line it does so.
  *
  * And what a change did to an element ("Added by this change", "+5 −2 in it"), for the details of a picked
  * box and the guide of a change.
@@ -32,6 +33,8 @@ export interface Caller {
   label: string;
   file: FilePath;
   line: number;
+  /** A function's calls to itself: every line, in order (`line` is the first). */
+  recursion?: number[];
 }
 
 const USES = new Set(["call", "extends", "implements"]);
@@ -55,8 +58,12 @@ export function callersOf(id: ElementId, index: IndexModel): Caller[] {
     inside = (from) => index.fileOfSymbolId(from) === parsed.path;
   } else return [];
   const byCaller = new Map<SymbolId, Caller>();
+  const selfLines = new Set<number>();
   for (const target of targets) {
     for (const ref of index.refsTo(target)) {
+      const recursive = parsed.type === "symbol" && ref.from === parsed.symbolId;
+      if (recursive && ref.kind === "call" && target === parsed.symbolId)
+        selfLines.add(ref.site.startLine);
       if (!USES.has(ref.kind) || inside(ref.from)) continue;
       const known = byCaller.get(ref.from);
       const file = index.fileOfSymbolId(ref.from) ?? ref.from.slice(0, ref.from.indexOf("#"));
@@ -70,7 +77,20 @@ export function callersOf(id: ElementId, index: IndexModel): Caller[] {
       });
     }
   }
-  return [...byCaller.values()].sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line);
+  const out = [...byCaller.values()].sort(
+    (a, b) => a.file.localeCompare(b.file) || a.line - b.line,
+  );
+  if (selfLines.size > 0 && parsed.type === "symbol") {
+    const lines = [...selfLines].sort((a, b) => a - b);
+    out.unshift({
+      from: parsed.symbolId,
+      label: "itself (recursion)",
+      file: parsed.file,
+      line: lines[0]!,
+      recursion: lines,
+    });
+  }
+  return out;
 }
 
 /** What the change did to a file or a symbol, in a reader's words, and where to look at it. */

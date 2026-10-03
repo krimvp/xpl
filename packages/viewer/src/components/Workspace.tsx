@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { derivedEdgeMap, processFlow, type SequenceView } from "@xpl/core";
 import { viewReverseIndex } from "../derive.js";
 import { sharedActor } from "../layout/flowLayout.js";
 import { describeElement } from "../details.js";
 import { renderInline } from "../markdown.js";
+import { looksLikeCode } from "../readerWords.js";
 import { stepTitle } from "../stepTitle.js";
 import { useDerived, useStore, useViewerState } from "../hooks.js";
 import {
@@ -21,6 +22,7 @@ import { FlowDiagram } from "./FlowDiagram.js";
 import { GraphView } from "./GraphView.js";
 import { Guide } from "./Guide.js";
 import { RelatedFiles } from "./RelatedFiles.js";
+import { Splitter } from "./Splitter.js";
 import { ZoomTrail } from "./ZoomTrail.js";
 
 /** `showSource`: open with the code shown (back from Present, where the code was on the slide). */
@@ -100,6 +102,8 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
   const code = state.perspective === "code";
   // The steps of one function: the code is the main pane, the flow a narrow outline beside it.
   const codeFirst = state.perspective === "flow" && codeFirstView(flow);
+  // Its width: the reader drags the bar between them (or uses the arrow keys); kept per flow.
+  const [outlineWidth, setOutlineWidth] = useOutlineWidth(codeFirst ? flow?.id : undefined);
   // The topic column names the picked element (not in the guide while its section is the topic).
   const topicShown =
     !!info && onScreen && !wholeFlow && !(state.perspective === "guide" && appliedStep);
@@ -112,10 +116,33 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
     if (state.openSeq > 0 && state.openedFile) setSourceOpen(true);
   }, [state.openSeq, state.openedFile]);
 
+  // "Who calls it" in the code: the callers are listed in the topic column. Beside the code on a screen too
+  // narrow for three columns that column is folded away: it then opens over the code, until closed.
+  const context = useRef<HTMLElement>(null);
+  const [contextOpen, setContextOpen] = useState(false);
+  useEffect(() => {
+    const aside = context.current;
+    if (state.callersSeq === 0 || !aside) return;
+    const folded = getComputedStyle(aside).display === "none";
+    if (folded) setContextOpen(true);
+    requestAnimationFrame(() => {
+      const list = aside.querySelector<HTMLElement>('[data-testid="callers"]');
+      list?.scrollIntoView({ block: "nearest" });
+      if (folded) list?.querySelector<HTMLElement>("button")?.focus({ preventScroll: true });
+    });
+  }, [state.callersSeq]);
+  // (it gives the code back when the reader goes to a caller, or elsewhere)
+  useEffect(() => setContextOpen(false), [state.perspective, showSource, state.openSeq]);
+
   return (
     <main
-      className={`workspace${showSource ? " has-source" : ""}${codeFirst ? " is-code-first" : ""}`}
+      className={`workspace${showSource ? " has-source" : ""}${codeFirst ? " is-code-first" : ""}${contextOpen ? " is-context-open" : ""}`}
       data-perspective={state.perspective}
+      style={
+        codeFirst && outlineWidth !== undefined
+          ? ({ "--outline-width": `${outlineWidth}px` } as CSSProperties)
+          : undefined
+      }
     >
       <div className="workspace-location">
         <div className="navigation-history" aria-label="Navigation history">
@@ -284,12 +311,48 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
             </ErrorBoundary>
           </section>
         )}
+        {codeFirst && showSource && (
+          <Splitter
+            orientation="col"
+            label="Resize the flow and the code"
+            value={outlineWidth ?? defaultOutlineWidth()}
+            min={OUTLINE_MIN}
+            max={outlineMax()}
+            onResize={(delta) =>
+              setOutlineWidth((width) =>
+                Math.round(clampWidth((width ?? defaultOutlineWidth()) + delta)),
+              )
+            }
+          />
+        )}
         {showSource && (
           <section className="workspace-source" aria-label="Source code">
             <CodeArea tree="collapsible" />
           </section>
         )}
-        <aside className="workspace-context" aria-label="Topic context">
+        <aside
+          className="workspace-context"
+          aria-label="Topic context"
+          ref={context}
+          onKeyDown={(event) => {
+            if (event.key === "Escape" && contextOpen) {
+              event.stopPropagation();
+              setContextOpen(false);
+            }
+          }}
+        >
+          {contextOpen && (
+            <button
+              type="button"
+              className="context-close"
+              data-testid="context-close"
+              aria-label="Close the topic panel"
+              title="Close (Esc)"
+              onClick={() => setContextOpen(false)}
+            >
+              ×
+            </button>
+          )}
           {/* In the guide, the open section is the topic: its summary would say it again. A box picked from
               a section (a member chip, a call) is another topic, and gets its summary here. */}
           {info && !onScreen && diagramTitle && (
@@ -314,7 +377,7 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
             <section className="topic-summary" data-testid="topic-summary">
               {/* While a step is applied the breadcrumb names the step: this is the box picked in it. */}
               <p className="eyebrow">{appliedStep ? "Picked" : "Current topic"}</p>
-              <h2>{info.title}</h2>
+              <h2 className={looksLikeCode(info.title) ? "is-code" : undefined}>{info.title}</h2>
               {info.summary && (
                 <p dangerouslySetInnerHTML={{ __html: renderInline(info.summary) }} />
               )}
@@ -346,4 +409,48 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
       </div>
     </main>
   );
+}
+
+/** The narrowest a code-first outline gets, px; the code keeps at least `CODE_MIN`. */
+const OUTLINE_MIN = 260;
+const CODE_MIN = 420;
+/** Below this width the page lays the columns out its own way (one column on a phone): no bar. */
+const outlineMax = () => Math.max(OUTLINE_MIN, window.innerWidth - CODE_MIN);
+const clampWidth = (width: number) => Math.min(outlineMax(), Math.max(OUTLINE_MIN, width));
+/** The width the stylesheet gives the outline before anyone drags: 360px, 420px on a wide screen. */
+const defaultOutlineWidth = () => (window.innerWidth >= 1680 ? 420 : 360);
+
+/**
+ * The width of a code-first flow's outline, per flow, remembered in this browser (localStorage, when it can
+ * be used: a private window or blocked storage just forgets). Undefined until the reader resizes it: the
+ * stylesheet's default.
+ */
+function useOutlineWidth(
+  viewId: string | undefined,
+): [number | undefined, (update: (width: number | undefined) => number) => void] {
+  const key = viewId ? `xpl.outline-width.${viewId}` : undefined;
+  const read = (): number | undefined => {
+    if (!key) return undefined;
+    try {
+      const stored = Number(window.localStorage.getItem(key));
+      return stored > 0 ? clampWidth(stored) : undefined;
+    } catch {
+      return undefined;
+    }
+  };
+  const [width, setWidth] = useState<{ key: string | undefined; value: number | undefined }>(
+    () => ({ key, value: read() }),
+  );
+  const value = width.key === key ? width.value : read();
+  const update = (change: (width: number | undefined) => number) => {
+    const next = change(value);
+    setWidth({ key, value: next });
+    if (!key) return;
+    try {
+      window.localStorage.setItem(key, String(next));
+    } catch {
+      // storage unavailable: the width lasts as long as the page
+    }
+  };
+  return [value, update];
 }

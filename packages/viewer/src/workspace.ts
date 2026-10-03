@@ -190,3 +190,45 @@ export function codeFirstView(view: View | undefined): boolean {
   }
   return true;
 }
+
+/** One link of a flow step to a step next to it, for the outline's "Around this step" list. */
+export interface StepLink {
+  /** The step at the other end. */
+  id: string;
+  label: string;
+  /** Before the step (an arrow into it), or after it. */
+  side: "before" | "after";
+  /** The arrow's own words ("fits", "next node"), if any. */
+  words?: string;
+  kind?: "recurse" | "return";
+}
+
+/**
+ * The steps one arrow away from `stepId` in a flow: where it comes from and where it goes, recurse and return
+ * links included (in a narrow outline they often run off the canvas). Arrows in, then arrows out, each in the
+ * flow's own order.
+ */
+export function stepLinks(flow: ProcessFlow, stepId: string): StepLink[] {
+  const labels = new Map(flow.stages.map(({ step }) => [step.id, step.label] as const));
+  const order = new Map(flow.stages.map(({ step }, i) => [step.id, i] as const));
+  const out: StepLink[] = [];
+  for (const side of ["before", "after"] as const) {
+    const links = flow.transitions
+      .filter((t) => (side === "before" ? t.to === stepId : t.from === stepId))
+      .map((t) => ({ t, other: side === "before" ? t.from : t.to }))
+      // a return with no step goes back to whoever made the call: there is no step to list
+      .filter((link): link is { t: (typeof link)["t"]; other: string } => link.other !== undefined)
+      .filter(({ t, other }) => (other !== stepId || t.kind) && labels.has(other))
+      .sort((a, b) => order.get(a.other)! - order.get(b.other)!);
+    for (const { t, other } of links) {
+      out.push({
+        id: other,
+        label: labels.get(other)!,
+        side,
+        ...(t.label ? { words: t.label } : {}),
+        ...(t.kind ? { kind: t.kind } : {}),
+      });
+    }
+  }
+  return out;
+}

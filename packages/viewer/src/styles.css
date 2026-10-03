@@ -2410,6 +2410,13 @@ code {
   gap: 6px;
 }
 
+/* r3-code: "itself (recursion)" is words, not a name */
+.caller-rows .caller-name.is-recursion {
+  flex: 1;
+  font: inherit;
+  font-style: italic;
+}
+
 .caller-rows .where {
   flex: 1 1 0;
   min-width: 5ch;
@@ -2879,6 +2886,20 @@ code {
   color: var(--muted);
   font-size: 12px;
   white-space: nowrap;
+}
+
+/* r3-code: next to the change stepper, the places stepper takes a row of its own, named (visual N7). */
+.pane-header:has(.pane-ranges.is-own-row) {
+  flex-wrap: wrap;
+  row-gap: 2px;
+}
+.pane-ranges.is-own-row {
+  order: 20;
+  flex-basis: 100%;
+  justify-content: flex-end;
+}
+.pane-ranges-name {
+  margin-right: 4px;
 }
 
 /* "in Runner.dispatch": where the top of a scrolled pane is. */
