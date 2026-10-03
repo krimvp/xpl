@@ -270,6 +270,10 @@ describe("ExplainerModel structure", () => {
     expect(cyc.subtreeContains("grp:a", "file:src/queue.ts")).toBe(false);
     expect(cyc.subtreeContains("grp:a", "grp:b")).toBe(true);
     expect(cyc.ancestors("grp:a")).toEqual(["repo"]);
+    // asked again (cached): the same answers
+    expect(cyc.subtreeContains("grp:a", "grp:b")).toBe(true);
+    expect(cyc.subtreeContains("grp:b", "grp:a")).toBe(true);
+    expect(cyc.subtreeContains("grp:a", "file:src/queue.ts")).toBe(false);
   });
 
   it("ancestors are worked out once per element (the viewer asks thousands of times)", () => {

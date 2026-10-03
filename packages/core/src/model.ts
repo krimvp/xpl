@@ -92,6 +92,7 @@ export class ExplainerModel {
   private readonly nodeCache = new Map<ElementId, ModelNode | null>();
   /** Structural chain per id, built on first use: views and the viewer ask for the same chains a lot. */
   private readonly ancestorCache = new Map<ElementId, ReadonlySet<ElementId>>();
+  private readonly reachCache = new Map<ElementId, ReadonlySet<ElementId>>();
 
   constructor(explainer: Explainer, index: SymbolIndex | IndexModel) {
     this.explainer = explainer;
@@ -350,21 +351,32 @@ export class ExplainerModel {
    * or (for a group) it is one of the group's members or lies in a member's subtree.
    */
   subtreeContains(ancestorId: ElementId, id: ElementId): boolean {
-    return this.contains(ancestorId, id, new Set());
+    if (ancestorId === id) return true;
+    const above = this.ancestorSet(id);
+    if (above.has(ancestorId)) return true;
+    // only a group holds more than its structural subtree: its members (nested groups' too), and theirs
+    if (!this.groupNodes.has(ancestorId)) return false;
+    const reach = this.groupReach(ancestorId);
+    if (reach.has(id)) return true;
+    for (const holder of above) if (reach.has(holder)) return true;
+    return false;
   }
 
-  private contains(ancestorId: ElementId, id: ElementId, seen: Set<ElementId>): boolean {
-    if (ancestorId === id) return true;
-    if (seen.has(ancestorId)) return false;
-    seen.add(ancestorId);
-    if (this.ancestorSet(id).has(ancestorId)) return true;
-    const group = this.groupNodes.get(ancestorId);
-    if (group) {
-      for (const member of this.members(ancestorId)) {
-        if (this.contains(member, id, seen)) return true;
+  /** A group's members, and the members of the groups among them, all the way down; cached (cycles end). */
+  private groupReach(group: ElementId): ReadonlySet<ElementId> {
+    let known = this.reachCache.get(group);
+    if (known) return known;
+    const out = new Set<ElementId>();
+    const stack = [group];
+    while (stack.length > 0) {
+      for (const member of this.members(stack.pop()!)) {
+        if (out.has(member)) continue;
+        out.add(member);
+        if (this.groupNodes.has(member)) stack.push(member);
       }
     }
-    return false;
+    this.reachCache.set(group, (known = out));
+    return known;
   }
 
   /**
