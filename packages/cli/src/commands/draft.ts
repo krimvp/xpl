@@ -26,6 +26,8 @@ const KINDS: readonly DraftKind[] = ["change", "repo", "path"];
 /** What a draft holds, for the summary line and `--json`. */
 export interface DraftCounts {
   views: number;
+  /** Graph views (maps). */
+  maps: number;
   boxes: number;
   participants: number;
   sequenceSteps: number;
@@ -62,17 +64,21 @@ export function draftCounts(patch: ExplainerPatch): DraftCounts {
   const views = patch.views ?? [];
   const nodes = patch.nodes ?? [];
   let boxes = 0;
+  let maps = 0;
   let participants = 0;
   let sequenceSteps = 0;
   for (const view of views) {
-    if (view.type === "graph") boxes += view.include?.length ?? 0;
-    else {
+    if (view.type === "graph") {
+      maps++;
+      boxes += view.include?.length ?? 0;
+    } else {
       participants += view.participants?.length ?? 0;
       sequenceSteps += view.steps?.length ?? 0;
     }
   }
   return {
     views: views.length,
+    maps,
     boxes,
     participants,
     sequenceSteps,
@@ -88,7 +94,9 @@ function summaryLine(kind: DraftKind, name: string, counts: DraftCounts): string
   const picture =
     kind === "path"
       ? `a sequence of ${plural(counts.sequenceSteps, "call")} between ${plural(counts.participants, "participant")}`
-      : `a map of ${plural(counts.boxes, "box", "boxes")}`;
+      : counts.maps > 1
+        ? `${counts.maps} maps of ${plural(counts.boxes, "box", "boxes")} in all`
+        : `a map of ${plural(counts.boxes, "box", "boxes")}`;
   return (
     `draft ${kind} for ${name}: ${picture}, ${plural(counts.overlays, "summary", "summaries")}` +
     (counts.groups > 0 ? `, ${plural(counts.groups, "group")}` : "") +
@@ -110,8 +118,11 @@ export const draftCommand: CommandSpec = {
     `                            tests; one group box for the tests), and a tour in review order: what changes for`,
     `                            users, where it enters, one step per changed piece, who else is affected, tests,`,
     `                            risks (at most ${DRAFT_LIMITS.changeSteps} steps). Every changed file is anchored, tests too.`,
-    `  repo <explainer>          an overview map of the top-level folders or files (below src in a src layout; at`,
-    `                            most ${DRAFT_LIMITS.mapBoxes} boxes), excludeFiles for tests and docs, and a tour that visits every box.`,
+    `  repo <explainer>          two levels. A system map: the project as a service box (one per program under`,
+    `                            services/, apps/ or cmd/), who reaches it and what it relies on (databases, caches,`,
+    `                            queues, other APIs, found from the import lines). Each service box opens a map of its`,
+    `                            parts: the top-level folders or files (below src in a src layout; at most`,
+    `                            ${DRAFT_LIMITS.mapBoxes} boxes) and the outside systems they use. A tour from the top down.`,
     "  path <explainer> <entry>  a sequence of the calls the entry symbol makes (depth 1, in source order, at most",
     `                            ${DRAFT_LIMITS.participants} participants and ${DRAFT_LIMITS.pathCalls} calls), and a tour with one step per call.`,
     'Graph views get `stubs: {mode: "none"}`; tour steps hold at most 2 code ranges. Ids already in the explainer',

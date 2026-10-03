@@ -12,6 +12,7 @@ import { FlowDiagram } from "./FlowDiagram.js";
 import { GraphView } from "./GraphView.js";
 import { Guide } from "./Guide.js";
 import { RelatedFiles } from "./RelatedFiles.js";
+import { ZoomTrail } from "./ZoomTrail.js";
 
 export function Workspace() {
   const store = useStore();
@@ -120,6 +121,9 @@ export function Workspace() {
                   <div className="workspace-caption">
                     <div>
                       <p className="eyebrow">{state.perspective === "map" ? "Map" : "Flow"}</p>
+                      <ZoomTrail
+                        viewId={state.perspective === "map" ? map.view.id : (flow?.id ?? "")}
+                      />
                       <h2>
                         {state.perspective === "map"
                           ? map.view.title

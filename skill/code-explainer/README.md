@@ -39,12 +39,12 @@ The index gets precise references from SCIP indexers when they can run (`npx` fo
 
 ## Contents
 
-| Path                          | What                                                                         |
-| ----------------------------- | ---------------------------------------------------------------------------- |
-| `SKILL.md`                    | the skill: workflow, the three scopes, drafts, tour, accuracy, hard rules    |
-| `bin/xpl`                     | launcher for the built CLI (`packages/cli/dist/xpl.mjs`), symlink-safe       |
-| `reference/writing.md`        | plain-language rules, what goes in which field, before/after rewrites        |
-| `reference/explain-change.md` | how to explain a PR, MR or branch diff: before/after checks, callers, tests  |
-| `reference/patch-format.md`   | every patch element with examples, merge rules, rejection messages and fixes |
-| `reference/cli.md`            | every command with options and sample output                                 |
-| `reference/examples/`         | worked patches to imitate: `go-retry` (a question), `py-overview` (a repo)   |
+| Path                          | What                                                                                                 |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `SKILL.md`                    | the skill: workflow, the three scopes, drafts, tour, accuracy, hard rules                            |
+| `bin/xpl`                     | launcher for the built CLI (`packages/cli/dist/xpl.mjs`), symlink-safe                               |
+| `reference/writing.md`        | plain-language rules, what goes in which field, before/after rewrites                                |
+| `reference/explain-change.md` | how to explain a PR, MR or branch diff: before/after checks, callers, tests                          |
+| `reference/patch-format.md`   | every patch element with examples, merge rules, rejection messages and fixes                         |
+| `reference/cli.md`            | every command with options and sample output                                                         |
+| `reference/examples/`         | worked patches to imitate: `go-retry` (a question), `py-overview` (a repo, from the system map down) |

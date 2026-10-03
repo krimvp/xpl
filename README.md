@@ -91,6 +91,19 @@ base; `A..B` takes two commits. A "before" claim is anchored in the old code wit
 or a span from line 1 of the base file), so `xpl validate` checks it like any other claim. The viewer shows
 added and removed lines, a "Before" pane, New and Changed badges on the map, and the list of changed files.
 
+### Architecture maps
+
+An overview starts at the top, like the C4 model: a system map with your service, who uses it, and what it
+relies on (databases, caches, queues, other systems' APIs, each drawn with its own shape), then the inside of
+each service (its parts, and which part talks to which outside system), then the code. A box with `opens`
+zooms into the next level; a trail above the map leads back up. `xpl draft repo` drafts both levels and finds
+the outside systems from the import lines. The text follows the same order: what each part is for, in plain
+words, before any code name (`xpl lint` flags notes that are long or lean on code names).
+
+![System map: customers send orders to the shop backend, which stores orders in a PostgreSQL database, charges cards with Stripe and sends receipts with SendGrid; the service box has a zoom button](docs/images/architecture-system-map-light.png)
+
+![Inside the shop backend, opened from the system map: Startup, Web API, Order rules, Order storage, Receipts and Payments, each part with an arrow to the outside system it uses; a trail above leads back to the system map](docs/images/architecture-inside-light.png)
+
 ## Languages and precision
 
 TypeScript/JavaScript, Python and Go get symbols and references. YAML, JSON and TOML get their keys as

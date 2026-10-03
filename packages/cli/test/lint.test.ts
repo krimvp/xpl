@@ -47,6 +47,66 @@ const rules = (findings: readonly LintFinding[]) => findings.map((f) => f.rule);
 const only = (findings: readonly LintFinding[], rule: LintRule) =>
   findings.filter((f) => f.rule === rule);
 
+describe("lintExplainer: plain notes for readers who do not know the code", () => {
+  const archViews = [
+    { id: "view:v", type: "graph", title: "Inside the shop", include: ["dir:src", "grp:db"] },
+  ];
+  const archNodes = [
+    { id: "grp:db", kind: "group", label: "Orders database", role: "database", members: [] },
+  ];
+
+  it("long-note: a note body over the limit, but not a TODO placeholder", () => {
+    const long = Array.from({ length: 16 }, () => "The queue keeps jobs.").join(" ");
+    const { findings } = lintExplainer(
+      explainer({
+        tours: [
+          tour([`### The queue keeps jobs\n\n${long}`, `### TODO: a title\n\nTODO: ${long}`]),
+        ],
+      }),
+    );
+    expect(only(findings, "long-note").map((f) => f.elementId)).toEqual(["tour:t/t1"]);
+  });
+
+  it("code-heavy: too many code names, fewer allowed on an architecture map and in the summary", () => {
+    const three =
+      "### The runner takes a job\n\n`Runner.dispatch` asks `Queue.pop` for a job and runs it on `Worker.run`.";
+    const two =
+      "### The orders part keeps orders\n\n`saveOrder` writes each order with `pool.query`.";
+    // three names in a note on a code map: fine
+    expect(
+      only(lintExplainer(explainer({ tours: [tour([three])] })).findings, "code-heavy"),
+    ).toEqual([]);
+    const four = `${three} Then \`Queue.ack\` removes it.`;
+    expect(
+      only(lintExplainer(explainer({ tours: [tour([four])] })).findings, "code-heavy").map(
+        (f) => f.message,
+      ),
+    ).toEqual([
+      "4 code names (`Runner.dispatch`, `Queue.pop`, `Worker.run`, `Queue.ack`); a note takes at most 3",
+    ]);
+    // two names on an architecture map: too many
+    const arch = lintExplainer(
+      explainer({ nodes: archNodes, views: archViews, tours: [tour([two])] }),
+    );
+    expect(only(arch.findings, "code-heavy")).toHaveLength(1);
+    expect(only(arch.findings, "code-heavy")[0]!.message).toContain(
+      "a note on an architecture map takes at most 1",
+    );
+    // the tour summary
+    const summary = lintExplainer(
+      explainer({
+        tours: [
+          tour([], {
+            summary:
+              "`Runner` takes jobs from `Queue`. `Worker` runs them and `Bus` tells the metrics.",
+          }),
+        ],
+      }),
+    );
+    expect(only(summary.findings, "code-heavy").map((f) => f.field)).toEqual(["summary"]);
+  });
+});
+
 describe("lintExplainer", () => {
   it("a clean explainer has no findings", () => {
     const { findings, checked } = lintExplainer(

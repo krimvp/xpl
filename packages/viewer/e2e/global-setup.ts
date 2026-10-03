@@ -18,7 +18,11 @@ const LANGUAGES = ["ts", "py", "go"] as const;
  * for TS; for Python and Go pass `--patch scripts/<lang>-example.patch.json`, which finds the sibling
  * `.user.patch.json` by itself).
  */
-function makeBundle(lang: (typeof LANGUAGES)[number], change = false): Promise<void> {
+function makeBundle(
+  lang: (typeof LANGUAGES)[number],
+  change = false,
+  architecture = false,
+): Promise<void> {
   return new Promise((resolve, reject) => {
     const child = spawn(
       "npx",
@@ -32,11 +36,25 @@ function makeBundle(lang: (typeof LANGUAGES)[number], change = false): Promise<v
         "Job runner",
         "--repo",
         "acme/jobrunner",
-        "--patch",
-        `scripts/${lang}-example.patch.json`,
-        "--user-patch",
-        `scripts/${lang}-example.user.patch.json`,
         "--no-explainer",
+        // An architecture explainer (a system map whose service box opens the map of its parts): the skill's
+        // worked repo overview.
+        ...(architecture
+          ? [
+              "--patch",
+              "../../skill/code-explainer/reference/examples/py-overview.patch.json",
+              "--no-user-patch",
+              "--out",
+              `dist/bundles/${lang}-architecture.html`,
+              "--dev-json",
+              `dist/bundles/${lang}-architecture.bundle.json`,
+            ]
+          : [
+              "--patch",
+              `scripts/${lang}-example.patch.json`,
+              "--user-patch",
+              `scripts/${lang}-example.user.patch.json`,
+            ]),
         // The change explainer (diff view): the same fixture with a made-up change (scripts/ts-change.json).
         ...(change
           ? [
@@ -69,6 +87,7 @@ export default async function globalSetup(): Promise<void> {
   const results = await Promise.allSettled([
     ...LANGUAGES.map((lang) => makeBundle(lang)),
     makeBundle("ts", true),
+    makeBundle("py", false, true),
   ]);
   const failures = results.flatMap((result) =>
     result.status === "rejected" ? [String(result.reason)] : [],

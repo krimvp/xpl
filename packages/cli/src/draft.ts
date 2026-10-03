@@ -10,8 +10,12 @@
  *   `Unchanged:`, and a tour in review order (what changes for users, where it enters, one step per changed piece,
  *   who else is affected, tests, risks), with step ids t10, t20, ... so inserted steps keep their order. Every changed file gets at least one anchor (test files too; a deleted file
  *   gets an anchor in the code before the change).
- * - `draftRepo`: an overview map of 4-8 boxes (top-level directories, or files; in a src layout below src), with
- *   `excludeFiles` and `stubs: none`, and a tour that visits every box.
+ * - `draftRepo`: two levels, top-down. A system map (`view:system`): the project as one service box (or one box per
+ *   program under `services/`, `apps/` or `cmd/`), who reaches it (a web server or CLI framework) and what it relies
+ *   on (databases, caches, queues, other systems' APIs), found from the import lines (outside.ts) and anchored there.
+ *   Each service box `opens` a map of its inside: 4-8 boxes (top-level directories, or files; in a src layout below
+ *   src) plus the outside systems they use, with an arrow from each part that imports one. Both maps have
+ *   `excludeFiles` and `stubs: none`; the tour starts on the system map, then zooms into the main service.
  * - `draftPath`: a sequence of the entry's outgoing calls (depth 1, source order, at most 6 participants), and a tour
  *   with one step per call after a big-picture step.
  *
@@ -40,6 +44,7 @@ import {
   type ExplainerPatch,
   type IndexModel,
   type IndexedSymbol,
+  type PatchEdge,
   type PatchNode,
   type PatchSequenceStep,
   type PatchTourStep,
@@ -47,6 +52,7 @@ import {
   type Reference,
   type TextCache,
 } from "@xpl/core";
+import { findOutsideSystems } from "./outside.js";
 
 export const DRAFT_LIMITS = {
   /** Boxes on a drafted map (the skill: 4-8). */
@@ -142,6 +148,16 @@ function note(title: string, ...body: string[]): string {
 function nameList(names: readonly string[], max = DRAFT_LIMITS.names): string {
   const unique = [...new Set(names)];
   const shown = unique.slice(0, max).map(tick);
+  const more = unique.length - shown.length;
+  if (more > 0) return `${shown.join(", ")} and ${more} more`;
+  if (shown.length <= 1) return shown.join("");
+  return `${shown.slice(0, -1).join(", ")} and ${shown.at(-1)}`;
+}
+
+/** "a, b and c": names of things that are not code (an outside system), so no code spans. */
+function plainList(names: readonly string[], max = DRAFT_LIMITS.names): string {
+  const unique = [...new Set(names)];
+  const shown = unique.slice(0, max);
   const more = unique.length - shown.length;
   if (more > 0) return `${shown.join(", ")} and ${more} more`;
   if (shown.length <= 1) return shown.join("");
@@ -1202,12 +1218,49 @@ function aboutAnchor(model: IndexModel, texts: TextCache): AnchorInput | undefin
   return readme ? fileLines(texts, readme, 1, DRAFT_LIMITS.readmeLines, "usage") : undefined;
 }
 
+/** Folders whose sub-folders are separate programs (`services/orders`, `apps/web`, `cmd/server`). */
+const SERVICE_PARENTS = /^(?:services|apps|cmd|svc|microservices)$/;
+
+/** A plain slug from a path or a name (`services/order-api` -> `order-api`). */
+function slugOf(text: string): string {
+  const slug = baseName(text)
+    .replace(/\.[^.]+$/, "")
+    .replace(/([a-z0-9])([A-Z])/g, "$1-$2")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  if (slug === "") return "part";
+  return RESERVED_PREFIXES.includes(slug) ? `${slug}-part` : slug;
+}
+
+const LANGUAGE_NAMES: Record<string, string> = {
+  typescript: "TypeScript",
+  tsx: "TypeScript",
+  javascript: "JavaScript",
+  python: "Python",
+  go: "Go",
+};
+
+/** One map of the inside of a service: its parts, and the parts that were left off. */
+interface Inside {
+  /** The service box on the system map: a `grp:` (the whole repo is one service) or a `dir:` (one of several). */
+  service: string;
+  /** Where the service's code lives ("" for the whole repo). */
+  root: string;
+  units: Unit[];
+  offMap: Unit[];
+  viewId: string;
+}
+
 export function draftRepo(input: DraftInput): Draft {
   const { explainer, model, texts } = input;
   const L = DRAFT_LIMITS;
   const ids = new FreeIds(explainer);
   const stored = storedNodeIds(explainer);
   const notes: string[] = [];
+  /** A box of the architecture keeps its id across drafts: the service and the outside systems are the same things. */
+  const reuse = (prefix: string, slug: string): string =>
+    stored.has(`${prefix}:${slug}`) ? `${prefix}:${slug}` : ids.get(prefix, slug);
 
   const outside = (path: string) =>
     isTestFile(path) ||
@@ -1245,83 +1298,306 @@ export function draftRepo(input: DraftInput): Draft {
     return out;
   };
 
-  let units = children("");
-  // one folder for the whole tree (src, the package): start below it
-  for (let hops = 0; hops < 8 && units.length === 1 && units[0]!.dir; hops++) {
-    units = children(units[0]!.path);
-  }
-  // too few boxes: open the biggest folder, while the map stays at most 8 boxes
-  for (let hops = 0; hops < 8 && units.length < 4; hops++) {
-    const biggest = units.filter((u) => u.dir).sort((a, b) => b.files.length - a.files.length)[0];
-    if (!biggest) break;
-    const inner = children(biggest.path);
-    if (inner.length <= 1 || units.length - 1 + inner.length > L.mapBoxes) break;
-    units = units.flatMap((u) => (u === biggest ? inner : [u]));
-  }
-  if (units.length === 0) {
-    throw new Error(
-      "the index has no code files outside tests, docs, examples and benchmarks: there is nothing to put on an overview",
-    );
-  }
-
   // references between code files, for ranking
-  const unitOfFile = new Map<string, Unit>();
-  for (const unit of units) for (const file of unit.files) unitOfFile.set(file, unit);
   const fileOf = (id: string) => model.fileOfSymbolId(id);
-  const links = new Map<Unit, number>();
-  const between = new Map<string, number>();
+  const fileLinks = new Map<string, number>();
+  const fileBetween = new Map<string, number>();
   const symbolIn = new Map<string, number>();
   for (const ref of model.refs) {
     const from = fileOf(ref.from);
     const to = fileOf(ref.to);
     if (!from || !to || from === to || outside(from) || outside(to)) continue;
-    const a = unitOfFile.get(from);
-    const b = unitOfFile.get(to);
-    if (a) links.set(a, (links.get(a) ?? 0) + 1);
-    if (b) links.set(b, (links.get(b) ?? 0) + 1);
-    if (a && b && a !== b)
-      between.set(`${a.id}\0${b.id}`, (between.get(`${a.id}\0${b.id}`) ?? 0) + 1);
+    fileLinks.set(from, (fileLinks.get(from) ?? 0) + 1);
+    fileLinks.set(to, (fileLinks.get(to) ?? 0) + 1);
+    fileBetween.set(`${from}\0${to}`, (fileBetween.get(`${from}\0${to}`) ?? 0) + 1);
     // fan-in of top-level symbols from other files
     let sym = model.symbol(ref.to);
     while (sym && model.parentSymbol(sym.id)) sym = model.parentSymbol(sym.id);
     if (sym) symbolIn.set(sym.id, (symbolIn.get(sym.id) ?? 0) + 1);
   }
+  const links = (u: Unit) => u.files.reduce((n, f) => n + (fileLinks.get(f) ?? 0), 0);
+  const between = (a: Unit, b: Unit) => {
+    let n = 0;
+    for (const from of a.files)
+      for (const to of b.files) n += fileBetween.get(`${from}\0${to}`) ?? 0;
+    return n;
+  };
 
-  let offMap: Unit[] = [];
-  if (units.length > L.mapBoxes) {
-    const ranked = [...units].sort(
-      (a, b) =>
-        Number(b.dir) - Number(a.dir) ||
-        (links.get(b) ?? 0) - (links.get(a) ?? 0) ||
-        a.path.localeCompare(b.path),
-    );
-    const keep = new Set(ranked.slice(0, L.mapBoxes));
-    offMap = units.filter((u) => !keep.has(u));
-    units = units.filter((u) => keep.has(u));
+  /** The parts of the code under `root`: 4-8 boxes, and what did not fit on the map. */
+  const partsOf = (root: string): { units: Unit[]; offMap: Unit[] } => {
+    let units = children(root);
+    // one folder for the whole tree (src, the package): start below it
+    for (let hops = 0; hops < 8 && units.length === 1 && units[0]!.dir; hops++) {
+      units = children(units[0]!.path);
+    }
+    // too few boxes: open the biggest folder, while the map stays at most 8 boxes
+    for (let hops = 0; hops < 8 && units.length < 4; hops++) {
+      const biggest = units.filter((u) => u.dir).sort((a, b) => b.files.length - a.files.length)[0];
+      if (!biggest) break;
+      const inner = children(biggest.path);
+      if (inner.length <= 1 || units.length - 1 + inner.length > L.mapBoxes) break;
+      units = units.flatMap((u) => (u === biggest ? inner : [u]));
+    }
+    let offMap: Unit[] = [];
+    if (units.length > L.mapBoxes) {
+      const ranked = [...units].sort(
+        (a, b) =>
+          Number(b.dir) - Number(a.dir) || links(b) - links(a) || a.path.localeCompare(b.path),
+      );
+      const keep = new Set(ranked.slice(0, L.mapBoxes));
+      offMap = units.filter((u) => !keep.has(u));
+      units = units.filter((u) => keep.has(u));
+    }
+    return { units, offMap };
+  };
+
+  // ── Level 1: the services. Several programs in `services/`, `apps/` or `cmd/` are one box each; otherwise the
+  // whole repo is one service.
+  const serviceRoots: string[] = [];
+  for (const parent of ["", "src"]) {
+    if (parent !== "" && !model.hasDirectory(parent)) continue;
+    for (const dir of model.dirChildren(parent).dirs) {
+      if (!SERVICE_PARENTS.test(baseName(dir))) continue;
+      for (const service of model.dirChildren(dir).dirs) {
+        if (codeUnder(service).length > 0) serviceRoots.push(service);
+      }
+    }
+  }
+  const multi = serviceRoots.length >= 2;
+  const repoName = explainer.repo?.name ?? "the project";
+
+  const insides: Inside[] = [];
+  if (multi) {
+    for (const root of serviceRoots.sort()) {
+      const { units, offMap } = partsOf(root);
+      if (units.length === 0) continue;
+      insides.push({
+        service: `dir:${root}`,
+        root,
+        units,
+        offMap,
+        viewId: ids.get("view", `${slugOf(root)}-inside`),
+      });
+    }
     notes.push(
-      `${offMap.length} files or folders are left off the map (at most ${L.mapBoxes} boxes); the first step asks to group them`,
+      `${insides.length} services found under ${nameList([...new Set(serviceRoots.map(dirOf))])}: one box each on the system map, and one map of the inside of each`,
+    );
+  } else {
+    const { units, offMap } = partsOf("");
+    if (units.length > 0) {
+      insides.push({
+        service: reuse("grp", slugOf(repoName)),
+        root: "",
+        units,
+        offMap,
+        viewId: ids.get("view", "overview"),
+      });
+    }
+  }
+  if (insides.length === 0) {
+    throw new Error(
+      "the index has no code files outside tests, docs, examples and benchmarks: there is nothing to put on an overview",
+    );
+  }
+  for (const inside of insides) {
+    if (inside.offMap.length > 0) {
+      notes.push(
+        `${inside.offMap.length} files or folders of ${inside.root || repoName} are left off its map (at most ${L.mapBoxes} boxes); its first step asks to group them`,
+      );
+    }
+  }
+
+  // ── What the code talks to outside itself, from its import lines.
+  const systems = findOutsideSystems(model, texts, isCode, Number.MAX_SAFE_INTEGER);
+  const systemIds = new Map(systems.map((s) => [s.slug, reuse("grp", s.slug)]));
+  const unitOfFile = new Map<string, Unit>();
+  for (const inside of insides)
+    for (const unit of inside.units) for (const f of unit.files) unitOfFile.set(f, unit);
+  const insideOfUnit = new Map<Unit, Inside>();
+  for (const inside of insides) for (const unit of inside.units) insideOfUnit.set(unit, inside);
+  /** Per system: the first import site in each part that imports it (the evidence of its arrows). */
+  const reach = new Map<string, { unit: Unit; anchor: AnchorInput }[]>();
+  for (const system of systems) {
+    const seen = new Set<Unit>();
+    const list: { unit: Unit; anchor: AnchorInput }[] = [];
+    for (const site of system.sites) {
+      const unit = unitOfFile.get(site.file);
+      if (!unit || seen.has(unit)) continue;
+      const anchor = fileLines(texts, site.file, site.line, site.line, "usage");
+      if (!anchor) continue;
+      seen.add(unit);
+      list.push({ unit, anchor });
+    }
+    if (list.length > 0) reach.set(system.slug, list);
+  }
+  const linked = systems.filter((s) => reach.has(s.slug));
+  const inbound = linked.filter((s) => s.inbound);
+  const outbound = linked.filter((s) => !s.inbound);
+  if (systems.length > linked.length) {
+    notes.push(
+      `${systems.length - linked.length} outside systems are only imported from files left off the maps: ${plainList(
+        systems.filter((s) => !reach.has(s.slug)).map((s) => s.label),
+      )}`,
+    );
+  }
+  if (linked.length > 0) {
+    notes.push(
+      `outside systems found from the import lines (hints: check each in the code): ${plainList(
+        linked.map((s) => `${s.label} (${s.tech})`),
+        10,
+      )}`,
     );
   }
 
+  const nodes: PatchNode[] = [];
+  const edges: PatchEdge[] = [];
+  const views: PatchView[] = [];
+
+  // the boxes of the outside systems: no members, anchored at the import lines that use them
+  for (const system of linked) {
+    const id = systemIds.get(system.slug)!;
+    // a box an earlier draft made keeps its text and its arrows
+    if (stored.has(id)) continue;
+    nodes.push({
+      id,
+      label: system.label,
+      role: system.role,
+      tech: system.tech,
+      parent: "repo",
+      summary: system.inbound
+        ? todo(
+            `one line: who uses the project this way (found: ${system.sites.map((s) => s.module)[0]}), in plain words.`,
+          )
+        : todo(
+            `one plain line: what the project keeps in it or asks of it. Name the real system if the code says (found: ${[...new Set(system.sites.map((s) => s.module))].slice(0, 3).join(", ")}).`,
+          ),
+      anchors: reach.get(system.slug)!.map((r) => r.anchor),
+    });
+    for (const { unit, anchor } of reach.get(system.slug)!) {
+      edges.push({
+        id: ids.get("edge", `${slugOf(unit.path)}-${system.slug}`),
+        from: system.inbound ? id : unit.id,
+        to: system.inbound ? unit.id : id,
+        kind: "custom",
+        label: todo(
+          system.inbound
+            ? "1-4 words: what they do with it (for example: sends requests)"
+            : "1-4 words: what passes here (for example: stores orders)",
+        ),
+        anchors: [anchor],
+      });
+    }
+  }
+
+  const languageOf = (files: readonly string[]): string | undefined => {
+    const count = new Map<string, number>();
+    for (const f of files) {
+      const name = LANGUAGE_NAMES[model.file(f)?.language ?? ""];
+      if (name) count.set(name, (count.get(name) ?? 0) + 1);
+    }
+    return [...count].sort((a, b) => b[1] - a[1])[0]?.[0];
+  };
+
+  // ── The services, and the inside of each: the parts and the outside systems they use.
+  for (const inside of insides) {
+    const allFiles = inside.units.flatMap((u) => u.files);
+    const language = languageOf(allFiles);
+    const service: PatchNode = multi
+      ? {
+          id: inside.service,
+          role: "service",
+          opens: inside.viewId,
+          ...(language ? { tech: language } : {}),
+          summary: todo("one line: what this service does, for whom, in plain words."),
+        }
+      : {
+          id: inside.service,
+          label: repoName,
+          role: "service",
+          opens: inside.viewId,
+          ...(language ? { tech: language } : {}),
+          parent: "repo",
+          members: inside.units.map((u) => u.id),
+          summary: todo("one line: what the project does, for whom, in plain words."),
+        };
+    if (!stored.has(inside.service)) nodes.push(service);
+    const used = linked.filter((s) =>
+      reach.get(s.slug)!.some((r) => insideOfUnit.get(r.unit) === inside),
+    );
+    const depth = Math.max(...inside.units.map((u) => u.path.split("/").length));
+    views.push({
+      id: inside.viewId,
+      type: "graph",
+      title: todo(
+        `what the map shows, in plain words (for example: inside ${multi ? baseName(inside.root) : repoName}: its parts and what they use)`,
+      ),
+      scope: { root: multi ? inside.service : "repo", depth },
+      include: [...inside.units.map((u) => u.id), ...used.map((s) => systemIds.get(s.slug)!)],
+      excludeFiles: [...OVERVIEW_EXCLUDE],
+      stubs: { mode: "none" },
+    });
+    for (const unit of inside.units) {
+      const node = overlay(
+        stored,
+        unit.id,
+        todo(
+          unit.dir
+            ? `one line: what this part does (${unit.files.length} code ${unit.files.length === 1 ? "file" : "files"}), in plain words.`
+            : "one line: what this file does, in plain words.",
+        ),
+      );
+      // a reader of the map knows the part by what it does ("Payments"), not by its folder name ("pay")
+      if (node)
+        nodes.push({
+          ...node,
+          label: todo(`1-3 plain words for this part (now: ${baseName(unit.path)})`),
+        });
+    }
+  }
+
+  const systemViewId = ids.get("view", "system");
+  views.unshift({
+    id: systemViewId,
+    type: "graph",
+    title: todo(
+      `the big picture in plain words (for example: ${repoName}, who uses it and what it relies on)`,
+    ),
+    scope: { root: "repo", depth: 1 },
+    include: [
+      ...inbound.map((s) => systemIds.get(s.slug)!),
+      ...insides.map((i) => i.service),
+      ...outbound.map((s) => systemIds.get(s.slug)!),
+    ],
+    excludeFiles: [...OVERVIEW_EXCLUDE],
+    stubs: { mode: "none" },
+  });
+
+  // ── The tour: the big picture, what it relies on, then down one level into the main service.
+  const about = aboutAnchor(model, texts);
+  const main = [...insides].sort(
+    (a, b) =>
+      b.units.reduce((n, u) => n + u.files.length, 0) -
+        a.units.reduce((n, u) => n + u.files.length, 0) || a.root.localeCompare(b.root),
+  )[0]!;
   const stem = (path: string) => baseName(path).replace(/\.[^.]+$/, "");
-  const main =
-    units.find((u) => ENTRY_NAMES.test(stem(u.path))) ??
-    units.find((u) => u.files.some((f) => ENTRY_NAMES.test(stem(f)))) ??
-    [...units].sort((a, b) => (links.get(b) ?? 0) - (links.get(a) ?? 0))[0]!;
-  const reachFromMain = (u: Unit) => between.get(`${main.id}\0${u.id}`) ?? 0;
+  const mainUnit =
+    main.units.find((u) => ENTRY_NAMES.test(stem(u.path))) ??
+    main.units.find((u) => u.files.some((f) => ENTRY_NAMES.test(stem(f)))) ??
+    [...main.units].sort((a, b) => links(b) - links(a))[0]!;
+  const reachFromMain = (u: Unit) => between(mainUnit, u);
   const order = [
-    main,
-    ...units
-      .filter((u) => u !== main)
+    mainUnit,
+    ...main.units
+      .filter((u) => u !== mainUnit)
       .sort(
         (a, b) =>
           reachFromMain(b) - reachFromMain(a) ||
-          (links.get(b) ?? 0) - (links.get(a) ?? 0) ||
+          links(b) - links(a) ||
           a.path.localeCompare(b.path),
       ),
   ];
 
-  /** The 2 top-level symbols of a unit that other files use most. */
+  /** The top-level symbols of a unit that other files use most. */
   const topSymbols = (unit: Unit, n: number): IndexedSymbol[] =>
     unit.files
       .flatMap((file) => model.topLevelSymbols(file))
@@ -1333,46 +1609,63 @@ export function draftRepo(input: DraftInput): Draft {
           a.id.localeCompare(b.id),
       )
       .slice(0, n);
-
-  const viewId = ids.get("view", "overview");
-  const depth = Math.max(...units.map((u) => u.path.split("/").length));
-  const repoName = explainer.repo?.name ?? "the project";
-  const view: PatchView = {
-    id: viewId,
-    type: "graph",
-    title: todo(`what the map shows, in plain words (for example: the five parts of ${repoName})`),
-    scope: { root: "repo", depth },
-    include: units.map((u) => u.id),
-    excludeFiles: [...OVERVIEW_EXCLUDE],
-    stubs: { mode: "none" },
-  };
-
-  const nodes: PatchNode[] = [];
-  for (const unit of units) {
-    const node = overlay(
-      stored,
-      unit.id,
-      todo(
-        unit.dir
-          ? `one line: what this part does (${unit.files.length} code files).`
-          : "one line: what this file does.",
-      ),
-    );
-    if (node) nodes.push(node);
-  }
-
-  const about = aboutAnchor(model, texts);
-  const mainTop = topSymbols(main, 1)[0];
+  const mainTop = topSymbols(mainUnit, 1)[0];
 
   const steps: PatchTourStep[] = [];
-  const offNames = offMap.map((u) => baseName(u.path));
+  const nextId = () => `t${steps.length + 1}`;
+  const otherServices = insides.filter((i) => i !== main).map((i) => baseName(i.root));
+  steps.push(
+    tourStep(
+      model,
+      nextId(),
+      systemViewId,
+      [main.service],
+      note(
+        todo("what the project is, as a plain statement anyone can follow"),
+        todo("its language, its kind and what it is for, from the README; no code names."),
+        inbound.length > 0
+          ? todo(
+              `who uses it and how (${plainList(inbound.map((s) => s.label))}), in one sentence.`,
+            )
+          : todo("who uses it and how, in one sentence."),
+        otherServices.length > 0
+          ? todo(
+              `what each of the other services does, one short sentence each: ${nameList(otherServices, 10)}.`,
+            )
+          : "",
+      ),
+      [about, mainTop ? definition(mainTop) : undefined],
+    ),
+  );
+  if (outbound.length > 0) {
+    steps.push(
+      tourStep(
+        model,
+        nextId(),
+        systemViewId,
+        outbound.map((s) => systemIds.get(s.slug)!),
+        note(
+          todo("what the project relies on outside its own code, as a plain statement"),
+          todo(
+            `one short sentence per box, in plain words: what it keeps or does for the project (${plainList(
+              outbound.map((s) => s.label),
+              10,
+            )}).`,
+          ),
+          todo("merge boxes that are the same system, and drop one the code only imports."),
+        ),
+        outbound.slice(0, L.codeRanges).map((s) => reach.get(s.slug)![0]!.anchor),
+      ),
+    );
+  }
+
+  const offNames = main.offMap.map((u) => baseName(u.path));
   // a hint for the groups: the box each left-off file shares the most references with
   const near = new Map<Unit, string[]>();
-  for (const off of offMap) {
-    const links = (u: Unit) =>
-      (between.get(`${off.id}\0${u.id}`) ?? 0) + (between.get(`${u.id}\0${off.id}`) ?? 0);
-    const best = [...units].sort((a, b) => links(b) - links(a))[0];
-    if (best && links(best) > 0) near.set(best, [...(near.get(best) ?? []), baseName(off.path)]);
+  for (const off of main.offMap) {
+    const shared = (u: Unit) => between(off, u) + between(u, off);
+    const best = [...main.units].sort((a, b) => shared(b) - shared(a))[0];
+    if (best && shared(best) > 0) near.set(best, [...(near.get(best) ?? []), baseName(off.path)]);
   }
   const nearHint = [...near].map(
     ([unit, files]) => `- with ${tick(baseName(unit.path))}: ${nameList(files, 4)}`,
@@ -1380,13 +1673,14 @@ export function draftRepo(input: DraftInput): Draft {
   steps.push(
     tourStep(
       model,
-      "t1",
-      viewId,
-      [main.id],
+      nextId(),
+      main.viewId,
+      [mainUnit.id],
       note(
-        todo("what the project is, as a plain statement"),
-        todo("its language, its kind and what it is for, from the README."),
-        todo("the main path in one sentence; define the central term of the project here."),
+        todo(`what is inside ${multi ? baseName(main.root) : "the project"}, as a plain statement`),
+        todo(
+          "its parts and what each is for, in one or two plain sentences; then the main path through them.",
+        ),
         offNames.length > 0
           ? `Not on the map: ${nameList(offNames, 10)}. ${todo("make one box per responsibility, and group files with grp boxes.")}` +
               (nearHint.length > 0
@@ -1394,20 +1688,31 @@ export function draftRepo(input: DraftInput): Draft {
                 : "")
           : todo("check that each box is one responsibility; merge or split boxes with grp boxes."),
       ),
-      [about, mainTop ? definition(mainTop) : undefined],
+      topSymbols(mainUnit, L.codeRanges).map((s) => definition(s)),
     ),
   );
   for (const unit of order.slice(1)) {
     const inner = unit.dir ? unit.files.map((f) => baseName(f)) : [];
+    const uses = linked.filter((s) => reach.get(s.slug)!.some((r) => r.unit === unit));
     steps.push(
       tourStep(
         model,
-        `t${steps.length + 1}`,
-        viewId,
+        nextId(),
+        main.viewId,
         [unit.id],
         note(
-          todo("what this part does, as a plain statement"),
-          todo("what to look at here, and how this part connects to the others."),
+          todo("what this part is for, as a plain statement"),
+          todo("its job in everyday words first; then how it connects to the other parts."),
+          uses.some((s) => !s.inbound)
+            ? todo(
+                `what it asks of ${plainList(uses.filter((s) => !s.inbound).map((s) => s.label))}.`,
+              )
+            : "",
+          uses.some((s) => s.inbound)
+            ? todo(
+                `how ${plainList(uses.filter((s) => s.inbound).map((s) => s.label.toLowerCase()))} reach the project here.`,
+              )
+            : "",
           inner.length > 1 ? `Files: ${nameList(inner, 5)}.` : "",
         ),
         topSymbols(unit, L.codeRanges).map((s) => definition(s)),
@@ -1417,14 +1722,15 @@ export function draftRepo(input: DraftInput): Draft {
 
   const patch: ExplainerPatch = {
     nodes,
-    views: [view],
+    ...(edges.length > 0 ? { edges } : {}),
+    views,
     tours: [
       {
         id: ids.get("tour", "overview"),
         title: todo("what the tour covers, in about 8 plain words"),
         summary: [
-          todo("what the project is: its language, its kind and what it is for."),
-          todo("the main path through its parts, in one sentence."),
+          todo("what the project is and who it is for, in plain words."),
+          todo("its main parts and what it relies on (databases, other systems), in one sentence."),
         ].join(" "),
         steps,
       },
