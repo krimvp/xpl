@@ -658,20 +658,20 @@ error: .explainer/jobrunner.explainer.json does not match the code: 3 anchors dr
 
 ```
 $ xpl bundle metrics -o metrics.html --files boundary
-wrote metrics.html (2.3 MB): .explainer/metrics.explainer.json, 4 of 12 files embedded (referenced 1, boundary +3: callers 1, callees 1, tests 1; 8.1 KB of source; --files all adds 8 files, 16.9 KB), index 29.9 KB (pruned from 80.2 KB), mode explore
+wrote metrics.html (2.3 MB): .explainer/metrics.explainer.json, 4 of 12 files embedded (referenced 1, boundary +3: callers 1, callees 1, tests 1; 8.1 KB of source; --files all adds 8 files, 16.9 KB), index 7.3 KB (29.9 KB as plain JSON, pruned from 80.2 KB), mode explore
 $ xpl bundle metrics -o metrics.html --files boundary --boundary-max 1
-wrote metrics.html (2.2 MB): .explainer/metrics.explainer.json, 2 of 12 files embedded (referenced 1, boundary +1: callers 1, callees 0, tests 0; 2 more cut at --boundary-max 1: test/retry.test.ts, src/bus.ts; 3.7 KB of source; --files all adds 10 files, 21.3 KB), index 15.3 KB (pruned from 80.2 KB), mode explore
+wrote metrics.html (2.2 MB): .explainer/metrics.explainer.json, 2 of 12 files embedded (referenced 1, boundary +1: callers 1, callees 0, tests 0; 2 more cut at --boundary-max 1: test/retry.test.ts, src/bus.ts; 3.7 KB of source; --files all adds 10 files, 21.3 KB), index 3.7 KB (15.3 KB as plain JSON, pruned from 80.2 KB), mode explore
 ```
 
 (Here `metrics` is an explainer with one concept anchored at `src/metrics.ts#registerMetrics`: `main()` calls it, it calls `EventBus.on` in `src/bus.ts`, and the retry test calls it.)
 
-The symbol index, most of the page for a large repository, is **pruned** with `--files referenced` (and `boundary`, for the files it embeds): every file entry stays, and so do the symbols of the embedded files and of what the explainer names or its graph views show (with their parents), and the references that touch an embedded file (`read` references: both ends), lie on a graph view or make up a derived edge the explainer names. The views, tours and code behave as with the whole index. `--files all` embeds the whole index; `--embed-index full|pruned` overrides either. The summary line says what was saved (`index 71.1 KB (pruned from 82.2 KB)`; just `index 82.2 KB` when nothing was dropped) and the embedded index carries `pruned: {files, symbols, refs}`, the counts of the whole one. One limit: a ghost the reader expands into a file whose code is not embedded opens only into the symbols the kept references end in, and edges between two such ghosts are missing (use `--files all`, or `--embed-index full`, when the reader should explore freely).
+The symbol index, most of the page for a large repository, is **pruned** with `--files referenced` (and `boundary`, for the files it embeds): every file entry stays, and so do the symbols of the embedded files and of what the explainer names or its graph views show (with their parents), and the references that touch an embedded file (`read` references: both ends), lie on a graph view or make up a derived edge the explainer names. The views, tours and code behave as with the whole index. `--files all` embeds the whole index; `--embed-index full|pruned` overrides either. The page holds the index packed (each symbol id once, every symbol and reference a short array of numbers: about a fifth of the plain JSON; the viewer unpacks it). The summary line says the size in the page, then as plain JSON and what was saved (`index 17.3 KB (71.1 KB as plain JSON, pruned from 82.2 KB)`; no `pruned from` when nothing was dropped) and the embedded index carries `pruned: {files, symbols, refs}`, the counts of the whole one. One limit: a ghost the reader expands into a file whose code is not embedded opens only into the symbols the kept references end in, and edges between two such ghosts are missing (use `--files all`, or `--embed-index full`, when the reader should explore freely).
 
 ```
 $ xpl bundle jobrunner -o jobrunner.html
-wrote jobrunner.html (2.3 MB): .explainer/jobrunner.explainer.json, 8 of 12 files embedded (referenced: 18.4 KB of source; --files all adds 4 files, 6.7 KB), index 71.1 KB (pruned from 82.2 KB), mode explore
+wrote jobrunner.html (2.3 MB): .explainer/jobrunner.explainer.json, 8 of 12 files embedded (referenced: 18.4 KB of source; --files all adds 4 files, 6.7 KB), index 17.3 KB (71.1 KB as plain JSON, pruned from 82.2 KB), mode explore
 $ xpl bundle jobrunner -o talk.html --tour tour:intro
-wrote talk.html (2.3 MB): .explainer/jobrunner.explainer.json, 8 of 12 files embedded (referenced: 18.4 KB of source; --files all adds 4 files, 6.7 KB), index 71.1 KB (pruned from 82.2 KB), mode present, tour tour:intro
+wrote talk.html (2.3 MB): .explainer/jobrunner.explainer.json, 8 of 12 files embedded (referenced: 18.4 KB of source; --files all adds 4 files, 6.7 KB), index 17.3 KB (71.1 KB as plain JSON, pruned from 82.2 KB), mode present, tour tour:intro
 $ xpl bundle jobrunner -o all.html --files all
 wrote all.html (2.3 MB): .explainer/jobrunner.explainer.json, 12 files embedded (all: 25.1 KB of source), index 82.2 KB, mode explore
 ```

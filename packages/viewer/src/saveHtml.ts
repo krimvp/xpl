@@ -45,12 +45,16 @@ export function withExplainer(
     void _server;
     const files = { ...rest.files, ...loaded.files };
     const baseFiles = { ...rest.baseFiles, ...loaded.baseFiles };
-    return serializeBundle({
-      ...rest,
-      explainer,
-      files,
-      ...(Object.keys(baseFiles).length > 0 ? { baseFiles } : {}),
-    });
+    return serializeBundle(
+      {
+        ...rest,
+        explainer,
+        files,
+        ...(Object.keys(baseFiles).length > 0 ? { baseFiles } : {}),
+      },
+      // a page of its own, like `xpl bundle` writes: the index packed
+      { packIndex: true },
+    );
   } catch {
     return undefined;
   }

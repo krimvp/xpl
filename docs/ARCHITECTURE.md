@@ -803,7 +803,7 @@ stdout (a rejection exits 1); fatal errors (`error: …`) and warnings (`warning
 | `xpl change <explainer> [<base>..<head>]` | records the change from git in the explainer and prints its analysis (§4.8; below); without a range, prints the analysis of the change already recorded |
 | `xpl draft change\|repo\|path <explainer> [<entry id>] [-o file]` | prints a patch skeleton built from the index (and the change record) with no LLM, `TODO:` in every text to write (below); the summary goes to stderr |
 | `xpl view <explainer> [--port p] [--host h] [--no-open]` | local server (below) |
-| `xpl bundle <explainer> -o out.html [--mode explore\|present] [--tour id] [--files referenced\|boundary\|all] [--boundary-max n] [--embed-index full\|pruned]` | self-contained HTML; `--tour` (`tour:intro` or `intro`) implies present mode; embeds the files the explainer references by default and prints what went in (`8 of 12 files embedded (referenced: 18.4 KB of source; --files all adds 4 files, 6.7 KB)`), `--files boundary` adds the direct callers, callees and tests of anchored symbols (at most `--boundary-max`, default 40), `--files all` every indexed file; with a change recorded, every changed file at head and the base text of the changed files go in too; the symbol index in it is pruned to what the viewer can draw with `--files referenced` or `boundary` and whole with `--files all` (`--embed-index` overrides; the summary line says `index 1.3 MB (pruned from 9.0 MB)`) |
+| `xpl bundle <explainer> -o out.html [--mode explore\|present] [--tour id] [--files referenced\|boundary\|all] [--boundary-max n] [--embed-index full\|pruned]` | self-contained HTML; `--tour` (`tour:intro` or `intro`) implies present mode; embeds the files the explainer references by default and prints what went in (`8 of 12 files embedded (referenced: 18.4 KB of source; --files all adds 4 files, 6.7 KB)`), `--files boundary` adds the direct callers, callees and tests of anchored symbols (at most `--boundary-max`, default 40), `--files all` every indexed file; with a change recorded, every changed file at head and the base text of the changed files go in too; the symbol index in it is pruned to what the viewer can draw with `--files referenced` or `boundary` and whole with `--files all` (`--embed-index` overrides) and packed (the summary line says `index 0.3 MB (1.3 MB as plain JSON, pruned from 9.0 MB)`) |
 
 **Exit codes.** 0 ok (warnings allowed); 1 rejected or failed: unknown id, no index, a rejected patch, a patch
 that changed nothing because the user owns everything it touched, validation errors, `resolve --write` on a
@@ -981,10 +981,18 @@ kept references end, with their parent chains. The viewer derives the same nodes
 focus and reverse lookup from it as from the whole index, whatever the edge-kind selection and stub mode; the
 tests compare the two. `SymbolIndex.pruned` (§2) records what the full index had.
 
-The summary line says what was saved, `…, index 1.3 MB (pruned from 9.0 MB), …` (just `index 9.0 MB` when
-nothing was dropped). With `--json` the `index` field is `{ path, commit, choice: "full"|"pruned", pruned, bytes,
-fullBytes, symbols: { embedded, indexed }, refs: { embedded, indexed } }` (`bytes` and `fullBytes`: the embedded
-and the whole index as compact JSON).
+**Packed index.** `xpl bundle` (and the viewer's Save as HTML) writes the index **packed** (core
+`index-pack.ts`, `serializeBundle(bundle, { packIndex: true })`): each symbol id once, in `ids`, and every symbol
+and reference a short array of numbers (`packing: "xpl-index-pack@1"`), about a fifth of the plain JSON (xpl's
+own page: 17.8 MB to 6.1 MB, its index 13.5 MB to 2.3 MB). It is lossless (an entry of an unknown shape stays an
+object) and `parseBundle` unpacks it, so the viewer only sees a `SymbolIndex`. `xpl view` and the e2e fixture
+pages keep it plain.
+
+The summary line says what was saved, `…, index 0.3 MB (1.3 MB as plain JSON, pruned from 9.0 MB), …` (the size
+in the page first; `index 2.1 MB (9.0 MB as plain JSON)` when nothing was dropped). With `--json` the `index` field
+is `{ path, commit, choice: "full"|"pruned", pruned, bytes, fullBytes, packedBytes, symbols: { embedded, indexed
+}, refs: { embedded, indexed } }` (`bytes` and `fullBytes`: the embedded and the whole index as compact JSON;
+`packedBytes`: the embedded one as the page holds it).
 
 **Known limit:** exploring past the embedded code is not exact. A ghost added there, one that leads into a file
 whose code is not embedded, opens only into the symbols the kept references end in, not all the symbols of the

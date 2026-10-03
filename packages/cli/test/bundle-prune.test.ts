@@ -93,7 +93,9 @@ describe("--embed-index: what the command embeds", () => {
     for (const symbol of pruned.symbols) expect(symbols.has(JSON.stringify(symbol))).toBe(true);
     // the summary line says what that saved
     const saved =
-      /index (\d+(?:\.\d)? (?:B|KB|MB)) \(pruned from (\d+(?:\.\d)? (?:B|KB|MB))\)/.exec(out);
+      /index (\d+(?:\.\d)? (?:B|KB|MB)) \((\d+(?:\.\d)? (?:B|KB|MB)) as plain JSON, pruned from (\d+(?:\.\d)? (?:B|KB|MB))\)/.exec(
+        out,
+      );
     expect(saved, out).not.toBeNull();
     // and the explainer is exactly what the file holds
     expect(data.explainer).toEqual(readJson(demo, ".explainer/demo.explainer.json"));
@@ -103,7 +105,7 @@ describe("--embed-index: what the command embeds", () => {
     const { data, out } = await bundle(demo, "demo", "all.html", "--files", "all");
     expect(data.index).toEqual(full);
     expect(data.index.pruned).toBeUndefined();
-    expect(out).toMatch(/, index \d+(\.\d)? KB, mode explore$/);
+    expect(out).toMatch(/, index \d+(\.\d)? KB \(\d+(\.\d)? KB as plain JSON\), mode explore$/);
     expect(out).not.toContain("pruned");
   });
 
@@ -156,6 +158,9 @@ describe("--embed-index: what the command embeds", () => {
     });
     expect(json.index.path).toMatch(/^\.explainer\/index-.+\.json$/);
     expect(json.index.bytes).toBeLessThan(json.index.fullBytes);
+    // the page holds it packed, and that is what the size says
+    expect(json.index.packedBytes).toBeLessThan(json.index.bytes / 2);
+    expect(readFile(demo, "j.html")).toContain('"packing":"xpl-index-pack@1"');
 
     const whole = JSON.parse(
       (

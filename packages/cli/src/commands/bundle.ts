@@ -91,10 +91,13 @@ function describeChange(
   return parts.join(", ");
 }
 
-/** `index 1.3 MB (pruned from 9.4 MB)`, or just `index 9.4 MB` when the whole index is embedded. */
+/**
+ * `index 0.3 MB (1.3 MB as plain JSON, pruned from 9.4 MB)`: the size in the page (packed), then unpacked; without
+ * `pruned from` when the whole index is embedded.
+ */
 function describeIndex(e: EmbeddedIndex): string {
-  const size = formatBytes(e.bytes);
-  return e.pruned ? `index ${size} (pruned from ${formatBytes(e.fullBytes)})` : `index ${size}`;
+  const plain = `${formatBytes(e.bytes)} as plain JSON`;
+  return `index ${formatBytes(e.packedBytes)} (${e.pruned ? `${plain}, pruned from ${formatBytes(e.fullBytes)}` : plain})`;
 }
 
 export const bundleCommand: CommandSpec = {
@@ -244,7 +247,8 @@ export const bundleCommand: CommandSpec = {
       mode,
       ...(tour !== undefined ? { tour } : {}),
     });
-    const page = injectBundle(html, bundle);
+    // the index packed: a fifth of its size as plain JSON (the viewer unpacks it, `parseBundle`)
+    const page = injectBundle(html, bundle, { packIndex: true });
     const target = resolve(ctx.cwd, out);
     await atomicWrite(target, page);
     const bytes = Buffer.byteLength(page);
@@ -296,6 +300,7 @@ export const bundleCommand: CommandSpec = {
           pruned: embeddedIndex.pruned,
           bytes: embeddedIndex.bytes,
           fullBytes: embeddedIndex.fullBytes,
+          packedBytes: embeddedIndex.packedBytes,
           symbols: embeddedIndex.symbols,
           refs: embeddedIndex.refs,
         },

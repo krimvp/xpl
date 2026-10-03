@@ -22,6 +22,7 @@ import {
   excludedRefs,
   isTestFile,
   parseId,
+  packIndex,
   pruneIndex,
   repr,
   reresolveExplainer,
@@ -396,12 +397,16 @@ export interface EmbeddedIndex {
   /** Size of the embedded index and of the whole one, as compact JSON (UTF-8 bytes). */
   bytes: number;
   fullBytes: number;
+  /** Size of the embedded index as the page holds it, packed (`packIndex`): what it adds to the page. */
+  packedBytes: number;
   /** Symbols and references embedded, and in the whole index. */
   symbols: { embedded: number; indexed: number };
   refs: { embedded: number; indexed: number };
 }
 
 const indexBytes = (index: SymbolIndex): number => Buffer.byteLength(JSON.stringify(index));
+const packedBytes = (index: SymbolIndex): number =>
+  Buffer.byteLength(JSON.stringify(packIndex(index)));
 
 /**
  * The index the bundle carries. `pruned` (the default with `--files referenced`) cuts it down to what the viewer can
@@ -430,6 +435,7 @@ export function embedIndex(opts: {
       pruned: false,
       bytes: fullBytes,
       fullBytes,
+      packedBytes: packedBytes(opts.index),
       symbols: { embedded: indexed.symbols, indexed: indexed.symbols },
       refs: { embedded: indexed.refs, indexed: indexed.refs },
     };
@@ -444,6 +450,7 @@ export function embedIndex(opts: {
     pruned: result.pruned,
     bytes: result.pruned ? indexBytes(result.index) : fullBytes,
     fullBytes,
+    packedBytes: packedBytes(result.index),
     symbols: { embedded: result.symbols.kept, indexed: result.symbols.total },
     refs: { embedded: result.refs.kept, indexed: result.refs.total },
   };

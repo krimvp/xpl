@@ -1,5 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { BUNDLE_SCHEMA, injectBundle, parseBundle, type ViewerBundle } from "../src/index.js";
+import {
+  BUNDLE_SCHEMA,
+  INDEX_PACKING,
+  injectBundle,
+  isPackedIndex,
+  packIndex,
+  parseBundle,
+  unpackIndex,
+  type PackedIndex,
+  type SymbolIndex,
+  type ViewerBundle,
+} from "../src/index.js";
+import { jobrunner } from "./helpers.js";
 
 const bundle = {
   schema: BUNDLE_SCHEMA,
@@ -21,5 +33,44 @@ describe("bundle", () => {
     const once = injectBundle("<head></head>", bundle);
     expect(injectBundle(once, bundle)).toBe(once);
     expect(() => parseBundle('{"schema":"nope"}')).toThrow(/bundle@0/);
+  });
+});
+
+describe("bundle: the packed index", () => {
+  const { index } = jobrunner();
+
+  it("packs to a fraction of the plain JSON and unpacks to the same index", () => {
+    const packed = packIndex(index);
+    expect(isPackedIndex(packed)).toBe(true);
+    expect(packed.symbols.every((entry) => Array.isArray(entry))).toBe(true);
+    expect(packed.refs.every((entry) => Array.isArray(entry))).toBe(true);
+    expect(JSON.stringify(packed).length).toBeLessThan(JSON.stringify(index).length / 2);
+    expect(unpackIndex(JSON.parse(JSON.stringify(packed)) as PackedIndex)).toEqual(index);
+  });
+
+  it("keeps an entry of a shape it does not know as it is", () => {
+    const odd: SymbolIndex = {
+      ...index,
+      symbols: [{ ...index.symbols[0]!, id: "other.ts#x" }, index.symbols[1]!],
+      refs: [
+        { ...index.refs[0]!, site: { startLine: 3, endLine: 3, startCol: 0, endCol: 4 } },
+        { ...index.refs[0]!, extra: true } as unknown as SymbolIndex["refs"][number],
+        { ...index.refs[0]!, site: { startLine: 3, endLine: 5 } },
+      ],
+    };
+    const packed = packIndex(odd);
+    expect(packed.symbols.map((entry) => Array.isArray(entry))).toEqual([false, true]);
+    expect(packed.refs.map((entry) => Array.isArray(entry))).toEqual([false, false, true]);
+    expect(unpackIndex(packed)).toEqual(odd);
+  });
+
+  it("is written packed on request, and parseBundle unpacks it", () => {
+    const full = { ...bundle, index } as ViewerBundle;
+    const plain = injectBundle("<head></head>", full);
+    const packed = injectBundle("<head></head>", full, { packIndex: true });
+    expect(packed.length).toBeLessThan(plain.length / 2);
+    expect(packed).toContain(INDEX_PACKING);
+    const text = packed.match(/<script id="xpl-data"[^>]*>([\s\S]*?)<\/script>/)![1]!;
+    expect(parseBundle(text)).toEqual(full);
   });
 });
