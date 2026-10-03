@@ -70,7 +70,7 @@ Where the index shows less than runs:
 ## explain <question>: part of a project
 
 1. **Entry point:** `search -i` the nouns and verbs of the question; `outline --depth 2`. Pick the function where the flow starts or the decision is made.
-2. **Draft:** `xpl draft path <name> <entry id> -o q.json`: a sequence of the entry's direct calls in source order, and one tour step per main call.
+2. **Draft:** `xpl draft path <name> <entry id> -o q.json`: a sequence of the entry's direct calls in source order, and one tour step per main call. A question with two halves (make a token, then check it): give both entries, `xpl draft path <name> <entry> <entry2>`, for one tour through two sequences. A method the class inherits works too (`sym:a.py#Child.run`).
 3. **Trace:** `show <entry> --refs`, then the callees that matter. Note every guard on the path (`if`, early `return`, type checks).
 4. **Shape:** the draft sees one level of calls. Drop the calls that do not matter. Add a map when the answer spans several files, and start the tour on it: the parts involved as plain boxes, with the outside systems they touch (a database, an API) as role boxes, so the reader sees where the answer sits before the calls. Add a flow when the point is a decision, a second process view when the question has two halves, concepts for ideas that cross files.
 5. **Boundary:** anchor the target code, its direct callers, the callees that change the answer, and the tests that pin the behaviour.

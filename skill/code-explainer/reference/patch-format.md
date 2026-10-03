@@ -284,6 +284,7 @@ Edit `include` without resending it with `includeAdd` (ids to append; those alre
         "**/test/**",
         "**/tests/**",
         "**/*.test.*",
+        "**/test-d/**",
         "**/test_*.py",
         "**/examples/**",
         "docs/**"

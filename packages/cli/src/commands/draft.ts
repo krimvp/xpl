@@ -4,7 +4,7 @@ import {
   shortSha,
   type AnchorInput,
   type ExplainerPatch,
-  type IndexedSymbol,
+  type IndexModel,
 } from "@xpl/core";
 import type { CommandSpec } from "../command.js";
 import {
@@ -12,6 +12,8 @@ import {
   draftChange,
   draftPath,
   draftProblems,
+  inheritedEntry,
+  type PathEntry,
   draftRepo,
   type Draft,
   type DraftKind,
@@ -94,7 +96,9 @@ export function draftCounts(patch: ExplainerPatch): DraftCounts {
 function summaryLine(kind: DraftKind, name: string, counts: DraftCounts): string {
   const picture =
     kind === "path"
-      ? `a sequence of ${plural(counts.sequenceSteps, "call")} between ${plural(counts.participants, "participant")}`
+      ? counts.views > 1
+        ? `${counts.views} sequences of ${plural(counts.sequenceSteps, "call")} in all`
+        : `a sequence of ${plural(counts.sequenceSteps, "call")} between ${plural(counts.participants, "participant")}`
       : counts.maps > 1
         ? `${counts.maps} maps of ${plural(counts.boxes, "box", "boxes")} in all`
         : `a map of ${plural(counts.boxes, "box", "boxes")}`;
@@ -106,9 +110,32 @@ function summaryLine(kind: DraftKind, name: string, counts: DraftCounts): string
   );
 }
 
+/**
+ * The symbol a path starts at. A method a class inherits (`sym:url_safe.py#URLSafeTimedSerializer.dumps`) is not a
+ * symbol of the index: it starts at the base class that defines it, with the class it was asked on.
+ */
+function pathEntry(model: IndexModel, arg: string): PathEntry {
+  let target: ReturnType<typeof resolveTarget>;
+  try {
+    target = resolveTarget(model, arg);
+  } catch (error) {
+    const hash = arg.indexOf("#");
+    const file = arg.slice(0, Math.max(0, hash)).replace(/^sym:/, "").replace(/^\.\//, "");
+    const inherited = hash !== -1 ? inheritedEntry(model, file, arg.slice(hash + 1)) : undefined;
+    if (inherited) return inherited;
+    throw error;
+  }
+  if (target.type !== "symbol") {
+    throw new CliError(
+      `the entry must be a symbol (a function or a method), not ${target.id}: \`xpl outline --under ${target.id}\` lists its symbols`,
+    );
+  }
+  return { symbol: target.symbol };
+}
+
 export const draftCommand: CommandSpec = {
   name: "draft",
-  usage: "xpl draft change|repo|path <explainer> [<entry id>] [-o <file>]",
+  usage: "xpl draft change|repo|path <explainer> [<entry id> ...] [-o <file>]",
   summary: "Print a patch skeleton for a change, a repo or a path; you write the TODO text",
   details: [
     "Builds a patch from the index (and the change record) with no LLM: the structure the index proves, with",
@@ -124,8 +151,15 @@ export const draftCommand: CommandSpec = {
     `                            queues, other APIs, found from the import lines). Each service box opens a map of its`,
     `                            parts: the top-level folders or files (below src in a src layout; at most`,
     `                            ${DRAFT_LIMITS.mapBoxes} boxes) and the outside systems they use. A tour from the top down.`,
-    "  path <explainer> <entry>  a sequence of the calls the entry symbol makes (depth 1, in source order, at most",
-    `                            ${DRAFT_LIMITS.participants} participants and ${DRAFT_LIMITS.pathCalls} calls), and a tour with one step per call.`,
+    "  path <explainer> <entry> [<entry> ...]",
+    "                            a sequence of the calls the entry symbol makes (depth 1, in source order, at most",
+    `                            ${DRAFT_LIMITS.participants} participants and ${DRAFT_LIMITS.pathCalls} calls), and a tour with one step per main call.`,
+    "                            Calls to helpers of the entry's own class get a lifeline of their own; recursion is a",
+    "                            call to itself; one-line helpers, type conversions and data built from a type are left",
+    "                            out (the notes list them), and so are the calls that reach the least code when there",
+    "                            are too many. Several entries: one sequence each, in one tour (a question with two",
+    "                            halves). A method a class inherits (`sym:a.py#Child.run`) starts at the base that",
+    "                            defines it, and self calls go where the class's method order finds them.",
     'Graph views get `stubs: {mode: "none"}`; tour steps hold at most 2 code ranges. Ids already in the explainer',
     "are not reused (`view:change-map-2`), and nodes it already explains get no new summary.",
     "Prints the patch on stdout (the summary on stderr), or writes it with -o and prints the summary.",
@@ -138,7 +172,7 @@ export const draftCommand: CommandSpec = {
   positionals: [
     { name: "change|repo|path" },
     { name: "explainer" },
-    { name: "entry", required: false },
+    { name: "entry", required: false, rest: true },
   ],
   async run(ctx, args) {
     const kind = args.positionals[0] as DraftKind;
@@ -146,7 +180,8 @@ export const draftCommand: CommandSpec = {
       throw new UsageError(`unknown draft "${args.positionals[0]}": use change, repo or path`);
     }
     const name = args.positionals[1]!;
-    const entryArg = args.positionals[2];
+    const entryArgs = args.positionals.slice(2);
+    const entryArg = entryArgs[0];
     if (kind === "path" && entryArg === undefined) {
       throw new UsageError(
         "missing <entry>: the symbol the path starts at, e.g. sym:src/runner.ts#Runner.dispatch",
@@ -174,16 +209,8 @@ export const draftCommand: CommandSpec = {
           `Check out ${shortSha(change.head)} and run \`xpl index\`, or record the change again.`,
       );
     }
-    let entry: IndexedSymbol | undefined;
-    if (kind === "path") {
-      const target = resolveTarget(ws.model, entryArg!);
-      if (target.type !== "symbol") {
-        throw new CliError(
-          `the entry must be a symbol (a function or a method), not ${target.id}: \`xpl outline --under ${target.id}\` lists its symbols`,
-        );
-      }
-      entry = target.symbol;
-    }
+    const entries: PathEntry[] = [];
+    if (kind === "path") for (const arg of entryArgs) entries.push(pathEntry(ws.model, arg));
 
     const input = { explainer: loaded.explainer, model: ws.model, texts: ws.texts };
     let draft: Draft;
@@ -193,7 +220,7 @@ export const draftCommand: CommandSpec = {
           ? draftChange(input, change!)
           : kind === "repo"
             ? draftRepo(input)
-            : draftPath(input, entry!);
+            : draftPath(input, entries);
     } catch (error) {
       throw new CliError(`nothing to draft: ${errorMessage(error)}`);
     }
