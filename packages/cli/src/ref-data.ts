@@ -405,7 +405,7 @@ export function buildRefTree(
     if (direction === "in") {
       const found = interfaceHops(current, depth);
       if (isRoot) hops = found.length;
-      nodes.push(...found);
+      for (const hop of found) nodes.push(hop);
     }
     return { nodes, more };
   };
@@ -427,8 +427,9 @@ export function renderRefTree(
   indent = 1,
   /** References that a `maxChildren` cap left out of this list. */
   more = 0,
+  /** The lines so far: appended to, never spread (a tree can have more lines than a call takes arguments). */
+  out: string[] = [],
 ): string[] {
-  const out: string[] = [];
   for (const node of nodes) {
     const note =
       node.note === "seen" ? "  (expanded above)" : node.note === "cycle" ? "  (cycle)" : "";
@@ -439,14 +440,13 @@ export function renderRefTree(
     const line = refLine(node.entry, needsFrom(node.entry, direction, subject));
     out.push(`${"  ".repeat(indent)}${line}${hop}${note}`);
     if (node.children) {
-      out.push(
-        ...renderRefTree(
-          node.children,
-          direction,
-          node.entry.id,
-          indent + 1,
-          node.moreChildren ?? 0,
-        ),
+      renderRefTree(
+        node.children,
+        direction,
+        node.entry.id,
+        indent + 1,
+        node.moreChildren ?? 0,
+        out,
       );
     } else if (node.moreChildren) out.push(moreChildrenLine(node.moreChildren, indent + 1));
     if (node.moreImpls) {

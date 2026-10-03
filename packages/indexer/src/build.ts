@@ -145,9 +145,13 @@ function grammarVersions(
 function keptAtBlind(
   refs: readonly Reference[],
   blind: readonly { file: FilePath; line: number; col: number }[],
+  precise: readonly Reference[],
 ): Set<Reference> {
   const kept = new Set<Reference>();
   if (blind.length === 0) return kept;
+  // an edge the tool has at the same line already is not kept twice
+  const edge = (r: Reference) => `${r.from}\0${r.to}\0${r.kind}\0${r.site.startLine}`;
+  const known = new Set(precise.map(edge));
   const byFile = new Map<FilePath, Reference[]>();
   for (const ref of refs) {
     const file = fileOfId(ref.from);
@@ -163,7 +167,7 @@ function keptAtBlind(
       if (ref.kind === "import" || !spanContains(siteSpan(ref), at.line, at.col)) continue;
       if (!best || size(ref) < size(best)) best = ref;
     }
-    if (best) kept.add(best);
+    if (best && !known.has(edge(best))) kept.add(best);
   }
   return kept;
 }
@@ -367,7 +371,7 @@ export async function buildIndex(opts: BuildIndexOptions): Promise<BuildIndexRes
               `the tool described none of the ${total} ${languages.join("/")} file(s)`,
             );
           }
-          const kept = keptAtBlind(refs, output.blind ?? []);
+          const kept = keptAtBlind(refs, output.blind ?? [], preciseRefs);
           refs = refs.filter((ref) => {
             const file = fileOfId(ref.from);
             return kept.has(ref) || !(covered.has(languageOfFile.get(file)!) && replaces(file));

@@ -95,7 +95,8 @@ type Entity =
 
 /** What an expression evaluates to, as far as member lookups are concerned. */
 type Value =
-  | { k: "type"; sym: IndexedSymbol }
+  /** `next`: for `super()` of a class with several bases, the other bases in order (Python's mixins). */
+  | { k: "type"; sym: IndexedSymbol; next?: readonly IndexedSymbol[] }
   | { k: "module"; files: readonly FilePath[] }
   | { k: "opaque" }
   | { k: "unknown" };
@@ -104,6 +105,20 @@ const OPAQUE: Value = { k: "opaque" };
 const UNKNOWN: Value = { k: "unknown" };
 
 type Want = (symbol: IndexedSymbol) => boolean;
+
+/** Receivers that are the language's own types or globals (by pack id): never guessed as a class of the repository. */
+const BUILTIN_RECEIVERS: Record<string, ReadonlySet<string>> = {
+  python: new Set(
+    "object type super int float complex bool str bytes bytearray list tuple dict set frozenset range slice memoryview property classmethod staticmethod Exception BaseException".split(
+      " ",
+    ),
+  ),
+  typescript: new Set(
+    "Object Array Promise Math JSON Number String Boolean Symbol BigInt Reflect Proxy Date RegExp Error Map Set WeakMap WeakSet Intl console globalThis window document".split(
+      " ",
+    ),
+  ),
+};
 
 const isTypeLike = (s: IndexedSymbol): boolean =>
   s.kind === "class" ||
@@ -525,9 +540,23 @@ class Resolver {
   ): Entity | undefined {
     const index = this.files.get(file);
     if (!index) return undefined;
-    for (const s of this.scopeChain(file, scope)) {
+    const chain = this.scopeChain(file, scope);
+    for (const s of chain) {
       const nested = this.pick(index.symbols.get(`${s}.${name}`), want);
       if (nested) return { k: "sym", sym: nested };
+    }
+    // an import inside an enclosing function (Python: `def templatize(): from .template import templatize`)
+    // binds the name there, over the module's own symbol of that name
+    for (const binding of index.bindings.get(name) ?? []) {
+      const inside = chain.some((s) => {
+        const range = index.symbols.get(s)?.[0]?.range;
+        return (
+          range &&
+          binding.site.startLine >= range.startLine &&
+          binding.site.startLine <= range.endLine
+        );
+      });
+      if (inside) return this.bindingEntity(file, binding, want);
     }
     const top = this.pick(index.symbols.get(name), want);
     if (top) return { k: "sym", sym: top };
@@ -663,8 +692,9 @@ class Resolver {
   private superValue(ctx: Ctx): Value {
     const self = this.thisValue(ctx);
     if (self.k !== "type") return self;
-    const base = this.bases(self.sym)[0];
-    return base ? { k: "type", sym: base } : UNKNOWN;
+    const [base, ...next] = this.bases(self.sym);
+    if (!base) return UNKNOWN;
+    return next.length > 0 ? { k: "type", sym: base, next } : { k: "type", sym: base };
   }
 
   /** Facts about a variable `name` in the scopes enclosing `scope`, innermost scope first (cached). */
@@ -892,8 +922,11 @@ class Resolver {
     }
     const receiver = this.qualifiedValue(qualifier, ctx, depth + 1);
     if (receiver.k === "type") {
-      const member = this.findMember(receiver.sym, name, WANT.call);
-      return member ? this.callableValue(member, receiver, depth + 1) : UNKNOWN;
+      for (const sym of [receiver.sym, ...(receiver.next ?? [])]) {
+        const member = this.findMember(sym, name, WANT.call);
+        if (member) return this.callableValue(member, receiver, depth + 1);
+      }
+      return UNKNOWN;
     }
     if (receiver.k === "module") {
       const entity = this.exported(receiver.files, name, WANT.call, new Set());
@@ -976,11 +1009,18 @@ class Resolver {
   ): IndexedSymbol | undefined {
     switch (value.k) {
       case "type": {
-        if (want !== WANT.read) return this.findMember(value.sym, name, want);
-        // The nearest member of that name decides: a property that overrides a base class's attribute
-        // (`@property def name` over `name: str`) is not a variable, and the attribute below it is out of reach.
-        const member = this.findMember(value.sym, name, WANT.any);
-        return member && want(member) ? member : undefined;
+        for (const sym of [value.sym, ...(value.next ?? [])]) {
+          if (want !== WANT.read) {
+            const member = this.findMember(sym, name, want);
+            if (member) return member;
+            continue;
+          }
+          // The nearest member of that name decides: a property that overrides a base class's attribute
+          // (`@property def name` over `name: str`) is not a variable, and the attribute below it is out of reach.
+          const member = this.findMember(sym, name, WANT.any);
+          if (member) return want(member) ? member : undefined;
+        }
+        return undefined;
       }
       case "module": {
         const entity = this.exported(value.files, name, want, new Set());
@@ -1002,10 +1042,14 @@ class Resolver {
   ): IndexedSymbol | undefined {
     if (!/^[A-Za-z_$][\w$]*$/.test(receiver) || receiver === "this" || receiver === "super")
       return undefined;
+    const site = this.files.get(ctx.file)!;
+    // `object.__new__(cls)`, `tuple.__len__(t)`, `Object.keys(x)`: the language's own types, not a class of ours
+    if (BUILTIN_RECEIVERS[site.file.pack.id]?.has(receiver)) return undefined;
     const classes = this.classesByLowerName.get(receiver.toLowerCase());
     if (!classes) return undefined;
     const found: { cls: IndexedSymbol; member: IndexedSymbol; rank: number }[] = [];
     for (const cls of classes) {
+      if (this.files.get(cls.file)?.file.pack !== site.file.pack) continue; // another language
       const target = this.findMember(cls, member, want);
       if (!target) continue;
       found.push({ cls, member: target, rank: this.rank(cls, ctx) });

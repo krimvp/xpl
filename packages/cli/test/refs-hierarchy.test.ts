@@ -4,7 +4,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { INDEX_SCHEMA, IndexModel, type Reference, type SymbolIndex } from "@xpl/core";
-import { buildRefTree, refTreeJson, renderRefTree } from "../src/ref-data.js";
+import { buildRefTree, refTreeJson, renderRefTree, type RefEntry } from "../src/ref-data.js";
 import { resolveTarget } from "../src/target.js";
 import { indexedFixture, xpl, xplJson } from "./helpers.js";
 
@@ -295,5 +295,23 @@ describe("xpl refs --max-children", () => {
     expect(json.json.totals.out).toBeGreaterThan(2);
     const bad = await xpl(dir, "refs", DISPATCH, "--max-children", "lots");
     expect(bad.code).toBe(2);
+  });
+});
+
+describe("renderRefTree on a very large tree", () => {
+  it("prints more lines than a call takes arguments without overflowing the stack", () => {
+    const entry: RefEntry = {
+      kind: "call",
+      id: "sym:a.py#f",
+      from: "sym:a.py#f",
+      to: "sym:a.py#g",
+      file: "a.py",
+      site: { startLine: 1, endLine: 1 },
+      offset: { from: 0, to: 0 },
+      resolution: "heuristic",
+    };
+    const leaves = Array.from({ length: 200_000 }, () => ({ entry }));
+    const lines = renderRefTree([{ entry, children: leaves }], "in", "sym:a.py#g");
+    expect(lines).toHaveLength(200_001);
   });
 });

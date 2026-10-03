@@ -122,8 +122,8 @@ export const refsCommand: CommandSpec = {
       const via = tree.hops > 0 ? `, plus ${tree.hops} via interface` : "";
       lines.push(
         `${direction} (${tree.total}${via}${tree.truncated && tree.total > tree.nodes.length ? `, first ${tree.nodes.length} shown` : ""}):`,
-        ...renderRefTree(tree.nodes, direction, target.id, 1, tree.more),
       );
+      renderRefTree(tree.nodes, direction, target.id, 1, tree.more, lines);
       if (tree.truncated) {
         lines.push(`  ... cut after ${limit} lines; use --limit 0, --kind, or a smaller --depth`);
       }

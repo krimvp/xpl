@@ -530,6 +530,59 @@ export function ⟦fact⟧(n: number): number {
     expect(triples(refs)).toEqual([]);
   });
 
+  it("Python: a call `x.Name()` whose target is named otherwise is left to the heuristic resolver; of a symbol defined twice, the one nested around the call, else the one at its own path", async () => {
+    const py = marked(`class ⟦AutoField⟧:
+    pass
+class ⟦DateTimeField⟧:
+    pass
+class ⟦Parser⟧:
+    def ⟦parse_tuple⟧(self):
+        def ⟦parse⟧():
+            return 1
+        return ⟦parse⟧()
+    def ⟦parse⟧(self):
+        return 2
+def ⟦use⟧(models, p):
+    models.⟦AutoField⟧()
+    models.⟦DateTimeField⟧()
+    return p.⟦parse⟧()
+`);
+    const sym = (d: string): string => `scip-python python p 0.0.0 \`pkg.a\`/${d}`;
+    const { refs, result } = await run(
+      { "pkg/a.py": py.text },
+      [
+        source([
+          {
+            path: "pkg/a.py",
+            occurrences: [
+              { range: [0, 0, 0], symbol: sym("__init__:"), roles: DEF },
+              ...occs(py, [
+                [0, sym("AutoField#"), DEF],
+                [1, sym("DateTimeField#"), DEF],
+                [2, sym("Parser#"), DEF],
+                [3, sym("Parser#parse_tuple()."), DEF],
+                [4, sym("Parser#parse()."), DEF], // the nested def gets the method's symbol
+                [5, sym("Parser#parse().")],
+                [6, sym("Parser#parse()."), DEF],
+                [7, sym("use()."), DEF],
+                [8, sym("DateTimeField#")], // scip-python's wrong target for a re-exported name
+                [9, sym("DateTimeField#")],
+                [10, sym("Parser#parse().")],
+              ]),
+            ],
+          },
+        ]),
+      ],
+      ["python"],
+    );
+    expect(triples(refs)).toEqual([
+      "call pkg/a.py#Parser.parse_tuple -> pkg/a.py#Parser.parse_tuple.parse",
+      "call pkg/a.py#use -> pkg/a.py#DateTimeField",
+      "call pkg/a.py#use -> pkg/a.py#Parser.parse",
+    ]);
+    expect(result.blind).toEqual([{ file: "pkg/a.py", line: 13, col: 12 }]);
+  });
+
   it("finds the implementation of overloaded functions (several definitions of one symbol, or one per signature)", async () => {
     const src = marked(`export function ⟦pick⟧(x: string): string;
 export function ⟦pick⟧(x: number): number;

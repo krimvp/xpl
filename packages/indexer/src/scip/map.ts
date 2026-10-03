@@ -581,14 +581,21 @@ class Mapper {
       };
     }
 
+    const path = parsed ? symbolPath(parsed) : undefined;
+    // several definitions of one symbol (scip-python gives a nested `def parse` inside `Parser.parse_tuple` the
+    // symbol of the method `Parser.parse`): the one at the path the symbol spells, else the first
+    let named: { entry: SymbolEntry; definition: Definition } | undefined;
     for (const definition of definitions) {
       const entry = this.namedEntry(definition);
-      if (entry && this.firstNaming().get(entry.symbol.id) === definition) {
-        return this.target(parsed, entry, definition, typeLike);
+      if (!entry || this.firstNaming().get(entry.symbol.id) !== definition) continue;
+      if (path !== undefined && entry.basePath === path) {
+        named = { entry, definition };
+        break;
       }
+      named ??= { entry, definition };
     }
+    if (named) return this.target(parsed, named.entry, named.definition, typeLike);
 
-    const path = parsed ? symbolPath(parsed) : undefined;
     if (path !== undefined) {
       for (const definition of definitions) {
         const found = this.lookup.entry(`${definition.file}#${path}`);
@@ -596,6 +603,51 @@ class Mapper {
       }
     }
     return null;
+  }
+
+  /**
+   * A Python call `x.Name(...)` whose target is named otherwise. scip-python 0.6.6 sends names that a package
+   * re-exports through `from .x import *` / `__all__` to a wrong sibling (django: every `models.AutoField(` to
+   * `DateTimeField`), so such a site is left to the heuristic resolver. Bare names are not checked: an alias
+   * (`from x import A as B; B()`) or `cls()` is spelled otherwise on purpose.
+   */
+  private misnamed(view: DocumentView, span: Span, target: Resolved): boolean {
+    if (target.moduleLike || this.languageOf.get(view.path) !== "python") return false;
+    const line = view.lines[span.startLine - 1];
+    if (line === undefined || span.startLine !== span.endLine || line[span.startCol - 2] !== ".")
+      return false;
+    const text = view.text(span);
+    const symbol = this.lookup.get(target.id);
+    if (!symbol || text === undefined || !/^\w+$/.test(text)) return false;
+    return text !== lastSegment(symbol.path).replace(/~\d+$/, "");
+  }
+
+  /**
+   * Of a symbol defined several times (scip-python: a nested `def parse` in `Parser.parse_tuple` has the symbol
+   * of the method `Parser.parse`), the definition nested in a function around the occurrence, if there is one:
+   * `parse()` inside `parse_tuple` calls the nested one. Elsewhere `resolveDefinition` decides.
+   */
+  private nearestDefinition(key: string, file: FilePath, at: Span, target: Resolved): Resolved {
+    const definitions = this.definitions.get(key);
+    if (!definitions || definitions.length < 2) return target;
+    let best: { entry: SymbolEntry; parent: SymbolEntry; definition: Definition } | undefined;
+    for (const definition of definitions) {
+      if (definition.file !== file) continue;
+      const entry = this.namedEntry(definition);
+      const parent = entry?.symbol.parent ? this.lookup.entry(entry.symbol.parent) : undefined;
+      if (
+        !entry ||
+        !parent ||
+        (parent.symbol.kind !== "function" && parent.symbol.kind !== "method")
+      )
+        continue;
+      if (!spanContains(parent.span, at.startLine, at.startCol)) continue;
+      // the innermost function around the occurrence that has such a definition
+      if (!best || spanContains(best.parent.span, parent.span.startLine, parent.span.startCol))
+        best = { entry, parent, definition };
+    }
+    if (!best || best.entry.symbol.id === target.id) return target;
+    return { ...target, id: best.entry.symbol.id, definition: best.definition };
   }
 
   /** The innermost symbol at a definition, when the definition's identifier is that symbol's name. */
@@ -693,7 +745,7 @@ class Mapper {
     for (const occ of view.doc.occurrences) {
       if (occ.symbol === "" || (occ.symbolRoles & SymbolRole.Definition) !== 0) continue;
       const key = this.key(view, occ.symbol);
-      const target =
+      let target =
         this.resolveDefinition(key, occ.symbol) ??
         (this.definitions.has(key) ? null : this.relativeModule(view, occ.symbol));
       if (!target) {
@@ -701,7 +753,10 @@ class Mapper {
         else if (isLocalSymbol(occ.symbol) || this.lostDefinitions.has(key)) {
           const range = parseScipRange(occ.range);
           const span = range && view.span(range);
-          if (span) this.blind.push({ file: view.path, line: span.startLine, col: span.startCol });
+          // a member (`ns.f`): a local with no definition that is a plain name is a keyword argument or the like
+          const member = span && view.lines[span.startLine - 1]?.[span.startCol - 2] === ".";
+          if (span && (member || this.lostDefinitions.has(key)))
+            this.blind.push({ file: view.path, line: span.startLine, col: span.startCol });
         }
         continue;
       }
@@ -717,6 +772,7 @@ class Mapper {
         this.misplaced.add(view.path);
         continue;
       }
+      if (target) target = this.nearestDefinition(key, view.path, span, target);
       const from = this.lookup.fromId(view.path, span.startLine, span.startCol);
       // an occurrence of a symbol inside itself: only a call counts (recursion), decided once it is classified
       candidates.push({ span, from, target, roles: occ.symbolRoles });
@@ -782,6 +838,10 @@ class Mapper {
         kind = "type-ref";
         site = c.span;
       } else {
+        return;
+      }
+      if (kind === "call" && this.misnamed(view, c.span, c.target)) {
+        this.blind.push({ file: view.path, line: c.span.startLine, col: c.span.startCol });
         return;
       }
       const moduleFile = info?.moduleFile;

@@ -390,6 +390,56 @@ describe("calls: scope chain and same-file symbols", () => {
     ]);
   });
 
+  it("Python: super() searches every base in order (mixins), an import inside a function is not recursion", async () => {
+    const r = await refs(
+      {
+        "pkg/__init__.py": "",
+        "pkg/template.py": src("def templatize(s):", "    return s"),
+        "pkg/base.py": src(
+          "class Mixin:",
+          "    def other(self):",
+          "        return 1",
+          "class Base:",
+          "    def __init__(self):",
+          "        self.x = 1",
+        ),
+        "pkg/child.py": src(
+          "from .base import Mixin, Base",
+          "class Child(Mixin, Base):",
+          "    def __init__(self):",
+          "        super().__init__()",
+          "def templatize(s):",
+          "    from .template import templatize",
+          "    return templatize(s)",
+        ),
+      },
+      "call",
+    );
+    expect(r).toEqual([
+      "pkg/child.py#Child.__init__ -> pkg/base.py#Base.__init__ (call)",
+      "pkg/child.py#templatize -> pkg/template.py#templatize (call)",
+    ]);
+  });
+
+  it("the last-resort guess skips the language's own types and classes of other languages", async () => {
+    const r = await refs(
+      {
+        "a.py": src(
+          "class Object:",
+          "    def __new__(cls):",
+          "        return object.__new__(cls)",
+          "class Item:",
+          "    def show(self):",
+          "        return 1",
+        ),
+        "b.js": src("export function f(item) { return item.show(); }"),
+        "c.py": src("def g(item):", "    return item.show()"),
+      },
+      "call",
+    );
+    expect(r).toEqual(["c.py#g -> a.py#Item.show (call)"]);
+  });
+
   it("resolves calls to overloaded functions to the implementation", async () => {
     const r = await refs(
       {
