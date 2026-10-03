@@ -14,11 +14,14 @@ import { Guide } from "./Guide.js";
 import { RelatedFiles } from "./RelatedFiles.js";
 import { ZoomTrail } from "./ZoomTrail.js";
 
-export function Workspace() {
+/** `showSource`: open with the code shown (back from Present, where the code was on the slide). */
+export function Workspace({ showSource: startWithSource = false }: { showSource?: boolean } = {}) {
   const store = useStore();
   const state = useViewerState();
   const derived = useDerived();
-  const [sourceOpen, setSourceOpen] = useState(false);
+  const [sourceOpen, setSourceOpen] = useState(startWithSource);
+  /** The guide section scrolled to (Guide), for the breadcrumb: where the reader is, not what was clicked. */
+  const [reading, setReading] = useState<string | undefined>(undefined);
   const columns = useRef<HTMLDivElement>(null);
   const map = useMemo(
     () => workspaceMap(state),
@@ -41,6 +44,10 @@ export function Workspace() {
   const appliedStep = state.applied
     ? state.model.tour(state.applied.tourId)?.steps.find((s) => s.id === state.applied!.stepId)
     : undefined;
+  const readingStep =
+    state.perspective === "guide" && reading
+      ? tour?.steps.find((s) => s.id === reading)
+      : undefined;
   const code = state.perspective === "code";
   const showSource = code || sourceOpen;
   useEffect(() => {
@@ -65,7 +72,7 @@ export function Workspace() {
             disabled={!state.canGoBack}
             onClick={() => store.back()}
           >
-            ← Back
+            ← <span className="nav-word">Back</span>
           </button>
           <button
             type="button"
@@ -74,7 +81,7 @@ export function Workspace() {
             disabled={!state.canGoForward}
             onClick={() => store.forward()}
           >
-            Forward →
+            <span className="nav-word">Forward</span> →
           </button>
         </div>
         <nav className="workspace-breadcrumb" aria-label="Current topic">
@@ -82,10 +89,13 @@ export function Workspace() {
             {state.explainer.title}
           </button>
           <span aria-hidden="true">/</span>
-          <span data-testid="breadcrumb-topic">
-            {appliedStep
-              ? stepTitle(appliedStep, state.model)
-              : (info?.title ?? tour?.title ?? "Overview")}
+          {/* Polite live region: a screen reader hears what a click or a scroll brought on screen. */}
+          <span data-testid="breadcrumb-topic" aria-live="polite">
+            {readingStep
+              ? stepTitle(readingStep, state.model)
+              : appliedStep
+                ? stepTitle(appliedStep, state.model)
+                : (info?.title ?? tour?.title ?? "Overview")}
           </span>
         </nav>
         {active && state.perspective !== "guide" && (
@@ -118,7 +128,7 @@ export function Workspace() {
               )}
             >
               {state.perspective === "guide" ? (
-                <Guide />
+                <Guide onReading={setReading} />
               ) : (
                 <>
                   <div className="workspace-caption">
@@ -228,7 +238,7 @@ export function Workspace() {
           {active && (
             <details className="workspace-inspector">
               <summary>Where this is in the code</summary>
-              <Details reader />
+              <Details reader untitled={!(state.perspective === "guide" && appliedStep)} />
             </details>
           )}
         </aside>

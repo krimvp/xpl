@@ -123,7 +123,7 @@ test("keeps discovered file collections collapsed and exposes loader evidence", 
   await expect(collection).not.toHaveAttribute("open", "");
   await expect(collection).toContainText("2 files");
   await collection.locator("summary").first().click();
-  await expect(collection).toContainText("not confirmed active plugins");
+  await expect(collection).toContainText("files that match a pattern, not checked one by one");
   await expect(page.locator(".editor-host")).toHaveCount(0);
   await collection.getByRole("button", { name: "src/worker.ts", exact: true }).click();
   await expect(page.locator('.workspace-source .pane[data-file="src/worker.ts"]')).toBeVisible();

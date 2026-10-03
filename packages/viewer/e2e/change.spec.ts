@@ -186,7 +186,9 @@ test.describe("base anchors", () => {
     await page.locator(".workspace-inspector > summary").click();
     const row = page.locator(".anchor-row", { has: page.locator(".anchor-before") });
     await expect(row).toHaveCount(1);
-    await expect(row).toContainText("src/runner.ts@base");
+    // a reader's narrow column names the file, the tooltip the whole path
+    await expect(row).toContainText("runner.ts@base");
+    await expect(row).toHaveAttribute("title", /src\/runner\.ts/);
     await row.click();
     const before = pane(page, "src/runner.ts", "base");
     await expect(before).toBeVisible();
@@ -422,5 +424,48 @@ test.describe("reading the diagrams", () => {
     }
     expect(heights.size).toBe(1);
     expect(problems).toEqual([]);
+  });
+});
+
+test.describe("reading, presenting and leaving", () => {
+  test("the browser's Back button leaves a talk started on the page, and the slide's code stays shown", async ({
+    page,
+  }) => {
+    const problems = watchProblems(page);
+    await open(page);
+    await page.getByTestId("mode-present").click();
+    await expect(page.getByTestId("present")).toBeVisible();
+    await page.goBack();
+    await expect(page.getByTestId("present")).toHaveCount(0);
+    await expect(page.locator(".workspace")).toBeVisible();
+    // back in the reading screens, the code of the slide is still there
+    await expect(page.locator(".workspace-source .pane").first()).toBeVisible();
+    expect((await stateOf(page)).mode).toBe("explore");
+    expect(problems).toEqual([]);
+  });
+
+  test("the guide's contents and the breadcrumb follow the section being read", async ({
+    page,
+  }) => {
+    const problems = watchProblems(page);
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await open(page);
+    const contents = page.locator(".guide-contents button");
+    await expect(contents.first()).toHaveAttribute("aria-current", "step");
+    const last = page.locator(".guide-section").last();
+    await last.scrollIntoViewIfNeeded();
+    await page
+      .locator(".workspace-columns, .guide-body")
+      .evaluateAll((els) => els.forEach((el) => el.scrollTo({ top: el.scrollHeight })));
+    await expect(contents.last()).toHaveAttribute("aria-current", "step");
+    const title = (await contents.last().innerText()).replace(/^\d+\s*/, "").trim();
+    await expect(page.getByTestId("breadcrumb-topic")).toHaveText(title);
+    expect(problems).toEqual([]);
+  });
+
+  test("a map edge's accessible name says which two boxes it joins", async ({ page }) => {
+    await open(page, "?perspective=map");
+    const edge = page.locator('.edges [role="button"]').first();
+    await expect(edge).toHaveAttribute("aria-label", /^.+ to .+: /);
   });
 });

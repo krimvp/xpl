@@ -70,6 +70,19 @@ const Reader = createContext(false);
  * ids (the live diagram keeps those to itself) and nothing to click or focus.
  */
 const Still = createContext(false);
+/** The names of the boxes drawn, by render id: an edge's accessible name says which two it joins. */
+const BoxNames = createContext<ReadonlyMap<string, string>>(new Map());
+
+function boxNames(
+  nodes: readonly LayoutNode[],
+  into = new Map<string, string>(),
+): Map<string, string> {
+  for (const node of nodes) {
+    into.set(node.id, node.label);
+    boxNames(node.children, into);
+  }
+  return into;
+}
 
 /** Where a ghost box is on screen, relative to the diagram pane (the menu of a folded ghost opens beside it). */
 interface Anchor {
@@ -326,6 +339,7 @@ export function GraphView({
     if (!(event.target as Element).closest(".ghost-menu")) setMenu(undefined);
   };
   const menuGhost = menu ? layout?.nodes.find((n) => n.id === menu.id) : undefined;
+  const names = useMemo(() => boxNames(layout?.nodes ?? []), [layout]);
 
   let body;
   if (error) body = <div className="diagram-message is-error">Layout failed: {error}</div>;
@@ -385,19 +399,21 @@ export function GraphView({
   return (
     <ReadOnly.Provider value={present}>
       <Reader.Provider value={present || reader}>
-        <GhostMenuContext.Provider value={menuApi}>
-          <div
-            className="graph-host"
-            ref={host}
-            onPointerDownCapture={dismiss}
-            onWheelCapture={menu ? dismissOnWheel : undefined}
-          >
-            {body}
-            {menu && menuGhost?.ghostFold && (
-              <GhostMenu node={menuGhost} anchor={menu.anchor} onClose={closeMenu} />
-            )}
-          </div>
-        </GhostMenuContext.Provider>
+        <BoxNames.Provider value={names}>
+          <GhostMenuContext.Provider value={menuApi}>
+            <div
+              className="graph-host"
+              ref={host}
+              onPointerDownCapture={dismiss}
+              onWheelCapture={menu ? dismissOnWheel : undefined}
+            >
+              {body}
+              {menu && menuGhost?.ghostFold && (
+                <GhostMenu node={menuGhost} anchor={menu.anchor} onClose={closeMenu} />
+              )}
+            </div>
+          </GhostMenuContext.Provider>
+        </BoxNames.Provider>
       </Reader.Provider>
     </ReadOnly.Provider>
   );
@@ -990,6 +1006,7 @@ const EdgeShape = memo(function EdgeShape({ edge, marks }: { edge: LayoutEdge; m
   const store = useStore();
   const reader = useContext(Reader);
   const still = useContext(Still);
+  const names = useContext(BoxNames);
   const points = edge.points;
   if (points.length < 2) return null;
   const path = roundedPath(points);
@@ -1017,7 +1034,12 @@ const EdgeShape = memo(function EdgeShape({ edge, marks }: { edge: LayoutEdge; m
       data-stub-id={edge.stub && !still ? edge.id : undefined}
       role={still ? undefined : "button"}
       tabIndex={still ? undefined : 0}
-      aria-label={still ? undefined : `${edge.stub ? "stub" : "edge"} ${edge.title}`}
+      aria-label={
+        still
+          ? undefined
+          : `${names.get(edge.from) ?? "?"} to ${names.get(edge.to) ?? "?"}: ${edge.title}` +
+            (edge.stub ? " (outside this map)" : "")
+      }
       onClick={(event) => {
         event.stopPropagation();
         select(event);

@@ -1,7 +1,8 @@
 /**
  * Keeps the address bar in step with the tour: `?mode=present&tour=<id>&step=<n>` while presenting
  * (n counts from 1, like the "2 / 5" counter), so a reload, a bookmark or a shared link lands on the
- * same slide. `history.replaceState` only: stepping through a talk must not fill the back button.
+ * same slide. Stepping through a talk uses `history.replaceState` (it must not fill the back button); starting
+ * one pushes an entry, so that the browser's Back button leaves the talk instead of the page.
  *
  * Nothing is written until the mode, tour or step changes, so a page opened with parameters keeps its
  * URL as it is. Leaving Present drops `tour` and `step`; `mode=explore` is written only when the bundle
@@ -57,11 +58,13 @@ export function watchUrl(
   bundleMode: "explore" | "present" | undefined,
   win: Window = window,
 ): () => void {
-  const write = (state: ViewerState) => {
+  const write = (state: ViewerState, push = false) => {
     try {
       const { pathname, search, hash } = win.location;
       const next = searchFor(state, search, bundleMode);
-      if (next !== search) win.history.replaceState(win.history.state, "", pathname + next + hash);
+      if (push) win.history.pushState({ xplPresent: true }, "", pathname + next + hash);
+      else if (next !== search)
+        win.history.replaceState(win.history.state, "", pathname + next + hash);
     } catch {
       /* file:// pages and sandboxed frames may refuse; the address bar just stays as it is */
     }
@@ -73,12 +76,25 @@ export function watchUrl(
         ? "explore"
         : `${state.perspective}|${state.viewId}|${state.tour?.tourId}|${state.tour?.step}|${JSON.stringify(state.selection)}`;
   let last = key(store.getState());
-  if (store.getState().mode === "present") write(store.getState());
-  return store.subscribe(() => {
+  let mode = store.getState().mode;
+  if (mode === "present") write(store.getState());
+  // Back out of a talk that was started on this page: leave Present, where the reader was.
+  const onPop = () => {
+    if (store.getState().mode !== "present") return;
+    if (new URLSearchParams(win.location.search).get("mode") !== "present") store.exitPresent();
+  };
+  win.addEventListener("popstate", onPop);
+  const unsubscribe = store.subscribe(() => {
     const state = store.getState();
     const now = key(state);
+    const started = state.mode === "present" && mode !== "present";
+    mode = state.mode;
     if (now === last) return;
     last = now;
-    write(state);
+    write(state, started);
   });
+  return () => {
+    unsubscribe();
+    win.removeEventListener("popstate", onPop);
+  };
 }

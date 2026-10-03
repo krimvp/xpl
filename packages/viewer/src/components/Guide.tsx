@@ -3,8 +3,11 @@
  * title, its note, a still picture of the step's diagram framed on what the step is about (with "Open in
  * Map / Flow"), the interaction or the parts it focuses, and the tests it points at, gathered in one
  * "Tests" list. A tour picker sits above the title when the explainer has several tours.
+ *
+ * The contents (and, through `onReading`, the breadcrumb) follow the scrolling: they mark the section being
+ * read, not only the one last clicked.
  */
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { codeFocus, isTestFile, type ExplainerModel, type TourStep } from "@xpl/core";
 import { overrideFocus } from "../derive.js";
 import { changeFiles, changeOf, STATUS_WORDS } from "../diff.js";
@@ -15,7 +18,7 @@ import { stepText, stepTitle } from "../stepTitle.js";
 import { TourPicker } from "./Header.js";
 import { Snapshot } from "./Snapshot.js";
 
-export function Guide() {
+export function Guide({ onReading }: { onReading?: (stepId: string | undefined) => void } = {}) {
   const store = useStore();
   const state = useViewerState();
   const tour = store.currentTour() ?? state.model.tours[0];
@@ -25,6 +28,36 @@ export function Guide() {
   const opening = useRef<string | undefined>(undefined);
   const active =
     state.applied && state.applied.tourId === tour?.id ? state.applied.stepId : undefined;
+
+  // The section being read: the last one whose top has passed a third of the way down the scroller.
+  const [reading, setReading] = useState<string | undefined>(undefined);
+  useEffect(() => {
+    const element = body.current;
+    if (!element) return;
+    const scroller =
+      getComputedStyle(element).overflowY === "auto"
+        ? element
+        : element.closest<HTMLElement>(".workspace-columns");
+    if (!scroller) return;
+    const update = () => {
+      const line = scroller.getBoundingClientRect().top + scroller.clientHeight / 3;
+      let current: string | undefined;
+      for (const section of element.querySelectorAll<HTMLElement>("[data-section-id]")) {
+        if (section.getBoundingClientRect().top <= line) current = section.dataset.sectionId;
+      }
+      // At the very bottom the last section is the one being read, however short it is.
+      if (scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 2) {
+        const all = element.querySelectorAll<HTMLElement>("[data-section-id]");
+        current = all[all.length - 1]?.dataset.sectionId ?? current;
+      }
+      setReading(scroller.scrollTop > 0 ? current : undefined);
+    };
+    update();
+    scroller.addEventListener("scroll", update, { passive: true });
+    return () => scroller.removeEventListener("scroll", update);
+  }, [tour?.id]);
+  const current = reading ?? active;
+  useEffect(() => onReading?.(reading), [reading, onReading]);
 
   useEffect(() => {
     if (
@@ -117,7 +150,7 @@ export function Guide() {
           <button
             key={step.id}
             type="button"
-            aria-current={step.id === active ? "step" : undefined}
+            aria-current={step.id === current ? "step" : undefined}
             onClick={() => store.previewStep(tour.id, index)}
           >
             <span>{index + 1}</span>

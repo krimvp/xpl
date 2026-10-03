@@ -171,7 +171,8 @@ function buildInfo(id: ElementId, model: ExplainerModel, vd: ViewDerived): Eleme
       }
       if (node.tech) facts.unshift({ label: "Technology", value: node.tech });
       const nested = node.kind === "group" ? 0 : model.children(id).length;
-      if (nested > 0) facts.push({ label: "Contains", value: `${nested} nested elements` });
+      if (nested > 0)
+        facts.push({ label: "Inside it", value: `${nested} ${nested === 1 ? "part" : "parts"}` });
       const info: ElementInfo = {
         id,
         type: "node",

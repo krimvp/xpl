@@ -4,7 +4,7 @@
  * mode (present/PresentMode.tsx) plays a tour: the diagram and a caption on the left, the code on the
  * right, no file tree. The keys of both modes are handled here, in one place.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { CodeArea } from "./components/CodeArea.js";
 import { ConceptList } from "./components/ConceptList.js";
 import { Details } from "./components/Details.js";
@@ -58,6 +58,12 @@ function Shell() {
       ? (store.currentTour() ?? (state.perspective === "guide" ? state.model.tours[0] : undefined))
       : undefined;
   const pageTitle = tour?.title.trim() || title;
+  // Back from a talk to the reading screens: the code that was on the slide stays on screen.
+  const previousMode = useRef(state.mode);
+  const fromPresent = previousMode.current === "present" && state.mode !== "present";
+  useEffect(() => {
+    previousMode.current = state.mode;
+  }, [state.mode]);
   useEffect(() => {
     document.title = pageTitle ? `${pageTitle} · xpl` : "xpl viewer";
   }, [pageTitle]);
@@ -112,7 +118,7 @@ function Shell() {
       {state.mode === "present" ? (
         <PresentMode />
       ) : state.perspective !== "explore" ? (
-        <Workspace />
+        <Workspace showSource={fromPresent} />
       ) : (
         <ExploreLayout
           leftWidth={leftWidth}

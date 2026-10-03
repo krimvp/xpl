@@ -20,7 +20,17 @@ const MAX_ANCHOR_ROWS = 8;
 /** Facts that only matter to the author of the explainer. */
 const AUTHOR_FACTS = new Set(["Origin", "Resolution"]);
 
-export function Details({ reader = false }: { reader?: boolean }) {
+/**
+ * `untitled`: the title and the summary are already on screen right above (the topic column says them): the
+ * details start with where the element is in the code, not with the same words again.
+ */
+export function Details({
+  reader = false,
+  untitled = false,
+}: {
+  reader?: boolean;
+  untitled?: boolean;
+}) {
   const store = useStore();
   const state = useViewerState();
   const derived = useDerived();
@@ -56,11 +66,13 @@ export function Details({ reader = false }: { reader?: boolean }) {
   const facts = reader ? info.facts.filter((fact) => !AUTHOR_FACTS.has(fact.label)) : info.facts;
   return (
     <section className="details" aria-label="Details" data-details-id={info.id}>
-      <header className="details-head">
-        {kind && <span className={`kind-pill kind-${kind.split(" ")[0]}`}>{kind}</span>}
-        <h2 className="details-title">{info.title}</h2>
-        {info.provenance && !reader && <ProvenanceBadge info={info} />}
-      </header>
+      {!untitled && (
+        <header className="details-head">
+          {kind && <span className={`kind-pill kind-${kind.split(" ")[0]}`}>{kind}</span>}
+          <h2 className="details-title">{info.title}</h2>
+          {info.provenance && !reader && <ProvenanceBadge info={info} />}
+        </header>
+      )}
       {info.where && <p className="where">{info.where}</p>}
       {!reader && (
         <p className="element-id">
@@ -141,7 +153,7 @@ export function Details({ reader = false }: { reader?: boolean }) {
         </div>
       )}
 
-      {info.summary && (
+      {info.summary && !untitled && (
         <p className="summary" dangerouslySetInnerHTML={{ __html: renderInline(info.summary) }} />
       )}
       {info.targets && !reader && (
@@ -230,7 +242,10 @@ function Anchors({ rows, reader }: { rows: AnchorRow[]; reader: boolean }) {
                 {reader ? roleWords(row.role) : row.role}
               </span>
               {row.base && <span className="anchor-before">before</span>}
-              <span className="where">{row.where}</span>
+              {/* A reader's narrow column: the file's name, not the start of its path (the title has it all). */}
+              <span className="where">
+                {reader ? row.where.replace(/^(?:[^/\s]+\/)+/, "") : row.where}
+              </span>
               {row.startLine !== undefined && (
                 <span className="lines">
                   {row.endLine !== row.startLine

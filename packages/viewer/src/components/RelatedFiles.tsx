@@ -3,11 +3,11 @@ import { relatedFiles, type RelatedFileSet } from "@xpl/core";
 import { useDerived, useStore, useViewerState } from "../hooks.js";
 
 const LABELS: Record<RelatedFileSet["kind"], string> = {
-  loads: "Loads",
-  discovers: "Discovers / registers",
-  configures: "Configuration wiring",
-  overrides: "Configuration overrides",
-  configuration: "Configured by",
+  loads: "Reads",
+  discovers: "Finds and registers",
+  configures: "Sets up",
+  overrides: "Overrides settings in",
+  configuration: "Its settings are in",
   test: "Tested by",
 };
 
@@ -74,11 +74,11 @@ export function RelatedFiles({ onOpen }: { onOpen: () => void }) {
           ))}
           <p className="resource-trust">
             {link.resolution === "static"
-              ? "Resolved from source"
+              ? "Found in the code"
               : link.resolution === "inferred"
-                ? "Inferred relationship — review the evidence"
-                : "Linked by the explainer's author"}
-            {link.pattern ? " · matching files, not confirmed active plugins" : ""}
+                ? "Likely, from how the code is written: check the lines below"
+                : "Added by the explainer's author"}
+            {link.pattern ? " · files that match a pattern, not checked one by one" : ""}
           </p>
           <ul>
             {link.files.map((file) => (
@@ -97,7 +97,7 @@ export function RelatedFiles({ onOpen }: { onOpen: () => void }) {
             ))}
           </ul>
           <details className="resource-evidence">
-            <summary>Why these files are linked</summary>
+            <summary>Where the code makes this link</summary>
             {link.evidence.map((site, index) => (
               <button
                 type="button"
@@ -108,7 +108,7 @@ export function RelatedFiles({ onOpen }: { onOpen: () => void }) {
                   onOpen();
                 }}
               >
-                {site.file}:L{site.line}
+                {site.file.slice(site.file.lastIndexOf("/") + 1)}, line {site.line}
               </button>
             ))}
           </details>

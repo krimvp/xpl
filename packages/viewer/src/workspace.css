@@ -818,6 +818,21 @@
   }
 }
 @media (max-width: 760px) {
+  /* A phone: Back and Forward are arrows, the breadcrumb is the topic alone, the tree sits above the code. */
+  .navigation-history .nav-word,
+  .workspace-breadcrumb > button,
+  .workspace-breadcrumb > span[aria-hidden="true"] {
+    display: none;
+  }
+  .workspace .code-area {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+  .workspace .tree-panel {
+    max-height: 132px;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
   .workspace-location {
     gap: 8px;
     padding: 8px;

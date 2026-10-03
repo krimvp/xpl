@@ -253,7 +253,7 @@ function edgeLabelText(edge: DerivedEdge): string {
 }
 
 function stubLabelText(stub: Stub): string {
-  return `${stub.kinds.join("/")} ×${stub.count}`;
+  return `${stub.kinds.join(" & ")} ×${stub.count}`;
 }
 
 function labelBox(text: string): { text: string; width: number; height: number } {
