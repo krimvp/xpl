@@ -2396,16 +2396,23 @@ code {
   list-style: none;
 }
 
+/* r3-copy: the name takes the room it needs, the file name gives way first (people N7) */
 .caller-rows .caller-name {
-  flex: none;
-  max-width: 55%;
+  flex: 0 1 auto;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   font: 11.5px var(--font-mono);
 }
 
+.caller-rows .anchor-row {
+  gap: 6px;
+}
+
 .caller-rows .where {
+  flex: 1 1 0;
+  min-width: 5ch;
   color: var(--muted);
 }
 
