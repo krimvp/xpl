@@ -1191,4 +1191,19 @@
     max-height: 30vh;
     overflow-y: auto;
   }
+  /* r3-frame: the location bar is one row (the topic's name gives way, cut short), and the topic below
+     the diagram is a little shorter: the map gets the height (a laptop at 200% left it 158px). */
+  .workspace-location {
+    flex-wrap: nowrap;
+  }
+  .workspace-breadcrumb {
+    flex: 1 1 0;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  .workspace-context {
+    max-height: 24vh;
+  }
 }

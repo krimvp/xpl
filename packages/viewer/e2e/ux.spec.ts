@@ -334,6 +334,53 @@ test.describe("Present: the code", () => {
       await explore.locator(".cm-scroller").evaluate((el) => el.scrollWidth > el.clientWidth),
     ).toBe(true);
   });
+
+  test("a long chain of calls wraps at a dot or a bracket, never inside a name", async ({
+    page,
+  }) => {
+    await openVariant(
+      page,
+      (bundle) => {
+        // a line with no spaces, longer than the code column: only its punctuation can break it
+        const lines = bundle.files["src/runner.ts"].split("\n");
+        const chain = Array.from(
+          { length: 12 },
+          (_, i) => `someLongerName${i}(argumentNumber${i})`,
+        );
+        lines[75] = `    ${chain.join(".")};`;
+        bundle.files["src/runner.ts"] = lines.join("\n");
+      },
+      "?mode=present&tour=tour:intro&step=2",
+      { width: 1280, height: 720 },
+    );
+    const line = page.locator('.present .pane[data-file="src/runner.ts"] .cm-line[data-line="76"]');
+    await expect(line).toBeVisible();
+    const breaks = await line.evaluate((el) => {
+      // where each row starts: the character before it and the first of the row
+      const range = document.createRange();
+      const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+      const out: string[] = [];
+      let top: number | undefined;
+      let previous = "";
+      for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+        const text = node.textContent ?? "";
+        for (let i = 0; i < text.length; i++) {
+          range.setStart(node, i);
+          range.setEnd(node, i + 1);
+          const rect = range.getClientRects()[0];
+          if (!rect) continue;
+          if (top !== undefined && rect.top > top + 4) out.push(previous + text[i]);
+          top = rect.top;
+          previous = text[i]!;
+        }
+      }
+      return out;
+    });
+    expect(breaks.length).toBeGreaterThan(0);
+    for (const pair of breaks) expect(pair, `a row starts inside a name: ${pair}`).toMatch(/^[.(]/);
+    // the text itself is unchanged (copying the line gives the code)
+    expect(await line.textContent()).toContain("someLongerName0(argumentNumber0).someLongerName1(");
+  });
 });
 
 test.describe("the Guide", () => {

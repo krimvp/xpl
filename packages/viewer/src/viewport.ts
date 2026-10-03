@@ -78,6 +78,11 @@ export interface Focus {
    * its label, not the tail of a long arrow).
    */
   core?: Box | undefined;
+  /**
+   * The diagram's other boxes: a frame is slid, within the room what it frames leaves, to cut as few of them
+   * as it can (half a box at the edge of the pane reads as a mistake).
+   */
+  others?: readonly Box[];
 }
 
 export interface FrameOptions extends FitOptions {
@@ -93,6 +98,13 @@ export interface FrameOptions extends FitOptions {
   readableMin?: number;
   /** A frame of several boxes may go down to this share of the readable zoom (default `FRAME_SHRINK`). */
   shrink?: number;
+  /**
+   * The focus itself (every box the step names) may be drawn down to this zoom, below the floor
+   * `readableMin` / `shrink` set for a frame with neighbours: all of what the step is about at a smaller size
+   * reads better than half of it at a large one. No single focus box is drawn larger than the pane either,
+   * down to this zoom. Default: the frame's floor (no lower).
+   */
+  focusMin?: number;
 }
 
 export interface FramedView {
@@ -140,9 +152,10 @@ export function boxInView(t: Transform, size: Size, box: Box): boolean {
  *
  * 1. All of it, when it fits at `whole` or more (its text stays readable).
  * 2. Else the focus with as many of its neighbours as fit with it (nearest first), when the focus fits at
- *    `shrink` × the readable zoom or more; else as many of the focus boxes as fit, from the first. A frame is
- *    drawn at the readable zoom when it fits at that, else smaller (down to the `shrink` share), and is
- *    placed as the first window of the diagram when it is in it (the start of a diagram matters most).
+ *    `shrink` × the readable zoom or more (or `focusMin`: then the neighbours only come in at the zoom the
+ *    focus needs); else as many of the focus boxes as fit, from the first. A frame is drawn at the readable
+ *    zoom when it fits at that, else smaller (down to the `shrink` share), and is placed as the first window
+ *    of the diagram when it is in it (the start of a diagram matters most).
  * 3. Else the first focus box at the readable zoom (its `core` when it is bigger than the pane), or the
  *    top-left corner when there is no focus.
  *
@@ -190,7 +203,7 @@ export function frameView(
       const use = span && fallback && span.size > visible ? fallback : span;
       return padding - windowStart(use, visible, total) * k;
     };
-    return {
+    const placed = {
       k,
       x: axis(
         size.w,
@@ -205,6 +218,77 @@ export function frameView(
         core && { start: core.y, size: core.height },
       ),
     };
+    return target && focus?.others?.length ? slide(placed, target, focus.others) : placed;
+  };
+  /** `t` moved, on each axis the diagram does not fit, to cut fewer of `others`, `keep` staying in view. */
+  const slide = (t: Transform, keep: Box, others: readonly Box[]): Transform => {
+    const margin = 12;
+    const axis = (
+      at: number,
+      pane: number,
+      total: number,
+      start: (box: Box) => number,
+      length: (box: Box) => number,
+      across: (box: Box) => boolean,
+    ): number => {
+      const visible = (pane - 2 * padding) / t.k;
+      if (total <= visible) return at;
+      const from = (padding - at) / t.k;
+      const lo = Math.max(0, start(keep) + length(keep) - visible);
+      const hi = Math.min(total - visible, start(keep));
+      if (lo > hi) return at;
+      // (`s` is where the padded window starts; the pane shows `edge` more on each side of it)
+      const edge = padding / t.k;
+      const boxes = others.filter(across);
+      const cuts = (s: number) =>
+        boxes.filter((box) => {
+          const a = start(box);
+          const b = a + length(box);
+          const left = s - edge;
+          const right = s + visible + edge;
+          return (a < left && left < b) || (a < right && right < b);
+        }).length;
+      const candidates = [from, lo, hi];
+      for (const box of boxes) {
+        const a = start(box);
+        const b = a + length(box);
+        // a pane edge just before or just after the box, on either side
+        candidates.push(a - margin + edge, b + margin + edge);
+        candidates.push(a - margin - visible - edge, b + margin - visible - edge);
+      }
+      let best = from;
+      let fewest = cuts(from);
+      for (const raw of candidates) {
+        const s = clamp(raw, lo, hi);
+        const n = cuts(s);
+        if (n < fewest || (n === fewest && Math.abs(s - from) < Math.abs(best - from))) {
+          best = s;
+          fewest = n;
+        }
+      }
+      return padding - best * t.k;
+    };
+    // across: a box counts on one axis when it is in the window on the other
+    const inRows = (y: number) => (box: Box) =>
+      box.y + box.height > -y / t.k && box.y < (size.h - y) / t.k;
+    const x = axis(
+      t.x,
+      size.w,
+      content.width,
+      (b) => b.x,
+      (b) => b.width,
+      inRows(t.y),
+    );
+    const inColumns = (box: Box) => box.x + box.width > -x / t.k && box.x < (size.w - x) / t.k;
+    const y = axis(
+      t.y,
+      size.h,
+      content.height,
+      (b) => b.y,
+      (b) => b.height,
+      inColumns,
+    );
+    return { k: t.k, x, y };
   };
   const result = (transform: Transform, context: number): FramedView => {
     // A frame no larger than the whole diagram would be: the whole diagram reads as well.
@@ -216,16 +300,25 @@ export function frameView(
       context,
     };
   };
-  /** The frame of `group`: at the readable zoom, or as much smaller as it needs (not below `least`). */
-  const frame = (group: readonly Box[]): Transform | undefined => {
+  /** The zoom `group` is framed at: the readable zoom, or as much smaller as it needs (undefined below `low`). */
+  const zoomFor = (group: readonly Box[], low: number): number | undefined => {
     const union = unionBox(group);
     if (!union) return undefined;
     const k = Math.min(most, rawFitScale(size, union, padding) || most);
-    return k >= least - 1e-9 ? place(k, union) : undefined;
+    return k >= low - 1e-9 ? k : undefined;
   };
+  const frame = (group: readonly Box[], low = least): Transform | undefined => {
+    const k = zoomFor(group, low);
+    return k === undefined ? undefined : place(k, unionBox(group));
+  };
+  // The focus alone may go below the frame's floor, down to `focusMin` (all of it in view).
+  const focusLeast = Math.min(least, options.focusMin ?? least);
 
-  // The focus, then as many of its neighbours as fit, nearest first.
-  if (boxes.length > 0 && frame(boxes)) {
+  // The focus, then as many of its neighbours as fit, nearest first: down to the floor, and never smaller
+  // than the focus alone needs.
+  const focusZoom = zoomFor(boxes, focusLeast);
+  if (boxes.length > 0 && focusZoom !== undefined) {
+    const low = Math.min(least, focusZoom);
     const group = [...boxes];
     const centre = unionBox(boxes)!;
     const cx = centre.x + centre.width / 2;
@@ -235,17 +328,18 @@ export function frameView(
     const near = [...(focus?.neighbours ?? [])].sort((a, b) => distance(a) - distance(b));
     let context = 0;
     for (const box of near) {
-      if (!frame([...group, box])) continue;
+      if (!frame([...group, box], low)) continue;
       group.push(box);
       context++;
     }
-    return result(frame(group)!, context);
+    return result(frame(group, low)!, context);
   }
   // Else as many of the focus boxes as fit, from the first.
   for (let n = boxes.length - 1; n >= 1; n--) {
-    const framed = frame(boxes.slice(0, n));
+    const framed = frame(boxes.slice(0, n), focusLeast);
     if (framed) return result(framed, 0);
   }
+  // Else the first box (too big for the pane even at `focusMin`): its core at the readable zoom.
   return result(place(most, boxes[0], focus?.core), 0);
 }
 
@@ -328,8 +422,9 @@ export interface SnapshotView {
  * Where a diagram sits in a still picture `width` px wide and at most `maxHeight` tall (the Guide's inline
  * diagram), by `frameView`: all of it when its text reads at about 10px or more (never enlarged), else the
  * focus and its neighbours at `SNAPSHOT_ZOOM` (down to `SNAPSHOT_MIN_ZOOM` to get them in). A picture that
- * would be cut at `maxHeight` but fits whole at `tallHeight` is drawn that tall instead. Undefined before the
- * picture has a width.
+ * would be cut at `maxHeight` but fits whole at `tallHeight` is drawn that tall instead; one that would still
+ * cut a box the step names is drawn up to `namedHeight` tall, when that shows more of them (a step about
+ * every part of a tall map shows all of it, not most of it). Undefined before the picture has a width.
  */
 export function snapshotView(
   width: number,
@@ -337,6 +432,7 @@ export function snapshotView(
   content: Pick<Box, "width" | "height">,
   focus: Focus | undefined,
   tallHeight = maxHeight,
+  namedHeight = tallHeight,
 ): SnapshotView | undefined {
   const pad = SNAPSHOT_PADDING;
   const options = {
@@ -354,6 +450,14 @@ export function snapshotView(
     if (tall && (!tall.partial || tall.hidden < framed.hidden || tall.context > framed.context)) {
       framed = tall;
       paneHeight = tallHeight;
+    }
+  }
+  if (framed.hidden > 0 && namedHeight > paneHeight) {
+    // Taller still, when that shows more of the boxes the step names.
+    const named = frameView({ w: width, h: namedHeight }, content, focus, options);
+    if (named && named.hidden < framed.hidden) {
+      framed = named;
+      paneHeight = namedHeight;
     }
   }
   const { transform } = framed;

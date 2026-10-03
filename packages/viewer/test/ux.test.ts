@@ -260,6 +260,23 @@ describe("the guide's still pictures", () => {
     const far = { x: 2800, y: 2800, width: 100, height: 100 };
     expect(snapshotView(600, 260, content, { boxes: [focus, far] })!.hidden).toBe(1);
   });
+  it("grow taller still rather than cut a box the step names (a tall map, every part of it named)", () => {
+    // 750 x 715, named top and bottom: at 420 tall (0.57 to fit) the frame is cut; at 620 it is whole
+    const content = { width: 750, height: 715 };
+    const top = { x: 350, y: 0, width: 100, height: 50 };
+    const bottom = { x: 350, y: 665, width: 100, height: 50 };
+    const cut = snapshotView(780, 260, content, { boxes: [top, bottom] }, 420)!;
+    expect(cut.hidden).toBe(1);
+    const view = snapshotView(780, 260, content, { boxes: [top, bottom] }, 420, 620)!;
+    expect(view.hidden).toBe(0);
+    expect(view.partial).toBe(false);
+    expect(view.transform.k).toBeGreaterThanOrEqual(SNAPSHOT_WHOLE);
+    expect(view.height).toBeLessThanOrEqual(620);
+    // a picture that names nothing it would cut stays at the usual height
+    expect(snapshotView(780, 260, content, { boxes: [top] }, 420, 620)!.height).toBeLessThanOrEqual(
+      420,
+    );
+  });
   it("grow taller when that shows the whole diagram", () => {
     // 700 x 380: cut at 260 tall (0.63), whole at 420 tall (0.82)
     const view = snapshotView(600, 260, { width: 700, height: 380 }, undefined, 420)!;

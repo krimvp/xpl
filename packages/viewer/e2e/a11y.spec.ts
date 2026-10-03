@@ -165,6 +165,8 @@ test.describe("short and narrow screens", () => {
     expect(box.height).toBeGreaterThan(250);
     expect(box.y + box.height).toBeLessThanOrEqual(450);
     await expect(page.locator(".workspace-caption .eyebrow")).toBeHidden();
+    // the location bar is one row: the topic's name gives way to the buttons
+    expect((await page.locator(".workspace-location").boundingBox())!.height).toBeLessThan(48);
   });
 
   test("a phone: a step picker instead of the pinned list, a tour picker inside the screen", async ({

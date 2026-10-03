@@ -57,41 +57,44 @@ export function SequenceView({
   // What a diagram too big to show whole starts on: the selected arrows and participants (a tour step's
   // focus), so the step being talked about is on screen, not the top-left corner. An arrow counts by its
   // label (what is read): a long arrow in a narrow pane is then framed on its words, not on its tail.
-  // The step's label (`core`), and with it both ends of its arrow when they fit (`whole`).
-  const { whole: startBox, core: startCore } = useMemo(() => {
+  // Each selected arrow is one focus box: its label with both ends (the heads of the two participants it
+  // joins), so a frame shows who talks to whom; several are framed together when they fit, else the first
+  // whole and "+N more". When even one is too wide, its label (`core`) is what stays in view.
+  const { boxes: startBoxes, core: startCore } = useMemo(() => {
     const boxes: Box[] = [];
-    const ends: Box[] = [];
+    let core: Box | undefined;
     for (const row of layout.rows) {
-      if (selected.has(row.step.id)) {
-        const left = row.labelAnchor === "middle" ? row.labelX - row.labelWidth / 2 : row.labelX;
-        boxes.push({
-          x: Math.max(row.bandLeft, left - 12),
+      if (!selected.has(row.step.id)) continue;
+      const left = row.labelAnchor === "middle" ? row.labelX - row.labelWidth / 2 : row.labelX;
+      const label = {
+        x: Math.max(row.bandLeft, left - 12),
+        y: row.bandTop,
+        width: row.labelWidth + 24,
+        height: row.bandBottom - row.bandTop,
+      };
+      const ends = layout.lifelines
+        .filter((lifeline) => lifeline.id === row.step.from || lifeline.id === row.step.to)
+        .map((lifeline) => ({
+          x: lifeline.x - lifeline.headWidth / 2,
           y: row.bandTop,
-          width: row.labelWidth + 24,
+          width: lifeline.headWidth,
           height: row.bandBottom - row.bandTop,
-        });
-        for (const lifeline of layout.lifelines) {
-          if (lifeline.id !== row.step.from && lifeline.id !== row.step.to) continue;
-          ends.push({
-            x: lifeline.x - lifeline.headWidth / 2,
-            y: row.bandTop,
-            width: lifeline.headWidth,
-            height: row.bandBottom - row.bandTop,
-          });
-        }
-      }
+        }));
+      core ??= label;
+      boxes.push(unionBox([label, ...ends])!);
     }
     for (const lifeline of layout.lifelines) {
-      if (selected.has(lifeline.id)) {
-        boxes.push({
-          x: lifeline.x - lifeline.headWidth / 2,
-          y: lifeline.headTop,
-          width: lifeline.headWidth,
-          height: lifeline.headHeight,
-        });
-      }
+      if (!selected.has(lifeline.id)) continue;
+      const head = {
+        x: lifeline.x - lifeline.headWidth / 2,
+        y: lifeline.headTop,
+        width: lifeline.headWidth,
+        height: lifeline.headHeight,
+      };
+      core ??= head;
+      boxes.push(head);
     }
-    return { core: unionBox(boxes), whole: unionBox([...boxes, ...ends]) };
+    return { boxes, core };
   }, [layout, selected]);
 
   if (layout.lifelines.length === 0) {
@@ -115,7 +118,7 @@ export function SequenceView({
       maxFitZoom={present ? PRESENT_MAX_FIT_ZOOM : undefined}
       fitPadding={present ? PRESENT_FIT_PADDING : undefined}
       readableZoom={present ? PRESENT_READABLE_ZOOM : undefined}
-      focus={startBox && { boxes: [startBox], core: startCore }}
+      focus={startBoxes.length > 0 ? { boxes: startBoxes, core: startCore } : undefined}
       keepInView={startCore}
       overlay={(t, size) => <StickyHeads lifelines={layout.lifelines} t={t} paneWidth={size.w} />}
       onBackgroundClick={() => store.clearSelection()}

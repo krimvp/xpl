@@ -1120,6 +1120,43 @@ function allEdges(layout: Pick<GraphLayout, "nodes" | "edges">): LayoutEdge[] {
 }
 
 /**
+ * What a still picture showing only `window` (canvas coordinates) of the layout cuts: the boxes (without boxes
+ * inside them) that are not wholly in it, and the edges with an end it does not show (such a box, or a
+ * container wholly out of it). The picture fades them: an arrow from a box that is not there, or a sliver of
+ * a box at the edge, reads as a mistake.
+ */
+export function cutAt(layout: Pick<GraphLayout, "nodes" | "edges">, window: Box): Set<string> {
+  const boxes = absoluteBoxes(layout.nodes);
+  const leaves = new Set<string>();
+  const walk = (list: readonly LayoutNode[]) => {
+    for (const node of list) {
+      if (node.children.length === 0) leaves.add(node.id);
+      walk(node.children);
+    }
+  };
+  walk(layout.nodes);
+  const slack = 1;
+  const inside = (box: Box) =>
+    box.x >= window.x - slack &&
+    box.y >= window.y - slack &&
+    box.x + box.width <= window.x + window.width + slack &&
+    box.y + box.height <= window.y + window.height + slack;
+  const meets = (box: Box) =>
+    box.x < window.x + window.width &&
+    box.x + box.width > window.x &&
+    box.y < window.y + window.height &&
+    box.y + box.height > window.y;
+  const cut = new Set<string>();
+  for (const id of leaves) if (!inside(boxes.get(id)!)) cut.add(id);
+  const shown = (id: string) => {
+    const box = boxes.get(id);
+    return box !== undefined && (leaves.has(id) ? inside(box) : meets(box));
+  };
+  for (const edge of allEdges(layout)) if (!shown(edge.from) || !shown(edge.to)) cut.add(edge.id);
+  return cut;
+}
+
+/**
  * What the first view frames for `ids` (render ids of boxes or edges, in order; see viewport.ts
  * `frameView`): the box of each (an edge stands for the two boxes it joins), and their neighbours, the
  * boxes at the other end of an edge from one of them. Undefined when none of them is drawn.

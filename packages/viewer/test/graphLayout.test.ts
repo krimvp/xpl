@@ -8,6 +8,7 @@ import {
 import { describe, expect, it } from "vitest";
 import {
   absoluteBoxes,
+  cutAt,
   drawnEdges,
   fitScale,
   gridLayoutOf,
@@ -488,5 +489,32 @@ describe("what a map draws", () => {
     expect(apart).toBe(true);
     // still on its line
     expect(b!.y).toBe(3);
+  });
+});
+
+describe("what a still picture's frame cuts", () => {
+  const node = (id: string, x: number, y: number, children: LayoutNode[] = []) =>
+    ({ id, x, y, width: 100, height: 40, children, edges: [] }) as unknown as LayoutNode;
+  const edge = (id: string, from: string, to: string) => ({ id, from, to }) as LayoutEdge;
+
+  it("is the boxes not wholly in the frame, and the arrows with an end out of it", () => {
+    const layout = {
+      nodes: [node("a", 0, 0), node("b", 0, 100), node("c", 0, 300), node("d", 150, 100)],
+      edges: [edge("a-b", "a", "b"), edge("b-c", "b", "c"), edge("b-d", "b", "d")],
+    };
+    // the frame shows a and b whole, d in part, c not at all
+    const cut = cutAt(layout, { x: 0, y: 0, width: 200, height: 200 });
+    expect([...cut].sort()).toEqual(["b-c", "b-d", "c", "d"]);
+  });
+
+  it("keeps a container that is partly in the frame, and the arrows into it", () => {
+    const group = node("g", 0, 100, [node("inner", 10, 30)]);
+    (group as { width: number; height: number }).width = 400;
+    (group as { width: number; height: number }).height = 400;
+    const layout = { nodes: [node("a", 0, 0), group], edges: [edge("a-g", "a", "g")] };
+    const cut = cutAt(layout, { x: 0, y: 0, width: 300, height: 250 });
+    expect(cut.has("g")).toBe(false);
+    expect(cut.has("a-g")).toBe(false);
+    expect(cut.has("inner")).toBe(false);
   });
 });

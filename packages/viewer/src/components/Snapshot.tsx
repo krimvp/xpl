@@ -18,6 +18,7 @@ import {
 } from "@xpl/core";
 import { useViewerState } from "../hooks.js";
 import {
+  cutAt,
   frameFocus,
   layoutGraphFitting,
   type ChangeMarks,
@@ -192,7 +193,14 @@ function GraphSnapshot({
       focus={frameFocus(layout, [...focus, ...marked])}
       where="Map"
     >
-      <GraphPicture layout={layout} selection={focus} related={marked} />
+      {(window) => (
+        <GraphPicture
+          layout={layout}
+          selection={focus}
+          related={marked}
+          cut={cutAt(layout, window)}
+        />
+      )}
     </SnapshotFrame>
   );
 }

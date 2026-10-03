@@ -14,7 +14,18 @@ import {
 export interface FlowLayout {
   width: number;
   height: number;
-  children: { id: string; x: number; y: number; width: number; height: number }[];
+  /**
+   * The boxes, by layout id: a stage's id, or for a repeated end (`copyOf`) an id of its own. A stage drawn
+   * more than once is one element: a click on any of its boxes picks it.
+   */
+  children: {
+    id: string;
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    copyOf?: string;
+  }[];
   edges: {
     id: string;
     /** The stages the transition joins (no `to`: a return to the caller, an arrow out of `from`). */
@@ -107,12 +118,60 @@ export function wrapWords(text: string, width: number, max = Infinity): string[]
   return lines.slice(0, max).map((line, index) => (index === max - 1 ? `${line}…` : line));
 }
 
-/** Lays out a flow top-down: stages in layers, right-angled transitions with their labels between them. */
-export async function layoutFlow(flow: ProcessFlow): Promise<FlowLayout> {
-  const children = flow.stages.map(({ step, shape }) => ({
+/** An end that this many transitions or more lead into is drawn again under each of them (`repeatEnds`). */
+export const REPEAT_END_FROM = 4;
+
+/**
+ * The flow with each busy end drawn once per way into it: an end (a terminal stage that leads nowhere) that
+ * `REPEAT_END_FROM` or more transitions lead into gets a copy under each of them but the first, so a flow
+ * with many ways to "give up" does not draw a dozen lines converging on one box from all over the picture.
+ * Returns the boxes to lay out (a copy has its own id, `copyOf` its stage) and the transitions, retargeted.
+ */
+export function repeatEnds(flow: ProcessFlow): {
+  boxes: { id: string; shape: ProcessFlow["stages"][number]["shape"]; copyOf?: string }[];
+  transitions: ProcessFlow["transitions"];
+} {
+  const leaves = new Set(
+    flow.transitions.filter((edge) => edge.from !== edge.to).map((edge) => edge.from),
+  );
+  const busy = new Set(
+    flow.stages
+      .filter(({ step, shape }) => shape === "terminal" && !leaves.has(step.id))
+      .map(({ step }) => step.id)
+      .filter(
+        (id) =>
+          flow.transitions.filter((edge) => edge.to === id && edge.from !== id).length >=
+          REPEAT_END_FROM,
+      ),
+  );
+  const boxes: ReturnType<typeof repeatEnds>["boxes"] = flow.stages.map(({ step, shape }) => ({
     id: step.id,
+    shape,
+  }));
+  const seen = new Map<string, number>();
+  const transitions = flow.transitions.map((edge) => {
+    // a return to the caller has no box to copy
+    if (edge.to === undefined || !busy.has(edge.to) || edge.from === edge.to) return edge;
+    const n = seen.get(edge.to) ?? 0;
+    seen.set(edge.to, n + 1);
+    if (n === 0) return edge;
+    const id = `${edge.to}#${n + 1}`;
+    const shape = flow.stages.find(({ step }) => step.id === edge.to)!.shape;
+    boxes.push({ id, shape, copyOf: edge.to });
+    return { ...edge, to: id };
+  });
+  return { boxes, transitions };
+}
+
+/** Lays out a flow top-down: stages in layers, right-angled transitions with their labels between them. */
+export async function layoutFlow(source: ProcessFlow): Promise<FlowLayout> {
+  const { boxes, transitions: links } = repeatEnds(source);
+  const flow = { ...source, transitions: links };
+  const children = boxes.map(({ id, shape, copyOf }) => ({
+    id,
     width: shape === "decision" ? DECISION_WIDTH : STAGE_WIDTH,
     height: shape === "decision" ? DECISION_HEIGHT : STAGE_HEIGHT,
+    ...(copyOf ? { copyOf } : {}),
   }));
   const labels = new Map(
     flow.transitions.flatMap((edge) => {
@@ -305,7 +364,7 @@ function exitTransition(
 }
 
 /**
- * The laid-out boxes of a flow, each with its stage. The layout answers after the render that asked for it: a
+ * The laid-out boxes of a flow, each with its stage (a repeated end's copies too). The layout answers after the render that asked for it: a
  * node the flow does not have (from the layout of another view, still on screen while the new one is
  * computed) is skipped, never drawn from a missing stage.
  */
@@ -315,7 +374,7 @@ export function placedStages(
 ): { node: FlowLayout["children"][number]; stage: ProcessFlow["stages"][number] }[] {
   const stages = new Map(flow.stages.map((stage) => [stage.step.id, stage] as const));
   return (layout.children ?? []).flatMap((node) => {
-    const stage = stages.get(node.id);
+    const stage = stages.get(node.copyOf ?? node.id);
     return stage ? [{ node, stage }] : [];
   });
 }
