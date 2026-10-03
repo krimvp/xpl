@@ -26,7 +26,7 @@
   --accent-soft: #e2ebfc;
   --match: #d97706;
   --match-soft: #fdebc6;
-  --related: #0d8a78;
+  --related: #0b7a6a;
   --related-soft: #d3f0ea;
   --danger: #b83227;
   --danger-soft: #fbe3e0;
@@ -1160,7 +1160,8 @@ code {
   -webkit-user-select: none;
 }
 
-.pz-svg g[role="button"] {
+.pz-svg g[role="button"],
+.pz-svg .node.is-container {
   cursor: pointer;
   outline: none;
 }
@@ -1504,13 +1505,21 @@ code {
   fill: var(--warn);
 }
 
-.node:hover > .box,
-.node:focus-visible > .box {
+.node:hover > .box {
   stroke: var(--accent);
 }
 
-.node:focus-visible > .box {
-  stroke-width: 3;
+/* a11y: keyboard focus is its own ring, outside the box with a gap (GraphView FocusRing), so it never looks
+   like the selection outline (M13). */
+.node > .focus-ring {
+  fill: none;
+  stroke: none;
+  pointer-events: none;
+}
+
+.node:focus-visible > .focus-ring {
+  stroke: var(--accent);
+  stroke-width: 2.5;
 }
 
 .node.is-selected > .box {
@@ -2524,6 +2533,7 @@ code {
   align-items: center;
   gap: 4px;
   width: 100%;
+  min-height: 24px; /* a11y: a 24 px target (WCAG 2.5.8) */
   padding: 2px 8px;
   border: 0;
   background: transparent;
@@ -3675,28 +3685,28 @@ code {
 
 /* The corner buttons of a box that opens a more detailed view: zoom into it ("See what is inside"), or show
    its inside on this map ("Show the inside here"). */
-.node .corner-button {
+:is(.node, .node-buttons) .corner-button {
   cursor: pointer;
 }
 
-.node .corner-button.zoom {
+:is(.node, .node-buttons) .corner-button.zoom {
   cursor: zoom-in;
 }
 
-.node .corner-button .corner-button-face {
+:is(.node, .node-buttons) .corner-button .corner-button-face {
   fill: var(--panel);
   stroke: var(--border-strong);
 }
 
-.node .corner-button > :not(.corner-button-face) {
+:is(.node, .node-buttons) .corner-button > :not(.corner-button-face) {
   fill: none;
   stroke: var(--accent);
   stroke-width: 1.6;
   stroke-linecap: round;
 }
 
-.node .corner-button:hover .corner-button-face,
-.node .corner-button:focus-visible .corner-button-face {
+:is(.node, .node-buttons) .corner-button:hover .corner-button-face,
+:is(.node, .node-buttons) .corner-button:focus-visible .corner-button-face {
   fill: var(--accent-soft);
   stroke: var(--accent);
 }

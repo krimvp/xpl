@@ -63,3 +63,75 @@ test.describe("the Key covers what is on screen", () => {
     await expect(key).toHaveCount(0);
   });
 });
+
+test.describe("the keyboard on a map", () => {
+  test("boxes: named label first, no button inside a button, Tab in reading order", async ({
+    page,
+  }) => {
+    await openBundle(page, "view:system", ARCHITECTURE_BUNDLE);
+    const names = await page
+      .locator('.diagram .nodes .node[role="button"]')
+      .evaluateAll((boxes) =>
+        boxes.map((box) => [
+          box.getAttribute("aria-label") ?? "",
+          box.querySelector(":scope > .label")?.textContent ?? "",
+        ]),
+      );
+    expect(names.length).toBeGreaterThan(2);
+    for (const [name, label] of names) expect(name.startsWith(label!)).toBe(true);
+    await expect(page.locator('.diagram [role="button"] [role="button"]')).toHaveCount(0);
+
+    // Tab from the canvas: the boxes come top-down, then left to right
+    await page.locator(".diagram .panzoom").focus();
+    const order: { top: number; left: number }[] = [];
+    for (let i = 0; i < 12; i++) {
+      await page.keyboard.press("Tab");
+      const at = await page.evaluate(() => {
+        const el = document.activeElement;
+        if (!el?.matches(".node")) return null;
+        const box = el.querySelector(":scope > .box")!.getBoundingClientRect();
+        return { top: box.top, left: box.left };
+      });
+      if (at) order.push(at);
+    }
+    expect(order.length).toBe(names.length);
+    for (let i = 1; i < order.length; i++) {
+      const [a, b] = [order[i - 1]!, order[i]!];
+      expect(a.top < b.top - 4 || (Math.abs(a.top - b.top) <= 8 && a.left <= b.left)).toBe(true);
+    }
+  });
+
+  test("keyboard focus has its own ring, apart from the selection outline", async ({ page }) => {
+    await openBundle(page, "view:system", ARCHITECTURE_BUNDLE);
+    const service = page.locator('.diagram [data-element-id="grp:job-runner"]');
+    await page.locator('.diagram [data-element-id="grp:operator"]').click();
+    await page.locator(".diagram .panzoom").focus();
+    // Tab to the service box (the operator is picked, the service has the focus)
+    for (let i = 0; i < 6; i++) {
+      await page.keyboard.press("Tab");
+      if (await service.evaluate((el) => el === document.activeElement)) break;
+    }
+    await expect(service).toBeFocused();
+    const ring = (id: string) =>
+      page
+        .locator(`.diagram [data-element-id="${id}"] > .focus-ring`)
+        .evaluate((el) => getComputedStyle(el).stroke);
+    expect(await ring("grp:job-runner")).not.toBe("none");
+    expect(await ring("grp:operator")).toBe("none");
+    // the focused box keeps its own outline: focus is not drawn like a picked box
+    await expect(service).not.toHaveClass(/is-selected/);
+  });
+
+  test("each step's buttons and lists say which step they belong to", async ({ page }) => {
+    await page.goto(TS_BUNDLE.href);
+    await expect(page.getByTestId("guide")).toBeVisible();
+    const names = await page
+      .locator(".guide-section .section-actions .btn, [data-testid=snapshot-open]")
+      .evaluateAll((buttons) =>
+        buttons.map((button) => button.getAttribute("aria-label") ?? button.textContent),
+      );
+    expect(names.length).toBeGreaterThan(2);
+    expect(new Set(names).size).toBe(names.length);
+    expect(names[0]).toMatch(/^(Open in Map|Open in Flow|Show the code), step 1: /);
+  });
+});

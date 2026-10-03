@@ -50,10 +50,13 @@ export function Snapshot({
   view,
   focus,
   onOpen,
+  context,
 }: {
   view: View;
   focus: readonly ElementId[];
   onOpen: () => void;
+  /** a11y: what the picture belongs to ("step 3: …"): the open button's name says it, as every step has one. */
+  context?: string;
 }) {
   const host = useRef<HTMLDivElement>(null);
   const [near, setNear] = useState(false);
@@ -77,6 +80,7 @@ export function Snapshot({
   }, [near]);
 
   const graph = view.type === "graph";
+  const open = graph ? "Open in Map" : "Open in Flow";
   return (
     <figure
       ref={host}
@@ -90,8 +94,14 @@ export function Snapshot({
     >
       <figcaption>
         <span className="guide-snapshot-title">{view.title}</span>
-        <button type="button" className="btn" data-testid="snapshot-open" onClick={onOpen}>
-          {graph ? "Open in Map" : "Open in Flow"}
+        <button
+          type="button"
+          className="btn"
+          data-testid="snapshot-open"
+          aria-label={context ? `${open}, ${context}` : undefined}
+          onClick={onOpen}
+        >
+          {open}
         </button>
       </figcaption>
       {near ? (

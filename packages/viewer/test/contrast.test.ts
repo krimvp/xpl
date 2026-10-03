@@ -121,6 +121,7 @@ describe.each([
       expect(contrast(v("--faint"), v(bg)), `--faint on ${bg}`).toBeGreaterThanOrEqual(4.5);
       expect(contrast(v("--muted"), v(bg)), `--muted on ${bg}`).toBeGreaterThanOrEqual(4.5);
       expect(contrast(v("--accent"), v(bg)), `--accent on ${bg}`).toBeGreaterThanOrEqual(4.5);
+      expect(contrast(v("--related"), v(bg)), `--related on ${bg}`).toBeGreaterThanOrEqual(4.5);
     }
     expect(contrast(v("--accent"), v("--accent-soft"))).toBeGreaterThanOrEqual(4.5);
     expect(contrast(v("--accent-fg"), v("--accent"))).toBeGreaterThanOrEqual(4.5);

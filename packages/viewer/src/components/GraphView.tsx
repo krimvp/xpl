@@ -47,6 +47,7 @@ import { unionBox } from "../viewport.js";
 import { changeMarks, changeOf } from "../diff.js";
 import { useStore, useViewerState } from "../hooks.js";
 import { mapKeyShows } from "../keyMarks.js";
+import { boxName, readingOrder } from "../mapOrder.js";
 import { readerBadge } from "../readerWords.js";
 import { GhostTargetList } from "./GhostTargets.js";
 import { Legend } from "./Legend.js";
@@ -207,6 +208,9 @@ function canvasBounds(layout: GraphLayout): Box {
   visit(layout.nodes, 0, 0);
   return unionBox(boxes)!;
 }
+
+/** a11y: how far the keyboard focus ring sits outside a box (the gap shows the canvas). */
+const FOCUS_RING_GAP = 5;
 
 function stateClasses(id: string, marks: Marks): string {
   return (
@@ -386,7 +390,7 @@ export function GraphView({
             ))}
           </g>
           <g className="nodes">
-            {layout.nodes.map((node) => (
+            {readingOrder(layout.nodes).map((node) => (
               <NodeShape key={node.id} node={node} marks={marks} />
             ))}
           </g>
@@ -516,15 +520,57 @@ function BoxShape({ node, marks }: { node: LayoutNode; marks: Marks }) {
   const textX = 14 + ICON_ROOM;
   const icon = iconName(node);
   const lid = node.role && CYLINDER_ROLES.has(node.role) && !container ? CYLINDER_LID : 0;
-  return (
+  const selected = marks.selected.has(node.id);
+  const name = boxName(
+    node.label,
+    badgeText ?? (node.badge || undefined),
+    node.change && changeText(node.change),
+  );
+  // left to right, the order Tab takes them in
+  const cornerButtons = (
+    <>
+      {expandable && (
+        <CornerButton
+          className="expand-here"
+          x={node.width - ZOOM_SIZE - 6 - (zoomable ? ZOOM_SIZE + 4 : 0)}
+          y={node.height - ZOOM_SIZE - 6}
+          label={`Show the parts of ${node.label} inside its box, on this map`}
+          title="Show its parts inside the box, on this map"
+          onPress={() => store.toggleExpanded(node.id)}
+        >
+          {/* a box with boxes in it: open it on this map */}
+          <rect x={3.5} y={3.5} width={15} height={15} rx={2.5} />
+          <rect x={6.5} y={9} width={4} height={4} rx={1} />
+          <rect x={11.5} y={9} width={4} height={4} rx={1} />
+          <path d="M6.5 6.5h9" />
+        </CornerButton>
+      )}
+      {zoomable && (
+        <CornerButton
+          className="zoom"
+          x={node.width - ZOOM_SIZE - 6 - (showCollapse ? 30 : 0)}
+          y={container ? 8 : node.height - ZOOM_SIZE - 6}
+          label={`See what is inside ${node.label}: open its map`}
+          title="See what is inside: open its map"
+          onPress={zoom}
+        >
+          {/* a magnifier with a plus: zoom in */}
+          <circle cx={9.5} cy={9.5} r={5} />
+          <path d="M13.2 13.2 L17.5 17.5 M7 9.5 H12 M9.5 7 V12" />
+        </CornerButton>
+      )}
+    </>
+  );
+  const shape = (
     <g
       className={`node kind-${node.kindClass}${role}${container ? " is-container" : ""}${zoomable ? " is-zoomable" : ""}${stateClasses(node.id, marks)}`}
       data-element-id={still ? undefined : node.id}
       transform={`translate(${node.x} ${node.y})`}
-      role={still ? undefined : "button"}
+      // a container holds boxes (buttons): it is a group, and says when it is the one picked
+      role={still ? undefined : container ? "group" : "button"}
       tabIndex={still ? undefined : 0}
-      aria-label={still ? undefined : `${node.badge} ${node.label}`}
-      aria-pressed={still ? undefined : marks.selected.has(node.id)}
+      aria-label={still ? undefined : container && selected ? `${name}, picked` : name}
+      aria-pressed={still || container ? undefined : selected}
       onClick={(event) => {
         event.stopPropagation();
         select(event);
@@ -557,6 +603,7 @@ function BoxShape({ node, marks }: { node: LayoutNode; marks: Marks }) {
       ) : (
         <rect className="box" width={node.width} height={node.height} rx={container ? 10 : 8} />
       )}
+      {!still && <FocusRing width={node.width} height={node.height} rx={container ? 10 : 8} />}
       {container ? (
         <>
           <BoxIcon name={icon} x={13} y={9} />
@@ -579,7 +626,7 @@ function BoxShape({ node, marks }: { node: LayoutNode; marks: Marks }) {
               <EdgeShape key={edge.id} edge={edge} marks={marks} />
             ))}
           </g>
-          {node.children.map((child) => (
+          {readingOrder(node.children).map((child) => (
             <NodeShape key={child.id} node={child} marks={marks} />
           ))}
           {showCollapse && (
@@ -614,6 +661,8 @@ function BoxShape({ node, marks }: { node: LayoutNode; marks: Marks }) {
           {centerIsCovered(node) && (
             <circle className="hit" cx={node.width / 2} cy={node.height / 2} r={10} />
           )}
+          {/* inside a container (a group), its buttons stay with it */}
+          {cornerButtons}
         </>
       ) : (
         <>
@@ -622,37 +671,35 @@ function BoxShape({ node, marks }: { node: LayoutNode; marks: Marks }) {
           <BoxIcon name={icon} x={13} y={lid + (node.height - lid) / 2 - 8} />
         </>
       )}
-      {zoomable && (
-        <CornerButton
-          className="zoom"
-          x={node.width - ZOOM_SIZE - 6 - (showCollapse ? 30 : 0)}
-          y={container ? 8 : node.height - ZOOM_SIZE - 6}
-          label={`See what is inside ${node.label}`}
-          title="See what is inside"
-          onPress={zoom}
-        >
-          {/* a magnifier with a plus: zoom in */}
-          <circle cx={9.5} cy={9.5} r={5} />
-          <path d="M13.2 13.2 L17.5 17.5 M7 9.5 H12 M9.5 7 V12" />
-        </CornerButton>
-      )}
-      {expandable && (
-        <CornerButton
-          className="expand-here"
-          x={node.width - ZOOM_SIZE - 6 - (zoomable ? ZOOM_SIZE + 4 : 0)}
-          y={node.height - ZOOM_SIZE - 6}
-          label={`Show the inside of ${node.label} here`}
-          title="Show the inside here"
-          onPress={() => store.toggleExpanded(node.id)}
-        >
-          {/* a box with boxes in it: open it on this map */}
-          <rect x={3.5} y={3.5} width={15} height={15} rx={2.5} />
-          <rect x={6.5} y={9} width={4} height={4} rx={1} />
-          <rect x={11.5} y={9} width={4} height={4} rx={1} />
-          <path d="M6.5 6.5h9" />
-        </CornerButton>
-      )}
     </g>
+  );
+  if (container || (!zoomable && !expandable)) return shape;
+  // a11y: a box is a button, so its corner buttons are drawn beside it, over it, not inside it
+  return (
+    <>
+      {shape}
+      <g
+        className="node-buttons"
+        data-buttons-of={node.id}
+        transform={`translate(${node.x} ${node.y})`}
+      >
+        {cornerButtons}
+      </g>
+    </>
+  );
+}
+
+/** a11y: the keyboard focus ring of a box: outside it, with a gap, never like the selection outline. */
+function FocusRing({ width, height, rx }: { width: number; height: number; rx: number }) {
+  return (
+    <rect
+      className="focus-ring"
+      x={-FOCUS_RING_GAP}
+      y={-FOCUS_RING_GAP}
+      width={width + 2 * FOCUS_RING_GAP}
+      height={height + 2 * FOCUS_RING_GAP}
+      rx={rx + FOCUS_RING_GAP}
+    />
   );
 }
 
@@ -877,6 +924,7 @@ function GhostShape({ node, marks }: { node: LayoutNode; marks: Marks }) {
               : `Add ${node.label} to the view`}
       </title>
       <rect className="box" width={node.width} height={node.height} rx={8} />
+      {!still && <FocusRing width={node.width} height={node.height} rx={8} />}
       {fold ? (
         <path className="plus is-list" d="M12 11h10M12 15h10M12 19h10" />
       ) : (

@@ -264,6 +264,8 @@ function GuideSection({
     store.previewStep(tourId, index);
     store.setPerspective(perspective);
   };
+  // a11y: every step has the same buttons and lists; their names say which step they belong to
+  const where = `step ${index + 1}: ${title}`;
   return (
     <section className={`guide-section${active ? " is-active" : ""}`} data-section-id={step.id}>
       <span className="section-number">Step {index + 1}</span>
@@ -294,6 +296,7 @@ function GuideSection({
           view={view}
           focus={step.focus}
           onOpen={() => show(view.type === "graph" ? "map" : "flow")}
+          context={where}
         />
       )}
       {step.focus.map((id) => {
@@ -367,7 +370,11 @@ function GuideSection({
         ) : null;
       })}
       {tests.length > 0 && (
-        <section className="guide-tests" data-testid="guide-tests" aria-label="Tests">
+        <section
+          className="guide-tests"
+          data-testid="guide-tests"
+          aria-label={`Tests, step ${index + 1}`}
+        >
           <h4>Tests</h4>
           <ul>
             {tests.map((test) => (
@@ -394,7 +401,7 @@ function GuideSection({
         <section
           className="guide-tests"
           data-testid="guide-callers"
-          aria-label="Code that calls what changed"
+          aria-label={`Code that calls what changed, step ${index + 1}`}
         >
           <h4>Code that calls what changed</h4>
           <ul>
@@ -421,7 +428,7 @@ function GuideSection({
         </section>
       )}
       <div className="section-actions">
-        <button className="btn" onClick={() => show("code")}>
+        <button className="btn" aria-label={`Show the code, ${where}`} onClick={() => show("code")}>
           Show the code
         </button>
       </div>
