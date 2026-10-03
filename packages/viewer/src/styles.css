@@ -2406,6 +2406,13 @@ code {
   font: 11.5px var(--font-mono);
 }
 
+/* r3-code: "itself (recursion)" is words, not a name */
+.caller-rows .caller-name.is-recursion {
+  flex: 1;
+  font: inherit;
+  font-style: italic;
+}
+
 .caller-rows .where {
   color: var(--muted);
 }

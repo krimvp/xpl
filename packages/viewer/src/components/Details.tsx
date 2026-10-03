@@ -496,11 +496,14 @@ export function CallerRows({ callers }: { callers: readonly Caller[] }) {
             onClick={() => store.openFile(caller.file, caller.line)}
           >
             {caller.recursion ? (
-              <span className="caller-name">{caller.label}</span>
+              // the function itself: no file to name
+              <span className="caller-name is-recursion">{caller.label}</span>
             ) : (
-              <code className="caller-name">{caller.label}</code>
+              <>
+                <code className="caller-name">{caller.label}</code>
+                <span className="where">{caller.file.slice(caller.file.lastIndexOf("/") + 1)}</span>
+              </>
             )}
-            <span className="where">{caller.file.slice(caller.file.lastIndexOf("/") + 1)}</span>
             <span className="lines">
               {(caller.recursion ?? [caller.line]).map((line) => `L${line}`).join(", ")}
             </span>
