@@ -272,6 +272,27 @@ describe("ExplainerModel structure", () => {
     expect(cyc.ancestors("grp:a")).toEqual(["repo"]);
   });
 
+  it("ancestors are worked out once per element (the viewer asks thousands of times)", () => {
+    const fresh = build();
+    const calls = { n: 0 };
+    const parent = fresh.parent.bind(fresh);
+    fresh.parent = (id) => (calls.n++, parent(id));
+    const pop = "sym:src/queue.ts#Queue.pop";
+    for (let i = 0; i < 1000; i++) {
+      fresh.subtreeContains("dir:test", pop);
+      fresh.ancestors(pop);
+    }
+    expect(calls.n).toBeLessThanOrEqual(5); // one per element on the chain
+    // the returned list is the caller's to change
+    fresh.ancestors(pop).push("x");
+    expect(fresh.ancestors(pop)).toEqual([
+      "sym:src/queue.ts#Queue",
+      "file:src/queue.ts",
+      "dir:src",
+      "repo",
+    ]);
+  });
+
   it("containsCode: does code at (file, symbol) lie inside an element?", () => {
     const at = (
       id: string,

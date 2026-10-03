@@ -90,6 +90,8 @@ export class ExplainerModel {
   >();
   private readonly groupsByMember = new Map<ElementId, ElementId[]>();
   private readonly nodeCache = new Map<ElementId, ModelNode | null>();
+  /** Structural chain per id, built on first use: views and the viewer ask for the same chains a lot. */
+  private readonly ancestorCache = new Map<ElementId, ReadonlySet<ElementId>>();
 
   constructor(explainer: Explainer, index: SymbolIndex | IndexModel) {
     this.explainer = explainer;
@@ -299,6 +301,26 @@ export class ExplainerModel {
 
   /** Structural chain above `id`: parent, grandparent, ..., `repo`. Empty for `repo` and unknown ids. */
   ancestors(id: ElementId): ElementId[] {
+    return [...this.ancestorSet(id)];
+  }
+
+  /** `ancestors(id)` as a set, in the same order; cached (the model does not change). */
+  private ancestorSet(id: ElementId): ReadonlySet<ElementId> {
+    let known = this.ancestorCache.get(id);
+    if (known) return known;
+    if (this.groupNodes.has(id)) {
+      // Stored group parents can loop: walk the chain, stopping at the first repeat.
+      known = new Set(this.walkAbove(id));
+    } else {
+      // Folders, files and symbols never sit in a group, and their chains cannot loop.
+      const parent = this.parent(id);
+      known = parent === undefined ? new Set() : new Set([parent, ...this.ancestorSet(parent)]);
+    }
+    this.ancestorCache.set(id, known);
+    return known;
+  }
+
+  private walkAbove(id: ElementId): ElementId[] {
     const out: ElementId[] = [];
     const seen = new Set<ElementId>([id]);
     for (let cur = this.parent(id); cur !== undefined && !seen.has(cur); cur = this.parent(cur)) {
@@ -335,7 +357,7 @@ export class ExplainerModel {
     if (ancestorId === id) return true;
     if (seen.has(ancestorId)) return false;
     seen.add(ancestorId);
-    if (this.ancestors(id).includes(ancestorId)) return true;
+    if (this.ancestorSet(id).has(ancestorId)) return true;
     const group = this.groupNodes.get(ancestorId);
     if (group) {
       for (const member of this.members(ancestorId)) {
