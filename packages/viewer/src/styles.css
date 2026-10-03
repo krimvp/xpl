@@ -16,12 +16,12 @@
   --canvas: #f8f9fb;
   --fg: #1c2127;
   --muted: #55616f;
-  --faint: #6b7583;
+  --faint: #5e6876;
   --border: #dbe0e7;
   --border-strong: #bcc5d0;
   --hover: rgba(28, 33, 39, 0.06);
 
-  --accent: #2b6ae0;
+  --accent: #2160d6;
   --accent-fg: #ffffff;
   --accent-soft: #e2ebfc;
   --match: #d97706;
@@ -57,7 +57,7 @@
   --code-bg: #ffffff;
   --code-fg: #1c2127;
   --code-gutter-bg: #f5f6f8;
-  --code-gutter-fg: #7d8794;
+  --code-gutter-fg: #5d646e;
   --code-selection: rgba(43, 106, 224, 0.25);
   --hl-definition: rgba(43, 106, 224, 0.14);
   --hl-definition-bar: #2b6ae0;
@@ -69,28 +69,48 @@
   --hl-config-bar: #16994a;
   --hl-test: rgba(219, 39, 119, 0.12);
   --hl-test-bar: #db2777;
-  --site-bg: rgba(217, 119, 6, 0.3);
+  --site-bg: rgba(217, 119, 6, 0.16);
   /* The change (diff): lines added or rewritten, lines removed. */
   --diff-add-bg: rgba(26, 127, 55, 0.13);
   --diff-add-bar: #1a7f37;
+  /* a11y: text on the add tint (the bar colour is 4.1:1 on it) */
+  --diff-add-fg: #166b2e;
   --diff-del-bg: rgba(207, 34, 46, 0.1);
   --diff-del-bar: #cf222e;
   --diff-del-fg: #82071e;
 
-  --syn-meta: #6b7785;
-  --syn-keyword: #8250df;
+  --syn-meta: #535d68;
+  --syn-keyword: #6d43bb;
   --syn-atom: #0550ae;
-  --syn-number: #0a7f5a;
-  --syn-string: #b3261e;
-  --syn-string-special: #c2410c;
-  --syn-definition: #0b5fd6;
+  --syn-number: #08694b;
+  --syn-string: #b1261e;
+  --syn-string-special: #a5370a;
+  --syn-definition: #0a56c3;
   --syn-local: #5b3fb5;
-  --syn-type: #0f766e;
-  --syn-class: #0e7490;
-  --syn-special: #476582;
+  --syn-type: #0d6861;
+  --syn-class: #0c657d;
+  --syn-special: #435f7a;
   --syn-property: #1d4ed8;
-  --syn-comment: #6b7785;
-  --syn-invalid: #d1242f;
+  --syn-comment: #535d68;
+  --syn-invalid: #b41f28;
+  /* a11y: dimmed code (lines outside the focus). Each colour is mixed toward --code-bg (about 40%), but
+     never below 4.5:1 on it; .cm-line.xpl-dim swaps these in. The syntax colours above stay at least 4.5:1
+     on every --hl-* and --diff-* tint (test/contrast.test.ts checks all of this). */
+  --code-fg-dim: #727579;
+  --syn-meta-dim: #6d757f;
+  --syn-keyword-dim: #8461c6;
+  --syn-atom-dim: #3975bf;
+  --syn-number-dim: #32826a;
+  --syn-string-dim: #c1514b;
+  --syn-string-special-dim: #b55b36;
+  --syn-definition-dim: #3674ce;
+  --syn-local-dim: #7c65c4;
+  --syn-type-dim: #34807a;
+  --syn-class-dim: #337e92;
+  --syn-special-dim: #5f778e;
+  --syn-property-dim: #466edf;
+  --syn-comment-dim: #6d757f;
+  --syn-invalid-dim: #c44e55;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -101,7 +121,7 @@
     --canvas: #12161b;
     --fg: #e6e9ee;
     --muted: #a0abb8;
-    --faint: #6f7b89;
+    --faint: #8994a2;
     --border: #2a313b;
     --border-strong: #3d4653;
     --hover: rgba(255, 255, 255, 0.07);
@@ -141,26 +161,27 @@
     --code-bg: #13171c;
     --code-fg: #e6e9ee;
     --code-gutter-bg: #181d23;
-    --code-gutter-fg: #5f6b79;
+    --code-gutter-fg: #949ca5;
     --code-selection: rgba(110, 162, 255, 0.32);
     --hl-definition: rgba(110, 162, 255, 0.16);
     --hl-definition-bar: #6ea2ff;
-    --hl-call-site: rgba(255, 180, 67, 0.22);
+    --hl-call-site: rgba(255, 180, 67, 0.15);
     --hl-call-site-bar: #ffb443;
     --hl-usage: rgba(181, 140, 255, 0.18);
     --hl-usage-bar: #b58cff;
-    --hl-config: rgba(74, 222, 128, 0.16);
+    --hl-config: rgba(74, 222, 128, 0.12);
     --hl-config-bar: #4ade80;
     --hl-test: rgba(244, 114, 182, 0.17);
     --hl-test-bar: #f472b6;
-    --site-bg: rgba(255, 180, 67, 0.36);
+    --site-bg: rgba(255, 180, 67, 0.1);
     --diff-add-bg: rgba(63, 185, 80, 0.16);
     --diff-add-bar: #3fb950;
+    --diff-add-fg: #3fb950;
     --diff-del-bg: rgba(248, 81, 73, 0.14);
     --diff-del-bar: #f85149;
     --diff-del-fg: #ffb3ad;
 
-    --syn-meta: #8b97a7;
+    --syn-meta: #a2acb9;
     --syn-keyword: #c4a1ff;
     --syn-atom: #79c0ff;
     --syn-number: #7ee0b5;
@@ -172,8 +193,23 @@
     --syn-class: #67d4ee;
     --syn-special: #9db4cc;
     --syn-property: #8fb4ff;
-    --syn-comment: #8b97a7;
-    --syn-invalid: #ff7b72;
+    --syn-comment: #a2acb9;
+    --syn-invalid: #ff8880;
+    --code-fg-dim: #8d9196;
+    --syn-meta-dim: #7a828d;
+    --syn-keyword-dim: #8d76b9;
+    --syn-atom-dim: #5687b2;
+    --syn-number-dim: #528e76;
+    --syn-string-dim: #b17169;
+    --syn-string-special-dim: #a57756;
+    --syn-definition-dim: #5984b6;
+    --syn-local-dim: #8579b9;
+    --syn-type-dim: #3f9187;
+    --syn-class-dim: #468a9c;
+    --syn-special-dim: #728395;
+    --syn-property-dim: #6782b6;
+    --syn-comment-dim: #7a828d;
+    --syn-invalid-dim: #bf6965;
   }
 }
 
@@ -1387,7 +1423,7 @@ code {
   font-size: 12px;
   font-weight: 700;
   text-anchor: middle;
-  fill: var(--diff-add-bar);
+  fill: var(--diff-add-fg);
 }
 
 .change-pill.is-changed rect {
@@ -2448,7 +2484,7 @@ code {
 }
 
 .tree-change-mark.is-added {
-  color: var(--diff-add-bar);
+  color: var(--diff-add-fg);
   background: var(--diff-add-bg);
 }
 
@@ -2768,13 +2804,26 @@ code {
   box-shadow: inset 3px 0 0 var(--hl-call-site-bar);
 }
 
-/* Dimmed, not hidden: context code stays readable (about 4.3:1 in light, 6:1 in dark). */
-.cm-line.xpl-dim {
-  opacity: 0.6;
-}
-
-.cm-gutterElement.xpl-gutter-dim {
-  opacity: 0.6;
+/* a11y: dimmed, not hidden. Context code takes the dim palette (each colour mixed toward the background, never
+   below 4.5:1); no opacity, which faded the syntax colours to 2-3:1. The line numbers keep their colour (the
+   focused ones are bold and darker). */
+/* A changed line is never dimmed like context: what the change did is what a reviewer reads. */
+.cm-line.xpl-dim:not(.xpl-add, .xpl-chg, .xpl-gone) {
+  color: var(--code-fg-dim);
+  --syn-meta: var(--syn-meta-dim);
+  --syn-keyword: var(--syn-keyword-dim);
+  --syn-atom: var(--syn-atom-dim);
+  --syn-number: var(--syn-number-dim);
+  --syn-string: var(--syn-string-dim);
+  --syn-string-special: var(--syn-string-special-dim);
+  --syn-definition: var(--syn-definition-dim);
+  --syn-local: var(--syn-local-dim);
+  --syn-type: var(--syn-type-dim);
+  --syn-class: var(--syn-class-dim);
+  --syn-special: var(--syn-special-dim);
+  --syn-property: var(--syn-property-dim);
+  --syn-comment: var(--syn-comment-dim);
+  --syn-invalid: var(--syn-invalid-dim);
 }
 
 .cm-gutterElement.xpl-gutter-hl {
@@ -2785,6 +2834,8 @@ code {
 .cm-line .xpl-site {
   background: var(--site-bg);
   border-radius: 3px;
+  /* a11y: a light tint (the code on it keeps 4.5:1) and an underline in the call-site colour */
+  box-shadow: inset 0 -2px 0 var(--hl-call-site-bar);
 }
 
 /* The change (editor.ts, "The change"): a tint over whatever the focus draws (a background image, so a line
@@ -2812,13 +2863,6 @@ code {
   );
 }
 
-/* A changed line is never dimmed like context: what the change did is what a reviewer reads. */
-.cm-line.xpl-dim.xpl-add,
-.cm-line.xpl-dim.xpl-chg,
-.cm-line.xpl-dim.xpl-gone {
-  opacity: 1;
-}
-
 /* A changed line in the focus keeps the focus colour (the role says why it is shown); its + or − cell is
    tinted instead, so that the two never mix into one muddy colour. */
 .cm-gutterElement.xpl-diff-added,
@@ -2840,7 +2884,7 @@ code {
 
 .xpl-diff-mark.is-added,
 .xpl-diff-mark.is-changed {
-  color: var(--diff-add-bar);
+  color: var(--diff-add-fg);
 }
 
 .xpl-diff-mark.is-gone,

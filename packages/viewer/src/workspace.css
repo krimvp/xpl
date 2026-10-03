@@ -175,6 +175,10 @@
   background: var(--accent-soft);
   color: var(--accent);
 }
+/* a11y: the current step's number in the step's colour (--faint is under 4.5:1 on the tint) */
+.guide-contents > button[aria-current] > span {
+  color: inherit;
+}
 .guide-contents > button:hover {
   background: var(--hover);
 }
@@ -339,7 +343,7 @@
 }
 .change-status.is-added {
   background: var(--diff-add-bg);
-  color: var(--diff-add-bar);
+  color: var(--diff-add-fg);
 }
 .change-status.is-modified,
 .change-status.is-renamed {
