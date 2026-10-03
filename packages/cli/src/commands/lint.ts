@@ -1,5 +1,5 @@
 import { resolve } from "node:path";
-import { applyPatch, type Explainer, type ExplainerPatch } from "@xpl/core";
+import { applyPatch, ExplainerModel, type Explainer, type ExplainerPatch } from "@xpl/core";
 import type { CommandSpec } from "../command.js";
 import type { Ctx } from "../context.js";
 import { CliError } from "../errors.js";
@@ -13,7 +13,7 @@ import {
   type LintFinding,
   type LintRule,
 } from "../lint.js";
-import { loadExplainer, openWorkspace } from "../repo.js";
+import { loadExplainer, openWorkspace, type Workspace } from "../repo.js";
 
 /** `(tour step)`, `(flow step in view:x)`: what an element is, after its id in the text output. */
 function kindText(f: LintFinding): string {
@@ -66,16 +66,17 @@ async function readPatch(ctx: Ctx, source: string): Promise<{ patch: unknown; la
 
 export const lintCommand: CommandSpec = {
   name: "lint",
-  usage: "xpl lint <explainer> [--patch <file|->] [--strict]",
+  usage: "xpl lint <explainer> [--patch <file|->] [--warn-only]",
   summary:
     "Check the reader-facing text and the tour order; --patch checks a patch before you apply it",
   details: [
-    "Reads the explainer only (no index) and checks the text a reader sees against the plain-language rules of",
-    "the skill (reference/writing.md). Text checked: the explainer title; tour titles, summaries and step notes;",
-    "view titles; flow and sequence step labels and summaries; the summaries and details of nodes, edges and",
-    "concepts, and the labels of groups and concepts. Findings:",
+    "Reads the explainer (and the index when there is one, for the boxes and arrows of maps) and checks the",
+    "text a reader sees against the plain-language rules of the skill (reference/writing.md). Text checked: the",
+    "explainer title; tour titles, summaries and step notes; view titles; flow and sequence step labels and",
+    "summaries; the summaries and details of nodes, edges and concepts, and the labels of groups and concepts.",
+    "Findings:",
     "  todo-left            a TODO placeholder left in any of these texts or in a view's question (`xpl draft`",
-    "                       writes them): the one error-level finding, still exit 0 without --strict",
+    "                       writes them): the one error-level finding, exit 1 even with --warn-only",
     `  tour-summary         a tour without a \`summary\`, or one of fewer than ${LINT_LIMITS.summaryMinSentences} or more than ${LINT_LIMITS.summarySentences} sentences`,
     "  tour-first-step      the first step of a tour does not show the big picture: it focuses a test, only a",
     "                       concept that lights up nothing, opens on a flow when the tour has a map, or its title",
@@ -102,14 +103,32 @@ export const lintCommand: CommandSpec = {
     "                       the viewer shows as plain text",
     "  markdown-in-summary  a # heading line or a [text](link) in the summary of an element or a step (inline",
     "                       markdown such as code spans, **bold** and *emphasis* is fine there)",
-    "Code spans (`...`) are left out of the word checks. Each finding names the element, the field, a short",
-    "quote and a fix. Fix them with a patch (`xpl apply`); a finding you keep on purpose needs no change.",
+    "What the viewer will show (boxes and arrows are counted on the index; without one, big-map counts",
+    "`include` and crowded-map is skipped):",
+    `  untitled-step        a tour step without a note, or whose note has no "### title" and a first sentence over`,
+    `                       ${LINT_LIMITS.titleSentenceChars} characters: the viewer shows that sentence cut short, or "Step N"`,
+    "  change-not-shown     a changed file (explainer of a change) that no tour step shows (its code ranges, what",
+    "                       it focuses, their members, ends and anchors) and no tour text names",
+    `  far-ranges           a tour step with two ranges in one file over ${LINT_LIMITS.farRangeLines} lines apart: a slide shows only one`,
+    "  long-talk-note       in a talk (a tour whose id or title says talk, presentation, demo or slides), a note",
+    `                       over ${LINT_LIMITS.talkNoteChars} characters under its title: Present sets it in smaller type`,
+    `  big-map              a graph view a tour shows with more than ${LINT_LIMITS.tourMapBoxes} boxes`,
+    `  crowded-map          a graph view with more than ${LINT_LIMITS.edgesPerBox} arrows (derived and stored) per box; the hint and`,
+    "                       --json (ids) list the least used drawn edges to put in the view's `hidden`",
+    "  self-loop            a stored edge from a box to itself, on a box a graph view shows: the map does not draw it",
+    "Code spans (`...`) are left out of the word checks, and example values in code spans (`503`, `-1`, `null`,",
+    '`/admin/*`, `"utf-8"`) do not count as code names. An absolute word has its evidence in the text of an',
+    "element with anchors, and in a tour note sentence that names a part the step shows (a focused element with",
+    "anchors, a symbol or a file; any focused element when the step has `code`). Box names match by word stems,",
+    'case-insensitive ("web server" names "Web servers"; `findEdge` names `nodes.findEdge`). Each finding names',
+    "the element, the field, a short quote and a fix. Fix them with a patch (`xpl apply`); for a finding you keep",
+    "on purpose, say why in your reply and run with --warn-only.",
     "",
     "--patch <file|->: lint the explainer as it would be after `xpl apply <explainer> <file>`: the patch is merged",
     "in memory the way apply merges it (same checks, --actor llm), and nothing is written. A patch that apply would",
     "reject prints the rejection, as apply prints it, and exits 1. Fix the findings in the patch, then apply it.",
-    "Exit codes: 0 (findings are warnings), 1 with --strict when there is any finding, or a rejected patch,",
-    "2 usage error.",
+    "Exit codes: 0 no findings; 1 any finding (so `xpl lint --patch p.json && xpl apply x p.json` stops on one;",
+    "with --warn-only only a todo-left error), or a rejected patch; 2 usage error.",
   ],
   options: {
     patch: {
@@ -117,20 +136,28 @@ export const lintCommand: CommandSpec = {
       arg: "<file|->",
       desc: "Lint the explainer as it would be after this patch (`-`: stdin); nothing is written",
     },
-    strict: { type: "boolean", desc: "Exit 1 when there is any finding" },
+    "warn-only": {
+      type: "boolean",
+      desc: "Exit 0 when every finding is a warning (a todo-left error still exits 1)",
+    },
+    strict: {
+      type: "boolean",
+      desc: "Exit 1 when there is any finding (the default; kept for older scripts)",
+    },
   },
   positionals: [{ name: "explainer" }],
   async run(ctx, args) {
-    const strict = args.flag("strict");
+    const strict = !args.flag("warn-only");
     const patchSource = args.str("patch");
     const read = patchSource === undefined ? undefined : await readPatch(ctx, patchSource);
     const loaded = loadExplainer(ctx, args.positionals[0]!);
 
     let explainer: Explainer = loaded.explainer;
+    let ws: Workspace | undefined;
     let patchInfo: { source: string; changed: string[]; protectedIds: string[] } | undefined;
     if (read !== undefined) {
       // The merge of `xpl apply` (core `applyPatch`), on a copy in memory: nothing is written.
-      const ws = await openWorkspace(ctx, { explainer: loaded });
+      ws = await openWorkspace(ctx, { explainer: loaded });
       const result = applyPatch(
         loaded.explainer,
         read.patch as ExplainerPatch,
@@ -176,8 +203,20 @@ export const lintCommand: CommandSpec = {
       patchInfo = { source: read.label, changed: result.changed, protectedIds };
     }
 
-    const { findings, checked } = lintExplainer(explainer);
-    const code = strict && findings.length > 0 ? 1 : 0;
+    // The index (when there is one) gives the boxes and arrows of each map; lint works without it.
+    if (ws === undefined) {
+      try {
+        ws = await openWorkspace(ctx, { explainer: loaded, skipFreshnessCheck: true });
+      } catch {
+        ws = undefined;
+      }
+    }
+    const { findings, checked } = lintExplainer(
+      explainer,
+      ws ? new ExplainerModel(explainer, ws.model) : undefined,
+    );
+    const errors = findings.filter((f) => f.severity === "error").length;
+    const code = (strict ? findings.length : errors) > 0 ? 1 : 0;
     const counts: Record<string, number> = {};
     for (const f of findings) counts[f.rule] = (counts[f.rule] ?? 0) + 1;
 
@@ -231,10 +270,12 @@ export const lintCommand: CommandSpec = {
       "",
       `${plural(findings.length, "finding")} in ${plural(elements, "element")} (${countLine(findings)})` +
         (strict
-          ? ""
-          : findings.some((f) => f.severity === "error")
-            ? `; ${plural(findings.filter((f) => f.severity === "error").length, "error")} (todo-left), --strict exits 1`
-            : "; warnings only, --strict exits 1"),
+          ? errors > 0
+            ? `; ${plural(errors, "error")} (todo-left)`
+            : "; fix them, or keep one on purpose (say why) and run with --warn-only"
+          : errors > 0
+            ? `; ${plural(errors, "error")} (todo-left): exit 1 even with --warn-only`
+            : "; warnings only (--warn-only)"),
     );
     ctx.out(lines.join("\n"));
     return code;

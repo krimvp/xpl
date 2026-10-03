@@ -50,7 +50,8 @@ async function draftApplyCheck(
   expect(json.json.patch).toEqual(patch);
 
   const before = await xplJson<LintJson>(dir, "lint", name, "--patch", out);
-  expect(before.code).toBe(0);
+  // a draft is full of TODOs: errors, so lint exits 1 (also with --warn-only)
+  expect(before.code).toBe(1);
   const applied = await xpl(dir, "apply", name, out);
   expect(applied.code, applied.out).toBe(0);
   expect(applied.out).toMatch(/^applied to /);
@@ -61,7 +62,7 @@ async function draftApplyCheck(
   const anchors = await xpl(dir, "anchors", name);
   expect(anchors.out).toMatch(/drifted 0, missing 0$/);
   const lint = await xplJson<LintJson>(dir, "lint", name);
-  expect(lint.code).toBe(0);
+  expect(lint.code).toBe(1);
   expect(Object.keys(lint.json.counts)).toEqual(["todo-left"]);
   expect(lint.json.findings.every((f) => f.severity === "error")).toBe(true);
   expect(lint.json.total).toBe(before.json.total);
@@ -602,17 +603,21 @@ describe("lint todo-left", () => {
     expect(findings.filter((f) => f.rule !== "todo-left").every((f) => !f.severity)).toBe(true);
   });
 
-  it("xpl lint: todo-left is an error in the output, exit 0 unless --strict", async () => {
+  it("xpl lint: todo-left is an error in the output, exit 1 even with --warn-only", async () => {
     const dir = await indexedFixture("ts-jobrunner");
     expect((await xpl(dir, "new", "d")).code).toBe(0);
     const out = join(makeTempDir("xpl-draft-out-"), "repo.json");
     expect((await xpl(dir, "draft", "repo", "d", "-o", out)).code).toBe(0);
     const r = await xpl(dir, "lint", "d", "--patch", out);
-    expect(r.code).toBe(0);
+    expect(r.code).toBe(1);
     expect(r.out).toContain("  summary  error todo-left: 1 TODO placeholder left");
     expect(r.out.split("\n").at(-1)).toMatch(
-      /^\d+ findings in \d+ elements \(todo-left \d+\); \d+ errors \(todo-left\), --strict exits 1$/,
+      /^\d+ findings in \d+ elements \(todo-left \d+\); \d+ errors \(todo-left\)$/,
     );
-    expect((await xpl(dir, "lint", "d", "--patch", out, "--strict")).code).toBe(1);
+    const warnOnly = await xpl(dir, "lint", "d", "--patch", out, "--warn-only");
+    expect(warnOnly.code).toBe(1);
+    expect(warnOnly.out.split("\n").at(-1)).toMatch(
+      /errors \(todo-left\): exit 1 even with --warn-only$/,
+    );
   });
 });

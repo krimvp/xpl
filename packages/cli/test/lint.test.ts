@@ -3,8 +3,15 @@
  * output, `--json`, `--strict`, exit codes) on an explainer applied to the TS fixture.
  */
 import { beforeAll, describe, expect, it } from "vitest";
-import type { Explainer } from "@xpl/core";
-import { codeLike, lintExplainer, type LintFinding, type LintRule } from "../src/lint.js";
+import { ExplainerModel, INDEX_SCHEMA, type Explainer, type SymbolIndex } from "@xpl/core";
+import {
+  codeLike,
+  isLiteral,
+  LINT_LIMITS,
+  lintExplainer,
+  type LintFinding,
+  type LintRule,
+} from "../src/lint.js";
 import {
   cloneDir,
   indexedFixture,
@@ -187,8 +194,11 @@ describe("lintExplainer", () => {
     );
     expect(only(six.findings, "tour-summary")[0]).toMatchObject({
       message: "6 sentences (more than 5)",
-      hint: "keep the summary to 2-5 sentences; move the rest into the steps",
     });
+    // the hint names the competing limit, so that one fix does not trip another rule
+    expect(only(six.findings, "tour-summary")[0]!.hint).toBe(
+      "keep the summary to 2-5 sentences; move the rest into the steps (two sentences joined into one over 25 words is a long-sentence finding)",
+    );
   });
 
   it('notes without a "### title" line; placeholders such as "Fix 1:"', () => {
@@ -841,7 +851,14 @@ describe("lintExplainer", () => {
       edges: "nope",
     } as unknown as Partial<Explainer>;
     const { findings } = lintExplainer(explainer(odd));
-    expect(rules(findings)).toEqual(["tour-summary", "tour-summary"]);
+    // the second tour: no summary, and three steps without a note (untitled)
+    expect(rules(findings)).toEqual([
+      "tour-summary",
+      "tour-summary",
+      "untitled-step",
+      "untitled-step",
+      "untitled-step",
+    ]);
   });
 });
 
@@ -1043,6 +1060,547 @@ describe("order checks", () => {
   });
 });
 
+// ─── Rules that do not fight: example values, anchored claims, label stems ───────────────────
+
+describe("lintExplainer: concrete text passes", () => {
+  it("code-heavy: example values in code spans are not code names", () => {
+    const values = [
+      "`503`",
+      "`-1`",
+      "`1.5`",
+      "`Infinity`",
+      "`undefined`",
+      "`null`",
+      "`true`",
+      "`0x1f`",
+      "`10_000`",
+      "`30s`",
+      "`5%`",
+    ];
+    const routes = [
+      "`/admin/*`",
+      "`/`",
+      "`-`",
+      "`{id:[0-9]+}`",
+      "`lots/of/:fun`",
+      "`users/{id}`",
+      '`"utf-8"`',
+      "`'a'`",
+      "`https://example.com/x`",
+    ];
+    for (const value of [...values, ...routes]) expect(isLiteral(value), value).toBe(true);
+    for (const code of [
+      "`parseHost`",
+      "`Ky.create`",
+      "`shouldRetry: () => true`",
+      "`**kwargs`",
+      "`std::vector`",
+      "`src/types.ts`",
+    ]) {
+      expect(isLiteral(code), code).toBe(false);
+    }
+    const note =
+      "### A retry waits\nA `503` with `retry: -1` or `Infinity` waits; `/admin/*` and `users/{id}` match. `Ky.create` reads it.";
+    const { findings } = lintExplainer(explainer({ tours: [tour([note])] }));
+    expect(only(findings, "code-heavy")).toEqual([]);
+    // four real code names are still too many for a note
+    const heavy =
+      "### A retry waits\n`Ky.create` calls `retry`, `fetch` and `parseHost` with a `503`.";
+    const loud = only(lintExplainer(explainer({ tours: [tour([heavy])] })).findings, "code-heavy");
+    expect(loud.map((f) => f.message)).toEqual([
+      "4 code names (`Ky.create`, `retry`, `fetch`, `parseHost`); a note takes at most 3",
+    ]);
+    expect(loud[0]!.hint).toContain("Example values");
+  });
+
+  it("code-heavy: the files a map leaves off may be named in that sentence (the skill asks for the list)", () => {
+    const views = [
+      { id: "view:v", type: "graph", title: "Inside the shop", include: ["dir:src", "grp:db"] },
+    ];
+    const nodes = [
+      { id: "grp:db", kind: "group", label: "Orders database", role: "database", members: [] },
+    ];
+    const listed =
+      "### The shop has two parts\nThe app keeps orders in a database. Two helper files, `is.ts` and `types.ts`, are left off this map.";
+    const quiet = lintExplainer(explainer({ views, nodes, tours: [tour([listed])] }));
+    expect(only(quiet.findings, "code-heavy")).toEqual([]);
+    // the same names in another sentence still count
+    const other = "### The shop has two parts\nThe app uses `is.ts` and `types.ts` for checks.";
+    const loud = lintExplainer(explainer({ views, nodes, tours: [tour([other])] }));
+    expect(only(loud.findings, "code-heavy")).toHaveLength(1);
+  });
+
+  it("absolute-word: an element with anchors carries its evidence; one without does not", () => {
+    const anchored = { file: "src/a.ts", symbol: "f", role: "definition" };
+    const { findings } = lintExplainer(
+      explainer({
+        nodes: [
+          {
+            id: "sym:a#x",
+            label: "x",
+            summary: "Every caller gets the same error.",
+            anchors: [anchored],
+          },
+          { id: "sym:a#y", label: "y", summary: "Every caller gets the same error.", anchors: [] },
+        ],
+        views: [
+          {
+            id: "view:f",
+            type: "flow",
+            title: "Retries",
+            participants: [],
+            steps: [
+              { id: "f:1", label: "Stop", summary: "Ky never retries a 404.", anchors: [anchored] },
+              { id: "f:2", label: "Stop", summary: "Ky never retries a 404.", anchors: [] },
+            ],
+          },
+        ],
+      }),
+    );
+    expect(only(findings, "absolute-word").map((f) => f.elementId)).toEqual(["f:2", "sym:a#y"]);
+    expect(only(findings, "absolute-word")[0]!.hint).toContain("anchor it");
+  });
+
+  it("absolute-word: a tour note sentence that names the part the step shows points at its evidence", () => {
+    const nodes = [
+      {
+        id: "grp:keys",
+        label: "Secret keys",
+        members: [],
+        anchors: [{ file: "a.py", role: "definition" }],
+      },
+    ];
+    const steps = [
+      // names the focused, anchored group: its anchors prove it
+      {
+        id: "t1",
+        view: "view:v",
+        focus: ["grp:keys"],
+        note: "### Every secret key can verify a token\nThe list keeps old keys.",
+      },
+      // a focused symbol is code the step shows
+      {
+        id: "t2",
+        view: "view:v",
+        focus: ["sym:src/timed.py#TimedSerializer.loads"],
+        note: "### Old tokens\nThe loads method never trusts an old timestamp.",
+      },
+      // a claim about something else
+      {
+        id: "t3",
+        view: "view:v",
+        focus: ["grp:keys"],
+        note: "### Old tokens\nEvery token expires after a day.",
+      },
+      // no anchors and no code: no evidence
+      {
+        id: "t4",
+        view: "view:v",
+        focus: ["grp:other"],
+        note: "### Other\nThe other part never fails.",
+      },
+    ];
+    const { findings } = lintExplainer(
+      explainer({
+        nodes: [...nodes, { id: "grp:other", label: "The other part", members: [] }],
+        tours: [
+          {
+            id: "tour:t",
+            title: "Tokens",
+            summary: "Tokens carry a time. Old keys still verify.",
+            steps,
+          },
+        ],
+      }),
+    );
+    expect(only(findings, "absolute-word").map((f) => f.elementId)).toEqual([
+      "tour:t/t3",
+      "tour:t/t4",
+    ]);
+    expect(only(findings, "absolute-word")[0]!.hint).toContain("name the part the step focuses");
+  });
+
+  it("absolute-word: the same words get the same verdict in a title, a heading, a summary and a note", () => {
+    const sentences = [
+      "A token expires only if you ask for an age limit",
+      "Only the router reads the header",
+      "Every key can verify a token",
+    ];
+    for (const text of sentences) {
+      const { findings } = lintExplainer(
+        explainer({
+          title: text,
+          tours: [
+            tour([`### ${text}\n${text}.`], {
+              title: text,
+              summary: `${text}. A second sentence.`,
+            }),
+          ],
+          nodes: [{ id: "grp:g", label: text, summary: `${text}.`, members: [] }],
+        }),
+      );
+      const fields = only(findings, "absolute-word").map((f) => `${f.elementId} ${f.field}`);
+      const expected = /^A token/.test(text)
+        ? []
+        : [
+            "(explainer) title",
+            "tour:t title",
+            "tour:t summary",
+            "tour:t/t1 note heading",
+            "tour:t/t1 note",
+            "grp:g label",
+            "grp:g summary",
+          ];
+      expect(fields, text).toEqual(expected);
+    }
+    // the message says what kind of "only" counts
+    const { findings } = lintExplainer(explainer({ title: "Only the router reads it" }));
+    expect(findings[0]!.message).toContain('"only" that opens a clause');
+  });
+
+  it("tour-covers-map: a label matches by word stems, and a method by its own name", () => {
+    const nodes = [
+      { id: "grp:web", label: "Web servers", members: [] },
+      { id: "grp:waits", label: "Timeouts and waits", members: [] },
+    ];
+    const views = [
+      {
+        id: "view:m",
+        type: "graph",
+        title: "Routing",
+        include: [
+          "grp:web",
+          "grp:waits",
+          "sym:tree.go#nodes.findEdge",
+          "sym:tree.go#node.findRoute",
+        ],
+      },
+    ];
+    const note =
+      "### Where a request goes\nYour app talks to the web server. Its timeout and wait stop it. findEdge picks a child.";
+    const { findings } = lintExplainer(
+      explainer({
+        nodes,
+        views,
+        tours: [
+          {
+            id: "tour:t",
+            title: "Routes",
+            summary: "A path finds a handler. Params are kept.",
+            steps: [{ id: "t1", view: "view:m", focus: ["sym:tree.go#node.findRoute"], note }],
+          },
+        ],
+      }),
+    );
+    expect(only(findings, "tour-covers-map")).toEqual([]);
+    // the hint says how to name a box without a code span
+    const missed = lintExplainer(
+      explainer({
+        nodes,
+        views,
+        tours: [
+          {
+            id: "tour:t",
+            title: "Routes",
+            summary: "A path finds a handler. Params are kept.",
+            steps: [
+              {
+                id: "t1",
+                view: "view:m",
+                focus: ["sym:tree.go#node.findRoute"],
+                note: "### Where\nThe router looks.",
+              },
+            ],
+          },
+        ],
+      }),
+    );
+    expect(only(missed.findings, "tour-covers-map")[0]!.ids).toEqual([
+      "grp:web",
+      "grp:waits",
+      "sym:tree.go#nodes.findEdge",
+    ]);
+    expect(only(missed.findings, "tour-covers-map")[0]!.hint).toContain("in plain words");
+  });
+
+  it("long-sentence in a full summary: shorten it, do not split it (tour-summary caps the sentences)", () => {
+    const long = `${"word ".repeat(27).trim()}.`;
+    const full = lintExplainer(
+      explainer({ tours: [tour([], { summary: `${long} Two. Three. Four.` })] }),
+    );
+    expect(only(full.findings, "tour-summary")).toEqual([]);
+    expect(only(full.findings, "long-sentence")[0]!.hint).toMatch(
+      /^shorten it .* rather than split it/,
+    );
+    const room = lintExplainer(explainer({ tours: [tour([], { summary: `${long} Two.` })] }));
+    expect(only(room.findings, "long-sentence")[0]!.hint).toMatch(/^split it/);
+  });
+});
+
+// ─── What the viewer will show ─────────────────────────────────────────────────────────────────
+
+describe("lintExplainer: reader checks", () => {
+  it("untitled-step: no note, or no heading and a first sentence too long to be a title", () => {
+    const long = `${"word ".repeat(20).trim()}. Short.`;
+    const { findings } = lintExplainer(
+      explainer({
+        tours: [
+          {
+            ...tour([long, "The runner takes a job. It runs it.", "- a list\n- of items"]),
+            steps: [
+              ...tour([long, "The runner takes a job. Then it runs.", "- a list\n- of items"])
+                .steps,
+              { id: "t4", view: "view:v", focus: ["grp:core"] },
+            ],
+          },
+        ],
+      }),
+    );
+    expect(
+      findings
+        .filter((f) => f.rule === "untitled-step" || f.rule === "note-heading")
+        .map((f) => [f.elementId, f.rule]),
+    ).toEqual([
+      ["tour:t/t1", "untitled-step"],
+      ["tour:t/t2", "note-heading"],
+      ["tour:t/t3", "untitled-step"],
+      ["tour:t/t4", "untitled-step"],
+    ]);
+    expect(only(findings, "untitled-step")[2]!.message).toContain('"Step 4"');
+  });
+
+  it("far-ranges: two ranges in one file far apart (a slide shows only one); close ones and a draft's TODO are fine", () => {
+    const range = (file: string, startLine: number, endLine: number) => ({
+      file,
+      role: "definition",
+      resolved: { commit: "c", range: { startLine, endLine }, status: "ok" },
+    });
+    const step = (id: string, code: unknown[], note = "### A step\nThe runner takes a job.") => ({
+      id,
+      view: "view:v",
+      focus: [],
+      note,
+      code,
+    });
+    const { findings } = lintExplainer(
+      explainer({
+        tours: [
+          {
+            ...tour([]),
+            steps: [
+              step("t1", [range("tree.go", 414, 428), range("tree.go", 90, 95)]),
+              step("t2", [
+                range("tree.go", 414, 428),
+                range("tree.go", 440, 450),
+                range("mux.go", 1, 5),
+              ]),
+              step("t3", [range("tree.go", 1, 5), { ...range("tree.go", 400, 410), at: "base" }]),
+              step(
+                "t4",
+                [range("tree.go", 1, 5), range("tree.go", 400, 410)],
+                "### TODO: say what this shows",
+              ),
+            ],
+          },
+        ],
+      }),
+    );
+    expect(
+      only(findings, "far-ranges").map((f) => [f.elementId, f.field, f.quote, f.message]),
+    ).toEqual([
+      [
+        "tour:t/t1",
+        "code",
+        "tree.go:90-95 and 414-428",
+        "two ranges in tree.go are 319 lines apart: the code pane scrolls to one of them, and a slide shows only one",
+      ],
+    ]);
+  });
+
+  it("long-talk-note: a note over LONG_NOTE in a talk; other tours may say more", () => {
+    const body = "The runner takes the next job from the queue. ".repeat(7).trim();
+    expect(body.length).toBeGreaterThan(LINT_LIMITS.talkNoteChars);
+    const note = `### The runner takes a job\n${body}`;
+    for (const [title, id, want] of [
+      ["Intro talk", "tour:t", 1],
+      ["How a job runs", "tour:talk", 1],
+      ["How a job runs", "tour:t", 0],
+    ] as const) {
+      const { findings } = lintExplainer(explainer({ tours: [tour([note], { id, title })] }));
+      expect(only(findings, "long-talk-note"), `${id} ${title}`).toHaveLength(want);
+    }
+  });
+
+  it("big-map (on include without an index) and self-loop (an edge from a box to itself is not drawn)", () => {
+    const include = Array.from({ length: 9 }, (_, i) => `file:src/f${i}.ts`);
+    const { findings } = lintExplainer(
+      explainer({
+        views: [
+          { id: "view:big", type: "graph", title: "Everything", include },
+          { id: "view:ref", type: "graph", title: "Reference", include },
+        ],
+        edges: [
+          {
+            id: "edge:recurse",
+            kind: "calls",
+            from: "sym:src/f1.ts#walk",
+            to: "sym:src/f1.ts#walk",
+            summary: "It walks down.",
+            anchors: [],
+          },
+          {
+            id: "edge:other",
+            kind: "calls",
+            from: "sym:other.ts#a",
+            to: "sym:other.ts#a",
+            anchors: [],
+          },
+        ],
+        tours: [
+          {
+            ...tour([]),
+            steps: [
+              {
+                id: "t1",
+                view: "view:big",
+                focus: [],
+                note: "### All of it\nThe runner takes a job.",
+              },
+            ],
+          },
+        ],
+      }),
+    );
+    // only the map a tour shows is too big for a picture
+    expect(only(findings, "big-map").map((f) => [f.elementId, f.message])).toEqual([
+      [
+        "view:big",
+        "9 boxes (more than 8) on a map a tour shows: a guide picture or a slide of it is too small to read",
+      ],
+    ]);
+    // edge:other is on no map
+    expect(only(findings, "self-loop").map((f) => [f.elementId, f.message])).toEqual([
+      [
+        "edge:recurse",
+        "an edge from walk to itself is not drawn on the map (view:big, view:ref): readers see it only from a step that names it",
+      ],
+    ]);
+  });
+
+  it("crowded-map: more than 2 arrows per box, with the least used drawn edges to hide (needs the index)", () => {
+    const sym = (id: string, start: number) => ({
+      id,
+      file: "src/a.ts",
+      path: id.split("#")[1]!,
+      kind: "function",
+      range: { startLine: start, endLine: start + 2 },
+      hash: "h",
+    });
+    const ref = (from: string, to: string, line: number, kind = "call") => ({
+      from,
+      to,
+      kind,
+      site: { startLine: line, endLine: line, startCol: 1, endCol: 2 },
+      resolution: "precise",
+    });
+    const [a, b, c] = ["src/a.ts#a", "src/a.ts#b", "src/a.ts#c"];
+    const index = {
+      schema: INDEX_SCHEMA,
+      commit: "c",
+      tool: "test",
+      languages: {},
+      files: [{ path: "src/a.ts", language: "typescript", hash: "h", lines: 40 }],
+      symbols: [sym(a!, 1), sym(b!, 10), sym(c!, 20)],
+      refs: [
+        ref(a!, b!, 2),
+        ref(a!, b!, 3),
+        ref(b!, a!, 11),
+        ref(a!, c!, 2),
+        ref(c!, a!, 21),
+        ref(b!, c!, 11),
+        ref(c!, b!, 21),
+        ref(c!, b!, 22),
+        ref(a!, b!, 1, "extends"),
+      ],
+    } as unknown as SymbolIndex;
+    const doc = explainer({
+      views: [
+        {
+          id: "view:m",
+          type: "graph",
+          title: "Three functions",
+          include: [`sym:${a}`, `sym:${b}`, `sym:${c}`],
+        },
+      ],
+    });
+    // without the index, no arrows to count
+    expect(only(lintExplainer(doc).findings, "crowded-map")).toEqual([]);
+    const { findings } = lintExplainer(doc, new ExplainerModel(doc, index));
+    const crowded = only(findings, "crowded-map");
+    expect(crowded.map((f) => [f.elementId, f.field, f.message])).toEqual([
+      [
+        "view:m",
+        "hidden",
+        "7 arrows on 3 boxes (more than 2 per box): the arrows cross and hide each other",
+      ],
+    ]);
+    // the one edge to hide is a least used one (one reference)
+    expect(crowded[0]!.ids).toHaveLength(1);
+    expect(crowded[0]!.hint).toContain(crowded[0]!.ids![0]!);
+  });
+
+  it("change-not-shown: changed files no tour step shows or names", () => {
+    const change = {
+      base: "b",
+      head: "h",
+      files: ["src/a.ts", "src/b.ts", "src/c.ts", "src/d.ts", "src/e.ts", "pnpm-lock.yaml"].map(
+        (path) => ({ path, status: "modified", hunks: [] }),
+      ),
+    };
+    const { findings } = lintExplainer(
+      explainer({
+        change,
+        nodes: [{ id: "grp:tests", label: "Tests", members: ["file:src/c.ts"] }],
+        edges: [
+          {
+            id: "edge:x",
+            kind: "calls",
+            from: "sym:src/d.ts#f",
+            to: "sym:src/d.ts#g",
+            anchors: [{ file: "src/e.ts", role: "call-site" }],
+          },
+        ],
+        tours: [
+          {
+            ...tour([]),
+            steps: [
+              {
+                id: "t1",
+                view: "view:v",
+                focus: ["sym:src/a.ts#f"],
+                note: "### A\nThe runner takes a job.",
+              },
+              {
+                id: "t2",
+                view: "view:v",
+                focus: ["grp:tests", "edge:x"],
+                note: "### B\nThe lock file pnpm-lock.yaml only moves versions.",
+              },
+            ],
+          },
+        ],
+      }),
+    );
+    expect(only(findings, "change-not-shown").map((f) => [f.elementId, f.ids, f.message])).toEqual([
+      [
+        "(explainer)",
+        ["src/b.ts"],
+        "1 changed file of 6 is on no tour step: no step shows its code, no note names it",
+      ],
+    ]);
+  });
+});
+
 describe("xpl lint", () => {
   let demo: string;
 
@@ -1053,10 +1611,11 @@ describe("xpl lint", () => {
     expect((await xpl(demo, "apply", "demo", PATCH_PATH)).code).toBe(0);
   });
 
-  it("prints the findings grouped by element and a count line, and exits 0", async () => {
+  it("prints the findings grouped by element and a count line, and exits 1 (0 with --warn-only)", async () => {
     const { code, out, err } = await xpl(demo, "lint", "demo");
     expect(err).toBe("");
-    expect(code).toBe(0);
+    // any finding exits 1, so `xpl lint --patch p && xpl apply x p` stops on it
+    expect(code).toBe(1);
     const lines = out.split("\n");
     expect(lines[0]).toMatch(/^\.explainer\/demo\.explainer\.json: \d+ texts checked$/);
     expect(out).toContain("\ntour:intro (tour)\n  summary  tour-summary: no summary");
@@ -1068,17 +1627,20 @@ describe("xpl lint", () => {
       "  steps  tour-covers-map: 2 boxes of the map view:overview (3 boxes) never come up",
     );
     expect(lines.at(-1)).toMatch(
-      /^\d+ findings in \d+ elements \(tour-summary 1, tour-covers-map 1, note-heading 2.*\); warnings only, --strict exits 1$/,
+      /^\d+ findings in \d+ elements \(tour-summary 1, tour-covers-map 1, note-heading 2.*\); fix them, or keep one on purpose \(say why\) and run with --warn-only$/,
     );
+    const warnOnly = await xpl(demo, "lint", "demo", "--warn-only");
+    expect(warnOnly.code).toBe(0);
+    expect(warnOnly.out.split("\n").at(-1)).toMatch(/; warnings only \(--warn-only\)$/);
   });
 
-  it("--json lists the findings; --strict exits 1 when there are any", async () => {
+  it("--json lists the findings; exit 1 when there are any, --strict too, --warn-only 0", async () => {
     const { code, json } = await xplJson<{
       total: number;
       checked: number;
       counts: Record<string, number>;
       findings: LintFinding[];
-    }>(demo, "lint", "demo");
+    }>(demo, "lint", "demo", "--warn-only");
     expect(code).toBe(0);
     expect(json.ok).toBe(true);
     expect(json.total).toBe(json.findings.length);
@@ -1093,18 +1655,22 @@ describe("xpl lint", () => {
       hint: expect.any(String),
     });
 
+    // --strict is the default now, kept for older scripts
     const strict = await xpl(demo, "lint", "demo", "--strict");
     expect(strict.code).toBe(1);
     expect(strict.out).not.toContain("warnings only");
+    const plain = await xplJson(demo, "lint", "demo");
+    expect(plain.code).toBe(1);
+    expect(plain.json.ok).toBe(false);
     const strictJson = await xplJson(demo, "lint", "demo", "--strict");
     expect(strictJson.code).toBe(1);
     expect(strictJson.json.ok).toBe(false);
   });
 
-  it("a clean explainer: ok, and --strict exits 0", async () => {
+  it("a clean explainer: ok, and exits 0", async () => {
     const dir = cloneDir(demo);
     expect((await xpl(dir, "new", "clean", "--title", "How a job runs")).code).toBe(0);
-    const { code, out } = await xpl(dir, "lint", "clean", "--strict");
+    const { code, out } = await xpl(dir, "lint", "clean");
     expect(code).toBe(0);
     expect(out).toBe("ok: .explainer/clean.explainer.json: 1 text checked, no findings");
   });
@@ -1117,7 +1683,7 @@ describe("xpl lint", () => {
     expect(missing.err).toContain('no explainer "nope"');
     const help = await invoke(["lint", "--help"]);
     expect(help.code).toBe(0);
-    expect(help.out).toContain("Usage: xpl lint <explainer> [--patch <file|->] [--strict]");
+    expect(help.out).toContain("Usage: xpl lint <explainer> [--patch <file|->] [--warn-only]");
     for (const rule of ["repeats-summary", "markdown-in-plain", "markdown-in-summary"]) {
       expect(help.out).toContain(rule);
     }
@@ -1141,7 +1707,8 @@ describe("xpl lint", () => {
       const before = readFile(dir, ".explainer/demo.explainer.json");
       writeFile(dir, "fix.json", JSON.stringify(FIX));
       const { code, out } = await xpl(dir, "lint", "demo", "--patch", "fix.json");
-      expect(code).toBe(0);
+      // the notes still have findings
+      expect(code).toBe(1);
       expect(out.split("\n")[0]).toMatch(
         /^\.explainer\/demo\.explainer\.json with patch fix\.json \(1 id changed, nothing written\): \d+ texts checked$/,
       );
@@ -1150,7 +1717,7 @@ describe("xpl lint", () => {
       expect(readFile(dir, ".explainer/demo.explainer.json")).toBe(before);
 
       // the same from stdin, and --json says what the patch changed
-      const json = await invoke(["lint", "demo", "--patch", "-", "--json"], {
+      const json = await invoke(["lint", "demo", "--patch", "-", "--json", "--warn-only"], {
         cwd: dir,
         stdin: JSON.stringify(FIX),
       });
@@ -1186,10 +1753,12 @@ describe("xpl lint", () => {
       expect(missing.err).toContain("cannot read patch file");
     });
 
-    it("--strict counts the findings after the patch", async () => {
+    it("the exit code counts the findings after the patch: `lint --patch && apply` stops on one", async () => {
       const dir = cloneDir(demo);
       writeFile(dir, "fix.json", JSON.stringify(FIX));
+      expect((await xpl(dir, "lint", "demo", "--patch", "fix.json")).code).toBe(1);
       expect((await xpl(dir, "lint", "demo", "--patch", "fix.json", "--strict")).code).toBe(1);
+      expect((await xpl(dir, "lint", "demo", "--patch", "fix.json", "--warn-only")).code).toBe(0);
     });
   });
 });
