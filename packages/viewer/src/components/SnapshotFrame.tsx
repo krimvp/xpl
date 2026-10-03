@@ -6,10 +6,13 @@ import { snapshotView, type Focus } from "../viewport.js";
 export const SNAPSHOT_HEIGHT = 260;
 /** A picture cut at `SNAPSHOT_HEIGHT` that would show whole at this height is drawn this tall, px. */
 export const SNAPSHOT_TALL_HEIGHT = 420;
+/** A picture that would cut a box its step names may be this tall, px (never taller than its diagram). */
+export const SNAPSHOT_NAMED_HEIGHT = 620;
 
 /**
  * The frame of a still picture: as wide as its column, at most `SNAPSHOT_HEIGHT` tall (or
- * `SNAPSHOT_TALL_HEIGHT` when that shows all of it), the content placed by `snapshotView` (all of it when
+ * `SNAPSHOT_TALL_HEIGHT` when that shows all of it, or `SNAPSHOT_NAMED_HEIGHT` when that is what it takes to
+ * show every box the step names), the content placed by `snapshotView` (all of it when
  * that reads well, else the focus and its neighbours at a readable zoom). The step's elements left out are
  * counted in a "+N more" note: the live diagram shows them.
  */
@@ -44,6 +47,7 @@ export function SnapshotFrame({
     { width, height },
     focus,
     SNAPSHOT_TALL_HEIGHT,
+    SNAPSHOT_NAMED_HEIGHT,
   );
   return (
     <div

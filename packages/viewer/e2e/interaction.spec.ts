@@ -275,6 +275,40 @@ test.describe("graph view", () => {
     await page.keyboard.press("0");
     await expect.poll(zoom).toBeCloseTo(fitZoom, 2);
   });
+
+  test("Fit frames what is drawn, not the invisible click areas around it", async ({ page }) => {
+    await openBundle(page);
+    await byId(page, "grp:scheduling").dblclick();
+    await byId(page, "file:src/queue.ts").dblclick();
+    await expect(byId(page, "sym:src/queue.ts#Queue")).toBeVisible();
+    await fitAll(page);
+    const room = await page.evaluate(() => {
+      const pane = document.querySelector(".panzoom")!.getBoundingClientRect();
+      let left = Infinity,
+        top = Infinity,
+        right = -Infinity,
+        bottom = -Infinity;
+      for (const el of document.querySelectorAll(
+        ".panzoom .graph .box, .panzoom .graph .line, .panzoom .graph .edge-label",
+      )) {
+        const box = el.getBoundingClientRect();
+        if (box.width === 0 && box.height === 0) continue;
+        left = Math.min(left, box.left);
+        top = Math.min(top, box.top);
+        right = Math.max(right, box.right);
+        bottom = Math.max(bottom, box.bottom);
+      }
+      return {
+        x: pane.width - (right - left),
+        y: pane.height - (bottom - top),
+        inside:
+          left >= pane.left && right <= pane.right && top >= pane.top && bottom <= pane.bottom,
+      };
+    });
+    expect(room.inside).toBe(true);
+    // fitted on one axis: what is drawn spans the pane but for the padding (24px a side) and a small margin
+    expect(Math.min(room.x, room.y)).toBeLessThan(2 * 24 + 2 * 14);
+  });
 });
 
 test.describe("details panel", () => {
@@ -401,8 +435,25 @@ test.describe("hit targets", () => {
    * parts of them, so their groups are built around an anchor on the route (see GraphView).
    */
   async function everyElementTakesAClick(page: import("@playwright/test").Page) {
-    // a big diagram starts zoomed in, with part of it out of sight: fit it, so that every element is on screen
+    // a big diagram starts zoomed in, with part of it out of sight: fit it, so that every element is on
+    // screen. Fit frames what is drawn; an edge's invisible box (its centre is where a click aims) can reach
+    // past that on the far side of its anchor, so zoom out until every whole box is in the pane.
     await fitAll(page);
+    const allInPane = () =>
+      page.evaluate(() => {
+        const pane = document.querySelector(".panzoom")!.getBoundingClientRect();
+        return [...document.querySelectorAll(".panzoom [data-element-id]")].every((el) => {
+          const box = el.getBoundingClientRect();
+          return (
+            box.left >= pane.left &&
+            box.right <= pane.right &&
+            box.top >= pane.top &&
+            box.bottom <= pane.bottom
+          );
+        });
+      });
+    for (let i = 0; i < 6 && !(await allInPane()); i++)
+      await page.getByRole("button", { name: "Zoom out" }).click();
     const ids = await page
       .locator("[data-element-id]")
       .evaluateAll((els) => els.map((el) => el.getAttribute("data-element-id")!));

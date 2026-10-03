@@ -346,8 +346,9 @@ export interface SnapshotView {
  * Where a diagram sits in a still picture `width` px wide and at most `maxHeight` tall (the Guide's inline
  * diagram), by `frameView`: all of it when its text reads at about 10px or more (never enlarged), else the
  * focus and its neighbours at `SNAPSHOT_ZOOM` (down to `SNAPSHOT_MIN_ZOOM` to get them in). A picture that
- * would be cut at `maxHeight` but fits whole at `tallHeight` is drawn that tall instead. Undefined before the
- * picture has a width.
+ * would be cut at `maxHeight` but fits whole at `tallHeight` is drawn that tall instead; one that would still
+ * cut a box the step names is drawn up to `namedHeight` tall, when that shows more of them (a step about
+ * every part of a tall map shows all of it, not most of it). Undefined before the picture has a width.
  */
 export function snapshotView(
   width: number,
@@ -355,6 +356,7 @@ export function snapshotView(
   content: Pick<Box, "width" | "height">,
   focus: Focus | undefined,
   tallHeight = maxHeight,
+  namedHeight = tallHeight,
 ): SnapshotView | undefined {
   const pad = SNAPSHOT_PADDING;
   const options = {
@@ -372,6 +374,14 @@ export function snapshotView(
     if (tall && (!tall.partial || tall.hidden < framed.hidden || tall.context > framed.context)) {
       framed = tall;
       paneHeight = tallHeight;
+    }
+  }
+  if (framed.hidden > 0 && namedHeight > paneHeight) {
+    // Taller still, when that shows more of the boxes the step names.
+    const named = frameView({ w: width, h: namedHeight }, content, focus, options);
+    if (named && named.hidden < framed.hidden) {
+      framed = named;
+      paneHeight = namedHeight;
     }
   }
   const { transform } = framed;

@@ -178,36 +178,40 @@ function containerPad(node: LayoutNode): number {
 const additive = (event: MouseEvent | KeyboardEvent) =>
   event.shiftKey || event.metaKey || event.ctrlKey;
 
+/** Room around what is drawn: strokes, arrowheads, halos, focus rings and corner buttons stick out a little. */
+const CANVAS_MARGIN = 12;
+
+/**
+ * The part of the layout that is drawn: its boxes, and its edges' routes and labels. The invisible `bounds`
+ * rects (they place the centre of a box or an edge where a click aims) reach well past what is drawn, on
+ * the far side of an edge's anchor, and must not make the diagram's frame wider or taller: a fit would
+ * leave empty bands around the picture and draw it smaller. They still exist, outside the canvas if need be.
+ */
 function canvasBounds(layout: GraphLayout): Box {
-  const boxes: Box[] = [{ x: 0, y: 0, width: layout.width, height: layout.height }];
+  const boxes: Box[] = [];
   const edges = (list: LayoutEdge[], x: number, y: number) => {
     for (const edge of list) {
-      const { x: reachX, y: reachY } = edgeReach(edge);
-      boxes.push({
-        x: x + edge.anchor.x - reachX,
-        y: y + edge.anchor.y - reachY,
-        width: 2 * reachX,
-        height: 2 * reachY,
-      });
+      const route = routeBox(edge.points, edge.label);
+      boxes.push({ ...route, x: x + route.x, y: y + route.y });
     }
   };
   const visit = (list: LayoutNode[], x: number, y: number) => {
     for (const node of list) {
       const at = { x: x + node.x, y: y + node.y };
-      const pad = node.children.length > 0 ? containerPad(node) : 0;
-      boxes.push({
-        x: at.x - pad,
-        y: at.y - pad,
-        width: node.width + 2 * pad,
-        height: node.height + 2 * pad,
-      });
+      boxes.push({ ...at, width: node.width, height: node.height });
       edges(node.edges, at.x, at.y);
       visit(node.children, at.x, at.y);
     }
   };
   edges(layout.edges, 0, 0);
   visit(layout.nodes, 0, 0);
-  return unionBox(boxes)!;
+  const all = unionBox(boxes) ?? { x: 0, y: 0, width: layout.width, height: layout.height };
+  return {
+    x: all.x - CANVAS_MARGIN,
+    y: all.y - CANVAS_MARGIN,
+    width: all.width + 2 * CANVAS_MARGIN,
+    height: all.height + 2 * CANVAS_MARGIN,
+  };
 }
 
 /** a11y: how far the keyboard focus ring sits outside a box (the gap shows the canvas). */
