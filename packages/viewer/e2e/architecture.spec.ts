@@ -10,6 +10,15 @@ const box = (page: import("@playwright/test").Page, id: string) =>
   page.locator(`.diagram [data-element-id="${id}"]`).first();
 
 test.describe("architecture maps", () => {
+  test("boxes of code show their level: a folder, a file, a class, a method", async ({ page }) => {
+    await openBundle(page, "view:overview");
+    const icons = await page
+      .locator(".diagram .node:not(.ghost) > .box-icon")
+      .evaluateAll((list) => list.map((el) => el.getAttribute("data-icon")));
+    expect(icons.length).toBeGreaterThan(0);
+    expect(icons.every((name) => name !== null && name !== "")).toBe(true);
+  });
+
   test("the system map draws each box as what it is", async ({ page }) => {
     await openBundle(page, "view:system", ARCHITECTURE_BUNDLE);
     await expect(box(page, "grp:job-runner")).toHaveClass(/role-service/);
@@ -19,6 +28,19 @@ test.describe("architecture maps", () => {
     await expect(box(page, "grp:settings-file").locator(":scope > .lid")).toHaveCount(1);
     // the badge is the technology, not "group"
     await expect(box(page, "grp:settings-file").locator(".badge text")).toHaveText("YAML");
+    // an icon says what each box is
+    await expect(box(page, "grp:job-runner").locator(".box-icon")).toHaveAttribute(
+      "data-icon",
+      "service",
+    );
+    await expect(box(page, "grp:settings-file").locator(".box-icon")).toHaveAttribute(
+      "data-icon",
+      "storage",
+    );
+    await expect(box(page, "grp:operator").locator(".box-icon")).toHaveAttribute(
+      "data-icon",
+      "person",
+    );
     // only the service opens a level below
     await expect(box(page, "grp:job-runner").locator(".zoom")).toHaveCount(1);
     await expect(box(page, "grp:settings-file").locator(".zoom")).toHaveCount(0);
@@ -29,6 +51,11 @@ test.describe("architecture maps", () => {
     await openBundle(page, "view:system", ARCHITECTURE_BUNDLE);
     await box(page, "grp:job-runner").locator(".zoom").click();
     await expect(page.locator('.diagram[data-view-id="view:overview"]')).toBeVisible();
+    // one level down: the parts are components, and the icon says so
+    await expect(box(page, "grp:scheduling").locator(":scope > .box-icon")).toHaveAttribute(
+      "data-icon",
+      "component",
+    );
     const trail = page.getByTestId("zoom-trail");
     await expect(trail).toContainText("The job runner, who starts it and what it reads");
     await expect(trail).toContainText("Job runner");

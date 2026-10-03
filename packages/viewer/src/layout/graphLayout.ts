@@ -176,9 +176,10 @@ export const ROLE_WORDS: Record<NodeRole, string> = {
 export const CYLINDER_ROLES: ReadonlySet<NodeRole> = new Set(["database", "cache", "storage"]);
 /** The height of a cylinder's lid (the ellipse on top). */
 export const CYLINDER_LID = 9;
-/** Room for the zoom button of a box that opens a view, and for a person's icon. */
+/** Room for the zoom button of a box that opens a view. */
 export const ZOOM_SIZE = 22;
-export const PERSON_ICON = 20;
+/** Room for the icon left of a box's label (components/icons.tsx: 16 units and a gap). */
+export const ICON_ROOM = 23;
 
 /** The words of the change pill. */
 export function changeText(change: ChangeStatus): string {
@@ -203,7 +204,7 @@ function leafWidth(
     textWidth(label, NODE_LABEL_FONT, 600),
     badgeWidth(badge) + changeWidth(change),
   );
-  const icon = extra.role === "person" ? PERSON_ICON + 6 : 0;
+  const icon = ICON_ROOM;
   const zoom = extra.opens !== undefined ? ZOOM_SIZE + 6 : 0;
   // an architecture box is a little wider: it is read on its own, from a distance
   const min = extra.role !== undefined ? 150 : 104;
@@ -222,7 +223,8 @@ function containerMinWidth(label: string, badge: string, change?: ChangeStatus):
     Math.ceil(
       textWidth(label, NODE_LABEL_FONT, 600) + badgeWidth(badge) + changeWidth(change) + 10 + 24,
     ) +
-    2 * PAD_X
+    2 * PAD_X +
+    ICON_ROOM
   );
 }
 

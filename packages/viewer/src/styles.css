@@ -3145,8 +3145,33 @@ code {
   --k-hue: 268;
 }
 
-.node .person-icon {
-  fill: var(--muted);
+/* The icon left of a box's label (components/icons.tsx): what the box is, in the colour of its kind. */
+.node .box-icon {
+  fill: none;
+  stroke: hsl(var(--k-hue, 220) var(--pill-s) var(--pill-fg-l));
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  pointer-events: none;
+}
+
+.node .box-icon.icon-person {
+  fill: hsl(var(--k-hue, 220) var(--pill-s) var(--pill-fg-l));
+  stroke: none;
+}
+
+/* A symbol's icon is a letter in a tinted square (C class, ƒ function, ...). */
+.node .box-icon rect:only-of-type {
+  fill: hsl(var(--k-hue, 220) var(--pill-s) var(--pill-bg-l));
+  stroke: none;
+}
+
+.node .box-icon text {
+  font-size: 11px;
+  font-weight: 750;
+  text-anchor: middle;
+  fill: hsl(var(--k-hue, 220) var(--pill-s) var(--pill-fg-l));
+  stroke: none;
 }
 
 /* "See what is inside": the zoom button of a box that opens a more detailed view. */

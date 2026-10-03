@@ -93,6 +93,8 @@ describe("xpl draft repo: one service and what it relies on", () => {
       { file: "src/db/orders.ts", span: { from: 0, to: 0 }, role: "usage" },
     ]);
 
+    // the parts are the components of the service
+    expect(node("dir:src/db")).toMatchObject({ role: "component" });
     const inside = graph(patch, "view:overview")!;
     expect(inside.include).toEqual(
       expect.arrayContaining([

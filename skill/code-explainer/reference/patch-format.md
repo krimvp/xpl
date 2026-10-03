@@ -809,7 +809,7 @@ A box for something outside the repo is a group with a `role` and **no `members`
 }
 ```
 
-On the system map the service is one box, so the arrows of its parts are drawn there as one arrow per outside box (with the anchors of all; when their labels differ the arrow shows none). Write a tour that goes down a level at a time: a step on the system map, then the inside, then the code (SKILL.md, "explain repo"). Keep 3-7 boxes on a system map. A part with one job is a `component` only when the reader gains from the word; most boxes of code need no role.
+On the system map the service is one box, so the arrows of its parts are drawn there as one arrow per outside box (with the anchors of all; when their labels differ the arrow shows none). Write a tour that goes down a level at a time: a step on the system map, then the inside, then the code (SKILL.md, "explain repo"). Keep 3-7 boxes on a system map. The parts on the map of a service's inside are its `component`s (`xpl draft repo` sets the role): with the role icons, the reader always sees which level a map is at (system, service, component, then code). Boxes on maps of code need no role: the viewer shows their kind (folder, file, class, function) with an icon of its own.
 
 ### 3.11 `title` and `remove`
 

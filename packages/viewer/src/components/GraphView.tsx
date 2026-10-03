@@ -29,7 +29,7 @@ import {
   changeText,
   CYLINDER_LID,
   CYLINDER_ROLES,
-  PERSON_ICON,
+  ICON_ROOM,
   ZOOM_SIZE,
   EDGE_BOUNDS_PAD,
   labelWidth,
@@ -47,6 +47,7 @@ import { changeMarks, changeOf } from "../diff.js";
 import { useStore, useViewerState } from "../hooks.js";
 import { readerBadge } from "../readerWords.js";
 import { GhostTargetList } from "./GhostTargets.js";
+import { BoxIcon, iconName } from "./icons.js";
 import {
   PanZoom,
   PRESENT_FIT_PADDING,
@@ -426,7 +427,9 @@ function BoxShape({ node, marks }: { node: LayoutNode; marks: Marks }) {
   const zoomable = node.opens !== undefined && !still && store.canZoomInto(node.id);
   const zoom = () => store.zoomInto(node.id);
   const role = node.role ? ` role-${node.role}` : "";
-  const textX = 14 + (node.role === "person" && !container ? PERSON_ICON + 6 : 0);
+  const textX = 14 + ICON_ROOM;
+  const icon = iconName(node);
+  const lid = node.role && CYLINDER_ROLES.has(node.role) && !container ? CYLINDER_LID : 0;
   return (
     <g
       className={`node kind-${node.kindClass}${role}${container ? " is-container" : ""}${zoomable ? " is-zoomable" : ""}${stateClasses(node.id, marks)}`}
@@ -470,15 +473,16 @@ function BoxShape({ node, marks }: { node: LayoutNode; marks: Marks }) {
       )}
       {container ? (
         <>
-          <text className="label" x={14} y={22}>
+          <BoxIcon name={icon} x={13} y={9} />
+          <text className="label" x={textX} y={22}>
             {node.label}
           </text>
           {badgeText && (
-            <Badge x={14 + labelWidth(node.label) + 8} y={9} text={badgeText} width={badge} />
+            <Badge x={textX + labelWidth(node.label) + 8} y={9} text={badgeText} width={badge} />
           )}
           {node.change && (
             <ChangePill
-              x={14 + labelWidth(node.label) + 8 + (badgeText ? badge + PILL_GAP : 0)}
+              x={textX + labelWidth(node.label) + 8 + (badgeText ? badge + PILL_GAP : 0)}
               y={9}
               change={node.change}
             />
@@ -518,14 +522,9 @@ function BoxShape({ node, marks }: { node: LayoutNode; marks: Marks }) {
         </>
       ) : (
         <>
-          <LeafText
-            node={node}
-            x={textX}
-            badgeText={badgeText}
-            badge={badge}
-            lid={node.role && CYLINDER_ROLES.has(node.role) ? CYLINDER_LID : 0}
-          />
-          {node.role === "person" && <PersonIcon x={12} y={node.height / 2} />}
+          <LeafText node={node} x={textX} badgeText={badgeText} badge={badge} lid={lid} />
+          {/* centred on the text block beside it */}
+          <BoxIcon name={icon} x={13} y={lid + (node.height - lid) / 2 - 8} />
         </>
       )}
       {zoomable && (
@@ -613,15 +612,6 @@ function RoleBox({ role, width, height }: { role: string; width: number; height:
     );
   }
   return <rect className="box" width={width} height={height} rx={role === "person" ? 20 : 8} />;
-}
-
-function PersonIcon({ x, y }: { x: number; y: number }) {
-  return (
-    <g className="person-icon" transform={`translate(${x} ${y - 10})`} aria-hidden="true">
-      <circle cx={PERSON_ICON / 2} cy={5} r={4.5} />
-      <path d={`M2 ${PERSON_ICON} a8 8 0 0 1 16 0 Z`} />
-    </g>
-  );
 }
 
 /** The button of a box that opens a more detailed view: "see what is inside". */
