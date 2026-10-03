@@ -202,6 +202,30 @@ describe("frameView: the first view of a diagram", () => {
     expect(boxInView(view.transform, size, diamond)).toBe(true);
   });
 
+  it("slides a frame, within the room its focus leaves, to cut fewer of the other boxes", () => {
+    // a row of boxes 260 apart; the pane shows 987 units at 0.75: centred on the 5th, it cuts two
+    const row = Array.from({ length: 8 }, (_, n) => ({
+      x: n * 260,
+      y: 1000,
+      width: 150,
+      height: 60,
+    }));
+    const content = { width: 2080, height: 3000 };
+    const focus = row[4]!;
+    const plain = frameView(PANE, content, { boxes: [focus] }, OPTIONS)!;
+    const cut = (t: typeof plain.transform) =>
+      row.filter((box) => {
+        const left = t.x + box.x * t.k;
+        const right = left + box.width * t.k;
+        return (left < 0 && right > 0) || (left < PANE.w && right > PANE.w);
+      }).length;
+    expect(cut(plain.transform)).toBe(2);
+    const slid = frameView(PANE, content, { boxes: [focus], others: row }, OPTIONS)!;
+    expect(cut(slid.transform)).toBe(0);
+    expect(boxInView(slid.transform, PANE, focus)).toBe(true);
+    expect(slid.transform.k).toBe(plain.transform.k);
+  });
+
   it("frames the union of several focused elements when it fits, else the first and counts the rest", () => {
     const a = { x: 1000, y: 1000, width: 200, height: 100 };
     const b = { x: 1500, y: 1100, width: 200, height: 100 };

@@ -290,12 +290,24 @@ export function GraphView({
   );
   const focus = useMemo(() => {
     const found = layout ? startFocus(layout, selection, order) : undefined;
-    return (
-      found && {
-        boxes: found.boxes.map(shift),
-        neighbours: (found.neighbours ?? []).map(shift),
+    if (!found || !layout) return undefined;
+    // the boxes without boxes inside them: a frame cuts as few of them as it can
+    const leaves: Box[] = [];
+    const walk = (list: readonly LayoutNode[], x: number, y: number) => {
+      for (const node of list) {
+        if (node.children.length === 0)
+          leaves.push(
+            shift({ x: x + node.x, y: y + node.y, width: node.width, height: node.height }),
+          );
+        walk(node.children, x + node.x, y + node.y);
       }
-    );
+    };
+    walk(layout.nodes, 0, 0);
+    return {
+      boxes: found.boxes.map(shift),
+      neighbours: (found.neighbours ?? []).map(shift),
+      others: leaves,
+    };
   }, [layout, shift, selection, order]);
   const selectionBox = useMemo(() => {
     const box = layout && selection.length > 0 ? startAnchor(layout, selection, []) : undefined;

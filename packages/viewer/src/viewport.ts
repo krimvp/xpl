@@ -78,6 +78,11 @@ export interface Focus {
    * its label, not the tail of a long arrow).
    */
   core?: Box | undefined;
+  /**
+   * The diagram's other boxes: a frame is slid, within the room what it frames leaves, to cut as few of them
+   * as it can (half a box at the edge of the pane reads as a mistake).
+   */
+  others?: readonly Box[];
 }
 
 export interface FrameOptions extends FitOptions {
@@ -198,7 +203,7 @@ export function frameView(
       const use = span && fallback && span.size > visible ? fallback : span;
       return padding - windowStart(use, visible, total) * k;
     };
-    return {
+    const placed = {
       k,
       x: axis(
         size.w,
@@ -213,6 +218,77 @@ export function frameView(
         core && { start: core.y, size: core.height },
       ),
     };
+    return target && focus?.others?.length ? slide(placed, target, focus.others) : placed;
+  };
+  /** `t` moved, on each axis the diagram does not fit, to cut fewer of `others`, `keep` staying in view. */
+  const slide = (t: Transform, keep: Box, others: readonly Box[]): Transform => {
+    const margin = 12;
+    const axis = (
+      at: number,
+      pane: number,
+      total: number,
+      start: (box: Box) => number,
+      length: (box: Box) => number,
+      across: (box: Box) => boolean,
+    ): number => {
+      const visible = (pane - 2 * padding) / t.k;
+      if (total <= visible) return at;
+      const from = (padding - at) / t.k;
+      const lo = Math.max(0, start(keep) + length(keep) - visible);
+      const hi = Math.min(total - visible, start(keep));
+      if (lo > hi) return at;
+      // (`s` is where the padded window starts; the pane shows `edge` more on each side of it)
+      const edge = padding / t.k;
+      const boxes = others.filter(across);
+      const cuts = (s: number) =>
+        boxes.filter((box) => {
+          const a = start(box);
+          const b = a + length(box);
+          const left = s - edge;
+          const right = s + visible + edge;
+          return (a < left && left < b) || (a < right && right < b);
+        }).length;
+      const candidates = [from, lo, hi];
+      for (const box of boxes) {
+        const a = start(box);
+        const b = a + length(box);
+        // a pane edge just before or just after the box, on either side
+        candidates.push(a - margin + edge, b + margin + edge);
+        candidates.push(a - margin - visible - edge, b + margin - visible - edge);
+      }
+      let best = from;
+      let fewest = cuts(from);
+      for (const raw of candidates) {
+        const s = clamp(raw, lo, hi);
+        const n = cuts(s);
+        if (n < fewest || (n === fewest && Math.abs(s - from) < Math.abs(best - from))) {
+          best = s;
+          fewest = n;
+        }
+      }
+      return padding - best * t.k;
+    };
+    // across: a box counts on one axis when it is in the window on the other
+    const inRows = (y: number) => (box: Box) =>
+      box.y + box.height > -y / t.k && box.y < (size.h - y) / t.k;
+    const x = axis(
+      t.x,
+      size.w,
+      content.width,
+      (b) => b.x,
+      (b) => b.width,
+      inRows(t.y),
+    );
+    const inColumns = (box: Box) => box.x + box.width > -x / t.k && box.x < (size.w - x) / t.k;
+    const y = axis(
+      t.y,
+      size.h,
+      content.height,
+      (b) => b.y,
+      (b) => b.height,
+      inColumns,
+    );
+    return { k: t.k, x, y };
   };
   const result = (transform: Transform, context: number): FramedView => {
     // A frame no larger than the whole diagram would be: the whole diagram reads as well.
