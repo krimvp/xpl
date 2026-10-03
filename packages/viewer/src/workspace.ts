@@ -2,6 +2,7 @@ import {
   codeFocus,
   deriveGraph,
   expandInPlace,
+  OUTSIDE_ROLES,
   repr,
   type ElementId,
   type ExplainerModel,
@@ -39,6 +40,29 @@ export function topicMatches(
     topics.has(id) ||
     [...topics].some(
       (topic) => model.hasNode(topic) && model.hasNode(id) && model.subtreeContains(topic, id),
+    )
+  );
+}
+
+/**
+ * True when the picked box holds the whole flow without being one of its boxes (the library a flow of its
+ * calls runs in): the flow is then not about that box, and the topic panel names the flow instead.
+ */
+export function aroundFlow(
+  id: ElementId,
+  flow: Pick<SequenceView, "participants">,
+  model: ExplainerModel,
+): boolean {
+  if (!model.hasNode(id) || flow.participants.includes(id)) return false;
+  // Boxes outside the code (the Fetch API, your app) are not inside any box of it.
+  const code = flow.participants.filter((participant) => {
+    const role = model.node(participant)?.role;
+    return !role || !OUTSIDE_ROLES.includes(role);
+  });
+  return (
+    code.length > 0 &&
+    code.every(
+      (participant) => model.hasNode(participant) && model.subtreeContains(id, participant),
     )
   );
 }

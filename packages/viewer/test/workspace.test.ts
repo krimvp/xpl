@@ -1,10 +1,10 @@
-import { processFlow, type SequenceView } from "@xpl/core";
+import { ExplainerModel, processFlow, type SequenceView } from "@xpl/core";
 import { describe, expect, it } from "vitest";
 import { ViewerStore } from "../src/store.js";
 import { makeBundle } from "./world.js";
 import { readLaunchParams } from "../src/data.js";
 import { searchFor } from "../src/url.js";
-import { flowRelated, topicElements } from "../src/workspace.js";
+import { aroundFlow, flowRelated, topicElements } from "../src/workspace.js";
 
 describe("explanation workspace", () => {
   it("starts with the guide but preserves explicit explore and present launches", () => {
@@ -46,6 +46,18 @@ describe("explanation workspace", () => {
     store.back();
     expect(store.getState().perspective).toBe("map");
     expect(store.getState().switchNotice).toBeUndefined();
+  });
+
+  it("a box that holds every box of the flow is not the flow's topic: the panel names the flow", () => {
+    const bundle = makeBundle();
+    const model = new ExplainerModel(bundle.explainer, bundle.index);
+    const flow = bundle.explainer.views.find((v) => v.id === "view:flow") as SequenceView;
+    // Core holds a.ts and b.ts, so both boxes of the flow
+    expect(aroundFlow("grp:core", flow, model)).toBe(true);
+    // a box of the flow, or one around only some of it, is still the topic
+    expect(aroundFlow("file:src/b.ts", flow, model)).toBe(false);
+    expect(aroundFlow("file:src/a.ts", flow, model)).toBe(false);
+    expect(aroundFlow("concept:retry", flow, model)).toBe(false);
   });
 
   it("restores topics, perspectives, file positions and tour context through history", () => {
