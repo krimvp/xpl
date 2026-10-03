@@ -215,27 +215,43 @@ test.describe("Present: a flow step", () => {
     { width: 1280, height: 720 },
     { width: 1440, height: 900 },
   ]) {
-    test(`${size.width}x${size.height}: a typical 8-stage flow reads at 11px or more, framed on the step, Fit all included`, async ({
+    test(`${size.width}x${size.height}: a typical 8-stage flow reads at 16px or more, framed on the step, Fit all shows it all`, async ({
       page,
     }) => {
       const problems = watchProblems(page);
       await openVariant(page, withEightStageFlow, "?mode=present&tour=tour:intro&step=2", size);
       await expect(byId(page, "dispatch:5")).toHaveClass(/is-selected/);
-      // the flow step gives the diagram more of the width than a graph step does
+      // a tour with a flow step gives the diagram more of the width
       const flowPane = (await page.locator(".present-left").boundingBox())!.width;
-      expect(flowPane).toBeGreaterThan(size.width * 0.52);
-      expect(await smallestDiagramText(page)).toBeGreaterThanOrEqual(11);
+      expect(flowPane).toBeGreaterThan(size.width * 0.5);
+      // read from the back of the room: the flow starts with its text at 16px
+      expect(await smallestDiagramText(page)).toBeGreaterThanOrEqual(15.9);
       await expect.poll(() => selectedInPane(page)).toBe(true);
-      // "Fit all", when it is offered, keeps the text readable (the whole width, scrolling down)
+      // "Fit all", when it is offered, shows every stage
       const badge = page.getByTestId("pz-badge");
       if ((await badge.count()) > 0 && (await badge.textContent()) === "Fit all") {
+        // it stays off the picture until the mouse moves
+        const opacity = () => badge.evaluate((el) => getComputedStyle(el).opacity);
+        expect(await opacity()).toBe("0");
+        await page.mouse.move(size.width / 4, size.height / 3);
+        await expect.poll(opacity).toBe("1");
         await badge.click();
-        expect(await smallestDiagramText(page)).toBeGreaterThanOrEqual(11);
+        await expect
+          .poll(() =>
+            page.evaluate(() => {
+              const pane = document.querySelector(".panzoom")!.getBoundingClientRect();
+              return [...document.querySelectorAll(".flow-stage")].every((el) => {
+                const r = el.getBoundingClientRect();
+                return r.top >= pane.top - 1 && r.bottom <= pane.bottom + 1;
+              });
+            }),
+          )
+          .toBe(true);
       }
-      // a graph step keeps the narrower diagram column
+      // one split for the whole tour: a graph step keeps the same columns (the slide does not jump)
       await page.keyboard.press("ArrowLeft");
       await expect(byId(page, "grp:scheduling")).toHaveClass(/is-selected/);
-      expect((await page.locator(".present-left").boundingBox())!.width).toBeLessThan(flowPane);
+      expect((await page.locator(".present-left").boundingBox())!.width).toBeCloseTo(flowPane, 0);
       expect(problems).toEqual([]);
     });
   }

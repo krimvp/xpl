@@ -99,6 +99,10 @@ describe("TEST_FILE_GLOBS", () => {
       "src/__tests__/a.tsx",
       "tests/conftest.py",
       "conftest.py",
+      "test-d/response-size.ts",
+      "packages/ky/test-d/hooks.ts",
+      "index.test-d.ts",
+      "src/options.spec-d.ts",
     ]) {
       expect(isTest(path), path).toBe(true);
     }
@@ -113,6 +117,8 @@ describe("TEST_FILE_GLOBS", () => {
       "src/contest/a.ts",
       "docs/testing.md",
       "internal/testdata_loader.go",
+      "src/test-data.ts",
+      "src/types/hooks.d.ts",
     ]) {
       expect(isTest(path), path).toBe(false);
     }

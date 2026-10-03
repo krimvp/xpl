@@ -6,8 +6,9 @@
  *   whole line is the title; the body is the rest of the note.
  * - A note without a heading: its first sentence is the title when it has at most `MAX_SENTENCE_TITLE`
  *   characters, and the body is the rest of the note.
- * - Otherwise the title is the label of the first element the step focuses (else the title of its view), and
- *   the body is the whole note.
+ * - Otherwise the title is the first sentence cut at a word boundary to about `SHORT_TITLE` characters, with
+ *   "…" (`shortTitle`), and the body is the whole note; a step without a note is "Step N". Never the label of
+ *   what the step focuses: that is often code (`codeFocus([id], model)`), and several steps share a focus.
  *
  * Either way the title is not printed again in the body: each thing is said once.
  */
@@ -15,6 +16,9 @@ import type { ExplainerModel, TourStep } from "@xpl/core";
 
 /** A first sentence longer than this does not make a title. */
 export const MAX_SENTENCE_TITLE = 80;
+
+/** A title cut from a long first sentence keeps about this many characters (then "…"). */
+export const SHORT_TITLE = 60;
 
 const HEADING = /^ {0,3}#{1,6}[ \t]+(.*?)(?:[ \t]+#+)?[ \t]*$/;
 
@@ -97,16 +101,41 @@ export function noteTitle(step: Pick<TourStep, "note">): string | undefined {
   return noteParts(step.note).title;
 }
 
-type Names = Pick<ExplainerModel, "label" | "view">;
+type Names = Pick<ExplainerModel, "tours">;
+
+/**
+ * The first sentence of a note without a title, cut at a word boundary to at most `SHORT_TITLE` characters plus
+ * "…" (list marks, quote marks and markdown left out). Undefined when the note opens with code or has no words.
+ */
+export function shortTitle(note: string | undefined): string | undefined {
+  if (typeof note !== "string") return undefined;
+  const text = note.trim();
+  if (/^(?:```|~~~)/.test(text)) return undefined;
+  const firstLine = text.split("\n")[0]!.replace(/^(?:[-+*>]|\d+[.)])\s+/, "");
+  const end = sentenceEnd(firstLine) ?? firstLine.length;
+  const sentence = plain(firstLine.slice(0, end)).replace(/\.$/, "");
+  if (!/[\p{L}\p{N}]/u.test(sentence)) return undefined;
+  if (sentence.length <= SHORT_TITLE) return sentence;
+  const cut = sentence.slice(0, SHORT_TITLE + 1);
+  const space = cut.lastIndexOf(" ");
+  return `${(space > SHORT_TITLE / 2 ? cut.slice(0, space) : cut.slice(0, SHORT_TITLE)).replace(/[\s,;:.\u2013\u2014-]+$/u, "")}…`;
+}
+
+/** "Step N": the step's place in its tour (the first tour that holds it, by identity, else by id). */
+function numbered(step: TourStep, model: Names): string {
+  const tours = model.tours ?? [];
+  for (const same of [(s: TourStep) => s === step, (s: TourStep) => s.id === step.id]) {
+    for (const tour of tours) {
+      const index = Array.isArray(tour.steps) ? tour.steps.findIndex(same) : -1;
+      if (index !== -1) return `Step ${index + 1}`;
+    }
+  }
+  return "Step";
+}
 
 /** The title of `step` (see the file comment). */
 export function stepTitle(step: TourStep, model: Names): string {
-  const fromNote = noteTitle(step);
-  if (fromNote) return fromNote;
-  const first = Array.isArray(step.focus)
-    ? step.focus.find((id) => typeof id === "string")
-    : undefined;
-  return first ? model.label(first) : (model.view(step.view)?.title ?? "Overview");
+  return noteTitle(step) ?? shortTitle(step.note) ?? numbered(step, model);
 }
 
 /**

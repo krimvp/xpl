@@ -319,6 +319,40 @@ describe("applyPatch: basics", () => {
     expect(apply({}, { explainer: broken }).ok).toBe(false);
   });
 
+  it("sets, keeps and clears the page's audience (scope.audience)", () => {
+    const set = apply({ scope: { audience: "Deep dive, for engineers working on the router" } });
+    expect(set.ok).toBe(true);
+    expect(set.changed).toEqual(["scope"]);
+    expect(set.explainer.scope).toEqual({
+      audience: "Deep dive, for engineers working on the router",
+    });
+    // a patch without scope keeps it; the same value again changes nothing
+    expect(apply({ title: "T2" }, { explainer: set.explainer }).explainer.scope).toEqual(
+      set.explainer.scope,
+    );
+    expect(apply({ scope: set.explainer.scope! }, { explainer: set.explainer }).changed).toEqual(
+      [],
+    );
+    const cleared = apply({ scope: { audience: null } }, { explainer: set.explainer });
+    expect(cleared.ok).toBe(true);
+    expect(cleared.explainer.scope).toBeUndefined();
+    expect(apply({ scope: null }, { explainer: set.explainer }).explainer.scope).toBeUndefined();
+    expect(apply({ scope: { audience: " " } }).issues[0]).toMatchObject({
+      path: "scope.audience",
+      severity: "error",
+    });
+    expect(apply({ scope: { level: "L3" } } as never).issues[0]).toMatchObject({
+      path: "scope.level",
+    });
+    expect(apply({ scope: "engineers" } as never).ok).toBe(false);
+    // a long audience is a warning: it is meant to be one line under the title
+    const long = apply({ scope: { audience: "x".repeat(200) } });
+    expect(long.ok).toBe(true);
+    expect(long.issues).toContainEqual(
+      expect.objectContaining({ path: "scope.audience", severity: "warning" }),
+    );
+  });
+
   it("checks fields: unknown names and wrong types are errors that name the allowed set", () => {
     const typo = apply({ concepts: [{ id: "concept:idem", summery: "x" } as never] });
     expect(typo.ok).toBe(false);

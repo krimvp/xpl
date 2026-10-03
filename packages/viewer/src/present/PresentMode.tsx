@@ -3,17 +3,20 @@
  * applied by the store (its view, its focus as the selection, the code override and editor options);
  * this lays it out for a room: the diagram and, under it, a large caption (the step's title and note) on
  * the left, the code on the right with the file tree out of the way. The step counter, the arrows and
- * the tour picker are in the header (Header.tsx). A flow step gives the diagram more of the width (a flow
- * is tall and branches sideways; the code beside it wraps its long lines).
+ * the tour picker are in the header (Header.tsx). A tour with a flow step gives the diagram more of the
+ * width, for all of its steps (a flow is tall and branches sideways; the code beside it wraps its long
+ * lines): the screen is split once per tour, so it does not jump between a map step and a flow step.
  *
- * The caption keeps one height for the whole tour: as tall as its tallest step needs (up to its cap), measured
- * off-screen, so the diagram above it does not jump from step to step.
+ * The caption keeps one height and one type size for the whole tour: as tall as its tallest step needs,
+ * measured off-screen, so the diagram above it does not jump from step to step. The diagram keeps a
+ * minimum (`DIAGRAM_MIN`); when the captions do not fit what is left, their type gets smaller first, and
+ * only at the smallest size does a caption scroll.
  *
  * Keys live in App.tsx (arrows, PageUp/PageDown, Space, Home/End, Esc). Clicking around the diagram is
  * a detour: the selection follows the click and the header says so; the next arrow key applies the
- * next step again.
+ * next step again (← and Esc go back to the step that was interrupted).
  */
-import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { TourStep } from "@xpl/core";
 import { CodeArea } from "../components/CodeArea.js";
 import { DiagramPane } from "../components/DiagramPane.js";
@@ -21,12 +24,10 @@ import { useStore, useViewerState } from "../hooks.js";
 import { renderInline, renderMarkdown } from "../markdown.js";
 import { stepNumber } from "../modes.js";
 import { stepText } from "../stepTitle.js";
+import { captionCap, captionFit } from "./caption.js";
 
-/** A note body longer than this (characters of markdown) is set in the smaller caption size. */
+/** A note body longer than this (characters of markdown): the tour's captions start one size smaller. */
 const LONG_NOTE = 280;
-
-/** The caption's height at most, as a share of the window's (`.tour-caption` max-height: 62vh). */
-const CAPTION_CAP = 0.62;
 
 export function PresentMode() {
   const store = useStore();
@@ -35,19 +36,26 @@ export function PresentMode() {
   const index = state.tour?.step ?? 0;
   const step = tour?.steps[index];
   const count = tour?.steps.length ?? 0;
-  // The step's title (the heading of its note, its short first sentence, else what it focuses), then the
+  // The step's title (the heading of its note, its first sentence, cut short when long, else "Step N"), then the
   // rest of the note: the same title as in the guide, and nothing said twice.
   const text = step ? stepText(step, state.model) : undefined;
   const note = text?.body;
   const noteHtml = useMemo(() => (note ? renderMarkdown(note) : ""), [note]);
-  // A long note is set a little smaller, so that it fits its box more often; what still does not fit
-  // scrolls inside the caption (the step counter stays on top).
-  const long = (note?.length ?? 0) > LONG_NOTE;
+  // One type size for the tour: a tour with a long note is set a little smaller throughout.
+  const long = useMemo(
+    () =>
+      tour?.steps.some((other) => (stepText(other, state.model).body?.length ?? 0) > LONG_NOTE) ??
+      false,
+    [tour, state.model],
+  );
+  // One split for the tour: the widest diagram column any of its steps needs.
+  const wide = tour?.steps.some((other) => state.model.view(other.view)?.type === "flow") ?? false;
 
-  // One caption height for the tour: the tallest step's, measured on hidden copies of every caption.
+  // One caption height for the tour: the tallest step's, measured on hidden copies of every caption, at the
+  // largest type size that leaves the diagram its room.
   const left = useRef<HTMLElement>(null);
   const measure = useRef<HTMLDivElement>(null);
-  const [captionHeight, setCaptionHeight] = useState<number | undefined>(undefined);
+  const [fit, setFit] = useState<{ size: number; height: number; cap: number } | undefined>();
   const [width, setWidth] = useState(0);
   const [height, setHeight] = useState(0);
   useLayoutEffect(() => {
@@ -55,20 +63,73 @@ export function PresentMode() {
     if (!element) return;
     const observer = new ResizeObserver(() => {
       setWidth(element.clientWidth);
-      setHeight(window.innerHeight);
+      setHeight(element.clientHeight);
     });
     observer.observe(element);
     return () => observer.disconnect();
   }, [tour?.id]);
   useLayoutEffect(() => {
-    const copies = measure.current?.children;
-    if (!copies || copies.length === 0) return setCaptionHeight(undefined);
-    let tallest = 0;
-    for (const copy of copies) tallest = Math.max(tallest, (copy as HTMLElement).offsetHeight);
-    // Never past the caption's own cap (a note longer than that scrolls inside it): the diagram keeps its room.
-    // (62vh: the `max-height` of `.tour-caption` in styles.css)
-    setCaptionHeight(Math.ceil(Math.min(tallest, window.innerHeight * CAPTION_CAP)));
-  }, [tour, width, state.model, height]);
+    const box = measure.current;
+    const copies = box?.children;
+    if (!box || !copies || copies.length === 0 || height === 0) return setFit(undefined);
+    const bar = left.current?.querySelector<HTMLElement>(".diagram-caption")?.offsetHeight ?? 0;
+    // (+2: the diagram pane's border)
+    const cap = captionCap(height, bar + 2);
+    const tallestAt = (size: number) => {
+      box.dataset.size = String(size);
+      let tallest = 0;
+      for (const copy of copies) tallest = Math.max(tallest, (copy as HTMLElement).offsetHeight);
+      return tallest;
+    };
+    setFit({ ...captionFit(tallestAt, cap, long), cap });
+  }, [tour, width, state.model, height, long]);
+
+  // Keyboard focus: on the slide when the talk starts, back on the Present button when it ends.
+  const slide = useRef<HTMLElement>(null);
+  const started = step !== undefined;
+  useEffect(() => {
+    if (started) slide.current?.focus({ preventScroll: true });
+  }, [started]);
+  useEffect(
+    () => () => {
+      requestAnimationFrame(() =>
+        document.querySelector<HTMLElement>('[data-testid="mode-present"]')?.focus(),
+      );
+    },
+    [],
+  );
+  // The code's scrolling areas can be reached with the keyboard, and say which file they show.
+  useEffect(() => {
+    const code = slide.current?.querySelector(".present-right");
+    if (!code) return;
+    const label = () => {
+      for (const scroller of code.querySelectorAll<HTMLElement>(".cm-scroller")) {
+        if (scroller.getAttribute("tabindex") === "0") continue;
+        scroller.tabIndex = 0;
+        const name = scroller.querySelector(".cm-content")?.getAttribute("aria-label");
+        scroller.setAttribute("aria-label", name ?? "Source code");
+      }
+    };
+    label();
+    const observer = new MutationObserver(label);
+    observer.observe(code, { childList: true, subtree: true });
+    return () => observer.disconnect();
+  }, [started]);
+  // "Fit all" and the zoom buttons stay off the picture until the mouse moves (a talk is driven by keys).
+  const [pointer, setPointer] = useState(false);
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const onMove = () => {
+      setPointer(true);
+      clearTimeout(timer);
+      timer = setTimeout(() => setPointer(false), 3000);
+    };
+    window.addEventListener("pointermove", onMove, { passive: true });
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener("pointermove", onMove);
+    };
+  }, []);
 
   if (!tour || !step) {
     return (
@@ -92,18 +153,24 @@ export function PresentMode() {
     <main
       className="present"
       data-testid="present"
+      ref={slide}
+      tabIndex={-1}
+      aria-label={`${tour.title}: step ${stepNumber(index)} of ${count}`}
       data-tour={tour.id}
       data-step={stepNumber(index)}
       data-step-id={step.id}
       data-view-type={store.view()?.type}
+      data-split={wide ? "wide" : undefined}
+      data-pointer={pointer ? "moved" : undefined}
     >
       <section className="present-left" aria-label="Diagram and caption" ref={left}>
         <DiagramPane />
         <footer
-          className={"tour-caption" + (long ? " is-long" : "")}
+          className="tour-caption"
           aria-label="Caption"
           data-testid="tour-caption"
-          style={captionHeight ? { minHeight: captionHeight } : undefined}
+          data-size={fit?.size ?? (long ? 1 : 0)}
+          style={fit ? { height: fit.height, maxHeight: fit.cap } : undefined}
         >
           {text!.titleMarkdown !== undefined ? (
             <h2
@@ -143,7 +210,7 @@ function CaptionCopy({ step }: { step: TourStep }) {
   const text = stepText(step, state.model);
   const note = text.body;
   return (
-    <div className={"tour-caption" + ((note?.length ?? 0) > LONG_NOTE ? " is-long" : "")}>
+    <div className="tour-caption">
       <h2 className="tour-title">{text.title}</h2>
       {note && (
         <div

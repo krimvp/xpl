@@ -37,6 +37,7 @@ import {
   layoutGraphFitting,
   PILL_GAP,
   startAnchor,
+  startFocus,
   type ChangeMarks,
   type GraphLayout,
   type LayoutEdge,
@@ -46,6 +47,8 @@ import { arrowHeadPath, distanceToSegment, roundedPath, routeBox, type Box } fro
 import { unionBox } from "../viewport.js";
 import { changeMarks, changeOf } from "../diff.js";
 import { useStore, useViewerState } from "../hooks.js";
+import { mapKeyShows } from "../keyMarks.js";
+import { boxName, readingOrder } from "../mapOrder.js";
 import { readerBadge } from "../readerWords.js";
 import { GhostTargetList } from "./GhostTargets.js";
 import { Legend } from "./Legend.js";
@@ -70,6 +73,9 @@ const Reader = createContext(false);
  * ids (the live diagram keeps those to itself) and nothing to click or focus.
  */
 const Still = createContext(false);
+/** The edge under the pointer (its label is drawn apart from it, and shows while it is hovered). */
+const Hovered = createContext<string | undefined>(undefined);
+const SetHovered = createContext<(id: string | undefined) => void>(() => undefined);
 /** The names of the boxes drawn, by render id: an edge's accessible name says which two it joins. */
 const BoxNames = createContext<ReadonlyMap<string, string>>(new Map());
 
@@ -176,15 +182,12 @@ function canvasBounds(layout: GraphLayout): Box {
   const boxes: Box[] = [{ x: 0, y: 0, width: layout.width, height: layout.height }];
   const edges = (list: LayoutEdge[], x: number, y: number) => {
     for (const edge of list) {
-      const box = routeBox(edge.points, edge.label);
-      const width = Math.max(edge.anchor.x - box.x, box.x + box.width - edge.anchor.x) + BOUNDS_PAD;
-      const height =
-        Math.max(edge.anchor.y - box.y, box.y + box.height - edge.anchor.y) + BOUNDS_PAD;
+      const { x: reachX, y: reachY } = edgeReach(edge);
       boxes.push({
-        x: x + edge.anchor.x - width,
-        y: y + edge.anchor.y - height,
-        width: 2 * width,
-        height: 2 * height,
+        x: x + edge.anchor.x - reachX,
+        y: y + edge.anchor.y - reachY,
+        width: 2 * reachX,
+        height: 2 * reachY,
       });
     }
   };
@@ -206,6 +209,9 @@ function canvasBounds(layout: GraphLayout): Box {
   visit(layout.nodes, 0, 0);
   return unionBox(boxes)!;
 }
+
+/** a11y: how far the keyboard focus ring sits outside a box (the gap shows the canvas). */
+const FOCUS_RING_GAP = 5;
 
 function stateClasses(id: string, marks: Marks): string {
   return (
@@ -261,6 +267,7 @@ export function GraphView({
   const [layout, setLayout] = useState<GraphLayout | undefined>();
   const [error, setError] = useState<string | undefined>();
   const [menu, setMenu] = useState<GhostMenuState | undefined>();
+  const [hovered, setHovered] = useState<string | undefined>();
   // Stable while nothing selected, matched or related changes, so unchanged shapes are not re-rendered.
   const marks = useMemo<Marks>(
     () => ({ selected: new Set(selection), matches: new Set(matches), related }),
@@ -268,10 +275,25 @@ export function GraphView({
   );
 
   const canvas = useMemo(() => (layout ? canvasBounds(layout) : undefined), [layout]);
-  const startBox = useMemo(() => {
-    const box = layout ? startAnchor(layout, selection, order) : undefined;
-    return box && canvas ? { ...box, x: box.x - canvas.x, y: box.y - canvas.y } : box;
-  }, [layout, canvas, selection, order]);
+  // The first view frames the selection and its neighbours (or the first box of the view); the selection
+  // is kept in sight when it changes or the pane is resized. Both in the canvas' coordinates.
+  const shift = useCallback(
+    (box: Box): Box => (canvas ? { ...box, x: box.x - canvas.x, y: box.y - canvas.y } : box),
+    [canvas],
+  );
+  const focus = useMemo(() => {
+    const found = layout ? startFocus(layout, selection, order) : undefined;
+    return (
+      found && {
+        boxes: found.boxes.map(shift),
+        neighbours: (found.neighbours ?? []).map(shift),
+      }
+    );
+  }, [layout, shift, selection, order]);
+  const selectionBox = useMemo(() => {
+    const box = layout && selection.length > 0 ? startAnchor(layout, selection, []) : undefined;
+    return box && shift(box);
+  }, [layout, shift, selection]);
 
   // The layout direction (right or down) is chosen for the pane the diagram is drawn in.
   useEffect(() => {
@@ -360,18 +382,16 @@ export function GraphView({
         maxFitZoom={present ? PRESENT_MAX_FIT_ZOOM : undefined}
         fitPadding={present ? PRESENT_FIT_PADDING : undefined}
         readableZoom={present ? PRESENT_READABLE_ZOOM : undefined}
-        startBox={startBox}
+        focus={focus}
+        keepInView={selectionBox}
         onBackgroundClick={() => store.clearSelection()}
         tools={
           <Legend
-            shows={{
-              outside: layout.edges.some((edge) => edge.stub),
-              authored: layout.edges.some(
-                (edge) => !edge.stub && (edge.resolution === "llm" || edge.resolution === "user"),
-              ),
-              heuristic: layout.edges.some((edge) => edge.resolution === "heuristic"),
-              change: (changes?.size ?? 0) > 0,
-            }}
+            shows={mapKeyShows(layout.nodes, layout.edges, {
+              canZoomInto: (id) => store.canZoomInto(id),
+              canExpandInPlace: (id) => store.canExpandInPlace(id),
+              changed: (changes?.size ?? 0) > 0,
+            })}
           />
         }
       >
@@ -387,8 +407,9 @@ export function GraphView({
               <EdgeShape key={edge.id} edge={edge} marks={marks} focusable={false} />
             ))}
           </g>
+          <EdgeLabels edges={layout.edges} marks={marks} />
           <g className="nodes">
-            {layout.nodes.map((node) => (
+            {readingOrder(layout.nodes).map((node) => (
               <NodeShape key={node.id} node={node} marks={marks} />
             ))}
           </g>
@@ -406,19 +427,23 @@ export function GraphView({
     <ReadOnly.Provider value={present}>
       <Reader.Provider value={present || reader}>
         <BoxNames.Provider value={names}>
-          <GhostMenuContext.Provider value={menuApi}>
-            <div
-              className="graph-host"
-              ref={host}
-              onPointerDownCapture={dismiss}
-              onWheelCapture={menu ? dismissOnWheel : undefined}
-            >
-              {body}
-              {menu && menuGhost?.ghostFold && (
-                <GhostMenu node={menuGhost} anchor={menu.anchor} onClose={closeMenu} />
-              )}
-            </div>
-          </GhostMenuContext.Provider>
+          <SetHovered.Provider value={setHovered}>
+            <Hovered.Provider value={hovered}>
+              <GhostMenuContext.Provider value={menuApi}>
+                <div
+                  className="graph-host"
+                  ref={host}
+                  onPointerDownCapture={dismiss}
+                  onWheelCapture={menu ? dismissOnWheel : undefined}
+                >
+                  {body}
+                  {menu && menuGhost?.ghostFold && (
+                    <GhostMenu node={menuGhost} anchor={menu.anchor} onClose={closeMenu} />
+                  )}
+                </div>
+              </GhostMenuContext.Provider>
+            </Hovered.Provider>
+          </SetHovered.Provider>
         </BoxNames.Provider>
       </Reader.Provider>
     </ReadOnly.Provider>
@@ -475,6 +500,7 @@ export function GraphPicture({
                 <EdgeShape key={edge.id} edge={edge} marks={marks} />
               ))}
             </g>
+            <EdgeLabels edges={layout.edges} marks={marks} />
             <g className="nodes">
               {layout.nodes.map((node) => (
                 <NodeShape key={node.id} node={node} marks={marks} />
@@ -518,15 +544,57 @@ function BoxShape({ node, marks }: { node: LayoutNode; marks: Marks }) {
   const textX = 14 + ICON_ROOM;
   const icon = iconName(node);
   const lid = node.role && CYLINDER_ROLES.has(node.role) && !container ? CYLINDER_LID : 0;
-  return (
+  const selected = marks.selected.has(node.id);
+  const name = boxName(
+    node.label,
+    badgeText ?? (node.badge || undefined),
+    node.change && changeText(node.change),
+  );
+  // left to right, the order Tab takes them in
+  const cornerButtons = (
+    <>
+      {expandable && (
+        <CornerButton
+          className="expand-here"
+          x={node.width - ZOOM_SIZE - 6 - (zoomable ? ZOOM_SIZE + 4 : 0)}
+          y={node.height - ZOOM_SIZE - 6}
+          label={`Show the parts of ${node.label} in its box`}
+          title="Show its parts in this box, on this map"
+          onPress={() => store.toggleExpanded(node.id)}
+        >
+          {/* a box with boxes in it: open it on this map */}
+          <rect x={3.5} y={3.5} width={15} height={15} rx={2.5} />
+          <rect x={6.5} y={9} width={4} height={4} rx={1} />
+          <rect x={11.5} y={9} width={4} height={4} rx={1} />
+          <path d="M6.5 6.5h9" />
+        </CornerButton>
+      )}
+      {zoomable && (
+        <CornerButton
+          className="zoom"
+          x={node.width - ZOOM_SIZE - 6 - (showCollapse ? 30 : 0)}
+          y={container ? 8 : node.height - ZOOM_SIZE - 6}
+          label={`Open the map of what is inside ${node.label}`}
+          title="Open its own map: what is inside it"
+          onPress={zoom}
+        >
+          {/* a magnifier with a plus: zoom in */}
+          <circle cx={9.5} cy={9.5} r={5} />
+          <path d="M13.2 13.2 L17.5 17.5 M7 9.5 H12 M9.5 7 V12" />
+        </CornerButton>
+      )}
+    </>
+  );
+  const shape = (
     <g
       className={`node kind-${node.kindClass}${role}${container ? " is-container" : ""}${zoomable ? " is-zoomable" : ""}${stateClasses(node.id, marks)}`}
       data-element-id={still ? undefined : node.id}
       transform={`translate(${node.x} ${node.y})`}
-      role={still ? undefined : "button"}
+      // a container holds boxes (buttons): it is a group, and says when it is the one picked
+      role={still ? undefined : container ? "group" : "button"}
       tabIndex={still ? undefined : 0}
-      aria-label={still ? undefined : `${node.badge} ${node.label}`}
-      aria-pressed={still ? undefined : marks.selected.has(node.id)}
+      aria-label={still ? undefined : container && selected ? `${name}, picked` : name}
+      aria-pressed={still || container ? undefined : selected}
       onClick={(event) => {
         event.stopPropagation();
         select(event);
@@ -559,6 +627,7 @@ function BoxShape({ node, marks }: { node: LayoutNode; marks: Marks }) {
       ) : (
         <rect className="box" width={node.width} height={node.height} rx={container ? 10 : 8} />
       )}
+      {!still && <FocusRing width={node.width} height={node.height} rx={container ? 10 : 8} />}
       {container ? (
         <>
           <BoxIcon name={icon} x={13} y={9} />
@@ -581,7 +650,8 @@ function BoxShape({ node, marks }: { node: LayoutNode; marks: Marks }) {
               <EdgeShape key={edge.id} edge={edge} marks={marks} />
             ))}
           </g>
-          {node.children.map((child) => (
+          <EdgeLabels edges={node.edges} marks={marks} />
+          {readingOrder(node.children).map((child) => (
             <NodeShape key={child.id} node={child} marks={marks} />
           ))}
           {showCollapse && (
@@ -616,6 +686,8 @@ function BoxShape({ node, marks }: { node: LayoutNode; marks: Marks }) {
           {centerIsCovered(node) && (
             <circle className="hit" cx={node.width / 2} cy={node.height / 2} r={10} />
           )}
+          {/* inside a container (a group), its buttons stay with it */}
+          {cornerButtons}
         </>
       ) : (
         <>
@@ -624,37 +696,35 @@ function BoxShape({ node, marks }: { node: LayoutNode; marks: Marks }) {
           <BoxIcon name={icon} x={13} y={lid + (node.height - lid) / 2 - 8} />
         </>
       )}
-      {zoomable && (
-        <CornerButton
-          className="zoom"
-          x={node.width - ZOOM_SIZE - 6 - (showCollapse ? 30 : 0)}
-          y={container ? 8 : node.height - ZOOM_SIZE - 6}
-          label={`See what is inside ${node.label}`}
-          title="See what is inside"
-          onPress={zoom}
-        >
-          {/* a magnifier with a plus: zoom in */}
-          <circle cx={9.5} cy={9.5} r={5} />
-          <path d="M13.2 13.2 L17.5 17.5 M7 9.5 H12 M9.5 7 V12" />
-        </CornerButton>
-      )}
-      {expandable && (
-        <CornerButton
-          className="expand-here"
-          x={node.width - ZOOM_SIZE - 6 - (zoomable ? ZOOM_SIZE + 4 : 0)}
-          y={node.height - ZOOM_SIZE - 6}
-          label={`Show the inside of ${node.label} here`}
-          title="Show the inside here"
-          onPress={() => store.toggleExpanded(node.id)}
-        >
-          {/* a box with boxes in it: open it on this map */}
-          <rect x={3.5} y={3.5} width={15} height={15} rx={2.5} />
-          <rect x={6.5} y={9} width={4} height={4} rx={1} />
-          <rect x={11.5} y={9} width={4} height={4} rx={1} />
-          <path d="M6.5 6.5h9" />
-        </CornerButton>
-      )}
     </g>
+  );
+  if (container || (!zoomable && !expandable)) return shape;
+  // a11y: a box is a button, so its corner buttons are drawn beside it, over it, not inside it
+  return (
+    <>
+      {shape}
+      <g
+        className="node-buttons"
+        data-buttons-of={node.id}
+        transform={`translate(${node.x} ${node.y})`}
+      >
+        {cornerButtons}
+      </g>
+    </>
+  );
+}
+
+/** a11y: the keyboard focus ring of a box: outside it, with a gap, never like the selection outline. */
+function FocusRing({ width, height, rx }: { width: number; height: number; rx: number }) {
+  return (
+    <rect
+      className="focus-ring"
+      x={-FOCUS_RING_GAP}
+      y={-FOCUS_RING_GAP}
+      width={width + 2 * FOCUS_RING_GAP}
+      height={height + 2 * FOCUS_RING_GAP}
+      rx={rx + FOCUS_RING_GAP}
+    />
   );
 }
 
@@ -879,6 +949,7 @@ function GhostShape({ node, marks }: { node: LayoutNode; marks: Marks }) {
               : `Add ${node.label} to the view`}
       </title>
       <rect className="box" width={node.width} height={node.height} rx={8} />
+      {!still && <FocusRing width={node.width} height={node.height} rx={8} />}
       {fold ? (
         <path className="plus is-list" d="M12 11h10M12 15h10M12 19h10" />
       ) : (
@@ -1034,6 +1105,21 @@ function EdgeKey({ edge }: { edge: LayoutEdge }) {
   );
 }
 
+/** The classes of an edge (and of its label): kind, trust, state, and quiet in a reader view. */
+function edgeClasses(edge: LayoutEdge, marks: Marks, reader: boolean): string {
+  const classes = ["edge", edge.stub ? "is-stub" : `res-${edge.resolution}`, `kind-${edge.kind}`];
+  // A count label in a reader view: shown on hover and when the edge or an end of it is selected.
+  if (
+    reader &&
+    edge.counted &&
+    !marks.selected.has(edge.id) &&
+    !marks.selected.has(edge.from) &&
+    !marks.selected.has(edge.to)
+  )
+    classes.push("is-quiet");
+  return classes.join(" ") + stateClasses(edge.id, marks);
+}
+
 const EdgeShape = memo(function EdgeShape({
   edge,
   marks,
@@ -1053,24 +1139,16 @@ const EdgeShape = memo(function EdgeShape({
   const path = roundedPath(points);
   const tip = points[points.length - 1]!;
   const before = points[points.length - 2]!;
-  const label = edge.label;
+  const hover = useContext(SetHovered);
   // A click on the edge lands on its anchor, a point of the route (see BOUNDS_PAD): the invisible
   // `bounds` rect is centred on it and reaches around the whole route.
   const { x: reachX, y: reachY } = edgeReach(edge);
   const select = (event: MouseEvent | KeyboardEvent) => store.click(edge.id, additive(event));
-  const classes = ["edge", edge.stub ? "is-stub" : `res-${edge.resolution}`, `kind-${edge.kind}`];
-  // A count label in a reader view: shown on hover (CSS) and when the edge or an end of it is selected.
-  if (
-    reader &&
-    edge.counted &&
-    !marks.selected.has(edge.id) &&
-    !marks.selected.has(edge.from) &&
-    !marks.selected.has(edge.to)
-  )
-    classes.push("is-quiet");
   return (
     <g
-      className={classes.join(" ") + stateClasses(edge.id, marks)}
+      className={edgeClasses(edge, marks, reader)}
+      onPointerEnter={edge.label ? () => hover(edge.id) : undefined}
+      onPointerLeave={edge.label ? () => hover(undefined) : undefined}
       data-element-id={still ? undefined : edge.id}
       data-stub-id={edge.stub && !still ? edge.id : undefined}
       role={still || !focusable ? undefined : "button"}
@@ -1100,14 +1178,46 @@ const EdgeShape = memo(function EdgeShape({
       <path className="line" d={path} />
       <path className="head" d={arrowHeadPath(before, tip)} />
       <path className="hit" d={path} />
-      {label && (
-        <g className="edge-label">
-          <rect x={label.x} y={label.y} width={label.width} height={label.height} rx={4} />
-          <text x={label.x + label.width / 2} y={label.y + label.height / 2 + 4}>
-            {label.text}
-          </text>
-        </g>
-      )}
     </g>
   );
 });
+
+/**
+ * The labels of a level's edges, drawn after all of its lines: a line never runs over a label (not even the
+ * selected edge's line). A label takes its edge's classes (colour, quiet, selected) and its click; a quiet
+ * label shows while its edge is hovered (`Hovered`) or the label itself is.
+ */
+function EdgeLabels({ edges, marks }: { edges: readonly LayoutEdge[]; marks: Marks }) {
+  if (!edges.some((edge) => edge.label)) return null;
+  return (
+    <g className="edge-labels">
+      {edges.map((edge) =>
+        edge.label ? <EdgeLabel key={edge.id} edge={edge} marks={marks} /> : null,
+      )}
+    </g>
+  );
+}
+
+function EdgeLabel({ edge, marks }: { edge: LayoutEdge; marks: Marks }) {
+  const store = useStore();
+  const still = useContext(Still);
+  const hovered = useContext(Hovered) === edge.id;
+  const label = edge.label!;
+  return (
+    <g
+      className={edgeClasses(edge, marks, useContext(Reader)) + (hovered ? " is-hover" : "")}
+      aria-hidden="true"
+      onClick={(event) => {
+        event.stopPropagation();
+        if (!still) store.click(edge.id, additive(event));
+      }}
+    >
+      <g className="edge-label">
+        <rect x={label.x} y={label.y} width={label.width} height={label.height} rx={4} />
+        <text x={label.x + label.width / 2} y={label.y + label.height / 2 + 4}>
+          {label.text}
+        </text>
+      </g>
+    </g>
+  );
+}

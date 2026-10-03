@@ -12,7 +12,7 @@ import { indexedFixture, invoke, readJson, xpl } from "./helpers.js";
 const here = dirname(fileURLToPath(import.meta.url));
 const SKILL = resolve(here, "..", "..", "..", "skill", "code-explainer");
 const PATCH_FORMAT = join(SKILL, "reference", "patch-format.md");
-const PATCH_KEYS = ["title", "nodes", "edges", "concepts", "views", "tours", "remove"];
+const PATCH_KEYS = ["title", "scope", "nodes", "edges", "concepts", "views", "tours", "remove"];
 
 /** The fenced blocks whose info string starts with `json`, with the info string and their line in the file. */
 function jsonBlocks(markdown: string): { line: number; info: string; text: string }[] {

@@ -6,7 +6,14 @@ import { describe, expect, it } from "vitest";
 import { ExplainerModel, processFlow, type SequenceView, type TourStep } from "@xpl/core";
 import { placedStages } from "../src/layout/flowLayout.js";
 import { readerBadge, roleWords } from "../src/readerWords.js";
-import { MAX_SENTENCE_TITLE, noteParts, stepText, stepTitle } from "../src/stepTitle.js";
+import {
+  MAX_SENTENCE_TITLE,
+  noteParts,
+  SHORT_TITLE,
+  shortTitle,
+  stepText,
+  stepTitle,
+} from "../src/stepTitle.js";
 import { makeBundle } from "./world.js";
 
 const model = () => {
@@ -69,22 +76,34 @@ describe("step titles", () => {
     );
   });
 
-  it("a first sentence over the limit is no title: then the first focused element names the step", () => {
+  it("a first sentence over the limit: the title is that sentence cut short, never a focused code label", () => {
     const long = `${"word ".repeat(20).trim()}. Short.`;
     expect(long.indexOf(".")).toBeGreaterThan(MAX_SENTENCE_TITLE);
     expect(noteParts(long)).toEqual({ body: long });
     const m = model();
-    // the label of the first focused element, never "A · B" joins of two labels
-    expect(stepTitle(step(long, ["grp:core", "concept:retry"]), m)).toBe("Core");
+    // cut at a word boundary, at most SHORT_TITLE characters, then "…"
+    const cut = `${"word ".repeat(12).trim()}…`;
+    expect(cut.length - 1).toBeLessThanOrEqual(SHORT_TITLE);
+    expect(stepTitle(step(long, ["grp:core", "concept:retry"]), m)).toBe(cut);
     expect(stepText(step(long, ["grp:core", "concept:retry"]), m)).toEqual({
-      title: "Core",
+      title: cut,
       body: long,
     });
-    // a list or a code block does not open with a title
+    // a focused symbol never names the step (its label is a code signature)
+    const sentence =
+      "When the queue is empty for longer than the idle timeout, the worker pool shuts down the spare workers.";
+    expect(stepTitle(step(sentence, ["sym:src/queue.ts#Queue.dispatch"]), m)).toBe(
+      "When the queue is empty for longer than the idle timeout…",
+    );
+    expect(shortTitle(sentence)!.length).toBeLessThanOrEqual(SHORT_TITLE + 1);
+    // a list opens with no title sentence: its first item, cut the same way
     expect(noteParts("- one\n- two").title).toBeUndefined();
-    // no note, no focus: the view's title
-    expect(stepTitle(step(undefined, []), m)).toBe("Overview");
-    expect(stepText(step("   ", []), m)).toEqual({ title: "Overview" });
+    expect(stepTitle(step("- one\n- two"), m)).toBe("one");
+    // a code block or no note: "Step N", the step's place in its tour
+    const first = m.tours[0]!.steps[0]!;
+    expect(stepTitle({ ...first, note: undefined }, m)).toBe("Step 1");
+    expect(stepTitle({ ...first, note: "```\ncode\n```" }, m)).toBe("Step 1");
+    expect(stepText(step("   ", []), m)).toEqual({ title: "Step" });
   });
 });
 

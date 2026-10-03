@@ -614,7 +614,7 @@ describe("test files", () => {
 });
 
 describe("properties of the references", () => {
-  it("are heuristic, never self-references, and their sites lie inside the file", async () => {
+  it("are heuristic, self-references only for recursion, and their sites lie inside the file", async () => {
     const { index } = await indexFiles({
       "a.go": src(
         "package p",
@@ -627,13 +627,14 @@ describe("properties of the references", () => {
     expect(index.refs.length).toBeGreaterThan(0);
     for (const ref of index.refs) {
       expect(ref.resolution).toBe("heuristic");
-      expect(ref.from).not.toBe(ref.to);
+      if (ref.from === ref.to) expect(ref.kind).toBe("call");
       expect(ref.site.startLine).toBeGreaterThanOrEqual(1);
       expect(ref.site.endLine).toBeLessThanOrEqual(5);
     }
-    // recursion is not a reference
-    expect(hasRef(index, "a.go#F", "a.go#F")).toBe(false);
-    expect(hasRef(index, "a.go#T.Rec", "a.go#T.Rec")).toBe(false);
+    // recursion is a call of the symbol from inside itself (a receiver method too: chi's xn.findRoute)
+    expect(hasRef(index, "a.go#F", "a.go#F", "call")).toBe(true);
+    expect(hasRef(index, "a.go#T.Rec", "a.go#T.Rec", "call")).toBe(true);
+    expect(hasRef(index, "a.go#T.Rec", "a.go#T.Rec", "read")).toBe(false);
     expect(hasRef(index, "a.go#F", "a.go#G", "call")).toBe(true);
   });
 

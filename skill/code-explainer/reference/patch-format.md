@@ -7,6 +7,7 @@ A draft (`xpl draft`) is a patch in this format: start from it, and use these te
 ```json
 {
   "title": "…",
+  "scope": { "audience": "…" },
   "nodes": [],
   "edges": [],
   "concepts": [],
@@ -284,6 +285,7 @@ Edit `include` without resending it with `includeAdd` (ids to append; those alre
         "**/test/**",
         "**/tests/**",
         "**/*.test.*",
+        "**/test-d/**",
         "**/test_*.py",
         "**/examples/**",
         "docs/**"
@@ -308,6 +310,8 @@ Keep a graph view readable: `"none"` for no stubs at all (every graph view a tou
 Use `type: "flow"` when the point is what the code decides: stages, conditions, and where each path ends. It takes the same fields as a sequence view (3.8): `title`, `participants`, `steps`, `scope`, anchors. Each step may add `shape` (`"stage"`, `"decision"` or `"terminal"`) and `next: [{"step": "<id>", "label": "<when>"}]`. Without `next`, a step goes on to the next step in the list, unless it is a `terminal`; `next: []` ends a path. Every `next` target must be a step of the same view. Model each branch and loop explicitly, and anchor the condition that decides it. A stage or decision inside one function uses that function's participant as both `from` and `to`, with `kind: "call"`; the box shows the label, not the two ends. `shape` and `next` are also accepted by `stepsUpdate` (`null` clears them).
 
 The box shows the `label` in large type, so a flow label names a stage (`writing.md`, section 3), and the call goes in the anchors. A `decision` label is a short question ("Did the attempt succeed?"), and each `next` label says when that branch is taken ("yes", "attempts left").
+
+**Participants need a summary.** Each participant counts as unexplained (`xpl status`) until its node has a `summary`: put an overlay (3.2) for every participant in the same patch as the view.
 
 ```json patch
 {
@@ -432,7 +436,7 @@ A sequence view also appears in the reader's Process flow tab, as an ordered lis
 
 ### 3.8 Sequence view (steps, frames)
 
-Required: `type: "sequence"`, `title`, `participants` (lifelines, left to right), `steps`. Every step needs `id` (`<view-slug>:<n>`), `from`, `to` (both must be participants), `label` (the call text, as written in the code), `kind` (`call` solid arrow, `return` dashed back to the caller, `async` open head), and should have `summary` and anchors: the exact call in the caller (`call-site`) plus the callee's definition. `edge` links a step to the edge it instantiates. A step's `from` may equal `to` (self-call). Frames (`loop`, `alt`, `opt`, `par`) wrap the run `fromStep`..`toStep` (inclusive); nest them or keep them apart (a partial overlap draws a warning). Keep a sequence view to 6 participants at most: a flow with more is two or three views (one per phase or per collaborator group), each readable on its own.
+Required: `type: "sequence"`, `title`, `participants` (lifelines, left to right), `steps`. Every step needs `id` (`<view-slug>:<n>`), `from`, `to` (both must be participants), `label` (the call text, as written in the code), `kind` (`call` solid arrow, `return` dashed back to the caller, `async` open head), and should have `summary` and anchors: the exact call in the caller (`call-site`) plus the callee's definition. `edge` links a step to the edge it instantiates. A step's `from` may equal `to` (self-call). Frames (`loop`, `alt`, `opt`, `par`) wrap the run `fromStep`..`toStep` (inclusive); nest them or keep them apart (a partial overlap draws a warning). Keep a sequence view to 6 participants at most: a flow with more is two or three views (one per phase or per collaborator group), each readable on its own. **Participants need a summary:** each counts as unexplained (`xpl status`) until its node has one, so put an overlay (3.2) for every participant in the same patch as the view.
 
 ```json patch
 {
@@ -811,9 +815,9 @@ A box for something outside the repo is a group with a `role` and **no `members`
 
 On the system map the service is one box, so the arrows of its parts are drawn there as one arrow per outside box (with the anchors of all; when their labels differ the arrow shows none). Write a tour that goes down a level at a time: a step on the system map, then the inside, then the code (SKILL.md, "explain repo"). Keep 3-7 boxes on a system map. The parts on the map of a service's inside are its `component`s (`xpl draft repo` sets the role): with the role icons, the reader always sees which level a map is at (system, service, component, then code). Boxes on maps of code need no role: the viewer shows their kind (folder, file, class, function) with an icon of its own.
 
-### 3.11 `title` and `remove`
+### 3.11 `title`, `scope` and `remove`
 
-`"title"` renames the explainer. `"remove"` deletes elements, views, tours and steps by id; an unknown id is a warning, not an error. Removing what something else points at (a step a frame or tour uses, a group a view includes, a concept a tour focuses) is rejected until the same patch fixes the pointer. An `llm` patch cannot remove what the user owns: an element, view or tour with `origin: "user"` or with any `userFields` (they edited part of it), nor a single step of a view whose `steps` they edited; those ids are skipped with a `protected` warning.
+`"title"` renames the explainer. `"scope": {"audience": "…"}` is one short line (at most 120 characters) that the viewer shows under the title: who the page is for and how deep it goes, such as `"Overview, for anyone new to ky"` or `"Deep dive, for engineers working on chi's router"`. `{"audience": null}` or `"scope": null` removes it. `"remove"` deletes elements, views, tours and steps by id; an unknown id is a warning, not an error. Removing what something else points at (a step a frame or tour uses, a group a view includes, a concept a tour focuses) is rejected until the same patch fixes the pointer. An `llm` patch cannot remove what the user owns: an element, view or tour with `origin: "user"` or with any `userFields` (they edited part of it), nor a single step of a view whose `steps` they edited; those ids are skipped with a `protected` warning.
 
 ## 4. Merge semantics
 

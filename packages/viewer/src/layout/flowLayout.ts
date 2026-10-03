@@ -17,6 +17,9 @@ export interface FlowLayout {
   children: { id: string; x: number; y: number; width: number; height: number }[];
   edges: {
     id: string;
+    /** The stages the transition joins. */
+    from: string;
+    to: string;
     sections: { startPoint: Point; bendPoints: Point[]; endPoint: Point }[];
     labels: { text: string; x: number; y: number; width: number; height: number }[];
   }[];
@@ -132,6 +135,8 @@ export async function layoutFlow(flow: ProcessFlow): Promise<FlowLayout> {
       const label = labels.get(edge.id);
       return {
         id: edge.id,
+        from: edge.from,
+        to: edge.to,
         sections: [
           {
             startPoint: points[0]!,

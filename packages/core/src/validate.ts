@@ -118,6 +118,9 @@ const NODE_KIND_OF: Partial<Record<ParsedId["type"], Node["kind"]>> = {
 };
 
 /** Validates an explainer against the index and the current file text. See the file header. */
+/** The longest `scope.audience` that still reads as one line under the title. */
+export const AUDIENCE_MAX = 120;
+
 export function validateExplainer(
   explainer: Explainer,
   index: SymbolIndex | IndexModel,
@@ -212,6 +215,24 @@ class Validator {
 
   // ─── Driver ─────────────────────────────────────────────────────────────────────────────────
 
+  /** The explainer's `scope`: an optional one-line `audience`. */
+  private checkExplainerScope(scope: unknown): void {
+    if (!isRecord(scope) || Object.keys(scope).some((key) => key !== "audience")) {
+      this.error("scope", "scope must be {audience?: string}");
+      return;
+    }
+    const audience = scope.audience;
+    if (audience === undefined) return;
+    if (typeof audience !== "string" || audience.trim() === "") {
+      this.error("scope.audience", "audience must be a non-empty string");
+    } else if (audience.length > AUDIENCE_MAX || audience.includes("\n")) {
+      this.warn(
+        "scope.audience",
+        `audience should be one short line (at most ${AUDIENCE_MAX} characters, got ${audience.length})`,
+      );
+    }
+  }
+
   run(): void {
     const ex = this.ex;
     if (!isRecord(ex)) {
@@ -226,6 +247,7 @@ class Validator {
     }
     if (typeof ex.title !== "string" || ex.title === "")
       this.warn("title", "title should be a non-empty string");
+    if (ex.scope !== undefined) this.checkExplainerScope(ex.scope);
     if (
       !isRecord(ex.repo) ||
       typeof ex.repo.name !== "string" ||

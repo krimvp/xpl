@@ -117,6 +117,8 @@ const baseTheme = EditorView.theme({
   },
   ".cm-content": { caretColor: "var(--code-fg)", padding: "6px 0" },
   ".cm-line": { padding: "0 12px 0 8px" },
+  // (a wrapped line's indentation with its first character: see `hangingIndent`)
+  ".xpl-indent": { whiteSpace: "pre" },
   ".cm-gutters": {
     backgroundColor: "var(--code-gutter-bg)",
     color: "var(--code-gutter-fg)",
@@ -730,6 +732,8 @@ export function indentColumns(text: string): number {
  * plus two columns, not at the left edge (a hanging indent, drawn with `text-indent` and `padding-left`).
  * Only the lines in view are decorated.
  */
+const keepIndent = Decoration.mark({ class: "xpl-indent" });
+
 const hangingIndent = ViewPlugin.fromClass(
   class {
     decorations: DecorationSet;
@@ -752,6 +756,11 @@ const hangingIndent = ViewPlugin.fromClass(
               },
             }).range(line.from),
           );
+          // The indentation and the first character stay together: a long first word wraps (or breaks)
+          // after them, never leaving the first row empty.
+          const indent = line.text.length - line.text.trimStart().length;
+          if (indent > 0 && indent < line.text.length)
+            items.push(keepIndent.range(line.from, line.from + indent + 1));
           pos = line.to + 1;
         }
       }

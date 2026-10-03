@@ -410,7 +410,8 @@ a variable, and the attribute below it is out of reach). An import binding marke
 `type-ref` reference instead of an `import`.
 
 Receivers whose type is known but outside the repository (`Map`, `Promise`, a bare npm import) are opaque:
-nothing is guessed. Unresolved sites and self-references are dropped. Module resolution (`resolveModule`):
+nothing is guessed. Unresolved sites and self-references are dropped, except a call of a symbol from inside itself:
+recursion is a `call` reference with `from === to`. Module resolution (`resolveModule`):
 TS relative specifiers with extension and `index` probing (`.js` → `.ts`), `tsconfig`/`jsconfig` `paths` and
 `baseUrl` (with relative `extends`), workspace packages by `package.json` name (entry through `exports`/
 `types`/`module`/`main`, build output mapped back to source) and `imports`; Python dotted and relative
@@ -453,8 +454,9 @@ into a `write`. When the pack does not classify an occurrence: a quoted module s
 module scope (dropped when the same statement imports names), role Import → `import`, WriteAccess → `write`, a
 type-like symbol → `type-ref`; anything else, declarations included, is dropped. Also dropped: references to
 definitions nested in something that is not one of our symbols (parameters, local variables, instance
-attributes), occurrences that do not fit the file text (a warning counts them), self-references. `local N`
-symbols follow the same rules, so calls to functions nested in functions stay. SCIP `is_implementation`
+attributes), occurrences that do not fit the file text (a warning counts them), self-references other than a call
+(recursion stays a `call`). `local N` symbols follow the same rules, so calls to functions nested in functions
+stay. SCIP `is_implementation`
 relationships become `implements` references (Go interfaces are satisfied implicitly, so this is where precise
 Go gets them), unless an occurrence already said `extends`/`implements` or the member merely overrides a
 base-class member. SCIP ranges (0-based, end-exclusive, in the document's encoding: UTF-16 for scip-typescript
@@ -790,7 +792,7 @@ stdout (a rejection exits 1); fatal errors (`error: …`) and warnings (`warning
 | `xpl anchors <explainer> [id...] [--full] [--max-lines n]` | each anchor of an element (or of every element) resolved now: role, `file#symbol +span`, status, lines, and the code at them with offsets (a long anchor: its first lines, an elision line, its last lines); a base anchor prints as `<file>@base +a..b … [before the change]` with the base code; `tour:<id>` (or `tour:<id>/<step>`) also shows what a step without `code` derives from its `focus`, marked derived; verifies spans without reading JSON |
 | `xpl resolve <explainer> [--write] [--allow-stale]` | §4.2 re-resolve against the index of the current code; report drifted llm elements, missing anchors; `--write` saves |
 | `xpl status <explainer>` | the skill's to-do list, read-only: per view the shown nodes, stored edges and steps without a summary (static edges optional), concepts without one, drift (user-owned drift counted apart), missing anchors, broken references (ids gone from the index), stale derived-edge overlays, queued requests; per graph view the ghosts and stubs it draws (counts, the most referenced ghost ids, and for each folded ghost up to 3 of the elements it stands for with their counts; `--json`: every ghost with its count and all its `targets` (`{id, count}`), and every stub id, in `views[].ghosts`) with a warning above 12 ghosts; the tours (id, step count, steps whose focus ids or view are gone) |
-| `xpl lint <explainer> [--patch <file\|->] [--strict]` | checks the text a reader sees (no index needed): rules below; `--patch` lints the explainer as it would be after `xpl apply` of that patch (merged in memory as actor `llm`, nothing written; a patch apply would reject prints the rejection and exits 1); exit 0 with findings, 1 with `--strict` and any finding |
+| `xpl lint <explainer> [--patch <file\|->] [--warn-only]` | checks the text a reader sees (the index, when there is one, counts the boxes and arrows of maps): rules below; `--patch` lints the explainer as it would be after `xpl apply` of that patch (merged in memory as actor `llm`, nothing written; a patch apply would reject prints the rejection and exits 1); exit 1 with any finding (so `lint --patch && apply` stops on one), 0 with `--warn-only` unless a `todo-left` error |
 | `xpl change <explainer> [<base>..<head>]` | records the change from git in the explainer and prints its analysis (§4.8; below); without a range, prints the analysis of the change already recorded |
 | `xpl draft change\|repo\|path <explainer> [<entry id>] [-o file]` | prints a patch skeleton built from the index (and the change record) with no LLM, `TODO:` in every text to write (below); the summary goes to stderr |
 | `xpl view <explainer> [--port p] [--host h] [--no-open]` | local server (below) |
@@ -799,7 +801,7 @@ stdout (a rejection exits 1); fatal errors (`error: …`) and warnings (`warning
 **Exit codes.** 0 ok (warnings allowed); 1 rejected or failed: unknown id, no index, a rejected patch, a patch
 that changed nothing because the user owns everything it touched, validation errors, `resolve --write` on a
 stale index, port in use, `xpl change` without git or with a head that is not the index commit, `xpl draft
-change` without a change record, `xpl lint --strict` with findings; 2 usage error. **Environment:**
+change` without a change record, `xpl lint` with findings; 2 usage error. **Environment:**
 `XPL_VIEWER_HTML` (viewer page for `view` and `bundle`), `XPL_SKIP_STALE_CHECK=1`, `XPL_WASM_DIR`,
 `XPL_SCIP_TIMEOUT_MS`, `XPL_DEBUG=1` (stack traces), `XPL_CLI` (the skill launcher: an `xpl.mjs` to run).
 
@@ -868,13 +870,13 @@ file; `--json` adds the counts and what was left out.
 A draft gives structure, not understanding: the concepts, flows, `llm` edges and base anchors that explain
 why the code is as it is are left to Claude.
 
-**`xpl lint`** reads only the explainer and checks the text a reader sees, against the skill's writing rules
+**`xpl lint`** reads the explainer (and the index when there is one, for map counts) and checks the text a reader sees, against the skill's writing rules
 (`reference/writing.md`). Code spans are left out of the word checks. Each finding names the element, the
 field, a short quote and a fix. Rules (thresholds and word lists live in `LINT_LIMITS`, `FILLER_WORDS`,
 `ABSOLUTE_WORDS` in `packages/cli/src/lint.ts`):
 
-- `todo-left`: a `TODO` left in reader text or a view's question; the one error-level finding (still exit 0
-  without `--strict`).
+- `todo-left`: a `TODO` left in reader text or a view's question; the one error-level finding (exit 1 even
+  with `--warn-only`; any other finding exits 1 without it).
 - Tours: `tour-summary` (missing, or not 2-4 sentences), `tour-first-step` (the first step focuses a test, a
   concept that lights up nothing, or a flow when the tour has a map, or its title says "edge case"),
   `tour-covers-map` (a box of a used map of at most 10 boxes that no step focuses and no note names),
@@ -882,13 +884,18 @@ field, a short quote and a fix. Rules (thresholds and word lists live in `LINT_L
 - Titles: `code-title` (a title that looks like code), `placeholder-title` ("Fix 1", "Note", "Step 3").
 - Sentences: `long-sentence` (over 25 words), `long-average` (a field averaging over 20), `bare-it` ("It" or
   "This" and a verb), `filler-word`, `absolute-word` ("all", "never", "only" … that needs evidence; idioms
-  such as "at all" and narrowing uses such as "compares only the host part" do not count),
+  such as "at all" and narrowing uses such as "compares only the host part" do not count, nor a claim next to
+  its evidence: the text of an element with anchors, a note sentence that names a part the step shows),
   `repeats-summary` (a note sentence that repeats a focused element's summary), `long-note` (a note body over
   60 words), `code-heavy` (more different code spans than 3 in a note, 1 in a note on an architecture map, a
-  graph view with a box that has a `role`, or 2 in a tour summary). Neither judges text that still holds a
-  `TODO`.
+  graph view with a box that has a `role`, or 2 in a tour summary; example values such as `503` or `/admin/*`
+  do not count). Neither judges text that still holds a `TODO`. `tour-covers-map` matches names by word stems.
 - Form: `flow-label-code` (a flow stage label written as code), `markdown-in-plain` (markdown in a title or
   label), `markdown-in-summary` (a heading or link in a summary; inline markdown is fine there).
+- What readers will see: `untitled-step` (no note, or no heading and a first sentence too long for a title),
+  `change-not-shown` (changed files no step shows or names), `far-ranges` (two ranges of a step in one file
+  over 40 lines apart), `long-talk-note` (a talk note over Present's `LONG_NOTE`), `big-map` (over 8 boxes on
+  a map a tour shows), `crowded-map` (over 2 arrows per box, with the edge ids to hide; needs the index).
 
 `--patch <file|->` merges the patch in memory with core `applyPatch`, the call `xpl apply` makes, so the
 findings are those of the explainer after apply; nothing is written. `--json`: `{ ok, path, strict, checked,
@@ -1049,8 +1056,10 @@ in plain words ("defined here", "called here", "used here", "setting", "test"). 
 the breadcrumb, the Flow tab's step list, the tour panel and the Present caption. A note that starts with a
 heading line (`### Plain title`) takes that whole line as its title, and the body is the rest. Otherwise a
 first sentence of at most 80 characters is the title (a stop inside code, a number or after "e.g." does not
-end it). Otherwise the title is the label of the first focused element, else the title of the step's view.
-The title is never printed again in the body.
+end it). Otherwise the title is that first sentence cut at a word boundary to about 60 characters and "…",
+else (no note, or a note that opens with code) "Step N". Never the label of a focused element: that is often
+a code signature. The title is never printed again in the body (a cut title aside: the body keeps the whole
+note). `xpl lint` reports such a step (`untitled-step`).
 
 **Explore.** The header holds the view tabs (the tooltip of a tab is its title and question) and the Views
 menu. Left: the diagram (caption: title and question), below it the concept list and the details panel. Right:
@@ -1129,28 +1138,37 @@ its `editor` options (`dimOthers`, `hideFileTree`, `primary`), and shows a capti
 Guide) and the rest of its note. The counter and the progress bar are in the header. The diagram is
 read-only: no drill-in, expand or collapse, and ghosts are pictures. Framing rules:
 
-- Layout: the diagram over the caption on the left (40% of the width, at least 340 px; 57% for a flow step,
-  since a flow is tall and branches sideways), the code on the right, no file tree unless a step sets
-  `hideFileTree: false`.
+- Layout: the diagram over the caption on the left (40% of the width, at least 340 px; 52% for a tour with
+  a flow step, since a flow is tall and branches sideways: the split is chosen once per tour, so the slide does
+  not re-split between steps), the code on the right, no file tree unless a step sets `hideFileTree: false`.
 - A diagram never starts below a readable zoom: graphs and sequences at zoom 1 (`PRESENT_READABLE_ZOOM`, so
-  the smallest 12-unit text is 12 px or more); a flow at the zoom that shows its whole width, between 11 and
-  16 px text. A diagram too big for that starts on the step's focus, and a badge offers "Fit all". A flow is
+  the smallest 12-unit text is 12 px or more); a flow with its text at 16 px (`PRESENT_FLOW_MAX_ZOOM`), fitted
+  only when that shows all of it. A diagram too big for that starts on the step's focus, and a badge offers "Fit all". A flow is
   never fitted below 11 px text (`FLOW_READABLE_ZOOM`): too tall, it is fitted to its width and the wheel
   scrolls it (`data-fit="width"`; when even the width does not fit, Fit shows all of it anyway).
-- The caption grows with its text up to 62% of the window's height; a note over 280 characters is set a
-  little smaller; what still does not fit scrolls inside the caption, with a shadow at the bottom.
-- The code font grows with the screen (`clamp(14px, 4px + 0.45vw + 0.75vh, 22px)`: about 15 px at 1280×720,
-  17 px at 1440×900). Long lines wrap with a hanging indent (Present only). A pane is as tall as its focus,
+- The diagram keeps at least 200 px (45% of the left column on a very short screen); the caption gets the
+  rest. It has one height and one type size per tour (present/caption.ts): the tallest caption, measured
+  off-screen, at the largest of four sizes at which it fits (a tour with a note over 280 characters starts one
+  size down). Only at the smallest size does a caption scroll, with a shadow at the bottom. "Fit all" and the
+  zoom buttons stay hidden until the mouse moves.
+- Two places far apart in one file (more than about a pane apart, present/ranges.ts) get a pane each, the
+  step's first one on top, like two files. Read mode shows "‹ range 1 / 2 ›" in the pane header instead.
+- The code font grows with the screen (`clamp(15px, 4px + 0.45vw + 0.75vh, 22px)`: about 15 px at 1280×720,
+  17 px at 1440×900; 14 px in a code column under 420 px). Long lines wrap with a hanging indent (Present
+  only) that keeps the first row of a line from being empty. A pane is as tall as its focus,
   plus the removed lines of a change shown inside it, and scrolls so that removed lines just above the focus
   stay in sight.
 
 Keys: `→` `PageDown` `Space` next, `←` `PageUp` `Shift+Space` previous, `Home`/`End` first/last,
 `Esc` leaves Present (in Explore, `Esc` clears the selection); they win over the diagram, the editors and
 focused buttons, while text fields and menus keep their own keys. **A click during a talk is a detour:** the
-selection follows the click, the caption says "Exploring · Back to step n", and the next key applies the next
-step again. URL: `?mode=present&tour=<id>&step=<n>` (`n` counts from 1; `tour=intro` finds `tour:intro`;
+selection follows the click, the caption says "Exploring · Back to step n", the next `→` applies the next
+step, and `←` or `Esc` first return to step n. URL: `?mode=present&tour=<id>&step=<n>` (`n` counts from 1; `tour=intro` finds `tour:intro`;
 `?view=<id>` picks the starting view). The address bar follows the tour with `history.replaceState`, so a
-reload or a shared link lands on the same slide. A step past the end is clamped; an unknown tour falls back
+reload or a shared link lands on the same slide. A talk started on the page pushes one history entry: Back
+leaves the talk, and `Esc` goes back over that entry too, so the address always says what is on screen. A
+page that opens in a talk pushes an entry when it is left (`?mode=explore&tour=<id>&step=<n>`), so Back
+returns to the talk. A step past the end is clamped; an unknown tour falls back
 to the first one when the page opens in Present. `xpl bundle --tour` or `--mode present` sets the bundle's
 defaults, which the URL overrides. Exit (or `Esc`) goes back to where the talk was started from.
 

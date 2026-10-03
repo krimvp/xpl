@@ -1,12 +1,21 @@
-import { deriveGraph, ExplainerModel, type GraphView } from "@xpl/core";
+import {
+  deriveGraph,
+  ExplainerModel,
+  type DerivedEdge,
+  type DerivedGraph,
+  type GraphView,
+} from "@xpl/core";
 import { describe, expect, it } from "vitest";
 import {
   absoluteBoxes,
+  drawnEdges,
   fitScale,
   gridLayoutOf,
   layoutGraph,
   layoutGraphFitting,
+  spreadLabels,
   startAnchor,
+  startFocus,
   type LayoutEdge,
   type LayoutNode,
 } from "../src/layout/graphLayout.js";
@@ -369,5 +378,115 @@ describe("where a diagram too big to fit starts", () => {
     // nothing to go by: the top-left corner
     expect(startAnchor(layout, [], [])).toBeUndefined();
     expect(startAnchor(layout, ["concept:x"], ["file:src/gone.ts"])).toBeUndefined();
+  });
+
+  it("frames the selection with its neighbours: the boxes at the other end of its edges", async () => {
+    const { graph } = graphOf(NESTED);
+    const layout = await layoutGraph(graph);
+    const boxes = absoluteBoxes(layout.nodes);
+    const edge = layout.edges.find((e) => e.from === "file:src/a.ts" || e.to === "file:src/a.ts");
+    const focus = startFocus(layout, ["file:src/b.ts"], NESTED)!;
+    expect(focus.boxes).toEqual([boxes.get("file:src/b.ts")]);
+    if (edge) {
+      // an edge stands for the two boxes it joins
+      const ends = startFocus(layout, [edge.id], NESTED)!;
+      expect(ends.boxes).toEqual([boxes.get(edge.from), boxes.get(edge.to)]);
+    }
+    const all = layout.edges.concat(
+      layout.nodes.flatMap(function inner(n): LayoutEdge[] {
+        return [...n.edges, ...n.children.flatMap(inner)];
+      }),
+    );
+    const near = all
+      .filter((e) => e.from === "file:src/b.ts" || e.to === "file:src/b.ts")
+      .map((e) => (e.from === "file:src/b.ts" ? e.to : e.from));
+    expect(focus.neighbours).toEqual(
+      expect.arrayContaining([...new Set(near)].map((id) => boxes.get(id))),
+    );
+    // nothing selected: the first box of the include list, alone
+    expect(startFocus(layout, [], NESTED)).toEqual({ boxes: [boxes.get("file:src/a.ts")] });
+    expect(startFocus(layout, [], [])).toBeUndefined();
+  });
+});
+
+const derived = (over: Partial<DerivedEdge>): DerivedEdge => ({
+  id: "edge:x",
+  from: "a",
+  to: "b",
+  kind: "calls",
+  count: 1,
+  resolution: "precise",
+  stored: false,
+  anchors: [],
+  ...over,
+});
+
+describe("what a map draws", () => {
+  it("leaves out a derived edge an authored one already says, and merges the kinds of one pair", () => {
+    const edges = drawnEdges([
+      derived({ id: "edge:calls:a->b", count: 5 }),
+      derived({ id: "edge:references:a->b", kind: "references", count: 2 }),
+      derived({ id: "edge:calls:b->a", from: "b", to: "a", count: 1, resolution: "heuristic" }),
+      derived({ id: "edge:calls:a->c", to: "c", count: 3 }),
+      derived({ id: "edge:said", to: "c", resolution: "llm", stored: true, label: "asks c" }),
+    ]);
+    expect(edges.map((e) => [e.id, e.label])).toEqual([
+      ["edge:calls:a->b", "calls ×5 · references ×2"],
+      ["edge:calls:b->a", undefined],
+      ["edge:said", "asks c"],
+    ]);
+  });
+
+  it("draws an edge of a box to itself as a loop on its top-right corner, with its label", async () => {
+    const graph: DerivedGraph = {
+      nodes: [
+        { id: "a", label: "findRoute", kind: "symbol", container: false },
+        { id: "b", label: "other", kind: "symbol", container: false },
+      ],
+      edges: [
+        derived({ id: "edge:loop", to: "a", resolution: "llm", stored: true, label: "recurses" }),
+        derived({ id: "edge:ab" }),
+      ],
+      stubs: [],
+      ghosts: [],
+    };
+    for (const layout of [await layoutGraph(graph), gridLayoutOf(graph)]) {
+      const box = absoluteBoxes(layout.nodes).get("a")!;
+      const loop = layout.edges.find((e) => e.id === "edge:loop")!;
+      expect(loop.from).toBe("a");
+      expect(loop.to).toBe("a");
+      expect(loop.points.length).toBeGreaterThan(3);
+      // out of the top, back into the right side
+      expect(loop.points[0]!.y).toBeCloseTo(box.y, 5);
+      expect(loop.points.at(-1)!.x).toBeCloseTo(box.x + box.width, 5);
+      expect(Math.min(...loop.points.map((p) => p.y))).toBeLessThan(box.y);
+      expect(loop.label?.text).toBe("recurses");
+    }
+  });
+
+  it("spreads labels that would overlap, along their own lines", () => {
+    const label = (x: number, y: number) => ({ text: "calls ×5", x, y, width: 60, height: 18 });
+    const edges = [
+      {
+        points: [
+          { x: 0, y: 9 },
+          { x: 400, y: 9 },
+        ],
+        label: label(100, 0),
+      },
+      {
+        points: [
+          { x: 0, y: 12 },
+          { x: 400, y: 12 },
+        ],
+        label: label(120, 3),
+      },
+    ];
+    spreadLabels(edges);
+    const [a, b] = edges.map((e) => e.label);
+    const apart = a!.x + a!.width <= b!.x || b!.x + b!.width <= a!.x;
+    expect(apart).toBe(true);
+    // still on its line
+    expect(b!.y).toBe(3);
   });
 });

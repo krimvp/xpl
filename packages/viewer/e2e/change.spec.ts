@@ -482,6 +482,28 @@ test.describe("reading, presenting and leaving", () => {
     expect(problems).toEqual([]);
   });
 
+  test("Esc leaves a talk like Back does: afterwards the address and the screen agree; focus returns to Present", async ({
+    page,
+  }) => {
+    const problems = watchProblems(page);
+    await open(page);
+    await page.getByTestId("mode-present").click();
+    await expect(page.getByTestId("present")).toBeFocused();
+    // the code's scrolling areas can be reached with the keyboard, and say what they show
+    const scroller = page.locator(".present .cm-scroller").first();
+    await expect(scroller).toHaveAttribute("tabindex", "0");
+    await expect(scroller).toHaveAttribute("aria-label", /source code/);
+    await page.keyboard.press("ArrowRight");
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("present")).toHaveCount(0);
+    await expect(page.getByTestId("mode-present")).toBeFocused();
+    const state = await stateOf(page);
+    // the address names the step on screen (Esc went back over the talk's own entry)
+    await expect.poll(() => new URL(page.url()).searchParams.get("step")).toBe(String(state.step));
+    expect(new URL(page.url()).searchParams.get("view")).toBe(state.viewId);
+    expect(problems).toEqual([]);
+  });
+
   test("the guide's contents and the breadcrumb follow the section being read", async ({
     page,
   }) => {

@@ -668,7 +668,7 @@ class Mapper {
         continue;
       }
       const from = this.lookup.fromId(view.path, span.startLine, span.startCol);
-      if (from === target.id) continue;
+      // an occurrence of a symbol inside itself: only a call counts (recursion), decided once it is classified
       candidates.push({ span, from, target, roles: occ.symbolRoles });
     }
     if (candidates.length === 0) return;
@@ -766,7 +766,7 @@ class Mapper {
         );
         if (namesImports) continue;
       }
-      if (ref.from !== ref.to) this.add(ref);
+      if (ref.from !== ref.to || ref.kind === "call") this.add(ref);
     }
   }
 

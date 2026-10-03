@@ -11,12 +11,14 @@ The reader sees the tour title and its **summary** first, then the steps (a titl
 
 ## Workflow
 
+`reference/quick.md` is this workflow, the rules and the lint checks on one page.
+
 1. `xpl index`, `xpl new <name>` (Setup).
 2. Choose the scope, and say it in the reply.
 3. A change only: `xpl change <name> <base>..<head>` records it and prints its analysis.
 4. `xpl draft change|repo|path <name> [<entry id>] -o <file>`.
-5. Read the code. Write every `TODO`, fix the structure where the code shows the draft is wrong, add what the tour needs.
-6. `xpl lint <name> --patch <file>`, fix, then `xpl apply <name> <file>`.
+5. Read the code. Write every `TODO`, fix the structure where the code shows the draft is wrong, add what the tour needs. Every flow and sequence participant needs a `summary` (an overlay in the same patch).
+6. `xpl lint <name> --patch <file> && xpl apply <name> <file>`: lint exits 1 on any finding, so a flawed patch is not applied.
 7. `xpl validate`, `xpl status`, `xpl anchors <name> tour:<slug>`.
 8. The accuracy pass, `xpl lint`, a newcomer's re-read.
 9. `xpl bundle`, then the reply.
@@ -33,7 +35,7 @@ The reader sees the tour title and its **summary** first, then the steps (a titl
 
 1. **The CLI** is `bin/xpl` in this skill's directory (else `ls -d ~/.claude/skills/code-explainer .claude/skills/code-explainer`). Below, `xpl` means that path, written in full. Run it from the repo root, or pass `--root <dir>`. If it says "the CLI is not built", tell the user to run `npm install && npm run build` in the xpl repo.
 2. **Index:** `xpl index`. Run it again when the code changed or a command warns that the index `does not match the working tree`. A language with `refs: heuristic` has hints, not facts: confirm each call with `show`. `--precise off` is fast, for a big repo.
-3. **Name it:** `xpl new <name> --title "..."` unless the explainer exists. One explainer per repo (the repo name, kebab-case); a new question adds views and a tour to it. A change gets its own explainer, titled after it: `xpl new <repo>-pr-42 --title "PR 42: <what it does>"`.
+3. **Name it:** `xpl new <name> --title "..."` unless the explainer exists. One explainer per repo (the repo name, kebab-case); a new question adds views and a tour to it. A change gets its own explainer, titled after it: `xpl new <repo>-pr-42 --title "PR 42: <what it does>"`. Say who the page is for, fit to its level, in one short line: `"scope": {"audience": "Overview, for anyone new to ky"}` (a repo), `"Deep dive, for engineers working on the router"` (an algorithm), `"For reviewers of this change, and anyone who uses the option"` (a change); the viewer shows it under the title (patch-format.md 3.11).
 4. **Patch files** go outside the repo (the scratchpad or `$TMPDIR`).
 
 ## Choose the scope
@@ -70,7 +72,7 @@ Where the index shows less than runs:
 ## explain <question>: part of a project
 
 1. **Entry point:** `search -i` the nouns and verbs of the question; `outline --depth 2`. Pick the function where the flow starts or the decision is made.
-2. **Draft:** `xpl draft path <name> <entry id> -o q.json`: a sequence of the entry's direct calls in source order, and one tour step per main call.
+2. **Draft:** `xpl draft path <name> <entry id> -o q.json`: a sequence of the entry's direct calls in source order, and one tour step per main call. A question with two halves (make a token, then check it): give both entries, `xpl draft path <name> <entry> <entry2>`, for one tour through two sequences. A method the class inherits works too (`sym:a.py#Child.run`).
 3. **Trace:** `show <entry> --refs`, then the callees that matter. Note every guard on the path (`if`, early `return`, type checks).
 4. **Shape:** the draft sees one level of calls. Drop the calls that do not matter. Add a map when the answer spans several files, and start the tour on it: the parts involved as plain boxes, with the outside systems they touch (a database, an API) as role boxes, so the reader sees where the answer sits before the calls. Add a flow when the point is a decision, a second process view when the question has two halves, concepts for ideas that cross files.
 5. **Boundary:** anchor the target code, its direct callers, the callees that change the answer, and the tests that pin the behaviour.
@@ -87,7 +89,7 @@ Three levels, each a zoom into a box of the one above (`opens`):
 | 3. Code (lazy) | the main path through a part: a sequence or a flow                                 | on `expand`                                          |
 
 1. **What it is:** the README and package metadata (`xpl show file:README.md`, `outline --keys` on `pyproject.toml`, `package.json`, `go.mod`): language, kind, purpose.
-2. **Draft:** `xpl draft repo <name> -o repo.json`: the system map (`view:system`), a map of the inside of each service, edges from each part to the outside systems it imports, and a tour from the top. The first step on the inside lists the files left off the map.
+2. **Draft:** `xpl draft repo <name> -o repo.json`: the system map (`view:system`), a map of the inside of each service, edges from each part to the outside systems it imports, and a tour from the top. The first step on the inside lists the files left off the map, by name, in one sentence.
 3. **Outside systems:** the draft finds them from import lines; each is a hint. Read the code that builds the client or reads its address: name the real system ("Orders database", not "SQL database"), merge two boxes for one system, drop a library that is only imported, and add what the imports miss (a service called through plain HTTP: `search` for its URL or config key). Each arrow gets a 1-4 word label: what passes ("stores orders", "charges cards").
 4. **Parts:** make each box one responsibility, with a label a manager understands ("Payments", not `pay_svc`). Merge folders into a group (`grp:<slug>` with `members`) where one responsibility spans several; split a box that holds two. Each box gets a one-line summary of what it is for.
 5. **Main path:** when there is an obvious entry point (`main`, `cmd/`, a server), run `xpl draft path` on it, and let its part `opens` the sequence. Copy its view, its nodes and the tour steps you keep into the repo patch, with the next free step ids.
@@ -126,26 +128,26 @@ The viewer shows each claim next to its code, so a wrong claim looks checked. Ch
 
 - **Only what the anchored code shows.** Delete what a callee does elsewhere, paths you did not read, and why the author chose it. What you cannot check, leave out and name in the reply.
 - **Guard conditions:** when the anchored lines run only under a condition, name it ("when `metrics.enabled` is true") and anchor it.
-- **Absolute words** (all, every, never, only, "the same everywhere") need proof in the anchored code. "Every caller" needs `refs --in` and an anchor for each site. Otherwise name the sites or narrow the claim.
+- **Absolute words** (all, every, never, only, "the same everywhere") need proof in the anchored code. "Every caller" needs `refs --in` and an anchor for each site. Otherwise name the sites or narrow the claim. Say a proved claim next to its evidence: on the element whose anchors show it, or in a note sentence that names the part the step shows.
 - **Lists** read as complete: check that they are, or write "for example".
 - **Code, not folklore:** "stops waiting after the timeout", not "kills the job", when the code only races a timer.
 - **Changes:** "before" claims and test claims follow `reference/explain-change.md` sections 4 and 6.
 
 ## Apply and check
 
-1. `xpl lint <name> --patch <file>` lints the explainer as it would be after the patch and writes nothing; a patch that `apply` would reject prints the rejection. Fix the patch, then apply it once.
+1. `xpl lint <name> --patch <file>` lints the explainer as it would be after the patch and writes nothing; a patch that `apply` would reject prints the rejection. It exits 1 on any finding: fix the patch, then apply it once. To keep a finding on purpose, run it with `--warn-only` and say why in the reply.
 2. `xpl apply <name> <file>`. A rejection writes nothing and lists every error, with `Did you mean` and ready-to-use anchor fields. Fix a `probably off by one` warning now. Never weaken a claim to pass: what you cannot anchor you cannot claim. A `protected` warning means the user's edits were kept (`patch-format.md` section 5).
 3. `xpl validate <name>`; `xpl status <name>` until `0 unexplained`; `xpl anchors <name> tour:<slug>` shows the code of each step.
 
 ## Check before you show it
 
 1. **Accuracy pass** (a change): if you can start a fresh subagent, give it the `xpl` path, the repo, the explainer name and path, and the range. Ask it to check each title, summary, note and detail against its anchors (`xpl anchors <name>`), each "before" claim against the base (`xpl show --at base <path>`, `git show <base>:<path>`), and what each cited test asserts. It rates each claim correct, imprecise, overstated, unanchored or wrong, quotes the lines, and changes no file. Without a subagent, do a second, separate pass yourself, one claim at a time. Fix what the pass finds.
-2. `xpl lint <name>`: `todo-left` must be zero before you bundle. Fix the other findings, or say in the reply why you kept one.
+2. `xpl lint <name>`: `todo-left` must be zero before you bundle. Fix the other findings, including what the reader will see (`untitled-step`, `far-ranges`, `big-map`, `crowded-map`), or say in the reply why you kept one.
 3. Re-read the tour in order as a newcomer, with the checklist in `reference/writing.md` section 7.
 
 ## Show the result
 
-- `xpl bundle <name> -o <name>.html --files boundary`: one self-contained HTML file that works offline; for a change it shows the diff, the code before, New and Changed badges and the file list. It is **the default in remote or cloud sessions**: give the user the path. Attach or publish it only when asked: it holds their source code. `--tour tour:<slug>` opens the tour as a presentation.
+- `xpl bundle <name> -o <name>.html`: one self-contained HTML file that works offline; for a change it shows the diff, the code before, New and Changed badges and the file list. It embeds the files the explainer refers to (`--files referenced`, the default); add `--files boundary` for a change or a subsystem, so the callers, callees and tests come along. A bundle is **what you give the user in remote or cloud sessions**: give them the path. Attach or publish it only when asked: it holds their source code. `--tour tour:<slug>` opens the tour as a presentation.
 - `xpl view <name>`: a local server for a user at the machine who keeps iterating; run it in the background.
 - **The reply:** first the answer in 3-6 sentences (for a change: the behaviour change, then the risk). Then one line each: the scope and any assumption; for a change, the changed files with `+/-` counts; what you checked by running code; what you left out or could not check; the bundle path and what it embeds. Say that `.explainer/` was written into the repo. Do not retell the tour.
 
@@ -178,7 +180,7 @@ What the user typed under "Explain this" in `xpl view`: the queued requests with
 
 ## make tour
 
-A talk built from existing views, by the rules of "The tour". Default: the newest question's views plus the overview; ask when there are several. Check with `xpl anchors <name> tour:<slug>`, then `xpl bundle <name> -o talk.html --tour tour:<slug>`.
+A talk built from existing views, by the rules of "The tour". Default: the newest question's views plus the overview; ask when there are several. Use a slug with `talk` (`tour:talk-retries`), so `xpl lint` keeps each note short enough for Present (`long-talk-note`). Check with `xpl anchors <name> tour:<slug>`, then `xpl bundle <name> -o talk.html --tour tour:<slug>`.
 
 ## After the code changed
 
@@ -198,6 +200,7 @@ A talk built from existing views, by the rules of "The tour". Default: the newes
 
 ## Reference
 
+- `reference/quick.md`: the one-page quick reference.
 - `reference/writing.md`: the writing rules and the checklist.
 - `reference/explain-change.md`: the guide for a PR, MR or branch.
 - `reference/patch-format.md`: a template per element, merge rules, provenance, rejections, repair.

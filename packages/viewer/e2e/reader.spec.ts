@@ -194,8 +194,52 @@ test.describe("bugs of the review", () => {
       },
       "?mode=present&tour=tour:intro&step=2",
     );
+    // The two places are far apart: each has a pane of its own, the step's first one on top.
+    const panes = page.locator('.pane[data-file="src/runner.ts"]');
+    await expect(panes).toHaveCount(2);
+    await expect(panes.nth(0).locator('.cm-line[data-line="76"]')).toBeInViewport();
+    await expect(panes.nth(1).locator('.cm-line[data-line="46"]')).toBeInViewport();
+    await expect(panes.nth(0).getByTestId("pane-ranges")).toHaveText("range 1 / 2");
+    await expect(panes.nth(1).getByTestId("pane-ranges")).toHaveText("range 2 / 2");
+    expect(problems).toEqual([]);
+  });
+
+  test("Read: two places far apart in one file get a ‹ range 1 / 2 › stepper in the pane header (and n / p)", async ({
+    page,
+  }) => {
+    const problems = watchProblems(page);
+    await openVariant(
+      page,
+      (bundle) => {
+        bundle.explainer.tours[0].steps[1].code = [
+          {
+            file: "src/runner.ts",
+            symbol: "Runner.dispatch",
+            span: { from: 34, to: 36 },
+            role: "call-site",
+          },
+          {
+            file: "src/runner.ts",
+            symbol: "Runner.dispatch",
+            span: { from: 4, to: 4 },
+            role: "call-site",
+          },
+        ].map((a) => ({ ...a, hash: "x", resolved: undefined }));
+      },
+      "?perspective=code&tour=tour:intro&step=2",
+    );
     const pane = page.locator('.pane[data-file="src/runner.ts"]');
-    await expect(pane.locator('.cm-line[data-line="76"]')).toBeVisible();
+    await expect(pane).toHaveCount(1);
+    const stepper = pane.getByTestId("pane-ranges");
+    await expect(stepper).toContainText("range 2 / 2");
+    await expect(pane.locator('.cm-line[data-line="76"]')).toBeInViewport();
+    await stepper.getByRole("button", { name: "Previous range" }).click();
+    await expect(stepper).toContainText("range 1 / 2");
+    await expect(pane.locator('.cm-line[data-line="46"]')).toBeInViewport();
+    // n / p in the code do the same
+    await pane.locator('.cm-line[data-line="46"]').click();
+    await page.keyboard.press("n");
+    await expect(stepper).toContainText("range 2 / 2");
     await expect(pane.locator('.cm-line[data-line="76"]')).toBeInViewport();
     expect(problems).toEqual([]);
   });
@@ -277,7 +321,7 @@ test.describe("round 2 of the review", () => {
         page,
         (bundle) => {
           bundle.explainer.tours[0].steps[0].note = LONG_NOTE;
-          bundle.explainer.tours[0].steps[1].note = `### A very long note\n\n${"This sentence is here to make the note far too long. ".repeat(30)}The last words.`;
+          bundle.explainer.tours[0].steps[1].note = `### A very long note\n\n${"This sentence is here to make the note far too long. ".repeat(80)}The last words.`;
         },
         "?mode=present&tour=tour:intro&step=1",
         size,
@@ -306,7 +350,7 @@ test.describe("round 2 of the review", () => {
     });
   }
 
-  test("Read > Flow: Fit all keeps a tall flow's text at 11px or more (fits the width, then scrolls)", async ({
+  test("Read > Flow: a tall flow starts readable, and Fit all really shows all of it", async ({
     page,
   }) => {
     const problems = watchProblems(page);
@@ -316,24 +360,15 @@ test.describe("round 2 of the review", () => {
     const badge = page.getByTestId("pz-badge");
     await expect(badge).toHaveText("Fit all");
     await badge.click();
-    await expect(page.locator(".panzoom")).toHaveAttribute("data-fit", "width");
-    await expect(badge).toHaveText("Back to the start");
+    // every stage in the pane (the text gets as small as that takes)
+    await expect.poll(() => stagesInPane(page)).toBe(10);
+    await expect(badge).toHaveText("Readable size");
+    // and back to a readable first view
+    await badge.click();
     expect(await smallestDiagramText(page)).toBeGreaterThanOrEqual(10.9);
-    // the wheel scrolls it (the zoom stays), down to the last stage
-    const zoom = await page.locator(".panzoom").getAttribute("data-zoom");
-    const box = (await page.locator(".panzoom").boundingBox())!;
-    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-    await page.mouse.wheel(0, 5000);
-    await expect(page.locator(".panzoom")).toHaveAttribute("data-zoom", zoom!);
-    await expect
-      .poll(async () => {
-        const last = (await byId(page, "dispatch:10").boundingBox())!;
-        return last.y + last.height <= box.y + box.height + 1;
-      })
-      .toBe(true);
-    // the Fit button of the toolbar still shows all of it
+    // the Fit button of the toolbar shows all of it too
     await page.getByRole("button", { name: "Fit to view" }).click();
-    await expect(page.locator(".panzoom")).toHaveAttribute("data-fit", "width");
+    await expect.poll(() => stagesInPane(page)).toBe(10);
     expect(problems).toEqual([]);
   });
 
@@ -388,8 +423,11 @@ test.describe("the reader's screen", () => {
     await expect(summary.locator("strong")).toHaveText("tried again");
     await expect(body).not.toContainText("Read the story");
     // the summary is between the title and the first section
+    // (what is on screen: the phone's step picker is hidden here)
     const order = await body.evaluate((el) =>
-      [...el.children].map((c) => c.getAttribute("data-testid") ?? c.tagName.toLowerCase()),
+      [...el.children]
+        .filter((c) => getComputedStyle(c).display !== "none")
+        .map((c) => c.getAttribute("data-testid") ?? c.tagName.toLowerCase()),
     );
     expect(order.slice(0, 3)).toEqual(["h2", "tour-summary", "section"]);
 
@@ -612,3 +650,19 @@ test.describe("the reader's screen", () => {
     );
   });
 });
+
+/** How many flow stages lie wholly inside the diagram's pane. */
+async function stagesInPane(page: Page): Promise<number> {
+  return page.evaluate(() => {
+    const pane = document.querySelector(".panzoom")!.getBoundingClientRect();
+    return [...document.querySelectorAll(".flow-stage")].filter((el) => {
+      const r = el.getBoundingClientRect();
+      return (
+        r.left >= pane.left - 1 &&
+        r.right <= pane.right + 1 &&
+        r.top >= pane.top - 1 &&
+        r.bottom <= pane.bottom + 1
+      );
+    }).length;
+  });
+}

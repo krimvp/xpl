@@ -15,9 +15,14 @@
  *   on (databases, caches, queues, other systems' APIs), found from the import lines (outside.ts) and anchored there.
  *   Each service box `opens` a map of its inside: 4-8 boxes (top-level directories, or files; in a src layout below
  *   src) plus the outside systems they use, with an arrow from each part that imports one. Both maps have
- *   `excludeFiles` and `stubs: none`; the tour starts on the system map, then zooms into the main service.
+ *   `excludeFiles` and `stubs: none`; the tour starts on the system map, then zooms into the main service. A library
+ *   (no program to run) gets a "Your app" box for the code that calls it.
  * - `draftPath`: a sequence of the entry's outgoing calls (depth 1, source order, at most 6 participants), and a tour
- *   with one step per call after a big-picture step.
+ *   with one step per call after a big-picture step. Several entries: one sequence each, one tour. A method a class
+ *   inherits starts at the base that defines it, and self calls follow the class's method order.
+ *
+ * `draftProblems` checks a draft for what `xpl apply` does not: ids named in a text that exist nowhere, and focus ids
+ * off their step's view.
  *
  * The drafts never overwrite: ids already used in the explainer get a suffix (`view:change-map-2`), and nodes the
  * explainer already stores get no overlay.
@@ -52,7 +57,7 @@ import {
   type Reference,
   type TextCache,
 } from "@xpl/core";
-import { findOutsideSystems } from "./outside.js";
+import { findOutsideSystems, isLibrary, ownModules, readmeUsage } from "./outside.js";
 
 export const DRAFT_LIMITS = {
   /** Boxes on a drafted map (the skill: 4-8). */
@@ -85,8 +90,11 @@ export const OVERVIEW_EXCLUDE: readonly string[] = [
   "**/test/**",
   "**/tests/**",
   "**/*.test.*",
+  "**/test-d/**",
+  "**/*.test-d.*",
   "**/test_*.py",
   "**/examples/**",
+  "**/_examples/**",
   "docs/**",
   "benchmarks/**",
 ];
@@ -95,6 +103,8 @@ export const OVERVIEW_EXCLUDE: readonly string[] = [
 const NOT_DESIGN: readonly string[] = [
   "**/examples/**",
   "**/example/**",
+  "**/_examples/**",
+  "**/testdata/**",
   "**/benchmarks/**",
   "**/benchmark/**",
   "**/docs/**",
@@ -431,6 +441,97 @@ function tourStep(
   };
 }
 
+// ─── Self-check ─────────────────────────────────────────────────────────────────────────────────
+
+/** An element id written in a text (`grp:ky-changes`, `sym:a.py#f`), up to a space, a quote or a bracket. */
+const ID_IN_TEXT = /\b(?:sym|file|dir|grp|view|tour|edge|concept):[^\s`'",;()[\]]+/g;
+/** Fields of a patch that hold text for a reader (ids in them are written by hand, so nothing checks them). */
+const TEXT_FIELDS: ReadonlySet<string> = new Set([
+  "label",
+  "summary",
+  "detail",
+  "title",
+  "note",
+  "question",
+]);
+
+/**
+ * What `xpl apply` does not catch in a draft, and a reader would trip over: an id named in a text or a note that
+ * exists nowhere (not in the draft, the explainer or the index), and a tour step whose focus is not on its view (a
+ * map's boxes; a sequence's participants and steps). Empty when the draft is sound.
+ */
+export function draftProblems(draft: Draft, explainer: Explainer, model: IndexModel): string[] {
+  const { patch } = draft;
+  const problems: string[] = [];
+  const known = new Set<string>(["repo"]);
+  const views = new Map<string, PatchView>();
+  const addAll = (items: unknown) => {
+    for (const item of Array.isArray(items) ? items : []) {
+      const id = (item as { id?: unknown } | null)?.id;
+      if (typeof id === "string") known.add(id);
+    }
+  };
+  for (const source of [explainer, patch] as const) {
+    addAll(source.nodes);
+    addAll(source.edges);
+    addAll(source.concepts);
+    addAll(source.tours);
+    addAll(source.views);
+    for (const view of (Array.isArray(source.views) ? source.views : []) as PatchView[]) {
+      views.set(view.id, view);
+      if (view.type !== "graph") addAll(view.steps);
+    }
+  }
+  const exists = (id: string): boolean => {
+    if (known.has(id)) return true;
+    const parsed = parseId(id);
+    if (parsed.type === "file") return model.hasFile(parsed.path);
+    if (parsed.type === "dir") return model.hasDirectory(parsed.path);
+    if (parsed.type !== "symbol") return false;
+    if (model.symbol(symbolIdForElementId(id) ?? "") !== undefined) return true;
+    // a test named in words ("sym:test/a.ts#limits the body") ends at the first space in a text
+    return model.symbolsInFile(parsed.file).some((s) => s.path.startsWith(`${parsed.path} `));
+  };
+  // the texts a person reads: summaries, labels, titles, notes, and what the command prints
+  const texts: string[] = [...draft.notes];
+  const collect = (value: unknown, key = ""): void => {
+    if (typeof value === "string") {
+      if (TEXT_FIELDS.has(key)) texts.push(value);
+    } else if (Array.isArray(value)) for (const item of value) collect(item, key);
+    else if (value !== null && typeof value === "object")
+      for (const [k, v] of Object.entries(value)) collect(v, k);
+  };
+  collect(patch);
+  const dangling = new Set<string>();
+  for (const text of texts) {
+    for (const match of text.match(ID_IN_TEXT) ?? []) {
+      const id = match.replace(/[.:]+$/, "");
+      if (!exists(id)) dangling.add(id);
+    }
+  }
+  for (const id of dangling) problems.push(`${id} is named but exists nowhere`);
+  for (const tour of patch.tours ?? []) {
+    for (const step of tour.steps ?? []) {
+      const view = views.get(step.view);
+      if (!view) {
+        problems.push(`${tour.id} step ${step.id}: its view ${step.view} does not exist`);
+        continue;
+      }
+      const on = new Set<string>(
+        view.type === "graph"
+          ? (view.include ?? [])
+          : [...(view.participants ?? []), ...(view.steps ?? []).map((s) => s.id)],
+      );
+      if (view.type === "graph" && view.include === undefined) continue;
+      for (const id of step.focus ?? []) {
+        if (!on.has(id))
+          problems.push(`${tour.id} step ${step.id}: focus ${id} is not on ${view.id}`);
+      }
+    }
+  }
+  return problems;
+}
+
 // ─── draft change ───────────────────────────────────────────────────────────────────────────────
 
 /** A box of the change map made from changed code: one symbol, a group of small siblings, or a file. */
@@ -455,10 +556,15 @@ interface Caller {
   precise: boolean;
 }
 
+/** Reference kinds that only name a type or import a name: code with only these does not call anything. */
+const TYPE_ONLY: ReadonlySet<Reference["kind"]> = new Set(["type-ref", "import"]);
+
 function callersOf(analysis: ChangeAnalysis): Caller[] {
   const byId = new Map<string, Caller>();
   const add = (entry: CallerEntry, target: ChangedSymbol, guess: boolean) => {
-    if (entry.changed) return;
+    if (entry.changed || isTestFile(entry.file)) return;
+    // a type annotation or an `import type` line uses the name, but runs nothing: not a caller
+    if (entry.kinds.every((kind) => TYPE_ONLY.has(kind))) return;
     let caller = byId.get(entry.id);
     if (!caller) {
       caller = { id: entry.id, file: entry.file, sites: [], guess, precise: false };
@@ -680,14 +786,16 @@ export function draftChange(input: DraftInput, change: ChangeRecord): Draft {
     boxes = boxes.filter((b) => !group.includes(b));
     boxes.splice(at, 0, merged);
   }
+  // too many boxes: the file with the most changed pieces becomes one box (its group boxes too)
+  const piece = (box: ChangeBox) => box.id.startsWith("sym:") || box.id.startsWith("grp:");
   while (boxes.length > changeSlots) {
     const counts = new Map<string, number>();
     for (const box of boxes) {
-      if (box.id.startsWith("sym:")) counts.set(box.file, (counts.get(box.file) ?? 0) + 1);
+      if (piece(box)) counts.set(box.file, (counts.get(box.file) ?? 0) + 1);
     }
     const [file, count] = [...counts].sort((a, b) => b[1] - a[1])[0] ?? ["", 0];
     if (count < 2) break;
-    const inFile = boxes.filter((b) => b.file === file && b.id.startsWith("sym:"));
+    const inFile = boxes.filter((b) => b.file === file && piece(b));
     const added = analysis.files.find((f) => f.path === file)?.status === "added";
     const merged: ChangeBox = {
       id: `file:${file}`,
@@ -700,13 +808,16 @@ export function draftChange(input: DraftInput, change: ChangeRecord): Draft {
     boxes = boxes.filter((b) => !inFile.includes(b));
     boxes.splice(at, 0, merged);
   }
+  // a group box left off the map is never written: name its members
+  const pieceIds = (box: ChangeBox) =>
+    box.id.startsWith("grp:") ? box.symbols.map((sym) => sym.id) : [box.id];
   let offMap: ChangeBox[] = [];
   if (boxes.length > changeSlots) {
     const keep = new Set([...boxes].sort((a, b) => b.lines - a.lines).slice(0, changeSlots));
     offMap = boxes.filter((b) => !keep.has(b));
     boxes = boxes.filter((b) => keep.has(b));
     notes.push(
-      `${offMap.length} changed ${offMap.length === 1 ? "piece is" : "pieces are"} left off the map (at most ${L.mapBoxes} boxes): ${offMap.map((b) => b.id).join(", ")}`,
+      `${offMap.length} changed ${offMap.length === 1 ? "piece is" : "pieces are"} left off the map (at most ${L.mapBoxes} boxes): ${offMap.flatMap(pieceIds).join(", ")}`,
     );
   }
 
@@ -927,7 +1038,7 @@ export function draftChange(input: DraftInput, change: ChangeRecord): Draft {
     const whole = box.status === "new";
     return [whole ? definition(sym) : symbolLines(texts, sym, run.start, run.end, "definition")];
   });
-  const alsoChanged = [...offMap, ...skipped].map((b) => displayName(b.id));
+  const alsoChanged = [...offMap, ...skipped].flatMap(pieceIds).map(displayName);
   steps.push(
     tourStep(
       model,
@@ -1037,7 +1148,8 @@ export function draftChange(input: DraftInput, change: ChangeRecord): Draft {
         model,
         next(),
         mapId,
-        [model.hasFile(firstPath) ? `file:${firstPath}` : mainFocus],
+        // a step focuses a box of its map: the file when it is one, else the main box
+        [include.includes(`file:${firstPath}`) ? `file:${firstPath}` : mainFocus],
         note(
           todo("what the other changed files do, as a plain statement"),
           `Changed outside the boxes of the map: ${nameList(chunk.map((c) => baseName(c.path)))}.`,
@@ -1613,6 +1725,52 @@ export function draftRepo(input: DraftInput): Draft {
       .slice(0, n);
   const mainTop = topSymbols(mainUnit, 1)[0];
 
+  // ── A library: nobody reaches it through a web server or a command line; the code of an app calls it. A box
+  // for that app, anchored where the README shows an import of the project, with an arrow to the service.
+  let appId: string | undefined;
+  const codeFiles = model.files.map((f) => f.path).filter(isCode);
+  if (!multi && inbound.length === 0 && mainTop && isLibrary(model, texts, codeFiles)) {
+    const readme = model.dirChildren("").files.find((f) => /^readme(?:\.[a-z]+)?$/i.test(f));
+    const shown = readme
+      ? readmeUsage(texts.lines(readme) ?? [], ownModules(model, texts))
+      : undefined;
+    const usage =
+      readme && shown ? fileLines(texts, readme, shown.line, shown.line, "usage") : undefined;
+    // what the app calls: the first name of the README example that is a top-level symbol of the service
+    const top = new Map<string, IndexedSymbol>();
+    // (in the files of the boxes: the arrow's evidence must lie inside the service)
+    for (const sym of main.units.flatMap((u) => u.files).flatMap((f) => model.topLevelSymbols(f)))
+      if (!top.has(sym.path) && sym.kind !== "key") top.set(sym.path, sym);
+    const named = shown?.names.map((n) => top.get(n)).find((s) => s !== undefined);
+    const callee = signature(texts, named ?? mainTop);
+    if (usage && callee) {
+      appId = reuse("grp", "your-app");
+      if (!stored.has(appId)) {
+        nodes.push({
+          id: appId,
+          label: "Your app",
+          role: "system",
+          parent: "repo",
+          summary: todo(`one line: how an app uses ${repoName}, in plain words.`),
+          anchors: [usage],
+        });
+        edges.push({
+          id: ids.get("edge", `your-app-${slugOf(repoName)}`),
+          from: appId,
+          to: main.service,
+          kind: "calls",
+          label: todo("1-4 words: what the app calls (for example: ky.get(), ky.post())"),
+          anchors: [usage, callee],
+        });
+      }
+      const system = views[0]!;
+      if (system.type === "graph") system.include = [appId, ...(system.include ?? [])];
+      notes.push(
+        `${repoName} looks like a library (no program to run, no web server or command line): "Your app" stands for the code that calls it`,
+      );
+    }
+  }
+
   const steps: PatchTourStep[] = [];
   const nextId = () => `t${steps.length + 1}`;
   const otherServices = insides.filter((i) => i !== main).map((i) => baseName(i.root));
@@ -1621,7 +1779,7 @@ export function draftRepo(input: DraftInput): Draft {
       model,
       nextId(),
       systemViewId,
-      [main.service],
+      appId ? [main.service, appId] : [main.service],
       note(
         todo("what the project is, as a plain statement anyone can follow"),
         todo("its language, its kind and what it is for, from the README; no code names."),
@@ -1629,7 +1787,9 @@ export function draftRepo(input: DraftInput): Draft {
           ? todo(
               `who uses it and how (${plainList(inbound.map((s) => s.label))}), in one sentence.`,
             )
-          : todo("who uses it and how, in one sentence."),
+          : appId
+            ? todo("how an app uses it (Your app): what the app calls, in one sentence.")
+            : todo("who uses it and how, in one sentence."),
         otherServices.length > 0
           ? todo(
               `what each of the other services does, one short sentence each: ${nameList(otherServices, 10)}.`,
@@ -1760,12 +1920,101 @@ function ownerOf(model: IndexModel, sym: IndexedSymbol): IndexedSymbol | undefin
   return undefined;
 }
 
+/** Kinds of symbol a call can only convert to or build data of: no code of theirs runs (Go's `nodeTyp(t)`). */
+const TYPE_KINDS: ReadonlySet<IndexedSymbol["kind"]> = new Set(["type", "interface", "enum"]);
+
+/** The classes a class extends, in the order its declaration names them. */
+function basesOf(model: IndexModel, cls: IndexedSymbol): IndexedSymbol[] {
+  const out: IndexedSymbol[] = [];
+  const refs = [...model.refsFrom(cls.id)]
+    .filter((ref) => ref.kind === "extends")
+    .sort(
+      (a, b) =>
+        a.site.startLine - b.site.startLine || (a.site.startCol ?? 0) - (b.site.startCol ?? 0),
+    );
+  for (const ref of refs) {
+    const base = model.symbol(ref.to);
+    if (base && base.id !== cls.id && !out.includes(base)) out.push(base);
+  }
+  return out;
+}
+
+/**
+ * The order in which a class and its bases are searched for a method (Python's C3 order; for single inheritance,
+ * the class, its base, the base's base, ...). The class comes first.
+ */
+export function methodOrder(model: IndexModel, cls: IndexedSymbol): IndexedSymbol[] {
+  const memo = new Map<string, IndexedSymbol[]>();
+  const linearize = (c: IndexedSymbol, depth: number): IndexedSymbol[] => {
+    const known = memo.get(c.id);
+    if (known) return known;
+    const bases = depth > 32 ? [] : basesOf(model, c);
+    const seqs = [...bases.map((b) => [...linearize(b, depth + 1)]), [...bases]].filter(
+      (s) => s.length > 0,
+    );
+    const out = [c];
+    while (seqs.some((s) => s.length > 0)) {
+      const head = seqs
+        .filter((s) => s.length > 0)
+        .map((s) => s[0]!)
+        .find((h) => !seqs.some((s) => s.indexOf(h) > 0));
+      if (!head) {
+        // no consistent order: the bases depth first
+        for (const s of seqs) for (const x of s) if (!out.includes(x)) out.push(x);
+        break;
+      }
+      out.push(head);
+      for (const s of seqs) if (s[0] === head) s.shift();
+    }
+    memo.set(c.id, out);
+    return out;
+  };
+  return linearize(cls, 0);
+}
+
+/** The method `name` as a class has it: its own, else the first base (in method order) that defines it. */
+function methodOf(model: IndexModel, cls: IndexedSymbol, name: string): IndexedSymbol | undefined {
+  for (const c of methodOrder(model, cls)) {
+    const method = model.symbolAt(c.file, `${c.path}.${name}`);
+    if (method && method.kind === "method") return method;
+  }
+  return undefined;
+}
+
+/** A method asked for on a class that inherits it: where it is defined, and the class it was asked on. */
+export interface PathEntry {
+  symbol: IndexedSymbol;
+  /** The class the method was asked on (`URLSafeTimedSerializer`), when it inherits the method from a base. */
+  via?: IndexedSymbol;
+}
+
+/**
+ * `Class.method` in `file` when the class does not define the method but one of its bases does
+ * (`sym:url_safe.py#URLSafeTimedSerializer.dumps` -> `Serializer.dumps`); undefined otherwise.
+ */
+export function inheritedEntry(
+  model: IndexModel,
+  file: string,
+  path: string,
+): PathEntry | undefined {
+  const dot = path.lastIndexOf(".");
+  if (dot === -1) return undefined;
+  const cls = model.symbolAt(file, path.slice(0, dot));
+  if (!cls || cls.kind !== "class") return undefined;
+  const method = methodOf(model, cls, path.slice(dot + 1));
+  return method ? { symbol: method, via: cls } : undefined;
+}
+
 interface Call {
   ref: Reference;
   callee: IndexedSymbol;
   participant: string;
   /** Reached through an interface: the one implementation outside tests the index knows. */
   hop: boolean;
+  /** Found by the method order of the class the entry runs on (`self.dump_payload` -> the mixin's). */
+  dispatched?: IndexedSymbol;
+  /** How much the call matters: what it reaches and how much code is behind it (see `callScore`). */
+  score: number;
 }
 
 /** `pop()`, `run(job, opts)`, `Options{…}`: the call as written at the site, its arguments cut when long. */
@@ -1835,26 +2084,90 @@ function pathSlug(path: string): string {
   return RESERVED_PREFIXES.includes(slug) ? `${slug}-path` : slug;
 }
 
-export function draftPath(input: DraftInput, entry: IndexedSymbol): Draft {
-  const { explainer, model, texts } = input;
+/** Lines of a symbol. */
+const lineCount = (sym: IndexedSymbol) => 1 + sym.range.endLine - sym.range.startLine;
+
+/** Lines of code in a symbol's body: after its first line, not blank and not only closing brackets. */
+function bodyLines(texts: TextCache, sym: IndexedSymbol): number {
+  const lines = texts.lines(sym.file) ?? [];
+  let n = 0;
+  for (let line = sym.range.startLine + 1; line <= sym.range.endLine; line++) {
+    if (!/^[\s{}()[\];]*$/.test(lines[line - 1] ?? "")) n++;
+  }
+  return n;
+}
+
+/** How many symbols of the repository (outside tests) a symbol reaches through calls, at most 3 calls deep. */
+function reachOf(model: IndexModel, start: IndexedSymbol, skip: ReadonlySet<string>): number {
+  const seen = new Set<string>([start.id]);
+  let frontier = [start.id];
+  for (let depth = 0; depth < 3 && frontier.length > 0 && seen.size < 60; depth++) {
+    const next: string[] = [];
+    for (const id of frontier) {
+      for (const ref of model.refsFrom(id)) {
+        if (ref.kind !== "call" || seen.has(ref.to) || skip.has(ref.to)) continue;
+        const sym = model.symbol(ref.to);
+        if (!sym || isTestFile(sym.file)) continue;
+        seen.add(ref.to);
+        next.push(ref.to);
+      }
+    }
+    frontier = next;
+  }
+  return seen.size - 1;
+}
+
+/** One sequence of a path draft: the view, its participants and calls, and what was left out. */
+interface PathSequence {
+  entry: PathEntry;
+  entryId: string;
+  view: PatchView & { type: "sequence" };
+  participants: string[];
+  /** The calls, each with its sequence step. */
+  calls: { call: Call; step: PatchSequenceStep }[];
+  notes: string[];
+}
+
+function pathSequence(
+  input: DraftInput,
+  entry: PathEntry,
+  ids: FreeIds,
+): PathSequence | { error: string } {
+  const { model, texts } = input;
   const L = DRAFT_LIMITS;
-  const ids = new FreeIds(explainer);
-  const stored = storedNodeIds(explainer);
   const notes: string[] = [];
-  const entryId = `sym:${entry.id}`;
+  const sym = entry.symbol;
+  const entryId = `sym:${sym.id}`;
+  const asked = entry.via
+    ? `${entry.via.path}.${sym.path.slice(sym.path.lastIndexOf(".") + 1)}`
+    : sym.path;
 
   // the entry and what it contains (nested functions are part of it)
   const inside = new Set<string>();
-  const walk = (sym: IndexedSymbol) => {
-    inside.add(sym.id);
-    for (const child of model.childSymbols(sym.id)) walk(child);
+  const walk = (s: IndexedSymbol) => {
+    inside.add(s.id);
+    for (const child of model.childSymbols(s.id)) walk(child);
   };
-  walk(entry);
-  const entryOwner = ownerOf(model, entry);
+  walk(sym);
+  const entryOwner = ownerOf(model, sym);
+  // the class the entry runs on: the one it was asked on, else its own
+  const runtime = entry.via ?? entryOwner;
+  const family = new Set(runtime ? methodOrder(model, runtime).map((c) => c.id) : []);
+  if (entry.via) {
+    notes.push(
+      `${asked} is inherited: it resolves to ${entryId}, the first class in ${entry.via.path}'s method order ` +
+        `that defines it. The path starts there, and its calls to methods of ${entry.via.path} and its bases go ` +
+        `where that order finds them`,
+    );
+  }
 
   const refs = [...inside]
     .flatMap((id) => model.refsFrom(id))
-    .filter((ref) => ref.kind === "call" && !inside.has(ref.to) && model.symbol(ref.to))
+    // a call out of the entry, or back into it (recursion)
+    .filter(
+      (ref) =>
+        ref.kind === "call" && (!inside.has(ref.to) || ref.to === sym.id) && model.symbol(ref.to),
+    )
     .sort(
       (a, b) =>
         a.site.startLine - b.site.startLine ||
@@ -1866,33 +2179,70 @@ export function draftPath(input: DraftInput, entry: IndexedSymbol): Draft {
   const seen = new Set<string>();
   /** Callees called more than once: one step each, at the first call. */
   const repeated = new Map<string, number>();
+  const built: string[] = [];
+  const helpers: string[] = [];
   for (const ref of refs) {
     let callee = model.symbol(ref.to)!;
     let hop = false;
-    const declared = ownerOf(model, callee);
+    let dispatched: IndexedSymbol | undefined;
+    const recursion = callee.id === sym.id;
+    const declared = recursion ? undefined : ownerOf(model, callee);
     if (declared?.kind === "interface" || callee.kind === "interface") {
       // a call through an interface: what runs is the implementation, when the index knows one outside tests
       const impls = implementationsOf(model, callee.id)
         .map((impl) => model.symbol(impl.id))
-        .filter((sym): sym is IndexedSymbol => sym !== undefined && !isTestFile(sym.file));
+        .filter((s): s is IndexedSymbol => s !== undefined && !isTestFile(s.file));
       if (impls.length === 1) {
         callee = impls[0]!;
         hop = true;
       }
+    } else if (runtime && declared && family.has(declared.id) && callee.kind === "method") {
+      // a method of the class the entry runs on: the one its method order finds (a mixin's override)
+      const name = callee.path.slice(callee.path.lastIndexOf(".") + 1);
+      const found = methodOf(model, runtime, name);
+      if (found && found.id !== callee.id) {
+        dispatched = found;
+        callee = found;
+      }
     }
-    if (inside.has(callee.id)) continue;
-    if (seen.has(callee.id)) {
+    if (!recursion && inside.has(callee.id)) continue;
+    // a conversion to a type, or data built from a type with no constructor: no code of the repo runs
+    if (
+      !recursion &&
+      (TYPE_KINDS.has(callee.kind) ||
+        (callee.kind === "class" && runsFor(model, callee) === callee))
+    ) {
+      if (!built.includes(callee.path)) built.push(callee.path);
+      continue;
+    }
+    const owner = callee.kind === "class" ? callee : ownerOf(model, callee);
+    const runs = runsFor(model, callee);
+    // a helper of the entry's own class (or of a class it inherits from), or of its file, that is one line and calls
+    // nothing: not worth an arrow
+    const own =
+      (owner !== undefined && (owner.id === entryOwner?.id || family.has(owner.id))) ||
+      (owner === undefined && callee.file === sym.file && callee.kind === "function");
+    const callsMore = model.refsFrom(runs.id).some((r) => r.kind === "call" && r.to !== runs.id);
+    if (!recursion && own && bodyLines(texts, runs) <= 1 && !callsMore) {
+      if (!helpers.includes(runs.path)) helpers.push(runs.path);
+      continue;
+    }
+    // each recursive call is drawn (they usually recurse on different inputs); other callees once
+    if (!recursion && seen.has(callee.id)) {
       repeated.set(callee.id, (repeated.get(callee.id) ?? 1) + 1);
       continue;
     }
     seen.add(callee.id);
-    const owner = callee.kind === "class" ? callee : ownerOf(model, callee);
-    // the entry's own class, and helper functions of its file, are self-calls on the entry's lifeline
-    const own =
-      (entryOwner !== undefined && owner?.id === entryOwner.id) ||
-      (owner === undefined && callee.file === entry.file && callee.kind === "function");
-    const participant = own ? entryId : `sym:${(owner ?? callee).id}`;
-    calls.push({ ref, callee, participant, hop });
+    // a method goes to the lifeline of its class (the entry's own class too: never the entry's lifeline, which
+    // stands for the entry alone), a function to its own; only recursion is a call of the entry to itself
+    const participant = recursion ? entryId : `sym:${(owner ?? callee).id}`;
+    const skip = new Set([sym.id]);
+    const score = recursion
+      ? 1000
+      : 3 * Math.min(reachOf(model, runs, skip), 20) +
+        Math.min(lineCount(runs), 60) / 6 +
+        (participant.startsWith(`sym:${sym.file}#`) ? 0 : 2);
+    calls.push({ ref, callee, participant, hop, ...(dispatched ? { dispatched } : {}), score });
   }
   if (repeated.size > 0) {
     notes.push(
@@ -1900,20 +2250,23 @@ export function draftPath(input: DraftInput, entry: IndexedSymbol): Draft {
         [...repeated].map(([id, n]) => `sym:${id} (${n} calls)`).join(", "),
     );
   }
-  if (calls.length === 0) {
-    throw new Error(
-      `${entryId} makes no call the index knows (calls into libraries outside the repository are not indexed): there is nothing to draw`,
+  if (built.length > 0) {
+    notes.push(
+      `not drawn, a conversion to a type or data built from it (no code of it runs): ${built.join(", ")}`,
     );
   }
+  if (helpers.length > 0) {
+    notes.push(`not drawn, one-line helpers that call nothing: ${helpers.join(", ")}`);
+  }
+  if (calls.length === 0) {
+    return {
+      error: `${entryId} makes no call the index knows (calls into libraries outside the repository are not indexed): there is nothing to draw`,
+    };
+  }
 
-  // what matters least goes first: data built from a type with no constructor (a struct literal), helpers of the
-  // entry's own class, then small callees
-  const literal = (c: Call) => c.callee.kind === "class" && runsFor(model, c.callee) === c.callee;
-  const size = (c: Call) =>
-    literal(c) ? 0 : 1 + c.callee.range.endLine - c.callee.range.startLine;
-  const weight = (c: Call) => (c.participant === entryId ? 0 : 1000) + size(c);
+  // what matters least goes first: the call that reaches the least code, the later one first
   const lightest = (list: readonly Call[]) =>
-    [...list].sort((a, b) => weight(a) - weight(b) || list.indexOf(b) - list.indexOf(a))[0]!;
+    [...list].sort((a, b) => a.score - b.score || list.indexOf(b) - list.indexOf(a))[0]!;
   const dropped: Call[] = [];
   while (calls.length > L.pathCalls) {
     const drop = lightest(calls);
@@ -1925,39 +2278,32 @@ export function draftPath(input: DraftInput, entry: IndexedSymbol): Draft {
     ...new Set(calls.map((c) => c.participant).filter((p) => p !== entryId)),
   ];
   while (participantsOf().length > L.participants) {
-    // the participant with the fewest calls goes, the one with the least code behind them first
-    const stats = new Map<string, { calls: number; size: number }>();
+    // the participant whose calls matter least goes
+    const weight = new Map<string, number>();
     for (const c of calls) {
       if (c.participant === entryId) continue;
-      const entry = stats.get(c.participant) ?? { calls: 0, size: 0 };
-      if (!literal(c)) entry.calls++;
-      entry.size = Math.max(entry.size, size(c));
-      stats.set(c.participant, entry);
+      weight.set(c.participant, Math.max(weight.get(c.participant) ?? 0, c.score));
     }
     const order = participantsOf();
-    const fewest = [...stats].sort(
-      (a, b) =>
-        a[1].calls - b[1].calls ||
-        a[1].size - b[1].size ||
-        order.indexOf(b[0]) - order.indexOf(a[0]),
+    const least = [...weight].sort(
+      (a, b) => a[1] - b[1] || order.indexOf(b[0]) - order.indexOf(a[0]),
     )[0]![0];
-    dropped.push(...calls.filter((c) => c.participant === fewest));
-    calls = calls.filter((c) => c.participant !== fewest);
+    dropped.push(...calls.filter((c) => c.participant === least));
+    calls = calls.filter((c) => c.participant !== least);
   }
   if (dropped.length > 0) {
     notes.push(
-      `calls left out of the sequence (at most ${L.pathCalls} calls and ${L.participants} participants): ` +
-        dropped.map((c) => `sym:${c.callee.id}`).join(", "),
+      `calls left out of the sequence (at most ${L.pathCalls} calls and ${L.participants} participants), ` +
+        `the ones that reach the least code: ${dropped.map((c) => `sym:${c.callee.id}`).join(", ")}`,
     );
   }
   const participants = participantsOf();
 
-  const slug = pathSlug(entry.path);
-  const viewId = ids.get("view", slug);
+  const viewId = ids.get("view", pathSlug(asked));
   const stepSlug = viewId.slice("view:".length);
-  const steps: PatchSequenceStep[] = calls.map((call, i) => {
+  const steps = calls.map((call, i): { call: Call; step: PatchSequenceStep } => {
     const name = call.ref.to
-      .slice(call.ref.to.lastIndexOf("#") + 1)
+      .slice(call.ref.to.indexOf("#") + 1)
       .split(".")
       .at(-1)!
       .replace(/~\d+$/, "");
@@ -1965,101 +2311,152 @@ export function draftPath(input: DraftInput, entry: IndexedSymbol): Draft {
       model,
       texts,
       call.ref.from,
-      entry.file,
+      sym.file,
       call.ref.site.startLine,
       call.ref.site.endLine,
     );
-    const anchors = [site, definition(runsFor(model, call.callee))].filter(
+    const recursion = call.callee.id === sym.id;
+    const anchors = [site, recursion ? undefined : definition(runsFor(model, call.callee))].filter(
       (a): a is AnchorInput => a !== undefined,
     );
+    const what = recursion
+      ? "what this call into itself does (one level down: on what input, and when it stops)."
+      : call.hop
+        ? "what happens at this call, with its condition (the call goes through an interface)."
+        : "what happens at this call, with its condition.";
+    const hint = call.dispatched
+      ? ` The index points at ${tick(model.symbol(call.ref.to)!.path)}; ${entry.via?.path ?? runtime?.path} runs ${tick(call.dispatched.path)} (its method order).`
+      : recursion
+        ? ""
+        : overridesHint(model, call.callee);
     return {
-      id: `${stepSlug}:${i + 1}`,
-      from: entryId,
-      to: call.participant,
-      label: callLabel(texts, entry.file, call.ref.site, name),
-      kind: "call",
-      summary:
-        todo(
-          call.hop
-            ? "what happens at this call, with its condition (the call goes through an interface)."
-            : "what happens at this call, with its condition.",
-        ) + overridesHint(model, call.callee),
-      anchors,
+      call,
+      step: {
+        id: `${stepSlug}:${i + 1}`,
+        from: entryId,
+        to: call.participant,
+        label: callLabel(texts, sym.file, call.ref.site, name),
+        kind: "call",
+        summary: todo(what) + hint,
+        anchors,
+      },
     };
   });
 
-  // one tour step per main call, in source order
-  let main = calls.map((call, i) => ({ call, step: steps[i]! }));
-  const quiet: Call[] = [];
-  while (main.length > L.pathSteps) {
-    const drop = lightest(main.map((m) => m.call));
-    quiet.push(drop);
-    main = main.filter((m) => m.call !== drop);
-  }
-  if (quiet.length > 0) {
-    notes.push(
-      `calls without a tour step of their own (at most ${L.pathSteps}): ` +
-        quiet.map((c) => `sym:${c.callee.id}`).join(", "),
-    );
-  }
-
-  const view: PatchView = {
+  const view: PatchView & { type: "sequence" } = {
     id: viewId,
     type: "sequence",
-    title: todo(`what this sequence shows, in plain words (it starts at ${tick(entry.path)})`),
+    title: todo(`what this sequence shows, in plain words (it starts at ${tick(asked)})`),
     scope: {
       root: "repo",
       depth: 2,
       question: todo("the question this path answers"),
-      entryPoints: [entry.id],
+      entryPoints: [sym.id],
     },
     participants,
-    steps,
+    steps: steps.map((s) => s.step),
   };
+  return { entry, entryId, view, participants, calls: steps, notes };
+}
 
-  const nodes: PatchNode[] = [];
-  for (const id of participants) {
-    const node = overlay(stored, id, todo("one sentence: what it does on this path."));
-    if (node) nodes.push(node);
+/**
+ * A sequence per entry (the calls each one makes, depth 1), and one tour: the big picture, then a step per main
+ * call of each sequence. Two entries answer a question with two halves (`dumps`, then `loads`) in one tour.
+ */
+export function draftPath(input: DraftInput, entries: readonly PathEntry[]): Draft {
+  const { explainer, model } = input;
+  const L = DRAFT_LIMITS;
+  const ids = new FreeIds(explainer);
+  const stored = storedNodeIds(explainer);
+  const notes: string[] = [];
+  const sequences: PathSequence[] = [];
+  for (const entry of entries) {
+    const result = pathSequence(input, entry, ids);
+    if ("error" in result) throw new Error(result.error);
+    sequences.push(result);
+    for (const n of result.notes)
+      notes.push(entries.length > 1 ? `${tick(result.view.id)}: ${n}` : n);
   }
 
-  const quietNames = quiet.map((c) => c.callee.path);
-  const tourSteps: PatchTourStep[] = [
-    tourStep(
-      model,
-      "t1",
-      viewId,
-      [entryId],
-      note(
-        todo("the answer to the question, as a plain statement"),
-        todo("where this path starts, what it ends with, and which call decides the outcome."),
-        quietNames.length > 0
-          ? `Calls without a step of their own: ${nameList(quietNames)}. ${todo("say what they do in one sentence, or drop this one.")}`
-          : "",
-      ),
-      [definition(entry)],
-    ),
-    ...main.map(({ step }, i) =>
+  // the main calls of each sequence get a tour step; the budget is shared between the sequences
+  // (the tour stays at most one step longer than for one entry: each sequence has a big-picture step of its own)
+  const perSequence = Math.max(
+    2,
+    Math.floor((L.pathSteps + 1 - sequences.length) / sequences.length),
+  );
+  const nodes: PatchNode[] = [];
+  const overlaid = new Set<string>();
+  const tourSteps: PatchTourStep[] = [];
+  const next = () => `t${tourSteps.length + 1}`;
+  for (const [index, seq] of sequences.entries()) {
+    for (const id of seq.participants) {
+      if (overlaid.has(id)) continue;
+      overlaid.add(id);
+      const node = overlay(stored, id, todo("one sentence: what it does on this path."));
+      if (node) nodes.push(node);
+    }
+    let main = [...seq.calls];
+    const quiet: Call[] = [];
+    while (main.length > perSequence) {
+      const drop = [...main].sort(
+        (a, b) => a.call.score - b.call.score || main.indexOf(b) - main.indexOf(a),
+      )[0]!;
+      quiet.push(drop.call);
+      main = main.filter((m) => m !== drop);
+    }
+    if (quiet.length > 0) {
+      notes.push(
+        `${sequences.length > 1 ? `${tick(seq.view.id)}: ` : ""}calls without a tour step of their own (at most ${perSequence}): ` +
+          quiet.map((c) => `sym:${c.callee.id}`).join(", "),
+      );
+    }
+    const quietNames = quiet.map((c) => c.callee.path);
+    const start = seq.entry.via
+      ? `${seq.entry.via.path}.${seq.entry.symbol.path.slice(seq.entry.symbol.path.lastIndexOf(".") + 1)}`
+      : seq.entry.symbol.path;
+    tourSteps.push(
       tourStep(
         model,
-        `t${i + 2}`,
-        viewId,
-        [step.id],
+        next(),
+        seq.view.id,
+        [seq.entryId],
         note(
-          todo("what this call does for the reader, as a plain statement"),
-          todo("why this call matters here, and the condition under which it runs."),
+          index === 0
+            ? todo("the answer to the question, as a plain statement")
+            : todo(`the next part of the answer, from ${tick(start)}, as a plain statement`),
+          todo("where this path starts, what it ends with, and which call decides the outcome."),
+          quietNames.length > 0
+            ? `Calls without a step of their own: ${nameList(quietNames)}. ${todo("say what they do in one sentence, or drop this one.")}`
+            : "",
         ),
-        step.anchors ?? [],
+        [definition(seq.entry.symbol)],
       ),
-    ),
-  ];
+    );
+    for (const { step } of main) {
+      tourSteps.push(
+        tourStep(
+          model,
+          next(),
+          seq.view.id,
+          [step.id],
+          note(
+            todo("what this call does for the reader, as a plain statement"),
+            todo("why this call matters here, and the condition under which it runs."),
+          ),
+          step.anchors ?? [],
+        ),
+      );
+    }
+  }
 
+  const first = sequences[0]!;
+  const tourSlug = first.view.id.slice("view:".length);
   const patch: ExplainerPatch = {
     nodes,
-    views: [view],
+    views: sequences.map((s) => s.view),
     tours: [
       {
-        id: ids.get("tour", slug),
+        id: ids.get("tour", tourSlug),
         title: todo("the question this tour answers, in about 8 plain words"),
         summary: [
           todo("the answer in one or two sentences, naming the key functions."),

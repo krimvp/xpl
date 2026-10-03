@@ -208,6 +208,8 @@ export type PatchTour = {
  */
 export interface ExplainerPatch {
   title?: string;
+  /** Merged into the explainer's `scope`; `null` clears it, and so does `audience: null`. */
+  scope?: { audience?: string | null } | null;
   nodes?: PatchNode[];
   edges?: PatchEdge[];
   concepts?: PatchConcept[];

@@ -88,12 +88,12 @@ export function Details({
         <div className="actions">
           {store.canZoomInto(info.id) && (
             <button type="button" className="btn" onClick={() => store.zoomInto(info.id)}>
-              See what is inside: {opensView(state.model, info.id)?.title}
+              Open its own map: {opensView(state.model, info.id)?.title}
             </button>
           )}
           {store.canExpandInPlace(info.id) && (
             <button type="button" className="btn" onClick={() => store.toggleExpanded(info.id)}>
-              {store.isExpanded(info.id) ? "Fold back into one box" : "Show the inside here"}
+              {store.isExpanded(info.id) ? "Fold back into one box" : "Show its parts in this box"}
             </button>
           )}
         </div>

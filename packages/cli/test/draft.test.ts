@@ -6,9 +6,9 @@
 import { readFileSync, renameSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
-import type { Explainer, ExplainerPatch } from "@xpl/core";
+import { IndexModel, type Explainer, type ExplainerPatch, type SymbolIndex } from "@xpl/core";
 import { patchAnchors } from "../src/commands/draft.js";
-import { DRAFT_LIMITS } from "../src/draft.js";
+import { DRAFT_LIMITS, draftProblems } from "../src/draft.js";
 import { lintExplainer, type LintFinding } from "../src/lint.js";
 import {
   cloneDir,
@@ -50,7 +50,8 @@ async function draftApplyCheck(
   expect(json.json.patch).toEqual(patch);
 
   const before = await xplJson<LintJson>(dir, "lint", name, "--patch", out);
-  expect(before.code).toBe(0);
+  // a draft is full of TODOs: errors, so lint exits 1 (also with --warn-only)
+  expect(before.code).toBe(1);
   const applied = await xpl(dir, "apply", name, out);
   expect(applied.code, applied.out).toBe(0);
   expect(applied.out).toMatch(/^applied to /);
@@ -61,7 +62,7 @@ async function draftApplyCheck(
   const anchors = await xpl(dir, "anchors", name);
   expect(anchors.out).toMatch(/drifted 0, missing 0$/);
   const lint = await xplJson<LintJson>(dir, "lint", name);
-  expect(lint.code).toBe(0);
+  expect(lint.code).toBe(1);
   expect(Object.keys(lint.json.counts)).toEqual(["todo-left"]);
   expect(lint.json.findings.every((f) => f.severity === "error")).toBe(true);
   expect(lint.json.total).toBe(before.json.total);
@@ -541,6 +542,122 @@ describe("xpl draft change: no caller outside tests", () => {
   });
 });
 
+describe("xpl draft change: type tests and type references", () => {
+  it("a type test is a test, and code that only names a type is no caller", async () => {
+    const dir = makeTempDir("xpl-draft-typetests-");
+    writeFile(dir, "package.json", '{ "name": "client" }\n');
+    writeFile(dir, "src/options.ts", "export interface Options {\n  limit?: number;\n}\n");
+    const client = [
+      'import type { Options } from "./options.js";',
+      "",
+      "export function send(url: string, options: Options = {}) {",
+      "  return url.length + (options.limit ?? 0);",
+      "}",
+      "",
+    ].join("\n");
+    writeFile(dir, "src/client.ts", client);
+    writeFile(
+      dir,
+      "src/index.ts",
+      'import { send } from "./client.js";\n\nexport function get(url: string) {\n  return send(url);\n}\n',
+    );
+    writeFile(
+      dir,
+      "src/defaults.ts",
+      'import type { Options } from "./options.js";\n\nexport const defaults: Options = {};\n',
+    );
+    git(dir, "init", "-q", "-b", "main");
+    git(dir, "add", "-A");
+    git(dir, "commit", "-q", "-m", "base");
+    writeFile(
+      dir,
+      "src/options.ts",
+      "export interface Options {\n  limit?: number;\n  max?: number;\n}\n",
+    );
+    writeFile(
+      dir,
+      "src/client.ts",
+      client.replace("(options.limit ?? 0)", "Math.min(options.limit ?? 0, options.max ?? 10)"),
+    );
+    writeFile(
+      dir,
+      "test-d/send.ts",
+      'import { send } from "../src/client.js";\n\nexport const sent: number = send("a", { max: 1 });\n',
+    );
+    git(dir, "add", "-A");
+    git(dir, "commit", "-q", "-m", "head");
+    expect((await xpl(dir, "index", "--precise", "off")).code).toBe(0);
+    expect((await xpl(dir, "new", "pr")).code).toBe(0);
+    const recorded = await xpl(dir, "change", "pr", "HEAD~1..HEAD");
+    expect(recorded.out).toMatch(/A {2}test-d\/send\.ts .*\(test\)/);
+    const { patch, notes } = await draftApplyCheck(dir, "pr", ["change", "pr"]);
+    checkShape(patch);
+    const view = patch.views![0]!;
+    if (view.type !== "graph") throw new Error("a map");
+    // the type test sits in the tests box, never on the map as changed code or as the way in
+    expect(view.include!.some((id) => id.includes("test-d"))).toBe(false);
+    const tests = patch.nodes!.find((n) => n.id === "grp:change-tests")!;
+    expect(JSON.stringify(tests.members)).toContain("test-d/send.ts");
+    const steps = patch.tours![0]!.steps!;
+    expect(steps[1]!.note).toContain("where the change enters");
+    expect(steps[1]!.focus).toEqual(["sym:src/index.ts#get"]);
+    // `defaults` only names the type: no box, no "who else" step
+    expect(view.include).not.toContain("sym:src/defaults.ts#defaults");
+    expect(JSON.stringify(patch)).not.toContain("defaults");
+    expect(notes.join("\n")).not.toContain("defaults");
+    // every focus is a box of the map
+    for (const step of steps) for (const id of step.focus) expect(view.include).toContain(id);
+  });
+});
+
+describe("draftProblems", () => {
+  it("finds ids named nowhere and a focus off its view", () => {
+    const model = new IndexModel({
+      schema: "code-explainer/index@0",
+      commit: "abc1234",
+      files: [{ path: "a.ts", language: "typescript", hash: "x", lines: 3 }],
+      symbols: [
+        {
+          id: "a.ts#run",
+          file: "a.ts",
+          path: "run",
+          kind: "function",
+          range: { startLine: 1, endLine: 3 },
+        },
+      ],
+      refs: [],
+    } as unknown as SymbolIndex);
+    const explainer = { nodes: [], views: [], tours: [] } as unknown as Explainer;
+    const patch: ExplainerPatch = {
+      nodes: [{ id: "grp:real", label: "Real", summary: "TODO: x", members: ["sym:a.ts#run"] }],
+      views: [{ id: "view:map", type: "graph", title: "Map", include: ["grp:real"] }],
+      tours: [
+        {
+          id: "tour:t",
+          title: "T",
+          summary: "S",
+          steps: [
+            { id: "t1", view: "view:map", focus: ["grp:real"], note: "Uses `sym:a.ts#run`." },
+            { id: "t2", view: "view:map", focus: ["file:a.ts"], note: "Also grp:gone." },
+          ],
+        },
+      ],
+    };
+    const problems = draftProblems(
+      { kind: "change", patch, notes: ["left off: grp:phantom, sym:a.ts#run"] },
+      explainer,
+      model,
+    );
+    expect(problems.sort()).toEqual(
+      [
+        "grp:gone is named but exists nowhere",
+        "grp:phantom is named but exists nowhere",
+        "tour:t step t2: focus file:a.ts is not on view:map",
+      ].sort(),
+    );
+  });
+});
+
 // ─── lint: todo-left ─────────────────────────────────────────────────────────────────────────────
 
 describe("lint todo-left", () => {
@@ -602,17 +719,21 @@ describe("lint todo-left", () => {
     expect(findings.filter((f) => f.rule !== "todo-left").every((f) => !f.severity)).toBe(true);
   });
 
-  it("xpl lint: todo-left is an error in the output, exit 0 unless --strict", async () => {
+  it("xpl lint: todo-left is an error in the output, exit 1 even with --warn-only", async () => {
     const dir = await indexedFixture("ts-jobrunner");
     expect((await xpl(dir, "new", "d")).code).toBe(0);
     const out = join(makeTempDir("xpl-draft-out-"), "repo.json");
     expect((await xpl(dir, "draft", "repo", "d", "-o", out)).code).toBe(0);
     const r = await xpl(dir, "lint", "d", "--patch", out);
-    expect(r.code).toBe(0);
+    expect(r.code).toBe(1);
     expect(r.out).toContain("  summary  error todo-left: 1 TODO placeholder left");
     expect(r.out.split("\n").at(-1)).toMatch(
-      /^\d+ findings in \d+ elements \(todo-left \d+\); \d+ errors \(todo-left\), --strict exits 1$/,
+      /^\d+ findings in \d+ elements \(todo-left \d+\); \d+ errors \(todo-left\)$/,
     );
-    expect((await xpl(dir, "lint", "d", "--patch", out, "--strict")).code).toBe(1);
+    const warnOnly = await xpl(dir, "lint", "d", "--patch", out, "--warn-only");
+    expect(warnOnly.code).toBe(1);
+    expect(warnOnly.out.split("\n").at(-1)).toMatch(
+      /errors \(todo-left\): exit 1 even with --warn-only$/,
+    );
   });
 });

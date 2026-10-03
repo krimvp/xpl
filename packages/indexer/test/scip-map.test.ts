@@ -412,8 +412,10 @@ export function ⟦load⟧(): void {
     expect(index.symbols.map((s) => s.id)).toEqual(
       expect.arrayContaining(["a.ts#outer", "a.ts#outer.inner", "a.ts#outer.sibling"]),
     );
-    // sibling calls inner, outer calls sibling; parameters, the local `value` and the recursion are not references
+    // sibling calls inner, outer calls sibling and itself (recursion); parameters and the local `value` are not
+    // references
     expect(triples(refs)).toEqual([
+      "call a.ts#outer -> a.ts#outer",
       "call a.ts#outer -> a.ts#outer.sibling",
       "call a.ts#outer.sibling -> a.ts#outer.inner",
     ]);
