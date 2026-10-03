@@ -13,8 +13,9 @@ export const EXPLAINER_SCHEMA = "code-explainer@0" as const;
 export const DEFAULT_EDGE_KINDS: readonly Edge["kind"][] = ["calls", "extends", "implements"];
 
 /**
- * Glob patterns (see glob.ts) that mark test code: Go, JS/TS and Python conventions. The CLI hides test
- * doubles behind them (`xpl refs`), and they are the suggested `GraphView.excludeFiles` of an overview.
+ * Glob patterns (see glob.ts) that mark test code: Go, JS/TS and Python conventions, type tests included (tsd's
+ * `test-d/` and `index.test-d.ts`, Vitest's `*.test-d.ts` and `*.spec-d.ts`). The CLI hides test doubles behind
+ * them (`xpl refs`), and they are the suggested `GraphView.excludeFiles` of an overview.
  */
 export const TEST_FILE_GLOBS: readonly string[] = [
   "**/*_test.go",
@@ -23,6 +24,9 @@ export const TEST_FILE_GLOBS: readonly string[] = [
   "**/__tests__/**",
   "**/*.test.*",
   "**/*.spec.*",
+  "**/test-d/**",
+  "**/*.test-d.*",
+  "**/*.spec-d.*",
   "**/test_*.py",
   "**/*_test.py",
   "**/conftest.py",
