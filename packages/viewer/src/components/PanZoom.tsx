@@ -115,6 +115,8 @@ export interface PanZoomProps {
    * render, so a click that changes the selection does not move the viewport. Default: the top-left corner.
    */
   startBox?: Box | undefined;
+  /** What of `startBox` must be in view when all of it cannot be (viewport.ts `startView`'s `core`). */
+  startCore?: Box | undefined;
   children: ReactNode;
 }
 
@@ -132,6 +134,7 @@ export function PanZoom({
   overlay,
   tools,
   startBox,
+  startCore,
   children,
 }: PanZoomProps) {
   const wrap = useRef<HTMLDivElement>(null);
@@ -139,6 +142,7 @@ export function PanZoom({
   const [t, setT] = useState<Transform>({ k: 1, x: 0, y: 0 });
   const follow = useRef<Follow>("start");
   const start = useRef<Box | undefined>(startBox);
+  const startCoreRef = useRef<Box | undefined>(startCore);
   const lastReset = useRef(resetKey);
   const drag = useRef<{ x: number; y: number; moved: boolean; id: number } | null>(null);
   const suppressClick = useRef(false);
@@ -180,7 +184,7 @@ export function PanZoom({
 
   /** The first view: the fit, or for a diagram too big to read whole, a readable zoom on its start. */
   const showStart = useCallback(() => {
-    const next = startView(size, { width, height }, start.current, options);
+    const next = startView(size, { width, height }, start.current, options, startCoreRef.current);
     widthFit.current = false;
     setScrolling(false);
     if (next) setT(next.transform);
@@ -189,6 +193,7 @@ export function PanZoom({
   // Read the caller's start box before the effect below uses it.
   useLayoutEffect(() => {
     start.current = startBox;
+    startCoreRef.current = startCore;
   });
 
   useLayoutEffect(() => {

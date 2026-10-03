@@ -54,12 +54,27 @@ export function EditorStack() {
   const change = changeOf(state.explainer);
   // Which pane has the column to itself, and which are folded to their headers: a way of looking, reset when
   // the selection changes. A file opened on purpose next to the focus takes the column.
+  // A "Before" pane next to the same file's pane, which already shows the removed lines inline, starts folded
+  // to its header in Read mode (one click shows it); a talk shows what the step asks for.
+  const reading = state.mode !== "present" && state.perspective !== "explore";
+  const startFolded = (): ReadonlySet<string> =>
+    reading && state.showChanges
+      ? new Set(
+          panes
+            .filter(
+              (pane) =>
+                pane.side === "base" &&
+                panes.some((other) => other.side !== "base" && other.file === pane.file),
+            )
+            .map(paneKey),
+        )
+      : new Set();
   const [expanded, setExpanded] = useState<string | undefined>(undefined);
-  const [folded, setFolded] = useState<ReadonlySet<string>>(new Set());
+  const [folded, setFolded] = useState<ReadonlySet<string>>(startFolded);
   useEffect(() => {
     setExpanded(undefined);
-    setFolded(new Set());
-  }, [derived.selection]);
+    setFolded(startFolded());
+  }, [derived.selection, reading, state.showChanges]);
   useEffect(() => {
     if (state.openSeq === 0 || !state.openedFile) return;
     const opened = panes.find((pane) => pane.opened);

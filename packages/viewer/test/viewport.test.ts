@@ -191,3 +191,26 @@ describe("readableFit (Fit of a diagram whose text must stay readable)", () => {
     expect(scrollDown(t, -10_000, PANE, { height: 1500 }, 24).y).toBe(24);
   });
 });
+
+describe("the first view of a big diagram, with a core that must stay in view", () => {
+  it("frames the whole anchor when it fits at the readable zoom, else its core", () => {
+    const size = { w: 400, h: 300 };
+    const content = { width: 3000, height: 2000 };
+    const options = { padding: 20, readable: 1, floor: 0.9, maxZoom: 1.25 };
+    const core = { x: 1500, y: 100, width: 100, height: 40 };
+    // the anchor (both ends of an arrow) fits in 360px: it is in view
+    const near = startView(
+      size,
+      content,
+      { x: 1450, y: 100, width: 300, height: 40 },
+      options,
+      core,
+    )!;
+    expect(-near.transform.x).toBeLessThanOrEqual(1450);
+    expect(-near.transform.x + 400).toBeGreaterThanOrEqual(1750);
+    // an anchor 2000px wide cannot be: the core is, not the middle of the anchor
+    const far = startView(size, content, { x: 0, y: 100, width: 2000, height: 40 }, options, core)!;
+    expect(-far.transform.x).toBeLessThanOrEqual(1500);
+    expect(-far.transform.x + 400).toBeGreaterThanOrEqual(1600);
+  });
+});

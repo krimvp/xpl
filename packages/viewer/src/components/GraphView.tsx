@@ -384,12 +384,18 @@ export function GraphView({
           {/* Nodes are drawn above the edges of their level: a click on a box is never taken by an edge. */}
           <g className="edges">
             {layout.edges.map((edge) => (
-              <EdgeShape key={edge.id} edge={edge} marks={marks} />
+              <EdgeShape key={edge.id} edge={edge} marks={marks} focusable={false} />
             ))}
           </g>
           <g className="nodes">
             {layout.nodes.map((node) => (
               <NodeShape key={node.id} node={node} marks={marks} />
+            ))}
+          </g>
+          {/* The edges again, for the keyboard only: after the boxes, so Tab reaches the boxes first. */}
+          <g className="edge-keys">
+            {layout.edges.map((edge) => (
+              <EdgeKey key={edge.id} edge={edge} />
             ))}
           </g>
         </g>
@@ -1002,7 +1008,42 @@ function GhostMenu({
 
 // ─── Edges ──────────────────────────────────────────────────────────────────────────────────────
 
-const EdgeShape = memo(function EdgeShape({ edge, marks }: { edge: LayoutEdge; marks: Marks }) {
+/**
+ * The keyboard's way to an edge of the top level (drawn by EdgeShape under the boxes): an invisible copy of its
+ * route that takes the focus after the boxes, shows a ring when focused, and lets clicks through.
+ */
+function EdgeKey({ edge }: { edge: LayoutEdge }) {
+  const store = useStore();
+  const names = useContext(BoxNames);
+  if (edge.points.length < 2) return null;
+  const select = (event: KeyboardEvent) => store.click(edge.id, additive(event));
+  return (
+    <g
+      className="edge-key"
+      data-key-for={edge.id}
+      role="button"
+      tabIndex={0}
+      aria-label={
+        `${names.get(edge.from) ?? "?"} to ${names.get(edge.to) ?? "?"}: ${edge.title}` +
+        (edge.stub ? " (outside this map)" : "")
+      }
+      onKeyDown={(event) => activate(event, () => select(event))}
+    >
+      <path d={roundedPath(edge.points)} />
+    </g>
+  );
+}
+
+const EdgeShape = memo(function EdgeShape({
+  edge,
+  marks,
+  focusable = true,
+}: {
+  edge: LayoutEdge;
+  marks: Marks;
+  /** False when EdgeKey gives the keyboard its way to the edge (the top level). */
+  focusable?: boolean;
+}) {
   const store = useStore();
   const reader = useContext(Reader);
   const still = useContext(Still);
@@ -1032,10 +1073,11 @@ const EdgeShape = memo(function EdgeShape({ edge, marks }: { edge: LayoutEdge; m
       className={classes.join(" ") + stateClasses(edge.id, marks)}
       data-element-id={still ? undefined : edge.id}
       data-stub-id={edge.stub && !still ? edge.id : undefined}
-      role={still ? undefined : "button"}
-      tabIndex={still ? undefined : 0}
+      role={still || !focusable ? undefined : "button"}
+      tabIndex={still || !focusable ? undefined : 0}
+      aria-hidden={!still && !focusable ? true : undefined}
       aria-label={
-        still
+        still || !focusable
           ? undefined
           : `${names.get(edge.from) ?? "?"} to ${names.get(edge.to) ?? "?"}: ${edge.title}` +
             (edge.stub ? " (outside this map)" : "")

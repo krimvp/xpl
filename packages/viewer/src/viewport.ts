@@ -112,6 +112,11 @@ export function startView(
   content: Pick<Box, "width" | "height">,
   anchor: Box | undefined,
   options: StartOptions,
+  /**
+   * What must be in view if `anchor` is too big to be (per axis): the heart of it. A sequence step frames both
+   * ends of its arrow when they fit, else its label.
+   */
+  core?: Box,
 ): StartView | undefined {
   const fit = fitTransform(size, content, options);
   if (!fit) return undefined;
@@ -129,15 +134,28 @@ export function startView(
     pane: number,
     total: number,
     span: { start: number; size: number } | undefined,
+    fallback?: { start: number; size: number },
   ): number => {
     if (total * k <= pane - 2 * padding) return (pane - total * k) / 2;
-    return padding - windowStart(span, (pane - 2 * padding) / k, total) * k;
+    const visible = (pane - 2 * padding) / k;
+    const use = span && fallback && span.size > visible ? fallback : span;
+    return padding - windowStart(use, visible, total) * k;
   };
   return {
     transform: {
       k,
-      x: axis(size.w, content.width, anchor && { start: anchor.x, size: anchor.width }),
-      y: axis(size.h, content.height, anchor && { start: anchor.y, size: anchor.height }),
+      x: axis(
+        size.w,
+        content.width,
+        anchor && { start: anchor.x, size: anchor.width },
+        core && { start: core.x, size: core.width },
+      ),
+      y: axis(
+        size.h,
+        content.height,
+        anchor && { start: anchor.y, size: anchor.height },
+        core && { start: core.y, size: core.height },
+      ),
     },
     partial: true,
   };

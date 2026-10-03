@@ -8,7 +8,9 @@
  */
 import { useEffect, useMemo, useState } from "react";
 import { opensView } from "@xpl/core";
+import { callersOf, changeSummary, type Caller } from "../callers.js";
 import { describeElement, type AnchorRow, type ElementInfo } from "../details.js";
+import { changeOf } from "../diff.js";
 import { explainCommand, messageOf } from "../data.js";
 import { useDerived, useStore, useViewerState } from "../hooks.js";
 import { renderInline, renderMarkdown } from "../markdown.js";
@@ -183,6 +185,8 @@ export function Details({
         </dl>
       )}
 
+      <ChangeOfElement id={info.id} />
+
       {info.related.length > 0 && (
         <div className="related">
           <h3>Related</h3>
@@ -203,6 +207,7 @@ export function Details({
       )}
 
       <Anchors rows={info.anchors} reader={reader} />
+      <CallersList id={info.id} />
     </section>
   );
 }
@@ -368,4 +373,73 @@ function ExplainNote({ id, phase, note }: { id: string; phase: ExplainPhase; not
         </div>
       );
   }
+}
+
+/** What the explainer's change did to the picked file or symbol, with a way to the lines. */
+function ChangeOfElement({ id }: { id: string }) {
+  const store = useStore();
+  const state = useViewerState();
+  const summary = useMemo(
+    () => changeSummary(id, state.model.index, changeOf(state.explainer)),
+    [id, state.model.index, state.explainer],
+  );
+  if (!summary) return null;
+  return (
+    <div className="element-change" data-testid="element-change">
+      <span>{summary.text}</span>
+      <button
+        type="button"
+        className="link"
+        onClick={() => store.openFile(summary.file, summary.line)}
+      >
+        Show the change
+      </button>
+    </div>
+  );
+}
+
+/** How many callers are listed before "N more". */
+const CALLERS_SHOWN = 6;
+
+/** "Called from": the code that calls the picked file or symbol, each row opening the call. */
+function CallersList({ id }: { id: string }) {
+  const state = useViewerState();
+  const callers = useMemo(() => callersOf(id, state.model.index), [id, state.model.index]);
+  const [all, setAll] = useState(false);
+  if (callers.length === 0) return null;
+  const shown = all ? callers : callers.slice(0, CALLERS_SHOWN);
+  return (
+    <div className="callers" data-testid="callers">
+      <h3>Called from</h3>
+      <CallerRows callers={shown} />
+      {callers.length > shown.length && (
+        <button className="link" onClick={() => setAll(true)}>
+          Show {callers.length - shown.length} more
+        </button>
+      )}
+    </div>
+  );
+}
+
+/** One button per caller: its name and file, opening the line of the call. */
+export function CallerRows({ callers }: { callers: readonly Caller[] }) {
+  const store = useStore();
+  return (
+    <ul className="caller-rows">
+      {callers.map((caller) => (
+        <li key={caller.from}>
+          <button
+            type="button"
+            className="anchor-row"
+            title={`Open ${caller.file} at line ${caller.line}`}
+            onClick={() => store.openFile(caller.file, caller.line)}
+          >
+            <code className="caller-name">{caller.label}</code>
+            <span className="where">{caller.file.slice(caller.file.lastIndexOf("/") + 1)}</span>
+            <span className="lines">L{caller.line}</span>
+          </button>
+        </li>
+      ))}
+    </ul>
+  );
 }

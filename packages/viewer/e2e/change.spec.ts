@@ -138,6 +138,10 @@ test.describe("base anchors", () => {
     const before = pane(page, "src/runner.ts", "base");
     await expect(before).toBeVisible();
     await expect(before.getByTestId("pane-before")).toHaveText("Before (base 1111111)");
+    // in Read mode it starts folded to its header (the head pane shows the removed lines inline); a click opens it
+    await expect(before).toHaveClass(/is-folded/);
+    await before.getByTestId("pane-fold").click();
+    await expect(before).not.toHaveClass(/is-folded/);
     // the anchor's base lines are highlighted, and they are the lines the change rewrote
     await expect.poll(() => marked(page, "src/runner.ts", "xpl-hl", "base")).toEqual([76, 77]);
     await expect
@@ -304,6 +308,8 @@ test.describe("under xpl view", () => {
     expect(asked).toEqual(["src/runner.ts"]);
     // a base anchor's pane uses what was fetched
     await page.evaluate(() => window.__xpl!.select(["concept:retry-policy"]));
+    // (in Read mode the Before pane starts folded: the head pane shows the removed lines inline)
+    await pane(page, "src/runner.ts", "base").getByTestId("pane-fold").click();
     await expect(
       pane(page, "src/runner.ts", "base").locator('.cm-line[data-line="76"]'),
     ).toBeVisible();
@@ -465,7 +471,57 @@ test.describe("reading, presenting and leaving", () => {
 
   test("a map edge's accessible name says which two boxes it joins", async ({ page }) => {
     await open(page, "?perspective=map");
-    const edge = page.locator('.edges [role="button"]').first();
+    const edge = page.locator('.edge-keys [role="button"]').first();
     await expect(edge).toHaveAttribute("aria-label", /^.+ to .+: /);
+    // Tab reaches the boxes before the edges
+    const order = await page.evaluate(() =>
+      [...document.querySelectorAll<HTMLElement>(".graph [tabindex='0']")].map((el) =>
+        el.closest(".edge-keys") ? "edge" : "box",
+      ),
+    );
+    expect(order.indexOf("edge")).toBeGreaterThan(order.lastIndexOf("box"));
+    // Enter on a focused edge picks it
+    await edge.focus();
+    await page.keyboard.press("Enter");
+    expect((await stateOf(page)).selection).toEqual([await edge.getAttribute("data-key-for")]);
+  });
+});
+
+test.describe("who calls this, and what the change did to it", () => {
+  test("a picked file says what the change did to it and who calls it; each row opens the code", async ({
+    page,
+  }) => {
+    const problems = watchProblems(page);
+    await open(page, "?perspective=map");
+    await byId(page, "file:src/metrics.ts").click();
+    await page.locator(".workspace-inspector > summary").click();
+    await expect(page.getByTestId("element-change")).toContainText("Added by this change: +36 −0");
+    const callers = page.getByTestId("callers");
+    await expect(callers).toContainText("Called from");
+    await expect(callers).toContainText("main");
+    await callers.getByRole("button").first().click();
+    await expect(pane(page, "src/main.ts")).toBeVisible();
+    expect(problems).toEqual([]);
+  });
+
+  test("a change's guide step lists the code outside it that calls what changed", async ({
+    page,
+  }) => {
+    const problems = watchProblems(page);
+    await open(page);
+    const callers = page.getByTestId("guide-callers").first();
+    await expect(callers).toContainText("Code that calls what changed");
+    await expect(callers.getByRole("button").first()).toContainText("src/");
+    expect(problems).toEqual([]);
+  });
+
+  test("a double-click on a guide picture opens the live diagram", async ({ page }) => {
+    await open(page);
+    const picture = page.getByTestId("guide-snapshot").first();
+    const map = (await picture.getAttribute("data-view-id"))!;
+    await picture.dblclick();
+    const state = await stateOf(page);
+    expect(["map", "flow"]).toContain(state.perspective);
+    expect(state.viewId).toBe(map);
   });
 });

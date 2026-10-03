@@ -9,6 +9,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { codeFocus, isTestFile, type ExplainerModel, type TourStep } from "@xpl/core";
+import { callersOf, changeSummary, type Caller } from "../callers.js";
 import { overrideFocus } from "../derive.js";
 import { changeFiles, changeOf, STATUS_WORDS } from "../diff.js";
 import { useStore, useViewerState } from "../hooks.js";
@@ -223,6 +224,29 @@ function GuideSection({
       ),
     [step, state.model, tourId],
   );
+  // A change: the code outside the step that calls what the step's parts changed (what a reviewer checks next).
+  const changeCallers = useMemo((): Caller[] => {
+    const change = changeOf(state.explainer);
+    if (!change) return [];
+    const ids = step.focus.flatMap((id) =>
+      state.model.element(id)?.type === "node" && state.model.node(id)?.kind === "group"
+        ? [id, ...state.model.members(id)]
+        : [id],
+    );
+    const changed = ids.filter((id) => changeSummary(id, state.model.index, change));
+    const files = new Set(
+      changed
+        .map((id) => codeFocus([id], state.model)[0]?.file)
+        .filter((file) => file !== undefined),
+    );
+    const byFrom = new Map<string, Caller>();
+    for (const id of changed) {
+      for (const caller of callersOf(id, state.model.index)) {
+        if (!files.has(caller.file) && !byFrom.has(caller.from)) byFrom.set(caller.from, caller);
+      }
+    }
+    return [...byFrom.values()].slice(0, 8);
+  }, [step, state.model, state.explainer]);
   const show = (perspective: "map" | "flow" | "code") => {
     store.previewStep(tourId, index);
     store.setPerspective(perspective);
@@ -347,6 +371,36 @@ function GuideSection({
                 >
                   <code>{test.name}</code>
                   <span className="guide-test-file">{test.file}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+      {changeCallers.length > 0 && (
+        <section
+          className="guide-tests"
+          data-testid="guide-callers"
+          aria-label="Code that calls what changed"
+        >
+          <h4>Code that calls what changed</h4>
+          <ul>
+            {changeCallers.map((caller) => (
+              <li key={caller.from}>
+                <button
+                  type="button"
+                  className="guide-test"
+                  title={`Open ${caller.file} at line ${caller.line}`}
+                  onClick={() => {
+                    store.previewStep(tourId, index);
+                    store.openFile(caller.file, caller.line);
+                    store.setPerspective("code");
+                  }}
+                >
+                  <code>{caller.label}</code>
+                  <span className="guide-test-file">
+                    {caller.file}, line {caller.line}
+                  </span>
                 </button>
               </li>
             ))}

@@ -84,6 +84,9 @@ export function Snapshot({
       data-testid="guide-snapshot"
       data-view-id={view.id}
       aria-label={`Diagram: ${view.title}`}
+      // A still picture: a double-click opens the live diagram, where boxes open and code shows.
+      onDoubleClick={onOpen}
+      title={`Double-click to open in the ${graph ? "Map" : "Flow"}`}
     >
       <figcaption>
         <span className="guide-snapshot-title">{view.title}</span>

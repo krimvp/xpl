@@ -1611,6 +1611,25 @@ code {
   stroke-linejoin: round;
 }
 
+/* The keyboard copy of a top-level edge (GraphView EdgeKey): invisible, lets clicks through, rings on focus. */
+.edge-key {
+  pointer-events: none;
+  outline: none;
+}
+
+.edge-key path {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.edge-key:focus-visible path {
+  stroke: var(--accent);
+  stroke-opacity: 0.55;
+}
+
 .edge path.hit {
   fill: none;
   stroke: transparent;
@@ -2146,6 +2165,39 @@ code {
 
 .facts dd {
   overflow-wrap: anywhere;
+}
+
+/* What the change did to the picked element, and who calls it (Details: ChangeOfElement, CallersList). */
+.element-change {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  margin: 10px 0;
+  padding: 6px 10px;
+  border-left: 3px solid var(--diff-add-bar);
+  border-radius: 6px;
+  background: var(--diff-add-bg);
+  font-size: 12.5px;
+}
+
+.caller-rows {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.caller-rows .caller-name {
+  flex: none;
+  max-width: 55%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 11.5px var(--font-mono);
+}
+
+.caller-rows .where {
+  color: var(--muted);
 }
 
 .details h3 {
