@@ -108,33 +108,25 @@ Each fix has a regression test that fails without it.
 - `draft repo` on a Go library with `cmd/` drafted only the command-line tools. hcl's and prometheus's whole
   library was missing.
 
-## 4. Still open, by value
+## 4. Second round: the open points
 
-1. **Abstract and base-class dispatch.** Callers of an abstract method are not listed under its overrides in
-   either mode (`Leaf.visit` shows none). Interfaces get "via interface"; `extends` is not hopped, by design.
-   Hopping overridden methods the way interface members are hopped would cover visitors and template methods.
-2. **Python symbols that are not symbols:**
-   - assignments under `if` / `try` (sympy's `cacheit`: 178 decorator uses with no edge);
-   - tuple unpacking (`sympy/abc.py`: 1,005 imports land on the module);
-   - `@property` reads, which are never references;
-   - `metaclass=X`, and classes used as values (`isinstance(x, C)`), which heuristic mode does not record.
-3. **The "anywhere in the repo" rank** of the last-resort guess. ARCHITECTURE promises the same file, then
-   imports, then the same directory. Rank 3 also guesses across packages: about 65 wrong edges in prometheus that
-   look like any other heuristic edge. Consider dropping it, or marking those edges.
-4. **Go method and function values** (`wrapAgent(api.query)`, `return lexStatements`) are references SCIP has. The
-   mapper drops them, so PromQL's lexer state machine has no edges even in precise mode.
-5. **Draft quality on monorepos.**
-   - vue's 12 packages come out as one `packages` box next to two rollup configs.
-   - sympy comes out as one `sympy` box.
-   - zod's draft takes a test fixture (`drizzle-zod`) for an SQL database.
-   - `pnpm-workspace.yaml` is not read.
-6. **Precise cost.** 9–10 minutes and up to 7 GB on sympy and prometheus. Worth saying in the README; heuristic
-   mode is the better default for a first look at a big repository.
-7. **Small:**
-   - valid JSONC `tsconfig.json` and fuzz-corpus `.json` files are reported as syntax errors;
-   - `apply` and `validate` accept a draft full of TODOs (only `lint` fails it);
-   - a 27–51 MB `--files all` bundle gets no size warning;
-   - `outline` `in=` leaves out self-calls;
-   - a named function expression's self-call (`const f = function inner() { inner() }`) and `new Self()` inside a
-     class expression are not linked;
-   - precise mode maps `cls.__doc__` to the class.
+Every point the first round left open was worked on. Each fix has a regression test that fails without it.
+
+| Was open                                                                     | Now                                                                                                                                                                                       |
+| ---------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Callers of an abstract method not listed under its overrides                 | `refs` hops through base classes as `override` lines, as it does through interfaces (TS, JS, Python; not Go embedding; not constructors)                                                   |
+| Python assignments under `if` / `try`, tuple targets                         | Symbols: sympy's `cacheit` went from 0 to 233 references; `x, y, z = …` gives each name. A fallback assignment still never shadows the import it stands in for                           |
+| `@property` reads, classes used as values, `metaclass=`                      | A property read is a `call` of the getter; a class or enum used as a value is a `type-ref`, as in precise mode (django: 13 → 24,985 type-refs; precise has 30,159)                         |
+| Last-resort guess from anywhere in the repo                                  | Dropped: 18 of prometheus's 22 such guesses were an outside type with the same name                                                                                                       |
+| Go method values, callbacks                                                  | A function or method used as a value is a `call`, in both modes: `bus.Subscribe(m.OnJobCompleted)`, `wrapAgent(api.query)`, the PromQL lexer's `return lexStatements` state machine     |
+| Drafts of monorepos                                                          | Workspace globs open into one box per package (vue: 8 real packages); a folder with most of the code is opened (sympy: core, polys, matrices…); benchmarks and fixtures are no part      |
+| Precise cost                                                                 | Said in the README, with the advice to start big repositories heuristic                                                                                                                  |
+| JSONC and fuzz-corpus syntax warnings                                        | Trailing commas are harmless; testdata and fixtures are not warned about                                                                                                                 |
+| `apply` / `validate` accept TODOs; no size warning                           | `bundle` warns about texts that still hold a TODO, and about pages over 20 MB                                                                                                             |
+| `outline` hides recursion                                                    | `recursive` after the counts                                                                                                                                                              |
+| Named function expressions, `new Self()`                                     | Resolved to the symbol they are declared as                                                                                                                                               |
+| `cls.__doc__` written to the class (precise)                                 | Already kept apart by the first round's "first naming definition" rule; now pinned by a test                                                                                            |
+
+What is left is what the README calls known limits: no overload resolution, generics, unions or narrowing in
+heuristic mode, dynamic dispatch by name (`getattr(self, "visit_" + …)`), closures that call themselves through a
+variable, and element types of slices, maps and ranges in Go.
