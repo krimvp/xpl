@@ -1,6 +1,7 @@
 import { readdirSync } from "node:fs";
 import { join } from "node:path";
 import type { LanguageInfo } from "@xpl/core";
+import { describeAnalysis } from "@xpl/core";
 import { buildIndex, writeIndex } from "@xpl/indexer";
 import type { CommandSpec } from "../command.js";
 import { CliError, errorMessage } from "../errors.js";
@@ -57,6 +58,8 @@ export const indexCommand: CommandSpec = {
     "(hints: confirm each call with `xpl show`), `refs: none` (yaml, json, toml, text), or, when the precise tool did not",
     "describe every file, `refs: precise 64/82 (scip-python@0.6.6), 18 heuristic`: the references of those 18 files",
     "are hints.",
+    "Analysis coverage lists independent source and relationship abilities, analyzed files, limits and failures.",
+    "Empty relationships do not prove complete coverage. Saved indexes and exported viewers retain this report.",
   ],
   options: {
     precise: {
@@ -96,6 +99,7 @@ export const indexCommand: CommandSpec = {
         symbols: index.symbols.length,
         refs: index.refs.length,
         languages: index.languages,
+        analysis: index.analysis,
         ...(stale.length > 0 ? { explainersToResolve: stale } : {}),
       });
       return 0;
@@ -111,6 +115,8 @@ export const indexCommand: CommandSpec = {
           `${name.padEnd(width)}  ${plural(info.files, "file").padEnd(9)}  ${plural(info.symbols, "symbol").padEnd(12)}  refs: ${describeRefs(info)}`,
       ),
     ];
+    const coverage = describeAnalysis(index);
+    lines.push("", coverage.summary, ...coverage.details);
     if (stale.length > 0) {
       lines.push(
         "",

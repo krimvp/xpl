@@ -94,6 +94,7 @@ function run(files: Record<string, FileSpec>, packFor: (path: string) => Languag
 
 /** A pack shaped like the Go one: a package is a directory, an import path maps to it. */
 const goLike: LanguagePack = {
+  capabilities: {},
   id: "go-like",
   languages: ["go"],
   grammarFor: () => "go",
@@ -111,6 +112,7 @@ const goLike: LanguagePack = {
 
 /** A pack shaped like the Python one: dotted modules, packages with `__init__.py`. */
 const pyLike: LanguagePack = {
+  capabilities: {},
   id: "py-like",
   languages: ["python"],
   grammarFor: () => "python",

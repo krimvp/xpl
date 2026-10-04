@@ -22,6 +22,10 @@ describe("xpl index", () => {
     expect(out).toMatch(/typescript\s+8 files\s+\d+ symbols\s+refs: heuristic/);
     expect(out).toMatch(/yaml\s+1 file\s+16 symbols\s+refs: none/);
     expect(index.languages.typescript.refs).toBe("heuristic");
+    expect(out).toContain("Analysis coverage: 12 files; some analysis is limited or unavailable.");
+    expect(out).toContain(
+      "text: named symbols, full declaration ranges, nesting, calls, imports, inheritance, implementations, type references, reads, writes unsupported (0/1 files analyzed).",
+    );
     expect(index.symbols.some((s: any) => s.id === "src/runner.ts#Runner.dispatch")).toBe(true);
   });
 
@@ -40,6 +44,9 @@ describe("xpl index", () => {
     expect(json.files).toBe(12);
     expect(json.symbols).toBeGreaterThan(100);
     expect(json.languages.typescript).toMatchObject({ files: 8, refs: "heuristic" });
+    expect(json.analysis.find((r: any) => r.provider === "files").capabilities).toEqual({
+      fileAnchors: "supported",
+    });
     expect(readdirSync(join(dir, ".explainer"))).toContain(`index-${json.commit}.json`);
   });
 

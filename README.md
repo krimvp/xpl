@@ -139,6 +139,11 @@ scope-aware heuristic resolver, or, when the tool can run, from a compiler-grade
 tries SCIP by default and prints what each language got: `refs: precise (scip-go@0.2.7)` or `refs: heuristic`.
 The viewer draws heuristic edges lighter, and Claude treats them as hints.
 
+`xpl index` also reports analysis coverage: file anchors, named symbols, full declaration ranges,
+nesting, and each relationship kind independently. Saved indexes and exported viewers retain the
+analyzed files, limits, and failures. Open **Analysis coverage** below the viewer's header for details.
+Empty relationships do not mean complete analysis. Older indexes still load, with coverage shown as unknown.
+
 | Language         | Precise references need                                                             |
 | ---------------- | ----------------------------------------------------------------------------------- |
 | TS / JS          | `npx` and, on first use, network access: `scip-typescript` 0.4.0                    |

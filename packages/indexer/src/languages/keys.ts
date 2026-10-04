@@ -15,6 +15,8 @@ export class KeyCollector {
   readonly drafts: SymbolDraft[] = [];
   /** Number of keys that were dropped because of `MAX_KEYS_PER_FILE`. */
   skipped = 0;
+  depthLimited = false;
+  nestingLimited = false;
 
   /** Record a key symbol; false when the per-file cap is reached (the key is dropped). */
   add(path: string, span: Span, parentPath: string | undefined): boolean {
@@ -29,8 +31,12 @@ export class KeyCollector {
   }
 
   warnings(): string[] {
-    return this.skipped > 0
-      ? [`${this.skipped} keys beyond the first ${MAX_KEYS_PER_FILE} were not indexed`]
-      : [];
+    const warnings: string[] = [];
+    if (this.skipped > 0)
+      warnings.push(`${this.skipped} keys beyond the first ${MAX_KEYS_PER_FILE} were not indexed`);
+    if (this.depthLimited) warnings.push(`Keys beyond depth ${MAX_KEY_DEPTH} were not indexed.`);
+    if (this.nestingLimited)
+      warnings.push(`Structure beyond nesting depth ${MAX_NESTING} was not indexed.`);
+    return warnings;
   }
 }

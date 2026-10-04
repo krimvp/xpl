@@ -9,8 +9,9 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { readFileSync, statSync } from "node:fs";
 import { isAbsolute, join, normalize, posix, resolve } from "node:path";
-import { splitLines, INDEX_SCHEMA } from "@xpl/core";
+import { splitLines, INDEX_SCHEMA, RELATIONSHIP_CAPABILITIES } from "@xpl/core";
 import type {
+  AnalysisReport,
   FileLanguage,
   FilePath,
   IndexedFile,
@@ -38,6 +39,7 @@ import { findSyntaxErrors, significantSyntaxErrors, syntaxErrorWarning } from ".
 import type { SyntaxErrorFile } from "./syntax-errors.js";
 import { GRAMMAR_WASM } from "./wasm-files.js";
 import { collectResourceSites, resolveResources, type ResourceSite } from "./resources.js";
+import { extractionReports, preciseReport, type ExtractionOutcome } from "./analysis.js";
 
 /** Options of `buildIndex` (ARCHITECTURE.md §3). */
 export interface BuildIndexOptions {
@@ -268,6 +270,7 @@ export async function buildIndex(opts: BuildIndexOptions): Promise<BuildIndexRes
   const usedPackKeys = new Set<string>();
   const syntaxErrors: SyntaxErrorFile[] = [];
   const resourceSites: ResourceSite[] = [];
+  const extractionOutcomes = new Map<FilePath, ExtractionOutcome>();
   const pool = new ParserPool();
   try {
     for (const discovered of discovery.files) {
@@ -282,6 +285,7 @@ export async function buildIndex(opts: BuildIndexOptions): Promise<BuildIndexRes
       );
       if (!indexed) continue;
       files.push(indexed.file);
+      extractionOutcomes.set(indexed.file.path, indexed.outcome);
       if (indexed.pack) {
         const key = `${indexed.pack.id}\0${indexed.file.language}`;
         if (!usedPackKeys.has(key)) {
@@ -294,6 +298,7 @@ export async function buildIndex(opts: BuildIndexOptions): Promise<BuildIndexRes
     await pool.dispose();
   }
   if (syntaxErrors.length > 0) warnings.push(syntaxErrorWarning(syntaxErrors));
+  const analysis = extractionReports(files, usedPacks, extractionOutcomes);
 
   // 3. Heuristic references for every language whose pack derives them.
   const lookup = new SymbolLookup(entries);
@@ -331,6 +336,9 @@ export async function buildIndex(opts: BuildIndexOptions): Promise<BuildIndexRes
           (l) => refLanguages.has(l) && !preciseTools.has(l),
         );
         if (languages.length === 0) continue;
+        const reportFiles = files.filter((f) => languages.includes(f.language)).map((f) => f.path);
+        const diagnostics: string[] = [];
+        let failedReport: AnalysisReport | undefined;
         try {
           const output = await resolver.resolve({
             root,
@@ -345,16 +353,43 @@ export async function buildIndex(opts: BuildIndexOptions): Promise<BuildIndexRes
               if (language === undefined || text === undefined) return undefined;
               return withParsedFile(sourcePool, path, language, text, fn);
             },
-            warn: (message) => warnings.push(message),
+            warn: (message) => {
+              warnings.push(message);
+              diagnostics.push(message);
+            },
           });
+          const advertisedKinds = RELATIONSHIP_CAPABILITIES.filter(
+            (kind) => !resolver.capabilities || resolver.capabilities[kind],
+          );
+          if (
+            advertisedKinds.length > 0 &&
+            advertisedKinds.every((kind) => {
+              const status = output.coverage?.[kind]?.status;
+              return status === "failed" || status === "unsupported";
+            })
+          ) {
+            failedReport = preciseReport(resolver, reportFiles, output, diagnostics);
+            throw new Error("all advertised relationship kinds failed or were unsupported");
+          }
           const covered = new Set<FileLanguage>(languages);
+          const replacesKind = (kind: Reference["kind"], file: FilePath): boolean => {
+            if (resolver.capabilities && !resolver.capabilities[kind]) return false;
+            const observation = output.coverage?.[kind];
+            return (
+              !observation ||
+              (observation.status !== "failed" &&
+                observation.status !== "unsupported" &&
+                observation.analyzedFiles.includes(file))
+            );
+          };
           const preciseRefs = output.refs.filter((ref) => {
-            const language = languageOfFile.get(fileOfId(ref.from));
-            return language !== undefined && covered.has(language);
+            const file = fileOfId(ref.from);
+            const language = languageOfFile.get(file);
+            return language !== undefined && covered.has(language) && replacesKind(ref.kind, file);
           });
-          // File by file: the files the tool described get its references (it saw every site there, so the
-          // heuristic ones it did not confirm go); the other files of these languages (build-tagged, excluded
-          // by the tool's own configuration, ...) keep their heuristic references.
+          // Replace supported kinds in described files; unexamined, unsupported or failed kinds keep heuristic hints.
+          // Describing a file controls replacement, not the completeness recorded in its analysis report.
+          // Materialize once: describedFiles may be a single-use iterable.
           const described = new Set<FilePath>(output.describedFiles ?? []);
           for (const ref of preciseRefs) described.add(fileOfId(ref.from));
           const replaces = (file: FilePath): boolean =>
@@ -376,9 +411,24 @@ export async function buildIndex(opts: BuildIndexOptions): Promise<BuildIndexRes
             );
           }
           const kept = keptAtBlind(refs, output.blind ?? [], preciseRefs);
+          analysis.push(
+            preciseReport(
+              resolver,
+              reportFiles,
+              { ...output, describedFiles: described },
+              diagnostics,
+            ),
+          );
           refs = refs.filter((ref) => {
             const file = fileOfId(ref.from);
-            return kept.has(ref) || !(covered.has(languageOfFile.get(file)!) && replaces(file));
+            return (
+              kept.has(ref) ||
+              !(
+                covered.has(languageOfFile.get(file)!) &&
+                replaces(file) &&
+                replacesKind(ref.kind, file)
+              )
+            );
           });
           for (const ref of preciseRefs) refs.push(ref);
           for (const language of preciseLanguages) preciseTools.set(language, output.tool);
@@ -392,6 +442,11 @@ export async function buildIndex(opts: BuildIndexOptions): Promise<BuildIndexRes
           }
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
+          analysis.push(
+            failedReport
+              ? { ...failedReport, diagnostics: [...diagnostics, message] }
+              : preciseReport(resolver, reportFiles, undefined, [...diagnostics, message]),
+          );
           if (precise === "require")
             throw new Error(`precise resolver "${resolver.id}" failed: ${message}`);
           warnings.push(
@@ -425,6 +480,7 @@ export async function buildIndex(opts: BuildIndexOptions): Promise<BuildIndexRes
     files,
     symbols: entries.map((e) => e.symbol),
     refs,
+    analysis,
     ...(resources.length > 0 ? { resources } : {}),
   };
   return { index, warnings };
@@ -439,7 +495,9 @@ async function indexFile(
   syntaxErrors: SyntaxErrorFile[],
   warnings: string[],
   resourceSites: ResourceSite[],
-): Promise<{ file: IndexedFile; pack: LanguagePack | undefined } | undefined> {
+): Promise<
+  { file: IndexedFile; pack: LanguagePack | undefined; outcome: ExtractionOutcome } | undefined
+> {
   let text: string;
   try {
     text = await readSource(discovered);
@@ -455,7 +513,8 @@ async function indexFile(
     lines: lines.length,
   };
   const pack = packForFile(discovered.path, discovered.language);
-  if (!pack) return { file, pack };
+  const outcome: ExtractionOutcome = { status: "supported", limitations: [] };
+  if (!pack) return { file, pack, outcome };
 
   let facts: FileFacts | undefined;
   try {
@@ -468,6 +527,10 @@ async function indexFile(
           discovered.path,
           findSyntaxErrors(parsed.ctx.tree.rootNode, pack),
         );
+        if (errors) {
+          outcome.status = "partial";
+          outcome.limitations.push("Syntax errors may leave symbols and relationships incomplete.");
+        }
         // test data is odd on purpose (Go fuzz corpora named `.json`, broken files a parser test reads)
         if (errors && !isTestData(discovered.path)) syntaxErrors.push(errors);
       } finally {
@@ -475,11 +538,28 @@ async function indexFile(
       }
     }
   } catch (error) {
+    outcome.diagnostics = [
+      `${discovered.path}: ${error instanceof Error ? error.message : String(error)}`,
+    ];
     warnings.push(
       `${discovered.path}: ${discovered.language} extraction failed: ${error instanceof Error ? error.message : String(error)}`,
     );
   }
-  if (!facts) return { file, pack };
+  if (!facts)
+    return {
+      file,
+      pack,
+      outcome: {
+        diagnostics: outcome.diagnostics,
+        status: "failed",
+        limitations: ["Source analysis failed; only file anchors are available."],
+      },
+    };
+  if (facts.warnings?.length) {
+    outcome.status = "partial";
+    outcome.limitations.push(...facts.warnings);
+    outcome.diagnostics = facts.warnings.map((w) => `${discovered.path}: ${w}`);
+  }
   for (const warning of facts.warnings ?? []) warnings.push(`${discovered.path}: ${warning}`);
   for (const entry of assembleSymbols(discovered.path, lines, facts.symbols, hasher).entries)
     entries.push(entry);
@@ -493,7 +573,7 @@ async function indexFile(
     exports: facts.exports ?? [],
     ...(facts.data !== undefined ? { data: facts.data } : {}),
   });
-  return { file, pack };
+  return { file, pack, outcome };
 }
 
 function summarizeLanguages(

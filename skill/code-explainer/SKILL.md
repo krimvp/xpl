@@ -61,6 +61,11 @@ Paste ids exactly as printed; `+34..36` is the span `{"from": 34, "to": 36}`. Op
 
 Where the index shows less than runs:
 
+- Read `xpl index`'s analysis coverage before making source claims. File anchors, symbols, full declaration ranges,
+  nesting, and relationship kinds have independent support and observed outcomes. Unsupported or failed analysis,
+  partial coverage, and legacy unknown coverage do not establish that a relationship is absent. Confirm with `show`
+  and anchor the available source; exported viewers keep these limits visible.
+
 - An interface method has no body: `refs --out` lists its implementations as `impl` lines. Anchor the one that does the work.
 - A `call` ref to a type is a construction, not a call on your path. A `call` ref to a field is a call through a stored function: anchor the field (`usage`) and the function (`refs <field> --in`).
 - A method reached through a variable (`await response(...)` runs `__call__`) has no callers in `refs --in`: `search` for the name, or find where the object is built (`refs <class> --in`).

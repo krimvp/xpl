@@ -289,6 +289,29 @@ code {
   display: none;
 }
 
+.analysis-coverage {
+  padding: 6px 16px;
+  background: var(--panel-2);
+  color: var(--fg);
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+
+.analysis-coverage summary {
+  cursor: pointer;
+}
+
+.analysis-coverage ul {
+  max-height: 180px;
+  overflow: auto;
+  margin: 8px 0 0;
+  padding-left: 20px;
+}
+
+.analysis-coverage li + li {
+  margin-top: 4px;
+}
+
 .drift-banner {
   display: flex;
   align-items: center;

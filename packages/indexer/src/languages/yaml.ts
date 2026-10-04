@@ -6,6 +6,7 @@
  * Merge keys (`<<`), empty keys, complex (`? ...`) keys and alias keys are not symbols. Duplicate paths
  * (repeated keys, several documents in one stream) are numbered `~2`, `~3`... by the framework.
  */
+import { STRUCTURE_SUPPORT } from "../analysis.js";
 import type { Node } from "web-tree-sitter";
 import { pointsToSpan } from "../ast.js";
 import { KeyCollector, MAX_KEY_DEPTH, MAX_NESTING } from "./keys.js";
@@ -77,7 +78,10 @@ class YamlWalker {
 
   /** Visit a value node. `segments` is the path of the value; `parentPath` the nearest emitted key. */
   visit(node: Node, segments: string[], keyDepth: number, parentPath: string | undefined): void {
-    if (segments.length > MAX_NESTING) return;
+    if (segments.length > MAX_NESTING) {
+      this.keys.nestingLimited = true;
+      return;
+    }
     switch (node.type) {
       case "stream":
       case "document":
@@ -126,7 +130,10 @@ class YamlWalker {
     keyDepth: number,
     parentPath: string | undefined,
   ): void {
-    if (keyDepth >= MAX_KEY_DEPTH) return;
+    if (keyDepth >= MAX_KEY_DEPTH) {
+      this.keys.depthLimited = true;
+      return;
+    }
     const name = scalarKey(pair.childForFieldName("key"));
     if (name === undefined || name === "" || name === "<<") return;
     const path = [...segments, name].join(".");
@@ -141,6 +148,7 @@ class YamlWalker {
 
 export const yamlPack: LanguagePack = {
   id: "yaml",
+  capabilities: { ...STRUCTURE_SUPPORT },
   languages: ["yaml"],
   grammarFor: () => "yaml",
   packageScope: "file",

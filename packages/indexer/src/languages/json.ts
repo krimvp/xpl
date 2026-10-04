@@ -3,6 +3,7 @@
  * addressed by index (`items.0.id`), max key depth 6. A key's range is its whole `"key": value` pair.
  * Comments (JSONC) are tolerated by the grammar. No reference sites.
  */
+import { STRUCTURE_SUPPORT } from "../analysis.js";
 import type { Node } from "web-tree-sitter";
 import { nodeSpan } from "../ast.js";
 import { KeyCollector, MAX_KEY_DEPTH, MAX_NESTING } from "./keys.js";
@@ -26,7 +27,10 @@ class JsonWalker {
   constructor(private readonly ctx: FileContext) {}
 
   visit(node: Node, segments: string[], keyDepth: number, parentPath: string | undefined): void {
-    if (segments.length > MAX_NESTING) return;
+    if (segments.length > MAX_NESTING) {
+      this.keys.nestingLimited = true;
+      return;
+    }
     switch (node.type) {
       case "document":
         for (const child of node.namedChildren) this.visit(child, segments, keyDepth, parentPath);
@@ -56,7 +60,10 @@ class JsonWalker {
     keyDepth: number,
     parentPath: string | undefined,
   ): void {
-    if (keyDepth >= MAX_KEY_DEPTH) return;
+    if (keyDepth >= MAX_KEY_DEPTH) {
+      this.keys.depthLimited = true;
+      return;
+    }
     const key = pair.childForFieldName("key");
     if (!key) return;
     const name = stringValue(key);
@@ -70,6 +77,7 @@ class JsonWalker {
 
 export const jsonPack: LanguagePack = {
   id: "json",
+  capabilities: { ...STRUCTURE_SUPPORT },
   languages: ["json"],
   grammarFor: () => "json",
   packageScope: "file",

@@ -45,6 +45,7 @@
  * is `this` / `super`, a call or cast, a name of the file, or a local or parameter of known type (a type
  * fact). The resolver decides the rest.
  */
+import { STRUCTURE_SUPPORT, HEURISTIC_SUPPORT } from "../analysis.js";
 import { posix } from "node:path";
 import type { Node } from "web-tree-sitter";
 import { SpanIndex, nodeSpan, spanBetween, spanLineCount } from "../ast.js";
@@ -2203,6 +2204,7 @@ function errorInTypePosition(error: Node): boolean {
 
 export const typescriptPack: LanguagePack = {
   id: "typescript",
+  capabilities: { ...STRUCTURE_SUPPORT, ...HEURISTIC_SUPPORT },
   languages: ["typescript", "tsx", "javascript"],
   grammarFor(language: FileLanguage): GrammarId {
     return language === "typescript" ? "typescript" : "tsx";

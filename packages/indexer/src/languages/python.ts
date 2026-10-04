@@ -77,6 +77,7 @@
  * Known gap: instance attributes (`self.x = ...` without a class-level declaration) are not symbols, so
  * writes to them are not linked.
  */
+import { STRUCTURE_SUPPORT, HEURISTIC_SUPPORT } from "../analysis.js";
 import type { FileLanguage } from "@xpl/core";
 import type { GrammarId } from "../wasm-files.js";
 import type { ClassifiedSite, FileContext, FileFacts, LanguagePack, RepoView } from "./types.js";
@@ -86,6 +87,7 @@ import { pythonSubmoduleSpec, resolvePythonModule } from "./python/modules.js";
 
 export const pythonPack: LanguagePack = {
   id: "python",
+  capabilities: { ...STRUCTURE_SUPPORT, ...HEURISTIC_SUPPORT, implements: undefined },
   languages: ["python"],
   grammarFor(_language: FileLanguage): GrammarId {
     return "python";
