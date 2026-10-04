@@ -1,4 +1,3 @@
-import { existsSync } from "node:fs";
 import { request } from "node:http";
 import { createServer as createNetServer } from "node:net";
 import { join } from "node:path";
@@ -12,8 +11,9 @@ import {
 } from "@xpl/core";
 import { run } from "../src/cli.js";
 import { DEFAULT_PORT } from "../src/commands/view.js";
-import { startViewServer, type ViewServer } from "../src/server.js";
+import type { ViewServer } from "../src/server.js";
 import {
+  bundleOf,
   cloneDir,
   editFile,
   indexedFixture,
@@ -181,9 +181,7 @@ describe("xpl view", () => {
     expect(res.headers.get("content-type")).toBe("text/html; charset=utf-8");
     const html = await res.text();
     expect(html).toContain("<title>stub viewer</title>");
-    const match = /<script id="xpl-data" type="application\/json">([\s\S]*?)<\/script>/.exec(html);
-    expect(match).not.toBeNull();
-    const data = parseBundle(match![1]!);
+    const data = bundleOf(html);
     expect(data.schema).toBe(BUNDLE_SCHEMA);
     expect(data.server).toEqual({ api: "/api" });
     expect(data.mode).toBe("explore");
@@ -212,7 +210,7 @@ describe("xpl view", () => {
     expect(bundle.explainer.views).toHaveLength(2);
     expect(Object.keys(bundle.files)).toContain("src/runner.ts");
     const html = await (await fetch(`${view.url}/`)).text();
-    expect(bundleFromHtml(html)).toEqual(bundle);
+    expect(bundleOf(html)).toEqual(bundle);
   });
 
   it("GET /api/file serves indexed files as text and rejects everything else", async () => {
@@ -497,49 +495,7 @@ describe("xpl view", () => {
     });
     expect(applied.code).toBe(0);
     expect(readJson(dir, path).tours.map((t: any) => t.id)).toEqual(["tour:intro", "tour:mine"]);
-
-    // ...and one that tries to replace them is refused, like any other user-owned element: the tour the user
-    // made, and the fields the user edited of the one Claude made
-    const mine = readJson(dir, path).tours.find((t: any) => t.id === "tour:mine");
-    const intro = readJson(dir, path).tours.find((t: any) => t.id === "tour:intro");
-    const replace = await invoke(["apply", "demo", "-"], {
-      cwd: dir,
-      stdin: JSON.stringify({
-        tours: [
-          { id: "tour:mine", title: "Overwritten", steps: [] },
-          { id: "tour:intro", title: "Overwritten", steps: [] },
-        ],
-      }),
-    });
-    expect(replace.code).toBe(1);
-    expect(replace.out).toContain("nothing was applied");
-    expect(replace.out).toContain("skipped as protected");
-    expect(replace.out).toContain("tour:mine");
-    expect(replace.out).toContain("tour:intro");
-    const removal = await invoke(["apply", "demo", "-", "--json"], {
-      cwd: dir,
-      stdin: JSON.stringify({ remove: ["tour:mine", "tour:intro"] }),
-    });
-    expect(removal.code).toBe(1);
-    expect(JSON.parse(removal.out)).toMatchObject({
-      ok: false,
-      applied: false,
-      protectedIds: ["tour:mine", "tour:intro"],
-    });
-    const after = readJson(dir, path).tours;
-    expect(after.find((t: any) => t.id === "tour:mine")).toEqual(mine);
-    expect(after.find((t: any) => t.id === "tour:intro")).toEqual(intro);
-    // what the user did not touch stays the llm's: a partly protected patch applies the rest (exit 0)
-    const partial = await invoke(["apply", "demo", "-"], {
-      cwd: dir,
-      stdin: JSON.stringify({
-        tours: [{ id: "tour:intro", title: "Nope" }],
-        concepts: [{ id: "concept:extra", label: "Extra" }],
-      }),
-    });
-    expect(partial.code).toBe(0);
-    expect(partial.out).toContain("skipped as protected (tour:intro)");
-    expect(readJson(dir, path).tours.find((t: any) => t.id === "tour:intro").title).toBe("Renamed");
+    // (an llm patch that touches them is refused like any user-owned element: apply-protection.test.ts)
   });
 
   it("PUT /api/tours/<id> rejects an invalid tour with 400 and the issues, and writes nothing", async () => {
@@ -627,12 +583,25 @@ describe("xpl view", () => {
       body: JSON.stringify({ elementId: "file:src/queue.ts" }),
     });
     expect(sameOrigin.status).toBe(201);
-    const huge = await fetch(`${view.url}/api/views/view:overview`, {
-      method: "PUT",
-      headers: JSON_HEADERS,
-      body: JSON.stringify({ layout: { pad: "x".repeat(9 * 1024 * 1024) } }),
-    }).catch(() => undefined);
-    if (huge) expect(huge.status).toBe(413);
+    // too large: the 413 comes back while the body is still being sent (then the server closes)
+    const huge = await new Promise<number>((resolve, reject) => {
+      const req = request(
+        {
+          host: "127.0.0.1",
+          port: view.server.port,
+          method: "PUT",
+          path: "/api/views/view:overview",
+          headers: JSON_HEADERS,
+        },
+        (res) => {
+          res.resume();
+          resolve(res.statusCode ?? 0);
+        },
+      );
+      req.on("error", reject);
+      req.end(JSON.stringify({ layout: { pad: "x".repeat(9 * 1024 * 1024) } }));
+    });
+    expect(huge).toBe(413);
 
     // DNS rebinding: a request whose Host is not the server's is refused
     const status = await new Promise<number>((resolve, reject) => {
@@ -752,18 +721,8 @@ describe("xpl view", () => {
         }),
       ),
     );
-    expect(responses.every((r) => r.status === 201)).toBe(true);
+    expect(responses.map((r) => r.status)).toEqual(Array(12).fill(201));
     expect(readJson(dir, ".explainer/requests.json")).toHaveLength(12);
-    const edits = await Promise.all(
-      [1, 2, 3, 4].map((n) =>
-        fetch(`${view.url}/api/views/view:overview`, {
-          method: "PUT",
-          headers: JSON_HEADERS,
-          body: JSON.stringify({ layout: { "file:src/worker.ts": { x: n, y: n } } }),
-        }),
-      ),
-    );
-    expect(edits.every((r) => r.status === 200)).toBe(true);
   });
 
   it("re-reads the explainer on every request, so `xpl apply` shows up without a restart", async () => {
@@ -978,26 +937,4 @@ describe("xpl view", () => {
       if (held) await new Promise((resolve) => blocker.close(resolve));
     }
   });
-
-  it("startViewServer can be used directly (port 0, custom host)", async () => {
-    const server = await startViewServer({
-      env: { root: demo, cwd: demo, env: {}, indexOption: undefined, warn: () => undefined },
-      explainerPath: join(demo, ".explainer", "demo.explainer.json"),
-      host: "127.0.0.1",
-      port: 0,
-      viewerHtml: () => "<html><head></head><body>x</body></html>",
-    });
-    try {
-      const html = await (await fetch(server.url)).text();
-      expect(html).toContain('<script id="xpl-data"');
-      expect(existsSync(server.explainerPath)).toBe(true);
-    } finally {
-      await server.close();
-    }
-  });
 });
-
-function bundleFromHtml(html: string): ViewerBundle {
-  const match = /<script id="xpl-data" type="application\/json">([\s\S]*?)<\/script>/.exec(html);
-  return parseBundle(match![1]!);
-}

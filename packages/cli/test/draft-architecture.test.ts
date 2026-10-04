@@ -62,8 +62,8 @@ describe("xpl draft repo: one service and what it relies on", () => {
     );
     const { patch, notes } = await drafted(framework);
     expect(patch.nodes!.find((n) => n.label === "flask")?.role).toBe("component");
-    expect(patch.nodes!.some((n) => n.id === "grp:user")).toBe(false);
-    expect(patch.nodes!.some((n) => n.id === "grp:your-app")).toBe(true);
+    expect(patch.nodes!.map((n) => n.id)).not.toContain("grp:user");
+    expect(patch.nodes!.map((n) => n.id)).toContain("grp:your-app");
     expect(notes.some((n) => n.startsWith("Provisional architecture"))).toBe(true);
   });
   const dir = makeTempDir("xpl-arch-");

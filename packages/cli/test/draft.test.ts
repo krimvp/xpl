@@ -623,7 +623,7 @@ describe("xpl draft change: type tests and type references", () => {
     // the type test sits in the tests box, never on the map as changed code or as the way in
     expect(view.include!.some((id) => id.includes("test-d"))).toBe(false);
     const tests = patch.nodes!.find((n) => n.id === "grp:change-tests")!;
-    expect(JSON.stringify(tests.members)).toContain("test-d/send.ts");
+    expect(tests.members).toEqual(["sym:test-d/send.ts#sent"]);
     const steps = patch.tours![0]!.steps!;
     expect(steps[1]!.note).toContain("where the change enters");
     expect(steps[1]!.focus).toEqual(["sym:src/index.ts#get"]);

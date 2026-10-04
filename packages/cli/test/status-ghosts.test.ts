@@ -266,9 +266,8 @@ describe("xpl status --view: what one view draws", () => {
     const before = (await xplJson<any>(dir, "status", "crowd", "--view", "view:crowd")).json;
     expect(before.view.id).toBe("view:crowd");
     const drawn = before.view.edges.drawn;
-    expect(drawn.length).toBeGreaterThan(0);
-    expect(drawn[0]).toMatchObject({ kind: "calls", origin: "derived", summary: false });
-    expect(drawn[0].count).toBeGreaterThan(0);
+    expect(drawn.length).toBe(1);
+    expect(drawn[0]).toMatchObject({ kind: "calls", origin: "derived", summary: false, count: 1 });
     expect(before.view.edges.hidden).toEqual([]);
 
     const first = drawn[0].id;
