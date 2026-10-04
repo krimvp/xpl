@@ -145,3 +145,39 @@ it("keeps multiline generic and scoped impl headers as declaration anchors", asy
     ["external", "function", { startLine: 6, endLine: 6 }, undefined],
   ]);
 });
+
+it("groups matching tags coverage while keeping syntax-error file scopes separate", async () => {
+  const { index, warnings } = await indexFiles({
+    "a.rs": "fn a() {}\n",
+    "b.rs": "fn broken(\n",
+    "c.rs": "fn c() {}\n",
+    "d.rs": "fn broken(\n",
+  });
+  expect(warnings).toEqual([
+    "1 file(s) have syntax errors; symbols near these lines may be incomplete: b.rs:1",
+    "1 file(s) have syntax errors; symbols near these lines may be incomplete: d.rs:1",
+  ]);
+  const reports = index.analysis!.filter((r) => r.provider === "rust-tags");
+  expect(reports.map((r) => r.files)).toEqual([
+    ["a.rs", "c.rs"],
+    ["b.rs", "d.rs"],
+  ]);
+  expect(
+    reports.map((r) => r.results.map(({ status, analyzedFiles }) => ({ status, analyzedFiles }))),
+  ).toEqual([
+    [
+      { status: "partial", analyzedFiles: ["a.rs", "c.rs"] },
+      { status: "unsupported", analyzedFiles: [] },
+    ],
+    [
+      { status: "partial", analyzedFiles: ["b.rs", "d.rs"] },
+      { status: "unsupported", analyzedFiles: [] },
+    ],
+  ]);
+  expect(reports[0]!.results[0]!.limitations).not.toContain(
+    "Syntax errors may leave declarations incomplete.",
+  );
+  expect(reports[1]!.results[0]!.limitations).toContain(
+    "Syntax errors may leave declarations incomplete.",
+  );
+});

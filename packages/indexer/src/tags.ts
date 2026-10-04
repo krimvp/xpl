@@ -58,7 +58,7 @@ export class TagsProvider implements IndexProvider {
   async analyze(input: ProviderInput): Promise<ProviderOutput> {
     const parser = await createParser(this.profile.grammar);
     const declarations: ProviderDeclaration[] = [];
-    const analysis: AnalysisReport[] = [];
+    const analysis = new Map<boolean, AnalysisReport>();
     const sourceHashes: Record<string, string> = {};
     let query: Query | undefined;
     try {
@@ -118,7 +118,15 @@ export class TagsProvider implements IndexProvider {
           }
           const errors = significantSyntaxErrors(source.path, findSyntaxErrors(tree.rootNode));
           if (errors) input.warn(syntaxErrorWarning([errors]));
-          analysis.push({
+          // All other outcomes are fixed by this profile; syntax recovery changes the limitations.
+          const recovered = Boolean(errors);
+          const report = analysis.get(recovered);
+          if (report) {
+            report.files.push(source.path);
+            report.results[0]!.analyzedFiles.push(source.path);
+            continue;
+          }
+          analysis.set(recovered, {
             provider: this.id,
             capabilities: this.capabilities,
             files: [source.path],
@@ -158,7 +166,7 @@ export class TagsProvider implements IndexProvider {
       sourceHashes,
       declarations,
       relationships: [],
-      analysis,
+      analysis: [...analysis.values()],
     };
   }
 }

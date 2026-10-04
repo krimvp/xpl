@@ -190,3 +190,22 @@ it("Rust symbols can be outlined, shown, anchored and exported with their suppor
     { status: "unsupported", analyzedFiles: [] },
   ]);
 });
+
+it("search --code finds Rust dispatch hits with their enclosing symbols", async () => {
+  const dir = copyFixture("rs-jobrunner");
+  expect((await xpl(dir, "index", "--precise", "off")).code).toBe(0);
+  const result = await xplJson<{
+    searched: number;
+    total: number;
+    hits: { file: string; line: number; id: string }[];
+  }>(dir, "search", "dispatch", "--code");
+  expect(result.code, result.out + result.err).toBe(0);
+  expect(result.json.searched).toBe(9);
+  expect(result.json.total).toBe(4);
+  expect(result.json.hits.map(({ file, line, id }) => [file, line, id])).toEqual([
+    ["src/runner.rs", 58, "sym:src/runner.rs#impl Runner<Q>.start"],
+    ["src/runner.rs", 65, "sym:src/runner.rs#impl Runner<Q>.dispatch"],
+    ["src/runner.rs", 74, "sym:src/runner.rs#impl Runner<Q>.dispatch"],
+    ["src/runner.rs", 100, "sym:src/runner.rs#impl Runner<Q>.dispatch"],
+  ]);
+});

@@ -486,7 +486,8 @@ Rust uses `tree-sitter-rust@0.24.0` (WASM ABI 14). The CLI copies the corrected 
 `dist/wasm`; source runs read it from the adapter directory. Rust reports partial symbols, declaration ranges
 and nesting, and unsupported relationship kinds. It does not resolve calls, imports, receiver ownership or
 external `mod` links, expand macros, evaluate cfg, or index fields, variants and local bindings. Declaration
-ranges exclude leading attributes and doc comments. Syntax recovery adds a limit and a warning.
+ranges exclude leading attributes and doc comments. Syntax recovery adds a limit and a warning. Matching
+tags outcomes share one report with combined file counts; syntax-error files keep a separate report.
 [The experiment record](rust-tags.md) gives literal cases, measurements, query coverage and repeatable commands.
 
 **Analysis coverage** (`core/src/analysis.ts`, `indexer/src/analysis.ts`). An `AnalysisReport` contains a
@@ -1046,6 +1047,10 @@ outside tests with its lines, callers (at most 8 listed, `--json` has all), call
 and tests, the changed lines outside any symbol, the test files the change touches with their new and changed
 tests, and the symbols with no test. Without a range it re-prints the analysis of the stored record. `--json`:
 `{ ok, path, written, change, analysis }`.
+
+`core/src/languages.ts` classifies every `FileLanguage` with a code display name or `undefined` for config
+and other text. Its derived `CODE_LANGUAGES` set is shared by code search and repo drafts; Rust participates
+in both, and its draft service boxes carry `tech: Rust`. Adding a language requires a classification.
 
 **`xpl draft change|repo|path`** prints a patch that `xpl apply` accepts as it is: views, groups, overlays,
 participants, steps, anchors and a tour, with `TODO: <what to write>` in every text (tour notes as `### TODO:
