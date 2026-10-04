@@ -217,8 +217,12 @@ export class ViewerStore {
   private readonly future: Navigation[] = [];
   /** The reading tab (Guide, Map, Flow, Code) last on screen: where "Back to reading" goes from Explore. */
   private reading: Exclude<Perspective, "explore"> = "guide";
+  /** Namespace of the page as loaded; edits change request context, never where requests are saved. */
+  private readonly feedbackStorageKey: string;
 
   constructor(bundle: ViewerBundle, launch: LaunchParams = {}) {
+    const identity = artifactIdentity(bundle.explainer, bundle.index);
+    this.feedbackStorageKey = `xpl-feedback:${identity.explainerHash}:${identity.sourceHash}`;
     this.indexModel = asIndexModel(bundle.index);
     this.api = bundle.server?.api ? new ServerApi(bundle.server.api) : undefined;
     const explainer = bundle.explainer;
@@ -1096,20 +1100,31 @@ export class ViewerStore {
 
   // ─── Explain requests and export ─────────────────────────────────────────────────────────────
 
-  private feedbackKey(): string {
-    const identity = artifactIdentity(this.state.explainer, this.state.model.index.index);
-    return `xpl-feedback:${identity.explainerHash}:${identity.sourceHash}`;
+  private mergeFeedback(requests: readonly FeedbackRequest[]): FeedbackRequest[] {
+    const merged = new Map<string, FeedbackRequest>();
+    for (const request of requests) {
+      const original = merged.get(request.id);
+      if (original && !sameFeedbackContent(original, request))
+        throw new Error(`Conflicting original content for request ${request.id}`);
+      if (!original || Date.parse(request.outcome.at) > Date.parse(original.outcome.at))
+        merged.set(request.id, request);
+    }
+    return [...merged.values()];
   }
 
   /** Persist before returning. Storage refusal stays visible and exports remain available. */
   private keepFeedback(requests: FeedbackRequest[]): void {
-    this.set({ feedback: requests });
+    this.set({ feedback: this.mergeFeedback([...this.state.feedback, ...requests]) });
     if (this.state.feedbackStorageError) return;
     try {
-      localStorage.setItem(
-        this.feedbackKey(),
-        JSON.stringify({ schema: FEEDBACK_SCHEMA, requests }),
-      );
+      // One atomic browser write per ID: saving in another tab cannot replace this request.
+      for (const request of requests) {
+        const key = `${this.feedbackStorageKey}:request:${encodeURIComponent(request.id)}`;
+        const saved = localStorage.getItem(key);
+        const current = saved ? [parseFeedbackRequest(JSON.parse(saved))] : [];
+        const latest = this.mergeFeedback([...current, request])[0]!;
+        localStorage.setItem(key, JSON.stringify(latest));
+      }
       this.set({ feedbackStorageError: undefined });
     } catch (error) {
       this.set({
@@ -1122,17 +1137,20 @@ export class ViewerStore {
     try {
       const requests = embedded ? parseFeedbackFile(embedded).requests : [];
       this.set({ feedback: requests });
-      const saved = localStorage.getItem(this.feedbackKey());
+      // Keep reading the old array without rewriting it; new saves use individual request keys.
+      const saved = localStorage.getItem(this.feedbackStorageKey);
       const stored = saved ? parseFeedbackFile(JSON.parse(saved)).requests : [];
-      const merged = new Map(requests.map((r) => [r.id, r]));
-      for (const r of stored) {
-        const original = merged.get(r.id);
-        if (original && !sameFeedbackContent(original, r))
-          throw new Error(`Conflicting original content for request ${r.id}`);
-        if (!original || Date.parse(r.outcome.at) > Date.parse(original.outcome.at))
-          merged.set(r.id, r);
+      const prefix = `${this.feedbackStorageKey}:request:`;
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (!key?.startsWith(prefix)) continue;
+        const json = localStorage.getItem(key);
+        if (json !== null) stored.push(parseFeedbackRequest(JSON.parse(json)));
       }
-      this.set({ feedback: [...merged.values()], feedbackStorageError: undefined });
+      this.set({
+        feedback: this.mergeFeedback([...requests, ...stored]),
+        feedbackStorageError: undefined,
+      });
     } catch (error) {
       this.set({
         feedbackStorageError: `Could not reload browser feedback: ${String(error)}. Export feedback JSON before closing this page.`,
@@ -1141,16 +1159,9 @@ export class ViewerStore {
   }
 
   async refreshFeedback(): Promise<void> {
+    this.loadFeedback({ schema: FEEDBACK_SCHEMA, requests: this.state.feedback });
     if (!this.api) return;
-    const saved = await this.api.requests();
-    const merged = new Map(this.state.feedback.map((r) => [r.id, r]));
-    for (const r of saved) {
-      const original = merged.get(r.id);
-      if (original && !sameFeedbackContent(original, r))
-        throw new Error(`Conflicting original content for request ${r.id}`);
-      merged.set(r.id, r);
-    }
-    this.keepFeedback([...merged.values()]);
+    this.keepFeedback(await this.api.requests());
   }
 
   feedbackJson(): string {
@@ -1195,9 +1206,9 @@ export class ViewerStore {
       ...(range ? { range } : {}),
       outcome: { status: "pending", reason: "Awaiting an explicit revision pass.", at },
     });
-    // Reread before merging, so another tab's saved requests are retained.
+    // Include other tabs' requests in this page without rewriting their stored records.
     this.loadFeedback({ schema: FEEDBACK_SCHEMA, requests: this.state.feedback });
-    this.keepFeedback([...this.state.feedback, request]);
+    this.keepFeedback([request]);
     if (!this.api) return "command";
     await this.api.postRequest(request);
     return "queued";

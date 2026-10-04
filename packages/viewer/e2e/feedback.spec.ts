@@ -55,6 +55,80 @@ test("disconnected reader captures selected source, reloads and exports the orig
   expect(problems).toEqual([]);
 });
 
+test("feedback captured after an offline view edit survives reload with its edited context", async ({
+  page,
+}) => {
+  await openBundle(page, "view:overview");
+  await byId(page, "ghost:file:src/bus.ts").click();
+  await byId(page, "file:src/bus.ts").click();
+  await page.getByRole("button", { name: /^Feedback/ }).click();
+  const panel = page.getByRole("dialog", { name: "Reader feedback" });
+  await panel.getByLabel("Feedback note").fill("Explain the newly added bus.");
+  await panel.getByRole("button", { name: "Save feedback", exact: true }).click();
+  await expect(panel.getByRole("status")).toContainText("Saved in this browser");
+  const original = await exported(page);
+  expect(original.requests).toHaveLength(1);
+  expect(original.requests[0]).toMatchObject({
+    elementId: "file:src/bus.ts",
+    note: "Explain the newly added bus.",
+    outcome: { status: "pending", reason: "Awaiting an explicit revision pass." },
+  });
+  await page.reload();
+  await page.getByRole("button", { name: /^Feedback \(1\)/ }).click();
+  await expect(panel).toContainText("outdated context");
+  expect(await exported(page)).toEqual(original);
+});
+
+test("two tabs retain both requests when each save reads the same pre-write snapshot", async ({
+  page,
+  context,
+}) => {
+  const other = await context.newPage();
+  for (const tab of [page, other]) {
+    await openBundle(tab, "view:dispatch");
+    await byId(tab, "sym:src/runner.ts#Runner.dispatch").click();
+    await tab.getByRole("button", { name: /^Feedback/ }).click();
+    // Force the interleaving where both tabs read before either writes. Writes still use real,
+    // shared browser storage; freezing reads makes this race reproducible without timing luck.
+    await tab.evaluate(() => {
+      const getItem = Storage.prototype.getItem;
+      const snapshot = new Map(
+        Array.from({ length: localStorage.length }, (_, i) => {
+          const key = localStorage.key(i)!;
+          return [key, getItem.call(localStorage, key)] as const;
+        }),
+      );
+      Storage.prototype.getItem = function (key) {
+        return this === localStorage && key.startsWith("xpl-feedback:")
+          ? (snapshot.get(key) ?? null)
+          : getItem.call(this, key);
+      };
+    });
+  }
+  await page.getByLabel("Feedback note").fill("First tab request.");
+  await other.getByLabel("Feedback note").fill("Second tab request.");
+  await Promise.all(
+    [page, other].map((tab) =>
+      tab.getByRole("button", { name: "Save feedback", exact: true }).click(),
+    ),
+  );
+  const first = (await exported(page)).requests;
+  const second = (await exported(other)).requests;
+  expect(first).toHaveLength(1);
+  expect(second).toHaveLength(1);
+  expect(first[0].id).not.toBe(second[0].id);
+  const captured = [...first, ...second].sort((a, b) => a.note.localeCompare(b.note));
+  expect(captured.map((r) => r.note)).toEqual(["First tab request.", "Second tab request."]);
+  for (const tab of [page, other]) {
+    await tab.reload();
+    await tab.getByRole("button", { name: /^Feedback \(2\)/ }).click();
+    const saved = (await exported(tab)).requests.sort((a: { note: string }, b: { note: string }) =>
+      a.note.localeCompare(b.note),
+    );
+    expect(saved).toEqual(captured);
+  }
+});
+
 test("saved-page feedback retains terminal outcomes and reports changed explanation context", async ({
   page,
 }) => {

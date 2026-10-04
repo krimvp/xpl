@@ -1454,8 +1454,11 @@ Both splits (diagram / panels, diagram / code) are resizable. Below 900 px the h
 **Feedback:** a header button in Read, Explore and Present opens a panel for corrections, explanations
 and expansions attached to the selected element and cursor lines (or the element's first source range).
 Before-source selections retain `side: base` and do not look up head symbols. Offline requests survive
-reload in browser storage keyed by original artifact/source identity. Reload keeps the newer of embedded
-and browser outcomes; conflicting original content for one ID is reported without overwriting storage.
+reload in a browser namespace captured once from the page's original artifact/source identity. View edits
+and live refresh never change that namespace; each request keeps the context at the time it was captured.
+Each request is written under its own stable-ID key, so concurrent tabs cannot replace each other's requests.
+Reload also reads the old array format without rewriting it and keeps the newer of embedded and browser
+outcomes; conflicting original content for one ID is reported without overwriting storage.
 JSON exports and Save as HTML carry
 the same validated contract, including outcomes and reasons. Storage refusal is visible; readers must
 export JSON or save the page before closing it in that case. Live requests use `POST /api/requests`;
