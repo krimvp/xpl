@@ -28,6 +28,7 @@ const SAMPLES: Record<GrammarId, { source: string; root: string; contains: strin
     root: "module",
     contains: ["class_definition", "function_definition"],
   },
+  rust: { source: "fn main() {}\n", root: "source_file", contains: ["function_item"] },
   go: {
     source: "package main\n\nfunc main() {}\n",
     root: "source_file",
@@ -96,7 +97,7 @@ describe("tree-sitter wasm grammars", () => {
   });
 
   it("rejects unknown grammar ids", async () => {
-    await expect(loadLanguage("rust" as GrammarId)).rejects.toThrow(/unknown grammar "rust"/);
+    await expect(loadLanguage("unknown" as GrammarId)).rejects.toThrow(/unknown grammar "unknown"/);
   });
 
   it("reports positions as UTF-16 code units (JS string indices)", async () => {

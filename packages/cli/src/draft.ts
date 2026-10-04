@@ -28,6 +28,8 @@
  * explainer already stores get no overlay.
  */
 import {
+  CODE_LANGUAGES,
+  CODE_LANGUAGE_NAMES,
   RESERVED_PREFIXES,
   analyzeChange,
   baseName,
@@ -121,14 +123,6 @@ const NOT_DESIGN: readonly string[] = [
   "**/__fixtures__/**",
   "**/__mocks__/**",
 ];
-
-const CODE_LANGUAGES: ReadonlySet<string> = new Set([
-  "typescript",
-  "tsx",
-  "javascript",
-  "python",
-  "go",
-]);
 
 /** File and directory names that usually hold the entry point of a project. */
 const ENTRY_NAMES = /^(?:main|__main__|cli|cmd|app|apps|application|applications|index|server)$/;
@@ -1356,14 +1350,6 @@ function slugOf(text: string): string {
   return RESERVED_PREFIXES.includes(slug) ? `${slug}-part` : slug;
 }
 
-const LANGUAGE_NAMES: Record<string, string> = {
-  typescript: "TypeScript",
-  tsx: "TypeScript",
-  javascript: "JavaScript",
-  python: "Python",
-  go: "Go",
-};
-
 /** One map of the inside of a service: its parts, and the parts that were left off. */
 interface Inside {
   /** The service box on the system map: a `grp:` (the whole repo is one service) or a `dir:` (one of several). */
@@ -1647,7 +1633,8 @@ export function draftRepo(input: DraftInput): Draft {
   const languageOf = (files: readonly string[]): string | undefined => {
     const count = new Map<string, number>();
     for (const f of files) {
-      const name = LANGUAGE_NAMES[model.file(f)?.language ?? ""];
+      const language = model.file(f)?.language;
+      const name = language ? CODE_LANGUAGE_NAMES[language] : undefined;
       if (name) count.set(name, (count.get(name) ?? 0) + 1);
     }
     return [...count].sort((a, b) => b[1] - a[1])[0]?.[0];

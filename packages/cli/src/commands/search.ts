@@ -1,4 +1,4 @@
-import { matchesGlob } from "@xpl/core";
+import { CODE_LANGUAGES, matchesGlob } from "@xpl/core";
 import type { CommandSpec } from "../command.js";
 import { UsageError } from "../errors.js";
 import { plural, truncate } from "../format.js";
@@ -8,14 +8,6 @@ import { resolveTarget } from "../target.js";
 const DEFAULT_LIMIT = 50;
 const MAX_TEXT = 160;
 
-/** Languages of code proper: `--code` keeps only these, and their files come first. */
-const CODE_LANGUAGES: ReadonlySet<string> = new Set([
-  "typescript",
-  "tsx",
-  "javascript",
-  "python",
-  "go",
-]);
 /** Config files (their symbols are keys): after code, before docs. */
 const CONFIG_LANGUAGES: ReadonlySet<string> = new Set(["yaml", "json", "toml"]);
 

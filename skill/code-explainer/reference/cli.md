@@ -46,9 +46,9 @@ available, but symbol and relationship completeness cannot be inferred.
 Provider labels separate a file-only fallback's limits from an artifact provider's usable symbols.
 Tool commands and diagnostic details are omitted from these summaries.
 
-- The last column is how far a language's references can be trusted. `refs: precise (tool)`: SCIP resolved them (TypeScript, Python, Go). `refs: heuristic`: tree-sitter scope-aware guesses, drawn lighter in the viewer; confirm calls with `show`. `refs: none`: usually yaml, json, toml and text without an artifact provider.
+- The last column is how far a language's references can be trusted. `refs: precise (tool)`: SCIP resolved them (TypeScript, Python, Go). `refs: heuristic`: tree-sitter scope-aware guesses, drawn lighter in the viewer; confirm calls with `show`. `refs: none`: usually rust, yaml, json, toml and text without an artifact provider. Rust tags provide partial named declarations and lexical nesting, without resolved relationships or macro expansion.
 - `refs: precise 10/11 (scip-go@0.2.7), 1 heuristic`: the tool described only 10 of the 11 files (build-tagged Go files, files a project's own configuration excludes). Those files keep heuristic references, so **their references are hints**; a warning above the summary names them: `warning: scip-go@0.2.7 did not describe 1 file(s) (excluded by build constraints or by the tool's own configuration, or unreadable?); their references stay heuristic: internal/queue/windows_only.go`.
-- `--precise auto` (default) falls back to heuristic with a warning, e.g. ``warning: precise resolver "scip-go" failed (scip-go@v0.2.7 could not be started (is `go` installed and on PATH?): spawn go ENOENT); using heuristic references for go``. `off` never runs SCIP (faster). `require` exits 1 instead of falling back.
+- `--precise auto` (default) falls back to heuristic with a warning, e.g. ``warning: precise resolver "scip-go" failed (scip-go@v0.2.7 could not be started (is `go` installed and on PATH?): spawn go ENOENT); using heuristic references for go``. `off` never runs SCIP (faster); syntax-only providers such as Rust tags still run. `require` exits 1 instead of falling back.
 - A file with syntax errors is indexed anyway. One warning covers all such files, with the first lines to look at: `warning: 1 file(s) have syntax errors; symbols near these lines may be incomplete: src/broken.ts:2` (at most 5 files and 3 lines each). Errors that cannot have cost a symbol (a TS labelled tuple element such as `[symbol: string]`) are not reported.
 - Reference kinds: `call import extends implements type-ref read write`. A `read` is a use of a module- or package-level variable or constant, or of a field whose type is known, that is not a call or an assignment (`this.config.retry`, `LIMIT`); the built-in syntax/tool adapters omit locals and parameters, while artifact imports can retain role-backed references to checked local declarations. A TS `import type` and a Python `import` under `TYPE_CHECKING` are `type-ref`, not `import`: `import` references are runtime dependencies.
 - Symbols beyond declarations: config keys (`kind: key`) of yaml, json and toml files (`config/default.yaml#retry.maxRetries`, `pyproject.toml#project.scripts.flask`); TS test blocks (statement-level `describe`/`suite`/`context`/`it`/`test` calls with a string title), whose path is the nested titles (`test/retry.test.ts#fails twice, then succeeds: acked after two requeues`; `.` and `#` in a title become `_`). Test blocks can be anchored and outlined but nothing references them by name.
@@ -106,8 +106,9 @@ adding or removing it changes the snapshot identity. Stale or unverified documen
 checked symbols or relationships. Documents must belong to discovered sources; generated build outputs
 and external symbols are not turned into local declarations. A supplied project-root URI must match `--root`.
 
-`--scip` selects the artifact provider instead of automatic SCIP tools. `auto` reports failures and keeps
-available syntax hints; `require` rejects unusable imports. `--precise off` cannot be combined with `--scip`.
+`--scip` selects the artifact provider instead of automatic SCIP tools. Registered syntax providers such as
+Rust tags still run first. `auto` reports failures and keeps available syntax declarations and hints;
+`require` rejects unusable imports and programming languages without usable precise relationship coverage. `--precise off` cannot be combined with `--scip`.
 Unknown extensions remain `text`, but imported symbols work with `outline`, `show`, `apply`, `validate` and
 `bundle`. Only definitions with full producer ranges become checked symbols. Missing ranges, parents and
 unclassified occurrences remain limits in `analysis`; diagnostics identify omitted facts. Only role-backed
@@ -271,7 +272,7 @@ Base classes (TS, JS, Python; not Go, whose embedding does not dispatch) are hop
 
 ## `xpl search <pattern> [--regex] [-i] [--limit n] [--under <dir|glob>] [--code]`
 
-Line-by-line search of the working-tree text of every indexed file (substring, case-sensitive; `--regex` = JavaScript regex; `-i` ignores case). Hit: `<file>:<line>  <enclosing symbol id> +<offset>  <line text>`; outside every symbol it names the file (offset = line − 1). Code files come first, then config (yaml, json, toml), then docs and other text, so the first hits (`--limit`, default 50) are the code; the total is always counted. `--code` drops everything that is not code. `--under` keeps the search inside a directory, file or symbol (`dir:src/flask`, `src/flask/`, `file:src/app.py`, `sym:src/app.py#Flask`) or a glob on repo paths (`'tests/**'`, `'src/*.py'`); repeat it or comma-separate for several. The total is counted inside the scope.
+Line-by-line search of the working-tree text of every indexed file (substring, case-sensitive; `--regex` = JavaScript regex; `-i` ignores case). Hit: `<file>:<line>  <enclosing symbol id> +<offset>  <line text>`; outside every symbol it names the file (offset = line − 1). Code files come first, then config (yaml, json, toml), then docs and other text, so the first hits (`--limit`, default 50) are the code; the total is always counted. `--code` drops everything that is not code; Rust (`.rs`) is included. `--under` keeps the search inside a directory, file or symbol (`dir:src/flask`, `src/flask/`, `file:src/app.py`, `sym:src/app.py#Flask`) or a glob on repo paths (`'tests/**'`, `'src/*.py'`); repeat it or comma-separate for several. The total is counted inside the scope.
 
 ```
 $ xpl search "job.completed"

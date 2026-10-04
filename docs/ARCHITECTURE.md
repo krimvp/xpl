@@ -135,7 +135,7 @@ Conventions (all packages):
    (§3, Analysis coverage). Its reports describe the original run, including in pruned bundles. Relationship
    results record `resolution?: "precise" | "heuristic"` independently of support and reference counts;
    an absent resolution is unknown.
-5. `IndexedFile.language: FileLanguage` = `typescript | tsx | javascript | python | go | yaml | json | toml |
+5. `IndexedFile.language: FileLanguage` = `typescript | tsx | javascript | python | go | rust | yaml | json | toml |
    text`.
 6. `Edge.kind` adds `"references"` (lifted type-refs) and, for stored edges to related files, `"loads"`,
    `"discovers"`, `"configures"` and `"overrides"` (`EDGE_KINDS` in `ids.ts`; `related-files.ts` lists them).
@@ -320,8 +320,8 @@ string]`, and its recovery stays inside the tuple; for the JSON pack, the traili
 without symbols. References are sorted by file, position and kind. The same walk collects resource sites
 (`resources.ts`, TS/JS, Python, Go: literal paths and globs passed to file-reading and glob calls, relative
 imports of `.json`/`.yaml`/`.toml`), resolved against the indexed files into `SymbolIndex.resources` (§2.18).
-`providers` replaces the semantic provider registry (tests inject fakes); `languages` restricts the build to some `FileLanguage`s
-(the CLI does not expose it).
+`providers` replaces the additional provider registry (syntax and semantic; tests inject fakes).
+`languages` restricts the build to some `FileLanguage`s (the CLI does not expose it).
 
 **Files.** `git ls-files --cached --others --exclude-standard` when `root` is inside a git work tree (limited
 to the root's subtree), otherwise a walk that skips `.git node_modules dist build out vendor target
@@ -331,8 +331,8 @@ Dropped silently: binaries (NUL in the first 8 KB), files over 1 MB, symlinks an
 deleted but still tracked, and lockfiles (`*-lock.json`, `*.lock`, `go.sum`, `pnpm-lock.yaml`,
 `npm-shrinkwrap.json`). Every remaining text file is an `IndexedFile` (unknown extensions → `text`), so
 file-relative anchors work anywhere. Language by extension: `.ts .mts .cts` typescript, `.tsx` tsx, `.js .mjs
-.cjs .jsx` javascript, `.py .pyi` python, `.go` go, `.yaml .yml` yaml, `.json` json, `.toml` toml. Paths are
-POSIX, repo-root-relative, sorted.
+.cjs .jsx` javascript, `.py .pyi` python, `.go` go, `.rs` rust, `.yaml .yml` yaml, `.json` json, `.toml` toml.
+Paths are POSIX, repo-root-relative, sorted.
 
 **Commit id.** `--commit` wins (letters, digits, `.`, `_`, `-` only: it becomes part of a file name). Else, if
 `root` is the git top-level and the work tree is clean (ignoring `.explainer/`): short HEAD (7 chars). Else
@@ -407,11 +407,14 @@ file.
 **Independent providers** (`src/providers.ts`). `IndexProvider` is the external seam for source-backed
 facts. `TreeSitterProvider` and the SCIP providers implement it. Providers may parse the supplied text,
 consume an artifact, or run a tool. No tree-sitter node or language-pack parser is required by the interface.
+Additional syntax providers always run, including with `precise: "off"`; semantic providers honor precise
+mode. `require` needs explicit precise relationship coverage for programming languages, including Rust.
 The old `PreciseResolver` interface and registry were removed; `providers` is the build option.
 
 ```ts
 interface IndexProvider {
-  id: string; languages: readonly FileLanguage[]; capabilities: AnalysisCapabilities;
+  id: string; mode?: "syntax" | "semantic";  // omitted = semantic
+  languages: readonly FileLanguage[]; capabilities: AnalysisCapabilities;
   analyze(input: ProviderInput): Promise<ProviderOutput>;
 }
 // Input: root, scoped languages, captured sources {path, language, text}, indexed files,
@@ -471,10 +474,12 @@ reuse is safe only when source, provider version and relevant configuration/depe
 
 The built-in tool adapters keep SCIP relationship mapping over existing syntax declarations. The separate
 `scipArtifactProvider({ artifact, manifest?, languages? })` imports declarations without a language pack.
-The CLI selects it with `xpl index --scip <artifact|manifest.json>` instead of automatic tool selection.
+The CLI selects it with `xpl index --scip <artifact|manifest.json>` instead of automatic semantic tools,
+retaining registered syntax-mode providers first. Artifact import can then replace their declarations where
+source-verified coverage allows it. In a mixed repository, `require` still needs precise relationships for
+Rust; an artifact covering only other source files cannot make Rust satisfy that requirement.
 Unknown extensions keep the closed `FileLanguage` value `text`; imported symbols work in outlines, queries,
 checked anchors and bundles. `--precise off` skips semantic providers; combining it with `--scip` is an error.
-Rust tags (#13) remain separate work.
 
 **Artifact evidence and losses** (`src/scip/artifact.ts`). Each document needs source evidence: embedded
 `Document.text`, or a manifest's pre-generation xpl source hash. The evidence must match the captured source.
@@ -508,6 +513,23 @@ External symbols and accessor targets without checked definitions never create l
 Reports remain partial, including empty results. Producer ranges may omit leading documentation; the importer
 never substitutes an identifier extent for a full declaration. The CLI reference documents generation and
 manifest creation. Java tool orchestration and a Java language identity belong to #14.
+
+Rust's syntax-only `TagsProvider` (`src/tags.ts`, `src/tags/rust.ts`, `rust.scm`) uses the standard
+`@name` and `@definition.*` convention through the same provider normalization. Its corrected query captures
+each declaration once, adds trait signatures, consts/statics and generic/scoped impl blocks, and preserves
+enum/type-alias kinds. Ordered tag containment supplies lexical parents. Functions directly under tagged
+traits/impls become methods; module functions remain functions. Impl paths preserve their receiver and trait
+(`impl Runner<Q>.dispatch`, `impl JobQueue for Queue.pop`); methods are children of the impl, not the receiver
+struct. Repeated paths are numbered in source order with explicit parent identities. Multiline receiver
+labels collapse whitespace; those compound names have full declaration evidence but no identifier span.
+
+Rust uses `tree-sitter-rust@0.24.0` (WASM ABI 14). The CLI copies the corrected query beside its grammar in
+`dist/wasm`; source runs read it from the adapter directory. Rust reports partial symbols, declaration ranges
+and nesting, and unsupported relationship kinds. It does not resolve calls, imports, receiver ownership or
+external `mod` links, expand macros, evaluate cfg, or index fields, variants and local bindings. Declaration
+ranges exclude leading attributes and doc comments. Syntax recovery adds a limit and a warning. Matching
+tags outcomes share one report with combined file counts; syntax-error files keep a separate report.
+[The experiment record](rust-tags.md) gives literal cases, measurements, query coverage and repeatable commands.
 
 **Analysis coverage** (`core/src/analysis.ts`, `indexer/src/analysis.ts`). An `AnalysisReport` contains a
 stable `provider` id, advertised `capabilities`, scoped `files`, and observed `results`. Capabilities are
@@ -1069,6 +1091,10 @@ and tests, the changed lines outside any symbol, the test files the change touch
 tests, and the symbols with no test. Without a range it re-prints the analysis of the stored record. `--json`:
 `{ ok, path, written, change, analysis }`.
 
+`core/src/languages.ts` classifies every `FileLanguage` with a code display name or `undefined` for config
+and other text. Its derived `CODE_LANGUAGES` set is shared by code search and repo drafts; Rust participates
+in both, and its draft service boxes carry `tech: Rust`. Adding a language requires a classification.
+
 **`xpl draft change|repo|path`** prints a patch that `xpl apply` accepts as it is: views, groups, overlays,
 participants, steps, anchors and a tour, with `TODO: <what to write>` in every text (tour notes as `### TODO:
 …` plus a body). It checks the draft with `applyPatch` before printing it, never reuses an id the explainer
@@ -1317,7 +1343,7 @@ menu. Left: the diagram (caption: title and question), below it the concept list
 the code, the file tree (collapsible; files outside the focus are greyed `is-dimmed`, files in it `is-focus`; a
 static bundle lists only the files it embeds, with a footer "N of M files included · rebuild with --files all",
 `tree-foot`; under `xpl view` every indexed file is listed and loaded when opened) beside the stack of
-CodeMirror editors (language modes for TS/TSX/JS, Python, Go, YAML and JSON; TOML and other text are plain).
+CodeMirror editors (language modes for TS/TSX/JS, Python, Go, YAML and JSON; Rust, TOML and other text are plain).
 Both splits (diagram / panels, diagram / code) are resizable. Below 900 px the halves stack.
 
 - **Graph view:** a layered layout (dagre, `layout/layered.ts`), direction RIGHT, or DOWN when the pane is taller than wide; when the result
@@ -1625,11 +1651,13 @@ validate both.
 
 ## 8. Fixtures and acceptance
 
-Three fixtures implement the same job runner (queue, worker pool, event bus, metrics, a runner with
+Four fixtures implement the same job runner (queue, worker pool, event bus, metrics, a runner with
 retry/backoff and dead-lettering, YAML config, tests), each with runnable tests using only its standard
 toolchain: TS `node --test` (type stripping), Python `unittest`, Go `go test` (several packages under
 `internal/` plus `cmd/jobrunner`; `*queue.Queue` satisfies `runner.JobQueue` without declaring it, which
-exercises implicit-interface inference). `config/default.yaml`'s `retry` mapping is lines 13–16 in all three.
+exercises implicit-interface inference), and Rust `cargo test --offline` (std only; trait, generic impl,
+inline/external modules and a `macro_rules!` declaration). `config/default.yaml`'s `retry` mapping is
+lines 13–16 in the original three.
 
 `fixtures/ts-jobrunner` matches the handoff example **exactly**: `src/runner.ts` with `Runner.dispatch` at
 lines 42–88; offsets (relative to line 42) 4 = the `pop()` call, 18–19 = the `run(job)` call, 30–41 = the
@@ -1686,7 +1714,8 @@ keyboard and small screens (`a11y.spec.ts`). `screenshots.spec.ts` (and screensh
 heuristic references, SCIP-precise references for all three, config keys of YAML, JSON and TOML files, the
 full CLI (with `change`, `draft` and `lint`), Read, Explore and Present with tours, feedback from the page
 under `xpl view` and its live update, architecture maps (`role`, `opens`), change explainers with
-base anchors and a diff view, and example explainers for the three fixtures.
+base anchors and a diff view, and example explainers for the original three fixtures. Rust has an
+experimental syntax-tags provider and a browser-tested structural bundle; it has no relationship resolver or committed example explainer.
 
 **Known limitations**
 

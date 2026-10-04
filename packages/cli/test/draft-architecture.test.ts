@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { ExplainerPatch, GraphView } from "@xpl/core";
 import { importsOf } from "../src/outside.js";
-import { makeTempDir, writeFile, xpl, xplJson } from "./helpers.js";
+import { copyFixture, makeTempDir, writeFile, xpl, xplJson } from "./helpers.js";
 
 interface DraftJson {
   notes: string[];
@@ -429,4 +429,20 @@ describe("xpl draft repo: monorepos and one big package", () => {
       ]),
     );
   });
+});
+
+it("drafts Rust code into a repository map labeled Rust", async () => {
+  const { patch } = await drafted(copyFixture("rs-jobrunner"));
+  expect(
+    patch.nodes!.filter((n) => n.role === "service").map(({ tech, opens }) => ({ tech, opens })),
+  ).toEqual([{ tech: "Rust", opens: "view:overview" }]);
+  expect(graph(patch, "view:overview")!.include).toEqual([
+    "file:src/bus.rs",
+    "file:src/config.rs",
+    "file:src/main.rs",
+    "file:src/metrics.rs",
+    "file:src/queue.rs",
+    "file:src/runner.rs",
+    "file:src/worker.rs",
+  ]);
 });
