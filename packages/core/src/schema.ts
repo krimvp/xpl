@@ -621,6 +621,33 @@ export interface TourStep {
 
 // ─── Explainer (<name>.explainer.json) ──────────────────────────────────────────────────────────
 
+/** Exact stored content and evidence inspected by an author; no implicit runtime coverage. */
+export interface ReviewScope {
+  /** All stored content, or non-empty node/edge/concept/view/tour IDs (not their dependencies). */
+  content: "all" | string[];
+  /** Attached anchors only, or also the full indexed file manifest. */
+  source: "anchored" | "repository";
+  /** Additional whole indexed files explicitly inspected. */
+  files?: FilePath[];
+}
+
+export interface ReviewFingerprint {
+  version: "xpl-review@1";
+  contentHash: Hash;
+  evidenceHash: Hash;
+}
+
+/** Self-reported author inspection, not authenticated identity or automatic semantic verification. */
+export interface ReviewRecord {
+  reviewer: string;
+  reviewedAt: string;
+  scope: ReviewScope;
+  omissions: string[];
+  fingerprint: ReviewFingerprint;
+  /** Index commit at recording time. Narrow reviews can remain current across later commits. */
+  sourceCommit: string;
+}
+
 export interface Explainer {
   schema: "code-explainer@0";
   title: string;
@@ -633,6 +660,8 @@ export interface Explainer {
   index: { path: string; commit: string };
   /** (amended) Who the page is for and how deep it goes: shown under the title. */
   scope?: ExplainerScope;
+  /** Absent on legacy explainers: unchecked. Written only by user patches. */
+  review?: ReviewRecord;
   /**
    * The change this explainer is about (a PR or MR), when there is one: written by `xpl change <name>
    * <base>..<head>`, never by patches. `head` is the commit the index was built from.
