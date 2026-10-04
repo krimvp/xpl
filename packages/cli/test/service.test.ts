@@ -269,7 +269,12 @@ describe("repository service lifecycle", () => {
       state: "interrupted",
       instanceId: old.instanceId,
     });
-    expect((await xplJson(root, "service", "start")).json.error).toMatch(/interrupted.*--recover/);
+    const refused = await invoke(["service", "start", "--json"], {
+      cwd: root,
+      env: { XPL_VIEWER_HTML: viewer },
+    });
+    expect(refused.code).toBe(1);
+    expect(JSON.parse(refused.out).error).toMatch(/interrupted.*--recover/);
     expect(readFile(root, ".explainer/demo.explainer.json")).toBe(artifact);
     const recovered = await serve(root, "--recover");
     try {
@@ -295,9 +300,12 @@ describe("repository service lifecycle", () => {
       expect((await xplJson(root, "service", "stop")).json.error).toMatch(
         /cannot verify service ownership/,
       );
-      expect((await xplJson(root, "service", "start", "--recover")).json.error).toMatch(
-        /PID is alive/,
-      );
+      const refused = await invoke(["service", "start", "--recover", "--json"], {
+        cwd: root,
+        env: { XPL_VIEWER_HTML: viewer },
+      });
+      expect(refused.code).toBe(1);
+      expect(JSON.parse(refused.out).error).toMatch(/PID is alive/);
       expect((await fetch(new URL("/api/bundle", running.server.url))).status).toBe(200);
       writeFile(root, ".explainer/service/instance.json", JSON.stringify(record));
     } finally {
@@ -322,9 +330,12 @@ describe("repository service lifecycle", () => {
         root,
         url: first.server.url,
       });
-      expect((await xplJson(alias, "service", "start", "demo")).json.error).toMatch(
-        /already running/,
-      );
+      const duplicate = await invoke(["service", "start", "demo", "--json"], {
+        cwd: alias,
+        env: { XPL_VIEWER_HTML: viewer },
+      });
+      expect(duplicate.code).toBe(1);
+      expect(JSON.parse(duplicate.out).error).toMatch(/already running/);
       const firstId = (await xplJson(root, "service", "status")).json.instanceId;
       await first.close();
       const restarted = await serve(root);
@@ -438,9 +449,12 @@ describe("repository service lifecycle", () => {
           })
         ).status,
       ).toBe(403);
-      const duplicate = await xplJson(root, "service", "start", "demo");
+      const duplicate = await invoke(["service", "start", "demo", "--json"], {
+        cwd: root,
+        env: { XPL_VIEWER_HTML: viewer },
+      });
       expect(duplicate.code).toBe(1);
-      expect(duplicate.json.error).toMatch(/already running/);
+      expect(JSON.parse(duplicate.out).error).toMatch(/already running/);
       expect(
         (await fetch(new URL("/api/service/stop", running.server.url), { method: "POST" })).status,
       ).toBe(403);
