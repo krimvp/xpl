@@ -2,12 +2,12 @@
  * Integration test on the Python job-runner fixture (fixtures/py-jobrunner): the same design as the TS
  * fixture of the handoff example, written idiomatically in Python (ARCHITECTURE.md §8).
  */
-import { cpSync, existsSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { existsSync } from "node:fs";
+import { resolve } from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
 import type { Reference, SymbolIndex } from "@xpl/core";
 import { buildIndex } from "../src/index.js";
-import { makeDir } from "./helpers.js";
+import { describeFixtureInvariants } from "./helpers.js";
 
 const fixture = resolve(import.meta.dirname, "../../../fixtures/py-jobrunner");
 
@@ -128,17 +128,6 @@ describe("py-jobrunner: files and symbols", () => {
       "jobrunner/worker.py": 16,
       "tests/test_retry.py": 17,
     });
-  });
-
-  it("every symbol's range lies inside its file, ids follow the path, parents exist", () => {
-    for (const symbol of index.symbols) {
-      const file = index.files.find((f) => f.path === symbol.file)!;
-      expect(symbol.range.startLine).toBeGreaterThanOrEqual(1);
-      expect(symbol.range.endLine).toBeLessThanOrEqual(file.lines);
-      expect(symbol.range.endLine).toBeGreaterThanOrEqual(symbol.range.startLine);
-      expect(symbol.id).toBe(`${symbol.file}#${symbol.path}`);
-      if (symbol.parent) expect(sym(symbol.parent), symbol.parent).toBeDefined();
-    }
   });
 });
 
@@ -341,38 +330,4 @@ describe("py-jobrunner: imports, heritage, the demo and the tests", () => {
   });
 });
 
-describe("py-jobrunner: index-level properties", () => {
-  it("has a deterministic working-tree commit id and byte-identical output", async () => {
-    expect(index.commit).toMatch(/^wt-[0-9a-f]{10}$/);
-    const again = await buildIndex({ root: fixture, precise: "off" });
-    expect(again.index.commit).toBe(index.commit);
-    expect(JSON.stringify(again.index)).toBe(JSON.stringify(index));
-  });
-
-  it("all refs reference existing files and symbols; module scopes only as `<file>#`", () => {
-    const ids = new Set(index.symbols.map((s) => s.id));
-    const files = new Set(index.files.map((f) => f.path));
-    for (const ref of index.refs) {
-      for (const id of [ref.from, ref.to]) {
-        const hash = id.indexOf("#");
-        expect(files.has(id.slice(0, hash)), id).toBe(true);
-        if (id.slice(hash + 1) !== "") expect(ids.has(id), id).toBe(true);
-      }
-      expect(ref.from).not.toBe(ref.to);
-      expect(ref.resolution).toBe("heuristic");
-      expect(ref.site.startLine).toBeGreaterThanOrEqual(1);
-    }
-  });
-
-  it("indexing a copy of the fixture elsewhere gives the same symbols and references", async () => {
-    const copy = makeDir();
-    cpSync(fixture, copy, {
-      recursive: true,
-      filter: (src) => !src.includes(`${join("py-jobrunner", ".explainer")}`),
-    });
-    const built = await buildIndex({ root: copy, precise: "off" });
-    expect(built.index.commit).toBe(index.commit);
-    expect(built.index.symbols).toEqual(index.symbols);
-    expect(built.index.refs).toEqual(index.refs);
-  });
-});
+describeFixtureInvariants(fixture, () => index);

@@ -1,9 +1,9 @@
 /** Shared test helpers: temp directories, git repos, single-file extraction and small index queries. */
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
-import { afterAll } from "vitest";
+import { basename, dirname, join } from "node:path";
+import { afterAll, describe, expect, it } from "vitest";
 import { splitLines } from "@xpl/core";
 import type { FileLanguage, Reference, SymbolIndex } from "@xpl/core";
 import { buildIndex, languageForPath, ParserPool, parseFile } from "../src/index.js";
@@ -128,4 +128,69 @@ export function symbolLines(index: SymbolIndex, file: string): string[] {
 /** The symbol with this path in this file. */
 export function symbol(index: SymbolIndex, file: string, path: string) {
   return index.symbols.find((s) => s.file === file && s.path === path);
+}
+
+/**
+ * What every fixture index keeps, whatever the language: ranges inside files, references between real
+ * symbols with their sites inside the symbol that makes them, and the same index built twice or elsewhere.
+ * `index` is read after the caller's `beforeAll` built it (`precise: "off"`).
+ */
+export function describeFixtureInvariants(fixture: string, index: () => SymbolIndex): void {
+  const name = basename(fixture);
+  describe(`${name}: index invariants`, () => {
+    it("every symbol's range lies inside its file, ids follow the path, parents exist", () => {
+      const { files, symbols } = index();
+      const ids = new Set(symbols.map((s) => s.id));
+      for (const symbol of symbols) {
+        const file = files.find((f) => f.path === symbol.file)!;
+        expect(symbol.range.startLine).toBeGreaterThanOrEqual(1);
+        expect(symbol.range.endLine).toBeLessThanOrEqual(file.lines);
+        expect(symbol.range.endLine).toBeGreaterThanOrEqual(symbol.range.startLine);
+        expect(symbol.id).toBe(`${symbol.file}#${symbol.path}`);
+        if (symbol.parent) expect(ids.has(symbol.parent), symbol.parent).toBe(true);
+      }
+    });
+
+    it("all refs join real files and symbols (module scopes only as `<file>#`), inside the symbol that makes them", () => {
+      const { files, symbols, refs } = index();
+      const byId = new Map(symbols.map((s) => [s.id, s]));
+      const lines = new Map(files.map((f) => [f.path, f.lines]));
+      for (const ref of refs) {
+        for (const id of [ref.from, ref.to]) {
+          const hash = id.indexOf("#");
+          expect(lines.has(id.slice(0, hash)), id).toBe(true);
+          if (id.slice(hash + 1) !== "") expect(byId.has(id), id).toBe(true);
+        }
+        expect(ref.from).not.toBe(ref.to);
+        expect(ref.resolution).toBe("heuristic");
+        expect(ref.site.startLine).toBeGreaterThanOrEqual(1);
+        expect(ref.site.endLine).toBeLessThanOrEqual(
+          lines.get(ref.from.slice(0, ref.from.indexOf("#")))!,
+        );
+        const from = byId.get(ref.from);
+        if (from && ref.kind !== "implements") {
+          expect(ref.site.startLine).toBeGreaterThanOrEqual(from.range.startLine);
+          expect(ref.site.endLine).toBeLessThanOrEqual(from.range.endLine);
+        }
+      }
+    });
+
+    it("has a deterministic working-tree commit id and a byte-identical index when built twice", async () => {
+      expect(index().commit).toMatch(/^wt-[0-9a-f]{10}$/);
+      const again = await buildIndex({ root: fixture, precise: "off" });
+      expect(JSON.stringify(again.index)).toBe(JSON.stringify(index()));
+    });
+
+    it("a copy of the fixture elsewhere gives the same commit id, symbols and references", async () => {
+      const copy = makeDir();
+      cpSync(fixture, copy, {
+        recursive: true,
+        filter: (src) => !src.includes(join(name, ".explainer")),
+      });
+      const built = await buildIndex({ root: copy, precise: "off" });
+      expect(built.index.commit).toBe(index().commit);
+      expect(built.index.symbols).toEqual(index().symbols);
+      expect(built.index.refs).toEqual(index().refs);
+    });
+  });
 }
