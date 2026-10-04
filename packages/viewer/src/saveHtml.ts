@@ -68,6 +68,8 @@ export async function prepareHtmlSave(store: ViewerStore): Promise<ViewerBundle>
   const script = page?.root.querySelector(`#${BUNDLE_SCRIPT_ID}`);
   if (!script) throw new Error("This page has no embedded snapshot to save.");
   const original = parseBundle(script.textContent ?? "");
+  // Reread browser records and live disk outcomes without changing any request's original context.
+  await store.refreshFeedback();
   if (store.getState().serverMode) {
     await store.flush();
     const state = store.getState();
@@ -85,7 +87,10 @@ export async function prepareHtmlSave(store: ViewerStore): Promise<ViewerBundle>
           bundle.files[path] = await api.file(path);
         }),
     );
-    return bundle;
+    return {
+      ...bundle,
+      feedback: store.feedbackFile(bundle.feedback),
+    };
   }
   const state = store.getState();
   return {
@@ -95,6 +100,7 @@ export async function prepareHtmlSave(store: ViewerStore): Promise<ViewerBundle>
     baseFiles: state.baseFiles,
     index: state.model.index.index,
     sourceWarning: state.sourceWarning,
+    feedback: store.feedbackFile(original.feedback),
   };
 }
 

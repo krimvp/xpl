@@ -38,8 +38,8 @@ In the repo you want to understand, ask Claude in plain words or with the skill'
 - `explain this repo`: what the project is, its parts on one map, and the main path; deeper nodes stay unexplained until you expand them.
 - Add "quickly" for a fast answer: one picture and a 5-step tour.
 - `explain change main..my-branch` (or a PR or MR you name): what changes for users, where, who else is affected, the tests and the risks. Claude reads the diff locally with git and never posts anything. The page shows the diff, the code before the change, and which boxes are new or changed.
-- `expand the queue package` (or click "Explain this" in `xpl view`; Claude drains the queue).
-- `feedback`: in `xpl view`, type what should change under "Explain this" ("too long", "show the caller") and send it; then `/code-explainer feedback` makes the changes, and the open page picks them up by itself.
+- `expand the queue package` (or click "Explain this" in `xpl view`; the next explicit pass records selected outcomes).
+- `feedback`: in `xpl view`, type what should change under "Explain this" ("too long", "show the caller") and send it; then explicitly invoke `/code-explainer feedback`. Saved pages use Feedback > Export feedback JSON and `xpl feedback <name> --import feedback.json` first. Requests retain IDs, source ranges, original snapshot hashes and outcome reasons. Saving starts no generation.
 - `make a tour` of the views for a talk (present mode).
 
 Claude indexes the repo, starts from a draft that `xpl draft` builds from the index (the structure, with no text), writes and checks the text, saves `.explainer/<name>.explainer.json`, passes `xpl ready <name>`, and gives you an HTML bundle (`xpl bundle`, self-contained, the default in cloud sessions) or a local viewer (`xpl view`). `.explainer/index-*.json` is git-ignored automatically; commit the `*.explainer.json` files.

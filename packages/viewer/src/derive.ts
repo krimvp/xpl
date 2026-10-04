@@ -411,7 +411,7 @@ const sideOf = (range: FocusRange, base: boolean) => ({ file: range.file, base }
 // ─── Stage 3: the caret ─────────────────────────────────────────────────────────────────────────
 
 function deriveMatches(vd: ViewDerived, cursor: Cursor | undefined): ElementId[] {
-  if (!cursor) return [];
+  if (!cursor || cursor.side === "base") return [];
   const reverse = vd.reverse();
   const found = new Set<ElementId>();
   const last = Math.min(cursor.toLine, cursor.fromLine + MAX_LOOKUP_LINES - 1);

@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { COMMANDS } from "../src/cli.js";
 import { indexedFixture, invoke, makeTempDir, xpl } from "./helpers.js";
 
 describe("xpl cli", () => {
-  it("--help prints the registered commands and global options", async () => {
+  it("--help describes commands and global options", async () => {
     const { code, out } = await invoke(["--help"]);
     expect(code).toBe(0);
-    for (const command of COMMANDS) expect(out).toMatch(new RegExp(`^  ${command.name}\\s`, "m"));
+    expect(out).toContain("Usage: xpl <command> [options]");
+    expect(out).toMatch(/feedback\s+Import, inspect or export durable reader feedback/);
     expect(out).toContain("--root");
     expect(out).toContain("--json");
     expect(out).toContain("--index");

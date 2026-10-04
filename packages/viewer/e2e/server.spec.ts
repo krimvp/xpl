@@ -225,9 +225,16 @@ test("Explain this queues a request with POST /api/requests", async ({ page }) =
   await byId(page, "concept:retry-policy").click();
   await page.getByRole("button", { name: "Explain this" }).click();
   await expect(page.locator(".explain-note")).toContainText("Queued");
-  expect(recorded.posts).toEqual([
-    { kind: "expand", id: "concept:retry-policy", view: "view:dispatch", label: "Retry policy" },
-  ]);
+  expect(recorded.posts).toHaveLength(1);
+  expect(recorded.posts[0]).toMatchObject({
+    kind: "expand",
+    elementId: "concept:retry-policy",
+    view: "view:dispatch",
+    label: "Retry policy",
+    id: expect.any(String),
+    context: { explainerHash: expect.any(String), sourceHash: expect.any(String) },
+    outcome: { status: "pending", reason: "Awaiting an explicit revision pass." },
+  });
   // No command box when the request was queued.
   await expect(page.getByTestId("explain-command")).toHaveCount(0);
 });
@@ -242,15 +249,14 @@ test("feedback typed under Explain this is queued as the note, and the change co
   await page.getByTestId("feedback").fill("Too long: one sentence is enough.");
   await page.getByRole("button", { name: "Send to Claude" }).click();
   await expect(page.locator(".explain-note")).toContainText("Queued");
-  expect(recorded.posts).toEqual([
-    {
-      kind: "expand",
-      id: "concept:retry-policy",
-      note: "Too long: one sentence is enough.",
-      view: "view:dispatch",
-      label: "Retry policy",
-    },
-  ]);
+  expect(recorded.posts).toHaveLength(1);
+  expect(recorded.posts[0]).toMatchObject({
+    kind: "expand",
+    elementId: "concept:retry-policy",
+    note: "Too long: one sentence is enough.",
+    view: "view:dispatch",
+    label: "Retry policy",
+  });
   await expect(page.getByTestId("feedback")).toHaveValue("");
 
   // Claude applies a patch; the next poll brings it in, with the same element still selected.

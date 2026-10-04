@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { expect, test } from "@playwright/test";
-import { hashText, parseBundle } from "@xpl/core";
+import { artifactIdentity, hashText, parseBundle } from "@xpl/core";
 import {
   openEditMenu,
   openVariant,
@@ -74,6 +74,13 @@ test("a complete snapshot saves ready HTML with source, provenance, identity and
   page,
 }) => {
   await openVariant(page, complete);
+  await page.evaluate(() => window.__xpl!.select(["sym:src/runner.ts#Runner.dispatch"]));
+  await page.getByRole("button", { name: /^Feedback/ }).click();
+  const feedback = page.getByRole("dialog", { name: "Reader feedback" });
+  await feedback.getByLabel("Feedback note").fill("Explain the queue wait.");
+  await feedback.getByRole("button", { name: "Save feedback", exact: true }).click();
+  await expect(feedback.getByRole("status")).toContainText("Saved in this browser");
+  await feedback.getByRole("button", { name: "Close feedback" }).click();
   await (await openEditMenu(page)).getByTestId("edit-save-html").click();
   await expect(page.getByTestId("readiness-summary")).toContainText("Ready: 0 errors");
   await page
@@ -85,6 +92,12 @@ test("a complete snapshot saves ready HTML with source, provenance, identity and
   ]);
   const html = readFileSync((await download.path())!, "utf8");
   const saved = dataOf(html);
+  expect(saved.feedback?.requests).toHaveLength(1);
+  expect(saved.feedback!.requests[0]).toMatchObject({
+    note: "Explain the queue wait.",
+    context: saved.exportInfo!.report.identity,
+    outcome: { status: "pending", reason: "Awaiting an explicit revision pass." },
+  });
   expect(saved.exportInfo).toMatchObject({
     status: "ready",
     report: {
@@ -110,15 +123,26 @@ test("a complete snapshot saves ready HTML with source, provenance, identity and
   });
   await page.goto("http://xpl.test/");
   await expect(page.getByTestId("explanation-info")).toBeVisible();
+  await page.evaluate(() => window.__xpl!.select(["sym:src/runner.ts#Runner.dispatch"]));
+  await page.getByRole("button", { name: /^Feedback \(1\)/ }).click();
+  await feedback.getByLabel("Feedback note").fill("Explain the ready snapshot too.");
+  await feedback.getByRole("button", { name: "Save feedback", exact: true }).click();
+  await expect(feedback.getByRole("status")).toContainText("Saved in this browser");
+  await feedback.getByRole("button", { name: "Close feedback" }).click();
   await (await openEditMenu(page)).getByTestId("edit-save-html").click();
   await expect(page.getByTestId("readiness-summary")).toContainText("Ready: 0 errors");
   const [again] = await Promise.all([
     page.waitForEvent("download"),
     page.getByTestId("save-html-ready").click(),
   ]);
-  expect(dataOf(readFileSync((await again.path())!, "utf8")).exportInfo?.report.identity).toEqual(
-    saved.exportInfo!.report.identity,
-  );
+  const reexported = dataOf(readFileSync((await again.path())!, "utf8"));
+  expect(reexported.exportInfo?.report.identity).toEqual(saved.exportInfo!.report.identity);
+  expect(reexported.feedback?.requests).toHaveLength(2);
+  expect(reexported.feedback!.requests[0]).toEqual(saved.feedback!.requests[0]);
+  expect(reexported.feedback!.requests[1]).toMatchObject({
+    note: "Explain the ready snapshot too.",
+    context: saved.exportInfo!.report.identity,
+  });
   expect(requests.filter((url) => url.includes("/api/"))).toEqual([]);
 });
 
@@ -135,6 +159,8 @@ test("a live save checks the workspace at the export click, even before polling 
     if (path === "/")
       return route.fulfill({ contentType: "text/html", body: withBundle(html, bundle) });
     if (path === "/api/explainer") return route.fulfill({ status: 304 });
+    if (path === "/api/requests")
+      return route.fulfill({ contentType: "application/json", body: '{"requests":[]}' });
     if (path === "/api/export") {
       exports++;
       return route.fulfill({
@@ -165,6 +191,20 @@ test("live ready HTML refreshes fetched source and keeps it available after disc
   const bundle: Loose = embedded;
   complete(bundle);
   bundle.server = { api: "/api" };
+  const original = parseBundle(JSON.stringify(bundle));
+  const prior = {
+    id: "live-request",
+    elementId: "sym:src/runner.ts#Runner.dispatch",
+    kind: "explain",
+    at: "2026-10-04T12:00:00.000Z",
+    context: artifactIdentity(original.explainer, original.index),
+    outcome: {
+      revision: 0,
+      status: "pending",
+      reason: "Awaiting a pass.",
+      at: "2026-10-04T12:00:00.000Z",
+    },
+  };
   delete bundle.files["README.md"];
   const initial = "Notes read while the workspace is open.";
   const fresh = "Updated notes saved for offline readers.";
@@ -176,6 +216,11 @@ test("live ready HTML refreshes fetched source and keeps it available after disc
     if (url.pathname === "/")
       return route.fulfill({ contentType: "text/html", body: withBundle(html, bundle) });
     if (url.pathname === "/api/explainer") return route.fulfill({ status: 304 });
+    if (url.pathname === "/api/requests")
+      return route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({ requests: [prior] }),
+      });
     if (url.pathname === "/api/file" && url.searchParams.get("path") === "README.md") {
       fetched.push(workspaceText);
       return route.fulfill({ contentType: "text/plain", body: workspaceText });
@@ -194,12 +239,19 @@ test("live ready HTML refreshes fetched source and keeps it available after disc
   workspaceText = fresh;
   await (await openEditMenu(page)).getByTestId("edit-save-html").click();
   await expect(page.getByTestId("readiness-summary")).toContainText("Ready: 0 errors");
+  prior.outcome = {
+    revision: 1,
+    status: "addressed",
+    reason: "Explained the queue wait.",
+    at: "2026-10-04T13:00:00.000Z",
+  };
   const [download] = await Promise.all([
     page.waitForEvent("download"),
     page.getByTestId("save-html-ready").click(),
   ]);
   const saved = readFileSync((await download.path())!, "utf8");
   expect(dataOf(saved).files["README.md"]).toBe(fresh);
+  expect(dataOf(saved).feedback?.requests).toEqual([prior]);
   expect(fetched).toEqual([initial, fresh, fresh]);
   await page.unroute("http://xpl.test/**");
   const requests: string[] = [];

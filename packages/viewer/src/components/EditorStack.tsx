@@ -175,7 +175,11 @@ export function EditorStack() {
             lines={info && !base ? info.lines : text !== undefined ? splitLines(text).length : 0}
             text={text}
             error={base ? state.baseErrors[pane.file] : state.fileErrors[pane.file]}
-            cursor={!base && state.cursor?.file === pane.file ? state.cursor : undefined}
+            cursor={
+              (state.cursor?.side === "base") === base && state.cursor?.file === pane.file
+                ? state.cursor
+                : undefined
+            }
             focusToken={derived.selection}
             openToken={
               state.openedFile === pane.file && state.openedBase === base ? state.openSeq : 0
@@ -371,13 +375,11 @@ const EditorPane = memo(function EditorPane({
       parent,
       text,
       language,
-      // The lines of a "before" pane are lines of the old code: the caret there looks nothing up.
-      base
-        ? undefined
-        : {
-            onCursor: (from, to) => store.setCursor(pane.file, from, to),
-            symbols: codeSymbols(store, pane.file),
-          },
+      // Before-source selections feed feedback; they never look up head symbols.
+      {
+        onCursor: (from, to) => store.setCursor(pane.file, from, to, base ? "base" : "head"),
+        ...(base ? {} : { symbols: codeSymbols(store, pane.file) }),
+      },
       wrapRef.current,
       `${pane.file}${base ? ", before the change" : ""}: source code`,
     );

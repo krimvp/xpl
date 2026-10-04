@@ -11,6 +11,7 @@ import { indexCommand } from "./commands/build-index.js";
 import { bundleCommand } from "./commands/bundle.js";
 import { changeCommand } from "./commands/change.js";
 import { draftCommand } from "./commands/draft.js";
+import { feedbackCommand } from "./commands/feedback.js";
 import { doctorCommand } from "./commands/doctor.js";
 import { skillCommand } from "./commands/skill.js";
 import { lintCommand } from "./commands/lint.js";
@@ -43,6 +44,7 @@ export const COMMANDS: readonly CommandSpec[] = [
   anchorsCommand,
   resolveCommand,
   statusCommand,
+  feedbackCommand,
   lintCommand,
   readyCommand,
   changeCommand,

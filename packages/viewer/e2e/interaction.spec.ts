@@ -345,9 +345,7 @@ test.describe("details panel", () => {
     await openBundle(page, "view:dispatch");
     await byId(page, "concept:retry-policy").click();
     await page.getByRole("button", { name: "Explain this" }).click();
-    await expect(page.getByTestId("explain-command")).toHaveText(
-      "/code-explainer expand concept:retry-policy",
-    );
+    await expect(page.getByTestId("explain-command")).toHaveText("/code-explainer feedback");
   });
 
   test("markdown detail is rendered and its HTML is neutralised", async ({ page }) => {

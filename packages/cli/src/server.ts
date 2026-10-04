@@ -17,9 +17,9 @@
  *                             updated view, 400 with { error, issues } when rejected
  *   PUT  /api/tours/<id>      the same for a tour: { title?, steps? } (both for a new tour), applied as
  *                             actor "user"; 200 with the updated tour
- *   GET  /api/requests        queued "explain this" requests
- *   POST /api/requests        { elementId, note? } appended to .explainer/requests.json (the viewer's
- *                             { kind, id, view?, label? } is accepted too: id is the elementId)
+ *   GET  /api/requests        durable feedback, outcomes and context warnings for this explainer
+ *   POST /api/requests        a snapshot-bound FeedbackRequest, merged by its stable request ID;
+ *                             legacy element-only input is stored as outdated, without invented context
  *
  * Both the bundle and /api/explainer carry the explainer with its anchors re-resolved against the index and the
  * working tree (`freshAnchors`, as `xpl bundle` does), never the stale `resolved` cache of the file.
@@ -29,6 +29,7 @@
  * It binds to 127.0.0.1 by default. Against DNS rebinding and cross-site writes it checks the Host
  * header (loopback binds), and requires an application/json body and a same-origin Origin for PUT/POST.
  */
+import { artifactIdentity, feedbackContextReason, parseFeedbackRequest } from "@xpl/core";
 import { createHash } from "node:crypto";
 import { statSync } from "node:fs";
 import { join } from "node:path";
@@ -48,7 +49,7 @@ import { collectBaseFiles, collectFiles, freshAnchors, makeBundle } from "./bund
 import type { RepoEnv } from "./context.js";
 import { CliError, errorMessage } from "./errors.js";
 import { atomicWrite, withFileLock, displayPath, jsonFile } from "./fsutil.js";
-import { appendRequest, readRequests } from "./requests.js";
+import { importRequests, appendRequest, readRequests } from "./requests.js";
 import {
   WorkingTree,
   chooseIndexFile,
@@ -407,6 +408,31 @@ export async function startViewServer(options: ViewServerOptions): Promise<ViewS
       const name = explainerName(explainerPath);
       if (method === "POST") {
         const body = await readJsonBody(req);
+        if (body.context !== undefined || body.outcome !== undefined) {
+          let request;
+          try {
+            request = parseFeedbackRequest(body);
+          } catch (error) {
+            throw new HttpError(400, errorMessage(error));
+          }
+          if (request.explainer !== undefined && request.explainer !== name)
+            throw new HttpError(400, "feedback names a different explainer");
+          await importRequests(env.root, [request]);
+          const state = await loadState();
+          const contextReason =
+            feedbackContextReason(request, artifactIdentity(freshExplainer(state), state.index)) ??
+            (await stalenessOf(env, state.tree, state.index, state.indexFile, state.loaded))
+              ?.message;
+          sendJson(req, res, 201, {
+            ok: true,
+            request: readRequests(env.root).requests.find((r) => r.id === request.id),
+            ...(contextReason
+              ? { contextStatus: "outdated", contextReason }
+              : { contextStatus: "current" }),
+          });
+          return;
+        }
+        // Older local viewers have no snapshot contract. Preserve them as unbound legacy feedback.
         // { elementId, note? } (ARCHITECTURE.md §5), or what the viewer sends: { kind, id, view?, label? }.
         const elementId = body.elementId ?? body.id;
         if (typeof elementId !== "string" || elementId === "" || elementId.length > 500) {
@@ -424,16 +450,19 @@ export async function startViewServer(options: ViewServerOptions): Promise<ViewS
           return value;
         };
         const note = text("note", 5000);
-        const kind = text("kind", 40);
+        const kind = text("kind", 40) ?? "expand";
+        if (kind !== "expand" && kind !== "correct" && kind !== "explain")
+          throw new HttpError(400, "unknown feedback kind");
         const view = text("view", 200);
         const label = text("label", 500);
         const saved = await appendRequest(env.root, {
           elementId,
           ...(note !== undefined ? { note } : {}),
-          ...(kind !== undefined ? { kind } : {}),
+          kind,
           ...(view !== undefined ? { view } : {}),
           ...(label !== undefined ? { label } : {}),
           explainer: name,
+          context: null,
         });
         sendJson(req, res, 201, { ok: true, ...saved });
         return;
@@ -441,7 +470,20 @@ export async function startViewServer(options: ViewServerOptions): Promise<ViewS
       const { requests, error } = readRequests(env.root);
       if (error) throw new HttpError(500, error);
       const mine = requests.filter((r) => r.explainer === undefined || r.explainer === name);
-      sendJson(req, res, 200, { requests: mine, pending: mine.length });
+      const state = await loadState();
+      const current = artifactIdentity(freshExplainer(state), state.index);
+      const stale = await stalenessOf(env, state.tree, state.index, state.indexFile, state.loaded);
+      sendJson(req, res, 200, {
+        requests: mine.map((r) => {
+          const contextReason = feedbackContextReason(r, current) ?? stale?.message;
+          return {
+            ...r,
+            contextStatus: contextReason ? "outdated" : "current",
+            ...(contextReason ? { contextReason } : {}),
+          };
+        }),
+        pending: mine.filter((r) => r.outcome.status === "pending").length,
+      });
       return;
     }
     if (pathname === "/favicon.ico") {

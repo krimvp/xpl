@@ -559,7 +559,7 @@ describe("xpl status", () => {
     expect(out).toContain("drifted llm elements to re-explain");
     expect(out).toContain("missing anchors (1)");
     expect(out).toContain(
-      '2026-01-01T00:00:00.000Z  sym:src/runner.ts#Runner.dispatch  "why a loop?"',
+      '2026-01-01T00:00:00.000Z  expand sym:src/runner.ts#Runner.dispatch  "why a loop?"',
     );
     // meant for another explainer (the ghost boxes of the overview name bus.ts too, so look for the request itself)
     expect(out).not.toContain("2026-01-02T00:00:00.000Z");

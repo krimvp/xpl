@@ -52,8 +52,9 @@ between two commits. For a change, `xpl change` records the diff in the explaine
    Sequence diagrams use a small custom layout (lifelines are trivial). No Mermaid, no D2.
 7. **Lazy explanations** are realised by the skill, and asynchronously: views get summaries for what they
    show; other nodes are explained on `expand`. The viewer cannot generate text itself. Its "Explain this"
-   button queues a request in `.explainer/requests.json` (under `xpl view`; otherwise it shows the command
-   to run), `xpl status` lists the queue, and the skill drains it.
+   button saves a request in `.explainer/requests.json` under `xpl view`; offline pages use browser storage
+   and JSON export. `xpl feedback` imports, inspects and exports requests and records selected outcomes.
+   Saving feedback never starts generation. The next explicit pass handles a selected batch.
 8. **Changes: one index, at the head.** A change explainer describes the head of the change, the code the
    index was built from. The base is never indexed. Its text is read from git when it is needed
    (`git show <base>:<path>`): for base anchors, `xpl show --at base`, and the "before" side of the viewer.
@@ -1171,6 +1172,7 @@ stdout (a rejection exits 1); fatal errors (`error: …`) and warnings (`warning
 | `xpl validate <explainer> [--lenient]` | §4.6 |
 | `xpl anchors <explainer> [id...] [--full] [--max-lines n]` | each anchor of an element (or of every element) resolved now: role, `file#symbol +span`, status, lines, and the code at them with offsets (a long anchor: its first lines, an elision line, its last lines); a base anchor prints as `<file>@base +a..b … [before the change]` with the base code; `tour:<id>` (or `tour:<id>/<step>`) also shows what a step without `code` derives from its `focus`, marked derived; verifies spans without reading JSON |
 | `xpl resolve <explainer> [--write] [--allow-stale]` | §4.2 re-resolve against the index of the current code; report drifted llm elements, missing anchors; `--write` saves |
+| `xpl feedback <explainer> [--import <file> \| --export <file> \| --outcomes <file>]` | durable reader feedback: stable-ID import deduplication, snapshot context inspection, portable export and selected-ID outcome merges; no generation |
 | `xpl status <explainer> [--view <id>]` | the skill's to-do list, read-only: per view the shown nodes, stored edges and steps without a summary (static edges optional), concepts without one, drift (user-owned drift counted apart), missing anchors, broken references (ids gone from the index), stale derived-edge overlays, queued requests; per graph view the ghosts and stubs it draws (counts, the most referenced ghost ids, and for each folded ghost up to 3 of the elements it stands for with their counts; `--json`: every ghost with its count and all its `targets` (`{id, count}`), and every stub id, in `views[].ghosts`) with a warning above 12 ghosts; the tours (id, step count, steps whose focus ids or view are gone); `--view <id>`: that view only, with what it draws (each arrow: id, kind, ends, references, stored or derived, label; each `hidden` id and what it takes out; a flow's step links) |
 | `xpl ready <explainer> [--note reason]` | shared readiness report before export; `--json` adds `ok` to the report above; 0 ready (warnings allowed), 1 blockers/failure, 2 usage; writes nothing; a note records intentional warning/omission decisions |
 | `xpl lint <explainer> [--patch <file\|->] [--warn-only]` | checks the text a reader sees (the index, when there is one, counts the boxes and arrows of maps): rules below; `--patch` lints the explainer as it would be after `xpl apply` of that patch (merged in memory as actor `llm`, nothing written; a patch apply would reject prints the rejection and exits 1); exit 1 with any finding (so `lint --patch && apply` stops on one), 0 with `--warn-only` unless a `todo-left` error |
@@ -1225,7 +1227,7 @@ Locks are never stolen on a timer. A crashed writer may leave `<file>.lock`: aft
 remove that directory and retry (writers time out after 30 seconds with that instruction).
 
 **Index selection**, in order: `--index <path>` (relative to the working directory, else to the root); for
-explainer commands, the explainer's own `index.path` when that file exists (`xpl resolve` **ignores** it: it
+explainer commands, the explainer's own `index.path` when that file exists (`xpl resolve` and `xpl feedback` **ignore** it: resolve
 exists to move an explainer to a newer index); otherwise among `.explainer/index-*.json`: the only one, else
 the one named for the current commit id, else the newest. None → an error that says to run `xpl index`.
 
@@ -1346,17 +1348,44 @@ parts may be out of date.
 | `PUT /api/views/<id>` | a view patch (`{ type, …changed fields }`) applied as actor `user` and written; 200 with the updated view; 400 `{ error, issues }` when rejected |
 | `PUT /api/tours/<id>` | the same for a tour (`{ title?, steps? }`, both for a new tour) |
 | `GET /api/requests` | `{ requests, pending }` for this explainer |
-| `POST /api/requests` | `{ elementId, note? }` (the viewer's `{ kind, id, view?, label? }` is accepted too, `id` = the element) appended to `.explainer/requests.json`; 201 |
+| `POST /api/requests` | validated `FeedbackRequest` saved by stable ID; 201 with original context and outcome; legacy element-only bodies remain unbound/outdated |
 
 Guards against DNS rebinding and cross-site writes: for loopback binds the `Host` header must be a loopback
 name with the server's port (403 otherwise); `PUT`/`POST` need `Content-Type: application/json` (415) and,
 when an `Origin` header is present, the same origin (403); bodies are capped at 8 MB (413); a wrong method
 gets 405 with `Allow`. View, tour and request writes run one at a time. `.explainer/requests.json` is a JSON
-array of `{ elementId, note?, kind?, view?, label?, at, explainer? }`; the skill deletes the file once it has
-handled the requests.
+array of `FeedbackRequest` records. Imports and selected-ID outcomes lock, reread and atomically merge
+against the latest store. No operation removes unselected or newly appended requests. Malformed stores
+and conflicting original content for one ID are rejected before writing. Imported outcomes advance only
+when their revision is greater; equal or older revisions keep the stored result.
+
+**Feedback contract** (`core/feedback.ts`): exports are `{schema: "code-explainer/feedback@1", requests}`.
+Each request has `id`, `elementId`, `kind` (`correct`, `explain`, `expand`), `at`, optional `note`, `view`,
+`label`, `explainer`, optional `range` (`file`, inclusive `fromLine`/`toLine`, `side: head|base`), immutable
+`context: {explainerHash, sourceHash}`, and `outcome: {revision, status, reason, at}`. Status is `pending`, `addressed`,
+`unresolved`, `rejected` or `outdated`; every result has a reason. Original source freshness warnings are
+retained as `sourceWarning`. Context uses #25's `artifactIdentity(explainer, index)`: canonical full
+explanation JSON and sorted indexed path/hash manifest plus change base/head. It identifies indexed source;
+a stale workspace or original source warning still requires reconciliation even when hashes match.
+Legacy requests get deterministic IDs and `context: null` with an outdated result; no snapshot is invented.
+Outcome revisions are non-negative safe integers. Capture starts at zero; only locked author outcome
+recording increments the latest stored counter. Old exports without a revision read as zero. Timestamps
+remain display metadata; no merge orders outcomes by clocks from different machines.
+Every merge uses `mergeFeedbackRequests`: a request's held outcome revision never decreases, whatever
+the source or arrival order. Lower or equal revisions preserve its status and reason. Equal revisions
+keep the first held result: the disk record on import, existing viewer state on refresh, or embedded
+feedback on the initial page load.
+
+`xpl feedback` compares against the latest index and reports `contextStatus`/`contextReason` separately
+from the stored outcome, preserving an imported terminal result and its reason. Outdated requests are
+never silently rebound. `--outcomes` reads an array of `{id, context, status, reason}` with the original
+context copied exactly. It updates those IDs and increments their revisions only. Failed writes leave
+the prior file and counters intact and retryable.
+The actual selected revision operation and acceptance/diff workflow belong to #30.
 
 **Bundle payload** (`ViewerBundle`, also `/api/bundle`): `{ schema: "code-explainer/bundle@0", explainer,
-index, files: Record<FilePath, string>, baseFiles?, mode?, tour?, server?, sourceWarning?, exportInfo? }`, embedded as `<script
+index, files: Record<FilePath, string>, baseFiles?, mode?, tour?, server?, sourceWarning?, exportInfo?,
+feedback? }`, embedded as `<script
 id="xpl-data" type="application/json">` with `<` escaped as `\u003c` (and U+2028/2029 escaped). Under `xpl
 view` `files` may be partial and the viewer fetches the rest from `/api/file`. `xpl bundle` embeds the files
 the explainer needs (`--files referenced`, the default; `--files all` embeds every indexed file): those of
@@ -1476,7 +1505,9 @@ serialization too. It saves the page as loaded with the checked explainer in its
 so what is saved is the page as loaded, not the rendered one. The saved copy keeps the index and the embedded
 files, adds the files and base files fetched since the page opened, and drops `server`: it opens without
 `xpl`, with the edits in it. Under `xpl view` the edits are saved by the server already; the HTML file is a copy
-to share.
+to share. Both ready and draft copies carry current feedback with its original IDs, context and outcomes.
+The save refreshes browser records and live disk outcomes before export. Feedback capture works on both
+ready pages and draft previews; an export decision never retargets a request to the exported explanation.
 
 **Read.** The page opens here unless the URL or the bundle asks for another mode. The tabs:
 
@@ -1586,8 +1617,29 @@ Both splits (diagram / panels, diagram / code) are resizable. Below 900 px the h
   facts, related elements and the anchors with their status (`ok`, `moved`, `drifted`, `missing`; clicking one
   opens the file at its lines). Actions: "Explain this", or "Send to Claude" with feedback typed above it
   (`feedback`: "What should Claude change?"; queues a request with the feedback as its note under `xpl view`,
-  otherwise shows `/code-explainer expand <id>` to copy), "Add … to the view" for a stub, "Open children",
+  offline saves in browser storage and offers JSON export through Feedback), "Add … to the view" for a stub, "Open children",
   "Collapse".
+
+**Feedback:** a header button in Read, Explore and Present opens a panel for corrections, explanations
+and expansions attached to the selected element and cursor lines (or the element's first source range).
+Before-source selections retain `side: base` and do not look up head symbols. Offline requests survive
+reload in a browser namespace captured once from the page's original artifact/source identity. View edits
+and live refresh never change that namespace; each request keeps the context at the time it was captured.
+Each request outcome is written under an immutable key containing its stable ID, revision and content hash.
+Concurrent tabs and delayed responses cannot overwrite a newer version, even for the same request ID.
+Reload reads legacy arrays and per-ID records without rewriting them and keeps the greatest outcome
+revision from embedded and browser records. Newer embedded results are persisted too, so reopening an
+older page retains them. Equal revisions keep the held result. Live responses use the same merge rule
+and preserve browser-only requests. A newer portable result must be imported into the author's disk
+store before recording its replacement; an older disk response cannot erase it. Only the locked author
+recording increments revisions. Browser versions are retained; quota refusal is reported rather than
+pruning feedback. JSON export rereads browser versions, including results observed in another tab.
+Conflicting original content for one ID is reported without overwriting storage.
+JSON exports and Save as HTML carry
+the same validated contract, including outcomes and reasons. Storage refusal is visible; readers must
+export JSON or save the page before closing it in that case. Live requests use `POST /api/requests`;
+opening the panel reads saved disk outcomes. Current and original source warnings and changed hashes
+are shown as outdated context. Instructions say to import feedback and invoke the next pass explicitly.
 
 **Reading aids.** A "Key" button beside the zoom buttons says what the diagram's marks mean (`Legend.tsx`:
 `Legend`, `FlowKey`, `SequenceKey`; rows for marks not on screen are left out). "Called from" (`callers.ts`;
@@ -1797,7 +1849,7 @@ newcomer's re-read → `xpl ready` → `xpl bundle --files boundary` (the defaul
 - **`expand <node>`**: an id, a clicked ghost (`ghost:dir:x` means `dir:x`; `ghost:rest:file:p` is what a partly
   shown `file:p` holds outside the view, `ghost:more:in|out` the ghosts beyond `stubs.max`) or a queued
   request. Read it, patch the graph view with `includeAdd` (works on user-curated views), explain only what
-  became visible (`xpl status` names it), drain `.explainer/requests.json` and delete it. A folded ghost is
+  became visible (`xpl status` names it), then record only the selected request outcomes with `xpl feedback`. A folded ghost is
   not an element: `includeAdd` the elements it stands for (`xpl status` prints up to 3 per ghost, `status --json`
   all as `views[].ghosts.list[].targets`; the viewer's menu, `outline --under file:p` and `refs <shown id> --out`
   show them too) or `file:p` for the whole file as one box; `hidden` takes ghost and stub ids
@@ -1806,7 +1858,9 @@ newcomer's re-read → `xpl ready` → `xpl bundle --files boundary` (the defaul
   queued requests with a note in `xpl status`). Per request: read the element and its code, make the
   smallest patch that does what the note asks (more to show is `expand`; a claim the code contradicts is
   fixed in the text, never by bending the anchor; a note wrong about the code changes nothing), all in one
-  patch, lint, apply, delete `.explainer/requests.json`; the open page picks the change up by itself.
+  patch, lint, apply and record selected outcomes with original IDs/context. Never delete the feedback store;
+  new and unselected requests survive. Outdated context needs explicit reconciliation. The open page picks
+  the applied explanation change up by itself.
 - **`make tour`**: a `summary` and 5–9 steps (up to 12 for a change), each of the form
   `{ id: "t1", view, focus: [ids], note, code, editor: { primary } }`, each note starting with
   `### <plain title>` and each `code` override holding at most 2 ranges; ids `tour:<slug>` (`tour:talk-…`

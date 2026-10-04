@@ -7,6 +7,17 @@
  * the current view, code focus, reverse lookup, matches) lives in derive.ts and is memoised per state.
  */
 import {
+  artifactIdentity,
+  FEEDBACK_SCHEMA,
+  parseFeedbackFile,
+  parseFeedbackRequest,
+  mergeFeedbackRequests,
+  hashText,
+  type FeedbackKind,
+  type FeedbackRequest,
+  type FeedbackFile,
+} from "@xpl/core";
+import {
   asIndexModel,
   codeFocus,
   collapse as collapseView,
@@ -59,6 +70,7 @@ export interface Cursor {
   file: FilePath;
   fromLine: number;
   toLine: number;
+  side?: "base";
 }
 
 export type SaveState =
@@ -169,6 +181,8 @@ export interface ViewerState {
   save: SaveState;
   /** Running under `xpl view`. */
   serverMode: boolean;
+  feedback: FeedbackRequest[];
+  feedbackStorageError?: string;
   /** The live source no longer matches its index; reindex before trusting locations and edges. */
   sourceWarning: string | undefined;
   exportInfo: ViewerBundle["exportInfo"];
@@ -206,8 +220,12 @@ export class ViewerStore {
   private readonly future: Navigation[] = [];
   /** The reading tab (Guide, Map, Flow, Code) last on screen: where "Back to reading" goes from Explore. */
   private reading: Exclude<Perspective, "explore"> = "guide";
+  /** Namespace of the page as loaded; edits change request context, never where requests are saved. */
+  private readonly feedbackStorageKey: string;
 
   constructor(bundle: ViewerBundle, launch: LaunchParams = {}) {
+    const identity = artifactIdentity(bundle.explainer, bundle.index);
+    this.feedbackStorageKey = `xpl-feedback:${identity.explainerHash}:${identity.sourceHash}`;
     this.indexModel = asIndexModel(bundle.index);
     this.api = bundle.server?.api ? new ServerApi(bundle.server.api) : undefined;
     const explainer = bundle.explainer;
@@ -251,8 +269,10 @@ export class ViewerStore {
       save: { status: "idle" },
       serverMode: this.api !== undefined,
       sourceWarning: bundle.sourceWarning,
+      feedback: [],
       exportInfo: bundle.exportInfo,
     };
+    this.loadFeedback(bundle.feedback);
     if (this.state.perspective !== "explore") this.reading = this.state.perspective;
     if (present) this.present();
     else if (launch.perspective && asked && launch.step) {
@@ -504,12 +524,26 @@ export class ViewerStore {
    * The caret (or the lines of a selection) moved in an editor. Drives the reverse lookup. Real cursor
    * moves and `window.__xpl.setCursor` both end up here.
    */
-  setCursor(file: FilePath, fromLine: number, toLine: number = fromLine): void {
+  setCursor(
+    file: FilePath,
+    fromLine: number,
+    toLine: number = fromLine,
+    side: "head" | "base" = "head",
+  ): void {
     const from = Math.max(1, Math.floor(fromLine));
     const to = Math.max(from, Math.floor(toLine));
     const cur = this.state.cursor;
-    if (cur && cur.file === file && cur.fromLine === from && cur.toLine === to) return;
-    this.set({ cursor: { file, fromLine: from, toLine: to } });
+    if (
+      cur &&
+      cur.file === file &&
+      cur.fromLine === from &&
+      cur.toLine === to &&
+      (cur.side ?? "head") === side
+    )
+      return;
+    this.set({
+      cursor: { file, fromLine: from, toLine: to, ...(side === "base" ? { side } : {}) },
+    });
   }
 
   clearCursor(): void {
@@ -1070,20 +1104,109 @@ export class ViewerStore {
 
   // ─── Explain requests and export ─────────────────────────────────────────────────────────────
 
-  /**
-   * "Explain this": queues a request on the server (`"queued"`); without one the caller shows the
-   * command to run instead (`"command"`). Rejects with a readable message when the server refuses.
-   */
-  async requestExplain(id: ElementId, note?: string): Promise<"queued" | "command"> {
-    if (!this.api) return "command";
-    const text = note?.trim();
-    await this.api.postRequest({
-      kind: "expand",
-      id,
-      ...(text ? { note: text } : {}),
-      ...(this.state.viewId !== undefined ? { view: this.state.viewId } : {}),
+  /** Persist before returning. Storage refusal stays visible and exports remain available. */
+  private keepFeedback(requests: readonly FeedbackRequest[]): void {
+    const held = mergeFeedbackRequests([...this.state.feedback, ...requests]);
+    this.set({ feedback: held });
+    try {
+      // Read both legacy arrays and per-ID records. New writes never replace either format.
+      const saved = localStorage.getItem(this.feedbackStorageKey);
+      const stored = saved ? parseFeedbackFile(JSON.parse(saved)).requests : [];
+      const prefix = `${this.feedbackStorageKey}:request:`;
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (!key?.startsWith(prefix)) continue;
+        const json = localStorage.getItem(key);
+        if (json !== null) stored.push(parseFeedbackRequest(JSON.parse(json)));
+      }
+      const feedback = mergeFeedbackRequests([...held, ...stored]);
+      this.set({ feedback, feedbackStorageError: undefined });
+      for (const request of feedback) {
+        // Immutable versions prevent a stale read in another tab from overwriting a newer outcome.
+        const json = JSON.stringify(request);
+        const key = `${prefix}${encodeURIComponent(request.id)}:revision:${request.outcome.revision}:${hashText(json)}`;
+        if (localStorage.getItem(key) === null) localStorage.setItem(key, json);
+      }
+    } catch (error) {
+      this.set({
+        feedbackStorageError: `Browser storage unavailable: ${String(error)}. Export feedback JSON to keep it.`,
+      });
+    }
+  }
+
+  private loadFeedback(embedded: ViewerBundle["feedback"]): void {
+    try {
+      this.keepFeedback(embedded ? parseFeedbackFile(embedded).requests : []);
+    } catch (error) {
+      this.set({
+        feedbackStorageError: `Could not reload browser feedback: ${String(error)}. Export feedback JSON before closing this page.`,
+      });
+    }
+  }
+
+  async refreshFeedback(): Promise<void> {
+    this.loadFeedback(undefined);
+    if (!this.api) return;
+    // Every response uses the same revision rule, including delayed or overlapping refreshes.
+    this.keepFeedback(await this.api.requests());
+  }
+
+  /** Export only after reconciling every observed version, including a refreshed bundle. */
+  feedbackFile(embedded?: FeedbackFile): FeedbackFile {
+    this.loadFeedback(embedded);
+    return { schema: FEEDBACK_SCHEMA, requests: this.state.feedback };
+  }
+
+  feedbackJson(): string {
+    return JSON.stringify(this.feedbackFile(), null, 2) + "\n";
+  }
+
+  /** Capture the element and selected inclusive lines against exactly the snapshot being viewed. */
+  async requestExplain(
+    id: ElementId,
+    note?: string,
+    kind: FeedbackKind = "expand",
+  ): Promise<"queued" | "command"> {
+    const at = new Date().toISOString();
+    const cursor = this.state.cursor;
+    const focus = codeFocus([id], this.state.model)[0];
+    const range = cursor
+      ? { ...cursor, side: cursor.side ?? ("head" as const) }
+      : focus
+        ? {
+            file: focus.file,
+            fromLine: focus.range.startLine,
+            toLine: focus.range.endLine,
+            side: "head" as const,
+          }
+        : undefined;
+    const request = parseFeedbackRequest({
+      id:
+        crypto.randomUUID?.() ??
+        Array.from(crypto.getRandomValues(new Uint8Array(16)), (n) =>
+          n.toString(16).padStart(2, "0"),
+        ).join(""),
+      kind,
+      elementId: id,
+      at,
+      context: artifactIdentity(this.state.explainer, this.state.model.index.index),
+      ...(this.state.sourceWarning ? { sourceWarning: this.state.sourceWarning } : {}),
+      ...(note?.trim() ? { note: note.trim() } : {}),
+      ...(this.state.viewId ? { view: this.state.viewId } : {}),
       label: this.state.model.label(id),
+      ...(range ? { range } : {}),
+      outcome: {
+        revision: 0,
+        status: "pending",
+        reason: "Awaiting an explicit revision pass.",
+        at,
+      },
     });
+    // Include other tabs' requests in this page without rewriting their stored records.
+    this.loadFeedback({ schema: FEEDBACK_SCHEMA, requests: this.state.feedback });
+    this.keepFeedback([request]);
+    if (!this.api) return "command";
+    await this.api.postRequest(request);
     return "queued";
   }
 

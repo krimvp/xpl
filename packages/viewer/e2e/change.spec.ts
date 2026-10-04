@@ -162,9 +162,11 @@ test.describe("base anchors", () => {
     const headBox = (await head.boundingBox())!;
     expect((await before.boundingBox())!.y).toBeGreaterThanOrEqual(headBox.y + headBox.height - 1);
     // a click into the old code looks nothing up (its lines are not the current code's)
-    const cursor = (await stateOf(page)).cursor;
     await before.locator('.cm-line[data-line="76"]').click();
-    expect((await stateOf(page)).cursor).toEqual(cursor);
+    await expect
+      .poll(async () => (await stateOf(page)).cursor)
+      .toEqual({ file: "src/runner.ts", fromLine: 76, toLine: 76, side: "base" });
+    await expect.poll(async () => (await stateOf(page)).matches).toEqual([]);
     expect(problems).toEqual([]);
   });
 
@@ -617,7 +619,7 @@ test.describe("who calls this, and what the change did to it", () => {
       "Runner.start",
     );
     // Ctrl+click on the name: its definition
-    await page.getByRole("button", { name: "Back" }).click();
+    await page.getByRole("button", { name: "Back", exact: true }).click();
     await line.scrollIntoViewIfNeeded();
     const again = await wordAt();
     await page.keyboard.down("Control");

@@ -458,6 +458,8 @@ test.describe("keyboard", () => {
     await expect(viewsMenu(page)).toBeVisible();
     await page.keyboard.press("Tab");
     await expect(viewsMenu(page)).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Feedback", exact: true })).toBeFocused();
+    await page.keyboard.press("Tab");
     await expect(page.getByTestId("mode-present")).toBeFocused();
 
     // A press outside closes it.

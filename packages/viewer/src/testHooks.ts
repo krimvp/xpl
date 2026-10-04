@@ -54,7 +54,7 @@ export interface XplSnapshot {
   canGoBack: boolean;
   canGoForward: boolean;
   selection: string[];
-  cursor: { file: string; fromLine: number; toLine: number } | null;
+  cursor: { file: string; fromLine: number; toLine: number; side?: "base" } | null;
   matches: string[];
   related: string[];
   /** Files with an editor pane, in stack order. */

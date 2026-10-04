@@ -21,6 +21,7 @@ import { useStore, useViewerState } from "../hooks.js";
 import { stepNumber } from "../modes.js";
 import { canSaveHtml } from "../saveHtml.js";
 import { SaveHtml } from "./SaveHtml.js";
+import { FeedbackPanel } from "./FeedbackPanel.js";
 import { EdgeKindToggles } from "./EdgeKinds.js";
 import { StubsControl } from "./StubsControl.js";
 import { TourPanel } from "./TourPanel.js";
@@ -33,6 +34,7 @@ export const NO_TOURS_HINT =
 
 export function Header() {
   const state = useViewerState();
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [toursOpen, setToursOpen] = useState(false);
   const present = state.mode === "present";
   const reading = !present && state.perspective !== "explore";
@@ -68,9 +70,21 @@ export function Header() {
 
       <div className="spacer" />
       <SaveStatus />
+      <button
+        className="btn"
+        type="button"
+        aria-expanded={feedbackOpen}
+        onClick={() => {
+          setFeedbackOpen(!feedbackOpen);
+          setToursOpen(false);
+        }}
+      >
+        Feedback{state.feedback.length > 0 ? ` (${state.feedback.length})` : ""}
+      </button>
       {present ? <ExitButton /> : <PresentButton />}
       <EditMenu toursOpen={toursOpen} onTours={() => setToursOpen((open) => !open)} />
 
+      {feedbackOpen && <FeedbackPanel onClose={() => setFeedbackOpen(false)} />}
       {toursOpen && <TourPanel onClose={() => setToursOpen(false)} />}
     </header>
   );

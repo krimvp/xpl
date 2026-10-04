@@ -588,7 +588,7 @@ missing anchors (2): fix or drop them explicitly
     symbol Queue.pop is not in src/queue.ts; did you mean sym:src/queue.ts#Queue.take (anchor: file: "src/queue.ts", symbol: "Queue.take")?
   ...
 
-requests queued by the viewer (2; delete .explainer/requests.json when handled):
+requests queued by the viewer (2; record selected outcomes with xpl feedback --outcomes):
   2026-09-29T12:14:26.518Z  expand file:src/config.ts  (in view:overview)  [config.ts]  "how is the yaml parsed?"
   2026-09-29T12:14:26.535Z  sym:src/queue.ts#Queue
 ```
@@ -615,7 +615,42 @@ view:dispatch-code (graph): Runner.dispatch and its neighbours
     ghost:more:in ×1 → dir:test ×1
 ```
 
-`.explainer/requests.json` is a JSON array of `{elementId, note?, kind?, view?, label?, at, explainer?}`; the element may be a node, edge, concept, step or ghost id. Delete the file after handling.
+`.explainer/requests.json` keeps durable request records with stable IDs, original snapshot hashes,
+optional inclusive source ranges, and explicit outcome reasons. Never delete the file after a batch.
+Use `xpl feedback` to inspect context and update only selected IDs.
+
+## `xpl feedback <explainer> [--import <file> | --export <file> | --outcomes <file>]`
+
+Offline readers select an element and source lines, open **Feedback**, save a correction, explanation
+request or expansion, and export `feedback.json`. Saving starts no generation. Import it locally:
+
+```sh
+xpl feedback myguide --import /tmp/feedback.json
+xpl feedback myguide --json
+# Explicitly invoke /code-explainer feedback in your chosen agent.
+xpl feedback myguide --outcomes /tmp/outcomes.json
+xpl feedback myguide --export /tmp/results.json
+```
+
+Exports use `{schema: "code-explainer/feedback@1", requests: [...]}`. Each request has `id`, `elementId`,
+`kind: correct|explain|expand`, `at`, immutable `context: {explainerHash, sourceHash}`, optional `note`,
+`view`, `label`, `explainer`, `sourceWarning` and `range: {file, fromLine, toLine, side: head|base}`, and
+`outcome: {revision, status, reason, at}`. Status is `pending`, `addressed`, `unresolved`, `rejected` or `outdated`.
+Outcomes are separate from author notes. Capture starts at revision zero. Imports deduplicate by ID and
+take greater outcome revisions; equal or older revisions keep local results. Old exports without a
+revision read as zero. Timestamps are display metadata, never an ordering across machines;
+conflicting original content is rejected before any write. `--outcomes` reads an array of
+`{id, context, status, reason}`; copy the selected IDs and their original context exactly. It never removes
+requests collected after selection or left unselected. Only author outcome recording increments the
+selected requests' revisions under the store lock. Failed writes leave the old store and counters intact.
+The outcome revision never decreases in the disk store, browser or portable exports. Delayed live
+responses and older pages cannot erase a newer result. Equal revisions keep the held result; import a
+newer portable result into the author's store before recording its replacement.
+
+Inspection reports `contextStatus: current|outdated` and `contextReason` separately from the stored
+outcome. A changed explanation/source snapshot or stale source needs explicit reconciliation; it is never
+silently rebound to the newer guide. Legacy records lacking a snapshot are unbound and outdated.
+Keep feedback exports/outcome input files outside the source tree so they do not stale the index.
 
 ## `xpl lint <explainer> [--patch <file|->] [--warn-only]`
 
@@ -787,7 +822,7 @@ the bundle and previously opened files while preserving navigation; unsaved edit
 A newly generated index is followed unless `--index` pins one. Changed source is shown with a stale-index
 warning until reindexing. Save as HTML carries the refreshed index, loaded source and any warning.
 
-Serves the viewer with live repo access at `http://127.0.0.1:<port>/` (default 4747, else a free port; `--port 0` = any) and tries to open a browser. The explainer is re-read from disk on every request, and the page checks for changes every 2 seconds: what `xpl apply` writes shows up without a reload. Edits in the viewer (layout, expanded nodes, the stubs control, tour steps) are saved as `user` edits; "Explain this" clicks, with what the user typed above the button as the `note`, are appended to `.explainer/requests.json`. Runs until Ctrl-C. It binds to 127.0.0.1; `--host` other than that exposes the source code. The anchors are re-resolved as for `xpl bundle`; drifted or missing anchors do not stop it (it is where you fix them), but it warns, and the page shows the same banner.
+Serves the viewer with live repo access at `http://127.0.0.1:<port>/` (default 4747, else a free port; `--port 0` = any) and tries to open a browser. The explainer is re-read from disk on every request, and the page checks for changes every 2 seconds: what `xpl apply` writes shows up without a reload. Edits in the viewer (layout, expanded nodes, the stubs control, tour steps) are saved as `user` edits; "Explain this" clicks, with what the user typed above the button as the `note`, are saved with stable IDs and original snapshot context to `.explainer/requests.json`. The Feedback panel also offers correction/explanation/expansion requests and JSON export; saving starts no generation. Runs until Ctrl-C. It binds to 127.0.0.1; `--host` other than that exposes the source code. The anchors are re-resolved as for `xpl bundle`; drifted or missing anchors do not stop it (it is where you fix them), but it warns, and the page shows the same banner.
 
 ```
 $ xpl view jobrunner --no-open --port 0
