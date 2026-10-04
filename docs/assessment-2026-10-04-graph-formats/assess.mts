@@ -11,7 +11,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { RELATIONSHIP_CAPABILITIES, splitLines, validateExplainer } from "@xpl/core";
 import type { AnalysisCapabilities, AnalysisReport, IndexedSymbol, SymbolIndex } from "@xpl/core";
-import { buildIndex, FileHasher } from "@xpl/indexer";
+import { buildIndex, FileHasher, normalizeProvider } from "@xpl/indexer";
 import type {
   IndexProvider,
   ProviderDeclaration,
@@ -72,6 +72,10 @@ function report(
 interface Tally {
   emitted: Record<string, number>;
   dropped: Record<string, number>;
+  /** Canonical IDs and lines of the declarations the artifact itself placed ("adapted" mode). */
+  placed?: string[];
+  /** Full-range declarations sent but not placed by normalizeProvider. */
+  unplaced?: string[];
 }
 const bump = (m: Record<string, number>, k: string, n = 1) => (m[k] = (m[k] ?? 0) + n);
 
@@ -613,7 +617,15 @@ function adapted(provider: IndexProvider, tally: Tally): IndexProvider {
           };
         }),
       }));
-      return { ...out, declarations, relationships, analysis };
+      const final = { ...out, declarations, relationships, analysis };
+      const normalized = normalizeProvider(input, final);
+      tally.placed = normalized.entries.map(
+        (e) => `${e.symbol.id} ${e.symbol.range.startLine}-${e.symbol.range.endLine}`,
+      );
+      tally.unplaced = declarations
+        .filter((d) => !normalized.identities.has(d.identity))
+        .map((d) => `${d.file}#${d.path ?? d.name}`);
+      return final;
     },
   };
 }
@@ -723,7 +735,26 @@ for (const [format, make, artifact] of runs) for (const mode of ["raw", "adapted
   const tally: Tally = { emitted: {}, dropped: {} };
   const provider = mode === "raw" ? make(tally) : adapted(make(tally), tally);
   const { index, warnings } = await buildIndex({ root, precise: "auto", providers: [provider] });
+  // The artifact's own declarations, compared with the pack's: the merged index keeps pack symbols, so
+  // a placed declaration without a pack counterpart disappears from it silently (range-only merging).
+  const pack = new Set(baseline.symbols.map((s) => s.id));
+  const packLines = new Set(baseline.symbols.map(symKey));
+  const placed = tally.placed;
+  const unplaced = tally.unplaced;
+  delete tally.placed;
+  delete tally.unplaced;
   results[name] = {
+    ...(placed
+      ? {
+          artifactDeclarations: {
+            placed: placed.length,
+            sameIdAsPack: placed.filter((p) => pack.has(p.split(" ")[0]!)).length,
+            sameIdAndLines: placed.filter((p) => packLines.has(p)).length,
+            noPackCounterpart: placed.filter((p) => !pack.has(p.split(" ")[0]!)),
+            sentButNotPlaced: unplaced,
+          },
+        }
+      : {}),
     adapter: tally,
     normalize: diagnostics(index, provider.id),
     merged: summarize(index, baseline),
@@ -744,6 +775,17 @@ if (existsSync(stale) && existsSync(join(artifacts, "kythe-go.json"))) {
       .reduce<Record<string, number>>((m, id) => (bump(m, id), m), {}),
   };
 }
-const json = JSON.stringify(results, null, 2);
+// Sorted keys: the tallies fill in artifact traversal order, which is not stable across runs.
+const sorted = (v: unknown): unknown =>
+  Array.isArray(v)
+    ? v.map(sorted)
+    : v && typeof v === "object"
+      ? Object.fromEntries(
+          Object.entries(v)
+            .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+            .map(([k, x]) => [k, sorted(x)]),
+        )
+      : v;
+const json = JSON.stringify(sorted(results), null, 2);
 if (outFile) writeFileSync(outFile, json + "\n");
 console.log(json);

@@ -1,17 +1,18 @@
 # SCIP, Kythe and Joern CPG through the provider contract, 2026-10-04
 
-Issue #11, part of #6. Assessed against the provider contract of #10 (`feat/issue-10-providers`, PR #41, at
-`b3adbca`). The question: can existing code-graph formats feed xpl's `IndexProvider` without changing what an
-explainer means, and is a production importer worth building?
+Issue #11, part of #6. Assessed against the provider contract of #10 (PR #41), and rerun on `main` at `f59f330`
+after #41 and the SCIP importer of #12 (PR #43) merged; the numbers did not change. The question: can existing
+code-graph formats feed xpl's `IndexProvider` without changing what an explainer means, and is a production
+importer worth building?
 
 **Decision, in short.**
 
 - **The three formats are interchange formats only.** xpl keeps its own `SymbolIndex` as the stored form, and
   `normalizeProvider` as the only place where source checks, IDs, hashes and positions are decided. No Kythe
   serving tables, no Joern graph database, no format-specific storage.
-- **No contract change is needed for #12.** All three formats mapped through `ProviderOutput` as it is.
-  Three rules every adapter must follow are now written down (§5). One trust-label bug was found in #41 and is
-  fixed there (§5.1).
+- **No contract change is needed.** All three formats mapped through `ProviderOutput` as it is, and #12's SCIP
+  importer (#43) landed on the same contract. Three rules every adapter must follow are now written down (§5).
+  One trust-label bug was found in #41 and is fixed there (§5.1).
 - **No production Kythe or CPG importer now.** Kythe gives the best Go facts of the three, but it only adds
   value where xpl has no SCIP tool, and its extraction setup is per language and build. CPG frontends differ too
   much, and gosrc2cpg skips whole statements. §6 says what would change this.
@@ -48,21 +49,32 @@ The TS fixture was also put through `jssrc2cpg`, only to compare position fields
 
 | | SCIP (scip-go) | Kythe (go_indexer) | CPG (gosrc2cpg) |
 |---|---|---|---|
-| Declarations with a full range | 56 of 159 (functions, methods) | 80 of 170 (also types, interfaces) | 54 of 80 (no types) |
+| Declarations with a full range, sent | 56 of 159 (functions, methods) | 80 of 170 (also types, interfaces) | 54 of 80 (no types) |
 | Identifier extent | yes | yes | no |
 | Source text in the artifact | no | yes (`/kythe/text`) | no (`FILE.content` empty, no hash) |
 | Call relationships | none: one role for every reference | `ref/call`, 81 mapped | `CALL`, 62 of 264 resolved |
 | **raw**: files merged | 1 of 10 | 0 of 10 (provider failed) | 1 of 10 |
-| **adapted**: symbol IDs and lines equal to tree-sitter | 158 of 158 | 158 of 158 | 158 of 158 |
+| **adapted**: declarations placed by `normalizeProvider` | 54 (2 outside the root) | 80 | 54 |
+| **adapted**: placed declarations with the pack's ID and lines | 54 of 54 | 79 of 80 | 54 of 54 |
+| **adapted**: pack symbols kept in the merged index | 158 of 158 | 158 of 158 | 158 of 158 |
 | **adapted**: explainer Go anchors served by the artifact | 5 of 5 | 5 of 5 | 5 of 5 |
 | **adapted**: explainer errors | 0 | 0 | 0 |
 | **adapted**: call pairs vs heuristic | not claimed | 66 shared, 2 new, 25 heuristic-only | not claimed (§3.3) |
 
 The rows in detail:
 
-- **IDs are stable across producers.** Every symbol a format could place received the same canonical
-  `<file>#<path>` ID as the tree-sitter pack, with the same lines. So the explainer's anchors keep their meaning
-  whichever provider supplied the range.
+- **IDs are stable across producers, with one exception.** The table compares each artifact's own placed
+  declarations with the pack, not the merged index (which keeps the pack's symbols). 187 of the 188 placed
+  declarations received the same canonical `<file>#<path>` ID as the tree-sitter pack, with the same lines, so
+  the explainer's anchors keep their meaning whichever provider supplied the range.
+  - The exception is Kythe's `internal/worker/worker.go#Worker.Run.outcome` (lines 55-58). It is a closure
+    assigned to a local, which Kythe reports as a declaration with a full range. The Go pack does not make
+    function-local closures symbols. Range-only merging updates existing nodes only, so this declaration is
+    dropped without a diagnostic.
+  - What counts as a symbol is xpl's policy, not the producer's. An adapter that wants a producer's extra
+    declarations has to claim `symbols` for the file (§5.2, rule 2).
+  - SCIP's 2 unplaced declarations (`init`, `main`) come from a document outside the repository root: the test
+    `main` that Go generates in its build cache, which scip-go indexes. They are correctly not placed.
 - **Raw mode loses almost everything** (§5.2). One unusable fact removes its file from all coverage.
   Declarations without a full range are unusable, and every relationship that points at one is dropped too.
 - **Kythe agrees with the heuristic resolver** on 66 of its 68 call pairs. It adds 2 that the heuristic missed
@@ -90,13 +102,18 @@ relationships (from, to, kind, evidence range, resolution), plus per-file, per-c
 | call / read / write | `symbol_roles` | scip-go marks all 1,551 references `ReadAccess` (calls too): no call evidence without a syntax classifier |
 | import | `Import` role | scip-go never sets it |
 | implements | `Relationship.is_implementation` | symbol-level, no occurrence: evidence is the implementing type's identifier |
-| source identity | `Document.text` (optional), none | scip-go writes no text and SCIP has no content hash |
+| source identity | `Document.text` (optional) | scip-go does not fill it, and SCIP has no content hash; producers that embed text are checkable |
 | encoding | `Document.position_encoding` | scip-go leaves it `0` (unspecified): the adapter must know the tool |
 
 The #41 SCIP adapters already handle relationships this way: occurrences plus the syntax classifier, so a
-generic reference only becomes a call where the syntax shows an invocation. The declaration path above is what
-#12 needs. prep-14's scip-java artifact gives full ranges on 223 of 245 definitions, so Java is much better
-off than Go here.
+generic reference only becomes a call where the syntax shows an invocation. #12's importer (#43) implements the
+declaration path above, with three differences from this assessment's mapping:
+- it takes source evidence from `Document.text` or a manifest of pre-generation hashes;
+- it reports calls as unsupported;
+- it diagnoses and omits `is_implementation`, because the flag alone does not establish the direction.
+
+The `implements` mapping here is the more permissive reading, and it matched the pack's 3 edges on this fixture.
+How well other SCIP producers fill `enclosing_range` (Java, for example) belongs to their own slices (#14).
 
 ### 3.2 Kythe
 
@@ -127,7 +144,8 @@ off than Go here.
 | call | `CALL` + `CALL` edge to the callee `METHOD` | gosrc2cpg drops `defer`, `go`, `select`, `send` statements (55 warnings across all 10 files); 202 of 264 calls unresolved (externals, interface dispatch) |
 | evidence range | `CALL` start + `CODE` | no end position: rebuilt from `CODE` and kept only where the source spells it exactly (3 dropped) |
 | extends / implements | `TYPE_DECL.inheritsFromTypeFullName` | one list for both: the two kinds cannot be told apart |
-| read / write / data or control flow | `REF`, `REACHING_DEF`, `CFG`, `CDG` | not assessed and not wanted (#11): xpl has no such facts |
+| read / write | `REF` edges from identifiers to locals, members, methods | not assessed: xpl has `read`/`write` relationships, but this export did not map them (§7) |
+| data and control flow | `REACHING_DEF`, `CFG`, `CDG`, `DOMINATE` | not wanted (#11): xpl has no such facts, and they would not be added because an input carries them |
 | source identity | `FILE.content`, `FILE.hash` | gosrc2cpg: both empty; jssrc2cpg: content present, hash empty |
 | encoding | per frontend, undeclared | gosrc2cpg: 1-based byte columns; jssrc2cpg: 0-based columns plus offsets |
 
@@ -152,9 +170,13 @@ facts claim call coverage anyway (`cpg-claims-all-calls`):
 - **Source validation.** Format-independent, and owned by `normalizeProvider`: snapshot hashes, strict column
   conversion, identifier spelling and containment. Formats differ only in what proof of source they carry:
   - **Kythe** embeds the text it read, so an artifact can be checked long after it was made;
-  - **SCIP** and **gosrc2cpg** carry no text or hash, so their facts are fresh only when xpl runs the tool over
-    the captured snapshot itself (what the built-in SCIP adapters do) or the artifact comes with hashes made at
-    generation time. A stored artifact without either cannot supply checked anchors (#12's freshness policy);
+  - **SCIP** can embed source in `Document.text`; a document that does is checkable the same way. The assessed
+    scip-go artifact does not, and SCIP has no hash field;
+  - **scip-go** and **gosrc2cpg** artifacts therefore carry no proof of source. Their facts are fresh only in
+    two cases:
+    - xpl runs the tool over the captured snapshot itself, as the built-in SCIP adapters do;
+    - the artifact comes with hashes made at generation time (#43's manifest).
+    A stored artifact without either cannot supply checked anchors.
   - **jssrc2cpg** content makes a TS or JS CPG checkable.
 
 ## 5. Contract findings
@@ -201,17 +223,16 @@ Two contract changes were considered and are **not recommended now**:
 
 ### 5.3 Notes for the language slices
 
-- `FileLanguage` is a closed union in core. A provider for a language without a pack (Java, #14) still needs a
-  `FileLanguage` value before `buildIndex` can scope files to it.
-- `buildIndex` runs registered providers only when `precise` is not `off`. A structure-only provider is
-  therefore switched off by `--precise off`. That is fine while SCIP is the only one; a declaration importer for
-  a language without a pack (#12) will want to run in every mode.
+At the assessed commit, two points stood out. #43 has since settled both:
+- `FileLanguage` is a closed union in core. #43 indexes unknown extensions as `text`; a Java language identity
+  belongs to #14.
+- `buildIndex` runs semantic providers only when `precise` is not `off`. #43 makes `--precise off` together
+  with `--scip` an error, instead of silently skipping the importer.
 
 ## 6. Recommendation on importers
 
-- **SCIP: yes, as planned in #12.** It is already the interchange format, tools exist for most languages, and
-  full ranges are good where the tool sets `enclosing_range` (scip-java). Kinds and descriptors give paths and
-  parents.
+- **SCIP: yes, now done in #12 (#43).** It is already the interchange format, tools exist for most languages,
+  and full ranges are good where the tool sets `enclosing_range`. Kinds and descriptors give paths and parents.
 - **Kythe: not now.** Its Go facts are the best of the three: call/write distinction, full ranges for types,
   embedded source text. But xpl already gets Go relationships from scip-go plus the classifier, and the Go
   extractor needs GOPATH mode and one compilation per package. Reconsider when a language has a Kythe indexer
@@ -226,8 +247,8 @@ Two contract changes were considered and are **not recommended now**:
 
 - **Non-ASCII columns.** The Go fixture is ASCII-only, so the column units (Kythe bytes, gosrc2cpg byte
   columns, scip-go unspecified) come from the formats' documentation and from observation on ASCII lines.
-  prep-14 verified scip-java's UTF-16 columns with an astral-character probe.
 - **Kythe for other languages** (Java, TypeScript). Its TypeScript indexer is not in the release.
 - **Real repositories.** Only the fixture was assessed; no timing or memory comparison.
 - **CPG reads and writes** (`REF` edges), and Joern frontends other than `gosrc2cpg` and `jssrc2cpg`.
-- **Overloads.** Go has none. prep-14 reports scip-java encodes them as `push().` / `push(+1).`, which #12 maps.
+- **Overloads.** Go has none. #43 keeps overload identities distinct (ARCHITECTURE §3); Java evidence belongs to
+  #14.
