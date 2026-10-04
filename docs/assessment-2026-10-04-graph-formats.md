@@ -1,7 +1,8 @@
 # SCIP, Kythe and Joern CPG through the provider contract, 2026-10-04
 
-Issue #11, part of #6. Assessed against the provider contract of #10 (PR #41), and rerun on `main` at `f59f330`
-after #41 and the SCIP importer of #12 (PR #43) merged; the numbers did not change. The question: can existing
+Issue #11, part of #6. Assessed against the provider contract of #10 (PR #41). Rerun on `main` at
+`8f03346`, after #41, the SCIP importer of #12 (PR #43) and the Rust provider modes of #13 (PR #44) merged; the
+merged-index numbers did not change. The question: can existing
 code-graph formats feed xpl's `IndexProvider` without changing what an explainer means, and is a production
 importer worth building?
 
@@ -49,7 +50,7 @@ The TS fixture was also put through `jssrc2cpg`, only to compare position fields
 
 | | SCIP (scip-go) | Kythe (go_indexer) | CPG (gosrc2cpg) |
 |---|---|---|---|
-| Declarations with a full range, sent | 56 of 159 (functions, methods) | 80 of 170 (also types, interfaces) | 54 of 80 (no types) |
+| Declarations with a full range, sent | 56 of 165 (functions, methods) | 80 of 170 (also types, interfaces) | 54 of 80 (no types) |
 | Identifier extent | yes | yes | no |
 | Source text in the artifact | no | yes (`/kythe/text`) | no (`FILE.content` empty, no hash) |
 | Call relationships | none: one role for every reference | `ref/call`, 81 mapped | `CALL`, 62 of 264 resolved |
@@ -96,12 +97,12 @@ relationships (from, to, kind, evidence range, resolution), plus per-file, per-c
 
 | xpl fact | SCIP source | Loss |
 |---|---|---|
-| declaration | `Occurrence` with the `Definition` role + `SymbolInformation.kind`, `display_name` | kind 35 (package) and 67 (type parameter) are not xpl symbols |
-| full range | `Occurrence.enclosing_range` | scip-go sets it on 56 of 432 definitions: functions and methods only |
+| declaration | `Occurrence` with the `Definition` role + `SymbolInformation.kind`, `display_name` | kind 35 (package) is not an xpl symbol; kind 67 (`MethodSpecification`) maps to `method` |
+| full range | `Occurrence.enclosing_range` | scip-go sets it on 56 of 432 definitions: functions and methods only, not types, fields or the 6 interface methods (kind 67) |
 | parent / path | the symbol descriptor (`…/Queue#Push().` → `…/Queue#`) | `enclosing_symbol` is never set; descriptors are a naming scheme, not a nesting fact |
 | call / read / write | `symbol_roles` | scip-go marks all 1,551 references `ReadAccess` (calls too): no call evidence without a syntax classifier |
 | import | `Import` role | scip-go never sets it |
-| implements | `Relationship.is_implementation` | symbol-level, no occurrence: evidence is the implementing type's identifier |
+| implements | `Relationship.is_implementation` between types | symbol-level, no occurrence: evidence is the implementing type's identifier; 9 method-to-method flags dropped, since xpl's `implements` is type-level and members are matched by name |
 | source identity | `Document.text` (optional) | scip-go does not fill it, and SCIP has no content hash; producers that embed text are checkable |
 | encoding | `Document.position_encoding` | scip-go leaves it `0` (unspecified): the adapter must know the tool |
 
@@ -223,11 +224,13 @@ Two contract changes were considered and are **not recommended now**:
 
 ### 5.3 Notes for the language slices
 
-At the assessed commit, two points stood out. #43 has since settled both:
+At the assessed commit, two points stood out. Later merges have settled both:
 - `FileLanguage` is a closed union in core. #43 indexes unknown extensions as `text`; a Java language identity
   belongs to #14.
-- `buildIndex` runs semantic providers only when `precise` is not `off`. #43 makes `--precise off` together
-  with `--scip` an error, instead of silently skipping the importer.
+- `buildIndex` ran every registered provider only when `precise` was not `off`. #44 added
+  `IndexProvider.mode`: syntax-mode providers (Rust tags) now run with `--precise off`, and semantic ones,
+  including artifact importers, still honour it. #43 makes `--precise off` together with `--scip` an error,
+  instead of silently skipping the importer. The adapters here are semantic (no `mode`).
 
 ## 6. Recommendation on importers
 

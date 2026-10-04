@@ -584,18 +584,18 @@
     "adapter": {
       "dropped": {
         "adapter: declaration without full range": 5,
-        "adapter: declaration without full range (endpoint kept as pack ID)": 98,
+        "adapter: declaration without full range (endpoint kept as pack ID)": 104,
         "scip definition kind 35 (not an xpl symbol)": 8,
-        "scip definition kind 67 (not an xpl symbol)": 6,
         "scip definition kind ? (not an xpl symbol)": 3,
         "scip generic occurrence (no call/read distinction)": 1551,
-        "scip is_implementation -> external": 9
+        "scip is_implementation between methods (xpl matches members by name)": 9
       },
       "emitted": {
         "declaration class (identifier only)": 20,
         "declaration function": 31,
         "declaration interface (identifier only)": 2,
         "declaration method": 25,
+        "declaration method (identifier only)": 6,
         "declaration type (identifier only)": 3,
         "declaration variable (identifier only)": 78,
         "relationship implements (is_implementation, evidence = type identifier)": 3
@@ -661,16 +661,16 @@
     "adapter": {
       "dropped": {
         "scip definition kind 35 (not an xpl symbol)": 8,
-        "scip definition kind 67 (not an xpl symbol)": 6,
         "scip definition kind ? (not an xpl symbol)": 3,
         "scip generic occurrence (no call/read distinction)": 1551,
-        "scip is_implementation -> external": 9
+        "scip is_implementation between methods (xpl matches members by name)": 9
       },
       "emitted": {
         "declaration class (identifier only)": 20,
         "declaration function": 31,
         "declaration interface (identifier only)": 2,
         "declaration method": 25,
+        "declaration method (identifier only)": 6,
         "declaration type (identifier only)": 3,
         "declaration variable (identifier only)": 78,
         "relationship implements (is_implementation, evidence = type identifier)": 3
@@ -719,7 +719,7 @@
         "scip-go gomod example.com/jobrunner . `example.com/jobrunner/internal/bus`/Handler#: full declaration range unavailable"
       ],
       "reasons": {
-        "full declaration range unavailable": 99,
+        "full declaration range unavailable": 105,
         "missing or self parent identity": 25,
         "unknown relationship kind, endpoint or invalid source evidence": 3
       },

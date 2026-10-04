@@ -296,6 +296,7 @@ const SCIP_KIND: Record<number, IndexedSymbol["kind"]> = {
   15: "variable",
   61: "variable",
   8: "variable",
+  67: "method", // MethodSpecification: Go interface methods
 };
 
 function scipProvider(file: string, tally: Tally): IndexProvider {
@@ -365,12 +366,17 @@ function scipProvider(file: string, tally: Tally): IndexProvider {
                 bump(tally.dropped, "scip is_implementation -> external");
                 continue;
               }
+              // xpl's `implements` is type-level; members are matched by name (ARCHITECTURE §4.8).
+              if (from.kind === "method" || to.kind === "method") {
+                bump(tally.dropped, "scip is_implementation between methods (xpl matches members by name)");
+                continue;
+              }
               relationships.push({ from: from.identity, to: to.identity, kind: "implements", file: from.file, evidence: from.identifier, resolution: "precise" });
               bump(tally.emitted, "relationship implements (is_implementation, evidence = type identifier)");
             }
       for (const [k, n] of Object.entries(generic)) bump(tally.dropped, `scip ${k}`, n);
       const files = input.sources.filter((s) => s.language === "go").map((s) => s.path);
-      // SCIP documents carry no text: freshness rests on this script having just run the tool on these files.
+      // scip-go fills no Document.text: freshness rests on this script having just run the tool on these files.
       const sourceHashes = Object.fromEntries(
         input.sources.filter((s) => files.includes(s.path)).map((s) => [s.path, hashOf(s.text)]),
       );
