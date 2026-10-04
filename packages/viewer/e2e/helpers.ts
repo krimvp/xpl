@@ -137,3 +137,34 @@ export async function toRead(page: Page): Promise<void> {
   await (await openEditMenu(page)).getByTestId("edit-read").click();
   await expect(page.locator(".header")).toHaveAttribute("data-mode", "read");
 }
+
+/** The embedded bundle edited as loose JSON: many shapes, none worth typing in a test. */
+export type Loose = Record<string, any>;
+
+/** The TS fixture page with `edit` applied to its bundle, served at http://xpl.test/`search`. */
+export async function openVariant(
+  page: Page,
+  edit: (bundle: Loose) => void,
+  search = "",
+  size = { width: 1280, height: 720 },
+): Promise<void> {
+  const { html, bundle } = readEmbeddedBundle();
+  edit(bundle);
+  await page.setViewportSize(size);
+  await page.route("http://xpl.test/**", (route) =>
+    route.fulfill({ contentType: "text/html", body: withBundle(html, bundle) }),
+  );
+  await page.goto(`http://xpl.test/${search}`);
+  await page.waitForFunction(() => window.__xpl !== undefined);
+}
+
+/** The smallest font size (screen px) of the visible text of the diagram. */
+export async function smallestDiagramText(page: Page): Promise<number> {
+  return page.evaluate(() => {
+    const sizes = [...document.querySelectorAll<SVGTextElement>(".diagram .pz-svg text")]
+      .filter((t) => t.textContent!.trim() && t.getBoundingClientRect().width > 0)
+      .filter((t) => getComputedStyle(t).opacity !== "0" && !t.closest(".is-quiet"))
+      .map((t) => parseFloat(getComputedStyle(t).fontSize) * (t.getScreenCTM()?.a ?? 1));
+    return Math.min(...sizes);
+  });
+}
