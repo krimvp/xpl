@@ -42,7 +42,7 @@ In the repo you want to understand, ask Claude in plain words or with the skill'
 - `feedback`: in `xpl view`, type what should change under "Explain this" ("too long", "show the caller") and send it; then `/code-explainer feedback` makes the changes, and the open page picks them up by itself.
 - `make a tour` of the views for a talk (present mode).
 
-Claude indexes the repo, starts from a draft that `xpl draft` builds from the index (the structure, with no text), writes and checks the text, saves `.explainer/<name>.explainer.json`, and gives you an HTML bundle (`xpl bundle`, self-contained, the default in cloud sessions) or a local viewer (`xpl view`). `.explainer/index-*.json` is git-ignored automatically; commit the `*.explainer.json` files.
+Claude indexes the repo, starts from a draft that `xpl draft` builds from the index (the structure, with no text), writes and checks the text, saves `.explainer/<name>.explainer.json`, passes `xpl ready <name>`, and gives you an HTML bundle (`xpl bundle`, self-contained, the default in cloud sessions) or a local viewer (`xpl view`). `.explainer/index-*.json` is git-ignored automatically; commit the `*.explainer.json` files.
 
 The index gets precise references from SCIP indexers when they can run (`npx` for TypeScript and Python, the Go toolchain for Go); without them it falls back to heuristic references and says so.
 

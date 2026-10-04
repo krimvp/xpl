@@ -1677,6 +1677,10 @@ guides and uses one only when selected by the user; `new` refuses a collision. T
 recovery instructions are in `reference/create.md`. Drafts receive `--audience` and `--question`; scratch
 patches and snapshots stay outside the indexed tree. An interrupted authoring run resumes from the stored
 guide and outside patch, without deleting the guide or using `--actor user` to bypass protected fields.
+Creation finishes with `xpl ready <name>` and a gated offline bundle outside the source root. The author
+records justified warning/omission decisions with the same `--note` on both commands, opens the guide
+locally or inspects the snapshot, and reports what was checked. A requested `--draft` preview is labelled
+as unfinished; it is not the creation workflow's finished result.
 
 Claude first chooses one of three scopes: `explain <question>` (part of a project), `explain repo` (the whole
 project) or `explain change <base>..<head>` (a diff). The reader sees the tour title and its `summary` first,

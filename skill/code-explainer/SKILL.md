@@ -21,7 +21,7 @@ The reader sees the tour title and its **summary** first, then the steps (a titl
 6. `xpl lint <name> --patch <file> && xpl apply <name> <file>`: lint exits 1 on any finding, so a flawed patch is not applied.
 7. `xpl validate`, `xpl status`, `xpl anchors <name> tour:<slug>`.
 8. The accuracy pass, `xpl lint`, a newcomer's re-read.
-9. `xpl bundle`, then the reply.
+9. `xpl ready <name>`, then `xpl bundle <name> -o <outside-repo>/<name>.html`. Open the guide for local review or inspect the offline snapshot, then reply.
 
 ## What you are making
 
