@@ -731,16 +731,15 @@ describe("lint todo-left", () => {
     } as unknown as Explainer);
     const todo = findings.filter((f) => f.rule === "todo-left");
     expect(todo.map((f) => [f.elementId, f.field])).toEqual([
-      ["tour:t", "summary"],
-      ["tour:t/t1", "note heading"],
-      ["tour:t/t1", "note"],
-      ["view:m", "title"],
-      ["view:m", "question"],
       ["sym:a#x", "summary"],
+      ["view:m", "title"],
+      ["view:m", "scope.question"],
+      ["tour:t", "summary"],
+      ["tour:t/t1", "note"],
     ]);
     expect(todo.every((f) => f.severity === "error")).toBe(true);
-    expect(todo[2]!.message).toBe("2 TODO placeholders left: text nobody has written yet");
-    expect(todo[0]!.quote).toContain("TODO: the risk.");
+    expect(todo[4]!.message).toBe("3 TODO placeholders left: text nobody has written yet");
+    expect(todo[3]!.quote).toContain("TODO: the risk.");
     // the other rules stay warnings (no severity)
     expect(findings.filter((f) => f.rule !== "todo-left").every((f) => !f.severity)).toBe(true);
   });
