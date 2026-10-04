@@ -79,34 +79,93 @@ async function reviewed(root: string) {
   return run;
 }
 
+async function flowGuide() {
+  const root = cloneDir(demo);
+  const initial = await applyStdin(root, {
+    views: [
+      {
+        id: "view:flow",
+        type: "flow",
+        title: "Dispatch flow",
+        participants: ["sym:src/runner.ts#Runner.dispatch", "file:src/queue.ts"],
+        steps: ["flow:1", "flow:2"].map((id) => ({
+          id,
+          from: "sym:src/runner.ts#Runner.dispatch",
+          to: "file:src/queue.ts",
+          kind: "call",
+          label: "Take the next job",
+          summary: "The runner takes a queued job.",
+          anchors: [{ file: "src/runner.ts", symbol: "Runner.dispatch", role: "definition" }],
+        })),
+      },
+    ],
+    tours: [
+      {
+        id: "tour:reader",
+        title: "Reading dispatch",
+        summary: "Follow dispatch from a queued job to execution.",
+        steps: ["flow:1", "sym:src/runner.ts#Runner.dispatch"].map((id) => ({
+          id,
+          view: "view:flow",
+          focus: ["flow:1"],
+          note: "The runner takes a queued job.",
+        })),
+      },
+      {
+        id: "tour:other",
+        title: "Another reading",
+        summary: "Compare a separate reading of dispatch.",
+        steps: [
+          {
+            id: "tour:reader/flow:1",
+            view: "view:flow",
+            focus: ["flow:1"],
+            note: "Keep this other reading.",
+          },
+        ],
+      },
+    ],
+  });
+  expect(initial.code, initial.out + initial.err).toBe(0);
+  return root;
+}
+
 it.each([
-  { selected: "flow:1", target: "flow:2", allowed: false },
-  { selected: "flow:1", target: "flow:1", allowed: true },
-  { selected: "view:flow", target: "flow:2", allowed: true },
+  { selected: "flow:1", target: "flow:2", container: "view:flow", allowed: false },
+  { selected: "flow:1", target: "flow:1", container: "view:flow", allowed: true },
+  { selected: "view:flow", target: "flow:2", container: "view:flow", allowed: true },
+  {
+    selected: "sym:src/runner.ts#Runner.dispatch",
+    target: "flow:2",
+    container: "view:flow",
+    include: "view:flow/flow:2",
+    allowed: true,
+  },
+  { selected: "flow:1", target: "flow:1", container: "tour:reader", allowed: false },
+  {
+    selected: "sym:src/runner.ts#Runner.dispatch",
+    target: "sym:src/runner.ts#Runner.dispatch",
+    container: "tour:reader",
+    allowed: false,
+  },
+  {
+    selected: "flow:1",
+    target: "flow:1",
+    container: "tour:reader",
+    include: "tour:reader/flow:1",
+    allowed: true,
+  },
+  {
+    selected: "flow:1",
+    target: "tour:reader/flow:1",
+    container: "tour:other",
+    include: "tour:reader/flow:1",
+    allowed: false,
+  },
 ])(
-  "bounds viewer feedback on $selected when changing $target",
-  async ({ selected, target, allowed }) => {
-    const root = cloneDir(demo);
-    const initial = await applyStdin(root, {
-      views: [
-        {
-          id: "view:flow",
-          type: "flow",
-          title: "Dispatch flow",
-          participants: ["sym:src/runner.ts#Runner.dispatch", "file:src/queue.ts"],
-          steps: ["flow:1", "flow:2"].map((id) => ({
-            id,
-            from: "sym:src/runner.ts#Runner.dispatch",
-            to: "file:src/queue.ts",
-            kind: "call",
-            label: "Take the next job",
-            summary: "The runner takes a queued job.",
-            anchors: [{ file: "src/runner.ts", symbol: "Runner.dispatch", role: "definition" }],
-          })),
-        },
-      ],
-    });
-    expect(initial.code, initial.out + initial.err).toBe(0);
+  "bounds viewer feedback on $selected when changing $container/$target ($include)",
+  async ({ selected, target, container, include, allowed }) => {
+    const root = await flowGuide();
     const before = readJson<Explainer>(root, ".explainer/demo.explainer.json");
     const at = "2026-10-04T12:00:00.000Z";
     // The viewer records its open view even when the reader selects just one step.
@@ -119,7 +178,12 @@ it.each([
         context: artifactIdentity(before, fullIndex(root)),
         note: "Clarify which job the runner takes.",
         view: "view:flow",
-        label: selected === "view:flow" ? "Dispatch flow" : "Take the next job",
+        label:
+          selected === "view:flow"
+            ? "Dispatch flow"
+            : selected.startsWith("sym:")
+              ? "My dispatch label"
+              : "Take the next job",
         range: { file: "src/runner.ts", fromLine: 20, toLine: 25, side: "head" },
         outcome: {
           revision: 0,
@@ -129,7 +193,14 @@ it.each([
         },
       },
     ]);
-    const selection = await xplJson(root, "revise", "demo", "--select", "viewer-request");
+    const selection = await xplJson(
+      root,
+      "revise",
+      "demo",
+      "--select",
+      "viewer-request",
+      ...(include ? ["--include", include] : []),
+    );
     expect(selection.code, selection.out).toBe(0);
     const run = selection.json.runId;
     const proposed = writeFile(
@@ -139,14 +210,27 @@ it.each([
         {
           id: "viewer-request",
           patch: {
-            views: [
-              {
-                id: "view:flow",
-                type: "flow",
-                ...(selected === "view:flow" ? { title: "Taking the oldest job" } : {}),
-                stepsUpdate: [{ id: target, summary: "The runner takes the oldest queued job." }],
-              },
-            ],
+            ...(container.startsWith("tour:")
+              ? {
+                  tours: [
+                    {
+                      id: container,
+                      stepsUpdate: [{ id: target, note: "Read only the selected tour step." }],
+                    },
+                  ],
+                }
+              : {
+                  views: [
+                    {
+                      id: "view:flow",
+                      type: "flow",
+                      ...(selected === "view:flow" ? { title: "Taking the oldest job" } : {}),
+                      stepsUpdate: [
+                        { id: target, summary: "The runner takes the oldest queued job." },
+                      ],
+                    },
+                  ],
+                }),
           },
         },
       ]),
@@ -154,7 +238,7 @@ it.each([
     const review = await xplJson(root, "revise", "demo", "--run", run, "--proposal", proposed);
     expect(review.code, review.out).toBe(allowed ? 0 : 1);
     if (!allowed) {
-      expect(review.json.error).toMatch(/changes view:flow outside its selected scope/);
+      expect(review.json.error).toContain(`changes ${container} outside its selected scope`);
       expect(readJson(root, ".explainer/demo.explainer.json")).toEqual(before);
       expect(readRequests(root).requests[0]!.outcome.status).toBe("pending");
       return;
@@ -178,20 +262,131 @@ it.each([
     expect(flow.steps.map((step) => [step.id, step.summary])).toEqual([
       [
         "flow:1",
-        target === "flow:1"
+        container === "view:flow" && target === "flow:1"
           ? "The runner takes the oldest queued job."
           : "The runner takes a queued job.",
       ],
       [
         "flow:2",
-        target === "flow:2"
+        container === "view:flow" && target === "flow:2"
           ? "The runner takes the oldest queued job."
           : "The runner takes a queued job.",
       ],
     ]);
     expect(flow.title).toBe(selected === "view:flow" ? "Taking the oldest job" : "Dispatch flow");
+    expect(
+      next.tours.map((tour) => [tour.id, tour.steps.map((step) => [step.id, step.note])]),
+    ).toEqual([
+      [
+        "tour:reader",
+        [
+          [
+            "flow:1",
+            container === "tour:reader"
+              ? "Read only the selected tour step."
+              : "The runner takes a queued job.",
+          ],
+          ["sym:src/runner.ts#Runner.dispatch", "The runner takes a queued job."],
+        ],
+      ],
+      ["tour:other", [["tour:reader/flow:1", "Keep this other reading."]]],
+    ]);
   },
 );
+
+it("refuses a raw step removal when an earlier proposal moved that ID to another view", async () => {
+  const root = await flowGuide();
+  const initial = await applyStdin(root, {
+    remove: ["tour:reader", "tour:other"],
+    views: [
+      {
+        id: "view:other",
+        type: "flow",
+        title: "Another dispatch flow",
+        participants: ["sym:src/runner.ts#Runner.dispatch", "file:src/queue.ts"],
+        steps: [],
+      },
+    ],
+  });
+  expect(initial.code, initial.out + initial.err).toBe(0);
+  const before = readJson<Explainer>(root, ".explainer/demo.explainer.json");
+  const flow = before.views.find((v) => v.id === "view:flow")!;
+  if (flow.type !== "flow") throw new Error("Expected a flow view");
+  await feedback(root, "move-step", "view:other");
+  const stepRequest = (await feedback(root, "remove-step", "flow:1")).request;
+  // Normal viewer context qualifies flow:1 in its original owner at selection.
+  await importRequests(root, [{ ...stepRequest, id: "viewer-remove-step", view: "view:flow" }]);
+  const selection = await xplJson(
+    root,
+    "revise",
+    "demo",
+    "--select",
+    "move-step,viewer-remove-step",
+    "--include",
+    "view:flow,flow:2",
+  );
+  expect(selection.code, selection.out).toBe(0);
+  const ownRemoval = writeFile(
+    makeTempDir(),
+    "own-removal.json",
+    JSON.stringify([{ id: "viewer-remove-step", patch: { remove: ["flow:2"] } }]),
+  );
+  const permitted = await xplJson(
+    root,
+    "revise",
+    "demo",
+    "--run",
+    selection.json.runId,
+    "--proposal",
+    ownRemoval,
+  );
+  expect(permitted.code, permitted.out).toBe(0);
+  expect(
+    permitted.json.changes.find((c: any) => c.id === "view:flow").after.steps.map((s: any) => s.id),
+  ).toEqual(["flow:1"]);
+  const proposals = [
+    {
+      id: "move-step",
+      patch: {
+        views: [
+          { id: "view:flow", type: "flow", steps: [flow.steps[1]] },
+          { id: "view:other", type: "flow", steps: [flow.steps[0]] },
+        ],
+      },
+    },
+    { id: "viewer-remove-step", patch: { remove: ["flow:1"] } },
+  ];
+  const file = writeFile(makeTempDir(), "proposal.json", JSON.stringify(proposals));
+  // Establish that the preceding move is independently valid before asserting the refusal.
+  const moveOnly = writeFile(makeTempDir(), "move.json", JSON.stringify(proposals.slice(0, 1)));
+  const moved = await xplJson(
+    root,
+    "revise",
+    "demo",
+    "--run",
+    selection.json.runId,
+    "--proposal",
+    moveOnly,
+  );
+  expect(moved.code, moved.out).toBe(0);
+  const refused = await xplJson(
+    root,
+    "revise",
+    "demo",
+    "--run",
+    selection.json.runId,
+    "--proposal",
+    file,
+  );
+  expect(refused.code, refused.out).toBe(1);
+  expect(refused.json.error).toMatch(/changes flow:1 outside its selected scope/);
+  expect(readJson(root, ".explainer/demo.explainer.json")).toEqual(before);
+  expect(readRequests(root).requests.map((r) => r.outcome.status)).toEqual([
+    "pending",
+    "pending",
+    "pending",
+  ]);
+});
 
 it("retains the exact reviewed source and diff after acceptance and later source edits", async () => {
   const root = cloneDir(demo);

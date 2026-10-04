@@ -12,6 +12,7 @@ import {
   collectAnchors,
   feedbackContextReason,
   parseFeedbackRequest,
+  parseId,
   referencedFiles,
   reresolveExplainer,
   sameFeedbackContent,
@@ -255,34 +256,86 @@ function decisions(ctx: Ctx, revision: Revision, file: string): Decision[] {
   return result;
 }
 
-function boundedPatch(revision: Revision, proposal: Proposal): void {
+const patchLists = ["nodes", "edges", "concepts", "views", "tours"] as const;
+type ScopeTarget = [string, string] | [string, string, string];
+
+/** Resolve public IDs to their collection and container; never infer scope from a tour's local IDs. */
+function scopeTarget(explainer: Explainer, id: string, view?: string): ScopeTarget {
+  const slash = id.indexOf("/");
+  if (slash !== -1 && (id.startsWith("view:") || id.startsWith("tour:")))
+    return [id.startsWith("view:") ? "views" : "tours", id.slice(0, slash), id.slice(slash + 1)];
+  switch (parseId(id).type) {
+    case "repo":
+    case "dir":
+    case "file":
+    case "symbol":
+    case "group":
+      return ["nodes", id];
+    case "edge":
+    case "derived-edge":
+      return ["edges", id];
+    case "concept":
+      return ["concepts", id];
+    case "view":
+      return ["views", id];
+    case "tour":
+      return ["tours", id];
+    case "step": {
+      const owners = explainer.views.filter(
+        (v) => (v.type === "flow" || v.type === "sequence") && v.steps.some((s) => s.id === id),
+      );
+      // Reading context can identify a selected step's owner, but cannot grant whole-view permission.
+      const owner =
+        owners.find((v) => v.id === view) ?? (owners.length === 1 ? owners[0] : undefined);
+      if (!owner)
+        throw new CliError(`step ${id} has no unique owner; use an explicit <view-id>/<step-id>`);
+      return ["views", owner.id, id];
+    }
+    default:
+      // Render-only or unknown selections need explicit --include IDs for patchable content.
+      return ["unpatchable", id];
+  }
+}
+
+function boundedPatch(revision: Revision, proposal: Proposal, current: Explainer): void {
   const request = selected(revision, proposal.id);
-  const allowed = new Set([request.elementId, ...revision.include]);
+  const allowed = new Set([
+    JSON.stringify(scopeTarget(revision.previous, request.elementId, request.view)),
+    ...revision.include.map((id) => JSON.stringify(scopeTarget(revision.previous, id))),
+  ]);
+  const permits = (target: ScopeTarget) =>
+    allowed.has(JSON.stringify(target)) ||
+    (target.length === 3 && allowed.has(JSON.stringify(target.slice(0, 2))));
+  const refuse = (id: string): never => {
+    throw new CliError(
+      `patch for ${proposal.id} changes ${id} outside its selected scope; explicitly select it with --include in a new run`,
+    );
+  };
   const patch = proposal.patch;
   if (patch.title !== undefined || patch.scope !== undefined)
     throw new CliError("revision patches cannot change the guide title or audience");
-  const ids = [
-    ...[patch.nodes, patch.edges, patch.concepts, patch.views, patch.tours].flatMap((items) =>
-      items === undefined ? [] : array(items).map((item) => nonempty(object(item).id, "patch ID")),
-    ),
-    ...(patch.remove === undefined
-      ? []
-      : array(patch.remove).map((id) => nonempty(id, "remove ID"))),
-  ];
-  for (const id of ids) {
-    // A selected step may be updated through its enclosing view/tour, but only that step.
-    const view = patch.views?.find((v) => v.id === id);
-    const tour = patch.tours?.find((t) => t.id === id);
-    const updates = view && "stepsUpdate" in view ? view.stepsUpdate : tour?.stepsUpdate;
-    const stepOnly =
-      updates?.length &&
-      Object.keys(view ?? tour!).every((k) => ["id", "type", "stepsUpdate"].includes(k)) &&
-      updates.every((step) => allowed.has(step.id) || allowed.has(`${id}/${step.id}`));
-    if (!allowed.has(id) && !stepOnly)
-      throw new CliError(
-        `patch for ${proposal.id} changes ${id} outside its selected scope; explicitly select it with --include in a new run`,
-      );
+  for (const list of patchLists) {
+    if (patch[list] === undefined) continue;
+    for (const value of array(patch[list])) {
+      const item = object(value);
+      const id = nonempty(item.id, "patch ID");
+      if (permits([list, id])) continue;
+      // Every entry is checked in its actual collection, including repeated container IDs.
+      const stepOnly =
+        (list === "views" || list === "tours") &&
+        Object.keys(item).every((k) => ["id", "type", "stepsUpdate"].includes(k)) &&
+        Array.isArray(item.stepsUpdate) &&
+        item.stepsUpdate.length > 0 &&
+        item.stepsUpdate.every((step) => permits([list, id, nonempty(object(step).id, "step ID")]));
+      if (!stepOnly) refuse(id);
+    }
   }
+  if (patch.remove !== undefined)
+    for (const value of array(patch.remove)) {
+      const id = nonempty(value, "remove ID");
+      // Earlier proposals may move a step. Match the actual removal owner, not its old local ID.
+      if (!permits(scopeTarget(current, id))) refuse(id);
+    }
 }
 
 function candidate(
@@ -294,7 +347,7 @@ function candidate(
   let next = revision.resolved;
   const issues = [];
   for (const proposal of chosen) {
-    boundedPatch(revision, proposal);
+    boundedPatch(revision, proposal, next);
     const decision = revision.decisions.find((d) => d.id === proposal.id);
     if (enforceDecisions) {
       const request = selected(revision, proposal.id);

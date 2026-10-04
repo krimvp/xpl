@@ -17,6 +17,8 @@ The guide stays unchanged. Resolution updates location-only moves and index meta
 
 Each request's selected element bounds its patch. The optional `view` records the reader's open view; it grants no permission to edit that view or sibling steps. A selected flow/sequence/tour step allows only that step's `stepsUpdate` through its enclosing view/tour. Whole-view edits require feedback selecting the view itself or an explicit `--include <view-id>` at selection. Add explicit `--include <id,id>` for extra existing or new explanation IDs needed by an expansion or repair. Guide title/audience cannot be changed through this operation. Read all user-owned fields before writing.
 
+Step permission applies to one step in one owning view or tour. Raw flow/sequence feedback IDs resolve to their actual owning view in the retained artifact. A tour step with the same local ID remains outside that scope. Use `--include view:flow/flow:1` or `--include tour:reader/step-id` to name a specific step explicitly; tour steps always need this qualified address. Keep local step IDs inside the ordinary patch's `stepsUpdate`. Replacing full step arrays, editing frames or changing other view/tour fields requires selecting or including the whole container. Ordinary `remove` IDs are checked against the current candidate's owner, including moves proposed earlier in the run.
+
 ## Propose and inspect
 
 Write an array of `{id, patch}` for selected request IDs. Each `patch` uses the existing [patch format](patch-format.md); it is applied as `llm`. No second patch language exists. An empty patch handles a location-only move. Wrong feedback can be declined without proposing a patch.

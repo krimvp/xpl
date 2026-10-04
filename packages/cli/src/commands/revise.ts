@@ -17,6 +17,8 @@ export const reviseCommand: CommandSpec = {
     "Each patch is limited to its request's selected element and explicit --include IDs (including new IDs).",
     "Feedback's view is reading context; whole-view edits require selecting or explicitly including the view.",
     "Selected steps allow only their stepsUpdate through the enclosing view/tour.",
+    "Qualify step IDs with their container: use --include view:flow/flow:1 or tour:reader/step-id.",
+    "Raw flow/sequence feedback IDs resolve to their owning view; a matching tour-local ID grants no scope.",
     "Guide title/audience and user-owned fields stay protected. Reviews show before/after, source, warnings and readiness findings.",
     "--decisions reads [{id, status, reason, reconciliation?, missing?}]: one per selected request.",
     "Status is addressed, rejected, unresolved or outdated. Only addressed patches enter the candidate.",
@@ -39,7 +41,7 @@ export const reviseCommand: CommandSpec = {
     include: {
       type: "string",
       arg: "id,id",
-      desc: "Explicit extra explanation IDs allowed in this run",
+      desc: "Extra IDs; qualify local steps as <view-or-tour-id>/<step-id>",
     },
     run: { type: "string", arg: "id", desc: "Inspect or continue an existing revision run" },
     proposal: {

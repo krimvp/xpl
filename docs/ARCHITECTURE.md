@@ -1468,6 +1468,16 @@ selected or explicitly included. Title/audience cannot change; core `llm` proven
 content. Plain reviews show patch warnings and detailed readiness findings with repair hints, alongside the
 explanation before/after and source.
 
+Scope checks compare `(collection, id)` for top-level elements and `(collection, containerId, stepId)`
+for steps, encoded as JSON tuples so arbitrary tour-local IDs cannot alias another container's identity.
+Selection and `--include` are resolved against the retained artifact. Raw flow/sequence feedback IDs resolve
+to their actual owning view; reading context can disambiguate that step, not authorize the whole view.
+Explicit step addresses use `<view-id>/<step-id>` or `<tour-id>/<step-id>`. Every patch entry is checked in
+its actual collection. Only `stepsUpdate` may use step permission; full arrays, frames, graph include
+operations and other container fields require the container itself. Removal IDs resolve against the current
+candidate, so a preceding proposal cannot move a local ID and carry its old removal permission with it.
+Ordinary patch, stored element and feedback ID formats stay unchanged.
+
 A run lives in `.explainer/revisions/<uuid>/run.json`; `previous.json` retains the previous artifact.
 Generated paths are excluded from discovery. Selection and continuation reject generated directory aliases
 into source using the indexer's shared device/inode directory census (`repositoryDirectoryIdentities`),
