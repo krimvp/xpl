@@ -13,7 +13,7 @@
  *   SymbolInformation  symbol=1  relationships=4  kind=5  display_name=6  enclosing_symbol=8
  *   Relationship       symbol=1  is_reference=2  is_implementation=3  is_type_definition=4  is_definition=5
  *
- * Everything else (documentation, diagnostics, syntax kinds, document text, signatures, ...) is skipped
+ * Everything else (documentation, diagnostics, syntax kinds, signatures, ...) is skipped
  * by wire type, as are fields we do not know, so the decoder keeps working when the schema grows.
  * Ranges stay in the SCIP encoding: 0-based `[line, startChar, endChar]` or
  * `[startLine, startChar, endLine, endChar]`, end exclusive, characters in the document's position encoding.
@@ -37,7 +37,8 @@ export const WireType = {
   Fixed32: 5,
 } as const;
 
-const utf8 = new TextDecoder("utf-8");
+// Protobuf strings are content: a leading BOM is part of embedded source and its snapshot hash.
+const utf8 = new TextDecoder("utf-8", { ignoreBOM: true });
 
 /** Deepest group nesting `skip` follows before giving up (groups are deprecated; this only guards recursion). */
 const MAX_GROUP_DEPTH = 64;
@@ -254,6 +255,8 @@ export interface ScipOccurrence {
 }
 
 export interface ScipDocument {
+  /** Optional source evidence embedded by the producer (Document.text = 5). */
+  text?: string;
   /** Path relative to the index's project root, `/`-separated. */
   relativePath: string;
   /** The SCIP language name (`TypeScript`, `Python`, `Go`, ...). */
@@ -375,6 +378,7 @@ function decodeDocument(reader: ProtoReader): ScipDocument {
     else if (field === 3 && wireType === WireType.Bytes)
       doc.symbols.push(decodeSymbolInformation(reader.readMessage()));
     else if (field === 4 && wireType === WireType.Bytes) doc.language = reader.readString();
+    else if (field === 5 && wireType === WireType.Bytes) doc.text = reader.readString();
     else if (field === 6 && wireType === WireType.Varint) doc.positionEncoding = reader.readInt32();
     else reader.skip(wireType);
   }

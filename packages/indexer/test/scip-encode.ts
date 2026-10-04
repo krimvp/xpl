@@ -98,6 +98,7 @@ export interface OccurrenceSpec {
 }
 
 export interface DocumentSpec {
+  text?: string;
   path: string;
   language?: string;
   positionEncoding?: number;
@@ -141,6 +142,7 @@ function document(w: Writer, doc: DocumentSpec): void {
   for (const occ of doc.occurrences ?? []) w.message(2, (m) => occurrence(m, occ));
   for (const info of doc.symbols ?? []) w.message(3, (m) => symbolInfo(m, info));
   if (doc.language !== undefined) w.string(4, doc.language);
+  if (doc.text !== undefined) w.string(5, doc.text);
   if (doc.positionEncoding !== undefined) w.field(6, doc.positionEncoding);
 }
 

@@ -458,7 +458,7 @@ it("reports every advertised structural capability as failed when its provider t
     ],
   });
   expect(describeAnalysis(index).details).toContain(
-    "typescript: named symbols, full declaration ranges, nesting failed (0/1 files analyzed). Provider analysis failed; previous checked facts remain.",
+    "typescript (declaration-artifact): named symbols, full declaration ranges, nesting failed (0/1 files analyzed). Provider analysis failed; previous checked facts remain.",
   );
 });
 
