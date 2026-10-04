@@ -66,7 +66,7 @@ export interface ProviderDeclaration {
   identity: string;
   file: string;
   name: string;
-  /** Pre-dedup dotted path. Omitted: name. Canonical suffixes are assigned by xpl. */
+  /** Pre-dedup dotted path, or an existing canonical path for an identifier-checked range update. */
   path?: string;
   kind: IndexedSymbol["kind"];
   parent?: string;
@@ -286,7 +286,11 @@ export function normalizeProvider(
     ).entries;
     built.forEach((entry, i) => identities.set(list[i]!.fact.identity, entry.symbol.id));
     built.forEach((entry, i) => factsById.set(entry.symbol.id, list[i]!.fact));
-    for (const entry of built) entry.symbol.provider = 0;
+    built.forEach((entry, i) => {
+      entry.symbol.provider = 0;
+      const identifier = identifiers.get(list[i]!.fact.identity);
+      if (identifier) entry.identifier = identifier;
+    });
     entries.push(...built);
   }
   for (const entry of entries) {
@@ -406,13 +410,33 @@ export function mergeProvider(
             r.analyzedFiles.includes(file),
         ),
     );
-  const structure = (file: string) => covers("symbols", file) && covers("declarationRanges", file);
+  const previousById = new Map(previous.entries.map((e) => [e.symbol.id, e]));
+  const nextById = new Map(nextEntries.map((e) => [e.symbol.id, e]));
+  // Partial or empty structure cannot erase checked declarations. Fall back to range-only updates.
+  const structureFiles = new Set(
+    nextEntries
+      .filter((e) => covers("symbols", e.symbol.file) && covers("declarationRanges", e.symbol.file))
+      .map((e) => e.symbol.file),
+  );
+  for (const entry of previous.entries) {
+    if (
+      !nextById.has(entry.symbol.id) &&
+      next.analysis.some((report) =>
+        report.results.some(
+          (r) =>
+            r.status === "partial" &&
+            r.capabilities.some((c) => c === "symbols" || c === "declarationRanges") &&
+            r.analyzedFiles.includes(entry.symbol.file),
+        ),
+      )
+    )
+      structureFiles.delete(entry.symbol.file);
+  }
+  const structure = (file: string) => structureFiles.has(file);
   const entries = [
     ...previous.entries.filter((e) => !structure(e.symbol.file)),
     ...nextEntries.filter((e) => structure(e.symbol.file)),
   ];
-  const previousById = new Map(previous.entries.map((e) => [e.symbol.id, e]));
-  const nextById = new Map(nextEntries.map((e) => [e.symbol.id, e]));
   const ids = new Set(entries.map((e) => e.symbol.id));
   for (let i = 0; i < entries.length; i++) {
     const entry = entries[i]!;
@@ -435,9 +459,10 @@ export function mergeProvider(
         },
       };
     }
-    const parent = covers("nesting", entry.symbol.file)
-      ? replacement?.symbol.parent
-      : old?.symbol.parent;
+    const parent =
+      replacement && covers("nesting", entry.symbol.file)
+        ? replacement.symbol.parent
+        : old?.symbol.parent;
     if (parent && ids.has(parent)) updated.symbol.parent = parent;
     else delete updated.symbol.parent;
     entries[i] = updated;

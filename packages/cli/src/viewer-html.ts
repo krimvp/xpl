@@ -37,7 +37,7 @@ export function findViewerHtml(
   const found = candidates.find((candidate) => existsSync(candidate));
   if (!found) {
     throw new CliError(
-      "the viewer is not built: run `npm run build` in the xpl repository " +
+      "the viewer is unavailable: reinstall the local xpl tarball; for source development, run `npm run build` in the xpl repository " +
         `(looked for ${candidates.join(", ")})`,
     );
   }

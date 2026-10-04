@@ -16,6 +16,8 @@ export interface SymbolEntry {
   symbol: IndexedSymbol;
   /** Full extent including columns. */
   span: Span;
+  /** Source-checked declaration identifier, when the provider supplied one. Not stored in the index. */
+  identifier?: Span;
   /** The pack's pre-dedup path (`symbol.path` without a `~N` suffix). */
   basePath: string;
   /** `SymbolDraft.anchorOnly`: never looked up by name, never the target of a reference. */

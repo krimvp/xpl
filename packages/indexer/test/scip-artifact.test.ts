@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto";
 import { hashText } from "@xpl/core";
 import { expect, it } from "vitest";
-import { buildIndex, scipArtifactProvider } from "../src/index.js";
+import { buildIndex, scipArtifactProvider, indexProviders } from "../src/index.js";
+import type { IndexProvider } from "../src/providers.js";
 import { makeDir } from "./helpers.js";
 import { encodeIndex } from "./scip-encode.js";
 import type { IndexSpec } from "./scip-encode.js";
@@ -41,6 +42,228 @@ function provider(
     },
   });
 }
+
+const rustText = "struct A;\nfn read() { A; }\n";
+const rangeLess: IndexSpec = {
+  documents: [
+    {
+      path: "a.rs",
+      text: rustText,
+      positionEncoding: 2,
+      symbols: [
+        { symbol: sym("A#"), kind: 49 },
+        { symbol: sym("read()."), kind: 17 },
+      ],
+      occurrences: [
+        { symbol: sym("A#"), roles: 1, range: [0, 7, 8] },
+        { symbol: sym("read()."), roles: 1, range: [1, 3, 7] },
+        { symbol: sym("A#"), range: [1, 12, 13] },
+      ],
+    },
+  ],
+};
+
+it("a partial duplicate declaration updates only its source-matched canonical symbol", async () => {
+  const source =
+    '#[cfg(feature = "one")]\nstruct A;\n#[cfg(not(feature = "one"))]\nstruct A;\nfn read() { A; }\n';
+  const artifact: IndexSpec = {
+    documents: [
+      {
+        path: "a.rs",
+        text: source,
+        positionEncoding: 2,
+        symbols: [{ symbol: sym("A#"), kind: 49 }],
+        occurrences: [
+          { symbol: sym("A#"), roles: 1, range: [3, 7, 8], enclosingRange: [3, 0, 9] },
+          { symbol: sym("A#"), range: [4, 12, 13] },
+        ],
+      },
+    ],
+  };
+  const { index } = await buildIndex({
+    root: makeDir({ "a.rs": source }),
+    precise: "require",
+    providers: [...indexProviders().filter((p) => p.mode === "syntax"), provider(artifact)],
+  });
+  expect(index.symbols.map((s) => [s.id, s.range, index.providers?.[s.provider!]?.id])).toEqual([
+    ["a.rs#A", { startLine: 2, endLine: 2 }, "rust-tags"],
+    ["a.rs#A~2", { startLine: 4, endLine: 4 }, "scip-artifact"],
+    ["a.rs#read", { startLine: 5, endLine: 5 }, "rust-tags"],
+  ]);
+  expect(index.refs.map((r) => [r.from, r.to, r.resolution])).toEqual([
+    ["a.rs#read", "a.rs#A~2", "precise"],
+  ]);
+});
+
+it("a same-name type parameter cannot attach a precise reference to its enclosing class", async () => {
+  const source = "class A<A> { x!: A; }\nA;\n";
+  const checkedSyntax: IndexProvider = {
+    id: "checked-syntax",
+    mode: "syntax",
+    languages: ["typescript"],
+    capabilities: { symbols: "supported", declarationRanges: "supported" },
+    async analyze() {
+      return {
+        provider: this.id,
+        version: "1",
+        tool: "test",
+        configuration: "default",
+        sourceHashes: { "a.ts": hashText(source) },
+        declarations: [
+          {
+            identity: "A",
+            file: "a.ts",
+            name: "A",
+            kind: "class",
+            identifier: { start: [0, 6], end: [0, 7], encoding: "utf16" },
+            declaration: { start: [0, 0], end: [0, 21], encoding: "utf16" },
+          },
+          {
+            identity: "x",
+            file: "a.ts",
+            name: "x",
+            path: "A.x",
+            kind: "variable",
+            parent: "A",
+            identifier: { start: [0, 13], end: [0, 14], encoding: "utf16" },
+            declaration: { start: [0, 13], end: [0, 19], encoding: "utf16" },
+          },
+        ],
+        relationships: [],
+        analysis: [
+          {
+            provider: this.id,
+            files: ["a.ts"],
+            capabilities: this.capabilities,
+            results: [
+              {
+                capabilities: ["symbols", "declarationRanges"],
+                status: "supported",
+                analyzedFiles: ["a.ts"],
+                limitations: [],
+              },
+            ],
+          },
+        ],
+      };
+    },
+  };
+  const artifact: IndexSpec = {
+    documents: [
+      {
+        path: "a.ts",
+        text: source,
+        positionEncoding: 2,
+        symbols: [
+          { symbol: sym("A#"), kind: 7 },
+          { symbol: sym("A#[A]"), kind: 55 },
+        ],
+        occurrences: [
+          { symbol: sym("A#"), roles: 1, range: [0, 6, 7] },
+          { symbol: sym("A#[A]"), roles: 1, range: [0, 8, 9] },
+          { symbol: sym("A#[A]"), range: [0, 17, 18] },
+          { symbol: sym("A#"), range: [1, 0, 1] },
+        ],
+      },
+    ],
+  };
+  const { index } = await buildIndex({
+    root: makeDir({ "a.ts": source }),
+    precise: "auto",
+    providers: [checkedSyntax, provider(artifact)],
+  });
+  expect(index.symbols.map((s) => s.id)).toEqual(["a.ts#A", "a.ts#A.x"]);
+  expect(index.refs.filter((r) => r.resolution === "precise").map((r) => [r.from, r.to])).toEqual([
+    ["a.ts#", "a.ts#A"],
+  ]);
+  expect(
+    index
+      .analysis!.find((r) => r.provider === "scip-artifact")!
+      .diagnostics!.filter((d) => d.includes("unsupported descriptor or kind")),
+  ).toEqual([
+    "a.ts: synthetic test demo 1 A#[A]: unsupported descriptor or kind; syntax update omitted",
+  ]);
+});
+
+it.each([false, true])(
+  "artifacts with full ranges: %s preserve syntax symbols and attach supported references",
+  async (fullRange) => {
+    const artifact = structuredClone(rangeLess);
+    if (fullRange) artifact.documents![0]!.occurrences![0]!.enclosingRange = [0, 0, 9];
+    const { index } = await buildIndex({
+      root: makeDir({ "a.rs": rustText, "b.rs": rustText }),
+      precise: "require",
+      providers: [...indexProviders().filter((p) => p.mode === "syntax"), provider(artifact)],
+    });
+    expect(index.symbols.map((s) => [s.id, index.providers?.[s.provider!]?.id, s.range])).toEqual([
+      ["a.rs#A", fullRange ? "scip-artifact" : "rust-tags", { startLine: 1, endLine: 1 }],
+      ["a.rs#read", "rust-tags", { startLine: 2, endLine: 2 }],
+      ["b.rs#A", "rust-tags", { startLine: 1, endLine: 1 }],
+      ["b.rs#read", "rust-tags", { startLine: 2, endLine: 2 }],
+    ]);
+    expect(index.refs.map((r) => [r.from, r.to, r.kind, r.resolution])).toEqual([
+      ["a.rs#read", "a.rs#A", "type-ref", "precise"],
+    ]);
+    const report = index.analysis!.find((r) => r.provider === "scip-artifact")!;
+    expect(
+      report.results
+        .filter((r) =>
+          r.capabilities.some((c) => ["symbols", "declarationRanges", "nesting"].includes(c)),
+        )
+        .map((r) => r.analyzedFiles),
+    ).toEqual([[], fullRange ? ["a.rs"] : [], []]);
+  },
+);
+
+it("standalone range-less artifacts cannot claim structure or earn precise relationship coverage", async () => {
+  const root = makeDir({ "a.rs": rustText });
+  const { index } = await buildIndex({ root, precise: "auto", providers: [provider(rangeLess)] });
+  expect(index.symbols).toEqual([]);
+  expect(index.refs).toEqual([]);
+  expect(index.languages.rust).toMatchObject({ symbols: 0, refs: "none" });
+  const report = index.analysis!.find((r) => r.provider === "scip-artifact")!;
+  expect(report.results.flatMap((r) => r.analyzedFiles)).toEqual([]);
+  expect(report.diagnostics).toEqual([
+    "a.rs: synthetic test demo 1 A#: full declaration/identifier range missing or invalid; definition omitted",
+    "a.rs: synthetic test demo 1 read().: full declaration/identifier range missing or invalid; definition omitted",
+    "a.rs:2:13: synthetic test demo 1 A#: external, omitted or unresolved target",
+    "the tool described none of the 1 rust file(s)",
+  ]);
+  await expect(
+    buildIndex({ root, precise: "require", providers: [provider(rangeLess)] }),
+  ).rejects.toThrow('precise provider "scip-artifact" failed');
+});
+
+it("a checked declaration permits explicit precise analysis with zero relationships", async () => {
+  const artifact = structuredClone(rangeLess);
+  artifact.documents![0]!.occurrences = [
+    { symbol: sym("A#"), roles: 1, range: [0, 7, 8], enclosingRange: [0, 0, 9] },
+  ];
+  const { index } = await buildIndex({
+    root: makeDir({ "a.rs": rustText }),
+    precise: "require",
+    providers: [provider(artifact)],
+  });
+  expect(index.symbols.map((s) => s.id)).toEqual(["a.rs#A"]);
+  expect(index.refs).toEqual([]);
+  expect(index.languages.rust).toMatchObject({ symbols: 1, refs: "precise" });
+});
+
+it("a stale range-less artifact cannot attach references to current syntax symbols", async () => {
+  const { index } = await buildIndex({
+    root: makeDir({ "a.rs": rustText.replace("A; }", "A; A; }") }),
+    precise: "auto",
+    providers: [...indexProviders().filter((p) => p.mode === "syntax"), provider(rangeLess)],
+  });
+  expect(index.symbols.map((s) => s.id)).toEqual(["a.rs#A", "a.rs#read"]);
+  expect(index.refs).toEqual([]);
+  expect(index.languages.rust).toMatchObject({ symbols: 2, refs: "none" });
+  expect(index.analysis!.find((r) => r.provider === "scip-artifact")!.diagnostics).toEqual([
+    "a.rs: source snapshot missing or stale; regenerate artifact and manifest together",
+    "a.rs: provider source snapshot is missing or stale",
+    "the tool described none of the 1 rust file(s)",
+  ]);
+});
 
 it("imports source-backed declarations, nesting and type mentions without a language pack", async () => {
   const { index, warnings } = await buildIndex({
