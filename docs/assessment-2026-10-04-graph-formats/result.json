@@ -1,0 +1,735 @@
+{
+  "baseline": {
+    "explainerErrors": [],
+    "explainerSymbolAnchorsBy": {
+      "tree-sitter": 6
+    },
+    "explainerWarnings": 0,
+    "goLanguageLabel": {
+      "files": 10,
+      "refs": "heuristic",
+      "symbols": 158,
+      "tool": "xpl-heuristic@0.0.0 (tree-sitter-go@0.25.0)"
+    },
+    "goRefs": 424,
+    "goSymbols": 158,
+    "refsByKind": {
+      "call/heuristic": 110,
+      "extends/heuristic": 1,
+      "implements/heuristic": 3,
+      "import/heuristic": 17,
+      "read/heuristic": 164,
+      "type-ref/heuristic": 108,
+      "write/heuristic": 21
+    }
+  },
+  "cpg-claims-all-calls/adapted": {
+    "adapter": {
+      "dropped": {
+        "adapter: declaration without full range": 1,
+        "adapter: declaration without full range (endpoint kept as pack ID)": 25,
+        "cpg CALL code does not match source at its position": 3,
+        "cpg CALL unresolved or external callee (blind)": 202,
+        "cpg FILE without content or hash (source identity unverifiable)": 0,
+        "cpg METHOD synthetic (<clinit>, file method, lambda)": 18,
+        "cpg TYPE_DECL synthetic or package-level": 12,
+        "cpg call coverage withdrawn: file has statements the frontend skipped": 0
+      },
+      "emitted": {
+        "declaration function (full range, no identifier extent)": 29,
+        "declaration method (full range, no identifier extent)": 25,
+        "declaration type (start position only)": 26,
+        "relationship call (CALL edge, range rebuilt from CODE)": 59
+      }
+    },
+    "artifactDeclarations": {
+      "noPackCounterpart": [],
+      "placed": 54,
+      "sameIdAndLines": 54,
+      "sameIdAsPack": 54,
+      "sentButNotPlaced": []
+    },
+    "merged": {
+      "callPairs": 79,
+      "callPairsOnlyHere": [],
+      "callPairsOnlyHeuristic": [
+        "cmd/jobrunner/main.go#run call internal/runner/runner.go#Runner.Dispatch",
+        "internal/bus/bus.go#Subscribe call internal/bus/bus.go#Bus.On",
+        "internal/runner/retry_test.go#testRetry call internal/config/config.go#Retry",
+        "internal/runner/retry_test.go#runOne call internal/runner/runner.go#Runner.Dispatch",
+        "internal/runner/retry_test.go#TestFailsTwiceThenSucceedsIsAckedAfterTwoRequeues call internal/runner/retry_test.go#runOne",
+        "internal/runner/retry_test.go#TestAlwaysFailingJobIsDeadLetteredAfterMaxRetries call internal/runner/retry_test.go#runOne",
+        "internal/runner/runner.go#Runner.Dispatch call internal/runner/runner.go#JobQueue.Pop",
+        "internal/runner/runner.go#Runner.Dispatch call internal/runner/runner.go#WorkerPool.Lease",
+        "internal/runner/runner.go#Runner.Dispatch call internal/runner/runner.go#WorkerPool.Release",
+        "internal/runner/runner.go#Runner.Dispatch call internal/runner/runner.go#JobQueue.Ack",
+        "internal/runner/runner.go#Runner.Dispatch call internal/runner/runner.go#JobQueue.Requeue",
+        "internal/runner/runner.go#Runner.Dispatch call internal/runner/runner.go#JobQueue.DeadLetter"
+      ],
+      "callPairsShared": 79,
+      "explainerErrors": [],
+      "explainerSymbolAnchorsBy": {
+        "cpg-artifact": 5,
+        "tree-sitter": 1
+      },
+      "explainerWarnings": 0,
+      "goLanguageLabel": {
+        "files": 10,
+        "refs": "heuristic",
+        "symbols": 158,
+        "tool": "xpl-heuristic@0.0.0 (tree-sitter-go@0.25.0)"
+      },
+      "goRefs": 412,
+      "goSymbols": 158,
+      "refsByKind": {
+        "call/heuristic": 98,
+        "extends/heuristic": 1,
+        "implements/heuristic": 3,
+        "import/heuristic": 17,
+        "read/heuristic": 164,
+        "type-ref/heuristic": 108,
+        "write/heuristic": 21
+      },
+      "symbolIdsLost": [],
+      "symbolIdsOnlyHere": [],
+      "symbolIdsSameLines": 158,
+      "symbolIdsShared": 158,
+      "symbolsLostByKind": {}
+    },
+    "normalize": {
+      "examples": [],
+      "reasons": {},
+      "results": [
+        "symbols: partial (1 files)",
+        "declarationRanges: partial (10 files)",
+        "nesting: partial (1 files)",
+        "call: partial (10 files)"
+      ]
+    },
+    "warnings": []
+  },
+  "cpg-claims-all-calls/raw": {
+    "adapter": {
+      "dropped": {
+        "cpg CALL code does not match source at its position": 3,
+        "cpg CALL unresolved or external callee (blind)": 202,
+        "cpg FILE without content or hash (source identity unverifiable)": 0,
+        "cpg METHOD synthetic (<clinit>, file method, lambda)": 18,
+        "cpg TYPE_DECL synthetic or package-level": 12,
+        "cpg call coverage withdrawn: file has statements the frontend skipped": 0
+      },
+      "emitted": {
+        "declaration function (full range, no identifier extent)": 29,
+        "declaration method (full range, no identifier extent)": 25,
+        "declaration type (start position only)": 26,
+        "relationship call (CALL edge, range rebuilt from CODE)": 59
+      }
+    },
+    "merged": {
+      "callPairs": 90,
+      "callPairsOnlyHere": [],
+      "callPairsOnlyHeuristic": [
+        "cmd/jobrunner/main.go#run call internal/runner/runner.go#Runner.Dispatch"
+      ],
+      "callPairsShared": 90,
+      "explainerErrors": [],
+      "explainerSymbolAnchorsBy": {
+        "tree-sitter": 6
+      },
+      "explainerWarnings": 0,
+      "goLanguageLabel": {
+        "files": 10,
+        "refs": "heuristic",
+        "symbols": 158,
+        "tool": "xpl-heuristic@0.0.0 (tree-sitter-go@0.25.0)"
+      },
+      "goRefs": 423,
+      "goSymbols": 158,
+      "refsByKind": {
+        "call/heuristic": 109,
+        "extends/heuristic": 1,
+        "implements/heuristic": 3,
+        "import/heuristic": 17,
+        "read/heuristic": 164,
+        "type-ref/heuristic": 108,
+        "write/heuristic": 21
+      },
+      "symbolIdsLost": [],
+      "symbolIdsOnlyHere": [],
+      "symbolIdsSameLines": 158,
+      "symbolIdsShared": 158,
+      "symbolsLostByKind": {}
+    },
+    "normalize": {
+      "examples": [
+        "example.com/jobrunner/internal/bus.JobCompleted: full declaration range unavailable",
+        "example.com/jobrunner/internal/bus.Handler: full declaration range unavailable",
+        "example.com/jobrunner/internal/bus.Bus: full declaration range unavailable",
+        "example.com/jobrunner/internal/bus.Bus: missing or self parent identity",
+        "example.com/jobrunner/internal/bus.Bus: missing or self parent identity"
+      ],
+      "reasons": {
+        "full declaration range unavailable": 26,
+        "missing or self parent identity": 25
+      },
+      "results": [
+        "symbols: partial (1 files)",
+        "declarationRanges: partial (1 files)",
+        "nesting: partial (1 files)",
+        "call: partial (1 files)"
+      ]
+    },
+    "warnings": []
+  },
+  "cpg/adapted": {
+    "adapter": {
+      "dropped": {
+        "adapter: declaration without full range": 1,
+        "adapter: declaration without full range (endpoint kept as pack ID)": 25,
+        "cpg CALL code does not match source at its position": 3,
+        "cpg CALL unresolved or external callee (blind)": 202,
+        "cpg FILE without content or hash (source identity unverifiable)": 0,
+        "cpg METHOD synthetic (<clinit>, file method, lambda)": 18,
+        "cpg TYPE_DECL synthetic or package-level": 12,
+        "cpg call coverage withdrawn: file has statements the frontend skipped": 10
+      },
+      "emitted": {
+        "declaration function (full range, no identifier extent)": 29,
+        "declaration method (full range, no identifier extent)": 25,
+        "declaration type (start position only)": 26,
+        "relationship call (CALL edge, range rebuilt from CODE)": 59
+      }
+    },
+    "artifactDeclarations": {
+      "noPackCounterpart": [],
+      "placed": 54,
+      "sameIdAndLines": 54,
+      "sameIdAsPack": 54,
+      "sentButNotPlaced": []
+    },
+    "merged": {
+      "callPairs": 91,
+      "callPairsOnlyHere": [],
+      "callPairsOnlyHeuristic": [],
+      "callPairsShared": 91,
+      "explainerErrors": [],
+      "explainerSymbolAnchorsBy": {
+        "cpg-artifact": 5,
+        "tree-sitter": 1
+      },
+      "explainerWarnings": 0,
+      "goLanguageLabel": {
+        "files": 10,
+        "refs": "heuristic",
+        "symbols": 158,
+        "tool": "xpl-heuristic@0.0.0 (tree-sitter-go@0.25.0)"
+      },
+      "goRefs": 424,
+      "goSymbols": 158,
+      "refsByKind": {
+        "call/heuristic": 110,
+        "extends/heuristic": 1,
+        "implements/heuristic": 3,
+        "import/heuristic": 17,
+        "read/heuristic": 164,
+        "type-ref/heuristic": 108,
+        "write/heuristic": 21
+      },
+      "symbolIdsLost": [],
+      "symbolIdsOnlyHere": [],
+      "symbolIdsSameLines": 158,
+      "symbolIdsShared": 158,
+      "symbolsLostByKind": {}
+    },
+    "normalize": {
+      "examples": [],
+      "reasons": {},
+      "results": [
+        "symbols: partial (1 files)",
+        "declarationRanges: partial (10 files)",
+        "nesting: partial (1 files)",
+        "call: partial (0 files)"
+      ]
+    },
+    "warnings": []
+  },
+  "cpg/raw": {
+    "adapter": {
+      "dropped": {
+        "cpg CALL code does not match source at its position": 3,
+        "cpg CALL unresolved or external callee (blind)": 202,
+        "cpg FILE without content or hash (source identity unverifiable)": 0,
+        "cpg METHOD synthetic (<clinit>, file method, lambda)": 18,
+        "cpg TYPE_DECL synthetic or package-level": 12,
+        "cpg call coverage withdrawn: file has statements the frontend skipped": 10
+      },
+      "emitted": {
+        "declaration function (full range, no identifier extent)": 29,
+        "declaration method (full range, no identifier extent)": 25,
+        "declaration type (start position only)": 26,
+        "relationship call (CALL edge, range rebuilt from CODE)": 59
+      }
+    },
+    "merged": {
+      "callPairs": 91,
+      "callPairsOnlyHere": [],
+      "callPairsOnlyHeuristic": [],
+      "callPairsShared": 91,
+      "explainerErrors": [],
+      "explainerSymbolAnchorsBy": {
+        "tree-sitter": 6
+      },
+      "explainerWarnings": 0,
+      "goLanguageLabel": {
+        "files": 10,
+        "refs": "heuristic",
+        "symbols": 158,
+        "tool": "xpl-heuristic@0.0.0 (tree-sitter-go@0.25.0)"
+      },
+      "goRefs": 424,
+      "goSymbols": 158,
+      "refsByKind": {
+        "call/heuristic": 110,
+        "extends/heuristic": 1,
+        "implements/heuristic": 3,
+        "import/heuristic": 17,
+        "read/heuristic": 164,
+        "type-ref/heuristic": 108,
+        "write/heuristic": 21
+      },
+      "symbolIdsLost": [],
+      "symbolIdsOnlyHere": [],
+      "symbolIdsSameLines": 158,
+      "symbolIdsShared": 158,
+      "symbolsLostByKind": {}
+    },
+    "normalize": {
+      "examples": [
+        "example.com/jobrunner/internal/bus.JobCompleted: full declaration range unavailable",
+        "example.com/jobrunner/internal/bus.Handler: full declaration range unavailable",
+        "example.com/jobrunner/internal/bus.Bus: full declaration range unavailable",
+        "example.com/jobrunner/internal/bus.Bus: missing or self parent identity",
+        "example.com/jobrunner/internal/bus.Bus: missing or self parent identity"
+      ],
+      "reasons": {
+        "full declaration range unavailable": 26,
+        "missing or self parent identity": 25
+      },
+      "results": [
+        "symbols: partial (1 files)",
+        "declarationRanges: partial (1 files)",
+        "nesting: partial (1 files)",
+        "call: partial (0 files)"
+      ]
+    },
+    "warnings": []
+  },
+  "kythe/adapted": {
+    "adapter": {
+      "dropped": {
+        "adapter: declaration without full range": 11,
+        "adapter: declaration without full range (endpoint kept as pack ID)": 79,
+        "adapter: read to an unknown declaration": 17,
+        "adapter: write to an unknown declaration": 5,
+        "kythe documents (no xpl relationship)": 76,
+        "kythe overrides (no xpl relationship)": 9,
+        "kythe package/ (not an xpl symbol)": 7,
+        "kythe param.N/tparam.N (type graph)": 546,
+        "kythe ref -> external or local target": 543,
+        "kythe ref -> package": 55,
+        "kythe ref -> tbuiltin": 93,
+        "kythe ref -> tvar": 5,
+        "kythe ref -> undefined": 495,
+        "kythe ref/call -> external or local target": 138,
+        "kythe ref/imports (package != file module scope)": 62,
+        "kythe ref/init (no xpl relationship)": 69,
+        "kythe ref/writes -> external or local target": 16,
+        "kythe satisfies -> external interface": 9,
+        "kythe tvar/ (not an xpl symbol)": 2,
+        "kythe typed (no xpl relationship)": 417,
+        "kythe variable/local (not an xpl symbol)": 123,
+        "kythe variable/local/parameter (not an xpl symbol)": 114
+      },
+      "emitted": {
+        "declaration class": 24,
+        "declaration function": 29,
+        "declaration interface": 2,
+        "declaration method": 25,
+        "declaration method (identifier only)": 6,
+        "declaration variable (identifier only)": 84,
+        "relationship call (from ref/call)": 81,
+        "relationship implements (from satisfies, evidence = type identifier)": 3,
+        "relationship read (from ref)": 282,
+        "relationship type-ref (from ref)": 141,
+        "relationship write (from ref/writes)": 87
+      }
+    },
+    "artifactDeclarations": {
+      "noPackCounterpart": [
+        "internal/worker/worker.go#Worker.Run.outcome 55-58"
+      ],
+      "placed": 80,
+      "sameIdAndLines": 79,
+      "sameIdAsPack": 79,
+      "sentButNotPlaced": []
+    },
+    "merged": {
+      "callPairs": 68,
+      "callPairsOnlyHere": [
+        "internal/runner/retry_test.go#TestFailsTwiceThenSucceedsIsAckedAfterTwoRequeues call internal/metrics/metrics.go#Metrics.Completed",
+        "internal/runner/retry_test.go#TestAlwaysFailingJobIsDeadLetteredAfterMaxRetries call internal/metrics/metrics.go#Metrics.Completed"
+      ],
+      "callPairsOnlyHeuristic": [
+        "cmd/jobrunner/main.go#runnerConfig call internal/runner/runner.go#Config",
+        "internal/bus/bus.go#New call internal/bus/bus.go#Bus",
+        "internal/config/config.go#Load call internal/config/config.go#Config",
+        "internal/config/config.go#Parse call internal/config/config.go#Config",
+        "internal/config/config.go#Parse call internal/config/config.go#reader",
+        "internal/config/config.go#Parse call internal/config/config.go#Queue",
+        "internal/config/config.go#Parse call internal/config/config.go#Workers",
+        "internal/config/config.go#Parse call internal/config/config.go#Retry",
+        "internal/config/config.go#Parse call internal/config/config.go#Metrics",
+        "internal/metrics/metrics.go#New call internal/metrics/metrics.go#Metrics",
+        "internal/queue/deadletter.go#Queue.DeadLetter call internal/queue/deadletter.go#DeadJob",
+        "internal/queue/queue.go#New call internal/queue/queue.go#Queue",
+        "internal/queue/queue.go#Queue.Push call internal/queue/queue.go#Job",
+        "internal/runner/retry_test.go#testRetry call internal/config/config.go#Retry",
+        "internal/runner/retry_test.go#newRecordingQueue call internal/runner/retry_test.go#recordingQueue",
+        "internal/runner/retry_test.go#runOne call internal/runner/runner.go#Config",
+        "internal/runner/retry_test.go#TestBackoffDoublesWithEveryFailureAndStopsAtMaxDelay call internal/config/config.go#Retry",
+        "internal/runner/retry_test.go#TestDefaultConfigCarriesTheRetryPolicy call internal/config/config.go#Retry",
+        "internal/runner/runner.go#New call internal/runner/runner.go#Runner",
+        "internal/runner/runner.go#Runner.Dispatch call internal/runner/runner.go#Runner.logf",
+        "internal/runner/runner.go#Runner.Dispatch call internal/worker/worker.go#Options",
+        "internal/worker/pool.go#NewPool call internal/worker/pool.go#Pool",
+        "internal/worker/worker.go#New call internal/worker/worker.go#Worker",
+        "internal/worker/worker.go#Worker.Run call internal/worker/worker.go#Result",
+        "internal/worker/worker.go#Worker.Run call internal/bus/bus.go#JobCompleted"
+      ],
+      "callPairsShared": 66,
+      "explainerErrors": [],
+      "explainerSymbolAnchorsBy": {
+        "kythe-artifact": 5,
+        "tree-sitter": 1
+      },
+      "explainerWarnings": 0,
+      "goLanguageLabel": {
+        "files": 10,
+        "refs": "precise",
+        "symbols": 158,
+        "tool": "kythe go_indexer@v0.0.76"
+      },
+      "goRefs": 495,
+      "goSymbols": 158,
+      "refsByKind": {
+        "call/precise": 81,
+        "extends/heuristic": 1,
+        "implements/precise": 3,
+        "import/heuristic": 17,
+        "read/heuristic": 114,
+        "read/precise": 84,
+        "type-ref/precise": 137,
+        "write/heuristic": 1,
+        "write/precise": 57
+      },
+      "symbolIdsLost": [],
+      "symbolIdsOnlyHere": [],
+      "symbolIdsSameLines": 158,
+      "symbolIdsShared": 158,
+      "symbolsLostByKind": {}
+    },
+    "normalize": {
+      "examples": [],
+      "reasons": {},
+      "results": [
+        "symbols: supported (0 files)",
+        "declarationRanges: partial (10 files)",
+        "nesting: supported (0 files)",
+        "call: supported (10 files)",
+        "implements: partial (10 files)",
+        "read: partial (3 files)",
+        "write: partial (8 files)",
+        "type-ref: partial (10 files)"
+      ]
+    },
+    "warnings": []
+  },
+  "kythe/adapted/stale-copy": {
+    "normalize": {
+      "examples": [
+        "example.com||jobrunner/cmd/jobrunner|func demoHandlers: unknown relationship kind, endpoint or invalid source evidence",
+        "example.com||jobrunner/cmd/jobrunner|func demoHandlers: unknown relationship kind, endpoint or invalid source evidence",
+        "example.com||jobrunner/cmd/jobrunner|func demoHandlers: unknown relationship kind, endpoint or invalid source evidence",
+        "example.com||jobrunner/cmd/jobrunner|func run: unknown relationship kind, endpoint or invalid source evidence",
+        "example.com||jobrunner/cmd/jobrunner|func run: unknown relationship kind, endpoint or invalid source evidence"
+      ],
+      "reasons": {
+        "missing or self parent identity": 2,
+        "provider source snapshot is missing or stale": 1,
+        "unknown relationship kind, endpoint or invalid source evidence": 46
+      },
+      "results": [
+        "symbols: supported (0 files)",
+        "declarationRanges: partial (4 files)",
+        "nesting: supported (0 files)",
+        "call: partial (4 files)",
+        "implements: partial (4 files)",
+        "read: partial (1 files)",
+        "write: partial (4 files)",
+        "type-ref: partial (4 files)"
+      ]
+    },
+    "staleFileSymbolProviders": {
+      "tree-sitter": 28
+    }
+  },
+  "kythe/raw": {
+    "adapter": {
+      "dropped": {
+        "kythe documents (no xpl relationship)": 76,
+        "kythe overrides (no xpl relationship)": 9,
+        "kythe package/ (not an xpl symbol)": 7,
+        "kythe param.N/tparam.N (type graph)": 546,
+        "kythe ref -> external or local target": 543,
+        "kythe ref -> package": 55,
+        "kythe ref -> tbuiltin": 93,
+        "kythe ref -> tvar": 5,
+        "kythe ref -> undefined": 495,
+        "kythe ref/call -> external or local target": 138,
+        "kythe ref/imports (package != file module scope)": 62,
+        "kythe ref/init (no xpl relationship)": 69,
+        "kythe ref/writes -> external or local target": 16,
+        "kythe satisfies -> external interface": 9,
+        "kythe tvar/ (not an xpl symbol)": 2,
+        "kythe typed (no xpl relationship)": 417,
+        "kythe variable/local (not an xpl symbol)": 123,
+        "kythe variable/local/parameter (not an xpl symbol)": 114
+      },
+      "emitted": {
+        "declaration class": 24,
+        "declaration function": 29,
+        "declaration interface": 2,
+        "declaration method": 25,
+        "declaration method (identifier only)": 6,
+        "declaration variable (identifier only)": 84,
+        "relationship call (from ref/call)": 81,
+        "relationship implements (from satisfies, evidence = type identifier)": 3,
+        "relationship read (from ref)": 282,
+        "relationship type-ref (from ref)": 141,
+        "relationship write (from ref/writes)": 87
+      }
+    },
+    "merged": {
+      "callPairs": 91,
+      "callPairsOnlyHere": [],
+      "callPairsOnlyHeuristic": [],
+      "callPairsShared": 91,
+      "explainerErrors": [],
+      "explainerSymbolAnchorsBy": {
+        "tree-sitter": 6
+      },
+      "explainerWarnings": 0,
+      "goLanguageLabel": {
+        "files": 10,
+        "refs": "heuristic",
+        "symbols": 158,
+        "tool": "xpl-heuristic@0.0.0 (tree-sitter-go@0.25.0)"
+      },
+      "goRefs": 424,
+      "goSymbols": 158,
+      "refsByKind": {
+        "call/heuristic": 110,
+        "extends/heuristic": 1,
+        "implements/heuristic": 3,
+        "import/heuristic": 17,
+        "read/heuristic": 164,
+        "type-ref/heuristic": 108,
+        "write/heuristic": 21
+      },
+      "symbolIdsLost": [],
+      "symbolIdsOnlyHere": [],
+      "symbolIdsSameLines": 158,
+      "symbolIdsShared": 158,
+      "symbolsLostByKind": {}
+    },
+    "normalize": {
+      "examples": [
+        "example.com||jobrunner/cmd/jobrunner|var [main.go#73].i: full declaration range unavailable",
+        "example.com||jobrunner/cmd/jobrunner|var [main.go#109].line: full declaration range unavailable",
+        "example.com||jobrunner/cmd/jobrunner|func demoHandlers: unknown relationship kind, endpoint or invalid source evidence",
+        "example.com||jobrunner/cmd/jobrunner|func demoHandlers: unknown relationship kind, endpoint or invalid source evidence",
+        "example.com||jobrunner/cmd/jobrunner|func demoHandlers: unknown relationship kind, endpoint or invalid source evidence"
+      ],
+      "reasons": {
+        "full declaration range unavailable": 90,
+        "the tool described none of the 10 go file(s)": 1,
+        "unknown relationship kind, endpoint or invalid source evidence": 292
+      },
+      "results": [
+        "symbols: partial (0 files)",
+        "declarationRanges: partial (0 files)",
+        "nesting: partial (0 files)",
+        "call: partial (0 files)",
+        "implements: partial (0 files)",
+        "read: partial (0 files)",
+        "write: partial (0 files)",
+        "type-ref: partial (0 files)"
+      ]
+    },
+    "warnings": [
+      "precise provider \"kythe-artifact\" failed (the tool described none of the 10 go file(s)); using heuristic references for go"
+    ]
+  },
+  "scip/adapted": {
+    "adapter": {
+      "dropped": {
+        "adapter: declaration without full range": 5,
+        "adapter: declaration without full range (endpoint kept as pack ID)": 104,
+        "scip definition kind 35 (not an xpl symbol)": 8,
+        "scip definition kind ? (not an xpl symbol)": 3,
+        "scip generic occurrence (no call/read distinction)": 1551,
+        "scip is_implementation between methods (xpl matches members by name)": 9
+      },
+      "emitted": {
+        "declaration class (identifier only)": 20,
+        "declaration function": 31,
+        "declaration interface (identifier only)": 2,
+        "declaration method": 25,
+        "declaration method (identifier only)": 6,
+        "declaration type (identifier only)": 3,
+        "declaration variable (identifier only)": 78,
+        "relationship implements (is_implementation, evidence = type identifier)": 3
+      }
+    },
+    "artifactDeclarations": {
+      "noPackCounterpart": [],
+      "placed": 54,
+      "sameIdAndLines": 54,
+      "sameIdAsPack": 54,
+      "sentButNotPlaced": [
+        "../gocache/49/492607f10c260e625c0f53cb6c29a580df1c899c0219362081b3e4607322bbc0-d#init",
+        "../gocache/49/492607f10c260e625c0f53cb6c29a580df1c899c0219362081b3e4607322bbc0-d#main"
+      ]
+    },
+    "merged": {
+      "callPairs": 91,
+      "callPairsOnlyHere": [],
+      "callPairsOnlyHeuristic": [],
+      "callPairsShared": 91,
+      "explainerErrors": [],
+      "explainerSymbolAnchorsBy": {
+        "scip-artifact": 5,
+        "tree-sitter": 1
+      },
+      "explainerWarnings": 0,
+      "goLanguageLabel": {
+        "files": 10,
+        "refs": "precise",
+        "symbols": 158,
+        "tool": "scip-go@0.2.7"
+      },
+      "goRefs": 424,
+      "goSymbols": 158,
+      "refsByKind": {
+        "call/heuristic": 110,
+        "extends/heuristic": 1,
+        "implements/precise": 3,
+        "import/heuristic": 17,
+        "read/heuristic": 164,
+        "type-ref/heuristic": 108,
+        "write/heuristic": 21
+      },
+      "symbolIdsLost": [],
+      "symbolIdsOnlyHere": [],
+      "symbolIdsSameLines": 158,
+      "symbolIdsShared": 158,
+      "symbolsLostByKind": {}
+    },
+    "normalize": {
+      "examples": [],
+      "reasons": {},
+      "results": [
+        "symbols: partial (1 files)",
+        "declarationRanges: partial (10 files)",
+        "nesting: partial (1 files)",
+        "implements: partial (10 files)"
+      ]
+    },
+    "warnings": []
+  },
+  "scip/raw": {
+    "adapter": {
+      "dropped": {
+        "scip definition kind 35 (not an xpl symbol)": 8,
+        "scip definition kind ? (not an xpl symbol)": 3,
+        "scip generic occurrence (no call/read distinction)": 1551,
+        "scip is_implementation between methods (xpl matches members by name)": 9
+      },
+      "emitted": {
+        "declaration class (identifier only)": 20,
+        "declaration function": 31,
+        "declaration interface (identifier only)": 2,
+        "declaration method": 25,
+        "declaration method (identifier only)": 6,
+        "declaration type (identifier only)": 3,
+        "declaration variable (identifier only)": 78,
+        "relationship implements (is_implementation, evidence = type identifier)": 3
+      }
+    },
+    "merged": {
+      "callPairs": 91,
+      "callPairsOnlyHere": [],
+      "callPairsOnlyHeuristic": [],
+      "callPairsShared": 91,
+      "explainerErrors": [],
+      "explainerSymbolAnchorsBy": {
+        "tree-sitter": 6
+      },
+      "explainerWarnings": 0,
+      "goLanguageLabel": {
+        "files": 10,
+        "heuristicFiles": 9,
+        "refs": "precise",
+        "symbols": 158,
+        "tool": "scip-go@0.2.7"
+      },
+      "goRefs": 424,
+      "goSymbols": 158,
+      "refsByKind": {
+        "call/heuristic": 110,
+        "extends/heuristic": 1,
+        "implements/heuristic": 3,
+        "import/heuristic": 17,
+        "read/heuristic": 164,
+        "type-ref/heuristic": 108,
+        "write/heuristic": 21
+      },
+      "symbolIdsLost": [],
+      "symbolIdsOnlyHere": [],
+      "symbolIdsSameLines": 158,
+      "symbolIdsShared": 158,
+      "symbolsLostByKind": {}
+    },
+    "normalize": {
+      "examples": [
+        "scip-go gomod example.com/jobrunner . `example.com/jobrunner/internal/bus`/JobCompleted#: full declaration range unavailable",
+        "scip-go gomod example.com/jobrunner . `example.com/jobrunner/internal/bus`/JobCompleted#JobID.: full declaration range unavailable",
+        "scip-go gomod example.com/jobrunner . `example.com/jobrunner/internal/bus`/JobCompleted#Type.: full declaration range unavailable",
+        "scip-go gomod example.com/jobrunner . `example.com/jobrunner/internal/bus`/JobCompleted#Duration.: full declaration range unavailable",
+        "scip-go gomod example.com/jobrunner . `example.com/jobrunner/internal/bus`/Handler#: full declaration range unavailable"
+      ],
+      "reasons": {
+        "full declaration range unavailable": 105,
+        "missing or self parent identity": 25,
+        "unknown relationship kind, endpoint or invalid source evidence": 3
+      },
+      "results": [
+        "symbols: partial (1 files)",
+        "declarationRanges: partial (1 files)",
+        "nesting: partial (1 files)",
+        "implements: partial (1 files)"
+      ]
+    },
+    "warnings": []
+  }
+}

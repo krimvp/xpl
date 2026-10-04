@@ -232,6 +232,9 @@ build step between packages in development. After `npm run build`, `node package
 - [docs/review-2026-10-03-stress.md](docs/review-2026-10-03-stress.md): a stress test on seven large repositories
   (zod, vue, django, sympy, jinja, prometheus, hcl) and on recursive edge cases: accuracy, speed, what was fixed
   and what is still open.
+- [docs/assessment-2026-10-04-graph-formats.md](docs/assessment-2026-10-04-graph-formats.md): SCIP, Kythe and
+  Joern CPG artifacts of the Go fixture mapped through the provider contract, what each loses, and why only SCIP
+  gets an importer; reproducible with the scripts beside it.
 - [docs/analysis-2026-09-30.txt](docs/analysis-2026-09-30.txt): an earlier analysis of the project (plain text).
 - [skill/code-explainer/](skill/code-explainer/): what Claude reads: `SKILL.md`, `reference/` (the one-page
   quick reference, the CLI, the patch format, the writing rules, the guide for changes, and two worked example
