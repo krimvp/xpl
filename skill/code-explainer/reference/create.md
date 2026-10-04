@@ -14,7 +14,7 @@ Gather these choices from the request, and state any inferred defaults before wo
 
 List `.explainer/*.explainer.json` before choosing the target. A name collision means choose another name or ask whether that existing guide is the intended target. Do not delete it, recreate it or silently extend it. Read existing views, tours and `userFields` before adding to a selected guide. Use fresh view and tour ids and the default `llm` actor; protected user text stays in place.
 
-After installing/authenticating Claude Code and running `xpl doctor --agent claude`, explicitly invoke one of these in that agent:
+After installing/authenticating Claude Code and running `xpl doctor --agent claude`, explicitly invoke one of these in that agent. If you installed the skill somewhere other than `~/.claude/skills/code-explainer` (for example a project's `.claude/skills/code-explainer` or a custom `--dir`), pass that folder: `xpl doctor --agent claude --skill-dir <folder>`.
 
 ```text
 /code-explainer explain repo. Root: /work/orders. Audience: new maintainers. Question: how do requests reach storage? New guide: orders-overview. Use --precise off.
