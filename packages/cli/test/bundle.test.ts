@@ -69,12 +69,12 @@ describe("xpl bundle", () => {
     const { index } = await buildIndex({
       root: dir,
       precise: "auto",
-      resolvers: [
+      providers: [
         {
           id: "calls-only",
           languages: ["typescript"],
           capabilities: { call: "supported" },
-          async resolve() {
+          async analyze() {
             throw new Error("tool unavailable");
           },
         },

@@ -1,5 +1,7 @@
+import { providerFacts } from "./helpers.js";
+import { PRECISE_SUPPORT } from "../src/analysis.js";
 /**
- * The per-file replacement rule of `buildIndex` (src/build.ts, `PreciseOutput.describedFiles`): precise
+ * The per-file replacement rule of `buildIndex` (src/build.ts, `RelationshipResult.describedFiles`): precise
  * references replace the heuristic ones only in the files the precise tool described. Files it did not
  * describe (build-tagged Go files, files a Python project's pyright configuration excludes, ...) keep their
  * heuristic references, and `LanguageInfo.heuristicFiles` counts them. Fake resolvers, no tools.
@@ -7,7 +9,7 @@
 import { describe, expect, it } from "vitest";
 import type { FileLanguage, Reference } from "@xpl/core";
 import { buildIndex } from "../src/index.js";
-import type { PreciseResolver } from "../src/index.js";
+import type { IndexProvider } from "../src/index.js";
 import { indexFiles, makeDir } from "./helpers.js";
 
 const queue = "export class Queue {\n  pop(): number {\n    return 1;\n  }\n}\n";
@@ -36,16 +38,21 @@ interface FakeOptions {
   described?: Iterable<string>;
 }
 
-function fake(options: FakeOptions = {}): PreciseResolver {
+function fake(options: FakeOptions = {}): IndexProvider {
   return {
+    capabilities: PRECISE_SUPPORT,
     id: options.id ?? "fake-ts",
     languages: options.languages ?? TS,
-    async resolve() {
-      return {
-        refs: options.refs ?? [],
-        tool: options.tool ?? "fake@1",
-        ...(options.described !== undefined ? { describedFiles: options.described } : {}),
-      };
+    async analyze(input) {
+      return providerFacts(
+        input,
+        {
+          refs: options.refs ?? [],
+          tool: options.tool ?? "fake@1",
+          ...(options.described !== undefined ? { describedFiles: options.described } : {}),
+        },
+        this,
+      );
     },
   };
 }
@@ -73,7 +80,7 @@ describe("precise references replace heuristic ones per file", () => {
 
     const { index, warnings } = await indexFiles(project, {
       precise: "auto",
-      resolvers: [
+      providers: [
         fake({
           languages: ["typescript"],
           described: ["src/queue.ts", "src/a.ts", "src/b.ts"],
@@ -105,8 +112,12 @@ describe("precise references replace heuristic ones per file", () => {
   it("keeps the references sorted when precise and heuristic ones are mixed", async () => {
     const { index } = await indexFiles(project, {
       precise: "auto",
-      resolvers: [
-        fake({ languages: ["typescript"], described: ["src/queue.ts", "src/b.ts"], refs: [] }),
+      providers: [
+        fake({
+          languages: ["typescript"],
+          described: ["src/queue.ts", "src/b.ts"],
+          refs: [],
+        }),
       ],
     });
     const files = index.refs.map((r) => r.from.slice(0, r.from.indexOf("#")));
@@ -122,7 +133,13 @@ describe("precise references replace heuristic ones per file", () => {
   ])("%s: the precise references replace all of the language", async (_, described) => {
     const { index } = await indexFiles(project, {
       precise: "auto",
-      resolvers: [fake({ languages: ["typescript"], refs: [pop], described })],
+      providers: [
+        fake({
+          languages: ["typescript"],
+          refs: [pop],
+          described,
+        }),
+      ],
     });
     expect(summary(index.refs.filter((r) => r.from.startsWith("src/")))).toEqual([
       "precise call src/a.ts#runA -> src/queue.ts#Queue.pop",
@@ -134,7 +151,13 @@ describe("precise references replace heuristic ones per file", () => {
   it("a file the tool produced references for counts as described even when it is not listed", async () => {
     const { index } = await indexFiles(project, {
       precise: "auto",
-      resolvers: [fake({ languages: ["typescript"], described: ["src/queue.ts"], refs: [pop] })],
+      providers: [
+        fake({
+          languages: ["typescript"],
+          described: ["src/queue.ts"],
+          refs: [pop],
+        }),
+      ],
     });
     expect(summary(fromFile(index.refs, "src/a.ts"))).toEqual([
       "precise call src/a.ts#runA -> src/queue.ts#Queue.pop",
@@ -153,7 +176,13 @@ describe("precise references replace heuristic ones per file", () => {
     for (const described of [new Set(["src/queue.ts", "src/a.ts"]), files()]) {
       const { index } = await indexFiles(project, {
         precise: "auto",
-        resolvers: [fake({ languages: ["typescript"], described, refs: [pop] })],
+        providers: [
+          fake({
+            languages: ["typescript"],
+            described,
+            refs: [pop],
+          }),
+        ],
       });
       expect(index.languages.typescript!.heuristicFiles).toBe(2);
       expect(fromFile(index.refs, "src/b.ts")).toHaveLength(3);
@@ -164,7 +193,7 @@ describe("precise references replace heuristic ones per file", () => {
     const stray = precise("tools/z.py#use", "tools/z.py#Z");
     const { index } = await indexFiles(project, {
       precise: "auto",
-      resolvers: [
+      providers: [
         fake({
           languages: ["typescript"],
           described: ["src/queue.ts", "src/a.ts"],
@@ -180,15 +209,19 @@ describe("precise references replace heuristic ones per file", () => {
 });
 
 describe("a tool that described nothing", () => {
-  const nothing = fake({ languages: ["typescript"], described: [], refs: [] });
+  const nothing = fake({
+    languages: ["typescript"],
+    described: [],
+    refs: [],
+  });
 
   it("auto: is treated as failed, the language keeps its heuristic references", async () => {
     const { index, warnings } = await indexFiles(project, {
       precise: "auto",
-      resolvers: [nothing],
+      providers: [nothing],
     });
     expect(warnings).toEqual([
-      'precise resolver "fake-ts" failed (the tool described none of the 4 typescript file(s)); using heuristic references for typescript',
+      'precise provider "fake-ts" failed (the tool described none of the 4 typescript file(s)); using heuristic references for typescript',
     ]);
     expect(index.languages.typescript!.refs).toBe("heuristic");
     expect(index.refs.every((r) => r.resolution === "heuristic")).toBe(true);
@@ -200,9 +233,9 @@ describe("a tool that described nothing", () => {
       Object.entries(project).filter(([path]) => path.startsWith("src/")),
     );
     await expect(
-      buildIndex({ root: makeDir(tsOnly), precise: "require", resolvers: [nothing] }),
+      buildIndex({ root: makeDir(tsOnly), precise: "require", providers: [nothing] }),
     ).rejects.toThrow(
-      /precise resolver "fake-ts" failed: the tool described none of the 4 typescript file\(s\)/,
+      /precise provider "fake-ts" failed: the tool described none of the 4 typescript file\(s\)/,
     );
   });
 });
@@ -211,7 +244,7 @@ describe("languages of one resolver are judged separately", () => {
   it("a language none of whose files was described stays heuristic while the resolver's other languages are precise", async () => {
     const { index } = await indexFiles(project, {
       precise: "auto",
-      resolvers: [
+      providers: [
         fake({ described: ["src/queue.ts", "src/a.ts", "src/b.ts", "src/c.ts"], refs: [pop] }),
       ],
     });
@@ -225,7 +258,7 @@ describe("languages of one resolver are judged separately", () => {
   it("a later resolver still gets the language the first one left out", async () => {
     const { index } = await indexFiles(project, {
       precise: "auto",
-      resolvers: [
+      providers: [
         fake({
           id: "fake-ts",
           described: ["src/queue.ts", "src/a.ts", "src/b.ts", "src/c.ts"],
@@ -278,7 +311,7 @@ describe("build-tagged Go files (the motivating case)", () => {
 
   it("keeps the heuristic references of the file the tool did not describe, drops the rest of the heuristic ones", async () => {
     const baseline = await indexFiles(go);
-    const { index } = await indexFiles(go, { precise: "auto", resolvers: [resolver] });
+    const { index } = await indexFiles(go, { precise: "auto", providers: [resolver] });
     expect(summary(fromFile(index.refs, "b/b.go")).sort()).toEqual([
       "precise call b/b.go#Use -> a/a.go#Store.Get",
       "precise implements b/b.go#Mem -> a/a.go#Store",

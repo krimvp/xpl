@@ -2,7 +2,7 @@
  * SCIP -> `Reference[]` (ARCHITECTURE.md §3, "Precise resolution").
  *
  * Input: one or more decoded SCIP indexes (a Go repository has one per module) and the built symbols of the
- * repository (`PreciseInput`). Output: references with `resolution: "precise"`.
+ * repository (`ProviderInput`). Output: references with `resolution: "precise"`.
  *
  * For every non-definition occurrence of a symbol whose definition lies in an indexed file:
  *
@@ -25,19 +25,22 @@
  * `is_implementation` relationships become `implements` references from the implementing symbol's definition
  * to the definition of what it implements (Go interfaces are satisfied implicitly, so this is the only place
  * they show up), unless an occurrence already said `extends`/`implements`, or a member merely overrides one
- * of a base class. Self references are dropped, the result is deduplicated and sorted.
+ * of a base class. Self references other than calls and function-value reads are dropped, the result is deduplicated and sorted.
  *
  * Symbols are matched across indexes without their package version, so the indexes of several modules can
  * refer to each other's definitions.
  *
- * Positions: SCIP ranges are 0-based, end exclusive, in the document's position encoding. They are converted
- * to our 1-based, inclusive, UTF-16 columns against the text of the file on disk.
+ * Positions: SCIP ranges are 0-based, end exclusive, in the document's position encoding. Shared strict conversion produces
+ * 1-based, inclusive UTF-16 columns against the captured source; invalid positions are rejected.
  */
 import { moduleScopeId, splitLines } from "@xpl/core";
 import type { FileLanguage, FilePath, IndexedSymbol, Reference, SymbolId } from "@xpl/core";
-import { nodeSpan, pointsToSpan, spanContains } from "../ast.js";
-import type { FileContext, RepoView, Span } from "../languages/types.js";
-import type { PreciseInput } from "../precise.js";
+import { pointsToSpan, spanContains } from "../ast.js";
+import type { Span } from "../languages/types.js";
+import { normalizeColumn } from "../providers.js";
+import type { ColumnEncoding } from "../providers.js";
+export type { ColumnEncoding } from "../providers.js";
+import type { ProviderInput } from "../providers.js";
 import type { SymbolEntry, SymbolLookup } from "../symbols.js";
 import { PositionEncoding, SymbolKind, SymbolRole, parseScipRange } from "./proto.js";
 import type { ScipDocument, ScipIndex, ScipRange } from "./proto.js";
@@ -50,9 +53,6 @@ import {
   symbolPath,
   withoutVersion,
 } from "./symbol.js";
-
-/** How the `character` offsets of a range count. */
-export type ColumnEncoding = "utf8" | "utf16" | "utf32";
 
 /** One decoded SCIP index and where its documents live. */
 export interface ScipSource {
@@ -72,8 +72,8 @@ export interface ScipSource {
 }
 
 export type MapInput = Pick<
-  PreciseInput,
-  "root" | "languages" | "files" | "lookup" | "readText" | "withFile" | "warn"
+  ProviderInput,
+  "root" | "languages" | "files" | "lookup" | "readText" | "classify" | "warn"
 > & {
   sources: readonly ScipSource[];
 };
@@ -83,7 +83,7 @@ export interface MapResult {
   /**
    * Occurrences the tool could not link: a `local` symbol with no definition in its document (scip-typescript
    * gives `ns.f` that way when `f` is an aliased re-export, `export { g as f }`), or a symbol whose definition
-   * does not fit its file (`misplaced`). See `PreciseOutput.blind`.
+   * does not fit its file (`misplaced`). See `RelationshipResult.blind`.
    */
   blind: { file: FilePath; line: number; col: number }[];
   /** Described files with occurrences outside their text, or malformed (`//line` directives of generated Go code). */
@@ -125,12 +125,6 @@ const TYPE_KINDS: ReadonlySet<number> = new Set([
 
 // ─── Columns ──────────────────────────────────────────────────────────────────────────────────────
 
-const ASCII_ONLY = /^[\x00-\x7f]*$/;
-
-function utf8Length(codePoint: number): number {
-  return codePoint < 0x80 ? 1 : codePoint < 0x800 ? 2 : codePoint < 0x10000 ? 3 : 4;
-}
-
 /** Resolve the column encoding of a document. */
 function encodingOf(doc: ScipDocument, source: ScipSource): ColumnEncoding {
   switch (doc.positionEncoding) {
@@ -143,23 +137,6 @@ function encodingOf(doc: ScipDocument, source: ScipSource): ColumnEncoding {
     default:
       return source.defaultEncoding;
   }
-}
-
-/**
- * 0-based offset in `encoding` units from the start of `line` -> 0-based UTF-16 index into `line`.
- * Offsets past the end of the line clamp to its length; one inside a multi-unit character rounds up to
- * the end of that character.
- */
-export function toUtf16Offset(line: string, offset: number, encoding: ColumnEncoding): number {
-  if (encoding === "utf16" || ASCII_ONLY.test(line)) return Math.min(offset, line.length);
-  let consumed = 0;
-  let index = 0;
-  while (index < line.length && consumed < offset) {
-    const codePoint = line.codePointAt(index)!;
-    consumed += encoding === "utf8" ? utf8Length(codePoint) : 1;
-    index += codePoint > 0xffff ? 2 : 1;
-  }
-  return index;
 }
 
 /** A SCIP document together with the text of the file it describes. */
@@ -181,13 +158,15 @@ class DocumentView {
   span(range: ScipRange): Span | undefined {
     const { lines } = this;
     if (range.startLine >= lines.length || range.endLine >= lines.length) return undefined;
-    const column = (line: number, offset: number): number =>
-      toUtf16Offset(lines[line]!, offset, this.encoding) + (line === 0 ? this.firstLineShift : 0);
+    const countedLines = this.firstLineShift ? [lines[0]!.slice(1), ...lines.slice(1)] : lines;
+    const start = normalizeColumn(countedLines, range.startLine, range.startChar, this.encoding);
+    const end = normalizeColumn(countedLines, range.endLine, range.endChar, this.encoding);
+    if (start === undefined || end === undefined) return undefined;
     return pointsToSpan(
       range.startLine,
-      column(range.startLine, range.startChar),
+      start + (range.startLine === 0 ? this.firstLineShift : 0),
       range.endLine,
-      column(range.endLine, range.endChar),
+      end + (range.endLine === 0 ? this.firstLineShift : 0),
       lines,
     );
   }
@@ -280,58 +259,11 @@ export function documentPath(prefix: string, relativePath: string): FilePath | u
   return parts.length > 0 ? parts.join("/") : undefined;
 }
 
-/** `RepoView` over the indexed files, for the packs' module resolution. */
-class MapRepoView implements RepoView {
-  readonly files: ReadonlySet<FilePath>;
-  private readonly dirs = new Map<string, FilePath[]>();
-
-  constructor(
-    readonly root: string,
-    paths: readonly FilePath[],
-    private readonly read: (path: FilePath) => string | undefined,
-  ) {
-    this.files = new Set(paths);
-    for (const path of [...paths].sort()) {
-      const slash = path.lastIndexOf("/");
-      const dir = slash < 0 ? "" : path.slice(0, slash);
-      const list = this.dirs.get(dir);
-      if (list) list.push(path);
-      else this.dirs.set(dir, [path]);
-    }
-  }
-
-  filesInDir(dir: string): readonly FilePath[] {
-    return this.dirs.get(dir === "." ? "" : dir) ?? [];
-  }
-
-  readText(path: FilePath): string | undefined {
-    return this.read(path);
-  }
-}
-
-/**
- * The other spelling of a method-like symbol: `Store#Get().` <-> `Store#Get.`. scip-go names an interface
- * method with a term descriptor where it is declared but as a method where another module refers to it, so
- * a reference without a definition may still be a reference to a symbol defined under the other spelling.
- */
+/** Go interface methods can use term descriptors at declarations and method descriptors at references. */
 function alternateKey(key: string): string | undefined {
   if (key.endsWith("().")) return `${key.slice(0, -3)}.`;
   if (key.endsWith(".") && !key.endsWith(").")) return `${key.slice(0, -1)}().`;
   return undefined;
-}
-
-/** Quote characters that delimit a module specifier (`"./x"`, `'./x'`, `` `./x` ``). */
-const QUOTES = new Set(['"', "'", "`"]);
-
-/** The span of the top-level statement (a child of the syntax tree's root) that contains `span`. */
-function topLevelSpan(ctx: FileContext, span: Span): Span | undefined {
-  let node = ctx.tree.rootNode.descendantForPosition(
-    { row: span.startLine - 1, column: span.startCol - 1 },
-    { row: span.startLine - 1, column: span.startCol },
-  );
-  if (!node) return undefined;
-  while (node.parent?.parent) node = node.parent;
-  return nodeSpan(node, ctx.lines);
 }
 
 interface ModuleEntry {
@@ -374,7 +306,6 @@ class Mapper {
   private readonly misplaced = new Set<FilePath>();
   /** Symbols whose definition did not fit its file: their occurrences elsewhere are `blind`. */
   private readonly lostDefinitions = new Set<string>();
-  private repo: RepoView | undefined;
   readonly stats: MapStats = {
     documents: 0,
     foreignDocuments: 0,
@@ -704,33 +635,6 @@ class Mapper {
     if (!this.refs.has(key)) this.refs.set(key, ref);
   }
 
-  /**
-   * The text of a quoted module specifier without its quotes: `"./x"` -> `./x`. Go import paths are
-   * reported without the quotes, so a span *inside* quotes counts too. Undefined for anything else.
-   */
-  private quotedText(view: DocumentView, span: Span): string | undefined {
-    if (span.startLine !== span.endLine) return undefined;
-    const line = view.lines[span.startLine - 1];
-    if (line === undefined) return undefined;
-    const text = line.slice(span.startCol - 1, span.endCol);
-    if (text.length >= 2 && QUOTES.has(text[0]!) && text[text.length - 1] === text[0]) {
-      return text.slice(1, -1);
-    }
-    const before = line[span.startCol - 2];
-    return before !== undefined && QUOTES.has(before) && line[span.endCol] === before
-      ? text
-      : undefined;
-  }
-
-  private repoView(): RepoView {
-    this.repo ??= new MapRepoView(
-      this.input.root,
-      this.input.files.map((f) => f.path),
-      (path) => this.input.readText(path),
-    );
-    return this.repo;
-  }
-
   private async mapDocument(view: DocumentView): Promise<void> {
     if (!this.covered.has(this.languageOf.get(view.path)!)) return;
 
@@ -809,7 +713,7 @@ class Mapper {
       const info = classified?.[i];
       let cls = info?.site;
       if (cls?.kind === "read") {
-        // A plain read is a reference only to a variable (a field, a constant): a function passed as a value or
+        // Variables and functions used as values remain reads;
         // a class used as a namespace is not one, and falls through to the rules below like any unclassified
         // occurrence. The indexers do not tell reads from writes (scip-typescript sets no role, the others say
         // "read" for everything), the pack's syntax does; a WriteAccess role, when there is one, wins.
@@ -822,8 +726,6 @@ class Mapper {
           (target && cls.bare && this.isMember(target))
         )
           cls = undefined;
-        else if (callable)
-          cls = { kind: "call", site: cls.site }; // a function used as a value runs when called
         else if ((c.roles & SymbolRole.WriteAccess) !== 0) cls = { kind: "write", site: cls.site };
       }
       if (cls) {
@@ -884,7 +786,7 @@ class Mapper {
         );
         if (namesImports) continue;
       }
-      if (ref.from !== ref.to || ref.kind === "call") this.add(ref);
+      if (ref.from !== ref.to || ref.kind === "call" || ref.kind === "read") this.add(ref);
     }
   }
 
@@ -902,26 +804,18 @@ class Mapper {
 
   /** Ask the language pack about every candidate (kind and site, and for modules the file and statement). */
   private classify(view: DocumentView, candidates: readonly { span: Span; target: Resolved }[]) {
-    return this.input.withFile(view.path, (ctx, pack) =>
-      candidates.map((c) => {
-        let site: ReturnType<typeof pack.classifySite>;
-        try {
-          site = pack.classifySite(ctx, c.span.startLine, c.span.startCol);
-        } catch {
-          this.stats.classifyErrors++;
-          site = undefined;
-        }
-        if (!c.target.moduleLike) return { site };
-        const specifier = this.quotedText(view, c.span);
-        const moduleFile =
-          specifier === undefined
-            ? undefined
-            : pack
-                .resolveModule(specifier, view.path, this.repoView())
-                .find((f) => c.target.moduleFiles.includes(f));
-        return { site, specifier, moduleFile, statement: topLevelSpan(ctx, c.span) };
-      }),
-    );
+    return this.input
+      .classify?.(
+        view.path,
+        candidates.map((c) => ({
+          span: c.span,
+          moduleFiles: c.target.moduleLike ? c.target.moduleFiles : [],
+        })),
+      )
+      .then((results) => {
+        this.stats.classifyErrors += results?.filter((r) => r.failed).length ?? 0;
+        return results;
+      });
   }
 
   // ── relationships ──────────────────────────────────────────────────────────────────────────────

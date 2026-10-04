@@ -1,3 +1,5 @@
+import { providerFacts } from "./helpers.js";
+import { PRECISE_SUPPORT } from "../src/analysis.js";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -5,12 +7,12 @@ import { hashText, INDEX_SCHEMA, sliceLines, splitLines } from "@xpl/core";
 import type { Reference, SymbolIndex } from "@xpl/core";
 import {
   buildIndex,
-  preciseResolvers,
-  registerPreciseResolver,
-  unregisterPreciseResolver,
+  indexProviders,
+  registerProvider,
+  unregisterProvider,
   writeIndex,
 } from "../src/index.js";
-import type { PreciseInput, PreciseResolver } from "../src/index.js";
+import type { ProviderInput, IndexProvider } from "../src/index.js";
 import { indexFiles, makeDir, makeRepo, symbol } from "./helpers.js";
 
 const src = (...lines: string[]): string => lines.join("\n") + "\n";
@@ -116,7 +118,9 @@ describe("buildIndex", () => {
   });
 
   it("restricts to the requested languages", async () => {
-    const { index } = await indexFiles(project, { languages: ["typescript", "yaml"] });
+    const { index } = await indexFiles(project, {
+      languages: ["typescript", "yaml"],
+    });
     expect(index.files.map((f) => f.path)).toEqual([
       "config/app.yaml",
       "src/queue.ts",
@@ -124,16 +128,21 @@ describe("buildIndex", () => {
     ]);
     expect(Object.keys(index.languages)).toEqual(["typescript", "yaml"]);
     expect(index.symbols.every((s) => s.file !== "package.json")).toBe(true);
-    const textOnly = await indexFiles(project, { languages: ["text"] });
+    const textOnly = await indexFiles(project, {
+      languages: ["text"],
+    });
     expect(textOnly.index.files.map((f) => f.path)).toEqual(["README.md"]);
     expect(textOnly.index.symbols).toEqual([]);
   });
 
   it("rejects unknown languages, missing roots and files as roots", async () => {
     const dir = makeDir(project);
-    await expect(buildIndex({ root: dir, languages: ["typescript", "cobol"] })).rejects.toThrow(
-      /unknown language "cobol"/,
-    );
+    await expect(
+      buildIndex({
+        root: dir,
+        languages: ["typescript", "cobol"],
+      }),
+    ).rejects.toThrow(/unknown language "cobol"/);
     await expect(buildIndex({ root: join(dir, "nope") })).rejects.toThrow(/no such directory/);
     await expect(buildIndex({ root: join(dir, "README.md") })).rejects.toThrow(/not a directory/);
     await expect(buildIndex({ root: dir, precise: "sometimes" as "auto" })).rejects.toThrow(
@@ -405,11 +414,12 @@ describe("writeIndex", () => {
   });
 });
 
-describe("precise resolvers (registry and modes)", () => {
-  const fake = (overrides: Partial<PreciseResolver> = {}): PreciseResolver => ({
+describe("precise providers (registry and modes)", () => {
+  const fake = (overrides: Partial<IndexProvider> = {}): IndexProvider => ({
+    capabilities: PRECISE_SUPPORT,
     id: "fake-ts",
     languages: ["typescript", "tsx", "javascript"],
-    async resolve(input: PreciseInput) {
+    async analyze(input: ProviderInput) {
       const ref: Reference = {
         from: "src/run.ts#run",
         to: "src/queue.ts#Queue",
@@ -419,7 +429,11 @@ describe("precise resolvers (registry and modes)", () => {
       };
       // a resolver must only produce refs for the languages it was asked for: this one is ignored
       const stray: Reference = { ...ref, from: "app/main.py#main" };
-      return { refs: input.languages.length > 0 ? [ref, stray] : [], tool: "fake-scip@1.2.3" };
+      return providerFacts(
+        input,
+        { refs: input.languages.length > 0 ? [ref, stray] : [], tool: "fake-scip@1.2.3" },
+        this,
+      );
     },
     ...overrides,
   });
@@ -433,7 +447,7 @@ describe("precise resolvers (registry and modes)", () => {
   );
 
   it("starts with the SCIP resolvers registered (importing the indexer registers them)", () => {
-    expect(preciseResolvers().map((r) => r.id)).toEqual([
+    expect(indexProviders().map((r) => r.id)).toEqual([
       "scip-typescript",
       "scip-python",
       "scip-go",
@@ -441,7 +455,7 @@ describe("precise resolvers (registry and modes)", () => {
   });
 
   it("auto with no resolver uses heuristic references silently", async () => {
-    const { index, warnings } = await indexFiles(project, { precise: "auto", resolvers: [] });
+    const { index, warnings } = await indexFiles(project, { precise: "auto", providers: [] });
     expect(warnings).toEqual([]);
     expect(index.languages.typescript!.refs).toBe("heuristic");
     expect(index.refs.length).toBeGreaterThan(0);
@@ -450,8 +464,8 @@ describe("precise resolvers (registry and modes)", () => {
 
   it("require with no resolver fails with a clear message naming the languages", async () => {
     const dir = makeDir(project);
-    await expect(buildIndex({ root: dir, precise: "require", resolvers: [] })).rejects.toThrow(
-      /precise references are required.*no precise resolver is available for: go, python, typescript/,
+    await expect(buildIndex({ root: dir, precise: "require", providers: [] })).rejects.toThrow(
+      /precise references are required.*no precise provider is available for: go, python, typescript/,
     );
   });
 
@@ -468,8 +482,10 @@ describe("precise resolvers (registry and modes)", () => {
 
   it("off never runs a resolver", async () => {
     let calls = 0;
-    const resolver = fake({ resolve: async () => (calls++, { refs: [], tool: "x" }) });
-    await indexFiles(project, { precise: "off", resolvers: [resolver] });
+    const resolver = fake({
+      analyze: async (input) => providerFacts(input, (calls++, { refs: [], tool: "x" })),
+    });
+    await indexFiles(project, { precise: "off", providers: [resolver] });
     expect(calls).toBe(0);
   });
 
@@ -482,11 +498,15 @@ describe("precise resolvers (registry and modes)", () => {
     };
     // the tool links neither call; it saw `lte` (line 2, column 44) but not `wrap`
     const blindAt = fake({
-      async resolve() {
-        return { refs: [], tool: "fake-scip@1", blind: [{ file: "src/use.ts", line: 2, col: 44 }] };
+      async analyze(input) {
+        return providerFacts(
+          input,
+          { refs: [], tool: "fake-scip@1", blind: [{ file: "src/use.ts", line: 2, col: 44 }] },
+          this,
+        );
       },
     });
-    const { index } = await indexFiles(files, { precise: "auto", resolvers: [blindAt] });
+    const { index } = await indexFiles(files, { precise: "auto", providers: [blindAt] });
     expect(
       index.refs
         .filter((r) => r.kind === "call")
@@ -495,12 +515,13 @@ describe("precise resolvers (registry and modes)", () => {
   });
 
   it("a resolver replaces the heuristic references of its languages and marks them precise", async () => {
-    const { index, warnings } = await indexFiles(project, { precise: "auto", resolvers: [fake()] });
+    const { index, warnings } = await indexFiles(project, { precise: "auto", providers: [fake()] });
     expect(warnings).toEqual([]);
     expect(index.languages.typescript).toMatchObject({ refs: "precise", tool: "fake-scip@1.2.3" });
     const fromTs = index.refs.filter((r) => r.from.startsWith("src/"));
     expect(fromTs).toEqual([
       {
+        provider: 1,
         from: "src/run.ts#run",
         to: "src/queue.ts#Queue",
         kind: "call",
@@ -515,18 +536,20 @@ describe("precise resolvers (registry and modes)", () => {
   });
 
   it("hands the resolver everything a SCIP importer needs", async () => {
-    let seen: PreciseInput | undefined;
+    let seen: ProviderInput | undefined;
     let classified: unknown;
     const resolver = fake({
-      async resolve(input) {
+      async analyze(input) {
         seen = input;
-        classified = await input.withFile("src/run.ts", (ctx, pack) =>
-          pack.classifySite(ctx, 3, 12),
-        );
-        return { refs: [], tool: "fake-scip@1" };
+        classified = (
+          await input.classify!("src/run.ts", [
+            { span: { startLine: 3, endLine: 3, startCol: 12, endCol: 12 }, moduleFiles: [] },
+          ])
+        )?.[0]?.site;
+        return providerFacts(input, { refs: [], tool: "fake-scip@1" }, this);
       },
     });
-    await indexFiles(project, { precise: "auto", resolvers: [resolver] });
+    await indexFiles(project, { precise: "auto", providers: [resolver] });
     expect(seen).toBeDefined();
     const input = seen!;
     expect([...input.languages].sort()).toEqual(["typescript"]);
@@ -536,25 +559,25 @@ describe("precise resolvers (registry and modes)", () => {
     expect(input.lookup.fromId("src/run.ts", 1, 1)).toBe("src/run.ts#");
     expect(input.readText("src/queue.ts")).toBe(project["src/queue.ts"]);
     expect(input.readText("missing.ts")).toBeUndefined();
-    expect(await input.withFile("README.md", () => 1)).toBeUndefined(); // text has no language pack
+    expect(await input.classify!("README.md", [])).toBeUndefined(); // text has no language pack
     expect(classified).toMatchObject({ kind: "call" }); // `q.pop()` at 3:12
     expect(input.root).toMatch(/xpl-indexer-/);
   });
 
   it("auto: a failing resolver becomes a warning and the language keeps heuristic references", async () => {
     const resolver = fake({
-      resolve: async (input: PreciseInput) => {
+      analyze: async (input: ProviderInput) => {
         input.warn("indexing took a while");
         throw new Error("scip-typescript not found");
       },
     });
     const { index, warnings } = await indexFiles(project, {
       precise: "auto",
-      resolvers: [resolver],
+      providers: [resolver],
     });
     expect(warnings).toEqual([
       "indexing took a while",
-      'precise resolver "fake-ts" failed (scip-typescript not found); using heuristic references for typescript',
+      'precise provider "fake-ts" failed (scip-typescript not found); using heuristic references for typescript',
     ]);
     expect(index.languages.typescript!.refs).toBe("heuristic");
     expect(index.refs.every((r) => r.resolution === "heuristic")).toBe(true);
@@ -562,50 +585,54 @@ describe("precise resolvers (registry and modes)", () => {
 
   it("require: a failing resolver aborts the build", async () => {
     const resolver = fake({
-      resolve: async () => {
+      analyze: async (input) => {
         throw new Error("boom");
       },
     });
-    await expect(indexFiles(tsOnly, { precise: "require", resolvers: [resolver] })).rejects.toThrow(
-      /precise resolver "fake-ts" failed: boom/,
+    await expect(indexFiles(tsOnly, { precise: "require", providers: [resolver] })).rejects.toThrow(
+      /precise provider "fake-ts" failed: boom/,
     );
   });
 
   it("require: satisfied when every language with references has a resolver", async () => {
-    const { index } = await indexFiles(tsOnly, { precise: "require", resolvers: [fake()] });
+    const { index } = await indexFiles(tsOnly, { precise: "require", providers: [fake()] });
     expect(index.languages.typescript!.refs).toBe("precise");
   });
 
   it("resolvers only run when their languages occur, and the registry is honoured by default", async () => {
     let calls = 0;
     const tsxResolver = fake({
+      capabilities: PRECISE_SUPPORT,
       id: "fake-tsx",
       languages: ["tsx"],
-      resolve: async () => (calls++, { refs: [], tool: "x" }),
+      analyze: async (input) => providerFacts(input, (calls++, { refs: [], tool: "x" })),
     });
-    await indexFiles(project, { precise: "auto", resolvers: [tsxResolver] }); // the project has no .tsx file
+    await indexFiles(project, { precise: "auto", providers: [tsxResolver] }); // the project has no .tsx file
     expect(calls).toBe(0);
     // the default registry holds the SCIP resolvers (real tools): set them aside for this test
-    const scip = [...preciseResolvers()];
-    for (const resolver of scip) unregisterPreciseResolver(resolver.id);
-    registerPreciseResolver(fake({ id: "registered" }));
+    const scip = [...indexProviders()];
+    for (const resolver of scip) unregisterProvider(resolver.id);
+    registerProvider(fake({ id: "registered" }));
     try {
-      expect(preciseResolvers().map((r) => r.id)).toEqual(["registered"]);
+      expect(indexProviders().map((r) => r.id)).toEqual(["registered"]);
       const { index } = await indexFiles(project, { precise: "auto" });
       expect(index.languages.typescript!.tool).toBe("fake-scip@1.2.3");
       // registering the same id replaces it
-      registerPreciseResolver(
-        fake({ id: "registered", resolve: async () => ({ refs: [], tool: "second@2" }) }),
+      registerProvider(
+        fake({
+          id: "registered",
+          analyze: async (input) => providerFacts(input, { refs: [], tool: "second@2" }),
+        }),
       );
-      expect(preciseResolvers()).toHaveLength(1);
+      expect(indexProviders()).toHaveLength(1);
       expect(
         (await indexFiles(project, { precise: "auto" })).index.languages.typescript!.tool,
       ).toBe("second@2");
     } finally {
-      expect(unregisterPreciseResolver("registered")).toBe(true);
-      expect(unregisterPreciseResolver("registered")).toBe(false);
-      expect(preciseResolvers()).toEqual([]);
-      for (const resolver of scip) registerPreciseResolver(resolver);
+      expect(unregisterProvider("registered")).toBe(true);
+      expect(unregisterProvider("registered")).toBe(false);
+      expect(indexProviders()).toEqual([]);
+      for (const resolver of scip) registerProvider(resolver);
     }
   });
 });

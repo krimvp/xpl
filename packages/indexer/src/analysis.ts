@@ -8,7 +8,14 @@ import {
   type IndexedFile,
 } from "@xpl/core";
 import type { LanguagePack } from "./languages/types.js";
-import type { PreciseOutput, PreciseResolver } from "./precise.js";
+import type {
+  RelationshipResult,
+  IndexProvider,
+  ProviderInput,
+  ProviderOutput,
+} from "./providers.js";
+import { providerRange } from "./providers.js";
+import { hashText } from "@xpl/core";
 
 export const STRUCTURE_SUPPORT = {
   symbols: "supported",
@@ -81,7 +88,14 @@ export function extractionReports(
             : status === "partial" || ability === "partial"
               ? "partial"
               : "supported";
-        addResult(results, capability, observed, status === "failed" ? [] : matching, limitations);
+        addResult(
+          results,
+          capability,
+          observed,
+          status === "failed" ? [] : matching,
+          limitations,
+          relationship ? "heuristic" : undefined,
+        );
       }
     }
     const diagnostics = scoped.flatMap((file) => outcomes.get(file)?.diagnostics ?? []);
@@ -121,27 +135,51 @@ function addResult(
   status: AnalysisResult["status"],
   analyzedFiles: string[],
   limitations: string[],
+  resolution?: AnalysisResult["resolution"],
 ): void {
   const same = results.find(
     (r) =>
       r.status === status &&
+      r.resolution === resolution &&
       JSON.stringify(r.analyzedFiles) === JSON.stringify(analyzedFiles) &&
       JSON.stringify(r.limitations) === JSON.stringify(limitations),
   );
   if (same) same.capabilities.push(capability);
-  else results.push({ capabilities: [capability], status, analyzedFiles, limitations });
+  else
+    results.push({
+      capabilities: [capability],
+      status,
+      analyzedFiles,
+      limitations,
+      ...(resolution ? { resolution } : {}),
+    });
 }
 
-export function preciseReport(
-  resolver: PreciseResolver,
+export function relationshipReport(
+  resolver: Pick<IndexProvider, "id" | "capabilities">,
   files: string[],
-  output?: PreciseOutput,
+  output?: RelationshipResult,
   diagnostics: string[] = [],
 ): AnalysisReport {
-  const capabilities = resolver.capabilities ?? HEURISTIC_SUPPORT;
+  const capabilities = resolver.capabilities;
+  if (!output)
+    return {
+      provider: resolver.id,
+      capabilities,
+      files,
+      results: [
+        {
+          capabilities: Object.keys(capabilities) as AnalysisCapability[],
+          status: "failed",
+          analyzedFiles: [],
+          limitations: ["Provider analysis failed; previous checked facts remain."],
+        },
+      ],
+      ...(diagnostics.length ? { diagnostics } : {}),
+    };
   const results: AnalysisResult[] = [];
-  const described = new Set(output?.describedFiles ?? []);
-  for (const ref of output?.refs ?? []) described.add(ref.from.slice(0, ref.from.indexOf("#")));
+  const described = new Set(output.describedFiles ?? []);
+  for (const ref of output.refs) described.add(ref.from.slice(0, ref.from.indexOf("#")));
   for (const kind of RELATIONSHIP_CAPABILITIES) {
     if (!capabilities[kind]) {
       addResult(
@@ -150,14 +188,6 @@ export function preciseReport(
         "unsupported",
         [],
         ["This relationship kind is unavailable in precise analysis; heuristic hints may remain."],
-      );
-    } else if (!output) {
-      addResult(
-        results,
-        kind,
-        "failed",
-        [],
-        ["Precise relationship analysis failed; heuristic hints remain."],
       );
     } else {
       const observation = output.coverage?.[kind];
@@ -184,9 +214,14 @@ export function preciseReport(
         limitations.push("Files outside this analysis keep heuristic hints.");
       if (status !== "unsupported" && output.blind?.length)
         limitations.push("Some occurrences could not be linked to their targets.");
-      if (!resolver.capabilities)
-        limitations.push("Independent relationship support was not recorded.");
-      addResult(results, kind, status, analyzedFiles, limitations);
+      addResult(
+        results,
+        kind,
+        status,
+        analyzedFiles,
+        limitations,
+        observation?.resolution ?? output.resolution,
+      );
     }
   }
   return {
@@ -195,5 +230,48 @@ export function preciseReport(
     files,
     results,
     ...(diagnostics.length ? { diagnostics } : {}),
+  };
+}
+
+/** Converts concrete relationship adapters to the same source-backed facts as syntax extraction. */
+export function relationshipOutput(
+  input: ProviderInput,
+  provider: Pick<IndexProvider, "id" | "capabilities">,
+  output: RelationshipResult,
+  diagnostics: string[] = [],
+): ProviderOutput {
+  const scoped = input.files.filter((f) => input.languages.includes(f.language)).map((f) => f.path);
+  const refs = output.refs.filter((r) => scoped.includes(r.from.slice(0, r.from.indexOf("#"))));
+  const described = new Set(output.describedFiles ?? scoped);
+  for (const ref of refs) described.add(ref.from.slice(0, ref.from.indexOf("#")));
+  const analysis = relationshipReport(
+    provider,
+    scoped,
+    { ...output, refs, describedFiles: described },
+    diagnostics,
+  );
+  const sourceHashes = Object.fromEntries(input.sources.map((s) => [s.path, hashText(s.text)]));
+  return {
+    provider: provider.id,
+    version: output.tool.includes("@")
+      ? output.tool.slice(output.tool.lastIndexOf("@") + 1)
+      : output.tool,
+    configuration: "tool-defaults",
+    tool: output.tool,
+    sourceHashes,
+    declarations: [],
+    relationships: refs.map((ref) => ({
+      from: ref.from,
+      to: ref.to,
+      kind: ref.kind,
+      file: ref.from.slice(0, ref.from.indexOf("#")),
+      evidence: providerRange(
+        ref.site,
+        input.sources.find((s) => s.path === ref.from.slice(0, ref.from.indexOf("#")))!.text,
+      ),
+      resolution: ref.resolution,
+    })),
+    analysis: [analysis],
+    blind: output.blind,
   };
 }

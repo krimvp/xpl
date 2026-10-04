@@ -6,7 +6,7 @@
  *
  * Also exported, for the CLI and the SCIP importer: file discovery and commit id rules, the language-pack
  * interface and registry (`classifySite` per language), the innermost-symbol lookup, a reparse helper
- * (`ParserPool` + `parseFile` / `withParsedFile`) and the precise-resolver registry.
+ * (`ParserPool` + `parseFile` / `withParsedFile`) and the independent provider registry.
  */
 export * from "./wasm.js";
 
@@ -65,7 +65,17 @@ export { ParserPool, parseFile, withParsedFile } from "./parse.js";
 export type { ParsedFile } from "./parse.js";
 export { SpanIndex, nodeSpan, pointsToSpan, spanBetween, spanContains } from "./ast.js";
 
-export { registerPreciseResolver, unregisterPreciseResolver, preciseResolvers } from "./precise.js";
-export type { PreciseInput, PreciseOutput, PreciseResolver } from "./precise.js";
+export { registerProvider, unregisterProvider, indexProviders } from "./providers.js";
+export { normalizeProvider, mergeProvider, providerRange } from "./providers.js";
+export type {
+  ProviderInput,
+  ProviderOutput,
+  ProviderDeclaration,
+  ProviderRelationship,
+  ProviderSource,
+  ProviderRange,
+  IndexProvider,
+} from "./providers.js";
+export { TreeSitterProvider } from "./tree-sitter.js";
 export { resolveHeuristic } from "./resolve/heuristic.js";
 export type { ResolverFile, ResolverInput } from "./resolve/heuristic.js";
