@@ -59,28 +59,19 @@ function output(): ProviderOutput {
   };
 }
 describe("source-backed providers", () => {
-  it("normalizes UTF-8 identifier and declaration ranges separately, assigning IDs and source hashes", () => {
-    const result = normalizeProvider(input, output());
-    expect(
-      result.entries.map((e) => ({
-        id: e.symbol.id,
-        range: e.symbol.range,
-        span: e.span,
-        hash: e.symbol.hash,
-      })),
-    ).toEqual([
-      {
-        id: "a.ts#f",
-        range: { startLine: 1, endLine: 1 },
-        span: { startLine: 1, endLine: 1, startCol: 21, endCol: 46 },
-        hash: hashText(text.split("\n")[0]!),
-      },
+  it("preserves YAML keys whose block declaration ends on a blank line", async () => {
+    const { index, warnings } = await buildIndex({
+      root: makeDir({ "config.yaml": "ok: true\nblank: |\n\n" }),
+      precise: "off",
+    });
+    expect(warnings).toEqual([]);
+    expect(index.symbols.map((s) => [s.id, s.range])).toEqual([
+      ["config.yaml#ok", { startLine: 1, endLine: 1 }],
+      ["config.yaml#blank", { startLine: 2, endLine: 3 }],
     ]);
-    expect(result.identifiers.get("f")).toEqual({
-      startLine: 1,
-      endLine: 1,
-      startCol: 30,
-      endCol: 30,
+    expect(index.analysis?.find((r) => r.provider === "yaml")?.results[0]).toMatchObject({
+      status: "supported",
+      analyzedFiles: ["config.yaml"],
     });
   });
 });
@@ -113,7 +104,28 @@ it.each(["utf8", "utf16", "utf32"] as const)(
         },
       },
     ];
-    expect(normalizeProvider(input, facts).entries.map((e) => e.symbol.id)).toEqual(["a.ts#f"]);
+    const result = normalizeProvider(input, facts);
+    expect(
+      result.entries.map((e) => ({
+        id: e.symbol.id,
+        range: e.symbol.range,
+        span: e.span,
+        hash: e.symbol.hash,
+      })),
+    ).toEqual([
+      {
+        id: "a.ts#f",
+        range: { startLine: 1, endLine: 1 },
+        span: { startLine: 1, endLine: 1, startCol: 21, endCol: 46 },
+        hash: hashText('const emoji = "😀"; function f() { return f; }'),
+      },
+    ]);
+    expect(result.identifiers.get("f")).toEqual({
+      startLine: 1,
+      endLine: 1,
+      startCol: 30,
+      endCol: 30,
+    });
   },
 );
 

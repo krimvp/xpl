@@ -88,7 +88,14 @@ export function extractionReports(
             : status === "partial" || ability === "partial"
               ? "partial"
               : "supported";
-        addResult(results, capability, observed, status === "failed" ? [] : matching, limitations);
+        addResult(
+          results,
+          capability,
+          observed,
+          status === "failed" ? [] : matching,
+          limitations,
+          relationship ? "heuristic" : undefined,
+        );
       }
     }
     const diagnostics = scoped.flatMap((file) => outcomes.get(file)?.diagnostics ?? []);
@@ -128,15 +135,24 @@ function addResult(
   status: AnalysisResult["status"],
   analyzedFiles: string[],
   limitations: string[],
+  resolution?: AnalysisResult["resolution"],
 ): void {
   const same = results.find(
     (r) =>
       r.status === status &&
+      r.resolution === resolution &&
       JSON.stringify(r.analyzedFiles) === JSON.stringify(analyzedFiles) &&
       JSON.stringify(r.limitations) === JSON.stringify(limitations),
   );
   if (same) same.capabilities.push(capability);
-  else results.push({ capabilities: [capability], status, analyzedFiles, limitations });
+  else
+    results.push({
+      capabilities: [capability],
+      status,
+      analyzedFiles,
+      limitations,
+      ...(resolution ? { resolution } : {}),
+    });
 }
 
 export function relationshipReport(
@@ -146,9 +162,24 @@ export function relationshipReport(
   diagnostics: string[] = [],
 ): AnalysisReport {
   const capabilities = resolver.capabilities;
+  if (!output)
+    return {
+      provider: resolver.id,
+      capabilities,
+      files,
+      results: [
+        {
+          capabilities: Object.keys(capabilities) as AnalysisCapability[],
+          status: "failed",
+          analyzedFiles: [],
+          limitations: ["Provider analysis failed; previous checked facts remain."],
+        },
+      ],
+      ...(diagnostics.length ? { diagnostics } : {}),
+    };
   const results: AnalysisResult[] = [];
-  const described = new Set(output?.describedFiles ?? []);
-  for (const ref of output?.refs ?? []) described.add(ref.from.slice(0, ref.from.indexOf("#")));
+  const described = new Set(output.describedFiles ?? []);
+  for (const ref of output.refs) described.add(ref.from.slice(0, ref.from.indexOf("#")));
   for (const kind of RELATIONSHIP_CAPABILITIES) {
     if (!capabilities[kind]) {
       addResult(
@@ -157,14 +188,6 @@ export function relationshipReport(
         "unsupported",
         [],
         ["This relationship kind is unavailable in precise analysis; heuristic hints may remain."],
-      );
-    } else if (!output) {
-      addResult(
-        results,
-        kind,
-        "failed",
-        [],
-        ["Precise relationship analysis failed; heuristic hints remain."],
       );
     } else {
       const observation = output.coverage?.[kind];
@@ -191,7 +214,14 @@ export function relationshipReport(
         limitations.push("Files outside this analysis keep heuristic hints.");
       if (status !== "unsupported" && output.blind?.length)
         limitations.push("Some occurrences could not be linked to their targets.");
-      addResult(results, kind, status, analyzedFiles, limitations);
+      addResult(
+        results,
+        kind,
+        status,
+        analyzedFiles,
+        limitations,
+        observation?.resolution ?? output.resolution,
+      );
     }
   }
   return {

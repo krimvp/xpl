@@ -140,9 +140,14 @@ function rangeFromLines(lines: readonly string[], range: ProviderRange): Span | 
 }
 
 export function providerRange(range: Range, text: string): ProviderRange {
+  const endLine = range.endLine - 1;
+  const lines = range.endCol === undefined || range.endCol === 1 ? splitLines(text) : undefined;
+  // pointsToSpan widens an empty terminal line to column 1 after consuming its newline.
+  const blankTerminalLine =
+    range.endLine > range.startLine && range.endCol === 1 && lines?.[endLine] === "";
   return {
     start: [range.startLine - 1, (range.startCol ?? 1) - 1],
-    end: [range.endLine - 1, range.endCol ?? splitLines(text)[range.endLine - 1]!.length],
+    end: blankTerminalLine ? [endLine + 1, 0] : [endLine, range.endCol ?? lines![endLine]!.length],
     encoding: "utf16",
   };
 }
@@ -456,6 +461,7 @@ export function mergeProvider(
 
 /** Plain relationship result shared by the SCIP tool adapters before conversion to provider facts. */
 export interface RelationshipResult {
+  resolution: Reference["resolution"];
   refs: Reference[];
   coverage?: Partial<Record<Reference["kind"], Omit<AnalysisResult, "capabilities">>>;
   tool: string;

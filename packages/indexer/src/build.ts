@@ -222,6 +222,15 @@ export async function buildIndex(opts: BuildIndexOptions): Promise<BuildIndexRes
   const languageOfFile = new Map<FilePath, FileLanguage>(files.map((f) => [f.path, f.language]));
   const refLanguages = new Set<FileLanguage>(heuristicFiles.map((f) => f.language));
   const preciseTools = new Map<FileLanguage, string>();
+  // Last replacement of each file/kind owns its resolution, even when it emitted no references.
+  const relationshipAnalysis = new Map<
+    string,
+    {
+      file: FilePath;
+      resolution: Reference["resolution"] | undefined;
+      tool: string;
+    }
+  >();
   /** Per language: files that keep heuristic references because the precise tool did not describe them. */
   const keptHeuristicFiles = new Map<FileLanguage, number>();
   if (precise !== "off") {
@@ -290,10 +299,6 @@ export async function buildIndex(opts: BuildIndexOptions): Promise<BuildIndexRes
               `the tool described none of the ${reportFiles.length} ${languages.join("/")} file(s)`,
             );
           }
-          const analyzed = new Set(usable.flatMap((r) => r.analyzedFiles));
-          const preciseLanguages = languages.filter((l) =>
-            reportFiles.some((f) => analyzed.has(f) && languageOfFile.get(f) === l),
-          );
           const kept = keptAtBlind(refs, output.blind ?? [], normalized.refs);
           ({ entries, refs, providers } = mergeProvider(
             { entries, refs, providers },
@@ -301,21 +306,32 @@ export async function buildIndex(opts: BuildIndexOptions): Promise<BuildIndexRes
             kept,
           ));
           analysis.push(...observed);
-          for (const language of preciseLanguages) {
-            // Structural-only providers do not claim precise relationship resolution.
-            if (
-              !usable.some((r) =>
-                r.capabilities.some((c) =>
-                  (RELATIONSHIP_CAPABILITIES as readonly string[]).includes(c),
-                ),
-              )
-            )
-              continue;
-            preciseTools.set(language, output.tool);
-            const count = heuristicFiles.filter(
-              (f) => f.language === language && !analyzed.has(f.path),
-            ).length;
-            if (count) keptHeuristicFiles.set(language, count);
+          const heuristicKinds = new Set(
+            normalized.refs
+              .filter((r) => r.resolution === "heuristic")
+              .map((r) => `${fileOfId(r.from)}\0${r.kind}`),
+          );
+          for (const report of observed) {
+            for (const result of report.results) {
+              if (!usable.includes(result)) continue;
+              for (const kind of RELATIONSHIP_CAPABILITIES) {
+                if (
+                  !provider.capabilities[kind] ||
+                  !report.capabilities[kind] ||
+                  !result.capabilities.includes(kind)
+                )
+                  continue;
+                for (const file of result.analyzedFiles) {
+                  if (!report.files.includes(file) || !reportFiles.includes(file)) continue;
+                  const key = `${file}\0${kind}`;
+                  relationshipAnalysis.set(key, {
+                    file,
+                    resolution: heuristicKinds.has(key) ? "heuristic" : result.resolution,
+                    tool: output.tool,
+                  });
+                }
+              }
+            }
           }
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
@@ -337,11 +353,23 @@ export async function buildIndex(opts: BuildIndexOptions): Promise<BuildIndexRes
     } finally {
       await sourcePool.dispose();
     }
+    const preciseFiles = new Set<FilePath>();
+    for (const { file, resolution, tool } of relationshipAnalysis.values()) {
+      if (resolution !== "precise") continue;
+      preciseFiles.add(file);
+      preciseTools.set(languageOfFile.get(file)!, tool);
+    }
+    for (const language of preciseTools.keys()) {
+      const count = heuristicFiles.filter(
+        (f) => f.language === language && !preciseFiles.has(f.path),
+      ).length;
+      if (count) keptHeuristicFiles.set(language, count);
+    }
     if (precise === "require") {
       const missing = [...refLanguages].filter((l) => !preciseTools.has(l));
       if (missing.length)
         throw new Error(
-          `precise references are required but no usable relationship analysis was produced for: ${missing.sort().join(", ")}`,
+          `precise references are required but no usable precise relationship analysis was produced for: ${missing.sort().join(", ")}`,
         );
     }
   }

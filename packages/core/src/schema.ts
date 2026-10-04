@@ -129,6 +129,8 @@ export type AnalysisCapability =
 /** Missing keys mean unsupported, never inferred from symbols or references. */
 export type AnalysisCapabilities = Partial<Record<AnalysisCapability, "supported" | "partial">>;
 export interface AnalysisResult {
+  /** Relationship resolution, including empty results. Absent on legacy/structural results: unknown. */
+  resolution?: Reference["resolution"];
   /** Capabilities with the same observed outcome, grouped to avoid repeating file lists. */
   capabilities: AnalysisCapability[];
   status: "supported" | "partial" | "unsupported" | "failed";
