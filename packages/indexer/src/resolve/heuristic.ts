@@ -74,6 +74,8 @@ export interface ResolverFile {
 
 export interface ResolverInput {
   files: readonly ResolverFile[];
+  /** Experiment only: retain every file's lookup facts, but visit sites in this subset. */
+  resolveFiles?: ReadonlySet<FilePath>;
   /** Every symbol of every file, in source order per file. */
   entries: readonly SymbolEntry[];
   /** Innermost-symbol lookup over the same symbols. */
@@ -296,6 +298,7 @@ class Resolver {
 
   run(): Reference[] {
     for (const file of this.input.files) {
+      if (this.input.resolveFiles && !this.input.resolveFiles.has(file.path)) continue;
       for (const binding of file.imports) this.resolveBinding(file, binding);
       for (const fact of file.exports)
         if (fact.module !== undefined && fact.site) this.resolveReexport(file, fact);

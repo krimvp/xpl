@@ -390,8 +390,8 @@ filters simply stop consuming old entries. Repository configuration (`tsconfig` 
 Python/Go module settings) is read fresh during resolution/tooling, so unchanged callers may resolve differently
 without re-extraction. It is not an input to the current file-local extractors. Language filters, precise mode
 and commit overrides likewise do not affect a retained file's extraction. A future extractor that reads
-configuration must include its content in the profile configuration key. Dependency-aware semantic reuse is
-left to #17; this cache never treats a source-only key as semantic evidence.
+configuration must include its content in the profile configuration key. The default pipeline retains full
+resolution; this cache never treats a source-only key as semantic evidence.
 
 `BuildIndexResult.extraction` and CLI JSON expose enabled/scope/hits/misses/write failures, an optional bypass
 reason (also printed in the text summary), and wall milliseconds for cache eligibility/lookup, parsing and
@@ -400,6 +400,20 @@ an extractor count as neither hits nor misses. `work` reports fresh heuristic-re
 provider runs and their wall time (including failed attempts), separately from extraction. Timings never enter
 `SymbolIndex`, capability reports or bundles. [extraction-cache.md](extraction-cache.md) gives the repeatable
 whole-index equivalence check, pinned benchmark commands, CPU/wall time, peak RSS and disk costs.
+
+**Semantic invalidation experiment** (`src/resolve/typescript-experiment.ts`, #17). An explicit
+`BuildIndexOptions.experimentalResolution` instance retains TypeScript-pack heuristic references between
+builds in one process. The CLI never supplies it. Exact extraction input (including #16's revision, provider
+and WASM identities) and normalized symbol entries identify a file; `SEMANTIC_REVISION` additionally versions
+resolution rules. Reuse requires unchanged transitive imports/re-exports and same-directory candidates.
+Both old and new reverse dependencies invalidate callers. File discovery and configuration changes resolve
+the whole project, including sites with no previous edge. Configuration includes every non-TypeScript source
+and module-resolution text reads, including missing and ignored files. Unsupported heuristic packs or
+unavailable extraction identity (disabled cache, directory alias, missing/mismatched WASM, failed extraction)
+discard retained state and resolve everything. Lookup tables, pack inference, resources and external providers
+always run fresh. State is never persisted and reports/timings never enter `SymbolIndex`. The
+[dated assessment](assessment-2026-10-04-semantic-invalidation.md) records the whole-index mutation harness,
+real-history fallback rate, separate bookkeeping/resolution costs and the decision on broader reuse.
 
 **Language packs** (`src/languages/<lang>.ts`, the larger ones split into `<lang>/`; registry in
 `languages/index.ts`). A pack turns one parsed

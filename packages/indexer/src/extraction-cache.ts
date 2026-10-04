@@ -1,5 +1,5 @@
 /**
- * File-local facts only. Resolution, normalization and semantic tools always run again.
+ * File-local facts only. Default builds rerun resolution, normalization and semantic tools.
  * Bump EXTRACTION_REVISION when extraction, resource sites or diagnostics change (see ARCHITECTURE §3).
  * SHA-256 addresses entries; exact stored input comparison handles address collisions. A separate checksum
  * detects damaged payloads. Missing/invalid entries and failed writes never affect the published index.
@@ -168,6 +168,8 @@ export class ExtractionCache {
     profile: ExtractionProfile,
     extract: () => Promise<T>,
     reusable: (value: T) => boolean = () => true,
+    /** Exact versioned input for the off-default semantic experiment; unavailable when reuse is unsafe. */
+    onIdentity?: (input: string) => void,
   ): Promise<T> {
     const started = performance.now();
     try {
@@ -186,6 +188,7 @@ export class ExtractionCache {
       });
       const target = join(this.directory, `${sha256(input)}.json`);
       if (fingerprint && compatibleWasm(fingerprint)) {
+        onIdentity?.(input);
         try {
           const entry: unknown = JSON.parse(await readFile(target, "utf8"));
           if (
