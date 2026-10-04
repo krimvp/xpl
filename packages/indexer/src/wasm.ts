@@ -23,7 +23,8 @@
  * File locations: `node_modules` by default; `setWasmDir(dir)` or the `XPL_WASM_DIR` environment
  * variable redirect every wasm file (see wasm-files.ts).
  */
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { Language, Parser } from "web-tree-sitter";
 import {
   GRAMMAR_IDS,
@@ -52,6 +53,17 @@ function existingWasmFile(source: WasmSource): string {
 }
 
 let initPromise: Promise<void> | undefined;
+const loadedWasmHashes = new Map<string, string>();
+
+/** A process keeps loaded WASM forever. Disk replacements must never label old extraction as new. */
+export function loadedWasmMatches(file: string, sha256: string): boolean {
+  const loaded = loadedWasmHashes.get(file);
+  return loaded === undefined || loaded === sha256;
+}
+
+function recordWasm(source: WasmSource, bytes: Buffer): void {
+  loadedWasmHashes.set(source.file, createHash("sha256").update(bytes).digest("hex"));
+}
 
 /**
  * Initialise the web-tree-sitter runtime. Safe to call from anywhere, any number of times: the
@@ -60,10 +72,11 @@ let initPromise: Promise<void> | undefined;
  */
 export function initParser(): Promise<void> {
   if (!initPromise) {
-    const attempt = Parser.init({
-      locateFile: (file: string, scriptDirectory: string): string =>
-        file === RUNTIME_WASM.file ? existingWasmFile(RUNTIME_WASM) : scriptDirectory + file,
-    });
+    const attempt = (async () => {
+      const bytes = readFileSync(existingWasmFile(RUNTIME_WASM));
+      await Parser.init({ wasmBinary: bytes });
+      recordWasm(RUNTIME_WASM, bytes);
+    })();
     initPromise = attempt;
     attempt.catch(() => {
       if (initPromise === attempt) initPromise = undefined;
@@ -86,7 +99,13 @@ export function loadLanguage(id: GrammarId): Promise<Language> {
   }
   let language = languageCache.get(id);
   if (!language) {
-    const attempt = initParser().then(() => Language.load(existingWasmFile(GRAMMAR_WASM[id])));
+    const attempt = initParser().then(async () => {
+      const source = GRAMMAR_WASM[id];
+      const bytes = readFileSync(existingWasmFile(source));
+      const language = await Language.load(bytes);
+      recordWasm(source, bytes);
+      return language;
+    });
     language = attempt;
     languageCache.set(id, attempt);
     attempt.catch(() => {

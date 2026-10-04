@@ -232,7 +232,7 @@ export interface FileFacts {
   warnings?: string[];
   /**
    * Pack-private data for `LanguagePack.inferRefs` (it comes back as `ResolverFile.data`). The framework does
-   * not look at it, and it is never stored in the index.
+   * not look at it. It must be plain JSON data for the extraction cache; it is never stored in the index.
    */
   data?: unknown;
 }

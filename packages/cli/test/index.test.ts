@@ -66,6 +66,27 @@ describe("xpl index", () => {
     expect(readdirSync(join(dir, ".explainer"))).toContain(`index-${json.commit}.json`);
   });
 
+  it("reports scoped cache work and --no-cache performs extraction without touching cached facts", async () => {
+    const dir = copyFixture();
+    const first = await xplJson(dir, "index", "--precise", "off");
+    expect(first.code).toBe(0);
+    expect(first.json.extraction).toMatchObject({ enabled: true, hits: 0, misses: 11 });
+    const warm = await xplJson(dir, "index", "--precise", "off");
+    expect(warm.json.extraction).toMatchObject({ enabled: true, hits: 11, misses: 0 });
+    expect(warm.json.extraction.scope).toBe(
+      "file-local tree-sitter and tags; excludes resolution and semantic tools",
+    );
+    expect(warm.json.work.semanticRuns).toBe(0);
+    const clean = await xplJson(dir, "index", "--precise", "off", "--no-cache");
+    expect(clean.code).toBe(0);
+    expect(clean.json.extraction).toMatchObject({ enabled: false, hits: 0, misses: 11 });
+    const human = await xpl(dir, "index", "--precise", "off");
+    expect(human.out).toMatch(
+      /Extraction \(cache enabled\): 11 hits, 0 misses, [\d.]+ ms wall; file-local tree-sitter and tags only\./,
+    );
+    expect(human.out).toContain("semantic providers 0 runs");
+  });
+
   it("--commit names the index file and the commit", async () => {
     const dir = copyFixture();
     const { code, out } = await xpl(dir, "index", "--precise", "off", "--commit", "v1.0");

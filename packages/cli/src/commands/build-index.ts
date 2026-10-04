@@ -47,10 +47,15 @@ export function describeRefs(info: LanguageInfo): string {
 
 export const indexCommand: CommandSpec = {
   name: "index",
-  usage: "xpl index [--precise auto|off|require] [--commit c] [--scip artifact|manifest.json]",
+  usage:
+    "xpl index [--precise auto|off|require] [--commit c] [--no-cache] [--scip artifact|manifest.json]",
   summary: "Build and write the symbol index; print a per-language summary",
   details: [
     "Indexes every text file under --root (git-aware) and writes .explainer/index-<commit>.json.",
+    "Reuses file-local tree-sitter and Rust tags facts from .explainer/cache by default.",
+    "Directory aliases into the repository (including symlinks and bind mounts) bypass cache reads and writes.",
+    "--no-cache neither reads nor writes that cache. Source discovery, hashes, heuristic resolution and semantic tools",
+    "still run on every build. Hits/misses and extraction wall time exclude resolution and semantic tools.",
     "The commit id is the short HEAD for a clean top-level git tree, else wt-<hash> of the files.",
     "--precise auto uses SCIP indexers when available (heuristic references otherwise, with a warning);",
     "off never runs them; syntax-only providers (Rust tags) still run. require fails instead of falling back.",
@@ -68,6 +73,10 @@ export const indexCommand: CommandSpec = {
     "--precise off cannot import an artifact. require needs precise coverage for each programming language.",
   ],
   options: {
+    "no-cache": {
+      type: "boolean",
+      desc: "Extract every file without reading or writing the facts cache",
+    },
     scip: {
       type: "string",
       arg: "<artifact|manifest.json>",
@@ -114,6 +123,7 @@ export const indexCommand: CommandSpec = {
       result = await buildIndex({
         root: ctx.root,
         precise,
+        cache: !args.flag("no-cache"),
         ...(providers ? { providers } : {}),
         ...(commit !== undefined ? { commit } : {}),
       });
@@ -137,6 +147,8 @@ export const indexCommand: CommandSpec = {
         refs: index.refs.length,
         languages: index.languages,
         analysis: index.analysis,
+        extraction: result.extraction,
+        work: result.work,
         ...(stale.length > 0 ? { explainersToResolve: stale } : {}),
       });
       return 0;
@@ -152,6 +164,17 @@ export const indexCommand: CommandSpec = {
           `${name.padEnd(width)}  ${plural(info.files, "file").padEnd(9)}  ${plural(info.symbols, "symbol").padEnd(12)}  refs: ${describeRefs(info)}`,
       ),
     ];
+    const { extraction, work } = result;
+    lines.push(
+      "",
+      `Extraction (${extraction.enabled ? "cache enabled" : "cache disabled"}): ${extraction.hits} hits, ${extraction.misses} misses, ${extraction.wallMs.toFixed(1)} ms wall; file-local tree-sitter and tags only.`,
+    );
+    if (extraction.writeFailures)
+      lines.push(`Cache writes failed: ${extraction.writeFailures}; fresh facts were used.`);
+    if (extraction.bypassReason) lines.push(`Cache bypassed: ${extraction.bypassReason}.`);
+    lines.push(
+      `Fresh work: heuristic resolution ${work.heuristicResolutionMs.toFixed(1)} ms wall; semantic providers ${work.semanticRuns} runs, ${work.semanticMs.toFixed(1)} ms wall.`,
+    );
     const coverage = describeAnalysis(index);
     lines.push("", coverage.summary, ...coverage.details);
     if (stale.length > 0) {

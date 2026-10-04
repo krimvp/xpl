@@ -56,107 +56,140 @@ export class TagsProvider implements IndexProvider {
     this.languages = [profile.language];
   }
   async analyze(input: ProviderInput): Promise<ProviderOutput> {
-    const parser = await createParser(this.profile.grammar);
+    let parser: Awaited<ReturnType<typeof createParser>> | undefined;
     const declarations: ProviderDeclaration[] = [];
     const analysis = new Map<boolean, AnalysisReport>();
     const sourceHashes: Record<string, string> = {};
     let query: Query | undefined;
     try {
-      query = new Query(await loadLanguage(this.profile.grammar), this.profile.query());
+      const queryText = this.profile.query();
       for (const source of input.sources.filter(
         (s) => input.languages.includes(s.language) && this.languages.includes(s.language),
       )) {
         sourceHashes[source.path] = new FileHasher(splitLines(source.text)).hashFile();
-        const tree = parser.parse(source.text);
-        if (!tree) throw new Error(`${source.path}: parser returned no tree`);
-        try {
-          const tags = query
-            .matches(tree.rootNode)
-            .flatMap((match) => {
-              const name = match.captures.find((c) => c.name === "name")?.node;
-              const context = match.captures.find((c) => c.name === "context")?.node.text;
-              if (!name) return [];
-              return match.captures
-                .filter((c) => c.name.startsWith("definition."))
-                .map((c) => ({
-                  node: c.node,
-                  tag: c.name.slice("definition.".length),
-                  name,
-                  label: this.profile.label(c.name.slice("definition.".length), name.text, context),
-                }));
-            })
-            .sort(
-              (a, b) => a.node.startIndex - b.node.startIndex || b.node.endIndex - a.node.endIndex,
-            );
-          const stack: { end: number; declaration: ProviderDeclaration; tag: string }[] = [];
-          const seen = new Set<number>();
-          for (const tag of tags) {
-            if (seen.has(tag.node.id)) continue;
-            seen.add(tag.node.id);
-            while (stack.length && stack.at(-1)!.end <= tag.node.startIndex) stack.pop();
-            const parent = stack.at(-1);
-            const kind = this.profile.kinds[tag.tag] ?? KINDS[tag.tag];
-            if (!kind) continue;
-            const declaration: ProviderDeclaration = {
-              identity: `${source.path}:${tag.node.startIndex}:${tag.node.endIndex}`,
-              file: source.path,
-              name: tag.name.text,
-              path: parent ? `${parent.declaration.path}.${tag.label}` : tag.label,
-              kind:
-                kind === "function" && parent && this.profile.methodParents.includes(parent.tag)
-                  ? "method"
-                  : kind,
-              // A tag may name a multiline receiver type rather than one identifier.
-              ...(tag.name.startPosition.row === tag.name.endPosition.row
-                ? { identifier: range(tag.name) }
-                : {}),
-              declaration: range(tag.node),
-              ...(parent ? { parent: parent.declaration.identity } : {}),
+        const extract = async () => {
+          parser ??= await createParser(this.profile.grammar);
+          query ??= new Query(await loadLanguage(this.profile.grammar), queryText);
+          const declarations: ProviderDeclaration[] = [];
+          const tree = parser.parse(source.text);
+          if (!tree) throw new Error(`${source.path}: parser returned no tree`);
+          try {
+            const tags = query
+              .matches(tree.rootNode)
+              .flatMap((match) => {
+                const name = match.captures.find((c) => c.name === "name")?.node;
+                const context = match.captures.find((c) => c.name === "context")?.node.text;
+                if (!name) return [];
+                return match.captures
+                  .filter((c) => c.name.startsWith("definition."))
+                  .map((c) => ({
+                    node: c.node,
+                    tag: c.name.slice("definition.".length),
+                    name,
+                    label: this.profile.label(
+                      c.name.slice("definition.".length),
+                      name.text,
+                      context,
+                    ),
+                  }));
+              })
+              .sort(
+                (a, b) =>
+                  a.node.startIndex - b.node.startIndex || b.node.endIndex - a.node.endIndex,
+              );
+            const stack: { end: number; declaration: ProviderDeclaration; tag: string }[] = [];
+            const seen = new Set<number>();
+            for (const tag of tags) {
+              if (seen.has(tag.node.id)) continue;
+              seen.add(tag.node.id);
+              while (stack.length && stack.at(-1)!.end <= tag.node.startIndex) stack.pop();
+              const parent = stack.at(-1);
+              const kind = this.profile.kinds[tag.tag] ?? KINDS[tag.tag];
+              if (!kind) continue;
+              const declaration: ProviderDeclaration = {
+                identity: `${source.path}:${tag.node.startIndex}:${tag.node.endIndex}`,
+                file: source.path,
+                name: tag.name.text,
+                path: parent ? `${parent.declaration.path}.${tag.label}` : tag.label,
+                kind:
+                  kind === "function" && parent && this.profile.methodParents.includes(parent.tag)
+                    ? "method"
+                    : kind,
+                // A tag may name a multiline receiver type rather than one identifier.
+                ...(tag.name.startPosition.row === tag.name.endPosition.row
+                  ? { identifier: range(tag.name) }
+                  : {}),
+                declaration: range(tag.node),
+                ...(parent ? { parent: parent.declaration.identity } : {}),
+              };
+              declarations.push(declaration);
+              stack.push({ end: tag.node.endIndex, declaration, tag: tag.tag });
+            }
+            const errors = significantSyntaxErrors(source.path, findSyntaxErrors(tree.rootNode));
+            return {
+              declarations,
+              recovered: Boolean(errors),
+              warning: errors ? syntaxErrorWarning([errors]) : undefined,
             };
-            declarations.push(declaration);
-            stack.push({ end: tag.node.endIndex, declaration, tag: tag.tag });
+          } finally {
+            tree.delete();
           }
-          const errors = significantSyntaxErrors(source.path, findSyntaxErrors(tree.rootNode));
-          if (errors) input.warn(syntaxErrorWarning([errors]));
-          // All other outcomes are fixed by this profile; syntax recovery changes the limitations.
-          const recovered = Boolean(errors);
-          const report = analysis.get(recovered);
-          if (report) {
-            report.files.push(source.path);
-            report.results[0]!.analyzedFiles.push(source.path);
-            continue;
-          }
-          analysis.set(recovered, {
-            provider: this.id,
-            capabilities: this.capabilities,
-            files: [source.path],
-            results: [
+        };
+        const result = input.extractionCache
+          ? await input.extractionCache.extract(
+              source,
               {
-                capabilities: ["symbols", "declarationRanges", "nesting"],
-                status: "partial",
-                analyzedFiles: [source.path],
-                limitations: [
-                  ...this.profile.limitations,
-                  ...(errors ? ["Syntax errors may leave declarations incomplete."] : []),
-                ],
+                provider: this.id,
+                version: this.profile.version,
+                grammar: this.profile.grammar,
+                configuration: JSON.stringify({
+                  queryText,
+                  kinds: this.profile.kinds,
+                  methodParents: this.profile.methodParents,
+                  limitations: this.profile.limitations,
+                }),
               },
-              {
-                capabilities: [...RELATIONSHIP_CAPABILITIES],
-                status: "unsupported",
-                analyzedFiles: [],
-                limitations: [
-                  "Relationship analysis is unavailable; syntax call sites are not resolved edges.",
-                ],
-              },
-            ],
-          });
-        } finally {
-          tree.delete();
+              extract,
+            )
+          : await extract();
+        declarations.push(...result.declarations);
+        if (result.warning) input.warn(result.warning);
+        // All other outcomes are fixed by this profile; syntax recovery changes the limitations.
+        const recovered = result.recovered;
+        const report = analysis.get(recovered);
+        if (report) {
+          report.files.push(source.path);
+          report.results[0]!.analyzedFiles.push(source.path);
+          continue;
         }
+        analysis.set(recovered, {
+          provider: this.id,
+          capabilities: this.capabilities,
+          files: [source.path],
+          results: [
+            {
+              capabilities: ["symbols", "declarationRanges", "nesting"],
+              status: "partial",
+              analyzedFiles: [source.path],
+              limitations: [
+                ...this.profile.limitations,
+                ...(recovered ? ["Syntax errors may leave declarations incomplete."] : []),
+              ],
+            },
+            {
+              capabilities: [...RELATIONSHIP_CAPABILITIES],
+              status: "unsupported",
+              analyzedFiles: [],
+              limitations: [
+                "Relationship analysis is unavailable; syntax call sites are not resolved edges.",
+              ],
+            },
+          ],
+        });
       }
     } finally {
       query?.delete();
-      parser.delete();
+      parser?.delete();
     }
     return {
       provider: this.id,
