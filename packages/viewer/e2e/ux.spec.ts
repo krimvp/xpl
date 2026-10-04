@@ -484,11 +484,13 @@ test.describe("Save as HTML", () => {
     await page.getByRole("button", { name: "Close the tour panel" }).click();
     await expect(page.locator(".header .save-status")).toHaveText("Unsaved");
     const menu = await openEditMenu(page);
+    await menu.getByTestId("edit-save-html").click();
+    await expect(page.getByTestId("save-html-ready")).toBeDisabled();
     const [download] = await Promise.all([
       page.waitForEvent("download"),
-      menu.getByTestId("edit-save-html").click(),
+      page.getByTestId("save-html-draft").click(),
     ]);
-    expect(download.suggestedFilename()).toMatch(/\.html$/);
+    expect(download.suggestedFilename()).toMatch(/\.draft\.html$/);
     const saved = readFileSync((await download.path())!, "utf8");
     // the page is the viewer as loaded (not the rendered page): one data script, the app, no render
     expect(saved.match(/<script id="xpl-data"/g)).toHaveLength(1);
@@ -503,6 +505,7 @@ test.describe("Save as HTML", () => {
     );
     await page.goto("http://xpl.test/?mode=present&tour=tour:intro&step=1");
     await page.waitForFunction(() => window.__xpl !== undefined);
+    await expect(page.getByTestId("draft-banner")).toContainText("Draft preview");
     await expect(page.getByTestId("tour-title")).toHaveText("Said in the meeting");
     await expect(page.getByTestId("tour-note")).toHaveText("A new note.");
     expect((await stateOf(page)).dirty).toBe(false);

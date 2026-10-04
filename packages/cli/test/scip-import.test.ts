@@ -79,10 +79,13 @@ it("imports a manifest, queries symbols, checks an anchor and exports its source
   );
   expect((await xpl(root, "apply", "demo", patch)).code).toBe(0);
   expect((await xpl(root, "validate", "demo")).code).toBe(0);
-  const exported = await invoke(["bundle", "demo", "-o", "demo.html", "--files", "all"], {
-    cwd: root,
-    env: { XPL_VIEWER_HTML: writeViewerStub() },
-  });
+  const exported = await invoke(
+    ["bundle", "--draft", "demo", "-o", "demo.html", "--files", "all"],
+    {
+      cwd: root,
+      env: { XPL_VIEWER_HTML: writeViewerStub() },
+    },
+  );
   expect(exported.code, exported.err).toBe(0);
   const bundle = bundleOf(readFile(root, "demo.html"));
   expect(bundle.files["a.demo"]).toBe(text);

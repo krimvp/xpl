@@ -1,4 +1,5 @@
 /**
+ * These source-selection examples omit story text; HTML uses explicit draft preview.
  * `xpl bundle --files boundary`: the referenced files plus the files of the direct callers and callees of every
  * anchored symbol and the tests that reference one, capped by `--boundary-max`; the summary line, `--json`, and an
  * index pruned for exactly the embedded files.
@@ -27,7 +28,10 @@ const OUT = makeTempDir("xpl-boundary-out-");
 
 /** `xpl bundle <name> -o <out> ... --root <dir>`, run in `OUT`. */
 function bundle(dir: string, name: string, out: string, ...argv: string[]) {
-  return invoke(["bundle", name, "-o", out, ...argv, "--root", dir], { cwd: OUT, env: viewerEnv });
+  return invoke(["bundle", "--draft", name, "-o", out, ...argv, "--root", dir], {
+    cwd: OUT,
+    env: viewerEnv,
+  });
 }
 
 /** A new explainer `name` in `dir` with one concept anchored at `anchors` (no views: only the anchors count). */
@@ -60,10 +64,10 @@ describe("--files boundary", () => {
     expect(Object.keys(bundleOf(readFile(OUT, "ref.html")).files)).toEqual(["src/metrics.ts"]);
 
     const { code, out, err } = await bundle(dir, "metrics", "b.html", "--files", "boundary");
-    expect(err).toBe("");
+    expect(err).toContain("Not ready");
     expect(code).toBe(0);
     expect(out).toMatch(
-      /^wrote b\.html \([\d.]+ KB\): \.explainer\/metrics\.explainer\.json, 4 of 12 files embedded \(referenced 1, boundary \+3: callers 1, callees 1, tests 1; [\d.]+ KB of source; --files all adds 8 files, [\d.]+ KB\), index [\d.]+ KB \([\d.]+ KB as plain JSON, pruned from [\d.]+ KB\), mode explore$/,
+      /^wrote b\.html \([\d.]+ KB\): \.explainer\/metrics\.explainer\.json, 4 of 12 files embedded \(referenced 1, boundary \+3: callers 1, callees 1, tests 1; [\d.]+ KB of source; --files all adds 8 files, [\d.]+ KB\), index [\d.]+ KB \([\d.]+ KB as plain JSON, pruned from [\d.]+ KB\), mode explore, draft preview$/,
     );
     const data = bundleOf(readFile(OUT, "b.html"));
     expect(Object.keys(data.files).sort()).toEqual([
