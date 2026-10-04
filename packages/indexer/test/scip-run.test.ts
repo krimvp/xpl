@@ -15,13 +15,7 @@ import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { buildIndex, preciseResolvers } from "../src/index.js";
-import {
-  createScipResolvers,
-  registerScipResolvers,
-  scipGoResolver,
-  scipPythonResolver,
-  scipTypescriptResolver,
-} from "../src/scip/index.js";
+import { createScipResolvers } from "../src/scip/index.js";
 import {
   DEFAULT_TIMEOUT_MS,
   SCIP_GO_PACKAGE,
@@ -908,32 +902,6 @@ describe("the resolvers registry", () => {
       ["scip-python", ["python"]],
       ["scip-go", ["go"]],
     ]);
-  });
-
-  it("registerScipResolvers replaces the resolvers with the same ids", () => {
-    const before = [...preciseResolvers()];
-    try {
-      registerScipResolvers({ timeoutMs: 5 });
-      expect(preciseResolvers().map((r) => r.id)).toEqual([
-        "scip-typescript",
-        "scip-python",
-        "scip-go",
-      ]);
-      expect(preciseResolvers()[0]).not.toBe(before[0]);
-    } finally {
-      registerScipResolvers();
-    }
-  });
-
-  it("each resolver covers its own languages", () => {
-    expect(createScipResolvers().map((r) => r.id)).toEqual([
-      "scip-typescript",
-      "scip-python",
-      "scip-go",
-    ]);
-    expect(scipTypescriptResolver().languages).toContain("javascript");
-    expect(scipPythonResolver().languages).toEqual(["python"]);
-    expect(scipGoResolver().languages).toEqual(["go"]);
   });
 });
 

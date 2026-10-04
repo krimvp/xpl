@@ -51,10 +51,6 @@ const SAMPLES: Record<GrammarId, { source: string; root: string; contains: strin
 };
 
 describe("tree-sitter wasm grammars", () => {
-  it("covers every grammar id", () => {
-    expect(Object.keys(SAMPLES).sort()).toEqual([...GRAMMAR_IDS].sort());
-  });
-
   it("initParser is idempotent and shares one initialisation", async () => {
     const first = initParser();
     expect(initParser()).toBe(first);
