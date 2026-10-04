@@ -263,7 +263,7 @@ Custom implementation effort from the merged experiments, counting source lines 
 
 | Path | Custom work | Reused work |
 |---|---|---|
-| Rust tags (#13) | 22 Rust query lines + 33 profile lines; 164-line generic tags adapter; language/WASM/query registration and plain editor integration | Provider normalization, IDs, hashes, coverage, anchors, queries, bundles |
+| Rust tags (#13) | 22 Rust query lines + 33 profile lines; 172-line generic tags adapter; language/WASM/query registration and plain editor integration | Provider normalization, IDs, hashes, coverage, anchors, queries, bundles |
 | Java semantic import (#14) | 83-line generation/manifest helper; zero production changes in the four packages | Generic #12 artifact importer, full-range/identity checks, CLI and viewer |
 | This decision (#15) | Assessment scripts, recorded measurements and support prose; zero production changes | Same provider/import boundary and Java helper |
 

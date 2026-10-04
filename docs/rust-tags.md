@@ -158,7 +158,7 @@ files, counting the named AST nodes in the table and the query's `definition.*` 
 
 ## Adapter effort and next steps
 
-Rust-specific production code is 22 query lines and 33 profile lines. The generic adapter is 164 lines.
+Rust-specific production code is 22 query lines and 33 profile lines. The generic adapter is 172 lines.
 Counts include comments and blank lines. The remaining integration adds the
 closed language union, extension/WASM registration, bundled query copy and plain-text viewer case. The tags
 adapter is generic; source validation, identity assignment, hashing, anchors, queries, bundles and capability
