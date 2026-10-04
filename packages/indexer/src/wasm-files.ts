@@ -30,6 +30,7 @@ export const GRAMMAR_WASM: Record<GrammarId, WasmSource> = {
   typescript: { pkg: "tree-sitter-typescript", file: "tree-sitter-typescript.wasm" },
   tsx: { pkg: "tree-sitter-typescript", file: "tree-sitter-tsx.wasm" },
   python: { pkg: "tree-sitter-python", file: "tree-sitter-python.wasm" },
+  rust: { pkg: "tree-sitter-rust", file: "tree-sitter-rust.wasm" },
   go: { pkg: "tree-sitter-go", file: "tree-sitter-go.wasm" },
   yaml: { pkg: "@tree-sitter-grammars/tree-sitter-yaml", file: "tree-sitter-yaml.wasm" },
   json: { pkg: "tree-sitter-json", file: "tree-sitter-json.wasm" },

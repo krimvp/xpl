@@ -1,18 +1,21 @@
 import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { existsSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 const viewerDir = fileURLToPath(new URL("..", import.meta.url));
 
-/** The fixtures that get a bundle: `fixtures/<lang>-jobrunner` + `scripts/<lang>-example*.patch.json`. */
-const LANGUAGES = ["ts", "py", "go"] as const;
+/** The original fixture examples and a small Rust structural example get browser bundles. */
+const LANGUAGES = ["ts", "py", "go", "rs"] as const;
 
 /**
  * Builds the fixture bundles once per run, one `scripts/make-bundle.ts` process per language in
  * parallel (plus `ts-change.html`: the TS fixture as a change explainer, see `--change`): it indexes fixtures/<lang>-jobrunner, applies scripts/<lang>-example.patch.json (actor llm)
  * and then scripts/<lang>-example.user.patch.json (actor user), which together are Appendix B of
  * docs/handoff.md for that language, and injects the result into the built viewer (dist/index.html)
- * -> dist/bundles/<lang>-jobrunner.html, which the specs open via file://.
+ * -> dist/bundles/<lang>-jobrunner.html, which the specs open via file://. Rust uses a temporary
+ * structural patch, without a user patch or a committed fixture explainer.
  * `--no-explainer` keeps the run from touching the committed fixtures/<lang>-jobrunner/.explainer files;
  * regenerate those by running the same command without it (`npm run bundle:ts -w @xpl/viewer` does that
  * for TS; for Python and Go pass `--patch scripts/<lang>-example.patch.json`, which finds the sibling
@@ -23,6 +26,34 @@ function makeBundle(
   change = false,
   architecture = false,
 ): Promise<void> {
+  const patchDir = lang === "rs" ? mkdtempSync(join(tmpdir(), "xpl-rust-e2e-")) : undefined;
+  const rustPatch = patchDir ? join(patchDir, "rust.patch.json") : undefined;
+  if (rustPatch)
+    writeFileSync(
+      rustPatch,
+      JSON.stringify({
+        views: [
+          {
+            id: "view:rust",
+            type: "graph",
+            title: "Rust structure",
+            include: [
+              "sym:src/queue.rs#JobQueue.pop",
+              "sym:src/worker.rs#demo.handlers.echo",
+              "sym:src/runner.rs#impl Runner<Q>.dispatch",
+            ],
+          },
+        ],
+        concepts: [
+          {
+            id: "concept:rust",
+            label: "Queue contract",
+            summary: "The queue supplies a job to the runner.",
+            anchors: [{ file: "src/queue.rs", symbol: "JobQueue.pop", role: "definition" }],
+          },
+        ],
+      }),
+    );
   return new Promise((resolve, reject) => {
     const child = spawn(
       "npx",
@@ -49,12 +80,14 @@ function makeBundle(
               "--dev-json",
               `dist/bundles/${lang}-architecture.bundle.json`,
             ]
-          : [
-              "--patch",
-              `scripts/${lang}-example.patch.json`,
-              "--user-patch",
-              `scripts/${lang}-example.user.patch.json`,
-            ]),
+          : rustPatch
+            ? ["--patch", rustPatch, "--no-user-patch"]
+            : [
+                "--patch",
+                `scripts/${lang}-example.patch.json`,
+                "--user-patch",
+                `scripts/${lang}-example.user.patch.json`,
+              ]),
         // The change explainer (diff view): the same fixture with a made-up change (scripts/ts-change.json).
         ...(change
           ? [
@@ -72,8 +105,12 @@ function makeBundle(
     let output = "";
     child.stdout.on("data", (chunk: Buffer) => (output += chunk));
     child.stderr.on("data", (chunk: Buffer) => (output += chunk));
-    child.on("error", reject);
+    child.on("error", (error) => {
+      if (patchDir) rmSync(patchDir, { recursive: true, force: true });
+      reject(error);
+    });
     child.on("close", (status) => {
+      if (patchDir) rmSync(patchDir, { recursive: true, force: true });
       if (status === 0) resolve();
       else reject(new Error(`make-bundle for ${lang} failed (${status}):\n${output}`));
     });
