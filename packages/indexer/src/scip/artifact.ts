@@ -188,6 +188,17 @@ export function scipArtifactProvider(options: ScipArtifactOptions): IndexProvide
       const diagnostics: string[] = [];
       const definitions = new Map<string, Definition>();
       const existingTargets = new Map<string, IndexedSymbol>();
+      const syntaxFiles = new Set(input.symbols.map((s) => s.file));
+      const identifierKey = (file: string, span: Span) =>
+        `${file}\0${span.startLine}:${span.startCol}-${span.endLine}:${span.endCol}`;
+      const existingByIdentifier = new Map<string, IndexedSymbol | undefined>();
+      for (const symbol of input.symbols) {
+        const entry = input.lookup.entry(symbol.id);
+        if (!entry?.identifier || entry.anchorOnly) continue;
+        const key = identifierKey(symbol.file, entry.identifier);
+        existingByIdentifier.set(key, existingByIdentifier.has(key) ? undefined : symbol);
+      }
+      const joinedIdentities = new Map<string, string>();
       const ambiguous = new Set<string>();
       const sourceHashes: Record<string, string> = {};
       const documents = new Map<
@@ -250,19 +261,32 @@ export function scipArtifactProvider(options: ScipArtifactOptions): IndexProvide
           const span = declaration && normalizeProviderRange(lines, declaration);
           const key = identity(file, occ.symbol);
           if (definitions.has(key) || existingTargets.has(key)) ambiguous.add(key);
-          // A checked syntax declaration supplies the body; an identifier only links the SCIP identity.
-          if (idSpan && idSpan.startLine === idSpan.endLine && !isLocalSymbol(occ.symbol)) {
-            const name = lines[idSpan.startLine - 1]!.slice(idSpan.startCol - 1, idSpan.endCol);
-            const entry = input.lookup.innermostEntry(file, idSpan.startLine, idSpan.startCol);
-            if (
-              entry &&
-              !entry.anchorOnly &&
-              contains(entry.span, idSpan) &&
-              entry.span.startLine === idSpan.startLine &&
-              entry.basePath.split(".").at(-1) === name &&
-              name === (info?.displayName || parsed?.descriptors.at(-1)?.name)
-            )
-              existingTargets.set(key, entry.symbol);
+          // Match the actual identifier, never another same-name identifier inside the declaration.
+          if (syntaxFiles.has(file)) {
+            if (!path || !KINDS[info?.kind ?? 0]) {
+              diagnostics.push(
+                `${file}: ${occ.symbol}: unsupported descriptor or kind; syntax update omitted`,
+              );
+              continue;
+            }
+            const name =
+              idSpan && idSpan.startLine === idSpan.endLine
+                ? lines[idSpan.startLine - 1]!.slice(idSpan.startCol - 1, idSpan.endCol)
+                : undefined;
+            const existing = idSpan && existingByIdentifier.get(identifierKey(file, idSpan));
+            if (!existing || name !== (info?.displayName || parsed?.descriptors.at(-1)?.name)) {
+              diagnostics.push(
+                `${file}: ${occ.symbol}: no unique checked identifier match; syntax update omitted`,
+              );
+              continue;
+            }
+            const other = joinedIdentities.get(existing.id);
+            if (other && other !== key) {
+              ambiguous.add(other);
+              ambiguous.add(key);
+            }
+            joinedIdentities.set(existing.id, key);
+            existingTargets.set(key, existing);
           }
           if (!idSpan || idSpan.startLine !== idSpan.endLine || !span || !contains(span, idSpan)) {
             diagnostics.push(
@@ -297,7 +321,7 @@ export function scipArtifactProvider(options: ScipArtifactOptions): IndexProvide
               identity: key,
               file,
               name,
-              path: declarationPath,
+              path: existingTargets.get(key)?.path ?? declarationPath,
               kind: KINDS[info?.kind ?? 0] ?? "other",
               identifier,
               declaration,
@@ -312,7 +336,6 @@ export function scipArtifactProvider(options: ScipArtifactOptions): IndexProvide
         definitions.delete(key);
         existingTargets.delete(key);
       }
-      const syntaxFiles = new Set(input.symbols.map((s) => s.file));
       const placedFiles = new Set([...definitions.values()].map((d) => d.fact.file));
       const nestingFiles = new Set([...placedFiles].filter((f) => !syntaxFiles.has(f)));
       const checkedParents = new Set<string>();

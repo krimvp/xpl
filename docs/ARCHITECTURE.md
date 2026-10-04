@@ -528,7 +528,12 @@ Other occurrences become `blind` and retain applicable heuristic hints. SCIP rol
 the importer reports calls as unsupported. `SymbolInformation.relationships` are diagnosed and omitted:
 implementation/override flags cannot establish class inheritance or relationship direction by themselves.
 Source-checked definition identifiers can link SCIP identities to existing same-file syntax symbols when
-containment, declaration start line and name agree. This creates no declaration from an identifier extent.
+the definition occurrence exactly matches a source-checked declaration identifier (file, line and column
+range), the descriptor and kind are supported, and the match is unique. Both references and range updates
+use that existing canonical ID, including its duplicate suffix. Missing identifier evidence, unsupported
+descriptors and ambiguous matches are diagnosed and omitted. Name and declaration start line do not establish
+identity. Checked identifier spans stay in the in-memory provider lookup; they add no stored index field.
+This creates no declaration from an identifier extent.
 External symbols and accessor targets without checked definitions never create local declarations.
 Relationship coverage requires retained checked targets, either imported or linked to existing symbols.
 A range-less standalone artifact with no targets cannot earn `precise` or satisfy `require`; explicit

@@ -62,7 +62,7 @@ export interface ProviderDeclaration {
   identity: string;
   file: string;
   name: string;
-  /** Pre-dedup dotted path. Omitted: name. Canonical suffixes are assigned by xpl. */
+  /** Pre-dedup dotted path, or an existing canonical path for an identifier-checked range update. */
   path?: string;
   kind: IndexedSymbol["kind"];
   parent?: string;
@@ -282,7 +282,11 @@ export function normalizeProvider(
     ).entries;
     built.forEach((entry, i) => identities.set(list[i]!.fact.identity, entry.symbol.id));
     built.forEach((entry, i) => factsById.set(entry.symbol.id, list[i]!.fact));
-    for (const entry of built) entry.symbol.provider = 0;
+    built.forEach((entry, i) => {
+      entry.symbol.provider = 0;
+      const identifier = identifiers.get(list[i]!.fact.identity);
+      if (identifier) entry.identifier = identifier;
+    });
     entries.push(...built);
   }
   for (const entry of entries) {
