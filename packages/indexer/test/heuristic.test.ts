@@ -715,13 +715,13 @@ describe("member calls: this, fields, locals, parameters, statics", () => {
     expect(r).toContain("a.ts#f -> b.ts#makeQueue (call)");
   });
 
-  it("parameters and typed locals resolve through their annotation, `T | undefined` and Promise unwrapping", async () => {
+  it("parameters and typed locals resolve through their annotation and `T | undefined`", async () => {
     const r = await refs(
       {
         "queue.ts": queueTs,
         "a.ts": src(
           "import { Queue } from './queue';",
-          "function f(q: Queue, maybe: Queue | undefined, later: Promise<Queue>) {",
+          "function f(q: Queue, maybe: Queue | undefined) {",
           "  q.push(1);",
           "  maybe.pop();",
           "  const typed: Queue = getIt();",
@@ -731,9 +731,11 @@ describe("member calls: this, fields, locals, parameters, statics", () => {
       },
       "call",
     );
-    expect(r).toContain("a.ts#f -> queue.ts#Queue.push (call)");
-    expect(r).toContain("a.ts#f -> queue.ts#Queue.pop (call)");
-    expect(r).toContain("a.ts#f -> queue.ts#Queue.requeue (call)");
+    expect(r).toEqual([
+      "a.ts#f -> queue.ts#Queue.push (call)",
+      "a.ts#f -> queue.ts#Queue.pop (call)",
+      "a.ts#f -> queue.ts#Queue.requeue (call)",
+    ]);
   });
 
   it("chains: this.a.b.c(), calls on call results, module-level variables", async () => {
@@ -1189,41 +1191,56 @@ describe("references carry positions and provenance", () => {
         "}",
       ),
     });
-    expect(index.refs.length).toBeGreaterThan(0);
-    for (const ref of index.refs) {
-      expect(ref.resolution).toBe("heuristic");
-      expect(ref.site.startCol).toBeGreaterThanOrEqual(1);
-      expect(ref.site.endCol).toBeGreaterThanOrEqual(1);
-      expect(ref.from).toMatch(/^[^#]+#/);
-      expect(ref.to).toMatch(/^[^#]+#/);
-      const symbolIds = new Set(index.symbols.map((s) => s.id));
-      for (const id of [ref.from, ref.to]) {
-        const [file, path] = [id.slice(0, id.indexOf("#")), id.slice(id.indexOf("#") + 1)];
-        expect(index.files.some((f) => f.path === file)).toBe(true);
-        if (path !== "") expect(symbolIds.has(id)).toBe(true);
-      }
-    }
-    const call = index.refs.find((r) => r.kind === "call")!;
-    expect(call).toEqual({
-      from: "a.ts#f",
-      to: "queue.ts#Queue.pop",
-      kind: "call",
-      site: { startLine: 3, endLine: 3, startCol: 3, endCol: 9 },
-      resolution: "heuristic",
+    const site = (line: number, startCol: number, endCol: number) => ({
+      startLine: line,
+      endLine: line,
+      startCol,
+      endCol,
     });
+    expect(index.refs).toEqual([
+      {
+        from: "a.ts#",
+        to: "queue.ts#Queue",
+        kind: "import",
+        site: site(1, 10, 14),
+        resolution: "heuristic",
+      },
+      {
+        from: "a.ts#f",
+        to: "queue.ts#Queue",
+        kind: "type-ref",
+        site: site(2, 22, 26),
+        resolution: "heuristic",
+      },
+      {
+        from: "a.ts#f",
+        to: "queue.ts#Queue.pop",
+        kind: "call",
+        site: site(3, 3, 9),
+        resolution: "heuristic",
+      },
+      {
+        from: "queue.ts#Queue.create",
+        to: "queue.ts#Queue",
+        kind: "type-ref",
+        site: site(5, 20, 24),
+        resolution: "heuristic",
+      },
+    ]);
   });
 
-  it("refs are sorted by file and position, and duplicated sites are reported once", async () => {
+  it("refs are sorted by file and position; two calls on one line are two references", async () => {
     const { index } = await indexFiles({
       "z.ts": "import { a } from './a';\nexport const z = a();\n",
       "a.ts": "export function a() {}\nexport function b() { a(); a(); }\n",
     });
-    const positions = index.refs.map(
-      (r) => `${r.from.split("#")[0]}:${r.site.startLine}:${r.site.startCol}`,
-    );
-    expect(positions).toEqual([...positions].sort());
-    const calls = index.refs.filter((r) => r.from === "a.ts#b");
-    expect(calls).toHaveLength(2);
-    expect(new Set(calls.map((c) => c.site.startCol)).size).toBe(2);
+    expect(
+      index.refs.map((r) => `${r.from} ${r.site.startLine}:${r.site.startCol} ${r.kind} ${r.to}`),
+    ).toEqual([
+      "a.ts#b 2:23 call a.ts#a",
+      "a.ts#b 2:28 call a.ts#a",
+      "z.ts# 1:10 import a.ts#a",
+      "z.ts#z 2:18 call a.ts#a",
+    ]);
   });
 });

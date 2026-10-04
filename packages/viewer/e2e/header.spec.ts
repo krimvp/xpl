@@ -10,17 +10,14 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 import {
   byId,
   fitAll,
+  type Loose,
   openTourEditor,
-  readEmbeddedBundle,
+  openVariant,
   screenshotPath,
   stateOf,
   TS_BUNDLE,
   watchProblems,
-  withBundle,
 } from "./helpers.js";
-
-/** The embedded bundle is edited as loose JSON: many shapes, none worth typing here. */
-type Loose = Record<string, any>;
 
 const EXTRA_TITLES = [
   "xpl architecture: the four packages and the skill",
@@ -91,15 +88,17 @@ async function openMany(
   size: { width: number; height: number },
   query = "?mode=explore",
 ): Promise<{ ids: string[]; titles: string[] }> {
-  const { html, bundle } = readEmbeddedBundle();
-  const ids = withManyViews(bundle);
-  const titles = (bundle.explainer as Loose).views.map((v: Loose) => v.title as string);
-  await page.setViewportSize(size);
-  await page.route("http://xpl.test/**", (route) =>
-    route.fulfill({ contentType: "text/html", body: withBundle(html, bundle) }),
+  let ids: string[] = [];
+  let titles: string[] = [];
+  await openVariant(
+    page,
+    (bundle) => {
+      ids = withManyViews(bundle);
+      titles = bundle.explainer.views.map((v: Loose) => v.title as string);
+    },
+    query,
+    size,
   );
-  await page.goto(`http://xpl.test/${query}`);
-  await page.waitForFunction(() => window.__xpl !== undefined);
   return { ids, titles };
 }
 
@@ -222,7 +221,6 @@ for (const size of [
     }) => {
       const problems = watchProblems(page);
       const { ids, titles } = await openMany(page, size);
-      expect(ids).toHaveLength(16);
 
       await viewsButton(page).click();
       await expect(viewsMenu(page)).toBeVisible();
@@ -273,12 +271,12 @@ for (const size of [
       const last = tab(page, ids.at(-1)!);
 
       // At the start: more to the right only.
-      expect(await scrollLeftOf(page)).toBe(0);
+      await expect.poll(() => scrollLeftOf(page)).toBe(0);
       await expect(frame).toHaveAttribute("data-more-start", "false");
       await expect(frame).toHaveAttribute("data-more-end", "true");
       await expect(start).toHaveCSS("opacity", "0");
       await expect(end).toHaveCSS("opacity", "1");
-      expect(await tabInSight(page, ids[0]!)).toBe(true);
+      await expect.poll(() => tabInSight(page, ids[0]!)).toBe(true);
       expect(await tabInSight(page, ids.at(-1)!)).toBe(false);
 
       // The mouse wheel, which turns up and down, moves the strip sideways.
@@ -309,19 +307,20 @@ for (const size of [
         clip: { x: 0, y: 0, width: size.width, height: 120 },
       });
 
-      // The arrow of the start takes the strip back, a page at a time, to the first tab.
+      // The arrow of the start takes the strip back, page by page, to the first tab.
       for (let pages = 0; (await scrollLeftOf(page)) > 0; pages++) {
         expect(pages, "the strip gets to its start").toBeLessThan(20);
         const from = await scrollLeftOf(page);
         await start.click();
         await expect.poll(() => scrollLeftOf(page)).toBeLessThan(from);
-        if (pages === 0) expect(from - (await scrollLeftOf(page))).toBeGreaterThan(0);
-        // Let the scroll settle before the next page.
+        // Let the scroll settle before the next page: two polls (100 ms or more apart) read the same.
+        let last = -1;
         await expect
           .poll(async () => {
-            const a = await scrollLeftOf(page);
-            await page.waitForTimeout(60);
-            return a === (await scrollLeftOf(page));
+            const now = await scrollLeftOf(page);
+            const settled = now === last;
+            last = now;
+            return settled;
           })
           .toBe(true);
       }
@@ -383,7 +382,7 @@ for (const size of [
       await openMany(page, size, `?view=${last}`);
       await expect(page.locator(`.diagram[data-view-id="${last}"]`)).toBeVisible();
       await expect(tab(page, last)).toHaveAttribute("aria-selected", "true");
-      expect(await tabInSight(page, last)).toBe(true);
+      await expect.poll(() => tabInSight(page, last)).toBe(true);
       expect(await scrollLeftOf(page)).toBeGreaterThan(500);
       await expectOneRowOnScreen(page, size);
       expect(problems).toEqual([]);
@@ -413,25 +412,23 @@ test.describe("keyboard", () => {
   test("the Views menu: arrows, Home, End, Enter, Escape and Tab", async ({ page }) => {
     const problems = watchProblems(page);
     const { ids } = await openMany(page, size);
-    const focusedId = () =>
-      page.evaluate(() => document.activeElement?.getAttribute("data-view-id") ?? null);
 
     // ArrowDown on the button opens the menu, on the current view.
     await viewsButton(page).focus();
     await page.keyboard.press("ArrowDown");
     await expect(viewsMenu(page)).toBeVisible();
-    expect(await focusedId()).toBe(ids[0]);
+    await expect(menuItem(page, ids[0]!)).toBeFocused();
     await page.keyboard.press("ArrowDown");
     await page.keyboard.press("ArrowDown");
-    expect(await focusedId()).toBe(ids[2]);
+    await expect(menuItem(page, ids[2]!)).toBeFocused();
     await page.keyboard.press("End");
-    expect(await focusedId()).toBe(ids.at(-1));
+    await expect(menuItem(page, ids.at(-1)!)).toBeFocused();
     await page.keyboard.press("ArrowDown");
-    expect(await focusedId(), "wraps round").toBe(ids[0]);
+    await expect(menuItem(page, ids[0]!), "wraps round").toBeFocused();
     await page.keyboard.press("ArrowUp");
-    expect(await focusedId(), "wraps round").toBe(ids.at(-1));
+    await expect(menuItem(page, ids.at(-1)!), "wraps round").toBeFocused();
     await page.keyboard.press("Home");
-    expect(await focusedId()).toBe(ids[0]);
+    await expect(menuItem(page, ids[0]!)).toBeFocused();
     await page.keyboard.press("ArrowDown");
     await page.keyboard.press("ArrowDown");
     await page.keyboard.press("ArrowDown");
@@ -448,7 +445,7 @@ test.describe("keyboard", () => {
     expect((await stateOf(page)).selection).toEqual(["file:src/queue.ts"]);
     await page.keyboard.press("Enter");
     await expect(viewsMenu(page)).toBeVisible();
-    expect(await focusedId()).toBe(ids[3]);
+    await expect(menuItem(page, ids[3]!)).toBeFocused();
     await page.keyboard.press("ArrowDown");
     await page.keyboard.press("Escape");
     await expect(viewsMenu(page)).toHaveCount(0);
@@ -495,8 +492,6 @@ test.describe("keyboard", () => {
   }) => {
     const problems = watchProblems(page);
     const { ids } = await openMany(page, size);
-    const focusedId = () =>
-      page.evaluate(() => document.activeElement?.getAttribute("data-view-id") ?? null);
 
     // Only the current tab is in the tab order.
     await expect(page.locator('.tab[tabindex="0"]')).toHaveCount(1);
@@ -504,19 +499,19 @@ test.describe("keyboard", () => {
     await expect(tab(page, ids[0]!)).toHaveAttribute("tabindex", "0");
     await tab(page, ids[0]!).focus();
     await page.keyboard.press("ArrowRight");
-    expect(await focusedId()).toBe(ids[1]);
+    await expect(tab(page, ids[1]!)).toBeFocused();
     await page.keyboard.press("End");
-    expect(await focusedId()).toBe(ids.at(-1));
+    await expect(tab(page, ids.at(-1)!)).toBeFocused();
     // The focused tab is brought in, clear of the arrows.
     await expect.poll(() => tabInSight(page, ids.at(-1)!)).toBe(true);
     await page.keyboard.press("ArrowRight");
-    expect(await focusedId(), "wraps round").toBe(ids[0]);
+    await expect(tab(page, ids[0]!), "wraps round").toBeFocused();
     await expect.poll(() => tabInSight(page, ids[0]!)).toBe(true);
     await page.keyboard.press("ArrowLeft");
-    expect(await focusedId()).toBe(ids.at(-1));
+    await expect(tab(page, ids.at(-1)!)).toBeFocused();
     await page.keyboard.press("ArrowLeft");
     await page.keyboard.press("ArrowLeft");
-    expect(await focusedId()).toBe(ids.at(-3));
+    await expect(tab(page, ids.at(-3)!)).toBeFocused();
     await expect.poll(() => tabInSight(page, ids.at(-3)!)).toBe(true);
     // Arrows only move the focus: the view is the same until Enter.
     expect((await stateOf(page)).viewId).toBe(ids[0]);

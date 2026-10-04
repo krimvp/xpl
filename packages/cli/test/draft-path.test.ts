@@ -229,11 +229,13 @@ describe("xpl draft path: a method a class inherits", () => {
     expect(view.steps!.filter((s) => s.from === s.to)).toEqual([]);
   });
 
-  it("an unknown method of a class still fails with the index's suggestions", async () => {
+  it("an unknown method of a class fails and says how to list the symbols of the file", async () => {
     const dir = await repo({ "ser.py": SERIALIZER });
     const r = await xpl(dir, "draft", "path", "d", "sym:ser.py#SafeSerializer.nothing");
     expect(r.code).toBe(1);
-    expect(r.err).toContain("not found");
+    expect(r.err).toBe(
+      'error: symbol "SafeSerializer.nothing" not found in ser.py. List the symbols of the file with `xpl outline --under file:ser.py`.',
+    );
   });
 });
 

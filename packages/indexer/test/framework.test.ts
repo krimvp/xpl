@@ -6,7 +6,6 @@ import {
   assembleSymbols,
   pointsToSpan,
   spanContains,
-  stripDuplicateSuffix,
 } from "../src/index.js";
 import type { Span, SymbolDraft } from "../src/index.js";
 
@@ -141,8 +140,6 @@ describe("assembleSymbols", () => {
     ]);
     expect(entries.map((e) => e.symbol.path)).toEqual(["x", "y", "x~2", "x~3"]);
     expect(entries.map((e) => e.basePath)).toEqual(["x", "y", "x", "x"]);
-    expect(stripDuplicateSuffix("x~3")).toBe("x");
-    expect(stripDuplicateSuffix("a.b")).toBe("a.b");
   });
 
   it("resolves parentPath to the draft with that path, preferring the one that contains the child", () => {

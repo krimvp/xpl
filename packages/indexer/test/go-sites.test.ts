@@ -558,7 +558,7 @@ describe("Go imports", () => {
       "raw <- example.com/m/raw «`example.com/m/raw`»",
     ]);
     // a package is a namespace: no importedName
-    expect(facts.imports.every((i) => i.importedName === undefined)).toBe(true);
+    expect(facts.imports.filter((i) => i.importedName !== undefined)).toEqual([]);
     // a dot import makes the package's names visible: a star export, like `from x import *`
     expect(facts.exports).toEqual([
       { name: "*", module: "os", site: { startLine: 7, startCol: 2, endLine: 7, endCol: 7 } },
@@ -681,9 +681,9 @@ describe("Go type facts", () => {
     expect(body.startLine).toBe(2);
     expect(body.endLine).toBe(4);
     expect(source.split("\n")[1]!.slice(body.startCol - 1, body.startCol)).toBe("{");
-    expect(
-      params.slice(0, 6).every((p) => p.visibleIn && p.visibleIn.startCol === body.startCol),
-    ).toBe(true);
+    expect(params.slice(0, 6).map((p) => p.visibleIn?.startCol)).toEqual(
+      Array(6).fill(body.startCol),
+    );
     // parameters of function declarations without a body have no scope, and none at all in function types
     const { facts: noBody } = await extract(
       "b.go",
@@ -858,7 +858,12 @@ describe("Go extraction never throws", () => {
       "package p\nfunc f() { for range { } }",
     ]) {
       const { facts } = await extract("a.go", source);
-      expect(Array.isArray(facts.symbols)).toBe(true);
+      // whatever it makes of the input, the symbols lie inside it
+      const lines = source.split("\n").length;
+      for (const s of facts.symbols) {
+        expect(s.range.startLine, source).toBeGreaterThanOrEqual(1);
+        expect(s.range.endLine, source).toBeLessThanOrEqual(lines);
+      }
     }
   });
 });

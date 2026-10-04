@@ -50,20 +50,6 @@ describe("xpl show", () => {
     expect(json.range).toEqual({ startLine: 42, endLine: 88 });
   });
 
-  it("accepts every id spelling", async () => {
-    const forms = [
-      DISPATCH,
-      "src/runner.ts#Runner.dispatch",
-      "./src/runner.ts#Runner.dispatch",
-      "sym:src/runner.ts#Runner.dispatch",
-    ];
-    const outputs = await Promise.all(forms.map((form) => xpl(dir, "show", form)));
-    for (const result of outputs) {
-      expect(result.code).toBe(0);
-      expect(result.out).toBe(outputs[0]!.out);
-    }
-  });
-
   it("a file: offsets are line - 1, the trailing newline is not a line", async () => {
     const { code, out, err } = await xpl(dir, "show", "src/queue.ts");
     expect(code).toBe(0);

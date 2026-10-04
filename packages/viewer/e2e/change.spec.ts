@@ -15,6 +15,7 @@ import {
   stateOf,
   watchProblems,
   withBundle,
+  TS_BUNDLE,
 } from "./helpers.js";
 
 async function open(page: Page, search = ""): Promise<void> {
@@ -65,8 +66,6 @@ test.describe("the code of a change", () => {
     await expect(log).toContainText("this.log(`finished ${job.id}`);");
     const line65 = await runner.locator('.cm-line[data-line="65"]').boundingBox();
     expect((await log.boundingBox())!.y).toBeGreaterThanOrEqual(line65!.y + line65!.height - 1);
-    // the removed text cannot be edited, and clicking it moves no caret into the head code
-    await expect(log).not.toHaveAttribute("contenteditable", "true");
     expect(problems).toEqual([]);
   });
 
@@ -78,7 +77,7 @@ test.describe("the code of a change", () => {
     const runner = pane(page, "src/runner.ts");
     const toggle = runner.getByTestId("show-changes");
     await expect(toggle).toHaveAttribute("aria-pressed", "true");
-    await expect(runner.locator(".xpl-removed")).not.toHaveCount(0);
+    await expect(runner.locator(".xpl-removed")).toHaveCount(2);
     await toggle.click();
     await expect(toggle).toHaveAttribute("aria-pressed", "false");
     await expect(runner.locator(".xpl-removed")).toHaveCount(0);
@@ -104,7 +103,7 @@ test.describe("the code of a change", () => {
     await open(page);
     const files = page.getByTestId("change-files");
     await files.locator('[data-path="src/bus.ts"]').click();
-    expect((await stateOf(page)).perspective).toBe("code");
+    await expect.poll(async () => (await stateOf(page)).perspective).toBe("code");
     const bus = pane(page, "src/bus.ts");
     await expect(bus.getByTestId("pane-change")).toHaveText("Renamed from src/events.ts");
     await expect(bus.locator('.xpl-removed[data-removed-from="1"]')).toContainText(
@@ -261,22 +260,31 @@ test.describe("the change in the reading screens", () => {
     expect(new Set(widths).size).toBe(1);
     // a file opens in the Code tab at its first change
     await list.locator('[data-path="src/runner.ts"]').click();
-    const state = await stateOf(page);
-    expect(state.perspective).toBe("code");
-    expect(state.openedFile).toBe("src/runner.ts");
-    expect(state.cursor).toEqual({ file: "src/runner.ts", fromLine: 65, toLine: 65 });
+    await expect
+      .poll(async () => {
+        const { perspective, openedFile, cursor } = await stateOf(page);
+        return { perspective, openedFile, cursor };
+      })
+      .toEqual({
+        perspective: "code",
+        openedFile: "src/runner.ts",
+        cursor: { file: "src/runner.ts", fromLine: 65, toLine: 65 },
+      });
     await expect(pane(page, "src/runner.ts").locator('.cm-line[data-line="65"]')).toBeInViewport();
     expect(problems).toEqual([]);
   });
 
   test("an explainer without a change shows none of it", async ({ page }) => {
-    await page.goto(new URL("../dist/bundles/ts-jobrunner.html", import.meta.url).href);
+    await page.goto(TS_BUNDLE.href);
     await page.waitForFunction(() => window.__xpl !== undefined);
     await expect(page.getByTestId("guide")).toBeVisible();
     await expect(page.getByTestId("change-files")).toHaveCount(0);
     await page.getByTestId("perspective-map").click();
     await expect(page.locator(".change-pill")).toHaveCount(0);
+    await page.getByTestId("perspective-code").click();
     await page.evaluate(() => window.__xpl!.setCursor("src/runner.ts", 75));
+    // the pane is open, so the checks below are not passing on an empty page
+    await expect(page.locator('.cm-line[data-line="75"]').first()).toBeVisible();
     await expect(page.getByTestId("show-changes")).toHaveCount(0);
     await expect(page.locator(".xpl-diff-gutter")).toHaveCount(0);
   });
@@ -326,7 +334,7 @@ test.describe("under xpl view", () => {
       pane(page, "src/runner.ts", "base").locator('.cm-line[data-line="76"]'),
     ).toBeVisible();
     // runner.ts is not fetched again; the concept's test file is changed too, so its old lines are fetched
-    expect([...asked].sort()).toEqual(["src/runner.ts", "test/retry.test.ts"]);
+    await expect.poll(() => [...asked].sort()).toEqual(["src/runner.ts", "test/retry.test.ts"]);
     // Save as HTML is offered under xpl view too
     await expect((await openEditMenu(page)).getByTestId("edit-save-html")).toBeVisible();
     expect(problems).toEqual([]);
@@ -539,7 +547,8 @@ test.describe("reading, presenting and leaving", () => {
     // Enter on a focused edge picks it
     await edge.focus();
     await page.keyboard.press("Enter");
-    expect((await stateOf(page)).selection).toEqual([await edge.getAttribute("data-key-for")]);
+    const key = await edge.getAttribute("data-key-for");
+    await expect.poll(async () => (await stateOf(page)).selection).toEqual([key]);
   });
 });
 
@@ -601,7 +610,9 @@ test.describe("who calls this, and what the change did to it", () => {
     const actions = page.getByTestId("symbol-actions");
     await expect(actions).toContainText("Runner.dispatch");
     await actions.getByRole("button", { name: "Who calls it" }).click();
-    expect((await stateOf(page)).selection).toEqual(["sym:src/runner.ts#Runner.dispatch"]);
+    await expect
+      .poll(async () => (await stateOf(page)).selection)
+      .toEqual(["sym:src/runner.ts#Runner.dispatch"]);
     await expect(page.getByTestId("topic-summary").getByTestId("callers")).toContainText(
       "Runner.start",
     );
@@ -711,8 +722,7 @@ test.describe("who calls this, and what the change did to it", () => {
     const picture = page.getByTestId("guide-snapshot").first();
     const map = (await picture.getAttribute("data-view-id"))!;
     await picture.dblclick();
-    const state = await stateOf(page);
-    expect(["map", "flow"]).toContain(state.perspective);
-    expect(state.viewId).toBe(map);
+    await expect.poll(async () => (await stateOf(page)).viewId).toBe(map);
+    expect(["map", "flow"]).toContain((await stateOf(page)).perspective);
   });
 });

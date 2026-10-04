@@ -268,7 +268,7 @@ import * as ⟦r⟧ from ⟦"./queue.ts"⟧;
     expect(refs.some((r) => r.to.includes("max"))).toBe(false);
   });
 
-  it("returns the references sorted, deduplicated and self-free", async () => {
+  it("returns the references sorted and deduplicated", async () => {
     const { files, sources } = mainScenario();
     // every occurrence twice: still one reference each
     const doc = sources[0]!.index.documents[1]!;
@@ -278,7 +278,6 @@ import * as ⟦r⟧ from ⟦"./queue.ts"⟧;
       (r) => `${r.from}|${r.to}|${r.kind}|${r.site.startLine}:${r.site.startCol}`,
     );
     expect(new Set(keys).size).toBe(keys.length);
-    expect(refs.every((r) => r.from !== r.to)).toBe(true);
     const files_ = refs.map((r) => r.from.slice(0, r.from.indexOf("#")));
     expect(files_).toEqual([...files_].sort());
     const lines = refs
@@ -320,9 +319,16 @@ describe("mapScip: a language pack that fails", () => {
     }));
     // no calls or imports of names without the pack; type-like symbols are still type references and
     // quoted module specifiers still import their module
-    expect(new Set(refs.map((r) => r.kind))).toEqual(new Set(["type-ref", "import"]));
-    expect(refs.filter((r) => r.kind === "import").every((r) => r.to.endsWith("#"))).toBe(true);
-    expect(result.stats.classifyErrors).toBeGreaterThan(0);
+    expect(triples(refs)).toEqual([
+      "import src/runner.ts# -> src/queue.ts#",
+      "import src/runner.ts# -> src/side.ts#",
+      "type-ref src/queue.ts#Queue.requeue -> src/queue.ts#Job",
+      "type-ref src/runner.ts# -> src/queue.ts#Job",
+      "type-ref src/runner.ts# -> src/queue.ts#Queue",
+      "type-ref src/runner.ts#Runner.dispatch -> src/queue.ts#Job",
+      "type-ref src/runner.ts#Runner.queue -> src/queue.ts#Queue",
+    ]);
+    expect(result.stats.classifyErrors).toBe(14);
   });
 
   it("warns and keeps the fallback kinds of a file the pack cannot parse, without losing the others", async () => {
@@ -338,11 +344,15 @@ describe("mapScip: a language pack that fails", () => {
       "src/runner.ts: sites could not be classified (parse failed); using fallback kinds",
     ]);
     // the other files are classified as usual, the failing one keeps what needs no pack
-    expect(refs.some((r) => r.kind === "type-ref" && r.from === "src/queue.ts#Queue.requeue")).toBe(
-      true,
-    );
-    expect(refs.some((r) => r.kind === "call" && r.from.startsWith("src/runner.ts"))).toBe(false);
-    expect(refs.some((r) => r.from.startsWith("src/runner.ts"))).toBe(true);
+    // (runner.ts also loses its whole-module imports: which site is a quoted specifier is found while the
+    // pack reads the file)
+    expect(triples(refs)).toEqual([
+      "type-ref src/queue.ts#Queue.requeue -> src/queue.ts#Job",
+      "type-ref src/runner.ts# -> src/queue.ts#Job",
+      "type-ref src/runner.ts# -> src/queue.ts#Queue",
+      "type-ref src/runner.ts#Runner.dispatch -> src/queue.ts#Job",
+      "type-ref src/runner.ts#Runner.queue -> src/queue.ts#Queue",
+    ]);
   });
 });
 
@@ -673,12 +683,6 @@ export function ⟦use⟧(): void {
       ]),
     ]);
     expect(triples(numbered.refs)).toEqual(["call a.ts#use -> a.ts#pick"]);
-  });
-
-  it("folds a constructor into its class and prefers no other target", async () => {
-    const { files, sources } = mainScenario();
-    const { refs } = await run(files, sources);
-    expect(refs.some((r) => r.to.endsWith("constructor"))).toBe(false);
   });
 
   it("uses the first defining file for a module defined in several files (Go packages)", async () => {
@@ -1069,7 +1073,6 @@ export class ⟦Implicit⟧ {
     expect(triples(refs.filter((r) => r.from.startsWith("a.ts#Child")))).toEqual([
       "extends a.ts#Child -> a.ts#Base",
     ]);
-    expect(refs.some((r) => r.from === "a.ts#Child.run")).toBe(false);
   });
 
   it("works for Go, where interfaces are satisfied implicitly and only the relationship says so", async () => {

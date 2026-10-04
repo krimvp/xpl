@@ -732,6 +732,7 @@ describe("classifySite agrees with the sites `extract` emits", () => {
         "    w.run(job, other);",
         "  }",
         "}",
+        "const o = { other };",
       ),
     );
     const at = (line: number, col: number) =>
@@ -749,6 +750,7 @@ describe("classifySite agrees with the sites `extract` emits", () => {
     expect(at(4, 7)).toMatchObject({ kind: "call" }); // `run`
     expect(at(4, 11)).toMatchObject({ kind: "read", bare: true }); // argument `job`
     expect(at(4, 16)).toMatchObject({ kind: "read", bare: true }); // argument `other`
+    expect(at(7, 13)).toMatchObject({ kind: "read", bare: true }); // shorthand `{ other }`
     expect(at(4, 6)).toBeUndefined(); // the `.` punctuation
     expect(at(99, 1)).toBeUndefined(); // outside the file
   });

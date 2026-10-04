@@ -40,7 +40,17 @@ covers the bug; do not replay it in core, CLI and e2e.
 - mocks of our own modules, or a mock that implements the behaviour being asserted;
 - a test name that promises more than its input exercises;
 - negative tests that pass for an unrelated reason (a different validation error than the one named);
-- dead production code whose only callers are tests.
+- a negative check with nothing positive before it: "shows no toggle" passes on a page that never drew the
+  pane; first assert what must be there;
+- an assertion that may not run: `if (res) expect(res.status)...` skips silently; assert the condition first
+  (`expect(r.ok).toBe(false); if (!r.ok) ...` is fine), or make the outcome certain;
+- `some(...)`/`every(...)` booleans, `toContain` or `> 0` where the whole list or count is known: the failure
+  says only "expected false to be true", wrong extras slip through, and `every` passes on an empty list;
+- e2e: a one-shot read after an action (`expect((await stateOf(page)).x)`, `document.activeElement`) instead
+  of a retrying `expect.poll` or web-first assertion (`toBeFocused`, `toHaveText`), or a fixed
+  `waitForTimeout` (only to give a "nothing else happens" check time to fail);
+- dead production code whose only callers are tests. `packages/cli/test/dead-exports.test.ts` fails on an
+  export no production source uses; a deliberate test seam goes in its `TEST_SEAMS` with the reason.
 
 ## What to keep
 

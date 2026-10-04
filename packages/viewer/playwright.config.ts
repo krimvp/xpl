@@ -9,7 +9,10 @@ export default defineConfig({
   globalSetup: "./e2e/global-setup.ts",
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
+  // The retry keeps a trace of the first failure; a test that then passes is flaky, and fails the run: a
+  // flake is a bug to find, never a pass.
   retries: process.env.CI ? 1 : 0,
+  failOnFlakyTests: !!process.env.CI,
   reporter: [["list"]],
   use: {
     ...devices["Desktop Chrome"],

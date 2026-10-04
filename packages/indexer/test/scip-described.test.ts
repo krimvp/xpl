@@ -114,32 +114,20 @@ describe("precise references replace heuristic ones per file", () => {
     expect(new Set(files)).toEqual(new Set(["lib/y.js", "src/a.ts", "src/c.ts", "tools/z.py"]));
   });
 
-  it("without describedFiles every file of the resolver's languages is replaced, as before", async () => {
+  // no describedFiles: every file of the resolver's languages is replaced, as before; a tool that described
+  // every file is the same, and leaves heuristicFiles absent (not zero)
+  it.each([
+    ["no describedFiles", undefined],
+    ["every file described", ["src/queue.ts", "src/a.ts", "src/b.ts", "src/c.ts"]],
+  ])("%s: the precise references replace all of the language", async (_, described) => {
     const { index } = await indexFiles(project, {
       precise: "auto",
-      resolvers: [fake({ languages: ["typescript"], refs: [pop] })],
+      resolvers: [fake({ languages: ["typescript"], refs: [pop], described })],
     });
     expect(summary(index.refs.filter((r) => r.from.startsWith("src/")))).toEqual([
       "precise call src/a.ts#runA -> src/queue.ts#Queue.pop",
     ]);
     expect(index.languages.typescript).toMatchObject({ refs: "precise", tool: "fake@1" });
-    expect("heuristicFiles" in index.languages.typescript!).toBe(false);
-  });
-
-  it("a tool that described every file leaves no heuristicFiles (absent, not zero)", async () => {
-    const { index } = await indexFiles(project, {
-      precise: "auto",
-      resolvers: [
-        fake({
-          languages: ["typescript"],
-          described: ["src/queue.ts", "src/a.ts", "src/b.ts", "src/c.ts"],
-          refs: [pop],
-        }),
-      ],
-    });
-    expect(summary(index.refs.filter((r) => r.from.startsWith("src/")))).toEqual([
-      "precise call src/a.ts#runA -> src/queue.ts#Queue.pop",
-    ]);
     expect("heuristicFiles" in index.languages.typescript!).toBe(false);
   });
 
