@@ -6,6 +6,7 @@
  * Merge keys (`<<`), empty keys, complex (`? ...`) keys and alias keys are not symbols. Duplicate paths
  * (repeated keys, several documents in one stream) are numbered `~2`, `~3`... by the framework.
  */
+import { STRUCTURE_SUPPORT } from "../analysis.js";
 import type { Node } from "web-tree-sitter";
 import { pointsToSpan } from "../ast.js";
 import { KeyCollector, MAX_KEY_DEPTH, MAX_NESTING } from "./keys.js";
@@ -141,6 +142,7 @@ class YamlWalker {
 
 export const yamlPack: LanguagePack = {
   id: "yaml",
+  capabilities: { ...STRUCTURE_SUPPORT },
   languages: ["yaml"],
   grammarFor: () => "yaml",
   packageScope: "file",

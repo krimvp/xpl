@@ -2,6 +2,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
 import { BUNDLE_SCHEMA, collectAnchors } from "@xpl/core";
+import { buildIndex, writeIndex } from "@xpl/indexer";
 import { findViewerHtml, viewerHtmlCandidates } from "../src/viewer-html.js";
 import {
   bundleOf,
@@ -63,6 +64,38 @@ const REFERENCED = [
 ];
 
 describe("xpl bundle", () => {
+  it("retains observed failures and abilities through a saved index and a pruned, packed HTML bundle", async () => {
+    const dir = cloneDir(demo);
+    const { index } = await buildIndex({
+      root: dir,
+      precise: "auto",
+      resolvers: [
+        {
+          id: "calls-only",
+          languages: ["typescript"],
+          capabilities: { call: "supported" },
+          async resolve() {
+            throw new Error("tool unavailable");
+          },
+        },
+      ],
+    });
+    await writeIndex(dir, index);
+    expect((await xpl(dir, "new", "coverage")).code).toBe(0);
+    const result = await invoke(["bundle", "coverage", "-o", "coverage.html"], {
+      cwd: dir,
+      env: viewerEnv,
+    });
+    expect(result.code).toBe(0);
+    const embedded = bundleOf(readFile(dir, "coverage.html")).index;
+    expect(embedded.pruned).toMatchObject({ files: 12, symbols: 160, refs: 297 });
+    expect(embedded.analysis).toEqual(index.analysis);
+    expect(
+      embedded.analysis
+        ?.find((r) => r.provider === "calls-only")
+        ?.results.find((r) => r.capabilities.includes("call")),
+    ).toMatchObject({ status: "failed", analyzedFiles: [] });
+  });
   it("refuses stale-index validation and export, including --allow-drift and the skip-check environment", async () => {
     const dir = cloneDir(demo);
     editFile(dir, "src/queue.ts", (text) =>

@@ -32,6 +32,7 @@
  */
 import type { Node, Tree } from "web-tree-sitter";
 import type {
+  AnalysisCapabilities,
   FileLanguage,
   FilePath,
   IndexedSymbol,
@@ -269,6 +270,8 @@ export interface InferRefsInput {
 // ─── The pack ─────────────────────────────────────────────────────────────────────────────────────
 
 export interface LanguagePack {
+  /** Independent advertised abilities. Missing keys are unsupported. */
+  readonly capabilities: AnalysisCapabilities;
   /** Pack id, e.g. "typescript" (one pack may serve several file languages). */
   readonly id: string;
   /** The `IndexedFile.language` values this pack handles. */

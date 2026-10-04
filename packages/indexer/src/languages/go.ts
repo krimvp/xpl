@@ -43,6 +43,7 @@
  * their directory name, and package-level variables (of another file, or `pkg.Var`) as receivers: the resolver
  * looks type facts up per file.
  */
+import { STRUCTURE_SUPPORT, HEURISTIC_SUPPORT } from "../analysis.js";
 import type { FileLanguage } from "@xpl/core";
 import type { GrammarId } from "../wasm-files.js";
 import { classifyGoSite } from "./go/classify.js";
@@ -54,6 +55,7 @@ import { offByDefault } from "./go/build.js";
 
 export const goPack: LanguagePack = {
   id: "go",
+  capabilities: { ...STRUCTURE_SUPPORT, ...HEURISTIC_SUPPORT, declarationRanges: "partial" },
   languages: ["go"],
   grammarFor(_language: FileLanguage): GrammarId {
     return "go";

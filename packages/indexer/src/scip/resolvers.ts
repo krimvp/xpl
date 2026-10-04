@@ -6,6 +6,7 @@
  */
 import type { FileLanguage, FilePath } from "@xpl/core";
 import type { PreciseInput, PreciseOutput, PreciseResolver } from "../precise.js";
+import { PRECISE_SUPPORT } from "../analysis.js";
 import { mapScip } from "./map.js";
 import type { ScipSource } from "./map.js";
 import {
@@ -119,6 +120,7 @@ export function scipTypescriptResolver(options: ScipOptions = {}): PreciseResolv
   const tool = `scip-typescript@${SCIP_TYPESCRIPT_VERSION}`;
   return {
     id: "scip-typescript",
+    capabilities: PRECISE_SUPPORT,
     languages: TYPESCRIPT_LANGUAGES,
     async resolve(input) {
       return finish(
@@ -135,6 +137,7 @@ export function scipPythonResolver(options: ScipOptions = {}): PreciseResolver {
   const tool = `scip-python@${SCIP_PYTHON_VERSION}`;
   return {
     id: "scip-python",
+    capabilities: PRECISE_SUPPORT,
     languages: ["python"],
     async resolve(input) {
       return finish(
@@ -151,6 +154,7 @@ export function scipGoResolver(options: ScipOptions = {}): PreciseResolver {
   const tool = `scip-go@${SCIP_GO_VERSION.replace(/^v/, "")}`;
   return {
     id: "scip-go",
+    capabilities: PRECISE_SUPPORT,
     languages: ["go"],
     async resolve(input) {
       return finish(input, await runScipGo(input.root, input.files, runConfig(options)), tool);

@@ -38,16 +38,6 @@ describe("buildIndex", () => {
     expect(index.commit).toMatch(/^wt-[0-9a-f]{10}$/);
     expect(index.root).toBe(dir);
     expect(warnings).toEqual([]);
-    expect(Object.keys(index)).toEqual([
-      "schema",
-      "commit",
-      "tool",
-      "languages",
-      "root",
-      "files",
-      "symbols",
-      "refs",
-    ]);
   });
 
   it("lists every text file with language, hash and line count, sorted by path", async () => {
@@ -175,6 +165,11 @@ describe("buildIndex", () => {
     expect(symbol(index, "broken.ts", "fine")).toBeDefined();
     expect(warnings).toHaveLength(1);
     expect(warnings[0]).toMatch(/1 file\(s\) have syntax errors.*broken\.ts/);
+    const report = index.analysis?.find((r) => r.provider === "typescript");
+    expect(report?.capabilities.symbols).toBe("supported");
+    expect(
+      report?.results.find((r) => r.capabilities.includes("symbols") && r.status === "partial"),
+    ).toMatchObject({ analyzedFiles: ["broken.ts"] });
   });
 
   describe("syntax error warning", () => {

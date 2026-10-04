@@ -10,6 +10,7 @@ import { ConceptList } from "./components/ConceptList.js";
 import { Details } from "./components/Details.js";
 import { DiagramPane } from "./components/DiagramPane.js";
 import { DriftBanner } from "./components/DriftBanner.js";
+import { AnalysisCoverage } from "./components/AnalysisCoverage.js";
 import { ErrorBoundary } from "./components/ErrorBoundary.js";
 import { Header } from "./components/Header.js";
 import { Workspace } from "./components/Workspace.js";
@@ -123,6 +124,7 @@ function Shell() {
     <div className="app" data-mode={state.mode}>
       <Header />
       <div className="workspace-warnings">
+        <AnalysisCoverage />
         {state.sourceWarning && (
           <div className="drift-banner" role="alert" data-testid="source-warning">
             <p>

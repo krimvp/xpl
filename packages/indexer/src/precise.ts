@@ -4,8 +4,8 @@
  * `buildIndex` always computes heuristic references first. With `precise: "auto" | "require"` it then runs
  * the registered resolvers that cover a language present in the repository and, for those languages,
  * replaces the heuristic references by the resolver's own (`resolution: "precise"`) - file by file: the
- * heuristic references of a file the tool *described* (`PreciseOutput.describedFiles`) are dropped, the tool saw
- * every site there; files it did not describe (build-tagged Go files, files a Python project's pyright
+ * heuristic references of a file the tool *described* (`PreciseOutput.describedFiles`) are replaced for the
+ * supported kinds; this does not establish complete coverage. Files it did not describe (build-tagged Go files, files a Python project's pyright
  * configuration excludes, ...) keep their heuristic references, and `LanguageInfo.heuristicFiles` counts them.
  *
  *  - `"off"`: never runs a resolver.
@@ -22,7 +22,15 @@
  * scope), a way to parse a file with its language pack (`withFile`, then `pack.classifySite(ctx, line, col)`
  * gives the reference kind and site of an occurrence), and `warn` for non-fatal problems.
  */
-import type { FileLanguage, FilePath, IndexedFile, IndexedSymbol, Reference } from "@xpl/core";
+import type {
+  AnalysisCapabilities,
+  AnalysisResult,
+  FileLanguage,
+  FilePath,
+  IndexedFile,
+  IndexedSymbol,
+  Reference,
+} from "@xpl/core";
 import type { FileContext, LanguagePack } from "./languages/types.js";
 import type { SymbolLookup } from "./symbols.js";
 
@@ -52,6 +60,8 @@ export interface PreciseInput {
 }
 
 export interface PreciseOutput {
+  /** Explicit per-kind observations. Described files alone never establish complete relationship coverage. */
+  coverage?: Partial<Record<Reference["kind"], Omit<AnalysisResult, "capabilities">>>;
   /** References with `resolution: "precise"`, all from files of `PreciseInput.languages`. */
   refs: Reference[];
   /**
@@ -65,12 +75,15 @@ export interface PreciseOutput {
    * The files of `PreciseInput.languages` the tool described (for SCIP: the documents of its index). Their
    * heuristic references are replaced by `refs`; the heuristic references of the other files are kept. A file
    * that has a reference in `refs` counts as described. Omitted: every file of `languages` is described.
-   * A tool that described none of the files (and produced no references) counts as failed.
+   * A tool that described none of the files (and produced no references) counts as failed. This controls
+   * replacement only, never completeness: report per-kind observations through `coverage`.
    */
   describedFiles?: Iterable<FilePath>;
 }
 
 export interface PreciseResolver {
+  /** Missing kinds are unsupported. Omitted by older adapters: all kinds have unknown, partial ability. */
+  readonly capabilities?: AnalysisCapabilities;
   /** Stable id, e.g. "scip-typescript". */
   readonly id: string;
   /** `IndexedFile.language` values this resolver can resolve (typescript, tsx and javascript for scip-typescript). */

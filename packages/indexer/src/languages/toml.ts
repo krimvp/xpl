@@ -19,6 +19,7 @@
  *
  * The files are `toml` in the index (`languageForPath` maps `.toml`), and the pack is found by that language.
  */
+import { STRUCTURE_SUPPORT } from "../analysis.js";
 import type { Node } from "web-tree-sitter";
 import { pointsToSpan } from "../ast.js";
 import { KeyCollector, MAX_KEY_DEPTH, MAX_NESTING } from "./keys.js";
@@ -181,6 +182,7 @@ class TomlWalker {
 
 export const tomlPack: LanguagePack = {
   id: "toml",
+  capabilities: { ...STRUCTURE_SUPPORT },
   languages: ["toml"],
   grammarFor: () => "toml",
   packageScope: "file",

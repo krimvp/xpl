@@ -110,6 +110,8 @@ export interface SymbolIndex {
   symbols: IndexedSymbol[];
   refs: Reference[];
   resources?: ResourceReference[];
+  /** Provider abilities and observed run coverage. Absent on legacy indexes: coverage is unknown. */
+  analysis?: AnalysisReport[];
   /**
    * Set when this index was cut down for a bundle (`xpl bundle` embeds a pruned one by default, see
    * `pruneIndex`): how many files, symbols and references the full index had. Every file entry is kept, so
@@ -117,6 +119,31 @@ export interface SymbolIndex {
    * still describes the full index. Absent on a complete index (everything `xpl index` writes).
    */
   pruned?: { files: number; symbols: number; refs: number };
+}
+
+/** Independent source claims and relationship kinds that an analyzer can check. */
+export type AnalysisCapability =
+  "fileAnchors" | "symbols" | "declarationRanges" | "nesting" | Reference["kind"];
+/** Missing keys mean unsupported, never inferred from symbols or references. */
+export type AnalysisCapabilities = Partial<Record<AnalysisCapability, "supported" | "partial">>;
+export interface AnalysisResult {
+  /** Capabilities with the same observed outcome, grouped to avoid repeating file lists. */
+  capabilities: AnalysisCapability[];
+  status: "supported" | "partial" | "unsupported" | "failed";
+  analyzedFiles: FilePath[];
+  /** Reader-facing limits; no tool commands, paths to executables, or stack traces. */
+  limitations: string[];
+}
+export interface AnalysisReport {
+  /** Stable provider id, for diagnostics rather than reader-facing text. */
+  provider: string;
+  /** Advertised abilities, separate from the results of this run. */
+  capabilities: AnalysisCapabilities;
+  /** Files in scope, including those not analyzed or whose analysis failed. */
+  files: FilePath[];
+  results: AnalysisResult[];
+  /** Diagnostic detail for authors. Reader summaries use only the results' limitations. */
+  diagnostics?: string[];
 }
 
 /** (amended) One entry of `SymbolIndex.languages`. */
@@ -129,6 +156,7 @@ export interface LanguageInfo {
    * Where this language's references come from. "precise": resolved by a SCIP indexer.
    * "heuristic": scope-aware tree-sitter resolver; treat as hints. "none": no references are
    * extracted for this language (e.g. yaml, json, toml, text).
+   * This is a coarse compatibility label; independent support and run coverage live in `analysis`.
    */
   refs: "precise" | "heuristic" | "none";
   /** Tool that produced the references, e.g. "scip-typescript@0.4.0". */
@@ -136,8 +164,8 @@ export interface LanguageInfo {
   /**
    * Only with `refs: "precise"`: how many files of this language keep the heuristic resolver's references
    * because the precise tool did not describe them (excluded by build constraints or by the tool's own
-   * configuration, unreadable, ...). References from every other file of the language are precise; those of
-   * these files have `resolution: "heuristic"`. Absent when the tool described every file.
+   * configuration, unreadable, ...). Other files may also keep heuristic kinds a precise provider cannot
+   * check. Read each reference's resolution and the analysis reports. Absent when the tool described every file.
    */
   heuristicFiles?: number;
 }
