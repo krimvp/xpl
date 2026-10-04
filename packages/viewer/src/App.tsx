@@ -125,6 +125,15 @@ function Shell() {
       <Header />
       <div className="workspace-warnings">
         <AnalysisCoverage />
+        {state.exportInfo?.status === "draft" && (
+          <div className="drift-banner" role="status" data-testid="draft-banner">
+            <p>
+              <strong>Draft preview.</strong> This snapshot is for review and repair. It has{" "}
+              {state.exportInfo.report.errors} readiness errors and{" "}
+              {state.exportInfo.report.warnings} reader warnings.
+            </p>
+          </div>
+        )}
         {state.sourceWarning && (
           <div className="drift-banner" role="alert" data-testid="source-warning">
             <p>

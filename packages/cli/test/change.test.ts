@@ -1,4 +1,5 @@
 /**
+ * These source-selection examples omit story text; HTML uses explicit draft preview.
  * `xpl change`, base anchors through the CLI (`apply`, `anchors`, `validate`, `show --at base`), `baseFiles` in
  * `xpl bundle`, and `GET /api/base-file`: against a small git repository with two commits.
  */
@@ -438,7 +439,8 @@ describe("bundle and server with a change", () => {
   let dir: string;
   // The viewer stub, so these tests never depend on the viewer build (CI runs them before any build).
   let env: { XPL_VIEWER_HTML: string };
-  const runBundle = (...argv: string[]) => invoke(["bundle", ...argv], { cwd: dir, env });
+  const runBundle = (...argv: string[]) =>
+    invoke(["bundle", "--draft", ...argv], { cwd: dir, env });
   beforeAll(async () => {
     dir = cloneDir(repo);
     expect((await xpl(dir, "change", "demo", "HEAD~1..HEAD")).code).toBe(0);

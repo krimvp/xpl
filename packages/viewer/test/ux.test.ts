@@ -1,19 +1,11 @@
 /**
  * The reader UX round of iteration 2: the tests of a guide section, the flow box's actor, the still
- * pictures of the guide, the flow start zoom in Present and "Save as HTML".
+ * pictures of the guide, the flow start zoom in Present.
  */
 import { describe, expect, it } from "vitest";
-import {
-  ExplainerModel,
-  hashText,
-  parseBundle,
-  serializeBundle,
-  sliceLines,
-  type IndexedSymbol,
-} from "@xpl/core";
+import { ExplainerModel, hashText, sliceLines, type IndexedSymbol } from "@xpl/core";
 import { indentColumns } from "../src/editor.js";
 import { sharedActor, stageActor, wrapWords } from "../src/layout/flowLayout.js";
-import { withExplainer } from "../src/saveHtml.js";
 import { stepTests } from "../src/stepTests.js";
 import {
   frameView,
@@ -286,56 +278,5 @@ describe("the guide's still pictures", () => {
   });
   it("have nothing to show before they have a width", () => {
     expect(snapshotView(0, 260, { width: 100, height: 100 }, undefined)).toBeUndefined();
-  });
-});
-
-describe("Save as HTML", () => {
-  it("saves the refreshed index and source, drops deleted files, and preserves freshness warnings", () => {
-    const original = makeBundle();
-    const index = structuredClone(original.index);
-    index.commit = "new-index";
-    const text = withExplainer(serializeBundle(original), original.explainer, {
-      index,
-      files: { "src/a.ts": "fresh" },
-      baseFiles: {},
-      sourceWarning: "Reindex source",
-    })!;
-    const saved = parseBundle(text);
-    expect(saved.index.commit).toBe("new-index");
-    expect(saved.files).toEqual({ "src/a.ts": "fresh" });
-    expect(saved.sourceWarning).toBe("Reindex source");
-    const current = parseBundle(
-      withExplainer(text, saved.explainer, { index, files: saved.files })!,
-    );
-    expect(current.sourceWarning).toBeUndefined();
-  });
-  it("puts the edited explainer in the data, keeps the rest, and drops the server", () => {
-    const bundle = makeBundle({ mode: "present", tour: "tour:demo", server: { api: "/api" } });
-    const edited = structuredClone(bundle.explainer);
-    edited.tours[0]!.steps[0]!.note = "### Edited </script> note";
-    const text = withExplainer(serializeBundle(bundle), edited)!;
-    expect(text).not.toContain("</script>");
-    const saved = parseBundle(text);
-    expect(saved.explainer.tours[0]!.steps[0]!.note).toBe("### Edited </script> note");
-    expect(saved.files).toEqual(bundle.files);
-    expect(saved.index).toEqual(bundle.index);
-    expect(saved.mode).toBe("present");
-    expect(saved.tour).toBe("tour:demo");
-    expect(saved.server).toBeUndefined();
-  });
-  it("keeps the source a server page fetched since it opened, so the copy opens without the server", () => {
-    const bundle = makeBundle({ server: { api: "/api" }, baseFiles: { "src/a.ts": "old a" } });
-    const text = withExplainer(serializeBundle(bundle), bundle.explainer, {
-      files: { "src/extra.ts": "fetched" },
-      baseFiles: { "src/b.ts": "old b" },
-    })!;
-    const saved = parseBundle(text);
-    expect(saved.files["src/extra.ts"]).toBe("fetched");
-    expect(saved.files["src/a.ts"]).toBe(bundle.files["src/a.ts"]);
-    expect(saved.baseFiles).toEqual({ "src/a.ts": "old a", "src/b.ts": "old b" });
-    expect(saved.server).toBeUndefined();
-  });
-  it("says so when the data is not a bundle", () => {
-    expect(withExplainer("{nope", makeBundle().explainer)).toBeUndefined();
   });
 });

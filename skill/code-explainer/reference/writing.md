@@ -15,6 +15,8 @@ Write the tour `summary` for the manager, the notes for the newcomer, and keep e
 
 Say each fact once, in the place where it belongs.
 
+Write every authored text before ready export, including frame labels, transition conditions, audience and technology. `xpl lint` checks all of them for TODO placeholders. A tour note is one stored field, including its heading and body.
+
 | Field                              | Says                                                                                     | Length                          | Format          |
 | ---------------------------------- | ---------------------------------------------------------------------------------------- | ------------------------------- | --------------- |
 | tour `summary`                     | what this is and why it matters; for a change: the behaviour change, the risk, the tests | 2-4 sentences (a change: 2-5)   | markdown        |
