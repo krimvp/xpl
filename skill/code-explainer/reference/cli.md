@@ -14,13 +14,33 @@
 
 **Exit codes:** 0 ok · 1 rejected or failed (bad id, rejected patch, a patch that changed nothing because the user owns everything it touches, `resolve --write` on a stale index, validation errors, `lint` findings, `bundle` with drifted or missing anchors) · 2 usage error.
 **Streams:** results, issue lists and rejections print on stdout (a rejection also exits 1); fatal errors (`error: ...`: unknown id, no index, bad JSON, unreadable file) and `warning:` lines go to stderr, so use `2>&1` to capture both. With `--json` there is one object on stdout, errors included (`{"ok": false, "error": ...}`).
-**Environment:** `XPL_CLI` (launcher: path of an `xpl.mjs` to run instead of the repo's build), `XPL_VIEWER_HTML` (viewer page for `view`/`bundle`), `XPL_SKIP_STALE_CHECK=1` (skip advisory freshness checks; strict validation and export still check), `XPL_SCIP_TIMEOUT_MS` (time limit of each SCIP indexer, default 10 minutes), `XPL_WASM_DIR` (where the tree-sitter `.wasm` files are), `XPL_DEBUG=1` (stack traces).
+**Environment:** `XPL_CLI` (launcher: path of an `xpl.mjs` overriding the installed CLI binding or development build), `XPL_VIEWER_HTML` (viewer page for `view`/`bundle`), `XPL_SKIP_STALE_CHECK=1` (skip advisory freshness checks; strict validation and export still check), `XPL_SCIP_TIMEOUT_MS` (time limit of each SCIP indexer, default 10 minutes), `XPL_WASM_DIR` (where the tree-sitter `.wasm` files are), `XPL_DEBUG=1` (stack traces).
 
 **Ids** are accepted loosely: `sym:src/a.ts#A.b`, `src/a.ts#A.b`, `file:src/a.ts`, `src/a.ts`, `dir:src`. The outputs always print the exact `sym:`/`file:`/`dir:` form: paste those into patches.
 
 **Staleness.** When the working tree changed since the index was built, commands print ``warning: index … does not match the working tree (wt-…): 2 changed (src/queue.ts, src/runner.ts). Line numbers and offsets may be off; run `xpl index`…``. Re-index before anchoring anything.
 
 ---
+
+## `xpl doctor [--agent none|claude] [--skill-dir <path>]`
+
+Diagnoses installed setup without downloading tools or starting authoring. Node >=22.12, artifact hashes
+and grammar loading are mandatory. Skill availability is optional by default; `--agent claude` makes
+the managed skill and Claude Code availability required. Optional git/npx/Go checks run local version
+commands. Missing precise prerequisites suggest `xpl index --precise off`; automatic precise mode may
+bootstrap tools and dependencies over the network. Presence is not a test of precise analysis,
+agent authentication or provider access. Required failures exit 1; JSON includes `ok`, `platform`,
+`agent`, `checks` (`id`, `required`, `status`, `detail`, `recovery`) and `network`.
+
+## `xpl skill install [--dir <path>]`
+
+Copies the bundled code-explainer skill to `~/.claude/skills/code-explainer`, or the chosen directory,
+and binds `bin/xpl` to this installed CLI. Rerun after updating or moving the CLI. Refuses symlinks,
+unmanaged directories, added files and locally edited skill files; move them aside first to preserve them.
+The current agent integration is Claude Code. Install/authenticate it separately and invoke the skill
+explicitly. Other agents can read the instructions, but their integration is unverified.
+Local reading, `index --precise off`, viewing and HTML export use bundled assets after setup.
+Precise tools/dependencies and agent authoring can have separate network requirements.
 
 ## `xpl index [--precise auto|off|require] [--commit c] [--scip artifact|manifest.json]`
 
