@@ -1,8 +1,8 @@
 # SCIP, Kythe and Joern CPG through the provider contract, 2026-10-04
 
-Issue #11, part of #6. Assessed against the provider contract of #10 (`feat/issue-10-providers`, PR #41).
-The question: can existing code-graph formats feed xpl's `IndexProvider` without changing what an explainer
-means, and is a production importer worth building?
+Issue #11, part of #6. Assessed against the provider contract of #10 (`feat/issue-10-providers`, PR #41, at
+`b3adbca`). The question: can existing code-graph formats feed xpl's `IndexProvider` without changing what an
+explainer means, and is a production importer worth building?
 
 **Decision, in short.**
 
@@ -10,7 +10,8 @@ means, and is a production importer worth building?
   `normalizeProvider` as the only place where source checks, IDs, hashes and positions are decided. No Kythe
   serving tables, no Joern graph database, no format-specific storage.
 - **No contract change is needed for #12.** All three formats mapped through `ProviderOutput` as it is.
-  Three rules every adapter must follow are now written down (§5), and one bug in #41 was found (§5.1).
+  Three rules every adapter must follow are now written down (§5). One trust-label bug was found in #41 and is
+  fixed there (§5.1).
 - **No production Kythe or CPG importer now.** Kythe gives the best Go facts of the three, but it only adds
   value where xpl has no SCIP tool, and its extraction setup is per language and build. CPG frontends differ too
   much, and gosrc2cpg skips whole statements. §6 says what would change this.
@@ -158,13 +159,17 @@ facts claim call coverage anyway (`cpg-claims-all-calls`):
 
 ## 5. Contract findings
 
-### 5.1 Bug in #41: the language trust label follows coverage, not resolution
+### 5.1 Found and fixed in #41: the language trust label followed coverage, not resolution
 
-`buildIndex` sets `languages.<lang>.refs = "precise"` and the provider's tool name when a provider has any usable
-relationship result. It never looks at the facts' `resolution`. In `cpg-claims-all-calls/adapted`, every merged
-call is `heuristic`, and `index.languages.go` still says `{ refs: "precise", tool: "joern@4.0.646" }`. That is
-exactly what #6 forbids ("the input format alone never determines trust"). Reported to #41 on 2026-10-04.
-Its round-1 fixes add per-result relationship resolution; `assess.mts` reproduces the case.
+At `e7d5e56`, `buildIndex` set `languages.<lang>.refs = "precise"` and the provider's tool name when a provider
+had any usable relationship result. It never looked at the facts' `resolution`. In
+`cpg-claims-all-calls/adapted`, every merged call was `heuristic`, yet `index.languages.go` said
+`{ refs: "precise", tool: "joern@4.0.646" }`. That is exactly what #6 forbids ("the input format alone never
+determines trust"). Review round 1 of #41 found the same defect.
+
+The fix (`448fa1f`) adds `AnalysisResult.resolution`, and the adapters here now set it: `precise` for Kythe and
+SCIP, `heuristic` for CPG. On the fixed branch, the same run labels Go `heuristic`. Every other number in this
+record is unchanged by the fix.
 
 ### 5.2 Rules for adapters (documentation, not a contract change)
 

@@ -570,9 +570,8 @@
       "goLanguageLabel": {
         "files": 10,
         "symbols": 158,
-        "refs": "precise",
-        "tool": "joern@4.0.646",
-        "heuristicFiles": 9
+        "refs": "heuristic",
+        "tool": "xpl-heuristic@0.0.0 (tree-sitter-go@0.25.0)"
       },
       "symbolIdsShared": 158,
       "symbolIdsSameLines": 158,
@@ -637,8 +636,8 @@
       "goLanguageLabel": {
         "files": 10,
         "symbols": 158,
-        "refs": "precise",
-        "tool": "joern@4.0.646"
+        "refs": "heuristic",
+        "tool": "xpl-heuristic@0.0.0 (tree-sitter-go@0.25.0)"
       },
       "symbolIdsShared": 158,
       "symbolIdsSameLines": 158,

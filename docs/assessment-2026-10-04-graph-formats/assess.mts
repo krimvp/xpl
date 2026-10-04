@@ -9,7 +9,7 @@
  */
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { splitLines, validateExplainer } from "@xpl/core";
+import { RELATIONSHIP_CAPABILITIES, splitLines, validateExplainer } from "@xpl/core";
 import type { AnalysisCapabilities, AnalysisReport, IndexedSymbol, SymbolIndex } from "@xpl/core";
 import { buildIndex, FileHasher } from "@xpl/indexer";
 import type {
@@ -52,6 +52,7 @@ function report(
   capabilities: AnalysisCapabilities,
   files: string[],
   limitations: Partial<Record<string, string>>,
+  resolution: "precise" | "heuristic",
 ): AnalysisReport {
   return {
     provider,
@@ -62,6 +63,8 @@ function report(
       status: level === "supported" ? "supported" : "partial",
       analyzedFiles: files,
       limitations: limitations[capability] ? [limitations[capability]!] : [],
+      // Relationship results say how their facts were resolved; structure results carry no resolution.
+      ...((RELATIONSHIP_CAPABILITIES as readonly string[]).includes(capability) ? { resolution } : {}),
     })),
   };
 }
@@ -271,7 +274,7 @@ function kytheProvider(file: string, tally: Tally): IndexProvider {
           report("kythe-artifact", capabilities, files, {
             declarationRanges: "Variables and fields have identifier anchors only.",
             implements: "Satisfaction has no source anchor.",
-          }),
+          }, "precise"),
         ],
       };
     },
@@ -378,7 +381,7 @@ function scipProvider(file: string, tally: Tally): IndexProvider {
         analysis: [
           report("scip-artifact", capabilities, files, {
             declarationRanges: "Only functions carry enclosing ranges.",
-          }),
+          }, "precise"),
         ],
       };
     },
@@ -536,10 +539,10 @@ function cpgProvider(
           {
             ...report("cpg-artifact", capabilities, files, {
               declarationRanges: "Type declarations have start positions only.",
-            }),
+            }, resolution),
             results: report("cpg-artifact", capabilities, files, {
               declarationRanges: "Type declarations have start positions only.",
-            }).results.map((r) =>
+            }, resolution).results.map((r) =>
               r.capabilities.includes("call")
                 ? { ...r, analyzedFiles: callFiles, limitations: ["Calls in defer, go and select statements are not in the graph."] }
                 : r,
