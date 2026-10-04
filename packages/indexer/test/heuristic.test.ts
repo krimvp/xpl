@@ -1199,6 +1199,7 @@ describe("references carry positions and provenance", () => {
     });
     expect(index.refs).toEqual([
       {
+        provider: 0,
         from: "a.ts#",
         to: "queue.ts#Queue",
         kind: "import",
@@ -1206,6 +1207,7 @@ describe("references carry positions and provenance", () => {
         resolution: "heuristic",
       },
       {
+        provider: 0,
         from: "a.ts#f",
         to: "queue.ts#Queue",
         kind: "type-ref",
@@ -1213,6 +1215,7 @@ describe("references carry positions and provenance", () => {
         resolution: "heuristic",
       },
       {
+        provider: 0,
         from: "a.ts#f",
         to: "queue.ts#Queue.pop",
         kind: "call",
@@ -1220,6 +1223,7 @@ describe("references carry positions and provenance", () => {
         resolution: "heuristic",
       },
       {
+        provider: 0,
         from: "queue.ts#Queue.create",
         to: "queue.ts#Queue",
         kind: "type-ref",

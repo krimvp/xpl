@@ -300,7 +300,7 @@ interface ExplainerPatch {
 
 ```ts
 buildIndex(opts: { root: string; commit?: string; precise?: "auto" | "off" | "require";
-                   languages?: string[]; resolvers?: readonly PreciseResolver[] })
+                   languages?: string[]; providers?: readonly IndexProvider[] })
   : Promise<{ index: SymbolIndex; warnings: string[] }>
 writeIndex(root: string, index: SymbolIndex): Promise<string>
 // atomic write of <root>/.explainer/index-<commit>.json; keeps `index-*.json` in .explainer/.gitignore
@@ -308,7 +308,7 @@ writeIndex(root: string, index: SymbolIndex): Promise<string>
 
 Pipeline: discover files → per file: read, hash, parse once, `pack.extract`, free the tree → assemble symbols
 (ids, `~N` suffixes, whole-line ranges, hashes, parents) → heuristic resolution of every site, plus the packs'
-`inferRefs` → precise resolvers replace references file by file → commit id → `SymbolIndex`. `tool` =
+`inferRefs` → providers normalize and merge declarations and references by capability and file → commit id → `SymbolIndex`. `tool` =
 `xpl-indexer@<v> web-tree-sitter@<v> <grammar>@<v> …`. A file with syntax errors is indexed anyway: one
 warning covers them all and names the first lines (`N file(s) have syntax errors; symbols near these lines may
 be incomplete: a.ts:12,40`; at most 5 files and 3 lines each), and errors a pack knows cost no symbol are not
@@ -318,7 +318,7 @@ string]`, and its recovery stays inside the tuple; for the JSON pack, the traili
 without symbols. References are sorted by file, position and kind. The same walk collects resource sites
 (`resources.ts`, TS/JS, Python, Go: literal paths and globs passed to file-reading and glob calls, relative
 imports of `.json`/`.yaml`/`.toml`), resolved against the indexed files into `SymbolIndex.resources` (§2.18).
-`resolvers` replaces the registry (tests inject fakes); `languages` restricts the build to some `FileLanguage`s
+`providers` replaces the semantic provider registry (tests inject fakes); `languages` restricts the build to some `FileLanguage`s
 (the CLI does not expose it).
 
 **Files.** `git ls-files --cached --others --exclude-standard` when `root` is inside a git work tree (limited
@@ -402,6 +402,67 @@ interface FileFacts {
 `IndexedSymbol.hash` = `hashText` of the symbol's full lines; `IndexedFile.hash` = `hashText` of the whole
 file.
 
+**Independent providers** (`src/providers.ts`). `IndexProvider` is the external seam for source-backed
+facts. `TreeSitterProvider` and the SCIP providers implement it. Providers may parse the supplied text,
+consume an artifact, or run a tool. No tree-sitter node or language-pack parser is required by the interface.
+The old `PreciseResolver` interface and registry were removed; `providers` is the build option.
+
+```ts
+interface IndexProvider {
+  id: string; languages: readonly FileLanguage[]; capabilities: AnalysisCapabilities;
+  analyze(input: ProviderInput): Promise<ProviderOutput>;
+}
+// Input: root, scoped languages, captured sources {path, language, text}, indexed files,
+// existing canonical symbols (full columns when known), SymbolLookup, cached readText, warn,
+// and an optional classify(file, candidates) callback returning plain site/module/statement facts.
+interface ProviderOutput {
+  provider: string; version: string; tool: string; configuration: string;
+  sourceHashes: Readonly<Record<FilePath, Hash>>;
+  declarations: readonly ProviderDeclaration[];
+  relationships: readonly ProviderRelationship[];
+  analysis: AnalysisReport[];
+  blind?: readonly { file: FilePath; line: number; col: number }[];
+}
+// Declaration: identity, file, name, optional pre-dedup path and parent identity, kind,
+// optional identifier and full declaration ranges. Syntax adapters may use parentPath/anchorOnly.
+// Relationship: from/to identities (or existing canonical IDs), file, kind, evidence, resolution.
+// ProviderRange: zero-based [line,column] start/end, end exclusive, encoding utf8 | utf16 | utf32.
+```
+
+`normalizeProvider` checks consumed-source hashes against the snapshot, converts positions without clamping,
+checks identifier spelling and its containment in the declaration, assigns canonical `<file>#<path>` IDs and
+source-ordered `~N` suffixes, and hashes the full declaration lines. Provider-local identities map to those
+IDs; explicit parents disambiguate duplicate paths. Identifier-only facts never become checked symbol
+anchors. No full declaration is inferred from an identifier extent. Unknown kinds, missing endpoints and
+invalid evidence are diagnosed and dropped, with the file removed from replacement coverage.
+
+`mergeProvider` replaces relationships only for the advertised kinds and explicitly analyzed files of
+supported or partial results. Failed, unsupported and unexamined scopes keep previous hints. Checked node
+replacement requires both symbols and declaration ranges; range-only coverage updates existing nodes without
+changing their identities. Nesting changes only under explicit nesting coverage. A blind occurrence preserves
+the smallest enclosing heuristic hint. Source and resolution provenance remains on each fact; report version,
+configuration and snapshot identities remain in the index and bundles. No format alone determines trust:
+each relationship explicitly says `heuristic` or `precise`. A generic reference is not converted to a call.
+
+Partial coverage is successful analysis with stated omissions; an empty result says nothing about completeness.
+An exception becomes a failed report in `auto` mode, preserving heuristic results. `require` fails for a missing
+provider, an exception or an attempt without usable analyzed capabilities/files. Reader summaries omit provider
+commands and diagnostics. Structural and relationship abilities remain independent.
+
+Cost and reuse: the syntax provider parses each source once for extraction; heuristic resolution stays inside
+it. SCIP runs per repository/project/module, with the timeout and fallback policy below, and may reparse sources
+through the optional plain classifier. The syntax adapter owns that reparsing. Both adapters use the same
+normalization and merge functions. The run snapshot covers indexed source and configuration files; configured
+external artifacts must report hashes of the source they actually consumed, not stamp current hashes onto old
+facts. The built-in SCIP adapters check source/config hashes before and after tool execution, including changes
+that leave positions in bounds. They cannot detect a file changed and restored during execution. `configuration`
+names the adapter's active profile (`builtin-packs` or `tool-defaults`); snapshot identity covers captured files.
+Toolchain/environment dependencies outside that snapshot are not reusable evidence. No cross-run cache is added:
+reuse is safe only when source, provider version and relevant configuration/dependency identities agree.
+
+This slice keeps SCIP relationship mapping over existing syntax declarations. SCIP-only declarations (#12)
+and Rust tags (#13) are separate adapters/import work; neither is implemented here.
+
 **Analysis coverage** (`core/src/analysis.ts`, `indexer/src/analysis.ts`). An `AnalysisReport` contains a
 stable `provider` id, advertised `capabilities`, scoped `files`, and observed `results`. Capabilities are
 independent: `fileAnchors`, `symbols`, `declarationRanges`, `nesting`, and each `Reference.kind`.
@@ -409,7 +470,7 @@ Advertised values are `supported` or `partial`; a missing key means unsupported.
 capabilities with the same `status` (`supported | partial | unsupported | failed`), `analyzedFiles`, and
 reader-facing `limitations`. Optional `diagnostics` retains author-facing warnings and failure reasons,
 which reader summaries do not render. Grouping avoids repeating identical file lists. This is provider-agnostic
-data in core; no runtime adapter contract or new language is introduced here.
+data in core; `IndexProvider` in the indexer returns these reports unchanged before source checks.
 
 All indexed files get file anchors. Configuration packs provide key symbols, ranges and nesting without
 relationships. Programming packs provide heuristic relationship hints; Python's heuristic pack has no
@@ -419,17 +480,19 @@ errors and extraction limits produce partial outcomes; config packs warn when ke
 structure exceeds nesting depth 64, or the file exceeds 2000 keys. Only affected files become partial.
 Extraction failures retain file anchors and record failed source analysis. Precise attempts record failures
 even after heuristic fallback.
-`PreciseResolver.capabilities` declares supported kinds; replacement preserves heuristic references for
-kinds the tool does not support. Older resolvers without declarations keep their previous replacement
-behaviour but report partial, unknown ability. `PreciseOutput.coverage` can explicitly report each kind;
-without it, described files and empty reference lists establish only partial coverage. Explicit unsupported
-or failed observations retain their status independently of advertised ability. Explicit success
-still becomes partial when files are missing, the ability is partial, or occurrences cannot be linked.
-The existing SCIP providers remain conservative: describing a document is not a completeness claim.
+`IndexProvider.capabilities` declares supported kinds; missing keys are unsupported. Replacement preserves
+heuristic references for kinds the provider does not support. `AnalysisReport.results` explicitly records
+which kinds and files were examined. The SCIP adapters use `relationshipOutput` to convert their mapped
+occurrences and per-kind observations into provider facts and the existing report. Described files and empty
+reference lists establish only partial coverage. Explicit unsupported or failed observations retain their
+status independently of advertised ability. Explicit success still becomes partial when files are missing,
+the ability is partial, or occurrences cannot be linked. The SCIP providers remain conservative:
+describing a document is not a completeness claim.
 
-Compatibility: the index schema stays `code-explainer/index@0`. `analysis` is optional so older indexes
-still load. No abilities or complete outcomes are inferred from language names, symbols, ranges or
-reference counts; legacy coverage is unknown. File anchors remain available for their indexed files.
+Compatibility: the index schema stays `code-explainer/index@0`. `analysis`, the shared
+`providers: { id, version }[]` table and fact `provider` positions into it are optional so older indexes still
+load. Reports optionally retain `version`, `configuration` and `snapshot` identities. No abilities or complete
+outcomes are inferred from language names, symbols, ranges or reference counts; legacy coverage is unknown. File anchors remain available for their indexed files.
 Pruning and packing preserve reports unchanged, so missing bundle edges never alter run coverage.
 `describeAnalysis` produces the same reader-facing summary for the CLI and viewer without provider ids.
 
@@ -449,7 +512,7 @@ Pruning and packing preserve reports unchanged, so missing bundle edges never al
 a value whose type is known (`this.queue`, `job.attempts`), that is not a call, a target or a declaration.
 Locals and parameters are not references: the pack leaves out a bare name that a function, block, loop,
 `catch`, comprehension or class body around the use binds, and the resolver decides the rest (only variables
-and fields count; in heuristic indexes a function or method used as a value, such as a callback or Go
+and fields count; in both modes a function or method used as a value, such as a callback or Go
 method value, remains a `read`, which does not establish invocation or recursion. A class or enum used as a value, such as `x instanceof C`,
 `isinstance(x, C)` or `Color.Red`, is a `type-ref`, as in precise mode). A Python `metaclass=M` is a `type-ref`. A call or assignment spanning more than
 10 lines is reported by its callee or target only. `from` is not given by the pack: the framework takes the
@@ -476,8 +539,7 @@ exactly like sites.
    class the file imports, then the same directory (Go: the same package before the imports). Ambiguity
    drops the site. Calls and writes only.
 
-A `read` site resolves by 1–4 and only to a variable or field: a re-export chain that finds a class or function
-drops it, and the nearest member of that name decides (a property that overrides a base-class attribute is not
+A `read` site resolves by 1–4 to a variable, field or function value; a class or enum becomes a type reference, and the nearest member of that name decides (a property that overrides a base-class attribute is not
 a variable, and the attribute below it is out of reach). An import binding marked `typeOnly` yields a
 `type-ref` reference instead of an `import`.
 
@@ -503,7 +565,7 @@ interface's, matched by name and a coarse signature check (parameter and result 
 unexported names count within one package only; empty interfaces, constraint interfaces and interfaces with
 an unresolvable embedded element (`io.Reader`) are skipped.
 
-**Precise resolution** (`src/scip/`). For each language present that a resolver covers, the SCIP indexer runs
+**Precise resolution** (`src/scip/`). For each language present that a provider covers, the SCIP indexer runs
 with a timeout (10 minutes, `XPL_SCIP_TIMEOUT_MS`), writing to a temp directory that is removed afterwards;
 `index.scip` is decoded by a small hand-rolled protobuf reader (no generated code). Commands as run:
 
@@ -516,29 +578,30 @@ with a timeout (10 minutes, `XPL_SCIP_TIMEOUT_MS`), writing to a temp directory 
 Mapping (`map.ts`): for every non-definition occurrence of a symbol whose definition lies in an indexed file,
 `from` = the innermost symbol at the occurrence (else the module scope) and `to` = the symbol whose name sits
 at the definition (a module or package → the module scope of the defining file, the alphabetically first for a
-Go package; a constructor → its class; a test block is never a target). `kind` and `site` come from the pack's
-`classifySite` (an `import` becomes a `type-ref` for a type-only import, by the syntax of the statement). The
+Go package; a constructor → its class; a test block is never a target). `kind` and `site` come through the syntax provider's plain
+classifier backed by `classifySite` (an `import` becomes a `type-ref` for a type-only import, by the syntax of the statement). The
 indexers do not tell reads from writes (scip-typescript sets no role, the others call everything a read), so
-the pack's syntax decides: a `read` is kept when its target is a variable of ours (a field, a constant), becomes a
-`call` when it is a function or method (used as a value: a callback, a method value, a property), and a class
-used as a namespace falls through to the rules below, a `bare` one
+the syntax adapter's plain classifier decides: a `read` is kept for a variable, field, constant,
+function or method. Taking a function value is not invocation. A class used as a namespace falls through
+to the rules below. A `bare` one
 (`ClassifiedSite.bare`: `LIMIT`, not `this.limit`) whose target is a class member is dropped (SCIP reports the
 property of an object-literal shorthand `{ retry }`, which reads no field), and a WriteAccess role turns it
 into a `write`. When the pack does not classify an occurrence: a quoted module specifier → `import` of the
 module scope (dropped when the same statement imports names), role Import → `import`, WriteAccess → `write`, a
 type-like symbol → `type-ref`; anything else, declarations included, is dropped. Also dropped: references to
 definitions nested in something that is not one of our symbols (parameters, local variables, instance
-attributes), occurrences that do not fit the file text (a warning counts them), self-references other than a call
-(recursion stays a `call`). `local N` symbols follow the same rules, so calls to functions nested in functions
+attributes), occurrences that do not fit the file text (a warning counts them), self-references other than a call or a function-value read
+(only a `call` establishes recursion). `local N` symbols follow the same rules, so calls to functions nested in functions
 stay. SCIP `is_implementation`
 relationships become `implements` references (Go interfaces are satisfied implicitly, so this is where precise
 Go gets them), unless an occurrence already said `extends`/`implements` or the member merely overrides a
 base-class member. SCIP ranges (0-based, end-exclusive, in the document's encoding: UTF-16 for scip-typescript
-and scip-python, UTF-8 bytes for scip-go) become 1-based, inclusive UTF-16 against the file on disk. Symbols
+and scip-python, UTF-8 bytes for scip-go) become 1-based, inclusive UTF-16 against the captured source snapshot. Invalid columns and split Unicode characters are rejected, never
+clamped into evidence. Symbols
 are matched across indexes without their package version, so the modules of a Go repository resolve each
 other.
 
-**Replacement is per file.** The files a tool *described* (`PreciseOutput.describedFiles`; for SCIP, the
+**Replacement is per file.** The files a tool *described* (`AnalysisReport.results[].analyzedFiles`; for SCIP, the
 documents of its index) replace heuristic references of supported, examined kinds with the tool's.
 Unsupported and explicitly failed kinds keep their heuristic hints. Files it did not describe (build-tagged
 Go files, files a Python project's pyright configuration excludes, unreadable ones) keep their heuristic
@@ -548,7 +611,7 @@ kinds all report failure or unsupported analysis has no usable precise analysis:
 and retains the heuristic label;
 required mode rejects it. The observed failure results and limits remain in the report. A file whose
 occurrences fall outside its text (`//line` directives of generated Go code) counts as not described. Where the tool saw an occurrence
-it could not link (`PreciseOutput.blind`), the innermost heuristic reference holding that position is kept,
+it could not link (`ProviderOutput.blind`), the innermost heuristic reference holding that position is kept,
 unless the tool has the same edge on that line. `precise: "auto"` (the default) turns a
 failed or missing tool into a warning and keeps the heuristic references; `"require"` fails instead; `"off"`
 never runs SCIP. Other environment: `XPL_WASM_DIR` (where the `.wasm` files come from: `dist/wasm/` next to
@@ -853,7 +916,9 @@ atomic: any error → `ok: false` and the input explainer, untouched.
   (`resolveFrames`), disambiguated lifeline labels. `flow.ts`: `processFlow(view)`, the stages and labelled
   transitions of a flow view (or a sequence read as a flow, `projected`). `related-files.ts`: `relatedFiles`,
   the config, test and `resources` files linked to a selection. `bundle.ts`: the viewer's data format (§5).
-  `index-pack.ts`: `packIndex` / `unpackIndex`, the compact index of a bundle (`xpl-index-pack@1`, §5).
+  `index-pack.ts`: `packIndex` / `unpackIndex`, the compact index of a bundle (`xpl-index-pack@1`, §5). Optional
+  trailing tuple positions refer to the index-level provider/version table; old tuples without provenance still
+  unpack. Unknown shapes stay plain objects.
   `prune.ts`: `pruneIndex`, the index cut down to what a bundle's viewer can draw (§5). `levels.ts`: the
   levels of an architecture explainer, a box's `opens` (`opensView`, `parentLevel`, `zoomTrail`), and boxes
   opened in place (`expandInPlace`, `canExpandInPlace`; §6). `glob.ts`, `constants.ts` (`DEFAULT_EDGE_KINDS`,

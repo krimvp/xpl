@@ -78,6 +78,7 @@ describe("inferRefs hook: what happens to the result", () => {
     const implemented = index.refs.filter((r) => r.kind === "implements");
     expect(implemented).toEqual([
       {
+        provider: 0,
         from: "b.go#T",
         to: "a.go#B",
         kind: "implements",

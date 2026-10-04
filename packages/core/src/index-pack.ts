@@ -32,15 +32,15 @@ const REF_KINDS: readonly Reference["kind"][] = [
 ];
 
 /**
- * `[id, kind, startLine, endLine, hash, parent]`: `id` and `parent` are positions in `ids` (`parent` -1: none),
+ * `[id, kind, startLine, endLine, hash, parent, provider?]`: `id` and `parent` are positions in `ids` (`parent` -1: none),
  * `kind` a position in `SYMBOL_KINDS`. The file and the path are the id's two parts.
  */
-type PackedSymbol = [number, number, number, number, string, number];
+type PackedSymbol = [number, number, number, number, string, number, number?];
 /**
- * `[from, to, kind, startLine, lines, startCol, endCol, precise]`: `from` and `to` are positions in `ids`, `kind`
+ * `[from, to, kind, startLine, lines, startCol, endCol, precise, provider?]`: `from` and `to` are positions in `ids`, `kind`
  * one in `REF_KINDS`, `lines` is `endLine - startLine`, a column 0 is none (columns start at 1), `precise` 1 or 0.
  */
-type PackedRef = [number, number, number, number, number, number, number, number];
+type PackedRef = [number, number, number, number, number, number, number, number, number?];
 
 export interface PackedIndex extends Omit<SymbolIndex, "symbols" | "refs"> {
   packing: typeof INDEX_PACKING;
@@ -99,14 +99,19 @@ export function packIndex(index: SymbolIndex): PackedIndex {
       symbol.id.slice(hash + 1) === symbol.path &&
       plainRange(symbol.range, false) &&
       (symbol.parent === undefined || typeof symbol.parent === "string") &&
-      hasKeys(
-        symbol,
-        symbol.parent === undefined
-          ? ["id", "file", "path", "kind", "range", "hash"]
-          : ["id", "file", "path", "kind", "range", "hash", "parent"],
-      );
+      (symbol.provider === undefined || Number.isInteger(symbol.provider)) &&
+      hasKeys(symbol, [
+        "id",
+        "file",
+        "path",
+        "kind",
+        "range",
+        "hash",
+        ...(symbol.parent === undefined ? [] : ["parent"]),
+        ...(symbol.provider === undefined ? [] : ["provider"]),
+      ]);
     if (!fits) return symbol;
-    return [
+    const tuple: PackedSymbol = [
       id(symbol.id),
       kind,
       symbol.range.startLine,
@@ -114,6 +119,8 @@ export function packIndex(index: SymbolIndex): PackedIndex {
       symbol.hash,
       symbol.parent === undefined ? -1 : id(symbol.parent),
     ];
+    if (symbol.provider !== undefined) tuple.push(symbol.provider);
+    return tuple;
   });
   const refs = (index.refs ?? []).map((ref): PackedRef | Reference => {
     const kind = REF_KINDS.indexOf(ref.kind);
@@ -125,9 +132,17 @@ export function packIndex(index: SymbolIndex): PackedIndex {
       (ref.resolution === "precise" || ref.resolution === "heuristic") &&
       plainRange(ref.site, cols) &&
       (!cols || ref.site.startCol! >= 1) &&
-      hasKeys(ref, ["from", "to", "kind", "site", "resolution"]);
+      (ref.provider === undefined || Number.isInteger(ref.provider)) &&
+      hasKeys(ref, [
+        "from",
+        "to",
+        "kind",
+        "site",
+        "resolution",
+        ...(ref.provider === undefined ? [] : ["provider"]),
+      ]);
     if (!fits) return ref;
-    return [
+    const tuple: PackedRef = [
       id(ref.from),
       id(ref.to),
       kind,
@@ -137,9 +152,17 @@ export function packIndex(index: SymbolIndex): PackedIndex {
       cols ? ref.site.endCol! : 0,
       ref.resolution === "precise" ? 1 : 0,
     ];
+    if (ref.provider !== undefined) tuple.push(ref.provider);
+    return tuple;
   });
   const { symbols: _symbols, refs: _refs, ...rest } = index;
-  return { ...rest, packing: INDEX_PACKING, ids, symbols, refs };
+  return {
+    ...rest,
+    packing: INDEX_PACKING,
+    ids,
+    symbols,
+    refs,
+  };
 }
 
 /** The plain index back from its packed form (equal to what was packed). */
@@ -149,7 +172,7 @@ export function unpackIndex(packed: PackedIndex): SymbolIndex {
     ...(rest as Omit<SymbolIndex, "symbols" | "refs">),
     symbols: symbols.map((entry): IndexedSymbol => {
       if (!Array.isArray(entry)) return entry;
-      const [at, kind, startLine, endLine, hash, parent] = entry;
+      const [at, kind, startLine, endLine, hash, parent, provider] = entry;
       const id = ids[at]!;
       const cut = id.indexOf("#");
       return {
@@ -160,11 +183,12 @@ export function unpackIndex(packed: PackedIndex): SymbolIndex {
         range: { startLine, endLine },
         hash,
         ...(parent === -1 ? {} : { parent: ids[parent]! }),
+        ...(provider === undefined ? {} : { provider }),
       };
     }),
     refs: refs.map((entry): Reference => {
       if (!Array.isArray(entry)) return entry;
-      const [from, to, kind, startLine, lines, startCol, endCol, precise] = entry;
+      const [from, to, kind, startLine, lines, startCol, endCol, precise, provider] = entry;
       return {
         from: ids[from]!,
         to: ids[to]!,
@@ -175,6 +199,7 @@ export function unpackIndex(packed: PackedIndex): SymbolIndex {
           ...(startCol === 0 ? {} : { startCol, endCol }),
         },
         resolution: precise === 1 ? "precise" : "heuristic",
+        ...(provider === undefined ? {} : { provider }),
       };
     }),
   };

@@ -1,13 +1,15 @@
+import { providerFacts } from "./helpers.js";
+import { PRECISE_SUPPORT } from "../src/analysis.js";
 /**
  * SCIP -> references (src/scip/map.ts). The SCIP indexes are synthetic (built with the encoder in
  * ./scip-encode.ts and decoded again), the repository is real: `buildIndex` builds the symbols and hands
- * the mapper the same `PreciseInput` a real run would get, with the real language packs classifying sites.
+ * the mapper the same `ProviderInput` a real run would get, with the real language packs classifying sites.
  */
 import { describe, expect, it } from "vitest";
 import type { FileLanguage, Reference, SymbolIndex } from "@xpl/core";
 import { buildIndex } from "../src/index.js";
-import type { PreciseInput, PreciseResolver } from "../src/index.js";
-import { documentPath, mapScip, toUtf16Offset } from "../src/scip/map.js";
+import type { ProviderInput, IndexProvider } from "../src/index.js";
+import { documentPath, mapScip } from "../src/scip/map.js";
 import type { ColumnEncoding, MapResult, ScipSource } from "../src/scip/map.js";
 import { PositionEncoding, SymbolRole } from "../src/scip/proto.js";
 import type { DocumentSpec, RelationshipSpec } from "./scip-encode.js";
@@ -23,27 +25,28 @@ interface Run {
   warnings: string[];
 }
 
-/** Build the repository, run the mapper as a precise resolver would, return what ends up in the index. */
+/** Build the repository, run the mapper as a precise provider would, return what ends up in the index. */
 async function run(
   files: Record<string, string>,
   sources: ScipSource[],
   languages: FileLanguage[] = TS_LANGUAGES,
-  tweak: (input: PreciseInput) => PreciseInput = (input) => input,
+  tweak: (input: ProviderInput) => ProviderInput = (input) => input,
 ): Promise<Run> {
   const dir = makeDir(files);
   let result: MapResult | undefined;
-  const resolver: PreciseResolver = {
+  const resolver: IndexProvider = {
+    capabilities: PRECISE_SUPPORT,
     id: "fake-scip",
     languages,
-    async resolve(input) {
+    async analyze(input) {
       result = await mapScip({ ...tweak(input), sources });
-      return { refs: result.refs, tool: "fake-scip@0" };
+      return providerFacts(input, { refs: result.refs, tool: "fake-scip@0" }, this);
     },
   };
   const { index, warnings } = await buildIndex({
     root: dir,
     precise: "auto",
-    resolvers: [resolver],
+    providers: [resolver],
   });
   if (!result) throw new Error("the resolver did not run");
   return { index, refs: index.refs, result, warnings };
@@ -257,6 +260,7 @@ import * as ⟦r⟧ from ⟦"./queue.ts"⟧;
     const read = refs.filter((r) => r.to === "src/runner.ts#Runner.queue" && r.kind === "read");
     expect(read).toEqual([
       {
+        provider: 1,
         kind: "read",
         from: "src/runner.ts#Runner.dispatch",
         to: "src/runner.ts#Runner.queue",
@@ -307,15 +311,12 @@ describe("mapScip: a language pack that fails", () => {
     const { files, sources } = mainScenario();
     const { refs, result } = await run(files, sources, TS_LANGUAGES, (input) => ({
       ...input,
-      withFile: (path, fn) =>
-        input.withFile(path, (ctx, pack) =>
-          fn(ctx, {
-            ...pack,
-            classifySite: () => {
-              throw new Error("pack bug");
-            },
-          }),
-        ),
+      classify: async (file, candidates) =>
+        (await input.classify!(file, candidates))?.map((c) => ({
+          ...c,
+          site: undefined,
+          failed: true,
+        })),
     }));
     // no calls or imports of names without the pack; type-like symbols are still type references and
     // quoted module specifiers still import their module
@@ -335,9 +336,9 @@ describe("mapScip: a language pack that fails", () => {
     const { files, sources } = mainScenario();
     const { refs, warnings } = await run(files, sources, TS_LANGUAGES, (input) => ({
       ...input,
-      withFile: (path, fn) => {
+      classify: (path, candidates) => {
         if (path === "src/runner.ts") return Promise.reject(new Error("parse failed"));
-        return input.withFile(path, fn);
+        return input.classify!(path, candidates);
       },
     }));
     expect(warnings).toEqual([
@@ -943,14 +944,14 @@ export function ⟦use⟧(): number {
     ]);
   });
 
-  it("a function read as a value is a call (it runs when the value is called), of itself too", async () => {
+  it("a function value remains a read, including its own name; it does not establish recursion", async () => {
     const { refs } = await run({ "a.ts": src.text }, [
       doc([
         [5, ts("a.ts", "other().")],
         [9, ts("a.ts", "use().")],
       ]),
     ]);
-    expect(triples(refs)).toEqual(["call a.ts#use -> a.ts#other", "call a.ts#use -> a.ts#use"]);
+    expect(triples(refs)).toEqual(["read a.ts#use -> a.ts#other", "read a.ts#use -> a.ts#use"]);
   });
 
   it("a plain read of a variable is a `read` (the pack says it is one, the symbol says it is a variable)", async () => {
@@ -961,13 +962,13 @@ export function ⟦use⟧(): number {
         [8, ts("a.ts", "counter.")],
       ]),
     ]);
-    // one reference per site; `other` read as a value is a call
+    // One reference per site; the function value and variables are reads.
     expect(triples(refs)).toEqual([
-      "call a.ts#use -> a.ts#other",
       "read a.ts#use -> a.ts#counter",
       "read a.ts#use -> a.ts#counter",
+      "read a.ts#use -> a.ts#other",
     ]);
-    expect(refs.filter((r) => r.kind === "read").map((r) => r.site.startLine)).toEqual([7, 9]);
+    expect(refs.filter((r) => r.kind === "read").map((r) => r.site.startLine)).toEqual([6, 7, 9]);
   });
 });
 
@@ -1129,37 +1130,6 @@ export class ⟦Implicit⟧ {
 
 // ─── Columns ──────────────────────────────────────────────────────────────────────────────────────
 
-describe("toUtf16Offset", () => {
-  const line = "aé🚀日b"; // a=1 byte, é=2, 🚀=4, 日=3, b=1
-  it("is the identity for UTF-16", () => {
-    expect(toUtf16Offset(line, 3, "utf16")).toBe(3);
-    expect(toUtf16Offset(line, 99, "utf16")).toBe(line.length);
-  });
-
-  it("converts UTF-8 byte offsets", () => {
-    expect(toUtf16Offset(line, 0, "utf8")).toBe(0);
-    expect(toUtf16Offset(line, 1, "utf8")).toBe(1); // after a
-    expect(toUtf16Offset(line, 3, "utf8")).toBe(2); // after é
-    expect(toUtf16Offset(line, 7, "utf8")).toBe(4); // after 🚀 (two UTF-16 units)
-    expect(toUtf16Offset(line, 10, "utf8")).toBe(5); // after 日
-    expect(toUtf16Offset(line, 11, "utf8")).toBe(6); // end
-    expect(toUtf16Offset(line, 99, "utf8")).toBe(6); // clamped
-    expect(toUtf16Offset(line, 2, "utf8")).toBe(2); // inside é: rounded up to its end
-  });
-
-  it("converts UTF-32 code point offsets", () => {
-    expect(toUtf16Offset(line, 1, "utf32")).toBe(1);
-    expect(toUtf16Offset(line, 2, "utf32")).toBe(2);
-    expect(toUtf16Offset(line, 3, "utf32")).toBe(4); // after 🚀
-    expect(toUtf16Offset(line, 5, "utf32")).toBe(6);
-  });
-
-  it("has a fast path for ASCII lines", () => {
-    expect(toUtf16Offset("plain ascii", 5, "utf8")).toBe(5);
-    expect(toUtf16Offset("plain ascii", 5, "utf32")).toBe(5);
-  });
-});
-
 describe("mapScip: position encodings", () => {
   // two symbols on one line, non-ASCII text before the reference: only correct columns find the right `from`
   const src = marked(`export class ⟦Target⟧ {}
@@ -1172,6 +1142,7 @@ export const label = "héllo 🚀 日本"; export const ⟦same⟧ = value insta
   ] as const;
 
   const expected = (): Reference => ({
+    provider: 1,
     from: "a.ts#same",
     to: "a.ts#Target",
     kind: "type-ref",
@@ -1202,6 +1173,17 @@ export const label = "héllo 🚀 日本"; export const ⟦same⟧ = value insta
   ] as const)("%s", async (_name, defaultEncoding, written, stated) => {
     const { refs } = await run(files, [source([doc(written, stated)], { defaultEncoding })]);
     expect(refs).toEqual([expected()]);
+  });
+
+  it("does not clamp a SCIP occurrence beyond the line into valid source evidence", async () => {
+    const good = await run(files, [source([doc("utf8")], { defaultEncoding: "utf8" })]);
+    expect(triples(good.refs)).toEqual(["type-ref a.ts#same -> a.ts#Target"]);
+    const broken = doc("utf8");
+    broken.occurrences!.at(-1)!.range = [1, 999, 1000];
+    const bad = await run(files, [source([broken], { defaultEncoding: "utf8" })]);
+    expect(bad.result.refs).toEqual([]);
+    expect(bad.result.misplaced).toEqual(["a.ts"]);
+    expect(bad.result.stats.outOfRange).toBe(1);
   });
 
   it("would misplace the reference if the columns were misread (sanity check of the scenario)", async () => {

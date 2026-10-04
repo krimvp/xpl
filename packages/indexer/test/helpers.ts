@@ -1,3 +1,4 @@
+import { relationshipOutput, PRECISE_SUPPORT } from "../src/analysis.js";
 /** Shared test helpers: temp directories, git repos, single-file extraction and small index queries. */
 import { execFileSync } from "node:child_process";
 import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -192,4 +193,17 @@ export function describeFixtureInvariants(fixture: string, index: () => SymbolIn
       expect(built.index.refs).toEqual(index().refs);
     });
   });
+}
+
+/** Fake tool results cross the real provider conversion and normalization seams. */
+export function providerFacts(
+  input: import("../src/providers.js").ProviderInput,
+  result: import("../src/providers.js").RelationshipResult,
+  provider: Partial<import("../src/providers.js").IndexProvider> = {},
+) {
+  return relationshipOutput(
+    input,
+    { id: provider.id ?? "test", capabilities: provider.capabilities ?? PRECISE_SUPPORT },
+    result,
+  );
 }

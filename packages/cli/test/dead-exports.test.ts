@@ -14,8 +14,8 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 
 /** Exports that only tests use, on purpose: each is the one way a test reaches a real seam. */
 const TEST_SEAMS: Record<string, string> = {
-  unregisterPreciseResolver:
-    "sets the real SCIP resolvers aside in build.test.ts (the PreciseResolver seam)",
+  unregisterProvider:
+    "sets the real SCIP resolvers aside in build.test.ts (the IndexProvider seam)",
   gridLayoutOf: "the grid fallback of graphLayout without making dagre fail",
 };
 

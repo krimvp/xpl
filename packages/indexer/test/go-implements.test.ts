@@ -1,3 +1,5 @@
+import { providerFacts } from "./helpers.js";
+import { PRECISE_SUPPORT } from "../src/analysis.js";
 /**
  * Implicit interface satisfaction: `LanguagePack.inferRefs` of the Go pack. A named type T implements an
  * interface I when T's method set (methods on T or *T in any file of its package, plus promoted ones) has every
@@ -6,7 +8,7 @@
 import { describe, expect, it } from "vitest";
 import type { Reference, SymbolIndex } from "@xpl/core";
 import { buildIndex } from "../src/index.js";
-import type { PreciseResolver } from "../src/index.js";
+import type { IndexProvider } from "../src/index.js";
 import { indexFiles, makeDir } from "./helpers.js";
 
 const src = (...lines: string[]): string => lines.join("\n") + "\n";
@@ -424,21 +426,24 @@ describe("implicit interfaces: the framework hook", () => {
     expect(keys).toEqual([...keys].sort((a, b) => a.localeCompare(b, "en", { numeric: true })));
   });
 
-  it("the inferred refs are heuristic refs: a precise resolver for Go replaces them", async () => {
+  it("the inferred refs are heuristic refs: a precise provider for Go replaces them", async () => {
     const dir = makeDir(files);
     const precise: Reference = {
+      provider: 1,
       from: "a.go#A",
       to: "a.go#Doer",
       kind: "implements",
-      site: { startLine: 3, endLine: 3 },
+      site: { startLine: 3, endLine: 3, startCol: 1, endCol: 15 },
       resolution: "precise",
     };
-    const fake: PreciseResolver = {
+    const fake: IndexProvider = {
+      capabilities: PRECISE_SUPPORT,
       id: "fake-go",
       languages: ["go"],
-      resolve: async () => ({ refs: [precise], tool: "fake-go@1" }),
+      analyze: async (input) =>
+        providerFacts(input, { refs: [precise], tool: "fake-go@1" }, { id: "fake-go" }),
     };
-    const { index } = await buildIndex({ root: dir, resolvers: [fake], commit: "x" });
+    const { index } = await buildIndex({ root: dir, providers: [fake], commit: "x" });
     expect(index.refs).toEqual([precise]);
     expect(index.languages.go).toMatchObject({ refs: "precise", tool: "fake-go@1" });
   });

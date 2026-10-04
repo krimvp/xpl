@@ -1,12 +1,16 @@
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
+import { splitLines } from "@xpl/core";
+import { FileHasher } from "../hash.js";
 /**
- * The precise resolvers: one per SCIP indexer, so a failing tool only costs its own languages their precise
+ * The precise providers: one per SCIP indexer, so a failing tool only costs its own languages their precise
  * references (`buildIndex` falls back to the heuristic ones for it, or throws in `precise: "require"` mode).
  *
- * Each resolver: run the tool -> decode `index.scip` -> map to references (`mapScip`).
+ * Each provider: run the tool -> decode `index.scip` -> map to references (`mapScip`).
  */
 import type { FileLanguage, FilePath } from "@xpl/core";
-import type { PreciseInput, PreciseOutput, PreciseResolver } from "../precise.js";
-import { PRECISE_SUPPORT } from "../analysis.js";
+import type { ProviderInput, RelationshipResult, IndexProvider } from "../providers.js";
+import { PRECISE_SUPPORT, relationshipOutput } from "../analysis.js";
 import { mapScip } from "./map.js";
 import type { ScipSource } from "./map.js";
 import {
@@ -43,7 +47,7 @@ function toolName(sources: readonly ScipSource[], fallback: string): string {
 }
 
 /** Files the tool left out: their references stay heuristic, which is worth telling the user. */
-function warnUncovered(input: PreciseInput, tool: string, files: readonly FilePath[]): void {
+function warnUncovered(input: ProviderInput, tool: string, files: readonly FilePath[]): void {
   const uncovered = files.filter((f) => !inSkippedDir(f));
   if (uncovered.length === 0) return;
   const shown = uncovered.slice(0, UNCOVERED_EXAMPLES).join(", ");
@@ -57,10 +61,10 @@ function warnUncovered(input: PreciseInput, tool: string, files: readonly FilePa
 }
 
 async function finish(
-  input: PreciseInput,
+  input: ProviderInput,
   run: ScipRunOutput,
   fallbackTool: string,
-): Promise<PreciseOutput> {
+): Promise<RelationshipResult> {
   for (const warning of run.warnings) input.warn(warning);
   const result = await mapScip({
     root: input.root,
@@ -68,7 +72,7 @@ async function finish(
     files: input.files,
     lookup: input.lookup,
     readText: input.readText,
-    withFile: input.withFile,
+    classify: input.classify,
     warn: input.warn,
     sources: run.sources,
   });
@@ -104,6 +108,29 @@ async function finish(
   };
 }
 
+/** Tools read disk, so check the supplied snapshot before and after the run, including config files. */
+async function checkedRun(
+  input: ProviderInput,
+  run: () => Promise<ScipRunOutput>,
+): Promise<ScipRunOutput> {
+  const check = async () => {
+    for (const file of input.files) {
+      let text;
+      try {
+        text = await readFile(join(input.root, ...file.path.split("/")), "utf8");
+      } catch {
+        throw new Error(`source changed while indexing: ${file.path}`);
+      }
+      if (new FileHasher(splitLines(text)).hashFile() !== file.hash)
+        throw new Error(`source changed while indexing: ${file.path}`);
+    }
+  };
+  await check();
+  const result = await run();
+  await check();
+  return result;
+}
+
 function runConfig(options: ScipOptions): ScipRunConfig {
   return {
     timeoutMs: options.timeoutMs ?? defaultTimeoutMs(options.env ?? process.env),
@@ -116,53 +143,73 @@ function runConfig(options: ScipOptions): ScipRunConfig {
 const TYPESCRIPT_LANGUAGES: readonly FileLanguage[] = ["typescript", "tsx", "javascript"];
 
 /** scip-typescript for TypeScript, TSX and JavaScript. */
-export function scipTypescriptResolver(options: ScipOptions = {}): PreciseResolver {
+export function scipTypescriptProvider(options: ScipOptions = {}): IndexProvider {
   const tool = `scip-typescript@${SCIP_TYPESCRIPT_VERSION}`;
   return {
     id: "scip-typescript",
     capabilities: PRECISE_SUPPORT,
     languages: TYPESCRIPT_LANGUAGES,
-    async resolve(input) {
-      return finish(
+    async analyze(input) {
+      return relationshipOutput(
         input,
-        await runScipTypescript(input.root, input.files, runConfig(options)),
-        tool,
+        this,
+        await finish(
+          input,
+          await checkedRun(input, () =>
+            runScipTypescript(input.root, input.files, runConfig(options)),
+          ),
+          tool,
+        ),
       );
     },
   };
 }
 
 /** scip-python for Python. */
-export function scipPythonResolver(options: ScipOptions = {}): PreciseResolver {
+export function scipPythonProvider(options: ScipOptions = {}): IndexProvider {
   const tool = `scip-python@${SCIP_PYTHON_VERSION}`;
   return {
     id: "scip-python",
     capabilities: PRECISE_SUPPORT,
     languages: ["python"],
-    async resolve(input) {
-      return finish(
+    async analyze(input) {
+      return relationshipOutput(
         input,
-        await runScipPython(input.root, input.files, input.readText, runConfig(options)),
-        tool,
+        this,
+        await finish(
+          input,
+          await checkedRun(input, () =>
+            runScipPython(input.root, input.files, input.readText, runConfig(options)),
+          ),
+          tool,
+        ),
       );
     },
   };
 }
 
 /** scip-go for Go (one run per go.mod). */
-export function scipGoResolver(options: ScipOptions = {}): PreciseResolver {
+export function scipGoProvider(options: ScipOptions = {}): IndexProvider {
   const tool = `scip-go@${SCIP_GO_VERSION.replace(/^v/, "")}`;
   return {
     id: "scip-go",
     capabilities: PRECISE_SUPPORT,
     languages: ["go"],
-    async resolve(input) {
-      return finish(input, await runScipGo(input.root, input.files, runConfig(options)), tool);
+    async analyze(input) {
+      return relationshipOutput(
+        input,
+        this,
+        await finish(
+          input,
+          await checkedRun(input, () => runScipGo(input.root, input.files, runConfig(options))),
+          tool,
+        ),
+      );
     },
   };
 }
 
-/** The three resolvers, configured with `options`. */
-export function createScipResolvers(options: ScipOptions = {}): PreciseResolver[] {
-  return [scipTypescriptResolver(options), scipPythonResolver(options), scipGoResolver(options)];
+/** The three providers, configured with `options`. */
+export function createScipProviders(options: ScipOptions = {}): IndexProvider[] {
+  return [scipTypescriptProvider(options), scipPythonProvider(options), scipGoProvider(options)];
 }

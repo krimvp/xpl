@@ -14,8 +14,8 @@ import {
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { buildIndex, preciseResolvers } from "../src/index.js";
-import { createScipResolvers } from "../src/scip/index.js";
+import { buildIndex, indexProviders } from "../src/index.js";
+import { createScipProviders } from "../src/scip/index.js";
 import {
   DEFAULT_TIMEOUT_MS,
   SCIP_GO_PACKAGE,
@@ -897,7 +897,7 @@ describe("runScipGo", () => {
 
 describe("the resolvers registry", () => {
   it("registers scip-typescript, scip-python and scip-go by default", () => {
-    expect(preciseResolvers().map((r) => [r.id, [...r.languages]])).toEqual([
+    expect(indexProviders().map((r) => [r.id, [...r.languages]])).toEqual([
       ["scip-typescript", ["typescript", "tsx", "javascript"]],
       ["scip-python", ["python"]],
       ["scip-go", ["go"]],
@@ -942,12 +942,12 @@ export function ⟦use⟧(): void {
     const { index, warnings } = await buildIndex({
       root: dir,
       precise: "auto",
-      resolvers: createScipResolvers({ run, timeoutMs: 1000 }),
+      providers: createScipProviders({ run, timeoutMs: 1000 }),
     });
     expect(calls.length).toBeGreaterThan(0);
     expect(warnings).toHaveLength(1);
     expect(warnings[0]).toMatch(
-      /^precise resolver "scip-typescript" failed \(scip-typescript@0\.4\.0 exited with code 1:/,
+      /^precise provider "scip-typescript" failed \(scip-typescript@0\.4\.0 exited with code 1:/,
     );
     expect(warnings[0]).toMatch(
       /exited with code 1: npm ERR! network offline; and with default compiler options: .*npm ERR! network offline\); using heuristic references for typescript/s,
@@ -961,16 +961,16 @@ export function ⟦use⟧(): void {
     const dir = makeDir(tsProject);
     const { run } = fakeRunner(() => ({ code: 1, stderr: "boom" }));
     await expect(
-      buildIndex({ root: dir, precise: "require", resolvers: createScipResolvers({ run }) }),
+      buildIndex({ root: dir, precise: "require", providers: createScipProviders({ run }) }),
     ).rejects.toThrow(
-      /precise resolver "scip-typescript" failed: scip-typescript@0\.4\.0 exited with code 1/,
+      /precise provider "scip-typescript" failed: scip-typescript@0\.4\.0 exited with code 1/,
     );
   });
 
   it("off: no tool is run", async () => {
     const dir = makeDir(tsProject);
     const { run, calls } = fakeRunner();
-    await buildIndex({ root: dir, precise: "off", resolvers: createScipResolvers({ run }) });
+    await buildIndex({ root: dir, precise: "off", providers: createScipProviders({ run }) });
     expect(calls).toEqual([]);
   });
 
@@ -980,7 +980,7 @@ export function ⟦use⟧(): void {
     const { index, warnings } = await buildIndex({
       root: dir,
       precise: "require",
-      resolvers: createScipResolvers({ run }),
+      providers: createScipProviders({ run }),
     });
     expect(warnings).toEqual([]);
     expect(index.languages.typescript).toMatchObject({
@@ -1000,7 +1000,7 @@ export function ⟦use⟧(): void {
     const { index } = await buildIndex({
       root: dir,
       precise: "auto",
-      resolvers: createScipResolvers({ run }),
+      providers: createScipProviders({ run }),
     });
     expect(index.languages.typescript!.tool).toBe("scip-typescript@0.4.0");
   });
@@ -1022,13 +1022,13 @@ export function ⟦use⟧(): void {
     const { index, warnings } = await buildIndex({
       root: dir,
       precise: "auto",
-      resolvers: createScipResolvers({ run }),
+      providers: createScipProviders({ run }),
     });
     expect(index.languages.typescript!.refs).toBe("precise");
     expect(index.languages.python!.refs).toBe("heuristic");
-    expect(warnings.filter((w) => w.startsWith("precise resolver"))).toEqual([
+    expect(warnings.filter((w) => w.startsWith("precise provider"))).toEqual([
       expect.stringMatching(
-        /^precise resolver "scip-python" failed \(scip-python@0\.6\.6 exited with code 1:\npython broke\); using heuristic references for python$/,
+        /^precise provider "scip-python" failed \(scip-python@0\.6\.6 exited with code 1:\npython broke\); using heuristic references for python$/,
       ),
     ]);
     expect(calls.map((c) => c.command)).toEqual(["npx", "npx"]);
@@ -1046,11 +1046,11 @@ export function ⟦use⟧(): void {
     const { warnings } = await buildIndex({
       root: dir,
       precise: "auto",
-      resolvers: createScipResolvers({ run }),
+      providers: createScipProviders({ run }),
     });
     expect(warnings).toEqual([
       "scip-typescript@0.4.0: 1 file(s) have positions outside their text (changed while indexing, or `//line` directives of generated code); they keep heuristic references: a.ts",
-      'precise resolver "scip-typescript" failed (the tool described none of the 1 typescript file(s)); using heuristic references for typescript',
+      'precise provider "scip-typescript" failed (the tool described none of the 1 typescript file(s)); using heuristic references for typescript',
     ]);
   });
 
@@ -1066,7 +1066,7 @@ export function ⟦use⟧(): void {
     const { index, warnings } = await buildIndex({
       root: dir,
       precise: "auto",
-      resolvers: createScipResolvers({ run }),
+      providers: createScipProviders({ run }),
     });
     expect(warnings).toEqual([
       expect.stringMatching(
@@ -1090,16 +1090,16 @@ export function ⟦use⟧(): void {
   it("real processes: tools that are not installed degrade to a warning (auto) or fail (require)", async () => {
     const dir = makeDir(tsProject);
     // an empty PATH: `npx` cannot be found, whatever the machine has installed
-    const resolvers = createScipResolvers({ env: { PATH: "" } });
-    const auto = await buildIndex({ root: dir, precise: "auto", resolvers });
+    const providers = createScipProviders({ env: { PATH: "" } });
+    const auto = await buildIndex({ root: dir, precise: "auto", providers });
     expect(auto.warnings).toEqual([
       expect.stringMatching(
-        /^precise resolver "scip-typescript" failed \(scip-typescript@0\.4\.0 could not be started \(is `npx` installed and on PATH\?\).*\); using heuristic references for typescript$/,
+        /^precise provider "scip-typescript" failed \(scip-typescript@0\.4\.0 could not be started \(is `npx` installed and on PATH\?\).*\); using heuristic references for typescript$/,
       ),
     ]);
     expect(auto.index.languages.typescript!.refs).toBe("heuristic");
-    await expect(buildIndex({ root: dir, precise: "require", resolvers })).rejects.toThrow(
-      /precise resolver "scip-typescript" failed: scip-typescript@0\.4\.0 could not be started/,
+    await expect(buildIndex({ root: dir, precise: "require", providers })).rejects.toThrow(
+      /precise provider "scip-typescript" failed: scip-typescript@0\.4\.0 could not be started/,
     );
   });
 
@@ -1109,7 +1109,7 @@ export function ⟦use⟧(): void {
     await buildIndex({
       root: dir,
       precise: "auto",
-      resolvers: createScipResolvers({ run, timeoutMs: 4242 }),
+      providers: createScipProviders({ run, timeoutMs: 4242 }),
     });
     expect(calls.every((c) => c.options.timeoutMs === 4242)).toBe(true);
   });

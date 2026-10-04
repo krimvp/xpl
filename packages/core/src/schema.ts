@@ -109,6 +109,8 @@ export interface SymbolIndex {
   files: IndexedFile[];
   symbols: IndexedSymbol[];
   refs: Reference[];
+  /** Shared identities for optional symbol/reference provenance. Absent on legacy indexes. */
+  providers?: AnalysisProvenance[];
   resources?: ResourceReference[];
   /** Provider abilities and observed run coverage. Absent on legacy indexes: coverage is unknown. */
   analysis?: AnalysisReport[];
@@ -137,6 +139,10 @@ export interface AnalysisResult {
 export interface AnalysisReport {
   /** Stable provider id, for diagnostics rather than reader-facing text. */
   provider: string;
+  /** Optional on legacy indexes. Adapter version and reuse identities for the analyzed snapshot. */
+  version?: string;
+  configuration?: string;
+  snapshot?: string;
   /** Advertised abilities, separate from the results of this run. */
   capabilities: AnalysisCapabilities;
   /** Files in scope, including those not analyzed or whose analysis failed. */
@@ -195,7 +201,15 @@ export interface IndexedFile {
   lines: number;
 }
 
+/** The analyzer that supplied a checked fact. Optional on legacy indexes. */
+export interface AnalysisProvenance {
+  id: string;
+  version: string;
+}
+
 export interface IndexedSymbol {
+  /** Position in SymbolIndex.providers. */
+  provider?: number;
   id: SymbolId;
   file: FilePath;
   path: SymbolPath;
@@ -217,6 +231,8 @@ export interface IndexedSymbol {
 
 /** `from` mentions `to` at `site` (a range in from's file). Raw material for static edges. */
 export interface Reference {
+  /** Position in SymbolIndex.providers. */
+  provider?: number;
   /**
    * (amended) Innermost symbol enclosing `site`, or the file's module scope ("<file>#", empty
    * symbol path) for top-level code.

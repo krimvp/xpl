@@ -39,14 +39,33 @@ describe("bundle", () => {
 describe("bundle: the packed index", () => {
   const { index } = jobrunner();
 
-  it("packs to a fraction of the plain JSON and unpacks to the same index", () => {
-    const packed = packIndex(index);
-    expect(isPackedIndex(packed)).toBe(true);
-    expect(packed.symbols.every((entry) => Array.isArray(entry))).toBe(true);
-    expect(packed.refs.every((entry) => Array.isArray(entry))).toBe(true);
-    expect(JSON.stringify(packed).length).toBeLessThan(JSON.stringify(index).length / 2);
-    expect(unpackIndex(JSON.parse(JSON.stringify(packed)) as PackedIndex)).toEqual(index);
-  });
+  it.each(["legacy", "provider facts"])(
+    "%s: packs to a fraction of the plain JSON and unpacks without losing provenance",
+    (shape) => {
+      const tagged: SymbolIndex =
+        shape === "legacy"
+          ? index
+          : {
+              ...index,
+              providers: [
+                { id: "syntax", version: "1" },
+                { id: "semantic", version: "2" },
+              ],
+              symbols: index.symbols.map((symbol) => ({
+                ...symbol,
+                provider: 0,
+              })),
+              refs: index.refs.map((ref, i) => ({
+                ...ref,
+                provider: i === 0 ? 0 : 1,
+              })),
+            };
+      const packed = packIndex(tagged);
+      expect(isPackedIndex(packed)).toBe(true);
+      expect(JSON.stringify(packed).length).toBeLessThan(JSON.stringify(tagged).length / 2);
+      expect(unpackIndex(JSON.parse(JSON.stringify(packed)) as PackedIndex)).toEqual(tagged);
+    },
+  );
 
   it("keeps an entry of a shape it does not know as it is", () => {
     const odd: SymbolIndex = {
