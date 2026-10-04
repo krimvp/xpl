@@ -831,6 +831,38 @@ serving .explainer/jobrunner.explainer.json at http://127.0.0.1:34971/  (Ctrl-C 
 
 API (for scripts): `GET /api/bundle`, `GET /api/export` (current complete export snapshot and shared readiness report), `GET /api/explainer` (the explainer with its anchors re-resolved, with an `ETag`; what the page polls), `GET /api/file?path=`, `GET /api/base-file?path=` (the code before the recorded change of a modified, renamed or deleted file), `PUT /api/views/<id>`, `PUT /api/tours/<id>`, `GET|POST /api/requests`.
 
+## `xpl service <start|stop|status> [explainer] [--background] [--port p] [--backend none|claude] [--recover]`
+
+Starts the existing viewer server on loopback (`127.0.0.1`) with one owner per canonical repository root.
+Foreground is the default; stop it with Ctrl-C or `xpl service stop`. `--background` starts the installed
+CLI as a detached process and logs to `.explainer/service/service.log`. It opens no browser automatically.
+The first start needs a guide. Later starts reuse the saved guide, port, pinned index and backend label:
+
+```sh
+xpl service start jobrunner --background --port 0
+xpl service status --json
+xpl service stop
+xpl service start
+```
+
+`status --json` reports `{ok, state, root, guide, backend, instanceId, pid, url, ownershipLock, recovery?}`.
+States are `stopped`, `starting`, `running`, `unavailable` (live owner whose identity cannot be verified)
+and `interrupted` (recorded owner exited unexpectedly). Status reports these states with exit 0;
+failed start/stop exits 1 and usage errors exit 2. Ownership tokens stay in private local records and are
+never printed. Stop verifies UUID, root and token through loopback; it never signals a PID.
+
+Duplicate starts are refused. Stop before changing guides. Use `--root` to attach another repository's
+separate service; guides and state paths must stay inside that canonical root. An explicit busy port fails
+with a `--port` hint. Without a saved/explicit port, start tries 4747 and falls back to a free port.
+`--backend none|claude` persists selection only; no jobs or agent run here. Local serving needs no network
+or authentication. Later Claude jobs need their configured authentication and provider network access.
+
+After a crash, inspect artifacts and use `xpl service start --recover`. It archives the interrupted owner
+record and preserves the last valid index/explanation. A live unverified PID is never replaced, and a
+crashed writer lock must be inspected and removed explicitly; no lock is stolen because it is old.
+Viewer connection/backend controls and durable jobs are follow-ups. `view`, manual iteration and offline
+HTML export/reading work independently while this service is stopped.
+
 ## `xpl ready <explainer> [--note reason]`
 
 Checks strict structure/references, workspace/index freshness, required text (visible summaries and guide

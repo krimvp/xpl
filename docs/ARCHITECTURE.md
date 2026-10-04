@@ -1179,6 +1179,7 @@ stdout (a rejection exits 1); fatal errors (`error: …`) and warnings (`warning
 | `xpl change <explainer> [<base>..<head>]` | records the change from git in the explainer and prints its analysis (§4.8; below); without a range, prints the analysis of the change already recorded |
 | `xpl draft change\|repo\|path <explainer> [<entry id> ...] [-o file]` | prints a patch skeleton built from the index (and the change record) with no LLM, `TODO:` in every text to write (below); the summary goes to stderr |
 | `xpl view <explainer> [--port p] [--host h] [--no-open]` | local server (below) |
+| `xpl service <start\|stop\|status> [explainer] [--background] [--port p] [--backend none\|claude] [--recover]` | optional repository-scoped lifecycle around the same viewer server; loopback only; persisted context and explicit interrupted-owner recovery |
 | `xpl bundle <explainer> -o out.html [--mode explore\|present] [--tour id] [--files referenced\|boundary\|all] [--boundary-max n] [--embed-index full\|pruned] [--draft] [--note reason] [--allow-drift]` | self-contained HTML after the shared readiness check (exit 1 before writing with errors); `--draft` writes a labelled preview with findings; `--allow-drift` is a legacy draft flag that still refuses stale indexes; warnings and optional author notes are retained; `--tour` (`tour:intro` or `intro`) implies present mode; embeds the files the explainer references by default and prints what went in (`8 of 12 files embedded (referenced: 18.4 KB of source; --files all adds 4 files, 6.7 KB)`), `--files boundary` adds the direct callers, callees and tests of anchored symbols (at most `--boundary-max`, default 40), `--files all` every indexed file; with a change recorded, every changed file at head and the base text of the changed files go in too; the symbol index in it is pruned to what the viewer can draw with `--files referenced` or `boundary` and whole with `--files all` (`--embed-index` overrides) and packed (the summary line says `index 0.3 MB (1.3 MB as plain JSON, pruned from 9.0 MB)`) |
 | `xpl doctor [--agent none\|claude] [--skill-dir path]` | local setup report: Node, artifact hashes, grammar loading, installed skill and optional git/npx/Go; selected Claude Code availability; no downloads or authentication probes; required failures exit 1 |
 | `xpl skill install [--dir path]` | copies the bundled skill and writes its CLI binding; repeat to update; defaults to `~/.claude/skills/code-explainer`; refuses unmanaged directories, symlinks and local edits |
@@ -1358,6 +1359,38 @@ array of `FeedbackRequest` records. Imports and selected-ID outcomes lock, rerea
 against the latest store. No operation removes unselected or newly appended requests. Malformed stores
 and conflicting original content for one ID are rejected before writing. Imported outcomes advance only
 when their revision is greater; equal or older revisions keep the stored result.
+
+**Repository service** (`commands/service.ts`): `start` wraps the same `listen`/`startViewServer` path as
+`view`, always on `127.0.0.1`. Foreground is the default. `--background` spawns the installed bundled CLI,
+waits for its IPC readiness acknowledgement, then detaches; output appends to `service.log`. The first
+start needs a guide; later starts reuse the selected guide, actual port, optional pinned index and backend.
+An explicitly occupied port fails; a first start without a port tries 4747, then a free port. Restart keeps
+the previous address unless `--port` overrides it. Another repository attaches its own service with `--root`.
+
+The canonical `realpath` root owns `.explainer/service/` (private permissions, git-ignored). `context.json`
+uses `xpl-service-context@1`: root, repository-relative guide, backend (`none|claude`), port and nullable
+pinned index path. `instance.json` uses `xpl-service-instance@1`: root, UUID, PID, secret token, state
+(`starting|running|stopped`), nullable URL and start time. Context and ownership updates use existing
+`withFileLock` and `atomicWrite`. The instance is reserved before listening, preventing concurrent starts.
+Guides, pinned indexes and state paths must remain within the root. Managed server requests also check
+artifact paths so a guide or requests symlink cannot attach another repository's state.
+
+`status` reports `stopped`, `starting`, `running`, `unavailable` or `interrupted`, with actual UUID, PID,
+address, root, guide and backend. UUID/root and secret bearer-token replies from `GET /api/service` verify
+the instance; `POST /api/service/stop` uses the same token and the existing JSON/origin guards. The token is
+never included in CLI output or a viewer bundle. Stop closes the listener and drains queued artifact writes
+before marking ownership stopped. No PID is signalled. An alive PID without a matching handshake remains
+unavailable; recovery refuses it, including PID reuse. A demonstrably exited owner requires `--recover`,
+which archives its record as `interrupted-<UUID>.json` before reserving another instance. Writer locks are
+never stolen on a timer: a crashed transaction requires explicit inspection/removal of its lock directory.
+An unexpected exit leaves the last valid index/explainer and interrupted instance record intact.
+
+This is lifecycle/context only (38A). Backend selection is a persisted label, with jobs unavailable;
+there is no agent execution, watching or job completion state. Local serving needs no provider network or
+credentials. A later configured Claude runner needs its own authentication and provider access. Viewer
+attachment/reconnect/backend availability belongs to 38B. Offline HTML and manual CLI commands remain
+independent of the service. The installed-artifact check exercises detached processes, saved-context
+restart, a real crash and explicit recovery, then manual export and disconnected reading after stop.
 
 **Feedback contract** (`core/feedback.ts`): exports are `{schema: "code-explainer/feedback@1", requests}`.
 Each request has `id`, `elementId`, `kind` (`correct`, `explain`, `expand`), `at`, optional `note`, `view`,
