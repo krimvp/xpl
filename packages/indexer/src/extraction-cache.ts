@@ -5,8 +5,8 @@
  * detects damaged payloads. Missing/invalid entries and failed writes never affect the published index.
  */
 import { createHash, randomUUID } from "node:crypto";
-import { lstat, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
+import { dirname, join, relative } from "node:path";
 import { performance } from "node:perf_hooks";
 import pkg from "../package.json" with { type: "json" };
 import { GRAMMAR_WASM, RUNTIME_WASM, resolveWasmFile, type GrammarId } from "./wasm-files.js";
@@ -26,6 +26,8 @@ export interface ExtractionProfile {
 
 export interface ExtractionReport {
   enabled: boolean;
+  /** Directory alias or inspection failure. Incidental metadata, never part of the saved index. */
+  bypassReason?: string;
   scope: "file-local tree-sitter and tags; excludes resolution and semantic tools";
   hits: number;
   misses: number;
@@ -35,6 +37,15 @@ export interface ExtractionReport {
 
 function sha256(value: string | Buffer): string {
   return createHash("sha256").update(value).digest("hex");
+}
+
+function missingPath(error: unknown): boolean {
+  return (
+    !!error &&
+    typeof error === "object" &&
+    "code" in error &&
+    (error.code === "ENOENT" || error.code === "ENOTDIR")
+  );
 }
 
 function compatibleWasm(fingerprint: string): boolean {
@@ -57,8 +68,12 @@ export class ExtractionCache {
   readonly report: ExtractionReport;
   private readonly fingerprints = new Map<GrammarId, Promise<string | undefined>>();
   private readonly directory: string;
+  private directories?: Promise<Map<string, string>>;
 
-  constructor(root: string, enabled = true) {
+  constructor(
+    private readonly root: string,
+    enabled = true,
+  ) {
     this.directory = join(root, ".explainer", "cache", "extraction-v1");
     this.report = {
       enabled,
@@ -70,24 +85,52 @@ export class ExtractionCache {
     };
   }
 
-  /** Discovery excludes the lexical .explainer path, so never redirect output through its directories. */
+  /** Include empty and ignored directories: new output can also change Git's clean-tree decision. */
+  private async repositoryDirectories(): Promise<Map<string, string>> {
+    const directories = new Map<string, string>();
+    const visit = async (path: string): Promise<void> => {
+      const info = await stat(join(this.root, path), { bigint: true }).catch((error: unknown) => {
+        if (path && missingPath(error)) return undefined; // Deleted or dangling directory link.
+        throw error;
+      });
+      if (!info?.isDirectory()) return;
+      const identity = `${info.dev}:${info.ino}`;
+      if (directories.has(identity)) return; // Directory aliases must not make the census recurse forever.
+      directories.set(identity, path || ".");
+      for (const entry of await readdir(join(this.root, path), { withFileTypes: true })) {
+        if (!entry.isDirectory() && !entry.isSymbolicLink()) continue;
+        if (!path && (entry.name === ".explainer" || entry.name === ".git")) continue;
+        await visit(join(path, entry.name));
+      }
+    };
+    await visit("");
+    return directories;
+  }
+
+  /** Symlinks, mounts and other aliases share one device/inode check, independent of path shape. */
   private async safeLocation(): Promise<boolean> {
     if (!this.report.enabled) return false;
+    let directories: Map<string, string>;
+    try {
+      directories = await (this.directories ??= this.repositoryDirectories());
+    } catch {
+      this.report.enabled = false;
+      this.report.bypassReason = "cannot inspect repository directory identities";
+      return false;
+    }
     for (const path of [
       dirname(dirname(this.directory)),
       dirname(this.directory),
       this.directory,
     ]) {
       try {
-        if (!(await lstat(path)).isSymbolicLink()) continue;
+        const info = await stat(path, { bigint: true });
+        const alias = directories.get(`${info.dev}:${info.ino}`);
+        if (alias === undefined) continue;
+        this.report.bypassReason = `${relative(this.root, path)} aliases repository directory ${alias}`;
       } catch (error) {
-        if (
-          error &&
-          typeof error === "object" &&
-          "code" in error &&
-          (error.code === "ENOENT" || error.code === "ENOTDIR")
-        )
-          return true;
+        if (missingPath(error)) return true;
+        this.report.bypassReason = `cannot inspect cache directory ${relative(this.root, path)}`;
       }
       this.report.enabled = false;
       return false;

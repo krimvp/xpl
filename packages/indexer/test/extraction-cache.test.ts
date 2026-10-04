@@ -1,4 +1,6 @@
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
+import fs from "node:fs/promises";
+import { syncBuiltinESMExports } from "node:module";
 import {
   copyFileSync,
   mkdirSync,
@@ -40,14 +42,128 @@ it.each(
     "shared-cache/source.ts#source",
   ]);
   expect(readdirSync(join(root, "shared-cache"))).toEqual(["source.ts"]);
-  expect(second.extraction).toMatchObject({ enabled: false, hits: 0, misses: 2 });
+  expect(second.extraction).toMatchObject({
+    enabled: false,
+    hits: 0,
+    misses: 2,
+    bypassReason: `${path} aliases repository directory shared-cache`,
+  });
   expect(JSON.stringify(second.index)).toBe(JSON.stringify(first.index));
   const clean = await buildIndex({ root, precise: "off", cache: false });
   expect(JSON.stringify(second.index)).toBe(JSON.stringify(clean.index));
   expect(second.warnings).toEqual(clean.warnings);
 });
 
-it("bypasses existing cache entries redirected outside the source tree", async () => {
+it.each([
+  ...[".explainer/cache", ".explainer", ".explainer/cache/extraction-v1"].flatMap((path) =>
+    [false, true].flatMap((git) =>
+      (path === ".explainer/cache" ? [false, true] : [false]).map((empty) => ({
+        path,
+        git,
+        empty,
+        target: "shared-cache",
+      })),
+    ),
+  ),
+  { path: ".explainer/cache", git: true, empty: true, target: "node_modules" },
+])(
+  "bypasses a bind alias at $path to $target with git $git and empty target $empty",
+  async ({ path, git, empty, target }) => {
+    const sources = {
+      "a.ts": "export function run() {}",
+      ...(empty ? {} : { "shared-cache/source.ts": "export const source = 1;" }),
+    };
+    const root = git ? makeRepo(sources) : makeDir(sources);
+    const shared = join(root, target);
+    const mounted = join(root, path);
+    mkdirSync(shared, { recursive: true });
+    mkdirSync(mounted, { recursive: true });
+    // Keep the regression portable: match a bind mount's stat identity without changing path shape.
+    const realStat = fs.stat.bind(fs);
+    const spy = vi
+      .spyOn(fs, "stat")
+      .mockImplementation((file, options) =>
+        realStat(String(file) === mounted ? shared : file, options),
+      );
+    syncBuiltinESMExports();
+    try {
+      const first = await buildIndex({ root, precise: "off" });
+      const second = await buildIndex({ root, precise: "off" });
+      expect(second.index.files.map((file) => file.path)).toEqual(
+        empty ? ["a.ts"] : ["a.ts", "shared-cache/source.ts"],
+      );
+      expect(second.extraction).toMatchObject({
+        enabled: false,
+        hits: 0,
+        misses: empty ? 1 : 2,
+        bypassReason: `${path} aliases repository directory ${target}`,
+      });
+      expect(readdirSync(mounted)).toEqual([]);
+      expect(JSON.stringify(second.index)).toBe(JSON.stringify(first.index));
+      const clean = await buildIndex({ root, precise: "off", cache: false });
+      expect(JSON.stringify(second.index)).toBe(JSON.stringify(clean.index));
+      expect(second.warnings).toEqual(clean.warnings);
+    } finally {
+      spy.mockRestore();
+      syncBuiltinESMExports();
+    }
+  },
+);
+
+it("bypasses a cache reached through a tracked directory symlink", async () => {
+  const root = makeRepo({
+    "a.ts": "export function run() {}",
+    "shared-cache/source.ts": "export const source = 1;",
+  });
+  const cache = join(root, ".explainer/cache");
+  const shared = join(root, "shared-cache");
+  mkdirSync(dirname(cache));
+  renameSync(shared, cache);
+  symlinkSync(".explainer/cache", shared, "dir");
+  const first = await buildIndex({ root, precise: "off" });
+  const second = await buildIndex({ root, precise: "off" });
+  expect(second.index.files.map((file) => file.path)).toEqual(["a.ts", "shared-cache/source.ts"]);
+  expect(second.extraction).toMatchObject({
+    enabled: false,
+    hits: 0,
+    misses: 2,
+    bypassReason: ".explainer/cache aliases repository directory shared-cache",
+  });
+  expect(readdirSync(cache)).toEqual(["source.ts"]);
+  expect(JSON.stringify(second.index)).toBe(JSON.stringify(first.index));
+  const clean = await buildIndex({ root, precise: "off", cache: false });
+  expect(JSON.stringify(second.index)).toBe(JSON.stringify(clean.index));
+});
+
+it("keeps reuse when directories share an inode number on different devices", async () => {
+  const root = makeDir({ "a.ts": "export function run() {}" });
+  const shared = join(root, "shared-cache");
+  const mounted = join(root, ".explainer/cache");
+  mkdirSync(shared);
+  mkdirSync(mounted, { recursive: true });
+  const realStat = fs.stat.bind(fs);
+  const spy = vi.spyOn(fs, "stat").mockImplementation(async (file, options) => {
+    const info = await realStat(String(file) === mounted ? shared : file, options);
+    if (String(file) === mounted)
+      Object.defineProperty(info, "dev", {
+        value: typeof info.dev === "bigint" ? info.dev + 1n : info.dev + 1,
+      });
+    return info;
+  });
+  syncBuiltinESMExports();
+  try {
+    const first = await buildIndex({ root, precise: "off" });
+    const second = await buildIndex({ root, precise: "off" });
+    expect(second.extraction).toMatchObject({ enabled: true, hits: 1, misses: 0 });
+    expect(second.extraction.bypassReason).toBeUndefined();
+    expect(JSON.stringify(second.index)).toBe(JSON.stringify(first.index));
+  } finally {
+    spy.mockRestore();
+    syncBuiltinESMExports();
+  }
+});
+
+it("reuses existing cache entries isolated outside the source tree", async () => {
   const root = makeDir({ "a.ts": "export function run() {}" });
   const cold = await buildIndex({ root, precise: "off" });
   expect(cold.extraction).toMatchObject({ enabled: true, hits: 0, misses: 1 });
@@ -57,9 +173,9 @@ it("bypasses existing cache entries redirected outside the source tree", async (
   symlinkSync(redirected, cache, "dir");
   const entries = readdirSync(join(redirected, "extraction-v1"));
   expect(entries).toHaveLength(1);
-  const bypassed = await buildIndex({ root, precise: "off" });
-  expect(bypassed.extraction).toMatchObject({ enabled: false, hits: 0, misses: 1 });
-  expect(JSON.stringify(bypassed.index)).toBe(JSON.stringify(cold.index));
+  const reused = await buildIndex({ root, precise: "off" });
+  expect(reused.extraction).toMatchObject({ enabled: true, hits: 1, misses: 0 });
+  expect(JSON.stringify(reused.index)).toBe(JSON.stringify(cold.index));
   expect(readdirSync(join(redirected, "extraction-v1"))).toEqual(entries);
 });
 

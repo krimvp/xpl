@@ -371,11 +371,16 @@ written through unique temporary files and rename. Missing, corrupt or wrong-inp
 extraction; cache write failures do not change the index or its diagnostics. Orphaned temporary files are
 ignored. Published indexes also use unique temporary names and atomic rename. Old content entries remain
 until `.explainer/cache` is removed; no eviction policy is added here. The whole `.explainer/` directory is
-excluded from discovery and clean-tree checks. Cache reads and writes are bypassed if `.explainer`, `cache`
-or `extraction-v1` is a symlink, including one targeting outside the repository; `extraction.enabled` becomes
-false. The check runs before lookup and again before persistence. This prevents generated facts from entering
-discoverable source directories while leaving ordinary source at a symlink target discoverable. The cache
-location is fixed: no option or environment variable redirects it. An indexed root may itself be a symlink.
+excluded from discovery and clean-tree checks. Before lookup and persistence, the cache compares the device
+and inode of `.explainer`, `cache` and `extraction-v1` against a per-build repository directory census.
+The census includes empty and ignored directories outside root `.explainer` and `.git`: new output could
+affect discovery or Git's clean-tree decision. The census follows directory links, including tracked paths
+that Git can still list through a symlink. Directory identities use bigint `stat` values; repeated identities
+stop census recursion. A match bypasses reads and writes, sets `extraction.enabled` false and
+reports `extraction.bypassReason`. Inspection failures also bypass reuse. Symlinks, bind mounts and other
+directory aliases share this rule; source at a matched target stays discoverable. Isolated external targets
+remain usable. The cache location is fixed: no option or environment variable redirects it. An indexed root
+may itself be a symlink. Location eligibility does not change extraction facts or their key revision.
 
 Every build discovers and captures sources again, recomputes source hashes, assigns IDs/hashes/parents,
 resolves all heuristic sites (including Go inference), resolves resources, runs selected semantic providers,
@@ -387,8 +392,9 @@ and commit overrides likewise do not affect a retained file's extraction. A futu
 configuration must include its content in the profile configuration key. Dependency-aware semantic reuse is
 left to #17; this cache never treats a source-only key as semantic evidence.
 
-`BuildIndexResult.extraction` and CLI JSON expose enabled/scope/hits/misses/write failures and wall milliseconds
-for cache lookup, parsing/extraction and cache writes only. Plain text includes that scope. Text files without
+`BuildIndexResult.extraction` and CLI JSON expose enabled/scope/hits/misses/write failures, an optional bypass
+reason (also printed in the text summary), and wall milliseconds for cache eligibility/lookup, parsing and
+extraction, and cache writes only. Plain text includes that scope. Text files without
 an extractor count as neither hits nor misses. `work` reports fresh heuristic-resolution wall time, semantic
 provider runs and their wall time (including failed attempts), separately from extraction. Timings never enter
 `SymbolIndex`, capability reports or bundles. [extraction-cache.md](extraction-cache.md) gives the repeatable

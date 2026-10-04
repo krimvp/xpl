@@ -66,12 +66,15 @@ options and actual grammar/runtime bytes change the key. Syntax recovery diagnos
 extraction is retried. Repository configuration is read fresh by resolution/tools, so a cached caller can
 resolve differently after a declaration, re-export or alias change. Missing/corrupt entries fall back safely.
 Keep scratch files and artifacts outside the indexed repository; `.explainer/cache` is excluded automatically.
-If `.explainer`, `cache` or `extraction-v1` is a symlink, cache reads and writes are bypassed, even for an
-external target. The cache directory is fixed; no option or environment variable redirects it.
+Device/inode identities detect whether `.explainer`, `cache` or `extraction-v1` aliases a repository
+directory, including an empty target. Such aliases bypass cache reads and writes, whether created by a
+symlink, bind mount or another mechanism. Isolated external targets remain usable. The cache directory is
+fixed; no option or environment variable redirects it.
 
 The summary also prints scoped extraction hits/misses and wall milliseconds, plus fresh heuristic-resolution
 time and semantic runs/time. `--json` includes `extraction` (`enabled`, `scope`, `hits`, `misses`,
-`writeFailures`, `wallMs`) and `work` (`heuristicResolutionMs`, `semanticMs`, `semanticRuns`). Plain text
+`writeFailures`, `wallMs`, optional `bypassReason`) and `work` (`heuristicResolutionMs`, `semanticMs`,
+`semanticRuns`). The text summary also prints the bypass reason. Plain text
 without an extractor counts as neither a hit nor a miss. Measurements cover analysis stages, not CLI startup
 or index serialization. These incidental measurements are outside the saved index and exported viewers.
 Removing `.explainer/cache` reclaims old content entries; `--no-cache` leaves them untouched.

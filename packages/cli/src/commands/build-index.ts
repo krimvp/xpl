@@ -53,7 +53,7 @@ export const indexCommand: CommandSpec = {
   details: [
     "Indexes every text file under --root (git-aware) and writes .explainer/index-<commit>.json.",
     "Reuses file-local tree-sitter and Rust tags facts from .explainer/cache by default.",
-    "Symlinked .explainer, cache or extraction-v1 directories bypass cache reads and writes.",
+    "Directory aliases into the repository (including symlinks and bind mounts) bypass cache reads and writes.",
     "--no-cache neither reads nor writes that cache. Source discovery, hashes, heuristic resolution and semantic tools",
     "still run on every build. Hits/misses and extraction wall time exclude resolution and semantic tools.",
     "The commit id is the short HEAD for a clean top-level git tree, else wt-<hash> of the files.",
@@ -171,6 +171,7 @@ export const indexCommand: CommandSpec = {
     );
     if (extraction.writeFailures)
       lines.push(`Cache writes failed: ${extraction.writeFailures}; fresh facts were used.`);
+    if (extraction.bypassReason) lines.push(`Cache bypassed: ${extraction.bypassReason}.`);
     lines.push(
       `Fresh work: heuristic resolution ${work.heuristicResolutionMs.toFixed(1)} ms wall; semantic providers ${work.semanticRuns} runs, ${work.semanticMs.toFixed(1)} ms wall.`,
     );

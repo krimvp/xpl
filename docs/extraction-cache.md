@@ -6,10 +6,12 @@ and runs semantic providers on every build. `xpl index --no-cache` reads and wri
 The [architecture contract](ARCHITECTURE.md#3-indexer-xplindexer) documents the key and revision rules.
 
 Cache entries live in `.explainer/cache/extraction-v1/`, excluded from discovery and snapshot identity.
-If `.explainer`, `cache` or `extraction-v1` is a symlink, reads and writes are bypassed and
-`extraction.enabled` is false. This also applies to links outside the repository. Bypassing keeps generated
-facts out of source directories without hiding source at the link target. No option or environment variable
-redirects the cache directory; an indexed root may itself be a symlink.
+Before lookup and persistence, device/inode identities of `.explainer`, `cache` and `extraction-v1` are
+checked against repository directories, including empty and ignored directories that could change Git's
+clean-tree decision. Symlinks, bind mounts and other aliases into that census bypass reads and writes;
+`extraction.enabled` is false and `extraction.bypassReason` explains the match. Inspection failures also
+bypass reuse. Source at the target stays discoverable; isolated external targets remain usable. No option
+or environment variable redirects the cache directory; an indexed root may itself be a symlink.
 Old entries remain until that directory is removed. Each entry stores the full source/key input and plain
 JSON facts, with an input/payload checksum. Address collisions cannot reuse a different stored input.
 Syntax errors and pack warnings from successful extraction are replayed; extraction failures are retried.
@@ -59,11 +61,13 @@ No dependencies or semantic toolchains are installed in the pinned repository.
 user/system CPU time cover `buildIndex` only, excluding process startup and output serialization. Peak RSS
 includes startup and is sampled before snapshot serialization; it is the OS process high-water mark.
 Disk costs include cache entries (logical bytes and allocated blocks), excluding indexes and benchmark
-output. Extraction wall time includes cache lookup, parsing/extraction and writes; heuristic and semantic
-work are reported separately. `precise: off` means these numbers measure extraction reuse with fresh
+output. Extraction wall time includes directory eligibility, cache lookup, parsing/extraction and writes;
+heuristic and semantic work are reported separately. `precise: off` means these numbers measure extraction reuse with fresh
 heuristic resolution, not a speedup of semantic tooling. OS filesystem caches are not flushed.
 
 ## Measurements
+
+These measurements predate the directory-identity census; rerun the commands above for current timings.
 
 Measured on Linux x64 with Node v22.23.1, three separate-process rounds per repository. The larger input is
 [Vitest v3.2.4](https://github.com/vitest-dev/vitest/tree/c666d149a4516761bae92ca56ce1336d2fd352c3),
