@@ -102,6 +102,8 @@ Conventions (all packages):
 - Tests: vitest, in `packages/<pkg>/test/*.test.ts`. E2E: Playwright `@playwright/test@1.56.1` (matches the
   preinstalled Chromium in `/opt/pw-browsers`), in `packages/viewer/e2e/`. `XPL_TEST_SCIP=1` turns on the
   SCIP integration test, which downloads and runs the real indexers. Fixtures carry their own runners.
+  `packages/cli/test/dead-exports.test.ts` fails on a production export that only tests use. On CI,
+  Playwright retries a failed spec once for its trace, and a spec that passes on the retry fails the run.
 - `.npmrc` sets `ignore-scripts=true`: the grammar packages' install scripts only build native bindings we
   never use. So npm also skips pre/post scripts of our own packages; there are none. Tree-sitter grammar
   versions are pinned exactly (the wasm ABI has to match `web-tree-sitter`).
