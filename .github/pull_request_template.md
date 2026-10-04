@@ -19,7 +19,8 @@ skill), in 2-4 plain sentences. Then how it works, briefly. -->
 <!-- Required when the PR changes the viewer's UI or UX, or can change abstraction levels (what a map shows
 at the system, service or code level; grouping, zoom/opens, stubs, lifted or derived edges, draft levels,
 package boundaries). Before/After from `scripts/pr-screenshots.sh origin/main --publish` (prints this section), see
-.claude/skills/pr-screenshots/SKILL.md. One line on what to look at, then the image.
+.claude/skills/pr-screenshots/SKILL.md. Above each image, write one or two sentences explaining the previous
+behaviour, the expected behaviour after the change, and where to look when the difference is subtle.
 If nothing visible changed, say why and paste the compare/index.md summary. Otherwise write "n/a". -->
 
 ## Docs

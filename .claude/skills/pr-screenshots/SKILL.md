@@ -55,10 +55,13 @@ the narrow width, the dark theme, whichever the change touches. Include dark mod
 
 Paste the printed section into the PR description's **Screenshots** section (create or update the PR body
 with the GitHub tools you have). Keep the most important images first, at most about six, and replace each
-`<!-- what to look at -->` with one line:
+`<!-- what to look at -->` with one or two sentences above the image. Describe the previous behaviour and
+the expected behaviour after the change, and tell the reviewer where to look when the difference is subtle.
+For example:
 
 ```md
-**arch-system**: the database box now shows its technology badge.
+**arch-system**: Before, the database box showed only its name; after, it also shows its technology badge.
+Look below the box title for the new PostgreSQL label.
 ![arch-system](https://github.com/<owner>/<repo>/blob/<sha>/<branch>/arch-system.png?raw=true)
 ```
 

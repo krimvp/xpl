@@ -32,8 +32,10 @@ tests that own the changed code. Fix what it finds before pushing, and mention t
 
 `scripts/needs-screenshots.sh` decides. When it says they are needed, run
 `scripts/pr-screenshots.sh origin/main --publish` (the `pr-screenshots` skill) without asking and paste the
-printed Screenshots section into the PR description, with one line per image on what to look at. With no
-visible change it prints a section saying so; paste that. CI posts the same images as a PR comment.
+printed Screenshots section into the PR description. Above each image, add one or two sentences explaining
+the previous behaviour, the expected behaviour after the change, and where to look when the difference is
+subtle. With no visible change it prints a section saying so; paste that. CI posts the same images as a PR
+comment.
 
 ## 4. Commit
 

@@ -147,6 +147,9 @@ Do yourself everything a tool can do; ask the user only for decisions, never to 
   `scripts/pr-screenshots.sh origin/main --publish` (the `pr-screenshots` skill) photographs base and head
   the same way, publishes the changed shots side by side and prints the Screenshots section to paste. Do it
   without asking; CI also posts them as a PR comment.
+  Above each Before/After image, add one or two sentences explaining what changed and what the reviewer
+  should look for. Describe the previous behaviour and the expected behaviour after the change, including
+  where to look when the difference is subtle.
 - Commits: conventional, scoped by package (`fix(indexer):`, `feat(viewer):`, `docs(explainer):`), with the
   subject stating the new behaviour in plain words (see recent `git log`).
 - Never push to `main` directly, never force-push a shared branch, never skip or loosen a test to get green.
