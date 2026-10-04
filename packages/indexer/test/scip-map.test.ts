@@ -583,6 +583,40 @@ def ⟦use⟧(models, p):
     expect(result.blind).toEqual([{ file: "pkg/a.py", line: 13, col: 12 }]);
   });
 
+  it("Python: a dunder the indexer defines at the class name (`__doc__`) is not the class", async () => {
+    const py = marked(`class ⟦Model⟧:
+    def ⟦__init__⟧(self):
+        pass
+def ⟦setup⟧(cls):
+    cls.⟦__doc__⟧ = "x"
+    return ⟦Model⟧()
+`);
+    const sym = (d: string): string => `scip-python python p 0.0.0 \`pkg.a\`/${d}`;
+    const { refs } = await run(
+      { "pkg/a.py": py.text },
+      [
+        source([
+          {
+            path: "pkg/a.py",
+            occurrences: [
+              { range: [0, 0, 0], symbol: sym("__init__:"), roles: DEF },
+              ...occs(py, [
+                [0, sym("Model#"), DEF],
+                [0, sym("Model#__doc__."), DEF], // synthesized at the class name
+                [1, sym("Model#__init__()."), DEF],
+                [2, sym("setup()."), DEF],
+                [3, sym("Model#__doc__."), SymbolRole.WriteAccess],
+                [4, sym("Model#")],
+              ]),
+            ],
+          },
+        ]),
+      ],
+      ["python"],
+    );
+    expect(triples(refs)).toEqual(["call pkg/a.py#setup -> pkg/a.py#Model"]);
+  });
+
   it("finds the implementation of overloaded functions (several definitions of one symbol, or one per signature)", async () => {
     const src = marked(`export function ⟦pick⟧(x: string): string;
 export function ⟦pick⟧(x: number): number;
