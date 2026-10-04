@@ -129,7 +129,10 @@ export function normalizeColumn(
 }
 
 /** Strict conversion: invalid columns, split Unicode characters and empty ranges are not evidence. */
-function rangeFromLines(lines: readonly string[], range: ProviderRange): Span | undefined {
+export function normalizeProviderRange(
+  lines: readonly string[],
+  range: ProviderRange,
+): Span | undefined {
   const [sr, sc] = range.start;
   const [er, ec] = range.end;
   const start = normalizeColumn(lines, sr, sc, range.encoding);
@@ -206,7 +209,7 @@ export function normalizeProvider(
     const text = fresh(fact.file);
     if (text === undefined) continue;
     const identifier =
-      fact.identifier && rangeFromLines(sourceLines.get(fact.file)!, fact.identifier);
+      fact.identifier && normalizeProviderRange(sourceLines.get(fact.file)!, fact.identifier);
     if (fact.identifier && !identifier) {
       reject(fact.file, `${fact.identity}: invalid identifier range`);
       continue;
@@ -229,7 +232,7 @@ export function normalizeProvider(
       reject(fact.file, `${fact.identity}: full declaration range unavailable`);
       continue;
     }
-    const span = rangeFromLines(sourceLines.get(fact.file)!, fact.declaration);
+    const span = normalizeProviderRange(sourceLines.get(fact.file)!, fact.declaration);
     if (
       !span ||
       (identifier &&
@@ -302,7 +305,7 @@ export function normalizeProvider(
     if (text === undefined) continue;
     const from = identities.get(fact.from) ?? fact.from;
     const to = identities.get(fact.to) ?? fact.to;
-    const site = rangeFromLines(sourceLines.get(fact.file)!, fact.evidence);
+    const site = normalizeProviderRange(sourceLines.get(fact.file)!, fact.evidence);
     if (
       !(RELATIONSHIP_CAPABILITIES as readonly string[]).includes(fact.kind) ||
       !site ||
