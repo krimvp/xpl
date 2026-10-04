@@ -1,12 +1,13 @@
 import { readFileSync } from "node:fs";
 import { expect, test } from "@playwright/test";
-import { artifactIdentity, hashText, parseBundle } from "@xpl/core";
+import { artifactIdentity, hashText, parseBundle, applyPatch } from "@xpl/core";
 import {
   openEditMenu,
   openVariant,
   type Loose,
   withBundle,
   readEmbeddedBundle,
+  openTourEditor,
 } from "./helpers.js";
 
 function complete(bundle: Loose) {
@@ -157,7 +158,7 @@ test("a live save checks the workspace at the export click, even before polling 
   await page.route("http://xpl.test/**", (route) => {
     const path = new URL(route.request().url()).pathname;
     if (path === "/")
-      return route.fulfill({ contentType: "text/html", body: withBundle(html, bundle) });
+      return route.fulfill({ contentType: "text/html", body: withBundle(html, { ...bundle }) });
     if (path === "/api/explainer") return route.fulfill({ status: 304 });
     if (path === "/api/requests")
       return route.fulfill({ contentType: "application/json", body: '{"requests":[]}' });
@@ -214,7 +215,7 @@ test("live ready HTML refreshes fetched source and keeps it available after disc
   await page.route("http://xpl.test/**", (route) => {
     const url = new URL(route.request().url());
     if (url.pathname === "/")
-      return route.fulfill({ contentType: "text/html", body: withBundle(html, bundle) });
+      return route.fulfill({ contentType: "text/html", body: withBundle(html, { ...bundle }) });
     if (url.pathname === "/api/explainer") return route.fulfill({ status: 304 });
     if (url.pathname === "/api/requests")
       return route.fulfill({
@@ -265,4 +266,181 @@ test("live ready HTML refreshes fetched source and keeps it available after disc
   await page.locator('.tree-row[data-path="README.md"]').click();
   await expect(page.locator('[data-file="README.md"] .cm-content')).toContainText(fresh);
   expect(requests).toEqual([]);
+});
+
+test("offline all-content review survives HTML reopening and explicitly gates team export", async ({
+  page,
+}) => {
+  await openVariant(page, complete);
+  await expect(page.getByTestId("review-status")).toHaveText("Author review: unchecked");
+  await (await openEditMenu(page)).getByTestId("edit-save-html").click();
+  await expect(page.getByTestId("save-html-ready")).toBeEnabled();
+  await page.getByLabel("Require a current review of all stored content (team policy)").check();
+  await expect(page.getByTestId("save-html-ready")).toBeDisabled();
+  await expect(page.locator(".readiness-findings")).toContainText("review-required");
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  await (await openEditMenu(page)).getByTestId("edit-review").click();
+  const dialog = page.getByRole("dialog", { name: "Record author review" });
+  await dialog.getByLabel("Reviewer name (self-reported)").fill("Ada");
+  await dialog
+    .getByLabel("Named omissions (one per line)")
+    .fill("Runtime initialization was not exercised.");
+  await expect(dialog.getByTestId("review-inspection")).toContainText(
+    "All stored explanation content",
+  );
+  await dialog.getByRole("button", { name: "Record inspected review", exact: true }).click();
+  await expect(dialog).not.toBeVisible();
+  await expect(page.getByTestId("review-status")).toHaveText("Author review: reviewed");
+  await page.getByTestId("explanation-info").locator("summary").click();
+  await expect(page.getByTestId("explanation-info")).toContainText("Ada (self-reported)");
+  await expect(page.getByTestId("explanation-info")).toContainText(
+    "Runtime initialization was not exercised.",
+  );
+  await (await openEditMenu(page)).getByTestId("edit-save-html").click();
+  await page.getByLabel("Require a current review of all stored content (team policy)").check();
+  await expect(page.getByTestId("save-html-ready")).toBeEnabled();
+  const [download] = await Promise.all([
+    page.waitForEvent("download"),
+    page.getByTestId("save-html-ready").click(),
+  ]);
+  const html = readFileSync((await download.path())!, "utf8");
+  const saved = dataOf(html);
+  expect(saved.explainer.review).toMatchObject({
+    reviewer: "Ada",
+    scope: { content: "all", source: "anchored" },
+    omissions: ["Runtime initialization was not exercised."],
+    sourceCommit: saved.index.commit,
+  });
+  expect(saved.exportInfo?.report.review).toEqual({ status: "reviewed", required: true });
+  const requests: string[] = [];
+  await page.unroute("http://xpl.test/**");
+  await page.route("http://xpl.test/**", (route) => {
+    if (new URL(route.request().url()).pathname === "/")
+      return route.fulfill({ contentType: "text/html", body: html });
+    requests.push(route.request().url());
+    return route.abort();
+  });
+  await page.goto("http://xpl.test/");
+  await expect(page.getByTestId("review-status")).toHaveText("Author review: reviewed");
+  await (await openEditMenu(page)).getByTestId("edit-save-html").click();
+  await expect(
+    page.getByLabel("Require a current review of all stored content (team policy)"),
+  ).toBeChecked();
+  await expect(page.getByTestId("save-html-ready")).toBeEnabled();
+  expect(requests).toEqual([]);
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  await openTourEditor(page);
+  await page
+    .getByTestId("tour-step-note")
+    .first()
+    .fill("### Changed explanation\n\nThe runner starts another dispatch pass.");
+  await page.getByRole("button", { name: "Close the tour panel" }).click();
+  await page.getByRole("button", { name: "Guide", exact: true }).click();
+  await expect(page.getByTestId("review-status")).toHaveText("Author review: out of date");
+  await (await openEditMenu(page)).getByTestId("edit-save-html").click();
+  await expect(page.getByTestId("save-review-status")).toHaveText("Author review: out of date");
+  await expect(page.getByTestId("save-html-ready")).toBeDisabled();
+  await page.getByLabel("Require a current review of all stored content (team policy)").uncheck();
+  await expect(page.getByTestId("save-html-ready")).toBeEnabled();
+});
+
+test("live author recording sends only a review user edit and refuses changes since inspection", async ({
+  page,
+}) => {
+  const { html, bundle: raw } = readEmbeddedBundle();
+  complete(raw);
+  raw.server = { api: "/api" };
+  let bundle = parseBundle(JSON.stringify(raw));
+  const puts: unknown[] = [];
+  await page.route("http://xpl.test/**", async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path === "/")
+      return route.fulfill({ contentType: "text/html", body: withBundle(html, { ...bundle }) });
+    if (path === "/api/explainer") return route.fulfill({ status: 304 });
+    if (path === "/api/requests")
+      return route.fulfill({ contentType: "application/json", body: '{"requests":[]}' });
+    if (path === "/api/export" || path === "/api/bundle")
+      return route.fulfill({ contentType: "application/json", body: JSON.stringify(bundle) });
+    if (path === "/api/review") {
+      const patch = route.request().postDataJSON();
+      puts.push(patch);
+      const result = applyPatch(
+        bundle.explainer,
+        patch,
+        bundle.index,
+        (path) => bundle.files[path],
+        { actor: "user" },
+      );
+      if (!result.ok)
+        return route.fulfill({
+          status: 400,
+          contentType: "application/json",
+          body: JSON.stringify({ error: "Reviewed content changed; inspect again." }),
+        });
+      bundle = { ...bundle, explainer: result.explainer };
+      return route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify(bundle.explainer),
+      });
+    }
+    return route.fulfill({ status: 404 });
+  });
+  await page.goto("http://xpl.test/");
+  await (await openEditMenu(page)).getByTestId("edit-review").click();
+  const dialog = page.getByRole("dialog", { name: "Record author review" });
+  await dialog.getByLabel("Reviewer name (self-reported)").fill("Grace");
+  await expect(dialog.getByRole("button", { name: "Record inspected review" })).toBeEnabled();
+  bundle.explainer.title = "Dispatching jobs after inspection";
+  await dialog.getByRole("button", { name: "Record inspected review" }).click();
+  await expect(dialog.getByRole("alert")).toContainText("inspect again");
+  await expect(page.getByTestId("review-status")).toHaveText("Author review: unchecked");
+  await dialog.getByRole("button", { name: "Inspect current snapshot" }).click();
+  await expect(dialog.getByTestId("review-inspection")).toContainText(
+    "Dispatching jobs after inspection",
+  );
+  await dialog.getByRole("button", { name: "Record inspected review" }).click();
+  await expect(dialog).not.toBeVisible();
+  await expect(page.getByTestId("review-status")).toHaveText("Author review: reviewed");
+  expect(puts).toHaveLength(2);
+  expect(Object.keys(puts[1] as object)).toEqual(["review"]);
+  expect(bundle.explainer.review?.reviewer).toBe("Grace");
+  bundle.explainer.title = "Another authored change";
+  await (await openEditMenu(page)).getByTestId("edit-save-html").click();
+  await expect(page.getByTestId("save-review-status")).toHaveText("Author review: out of date");
+});
+
+test("selected review requires reinspection, survives unrelated tour edits and can be removed as an author edit", async ({
+  page,
+}) => {
+  await openVariant(page, complete);
+  await (await openEditMenu(page)).getByTestId("edit-review").click();
+  const dialog = page.getByRole("dialog", { name: "Record author review" });
+  await dialog.getByLabel("Reviewer name (self-reported)").fill("Ada");
+  await dialog.getByLabel("Content scope", { exact: true }).selectOption("selected");
+  await dialog.getByLabel("Stored items", { exact: true }).selectOption(["concept:retry-policy"]);
+  await expect(dialog.getByRole("button", { name: "Record inspected review" })).toBeDisabled();
+  await dialog.getByRole("button", { name: "Inspect current snapshot" }).click();
+  await expect(dialog.getByTestId("review-inspection")).toContainText("concept:retry-policy");
+  await dialog.getByRole("button", { name: "Record inspected review" }).click();
+  await expect(dialog).not.toBeVisible();
+  await expect(page.getByTestId("review-status")).toHaveText("Author review: reviewed");
+  await openTourEditor(page);
+  await page
+    .getByTestId("tour-step-note")
+    .first()
+    .fill("### Another tour introduction\n\nThe runner starts scheduling jobs.");
+  await page.getByRole("button", { name: "Close the tour panel" }).click();
+  await page.getByRole("button", { name: "Guide", exact: true }).click();
+  await expect(page.getByTestId("review-status")).toHaveText("Author review: reviewed");
+  await (await openEditMenu(page)).getByTestId("edit-save-html").click();
+  await expect(page.getByTestId("save-html-ready")).toBeEnabled();
+  await page.getByLabel("Require a current review of all stored content (team policy)").check();
+  await expect(page.getByTestId("save-html-ready")).toBeDisabled();
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  await (await openEditMenu(page)).getByTestId("edit-review").click();
+  await expect(dialog.getByLabel("Content scope", { exact: true })).toHaveValue("selected");
+  await expect(dialog.getByRole("button", { name: "Remove review" })).toBeEnabled();
+  await dialog.getByRole("button", { name: "Remove review" }).click();
+  await expect(dialog).not.toBeVisible();
+  await expect(page.getByTestId("review-status")).toHaveText("Author review: unchecked");
 });

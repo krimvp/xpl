@@ -4,6 +4,8 @@ import { join } from "node:path";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import {
   BUNDLE_SCHEMA,
+  reviewFingerprint,
+  TextCache,
   collectAnchors,
   parseBundle,
   type Explainer,
@@ -87,6 +89,55 @@ async function json(res: Response): Promise<any> {
 }
 
 describe("xpl view", () => {
+  it("records and removes author reviews on disk, rejects stale inspected content, and embeds broad evidence", async () => {
+    const dir = cloneDir(demo);
+    const view = await serve(dir);
+    const initial = parseBundle(await (await fetch(`${view.url}/api/export`)).text());
+    const scope = { content: "all" as const, source: "repository" as const };
+    // Repository review reads every indexed file, including source not referenced by a diagram.
+    const texts = new TextCache((path) => readFile(dir, path));
+    const review = {
+      reviewer: "Ada",
+      reviewedAt: "2026-10-04T12:00:00Z",
+      scope,
+      omissions: ["No runtime tests were run."],
+      fingerprint: reviewFingerprint(initial.explainer, initial.index, texts, scope),
+    };
+    const put = (body: unknown) =>
+      fetch(`${view.url}/api/review`, {
+        method: "PUT",
+        headers: JSON_HEADERS,
+        body: JSON.stringify(body),
+      });
+    const saved = await put({ review });
+    expect(saved.status).toBe(200);
+    expect(readJson(dir, ".explainer/demo.explainer.json").review).toEqual({
+      ...review,
+      sourceCommit: initial.index.commit,
+    });
+    const exported = parseBundle(await (await fetch(`${view.url}/api/export`)).text());
+    expect(exported.exportInfo?.report.review).toEqual({ status: "reviewed", required: false });
+    expect(exported.files["README.md"]).toBe(readFile(dir, "README.md"));
+    const edited = await fetch(`${view.url}/api/views/view:overview`, {
+      method: "PUT",
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ title: "Edited after inspection" }),
+    });
+    expect(edited.status).toBe(200);
+    const stale = await put({ review });
+    expect(stale.status).toBe(400);
+    expect(await json(stale)).toMatchObject({
+      issues: [{ code: "review", path: "review.fingerprint" }],
+    });
+    expect(readJson(dir, ".explainer/demo.explainer.json").review).toEqual({
+      ...review,
+      sourceCommit: initial.index.commit,
+    });
+    expect((await put({ review: null, title: "Bypass user patch" })).status).toBe(400);
+    expect((await put({ review: null })).status).toBe(200);
+    expect(readJson(dir, ".explainer/demo.explainer.json").review).toBeUndefined();
+  });
+
   it("export snapshots include source behind stubs and check current workspace hashes", async () => {
     const dir = cloneDir(demo);
     const view = await serve(dir);
