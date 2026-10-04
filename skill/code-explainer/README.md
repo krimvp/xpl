@@ -30,6 +30,8 @@ launcher binding. For source development, `bin/xpl` still finds `packages/cli/di
 
 ## Use
 
+Start with [Create a guide](reference/create.md): choose the repository root, reader, question and a new or existing guide. The agent writes the patch; you do not need to construct JSON. The guide includes three installed invocation examples and recovery steps for interrupted runs.
+
 In the repo you want to understand, ask Claude in plain words or with the skill's operations:
 
 - `explain how a failed job gets retried`: a tour that answers the question, with a map of the code involved and a flow of the decisions, anchored to code, config keys and tests.
@@ -40,7 +42,7 @@ In the repo you want to understand, ask Claude in plain words or with the skill'
 - `feedback`: in `xpl view`, type what should change under "Explain this" ("too long", "show the caller") and send it; then `/code-explainer feedback` makes the changes, and the open page picks them up by itself.
 - `make a tour` of the views for a talk (present mode).
 
-Claude indexes the repo, starts from a draft that `xpl draft` builds from the index (the structure, with no text), writes and checks the text, saves `.explainer/<name>.explainer.json`, and gives you an HTML bundle (`xpl bundle`, self-contained, the default in cloud sessions) or a local viewer (`xpl view`). `.explainer/index-*.json` is git-ignored automatically; commit the `*.explainer.json` files.
+Claude indexes the repo, starts from a draft that `xpl draft` builds from the index (the structure, with no text), writes and checks the text, saves `.explainer/<name>.explainer.json`, passes `xpl ready <name>`, and gives you an HTML bundle (`xpl bundle`, self-contained, the default in cloud sessions) or a local viewer (`xpl view`). `.explainer/index-*.json` is git-ignored automatically; commit the `*.explainer.json` files.
 
 The index gets precise references from SCIP indexers when they can run (`npx` for TypeScript and Python, the Go toolchain for Go); without them it falls back to heuristic references and says so.
 
@@ -55,6 +57,7 @@ invoke the skill; no continuously running authoring worker is required.
 | ----------------------------- | ---------------------------------------------------------------------------------------------------- |
 | `SKILL.md`                    | the skill: workflow, the three scopes, drafts, tour, accuracy, hard rules                            |
 | `bin/xpl`                     | launcher bound by the installer to the installed CLI; `XPL_CLI` overrides it                         |
+| `reference/create.md`         | installed creation prompts, new/existing target selection and recovery                               |
 | `reference/writing.md`        | plain-language rules, what goes in which field, before/after rewrites                                |
 | `reference/explain-change.md` | how to explain a PR, MR or branch diff: before/after checks, callers, tests                          |
 | `reference/patch-format.md`   | every patch element with examples, merge rules, rejection messages and fixes                         |
