@@ -18,6 +18,7 @@ function request(id: string): FeedbackRequest {
     context,
     range: { file: "src/runner.ts", fromLine: 4, toLine: 8, side: "head" },
     outcome: {
+      revision: 0,
       status: "pending",
       reason: "Awaiting an explicit revision pass.",
       at: "2026-10-04T12:00:00.000Z",
@@ -37,7 +38,12 @@ describe("durable feedback", () => {
     expect(readRequests(root).requests).toEqual([
       {
         ...original,
-        outcome: { status: "unresolved", reason: "Needs a runtime trace.", at: expect.any(String) },
+        outcome: {
+          revision: 1,
+          status: "unresolved",
+          reason: "Needs a runtime trace.",
+          at: expect.any(String),
+        },
       },
     ]);
   });
@@ -95,6 +101,7 @@ describe("durable feedback", () => {
       expect(existsSync(join(directory, "requests.json.lock"))).toBe(true);
       expect(to).toBe(path);
       expect(JSON.parse(readFileSync(String(from), "utf8"))[0].outcome).toMatchObject({
+        revision: 1,
         status: "unresolved",
         reason: "Run failed.",
       });
@@ -121,6 +128,7 @@ describe("durable feedback", () => {
       {
         ...original,
         outcome: {
+          revision: 1,
           status: "unresolved",
           reason: "Run failed; retry available.",
           at: expect.any(String),

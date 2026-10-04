@@ -1102,21 +1102,21 @@ export class ViewerStore {
 
   // ─── Explain requests and export ─────────────────────────────────────────────────────────────
 
-  private mergeFeedback(requests: readonly FeedbackRequest[]): FeedbackRequest[] {
+  private mergeFeedback(requests: readonly FeedbackRequest[], fromDisk = false): FeedbackRequest[] {
     const merged = new Map<string, FeedbackRequest>();
     for (const request of requests) {
       const original = merged.get(request.id);
       if (original && !sameFeedbackContent(original, request))
         throw new Error(`Conflicting original content for request ${request.id}`);
-      if (!original || Date.parse(request.outcome.at) > Date.parse(original.outcome.at))
+      if (!original || fromDisk || request.outcome.revision > original.outcome.revision)
         merged.set(request.id, request);
     }
     return [...merged.values()];
   }
 
   /** Persist before returning. Storage refusal stays visible and exports remain available. */
-  private keepFeedback(requests: FeedbackRequest[]): void {
-    this.set({ feedback: this.mergeFeedback([...this.state.feedback, ...requests]) });
+  private keepFeedback(requests: FeedbackRequest[], fromDisk = false): void {
+    this.set({ feedback: this.mergeFeedback([...this.state.feedback, ...requests], fromDisk) });
     if (this.state.feedbackStorageError) return;
     try {
       // One atomic browser write per ID: saving in another tab cannot replace this request.
@@ -1124,7 +1124,7 @@ export class ViewerStore {
         const key = `${this.feedbackStorageKey}:request:${encodeURIComponent(request.id)}`;
         const saved = localStorage.getItem(key);
         const current = saved ? [parseFeedbackRequest(JSON.parse(saved))] : [];
-        const latest = this.mergeFeedback([...current, request])[0]!;
+        const latest = this.mergeFeedback([...current, request], fromDisk)[0]!;
         localStorage.setItem(key, JSON.stringify(latest));
       }
       this.set({ feedbackStorageError: undefined });
@@ -1163,7 +1163,8 @@ export class ViewerStore {
   async refreshFeedback(): Promise<void> {
     this.loadFeedback({ schema: FEEDBACK_SCHEMA, requests: this.state.feedback });
     if (!this.api) return;
-    this.keepFeedback(await this.api.requests());
+    // The live author store owns outcomes; a portable browser result cannot override it.
+    this.keepFeedback(await this.api.requests(), true);
   }
 
   feedbackJson(): string {
@@ -1206,7 +1207,12 @@ export class ViewerStore {
       ...(this.state.viewId ? { view: this.state.viewId } : {}),
       label: this.state.model.label(id),
       ...(range ? { range } : {}),
-      outcome: { status: "pending", reason: "Awaiting an explicit revision pass.", at },
+      outcome: {
+        revision: 0,
+        status: "pending",
+        reason: "Awaiting an explicit revision pass.",
+        at,
+      },
     });
     // Include other tabs' requests in this page without rewriting their stored records.
     this.loadFeedback({ schema: FEEDBACK_SCHEMA, requests: this.state.feedback });

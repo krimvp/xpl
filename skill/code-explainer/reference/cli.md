@@ -615,11 +615,14 @@ xpl feedback myguide --export /tmp/results.json
 Exports use `{schema: "code-explainer/feedback@1", requests: [...]}`. Each request has `id`, `elementId`,
 `kind: correct|explain|expand`, `at`, immutable `context: {explainerHash, sourceHash}`, optional `note`,
 `view`, `label`, `explainer`, `sourceWarning` and `range: {file, fromLine, toLine, side: head|base}`, and
-`outcome: {status, reason, at}`. Status is `pending`, `addressed`, `unresolved`, `rejected` or `outdated`.
-Outcomes are separate from author notes. Repeated imports deduplicate by ID and keep local results;
+`outcome: {revision, status, reason, at}`. Status is `pending`, `addressed`, `unresolved`, `rejected` or `outdated`.
+Outcomes are separate from author notes. Capture starts at revision zero. Imports deduplicate by ID and
+take greater outcome revisions; equal or older revisions keep local results. Old exports without a
+revision read as zero. Timestamps are display metadata, never an ordering across machines;
 conflicting original content is rejected before any write. `--outcomes` reads an array of
 `{id, context, status, reason}`; copy the selected IDs and their original context exactly. It never removes
-requests collected after selection or left unselected. Failed writes leave the old store intact.
+requests collected after selection or left unselected. Only author outcome recording increments the
+selected requests' revisions under the store lock. Failed writes leave the old store and counters intact.
 
 Inspection reports `contextStatus: current|outdated` and `contextReason` separately from the stored
 outcome. A changed explanation/source snapshot or stale source needs explicit reconciliation; it is never

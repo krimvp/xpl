@@ -6,6 +6,8 @@ export type FeedbackKind = "correct" | "explain" | "expand";
 export type FeedbackStatus = "pending" | "addressed" | "unresolved" | "rejected" | "outdated";
 
 export interface FeedbackOutcome {
+  /** Starts at zero; only an author's locked outcome recording increments this counter. */
+  revision: number;
   status: FeedbackStatus;
   reason: string;
   at: string;
@@ -62,6 +64,10 @@ export function parseFeedbackRequest(value: unknown): FeedbackRequest {
   const kind = text(data.kind, "kind", 20);
   if (!["correct", "explain", "expand"].includes(kind)) throw new Error("unknown feedback kind");
   const result = object(data.outcome);
+  // Existing v1 exports predate counters. Their times cannot establish an ordering.
+  const revision = result.revision === undefined ? 0 : result.revision;
+  if (typeof revision !== "number" || !Number.isSafeInteger(revision) || revision < 0)
+    throw new Error("outcome.revision must be a non-negative safe integer");
   const status = text(result.status, "status", 20);
   if (!["pending", "addressed", "unresolved", "rejected", "outdated"].includes(status)) {
     throw new Error("unknown feedback status");
@@ -122,6 +128,7 @@ export function parseFeedbackRequest(value: unknown): FeedbackRequest {
     context,
     ...(range ? { range } : {}),
     outcome: {
+      revision,
       status: status as FeedbackStatus,
       reason: text(result.reason, "reason", 5000),
       at: timestamp(result.at),

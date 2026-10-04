@@ -43,6 +43,7 @@ test("disconnected reader captures selected source, reloads and exports the orig
     context: { explainerHash: expect.any(String), sourceHash: expect.any(String) },
     range: { file: "src/runner.ts", fromLine: 40, toLine: 40, side: "head" },
     outcome: {
+      revision: 0,
       status: "pending",
       reason: "Awaiting an explicit revision pass.",
       at: expect.any(String),
@@ -143,6 +144,7 @@ test("saved-page feedback retains terminal outcomes and reports changed explanat
         at: "2026-10-04T12:00:00.000Z",
         context: { explainerHash: "previous-explanation", sourceHash: "previous-source" },
         outcome: {
+          revision: 1,
           status: "unresolved",
           reason: "Need a runtime trace; retry later.",
           at: "2026-10-04T13:00:00.000Z",
@@ -161,6 +163,7 @@ test("saved-page feedback retains terminal outcomes and reports changed explanat
               requests: requests.map((r) => ({
                 ...r,
                 outcome: {
+                  revision: 0,
                   status: "pending",
                   reason: "Older pending result.",
                   at: "2026-10-04T12:00:00.000Z",

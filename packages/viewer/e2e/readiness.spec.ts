@@ -198,7 +198,12 @@ test("live ready HTML refreshes fetched source and keeps it available after disc
     kind: "explain",
     at: "2026-10-04T12:00:00.000Z",
     context: artifactIdentity(original.explainer, original.index),
-    outcome: { status: "pending", reason: "Awaiting a pass.", at: "2026-10-04T12:00:00.000Z" },
+    outcome: {
+      revision: 0,
+      status: "pending",
+      reason: "Awaiting a pass.",
+      at: "2026-10-04T12:00:00.000Z",
+    },
   };
   delete bundle.files["README.md"];
   const initial = "Notes read while the workspace is open.";
@@ -235,6 +240,7 @@ test("live ready HTML refreshes fetched source and keeps it available after disc
   await (await openEditMenu(page)).getByTestId("edit-save-html").click();
   await expect(page.getByTestId("readiness-summary")).toContainText("Ready: 0 errors");
   prior.outcome = {
+    revision: 1,
     status: "addressed",
     reason: "Explained the queue wait.",
     at: "2026-10-04T13:00:00.000Z",

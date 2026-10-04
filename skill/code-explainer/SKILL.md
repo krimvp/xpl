@@ -186,12 +186,12 @@ Patch only what changes, and lint the patch first.
 
 ## feedback [<id> <what to change>]
 
-Reader requests from the Feedback panel or "Explain this", in a saved page or `xpl view`. Saving a request never starts generation. Import an offline `feedback.json` with `xpl feedback <name> --import /path/to/feedback.json`; repeated imports retain local outcomes and deduplicate by stable ID.
+Reader requests from the Feedback panel or "Explain this", in a saved page or `xpl view`. Saving a request never starts generation. Import an offline `feedback.json` with `xpl feedback <name> --import /path/to/feedback.json`; imports deduplicate by stable ID and take greater outcome revisions. Equal or older revisions keep the current result; timestamps never order outcomes.
 
 1. Inspect `xpl feedback <name> --json`. Select an explicit batch by request IDs and original `context`. Keep that selection unchanged while working. Requests with `contextStatus: "outdated"` require explicit reconciliation with the reader; never assume their element or range means the same thing in a newer explanation or source snapshot. Legacy unbound requests are outdated too.
 2. For selected pending or retryable requests with current context: read the original element, selected source range and code (`show <id> --refs`). Make the smallest patch the note asks for, by `writing.md`. More to show is `expand`; a contradicted claim is fixed in the text, never by bending the anchor. If the note is wrong, change nothing and explain why. Preserve user-owned fields. Lint and apply the patch, then validate it.
 3. Record one explicit result per selected request with `xpl feedback <name> --outcomes /tmp/outcomes.json`. The file is an array of `{id, context, status, reason}`; copy the request ID and original `{explainerHash, sourceHash}` exactly. Status is `addressed`, `unresolved`, `rejected` or `outdated`, with a concrete reason. A failed pass stays pending or unresolved and retryable. Never delete `.explainer/requests.json`: unselected requests and feedback added during the pass must survive. Outcomes are separate from author notes.
-4. Reply with one line per selected request: what changed or why it could not be handled. `xpl feedback <name> --export /tmp/feedback.json` carries original IDs, context, ranges and outcomes. A live page picks up applied explanation changes; a saved page keeps its original snapshot.
+4. Reply with one line per selected request: what changed or why it could not be handled. `xpl feedback <name> --export /tmp/feedback.json` carries original IDs, context, ranges and outcomes, including the revision counter incremented by `--outcomes`. Do not edit counters or use timestamps to order results. A live page takes outcomes from disk and picks up applied explanation changes; a saved page keeps its original snapshot.
 
 ## make tour
 

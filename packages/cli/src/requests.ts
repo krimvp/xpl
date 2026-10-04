@@ -32,6 +32,7 @@ function storedRequest(value: unknown, position: number): FeedbackRequest {
       at,
       context: null,
       outcome: {
+        revision: 0,
         status: "outdated",
         reason: "Original snapshot was not recorded. Explicit reconciliation is required.",
         at,
@@ -66,7 +67,7 @@ async function mutate<T>(root: string, merge: (requests: FeedbackRequest[]) => T
   });
 }
 
-/** Imports never replace a local outcome. Reusing an ID for different original content is an error. */
+/** Portable results advance by revision; duplicate or older imports keep the current outcome. */
 export async function importRequests(
   root: string,
   incoming: readonly FeedbackRequest[],
@@ -79,6 +80,7 @@ export async function importRequests(
       if (existing) {
         if (!sameFeedbackContent(existing, entry))
           throw new CliError(`request ID ${entry.id} conflicts with its original content`);
+        if (entry.outcome.revision > existing.outcome.revision) existing.outcome = entry.outcome;
       } else {
         requests.push(entry);
         imported++;
@@ -100,11 +102,12 @@ export async function appendRequest(
     outcome:
       request.context === null
         ? {
+            revision: 0,
             status: "outdated",
             reason: "Original snapshot was not recorded. Explicit reconciliation is required.",
             at,
           }
-        : { status: "pending", reason: "Awaiting an explicit revision pass.", at },
+        : { revision: 0, status: "pending", reason: "Awaiting an explicit revision pass.", at },
   });
   await importRequests(root, [entry]);
   const saved = readRequests(root).requests;
@@ -140,7 +143,12 @@ export async function recordOutcomes(
         throw new CliError(`original context does not match request ${update.id}`);
       requests[i] = parseFeedbackRequest({
         ...original,
-        outcome: { status: update.status, reason: update.reason, at: new Date().toISOString() },
+        outcome: {
+          revision: original.outcome.revision + 1,
+          status: update.status,
+          reason: update.reason,
+          at: new Date().toISOString(),
+        },
       });
     }
   });

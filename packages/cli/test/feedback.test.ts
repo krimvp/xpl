@@ -33,6 +33,7 @@ it("imports, inspects, exports and records outcomes by ID while reporting outdat
     context,
     range: { file: "src/runner.ts", fromLine: 4, toLine: 8, side: "head" },
     outcome: {
+      revision: 0,
       status: "pending",
       reason: "Awaiting an explicit revision pass.",
       at: "2026-10-04T12:00:00.000Z",
@@ -58,6 +59,7 @@ it("imports, inspects, exports and records outcomes by ID while reporting outdat
   expect(readJson(scratch, "retry.json").requests[0]).toMatchObject({
     ...original,
     outcome: {
+      revision: 1,
       status: "unresolved",
       reason: "Run failed; retry available.",
       at: expect.any(String),

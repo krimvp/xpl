@@ -20,6 +20,9 @@ it.each([
   [{ range: { ...request.range, fromLine: 6 } }, "inclusive line numbers"],
   [{ outcome: { ...request.outcome, reason: "" } }, "reason must be"],
   [{ outcome: { ...request.outcome, status: "approved" } }, "unknown feedback status"],
+  [{ outcome: { ...request.outcome, revision: -1 } }, "revision must be"],
+  [{ outcome: { ...request.outcome, revision: 1.5 } }, "revision must be"],
+  [{ outcome: { ...request.outcome, revision: Number.MAX_SAFE_INTEGER + 1 } }, "revision must be"],
   [{ context: null }, "unbound legacy feedback must be outdated"],
   [{ kind: "generate" }, "unknown feedback kind"],
 ])("rejects malformed imported request %j before storage", (change, error) => {
@@ -27,3 +30,17 @@ it.each([
     parseFeedbackFile({ schema: FEEDBACK_SCHEMA, requests: [{ ...request, ...change }] }),
   ).toThrow(error as string);
 });
+
+it.each([
+  [undefined, 0],
+  [3, 3],
+])(
+  "preserves explicit outcome revisions and reads unversioned v1 records (%s)",
+  (revision, expected) => {
+    const file = parseFeedbackFile({
+      schema: FEEDBACK_SCHEMA,
+      requests: [{ ...request, outcome: { ...request.outcome, revision } }],
+    });
+    expect(file.requests[0]!.outcome).toEqual({ ...request.outcome, revision: expected });
+  },
+);

@@ -1286,22 +1286,27 @@ when an `Origin` header is present, the same origin (403); bodies are capped at 
 gets 405 with `Allow`. View, tour and request writes run one at a time. `.explainer/requests.json` is a JSON
 array of `FeedbackRequest` records. Imports and selected-ID outcomes lock, reread and atomically merge
 against the latest store. No operation removes unselected or newly appended requests. Malformed stores
-and conflicting original content for one ID are rejected before writing; repeated imports keep local outcomes.
+and conflicting original content for one ID are rejected before writing. Imported outcomes advance only
+when their revision is greater; equal or older revisions keep the stored result.
 
 **Feedback contract** (`core/feedback.ts`): exports are `{schema: "code-explainer/feedback@1", requests}`.
 Each request has `id`, `elementId`, `kind` (`correct`, `explain`, `expand`), `at`, optional `note`, `view`,
 `label`, `explainer`, optional `range` (`file`, inclusive `fromLine`/`toLine`, `side: head|base`), immutable
-`context: {explainerHash, sourceHash}`, and `outcome: {status, reason, at}`. Status is `pending`, `addressed`,
+`context: {explainerHash, sourceHash}`, and `outcome: {revision, status, reason, at}`. Status is `pending`, `addressed`,
 `unresolved`, `rejected` or `outdated`; every result has a reason. Original source freshness warnings are
 retained as `sourceWarning`. Context uses #25's `artifactIdentity(explainer, index)`: canonical full
 explanation JSON and sorted indexed path/hash manifest plus change base/head. It identifies indexed source;
 a stale workspace or original source warning still requires reconciliation even when hashes match.
 Legacy requests get deterministic IDs and `context: null` with an outdated result; no snapshot is invented.
+Outcome revisions are non-negative safe integers. Capture starts at zero; only locked author outcome
+recording increments the latest stored counter. Old exports without a revision read as zero. Timestamps
+remain display metadata; no merge orders outcomes by clocks from different machines.
 
 `xpl feedback` compares against the latest index and reports `contextStatus`/`contextReason` separately
 from the stored outcome, preserving an imported terminal result and its reason. Outdated requests are
 never silently rebound. `--outcomes` reads an array of `{id, context, status, reason}` with the original
-context copied exactly. It updates those IDs only. Failed writes leave the prior file intact and retryable.
+context copied exactly. It updates those IDs and increments their revisions only. Failed writes leave
+the prior file and counters intact and retryable.
 The actual selected revision operation and acceptance/diff workflow belong to #30.
 
 **Bundle payload** (`ViewerBundle`, also `/api/bundle`): `{ schema: "code-explainer/bundle@0", explainer,
@@ -1547,8 +1552,11 @@ Before-source selections retain `side: base` and do not look up head symbols. Of
 reload in a browser namespace captured once from the page's original artifact/source identity. View edits
 and live refresh never change that namespace; each request keeps the context at the time it was captured.
 Each request is written under its own stable-ID key, so concurrent tabs cannot replace each other's requests.
-Reload also reads the old array format without rewriting it and keeps the newer of embedded and browser
-outcomes; conflicting original content for one ID is reported without overwriting storage.
+Reload also reads the old array format without rewriting it and keeps the greater outcome revision from
+embedded and browser records; equal revisions retain the first result. Live refresh takes matching
+outcomes from the disk store, even if a portable browser result has a greater revision, and preserves
+browser-only requests. It persists those authoritative outcomes back to the per-ID browser records.
+Conflicting original content for one ID is reported without overwriting storage.
 JSON exports and Save as HTML carry
 the same validated contract, including outcomes and reasons. Storage refusal is visible; readers must
 export JSON or save the page before closing it in that case. Live requests use `POST /api/requests`;

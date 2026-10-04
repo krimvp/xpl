@@ -19,12 +19,14 @@ export const feedbackCommand: CommandSpec = {
   summary: "Import, inspect or export durable reader feedback; record selected outcomes",
   details: [
     "Offline pages export code-explainer/feedback@1 JSON. Import deduplicates by stable request ID",
-    "and refuses conflicting original content. Repeated imports keep locally recorded outcomes.",
+    "and refuses conflicting original content. Higher outcome revisions update stored results;",
+    "equal or older revisions keep the current result. Timestamps never order outcomes.",
     "Feedback retains its original explanation/source hashes and optional inclusive source range.",
     "Changed context is reported as outdated and requires explicit reconciliation; it is never rebound.",
     "--outcomes reads a JSON array of {id, context, status, reason}; context must match the selected",
     "request's original {explainerHash, sourceHash}. Status: pending, addressed, unresolved, rejected,",
-    "outdated. Only those IDs change. Failed writes leave the prior store intact; new feedback survives.",
+    "outdated. Only those IDs change and increment their outcome revision. Failed writes leave the",
+    "prior store intact; new feedback survives. Missing revisions in older exports read as zero.",
     "Saving/importing never starts generation. Run /code-explainer feedback in your chosen agent",
     "for the next explicit pass. Never delete the feedback store after processing a batch.",
   ],
@@ -32,7 +34,7 @@ export const feedbackCommand: CommandSpec = {
     import: {
       type: "string",
       arg: "file",
-      desc: "Import a feedback export without replacing stored outcomes",
+      desc: "Import feedback by ID and merge outcomes by revision",
     },
     export: {
       type: "string",
@@ -85,7 +87,12 @@ export const feedbackCommand: CommandSpec = {
         const checked = parseFeedbackRequest({
           ...original,
           context: update.context,
-          outcome: { status: update.status, reason: update.reason, at: new Date().toISOString() },
+          outcome: {
+            revision: original.outcome.revision,
+            status: update.status,
+            reason: update.reason,
+            at: new Date().toISOString(),
+          },
         });
         return {
           id: checked.id,
