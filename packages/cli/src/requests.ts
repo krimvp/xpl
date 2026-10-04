@@ -12,7 +12,7 @@ import {
   type FeedbackStatus,
 } from "@xpl/core";
 import { CliError, errorMessage } from "./errors.js";
-import { atomicWrite, withFileLock, jsonFile } from "./fsutil.js";
+import { atomicWrite, withRepositoryLock, jsonFile } from "./fsutil.js";
 import { EXPLAINER_DIR } from "./repo.js";
 
 export const REQUESTS_FILE = "requests.json";
@@ -57,14 +57,8 @@ export function readRequests(root: string): { requests: FeedbackRequest[]; error
   }
 }
 
-async function mutate<T>(
-  root: string,
-  merge: (requests: FeedbackRequest[]) => T,
-  checkStore?: () => void,
-): Promise<T> {
-  return withFileLock(requestsPath(root), async () => {
-    // A server's repository fence must see the store after any competing writer releases its lock.
-    checkStore?.();
+async function mutate<T>(root: string, merge: (requests: FeedbackRequest[]) => T): Promise<T> {
+  return withRepositoryLock(root, requestsPath(root), async () => {
     const { requests, error } = readRequests(root);
     if (error) throw new CliError(error);
     const result = merge(requests);
@@ -77,19 +71,14 @@ async function mutate<T>(
 export async function importRequests(
   root: string,
   incoming: readonly FeedbackRequest[],
-  checkStore?: () => void,
 ): Promise<{ imported: number; total: number }> {
   const checked = incoming.map(parseFeedbackRequest);
-  return mutate(
-    root,
-    (requests) => {
-      const merged = mergeFeedbackRequests([...requests, ...checked]);
-      const imported = merged.length - requests.length;
-      requests.splice(0, requests.length, ...merged);
-      return { imported, total: merged.length };
-    },
-    checkStore,
-  );
+  return mutate(root, (requests) => {
+    const merged = mergeFeedbackRequests([...requests, ...checked]);
+    const imported = merged.length - requests.length;
+    requests.splice(0, requests.length, ...merged);
+    return { imported, total: merged.length };
+  });
 }
 
 export async function appendRequest(
@@ -112,7 +101,7 @@ export async function appendRequest(
           }
         : { revision: 0, status: "pending", reason: "Awaiting an explicit revision pass.", at },
   });
-  await importRequests(root, [entry], checkStore);
+  await importRequests(root, [entry]);
   checkStore?.();
   const saved = readRequests(root).requests;
   return {

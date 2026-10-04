@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 import type { CommandSpec } from "../command.js";
 import type { Ctx } from "../context.js";
 import { CliError, UsageError } from "../errors.js";
-import { atomicWrite, jsonFile, parseJson, toPosix, withFileLock } from "../fsutil.js";
+import { atomicWrite, jsonFile, parseJson, toPosix, withRepositoryLock } from "../fsutil.js";
 import { chooseIndexFile, loadExplainer, openWorkspace, WorkingTree } from "../repo.js";
 import type { ViewServer } from "../server.js";
 import { readViewerHtml } from "../viewer-html.js";
@@ -380,7 +380,7 @@ export const serviceCommand: CommandSpec = {
       url: null,
       startedAt: new Date().toISOString(),
     };
-    await withFileLock(p.instance, async () => {
+    await withRepositoryLock(p.root, p.instance, async () => {
       const previous = readInstance(p.instance, p.root);
       if (previous && previous.state !== "stopped") {
         if (await contact(previous))
@@ -424,7 +424,7 @@ export const serviceCommand: CommandSpec = {
         port: server.port,
         index,
       };
-      await withFileLock(p.instance, async () => {
+      await withRepositoryLock(p.root, p.instance, async () => {
         await atomicWrite(p.context, jsonFile(context));
         await atomicWrite(p.instance, jsonFile(instance));
       });
@@ -435,7 +435,7 @@ export const serviceCommand: CommandSpec = {
     } finally {
       abort.abort();
       await server?.close();
-      await withFileLock(p.instance, async () => {
+      await withRepositoryLock(p.root, p.instance, async () => {
         if (readInstance(p.instance, p.root)?.instanceId === instance.instanceId) {
           instance.state = "stopped";
           await atomicWrite(p.instance, jsonFile(instance));

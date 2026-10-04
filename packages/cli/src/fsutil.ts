@@ -1,6 +1,6 @@
 /** File-system helpers: atomic writes, tolerant JSON reading, the working-tree reader. */
 import { randomBytes } from "node:crypto";
-import { readFileSync, realpathSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { mkdir, rename, rmdir, unlink, writeFile } from "node:fs/promises";
 import { basename, dirname, join, relative, isAbsolute, sep } from "node:path";
 import { CliError, errorMessage } from "./errors.js";
@@ -46,6 +46,24 @@ export async function withFileLock<T>(path: string, job: () => Promise<T>): Prom
   } finally {
     await rmdir(lock);
   }
+}
+
+/** Repository records share this fence: validate after waiting, even when the record is absent. */
+export async function withRepositoryLock<T>(
+  root: string,
+  path: string,
+  job: () => Promise<T>,
+): Promise<T> {
+  const canonicalRoot = realpathSync(root);
+  return withFileLock(path, async () => {
+    for (const target of [dirname(path), ...(existsSync(path) ? [path] : [])]) {
+      if (!realpathSync(target).startsWith(canonicalRoot + sep))
+        throw new CliError("service artifact path leaves its repository", 1, {
+          code: "REPOSITORY_ESCAPE",
+        });
+    }
+    return job();
+  });
 }
 
 /** Pretty JSON with a trailing newline: the format of explainers and requests on disk. */

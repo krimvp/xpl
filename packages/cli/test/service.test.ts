@@ -1,6 +1,15 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { execFileSync } from "node:child_process";
-import { lstatSync, mkdirSync, readdirSync, rmdirSync, symlinkSync, unlinkSync } from "node:fs";
+import {
+  lstatSync,
+  mkdirSync,
+  readdirSync,
+  renameSync,
+  rmdirSync,
+  statSync,
+  symlinkSync,
+  unlinkSync,
+} from "node:fs";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import {
@@ -53,6 +62,49 @@ async function serve(root: string, ...extra: string[]) {
 }
 
 describe("repository service lifecycle", () => {
+  it("refuses an empty foreign service directory swapped while startup waits for ownership", async () => {
+    const root = cloneDir(demo);
+    const other = cloneDir(demo);
+    const dir = join(root, ".explainer/service");
+    const held = join(root, ".explainer/service-held");
+    const foreign = join(other, ".explainer/service");
+    mkdirSync(dir, { mode: 0o755 });
+    mkdirSync(foreign);
+    mkdirSync(join(dir, "instance.json.lock"));
+    const abort = new AbortController();
+    let settled = false;
+    const done = invoke(["service", "start", "demo", "--root", root, "--port", "0"], {
+      env: { XPL_VIEWER_HTML: viewer },
+      signal: abort.signal,
+    });
+    done.then(() => {
+      settled = true;
+    });
+    try {
+      // Startup has checked and prepared this directory, but its ownership transaction is blocked.
+      await expect.poll(() => statSync(dir).mode & 0o777).toBe(0o700);
+      await delay(250);
+      expect(settled).toBe(false);
+      renameSync(dir, held);
+      symlinkSync(foreign, dir);
+      rmdirSync(join(held, "instance.json.lock"));
+      const result = await done;
+      expect(readdirSync(foreign)).toEqual([]);
+      expect(result.code).toBe(1);
+      expect(result.err).toContain("service artifact path leaves its repository");
+    } finally {
+      for (const path of [join(dir, "instance.json.lock"), join(held, "instance.json.lock")]) {
+        try {
+          rmdirSync(path);
+        } catch {
+          /* released by test */
+        }
+      }
+      abort.abort();
+      await done;
+    }
+  });
+
   const feedback = {
     id: "held-request",
     elementId: "file:src/queue.ts",

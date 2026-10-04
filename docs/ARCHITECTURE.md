@@ -1411,13 +1411,16 @@ fallback second. Service checks containment and saves the resolved absolute path
 The canonical `realpath` root owns `.explainer/service/` (private permissions, git-ignored). `context.json`
 uses `xpl-service-context@1`: root, repository-relative guide, backend (`none|claude`), port and nullable
 pinned index path. `instance.json` uses `xpl-service-instance@1`: root, UUID, PID, secret token, state
-(`starting|running|stopped`), nullable URL and start time. Context and ownership updates use existing
-`withFileLock` and `atomicWrite`. The instance is reserved before listening, preventing concurrent starts.
+(`starting|running|stopped`), nullable URL and start time. `withRepositoryLock` wraps the existing
+`withFileLock`: after acquiring the lock, it checks that the target directory and any existing record
+resolve inside the canonical root, even when the record is absent. Instance, context and interrupted
+archive writes share this fence and publish with `atomicWrite`. The instance is reserved before listening,
+preventing concurrent starts.
 Guides, pinned indexes and state paths must remain within the root. Managed server requests also check
 artifact paths so a guide or requests symlink cannot attach another repository's state.
-Both feedback POST paths check the requests file after acquiring its filesystem lock and immediately
-before the synchronous read/merge. They recheck before unlocked response reads too; a symlink swapped
-while a writer waits cannot import another root's feedback.
+All feedback writes (imports, appends and outcomes) use the same `withRepositoryLock` fence before the
+synchronous read/merge. Both feedback POST paths recheck before unlocked response reads too; a file or
+directory symlink swapped while a writer waits cannot import or publish another root's records.
 
 `status` reports `stopped`, `starting`, `running`, `unavailable` or `interrupted`, with actual UUID, PID,
 address, root, guide and backend. UUID/root and secret bearer-token replies from `GET /api/service` verify

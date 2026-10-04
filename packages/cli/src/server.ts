@@ -451,7 +451,7 @@ export async function startViewServer(options: ViewServerOptions): Promise<ViewS
           }
           if (request.explainer !== undefined && request.explainer !== name)
             throw new HttpError(400, "feedback names a different explainer");
-          await serial(() => importRequests(env.root, [request], checkRequestStore));
+          await serial(() => importRequests(env.root, [request]));
           const state = await loadState();
           const contextReason =
             feedbackContextReason(request, artifactIdentity(freshExplainer(state), state.index)) ??
@@ -538,6 +538,8 @@ export async function startViewServer(options: ViewServerOptions): Promise<ViewS
 
   const server: Server = createServer((req, res) => {
     handle(req, res).catch((error: unknown) => {
+      if (error instanceof CliError && error.extra.code === "REPOSITORY_ESCAPE")
+        error = new HttpError(403, error.message);
       if (res.headersSent) {
         res.destroy();
         return;

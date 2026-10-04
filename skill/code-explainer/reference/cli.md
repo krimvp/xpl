@@ -857,6 +857,8 @@ never printed. Stop verifies UUID, root and token through loopback; it never sig
 Duplicate starts are refused. Stop before changing guides. Use `--root` to attach another repository's
 separate service; guides and state paths must stay inside that canonical root. An explicit busy port fails
 with a `--port` hint. Without a saved/explicit port, start tries 4747 and falls back to a free port.
+Record writes recheck the directory after acquiring the filesystem lock, including first startup with
+no saved records. A service-directory symlink swapped during that wait is refused before publishing state.
 `--backend none|claude` persists selection only; no jobs or agent run here. Local serving needs no network
 or authentication. Later Claude jobs need their configured authentication and provider network access.
 
