@@ -154,16 +154,11 @@ export function symbolIdForElementId(id: ElementId): SymbolId | undefined {
 export const dirId = (path: FilePath): ElementId => `dir:${path}`;
 export const fileId = (path: FilePath): ElementId => `file:${path}`;
 export const symId = (file: FilePath, path: SymbolPath): ElementId => `sym:${file}#${path}`;
-export const groupId = (slug: string): ElementId => `grp:${slug}`;
-export const conceptId = (slug: string): ElementId => `concept:${slug}`;
-/** Stored (llm / user) edge: `edge:<slug>`. */
-export const storedEdgeId = (slug: string): ElementId => `edge:${slug}`;
 /** Derived edge: `edge:<kind>:<fromId>-><toId>`. */
 export const derivedEdgeId = (kind: Edge["kind"], from: ElementId, to: ElementId): ElementId =>
   `edge:${kind}:${from}->${to}`;
 export const viewId = (slug: string): string => `view:${slug}`;
 export const tourId = (slug: string): string => `tour:${slug}`;
-export const frameId = (slug: string): string => `frame:${slug}`;
 /** Slug of a view id (`view:dispatch` -> `dispatch`; anything else is returned unchanged). */
 export const viewSlug = (id: string): string => (id.startsWith("view:") ? id.slice(5) : id);
 /** Sequence step id: `stepId("view:dispatch", 3)` and `stepId("dispatch", 3)` are `dispatch:3`. */
@@ -275,17 +270,6 @@ function parseEdgeRest(rest: string): ParsedId {
     }
   }
   return { type: "edge", slug: rest };
-}
-
-/** True for ids of diagram boxes: repo, dir:, file:, sym:, grp:. */
-export function isNodeId(id: string): boolean {
-  return NODE_TYPES.has(parseId(id).type);
-}
-
-/** True for ids that live in the index: repo, dir:, file:, sym:. */
-export function isStructuralId(id: string): boolean {
-  const type = parseId(id).type;
-  return type === "repo" || type === "dir" || type === "file" || type === "symbol";
 }
 
 /** `Node.kind` an id implies (`grp:x` -> "group"), or undefined when it is not a node id. */

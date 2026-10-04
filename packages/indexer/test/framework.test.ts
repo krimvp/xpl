@@ -4,7 +4,6 @@ import {
   SpanIndex,
   SymbolLookup,
   assembleSymbols,
-  lookupFromSymbols,
   moduleScopeId,
   pointsToSpan,
   spanContains,
@@ -217,11 +216,5 @@ describe("SymbolLookup", () => {
   it("line-only queries use whole lines", () => {
     expect(lookup.innermost("f.ts", 3)?.path).toBe("f");
     expect(lookup.innermost("f.ts", 1)?.path).toBe("A");
-  });
-
-  it("lookupFromSymbols works from bare index symbols (whole lines only)", () => {
-    const bare = lookupFromSymbols(entries.map((e) => e.symbol));
-    expect(bare.innermost("f.ts", 3, 1)?.path).toBe("f");
-    expect(bare.innermost("f.ts", 1, 1)?.path).toBeDefined();
   });
 });

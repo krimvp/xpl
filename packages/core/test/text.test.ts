@@ -1,11 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { hashText, normalizeText, sliceLines, splitLines } from "../src/index.js";
+import { hashText, sliceLines, splitLines } from "../src/index.js";
 
 describe("text", () => {
-  it("normalizes by trimming lines and dropping blank ones", () => {
-    expect(normalizeText("  a  \r\n\n\t b\n   \n")).toBe("a\nb");
-  });
-
   it("hashes preserve indentation and blank lines, canonicalizing CRLF only", () => {
     const h = hashText("if (x) {\n  y();\n}");
     expect(h).toMatch(/^sha256-v2:[0-9a-f]{12}$/);

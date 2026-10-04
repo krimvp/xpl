@@ -17,25 +17,6 @@ export function stepIndex(view: SequenceView, stepId: string): number {
   return steps(view).findIndex((step) => step?.id === stepId);
 }
 
-/** Position of a participant (lifeline, left to right), or -1. */
-export function participantIndex(view: SequenceView, id: ElementId): number {
-  return participants(view).indexOf(id);
-}
-
-/** Lifeline positions of a step's ends; -1 for an end that is not a participant. */
-export interface StepEnds {
-  from: number;
-  to: number;
-  /** `from` and `to` are the same lifeline (drawn as a loop). */
-  self: boolean;
-}
-
-export function stepEnds(view: SequenceView, step: SequenceStep): StepEnds {
-  const from = participantIndex(view, step.from);
-  const to = participantIndex(view, step.to);
-  return { from, to, self: from !== -1 && from === to };
-}
-
 /** A frame with the step positions it spans and how deeply it is nested. */
 export interface ResolvedFrame {
   frame: SequenceFrame;

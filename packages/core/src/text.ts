@@ -24,11 +24,6 @@ export function sliceLineArray(lines: readonly string[], range: Range): string {
 }
 
 /** Trim every line, drop lines that are empty after trimming, join with `\n`. */
-export function normalizeText(text: string): string {
-  return normalizeLines(splitLines(text));
-}
-
-/** Same as `normalizeText` for text that is already split. */
 export function normalizeLines(lines: readonly string[]): string {
   const out: string[] = [];
   for (const line of lines) {
@@ -51,26 +46,4 @@ export function hashNormalized(normalized: string): Hash {
 /** Hash of lines `range` of `text` (full lines). */
 export function hashRange(text: string, range: Range): Hash {
   return hashText(sliceLines(text, range));
-}
-
-/**
- * Hashes of every prefix of `lines[start..]`: entry `k - 1` equals `hashNormalized(lines.slice(start,
- * start + k).join("\n"))`, for `k = 1..maxCount`. The lines must already be split on CRLF/LF. Computed incrementally (one SHA-256 state, cloned per prefix), so
- * scanning all windows of a line sequence costs O(lines x maxCount) instead of O(lines x maxCount^2).
- * Retained as a source-prefix hashing utility for callers.
- */
-export function normalizedPrefixHashes(
-  lines: readonly string[],
-  start: number,
-  maxCount: number,
-): Hash[] {
-  const count = Math.min(maxCount, lines.length - start);
-  const out: Hash[] = [];
-  if (count <= 0) return out;
-  const state = sha256.create();
-  for (let k = 0; k < count; k++) {
-    state.update(utf8ToBytes(k === 0 ? lines[start]! : "\n" + lines[start + k]!));
-    out.push("sha256-v2:" + bytesToHex(state.clone().digest()).slice(0, 12));
-  }
-  return out;
 }

@@ -526,7 +526,8 @@ Modules of `packages/core/src`: `schema`, `patch`, `constants`, `text` (hashing)
 
 - `splitLines(text)` splits on `\r?\n` (a trailing newline yields a final empty line). `sliceLines(text,
   range)` returns full lines `startLine..endLine`.
-- `normalizeText(text)`: trim every line, drop blank lines, join with `\n`; for text matching only, never source hashing.
+- `normalizeLines(lines)`: trim every line, drop blank lines, join with `\n`; for text matching only, never source
+  hashing.
 - `hashText(text)` = `"sha256-v2:" + hex(sha256(splitLines(text).join("\n"))).slice(0, 12)` (sync; `@noble/hashes`).
   Indentation, trailing spaces and blank lines are preserved: they can change Python/YAML structure and string values.
   Only CRLF/LF differences are canonicalized. File freshness compares these source hashes even when commit labels match.

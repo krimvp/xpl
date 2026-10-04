@@ -186,19 +186,3 @@ export class SymbolLookup {
     return this.innermost(file, line, col)?.id ?? moduleScopeId(file);
   }
 }
-
-/** Build a lookup from bare symbols (whole lines only; several symbols on one line become ambiguous). */
-export function lookupFromSymbols(symbols: readonly IndexedSymbol[]): SymbolLookup {
-  return new SymbolLookup(
-    symbols.map((symbol) => ({
-      symbol,
-      span: {
-        startLine: symbol.range.startLine,
-        startCol: 1,
-        endLine: symbol.range.endLine,
-        endCol: Number.MAX_SAFE_INTEGER,
-      },
-      basePath: stripDuplicateSuffix(symbol.path),
-    })),
-  );
-}

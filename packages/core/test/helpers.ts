@@ -311,7 +311,3 @@ export function sequenceView(
     ...over,
   };
 }
-
-export function errors(issues: { severity: string }[]): number {
-  return issues.filter((i) => i.severity === "error").length;
-}
