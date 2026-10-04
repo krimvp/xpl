@@ -131,11 +131,11 @@ Do yourself everything a tool can do; ask the user only for decisions, never to 
 - **Scripts**: `scripts/needs-screenshots.sh` (are screenshots required?), `scripts/pr-screenshots.sh`
   (take them; `--publish` also pushes them and prints the PR section), `scripts/publish-pr-shots.sh` (push a
   compare directory to `pr-assets`). The `pr-assets` branch only holds screenshots; push to it freely.
-- **Claude Code hooks** (`.claude/hooks/`), written but **not switched on yet**: nothing registers them in
-  `.claude/settings.json`, so none of them runs. `session-start.sh` would install dependencies, build the CLI
-  and viewer and fetch `origin/main` in cloud sessions; `format-on-edit.sh` would run prettier on every file
-  an agent edits; `stop-check.sh` would stop an agent once per state of the change, before it finishes, with
-  the "Done means" list above filled in for its diff. Until they are on, do those steps yourself.
+- **Claude Code hooks** (`.claude/hooks/`, registered in `.claude/settings.json`): `session-start.sh`
+  installs dependencies, builds the CLI and viewer and fetches `origin/main` in cloud sessions;
+  `format-on-edit.sh` runs prettier on every file an agent edits; `stop-check.sh` stops an agent once per
+  state of the change, before it finishes, with the "Done means" list above filled in for its diff (which
+  tests changed, whether screenshots are required). Agents without these hooks run the same steps by hand.
 
 ## Pull requests
 

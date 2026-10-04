@@ -69,8 +69,8 @@ and go.
 
 ## Done means
 
-The list in `AGENTS.md` ("Done means"). Go through it yourself before you finish (the stop hook that would
-hand it back to you, `.claude/hooks/stop-check.sh`, is not switched on). In short:
+The list in `AGENTS.md` ("Done means"); the stop hook (`.claude/hooks/stop-check.sh`) hands it back to you
+filled in for your diff. In short:
 
 - **Run `test-audit` before you call it finished. Strongly recommended, every time code or tests changed.**
   Gate each new or changed test, check the tests that own the changed code, and say what the audit found.
