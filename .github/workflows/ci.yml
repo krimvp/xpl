@@ -1,0 +1,106 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: typecheck, unit tests, format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run format:check
+
+  e2e:
+    name: viewer e2e
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # CI has no preinstalled browsers: install the Chromium that @playwright/test 1.56.1 expects.
+      - run: npx playwright install --with-deps chromium
+        working-directory: packages/viewer
+      - run: npm run test:e2e
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-traces
+          path: packages/viewer/test-results
+          if-no-files-found: ignore
+
+  screenshots:
+    name: before/after screenshots
+    # Only for pull requests from this repository: the job pushes to the pr-assets branch and comments.
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: need
+        name: does the change need screenshots?
+        run: |
+          if scripts/needs-screenshots.sh "origin/${{ github.base_ref }}" | tee reasons.txt; then
+            echo "needed=true" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.need.outputs.needed == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - if: steps.need.outputs.needed == 'true'
+        run: |
+          npm ci
+          (cd packages/viewer && npx playwright install --with-deps chromium)
+      - if: steps.need.outputs.needed == 'true'
+        name: take and publish
+        env:
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          scripts/pr-screenshots.sh "origin/${{ github.base_ref }}" "$RUNNER_TEMP/shots" --self --publish -- \
+            --set ux --shot self-map=self?perspective=map
+          cp "$RUNNER_TEMP/shots/compare/pr-section.md" section.md
+      - if: steps.need.outputs.needed == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots
+          path: ${{ runner.temp }}/shots/compare
+      - if: steps.need.outputs.needed == 'true'
+        name: comment on the pull request
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require("fs");
+            const marker = "<!-- xpl-screenshots -->";
+            const reasons = fs.readFileSync("reasons.txt", "utf8").trim();
+            const body = `${marker}\n${fs.readFileSync("section.md", "utf8")}\n\n<details><summary>Why</summary>\n\n\`\`\`\n${reasons}\n\`\`\`\n</details>\n\nTaken by CI for ${context.sha.slice(0, 7)}. Copy the images you want into the PR description, with one line each on what to look at.`;
+            const { owner, repo } = context.repo;
+            const issue_number = context.issue.number;
+            const comments = await github.paginate(github.rest.issues.listComments, { owner, repo, issue_number });
+            const mine = comments.find((c) => c.body?.startsWith(marker));
+            if (mine) await github.rest.issues.updateComment({ owner, repo, comment_id: mine.id, body });
+            else await github.rest.issues.createComment({ owner, repo, issue_number, body });

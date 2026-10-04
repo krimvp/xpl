@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Before/after screenshots of the viewer for a pull request (.claude/skills/pr-screenshots/SKILL.md).
 #
-#   scripts/pr-screenshots.sh <base-ref> [out-dir] [--self] [-- <pr-shots.ts shoot options>]
+#   scripts/pr-screenshots.sh <base-ref> [out-dir] [--self] [--publish] [-- <pr-shots.ts shoot options>]
 #
 # Checks <base-ref> out in a temporary worktree (npm ci there), builds the viewer and its fixture bundles in
 # both trees, photographs both with this tree's packages/viewer/scripts/pr-shots.ts and writes:
@@ -9,15 +9,22 @@
 # --self also bundles xpl's own explainer (.explainer/xpl.explainer.json) in both trees as the bundle `self`,
 # for changes to the levels of a map: pass e.g. -- --shot self-map=self?perspective=map
 # Without shoot options the standard set (scripts/ux-shots.ts) is taken.
+# --publish then pushes the changed shots to the pr-assets branch (scripts/publish-pr-shots.sh) and writes the
+# PR description's Screenshots section to <out>/compare/pr-section.md (and stdout).
 # Default out-dir: ${TMPDIR:-/tmp}/xpl-pr-shots. Keep it outside the repo.
 set -euo pipefail
 
-base="${1:?usage: scripts/pr-screenshots.sh <base-ref> [out-dir] [--self] [-- shoot options]}"
+base="${1:?usage: scripts/pr-screenshots.sh <base-ref> [out-dir] [--self] [--publish] [-- shoot options]}"
 shift
 out="${TMPDIR:-/tmp}/xpl-pr-shots"
 if [[ $# -gt 0 && "$1" != --* ]]; then out="$1"; shift; fi
 self=0
-if [[ "${1:-}" == "--self" ]]; then self=1; shift; fi
+publish=0
+while [[ "${1:-}" == "--self" || "${1:-}" == "--publish" ]]; do
+  [[ "$1" == "--self" ]] && self=1
+  [[ "$1" == "--publish" ]] && publish=1
+  shift
+done
 if [[ "${1:-}" == "--" ]]; then shift; fi
 
 head="$(git rev-parse --show-toplevel)"
@@ -44,3 +51,6 @@ for side in before after; do
   (cd "$head/packages/viewer" && npx tsx "$shots" shoot "$out/$side" --viewer-dir "$tree/packages/viewer" --build "$@")
 done
 (cd "$head/packages/viewer" && npx tsx "$shots" compare "$out/before" "$out/after" "$out/compare")
+if [[ $publish == 1 ]]; then
+  "$head/scripts/publish-pr-shots.sh" "$out/compare" | tee "$out/compare/pr-section.md"
+fi
