@@ -526,7 +526,13 @@ implementation/override flags cannot establish class inheritance or relationship
 External symbols and accessor targets without checked definitions never create local declarations.
 Reports remain partial, including empty results. Producer ranges may omit leading documentation; the importer
 never substitutes an identifier extent for a full declaration. The CLI reference documents generation and
-manifest creation. Java tool orchestration and a Java language identity belong to #14.
+manifest creation. Java uses this importer without a language pack or new `FileLanguage` value.
+`scripts/java-scip.ts` runs the pinned Maven producer workflow, captures source/config hashes before
+generation, checks them afterward, and writes a manifest only for a successful run with a fresh artifact.
+Missing JDK, Maven or scip-java and build failures exit 1 with a file-anchor fallback instruction. Java
+remains `text`, including plain editor range highlighting; code-only search and automatic Java service
+classification are not added. [docs/java-scip.md](java-scip.md) records versions, commands, literal fixture
+facts, losses and fixture/Gson generation and import costs. Calls and implementation flags remain unsupported.
 
 Rust's syntax-only `TagsProvider` (`src/tags.ts`, `src/tags/rust.ts`, `rust.scm`) uses the standard
 `@name` and `@definition.*` convention through the same provider normalization. Its corrected query captures
@@ -1673,6 +1679,12 @@ exercises implicit-interface inference), and Rust `cargo test --offline` (std on
 inline/external modules and a `macro_rules!` declaration). `config/default.yaml`'s `retry` mapping is
 lines 13–16 in the original three.
 
+`fixtures/java-jobrunner` adds a Maven fixture for semantic artifact import, with overloads, both
+nested-class forms, interfaces, abstract methods, callbacks and records. It has 13 Java files and a
+standard-library `RetryTest` main; `mvn test` does not run that main. The Java acceptance test imports
+a recorded scip-java artifact outside the fixture, with checked ranges/nesting and precise type mentions.
+The repeatable workflow and checked bundle example are in [docs/java-scip.md](java-scip.md).
+
 `fixtures/ts-jobrunner` matches the handoff example **exactly**: `src/runner.ts` with `Runner.dispatch` at
 lines 42–88; offsets (relative to line 42) 4 = the `pop()` call, 18–19 = the `run(job)` call, 30–41 = the
 retry block, 34–36 = the `requeue(...)` call; `Worker.run` offset 21 = the `job.completed` emit;
@@ -1730,6 +1742,10 @@ full CLI (with `change`, `draft` and `lint`), Read, Explore and Present with tou
 under `xpl view` and its live update, architecture maps (`role`, `opens`), change explainers with
 base anchors and a diff view, and example explainers for the original three fixtures. Rust has an
 experimental syntax-tags provider and a browser-tested structural bundle; it has no relationship resolver or committed example explainer.
+
+Java artifact import is also exercised without a language pack: the pinned scip-java/Maven workflow
+retains source-checked declarations and type references, with file-anchor fallback and explicit losses
+([docs/java-scip.md](java-scip.md)). Java stays `text`; semantic calls and inheritance are unsupported.
 
 **Known limitations**
 

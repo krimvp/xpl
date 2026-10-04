@@ -1,0 +1,20 @@
+{
+  "artifact": "index.scip",
+  "artifactSha256": "8d1acff2e2040e65f338bc260c4f93fac019d55d09b1b11782acb8f620d38c57",
+  "sourceHashes": {
+    "src/main/java/jobrunner/BaseHandler.java": "sha256-v2:92578929c273",
+    "src/main/java/jobrunner/Config.java": "sha256-v2:71b1e3d13106",
+    "src/main/java/jobrunner/EchoHandler.java": "sha256-v2:76d39b15e224",
+    "src/main/java/jobrunner/EventBus.java": "sha256-v2:8f0bc40edd97",
+    "src/main/java/jobrunner/FailingHandler.java": "sha256-v2:2a908b4a8a90",
+    "src/main/java/jobrunner/Handler.java": "sha256-v2:fc8274fa22b7",
+    "src/main/java/jobrunner/Main.java": "sha256-v2:4c7a14f039cf",
+    "src/main/java/jobrunner/Metrics.java": "sha256-v2:60185b0e90fe",
+    "src/main/java/jobrunner/Queue.java": "sha256-v2:c0f26480c00d",
+    "src/main/java/jobrunner/Runner.java": "sha256-v2:b506c0117d02",
+    "src/main/java/jobrunner/Worker.java": "sha256-v2:2e2cdfd29e62",
+    "src/main/java/jobrunner/WorkerPool.java": "sha256-v2:f1c7b1a40fe3",
+    "src/test/java/jobrunner/RetryTest.java": "sha256-v2:1799201b1eb9"
+  },
+  "defaultEncoding": "utf16"
+}
