@@ -6,6 +6,7 @@ import {
   mkdir,
   mkdtemp,
   readFile,
+  readlink,
   readdir,
   realpath,
   rm,
@@ -20,12 +21,12 @@ import {
   type ChangeRecord,
   type SymbolIndex,
 } from "@xpl/core";
-import { buildIndex, writeIndex } from "@xpl/indexer";
+import { buildIndex, createScipProviders, indexProviders, writeIndex } from "@xpl/indexer";
 import type { Ctx } from "./context.js";
 import { CliError, errorMessage } from "./errors.js";
 import { atomicWrite, jsonFile, toPosix, workingTreeReader } from "./fsutil.js";
 import { computeChange, gitShowReader } from "./git.js";
-import { prProcess, type ResolvedPr } from "./pr.js";
+import { prGitOptions, prProcess, type ResolvedPr } from "./pr.js";
 
 type Source =
   { state: "absent" } | { state: "text"; text: string } | { state: "unavailable"; reason: string };
@@ -105,14 +106,9 @@ export async function preparePr(
   await mkdir(cache, { recursive: true });
   const directory = await mkdtemp(join(cache, "input-"));
   const repository = join(directory, "repository");
+  const gitOptions = prGitOptions(ctx.env, repository);
   const git = (args: string[]) =>
-    prProcess(
-      "git",
-      [`--git-dir=${join(repository, ".git")}`, `--work-tree=${repository}`, ...args],
-      repository,
-      ctx.env,
-      ctx.io.signal,
-    );
+    prProcess("git", args, repository, gitOptions.env, ctx.io.signal, gitOptions);
   try {
     await writeFile(
       join(directory, MARKER),
@@ -152,6 +148,28 @@ export async function preparePr(
         `cannot fetch exact head ${pr.head.sha}; the PR ref may have moved or fork access may be unavailable. ${failures.join("; ")}. Resolve the PR again or check existing git access.`,
       );
     await git(["-c", "submodule.recurse=false", "checkout", "--quiet", "--detach", pr.head.sha]);
+    // Status/diff would run clean filters again and can hide a smudge or line-ending transformation.
+    // Compare raw blob IDs instead, before any transformed bytes enter an index claiming this head.
+    const tree = (await git(["ls-tree", "-r", "-z", pr.head.sha])).split("\0").filter(Boolean);
+    for (const entry of tree) {
+      const tab = entry.indexOf("\t");
+      const [mode, type, blob] = entry.slice(0, tab).split(" ");
+      if (type !== "blob") continue; // Submodules are not materialized or indexed.
+      const path = entry.slice(tab + 1);
+      const absolute = join(repository, path);
+      const bytes =
+        mode === "120000"
+          ? await readlink(absolute, { encoding: "buffer" })
+          : await readFile(absolute);
+      const actual = createHash(pr.head.sha.length === 40 ? "sha1" : "sha256")
+        .update(`blob ${bytes.length}\0`)
+        .update(bytes)
+        .digest("hex");
+      if (actual !== blob)
+        throw new CliError(
+          `${path} differs from the raw head blob; checkout filters or line-ending conversion changed the snapshot. Disable that conversion for PR preparation and retry.`,
+        );
+    }
     // Index writes must not follow a repository-supplied .explainer symlink out of owned storage.
     const explainerDir = await lstat(join(repository, ".explainer")).catch(
       (error: NodeJS.ErrnoException) => {
@@ -177,10 +195,15 @@ export async function preparePr(
       precise,
       commit: pr.head.sha,
       cache: false,
+      gitOptions,
+      providers: [
+        ...indexProviders().filter((provider) => provider.mode === "syntax"),
+        ...createScipProviders({ env: gitOptions.env }),
+      ],
     });
     const indexPath = await writeIndex(repository, result.index);
-    const change = await computeChange(repository, pr.base.sha, pr.head.sha);
-    const read = gitShowReader(repository);
+    const change = await computeChange(repository, pr.base.sha, pr.head.sha, gitOptions);
+    const read = gitShowReader(repository, gitOptions);
     const source = (sha: string, path: string): Source => {
       const text = read(sha, path);
       if (text === undefined)

@@ -51,6 +51,8 @@ repository. It indexes head with `--precise off` by default and saves an immutab
 before/after source and analysis labels. The developer checkout stays untouched. This command prepares
 input only; agent handoff, PR freshness checks and ready result export are future work. Network access
 to GitHub is required. Remove a retained input with `xpl pr cleanup <input-directory> --cache-dir /outside/pr-cache`.
+Inherited Git repository overrides cannot redirect PR reads into the developer checkout. Preparation
+refuses checkout filters or line-ending conversion that change the head's raw source bytes.
 
 Claude indexes the repo, writes `.explainer/<name>.explainer.json` (commit it; the indexes beside it are
 git-ignored) and gives you the result. Open it yourself with `xpl bundle <name> -o <name>.html` (one

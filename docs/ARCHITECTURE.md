@@ -315,7 +315,8 @@ interface ExplainerPatch {
 
 ```ts
 buildIndex(opts: { root: string; commit?: string; precise?: "auto" | "off" | "require";
-                   languages?: string[]; providers?: readonly IndexProvider[]; cache?: boolean })
+                   languages?: string[]; providers?: readonly IndexProvider[]; cache?: boolean;
+                   gitOptions?: GitOptions })
   : Promise<{ index: SymbolIndex; warnings: string[]; extraction: ExtractionReport;
               work: { heuristicResolutionMs: number; semanticMs: number; semanticRuns: number } }>
 writeIndex(root: string, index: SymbolIndex): Promise<string>
@@ -1316,6 +1317,13 @@ a moved ref never silently substitutes another head. Each fetch has depth one, n
 The head is checked out detached. Index output refuses repository-supplied `.explainer` symlinks, and
 head indexing uses fresh extraction with no repository-supplied cache. `--precise off` is the default;
 `auto` and `require` explicitly opt into optional analysis tools and their toolchain/network requirements.
+One sanitized Git context pins all direct PR Git reads and writes to the owned git directory/work tree.
+Shared indexer discovery/commit helpers and CLI diff/source readers accept optional `GitOptions`
+(`env`, global `args`); ordinary callers keep their existing environment and discovery behavior.
+SCIP adapters receive the sanitized environment through their existing tool options. Before indexing,
+every materialized blob is compared with the head tree's raw blob ID, including binary bytes and symlink
+text. A smudge, encoding or line-ending conversion that changes bytes refuses preparation and removes
+staging. A clean-filter round trip or `git status` is not sufficient proof of raw source identity.
 
 The CLI-only `PrInputManifest` has `schemaVersion: 1`, `kind: "github-pr-input"`, preparation time,
 `pr` identity, `change`, `sources`, `index`, head `analysis` and `warnings`. `change` uses the existing

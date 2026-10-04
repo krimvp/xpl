@@ -1,5 +1,6 @@
 /** GitHub PR input identities. GitHub access is read-only and uses the configured gh CLI. */
 import { execFile } from "node:child_process";
+import { join } from "node:path";
 import type { Env } from "./context.js";
 import { CliError, UsageError } from "./errors.js";
 import { FULL_SHA } from "./git.js";
@@ -36,15 +37,8 @@ export function parsePr(input: string, number?: string): PrIdentity {
   return { repository, number: n, url: `https://github.com/${repository}/pull/${n}` };
 }
 
-/** A real process boundary: no shell, no prompts, bounded time and output. */
-export function prProcess(
-  command: string,
-  args: string[],
-  cwd: string,
-  env: Env,
-  signal?: AbortSignal,
-): Promise<string> {
-  const operation = args.find((arg) => !arg.startsWith("--")) ?? "";
+/** One git context for owned fetches and the shared indexing/diff/source helpers. */
+export function prGitOptions(env: Env, repository?: string) {
   const childEnv: Env = {
     ...env,
     GH_PROMPT_DISABLED: "1",
@@ -52,21 +46,43 @@ export function prProcess(
     GIT_OPTIONAL_LOCKS: "0",
     GCM_INTERACTIVE: "Never",
   };
-  if (command === "git") {
-    // A caller's repository overrides must never redirect owned fetches into their checkout.
-    for (const name of [
-      "GIT_DIR",
-      "GIT_WORK_TREE",
-      "GIT_INDEX_FILE",
-      "GIT_COMMON_DIR",
-      "GIT_OBJECT_DIRECTORY",
-      "GIT_ALTERNATE_OBJECT_DIRECTORIES",
-      "GIT_NAMESPACE",
-      "GIT_SHALLOW_FILE",
-    ])
-      delete childEnv[name];
-    args = ["-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false", ...args];
-  }
+  // A caller's repository overrides must never redirect owned reads or writes into their checkout.
+  for (const name of [
+    "GIT_DIR",
+    "GIT_WORK_TREE",
+    "GIT_INDEX_FILE",
+    "GIT_COMMON_DIR",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+    "GIT_NAMESPACE",
+    "GIT_SHALLOW_FILE",
+  ])
+    delete childEnv[name];
+  return {
+    env: childEnv,
+    args: [
+      "-c",
+      "core.hooksPath=/dev/null",
+      "-c",
+      "core.fsmonitor=false",
+      ...(repository ? [`--git-dir=${join(repository, ".git")}`, `--work-tree=${repository}`] : []),
+    ],
+  };
+}
+
+/** A real process boundary: no shell, no prompts, bounded time and output. */
+export function prProcess(
+  command: string,
+  args: string[],
+  cwd: string,
+  env: Env,
+  signal?: AbortSignal,
+  gitOptions?: ReturnType<typeof prGitOptions>,
+): Promise<string> {
+  const operation = args.find((arg) => !arg.startsWith("--")) ?? "";
+  const options = gitOptions ?? prGitOptions(env);
+  const childEnv = command === "git" ? options.env : { ...env, GH_PROMPT_DISABLED: "1" };
+  if (command === "git") args = [...options.args, ...args];
   return new Promise((resolve, reject) => {
     execFile(
       command,

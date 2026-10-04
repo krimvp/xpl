@@ -6,22 +6,23 @@
  */
 import { execFile, execFileSync } from "node:child_process";
 import type { ChangedFile, ChangeHunk, ChangeRecord } from "@xpl/core";
+import type { GitOptions } from "@xpl/indexer";
 import { CliError } from "./errors.js";
 
 const MAX_BUFFER = 512 * 1024 * 1024;
 
 /** Never write git's index lock just to answer a read-only question; never ask for credentials. */
-function gitEnv(): NodeJS.ProcessEnv {
-  return { ...process.env, GIT_OPTIONAL_LOCKS: "0", GIT_TERMINAL_PROMPT: "0" };
+function gitEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  return { ...env, GIT_OPTIONAL_LOCKS: "0", GIT_TERMINAL_PROMPT: "0" };
 }
 
 /** Runs git in `cwd`: stdout, or a `CliError` with git's own message. */
-function runGit(cwd: string, args: readonly string[]): Promise<string> {
+function runGit(cwd: string, args: readonly string[], options: GitOptions = {}): Promise<string> {
   return new Promise((resolve, reject) => {
     execFile(
       "git",
-      [...args],
-      { cwd, maxBuffer: MAX_BUFFER, encoding: "utf8", env: gitEnv() },
+      [...(options.args ?? []), ...args],
+      { cwd, maxBuffer: MAX_BUFFER, encoding: "utf8", env: gitEnv(options.env) },
       (error, stdout, stderr) => {
         if (!error) {
           resolve(stdout);
@@ -74,7 +75,10 @@ export async function mergeBase(root: string, a: string, b: string): Promise<str
  * commit). Synchronous, because anchors resolve synchronously; `TextCache` memoises it. Only full SHAs are accepted:
  * the commit comes from an explainer file, and anything else could be read by git as an option.
  */
-export function gitShowReader(root: string): (commit: string, path: string) => string | undefined {
+export function gitShowReader(
+  root: string,
+  options: GitOptions = {},
+): (commit: string, path: string) => string | undefined {
   return (commit, path) => {
     if (!FULL_SHA.test(commit)) return undefined;
     if (
@@ -86,12 +90,12 @@ export function gitShowReader(root: string): (commit: string, path: string) => s
       return undefined;
     }
     try {
-      return execFileSync("git", ["show", `${commit}:./${path}`], {
+      return execFileSync("git", [...(options.args ?? []), "show", `${commit}:./${path}`], {
         cwd: root,
         encoding: "utf8",
         maxBuffer: MAX_BUFFER,
         stdio: ["ignore", "pipe", "ignore"],
-        env: gitEnv(),
+        env: gitEnv(options.env),
       });
     } catch {
       return undefined;
@@ -258,10 +262,15 @@ export async function computeChange(
   root: string,
   base: string,
   head: string,
+  options?: GitOptions,
 ): Promise<ChangeRecord> {
   const [names, patch] = await Promise.all([
-    runGit(root, [...DIFF_OPTIONS, "--name-status", "-z", base, head]),
-    runGit(root, [...DIFF_OPTIONS, "-U0", "--src-prefix=a/", "--dst-prefix=b/", base, head]),
+    runGit(root, [...DIFF_OPTIONS, "--name-status", "-z", base, head], options),
+    runGit(
+      root,
+      [...DIFF_OPTIONS, "-U0", "--src-prefix=a/", "--dst-prefix=b/", base, head],
+      options,
+    ),
   ]);
   return { base, head, files: joinDiff(parseNameStatus(names), parsePatch(patch)) };
 }

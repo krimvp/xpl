@@ -99,18 +99,29 @@ export interface GitInfo {
   atToplevel: boolean;
 }
 
+/** Optional process context for git reads in a caller-owned repository. Defaults retain normal git discovery. */
+export interface GitOptions {
+  env?: NodeJS.ProcessEnv;
+  /** Global git arguments, before the subcommand (for example --git-dir and --work-tree). */
+  args?: readonly string[];
+}
+
 /** Run git in `cwd`; resolves to stdout, or undefined when git fails or is not installed. */
-export function runGit(cwd: string, args: readonly string[]): Promise<string | undefined> {
+export function runGit(
+  cwd: string,
+  args: readonly string[],
+  options: GitOptions = {},
+): Promise<string | undefined> {
   return new Promise((resolve) => {
     execFile(
       "git",
-      [...args],
+      [...(options.args ?? []), ...args],
       {
         cwd,
         maxBuffer: 512 * 1024 * 1024,
         encoding: "utf8",
         // Never write the index lock just to answer a read-only question.
-        env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" },
+        env: { ...(options.env ?? process.env), GIT_OPTIONAL_LOCKS: "0" },
       },
       (error, stdout) => resolve(error ? undefined : stdout),
     );
@@ -118,8 +129,12 @@ export function runGit(cwd: string, args: readonly string[]): Promise<string | u
 }
 
 /** Detect whether `root` is inside a git work tree. */
-export async function detectGit(root: string): Promise<GitInfo | undefined> {
-  const out = await runGit(root, ["rev-parse", "--is-inside-work-tree", "--show-toplevel"]);
+export async function detectGit(root: string, options?: GitOptions): Promise<GitInfo | undefined> {
+  const out = await runGit(
+    root,
+    ["rev-parse", "--is-inside-work-tree", "--show-toplevel"],
+    options,
+  );
   if (out === undefined) return undefined;
   const [inside, toplevel] = out.split("\n");
   if (inside?.trim() !== "true" || !toplevel) return undefined;
@@ -144,6 +159,7 @@ export interface DiscoverOptions {
   languages?: readonly FileLanguage[];
   /** Result of `detectGit(root)`; detected when omitted. */
   git?: GitInfo | undefined;
+  gitOptions?: GitOptions;
 }
 
 export interface Discovery {
@@ -154,8 +170,12 @@ export interface Discovery {
 }
 
 /** Paths git lists for `root` (tracked + untracked, minus ignored), relative to `root`. */
-async function gitPaths(root: string): Promise<string[] | undefined> {
-  const out = await runGit(root, ["ls-files", "--cached", "--others", "--exclude-standard", "-z"]);
+async function gitPaths(root: string, options?: GitOptions): Promise<string[] | undefined> {
+  const out = await runGit(
+    root,
+    ["ls-files", "--cached", "--others", "--exclude-standard", "-z"],
+    options,
+  );
   if (out === undefined) return undefined;
   return out.split("\0").filter((p) => p !== "");
 }
@@ -226,9 +246,9 @@ export async function discoverFiles(
   options: DiscoverOptions = {},
 ): Promise<Discovery> {
   const warnings: string[] = [];
-  const git = "git" in options ? options.git : await detectGit(root);
+  const git = "git" in options ? options.git : await detectGit(root, options.gitOptions);
   let candidates: string[] | undefined;
-  if (git) candidates = await gitPaths(root);
+  if (git) candidates = await gitPaths(root, options.gitOptions);
   const usedGit = candidates !== undefined;
   candidates ??= await walkPaths(root, warnings);
 

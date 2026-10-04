@@ -11,7 +11,7 @@ import {
   symlinkSync,
 } from "node:fs";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { git, invoke, makeTempDir, readJson, writeFile, xplJson } from "./helpers.js";
 
 function fixture() {
@@ -65,6 +65,76 @@ function fixture() {
 }
 
 describe("PR input", () => {
+  it("ignores inherited developer git overrides for indexing, changes and source reads", async () => {
+    const f = fixture();
+    const developer = makeTempDir();
+    writeFile(developer, "developer.ts", "export const developer = 99;\n");
+    git(developer, "init", "-q", "-b", "developer");
+    git(developer, "add", ".");
+    git(developer, "commit", "-qm", "unrelated developer repository");
+    writeFile(developer, "developer.ts", "dirty developer work\n");
+    const index = readFileSync(join(developer, ".git/index"));
+    vi.stubEnv("GIT_DIR", join(developer, ".git"));
+    vi.stubEnv("GIT_WORK_TREE", developer);
+    vi.stubEnv("GIT_INDEX_FILE", join(developer, ".git/index"));
+    let result;
+    try {
+      result = await invoke(["pr", "prepare", "team/project#7", "--cache-dir", f.cache, "--json"], {
+        cwd: developer,
+        env: f.env,
+      });
+    } finally {
+      vi.unstubAllEnvs();
+    }
+    expect(result.code, result.out).toBe(0);
+    const output = JSON.parse(result.out);
+    const manifest = readJson(output.directory, "input.json");
+    expect(manifest.change.files.map((file: { path: string }) => file.path)).toEqual([
+      "app.ts",
+      "gone.ts",
+      "new.ts",
+      "renamed.ts",
+    ]);
+    expect(manifest.sources.find((file: { path: string }) => file.path === "new.ts").after).toEqual(
+      { state: "text", text: "export const fresh = 3;\n" },
+    );
+    const indexData = readJson(output.directory, manifest.index.path);
+    expect(indexData.files.map((file: { path: string }) => file.path)).toEqual([
+      "app.ts",
+      "caller.ts",
+      "new.ts",
+      "renamed.ts",
+    ]);
+    expect(indexData.commit).toBe(f.head);
+    expect(git(output.repository, "rev-parse", "HEAD")).toBe(f.head);
+    expect(readFileSync(join(developer, ".git/index"))).toEqual(index);
+    expect(readFileSync(join(developer, "developer.ts"), "utf8")).toBe("dirty developer work\n");
+    expect(git(developer, "symbolic-ref", "HEAD")).toBe("refs/heads/developer");
+  });
+
+  it("refuses smudge-transformed checkout bytes before indexing or publishing input", async () => {
+    const f = fixture();
+    writeFile(f.root, ".gitattributes", "new.ts filter=transform\n");
+    git(f.root, "add", ".gitattributes");
+    git(f.root, "commit", "-qm", "select a configured smudge filter");
+    f.response.head.sha = git(f.root, "rev-parse", "HEAD");
+    writeFile(f.tools, "response.json", JSON.stringify(f.response));
+    writeFile(
+      f.tools,
+      "gitconfig",
+      readFileSync(f.env.GIT_CONFIG_GLOBAL, "utf8") +
+        '[filter "transform"]\n\tsmudge = sed s/fresh/transformed/g\n\tclean = cat\n\trequired = true\n',
+    );
+    const result = await invoke(
+      ["pr", "prepare", "team/project#7", "--cache-dir", f.cache, "--json"],
+      { cwd: f.root, env: f.env },
+    );
+    expect(result.code, result.out).toBe(1);
+    expect(JSON.parse(result.out).error).toContain("new.ts differs from the raw head blob");
+    expect(readdirSync(f.cache)).toEqual([]);
+    expect(git(f.root, "show", `${f.response.head.sha}:new.ts`)).toBe("export const fresh = 3;");
+  });
+
   it("rejects non-GitHub and ambiguous inputs before fetching", async () => {
     const root = makeTempDir();
     for (const input of [

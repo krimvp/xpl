@@ -11,6 +11,8 @@ export const prCommand: CommandSpec = {
   details: [
     "Uses existing gh and git access to GitHub. Never prompts for credentials or writes to GitHub.",
     "Resolves full API base/head commits and fetches them into a new detached repository outside the developer tree.",
+    "Inherited git-directory/work-tree/index overrides are excluded from all owned source reads and indexing.",
+    "Checks checkout bytes against raw head blobs before indexing; filter or line-ending changes refuse input.",
     "Defaults to --precise off; auto/require opt into optional analysis tools and their network/toolchain needs.",
     "Writes immutable input.json last, with PR identity, change, before/after source and head index hashes/labels.",
     "This prepares input only: no agent is invoked, no explanation or ready result is produced, and head freshness",

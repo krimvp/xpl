@@ -23,7 +23,8 @@ export {
   FILE_LANGUAGES,
   MAX_FILE_BYTES,
 } from "./files.js";
-export type { DiscoveredFile, DiscoverOptions, Discovery, GitInfo } from "./files.js";
+export type { DiscoveredFile, DiscoverOptions, Discovery, GitInfo, GitOptions } from "./files.js";
+export { createScipProviders } from "./scip/resolvers.js";
 export {
   isWorkTreeClean,
   resolveCommitId,

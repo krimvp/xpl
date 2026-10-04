@@ -249,7 +249,7 @@
           "role": "definition",
           "hash": "sha256-v2:f2d606e229a3",
           "resolved": {
-            "commit": "wt-99b7fa3ba5",
+            "commit": "wt-abc6da4f41",
             "range": {
               "startLine": 1,
               "endLine": 10
@@ -263,7 +263,7 @@
           "role": "config",
           "hash": "sha256-v2:8869d37515f9",
           "resolved": {
-            "commit": "wt-99b7fa3ba5",
+            "commit": "wt-abc6da4f41",
             "range": {
               "startLine": 6,
               "endLine": 6
@@ -275,12 +275,12 @@
           "file": "packages/indexer/src/build.ts",
           "symbol": "buildIndex",
           "role": "definition",
-          "hash": "sha256-v2:b034bb31fa4f",
+          "hash": "sha256-v2:7219745fb45d",
           "resolved": {
-            "commit": "wt-99b7fa3ba5",
+            "commit": "wt-abc6da4f41",
             "range": {
-              "startLine": 174,
-              "endLine": 456
+              "startLine": 177,
+              "endLine": 469
             },
             "status": "ok"
           }
@@ -288,7 +288,7 @@
       ],
       "provenance": {
         "origin": "llm",
-        "commit": "wt-6c964bca44"
+        "commit": "wt-abc6da4f41"
       }
     },
     {
@@ -1851,7 +1851,7 @@
           "role": "call-site",
           "hash": "sha256-v2:f2e568accbea",
           "resolved": {
-            "commit": "wt-99b7fa3ba5",
+            "commit": "wt-abc6da4f41",
             "range": {
               "startLine": 123,
               "endLine": 129
@@ -1869,7 +1869,7 @@
           "role": "call-site",
           "hash": "sha256-v2:e5812e126d52",
           "resolved": {
-            "commit": "wt-99b7fa3ba5",
+            "commit": "wt-abc6da4f41",
             "range": {
               "startLine": 134,
               "endLine": 134
@@ -1887,7 +1887,7 @@
           "role": "call-site",
           "hash": "sha256-v2:9ab26b0fd66e",
           "resolved": {
-            "commit": "wt-99b7fa3ba5",
+            "commit": "wt-abc6da4f41",
             "range": {
               "startLine": 72,
               "endLine": 72
@@ -1901,7 +1901,7 @@
           "role": "call-site",
           "hash": "sha256-v2:336b04a7cf0e",
           "resolved": {
-            "commit": "wt-99b7fa3ba5",
+            "commit": "wt-abc6da4f41",
             "range": {
               "startLine": 77,
               "endLine": 96
@@ -1915,7 +1915,7 @@
           "role": "usage",
           "hash": "sha256-v2:f555bfbc9fe9",
           "resolved": {
-            "commit": "wt-99b7fa3ba5",
+            "commit": "wt-abc6da4f41",
             "range": {
               "startLine": 248,
               "endLine": 287
@@ -1927,12 +1927,12 @@
           "file": "packages/indexer/src/build.ts",
           "symbol": "buildIndex",
           "role": "definition",
-          "hash": "sha256-v2:b034bb31fa4f",
+          "hash": "sha256-v2:7219745fb45d",
           "resolved": {
-            "commit": "wt-99b7fa3ba5",
+            "commit": "wt-abc6da4f41",
             "range": {
-              "startLine": 174,
-              "endLine": 456
+              "startLine": 177,
+              "endLine": 469
             },
             "status": "ok"
           }
@@ -1943,10 +1943,10 @@
           "role": "definition",
           "hash": "sha256-v2:c78396b758da",
           "resolved": {
-            "commit": "wt-99b7fa3ba5",
+            "commit": "wt-abc6da4f41",
             "range": {
-              "startLine": 504,
-              "endLine": 531
+              "startLine": 517,
+              "endLine": 544
             },
             "status": "ok"
           }
@@ -1955,12 +1955,12 @@
           "file": "packages/indexer/src/files.ts",
           "symbol": "discoverFiles",
           "role": "definition",
-          "hash": "sha256-v2:791c72a53490",
+          "hash": "sha256-v2:caf627e12ac2",
           "resolved": {
-            "commit": "wt-99b7fa3ba5",
+            "commit": "wt-abc6da4f41",
             "range": {
-              "startLine": 224,
-              "endLine": 278
+              "startLine": 244,
+              "endLine": 298
             },
             "status": "ok"
           }
@@ -1968,7 +1968,7 @@
       ],
       "provenance": {
         "origin": "llm",
-        "commit": "wt-6c964bca44"
+        "commit": "wt-abc6da4f41"
       }
     },
     {
@@ -6512,12 +6512,12 @@
           "file": "packages/indexer/src/commit.ts",
           "symbol": "resolveCommitId",
           "role": "definition",
-          "hash": "sha256-v2:591a832f3e2a",
+          "hash": "sha256-v2:f6cbca0e5e30",
           "resolved": {
-            "commit": "wt-99b7fa3ba5",
+            "commit": "wt-abc6da4f41",
             "range": {
-              "startLine": 70,
-              "endLine": 79
+              "startLine": 68,
+              "endLine": 77
             },
             "status": "ok"
           }
@@ -6528,7 +6528,7 @@
           "role": "definition",
           "hash": "sha256-v2:7c8ede52253f",
           "resolved": {
-            "commit": "wt-99b7fa3ba5",
+            "commit": "wt-abc6da4f41",
             "range": {
               "startLine": 22,
               "endLine": 29
@@ -6540,12 +6540,12 @@
           "file": "packages/indexer/src/commit.ts",
           "symbol": "isWorkTreeClean",
           "role": "definition",
-          "hash": "sha256-v2:1f45f42cffbc",
+          "hash": "sha256-v2:c7f27503f8ff",
           "resolved": {
-            "commit": "wt-99b7fa3ba5",
+            "commit": "wt-abc6da4f41",
             "range": {
               "startLine": 47,
-              "endLine": 57
+              "endLine": 54
             },
             "status": "ok"
           }
@@ -6556,7 +6556,7 @@
           "role": "definition",
           "hash": "sha256-v2:2abba1857f32",
           "resolved": {
-            "commit": "wt-99b7fa3ba5",
+            "commit": "wt-abc6da4f41",
             "range": {
               "startLine": 32,
               "endLine": 37
@@ -6570,10 +6570,10 @@
           "role": "usage",
           "hash": "sha256-v2:284aa3518e48",
           "resolved": {
-            "commit": "wt-99b7fa3ba5",
+            "commit": "wt-abc6da4f41",
             "range": {
-              "startLine": 189,
-              "endLine": 195
+              "startLine": 209,
+              "endLine": 215
             },
             "status": "ok"
           }
@@ -6588,7 +6588,7 @@
           "role": "usage",
           "hash": "sha256-v2:7e37246860b9",
           "resolved": {
-            "commit": "wt-99b7fa3ba5",
+            "commit": "wt-abc6da4f41",
             "range": {
               "startLine": 192,
               "endLine": 192
@@ -6602,7 +6602,7 @@
           "role": "test",
           "hash": "sha256-v2:968553f98d4f",
           "resolved": {
-            "commit": "wt-99b7fa3ba5",
+            "commit": "wt-abc6da4f41",
             "range": {
               "startLine": 60,
               "endLine": 66
@@ -6616,7 +6616,7 @@
           "role": "test",
           "hash": "sha256-v2:e31e4b2f779a",
           "resolved": {
-            "commit": "wt-99b7fa3ba5",
+            "commit": "wt-abc6da4f41",
             "range": {
               "startLine": 68,
               "endLine": 75
@@ -6630,7 +6630,7 @@
           "role": "test",
           "hash": "sha256-v2:edb4b7768d15",
           "resolved": {
-            "commit": "wt-99b7fa3ba5",
+            "commit": "wt-abc6da4f41",
             "range": {
               "startLine": 88,
               "endLine": 95
@@ -6644,7 +6644,7 @@
           "role": "test",
           "hash": "sha256-v2:e4dddcd61f2b",
           "resolved": {
-            "commit": "wt-99b7fa3ba5",
+            "commit": "wt-abc6da4f41",
             "range": {
               "startLine": 114,
               "endLine": 122
@@ -6658,7 +6658,7 @@
           "role": "test",
           "hash": "sha256-v2:b9c5cc4191fd",
           "resolved": {
-            "commit": "wt-99b7fa3ba5",
+            "commit": "wt-abc6da4f41",
             "range": {
               "startLine": 124,
               "endLine": 131
@@ -6675,7 +6675,7 @@
       ],
       "provenance": {
         "origin": "llm",
-        "commit": "wt-f352d7d560"
+        "commit": "wt-abc6da4f41"
       }
     },
     {
@@ -7247,7 +7247,7 @@
           "role": "definition",
           "hash": "sha256-v2:0246e0d7f5a2",
           "resolved": {
-            "commit": "wt-99b7fa3ba5",
+            "commit": "wt-abc6da4f41",
             "range": {
               "startLine": 379,
               "endLine": 494
@@ -7259,12 +7259,12 @@
           "file": "packages/indexer/src/build.ts",
           "symbol": "buildIndex",
           "role": "definition",
-          "hash": "sha256-v2:b034bb31fa4f",
+          "hash": "sha256-v2:7219745fb45d",
           "resolved": {
-            "commit": "wt-99b7fa3ba5",
+            "commit": "wt-abc6da4f41",
             "range": {
-              "startLine": 174,
-              "endLine": 456
+              "startLine": 177,
+              "endLine": 469
             },
             "status": "ok"
           }
@@ -7275,7 +7275,7 @@
           "role": "definition",
           "hash": "sha256-v2:0246e0d7f5a2",
           "resolved": {
-            "commit": "wt-99b7fa3ba5",
+            "commit": "wt-abc6da4f41",
             "range": {
               "startLine": 379,
               "endLine": 494
@@ -7289,7 +7289,7 @@
           "role": "definition",
           "hash": "sha256-v2:960f34ef5b0e",
           "resolved": {
-            "commit": "wt-99b7fa3ba5",
+            "commit": "wt-abc6da4f41",
             "range": {
               "startLine": 90,
               "endLine": 102
@@ -7303,7 +7303,7 @@
           "role": "definition",
           "hash": "sha256-v2:60ab9422ea4b",
           "resolved": {
-            "commit": "wt-99b7fa3ba5",
+            "commit": "wt-abc6da4f41",
             "range": {
               "startLine": 451,
               "endLine": 457
@@ -7317,7 +7317,7 @@
           "role": "definition",
           "hash": "sha256-v2:7996042f251f",
           "resolved": {
-            "commit": "wt-99b7fa3ba5",
+            "commit": "wt-abc6da4f41",
             "range": {
               "startLine": 460,
               "endLine": 467
@@ -7335,10 +7335,10 @@
           "role": "usage",
           "hash": "sha256-v2:0cd75a02b5b3",
           "resolved": {
-            "commit": "wt-99b7fa3ba5",
+            "commit": "wt-abc6da4f41",
             "range": {
-              "startLine": 487,
-              "endLine": 487
+              "startLine": 500,
+              "endLine": 500
             },
             "status": "ok"
           }
@@ -7349,7 +7349,7 @@
           "role": "usage",
           "hash": "sha256-v2:198710fb912a",
           "resolved": {
-            "commit": "wt-99b7fa3ba5",
+            "commit": "wt-abc6da4f41",
             "range": {
               "startLine": 40,
               "endLine": 46
@@ -7363,7 +7363,7 @@
           "role": "usage",
           "hash": "sha256-v2:05f0e3ae19a7",
           "resolved": {
-            "commit": "wt-99b7fa3ba5",
+            "commit": "wt-abc6da4f41",
             "range": {
               "startLine": 158,
               "endLine": 179
@@ -7377,7 +7377,7 @@
           "role": "test",
           "hash": "sha256-v2:68cf78bc98b6",
           "resolved": {
-            "commit": "wt-99b7fa3ba5",
+            "commit": "wt-abc6da4f41",
             "range": {
               "startLine": 76,
               "endLine": 110
@@ -7391,7 +7391,7 @@
           "role": "test",
           "hash": "sha256-v2:b9d668b0c88a",
           "resolved": {
-            "commit": "wt-99b7fa3ba5",
+            "commit": "wt-abc6da4f41",
             "range": {
               "startLine": 312,
               "endLine": 330
@@ -7405,7 +7405,7 @@
           "role": "test",
           "hash": "sha256-v2:7c44a45abeac",
           "resolved": {
-            "commit": "wt-99b7fa3ba5",
+            "commit": "wt-abc6da4f41",
             "range": {
               "startLine": 218,
               "endLine": 228
@@ -7425,7 +7425,7 @@
       ],
       "provenance": {
         "origin": "llm",
-        "commit": "wt-6c964bca44"
+        "commit": "wt-abc6da4f41"
       }
     },
     {
@@ -11618,7 +11618,7 @@
               "role": "usage",
               "hash": "sha256-v2:08f1a4c0c540",
               "resolved": {
-                "commit": "wt-99b7fa3ba5",
+                "commit": "wt-abc6da4f41",
                 "range": {
                   "startLine": 16,
                   "endLine": 16
@@ -11636,12 +11636,12 @@
               "role": "call-site",
               "hash": "sha256-v2:13de86e3022f",
               "resolved": {
-                "commit": "wt-99b7fa3ba5",
+                "commit": "wt-abc6da4f41",
                 "range": {
                   "startLine": 254,
                   "endLine": 254
                 },
-                "status": "moved"
+                "status": "ok"
               }
             },
             {
@@ -11654,7 +11654,7 @@
               "role": "call-site",
               "hash": "sha256-v2:f2e568accbea",
               "resolved": {
-                "commit": "wt-99b7fa3ba5",
+                "commit": "wt-abc6da4f41",
                 "range": {
                   "startLine": 123,
                   "endLine": 129
@@ -11672,7 +11672,7 @@
               "role": "call-site",
               "hash": "sha256-v2:e5812e126d52",
               "resolved": {
-                "commit": "wt-99b7fa3ba5",
+                "commit": "wt-abc6da4f41",
                 "range": {
                   "startLine": 134,
                   "endLine": 134
@@ -11684,12 +11684,12 @@
               "file": "packages/indexer/src/build.ts",
               "symbol": "buildIndex",
               "role": "definition",
-              "hash": "sha256-v2:b034bb31fa4f",
+              "hash": "sha256-v2:7219745fb45d",
               "resolved": {
-                "commit": "wt-99b7fa3ba5",
+                "commit": "wt-abc6da4f41",
                 "range": {
-                  "startLine": 174,
-                  "endLine": 456
+                  "startLine": 177,
+                  "endLine": 469
                 },
                 "status": "ok"
               }
@@ -11700,10 +11700,10 @@
               "role": "definition",
               "hash": "sha256-v2:c78396b758da",
               "resolved": {
-                "commit": "wt-99b7fa3ba5",
+                "commit": "wt-abc6da4f41",
                 "range": {
-                  "startLine": 504,
-                  "endLine": 531
+                  "startLine": 517,
+                  "endLine": 544
                 },
                 "status": "ok"
               }
@@ -11714,10 +11714,10 @@
               "role": "usage",
               "hash": "sha256-v2:a0f634f0091e",
               "resolved": {
-                "commit": "wt-99b7fa3ba5",
+                "commit": "wt-abc6da4f41",
                 "range": {
-                  "startLine": 498,
-                  "endLine": 498
+                  "startLine": 511,
+                  "endLine": 511
                 },
                 "status": "ok"
               }
@@ -12184,7 +12184,7 @@
       ],
       "provenance": {
         "origin": "llm",
-        "commit": "wt-2cb165af4f"
+        "commit": "wt-abc6da4f41"
       }
     },
     {
@@ -12227,7 +12227,7 @@
               "role": "call-site",
               "hash": "sha256-v2:f2e568accbea",
               "resolved": {
-                "commit": "wt-99b7fa3ba5",
+                "commit": "wt-abc6da4f41",
                 "range": {
                   "startLine": 123,
                   "endLine": 129
@@ -12239,12 +12239,12 @@
               "file": "packages/indexer/src/build.ts",
               "symbol": "buildIndex",
               "role": "definition",
-              "hash": "sha256-v2:b034bb31fa4f",
+              "hash": "sha256-v2:7219745fb45d",
               "resolved": {
-                "commit": "wt-99b7fa3ba5",
+                "commit": "wt-abc6da4f41",
                 "range": {
-                  "startLine": 174,
-                  "endLine": 456
+                  "startLine": 177,
+                  "endLine": 469
                 },
                 "status": "ok"
               }
@@ -12256,7 +12256,7 @@
           "id": "indexing:2",
           "from": "file:packages/indexer/src/build.ts",
           "to": "file:packages/indexer/src/files.ts",
-          "label": "detectGit(root)",
+          "label": "detectGit(root, gitOptions)",
           "kind": "call",
           "anchors": [
             {
@@ -12267,12 +12267,12 @@
                 "to": 10
               },
               "role": "call-site",
-              "hash": "sha256-v2:6d73f608cfc9",
+              "hash": "sha256-v2:c5b344f06fcb",
               "resolved": {
-                "commit": "wt-99b7fa3ba5",
+                "commit": "wt-abc6da4f41",
                 "range": {
-                  "startLine": 184,
-                  "endLine": 184
+                  "startLine": 187,
+                  "endLine": 187
                 },
                 "status": "ok"
               }
@@ -12281,24 +12281,24 @@
               "file": "packages/indexer/src/files.ts",
               "symbol": "detectGit",
               "role": "definition",
-              "hash": "sha256-v2:a674248a3e66",
+              "hash": "sha256-v2:68aad9ed77ff",
               "resolved": {
-                "commit": "wt-99b7fa3ba5",
+                "commit": "wt-abc6da4f41",
                 "range": {
-                  "startLine": 121,
-                  "endLine": 132
+                  "startLine": 132,
+                  "endLine": 147
                 },
                 "status": "ok"
               }
             }
           ],
-          "summary": "Git detection identifies the containing work tree and indexed root. Discovery uses that context when available."
+          "summary": "Git detection identifies the containing work tree and indexed root. PR preparation pins this lookup to the owned repository with a sanitized environment. Discovery reuses that context."
         },
         {
           "id": "indexing:3",
           "from": "file:packages/indexer/src/build.ts",
           "to": "file:packages/indexer/src/files.ts",
-          "label": "discoverFiles(root, { git, languages })",
+          "label": "discoverFiles(root, { git, languages, gitOptions })",
           "kind": "call",
           "anchors": [
             {
@@ -12306,15 +12306,15 @@
               "symbol": "buildIndex",
               "span": {
                 "from": 11,
-                "to": 11
+                "to": 15
               },
               "role": "call-site",
-              "hash": "sha256-v2:636245f886d2",
+              "hash": "sha256-v2:74aabe65ad92",
               "resolved": {
-                "commit": "wt-99b7fa3ba5",
+                "commit": "wt-abc6da4f41",
                 "range": {
-                  "startLine": 185,
-                  "endLine": 185
+                  "startLine": 188,
+                  "endLine": 192
                 },
                 "status": "ok"
               }
@@ -12323,12 +12323,12 @@
               "file": "packages/indexer/src/files.ts",
               "symbol": "discoverFiles",
               "role": "definition",
-              "hash": "sha256-v2:791c72a53490",
+              "hash": "sha256-v2:caf627e12ac2",
               "resolved": {
-                "commit": "wt-99b7fa3ba5",
+                "commit": "wt-abc6da4f41",
                 "range": {
-                  "startLine": 224,
-                  "endLine": 278
+                  "startLine": 244,
+                  "endLine": 298
                 },
                 "status": "ok"
               }
@@ -12337,12 +12337,12 @@
               "file": "packages/indexer/src/files.ts",
               "symbol": "gitPaths",
               "role": "definition",
-              "hash": "sha256-v2:c4b90e27aa46",
+              "hash": "sha256-v2:11a06c3d5679",
               "resolved": {
-                "commit": "wt-99b7fa3ba5",
+                "commit": "wt-abc6da4f41",
                 "range": {
-                  "startLine": 157,
-                  "endLine": 161
+                  "startLine": 173,
+                  "endLine": 181
                 },
                 "status": "ok"
               }
@@ -12353,10 +12353,10 @@
               "role": "definition",
               "hash": "sha256-v2:ccadcb921c63",
               "resolved": {
-                "commit": "wt-99b7fa3ba5",
+                "commit": "wt-abc6da4f41",
                 "range": {
-                  "startLine": 164,
-                  "endLine": 186
+                  "startLine": 184,
+                  "endLine": 206
                 },
                 "status": "ok"
               }
@@ -12367,7 +12367,7 @@
               "role": "usage",
               "hash": "sha256-v2:3c57f3791007",
               "resolved": {
-                "commit": "wt-99b7fa3ba5",
+                "commit": "wt-abc6da4f41",
                 "range": {
                   "startLine": 25,
                   "endLine": 37
@@ -12381,10 +12381,10 @@
               "role": "definition",
               "hash": "sha256-v2:eaef96cd6947",
               "resolved": {
-                "commit": "wt-99b7fa3ba5",
+                "commit": "wt-abc6da4f41",
                 "range": {
-                  "startLine": 198,
-                  "endLine": 218
+                  "startLine": 218,
+                  "endLine": 238
                 },
                 "status": "ok"
               }
@@ -12395,7 +12395,7 @@
               "role": "usage",
               "hash": "sha256-v2:d68fbe09e083",
               "resolved": {
-                "commit": "wt-99b7fa3ba5",
+                "commit": "wt-abc6da4f41",
                 "range": {
                   "startLine": 20,
                   "endLine": 20
@@ -12409,7 +12409,7 @@
               "role": "usage",
               "hash": "sha256-v2:5393406dbb3c",
               "resolved": {
-                "commit": "wt-99b7fa3ba5",
+                "commit": "wt-abc6da4f41",
                 "range": {
                   "startLine": 22,
                   "endLine": 22
@@ -12418,7 +12418,7 @@
               }
             }
           ],
-          "summary": "Discovery lists candidate files and filters excluded content. Generated XPL pages are omitted so exports cannot feed back into the index."
+          "summary": "Discovery lists candidate files and filters excluded content. Discovery passes the supplied Git context to file listing. Generated XPL pages are omitted so exports cannot feed back into the index."
         },
         {
           "id": "indexing:4",
@@ -12431,12 +12431,12 @@
               "file": "packages/indexer/src/build.ts",
               "symbol": "buildIndex",
               "role": "call-site",
-              "hash": "sha256-v2:b034bb31fa4f",
+              "hash": "sha256-v2:7219745fb45d",
               "resolved": {
-                "commit": "wt-99b7fa3ba5",
+                "commit": "wt-abc6da4f41",
                 "range": {
-                  "startLine": 174,
-                  "endLine": 456
+                  "startLine": 177,
+                  "endLine": 469
                 },
                 "status": "ok"
               }
@@ -12447,7 +12447,7 @@
               "role": "definition",
               "hash": "sha256-v2:cb4212e0328e",
               "resolved": {
-                "commit": "wt-99b7fa3ba5",
+                "commit": "wt-abc6da4f41",
                 "range": {
                   "startLine": 175,
                   "endLine": 240
@@ -12794,7 +12794,7 @@
       ],
       "provenance": {
         "origin": "llm",
-        "commit": "wt-6c964bca44"
+        "commit": "wt-abc6da4f41"
       }
     },
     {
@@ -13202,12 +13202,12 @@
               "file": "packages/indexer/src/build.ts",
               "symbol": "buildIndex",
               "role": "definition",
-              "hash": "sha256-v2:b034bb31fa4f",
+              "hash": "sha256-v2:7219745fb45d",
               "resolved": {
-                "commit": "wt-99b7fa3ba5",
+                "commit": "wt-abc6da4f41",
                 "range": {
-                  "startLine": 174,
-                  "endLine": 456
+                  "startLine": 177,
+                  "endLine": 469
                 },
                 "status": "ok"
               }
@@ -13216,16 +13216,16 @@
               "file": "packages/indexer/src/build.ts",
               "symbol": "buildIndex",
               "span": {
-                "from": 212,
-                "to": 212
+                "from": 216,
+                "to": 216
               },
               "role": "definition",
               "hash": "sha256-v2:7ab3f8620bb0",
               "resolved": {
-                "commit": "wt-99b7fa3ba5",
+                "commit": "wt-abc6da4f41",
                 "range": {
-                  "startLine": 386,
-                  "endLine": 386
+                  "startLine": 393,
+                  "endLine": 393
                 },
                 "status": "ok"
               }
@@ -13237,23 +13237,23 @@
           "id": "indexing-refs:7",
           "from": "file:packages/indexer/src/build.ts",
           "to": "file:packages/indexer/src/commit.ts",
-          "label": "resolveCommitId({ commit, git, files, root })",
+          "label": "resolveCommitId({ commit, git, files, root, gitOptions })",
           "kind": "call",
           "anchors": [
             {
               "file": "packages/indexer/src/build.ts",
               "symbol": "buildIndex",
               "span": {
-                "from": 258,
-                "to": 258
+                "from": 262,
+                "to": 268
               },
               "role": "call-site",
-              "hash": "sha256-v2:f9ca869696dc",
+              "hash": "sha256-v2:81800cd1565c",
               "resolved": {
-                "commit": "wt-99b7fa3ba5",
+                "commit": "wt-abc6da4f41",
                 "range": {
-                  "startLine": 432,
-                  "endLine": 432
+                  "startLine": 439,
+                  "endLine": 445
                 },
                 "status": "ok"
               }
@@ -13262,12 +13262,12 @@
               "file": "packages/indexer/src/commit.ts",
               "symbol": "resolveCommitId",
               "role": "definition",
-              "hash": "sha256-v2:591a832f3e2a",
+              "hash": "sha256-v2:f6cbca0e5e30",
               "resolved": {
-                "commit": "wt-99b7fa3ba5",
+                "commit": "wt-abc6da4f41",
                 "range": {
-                  "startLine": 70,
-                  "endLine": 79
+                  "startLine": 68,
+                  "endLine": 77
                 },
                 "status": "ok"
               }
@@ -13278,7 +13278,7 @@
               "role": "definition",
               "hash": "sha256-v2:2abba1857f32",
               "resolved": {
-                "commit": "wt-99b7fa3ba5",
+                "commit": "wt-abc6da4f41",
                 "range": {
                   "startLine": 32,
                   "endLine": 37
@@ -13290,12 +13290,12 @@
               "file": "packages/indexer/src/commit.ts",
               "symbol": "isWorkTreeClean",
               "role": "definition",
-              "hash": "sha256-v2:1f45f42cffbc",
+              "hash": "sha256-v2:c7f27503f8ff",
               "resolved": {
-                "commit": "wt-99b7fa3ba5",
+                "commit": "wt-abc6da4f41",
                 "range": {
                   "startLine": 47,
-                  "endLine": 57
+                  "endLine": 54
                 },
                 "status": "ok"
               }
@@ -13304,9 +13304,9 @@
               "file": "packages/indexer/src/commit.ts",
               "symbol": "shortHead",
               "role": "definition",
-              "hash": "sha256-v2:90aff689e90e",
+              "hash": "sha256-v2:72348de84a11",
               "resolved": {
-                "commit": "wt-99b7fa3ba5",
+                "commit": "wt-abc6da4f41",
                 "range": {
                   "startLine": 40,
                   "endLine": 44
@@ -13328,12 +13328,12 @@
               "file": "packages/indexer/src/build.ts",
               "symbol": "buildIndex",
               "role": "definition",
-              "hash": "sha256-v2:b034bb31fa4f",
+              "hash": "sha256-v2:7219745fb45d",
               "resolved": {
-                "commit": "wt-99b7fa3ba5",
+                "commit": "wt-abc6da4f41",
                 "range": {
-                  "startLine": 174,
-                  "endLine": 456
+                  "startLine": 177,
+                  "endLine": 469
                 },
                 "status": "ok"
               }
@@ -13348,7 +13348,7 @@
               "role": "call-site",
               "hash": "sha256-v2:969eed20d327",
               "resolved": {
-                "commit": "wt-99b7fa3ba5",
+                "commit": "wt-abc6da4f41",
                 "range": {
                   "startLine": 133,
                   "endLine": 133
@@ -13477,7 +13477,7 @@
       ],
       "provenance": {
         "origin": "llm",
-        "commit": "wt-6c964bca44"
+        "commit": "wt-abc6da4f41"
       }
     },
     {

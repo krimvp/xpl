@@ -742,6 +742,10 @@ Each run resolves the API base/head full SHAs and fetches a separate detached he
 PR ref can supply an inaccessible/deleted fork, but the resolved exact head must exist after fetch;
 a ref that moved to another commit is not substituted. Only head is indexed. `--precise off` is the default;
 `auto`/`require` explicitly opt into optional analysis tools. No developer branch, index, refs or files change.
+Inherited Git directory/work-tree/index overrides are removed from the owned Git context, which is passed
+through indexing, diff computation and source reads. Checkout bytes must match the raw head blobs before
+indexing. A configured smudge, encoding or line-ending conversion that changes content fails preparation
+and removes staging; disable that conversion for the PR run before retrying.
 
 JSON output gives `directory`, `repository`, `manifestPath` and `pr` identity. The immutable `input.json`
 records `schemaVersion: 1`, `kind: "github-pr-input"`, preparation time, PR identity, the rename-aware
