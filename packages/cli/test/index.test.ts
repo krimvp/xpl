@@ -2,9 +2,25 @@ import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { INDEX_SCHEMA } from "@xpl/core";
-import { copyFixture, git, readFile, readJson, writeFile, xpl, xplJson } from "./helpers.js";
+import {
+  copyFixture,
+  git,
+  invoke,
+  readFile,
+  readJson,
+  writeFile,
+  xpl,
+  xplJson,
+} from "./helpers.js";
 
 describe("xpl index", () => {
+  it("qualifies text's absent references in help because an artifact can provide them", async () => {
+    const help = await invoke(["index", "--help"]);
+    expect(help.code).toBe(0);
+    expect(help.out).toContain(
+      "`refs: none` (yaml, json, toml, text without an artifact provider)",
+    );
+  });
   it("writes .explainer/index-<commit>.json and prints path, commit and per-language summary", async () => {
     const dir = copyFixture();
     const { code, out, err } = await xpl(dir, "index", "--precise", "off");
@@ -24,7 +40,7 @@ describe("xpl index", () => {
     expect(index.languages.typescript.refs).toBe("heuristic");
     expect(out).toContain("Analysis coverage: 12 files; some analysis is limited or unavailable.");
     expect(out).toContain(
-      "text: named symbols, full declaration ranges, nesting, calls, imports, inheritance, implementations, type references, reads, writes unsupported (0/1 files analyzed).",
+      "text (text): named symbols, full declaration ranges, nesting, calls, imports, inheritance, implementations, type references, reads, writes unsupported (0/1 files analyzed).",
     );
     expect(index.symbols.some((s: any) => s.id === "src/runner.ts#Runner.dispatch")).toBe(true);
   });

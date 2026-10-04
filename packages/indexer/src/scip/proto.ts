@@ -37,7 +37,8 @@ export const WireType = {
   Fixed32: 5,
 } as const;
 
-const utf8 = new TextDecoder("utf-8");
+// Protobuf strings are content: a leading BOM is part of embedded source and its snapshot hash.
+const utf8 = new TextDecoder("utf-8", { ignoreBOM: true });
 
 /** Deepest group nesting `skip` follows before giving up (groups are deprecated; this only guards recursion). */
 const MAX_GROUP_DEPTH = 64;

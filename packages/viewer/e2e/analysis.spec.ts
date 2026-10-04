@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { openBundle, openVariant, watchProblems } from "./helpers.js";
 
-test("the exported viewer explains missing analysis without provider internals", async ({
+test("the exported viewer labels analysis sources without command or diagnostic details", async ({
   page,
 }) => {
   const problems = watchProblems(page);
@@ -17,7 +17,7 @@ test("the exported viewer explains missing analysis without provider internals",
   await expect(notice).toContainText(
     "Heuristic relationships are hints; unresolved targets may be missing.",
   );
-  await expect(notice).not.toContainText("tree-sitter");
+  await expect(notice).toContainText("typescript (typescript):");
   expect(problems).toEqual([]);
 });
 
@@ -48,6 +48,6 @@ test("legacy coverage stays unknown and failed analysis is visible", async ({ pa
   await expect(notice.locator("summary")).toContainText("some analysis failed");
   await notice.locator("summary").click();
   await expect(notice).toContainText("calls failed (0/1 files analyzed)");
-  await expect(notice).not.toContainText("test-tool");
+  await expect(notice).toContainText("typescript (test-tool): calls failed");
   await expect(notice).not.toContainText("/private/bin/tool");
 });

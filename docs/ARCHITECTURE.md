@@ -478,6 +478,7 @@ Rust tags (#13) remain separate work.
 
 **Artifact evidence and losses** (`src/scip/artifact.ts`). Each document needs source evidence: embedded
 `Document.text`, or a manifest's pre-generation xpl source hash. The evidence must match the captured source.
+Protobuf string decoding preserves a leading BOM as source content; adding or removing it changes the hash.
 A manifest binds the exact artifact bytes with `artifactSha256` and names the artifact for the CLI (relative
 to the manifest). Missing or stale evidence excludes that document from every replacement capability.
 Absolute, non-canonical, undiscovered and generated paths are excluded, even when a file exists on disk.
@@ -539,7 +540,9 @@ Compatibility: the index schema stays `code-explainer/index@0`. `analysis`, the 
 load. Reports optionally retain `version`, `configuration` and `snapshot` identities. No abilities or complete
 outcomes are inferred from language names, symbols, ranges or reference counts; legacy coverage is unknown. File anchors remain available for their indexed files.
 Pruning and packing preserve reports unchanged, so missing bundle edges never alter run coverage.
-`describeAnalysis` produces the same reader-facing summary for the CLI and viewer without provider ids.
+`describeAnalysis` produces the same reader-facing summary for the CLI and viewer. Each capability result
+names its provider id, so a file-only fallback's limits do not describe a separate artifact provider's symbols.
+Tool commands and diagnostic details remain author-facing.
 
 | Language | Symbols (kind) | Path rules |
 |---|---|---|
@@ -1248,7 +1251,8 @@ what the mode moves between, the save state (only when there is something to say
 saved"), the mode's one action, and the **Edit** menu.
 
 Below the header, **Analysis coverage** is a collapsed disclosure in every mode. It names missing or
-failed analysis and opens into capabilities, file counts and limits, without adapter ids or tool commands.
+failed analysis and opens into capabilities, file counts and limits, labeled by analysis provider id.
+Tool commands and diagnostic details are omitted.
 It describes the original indexed repository, including when only some sources are embedded or the index
 is pruned. A legacy index shows coverage unknown. Live refresh and Save as HTML use the current index report.
 

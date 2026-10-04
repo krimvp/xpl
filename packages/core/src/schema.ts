@@ -139,7 +139,7 @@ export interface AnalysisResult {
   limitations: string[];
 }
 export interface AnalysisReport {
-  /** Stable provider id, for diagnostics rather than reader-facing text. */
+  /** Stable provider id; labels the source of each reader-facing coverage result. */
   provider: string;
   /** Optional on legacy indexes. Adapter version and reuse identities for the analyzed snapshot. */
   version?: string;

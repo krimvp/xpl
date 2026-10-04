@@ -65,6 +65,40 @@ it("imports source-backed declarations, nesting and type mentions without a lang
   expect(index.languages.text).toMatchObject({ symbols: 2, refs: "precise" });
 });
 
+it.each([
+  {
+    name: "matching BOM-bearing source",
+    source: "\uFEFF// header\nclass A {}\n",
+    ids: ["a.demo#A"],
+  },
+  { name: "source whose leading BOM was removed", source: "// header\nclass A {}\n", ids: [] },
+])("preserves embedded source identity for $name", async ({ source, ids }) => {
+  const artifact = encodeIndex({
+    documents: [
+      {
+        path: "a.demo",
+        text: "\uFEFF// header\nclass A {}\n",
+        positionEncoding: 2,
+        symbols: [{ symbol: sym("A#"), kind: 7 }],
+        occurrences: [
+          { symbol: sym("A#"), roles: 1, range: [1, 6, 7], enclosingRange: [1, 0, 10] },
+        ],
+      },
+    ],
+  });
+  const { index } = await buildIndex({
+    root: makeDir({ "a.demo": source }),
+    precise: "auto",
+    providers: [scipArtifactProvider({ artifact })],
+  });
+  expect(index.symbols.map((s) => s.id)).toEqual(ids);
+  if (!ids.length) {
+    expect(index.analysis?.find((r) => r.provider === "scip-artifact")?.diagnostics).toContain(
+      "a.demo: source snapshot missing or stale; regenerate artifact and manifest together",
+    );
+  }
+});
+
 it("preserves overload targets, nested declarations and document-scoped local identities", async () => {
   const a = "class A {\n m() { m; x; }\n m() { m; }\n class B {}\n}\n";
   const b = "let x;\nread x;\n";

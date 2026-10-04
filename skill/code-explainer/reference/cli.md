@@ -37,12 +37,14 @@ typescript  8 files    121 symbols   refs: precise (scip-typescript@0.4.0)
 yaml        1 file     16 symbols    refs: none
 ```
 
-The summary is followed by **Analysis coverage** and per-capability outcomes (`supported`, `partial`,
-`unsupported`, `failed`) with analyzed file counts and limits. `--json` includes the same `analysis`
-reports as the saved index. Abilities are separate from observed coverage: a described file or empty
-reference list never proves complete relationships. Exported viewers keep the report even when their
+The summary is followed by **Analysis coverage** and per-capability outcomes labeled by analysis provider
+(`supported`, `partial`, `unsupported`, `failed`) with analyzed file counts and limits.
+`--json` includes the same `analysis` reports as the saved index. Abilities are separate from observed coverage:
+a described file or empty reference list never proves complete relationships. Exported viewers keep the report even when their
 symbol index is pruned. Legacy indexes without reports load with coverage unknown; file anchors remain
 available, but symbol and relationship completeness cannot be inferred.
+Provider labels separate a file-only fallback's limits from an artifact provider's usable symbols.
+Tool commands and diagnostic details are omitted from these summaries.
 
 - The last column is how far a language's references can be trusted. `refs: precise (tool)`: SCIP resolved them (TypeScript, Python, Go). `refs: heuristic`: tree-sitter scope-aware guesses, drawn lighter in the viewer; confirm calls with `show`. `refs: none`: usually yaml, json, toml and text without an artifact provider.
 - `refs: precise 10/11 (scip-go@0.2.7), 1 heuristic`: the tool described only 10 of the 11 files (build-tagged Go files, files a project's own configuration excludes). Those files keep heuristic references, so **their references are hints**; a warning above the summary names them: `warning: scip-go@0.2.7 did not describe 1 file(s) (excluded by build constraints or by the tool's own configuration, or unreadable?); their references stay heuristic: internal/queue/windows_only.go`.
@@ -99,7 +101,8 @@ xpl index --scip /tmp/xpl-scip-run/manifest.json --precise require
 
 The manifest attests to a successful run against that snapshot. Hashes cannot prove compilation success or
 detect a file changed and restored during generation. Never stamp current hashes onto an old artifact.
-Embedded source takes precedence for documents that supply it. Stale or unverified documents supply no
+Embedded source takes precedence for documents that supply it. A leading BOM is preserved as source content;
+adding or removing it changes the snapshot identity. Stale or unverified documents supply no
 checked symbols or relationships. Documents must belong to discovered sources; generated build outputs
 and external symbols are not turned into local declarations. A supplied project-root URI must match `--root`.
 
