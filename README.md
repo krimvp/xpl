@@ -73,6 +73,13 @@ Browser storage can be unavailable; the panel reports this and JSON export or Sa
 new indexes refresh in a live viewer; a saved HTML page stays at its exported version. Unsaved edits
 postpone live refresh. Reindex changed code to restore reliable source locations and references.
 
+The next pass uses `xpl revise`: select request IDs, inspect ordinary per-request patch proposals with
+explanation before/after and source, review the author's accepted/rejected subset, then explicitly accept.
+Acceptance rechecks live source, snapshot identity and readiness. It preserves user-owned content and the
+previous artifact, and records only selected outcomes. Interrupted acceptance resumes without applying or
+recording twice. Missing anchors need an explicit re-anchor or removal decision; location-only moves keep
+prose unchanged. See the installed skill's [revision workflow](skill/code-explainer/reference/revise.md).
+
 No Claude at hand? The source repository's fixtures ship example explainers (fixtures are not in the tarball):
 
 ```sh
