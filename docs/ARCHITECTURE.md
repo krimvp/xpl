@@ -544,7 +544,8 @@ Unsupported and explicitly failed kinds keep their heuristic hints. Files it did
 Go files, files a Python project's pyright configuration excludes, unreadable ones) keep their heuristic
 references, are named in a warning, and are counted in `LanguageInfo.heuristicFiles`. A language none of
 whose files was described is not precise: that run counts as failed. A run whose advertised relationship
-kinds all report failure also counts as failed: automatic mode warns and retains the heuristic label;
+kinds all report failure or unsupported analysis has no usable precise analysis: automatic mode warns
+and retains the heuristic label;
 required mode rejects it. The observed failure results and limits remain in the report. A file whose
 occurrences fall outside its text (`//line` directives of generated Go code) counts as not described. Where the tool saw an occurrence
 it could not link (`PreciseOutput.blind`), the innermost heuristic reference holding that position is kept,

@@ -87,7 +87,7 @@ it.each(["auto", "require"] as const)(
     };
     if (precise === "require") {
       await expect(indexFiles(files, { precise, resolvers: [resolver] })).rejects.toThrow(
-        'precise resolver "calls-only" failed: all advertised relationship kinds failed',
+        'precise resolver "calls-only" failed: all advertised relationship kinds failed or were unsupported',
       );
       return;
     }
@@ -96,7 +96,7 @@ it.each(["auto", "require"] as const)(
     expect(index.languages.typescript?.refs).toBe("heuristic");
     expect(index.languages.typescript?.tool).toMatch(/^xpl-heuristic@/);
     expect(warnings).toEqual([
-      'precise resolver "calls-only" failed (all advertised relationship kinds failed); using heuristic references for typescript',
+      'precise resolver "calls-only" failed (all advertised relationship kinds failed or were unsupported); using heuristic references for typescript',
     ]);
     expect(
       index.analysis
@@ -197,44 +197,74 @@ it.each([
   },
 );
 
-it.each([{ analyzedFiles: [] }, { analyzedFiles: ["a.ts"] }])(
-  "preserves an unsupported call observation and its heuristic hints ($analyzedFiles)",
-  async ({ analyzedFiles }) => {
-    const { index } = await indexFiles(
-      { "a.ts": "export function a() {}\nexport function b() { a(); }\n" },
-      {
-        precise: "auto",
-        resolvers: [
-          {
-            id: "calls-only",
-            languages: ["typescript"],
-            capabilities: { call: "supported" },
-            async resolve() {
-              return {
-                tool: "calls-only@1",
-                refs: [],
-                describedFiles: ["a.ts"],
-                coverage: {
-                  call: {
-                    status: "unsupported",
-                    analyzedFiles,
-                    limitations: ["Call analysis is unavailable for this project."],
-                  },
-                },
-              };
+it.each(
+  [
+    { analyzedFiles: [], failedImport: false },
+    { analyzedFiles: ["a.ts"], failedImport: false },
+    { analyzedFiles: [], failedImport: true },
+  ].flatMap((observation) => [
+    { ...observation, precise: "auto" as const },
+    { ...observation, precise: "require" as const },
+  ]),
+)(
+  "preserves unsupported outcomes and rejects unusable precise analysis ($precise, $analyzedFiles, failed import: $failedImport)",
+  async ({ analyzedFiles, failedImport, precise }) => {
+    const files = { "a.ts": "export function a() {}\nexport function b() { a(); }\n" };
+    const resolver: PreciseResolver = {
+      id: "calls-only",
+      languages: ["typescript"],
+      capabilities: failedImport
+        ? { call: "supported", import: "supported" }
+        : { call: "supported" },
+      async resolve() {
+        return {
+          tool: "calls-only@1",
+          refs: [],
+          describedFiles: ["a.ts"],
+          coverage: {
+            call: {
+              status: "unsupported",
+              analyzedFiles,
+              limitations: ["Call analysis is unavailable for this project."],
             },
+            ...(failedImport
+              ? {
+                  import: {
+                    status: "failed" as const,
+                    analyzedFiles: [],
+                    limitations: ["Import analysis failed."],
+                  },
+                }
+              : {}),
           },
-        ],
+        };
       },
-    );
+    };
+    if (precise === "require") {
+      await expect(indexFiles(files, { precise, resolvers: [resolver] })).rejects.toThrow(
+        'precise resolver "calls-only" failed: all advertised relationship kinds failed or were unsupported',
+      );
+      return;
+    }
+    const { index, warnings } = await indexFiles(files, { precise, resolvers: [resolver] });
     expect(index.refs.map((r) => [r.kind, r.resolution])).toEqual([["call", "heuristic"]]);
+    expect(index.languages.typescript?.refs).toBe("heuristic");
+    expect(index.languages.typescript?.tool).toMatch(/^xpl-heuristic@/);
+    expect(warnings).toEqual([
+      'precise resolver "calls-only" failed (all advertised relationship kinds failed or were unsupported); using heuristic references for typescript',
+    ]);
     const report = index.analysis?.find((r) => r.provider === "calls-only");
-    expect(report?.capabilities).toEqual({ call: "supported" });
+    expect(report?.capabilities).toEqual(
+      failedImport ? { call: "supported", import: "supported" } : { call: "supported" },
+    );
     expect(report?.results.find((r) => r.capabilities.includes("call"))).toMatchObject({
       status: "unsupported",
       analyzedFiles,
       limitations: ["Call analysis is unavailable for this project."],
     });
+    expect(report?.results.find((r) => r.capabilities.includes("import"))?.status).toBe(
+      failedImport ? "failed" : "unsupported",
+    );
   },
 );
 

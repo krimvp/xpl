@@ -363,10 +363,13 @@ export async function buildIndex(opts: BuildIndexOptions): Promise<BuildIndexRes
           );
           if (
             advertisedKinds.length > 0 &&
-            advertisedKinds.every((kind) => output.coverage?.[kind]?.status === "failed")
+            advertisedKinds.every((kind) => {
+              const status = output.coverage?.[kind]?.status;
+              return status === "failed" || status === "unsupported";
+            })
           ) {
             failedReport = preciseReport(resolver, reportFiles, output, diagnostics);
-            throw new Error("all advertised relationship kinds failed");
+            throw new Error("all advertised relationship kinds failed or were unsupported");
           }
           const covered = new Set<FileLanguage>(languages);
           const replacesKind = (kind: Reference["kind"], file: FilePath): boolean => {
