@@ -11,9 +11,11 @@ import {
   FEEDBACK_SCHEMA,
   parseFeedbackFile,
   parseFeedbackRequest,
-  sameFeedbackContent,
+  mergeFeedbackRequests,
+  hashText,
   type FeedbackKind,
   type FeedbackRequest,
+  type FeedbackFile,
 } from "@xpl/core";
 import {
   asIndexModel,
@@ -1102,44 +1104,12 @@ export class ViewerStore {
 
   // ─── Explain requests and export ─────────────────────────────────────────────────────────────
 
-  private mergeFeedback(requests: readonly FeedbackRequest[], fromDisk = false): FeedbackRequest[] {
-    const merged = new Map<string, FeedbackRequest>();
-    for (const request of requests) {
-      const original = merged.get(request.id);
-      if (original && !sameFeedbackContent(original, request))
-        throw new Error(`Conflicting original content for request ${request.id}`);
-      if (!original || fromDisk || request.outcome.revision > original.outcome.revision)
-        merged.set(request.id, request);
-    }
-    return [...merged.values()];
-  }
-
   /** Persist before returning. Storage refusal stays visible and exports remain available. */
-  private keepFeedback(requests: FeedbackRequest[], fromDisk = false): void {
-    this.set({ feedback: this.mergeFeedback([...this.state.feedback, ...requests], fromDisk) });
-    if (this.state.feedbackStorageError) return;
+  private keepFeedback(requests: readonly FeedbackRequest[]): void {
+    const held = mergeFeedbackRequests([...this.state.feedback, ...requests]);
+    this.set({ feedback: held });
     try {
-      // One atomic browser write per ID: saving in another tab cannot replace this request.
-      for (const request of requests) {
-        const key = `${this.feedbackStorageKey}:request:${encodeURIComponent(request.id)}`;
-        const saved = localStorage.getItem(key);
-        const current = saved ? [parseFeedbackRequest(JSON.parse(saved))] : [];
-        const latest = this.mergeFeedback([...current, request], fromDisk)[0]!;
-        localStorage.setItem(key, JSON.stringify(latest));
-      }
-      this.set({ feedbackStorageError: undefined });
-    } catch (error) {
-      this.set({
-        feedbackStorageError: `Browser storage unavailable: ${String(error)}. Export feedback JSON to keep it.`,
-      });
-    }
-  }
-
-  private loadFeedback(embedded: ViewerBundle["feedback"]): void {
-    try {
-      const requests = embedded ? parseFeedbackFile(embedded).requests : [];
-      this.set({ feedback: requests });
-      // Keep reading the old array without rewriting it; new saves use individual request keys.
+      // Read both legacy arrays and per-ID records. New writes never replace either format.
       const saved = localStorage.getItem(this.feedbackStorageKey);
       const stored = saved ? parseFeedbackFile(JSON.parse(saved)).requests : [];
       const prefix = `${this.feedbackStorageKey}:request:`;
@@ -1149,10 +1119,24 @@ export class ViewerStore {
         const json = localStorage.getItem(key);
         if (json !== null) stored.push(parseFeedbackRequest(JSON.parse(json)));
       }
+      const feedback = mergeFeedbackRequests([...held, ...stored]);
+      this.set({ feedback, feedbackStorageError: undefined });
+      for (const request of feedback) {
+        // Immutable versions prevent a stale read in another tab from overwriting a newer outcome.
+        const json = JSON.stringify(request);
+        const key = `${prefix}${encodeURIComponent(request.id)}:revision:${request.outcome.revision}:${hashText(json)}`;
+        if (localStorage.getItem(key) === null) localStorage.setItem(key, json);
+      }
+    } catch (error) {
       this.set({
-        feedback: this.mergeFeedback([...requests, ...stored]),
-        feedbackStorageError: undefined,
+        feedbackStorageError: `Browser storage unavailable: ${String(error)}. Export feedback JSON to keep it.`,
       });
+    }
+  }
+
+  private loadFeedback(embedded: ViewerBundle["feedback"]): void {
+    try {
+      this.keepFeedback(embedded ? parseFeedbackFile(embedded).requests : []);
     } catch (error) {
       this.set({
         feedbackStorageError: `Could not reload browser feedback: ${String(error)}. Export feedback JSON before closing this page.`,
@@ -1161,16 +1145,20 @@ export class ViewerStore {
   }
 
   async refreshFeedback(): Promise<void> {
-    this.loadFeedback({ schema: FEEDBACK_SCHEMA, requests: this.state.feedback });
+    this.loadFeedback(undefined);
     if (!this.api) return;
-    // The live author store owns outcomes; a portable browser result cannot override it.
-    this.keepFeedback(await this.api.requests(), true);
+    // Every response uses the same revision rule, including delayed or overlapping refreshes.
+    this.keepFeedback(await this.api.requests());
+  }
+
+  /** Export only after reconciling every observed version, including a refreshed bundle. */
+  feedbackFile(embedded?: FeedbackFile): FeedbackFile {
+    this.loadFeedback(embedded);
+    return { schema: FEEDBACK_SCHEMA, requests: this.state.feedback };
   }
 
   feedbackJson(): string {
-    return (
-      JSON.stringify({ schema: FEEDBACK_SCHEMA, requests: this.state.feedback }, null, 2) + "\n"
-    );
+    return JSON.stringify(this.feedbackFile(), null, 2) + "\n";
   }
 
   /** Capture the element and selected inclusive lines against exactly the snapshot being viewed. */

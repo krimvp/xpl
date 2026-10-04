@@ -10,7 +10,6 @@
  */
 import {
   BUNDLE_SCRIPT_ID,
-  FEEDBACK_SCHEMA,
   checkReadiness,
   TextCache,
   basePathOf,
@@ -90,7 +89,7 @@ export async function prepareHtmlSave(store: ViewerStore): Promise<ViewerBundle>
     );
     return {
       ...bundle,
-      feedback: { schema: FEEDBACK_SCHEMA, requests: store.getState().feedback },
+      feedback: store.feedbackFile(bundle.feedback),
     };
   }
   const state = store.getState();
@@ -101,7 +100,7 @@ export async function prepareHtmlSave(store: ViewerStore): Promise<ViewerBundle>
     baseFiles: state.baseFiles,
     index: state.model.index.index,
     sourceWarning: state.sourceWarning,
-    feedback: { schema: FEEDBACK_SCHEMA, requests: state.feedback },
+    feedback: store.feedbackFile(original.feedback),
   };
 }
 

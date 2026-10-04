@@ -643,6 +643,9 @@ conflicting original content is rejected before any write. `--outcomes` reads an
 `{id, context, status, reason}`; copy the selected IDs and their original context exactly. It never removes
 requests collected after selection or left unselected. Only author outcome recording increments the
 selected requests' revisions under the store lock. Failed writes leave the old store and counters intact.
+The outcome revision never decreases in the disk store, browser or portable exports. Delayed live
+responses and older pages cannot erase a newer result. Equal revisions keep the held result; import a
+newer portable result into the author's store before recording its replacement.
 
 Inspection reports `contextStatus: current|outdated` and `contextReason` separately from the stored
 outcome. A changed explanation/source snapshot or stale source needs explicit reconciliation; it is never

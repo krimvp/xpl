@@ -135,7 +135,7 @@ for (const [direction, skew] of [
       const imported = JSON.parse(await xpl(portable, ["feedback", "demo", "--json"]));
       expect(imported.requests[0].outcome).toEqual(recorded.requests[0].outcome);
       expect(recorded.requests[0].outcome.revision).toBe(1);
-      // A portable author branch recorded revision 2. The live workspace still owns revision 1.
+      // A newer portable authored result cannot be erased by an older live workspace.
       const branchRoot = join(scratch, "branch-store");
       cpSync(portable, branchRoot, { recursive: true });
       writeFileSync(
@@ -157,20 +157,23 @@ for (const [direction, skew] of [
       const keys = await live.evaluate((request) => {
         const keys = Array.from({ length: localStorage.length }, (_, i) =>
           localStorage.key(i)!,
-        ).filter((key) => key.endsWith(`:request:${encodeURIComponent(request.id)}`));
-        for (const key of keys) localStorage.setItem(key, JSON.stringify(request));
-        return keys;
+        ).filter((key) => key.includes(`:request:${encodeURIComponent(request.id)}`));
+        const legacy = keys[0]!.split(":revision:")[0]!;
+        localStorage.setItem(legacy, JSON.stringify(request));
+        return [legacy];
       }, branch.requests[0]);
       expect(keys).toHaveLength(1);
       await live.reload();
       await live.getByRole("button", { name: /^Feedback/ }).click();
       await expect(livePanel.locator(".feedback-list")).toContainText(
-        "Need a runtime trace; retry later.",
+        "Decision from a separate author store.",
       );
-      expect(await feedbackExport(live)).toEqual(recorded);
+      expect(await feedbackExport(live)).toEqual(branch);
       expect(
         await live.evaluate((key) => JSON.parse(localStorage.getItem(key)!), keys[0]!),
-      ).toEqual(recorded.requests[0]);
+      ).toEqual(branch.requests[0]);
+      // Import it into the authoritative store before recording a replacement at revision 3.
+      await xpl(root, ["feedback", "demo", "--import", branchFile]);
       // Even the author's clock can move backwards between two explicit recordings.
       const clock = join(scratch, "author-clock.mjs");
       writeFileSync(
@@ -192,7 +195,7 @@ for (const [direction, skew] of [
       await xpl(root, ["feedback", "demo", "--export", outcomeFile]);
       const addressed = JSON.parse(readFileSync(outcomeFile, "utf8"));
       expect(addressed.requests[0].outcome).toMatchObject({
-        revision: 2,
+        revision: 3,
         status: "addressed",
         at: new Date(authorTime - 600_000).toISOString(),
       });
@@ -206,7 +209,7 @@ for (const [direction, skew] of [
         expect(await feedbackExport(tab)).toEqual(addressed);
       }
       await xpl(portable, ["feedback", "demo", "--import", outcomeFile]);
-      // Replaying both the original pending export and revision 1 cannot erase revision 2.
+      // Replaying both the original pending export and revision 1 cannot erase revision 3.
       await xpl(portable, ["feedback", "demo", "--import", input]);
       writeFileSync(outcomeFile, JSON.stringify(recorded));
       await xpl(portable, ["feedback", "demo", "--import", outcomeFile]);

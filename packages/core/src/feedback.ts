@@ -159,6 +159,19 @@ export function sameFeedbackContent(a: FeedbackRequest, b: FeedbackRequest): boo
   return JSON.stringify(originalA) === JSON.stringify(originalB);
 }
 
+/** Revisions never decrease. Equal revisions keep the first result; original content never changes. */
+export function mergeFeedbackRequests(requests: readonly FeedbackRequest[]): FeedbackRequest[] {
+  const merged = new Map<string, FeedbackRequest>();
+  for (const request of requests) {
+    const original = merged.get(request.id);
+    if (original && !sameFeedbackContent(original, request))
+      throw new Error(`request ID ${request.id} conflicts with its original content`);
+    if (!original || request.outcome.revision > original.outcome.revision)
+      merged.set(request.id, request);
+  }
+  return [...merged.values()];
+}
+
 /** Outdated context is reported separately, so importing an old result never discards its reason. */
 export function feedbackContextReason(
   request: FeedbackRequest,

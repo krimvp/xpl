@@ -21,6 +21,8 @@ export const feedbackCommand: CommandSpec = {
     "Offline pages export code-explainer/feedback@1 JSON. Import deduplicates by stable request ID",
     "and refuses conflicting original content. Higher outcome revisions update stored results;",
     "equal or older revisions keep the current result. Timestamps never order outcomes.",
+    "Browser refreshes and exports use that same rule; held revisions never decrease.",
+    "Import newer portable results into the author store before recording replacements.",
     "Feedback retains its original explanation/source hashes and optional inclusive source range.",
     "Changed context is reported as outdated and requires explicit reconciliation; it is never rebound.",
     "--outcomes reads a JSON array of {id, context, status, reason}; context must match the selected",

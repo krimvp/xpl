@@ -6,7 +6,7 @@ import {
   hashText,
   parseFeedbackRequest,
   sameFeedbackContext,
-  sameFeedbackContent,
+  mergeFeedbackRequests,
   type ArtifactIdentity,
   type FeedbackRequest,
   type FeedbackStatus,
@@ -74,19 +74,10 @@ export async function importRequests(
 ): Promise<{ imported: number; total: number }> {
   const checked = incoming.map(parseFeedbackRequest);
   return mutate(root, (requests) => {
-    let imported = 0;
-    for (const entry of checked) {
-      const existing = requests.find((r) => r.id === entry.id);
-      if (existing) {
-        if (!sameFeedbackContent(existing, entry))
-          throw new CliError(`request ID ${entry.id} conflicts with its original content`);
-        if (entry.outcome.revision > existing.outcome.revision) existing.outcome = entry.outcome;
-      } else {
-        requests.push(entry);
-        imported++;
-      }
-    }
-    return { imported, total: requests.length };
+    const merged = mergeFeedbackRequests([...requests, ...checked]);
+    const imported = merged.length - requests.length;
+    requests.splice(0, requests.length, ...merged);
+    return { imported, total: merged.length };
   });
 }
 
@@ -141,7 +132,7 @@ export async function recordOutcomes(
         !sameFeedbackContext(original.context, update.context)
       )
         throw new CliError(`original context does not match request ${update.id}`);
-      requests[i] = parseFeedbackRequest({
+      const recorded = parseFeedbackRequest({
         ...original,
         outcome: {
           revision: original.outcome.revision + 1,
@@ -150,6 +141,7 @@ export async function recordOutcomes(
           at: new Date().toISOString(),
         },
       });
+      requests[i] = mergeFeedbackRequests([original, recorded])[0]!;
     }
   });
 }

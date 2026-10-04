@@ -230,6 +230,95 @@ test("saved-page feedback retains terminal outcomes and reports changed explanat
   expect(JSON.parse(data[1]!).feedback.requests).toEqual(requests);
 });
 
+test("two tabs cannot replace a newer outcome for the same request with a stale storage read", async ({
+  page,
+  context,
+}) => {
+  const { html, bundle } = readEmbeddedBundle();
+  const original = {
+    id: "shared-request",
+    elementId: "concept:retry-policy",
+    kind: "explain",
+    at: "2026-10-04T12:00:00.000Z",
+    context: { explainerHash: "original-explanation", sourceHash: "original-source" },
+    outcome: {
+      revision: 3,
+      status: "unresolved",
+      reason: "Older result.",
+      at: "2026-10-04T13:00:00.000Z",
+    },
+  };
+  const newer = {
+    ...original,
+    outcome: { ...original.outcome, revision: 4, reason: "Newer result." },
+  };
+  const data = {
+    ...bundle,
+    server: { api: "/api" },
+    feedback: { schema: "code-explainer/feedback@1", requests: [original] },
+  };
+  const other = await context.newPage();
+  await context.route("http://feedback-race.test/**", (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path === "/api/requests")
+      return route.fulfill({
+        json: {
+          requests: [route.request().frame().page() === other ? newer : original],
+        },
+      });
+    if (path === "/api/explainer") return route.fulfill({ status: 304 });
+    return route.fulfill({ contentType: "text/html", body: withBundle(html, data) });
+  });
+  for (const tab of [page, other]) await tab.goto("http://feedback-race.test/");
+  // Hold the first tab's storage read at revision 3 while the other tab publishes revision 4.
+  await page.evaluate(() => {
+    const getItem = Storage.prototype.getItem;
+    const snapshot = new Map(
+      Array.from({ length: localStorage.length }, (_, i) => {
+        const key = localStorage.key(i)!;
+        return [key, getItem.call(localStorage, key)] as const;
+      }),
+    );
+    Storage.prototype.getItem = function (key) {
+      return this === localStorage && key.startsWith("xpl-feedback:")
+        ? (snapshot.get(key) ?? null)
+        : getItem.call(this, key);
+    };
+  });
+  await other.getByRole("button", { name: /^Feedback/ }).click();
+  await expect(other.locator(".feedback-list")).toContainText("Newer result.");
+  await page.getByRole("button", { name: /^Feedback/ }).click();
+  await expect(page.locator(".feedback-list")).toContainText("Older result.");
+  await context.unroute("http://feedback-race.test/**");
+  // An older disconnected page must recover revision 4 from real shared browser storage alone.
+  await context.route("http://feedback-race.test/**", (route) =>
+    route.fulfill({
+      contentType: "text/html",
+      body: withBundle(html, {
+        ...bundle,
+        feedback: {
+          schema: "code-explainer/feedback@1",
+          requests: [
+            {
+              ...original,
+              outcome: {
+                ...original.outcome,
+                revision: 0,
+                status: "pending",
+                reason: "Awaiting an explicit pass.",
+              },
+            },
+          ],
+        },
+      }),
+    }),
+  );
+  await page.reload();
+  await page.getByRole("button", { name: /^Feedback/ }).click();
+  await expect(page.locator(".feedback-list")).toContainText("Newer result.");
+  expect((await exported(page)).requests[0].outcome).toEqual(newer.outcome);
+});
+
 test("before-source feedback keeps the selected range when browser storage refuses writes", async ({
   page,
 }) => {

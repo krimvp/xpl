@@ -1357,6 +1357,10 @@ Legacy requests get deterministic IDs and `context: null` with an outdated resul
 Outcome revisions are non-negative safe integers. Capture starts at zero; only locked author outcome
 recording increments the latest stored counter. Old exports without a revision read as zero. Timestamps
 remain display metadata; no merge orders outcomes by clocks from different machines.
+Every merge uses `mergeFeedbackRequests`: a request's held outcome revision never decreases, whatever
+the source or arrival order. Lower or equal revisions preserve its status and reason. Equal revisions
+keep the first held result: the disk record on import, existing viewer state on refresh, or embedded
+feedback on the initial page load.
 
 `xpl feedback` compares against the latest index and reports `contextStatus`/`contextReason` separately
 from the stored outcome, preserving an imported terminal result and its reason. Outdated requests are
@@ -1607,11 +1611,15 @@ and expansions attached to the selected element and cursor lines (or the element
 Before-source selections retain `side: base` and do not look up head symbols. Offline requests survive
 reload in a browser namespace captured once from the page's original artifact/source identity. View edits
 and live refresh never change that namespace; each request keeps the context at the time it was captured.
-Each request is written under its own stable-ID key, so concurrent tabs cannot replace each other's requests.
-Reload also reads the old array format without rewriting it and keeps the greater outcome revision from
-embedded and browser records; equal revisions retain the first result. Live refresh takes matching
-outcomes from the disk store, even if a portable browser result has a greater revision, and preserves
-browser-only requests. It persists those authoritative outcomes back to the per-ID browser records.
+Each request outcome is written under an immutable key containing its stable ID, revision and content hash.
+Concurrent tabs and delayed responses cannot overwrite a newer version, even for the same request ID.
+Reload reads legacy arrays and per-ID records without rewriting them and keeps the greatest outcome
+revision from embedded and browser records. Newer embedded results are persisted too, so reopening an
+older page retains them. Equal revisions keep the held result. Live responses use the same merge rule
+and preserve browser-only requests. A newer portable result must be imported into the author's disk
+store before recording its replacement; an older disk response cannot erase it. Only the locked author
+recording increments revisions. Browser versions are retained; quota refusal is reported rather than
+pruning feedback. JSON export rereads browser versions, including results observed in another tab.
 Conflicting original content for one ID is reported without overwriting storage.
 JSON exports and Save as HTML carry
 the same validated contract, including outcomes and reasons. Storage refusal is visible; readers must
