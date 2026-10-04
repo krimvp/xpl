@@ -13,10 +13,10 @@ The reader sees the tour title and its **summary** first, then the steps (a titl
 
 `reference/quick.md` is this workflow, the rules and the lint checks on one page.
 
-1. `xpl index`, `xpl new <name>` (Setup).
+1. Gather the root, audience, question and guide name; choose new or existing (Setup). Then `xpl index`, and `xpl new <name>` for a new guide.
 2. Choose the scope, and say it in the reply.
 3. A change only: `xpl change <name> <base>..<head>` records it and prints its analysis.
-4. `xpl draft change|repo|path <name> [<entry id>] -o <file>`.
+4. `xpl draft change|repo|path <name> [<entry id>] --audience "<reader>" --question "<question>" -o <file>` (outside the repo).
 5. Read the code. Write every `TODO`, fix the structure where the code shows the draft is wrong, add what the tour needs. Every flow and sequence participant needs a `summary` (an overlay in the same patch).
 6. `xpl lint <name> --patch <file> && xpl apply <name> <file>`: lint exits 1 on any finding, so a flawed patch is not applied.
 7. `xpl validate`, `xpl status`, `xpl anchors <name> tour:<slug>`.
@@ -33,9 +33,11 @@ The reader sees the tour title and its **summary** first, then the steps (a titl
 
 ## Setup
 
+Follow `reference/create.md` for installed entry prompts and recovery. List existing `.explainer/*.explainer.json` files and choose the intended existing guide or a new name. A name collision is not permission to extend that guide.
+
 1. **The CLI** is `bin/xpl` in this installed skill's directory (else `ls -d ~/.claude/skills/code-explainer .claude/skills/code-explainer`). Below, `xpl` means that path, written in full. Run it from the repo root, or pass `--root <dir>`. If its CLI is unavailable, reinstall the local xpl tarball and run `xpl skill install` (or `--dir <this skill directory>`). Rerun that installer after CLI updates or moves; it preserves local edits by refusing to replace them. `xpl doctor --agent claude` diagnoses Node, bundled assets, the skill, optional precise tools and Claude Code availability. Node >=22.12 is required; the installed workflow is verified on Linux x64 only.
-2. **Index:** `xpl index`. Run it again when the code changed or a command warns that the index `does not match the working tree`. A language with `refs: heuristic` has hints, not facts: confirm each call with `show`. `--precise off` is fast, for a big repo.
-3. **Name it:** `xpl new <name> --title "..."` unless the explainer exists. One explainer per repo (the repo name, kebab-case); a new question adds views and a tour to it. A change gets its own explainer, titled after it: `xpl new <repo>-pr-42 --title "PR 42: <what it does>"`. Say who the page is for, fit to its level, in one short line: `"scope": {"audience": "Overview, for anyone new to ky"}` (a repo), `"Deep dive, for engineers working on the router"` (an algorithm), `"For reviewers of this change, and anyone who uses the option"` (a change); the viewer shows it under the title (patch-format.md 3.11).
+2. **Index:** `xpl index`. Run it again when the code changed or a command warns that the index `does not match the working tree`. A language with `refs: heuristic` has hints, not facts: confirm each call with `show`. `--precise off` skips optional tools for fast or offline indexing. Report the chosen mode and the actual coverage and trust labels. `--precise require` is for a user who needs precise references; if it fails, offer the explicit heuristic path without calling it precise.
+3. **Name it:** `xpl new <name> --title "..."` for a new guide; it refuses an existing name. For an explicitly selected existing guide, read its views, tours and protected fields first, then add the new question with fresh ids. The repo name in kebab-case is a useful default for an overview; separate questions may have their own guide. A change gets its own explainer, titled after it: `xpl new <repo>-pr-42 --title "PR 42: <what it does>"`. Say who the page is for, fit to its level, in one short line: `"scope": {"audience": "Overview, for anyone new to ky"}` (a repo), `"Deep dive, for engineers working on the router"` (an algorithm), `"For reviewers of this change, and anyone who uses the option"` (a change); the viewer shows it under the title (patch-format.md 3.11).
 4. **Patch files** go outside the repo (the scratchpad or `$TMPDIR`).
 
 Local reading, `index --precise off`, viewing and HTML export use bundled assets without hosted xpl
@@ -213,6 +215,7 @@ A talk built from existing views, by the rules of "The tour". Default: the newes
 
 ## Reference
 
+- `reference/create.md`: installed creation prompts, target selection and recovery.
 - `reference/quick.md`: the one-page quick reference.
 - `reference/writing.md`: the writing rules and the checklist.
 - `reference/explain-change.md`: the guide for a PR, MR or branch.

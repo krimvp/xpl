@@ -83,7 +83,7 @@ packages/
                           tree-sitter .wasm files) and dist/viewer.html (a copy of the built viewer) beside it
   viewer/   @xpl/viewer   React 19 + CodeMirror 6 + dagre; vite single-file build → packages/viewer/dist/index.html
 skill/code-explainer/   Claude skill: SKILL.md, README.md, reference/ (quick.md, cli.md, patch-format.md, writing.md,
-                        explain-change.md, examples/), bin/xpl (an installed CLI launcher with a source fallback)
+                        create.md, explain-change.md, examples/), bin/xpl (an installed CLI launcher with a source fallback)
 fixtures/{ts,py,go}-jobrunner/   tiny real repos + committed explainers in .explainer/
 docs/                   handoff.md, ARCHITECTURE.md, analysis-2026-09-30.txt, review-*.md (review notes),
                         review-2026-10-03-real-runs/ (the per-run reports of that review), images/,
@@ -1627,6 +1627,12 @@ an explainer by hand. SKILL.md and its `reference/` files are the source of trut
 only says how they use the CLI. Claude Code installation, authentication and provider access are separate;
 the skill never starts a resident generation worker.
 
+Before indexing, Claude gathers the repository root, audience, question and guide name. It lists existing
+guides and uses one only when selected by the user; `new` refuses a collision. The installed entry and
+recovery instructions are in `reference/create.md`. Drafts receive `--audience` and `--question`; scratch
+patches and snapshots stay outside the indexed tree. An interrupted authoring run resumes from the stored
+guide and outside patch, without deleting the guide or using `--actor user` to bypass protected fields.
+
 Claude first chooses one of three scopes: `explain <question>` (part of a project), `explain repo` (the whole
 project) or `explain change <base>..<head>` (a diff). The reader sees the tour title and its `summary` first,
 then the steps, then the maps and the code on demand, so the tour is written top-down: the big picture, the
@@ -1706,7 +1712,8 @@ text the user dictates; views and tours the user edited are theirs too); summari
 about this code, every claim visible in the code their anchors show; for a change, never describe old
 behaviour that was not read in the base code; lazy; ask rather than guess.
 
-`reference/`: `quick.md` (the one-page quick reference: the loop, what every patch needs, the lint checks),
+`reference/`: `create.md` (installed creation prompts, target choice and recovery), `quick.md` (the one-page
+quick reference: the loop, what every patch needs, the lint checks),
 `patch-format.md` (a template for every element, merge rules, rejection messages and their
 fixes; its `json patch` blocks are applied by a test), `cli.md` (every command with sample output),
 `writing.md` (which field holds what, plain-language rules, the tour summary, rewrites; `xpl lint` checks the

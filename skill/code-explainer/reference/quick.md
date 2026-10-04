@@ -4,6 +4,8 @@ One page to keep open while you work. `SKILL.md` says why; `patch-format.md`, `w
 
 ## The loop
 
+Choose the root, audience, question and guide name first. List existing guides; extend one only when it is the intended target. Use `reference/create.md` for installed entry examples and recovery. Pass `--audience` and `--question` to the draft. Patches and output snapshots go outside the indexed tree.
+
 | Step              | Command                                                                      | Done when                                     |
 | ----------------- | ---------------------------------------------------------------------------- | --------------------------------------------- |
 | Index, name       | `xpl index`, `xpl new <name> --title "..."`                                  | the index matches the working tree            |

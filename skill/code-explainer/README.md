@@ -30,6 +30,8 @@ launcher binding. For source development, `bin/xpl` still finds `packages/cli/di
 
 ## Use
 
+Start with [Create a guide](reference/create.md): choose the repository root, reader, question and a new or existing guide. The agent writes the patch; you do not need to construct JSON. The guide includes three installed invocation examples and recovery steps for interrupted runs.
+
 In the repo you want to understand, ask Claude in plain words or with the skill's operations:
 
 - `explain how a failed job gets retried`: a tour that answers the question, with a map of the code involved and a flow of the decisions, anchored to code, config keys and tests.
@@ -55,6 +57,7 @@ invoke the skill; no continuously running authoring worker is required.
 | ----------------------------- | ---------------------------------------------------------------------------------------------------- |
 | `SKILL.md`                    | the skill: workflow, the three scopes, drafts, tour, accuracy, hard rules                            |
 | `bin/xpl`                     | launcher bound by the installer to the installed CLI; `XPL_CLI` overrides it                         |
+| `reference/create.md`         | installed creation prompts, new/existing target selection and recovery                               |
 | `reference/writing.md`        | plain-language rules, what goes in which field, before/after rewrites                                |
 | `reference/explain-change.md` | how to explain a PR, MR or branch diff: before/after checks, callers, tests                          |
 | `reference/patch-format.md`   | every patch element with examples, merge rules, rejection messages and fixes                         |
