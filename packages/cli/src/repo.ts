@@ -35,7 +35,7 @@ import {
 } from "@xpl/indexer";
 import type { RepoEnv } from "./context.js";
 import { CliError, errorMessage } from "./errors.js";
-import { listText, plural } from "./format.js";
+import { listText } from "./format.js";
 import { displayPath, parseJson, readTextFile, workingTreeReader } from "./fsutil.js";
 import { gitShowReader } from "./git.js";
 
@@ -245,16 +245,6 @@ export interface Staleness {
 }
 
 /** Why the index does not match the working tree, or undefined when it does. */
-export async function stalenessWarning(
-  env: RepoEnv,
-  tree: WorkingTree,
-  index: SymbolIndex,
-  indexFile: string,
-  explainer?: LoadedExplainer,
-): Promise<string | undefined> {
-  return (await stalenessOf(env, tree, index, indexFile, explainer))?.message;
-}
-
 export async function stalenessOf(
   env: RepoEnv,
   tree: WorkingTree,

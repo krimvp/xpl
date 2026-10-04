@@ -79,7 +79,7 @@ declare global {
   }
 }
 
-export function installTestHooks(store: ViewerStore, target: Window = window): XplHooks {
+export function installTestHooks(store: ViewerStore): XplHooks {
   const derived = () => getDerived(store.getState());
   const hooks: XplHooks = {
     select: (ids) => store.select(ids),
@@ -143,6 +143,6 @@ export function installTestHooks(store: ViewerStore, target: Window = window): X
       };
     },
   };
-  target.__xpl = hooks;
+  window.__xpl = hooks;
   return hooks;
 }

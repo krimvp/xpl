@@ -3,11 +3,20 @@
  * captured output (the same `run()` the bin uses, so exit codes and messages are the real ones).
  */
 import { execFileSync } from "node:child_process";
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  cpSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterAll } from "vitest";
+import { afterAll, expect } from "vitest";
+import { BUNDLE_SCRIPT_ID, parseBundle, type SymbolIndex, type ViewerBundle } from "@xpl/core";
 import { run, type Io } from "../src/cli.js";
 import type { ViewServer } from "../src/server.js";
 
@@ -152,4 +161,24 @@ export async function indexedFixture(name = "ts-jobrunner"): Promise<string> {
 export function writeViewerStub(): string {
   const dir = makeTempDir("xpl-viewer-");
   return writeFile(dir, "viewer.html", STUB_VIEWER_HTML);
+}
+
+/** `xpl apply demo -` with `patch` on stdin, in `dir`. */
+export function applyStdin(dir: string, patch: unknown, ...flags: string[]): Promise<Invocation> {
+  return invoke(["apply", "demo", "-", ...flags], { cwd: dir, stdin: JSON.stringify(patch) });
+}
+
+/** The bundle a page embeds (`xpl bundle`). */
+export function bundleOf(html: string): ViewerBundle {
+  const match = new RegExp(
+    `<script id="${BUNDLE_SCRIPT_ID}" type="application/json">([\\s\\S]*?)</script>`,
+  ).exec(html);
+  expect(match, "the page has an xpl-data script").not.toBeNull();
+  return parseBundle(match![1]!);
+}
+
+/** The whole index of an indexed directory, as written by `xpl index`. */
+export function fullIndex(dir: string): SymbolIndex {
+  const name = readdirSync(join(dir, ".explainer")).find((file) => /^index-.+\.json$/.test(file))!;
+  return readJson<SymbolIndex>(dir, `.explainer/${name}`);
 }

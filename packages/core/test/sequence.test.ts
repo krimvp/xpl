@@ -1,10 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   ExplainerModel,
-  participantIndex,
   participantLabels,
   resolveFrames,
-  stepEnds,
   stepIndex,
   type SequenceView,
 } from "../src/index.js";
@@ -32,34 +30,16 @@ const view: SequenceView = sequenceView(
   ],
 );
 
-describe("step and participant lookups", () => {
+describe("step lookups", () => {
   it("finds a step's position", () => {
     expect(stepIndex(view, "v:1")).toBe(0);
     expect(stepIndex(view, "v:5")).toBe(4);
     expect(stepIndex(view, "v:9")).toBe(-1);
   });
 
-  it("finds a participant's lifeline", () => {
-    expect(participantIndex(view, DISPATCH)).toBe(0);
-    expect(participantIndex(view, "file:src/worker.ts")).toBe(2);
-    expect(participantIndex(view, "file:src/metrics.ts")).toBe(-1);
-  });
-
-  it("resolves a step's ends to lifelines and detects self calls", () => {
-    expect(stepEnds(view, view.steps[0]!)).toEqual({ from: 0, to: 1, self: false });
-    expect(stepEnds(view, view.steps[2]!)).toEqual({ from: 2, to: 2, self: true });
-    expect(stepEnds(view, view.steps[4]!)).toEqual({ from: 1, to: 0, self: false });
-    expect(stepEnds(view, step("x:1", "file:nope", "file:nope"))).toEqual({
-      from: -1,
-      to: -1,
-      self: false,
-    });
-  });
-
   it("tolerates views without steps or participants", () => {
     const bare = { ...view, steps: undefined, participants: undefined, frames: undefined } as never;
     expect(stepIndex(bare, "v:1")).toBe(-1);
-    expect(participantIndex(bare, DISPATCH)).toBe(-1);
     expect(resolveFrames(bare)).toEqual([]);
   });
 });

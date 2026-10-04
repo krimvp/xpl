@@ -36,18 +36,14 @@ describe("workingTreeId", () => {
     );
   });
 
-  it("hashes the sorted `path\\0hash\\n` list (documented format)", async () => {
-    const { createHash } = await import("node:crypto");
-    const expected = createHash("sha256")
-      .update("a.ts\0sha256:1\nb.ts\0sha256:2\n")
-      .digest("hex")
-      .slice(0, 10);
+  // sha256 of "a.ts\0sha256:1\nb.ts\0sha256:2\n", first 10 hex digits
+  it("hashes the sorted `path\\0hash\\n` list (documented format)", () => {
     expect(
       workingTreeId([
         { path: "b.ts", hash: "sha256:2" },
         { path: "a.ts", hash: "sha256:1" },
       ]),
-    ).toBe(`wt-${expected}`);
+    ).toBe("wt-facfef58a6");
   });
 });
 

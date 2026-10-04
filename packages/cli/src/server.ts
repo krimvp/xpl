@@ -29,7 +29,7 @@
  * header (loopback binds), and requires an application/json body and a same-origin Origin for PUT/POST.
  */
 import { createHash } from "node:crypto";
-import { readFileSync, statSync } from "node:fs";
+import { statSync } from "node:fs";
 import { join } from "node:path";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";

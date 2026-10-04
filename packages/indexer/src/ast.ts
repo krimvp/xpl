@@ -67,11 +67,6 @@ export function comparePos(aLine: number, aCol: number, bLine: number, bCol: num
   return aLine !== bLine ? aLine - bLine : aCol - bCol;
 }
 
-/** Text of a node, or "" for null. */
-export function textOf(node: Node | null | undefined): string {
-  return node ? node.text : "";
-}
-
 /**
  * Innermost-span lookup over a set of (possibly nested) spans of one file: "which item most tightly
  * contains this position?". Items must be properly nested or disjoint; partially overlapping items are

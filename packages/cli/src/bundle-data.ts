@@ -21,7 +21,6 @@ import {
   elementIdForSymbolId,
   excludedRefs,
   isTestFile,
-  parseId,
   packIndex,
   pruneIndex,
   repr,

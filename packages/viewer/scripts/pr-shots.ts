@@ -63,7 +63,9 @@ async function shoot(argv: string[]): Promise<void> {
   else if (set !== undefined) throw new Error(`unknown --set ${set} (only "ux")`);
   if (values.shot.length === 0) return;
 
-  const [width, height] = values.size.split("x").map(Number);
+  const [width = NaN, height = NaN] = values.size.split("x").map(Number);
+  if (!(width > 0 && height > 0))
+    throw new Error(`--size ${values.size}: expected <width>x<height>`);
   const colorScheme = values.scheme === "dark" ? "dark" : "light";
   const browser = await chromium.launch();
   try {
@@ -71,7 +73,7 @@ async function shoot(argv: string[]): Promise<void> {
       const eq = spec.indexOf("=");
       if (eq < 1) throw new Error(`--shot ${spec}: expected <name>=<bundle>[?query]`);
       const name = spec.slice(0, eq);
-      const [bundle, query = ""] = spec.slice(eq + 1).split(/(?=\?)/);
+      const [bundle = "", query = ""] = spec.slice(eq + 1).split(/(?=\?)/);
       const file = bundle.endsWith(".html")
         ? isAbsolute(bundle)
           ? bundle
@@ -97,7 +99,8 @@ async function shoot(argv: string[]): Promise<void> {
 
 async function compare(argv: string[]): Promise<void> {
   const [beforeDir, afterDir, outArg] = argv.map((p) => resolve(p));
-  if (!outArg) throw new Error("usage: compare <beforeDir> <afterDir> <outDir>");
+  if (!beforeDir || !afterDir || !outArg)
+    throw new Error("usage: compare <beforeDir> <afterDir> <outDir>");
   mkdirSync(outArg, { recursive: true });
   const pngs = (dir: string) =>
     existsSync(dir) ? readdirSync(dir).filter((f) => f.endsWith(".png")) : [];

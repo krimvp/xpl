@@ -7,10 +7,10 @@ import { issueSummary, plural, renderIssues } from "../format.js";
 import { atomicWrite, withFileLock, jsonFile, parseJson, readTextFile } from "../fsutil.js";
 import { loadExplainer, openWorkspace, resolveExplainerPath } from "../repo.js";
 
-async function defaultReadStdin(): Promise<string> {
+async function defaultReadStdin(arg: string): Promise<string> {
   if (process.stdin.isTTY) {
     throw new CliError(
-      "the patch should come from stdin (`-`), but stdin is a terminal: pipe the JSON in, or pass a file",
+      `the patch should come from stdin (\`${arg}\`), but stdin is a terminal: pipe the JSON in, or pass a file`,
     );
   }
   const chunks: Buffer[] = [];
@@ -18,9 +18,14 @@ async function defaultReadStdin(): Promise<string> {
   return Buffer.concat(chunks).toString("utf8");
 }
 
-async function readPatch(ctx: Ctx, source: string): Promise<{ patch: unknown; label: string }> {
+/** The patch of `<file|->`; `arg` is how the command spells stdin, for the error when stdin is a terminal. */
+export async function readPatch(
+  ctx: Ctx,
+  source: string,
+  arg = "-",
+): Promise<{ patch: unknown; label: string }> {
   if (source === "-") {
-    const text = await (ctx.io.readStdin ?? defaultReadStdin)();
+    const text = await (ctx.io.readStdin ?? (() => defaultReadStdin(arg)))();
     return { patch: parseJson(text, "the patch on stdin"), label: "stdin" };
   }
   const path = resolve(ctx.cwd, source);

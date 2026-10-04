@@ -14,14 +14,15 @@ import {
   serializeBundle,
   type Explainer,
   type SymbolIndex,
-  type ViewerBundle,
 } from "@xpl/core";
 import { defaultIndexChoice, embedIndex, makeBundle, referencedFiles } from "../src/bundle-data.js";
 import { expectSameViewer } from "../../core/test/prune-equivalence.js";
 import { syntheticRepo } from "../../core/test/prune-repo.js";
 import {
+  bundleOf,
   cloneDir,
   FIXTURES_DIR,
+  fullIndex,
   indexedFixture,
   invoke,
   PATCH_PATH,
@@ -32,13 +33,6 @@ import {
 } from "./helpers.js";
 
 const viewerEnv = { XPL_VIEWER_HTML: writeViewerStub() };
-const DATA_SCRIPT = /<script id="xpl-data" type="application\/json">([\s\S]*?)<\/script>/;
-
-function bundleOf(dir: string, out: string): ViewerBundle {
-  const match = DATA_SCRIPT.exec(readFile(dir, out));
-  expect(match, `${out} has an xpl-data script`).not.toBeNull();
-  return parseBundle(match![1]!);
-}
 
 /** `xpl bundle <name> -o <out> ...`, and the bundle it wrote. */
 async function bundle(dir: string, name: string, out: string, ...argv: string[]) {
@@ -47,13 +41,7 @@ async function bundle(dir: string, name: string, out: string, ...argv: string[])
     env: viewerEnv,
   });
   expect(result.code, result.err + result.out).toBe(0);
-  return { ...result, data: bundleOf(dir, out) };
-}
-
-/** The whole index of an indexed directory, as written by `xpl index`. */
-function fullIndex(dir: string): SymbolIndex {
-  const name = readdirSync(join(dir, ".explainer")).find((file) => /^index-.+\.json$/.test(file))!;
-  return readJson<SymbolIndex>(dir, `.explainer/${name}`);
+  return { ...result, data: bundleOf(readFile(dir, out)) };
 }
 
 const sizeOf = (value: unknown) => Buffer.byteLength(JSON.stringify(value));
@@ -146,7 +134,7 @@ describe("--embed-index: what the command embeds", () => {
     });
     expect(result.code).toBe(0);
     const json = JSON.parse(result.out);
-    const data = bundleOf(demo, "j.html");
+    const data = bundleOf(readFile(demo, "j.html"));
     expect(json.index).toMatchObject({
       commit: full.commit,
       choice: "pruned",

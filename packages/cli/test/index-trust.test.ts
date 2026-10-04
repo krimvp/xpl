@@ -1,45 +1,9 @@
 /**
  * The per-language line of `xpl index` is the trust level of every reference the skill will use, so it says
- * exactly how much of a language the precise tool described. The indexer is faked: what is under test is the line.
+ * exactly how much of a language the precise tool described. index.test.ts checks the line itself.
  */
-import { join } from "node:path";
-import { describe, expect, it, vi } from "vitest";
-import { INDEX_SCHEMA, type LanguageInfo, type SymbolIndex } from "@xpl/core";
+import { describe, expect, it } from "vitest";
 import { describeRefs } from "../src/commands/build-index.js";
-import { makeTempDir, xpl, xplJson } from "./helpers.js";
-
-const languages: Record<string, LanguageInfo> = {
-  go: { files: 36, symbols: 736, refs: "heuristic" },
-  python: {
-    files: 82,
-    symbols: 1803,
-    refs: "precise",
-    tool: "scip-python@0.6.6",
-    heuristicFiles: 18,
-  },
-  text: { files: 140, symbols: 0, refs: "none" },
-  typescript: { files: 8, symbols: 114, refs: "precise", tool: "scip-typescript@0.4.0" },
-};
-
-vi.mock("@xpl/indexer", async (importOriginal) => {
-  const original = await importOriginal<typeof import("@xpl/indexer")>();
-  return {
-    ...original,
-    buildIndex: async () => ({
-      index: {
-        schema: INDEX_SCHEMA,
-        commit: "c1",
-        tool: "test",
-        languages,
-        files: [],
-        symbols: [],
-        refs: [],
-      } satisfies SymbolIndex,
-      warnings: [],
-    }),
-    writeIndex: async (root: string) => join(root, ".explainer", "index-c1.json"),
-  };
-});
 
 describe("describeRefs", () => {
   it("is the refs kind, plus the tool when precise", () => {
@@ -72,25 +36,5 @@ describe("describeRefs", () => {
     expect(
       describeRefs({ files: 5, symbols: 1, refs: "precise", tool: "t@1", heuristicFiles: 9 }),
     ).toBe("precise 0/5 (t@1), 9 heuristic");
-  });
-});
-
-describe("xpl index: the trust line", () => {
-  it("tells the truth about files that only have heuristic references", async () => {
-    const dir = makeTempDir();
-    const { code, out } = await xpl(dir, "index");
-    expect(code).toBe(0);
-    expect(out).toMatch(/^go +36 files +736 symbols +refs: heuristic$/m);
-    expect(out).toMatch(
-      /^python +82 files +1803 symbols +refs: precise 64\/82 \(scip-python@0\.6\.6\), 18 heuristic$/m,
-    );
-    expect(out).toMatch(/^text +140 files +0 symbols +refs: none$/m);
-    // a language the tool described completely keeps the short line
-    expect(out).toMatch(
-      /^typescript +8 files +114 symbols +refs: precise \(scip-typescript@0\.4\.0\)$/m,
-    );
-    // the --json summary carries the same numbers
-    const json = await xplJson<{ languages: Record<string, LanguageInfo> }>(dir, "index");
-    expect(json.json.languages.python).toMatchObject({ files: 82, heuristicFiles: 18 });
   });
 });

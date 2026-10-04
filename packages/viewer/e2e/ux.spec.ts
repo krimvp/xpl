@@ -9,32 +9,14 @@ import { expect, test, type Page } from "@playwright/test";
 import { packIndex, type SymbolIndex } from "@xpl/core";
 import {
   byId,
+  type Loose,
   openEditMenu,
   openTourEditor,
-  readEmbeddedBundle,
+  openVariant,
+  smallestDiagramText,
   stateOf,
   watchProblems,
-  withBundle,
 } from "./helpers.js";
-
-/** The embedded bundle is edited as loose JSON: many shapes, none worth typing here. */
-type Loose = Record<string, any>;
-
-async function openVariant(
-  page: Page,
-  edit: (bundle: Loose) => void,
-  search = "",
-  size = { width: 1280, height: 720 },
-): Promise<void> {
-  const { html, bundle } = readEmbeddedBundle();
-  edit(bundle);
-  await page.setViewportSize(size);
-  await page.route("http://xpl.test/**", (route) =>
-    route.fulfill({ contentType: "text/html", body: withBundle(html, bundle) }),
-  );
-  await page.goto(`http://xpl.test/${search}`);
-  await page.waitForFunction(() => window.__xpl !== undefined);
-}
 
 const RUNNER = "sym:src/runner.ts#Runner.dispatch";
 const QUEUE = "file:src/queue.ts";
@@ -74,17 +56,6 @@ function withEightStageFlow(bundle: Loose): void {
     stage(8, "Record the metrics", RUNNER, RUNNER, { shape: "terminal" }),
   ];
   bundle.explainer.tours[0].steps[1].focus = ["dispatch:5"];
-}
-
-/** The smallest rendered font size (px on screen) of the diagram's visible text. */
-async function smallestDiagramText(page: Page): Promise<number> {
-  return page.evaluate(() => {
-    const sizes = [...document.querySelectorAll<SVGTextElement>(".diagram .pz-svg text")]
-      .filter((t) => t.textContent!.trim() && t.getBoundingClientRect().width > 0)
-      .filter((t) => getComputedStyle(t).opacity !== "0" && !t.closest(".is-quiet"))
-      .map((t) => parseFloat(getComputedStyle(t).fontSize) * (t.getScreenCTM()?.a ?? 1));
-    return Math.min(...sizes);
-  });
 }
 
 /** Whether every selected element of the diagram is inside its pane. */

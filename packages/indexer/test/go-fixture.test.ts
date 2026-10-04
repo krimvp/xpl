@@ -4,12 +4,12 @@
  *
  * Line numbers are pinned by the fixture (its README says so); `nl -ba` the files to check them.
  */
-import { cpSync, existsSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { existsSync } from "node:fs";
+import { resolve } from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
 import type { Reference, SymbolIndex } from "@xpl/core";
-import { buildIndex, writeIndex } from "../src/index.js";
-import { makeDir } from "./helpers.js";
+import { buildIndex } from "../src/index.js";
+import { describeFixtureInvariants } from "./helpers.js";
 
 const fixture = resolve(import.meta.dirname, "../../../fixtures/go-jobrunner");
 
@@ -133,17 +133,6 @@ describe("go-jobrunner: files and symbols", () => {
   it("config/default.yaml is indexed by its own pack next to the Go files", () => {
     expect(sym("config/default.yaml#retry")!.kind).toBe("key");
     expect(sym("config/default.yaml#retry")!.range).toEqual({ startLine: 13, endLine: 16 });
-  });
-
-  it("every symbol's range lies inside its file and its parent exists", () => {
-    for (const symbol of index.symbols) {
-      const file = index.files.find((f) => f.path === symbol.file)!;
-      expect(symbol.range.startLine).toBeGreaterThanOrEqual(1);
-      expect(symbol.range.endLine).toBeLessThanOrEqual(file.lines);
-      expect(symbol.range.endLine).toBeGreaterThanOrEqual(symbol.range.startLine);
-      expect(symbol.id).toBe(`${symbol.file}#${symbol.path}`);
-      if (symbol.parent) expect(sym(symbol.parent), symbol.parent).toBeDefined();
-    }
   });
 });
 
@@ -328,49 +317,4 @@ describe("go-jobrunner: packages, imports and files of one package", () => {
   });
 });
 
-describe("go-jobrunner: index-level properties", () => {
-  it("has a deterministic working-tree commit id and a byte-identical index when built twice", async () => {
-    expect(index.commit).toMatch(/^wt-[0-9a-f]{10}$/);
-    const again = await buildIndex({ root: fixture, precise: "off" });
-    expect(again.index.commit).toBe(index.commit);
-    expect(JSON.stringify(again.index)).toBe(JSON.stringify(index));
-  });
-
-  it("all refs reference existing files and symbols; module scopes only as `<file>#`", () => {
-    const ids = new Set(index.symbols.map((s) => s.id));
-    const files = new Set(index.files.map((f) => f.path));
-    for (const ref of index.refs) {
-      for (const id of [ref.from, ref.to]) {
-        const hash = id.indexOf("#");
-        expect(files.has(id.slice(0, hash)), id).toBe(true);
-        if (id.slice(hash + 1) !== "") expect(ids.has(id), id).toBe(true);
-      }
-      expect(ref.from).not.toBe(ref.to);
-      expect(ref.site.startLine).toBeGreaterThanOrEqual(1);
-      expect(ref.resolution).toBe("heuristic");
-      // a site lies inside the file it is in, and inside the symbol that makes the reference
-      const file = index.files.find((f) => f.path === ref.from.slice(0, ref.from.indexOf("#")))!;
-      expect(ref.site.endLine).toBeLessThanOrEqual(file.lines);
-      const from = sym(ref.from);
-      if (from && ref.kind !== "implements") {
-        expect(ref.site.startLine).toBeGreaterThanOrEqual(from.range.startLine);
-        expect(ref.site.endLine).toBeLessThanOrEqual(from.range.endLine);
-      }
-    }
-  });
-
-  it("writes the index of a copy of the fixture (never into the fixture itself)", async () => {
-    const copy = makeDir();
-    cpSync(fixture, copy, {
-      recursive: true,
-      filter: (src) => !src.includes(`${join("go-jobrunner", ".explainer")}`),
-    });
-    const built = await buildIndex({ root: copy, precise: "off" });
-    const path = await writeIndex(copy, built.index);
-    expect(path).toBe(join(copy, ".explainer", `index-${built.index.commit}.json`));
-    // the same files under another directory give the same commit id, symbols and references
-    expect(built.index.commit).toBe(index.commit);
-    expect(built.index.symbols).toEqual(index.symbols);
-    expect(built.index.refs).toEqual(index.refs);
-  });
-});
+describeFixtureInvariants(fixture, () => index);

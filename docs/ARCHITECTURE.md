@@ -69,7 +69,7 @@ between two commits. For a change, `xpl change` records the diff in the explaine
 
 ```
 package.json            npm workspaces root (ESM). Scripts: build, test, typecheck, test:e2e, format, format:check
-tsconfig.base.json      strict, ES2022, NodeNext
+tsconfig.base.json      strict, noUncheckedIndexedAccess, noUnusedLocals, ES2022, NodeNext
 packages/
   core/     @xpl/core     schema types + pure logic (hash, anchors, derivation, validation, patches).
                           Browser-safe: no node:* imports. Used by indexer, cli and viewer.
@@ -526,7 +526,8 @@ Modules of `packages/core/src`: `schema`, `patch`, `constants`, `text` (hashing)
 
 - `splitLines(text)` splits on `\r?\n` (a trailing newline yields a final empty line). `sliceLines(text,
   range)` returns full lines `startLine..endLine`.
-- `normalizeText(text)`: trim every line, drop blank lines, join with `\n`; for text matching only, never source hashing.
+- `normalizeLines(lines)`: trim every line, drop blank lines, join with `\n`; for text matching only, never source
+  hashing.
 - `hashText(text)` = `"sha256-v2:" + hex(sha256(splitLines(text).join("\n"))).slice(0, 12)` (sync; `@noble/hashes`).
   Indentation, trailing spaces and blank lines are preserved: they can change Python/YAML structure and string values.
   Only CRLF/LF differences are canonicalized. File freshness compares these source hashes even when commit labels match.

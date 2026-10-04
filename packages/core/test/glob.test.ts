@@ -1,11 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  TEST_FILE_GLOBS,
-  globMatcher,
-  globToRegExp,
-  matchesAnyGlob,
-  matchesGlob,
-} from "../src/index.js";
+import { TEST_FILE_GLOBS, globMatcher, matchesAnyGlob, matchesGlob } from "../src/index.js";
 
 describe("matchesGlob", () => {
   it("* stays inside one path segment, ? is one character", () => {
@@ -64,10 +58,6 @@ describe("matchesGlob", () => {
   it("an empty pattern matches nothing", () => {
     expect(matchesGlob("a", "")).toBe(false);
     expect(matchesAnyGlob("a", [])).toBe(false);
-  });
-
-  it("globToRegExp is memoised", () => {
-    expect(globToRegExp("x/**")).toBe(globToRegExp("x/**"));
   });
 });
 

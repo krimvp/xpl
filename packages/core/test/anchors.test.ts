@@ -3,9 +3,6 @@ import {
   collectAnchors,
   hashText,
   makeAnchor,
-  normalizedPrefixHashes,
-  normalizeLines,
-  hashNormalized,
   reresolveExplainer,
   resolveAnchor,
   TextCache,
@@ -22,7 +19,6 @@ import {
   LLM,
   makeWorld,
   sequenceView,
-  textWith,
   USER,
   type SymbolDecl,
 } from "./helpers.js";
@@ -454,20 +450,6 @@ describe("resolveAnchor: spans", () => {
     resolveAnchor(a, v1.index, cache);
     resolveAnchor(a, v1.index, cache);
     expect(reads).toBe(1);
-  });
-});
-
-describe("normalizedPrefixHashes", () => {
-  it("equals hashNormalized of every prefix", () => {
-    const lines = ["alpha();", "beta()", "gamma;", "delta"];
-    const hashes = normalizedPrefixHashes(lines, 1, 10);
-    expect(hashes).toHaveLength(3);
-    for (let k = 1; k <= 3; k++) {
-      expect(hashes[k - 1]).toBe(hashNormalized(lines.slice(1, 1 + k).join("\n")));
-    }
-    expect(normalizedPrefixHashes(lines, 0, 2)).toHaveLength(2);
-    expect(normalizedPrefixHashes(lines, 4, 2)).toEqual([]);
-    expect(hashNormalized(normalizeLines(["  a ", "", "b"]))).toBe(hashText("a\nb"));
   });
 });
 

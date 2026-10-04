@@ -43,8 +43,3 @@ export function unique<T>(values: Iterable<T>): T[] {
 export function sortedUnique(values: Iterable<string>): string[] {
   return [...new Set(values)].sort(cmp);
 }
-
-/** `"a" | "b"` style list for messages. */
-export function quoteList(values: readonly string[]): string {
-  return values.map((v) => `"${v}"`).join(", ");
-}

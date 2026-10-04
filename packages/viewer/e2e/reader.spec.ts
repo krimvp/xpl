@@ -5,30 +5,19 @@
  * summary first, author tools behind "Edit", plain words, readable diagrams).
  */
 import { expect, test, type Page } from "@playwright/test";
-import { byId, readEmbeddedBundle, stateOf, toRead, watchProblems, withBundle } from "./helpers.js";
-
-/** The embedded bundle is edited as loose JSON: many shapes, none worth typing here. */
-type Loose = Record<string, any>;
+import {
+  byId,
+  type Loose,
+  openVariant,
+  smallestDiagramText,
+  stateOf,
+  toRead,
+  watchProblems,
+} from "./helpers.js";
 
 const RUNNER = "sym:src/runner.ts#Runner.dispatch";
 const QUEUE = "file:src/queue.ts";
 const WORKER = "file:src/worker.ts";
-
-async function openVariant(
-  page: Page,
-  edit: (bundle: Loose) => void,
-  search = "",
-  size = { width: 1280, height: 720 },
-): Promise<void> {
-  const { html, bundle } = readEmbeddedBundle();
-  edit(bundle);
-  await page.setViewportSize(size);
-  await page.route("http://xpl.test/**", (route) =>
-    route.fulfill({ contentType: "text/html", body: withBundle(html, bundle) }),
-  );
-  await page.goto(`http://xpl.test/${search}`);
-  await page.waitForFunction(() => window.__xpl !== undefined);
-}
 
 /** A second flow view: the dispatch sequence with other step ids (a switch between the two used to crash). */
 function withTwoFlows(bundle: Loose): void {
@@ -93,17 +82,6 @@ async function selectedInPane(page: Page): Promise<boolean> {
         );
       })
     );
-  });
-}
-
-/** The smallest rendered font size (px on screen) of the diagram's visible text. */
-async function smallestDiagramText(page: Page): Promise<number> {
-  return page.evaluate(() => {
-    const sizes = [...document.querySelectorAll<SVGTextElement>(".diagram .pz-svg text")]
-      .filter((t) => t.textContent!.trim() && t.getBoundingClientRect().width > 0)
-      .filter((t) => getComputedStyle(t).opacity !== "0" && !t.closest(".is-quiet"))
-      .map((t) => parseFloat(getComputedStyle(t).fontSize) * (t.getScreenCTM()?.a ?? 1));
-    return Math.min(...sizes);
   });
 }
 

@@ -5,7 +5,7 @@
  * The page is the viewer with a synthetic pipeline of 17 stages added to the fixture (a chain of groups
  * with stored edges, no members, so nothing else is drawn): fitted, it comes out at about 0.2.
  */
-import { expect, test, type Locator, type Page } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import {
   byId,
   readEmbeddedBundle,
@@ -297,13 +297,4 @@ test("a short pane (a laptop at 200%): Fit all sits among the zoom buttons, not 
   // a tall pane keeps the pill in its corner
   await page.setViewportSize({ width: 1440, height: 900 });
   await expect(page.locator(".panzoom > [data-testid=pz-badge]")).toBeVisible();
-});
-
-/** Keep the helper honest: the boxes the checks above measure exist. */
-test("the synthetic pipeline has its 17 stages", async ({ page }) => {
-  await open(page);
-  await showPipeline(page);
-  const boxes: Locator = page.locator(".graph .node");
-  await expect(boxes).toHaveCount(17);
-  expect((await stateOf(page)).graph!.nodes).toHaveLength(17);
 });

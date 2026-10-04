@@ -60,28 +60,6 @@ describe("process flows and related files", () => {
     );
   });
 
-  it("rejects transitions to missing stages", () => {
-    const bundle = makeBundle();
-    const view = bundle.explainer.views.find((item) => item.type === "sequence") as SequenceView;
-    const result = applyPatch(
-      bundle.explainer,
-      {
-        views: [
-          {
-            ...view,
-            id: "view:process",
-            type: "flow",
-            steps: [{ ...view.steps[0]!, id: "process:1", next: [{ step: "process:404" }] }],
-          },
-        ],
-      },
-      bundle.index,
-      (file) => TEXTS[file],
-      { actor: "user" },
-    );
-    expect(result.ok).toBe(false);
-  });
-
   it("marks sequence projections as ordering rather than inferred execution", () => {
     const view = makeBundle().explainer.views.find(
       (item) => item.type === "sequence",

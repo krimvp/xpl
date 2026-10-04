@@ -1,24 +1,18 @@
 import { describe, expect, it } from "vitest";
 import {
-  conceptId,
   derivedEdgeId,
   dirId,
   elementIdForSymbolId,
   fileId,
-  frameId,
   ghostId,
-  groupId,
   isModuleScopeId,
-  isNodeId,
   isSlug,
-  isStructuralId,
   moduleScopeId,
   nodeKindOfId,
   normalizeElementId,
   parseId,
   splitSymbolId,
   stepId,
-  storedEdgeId,
   stubId,
   symbolId,
   symbolIdForElementId,
@@ -30,16 +24,12 @@ import {
 import { jobrunner, makeWorld } from "./helpers.js";
 
 describe("id builders", () => {
-  it("builds every id form of section 4.3", () => {
+  it("builds the id forms of section 4.3", () => {
     expect(dirId("src/core")).toBe("dir:src/core");
     expect(fileId("src/a.ts")).toBe("file:src/a.ts");
     expect(symId("src/a.ts", "A.b")).toBe("sym:src/a.ts#A.b");
-    expect(groupId("scheduling")).toBe("grp:scheduling");
-    expect(conceptId("retry-policy")).toBe("concept:retry-policy");
-    expect(storedEdgeId("job-completed")).toBe("edge:job-completed");
     expect(viewId("dispatch")).toBe("view:dispatch");
     expect(tourId("intro")).toBe("tour:intro");
-    expect(frameId("retry")).toBe("frame:retry");
     expect(stepId("view:dispatch", 3)).toBe("dispatch:3");
     expect(stepId("dispatch", 3)).toBe("dispatch:3");
     expect(viewSlug("view:dispatch")).toBe("dispatch");
@@ -145,12 +135,6 @@ describe("parseId", () => {
   });
 
   it("classifies node ids", () => {
-    expect(isNodeId("repo")).toBe(true);
-    expect(isNodeId("grp:x")).toBe(true);
-    expect(isNodeId("concept:x")).toBe(false);
-    expect(isNodeId("dispatch:1")).toBe(false);
-    expect(isStructuralId("sym:a#b")).toBe(true);
-    expect(isStructuralId("grp:x")).toBe(false);
     expect(nodeKindOfId("sym:a#b")).toBe("symbol");
     expect(nodeKindOfId("grp:x")).toBe("group");
     expect(nodeKindOfId("edge:x")).toBeUndefined();

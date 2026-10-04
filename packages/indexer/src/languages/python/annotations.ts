@@ -168,12 +168,6 @@ function single(
   return rest.length === 1 ? typeNameOf(rest[0], mode, depth + 1) : undefined;
 }
 
-/** Is the annotation exactly `None` (`-> None`)? */
-export function isNoneType(node: Node | null | undefined): boolean {
-  const n = unwrapType(node);
-  return n?.type === "none";
-}
-
 // ─── The names an annotation mentions ─────────────────────────────────────────────────────────────
 
 function nameShape(n: Node, lines: readonly string[]): SiteShape | undefined {

@@ -2,12 +2,12 @@
  * Integration test on the TS job-runner fixture (fixtures/ts-jobrunner), which reproduces the worked
  * example of docs/handoff.md exactly (ARCHITECTURE.md §8).
  */
-import { cpSync, existsSync, readFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { existsSync } from "node:fs";
+import { resolve } from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
 import type { Reference, SymbolIndex } from "@xpl/core";
-import { buildIndex, writeIndex } from "../src/index.js";
-import { makeDir } from "./helpers.js";
+import { buildIndex } from "../src/index.js";
+import { describeFixtureInvariants } from "./helpers.js";
 
 const fixture = resolve(import.meta.dirname, "../../../fixtures/ts-jobrunner");
 
@@ -86,17 +86,6 @@ describe("ts-jobrunner: files and symbols", () => {
       "retry.maxDelayMs",
     ]);
     expect(children.map((s) => s.range.startLine)).toEqual([14, 15, 16]);
-  });
-
-  it("every symbol's hash matches its lines and ranges lie inside their file", () => {
-    for (const symbol of index.symbols) {
-      const file = index.files.find((f) => f.path === symbol.file)!;
-      expect(symbol.range.startLine).toBeGreaterThanOrEqual(1);
-      expect(symbol.range.endLine).toBeLessThanOrEqual(file.lines);
-      expect(symbol.range.endLine).toBeGreaterThanOrEqual(symbol.range.startLine);
-      expect(symbol.id).toBe(`${symbol.file}#${symbol.path}`);
-      if (symbol.parent) expect(sym(symbol.parent), symbol.parent).toBeDefined();
-    }
   });
 });
 
@@ -209,48 +198,13 @@ describe("ts-jobrunner: imports, heritage and the test file", () => {
   });
 });
 
-describe("ts-jobrunner: index-level properties", () => {
-  it("has a deterministic working-tree commit id (the fixture is not the git top level)", async () => {
-    expect(index.commit).toMatch(/^wt-[0-9a-f]{10}$/);
-    const again = await buildIndex({ root: fixture, precise: "off" });
-    expect(again.index.commit).toBe(index.commit);
-    expect(JSON.stringify(again.index)).toBe(JSON.stringify(index));
-  });
+describeFixtureInvariants(fixture, () => index);
 
+describe("ts-jobrunner: languages", () => {
   it("summarises languages", () => {
     expect(index.languages.typescript).toMatchObject({ refs: "heuristic" });
     expect(index.languages.yaml).toMatchObject({ files: 1, refs: "none" });
     expect(index.languages.typescript!.files).toBeGreaterThanOrEqual(8);
     expect(index.tool).toContain("tree-sitter-typescript@");
-  });
-
-  it("all refs reference existing files and symbols; module scopes only as `<file>#`", () => {
-    const ids = new Set(index.symbols.map((s) => s.id));
-    const files = new Set(index.files.map((f) => f.path));
-    for (const ref of index.refs) {
-      for (const id of [ref.from, ref.to]) {
-        const hash = id.indexOf("#");
-        expect(files.has(id.slice(0, hash)), id).toBe(true);
-        if (id.slice(hash + 1) !== "") expect(ids.has(id), id).toBe(true);
-      }
-      expect(ref.from).not.toBe(ref.to);
-      expect(ref.site.startLine).toBeGreaterThanOrEqual(1);
-    }
-  });
-
-  it("writes the index of a copy of the fixture (never into the fixture itself)", async () => {
-    const copy = makeDir();
-    cpSync(fixture, copy, {
-      recursive: true,
-      filter: (src) => !src.includes(`${join("ts-jobrunner", ".explainer")}`),
-    });
-    const built = await buildIndex({ root: copy, precise: "off" });
-    const path = await writeIndex(copy, built.index);
-    expect(path).toBe(join(copy, ".explainer", `index-${built.index.commit}.json`));
-    expect(JSON.parse(readFileSync(path, "utf8"))).toEqual(built.index);
-    // the same files under another directory give the same commit id and the same symbols
-    expect(built.index.commit).toBe(index.commit);
-    expect(built.index.symbols).toEqual(index.symbols);
-    expect(built.index.refs).toEqual(index.refs);
   });
 });

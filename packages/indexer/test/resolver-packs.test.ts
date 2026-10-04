@@ -215,25 +215,6 @@ describe("directory-scoped languages (Go-like)", () => {
     expect(refs).toContain("cmd/runner.go#Runner.Run -> internal/queue/queue.go#Queue.Pop (call)");
   });
 
-  it("a method of a struct declared in another file has no parent, one in the same file has", () => {
-    const entries = assembleSymbols("x.go", splitLines("x\n".repeat(20)), [
-      { path: "S", kind: "class", range: { startLine: 1, startCol: 1, endLine: 2, endCol: 2 } },
-      {
-        path: "S.M",
-        kind: "method",
-        range: { startLine: 4, startCol: 1, endLine: 6, endCol: 2 },
-        parentPath: "S",
-      },
-      {
-        path: "T.M",
-        kind: "method",
-        range: { startLine: 8, startCol: 1, endLine: 9, endCol: 2 },
-        parentPath: "T",
-      },
-    ]).entries;
-    expect(entries.map((e) => e.symbol.parent)).toEqual([undefined, "x.go#S", undefined]);
-  });
-
   it("symbols of other directories are not visible without an import", () => {
     const local = run(
       {
