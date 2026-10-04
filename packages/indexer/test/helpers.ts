@@ -198,12 +198,12 @@ export function describeFixtureInvariants(fixture: string, index: () => SymbolIn
 /** Fake tool results cross the real provider conversion and normalization seams. */
 export function providerFacts(
   input: import("../src/providers.js").ProviderInput,
-  result: import("../src/providers.js").RelationshipResult,
+  result: Omit<import("../src/providers.js").RelationshipResult, "resolution">,
   provider: Partial<import("../src/providers.js").IndexProvider> = {},
 ) {
   return relationshipOutput(
     input,
     { id: provider.id ?? "test", capabilities: provider.capabilities ?? PRECISE_SUPPORT },
-    result,
+    { ...result, resolution: "precise" },
   );
 }

@@ -138,7 +138,9 @@ Conventions (all packages):
    (`scip-typescript@0.4.0`, `xpl-heuristic@… (tree-sitter-typescript@…)`); `heuristicFiles` counts the files
    of a precise language that keep heuristic references because the tool did not describe them (§3).
    `SymbolIndex.analysis?: AnalysisReport[]` records provider abilities separately from observed coverage
-   (§3, Analysis coverage). Its reports describe the original run, including in pruned bundles.
+   (§3, Analysis coverage). Its reports describe the original run, including in pruned bundles. Relationship
+   results record `resolution?: "precise" | "heuristic"` independently of support and reference counts;
+   an absent resolution is unknown.
 5. `IndexedFile.language: FileLanguage` = `typescript | tsx | javascript | python | go | yaml | json | toml |
    text`.
 6. `Edge.kind` adds `"references"` (lifted type-refs) and, for stored edges to related files, `"loads"`,
@@ -441,6 +443,8 @@ source-ordered `~N` suffixes, and hashes the full declaration lines. Provider-lo
 IDs; explicit parents disambiguate duplicate paths. Identifier-only facts never become checked symbol
 anchors. No full declaration is inferred from an identifier extent. Unknown kinds, missing endpoints and
 invalid evidence are diagnosed and dropped, with the file removed from replacement coverage.
+When syntax spans end on an empty line, `providerRange` restores the consumed newline's end-exclusive
+position instead of treating the widened inclusive column as a character on that line.
 
 `mergeProvider` replaces relationships only for the advertised kinds and explicitly analyzed files of
 supported or partial results. Failed, unsupported and unexamined scopes keep previous hints. Checked node
@@ -449,11 +453,16 @@ changing their identities. Nesting changes only under explicit nesting coverage.
 the smallest enclosing heuristic hint. Source and resolution provenance remains on each fact; report version,
 configuration and snapshot identities remain in the index and bundles. No format alone determines trust:
 each relationship explicitly says `heuristic` or `precise`. A generic reference is not converted to a call.
+Relationship coverage also records resolution, including empty results. Language summaries and `require`
+use the latest successful replacement of each file/kind: only explicitly precise relationship coverage
+qualifies, scoped to that file's language. Structural coverage and heuristic facts cannot establish precision;
+emitted heuristic facts override a contradictory precise coverage label for their file/kind.
 
 Partial coverage is successful analysis with stated omissions; an empty result says nothing about completeness.
-An exception becomes a failed report in `auto` mode, preserving heuristic results. `require` fails for a missing
-provider, an exception or an attempt without usable analyzed capabilities/files. Reader summaries omit provider
-commands and diagnostics. Structural and relationship abilities remain independent.
+An exception becomes a failed report for every advertised capability in `auto` mode, preserving prior checked
+facts. Structural-provider failures record symbols, ranges and nesting as failed too. `require` fails for a
+missing provider, an exception or a language without usable explicitly precise relationship analysis.
+Reader summaries omit provider commands and diagnostics. Structural and relationship abilities remain independent.
 
 Cost and reuse: the syntax provider parses each source once for extraction; heuristic resolution stays inside
 it. SCIP runs per repository/project/module, with the timeout and fallback policy below, and may reparse sources
@@ -479,9 +488,9 @@ coverage per file and kind where facts were dropped, and report seen-but-unresol
 stable `provider` id, advertised `capabilities`, scoped `files`, and observed `results`. Capabilities are
 independent: `fileAnchors`, `symbols`, `declarationRanges`, `nesting`, and each `Reference.kind`.
 Advertised values are `supported` or `partial`; a missing key means unsupported. A result groups
-capabilities with the same `status` (`supported | partial | unsupported | failed`), `analyzedFiles`, and
-reader-facing `limitations`. Optional `diagnostics` retains author-facing warnings and failure reasons,
-which reader summaries do not render. Grouping avoids repeating identical file lists. This is provider-agnostic
+capabilities with the same `status` (`supported | partial | unsupported | failed`), `resolution`,
+`analyzedFiles`, and reader-facing `limitations`. Optional `diagnostics` retains author-facing warnings and
+failure reasons, which reader summaries do not render. Grouping avoids repeating identical file lists. This is provider-agnostic
 data in core; `IndexProvider` in the indexer returns these reports unchanged before source checks.
 
 All indexed files get file anchors. Configuration packs provide key symbols, ranges and nesting without

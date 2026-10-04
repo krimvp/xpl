@@ -98,6 +98,7 @@ async function finish(
     );
   }
   return {
+    resolution: "precise",
     refs:
       misplaced.size > 0
         ? result.refs.filter((r) => !misplaced.has(r.from.slice(0, r.from.indexOf("#"))))

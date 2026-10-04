@@ -2,6 +2,7 @@ import { providerFacts } from "./helpers.js";
 import { expect, it } from "vitest";
 import { indexFiles } from "./helpers.js";
 import type { IndexProvider } from "../src/index.js";
+import { describeAnalysis } from "@xpl/core";
 
 // buildIndex owns support and observed coverage; an empty result must not imply unsupported analysis.
 it("reports file anchors, config structure and language relationships independently, even when empty", async () => {
@@ -146,6 +147,7 @@ it("keeps unsupported kinds separate from an explicitly analyzed empty result an
   expect(report?.results.find((r) => r.capabilities.includes("call"))).toEqual({
     capabilities: ["call"],
     status: "supported",
+    resolution: "precise",
     analyzedFiles: ["a.ts"],
     limitations: [],
   });
@@ -311,5 +313,201 @@ it.each(["json", "yaml", "toml"])(
     expect(warnings).toEqual([
       `deep.${format}: Structure beyond nesting depth 64 was not indexed.`,
     ]);
+  },
+);
+
+it.each([
+  { precise: "auto" as const, empty: false },
+  { precise: "require" as const, empty: false },
+  { precise: "auto" as const, empty: true },
+  { precise: "require" as const, empty: true },
+])(
+  "heuristic provider analysis remains heuristic ($precise, empty: $empty)",
+  async ({ precise, empty }) => {
+    const provider: IndexProvider = {
+      id: "syntax-calls",
+      languages: ["typescript"],
+      capabilities: { call: "partial" },
+      async analyze(input) {
+        return {
+          provider: this.id,
+          version: "1",
+          configuration: "default",
+          tool: "syntax-calls@1",
+          sourceHashes: Object.fromEntries(input.files.map((f) => [f.path, f.hash])),
+          declarations: [],
+          relationships: empty
+            ? []
+            : [
+                {
+                  from: "a.ts#b",
+                  to: "a.ts#a",
+                  kind: "call",
+                  file: "a.ts",
+                  resolution: "heuristic",
+                  evidence: { start: [1, 21], end: [1, 24], encoding: "utf16" },
+                },
+              ],
+          analysis: [
+            {
+              provider: this.id,
+              capabilities: this.capabilities,
+              files: ["a.ts"],
+              results: [
+                {
+                  capabilities: ["call"],
+                  status: "partial",
+                  resolution: "heuristic",
+                  analyzedFiles: ["a.ts"],
+                  limitations: ["Syntax-only resolution."],
+                },
+              ],
+            },
+          ],
+        };
+      },
+    };
+    const files = { "a.ts": "export function a() {}\nexport function b() { a(); }\n" };
+    if (precise === "require") {
+      await expect(indexFiles(files, { precise, providers: [provider] })).rejects.toThrow(
+        /no usable precise relationship analysis.*typescript/,
+      );
+      return;
+    }
+    const { index, warnings } = await indexFiles(files, { precise, providers: [provider] });
+    expect(warnings).toEqual([]);
+    expect(index.languages.typescript?.refs).toBe("heuristic");
+    expect(index.refs.map((r) => r.resolution)).toEqual(empty ? [] : ["heuristic"]);
+  },
+);
+
+it("empty precise relationship coverage applies only to its analyzed language", async () => {
+  const provider: IndexProvider = {
+    id: "mixed",
+    languages: ["typescript", "python"],
+    capabilities: { call: "partial", symbols: "supported" },
+    async analyze(input) {
+      return {
+        provider: this.id,
+        version: "1",
+        configuration: "default",
+        tool: "mixed@1",
+        sourceHashes: Object.fromEntries(input.files.map((f) => [f.path, f.hash])),
+        declarations: [],
+        relationships: [],
+        analysis: [
+          {
+            provider: this.id,
+            capabilities: this.capabilities,
+            files: ["a.ts", "b.py"],
+            results: [
+              {
+                capabilities: ["call"],
+                status: "partial",
+                resolution: "precise",
+                analyzedFiles: ["a.ts"],
+                limitations: [],
+              },
+              {
+                capabilities: ["symbols"],
+                status: "supported",
+                analyzedFiles: ["b.py"],
+                limitations: [],
+              },
+            ],
+          },
+        ],
+      };
+    },
+  };
+  const files = { "a.ts": "export const a = 1;\n", "b.py": "a = 1\n" };
+  const { index, warnings } = await indexFiles(files, { precise: "auto", providers: [provider] });
+  expect(warnings).toEqual([]);
+  expect(index.refs).toEqual([]);
+  expect([index.languages.typescript?.refs, index.languages.python?.refs]).toEqual([
+    "precise",
+    "heuristic",
+  ]);
+  await expect(indexFiles(files, { precise: "require", providers: [provider] })).rejects.toThrow(
+    /no usable precise relationship analysis.*python/,
+  );
+});
+
+it("reports every advertised structural capability as failed when its provider throws", async () => {
+  const provider: IndexProvider = {
+    id: "declaration-artifact",
+    languages: ["typescript"],
+    capabilities: { symbols: "supported", declarationRanges: "partial", nesting: "supported" },
+    async analyze() {
+      throw new Error("artifact unreadable");
+    },
+  };
+  const { index } = await indexFiles(
+    { "a.ts": "export function a() {}\n" },
+    { precise: "auto", providers: [provider] },
+  );
+  expect(index.symbols.map((s) => s.id)).toEqual(["a.ts#a"]);
+  expect(index.analysis?.find((r) => r.provider === provider.id)).toMatchObject({
+    diagnostics: ["artifact unreadable"],
+    results: [
+      {
+        capabilities: ["symbols", "declarationRanges", "nesting"],
+        status: "failed",
+        analyzedFiles: [],
+      },
+    ],
+  });
+  expect(describeAnalysis(index).details).toContain(
+    "typescript: named symbols, full declaration ranges, nesting failed (0/1 files analyzed). Provider analysis failed; previous checked facts remain.",
+  );
+});
+
+it.each(["heuristic", undefined] as const)(
+  "a later empty replacement with %s resolution cannot inherit earlier precise analysis",
+  async (resolution) => {
+    const provider: IndexProvider = {
+      id: "later",
+      languages: ["typescript"],
+      capabilities: { call: "supported" },
+      async analyze(input) {
+        const output = providerFacts(
+          input,
+          {
+            tool: "later@1",
+            refs: [],
+            describedFiles: ["a.ts"],
+            coverage: { call: { status: "supported", analyzedFiles: ["a.ts"], limitations: [] } },
+          },
+          this,
+        );
+        output.analysis[0]!.results.find((r) => r.capabilities.includes("call"))!.resolution =
+          resolution;
+        return output;
+      },
+    };
+    const earlier: IndexProvider = {
+      ...provider,
+      id: "earlier",
+      async analyze(input) {
+        return providerFacts(
+          input,
+          {
+            tool: "earlier@1",
+            refs: [],
+            describedFiles: ["a.ts"],
+            coverage: { call: { status: "supported", analyzedFiles: ["a.ts"], limitations: [] } },
+          },
+          this,
+        );
+      },
+    };
+    const files = { "a.ts": "export const a = 1;\n" };
+    const precise = await indexFiles(files, { precise: "require", providers: [earlier] });
+    expect(precise.index.languages.typescript?.refs).toBe("precise");
+    const replaced = await indexFiles(files, { precise: "auto", providers: [earlier, provider] });
+    expect(replaced.index.languages.typescript?.refs).toBe("heuristic");
+    await expect(
+      indexFiles(files, { precise: "require", providers: [earlier, provider] }),
+    ).rejects.toThrow(/no usable precise relationship analysis.*typescript/);
   },
 );
