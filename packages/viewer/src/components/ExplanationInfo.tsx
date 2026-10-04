@@ -11,6 +11,19 @@ export function ExplanationInfo() {
         they do not verify the claims or prove that every execution path is covered. Use the linked
         code and tests to check important conclusions.
       </p>
+      {state.exportInfo && (
+        <p>
+          Saved as {state.exportInfo.status === "draft" ? "a draft preview" : "ready HTML"}; checked
+          against{" "}
+          {state.exportInfo.report.scope === "workspace"
+            ? "the workspace at export time"
+            : "the embedded source snapshot"}
+          . An offline page cannot detect later repository changes.
+          {state.exportInfo.report.decisionNote && (
+            <> Author decision: {state.exportInfo.report.decisionNote}</>
+          )}
+        </p>
+      )}
       <p>
         Guide tells the story. Map shows relationships. Flow follows steps. Code opens the source.
         Present walks through a tour. Reference hints can include unresolved or indirect behavior.

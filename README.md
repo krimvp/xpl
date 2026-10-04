@@ -87,6 +87,7 @@ xpl apply myrepo /tmp/draft.json                 # check and merge the patch: al
 xpl validate myrepo                             # every id and anchor still resolves?
 xpl lint myrepo                                 # plain-language, tour and reader checks (exit 1 on any; --warn-only)
 xpl view myrepo                                 # http://127.0.0.1:4747 (falls back to a free port)
+xpl ready myrepo                               # check source, required text and reader findings
 xpl bundle myrepo -o myrepo.html                # one self-contained HTML file (--files boundary|all; --tour <id>)
 ```
 
@@ -101,10 +102,16 @@ collapsed targets. Check conditions, loops and callback execution before describ
 In heuristic indexes, function values and callback registration are `read` references; invocation is a `call`. Reads are
 available through `xpl refs` and the Map edge filters without creating recursion or execution steps.
 
-Strict validation and export require a current index, even with `XPL_SKIP_STALE_CHECK=1`.
+Strict validation and ready export require a current index, even with `XPL_SKIP_STALE_CHECK=1`.
 After changing code, run `xpl index`, `xpl resolve myrepo --write`, review the drift, and rebuild
 the affected explanations before validating and bundling. `validate --lenient` supports repair work;
-`bundle --allow-drift` permits unresolved anchors against a current index, with a visible warning.
+`xpl ready myrepo --json` reports source, structural, required-content and reader findings. Ready export
+refuses before writing when required text is unfinished or source links are broken. Reader warnings invite
+author judgment; `--note "reason"` records intentional omissions or warnings in the report and HTML.
+`bundle --draft` writes a labelled preview for repair; `--allow-drift` is a legacy draft flag against a current
+index. Edit > Save as HTML uses the same rules, with separate ready and draft actions. Offline re-saves check
+only included source, and say they cannot detect later repository changes. Source checks do not verify prose
+claims or every runtime path.
 Generated XPL HTML pages are excluded from indexing, so exporting inside a repo does not stale its index.
 
 ### Explaining a change

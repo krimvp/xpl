@@ -1,4 +1,5 @@
 /**
+ * These source-selection examples omit story text; HTML uses explicit draft preview.
  * The symbol index in a bundle. `xpl bundle` embeds a pruned one by default (core's `pruneIndex`, ARCHITECTURE.md §5),
  * and the viewer must derive exactly what it derives from the whole index. The checks compare the derivations of
  * the two (`expectSameViewer`, shared with core's tests): on the committed example explainers of the three fixtures,
@@ -36,7 +37,7 @@ const viewerEnv = { XPL_VIEWER_HTML: writeViewerStub() };
 
 /** `xpl bundle <name> -o <out> ...`, and the bundle it wrote. */
 async function bundle(dir: string, name: string, out: string, ...argv: string[]) {
-  const result = await invoke(["bundle", name, "-o", out, ...argv, "--root", dir], {
+  const result = await invoke(["bundle", "--draft", name, "-o", out, ...argv, "--root", dir], {
     cwd: dir,
     env: viewerEnv,
   });
@@ -93,7 +94,9 @@ describe("--embed-index: what the command embeds", () => {
     const { data, out } = await bundle(demo, "demo", "all.html", "--files", "all");
     expect(data.index).toEqual(full);
     expect(data.index.pruned).toBeUndefined();
-    expect(out).toMatch(/, index \d+(\.\d)? KB \(\d+(\.\d)? KB as plain JSON\), mode explore$/);
+    expect(out).toMatch(
+      /, index \d+(\.\d)? KB \(\d+(\.\d)? KB as plain JSON\), mode explore, draft preview$/,
+    );
     expect(out).not.toContain("pruned");
   });
 
@@ -128,10 +131,13 @@ describe("--embed-index: what the command embeds", () => {
   });
 
   it("--json reports what was embedded of the index", async () => {
-    const result = await invoke(["bundle", "demo", "-o", "j.html", "--json", "--root", demo], {
-      cwd: demo,
-      env: viewerEnv,
-    });
+    const result = await invoke(
+      ["bundle", "--draft", "demo", "-o", "j.html", "--json", "--root", demo],
+      {
+        cwd: demo,
+        env: viewerEnv,
+      },
+    );
     expect(result.code).toBe(0);
     const json = JSON.parse(result.out);
     const data = bundleOf(readFile(demo, "j.html"));
@@ -153,7 +159,18 @@ describe("--embed-index: what the command embeds", () => {
     const whole = JSON.parse(
       (
         await invoke(
-          ["bundle", "demo", "-o", "j2.html", "--json", "--files", "all", "--root", demo],
+          [
+            "bundle",
+            "--draft",
+            "demo",
+            "-o",
+            "j2.html",
+            "--json",
+            "--files",
+            "all",
+            "--root",
+            demo,
+          ],
           {
             cwd: demo,
             env: viewerEnv,
@@ -173,7 +190,7 @@ describe("--embed-index: what the command embeds", () => {
 
   it("rejects a value that is not full or pruned, and leaves --index to pick the index file", async () => {
     const bad = await invoke(
-      ["bundle", "demo", "-o", "x.html", "--embed-index", "some", "--root", demo],
+      ["bundle", "--draft", "demo", "-o", "x.html", "--embed-index", "some", "--root", demo],
       {
         cwd: demo,
         env: viewerEnv,
@@ -188,7 +205,7 @@ describe("--embed-index: what the command embeds", () => {
     const chosen = await bundle(demo, "demo", "chosen.html", "--index", `.explainer/${file}`);
     expect(chosen.data.index.commit).toBe(full.commit);
     const wrong = await invoke(
-      ["bundle", "demo", "-o", "x.html", "--index", "pruned", "--root", demo],
+      ["bundle", "--draft", "demo", "-o", "x.html", "--index", "pruned", "--root", demo],
       {
         cwd: demo,
         env: viewerEnv,
@@ -197,7 +214,7 @@ describe("--embed-index: what the command embeds", () => {
     expect(wrong.code).toBe(1);
     expect(wrong.err).toContain('index file "pruned" not found');
     // the help says so
-    const help = await invoke(["bundle", "--help"]);
+    const help = await invoke(["bundle", "--draft", "--help"]);
     expect(help.out).toContain("--embed-index full|pruned");
     expect(help.out).toContain("--index <path>");
   });

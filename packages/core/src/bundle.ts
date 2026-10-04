@@ -4,6 +4,7 @@
  * viewer then fetches missing files from `${server.api}/file?path=`).
  */
 import { isPackedIndex, packIndex, unpackIndex } from "./index-pack.js";
+import type { ReadinessReport } from "./readiness.js";
 import type { Explainer, FilePath, SymbolIndex } from "./schema.js";
 
 export const BUNDLE_SCHEMA = "code-explainer/bundle@0";
@@ -32,6 +33,8 @@ export interface ViewerBundle {
   server?: { api: string };
   /** Live workspace warning when source and index differ. Never implies prose was verified. */
   sourceWarning?: string;
+  /** Export decision and checked source scope, preserved in disconnected HTML. */
+  exportInfo?: { status: "ready" | "draft"; report: ReadinessReport };
 }
 
 export interface SerializeOptions {

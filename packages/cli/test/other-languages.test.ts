@@ -1,4 +1,5 @@
 /**
+ * These source-selection examples omit story text; HTML uses explicit draft preview.
  * The commands are language-agnostic: the same workflow works on the Python and Go fixtures. Nothing
  * here asserts on their symbols (the language packs are the indexer's business), only that files,
  * config keys and file-level anchors flow through index, outline, show, search, apply, validate, bundle.
@@ -107,7 +108,7 @@ describe.each(CASES)("$fixture", ({ fixture, language }) => {
     expect((await xplJson<any>(dir, "status", "demo")).json.views[0].id).toBe("view:overview");
 
     const viewer = writeViewerStub();
-    const bundled = await invoke(["bundle", "demo", "-o", "out.html", "--root", dir], {
+    const bundled = await invoke(["bundle", "--draft", "demo", "-o", "out.html", "--root", dir], {
       cwd: dir,
       env: { XPL_VIEWER_HTML: viewer },
     });
@@ -165,7 +166,7 @@ it("Rust symbols can be outlined, shown, anchored and exported with their suppor
   const anchors = await xpl(dir, "anchors", "rust", "concept:dispatch");
   expect(anchors.code).toBe(0);
   expect(anchors.out).toContain("src/runner.rs");
-  const bundled = await invoke(["bundle", "rust", "-o", "rust.html"], {
+  const bundled = await invoke(["bundle", "--draft", "rust", "-o", "rust.html"], {
     cwd: dir,
     env: { XPL_VIEWER_HTML: writeViewerStub() },
   });

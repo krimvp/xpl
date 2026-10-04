@@ -171,6 +171,7 @@ export interface ViewerState {
   serverMode: boolean;
   /** The live source no longer matches its index; reindex before trusting locations and edges. */
   sourceWarning: string | undefined;
+  exportInfo: ViewerBundle["exportInfo"];
   /**
    * Said once when opening a box switched the reading tab (a double-click on the Map that opened a flow):
    * which tab the reader is in now and why. Gone at the next move.
@@ -250,6 +251,7 @@ export class ViewerStore {
       save: { status: "idle" },
       serverMode: this.api !== undefined,
       sourceWarning: bundle.sourceWarning,
+      exportInfo: bundle.exportInfo,
     };
     if (this.state.perspective !== "explore") this.reading = this.state.perspective;
     if (present) this.present();
@@ -1176,6 +1178,7 @@ export class ViewerStore {
             baseFiles: workspace.baseFiles ?? {},
             baseErrors: {},
             sourceWarning: workspace.sourceWarning,
+            exportInfo: workspace.exportInfo,
           }
         : {}),
     });

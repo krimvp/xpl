@@ -4,6 +4,7 @@ import { execFileSync, spawn } from "node:child_process";
 import { once } from "node:events";
 import {
   cpSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -198,7 +199,15 @@ try {
     run(["apply", "demo", patch], fixture);
     run(["validate", "demo"], fixture);
     const output = join(scratch, `${language}.html`);
-    run(["bundle", "demo", "-o", output], fixture);
+    // The TS structural example leaves reader text unfinished. Installed export must gate it too.
+    if (language === "ts") {
+      const blocked = rejected(["bundle", "demo", "-o", output, "--json"], fixture);
+      assert.equal(blocked.readiness.ready, false);
+      assert.equal(blocked.readiness.errors, 7);
+      assert.equal(existsSync(output), false);
+    }
+    const preview = JSON.parse(run(["bundle", "demo", "-o", output, "--draft", "--json"], fixture));
+    assert.equal(preview.exportStatus, "draft");
     const page = await browser.newPage();
     const problems = [];
     page.on("pageerror", (error) => problems.push(error.message));
@@ -206,8 +215,60 @@ try {
     await page.goto(pathToFileURL(output).href + "?perspective=map");
     await expect(page.locator("#root")).toContainText("Local install demo");
     await expect(page.locator(".workspace-diagram svg").first()).toBeVisible();
+    await expect(page.getByTestId("draft-banner")).toContainText("Draft preview");
     await page.close();
     assert.deepEqual(problems, []);
+
+    // A complete one-file explanation checks the positive ready path without filling the examples mechanically.
+    const file = {
+      ts: "src/runner.ts",
+      py: "jobrunner/runner.py",
+      go: "internal/runner/runner.go",
+    }[language];
+    const readyPatch = join(scratch, `${language}.ready.patch.json`);
+    writeFileSync(
+      readyPatch,
+      JSON.stringify({
+        nodes: [
+          {
+            id: `file:${file}`,
+            kind: "file",
+            parent: `dir:${dirname(file)}`,
+            label: "Job dispatch",
+            summary:
+              "The runner sends queued jobs to workers and schedules retries after failures.",
+            anchors: [{ file, role: "definition" }],
+          },
+        ],
+        views: [
+          {
+            id: "view:dispatch",
+            type: "graph",
+            title: "Job dispatch",
+            scope: { root: "repo", depth: 1 },
+            include: [`file:${file}`],
+            stubs: { mode: "none" },
+          },
+        ],
+      }),
+    );
+    run(["new", "ready-demo", "--title", "Ready install demo"], fixture);
+    run(["apply", "ready-demo", readyPatch], fixture);
+    assert.equal(JSON.parse(run(["ready", "ready-demo", "--json"], fixture)).ready, true);
+    const readyOutput = join(scratch, `${language}.ready.html`);
+    const exported = JSON.parse(
+      run(["bundle", "ready-demo", "-o", readyOutput, "--json"], fixture),
+    );
+    assert.equal(exported.exportStatus, "ready");
+    assert.equal(exported.readiness.ready, true);
+    const offline = await browser.newPage();
+    await offline.route(/^https?:/, (route) => route.abort());
+    await offline.goto(pathToFileURL(readyOutput).href + "?perspective=code");
+    await expect(offline.locator("#root")).toContainText("Ready install demo");
+    await expect(offline.getByTestId("draft-banner")).toHaveCount(0);
+    await offline.locator(`.tree-row[data-path="${file}"]`).click();
+    await expect(offline.locator(`[data-file="${file}"] .cm-content`)).toContainText("Runner");
+    await offline.close();
 
     const server = spawn(cli, ["view", "demo", "--no-open", "--port", "0", "--json"], {
       cwd: fixture,
@@ -252,7 +313,7 @@ try {
       await stopped;
     }
     results.push(
-      `${language}: bundled grammars, heuristic index, new/apply/validate, local viewer and offline HTML passed`,
+      `${language}: bundled grammars, heuristic index, new/apply/validate, ready export gate, explicit draft, local viewer and disconnected ready HTML passed`,
     );
   }
 } finally {

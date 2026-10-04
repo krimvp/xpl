@@ -7,7 +7,6 @@ import {
   defaultIndexChoice,
   describeDrift,
   embedIndex,
-  freshAnchors,
   makeBundle,
   type Boundary,
   type BoundaryReason,
@@ -18,8 +17,8 @@ import type { CommandSpec } from "../command.js";
 import { CliError, UsageError } from "../errors.js";
 import { formatBytes, listText, plural } from "../format.js";
 import { atomicWrite } from "../fsutil.js";
-import { loadExplainer, openWorkspace } from "../repo.js";
-import { lintExplainer } from "../lint.js";
+import { loadExplainer } from "../repo.js";
+import { describeReadiness, workspaceReadiness } from "../readiness.js";
 import { readViewerHtml } from "../viewer-html.js";
 
 /** A page larger than this gets a warning: it opens slowly, and mail and chat refuse it. */
@@ -107,9 +106,13 @@ function describeIndex(e: EmbeddedIndex): string {
 export const bundleCommand: CommandSpec = {
   name: "bundle",
   usage:
-    "xpl bundle <explainer> -o out.html [--mode explore|present] [--tour id] [--files referenced|boundary|all] [--boundary-max n] [--embed-index full|pruned] [--allow-drift]",
-  summary: "Write one self-contained HTML file",
+    "xpl bundle <explainer> -o out.html [--mode explore|present] [--tour id] [--files referenced|boundary|all] [--boundary-max n] [--embed-index full|pruned] [--draft] [--note reason] [--allow-drift]",
+  summary: "Check readiness, then write one self-contained HTML file",
   details: [
+    "Runs the shared xpl ready check before writing: unfinished required text, structural errors, stale indexes",
+    "and broken source links block ready output (exit 1; no output written). Reader warnings are reported.",
+    "--draft explicitly writes a draft preview with its findings. --note records justified omissions or warning",
+    "decisions in the HTML; it never overrides blockers. --json includes readiness and exportStatus.",
     "Writes the viewer with the explainer, the symbol index and the source files inlined, so the file works",
     "offline and can be shared. --files referenced (the default) embeds the files the explainer needs: those of",
     "every anchor, of the nodes its graph views include (a directory or group: its files), of a sequence view's",
@@ -141,13 +144,22 @@ export const bundleCommand: CommandSpec = {
     "now. A stale index is refused even with --allow-drift: run `xpl index`, then `xpl resolve --write` first.",
     "An anchor whose text moved gets its new lines. When some anchors drifted (their code changed) or are",
     "missing (their code is gone), the command refuses: the page would point at the wrong code. Run",
-    "`xpl resolve <explainer> --write` and re-explain what it lists. --allow-drift writes the page anyway; it warns,",
+    "`xpl resolve <explainer> --write` and re-explain what it lists. --allow-drift is a legacy draft preview flag; it warns,",
     "and the page tells the reader which parts may be out of date.",
     "--mode present opens in present mode; --tour <id> starts that tour (and implies --mode present).",
     "The output path is printed as given (absolute when you gave it absolute); -o is relative to the working",
     "directory.",
   ],
   options: {
+    draft: {
+      type: "boolean",
+      desc: "Write an explicitly labelled draft preview, even with readiness errors",
+    },
+    note: {
+      type: "string",
+      arg: "<reason>",
+      desc: "Record an author decision about warnings or omissions",
+    },
     out: { type: "string", short: "o", arg: "<out.html>", desc: "Output file (required)" },
     mode: { type: "string", arg: "explore|present", desc: "Initial mode (default explore)" },
     tour: {
@@ -167,7 +179,7 @@ export const bundleCommand: CommandSpec = {
     },
     "allow-drift": {
       type: "boolean",
-      desc: "Write the page even when anchors drifted or are missing (the page says so)",
+      desc: "Legacy draft preview for drifted/missing anchors; output is labelled draft",
     },
     "embed-index": {
       type: "string",
@@ -207,33 +219,42 @@ export const bundleCommand: CommandSpec = {
     const mode = modeOption ?? (tour !== undefined ? "present" : "explore");
 
     const html = readViewerHtml(ctx.env);
-    const ws = await openWorkspace(ctx, {
-      explainer: loaded,
-      deferStaleWarning: true,
-      requireFreshIndex: true,
-    });
-    if (ws.stale) {
+    const { ws, explainer, drift, report } = await workspaceReadiness(
+      ctx,
+      loaded,
+      args.str("note"),
+    );
+    const draft = args.flag("draft") || args.flag("allow-drift");
+    if (ws.stale && !args.flag("draft")) {
       throw new CliError(
         `${ws.stale.message} Refusing to export source with an outdated index; --allow-drift only permits drift against a current index.`,
         1,
-        { stale: ws.stale.head },
+        { stale: ws.stale.head, readiness: report },
       );
     }
-    const { explainer, drift } = freshAnchors(loaded.explainer, ws.model, ws.texts);
     const stale = describeDrift(drift);
     if (stale !== "") {
       const fix = `run \`xpl resolve ${loaded.name} --write\` and fix what it lists: re-explain the drifted elements, re-anchor or drop the missing anchors`;
-      if (!args.flag("allow-drift")) {
+      if (!draft) {
         throw new CliError(
           `${loaded.rel} does not match the code: ${stale}, so the page would point at the wrong code. To fix it, ${fix}, then bundle again; --allow-drift writes the page anyway, with a warning on it`,
           1,
-          { drift },
+          { drift, readiness: report },
         );
       }
       ctx.warn(
         `${stale}: the page says so, but the reader will see code that may not match the text (to fix it, ${fix})`,
       );
     }
+    if (!report.ready && !draft) {
+      throw new CliError(
+        `${describeReadiness(report)}
+Repair these findings, or use --draft for a labelled preview.`,
+        1,
+        { readiness: report },
+      );
+    }
+    if (report.findings.length > 0) ctx.warn(describeReadiness(report));
     const collected = collectFiles({
       root: ctx.root,
       index: ws.model,
@@ -263,18 +284,14 @@ export const bundleCommand: CommandSpec = {
       mode,
       ...(tour !== undefined ? { tour } : {}),
     });
+    if (ws.stale) bundle.sourceWarning = ws.stale.message;
+    bundle.exportInfo = { status: draft ? "draft" : "ready", report };
     // the index packed: a fifth of its size as plain JSON (the viewer unpacks it, `parseBundle`)
     const page = injectBundle(html, bundle, { packIndex: true });
     const target = resolve(ctx.cwd, out);
     await atomicWrite(target, page);
     const bytes = Buffer.byteLength(page);
     const embedded = Object.keys(collected.files).length;
-    const todos = lintExplainer(explainer).findings.filter((f) => f.rule === "todo-left").length;
-    if (todos > 0) {
-      ctx.warn(
-        `${plural(todos, "text")} of ${loaded.rel} still ${todos === 1 ? "holds" : "hold"} a TODO placeholder, and the reader will see it: write ${todos === 1 ? "it" : "them"} first (\`xpl lint ${loaded.name}\` lists ${todos === 1 ? "it" : "them"})`,
-      );
-    }
     if (bytes > LARGE_BUNDLE_BYTES) {
       ctx.warn(
         `the page is ${formatBytes(bytes)}: a page this large opens slowly and is hard to send${collected.choice === "referenced" ? "" : "; --files referenced embeds only the files the explainer points at"}`,
@@ -283,6 +300,8 @@ export const bundleCommand: CommandSpec = {
 
     if (ctx.json) {
       ctx.emit({
+        readiness: report,
+        exportStatus: draft ? "draft" : "ready",
         path: out,
         absolutePath: target,
         bytes,
@@ -340,7 +359,7 @@ export const bundleCommand: CommandSpec = {
         ? `, ${describeChange(collected, base, describeChangeRange(change))}`
         : "";
     ctx.out(
-      `wrote ${out} (${formatBytes(bytes)}): ${loaded.rel}, ${describeFiles(collected)}${changeText}, ${describeIndex(embeddedIndex)}, mode ${mode}${tour !== undefined ? `, tour ${tour}` : ""}`,
+      `wrote ${out} (${formatBytes(bytes)}): ${loaded.rel}, ${describeFiles(collected)}${changeText}, ${describeIndex(embeddedIndex)}, mode ${mode}${tour !== undefined ? `, tour ${tour}` : ""}${draft ? ", draft preview" : ""}`,
     );
     return 0;
   },
