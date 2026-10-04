@@ -169,6 +169,8 @@ export interface ViewerState {
   save: SaveState;
   /** Running under `xpl view`. */
   serverMode: boolean;
+  /** The live source no longer matches its index; reindex before trusting locations and edges. */
+  sourceWarning: string | undefined;
   /**
    * Said once when opening a box switched the reading tab (a double-click on the Map that opened a flow):
    * which tab the reader is in now and why. Gone at the next move.
@@ -192,7 +194,8 @@ export class ViewerStore {
   private state: ViewerState;
   private readonly listeners = new Set<() => void>();
   private readonly api: ServerApi | undefined;
-  private readonly indexModel: IndexModel;
+  private indexModel: IndexModel;
+  private workspaceRevision = 0;
   private readonly loading = new Set<FilePath>();
   private readonly loadingBase = new Set<FilePath>();
   private readonly pending = new Map<string, Record<string, unknown>>();
@@ -246,6 +249,7 @@ export class ViewerStore {
       dirty: false,
       save: { status: "idle" },
       serverMode: this.api !== undefined,
+      sourceWarning: bundle.sourceWarning,
     };
     if (this.state.perspective !== "explore") this.reading = this.state.perspective;
     if (present) this.present();
@@ -552,14 +556,18 @@ export class ViewerStore {
       return;
     }
     this.loading.add(file);
+    const revision = this.workspaceRevision;
     try {
       const text = await this.api.file(file);
+      if (revision !== this.workspaceRevision) return;
       const { [file]: _dropped, ...errors } = this.state.fileErrors;
       this.set({ files: { ...this.state.files, [file]: text }, fileErrors: errors });
     } catch (error) {
+      if (revision !== this.workspaceRevision) return;
       this.set({ fileErrors: { ...this.state.fileErrors, [file]: messageOf(error) } });
     } finally {
       this.loading.delete(file);
+      if (revision !== this.workspaceRevision) void this.ensureFile(file);
     }
   }
 
@@ -589,14 +597,18 @@ export class ViewerStore {
       return;
     }
     this.loadingBase.add(file);
+    const revision = this.workspaceRevision;
     try {
       const text = await this.api.baseFile(file);
+      if (revision !== this.workspaceRevision) return;
       const { [file]: _dropped, ...errors } = this.state.baseErrors;
       this.set({ baseFiles: { ...this.state.baseFiles, [file]: text }, baseErrors: errors });
     } catch (error) {
+      if (revision !== this.workspaceRevision) return;
       this.set({ baseErrors: { ...this.state.baseErrors, [file]: messageOf(error) } });
     } finally {
       this.loadingBase.delete(file);
+      if (revision !== this.workspaceRevision) void this.ensureBaseFile(file);
     }
   }
 
@@ -1077,7 +1089,8 @@ export class ViewerStore {
 
   /**
    * Under `xpl view`, polls `GET {api}/explainer` and shows what changed on disk without a reload, so
-   * feedback given with "Explain this" comes back on the page once Claude has applied it. Stops for
+   * source edits, new indexes and applied feedback arrive together. Fetches a fresh bundle after the
+   * workspace ETag changes and preserves unsaved edits and reader position. Stops for
    * good on a server that has no such endpoint. Returns the function that stops it.
    */
   watchExplainer(intervalMs = WATCH_INTERVAL_MS): () => void {
@@ -1086,13 +1099,36 @@ export class ViewerStore {
     let etag: string | undefined;
     let busy = false;
     const poll = async () => {
-      if (busy || (typeof document !== "undefined" && document.hidden)) return;
+      if (
+        busy ||
+        this.state.dirty ||
+        this.pending.size > 0 ||
+        this.saving ||
+        (typeof document !== "undefined" && document.hidden)
+      )
+        return;
       busy = true;
       try {
         const fresh = await api.getExplainer(etag);
         if (fresh) {
-          etag = fresh.etag;
-          this.adoptExplainer(fresh.explainer);
+          const bundle = await api.bundle();
+          const files = { ...bundle.files };
+          const fileErrors: Record<string, string> = {};
+          // Include files opened outside the explanation, rather than keeping their old cached text.
+          await Promise.all(
+            Object.keys(this.state.files)
+              .filter((file) => !(file in files))
+              .map(async (file) => {
+                try {
+                  files[file] = await api.file(file);
+                } catch (error) {
+                  fileErrors[file] = messageOf(error);
+                }
+              }),
+          );
+          // Do not acknowledge a skipped update: poll again once the user's edits are saved.
+          if (this.adoptExplainer(bundle.explainer, { ...bundle, files, fileErrors }))
+            etag = fresh.etag;
         }
       } catch (error) {
         if (/^404\b/.test(messageOf(error))) stop();
@@ -1110,9 +1146,17 @@ export class ViewerStore {
    * is: the view, the tour step and the selection, as far as they still exist. Skipped while edits made
    * here are not saved yet: they would be lost, and the next poll after the save brings both.
    */
-  adoptExplainer(explainer: Explainer): boolean {
+  adoptExplainer(
+    explainer: Explainer,
+    workspace?: ViewerBundle & { fileErrors?: Record<string, string> },
+  ): boolean {
     if (this.state.dirty || this.pending.size > 0 || this.saving) return false;
-    if (serializeExplainer(explainer) === serializeExplainer(this.state.explainer)) return false;
+    if (!workspace && serializeExplainer(explainer) === serializeExplainer(this.state.explainer))
+      return false;
+    if (workspace) {
+      this.workspaceRevision++;
+      this.indexModel = asIndexModel(workspace.index);
+    }
     const model = this.modelOf(explainer);
     const { viewId, tour, applied } = this.state;
     const tourNow = tour ? model.tour(tour.tourId) : undefined;
@@ -1125,6 +1169,15 @@ export class ViewerStore {
         tour && tourNow ? { ...tour, step: clampStep(tour.step, tourNow.steps.length) } : undefined,
       applied: applied && model.tour(applied.tourId) ? applied : undefined,
       ...(selection.length !== this.state.selection.length ? { selection } : {}),
+      ...(workspace
+        ? {
+            files: workspace.files,
+            fileErrors: workspace.fileErrors ?? {},
+            baseFiles: workspace.baseFiles ?? {},
+            baseErrors: {},
+            sourceWarning: workspace.sourceWarning,
+          }
+        : {}),
     });
     return true;
   }

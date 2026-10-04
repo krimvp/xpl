@@ -1,14 +1,20 @@
 /**
  * "Save as HTML" (Edit menu): the page as it was loaded, with the explainer edited here put into its
  * `<script id="xpl-data">` instead of the one it came with. Everything else of the page (the viewer, the
- * index, the embedded files) is kept as it is, so the saved file opens like the original with the edits
- * in it: a presenter's edits survive a reload of the saved file.
+ * assets) is preserved. The current index, source files and freshness warning are embedded with the
+ * edits, so a saved live page reflects the workspace snapshot the reader last saw.
  *
  * A copy of the document is taken when the viewer starts (`rememberPage`), before React renders into it:
  * what is saved is the page as loaded, not the rendered one. The data script is found as an element of
  * that copy, never by searching the page's text (the viewer's own code may contain the same words).
  */
-import { BUNDLE_SCRIPT_ID, parseBundle, serializeBundle, type Explainer } from "@xpl/core";
+import {
+  BUNDLE_SCRIPT_ID,
+  parseBundle,
+  serializeBundle,
+  type Explainer,
+  type SymbolIndex,
+} from "@xpl/core";
 import type { ViewerState } from "./store.js";
 
 let page: { doctype: string; root: Element; name: string | undefined } | undefined;
@@ -28,11 +34,14 @@ export function rememberPage(doc: Document = document): void {
 export interface LoadedTexts {
   files?: Readonly<Record<string, string>>;
   baseFiles?: Readonly<Record<string, string>>;
+  /** A refreshed workspace replaces old source/index data, including deleted files and stale warnings. */
+  index?: SymbolIndex;
+  sourceWarning?: string;
 }
 
 /**
  * The text of a data script with `explainer` in place of its explainer. The rest of the bundle (index,
- * files, base files, mode, tour) is kept, with the texts the page loaded since added to it; `server` is
+ * mode and tour) is kept. Refreshed workspace data replaces the index and source snapshot; `server` is
  * dropped: a saved file has no server behind it. Undefined when the text is not a bundle.
  */
 export function withExplainer(
@@ -43,12 +52,17 @@ export function withExplainer(
   try {
     const { server: _server, ...rest } = parseBundle(text);
     void _server;
-    const files = { ...rest.files, ...loaded.files };
-    const baseFiles = { ...rest.baseFiles, ...loaded.baseFiles };
+    const files = loaded.index ? { ...loaded.files } : { ...rest.files, ...loaded.files };
+    const baseFiles = loaded.index
+      ? { ...loaded.baseFiles }
+      : { ...rest.baseFiles, ...loaded.baseFiles };
     return serializeBundle(
       {
         ...rest,
         explainer,
+        ...(loaded.index
+          ? { index: loaded.index, sourceWarning: loaded.sourceWarning, baseFiles }
+          : {}),
         files,
         ...(Object.keys(baseFiles).length > 0 ? { baseFiles } : {}),
       },
@@ -73,7 +87,8 @@ export function canSaveHtml(): boolean {
  * from `xpl view` fetches files when they are opened: the saved copy keeps the ones that were).
  */
 export function savedPage(
-  state: Pick<ViewerState, "explainer"> & Partial<Pick<ViewerState, "files" | "baseFiles">>,
+  state: Pick<ViewerState, "explainer"> &
+    Partial<Pick<ViewerState, "files" | "baseFiles" | "model" | "sourceWarning">>,
 ): string {
   if (!page) return "";
   const root = page.root.cloneNode(true) as Element;
@@ -83,6 +98,9 @@ export function savedPage(
     withExplainer(script.textContent ?? "", state.explainer, {
       ...(state.files ? { files: state.files } : {}),
       ...(state.baseFiles ? { baseFiles: state.baseFiles } : {}),
+      ...(state.model
+        ? { index: state.model.index.index, sourceWarning: state.sourceWarning }
+        : {}),
     });
   if (script && text !== undefined) script.textContent = text;
   return page.doctype + root.outerHTML;

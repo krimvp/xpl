@@ -138,7 +138,8 @@ export const bundleCommand: CommandSpec = {
     "(the summary says how many the selection had left out), and so is the code before the change of every modified,",
     "renamed or deleted file (`baseFiles`, read from git), so the reader can compare before and after.",
     "Every anchor is re-resolved against the index and the code first, so the page highlights where the code is",
-    "now (an anchor whose text moved gets its new lines). When some anchors drifted (their code changed) or are",
+    "now. A stale index is refused even with --allow-drift: run `xpl index`, then `xpl resolve --write` first.",
+    "An anchor whose text moved gets its new lines. When some anchors drifted (their code changed) or are",
     "missing (their code is gone), the command refuses: the page would point at the wrong code. Run",
     "`xpl resolve <explainer> --write` and re-explain what it lists. --allow-drift writes the page anyway; it warns,",
     "and the page tells the reader which parts may be out of date.",
@@ -206,7 +207,18 @@ export const bundleCommand: CommandSpec = {
     const mode = modeOption ?? (tour !== undefined ? "present" : "explore");
 
     const html = readViewerHtml(ctx.env);
-    const ws = await openWorkspace(ctx, { explainer: loaded });
+    const ws = await openWorkspace(ctx, {
+      explainer: loaded,
+      deferStaleWarning: true,
+      requireFreshIndex: true,
+    });
+    if (ws.stale) {
+      throw new CliError(
+        `${ws.stale.message} Refusing to export source with an outdated index; --allow-drift only permits drift against a current index.`,
+        1,
+        { stale: ws.stale.head },
+      );
+    }
     const { explainer, drift } = freshAnchors(loaded.explainer, ws.model, ws.texts);
     const stale = describeDrift(drift);
     if (stale !== "") {

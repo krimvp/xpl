@@ -29,7 +29,8 @@
  * header (loopback binds), and requires an application/json body and a same-origin Origin for PUT/POST.
  */
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
+import { join } from "node:path";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import {
@@ -51,6 +52,7 @@ import {
   explainerName,
   loadIndexFile,
   readExplainerFile,
+  stalenessOf,
   type LoadedExplainer,
 } from "./repo.js";
 
@@ -174,14 +176,36 @@ export async function startViewServer(options: ViewServerOptions): Promise<ViewS
       explainer,
     };
     const tree = new WorkingTree(env.root);
-    const indexFile = await chooseIndexFile(env, tree, { explainer: loaded });
+    // A live workspace follows a newly generated index; an explicit --index still wins.
+    const indexFile = await chooseIndexFile(env, tree, { skipExplainerIndex: true });
     const { index, model } = loadIndexFile(indexFile);
-    return { loaded, tree, index, model };
+    return { loaded, tree, indexFile, index, model };
   }
 
   /** The explainer with its anchors re-resolved against the index and the working tree, as `xpl bundle` does. */
   function freshExplainer(state: Awaited<ReturnType<typeof loadState>>) {
     return freshAnchors(state.loaded.explainer, state.model, state.tree.texts).explainer;
+  }
+
+  /** Cheap cache identity for indexed source and the index, even for files without stored anchors. */
+  function sourceFingerprint(state: Awaited<ReturnType<typeof loadState>>): string {
+    const hash = createHash("sha1");
+    for (const path of [
+      state.indexFile,
+      env.root,
+      ...state.model.directories.map((dir) => join(env.root, dir)),
+      ...state.index.files.map((file) => join(env.root, file.path)),
+    ]) {
+      hash.update(path);
+      try {
+        const stat = statSync(path, { bigint: true });
+        hash.update(`${stat.mtimeNs}:${stat.ctimeNs}:${stat.size}:${stat.ino}`);
+      } catch {
+        hash.update("missing");
+      }
+      hash.update("\0");
+    }
+    return hash.digest("hex");
   }
 
   async function bundleOf() {
@@ -199,14 +223,18 @@ export async function startViewServer(options: ViewServerOptions): Promise<ViewS
     });
     // the code before the change: only the changed files, so it is small enough to send whole
     const base = collectBaseFiles(explainer, state.tree.texts);
-    return makeBundle({
-      explainer,
-      index: state.index,
-      files: collected.files,
-      ...(base !== undefined ? { baseFiles: base.files } : {}),
-      mode: "explore",
-      server: { api: API },
-    });
+    const stale = await stalenessOf(env, state.tree, state.index, state.indexFile, state.loaded);
+    return {
+      ...makeBundle({
+        explainer,
+        index: state.index,
+        files: collected.files,
+        ...(base !== undefined ? { baseFiles: base.files } : {}),
+        mode: "explore",
+        server: { api: API },
+      }),
+      ...(stale ? { sourceWarning: stale.message } : {}),
+    };
   }
 
   // View edits and request appends run one at a time: each is a read-modify-write of a file.
@@ -250,16 +278,17 @@ export async function startViewServer(options: ViewServerOptions): Promise<ViewS
     }
     if (pathname === `${API}/explainer`) {
       allow("GET", "HEAD");
-      const text = readFileSync(explainerPath, "utf8");
-      const etag = `"${createHash("sha1").update(text).digest("hex")}"`;
+      const state = await loadState();
+      const fresh = freshExplainer(state);
+      const text = JSON.stringify(fresh, null, 2);
+      const etag = `"${createHash("sha1").update(text).update(sourceFingerprint(state)).digest("hex")}"`;
       if (req.headers["if-none-match"] === etag) {
         res.writeHead(304, { ETag: etag, "Cache-Control": "no-store" });
         res.end();
         return;
       }
       // what the page shows: the anchors re-resolved, like the bundle (a stale cache would undo that)
-      const fresh = freshExplainer(await loadState());
-      send(req, res, 200, JSON.stringify(fresh, null, 2), "application/json; charset=utf-8", {
+      send(req, res, 200, text, "application/json; charset=utf-8", {
         ETag: etag,
       });
       return;

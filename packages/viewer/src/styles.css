@@ -281,8 +281,12 @@ code {
 }
 
 /* trust: the drift warning under the header takes a row of its own when it is there. */
-.app:has(> .drift-banner) {
+.app:has(> .workspace-warnings:not(:empty)) {
   grid-template-rows: auto auto minmax(0, 1fr);
+}
+
+.workspace-warnings:empty {
+  display: none;
 }
 
 .drift-banner {

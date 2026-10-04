@@ -138,7 +138,7 @@ const WANT: Record<"any" | "call" | "type" | "write" | "read", Want> = {
     s.kind !== "enum" &&
     s.kind !== "key",
   // Variables and fields are read. A function or method used as a value (a callback, a Go method value, a
-  // Python property) is too, and becomes a call: it runs when the value is called. A class or other type used
+  // Python property) is too, without inventing an invocation. A class or other type used
   // as a value (`isinstance(x, C)`, `raise Error`, a class passed on) becomes a type-ref, as in precise mode.
   read: (s) =>
     s.kind === "variable" ||
@@ -312,8 +312,10 @@ class Resolver {
 
   private add(ctx: Ctx, to: SymbolId, kind: Reference["kind"], span: Span): void {
     const from = ctx.from?.id ?? moduleScopeId(ctx.file);
-    // a symbol naming itself is no reference, unless it calls itself (recursion)
-    if (from === to && kind !== "call") return;
+    // Preserve function values as reads, including `return f` inside f. Only self-calls prove recursion.
+    const functionValue =
+      kind === "read" && (ctx.from?.kind === "function" || ctx.from?.kind === "method");
+    if (from === to && kind !== "call" && !functionValue) return;
     const key = `${from}\0${to}\0${kind}\0${span.startLine}:${span.startCol}-${span.endLine}:${span.endCol}`;
     if (this.seenRefs.has(key)) return;
     this.seenRefs.add(key);
@@ -971,13 +973,13 @@ class Resolver {
       const owner = this.qualifiedValue(site.qualifier, ctx, 0);
       if (owner.k === "type" && owner.sym.kind === "enum") target = owner.sym;
     }
-    // Re-export chains look names up without regard to their kind (`from .app import Flask as Flask` finds the
-    // class): a read only ever points at a variable, or at a function used as a value (then it is a call).
+    // A function used as a value is a read, not an invocation. Keeping that distinction prevents
+    // callback registration and returning a function from inventing call paths or recursion.
+    // Re-export chains can also resolve a class, which remains a type reference here.
     let kind = site.kind;
     if (target && site.kind === "read" && target.kind !== "variable") {
-      if (target.kind === "function" || target.kind === "method") kind = "call";
-      else if (isTypeLike(target) && target.kind !== "other") kind = "type-ref";
-      else target = undefined;
+      if (isTypeLike(target) && target.kind !== "other") kind = "type-ref";
+      else if (target.kind !== "function" && target.kind !== "method") target = undefined;
     }
     if (target) this.add(ctx, target.id, kind, site.site);
   }

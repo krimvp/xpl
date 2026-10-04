@@ -34,6 +34,31 @@ interface LintJson {
   findings: LintFinding[];
 }
 
+describe("draft audience and question", () => {
+  it("records the reader and question in the patch without writing the explainer", async () => {
+    const dir = await indexedFixture();
+    await xpl(dir, "new", "focused");
+    const before = readJson(dir, ".explainer/focused.explainer.json");
+    const result = await xplJson<DraftJson>(
+      dir,
+      "draft",
+      "repo",
+      "focused",
+      "--audience",
+      "New maintainers",
+      "--question",
+      "How are jobs retried?",
+    );
+    expect(result.code).toBe(0);
+    expect(result.json.patch.scope).toEqual({ audience: "New maintainers" });
+    expect(
+      result.json.patch.views!.every((v) => v.scope?.question === "How are jobs retried?"),
+    ).toBe(true);
+    expect(result.json.patch.tours![0]!.summary).toContain("How are jobs retried?");
+    expect(readJson(dir, ".explainer/focused.explainer.json")).toEqual(before);
+  });
+});
+
 /** Runs a draft into a file, applies it, validates, and lints; returns the patch and the lint result. */
 async function draftApplyCheck(
   dir: string,
@@ -384,7 +409,8 @@ describe("xpl draft change", () => {
       ]),
     );
     const byId = new Map(patch.nodes!.map((n) => [n.id, n]));
-    expect(byId.get("sym:runner.py#jitter")!.summary).toMatch(/^New: TODO: /);
+    // A mixed replacement hunk cannot prove a declaration was absent at base.
+    expect(byId.get("sym:runner.py#jitter")!.summary).toMatch(/^Changed: TODO: /);
     expect(byId.get("sym:runner.py#backoff")!.summary).toMatch(/^Changed: TODO: /);
     expect(byId.get("sym:main.py#main")!.summary).toMatch(/^Unchanged: TODO: /);
     expect(byId.get("sym:main.py#main")!.summary).toContain("calls `Runner.dispatch`");

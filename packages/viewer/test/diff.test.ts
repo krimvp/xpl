@@ -107,7 +107,7 @@ describe("the change on the map", () => {
   const change = (files: ChangedFile[]): ChangeRecord => ({ base: BASE, head: HEAD, files });
   const model = { symbol: (id: string) => index.symbols.find((s) => s.id === id) };
 
-  it("a symbol is changed when the change touches some of its lines, new when all of them", () => {
+  it("a symbol is changed when touched or entirely replaced, new only for pure insertions", () => {
     const record = change([
       modified([
         { oldStart: 12, oldLines: 1, newStart: 12, newLines: 1 },
@@ -122,6 +122,10 @@ describe("the change on the map", () => {
     expect(changeStatus("sym:src/b.ts#B.go", model, record)).toBeUndefined();
     expect(changeStatus("file:src/b.ts", model, record)).toBeUndefined();
     expect(changeStatus("grp:core", model, record)).toBeUndefined();
+    const replacement = change([
+      modified([{ oldStart: 5, oldLines: 16, newStart: 5, newLines: 16 }]),
+    ]);
+    expect(changeStatus("sym:src/a.ts#A.run", model, replacement)).toBe("changed");
   });
 
   it("a group or directory is changed when a file it covers is; files and symbols keep their own status", () => {

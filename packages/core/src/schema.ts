@@ -196,6 +196,7 @@ export interface Reference {
   from: SymbolId;
   /** (amended) Referenced symbol, or a module scope ("<file>#") for whole-module imports. */
   to: SymbolId;
+  /** `read` includes function values/callback registration; only an invocation is a `call`. */
   kind: "call" | "import" | "extends" | "implements" | "type-ref" | "read" | "write";
   site: Range;
   /**

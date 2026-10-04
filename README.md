@@ -16,8 +16,13 @@ The page opens on a guide: a short summary, then the steps, each with a picture 
 
 Needs Node 22.12 or newer.
 
+XPL helps an author publish a focused explanation of code. Choose a reader and a question before
+drafting. Readers can check the linked source and tests; a valid anchor checks a location and
+freshness, while the author remains responsible for the explanation's claims and omitted behavior.
+
 ```sh
 npm install && npm run build
+node packages/cli/dist/xpl.mjs --help            # CLI works independently of Claude Code
 mkdir -p ~/.claude/skills && ln -s "$PWD/skill/code-explainer" ~/.claude/skills/code-explainer
 alias xpl="$HOME/.claude/skills/code-explainer/bin/xpl"   # the CLI, for your own use
 ```
@@ -38,6 +43,12 @@ queued for Claude). Other things to ask for: `explain this repo`, `explain chang
 branch), `expand <node>`, `make a tour` (Present mode: arrow keys step through it). More in
 [skill/code-explainer/README.md](skill/code-explainer/README.md).
 
+In the viewer, Guide tells the story, Map shows relationships, Flow follows steps, and Code opens
+source. Present plays a tour with arrow-key navigation. "Explain this" queues feedback; run
+`/code-explainer feedback` in Claude Code to process it. Applied explanations, source changes and
+new indexes refresh in a live viewer; a saved HTML page stays at its exported version. Unsaved edits
+postpone live refresh. Reindex changed code to restore reliable source locations and references.
+
 No Claude at hand? Every fixture ships an explainer:
 
 ```sh
@@ -56,9 +67,9 @@ xpl outline --depth 2                           # dirs, files, symbols: exact id
 xpl show src/runner.ts#Runner.dispatch --refs   # code with the 0-based offsets anchors use, and its calls
 xpl refs src/queue.ts#Queue.requeue --in        # who calls it (hops through interfaces)
 xpl new myrepo --title "My repo"                # .explainer/myrepo.explainer.json, bound to the index
-xpl draft repo myrepo -o /tmp/draft.json        # a patch skeleton from the index; you write the TODO text
-xpl lint myrepo --patch patch.json              # check the reader text as it would be after the patch
-xpl apply myrepo patch.json                     # check a patch against the index, then merge it: all or nothing
+xpl draft repo myrepo --audience "New maintainers" --question "How does this project work?" -o /tmp/draft.json
+xpl lint myrepo --patch /tmp/draft.json          # write each TODO and check the reader text
+xpl apply myrepo /tmp/draft.json                 # check and merge the patch: all or nothing
 xpl validate myrepo                             # every id and anchor still resolves?
 xpl lint myrepo                                 # plain-language, tour and reader checks (exit 1 on any; --warn-only)
 xpl view myrepo                                 # http://127.0.0.1:4747 (falls back to a free port)
@@ -69,6 +80,18 @@ xpl bundle myrepo -o myrepo.html                # one self-contained HTML file (
 explaining), `xpl change` and `xpl draft change|path` (below) complete the set:
 [skill/code-explainer/reference/cli.md](skill/code-explainer/reference/cli.md).
 The format of `patch.json`: [skill/code-explainer/reference/patch-format.md](skill/code-explainer/reference/patch-format.md).
+
+Drafts are provisional. Import lines suggest dependencies and architecture roles; review the primary
+users and entry points. Path drafts select direct call sites in source order and list capped or
+collapsed targets. Check conditions, loops and callback execution before describing a runtime flow.
+In heuristic indexes, function values and callback registration are `read` references; invocation is a `call`. Reads are
+available through `xpl refs` and the Map edge filters without creating recursion or execution steps.
+
+Strict validation and export require a current index, even with `XPL_SKIP_STALE_CHECK=1`.
+After changing code, run `xpl index`, `xpl resolve myrepo --write`, review the drift, and rebuild
+the affected explanations before validating and bundling. `validate --lenient` supports repair work;
+`bundle --allow-drift` permits unresolved anchors against a current index, with a visible warning.
+Generated XPL HTML pages are excluded from indexing, so exporting inside a repo does not stale its index.
 
 ### Explaining a change
 

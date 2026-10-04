@@ -30,6 +30,8 @@ export interface ViewerBundle {
   tour?: string;
   /** Set by `xpl view`: base URL of the local API (e.g. "/api"). Absent in a static bundle. */
   server?: { api: string };
+  /** Live workspace warning when source and index differ. Never implies prose was verified. */
+  sourceWarning?: string;
 }
 
 export interface SerializeOptions {

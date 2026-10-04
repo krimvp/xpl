@@ -423,6 +423,7 @@ describe("read references: heuristic resolution", () => {
       }),
     ).toEqual([
       "a.ts#local -> config.ts#LIMIT (read)", // the initialiser of a variable is inside its symbol
+      "a.ts#f -> config.ts#fn (read)",
       "a.ts#f -> config.ts#LIMIT (read)",
       "a.ts#f -> config.ts#counter (read)",
       "a.ts#f -> a.ts#local (read)",
@@ -461,7 +462,7 @@ describe("read references: heuristic resolution", () => {
     ]);
   });
 
-  it("only variables are read: not functions or methods used as values, classes, enums, and never a guessed member", async () => {
+  it("function and method values are reads; classes and enums remain type references; unknown members are not guessed", async () => {
     expect(
       await refs({
         "a.ts": src(
@@ -480,10 +481,16 @@ describe("read references: heuristic resolution", () => {
           "}",
         ),
       }),
-    ).toEqual(["a.ts#f -> a.ts#value (read)", "a.ts#f -> a.ts#Klass.field (read)"]);
+    ).toEqual([
+      "a.ts#f -> a.ts#helper (read)",
+      "a.ts#f -> a.ts#Klass.method (read)",
+      "a.ts#f -> a.ts#Klass.handler (read)",
+      "a.ts#f -> a.ts#value (read)",
+      "a.ts#f -> a.ts#Klass.field (read)",
+    ]);
   });
 
-  it("re-exported classes and functions used as values are not reads; re-exported variables are", async () => {
+  it("re-exported function values and variables are reads; classes remain type references", async () => {
     expect(
       await refs({
         "lib/index.ts": src(
@@ -502,7 +509,9 @@ describe("read references: heuristic resolution", () => {
       }),
     ).toEqual([
       "use.ts#all -> lib/consts.ts#LIMIT (read)",
+      "use.ts#all -> lib/fn.ts#helper (read)",
       "use.ts#all -> lib/klass.ts#Klass.shared (read)",
+      "use.ts#all -> lib/fn.ts#helper (read)",
       "use.ts#all -> lib/consts.ts#LIMIT (read)",
     ]);
   });

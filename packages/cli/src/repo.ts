@@ -178,6 +178,8 @@ export interface Workspace {
 }
 
 export interface OpenOptions {
+  /** Strict validation/export must check even when XPL_SKIP_STALE_CHECK is set. */
+  requireFreshIndex?: boolean;
   /** For explainer commands: prefer the explainer's own index. */
   explainer?: LoadedExplainer;
   /** `xpl resolve`: ignore the explainer's own index (it is the old one by definition). */
@@ -300,7 +302,10 @@ export async function openWorkspace(env: RepoEnv, opts: OpenOptions = {}): Promi
   const { index, model } = loadIndexFile(indexFile);
   // XPL_SKIP_STALE_CHECK=1: skip hashing the working tree (it costs about a second per 5000 files).
   let stale: Staleness | undefined;
-  if (!opts.skipFreshnessCheck && !envFlag(env.env.XPL_SKIP_STALE_CHECK)) {
+  if (
+    opts.requireFreshIndex ||
+    (!opts.skipFreshnessCheck && !envFlag(env.env.XPL_SKIP_STALE_CHECK))
+  ) {
     stale = await stalenessOf(env, tree, index, indexFile, opts.explainer);
     if (stale && !opts.deferStaleWarning) env.warn(stale.message);
   }

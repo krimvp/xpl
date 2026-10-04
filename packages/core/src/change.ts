@@ -13,6 +13,7 @@ import type {
   ElementId,
   FilePath,
   IndexedSymbol,
+  Range,
   Reference,
   SymbolId,
 } from "./schema.js";
@@ -305,13 +306,42 @@ function hunkLines(hunks: readonly ChangeHunk[]): { lines: Set<number>; deletion
 }
 
 /**
+ * Classify a head range conservatively from the diff. Only pure insertions prove that a declaration
+ * is new. A replacement may rewrite an existing one-line field/function, even when every head line
+ * is added; without a base symbol index it must remain changed.
+ */
+export function changeStatusOfRange(
+  file: ChangedFile,
+  range: Range,
+): "new" | "changed" | undefined {
+  if (file.status === "deleted") return undefined;
+  if (file.status === "added") return "new";
+  const added = new Set<number>();
+  let touched = false;
+  for (const hunk of Array.isArray(file.hunks) ? file.hunks : []) {
+    if (hunk.newLines === 0) {
+      if (hunk.newStart >= range.startLine && hunk.newStart < range.endLine) touched = true;
+      continue;
+    }
+    const from = Math.max(range.startLine, hunk.newStart);
+    const to = Math.min(range.endLine, hunk.newStart + hunk.newLines - 1);
+    if (from > to) continue;
+    touched = true;
+    if (hunk.oldLines > 0) return "changed";
+    for (let line = from; line <= to; line++) added.add(line);
+  }
+  if (added.size === range.endLine - range.startLine + 1) return "new";
+  return touched ? "changed" : undefined;
+}
+
+/**
  * The analysis of a change against the index of its head (ARCHITECTURE.md, `xpl change`):
  *
  * - files with their +/- line counts;
  * - changed symbols: for each line the change added or edited (and each place where it only removed lines), the
  *   innermost index symbol around it; a function nested in a function counts as part of the outer one. A class
  *   counts only for lines of its own (not for blank lines or comments between its methods). A symbol all of whose
- *   lines were added is `new`;
+ *   lines were purely inserted is `new`; replacement hunks are conservatively `changed`;
  * - for each changed symbol outside tests: its direct callers outside test files (references of kind `call`; for a
  *   variable or key the reads and writes; for a type its uses), the code inside it excluded; for a constructor
  *   (`__init__`, `constructor`) the calls of its class too (`via: "class"`); for a method reached through an
@@ -330,7 +360,9 @@ export function analyzeChange(
   const files: ChangedFileSummary[] = [];
   /** Changed symbols of every file, with the lines that touch them. */
   const touched = new Map<SymbolId, { sym: IndexedSymbol; lines: Set<number> }>();
-  const allAdded = new Map<FilePath, Set<number>>();
+  const changedFiles = new Map(
+    (Array.isArray(change.files) ? change.files : []).map((file) => [file.path, file]),
+  );
 
   for (const file of Array.isArray(change.files) ? change.files : []) {
     const hunks = Array.isArray(file.hunks) ? file.hunks : [];
@@ -358,7 +390,6 @@ export function analyzeChange(
     const quiet = (line: number): boolean =>
       text !== undefined && blankOrComment(text[line - 1] ?? "", language);
     const { lines, deletions } = hunkLines(hunks);
-    allAdded.set(file.path, lines);
     const touch = (inner: IndexedSymbol, line: number) => {
       // a function nested in a function is part of it: nothing outside can call it
       let sym = inner;
@@ -393,12 +424,8 @@ export function analyzeChange(
   }
 
   const statusOf = (sym: IndexedSymbol): "new" | "changed" => {
-    const added = allAdded.get(sym.file);
-    if (!added) return "changed";
-    for (let line = sym.range.startLine; line <= sym.range.endLine; line++) {
-      if (!added.has(line)) return "changed";
-    }
-    return "new";
+    const file = changedFiles.get(sym.file);
+    return file ? (changeStatusOfRange(file, sym.range) ?? "changed") : "changed";
   };
   const changedStatus = new Map<SymbolId, "new" | "changed">();
   for (const { sym } of touched.values()) changedStatus.set(sym.id, statusOf(sym));

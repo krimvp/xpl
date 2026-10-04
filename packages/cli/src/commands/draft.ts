@@ -138,9 +138,11 @@ export const draftCommand: CommandSpec = {
   usage: "xpl draft change|repo|path <explainer> [<entry id> ...] [-o <file>]",
   summary: "Print a patch skeleton for a change, a repo or a path; you write the TODO text",
   details: [
-    "Builds a patch from the index (and the change record) with no LLM: the structure the index proves, with",
+    "Builds a provisional patch from indexed references and the change record, with",
     "`TODO: <what to write>` in every text a person must write. `xpl apply` accepts it as it is; `xpl lint` reports",
     "each TODO left (`todo-left`). Write the text, check it against the code, then apply.",
+    "Use --audience and --question to focus the draft. Imports suggest architecture; they do not prove",
+    "who uses the project. Path sequences list selected call sites, not every runtime branch or invocation.",
     "  change <explainer>        needs the change record (`xpl change <explainer> <base>..<head>` first). A map of",
     `                            the change (changed symbols, or their files when many; direct callers outside`,
     `                            tests; one group box for the tests), and a tour in review order: what changes for`,
@@ -168,6 +170,12 @@ export const draftCommand: CommandSpec = {
   ],
   options: {
     out: { type: "string", short: "o", arg: "<file>", desc: "Write the patch to a file" },
+    audience: { type: "string", arg: "<reader>", desc: "Who this explanation is for" },
+    question: {
+      type: "string",
+      arg: "<question>",
+      desc: "The question the explanation should answer",
+    },
   },
   positionals: [
     { name: "change|repo|path" },
@@ -223,6 +231,19 @@ export const draftCommand: CommandSpec = {
             : draftPath(input, entries);
     } catch (error) {
       throw new CliError(`nothing to draft: ${errorMessage(error)}`);
+    }
+    const audience = args.str("audience")?.trim();
+    const question = args.str("question")?.trim();
+    if (audience === "" || question === "")
+      throw new UsageError("--audience and --question must contain text");
+    if (audience) draft.patch.scope = { ...draft.patch.scope, audience };
+    if (question) {
+      for (const view of draft.patch.views ?? []) {
+        if (view.scope) view.scope.question = question;
+      }
+      for (const tour of draft.patch.tours ?? []) {
+        tour.summary = `TODO: answer ${JSON.stringify(question)}${audience ? ` for ${audience}` : ""}. State the scope and excluded behavior.`;
+      }
     }
 
     // The draft must apply as it is: check it the way `xpl apply` does, in memory.

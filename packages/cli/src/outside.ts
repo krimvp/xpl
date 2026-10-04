@@ -482,6 +482,17 @@ export function findOutsideSystems(
       if (own.some((name) => within(module, name, family))) continue;
       const kind = lookup(module, family);
       if (!kind) continue;
+      // A CLI dependency alone can be a helper in a framework/library. Require a command definition
+      // or parser entry point before suggesting a terminal user; the resulting role is still a hint.
+      if (
+        kind.slug === "user" &&
+        !lines.some((source) =>
+          /(?:\b(?:ArgumentParser|Typer|Fire)\s*\(|@(?:[\w.]+\.)?(?:command|group)\b|\.(?:parse_args|parseArgs|Execute|execute|command|add_command)\s*\(|\bcobra\.Command\s*\{)/.test(
+            source,
+          ),
+        )
+      )
+        continue;
       let system = found.get(kind.slug);
       if (!system) {
         system = { ...kind, sites: [], files: new Set() };
@@ -559,6 +570,9 @@ export function isLibrary(
   const setup = text("setup.py");
   const gomod = text("go.mod");
   if ([pkg, pyproject, setup, gomod].every((t) => t === undefined)) return false;
+  // Frameworks and libraries can ship secondary CLI tools. Their declared purpose takes precedence
+  // over those entry points when drafting the primary application-facing relationship.
+  if (declaredLibrary(model, texts)) return true;
   if (pkg !== undefined) {
     try {
       const json = JSON.parse(pkg) as { bin?: unknown; scripts?: { start?: unknown } };
@@ -578,6 +592,17 @@ export function isLibrary(
     if (go && head.some((line) => /^package main\b/.test(line))) return false;
   }
   return true;
+}
+
+/** A declared primary purpose can coexist with a secondary command-line tool. */
+export function declaredLibrary(model: IndexModel, texts: TextCache): boolean {
+  const readme = model.dirChildren("").files.find((file) => /^readme(?:\.[a-z]+)?$/i.test(file));
+  return Boolean(
+    readme &&
+    /\b(?:is|a|an)\s+(?:(?:small|simple|lightweight|web|application|WSGI|HTTP|Python|TypeScript|JavaScript|Go|client|routing)\s+){0,6}(?:library|framework)\b/i.test(
+      (texts.text(readme) ?? "").slice(0, 2000),
+    ),
+  );
 }
 
 /**

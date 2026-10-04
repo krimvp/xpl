@@ -60,6 +60,14 @@ describe("isLockfile", () => {
 });
 
 describe("discoverFiles in a git work tree", () => {
+  it("excludes exported XPL pages while keeping ordinary HTML source", async () => {
+    const dir = makeRepo({
+      "index.html": "<html><head><title>Application</title></head></html>",
+      "walkthrough.html":
+        '<html><script id="xpl-data" type="application/json">{"schema":"code-explainer/bundle@0","files":{}}</script></html>',
+    });
+    expect(await paths(dir)).toEqual(["index.html"]);
+  });
   it("lists tracked and untracked files, minus ignored ones, sorted and POSIX", async () => {
     const dir = makeRepo({
       ".gitignore": "ignored.ts\nbuild-output/\n",

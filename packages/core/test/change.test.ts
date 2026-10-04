@@ -181,6 +181,41 @@ describe("change record", () => {
 // ─── Analysis ───────────────────────────────────────────────────────────────────────────────────
 
 describe("analyzeChange", () => {
+  it("a rewritten one-line field or function is changed, while a pure insertion is new", () => {
+    const w = makeWorld({
+      files: [
+        {
+          path: "a.ts",
+          text: "readonly signal: AbortSignal | undefined;\nfunction f() { return 2; }\nfunction added() {}",
+        },
+      ],
+      symbols: [
+        { id: "a.ts#signal", kind: "variable", start: 1, end: 1 },
+        { id: "a.ts#f", kind: "function", start: 2, end: 2 },
+        { id: "a.ts#added", kind: "function", start: 3, end: 3 },
+      ],
+    });
+    const change: ChangeRecord = {
+      base: BASE,
+      head: HEAD,
+      files: [
+        {
+          path: "a.ts",
+          status: "modified",
+          hunks: [
+            { oldStart: 1, oldLines: 1, newStart: 1, newLines: 1 },
+            { oldStart: 2, oldLines: 1, newStart: 2, newLines: 1 },
+            { oldStart: 2, oldLines: 0, newStart: 3, newLines: 1 },
+          ],
+        },
+      ],
+    };
+    expect(analyzeChange(change, w.model, w.getText).symbols.map((s) => [s.id, s.status])).toEqual([
+      ["sym:a.ts#signal", "changed"],
+      ["sym:a.ts#f", "changed"],
+      ["sym:a.ts#added", "new"],
+    ]);
+  });
   const w = world();
   const analysis = analyzeChange(CHANGE, w.model, w.getText);
 

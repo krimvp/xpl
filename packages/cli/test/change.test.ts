@@ -227,7 +227,7 @@ describe("xpl change", () => {
     expect(r.out).toContain(`change demo: ${base.slice(0, 7)}..${head.slice(0, 7)} (5 files`);
     expect(r.out).toContain("M  app.py");
     expect(r.out).toContain("R  tools.py <- util.py");
-    expect(r.out).toContain("sym:app.py#helper  (function, lines 17-18)  new");
+    expect(r.out).toContain("sym:app.py#helper  (function, lines 17-18)  changed");
     expect(r.out).toContain("sym:app.py#App.handle  (method, lines 11-14)  changed at 12-14");
     expect(r.out).toContain("sym:tests/test_app.py#test_app  (changed, uses its class)");
     expect(r.out).toContain("no test found for 1 changed symbol: sym:new.py#fresh");
@@ -251,7 +251,7 @@ describe("xpl change", () => {
     expect(helper.tests.map((t: any) => t.id)).toEqual(["sym:tests/test_app.py#test_helper"]);
     expect(json.analysis.testSymbols.map((s: any) => [s.id, s.status])).toEqual([
       ["sym:tests/test_app.py#test_app", "changed"],
-      ["sym:tests/test_app.py#test_helper", "new"],
+      ["sym:tests/test_app.py#test_helper", "changed"],
     ]);
     // handle is reached through the instance: the code that builds App is a guess, test files that build it count
     const handle = json.analysis.symbols.find((s) => s.id === "sym:app.py#App.handle");
@@ -363,8 +363,8 @@ describe("base anchors through the CLI", () => {
         },
       ],
     };
-    writeFile(dir, "p.json", JSON.stringify(patch));
-    const applied = await xpl(dir, "apply", "demo", "p.json");
+    writeFile(dir, ".explainer/p.json", JSON.stringify(patch));
+    const applied = await xpl(dir, "apply", "demo", ".explainer/p.json");
     expect(applied.out).toContain("applied");
     expect(applied.code).toBe(0);
     const stored = readJson<Explainer>(dir, ".explainer/demo.explainer.json").concepts[0]!.anchors;
@@ -399,13 +399,13 @@ describe("base anchors through the CLI", () => {
         },
       ],
     });
-    writeFile(other, "p.json", patch);
-    const r = await xpl(other, "apply", "demo", "p.json");
+    writeFile(other, ".explainer/p.json", patch);
+    const r = await xpl(other, "apply", "demo", ".explainer/p.json");
     expect(r.code).toBe(1);
     expect(r.out).toContain("no change record");
     writeFile(
       dir,
-      "q.json",
+      ".explainer/q.json",
       JSON.stringify({
         concepts: [
           {
@@ -416,7 +416,7 @@ describe("base anchors through the CLI", () => {
         ],
       }),
     );
-    const symbol = await xpl(dir, "apply", "demo", "q.json");
+    const symbol = await xpl(dir, "apply", "demo", ".explainer/q.json");
     expect(symbol.code).toBe(1);
     expect(symbol.out).toContain("a base anchor cannot name a symbol");
   });

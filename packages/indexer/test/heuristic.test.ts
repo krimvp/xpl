@@ -215,11 +215,8 @@ describe("imports", () => {
       },
       "call",
     );
-    // (the barrel's own `{ model: tm }` hands its imported `tm` over: a call of that one)
-    expect(r).toEqual([
-      "dom/index.ts#opts -> dom/vmodel.ts#tm (call)",
-      "use.ts#go -> core/vmodel.ts#tm (call)",
-    ]);
+    // The barrel hands its own tm over as a value; only the consumer invokes a function.
+    expect(r).toEqual(["use.ts#go -> core/vmodel.ts#tm (call)"]);
   });
 
   it("uses the import's own position: an import inside a function comes from that function", async () => {
@@ -512,11 +509,27 @@ describe("calls: scope chain and same-file symbols", () => {
         "}",
       ),
     });
-    expect(r.filter((t) => !t.includes("(read)"))).toEqual([
-      "a.ts#use -> a.ts#cb (call)",
-      "a.ts#use -> a.ts#use.inner (call)",
+    expect(r).toEqual([
+      "a.ts#use -> a.ts#cb (read)",
+      "a.ts#use -> a.ts#use.inner (read)",
       "a.ts#use -> a.ts#Box (type-ref)",
     ]);
+  });
+
+  it("returning a function and registering a callback are reads; actual self-invocation is a call", async () => {
+    const r = await refs({
+      "a.ts": src(
+        "export function provide() { return provide; }",
+        "export function handle() { return 'ok'; }",
+        "export function register(router: any) { router.get('/health', handle); }",
+        "export function recursive() { recursive(); }",
+      ),
+    });
+    expect(r).toContain("a.ts#provide -> a.ts#provide (read)");
+    expect(r).toContain("a.ts#register -> a.ts#handle (read)");
+    expect(r).not.toContain("a.ts#provide -> a.ts#provide (call)");
+    expect(r).not.toContain("a.ts#register -> a.ts#handle (call)");
+    expect(r).toContain("a.ts#recursive -> a.ts#recursive (call)");
   });
 
   it("resolves calls to overloaded functions to the implementation", async () => {
@@ -1031,12 +1044,8 @@ describe("qualifier-name fallback and unresolved sites", () => {
       },
       "call",
     );
-    // only `f` handing itself over (`debounce(f)`, `.then(f)`, `setTimeout(f, 1)`): a call of itself, later
-    expect(r).toEqual([
-      "a.ts#f -> a.ts#f (call)",
-      "a.ts#f -> a.ts#f (call)",
-      "a.ts#f -> a.ts#f (call)",
-    ]);
+    // Passing f to an external API is not an invocation or proof of recursion.
+    expect(r).toEqual([]);
   });
 });
 

@@ -14,7 +14,7 @@
 
 **Exit codes:** 0 ok · 1 rejected or failed (bad id, rejected patch, a patch that changed nothing because the user owns everything it touches, `resolve --write` on a stale index, validation errors, `lint` findings, `bundle` with drifted or missing anchors) · 2 usage error.
 **Streams:** results, issue lists and rejections print on stdout (a rejection also exits 1); fatal errors (`error: ...`: unknown id, no index, bad JSON, unreadable file) and `warning:` lines go to stderr, so use `2>&1` to capture both. With `--json` there is one object on stdout, errors included (`{"ok": false, "error": ...}`).
-**Environment:** `XPL_CLI` (launcher: path of an `xpl.mjs` to run instead of the repo's build), `XPL_VIEWER_HTML` (viewer page for `view`/`bundle`), `XPL_SKIP_STALE_CHECK=1` (skip the index-vs-working-tree comparison), `XPL_SCIP_TIMEOUT_MS` (time limit of each SCIP indexer, default 10 minutes), `XPL_WASM_DIR` (where the tree-sitter `.wasm` files are), `XPL_DEBUG=1` (stack traces).
+**Environment:** `XPL_CLI` (launcher: path of an `xpl.mjs` to run instead of the repo's build), `XPL_VIEWER_HTML` (viewer page for `view`/`bundle`), `XPL_SKIP_STALE_CHECK=1` (skip advisory freshness checks; strict validation and export still check), `XPL_SCIP_TIMEOUT_MS` (time limit of each SCIP indexer, default 10 minutes), `XPL_WASM_DIR` (where the tree-sitter `.wasm` files are), `XPL_DEBUG=1` (stack traces).
 
 **Ids** are accepted loosely: `sym:src/a.ts#A.b`, `src/a.ts#A.b`, `file:src/a.ts`, `src/a.ts`, `dir:src`. The outputs always print the exact `sym:`/`file:`/`dir:` form: paste those into patches.
 
@@ -285,6 +285,10 @@ what to do: the user's edits win over Claude's.
 `--json` then has `ok: false`, `applied: false`, `protectedIds: [...]` and an `error` string (and `protectedIds` is also present on a partial success).
 
 ## `xpl validate <explainer> [--lenient]`
+
+Strict validation requires an index matching the working tree. A stale index is an error even with
+`XPL_SKIP_STALE_CHECK=1`; `--lenient` makes it a repair warning. Run `xpl index`, resolve against the
+new index, and review changed explanations. Anchor checks verify locations and freshness, not prose truth.
 
 Strict by default: ids, references, anchors (must resolve `ok` or `moved`), the evidence rule for `llm` edges. `--lenient` turns drifted/missing anchors and vanished ids into warnings (for inspecting after `resolve --write`). Exit 1 on errors.
 
@@ -583,6 +587,13 @@ The callers and tests come from the index: a call through a variable, a callback
 
 ## `xpl draft change|repo|path <explainer> [<entry id> ...] [-o <file>]`
 
+Add `--audience "New maintainers" --question "How are retries selected?"` to focus the draft.
+The audience is saved in the patch's scope and the question in view scopes and tour summary placeholders.
+Architecture is provisional: verify primary users, entry points and outside systems. Path drafts list
+selected call sites in source order; review conditions, loops and omissions before treating them as an
+execution story. Repeated and capped targets are also named in the first tour step. In heuristic indexes, function values are
+`read` references, not calls or recursion.
+
 Prints a patch skeleton for one of the three scopes, built from the index (and the change record) with no LLM: the structure the index proves, with `TODO: <what to write>` in every text you must write. `xpl apply` accepts the draft as it is. Use it to start an explainer, then write the text and check it against the code.
 
 | Draft                   | Structure                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
@@ -633,6 +644,11 @@ What the draft cannot know, you write: every title, summary and note; the groups
 
 ## `xpl view <explainer> [--port p] [--host h] [--no-open]`
 
+The visible page polls for resolved explanation, source and index changes. A changed ETag refreshes
+the bundle and previously opened files while preserving navigation; unsaved edits postpone adoption.
+A newly generated index is followed unless `--index` pins one. Changed source is shown with a stale-index
+warning until reindexing. Save as HTML carries the refreshed index, loaded source and any warning.
+
 Serves the viewer with live repo access at `http://127.0.0.1:<port>/` (default 4747, else a free port; `--port 0` = any) and tries to open a browser. The explainer is re-read from disk on every request, and the page checks for changes every 2 seconds: what `xpl apply` writes shows up without a reload. Edits in the viewer (layout, expanded nodes, the stubs control, tour steps) are saved as `user` edits; "Explain this" clicks, with what the user typed above the button as the `note`, are appended to `.explainer/requests.json`. Runs until Ctrl-C. It binds to 127.0.0.1; `--host` other than that exposes the source code. The anchors are re-resolved as for `xpl bundle`; drifted or missing anchors do not stop it (it is where you fix them), but it warns, and the page shows the same banner.
 
 ```
@@ -643,6 +659,10 @@ serving .explainer/jobrunner.explainer.json at http://127.0.0.1:34971/  (Ctrl-C 
 API (for scripts): `GET /api/bundle`, `GET /api/explainer` (the explainer with its anchors re-resolved, with an `ETag`; what the page polls), `GET /api/file?path=`, `GET /api/base-file?path=` (the code before the recorded change of a modified, renamed or deleted file), `PUT /api/views/<id>`, `PUT /api/tours/<id>`, `GET|POST /api/requests`.
 
 ## `xpl bundle <explainer> -o out.html [--mode explore|present] [--tour id] [--files referenced|boundary|all] [--boundary-max n] [--embed-index full|pruned] [--allow-drift]`
+
+A stale index is refused, including with `--allow-drift` or `XPL_SKIP_STALE_CHECK=1`. Reindex and resolve
+first. `--allow-drift` only permits drift against a current index. Generated XPL HTML pages are excluded
+from discovery so exports do not feed back into subsequent indexes.
 
 Writes one self-contained HTML file: the viewer, the explainer, the index and source files inline. Works offline and can be shared. `--tour <id>` (`tour:intro` or `intro`) starts that tour and implies `--mode present`.
 

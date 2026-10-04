@@ -326,6 +326,7 @@ describe("Python read references: heuristic resolution", () => {
       }),
     ).toEqual([
       "pkg/run.py#LOCAL -> pkg/config.py#LIMIT (read)",
+      "pkg/run.py#Runner.run -> pkg/config.py#fn (read)",
       "pkg/run.py#Runner.run -> pkg/config.py#LIMIT (read)",
       "pkg/run.py#Runner.run -> pkg/config.py#counter (read)",
       "pkg/run.py#Runner.run -> pkg/model.py#Opts.retries (read)",
@@ -351,7 +352,7 @@ describe("Python read references: heuristic resolution", () => {
     ).toEqual(["a.py#A.m -> a.py#A.declared (read)"]);
   });
 
-  it("functions, classes and methods used as values are not reads", async () => {
+  it("function and method values are reads; classes remain type references", async () => {
     expect(
       await refs({
         "a.py": src(
@@ -364,7 +365,12 @@ describe("Python read references: heuristic resolution", () => {
           "    return [helper, K, k.method, VALUE, k.value]",
         ),
       }),
-    ).toEqual(["a.py#f -> a.py#VALUE (read)", "a.py#f -> a.py#K.value (read)"]);
+    ).toEqual([
+      "a.py#f -> a.py#helper (read)",
+      "a.py#f -> a.py#K.method (read)",
+      "a.py#f -> a.py#VALUE (read)",
+      "a.py#f -> a.py#K.value (read)",
+    ]);
   });
 
   it("the nearest member of a name decides: a property overriding a base class's attribute is not a variable", async () => {
@@ -382,10 +388,13 @@ describe("Python read references: heuristic resolution", () => {
           "        return self.name, self.kind",
         ),
       }),
-    ).toEqual(["a.py#Child.show -> a.py#Base.kind (read)"]);
+    ).toEqual([
+      "a.py#Child.show -> a.py#Child.name (read)",
+      "a.py#Child.show -> a.py#Base.kind (read)",
+    ]);
   });
 
-  it("names re-exported by a package: variables are read, a re-exported class or function used as a value is not", async () => {
+  it("re-exported variables and function values are reads; classes remain type references", async () => {
     expect(
       await refs({
         "pkg/__init__.py": src(
@@ -405,6 +414,7 @@ describe("Python read references: heuristic resolution", () => {
       }),
     ).toEqual([
       "use.py#f -> pkg/globals.py#request (read)",
+      "use.py#f -> pkg/helpers.py#url_for (read)",
       "use.py#f -> pkg/app.py#App.default_config (read)",
       "use.py#f -> pkg/globals.py#request (read)",
     ]);

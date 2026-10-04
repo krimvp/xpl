@@ -9,6 +9,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { codeFocus, isTestFile, type ExplainerModel, type TourStep } from "@xpl/core";
+import { ExplanationInfo } from "./ExplanationInfo.js";
 import { callersOf, changeSummary, type Caller } from "../callers.js";
 import { overrideFocus } from "../derive.js";
 import { changeFiles, changeOf, STATUS_WORDS } from "../diff.js";
@@ -113,6 +114,7 @@ export function Guide({ onReading }: { onReading?: (stepId: string | undefined) 
         <p className="eyebrow">Start here</p>
         <h2>{state.explainer.title}</h2>
         <Audience />
+        <ExplanationInfo />
         <p>Choose a topic below, or open the map to see the parts of the code.</p>
         {state.model.views.map((view) => (
           <section className="guide-section" key={view.id}>
@@ -196,6 +198,7 @@ export function Guide({ onReading }: { onReading?: (stepId: string | undefined) 
             dangerouslySetInnerHTML={{ __html: renderMarkdown(summary) }}
           />
         )}
+        <ExplanationInfo />
         <ChangeFiles />
         {tour.steps.map((step, index) => (
           <GuideSection

@@ -15,6 +15,7 @@
  */
 import {
   changedFile,
+  changeStatusOfRange,
   changeShapeIssues,
   hasBaseVersion,
   isTestFile,
@@ -126,7 +127,7 @@ export type ChangeStatus = "new" | "changed";
 
 /**
  * The change status of a graph node: a file the change added is new, any other changed file is changed; a
- * symbol is new when the change added every line of it, changed when the change added, rewrote or removed lines
+ * symbol is new when the change purely inserted every line of it, changed when it rewrote or removed lines
  * inside it. Other nodes (groups, directories) and unchanged code have none.
  */
 export function changeStatus(
@@ -146,18 +147,7 @@ export function changeStatus(
   if (file.status === "added") return "new";
   const sym = index.symbol(parsed.symbolId);
   if (!sym) return undefined;
-  const { startLine, endLine } = sym.range;
-  const diff = fileDiff(file);
-  let touched = 0;
-  for (let n = startLine; n <= endLine; n++) if (diff.lines.has(n)) touched++;
-  if (touched === endLine - startLine + 1) return "new";
-  if (touched > 0) return "changed";
-  // Lines removed between two lines of the symbol (a pure deletion after line `at`) change it too.
-  return diff.removed.some(
-    (block) => block.place === "after" && block.at >= startLine && block.at < endLine,
-  )
-    ? "changed"
-    : undefined;
+  return changeStatusOfRange(file, sym.range);
 }
 
 /** One row of "Files in this change". */

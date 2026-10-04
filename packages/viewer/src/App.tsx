@@ -122,7 +122,16 @@ function Shell() {
   return (
     <div className="app" data-mode={state.mode}>
       <Header />
-      {state.mode !== "present" && <DriftBanner explainer={state.explainer} />}
+      <div className="workspace-warnings">
+        {state.sourceWarning && (
+          <div className="drift-banner" role="alert" data-testid="source-warning">
+            <p>
+              <strong>Source changed since indexing.</strong> {state.sourceWarning}
+            </p>
+          </div>
+        )}
+        {state.mode !== "present" && <DriftBanner explainer={state.explainer} />}
+      </div>
       {state.mode === "present" ? (
         <PresentMode />
       ) : state.perspective !== "explore" ? (

@@ -1207,3 +1207,20 @@
     max-height: 24vh;
   }
 }
+/* Optional reading guidance stays compact until a reader asks for it. */
+.guide-about {
+  margin: 12px 0 20px;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.guide-about summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.guide-about p {
+  margin: 10px 0 0;
+}

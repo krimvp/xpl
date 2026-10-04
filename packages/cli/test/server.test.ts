@@ -23,6 +23,7 @@ import {
   readJson,
   writeViewerStub,
   xpl,
+  xplJson,
   type Invocation,
 } from "./helpers.js";
 
@@ -821,6 +822,33 @@ describe("xpl view", () => {
     expect(changed.status).toBe(200);
     expect(changed.headers.get("etag")).not.toBe(etag);
     expect(((await changed.json()) as Explainer).concepts[0]!.summary).toBe("Shorter now.");
+  });
+
+  it("invalidates polling for source changes, including unanchored files, and follows a new index", async () => {
+    const dir = cloneDir(demo);
+    const view = await serve(dir);
+    const first = await fetch(`${view.url}/api/explainer`);
+    const etag = first.headers.get("etag")!;
+    editFile(dir, "src/queue.ts", (text) =>
+      text.replace("Date.now() + delayMs", "Date.now() + delayMs + 7"),
+    );
+    const changed = await fetch(`${view.url}/api/explainer`, {
+      headers: { "If-None-Match": etag },
+    });
+    expect(changed.status).toBe(200);
+    const nextEtag = changed.headers.get("etag")!;
+    expect(nextEtag).not.toBe(etag);
+    const stale = parseBundle(await (await fetch(`${view.url}/api/bundle`)).text());
+    expect(stale.sourceWarning).toContain("does not match the working tree");
+    expect(stale.files["src/queue.ts"]).toContain("delayMs + 7");
+    editFile(dir, "src/main.ts", (text) => `${text}\n// source without a stored anchor changed\n`);
+    expect(
+      (await fetch(`${view.url}/api/explainer`, { headers: { "If-None-Match": nextEtag } })).status,
+    ).toBe(200);
+    const indexed = await xplJson<any>(dir, "index", "--precise", "off");
+    const current = parseBundle(await (await fetch(`${view.url}/api/bundle`)).text());
+    expect(current.index.commit).toBe(indexed.json.commit);
+    expect(current.sourceWarning).toBeUndefined();
   });
 
   it("re-resolves the anchors like xpl bundle, and warns about drift but still serves", async () => {

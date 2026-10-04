@@ -290,6 +290,25 @@ describe("the guide's still pictures", () => {
 });
 
 describe("Save as HTML", () => {
+  it("saves the refreshed index and source, drops deleted files, and preserves freshness warnings", () => {
+    const original = makeBundle();
+    const index = structuredClone(original.index);
+    index.commit = "new-index";
+    const text = withExplainer(serializeBundle(original), original.explainer, {
+      index,
+      files: { "src/a.ts": "fresh" },
+      baseFiles: {},
+      sourceWarning: "Reindex source",
+    })!;
+    const saved = parseBundle(text);
+    expect(saved.index.commit).toBe("new-index");
+    expect(saved.files).toEqual({ "src/a.ts": "fresh" });
+    expect(saved.sourceWarning).toBe("Reindex source");
+    const current = parseBundle(
+      withExplainer(text, saved.explainer, { index, files: saved.files })!,
+    );
+    expect(current.sourceWarning).toBeUndefined();
+  });
   it("puts the edited explainer in the data, keeps the rest, and drops the server", () => {
     const bundle = makeBundle({ mode: "present", tour: "tour:demo", server: { api: "/api" } });
     const edited = structuredClone(bundle.explainer);

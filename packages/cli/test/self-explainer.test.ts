@@ -14,6 +14,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { reresolveExplainer, validateExplainer, type Explainer } from "@xpl/core";
 import { buildIndex } from "@xpl/indexer";
+import { lintExplainer } from "../src/lint.js";
 import { WorkingTree } from "../src/repo.js";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
@@ -23,6 +24,10 @@ const FIX = "run `xpl index`, `xpl resolve xpl --write` and re-explain what `xpl
 describe("xpl's own explainer", () => {
   it("has no drifted or missing anchors against the working tree, and validates strictly", async () => {
     const explainer = JSON.parse(readFileSync(EXPLAINER, "utf8")) as Explainer;
+    expect(
+      lintExplainer(explainer).findings,
+      "Keep the introductory tours concise and the prose specific",
+    ).toEqual([]);
     const { index } = await buildIndex({ root: ROOT, precise: "off" });
     const texts = new WorkingTree(ROOT).texts;
 

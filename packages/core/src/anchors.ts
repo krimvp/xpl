@@ -183,15 +183,15 @@ function isSpan(span: unknown): span is { from: number; to: number } {
  * Resolves a stored anchor against the index and the current text (section 4.2):
  *
  * 1. File or symbol not in the index: `missing`.
- * 2. Region = the symbol's range or the whole file. Without a span the region hash (from the index)
+ * 2. Region = the symbol's range or the whole file. Without a span the current text's hash
  *    is compared with `anchor.hash`: equal is `ok` (or `moved` when the region is not where
  *    `anchor.resolved.range` says), different is `drifted`.
  * 3. With a span, the lines at `region start + span` are hashed. Equal: `ok`/`moved`. Otherwise the
  *    region is searched for exact text in windows of the same length, nearest to the expected position first. A hit
  *    is `moved` (new `range` and `span`); no hit is `drifted` at the expected range.
  *
- * `getText` is only needed for span anchors. When it cannot supply the file, the cached
- * `anchor.resolved` is kept (or `drifted` if there is none).
+ * When current text is unavailable, whole anchors are drifted rather than declared verified.
+ * Span anchors retain their cached resolution with a reason saying the text was unavailable.
  */
 export function resolveAnchor(
   anchor: Anchor,
@@ -254,7 +254,16 @@ export function resolveWith(
   }
 
   if (anchor.span === undefined || anchor.span === null) {
-    const current = symbol ? symbol.hash : file.hash;
+    const lines = texts.lines(anchor.file);
+    if (!lines) {
+      return {
+        status: "drifted",
+        range: prev ?? region,
+        hash: anchor.hash,
+        reason: `cannot read ${anchor.file} to verify its current text`,
+      };
+    }
+    const current = symbol ? hashOf(lines, region) : hashText(lines.join("\n"));
     if (current !== anchor.hash) {
       return {
         status: "drifted",
@@ -693,7 +702,14 @@ export function makeAnchor(
   let hash: Hash;
   if (span === undefined) {
     range = { ...region };
-    hash = symbol ? symbol.hash : file.hash;
+    const lines = texts.lines(input.file);
+    if (!lines) return fail(`cannot read ${input.file} to hash the anchor`);
+    if (hashText(lines.join("\n")) !== file.hash) {
+      return fail(
+        `index for ${input.file} does not match its current text; run \`xpl index\` before building anchors`,
+      );
+    }
+    hash = symbol ? hashOf(lines, range) : hashText(lines.join("\n"));
   } else {
     if (base + span.to > region.endLine) {
       return fail(

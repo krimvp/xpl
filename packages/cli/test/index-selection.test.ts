@@ -148,11 +148,16 @@ describe("index selection", () => {
     const b = await reindexWith(dir, "state B");
 
     // validate / status / apply keep using the explainer's index (A), and say what to do about it
-    const validate = await xplJson<{ index: string; warnings: string[] }>(dir, "validate", "demo");
+    const validate = await xplJson<{ index: string; issues: { message: string }[] }>(
+      dir,
+      "validate",
+      "demo",
+    );
     expect(validate.json.index).toBe(`.explainer/index-${baseCommit}.json`);
-    expect(validate.json.warnings).toHaveLength(1);
-    expect(validate.json.warnings[0]).toContain("xpl resolve demo --write");
-    expect(validate.json.warnings[0]).toContain(
+    expect(validate.code).toBe(1);
+    expect(validate.json.issues.length).toBeGreaterThanOrEqual(1);
+    expect(validate.json.issues[0]!.message).toContain("xpl resolve demo --write");
+    expect(validate.json.issues[0]!.message).toContain(
       `an index for the current tree exists: .explainer/index-${b}.json`,
     );
 

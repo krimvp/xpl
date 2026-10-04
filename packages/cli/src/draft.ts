@@ -58,6 +58,7 @@ import {
   type TextCache,
 } from "@xpl/core";
 import {
+  declaredLibrary,
   findOutsideSystems,
   isLibrary,
   ownModules,
@@ -1379,7 +1380,9 @@ export function draftRepo(input: DraftInput): Draft {
   const L = DRAFT_LIMITS;
   const ids = new FreeIds(explainer);
   const stored = storedNodeIds(explainer);
-  const notes: string[] = [];
+  const notes: string[] = [
+    "Provisional architecture: confirm project kind, primary users and entry points in the README and code; import lines identify dependencies.",
+  ];
   /** A box of the architecture keeps its id across drafts: the service and the outside systems are the same things. */
   const reuse = (prefix: string, slug: string): string =>
     stored.has(`${prefix}:${slug}`) ? `${prefix}:${slug}` : ids.get(prefix, slug);
@@ -1599,6 +1602,11 @@ export function draftRepo(input: DraftInput): Draft {
   const nodes: PatchNode[] = [];
   const edges: PatchEdge[] = [];
   const views: PatchView[] = [];
+  const library =
+    !multi &&
+    (declaredLibrary(model, texts) ||
+      (inbound.length === 0 &&
+        isLibrary(model, texts, model.files.map((file) => file.path).filter(isCode))));
 
   // the boxes of the outside systems: no members, anchored at the import lines that use them
   for (const system of linked) {
@@ -1660,7 +1668,7 @@ export function draftRepo(input: DraftInput): Draft {
       : {
           id: inside.service,
           label: repoName,
-          role: "service",
+          role: library ? "component" : "service",
           opens: inside.viewId,
           ...(language ? { tech: language } : {}),
           parent: "repo",
@@ -1763,8 +1771,7 @@ export function draftRepo(input: DraftInput): Draft {
   // ── A library: nobody reaches it through a web server or a command line; the code of an app calls it. A box
   // for that app, anchored where the README shows an import of the project, with an arrow to the service.
   let appId: string | undefined;
-  const codeFiles = model.files.map((f) => f.path).filter(isCode);
-  if (!multi && inbound.length === 0 && mainTop && isLibrary(model, texts, codeFiles)) {
+  if (library && mainTop) {
     const readme = model.dirChildren("").files.find((f) => /^readme(?:\.[a-z]+)?$/i.test(f));
     const shown = readme
       ? readmeUsage(texts.lines(readme) ?? [], ownModules(model, texts))
@@ -1818,6 +1825,7 @@ export function draftRepo(input: DraftInput): Draft {
       note(
         todo("what the project is, as a plain statement anyone can follow"),
         todo("its language, its kind and what it is for, from the README; no code names."),
+        "Architecture roles are provisional. Confirm primary users and entry points in the code.",
         inbound.length > 0
           ? todo(
               `who uses it and how (${plainList(inbound.map((s) => s.label))}), in one sentence.`,
@@ -2489,6 +2497,15 @@ export function draftPath(input: DraftInput, entries: readonly PathEntry[]): Dra
             ? todo("the answer to the question, as a plain statement")
             : todo(`the next part of the answer, from ${tick(start)}, as a plain statement`),
           todo("where this path starts, what it ends with, and which call decides the outcome."),
+          "Draft scope: selected direct call sites in source order. Review conditions, loops, repeated calls and omitted branches before publishing.",
+          ...seq.notes
+            .filter((text) => /called more than once|calls left out of the sequence/.test(text))
+            .map((text) => {
+              const targets = (text.match(/sym:[^\s,)]+/g) ?? []).map(tick).join(", ");
+              return text.startsWith("called more than once")
+                ? `Repeated targets: ${targets}. The sequence draws the first call site.`
+                : `Omitted targets: ${targets}. The draft reached its call or participant limit.`;
+            }),
           quietNames.length > 0
             ? `Calls without a step of their own: ${nameList(quietNames)}. ${todo("say what they do in one sentence, or drop this one.")}`
             : "",

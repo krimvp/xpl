@@ -11,6 +11,8 @@ export const validateCommand: CommandSpec = {
     "Checks ids, references, anchors (they must still resolve: ok or moved) and the evidence rule for",
     "llm edges against the index and the working-tree text. Strict by default; --lenient (use it after",
     "`xpl resolve --write`) turns drifted and missing anchors into warnings.",
+    "Strict validation also requires an index that matches the working tree. Reindex and resolve before",
+    "validating changed code. --lenient reports a stale index as a warning for repair workflows.",
     "Exit codes: 0 no errors (warnings allowed), 1 errors.",
   ],
   options: {
@@ -22,9 +24,21 @@ export const validateCommand: CommandSpec = {
   positionals: [{ name: "explainer" }],
   async run(ctx, args) {
     const loaded = loadExplainer(ctx, args.positionals[0]!);
-    const ws = await openWorkspace(ctx, { explainer: loaded });
     const mode = args.flag("lenient") ? "lenient" : "strict";
+    const ws = await openWorkspace(ctx, {
+      explainer: loaded,
+      deferStaleWarning: true,
+      requireFreshIndex: mode === "strict",
+    });
     const issues = validateExplainer(loaded.explainer, ws.model, ws.texts, { mode });
+    if (ws.stale) {
+      issues.unshift({
+        severity: mode === "strict" ? "error" : "warning",
+        path: "index",
+        code: "commit",
+        message: ws.stale.message,
+      });
+    }
     const errors = issues.filter((issue) => issue.severity === "error").length;
     if (ctx.json) {
       ctx.emit({

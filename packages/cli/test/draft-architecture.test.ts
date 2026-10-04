@@ -37,6 +37,35 @@ const graph = (patch: ExplainerPatch, id: string) =>
   patch.views!.find((v) => v.id === id) as GraphView | undefined;
 
 describe("xpl draft repo: one service and what it relies on", () => {
+  it("treats a declared framework as a component and does not infer a terminal user from a helper import", async () => {
+    const framework = makeTempDir("xpl-framework-");
+    writeFile(
+      framework,
+      "README.md",
+      "# Flask\n\nA web application framework.\n\n```python\nfrom flask import Flask\napp = Flask(__name__)\n```\n",
+    );
+    writeFile(
+      framework,
+      "pyproject.toml",
+      '[project]\nname = "flask"\n[project.scripts]\nflask = "flask.cli:main"\n',
+    );
+    writeFile(framework, "src/flask/__init__.py", "from .app import Flask\n");
+    writeFile(
+      framework,
+      "src/flask/app.py",
+      "class Flask:\n    def __init__(self, name):\n        self.name = name\n",
+    );
+    writeFile(
+      framework,
+      "src/flask/cli.py",
+      'import click\ndef helper():\n    return click.style("message")\n',
+    );
+    const { patch, notes } = await drafted(framework);
+    expect(patch.nodes!.find((n) => n.label === "flask")?.role).toBe("component");
+    expect(patch.nodes!.some((n) => n.id === "grp:user")).toBe(false);
+    expect(patch.nodes!.some((n) => n.id === "grp:your-app")).toBe(true);
+    expect(notes.some((n) => n.startsWith("Provisional architecture"))).toBe(true);
+  });
   const dir = makeTempDir("xpl-arch-");
   writeFile(dir, "README.md", "# shop\n\nA small web shop that takes orders and payments.\n");
   writeFile(dir, "package.json", '{ "name": "shop", "description": "A small web shop" }\n');

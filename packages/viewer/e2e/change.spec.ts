@@ -296,6 +296,8 @@ test.describe("under xpl view", () => {
       const url = new URL(route.request().url());
       if (url.pathname === "/")
         return route.fulfill({ contentType: "text/html", body: withBundle(html, bundle) });
+      if (url.pathname === "/api/explainer") return route.fulfill({ status: 304 });
+      if (url.pathname === "/favicon.ico") return route.fulfill({ status: 204 });
       if (url.pathname === "/api/base-file") {
         const path = url.searchParams.get("path")!;
         asked.push(path);

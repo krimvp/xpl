@@ -266,7 +266,7 @@ describe("Go read references: heuristic resolution", () => {
     ]);
   });
 
-  it("functions and methods used as values, types and packages are not reads; locals shadow package variables", async () => {
+  it("function and method values are reads; types and packages are not; locals shadow package variables", async () => {
     expect(
       await refs({
         "a.go": src(
@@ -287,6 +287,8 @@ describe("Go read references: heuristic resolution", () => {
         ),
       }),
     ).toEqual([
+      "a.go#f -> a.go#helper (read)",
+      "a.go#f -> a.go#T.Method (read)",
       "a.go#f -> a.go#T.Field (read)",
       "a.go#g -> a.go#Global (read)",
       "a.go#g -> a.go#T.Field (read)",

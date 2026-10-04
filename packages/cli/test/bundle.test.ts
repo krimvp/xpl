@@ -70,6 +70,40 @@ const REFERENCED = [
 ];
 
 describe("xpl bundle", () => {
+  it("refuses stale-index validation and export, including --allow-drift and the skip-check environment", async () => {
+    const dir = cloneDir(demo);
+    editFile(dir, "src/queue.ts", (text) =>
+      text.replace("Date.now() + delayMs", "Date.now() + delayMs + 7"),
+    );
+    const strict = await xplJson<any>(dir, "validate", "demo");
+    expect(strict.code).toBe(1);
+    expect(strict.json.issues).toContainEqual(
+      expect.objectContaining({
+        path: "index",
+        severity: "error",
+        message: expect.stringContaining("does not match the working tree"),
+      }),
+    );
+    const lenient = await xplJson<any>(dir, "validate", "demo", "--lenient");
+    expect(lenient.code).toBe(0);
+    expect(lenient.json.issues).toContainEqual(
+      expect.objectContaining({ path: "index", severity: "warning" }),
+    );
+    for (const args of [[], ["--allow-drift"]]) {
+      const result = await invoke(["bundle", "demo", "-o", "stale.html", ...args], {
+        cwd: dir,
+        env: { ...viewerEnv, XPL_SKIP_STALE_CHECK: "1" },
+      });
+      expect(result.code).toBe(1);
+      expect(result.err).toContain("Refusing to export");
+      expect(existsSync(join(dir, "stale.html"))).toBe(false);
+    }
+    const skipped = await invoke(["validate", "demo"], {
+      cwd: dir,
+      env: { XPL_SKIP_STALE_CHECK: "1" },
+    });
+    expect(skipped.code).toBe(1);
+  });
   it("writes one HTML file with the xpl-data script, and the payload parses back", async () => {
     const { code, out, err } = await bundle(demo, "-o", "out.html");
     expect(err).toBe("");
@@ -285,7 +319,8 @@ describe("xpl bundle", () => {
     const dir = cloneDir(demo);
     const hostile = 'const a = "</script><script>alert(1)</script>"; // <!--  ';
     editFile(dir, "src/bus.ts", (text) => `${text}\n${hostile}\n`);
-    const { code } = await bundle(dir, "-o", "out.html");
+    const index = await reindex(dir);
+    const { code } = await bundle(dir, "-o", "out.html", "--index", index, "--allow-drift");
     expect(code).toBe(0);
     const html = readFile(dir, "out.html");
     expect(html).not.toContain("<script>alert(1)");

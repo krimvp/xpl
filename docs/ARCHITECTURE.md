@@ -410,8 +410,8 @@ file.
 a value whose type is known (`this.queue`, `job.attempts`), that is not a call, a target or a declaration.
 Locals and parameters are not references: the pack leaves out a bare name that a function, block, loop,
 `catch`, comprehension or class body around the use binds, and the resolver decides the rest (only variables
-and fields count; a function or method used as a value, such as a callback, a Go method value or a Python
-property, becomes a `call`: it runs when the value is called; a class or enum used as a value, such as `x instanceof C`,
+and fields count; in heuristic indexes a function or method used as a value, such as a callback or Go
+method value, remains a `read`, which does not establish invocation or recursion. A class or enum used as a value, such as `x instanceof C`,
 `isinstance(x, C)` or `Color.Red`, is a `type-ref`, as in precise mode). A Python `metaclass=M` is a `type-ref`. A call or assignment spanning more than
 10 lines is reported by its callee or target only. `from` is not given by the pack: the framework takes the
 innermost symbol containing the site's start (line and column), else the module scope `"<file>#"`.
@@ -541,7 +541,8 @@ returns the current file text.
 
 1. File not in the index → `missing`. `symbol` given but not in the index → `missing`.
 2. Region = the symbol's range, or the whole file. Base line = region start (or 1 for files).
-3. No span: current hash = symbol/file hash. Equal to `anchor.hash` → `ok`, or `moved` if `anchor.resolved.range`
+3. No span: hash current source in the symbol range or the whole file. Unavailable text → `drifted`.
+   Equal to `anchor.hash` → `ok`, or `moved` if `anchor.resolved.range`
    exists and differs from the region. Different → `drifted` (range = region).
 4. Span: expected = `[base+from, base+to]`. Hash of the expected lines equal → `ok`/`moved` as above.
    Otherwise search the region for unchanged text in windows of the same length; the
@@ -555,7 +556,7 @@ returns the current file text.
 `makeAnchor(input, index, getText)` converts an `AnchorInput`: rejects unknown fields (JSON `null` counts as
 absent), validates file, symbol and role, converts `find` to a span (exactly one occurrence), checks the span
 is inside the region and not blank, computes `hash`, and sets `resolved` with status `ok`. A `hash` on the
-input must equal the current one.
+input must equal the current one. Whole-anchor creation requires source matching the indexed file hash.
 
 `reresolveExplainer(explainer, index, getText, { indexPath? })` re-resolves every anchor (elements, sequence
 steps, tour code overrides; base anchors against the base commit, which their `resolved.commit` keeps),
@@ -823,8 +824,8 @@ atomic: any error → `ok: false` and the input explainer, untouched.
     the changed lines that lie in no symbol (imports, module-level code).
   - **Changed symbols**: for each added or edited head line, and each place where lines were only removed, the
     innermost index symbol around it. A function nested in a function counts as part of the outer one.
-    Blank and comment lines count only inside a function. A symbol all of whose lines were added is `new`,
-    else `changed`.
+    Blank and comment lines count only inside a function. A symbol wholly covered by pure insertion hunks is `new`; replacements are `changed`,
+    even when every line differs. Mixed replacement hunks are classified conservatively.
   - **Callers** of each changed symbol outside tests: direct references (depth 1) of kind `call` from outside
     the symbol and outside test files (for a variable or key: reads and writes; for a type: its uses). A
     constructor (`__init__`, `__new__`, `constructor`) also counts the calls of its class (`via: "class"`). For
@@ -890,7 +891,9 @@ the one named for the current commit id, else the newest. None → an error that
 **Stale index.** Whatever was chosen is compared with the working tree (the commit id it would get now, then
 per-file hashes). If they differ, commands warn, naming the changed, new and deleted files: `index X … does
 not match the working tree (Y): 2 changed (src/queue.ts, src/runner.ts). Line numbers and offsets may be off;
-run xpl index`. `XPL_SKIP_STALE_CHECK=1` skips the comparison (about a second per 5000 files). `xpl resolve
+run xpl index`. `XPL_SKIP_STALE_CHECK=1` skips advisory comparisons (about a second per 5000 files). Strict
+validation and HTML export always check freshness and fail on a stale index; `--allow-drift`
+does not bypass this requirement. Reindex before resolving or exporting. `xpl resolve
 --write` refuses (exit 1) on a stale index, because the ranges it would save are already wrong, unless
 `--allow-stale`.
 
@@ -976,10 +979,13 @@ total, counts, findings, patch?, changed?, protectedIds? }`.
 taken (`--port 0` = any; an explicit port that is taken is an error). `--host` other than loopback exposes
 your source and edit rights, and warns. It opens the browser best-effort (`--no-open`) and fails early when
 the viewer is not built or there is no index. The server keeps no explainer state: every request re-reads
-the explainer, its index and the working tree, and the page polls `GET /api/explainer` every 2 seconds, so
-`xpl apply` while the viewer is open shows up without a reload, and viewer edits never overwrite it. Drifted
-or missing anchors do not stop it (unlike `xpl bundle`): it warns, and the page says which parts may be out
-of date.
+the explainer, its index and the working tree. The page polls `/api/explainer`; its ETag includes the
+resolved explanation and source/index file metadata. A change refreshes `/api/bundle` and previously
+opened source files while preserving navigation. Unsaved viewer edits postpone adoption without
+acknowledging the new ETag. A newly generated index is followed unless `--index` pins a specific one.
+Source edits are shown with a stale-index warning until reindexing; viewer edits never overwrite them.
+Drifted or missing anchors do not stop it (unlike `xpl bundle`): it warns, and the page says which
+parts may be out of date.
 
 | Route | |
 |---|---|
@@ -1298,8 +1304,8 @@ from `GET /api/base-file` (each file once; an error shows in its pane).
   file the change removed opens from base in a "Before" pane labelled "Removed"; a renamed file's "Before"
   pane shows its old path. In the details panel a base anchor's row is tagged "before" and opens the base
   pane at its line.
-- **Map badges.** A file or symbol box gets a "New" pill when the change added all of its lines (an added file
-  and everything in it), or "Changed" when it added, rewrote or removed some (`changeStatus`; the box's
+- **Map badges.** A file or symbol box gets a "New" pill for an added file or a range wholly covered by pure
+  insertions. Replacement hunks, including complete rewrites, get "Changed" (`changeStatus`; the box's
   `data-change`). Groups and directories get none. Boxes are widened so the pill never covers the label. The
   Guide's pictures show the pills too.
 - **Files in this change** (Guide, under the summary): source files first, then tests. Each row has its
@@ -1530,9 +1536,8 @@ base anchors and a diff view, and example explainers for the three fixtures.
   (`xpl status --json` lists the derived edge ids).
 - The layout runs on the main thread: laying out a very large graph blocks the page, so views
   should stay coarse (whole-repo views start at packages) and are expanded by hand.
-- Live update covers the explainer only: under `xpl view` the page polls `/api/explainer` every 2 s and
-  shows what `xpl apply` wrote, but not while edits made on the page are unsaved; source files already open
-  are not re-read, and a static bundle never updates.
+- Live refresh is polling-based: updates appear on the next poll while the page is visible and has no
+  unsaved edits. Source locations and reference edges need reindexing after source changes.
 - Heuristic references are hints, and the limits are in §3: no overloads, generics, unions or narrowing;
   Python instance attributes are not linked. A precise index needs the tools: `npx` for
   TypeScript and Python, Go ≥ 1.25 (or the network for the automatic toolchain) for Go, and the first run
@@ -1562,7 +1567,7 @@ base anchors and a diff view, and example explainers for the three fixtures.
 
 **Next steps, roughly by value** (the review in `docs/review-2026-10-01.md` has the roadmap): an independent
 accuracy pass for change explainers; a word-level diff in rewritten lines; editable step titles and code in
-the viewer; a server-sent event instead of polling `/api/explainer`, and re-reading changed source files; a UI for hiding and pinning, or dropping the unused `layout` field; the layout in a Web Worker; more
+the viewer; a UI for hiding and pinning, or dropping the unused `layout` field; the layout in a Web Worker; more
 language packs (each needs `extract`, `classifySite`, `resolveModule`, and optionally a SCIP resolver);
 publishing the CLI and packaging the skill so that install is one step; a regeneration mode in the skill that
 walks `xpl status` on its own.

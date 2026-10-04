@@ -62,6 +62,30 @@ const spanAnchor = (): Anchor =>
   mk(v1, { file: "src/a.ts", symbol: "Runner.run", span: { from: 4, to: 5 }, role: "call-site" });
 
 describe("resolveAnchor: whole symbols and files", () => {
+  it("checks working-tree text rather than trusting a stale index hash", () => {
+    const symbol = mk(v1, { file: "src/a.ts", symbol: "Runner.run", role: "definition" });
+    const file = mk(v1, { file: "src/a.ts", role: "definition" });
+    const changed = V1.join("\n").replace("return a + b", "return a * b");
+    expect(resolveAnchor(symbol, v1.index, () => changed).status).toBe("drifted");
+    // Appended lines lie beyond the old file range and must still change a whole-file anchor.
+    expect(resolveAnchor(file, v1.index, () => V1.join("\n") + "\nnewCode();").status).toBe(
+      "drifted",
+    );
+    expect(resolveAnchor(symbol, v1.index, () => undefined)).toMatchObject({
+      status: "drifted",
+      reason: expect.stringContaining("cannot read"),
+    });
+    expect(
+      makeAnchor(
+        { file: "src/a.ts", symbol: "Runner.run", role: "definition" },
+        v1.index,
+        () => changed,
+      ),
+    ).toMatchObject({
+      ok: false,
+      error: expect.stringContaining("run `xpl index`"),
+    });
+  });
   it("detects a Python return moving into a conditional and refuses legacy hashes", () => {
     const text = "def f(flag):\n    if flag:\n        return 1\n    return 2";
     const before = makeWorld({
@@ -774,7 +798,7 @@ describe("makeAnchor", () => {
       );
       expect(!r.ok && r.error).toContain("cannot read src/a.ts");
       expect(makeAnchor({ file: "src/a.ts", role: "usage" }, v1.index, () => undefined).ok).toBe(
-        true,
+        false,
       );
     });
   });

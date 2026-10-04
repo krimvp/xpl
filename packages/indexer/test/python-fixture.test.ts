@@ -333,10 +333,10 @@ describe("py-jobrunner: imports, heritage, the demo and the tests", () => {
     expect(count(index.refs, (r) => r.kind)).toEqual({
       import: 44,
       "type-ref": 52, // two classes used as values: type references, as in precise mode
-      call: 94, // `queue.size` reads a property: a call of its getter
+      call: 93, // `queue.size` reads a property: a call of its getter
       write: 4,
       extends: 1,
-      read: 74,
+      read: 75, // includes the callback passed to the event bus
     });
   });
 });

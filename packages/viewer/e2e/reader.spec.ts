@@ -429,7 +429,7 @@ test.describe("the reader's screen", () => {
         .filter((c) => getComputedStyle(c).display !== "none")
         .map((c) => c.getAttribute("data-testid") ?? c.tagName.toLowerCase()),
     );
-    expect(order.slice(0, 3)).toEqual(["h2", "tour-summary", "section"]);
+    expect(order.slice(0, 4)).toEqual(["h2", "tour-summary", "explanation-info", "section"]);
 
     // without a summary there is no placeholder
     await page.unroute("http://xpl.test/**");

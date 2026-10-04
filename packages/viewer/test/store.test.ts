@@ -213,7 +213,7 @@ describe("view edits without a server", () => {
 
 describe("under xpl view (server mode)", () => {
   const calls: { url: string; init?: RequestInit }[] = [];
-  let respond: (url: string, init?: RequestInit) => Response;
+  let respond: (url: string, init?: RequestInit) => Response | Promise<Response>;
 
   beforeEach(() => {
     vi.useFakeTimers();
@@ -368,24 +368,64 @@ describe("under xpl view (server mode)", () => {
     let served: Response = new Response(JSON.stringify(changed), {
       headers: { "content-type": "application/json", etag: '"v2"' },
     });
-    respond = () => served;
+    respond = (url) =>
+      url === "/api/bundle"
+        ? new Response(JSON.stringify(makeBundle({ explainer: changed })))
+        : served;
     const stop = store.watchExplainer(1000);
 
     await vi.advanceTimersByTimeAsync(1000);
-    expect(calls.map((c) => c.url)).toEqual(["/api/explainer"]);
+    expect(calls.map((c) => c.url)).toEqual(["/api/explainer", "/api/bundle"]);
     expect(store.getState().model.concept("concept:retry")?.summary).toBe("Shorter now.");
     expect(store.getState().selection).toEqual(["concept:retry"]);
     expect(store.getState().viewId).toBe("view:overview");
 
     served = new Response(null, { status: 304 });
     await vi.advanceTimersByTimeAsync(1000);
-    expect(new Headers(calls[1]!.init!.headers).get("if-none-match")).toBe('"v2"');
+    expect(new Headers(calls[2]!.init!.headers).get("if-none-match")).toBe('"v2"');
 
     // an older `xpl view` has no such endpoint: stop asking
     respond = () => new Response("not found", { status: 404, statusText: "Not Found" });
     await vi.advanceTimersByTimeAsync(3000);
-    expect(calls).toHaveLength(3);
+    expect(calls).toHaveLength(4);
     stop();
+  });
+
+  it("refreshes loaded source, the index and warnings even when the explanation is unchanged", async () => {
+    const store = graphStore(true);
+    store.select(["sym:src/a.ts#A.run"]);
+    const bundle = makeBundle({ files: { "src/a.ts": "edited source" } });
+    bundle.index.commit = "new-index";
+    bundle.sourceWarning = "Reindex changed source";
+    respond = (url) =>
+      url === "/api/explainer"
+        ? new Response(JSON.stringify(bundle.explainer), { headers: { etag: '"new"' } })
+        : url === "/api/bundle"
+          ? new Response(JSON.stringify(bundle))
+          : new Response("fresh separately opened file");
+    const stop = store.watchExplainer(1000);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(store.getState().files["src/a.ts"]).toBe("edited source");
+    expect(store.getState().files["src/b.ts"]).toBe("fresh separately opened file");
+    expect(store.getState().model.index.commit).toBe("new-index");
+    expect(store.getState().selection).toEqual(["sym:src/a.ts#A.run"]);
+    expect(store.getState().sourceWarning).toBe("Reindex changed source");
+    stop();
+  });
+
+  it("does not let a file request from the previous workspace overwrite refreshed source", async () => {
+    const store = graphStore(true, {});
+    let finish: (response: Response) => void = () => undefined;
+    const oldResponse = new Promise<Response>((resolve) => {
+      finish = resolve;
+    });
+    respond = () => oldResponse;
+    const loading = store.ensureFile("src/a.ts");
+    const refreshed = makeBundle({ files: { "src/a.ts": "new source" } });
+    store.adoptExplainer(refreshed.explainer, refreshed);
+    finish(new Response("old source"));
+    await loading;
+    expect(store.getState().files["src/a.ts"]).toBe("new source");
   });
 
   it("does not replace the explainer while an edit made here is not saved yet", () => {

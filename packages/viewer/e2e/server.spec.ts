@@ -27,6 +27,7 @@ interface Recorded {
   tourStatus: number;
   /** What GET /api/explainer serves; until a test sets it, the explainer is unchanged (304). */
   explainer?: unknown;
+  workspace?: Record<string, unknown>;
 }
 
 async function serve(
@@ -103,6 +104,17 @@ async function serve(
         body: JSON.stringify(recorded.explainer),
       });
     }
+    if (url.pathname === "/api/bundle" && request.method() === "GET") {
+      return route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          ...bundle,
+          ...recorded.workspace,
+          ...(recorded.explainer ? { explainer: recorded.explainer } : {}),
+        }),
+      });
+    }
+    if (url.pathname === "/favicon.ico") return route.fulfill({ status: 204 });
     if (url.pathname === "/api/requests" && request.method() === "POST") {
       recorded.posts.push(JSON.parse(request.postData() ?? "null") as Record<string, unknown>);
       return route.fulfill({ status: 201, contentType: "application/json", body: "{}" });
@@ -359,4 +371,40 @@ test("a refused tour save keeps the edit, says why, does not hold back a view ed
   const steps = recorded.tourPuts.at(-1)!.body.steps as { note?: string }[];
   expect(steps[0]!.note).toBe("Will be refused.");
   expect(recorded.puts).toHaveLength(1); // the view edit was not sent again
+});
+
+test("a source edit refreshes Code and the freshness warning without changing the story or selection", async ({
+  page,
+}) => {
+  const problems = watchProblems(page);
+  const recorded = await serve(page);
+  await page.evaluate(() => window.__xpl!.setView("view:dispatch"));
+  await byId(page, "dispatch:3").click();
+  const { bundle } = readEmbeddedBundle();
+  const original = (bundle.files as Record<string, string>)["src/runner.ts"]!;
+  recorded.workspace = {
+    files: {
+      ...(bundle.files as Record<string, string>),
+      "src/runner.ts": original + "\n// Updated source while the page is open\n",
+    },
+    sourceWarning: "Source changed: run xpl index before relying on indexed relationships.",
+  };
+  recorded.explainer = bundle.explainer;
+  await expect(page.locator('[data-file="src/runner.ts"] .cm-editor')).toContainText(
+    "Updated source while the page is open",
+    { timeout: 10_000 },
+  );
+  await expect(page.getByTestId("source-warning")).toContainText("run xpl index");
+  expect(await selectionOf(page)).toEqual(["dispatch:3"]);
+  expect(problems).toEqual([]);
+});
+
+test("readers can find the limits of source verification beside the guide", async ({ page }) => {
+  await serve(page);
+  await (await openEditMenu(page)).getByTestId("edit-read").click();
+  await page.getByTestId("perspective-guide").click();
+  const info = page.getByTestId("explanation-info");
+  await info.locator("summary").click();
+  await expect(info).toContainText("they do not verify the claims");
+  await expect(info).toContainText("applied changes appear here automatically");
 });

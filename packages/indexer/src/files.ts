@@ -244,7 +244,27 @@ export async function discoverFiles(
   const BATCH = 64;
   for (let i = 0; i < selected.length; i += BATCH) {
     const batch = selected.slice(i, i + BATCH);
-    const verdicts = await Promise.all(batch.map((f) => passesContentFilters(f.abs)));
+    const verdicts = await Promise.all(
+      batch.map(async (f) => {
+        if (!(await passesContentFilters(f.abs))) return false;
+        // Exports are generated artifacts, including small custom-viewer bundles. Indexing them would
+        // make the next export stale and can recursively embed earlier exports. Keep ordinary HTML.
+        if (/\.html?$/i.test(f.path)) {
+          try {
+            const text = await readFile(f.abs, "utf8");
+            if (
+              text.includes(
+                '<script id="xpl-data" type="application/json">{"schema":"code-explainer/bundle@0"',
+              )
+            )
+              return false;
+          } catch {
+            return false;
+          }
+        }
+        return true;
+      }),
+    );
     batch.forEach((file, j) => {
       if (verdicts[j] === true) kept.push(file);
     });
