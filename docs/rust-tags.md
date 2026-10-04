@@ -11,7 +11,9 @@ files retain a separate report and limitation. Rust code renders as plain text i
 and highlights.
 
 `xpl search dispatch --code` searches Rust source, and `xpl draft repo` includes Rust code and labels its
-service boxes Rust. Both use the shared code-language classification in core.
+service boxes Rust. Both use the shared code-language classification in core. `--scip` retains Rust tags
+alongside the artifact provider. With `--precise auto`, source outside the artifact keeps its syntax
+declarations; `require` rejects Rust without usable precise relationship coverage.
 
 This is a tags-path experiment for #13, under #7. It adds no Rust scope/module resolver or semantic import.
 The standard tagging convention supplies `@name` and `@definition.*`; the generic adapter converts them to

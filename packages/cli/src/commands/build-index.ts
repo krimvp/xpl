@@ -2,7 +2,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import type { LanguageInfo } from "@xpl/core";
 import { describeAnalysis } from "@xpl/core";
-import { buildIndex, scipArtifactProvider, writeIndex } from "@xpl/indexer";
+import { buildIndex, indexProviders, scipArtifactProvider, writeIndex } from "@xpl/indexer";
 import type { CommandSpec } from "../command.js";
 import { CliError, errorMessage } from "../errors.js";
 import { plural } from "../format.js";
@@ -64,7 +64,8 @@ export const indexCommand: CommandSpec = {
     "--scip imports a generated artifact with embedded source text, or a JSON manifest naming its artifact.",
     "Textless artifacts require artifactSha256 and pre-generation sourceHashes in the manifest.",
     "Unspecified positions require a verified manifest.defaultEncoding. Unknown extensions stay text.",
-    "This replaces automatic SCIP tool selection for the run. --precise off cannot import an artifact.",
+    "This replaces automatic SCIP tools; registered syntax providers (Rust tags) still run.",
+    "--precise off cannot import an artifact. require needs precise coverage for each programming language.",
   ],
   options: {
     scip: {
@@ -107,6 +108,8 @@ export const indexCommand: CommandSpec = {
             }),
           ];
         } else providers = [scipArtifactProvider({ artifact: readFileSync(path) })];
+        // Artifact selection replaces semantic tools; registered syntax providers still run first.
+        providers.unshift(...indexProviders().filter((provider) => provider.mode === "syntax"));
       }
       result = await buildIndex({
         root: ctx.root,

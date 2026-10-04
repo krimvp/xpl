@@ -474,7 +474,10 @@ reuse is safe only when source, provider version and relevant configuration/depe
 
 The built-in tool adapters keep SCIP relationship mapping over existing syntax declarations. The separate
 `scipArtifactProvider({ artifact, manifest?, languages? })` imports declarations without a language pack.
-The CLI selects it with `xpl index --scip <artifact|manifest.json>` instead of automatic tool selection.
+The CLI selects it with `xpl index --scip <artifact|manifest.json>` instead of automatic semantic tools,
+retaining registered syntax-mode providers first. Artifact import can then replace their declarations where
+source-verified coverage allows it. In a mixed repository, `require` still needs precise relationships for
+Rust; an artifact covering only other source files cannot make Rust satisfy that requirement.
 Unknown extensions keep the closed `FileLanguage` value `text`; imported symbols work in outlines, queries,
 checked anchors and bundles. `--precise off` skips semantic providers; combining it with `--scip` is an error.
 

@@ -106,8 +106,9 @@ adding or removing it changes the snapshot identity. Stale or unverified documen
 checked symbols or relationships. Documents must belong to discovered sources; generated build outputs
 and external symbols are not turned into local declarations. A supplied project-root URI must match `--root`.
 
-`--scip` selects the artifact provider instead of automatic SCIP tools. `auto` reports failures and keeps
-available syntax hints; `require` rejects unusable imports. `--precise off` cannot be combined with `--scip`.
+`--scip` selects the artifact provider instead of automatic SCIP tools. Registered syntax providers such as
+Rust tags still run first. `auto` reports failures and keeps available syntax declarations and hints;
+`require` rejects unusable imports and programming languages without usable precise relationship coverage. `--precise off` cannot be combined with `--scip`.
 Unknown extensions remain `text`, but imported symbols work with `outline`, `show`, `apply`, `validate` and
 `bundle`. Only definitions with full producer ranges become checked symbols. Missing ranges, parents and
 unclassified occurrences remain limits in `analysis`; diagnostics identify omitted facts. Only role-backed
