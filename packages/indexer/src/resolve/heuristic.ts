@@ -39,7 +39,14 @@
  * reassigned locals with different types, dynamic access, CommonJS `module.exports`
  * shapes (tsconfig path aliases are the TypeScript pack's `resolveModule`, see ts-modules.ts).
  */
-import type { FileLanguage, FilePath, IndexedSymbol, Reference, SymbolId } from "@xpl/core";
+import {
+  moduleScopeId,
+  type FileLanguage,
+  type FilePath,
+  type IndexedSymbol,
+  type Reference,
+  type SymbolId,
+} from "@xpl/core";
 import type {
   ExportFact,
   ImportBinding,
@@ -50,7 +57,6 @@ import type {
   TypeFact,
 } from "../languages/types.js";
 import { spanContains } from "../ast.js";
-import { moduleScopeId } from "../symbols.js";
 import type { SymbolEntry, SymbolLookup } from "../symbols.js";
 
 /** One file's facts, as the framework hands them to the resolver. */

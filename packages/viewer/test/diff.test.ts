@@ -20,7 +20,6 @@ import {
   changeStatus,
   fileDiff,
   firstChangedLine,
-  isTestPath,
   languageOfPath,
   needsBase,
   paneDiff,
@@ -218,10 +217,7 @@ describe("the files in a change", () => {
     expect(languageOfPath("README")).toBe("text");
   });
 
-  it("tags type tests as tests, and widens the tree to the longest changed name", () => {
-    expect(isTestPath("test-d/response-size.ts")).toBe(true);
-    expect(isTestPath("source/index.test-d.ts")).toBe(true);
-    expect(isTestPath("source/test-data.ts")).toBe(false);
+  it("widens the tree to the longest changed name", () => {
     // "a.test.ts" two levels down: 8 + 2 * 14 + 9 * 7.2 + 36 = 136.8 (the CSS keeps the column at 160 or more)
     expect(changeTreeWidth(record)).toBe(137);
     const long: ChangeRecord = {

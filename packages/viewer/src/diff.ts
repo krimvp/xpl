@@ -157,7 +157,7 @@ export interface ChangeFileRow {
   oldPath?: FilePath;
   added: number;
   deleted: number;
-  /** A test file (`isTestPath`). */
+  /** A test file (`isTestFile`). */
   test: boolean;
   /** The line the code view opens it at (the first change), in the head file; base line 1 for a deleted file. */
   line: number;
@@ -173,19 +173,11 @@ export function changeFiles(change: ChangeRecord): ChangeFileRow[] {
       ...(file.status === "renamed" && file.oldPath ? { oldPath: file.oldPath } : {}),
       added: diff.added,
       deleted: diff.deleted,
-      test: isTestPath(file.path),
+      test: isTestFile(file.path),
       line: file.status === "deleted" ? 1 : firstChangedLine(file),
     };
   });
   return [...rows.filter((row) => !row.test), ...rows.filter((row) => row.test)];
-}
-
-/**
- * A test file, for the "test" tag: core's `isTestFile`, plus type tests (a `test-d/` directory, `*.test-d.ts`),
- * which tsd and vitest run as tests.
- */
-export function isTestPath(path: FilePath): boolean {
-  return isTestFile(path) || /(^|\/)test-d\//.test(path) || /\.test-d\.[cm]?tsx?$/.test(path);
 }
 
 /** Most changed files a change can have for the tree to widen to their names. */

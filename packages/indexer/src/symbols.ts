@@ -5,7 +5,7 @@
  * The framework, not the pack, assigns: ids (`<file>#<path>`), `~2`/`~3` duplicate suffixes (in source
  * order), whole-line ranges, hashes (`hashText` of the symbol's full lines) and parents.
  */
-import type { FilePath, IndexedSymbol, SymbolId } from "@xpl/core";
+import { moduleScopeId, type FilePath, type IndexedSymbol, type SymbolId } from "@xpl/core";
 import { SpanIndex, comparePos } from "./ast.js";
 import { FileHasher } from "./hash.js";
 import type { Span } from "./ast.js";
@@ -31,11 +31,6 @@ export interface AssembledSymbols {
 export function stripDuplicateSuffix(path: string): string {
   const m = /~\d+$/.exec(path);
   return m ? path.slice(0, m.index) : path;
-}
-
-/** `symbolId` of module scope (`"<file>#"`). */
-export function moduleScopeId(file: FilePath): SymbolId {
-  return `${file}#`;
 }
 
 /** Order drafts by position: earlier start first, then larger extent first, then input order. */

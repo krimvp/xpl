@@ -33,12 +33,11 @@
  * Positions: SCIP ranges are 0-based, end exclusive, in the document's position encoding. They are converted
  * to our 1-based, inclusive, UTF-16 columns against the text of the file on disk.
  */
-import { splitLines } from "@xpl/core";
+import { moduleScopeId, splitLines } from "@xpl/core";
 import type { FileLanguage, FilePath, IndexedSymbol, Reference, SymbolId } from "@xpl/core";
 import { nodeSpan, pointsToSpan, spanContains } from "../ast.js";
 import type { FileContext, RepoView, Span } from "../languages/types.js";
 import type { PreciseInput } from "../precise.js";
-import { moduleScopeId } from "../symbols.js";
 import type { SymbolEntry, SymbolLookup } from "../symbols.js";
 import { PositionEncoding, SymbolKind, SymbolRole, parseScipRange } from "./proto.js";
 import type { ScipDocument, ScipIndex, ScipRange } from "./proto.js";

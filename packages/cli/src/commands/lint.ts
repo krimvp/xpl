@@ -1,10 +1,6 @@
-import { resolve } from "node:path";
 import { applyPatch, ExplainerModel, type Explainer, type ExplainerPatch } from "@xpl/core";
 import type { CommandSpec } from "../command.js";
-import type { Ctx } from "../context.js";
-import { CliError } from "../errors.js";
 import { plural, renderIssues } from "../format.js";
-import { parseJson, readTextFile } from "../fsutil.js";
 import {
   ABSOLUTE_WORDS,
   LINT_LIMITS,
@@ -14,6 +10,7 @@ import {
   type LintRule,
 } from "../lint.js";
 import { loadExplainer, openWorkspace, type Workspace } from "../repo.js";
+import { readPatch } from "./apply.js";
 
 /** `(tour step)`, `(flow step in view:x)`: what an element is, after its id in the text output. */
 function kindText(f: LintFinding): string {
@@ -41,27 +38,6 @@ function countLine(findings: readonly LintFinding[]): string {
     .filter((rule) => counts.has(rule))
     .map((rule) => `${rule} ${counts.get(rule)}`)
     .join(", ");
-}
-
-async function defaultReadStdin(): Promise<string> {
-  if (process.stdin.isTTY) {
-    throw new CliError(
-      "the patch should come from stdin (`--patch -`), but stdin is a terminal: pipe the JSON in, or pass a file",
-    );
-  }
-  const chunks: Buffer[] = [];
-  for await (const chunk of process.stdin) chunks.push(Buffer.from(chunk as Uint8Array));
-  return Buffer.concat(chunks).toString("utf8");
-}
-
-/** The patch of `--patch <file|->`, read as `xpl apply` reads it. */
-async function readPatch(ctx: Ctx, source: string): Promise<{ patch: unknown; label: string }> {
-  if (source === "-") {
-    const text = await (ctx.io.readStdin ?? defaultReadStdin)();
-    return { patch: parseJson(text, "the patch on stdin"), label: "stdin" };
-  }
-  const path = resolve(ctx.cwd, source);
-  return { patch: parseJson(readTextFile(path, "patch file"), `patch ${source}`), label: source };
 }
 
 export const lintCommand: CommandSpec = {
@@ -151,7 +127,8 @@ export const lintCommand: CommandSpec = {
   async run(ctx, args) {
     const strict = !args.flag("warn-only");
     const patchSource = args.str("patch");
-    const read = patchSource === undefined ? undefined : await readPatch(ctx, patchSource);
+    const read =
+      patchSource === undefined ? undefined : await readPatch(ctx, patchSource, "--patch -");
     const loaded = loadExplainer(ctx, args.positionals[0]!);
 
     let explainer: Explainer = loaded.explainer;

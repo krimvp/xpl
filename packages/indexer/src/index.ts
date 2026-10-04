@@ -58,7 +58,7 @@ export type {
   TypeFact,
 } from "./languages/index.js";
 
-export { SymbolLookup, assembleSymbols, moduleScopeId, stripDuplicateSuffix } from "./symbols.js";
+export { SymbolLookup, assembleSymbols, stripDuplicateSuffix } from "./symbols.js";
 export type { AssembledSymbols, SymbolEntry } from "./symbols.js";
 export { FileHasher } from "./hash.js";
 export { ParserPool, parseFile, withParsedFile } from "./parse.js";

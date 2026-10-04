@@ -4,7 +4,6 @@ import {
   SpanIndex,
   SymbolLookup,
   assembleSymbols,
-  moduleScopeId,
   pointsToSpan,
   spanContains,
   stripDuplicateSuffix,
@@ -207,7 +206,6 @@ describe("SymbolLookup", () => {
   it("fromId falls back to the module scope; get/entry look up by id", () => {
     expect(lookup.fromId("f.ts", 3, 3)).toBe("f.ts#f");
     expect(lookup.fromId("f.ts", 9, 1)).toBe("f.ts#");
-    expect(moduleScopeId("src/a.ts")).toBe("src/a.ts#");
     expect(lookup.get("f.ts#A.m")?.kind).toBe("method");
     expect(lookup.entry("f.ts#A.m")?.span).toEqual(span(1, 11, 1, 16));
     expect(lookup.get("f.ts#nope")).toBeUndefined();
