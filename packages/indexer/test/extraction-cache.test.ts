@@ -19,6 +19,7 @@ import { ExtractionCache, type ExtractionProfile } from "../src/extraction-cache
 import { allWasmSources, resolveWasmFile, setWasmDir } from "../src/wasm-files.js";
 import { makeDir, makeRepo, providerFacts, writeFiles } from "./helpers.js";
 import type { IndexProvider, ProviderSource } from "../src/providers.js";
+import { TypeScriptResolutionExperiment } from "../src/resolve/typescript-experiment.js";
 
 it.each(
   [".explainer/cache", ".explainer", ".explainer/cache/extraction-v1"].flatMap((path) =>
@@ -189,12 +190,23 @@ const equivalenceRoots = [
 it.each(equivalenceRoots)(
   "the whole cached index and warnings match a clean build on %s",
   async (root) => {
-    await buildIndex({ root, precise: "off" });
-    const warm = await buildIndex({ root, precise: "off" });
-    expect(warm.extraction.misses).toBe(0);
-    const clean = await buildIndex({ root, precise: "off", cache: false });
-    expect(JSON.stringify(warm.index)).toBe(JSON.stringify(clean.index));
-    expect(warm.warnings).toEqual(clean.warnings);
+    for (const languages of [undefined, ["typescript", "tsx", "javascript", "json"]]) {
+      const experiment = new TypeScriptResolutionExperiment();
+      const options = { root, precise: "off" as const, languages };
+      await buildIndex({ ...options, experimentalResolution: experiment });
+      const warm = await buildIndex({ ...options, experimentalResolution: experiment });
+      expect(warm.extraction.misses).toBe(0);
+      const clean = await buildIndex({ ...options, cache: false });
+      expect(JSON.stringify(warm.index)).toBe(JSON.stringify(clean.index));
+      expect(warm.warnings).toEqual(clean.warnings);
+      if (languages) {
+        expect(experiment.report.fallback).toBe("");
+        expect(experiment.report.resolvedFiles).toEqual([]);
+        expect(experiment.report.reusedFiles).toEqual(
+          warm.index.files.filter((f) => f.language !== "json").map((f) => f.path),
+        );
+      }
+    }
   },
   120_000,
 );
@@ -306,9 +318,15 @@ it("reruns semantic providers even when all file-local extractions hit", async (
       return providerFacts(input, { tool: "semantic@1", refs: [], describedFiles: ["a.ts"] }, this);
     },
   };
-  await buildIndex({ root, providers: [provider] });
-  const warm = await buildIndex({ root, providers: [provider] });
+  const experiment = new TypeScriptResolutionExperiment();
+  await buildIndex({ root, providers: [provider], experimentalResolution: experiment });
+  const warm = await buildIndex({
+    root,
+    providers: [provider],
+    experimentalResolution: experiment,
+  });
   expect(warm.extraction).toMatchObject({ hits: 1, misses: 0 });
+  expect(experiment.report.reusedFiles).toEqual(["a.ts"]);
   expect(runs).toBe(2);
   expect(warm.work.semanticRuns).toBe(1);
   const clean = await buildIndex({ root, cache: false, providers: [provider] });

@@ -1,58 +1,24 @@
 /** Separate processes measure clean/cold/warm builds; whole indexes and warnings must match each round. */
 import { deepStrictEqual } from "node:assert";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { arch, cpus, platform } from "node:os";
 import { isAbsolute, join, relative, resolve } from "node:path";
-import { performance } from "node:perf_hooks";
 import { fileURLToPath } from "node:url";
-import { buildIndex } from "../packages/indexer/src/index.js";
-
-function diskCost(path: string): { files: number; bytes: number; allocatedBytes: number } {
-  let files = 0,
-    bytes = 0,
-    allocatedBytes = 0;
-  for (const entry of readdirSync(path, { withFileTypes: true })) {
-    const child = join(path, entry.name);
-    if (entry.isDirectory()) {
-      const cost = diskCost(child);
-      files += cost.files;
-      bytes += cost.bytes;
-      allocatedBytes += cost.allocatedBytes;
-    } else {
-      const stat = statSync(child);
-      files++;
-      bytes += stat.size;
-      allocatedBytes += stat.blocks * 512;
-    }
-  }
-  return { files, bytes, allocatedBytes };
-}
+import { diskCost, measuredBuild } from "./index-benchmark-metrics.js";
 
 if (process.argv[2] === "--worker") {
   const [, , , root, output, phase] = process.argv;
-  const started = performance.now();
-  const cpuStarted = process.cpuUsage();
-  const result = await buildIndex({ root: root!, precise: "off", cache: phase !== "clean" });
-  const wallMs = performance.now() - started;
-  const cpu = process.cpuUsage(cpuStarted);
-  const peakRssKiB = process.resourceUsage().maxRSS;
+  const { result, metrics } = await measuredBuild({
+    root: root!,
+    precise: "off",
+    cache: phase !== "clean",
+  });
   writeFileSync(output!, JSON.stringify({ index: result.index, warnings: result.warnings }));
   process.stdout.write(
     JSON.stringify({
       phase,
-      wallMs,
-      cpuUserMs: cpu.user / 1000,
-      cpuSystemMs: cpu.system / 1000,
-      peakRssKiB,
-      counts: {
-        files: result.index.files.length,
-        symbols: result.index.symbols.length,
-        refs: result.index.refs.length,
-        warnings: result.warnings.length,
-      },
-      extraction: result.extraction,
-      work: result.work,
+      ...metrics,
     }),
   );
 } else {
