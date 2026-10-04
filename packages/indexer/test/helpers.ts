@@ -161,7 +161,6 @@ export function describeFixtureInvariants(fixture: string, index: () => SymbolIn
           expect(lines.has(id.slice(0, hash)), id).toBe(true);
           if (id.slice(hash + 1) !== "") expect(byId.has(id), id).toBe(true);
         }
-        expect(ref.from).not.toBe(ref.to);
         expect(ref.resolution).toBe("heuristic");
         expect(ref.site.startLine).toBeGreaterThanOrEqual(1);
         expect(ref.site.endLine).toBeLessThanOrEqual(

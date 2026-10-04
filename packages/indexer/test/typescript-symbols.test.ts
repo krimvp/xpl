@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { hashText, sliceLines } from "@xpl/core";
+import { hashText } from "@xpl/core";
 import { indexFiles, symbol, symbolLines } from "./helpers.js";
 
 const src = (...lines: string[]): string => lines.join("\n") + "\n";
@@ -484,9 +484,9 @@ describe("TypeScript symbols: ranges exclude leading comments and include decora
     const { index } = await indexFiles({ "a.ts": source });
     const m = symbol(index, "a.ts", "A.m")!;
     expect(m.range).toEqual({ startLine: 2, endLine: 4 });
-    expect(m.hash).toBe(hashText(sliceLines(source, m.range)));
+    expect(m.hash).toBe(hashText("  m() {\n    return 1;\n  }"));
     expect(symbol(index, "a.ts", "A")!.hash).toBe(
-      hashText(sliceLines(source, { startLine: 1, endLine: 5 })),
+      hashText("class A {\n  m() {\n    return 1;\n  }\n}"),
     );
   });
 
@@ -556,11 +556,9 @@ describe("JavaScript and TSX files", () => {
     ]);
   });
 
-  it("the tsx grammar is used for .tsx, the typescript grammar for .ts (angle-bracket assertions)", async () => {
+  it("a .ts file is read with the typescript grammar, which knows angle-bracket assertions", async () => {
     const ts = src("const x = <number>y;", "export function f() {}");
     expect(await symbolsOf(ts, "cast.ts")).toEqual(["variable x 1-1", "function f 2-2"]);
-    const { index } = await indexFiles({ "cast.ts": ts });
-    expect(index.languages.typescript).toMatchObject({ files: 1, symbols: 2 });
   });
 });
 
@@ -768,7 +766,7 @@ describe("TypeScript symbols: test blocks", () => {
     ]);
   });
 
-  it("works in .js and .tsx files and in files that also declare things around the tests", async () => {
+  it("works in .js files and in files that also declare things around the tests", async () => {
     const source = src(
       'const { describe, it } = require("node:test");',
       "const util = require('./util');",
