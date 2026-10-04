@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
 import { BUNDLE_SCHEMA, collectAnchors, parseBundle, type ViewerBundle } from "@xpl/core";
@@ -431,3 +431,25 @@ describe("xpl bundle", () => {
 function viewerEnvBuilt(): boolean {
   return viewerHtmlCandidates().some((candidate) => existsSync(candidate));
 }
+
+describe("xpl bundle: what the reader would see by mistake", () => {
+  it("warns when texts still hold TODO placeholders, and writes the page", async () => {
+    const dir = cloneDir(demo);
+    const scratch = makeTempDir("xpl-bundle-todo-");
+    const patch = join(scratch, "todo-patch.json");
+    writeFileSync(
+      patch,
+      JSON.stringify({
+        concepts: [{ id: "concept:todo", label: "Retries", summary: "TODO: say what it does" }],
+      }),
+    );
+    expect((await xpl(dir, "apply", "demo", patch)).code).toBe(0);
+    const out = join(scratch, "page.html");
+    const r = await bundle(dir, "-o", out);
+    expect(r.code).toBe(0);
+    expect(r.err).toMatch(
+      /1 text of \.explainer\/demo\.explainer\.json still holds a TODO placeholder/,
+    );
+    expect(readFileSync(out, "utf8").length).toBeGreaterThan(0);
+  });
+});

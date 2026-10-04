@@ -322,7 +322,8 @@ export interface LanguagePack {
    * Optional. Is this syntax-error node (`ERROR` or a MISSING token) inside a type expression, where the parser
    * recovered without disturbing anything a pack extracts (TypeScript: `[symbol: string]`, a valid labelled tuple
    * element the grammar cannot read, makes an `ERROR` inside the tuple only)? A file whose errors are all of
-   * that kind is not reported as having syntax errors. Leave it out when no such errors are known.
+   * that kind is not reported as having syntax errors. Leave it out when no such errors are known. (JSON uses it
+   * for the trailing commas of JSONC, `tsconfig.json`: the keys are all read.)
    */
   errorInTypePosition?(error: Node): boolean;
   /**

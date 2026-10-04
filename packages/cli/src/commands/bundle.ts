@@ -19,7 +19,11 @@ import { CliError, UsageError } from "../errors.js";
 import { formatBytes, listText, plural } from "../format.js";
 import { atomicWrite } from "../fsutil.js";
 import { loadExplainer, openWorkspace } from "../repo.js";
+import { lintExplainer } from "../lint.js";
 import { readViewerHtml } from "../viewer-html.js";
+
+/** A page larger than this gets a warning: it opens slowly, and mail and chat refuse it. */
+const LARGE_BUNDLE_BYTES = 20 * 1024 * 1024;
 
 /** The boundary files added per reason, in a fixed order. */
 const REASONS: readonly { reason: BoundaryReason; name: string }[] = [
@@ -253,6 +257,17 @@ export const bundleCommand: CommandSpec = {
     await atomicWrite(target, page);
     const bytes = Buffer.byteLength(page);
     const embedded = Object.keys(collected.files).length;
+    const todos = lintExplainer(explainer).findings.filter((f) => f.rule === "todo-left").length;
+    if (todos > 0) {
+      ctx.warn(
+        `${plural(todos, "text")} of ${loaded.rel} still ${todos === 1 ? "holds" : "hold"} a TODO placeholder, and the reader will see it: write ${todos === 1 ? "it" : "them"} first (\`xpl lint ${loaded.name}\` lists ${todos === 1 ? "it" : "them"})`,
+      );
+    }
+    if (bytes > LARGE_BUNDLE_BYTES) {
+      ctx.warn(
+        `the page is ${formatBytes(bytes)}: a page this large opens slowly and is hard to send${collected.choice === "referenced" ? "" : "; --files referenced embeds only the files the explainer points at"}`,
+      );
+    }
 
     if (ctx.json) {
       ctx.emit({

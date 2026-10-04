@@ -74,6 +74,11 @@ export const jsonPack: LanguagePack = {
   grammarFor: () => "json",
   packageScope: "file",
   refs: "none",
+  // JSONC (`tsconfig.json`, `.vscode/*.json`) allows a trailing comma: an `ERROR` of just `,` in an object, or a
+  // MISSING value before an array's `]`. The keys around it are read all the same.
+  errorInTypePosition: (error) =>
+    (!error.isMissing && error.text.trim() === ",") ||
+    (error.isMissing && error.parent?.type === "array" && error.nextSibling?.type === "]"),
 
   extract(ctx: FileContext): FileFacts {
     const walker = new JsonWalker(ctx);

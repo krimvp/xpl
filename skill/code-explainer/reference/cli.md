@@ -647,6 +647,8 @@ Writes one self-contained HTML file: the viewer, the explainer, the index and so
 
 Every anchor is **re-resolved** first, against the index and the code that go into the page, so an anchor whose code moved is highlighted at its new lines (`moved`), whatever the explainer file's cached `resolved` says; nothing is written back. When anchors **drifted** (their code changed) or are **missing** (their code is gone), bundle **refuses** (exit 1): the page would point at the wrong code. Run `xpl resolve <explainer> --write` and fix what it lists, then bundle again. `--allow-drift` writes the page anyway: it warns, the page shows a banner with the counts, and the drifted code is marked on its pane.
 
+It also warns, and writes the page, when a text still holds a `TODO` placeholder (the reader would see it: `xpl lint` lists them), and when the page is over 20 MB (`--files referenced` embeds fewer files).
+
 ```
 $ xpl bundle jobrunner -o jobrunner.html
 error: .explainer/jobrunner.explainer.json does not match the code: 3 anchors drifted (their code changed) and 2 are missing (their code is gone), so the page would point at the wrong code. To fix it, run `xpl resolve jobrunner --write` and fix what it lists: re-explain the drifted elements, re-anchor or drop the missing anchors, then bundle again; --allow-drift writes the page anyway, with a warning on it

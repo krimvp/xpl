@@ -181,6 +181,10 @@ function siteSpan(ref: Reference) {
   };
 }
 
+function isTestData(path: FilePath): boolean {
+  return /(?:^|\/)(?:testdata|fixtures|__fixtures__)\//.test(path);
+}
+
 function fileOfId(id: string): FilePath {
   return id.slice(0, id.indexOf("#"));
 }
@@ -464,7 +468,8 @@ async function indexFile(
           discovered.path,
           findSyntaxErrors(parsed.ctx.tree.rootNode, pack),
         );
-        if (errors) syntaxErrors.push(errors);
+        // test data is odd on purpose (Go fuzz corpora named `.json`, broken files a parser test reads)
+        if (errors && !isTestData(discovered.path)) syntaxErrors.push(errors);
       } finally {
         parsed.dispose();
       }

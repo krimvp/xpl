@@ -189,6 +189,20 @@ describe("buildIndex", () => {
       ]);
     });
 
+    it("leaves out JSONC trailing commas and test data, and keeps the keys", async () => {
+      const { index, warnings } = await indexFiles({
+        "tsconfig.json":
+          '{\n  // strict\n  "compilerOptions": { "strict": true, },\n  "include": ["src",],\n}\n',
+        "fuzz/testdata/fuzz/FuzzParse/seed.json": 'go test fuzz v1\n[]byte("{")\n',
+        "bad.json": '{ "a": 1 "b": 2 }\n',
+      });
+      expect(warnings).toEqual([
+        "1 file(s) have syntax errors; symbols near these lines may be incomplete: bad.json:1",
+      ]);
+      expect(symbol(index, "tsconfig.json", "compilerOptions.strict")).toBeDefined();
+      expect(symbol(index, "tsconfig.json", "include")).toBeDefined();
+    });
+
     it("lists at most three lines per file and five files", async () => {
       const files: Record<string, string> = {};
       for (let i = 0; i < 7; i++)
