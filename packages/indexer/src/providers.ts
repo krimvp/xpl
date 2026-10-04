@@ -97,6 +97,8 @@ export interface ProviderOutput {
   blind?: readonly { file: string; line: number; col: number }[];
 }
 export interface IndexProvider {
+  /** Syntax providers always run; semantic providers (the default) honor precise mode. */
+  readonly mode?: "syntax" | "semantic";
   readonly id: string;
   readonly languages: readonly FileLanguage[];
   readonly capabilities: AnalysisCapabilities;

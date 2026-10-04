@@ -446,8 +446,9 @@ describe("precise providers (registry and modes)", () => {
     ),
   );
 
-  it("starts with the SCIP resolvers registered (importing the indexer registers them)", () => {
+  it("starts with syntax and semantic providers registered", () => {
     expect(indexProviders().map((r) => r.id)).toEqual([
+      "rust-tags",
       "scip-typescript",
       "scip-python",
       "scip-go",

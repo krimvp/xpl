@@ -113,6 +113,7 @@ async function smoke(io: Io): Promise<number> {
     typescript: { source: "export const a = 1;\n", root: "program" },
     tsx: { source: "const el = <div />;\n", root: "program" },
     python: { source: "x = 1\n", root: "module" },
+    rust: { source: "fn main() {}\n", root: "source_file" },
     go: { source: "package main\n", root: "source_file" },
     yaml: { source: "a: 1\n", root: "stream" },
     json: { source: '{"a": 1}\n', root: "document" },

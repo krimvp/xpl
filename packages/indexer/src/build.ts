@@ -27,6 +27,7 @@ import type { LanguagePack } from "./languages/types.js";
 import { ParserPool } from "./parse.js";
 import { indexProviders } from "./providers.js";
 import type { IndexProvider } from "./providers.js";
+import "./tags/rust.js"; // registers syntax-only Rust tags
 import "./scip/index.js"; // registers the SCIP providers (scip-typescript, scip-python, scip-go)
 import { SymbolLookup } from "./symbols.js";
 import type { SymbolEntry } from "./symbols.js";
@@ -49,7 +50,7 @@ export interface BuildIndexOptions {
   precise?: "auto" | "off" | "require";
   /** Restrict to these languages (`IndexedFile.language` values). Default: all. */
   languages?: string[];
-  /** Additional providers to use instead of the semantic provider registry (see providers.ts). */
+  /** Providers to use instead of the additional provider registry (see providers.ts). */
   providers?: readonly IndexProvider[];
 }
 
@@ -207,7 +208,22 @@ export async function buildIndex(opts: BuildIndexOptions): Promise<BuildIndexRes
   const syntaxOutput = await syntax.analyze(providerInput);
   const normalizedSyntax = normalizeProvider(providerInput, syntaxOutput);
   let { entries, refs, providers } = mergeProvider({ entries: [], refs: [] }, normalizedSyntax);
-  const analysis = normalizedSyntax.analysis;
+  const additionalProviders = opts.providers ?? indexProviders();
+  const syntaxLanguages = new Set(
+    additionalProviders.filter((p) => p.mode === "syntax").flatMap((p) => p.languages),
+  );
+  const analysis = normalizedSyntax.analysis
+    .map((report) =>
+      report.provider === "text"
+        ? {
+            ...report,
+            files: report.files.filter(
+              (file) => !syntaxLanguages.has(files.find((f) => f.path === file)!.language),
+            ),
+          }
+        : report,
+    )
+    .filter((report) => report.files.length > 0);
   const usedPacks = syntax.usedPacks;
   const resourceSites = syntax.resourceSites;
   warnings.push(...syntax.warnings);
@@ -220,7 +236,15 @@ export async function buildIndex(opts: BuildIndexOptions): Promise<BuildIndexRes
 
   // 4. Precise references replace the heuristic ones of the languages they cover.
   const languageOfFile = new Map<FilePath, FileLanguage>(files.map((f) => [f.path, f.language]));
-  const refLanguages = new Set<FileLanguage>(heuristicFiles.map((f) => f.language));
+  const refLanguages = new Set<FileLanguage>(
+    sources
+      .filter(
+        (s) =>
+          packForFile(s.path, s.language)?.refs === "heuristic" ||
+          additionalProviders.some((p) => p.mode === "syntax" && p.languages.includes(s.language)),
+      )
+      .map((s) => s.language),
+  );
   const preciseTools = new Map<FileLanguage, string>();
   // Last replacement of each file/kind owns its resolution, even when it emitted no references.
   const relationshipAnalysis = new Map<
@@ -233,14 +257,16 @@ export async function buildIndex(opts: BuildIndexOptions): Promise<BuildIndexRes
   >();
   /** Per language: files that keep heuristic references because the precise tool did not describe them. */
   const keptHeuristicFiles = new Map<FileLanguage, number>();
-  if (precise !== "off") {
-    const available = opts.providers ?? indexProviders();
+  {
+    const available = additionalProviders.filter((p) => p.mode === "syntax" || precise !== "off");
     if (precise === "require") {
       const uncovered = [...refLanguages].filter(
         (l) =>
           !available.some(
             (r) =>
-              r.languages.includes(l) && RELATIONSHIP_CAPABILITIES.some((c) => r.capabilities[c]),
+              r.mode !== "syntax" &&
+              r.languages.includes(l) &&
+              RELATIONSHIP_CAPABILITIES.some((c) => r.capabilities[c]),
           ),
       );
       if (uncovered.length > 0) {
@@ -294,7 +320,9 @@ export async function buildIndex(opts: BuildIndexOptions): Promise<BuildIndexRes
                 ),
               );
             if (allUnavailable)
-              throw new Error("all advertised relationship kinds failed or were unsupported");
+              throw new Error(
+                `all advertised ${provider.mode === "syntax" ? "capabilities" : "relationship kinds"} failed or were unsupported`,
+              );
             throw new Error(
               `the tool described none of the ${reportFiles.length} ${languages.join("/")} file(s)`,
             );
@@ -344,9 +372,13 @@ export async function buildIndex(opts: BuildIndexOptions): Promise<BuildIndexRes
             ]),
           );
           if (precise === "require")
-            throw new Error(`precise provider "${provider.id}" failed: ${message}`);
+            throw new Error(
+              `${provider.mode === "syntax" ? "syntax" : "precise"} provider "${provider.id}" failed: ${message}`,
+            );
           warnings.push(
-            `precise provider "${provider.id}" failed (${message}); using heuristic references for ${languages.join(", ")}`,
+            provider.mode === "syntax"
+              ? `syntax provider "${provider.id}" failed (${message}); previous checked facts remain`
+              : `precise provider "${provider.id}" failed (${message}); using heuristic references for ${languages.join(", ")}`,
           );
         }
       }

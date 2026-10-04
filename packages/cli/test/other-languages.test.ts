@@ -18,6 +18,7 @@ import {
 const CASES = [
   { fixture: "py-jobrunner", language: "python" },
   { fixture: "go-jobrunner", language: "go" },
+  { fixture: "rs-jobrunner", language: "rust" },
 ];
 
 interface OutlineNode {
@@ -119,4 +120,73 @@ describe.each(CASES)("$fixture", ({ fixture, language }) => {
     expect(data.files["config/default.yaml"]).toBe(readFile(dir, "config/default.yaml"));
     expect(readJson(dir, ".explainer/demo.explainer.json").concepts).toHaveLength(1);
   });
+});
+
+it("Rust symbols can be outlined, shown, anchored and exported with their support limits", async () => {
+  const dir = copyFixture("rs-jobrunner");
+  const indexed = await xpl(dir, "index", "--precise", "off");
+  expect(indexed.code).toBe(0);
+  expect(indexed.out).toContain("rust: named symbols, full declaration ranges, nesting partial");
+  const outlined = await xpl(dir, "outline", "--under", "src/runner.rs", "--depth", "4");
+  expect(outlined.code).toBe(0);
+  expect(outlined.out).toContain("impl Runner<Q>.dispatch");
+  const shown = await xpl(dir, "show", "sym:src/runner.rs#impl Runner<Q>.dispatch");
+  expect(shown.code).toBe(0);
+  expect(shown.out.split("\n")[0]).toContain("(method) src/runner.rs:65-101");
+  expect(shown.out).toMatch(/^ *65 +0│ +pub fn dispatch\(&mut self\) \{$/m);
+  expect((await xpl(dir, "new", "rust")).code).toBe(0);
+  const applied = await invoke(["apply", "rust", "-"], {
+    cwd: dir,
+    stdin: JSON.stringify({
+      concepts: [
+        {
+          id: "concept:dispatch",
+          label: "Dispatch",
+          summary: "Runs queued jobs and retries failed attempts.",
+          anchors: [
+            { file: "src/runner.rs", symbol: "impl Runner<Q>.dispatch", role: "definition" },
+          ],
+        },
+      ],
+      views: [
+        {
+          id: "view:rust",
+          type: "graph",
+          title: "Dispatch",
+          include: ["sym:src/runner.rs#impl Runner<Q>.dispatch"],
+        },
+      ],
+    }),
+  });
+  expect(applied.code, applied.out + applied.err).toBe(0);
+  expect((await xpl(dir, "validate", "rust")).code).toBe(0);
+  const anchors = await xpl(dir, "anchors", "rust", "concept:dispatch");
+  expect(anchors.code).toBe(0);
+  expect(anchors.out).toContain("src/runner.rs");
+  const bundled = await invoke(["bundle", "rust", "-o", "rust.html"], {
+    cwd: dir,
+    env: { XPL_VIEWER_HTML: writeViewerStub() },
+  });
+  expect(bundled.code, bundled.out + bundled.err).toBe(0);
+  const data = parseBundle(
+    /<script id="xpl-data" type="application\/json">([\s\S]*?)<\/script>/.exec(
+      readFile(dir, "rust.html"),
+    )![1]!,
+  );
+  expect(data.files["src/runner.rs"]).toBe(readFile(dir, "src/runner.rs"));
+  expect(
+    data.index.symbols.find((s) => s.id === "src/runner.rs#impl Runner<Q>.dispatch"),
+  ).toMatchObject({
+    range: { startLine: 65, endLine: 101 },
+    parent: "src/runner.rs#impl Runner<Q>",
+  });
+  expect(data.index.languages.rust).toEqual({ files: 9, symbols: 82, refs: "none" });
+  expect(
+    data.index.analysis?.find(
+      (r) => r.provider === "rust-tags" && r.files.includes("src/runner.rs"),
+    )?.results,
+  ).toMatchObject([
+    { status: "partial", analyzedFiles: expect.arrayContaining(["src/runner.rs"]) },
+    { status: "unsupported", analyzedFiles: [] },
+  ]);
 });
