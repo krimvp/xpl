@@ -26,7 +26,7 @@
  * 5. last resort, only when the receiver's type is completely unknown: a class named like the qualifier
  *    (case-insensitive) that has the member (`queue.pop()` -> `Queue.pop`), preferring the same file, then
  *    a class the file imports, then the same directory (for Go, the same package comes before the imports);
- *    ambiguity drops the site. Calls and writes only.
+ *    a class elsewhere in the repository is not taken, and ambiguity drops the site. Calls and writes only.
  *
  * A `read` site resolves the same way (1-4) but only to variables: package-level variables and constants,
  * fields and properties. `import type` / `TYPE_CHECKING` bindings (`ImportBinding.typeOnly`) are `type-ref`
@@ -1056,6 +1056,9 @@ class Resolver {
     }
     if (found.length === 0) return undefined;
     const best = Math.min(...found.map((f) => f.rank));
+    // a class anywhere else in the repository is no evidence: in prometheus, 18 of 22 such guesses were an
+    // outside type with the same name (protobuf's `dto.Metric`, OTLP's `pmetric.Metric`, `io.Closer`)
+    if (best >= 3) return undefined;
     const top = found.filter((f) => f.rank === best);
     if (top.length !== 1) return undefined;
     this.input.onNameMatch?.({ file: ctx.file, receiver, member, target: top[0]!.member });
@@ -1063,7 +1066,8 @@ class Resolver {
   }
 
   /**
-   * Closeness of a candidate class to the site: same file, imported by the file, same directory, elsewhere. For
+   * Closeness of a candidate class to the site: same file, imported by the file, same directory, elsewhere (3,
+   * never taken). For
    * a language whose package is the directory (Go), the same directory is the file's own package: it comes
    * before what the file imports.
    */

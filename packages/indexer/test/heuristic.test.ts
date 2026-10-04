@@ -440,6 +440,20 @@ describe("calls: scope chain and same-file symbols", () => {
     expect(r).toEqual(["c.py#g -> a.py#Item.show (call)"]);
   });
 
+  it("the last-resort guess takes no class from an unrelated place in the repository", async () => {
+    const r = await refs(
+      {
+        "proto/metrics.ts": src("export class Metric {", "  render(): string { return ''; }", "}"),
+        "engine/eval.ts": src("export function show(metric: any) { return metric.render(); }"),
+        "engine/near.ts": src("export class Closer {", "  close(): void {}", "}"),
+        "engine/use.ts": src("export function stop(closer: any) { closer.close(); }"),
+      },
+      "call",
+    );
+    // the same directory is evidence enough; a class anywhere else is not
+    expect(r).toEqual(["engine/use.ts#stop -> engine/near.ts#Closer.close (call)"]);
+  });
+
   it("resolves calls to overloaded functions to the implementation", async () => {
     const r = await refs(
       {
