@@ -38,8 +38,12 @@ aside to preserve it, then retry. Claude Code needs its own installation, authen
 access. In a TypeScript, Python or Go repository, explicitly ask it:
 
 ```
-/code-explainer explain How does X work?
+/code-explainer explain How does X work? Root: /absolute/path/to/repo. Audience: maintainers. New guide: subsystem-guide.
 ```
+
+For the three creation scopes and safe retries, see [Create a guide](skill/code-explainer/reference/create.md).
+Choose a new guide or name the existing guide to extend; an existing file is never replaced by creation.
+The agent writes and checks the JSON patch for you.
 
 Claude indexes the repo, writes `.explainer/<name>.explainer.json` (commit it; the indexes beside it are
 git-ignored) and gives you the result. Open it yourself with `xpl bundle <name> -o <name>.html` (one
@@ -186,6 +190,13 @@ Empty relationships do not mean complete analysis. Older indexes still load, wit
 `XPL_SCIP_TIMEOUT_MS` sets the per-tool timeout (default 10 minutes). Files a tool did not describe (build-tagged
 Go files, for one) keep their heuristic references and are named in a warning; the summary then reads
 `refs: precise 10/11 (scip-go@0.2.7), 1 heuristic`.
+
+Repeated `xpl index` builds reuse file-local tree-sitter and Rust tags extraction in `.explainer/cache`.
+Discovery, source hashes, heuristic resolution and semantic tools still run on every build. The summary
+reports extraction hits/misses and wall time separately from fresh resolution and semantic work.
+`xpl index --no-cache` reads and writes no cached facts; removing `.explainer/cache` reclaims old entries.
+Cache directory aliases into the repository (symlinks or bind mounts) bypass reuse and report why.
+See [cache keys, equivalence checks and measurements](docs/extraction-cache.md).
 
 `xpl index --scip <artifact|manifest.json>` imports generated SCIP declarations and supported references,
 including sources without a language pack (their language stays `text`). Documents need embedded source text
