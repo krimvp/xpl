@@ -12,7 +12,6 @@ import type { ColumnEncoding, MapResult, ScipSource } from "../src/scip/map.js";
 import { PositionEncoding, SymbolRole } from "../src/scip/proto.js";
 import type { DocumentSpec, RelationshipSpec } from "./scip-encode.js";
 import { DEF, marked, moduleDef, occs, source, ts } from "./scip-dsl.js";
-import type { Marked } from "./scip-dsl.js";
 import { makeDir } from "./helpers.js";
 
 const TS_LANGUAGES: FileLanguage[] = ["typescript", "tsx", "javascript"];

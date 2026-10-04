@@ -73,13 +73,16 @@ test.describe("the keyboard on a map", () => {
     const names = await page
       .locator('.diagram .nodes .node[role="button"]')
       .evaluateAll((boxes) =>
-        boxes.map((box) => [
-          box.getAttribute("aria-label") ?? "",
-          box.querySelector(":scope > .label")?.textContent ?? "",
-        ]),
+        boxes.map(
+          (box) =>
+            [
+              box.getAttribute("aria-label") ?? "",
+              box.querySelector(":scope > .label")?.textContent ?? "",
+            ] as const,
+        ),
       );
     expect(names.length).toBeGreaterThan(2);
-    for (const [name, label] of names) expect(name.startsWith(label!)).toBe(true);
+    for (const [name, label] of names) expect(name.startsWith(label)).toBe(true);
     await expect(page.locator('.diagram [role="button"] [role="button"]')).toHaveCount(0);
 
     // Tab from the canvas: the boxes come top-down, then left to right

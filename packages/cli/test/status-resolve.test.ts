@@ -12,7 +12,6 @@ import {
 } from "./helpers.js";
 
 const EXPLAINER = ".explainer/demo.explainer.json";
-const DISPATCH = "sym:src/runner.ts#Runner.dispatch";
 
 let indexed: string;
 let demo: string;

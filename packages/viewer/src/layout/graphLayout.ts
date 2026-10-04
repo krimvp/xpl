@@ -952,8 +952,6 @@ export function spreadLabels(edges: readonly Pick<LayoutEdge, "points" | "label"
   }
 }
 
-const size2 = (box: Box, axis: "x" | "y") => (axis === "x" ? box.width : box.height);
-
 /** Routes laid end to end: where one ends the next starts, so the shared point is kept once. */
 function joined(parts: readonly Point[][]): Point[] {
   const out: Point[] = [];

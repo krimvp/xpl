@@ -136,7 +136,6 @@ const addKeyAboveRetry = (dir: string) =>
 
 describe.each([python, go])("regeneration on the $name fixture", (lang) => {
   const symbol = (file: string, path: string) => `sym:${file}#${path}`;
-  const dispatchId = symbol(lang.runnerFile, lang.dispatch);
   let base: string;
 
   beforeAll(async () => {

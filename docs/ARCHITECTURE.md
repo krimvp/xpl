@@ -69,7 +69,7 @@ between two commits. For a change, `xpl change` records the diff in the explaine
 
 ```
 package.json            npm workspaces root (ESM). Scripts: build, test, typecheck, test:e2e, format, format:check
-tsconfig.base.json      strict, ES2022, NodeNext
+tsconfig.base.json      strict, noUncheckedIndexedAccess, noUnusedLocals, ES2022, NodeNext
 packages/
   core/     @xpl/core     schema types + pure logic (hash, anchors, derivation, validation, patches).
                           Browser-safe: no node:* imports. Used by indexer, cli and viewer.

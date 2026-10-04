@@ -3,7 +3,6 @@ import {
   applyPatch,
   createExplainer,
   validateExplainer,
-  type Anchor,
   type ApplyResult,
   type Explainer,
   type ExplainerPatch,

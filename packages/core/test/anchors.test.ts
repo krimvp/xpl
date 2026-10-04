@@ -22,7 +22,6 @@ import {
   LLM,
   makeWorld,
   sequenceView,
-  textWith,
   USER,
   type SymbolDecl,
 } from "./helpers.js";

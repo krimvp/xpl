@@ -35,7 +35,7 @@ import {
 } from "@xpl/indexer";
 import type { RepoEnv } from "./context.js";
 import { CliError, errorMessage } from "./errors.js";
-import { listText, plural } from "./format.js";
+import { listText } from "./format.js";
 import { displayPath, parseJson, readTextFile, workingTreeReader } from "./fsutil.js";
 import { gitShowReader } from "./git.js";
 
