@@ -27,12 +27,6 @@ export interface AssembledSymbols {
   entries: SymbolEntry[];
 }
 
-/** Strip the `~N` duplicate suffix the framework appends. */
-export function stripDuplicateSuffix(path: string): string {
-  const m = /~\d+$/.exec(path);
-  return m ? path.slice(0, m.index) : path;
-}
-
 /** Order drafts by position: earlier start first, then larger extent first, then input order. */
 function sortDrafts(drafts: readonly SymbolDraft[]): SymbolDraft[] {
   return drafts
