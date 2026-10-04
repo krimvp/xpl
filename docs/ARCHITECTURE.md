@@ -238,6 +238,12 @@ Conventions (all packages):
 20. `Explainer` adds `scope?: ExplainerScope` = `{ audience?: string }`: who the page is for and how deep it
     goes, one line (at most `AUDIENCE_MAX` = 120 characters) shown under the title. Not a view's `Scope`. A
     patch's top-level `scope` is merged in; `null` (for it or for `audience`) clears.
+21. `Explainer.review?: ReviewRecord` records one author inspection: `{ reviewer, reviewedAt, scope,
+    omissions, fingerprint, sourceCommit }`. The name is self-reported and the time is a UTC ISO timestamp;
+    neither authenticates the reviewer nor verifies prose. Omissions are named descriptions, or `[]` when
+    none are named. Missing legacy records mean unchecked. Only user patches record or remove a review.
+    Scope is `{ content: "all" | string[], source: "anchored" | "repository", files?: string[] }`;
+    the fingerprint is `{ version: "xpl-review@1", contentHash, evidenceHash }` (§4.6).
 
 Patch-side types (never stored) live in `packages/core/src/patch.ts`; its header holds the authoritative
 merge rules and `skill/code-explainer/reference/patch-format.md` is the practical guide. What Claude writes:
@@ -992,13 +998,16 @@ id wins (validation reports the duplicates).
 `validateExplainer(explainer, index, getText, { mode: "strict" | "lenient" })` returns `Issue[]`:
 `{ severity: "error" | "warning", path, elementId?, message, code?, userLocked? }`, with `path` like
 `views[1].steps[2].anchors[0]`. Codes: `schema duplicate-id bad-id unknown-id anchor-invalid anchor-drifted
-anchor-missing evidence frame cycle step commit change protected`. Messages are written for Claude to fix its
+anchor-missing evidence frame cycle step commit change review protected`. Messages are written for Claude to fix its
 patch from. Rules:
 
 - Shapes and enums; `schema` = `code-explainer@0`; `repo` and `index` present. An `index.commit` other than
   the given index's is a warning (`commit`) that points at `xpl resolve --write`. A tour's `summary` is a string.
   An empty `title` is a warning; the explainer's `scope` is `{ audience? }`, one line of at most `AUDIENCE_MAX`
   (120) characters (longer is a warning). A node's `role` is one of `NODE_ROLES`, its `tech` a string.
+- `review`: exact fields and fingerprint version/hashes, non-empty reviewer and omissions, UTC ISO time,
+  unique non-empty content IDs, known source policy and repository-relative file paths. Historical records
+  remain valid when their content or evidence disappears; `checkReview` reports them out of date separately.
 - `change` (`changeShapeIssues`): full SHAs, known statuses, `oldPath` only and always on a renamed file, no
   path twice, well-formed hunks; a problem is an error (code `change`, path under `change.`), since only a hand
   edit makes one. A `change.head` that is not the commit of the index in use is a warning that says to check
@@ -1066,6 +1075,30 @@ This identity lives in core for export and feedback/revision consumers, independ
 `sourceHash` identifies indexed source: a stale draft/workspace can contain code that differs from it.
 Consumers must also check readiness/freshness before accepting a revision or retargeting feedback.
 
+**Scoped review (`review.ts`).** `reviewFingerprint(explainer, index, texts, scope)` hashes a separate
+projection; it does not change `artifactIdentity`. `content: "all"` covers stored nodes, edges, concepts,
+views and tours plus title, audience, repository name/URL and the change record. A list selects exactly the
+named stored node/edge/concept/view/tour records. A view includes its steps; a tour includes its notes and
+code overrides. Dependencies are not selected automatically: a view's included nodes and a tour's focused
+elements need their own IDs to cover their prose and anchors. Derived boxes/arrows and runtime paths outside
+the selected records are outside this inspection. Name them as omissions or explicitly widen the scope.
+
+`source: "anchored"` covers the selected records' attached anchors, including before-source read through
+`TextCache.textAt`. `files` adds named whole indexed files. `source: "repository"` also covers the full
+indexed path/hash manifest, so any indexed addition, deletion or edit invalidates that broader review.
+Source hashes are computed from readable text; missing text and drifted/missing anchors cannot produce a
+fingerprint. Discovery/freshness of the working tree remains a separate readiness check. A narrow review
+survives unrelated files and edits outside its anchor spans, even in the same file. Exact anchor moves
+survive too: the projection excludes span offsets, resolution caches, provenance and current index/repo
+commits. Anchor file/symbol/role/side and hashes remain bound. `sourceCommit` records the index used at
+inspection time; later commits alone do not invalidate a narrow review.
+
+`checkReview(explainer, index, texts)` returns `{ status: "unchecked" | "reviewed" | "out-of-date" }`.
+Changed selected prose, anchor identity/hash, additional whole files, missing content or unavailable
+evidence make the record out of date. Review metadata is excluded to avoid hashing the record into itself.
+The explainer carries the record through existing live and portable bundle serialization. This contract
+does not add a viewer control or a required-review export policy; those are separate follow-ups.
+
 ### 4.7 Patches (`apply.ts`)
 
 `applyPatch(explainer, patch, index, getText, { actor: "llm" | "user" }) → { ok, explainer, issues, changed }`,
@@ -1073,7 +1106,7 @@ atomic: any error → `ok: false` and the input explainer, untouched.
 
 - Upsert by id, shallow-merged as in §2. An id twice in one patch, or upserted (or changed by a `stepsUpdate`)
   and removed by the same patch, is an error. Top-level keys: `title scope nodes edges concepts views tours
-  remove`; `scope` merges `{ audience }` into the explainer's (`null` clears). `remove` takes elements,
+  remove review`; `scope` merges `{ audience }` into the explainer's (`null` clears). `remove` takes elements,
   views, tours and single steps (an unknown id is a warning); dropping a step id by resending a view's
   `steps` is a warning (`step`: tours may point at it).
 - **Ownership.** `actor: "llm"` never modifies (skipped with a `protected` warning) an element, view or tour
@@ -1084,6 +1117,12 @@ atomic: any error → `ok: false` and the input explainer, untouched.
   still make to a field the user owns is `includeAdd`. A tour without `provenance` counts as `llm`.
   `actor: "user"` editing an element of another origin adds the changed fields to `userFields`; that is how
   viewer edits and `xpl apply --actor user` protect themselves from regeneration.
+- **Author review.** A user patch sends a complete `review` input (all record fields except `sourceCommit`)
+  with the fingerprint of the content/evidence the author inspected. Apply compares it with the final
+  merged scope, so concurrent source changes and relevant edits in the same patch reject the record
+  atomically. `sourceCommit` is filled from the index. `review: null` explicitly removes the record.
+  Any LLM patch carrying `review` is a `protected` error, including creation, overwrite and removal.
+  Generated patches that omit it preserve the record, even when their edits make it out of date.
 - New elements, views and tours get `provenance = { origin: actor, commit: index.commit }` unless given; a
   changed `llm` element gets `provenance.commit = index.commit`.
 - Anchors go through `makeAnchor`, steps and tour `code` overrides likewise, frames are checked. A patch
@@ -1101,7 +1140,7 @@ atomic: any error → `ok: false` and the input explainer, untouched.
   exception: an `llm` patch that changes an element whose anchors the user owns is not rejected for the drift
   of those anchors, which it cannot repair; the problem stays a warning (`userLocked`).
 - `changed` lists the ids of elements, views, tours and steps the patch added, changed or removed (upserts
-  that change nothing are not listed), plus `"title"` and `"scope"` when they change; a `stepsUpdate` lists
+  that change nothing are not listed), plus `"title"`, `"scope"` and `"review"` when they change; a `stepsUpdate` lists
   the view and each step it changed (a tour's steps as `<tour id>/<step id>`).
 
 ### 4.8 Also in core
