@@ -9,8 +9,9 @@
  * - An id that exists: the patch is shallow-merged onto it. Fields absent from the patch keep their
  *   values, arrays and nested objects (`members`, `include`, `steps`, `layout`, `scope`, ...) are
  *   replaced wholesale, and `null` clears an optional field (`summary` of an element or a tour, `detail`,
- *   `members`, `related`, `via`, `edgeKinds`, `hidden`, `excludeFiles`, `stubs`, `layout`, `frames`). In particular a
- *   sequence view's `steps` are sent whole (keep every step id: tours and frames point at them; `remove` deletes single steps).
+ *   `members`, `role`, `tech`, `opens`, `related`, `via`, `edgeKinds`, `hidden`, `excludeFiles`, `stubs`,
+ *   `layout`, `frames`). In particular a sequence view's `steps` are sent whole (keep every step id: tours
+ *   and frames point at them; `remove` deletes single steps).
  * - A graph view's `include` can also be edited incrementally, with `includeAdd` and `includeRemove` (patch-only
  *   fields, never stored). They apply after `include` (when that is given too): the ids in `includeRemove` leave
  *   the list, the ids in `includeAdd` that are not in it yet are appended. Ids are checked like `include`
@@ -18,10 +19,11 @@
  *   vanished node is dropped), and an id in both lists is an error. They are how `expand` grows a view.
  * - A sequence view's steps can also be edited one by one, with `stepsUpdate` (a patch-only field, never stored): a
  *   list of `{ id, ...fields }` whose fields are shallow-merged into the existing steps with those ids (`anchors`
- *   are `AnchorInput`s and replace the step's anchors wholesale; `null` clears `summary` or `edge`; `id` is the
- *   key, so it cannot change). It applies after `steps` when both are sent. An id that is not a step of the view
- *   is an error that names the view's steps. Like `steps`, it is skipped (with a `protected` warning) for an
- *   `llm` patch when the user edited the view's `steps`. It is how one summary is fixed without resending them all.
+ *   are `AnchorInput`s and replace the step's anchors wholesale; `null` clears `summary`, `edge`, `shape` or
+ *   `next`; `id` is the key, so it cannot change). It applies after `steps` when both are sent. An id that
+ *   is not a step of the view is an error that names the view's steps. Like `steps`, it is skipped (with a
+ *   `protected` warning) for an `llm` patch when the user edited the view's `steps`. It is how one summary is
+ *   fixed without resending them all.
  * - A tour's steps can be edited one by one too, with the tour's `stepsUpdate`: `[{ id, ...fields }]` merged into the
  *   tour's steps with those ids (`view`, `focus`, `note`, `code` as `AnchorInput`s, `editor`; `null` clears `note`,
  *   `code` or `editor`). Same rules as for a sequence view: after `steps`, an unknown id is an error naming the
@@ -36,7 +38,7 @@
  *   view whose `steps` the user edited.)
  * - A new id: the fields that cannot be inferred must be present. Required when creating:
  *   - node: `label` (except for `dir:`/`file:`/`sym:` overlays, whose default label is used) and, for a
- *     group, `members`. `kind` is inferred from the id, `parent` defaults to the structural parent
+ *     group, `members` (or a `role`). `kind` is inferred from the id, `parent` defaults to the structural parent
  *     (`repo` for groups), `anchors` to `[]`.
  *   - edge: `from`, `to`, `kind` and `label` (for an id of the derived form `edge:<kind>:<a>-><b>`
  *     they come from the id and `label` may be omitted).

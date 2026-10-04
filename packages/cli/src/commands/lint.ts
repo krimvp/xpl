@@ -77,7 +77,7 @@ export const lintCommand: CommandSpec = {
     "Findings:",
     "  todo-left            a TODO placeholder left in any of these texts or in a view's question (`xpl draft`",
     "                       writes them): the one error-level finding, exit 1 even with --warn-only",
-    `  tour-summary         a tour without a \`summary\`, or one of fewer than ${LINT_LIMITS.summaryMinSentences} or more than ${LINT_LIMITS.summarySentences} sentences`,
+    `  tour-summary         a tour without a \`summary\`, or one of fewer than ${LINT_LIMITS.summaryMinSentences} or more than ${LINT_LIMITS.summarySentences} sentences (${LINT_LIMITS.changeSummarySentences} for a change)`,
     "  tour-first-step      the first step of a tour does not show the big picture: it focuses a test, only a",
     "                       concept that lights up nothing, opens on a flow when the tour has a map, or its title",
     '                       says "edge case", "corner case", "gotcha" or "open question"',

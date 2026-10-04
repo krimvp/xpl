@@ -36,8 +36,8 @@
  * import) are "opaque": nothing is guessed for them.
  *
  * Not handled: overload resolution, generics/type arguments, union types, control-flow narrowing,
- * reassigned locals with different types, dynamic access, tsconfig path aliases, CommonJS
- * `module.exports` shapes.
+ * reassigned locals with different types, dynamic access, CommonJS `module.exports`
+ * shapes (tsconfig path aliases are the TypeScript pack's `resolveModule`, see ts-modules.ts).
  */
 import type { FileLanguage, FilePath, IndexedSymbol, Reference, SymbolId } from "@xpl/core";
 import type {

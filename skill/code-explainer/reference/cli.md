@@ -1,17 +1,18 @@
 # CLI reference
 
-`<skill dir>/bin/xpl <command> [options]` (below: `xpl`). Run it from the root of the repo you are explaining, or pass `--root <dir>`. Samples come from `fixtures/ts-jobrunner` (a tiny job runner, indexed as `wt-6dd745d736`) and are trimmed, not edited.
+`<skill dir>/bin/xpl <command> [options]` (below: `xpl`). Run it from the root of the repo you are explaining, or pass `--root <dir>`. Samples come from `fixtures/ts-jobrunner` (a tiny job runner, indexed as `wt-0db7e190f5`) and are trimmed, not edited.
 
 **Global options** (every command)
 
-| Option           | Meaning                                                                                  |
-| ---------------- | ---------------------------------------------------------------------------------------- |
-| `--root <dir>`   | repository root (default: current directory)                                             |
-| `--json`         | machine-readable output (`{"ok": true, ...}`; errors as `{"ok": false, "error": "..."}`) |
-| `--index <path>` | symbol index to use (default: the index of the current commit id, else the newest one)   |
-| `-h`, `--help`   | help for the command; `xpl help` lists all                                               |
+| Option            | Meaning                                                                                  |
+| ----------------- | ---------------------------------------------------------------------------------------- |
+| `--root <dir>`    | repository root (default: current directory)                                             |
+| `--json`          | machine-readable output (`{"ok": true, ...}`; errors as `{"ok": false, "error": "..."}`) |
+| `--index <path>`  | symbol index to use (default: the index of the current commit id, else the newest one)   |
+| `-h`, `--help`    | help for the command; `xpl help` lists all                                               |
+| `-v`, `--version` | print the version                                                                        |
 
-**Exit codes:** 0 ok · 1 rejected or failed (bad id, rejected patch, a patch that changed nothing because the user owns everything it touches, `resolve --write` on a stale index, validation errors) · 2 usage error.
+**Exit codes:** 0 ok · 1 rejected or failed (bad id, rejected patch, a patch that changed nothing because the user owns everything it touches, `resolve --write` on a stale index, validation errors, `lint` findings, `bundle` with drifted or missing anchors) · 2 usage error.
 **Streams:** results, issue lists and rejections print on stdout (a rejection also exits 1); fatal errors (`error: ...`: unknown id, no index, bad JSON, unreadable file) and `warning:` lines go to stderr, so use `2>&1` to capture both. With `--json` there is one object on stdout, errors included (`{"ok": false, "error": ...}`).
 **Environment:** `XPL_CLI` (launcher: path of an `xpl.mjs` to run instead of the repo's build), `XPL_VIEWER_HTML` (viewer page for `view`/`bundle`), `XPL_SKIP_STALE_CHECK=1` (skip the index-vs-working-tree comparison), `XPL_SCIP_TIMEOUT_MS` (time limit of each SCIP indexer, default 10 minutes), `XPL_WASM_DIR` (where the tree-sitter `.wasm` files are), `XPL_DEBUG=1` (stack traces).
 
@@ -27,12 +28,12 @@ Builds `.explainer/index-<commit>.json` (and `.explainer/.gitignore` with `index
 
 ```
 $ xpl index
-index written: .explainer/index-wt-6dd745d736.json
-commit: wt-6dd745d736  files: 12  symbols: 157  refs: 301
+index written: .explainer/index-wt-0db7e190f5.json
+commit: wt-0db7e190f5  files: 12  symbols: 160  refs: 314
 
 json        2 files    23 symbols    refs: none
 text        1 file     0 symbols     refs: none
-typescript  8 files    118 symbols   refs: precise (scip-typescript@0.4.0)
+typescript  8 files    121 symbols   refs: precise (scip-typescript@0.4.0)
 yaml        1 file     16 symbols    refs: none
 ```
 
@@ -50,7 +51,7 @@ One line per element: `<id>  <kind>  <first>-<last line>  in=<fan-in> out=<fan-o
 
 ```
 $ xpl outline --depth 1
-repo  ts-jobrunner  12 files, 157 symbols
+repo  ts-jobrunner  12 files, 160 symbols
   dir:config  dir  1 file  in=0 out=0  [+1]
   dir:src  dir  7 files  in=41 out=0  [+7]
   dir:test  dir  1 file  in=0 out=41  [+1]
@@ -93,7 +94,7 @@ Code with **0-based offsets from the symbol's first line**: the numbers `span` u
 
 ```
 $ xpl show src/runner.ts#Runner.dispatch --refs
-sym:src/runner.ts#Runner.dispatch (method) src/runner.ts:42-88 sha256-v2:c02146e8d847
+sym:src/runner.ts#Runner.dispatch (method) src/runner.ts:42-88 sha256-v2:e6c9c06f4779
 42  0│   async dispatch(): Promise<void> {
 43  1│     while (this.running) {
 ...
@@ -223,7 +224,7 @@ Creates an empty `.explainer/<name>.explainer.json` bound to the selected index.
 
 ```
 $ xpl new jobrunner --title "Job runner"
-created .explainer/jobrunner.explainer.json (title "Job runner", index .explainer/index-wt-6dd745d736.json, commit wt-6dd745d736)
+created .explainer/jobrunner.explainer.json (title "Job runner", index .explainer/index-wt-0db7e190f5.json, commit wt-0db7e190f5)
 repo: ts-jobrunner (package.json)
 next: write a patch and run `xpl apply jobrunner patch.json`
 ```
@@ -289,12 +290,12 @@ Strict by default: ids, references, anchors (must resolve `ok` or `moved`), the 
 
 ```
 $ xpl validate jobrunner
-ok: .explainer/jobrunner.explainer.json is valid (strict, index wt-6dd745d736); no errors, no warnings
+ok: .explainer/jobrunner.explainer.json is valid (strict, index wt-0db7e190f5); no errors, no warnings
 $ xpl validate jobrunner            # after the code changed and `resolve --write`
 .explainer/jobrunner.explainer.json (strict, index wt-3fa2f32c4b): 5 errors, 0 warnings
-error   concepts[1].anchors[0] [concept:mine]: anchor src/queue.ts#Queue.requeue drifted: text of src/queue.ts#Queue.requeue changed (expected sha256-v2:9abf2fb62272, now sha256-v2:ba9e3c066ce0). This element is user-authored, so an llm patch cannot change it (it is skipped): tell the user, or fix it with `xpl apply --actor user`.
+error   concepts[1].anchors[0] [concept:mine]: anchor src/queue.ts#Queue.requeue drifted: text of src/queue.ts#Queue.requeue changed (expected sha256-v2:2313a7a99ec8, now sha256-v2:ba9e3c066ce0). This element is user-authored, so an llm patch cannot change it (it is skipped): tell the user, or fix it with `xpl apply --actor user`.
 error   views[1].steps[0].anchors[1] [dispatch:1]: anchor src/queue.ts#Queue.pop is missing: symbol Queue.pop is not in src/queue.ts; did you mean sym:src/queue.ts#Queue.take (anchor: file: "src/queue.ts", symbol: "Queue.take")? Re-anchor it to where the code went, or drop it (resend the element without this anchor, or remove the element).
-error   views[1].steps[3].anchors[1] [dispatch:4]: anchor src/queue.ts#Queue.requeue drifted: text of src/queue.ts#Queue.requeue changed (expected sha256-v2:9abf2fb62272, now sha256-v2:ba9e3c066ce0). Re-read the code and rewrite the anchor (and the explanation that depends on it).
+error   views[1].steps[3].anchors[1] [dispatch:4]: anchor src/queue.ts#Queue.requeue drifted: text of src/queue.ts#Queue.requeue changed (expected sha256-v2:2313a7a99ec8, now sha256-v2:ba9e3c066ce0). Re-read the code and rewrite the anchor (and the explanation that depends on it).
 ...
 ```
 
@@ -375,7 +376,7 @@ anchors: 24 (ok 10, moved 9, drifted 3, missing 2)
 drifted llm elements to re-explain (2):
   dispatch:4  (step in view:dispatch)
     views[1].steps[3].anchors[1]  src/queue.ts#Queue.requeue [definition]  now at lines 87-90
-      text of src/queue.ts#Queue.requeue changed (expected sha256-v2:9abf2fb62272, now sha256-v2:ba9e3c066ce0)
+      text of src/queue.ts#Queue.requeue changed (expected sha256-v2:2313a7a99ec8, now sha256-v2:ba9e3c066ce0)
   dispatch:5  (step in view:dispatch)
     ...
 drifted, but not llm-owned (left alone) (1):
@@ -569,7 +570,7 @@ files (1):
 changed symbols outside tests (1):
   sym:src/runner.ts#Runner.dispatch  (method, lines 42-88)  changed at 80
     callers outside tests (1):
-      sym:src/runner.ts#Runner.start  (src/runner.ts:32; heuristic)
+      sym:src/runner.ts#Runner.start  (src/runner.ts:32)
     tests: no test found (no test references it by name; tests of other code may still run it)
 
 no test found for 1 changed symbol: sym:src/runner.ts#Runner.dispatch
@@ -639,7 +640,7 @@ $ xpl view jobrunner --no-open --port 0
 serving .explainer/jobrunner.explainer.json at http://127.0.0.1:34971/  (Ctrl-C to stop)
 ```
 
-API (for scripts): `GET /api/bundle`, `GET /api/file?path=`, `GET /api/base-file?path=` (the code before the recorded change of a modified, renamed or deleted file), `PUT /api/views/<id>`, `PUT /api/tours/<id>`, `GET|POST /api/requests`.
+API (for scripts): `GET /api/bundle`, `GET /api/explainer` (the explainer with its anchors re-resolved, with an `ETag`; what the page polls), `GET /api/file?path=`, `GET /api/base-file?path=` (the code before the recorded change of a modified, renamed or deleted file), `PUT /api/views/<id>`, `PUT /api/tours/<id>`, `GET|POST /api/requests`.
 
 ## `xpl bundle <explainer> -o out.html [--mode explore|present] [--tour id] [--files referenced|boundary|all] [--boundary-max n] [--embed-index full|pruned] [--allow-drift]`
 
@@ -667,20 +668,20 @@ wrote metrics.html (2.2 MB): .explainer/metrics.explainer.json, 2 of 12 files em
 
 (Here `metrics` is an explainer with one concept anchored at `src/metrics.ts#registerMetrics`: `main()` calls it, it calls `EventBus.on` in `src/bus.ts`, and the retry test calls it.)
 
-The symbol index, most of the page for a large repository, is **pruned** with `--files referenced` (and `boundary`, for the files it embeds): every file entry stays, and so do the symbols of the embedded files and of what the explainer names or its graph views show (with their parents), and the references that touch an embedded file (`read` references: both ends), lie on a graph view or make up a derived edge the explainer names. The views, tours and code behave as with the whole index. `--files all` embeds the whole index; `--embed-index full|pruned` overrides either. The page holds the index packed (each symbol id once, every symbol and reference a short array of numbers: about a fifth of the plain JSON; the viewer unpacks it). The summary line says the size in the page, then as plain JSON and what was saved (`index 17.3 KB (71.1 KB as plain JSON, pruned from 82.2 KB)`; no `pruned from` when nothing was dropped) and the embedded index carries `pruned: {files, symbols, refs}`, the counts of the whole one. One limit: a ghost the reader expands into a file whose code is not embedded opens only into the symbols the kept references end in, and edges between two such ghosts are missing (use `--files all`, or `--embed-index full`, when the reader should explore freely).
+The symbol index, most of the page for a large repository, is **pruned** with `--files referenced` (and `boundary`, for the files it embeds): every file entry stays, and so do the symbols of the embedded files and of what the explainer names or its graph views show (with their parents), and the references that touch an embedded file (`read` references: both ends), lie on a graph view or make up a derived edge the explainer names. The views, tours and code behave as with the whole index. `--files all` embeds the whole index; `--embed-index full|pruned` overrides either. The page holds the index packed (each symbol id once, every symbol and reference a short array of numbers: about a fifth of the plain JSON; the viewer unpacks it). The summary line says the size in the page, then as plain JSON and what was saved (`index 17.2 KB (72.0 KB as plain JSON, pruned from 85.8 KB)`; no `pruned from` when nothing was dropped) and the embedded index carries `pruned: {files, symbols, refs}`, the counts of the whole one. One limit: a ghost the reader expands into a file whose code is not embedded opens only into the symbols the kept references end in, and edges between two such ghosts are missing (use `--files all`, or `--embed-index full`, when the reader should explore freely).
 
 ```
 $ xpl bundle jobrunner -o jobrunner.html
-wrote jobrunner.html (2.3 MB): .explainer/jobrunner.explainer.json, 8 of 12 files embedded (referenced: 18.4 KB of source; --files all adds 4 files, 6.7 KB), index 17.3 KB (71.1 KB as plain JSON, pruned from 82.2 KB), mode explore
+wrote jobrunner.html (1.1 MB): .explainer/jobrunner.explainer.json, 8 of 12 files embedded (referenced: 18.4 KB of source; --files all adds 4 files, 6.7 KB), index 17.2 KB (72.0 KB as plain JSON, pruned from 85.8 KB), mode explore
 $ xpl bundle jobrunner -o talk.html --tour tour:intro
-wrote talk.html (2.3 MB): .explainer/jobrunner.explainer.json, 8 of 12 files embedded (referenced: 18.4 KB of source; --files all adds 4 files, 6.7 KB), index 17.3 KB (71.1 KB as plain JSON, pruned from 82.2 KB), mode present, tour tour:intro
+wrote talk.html (1.1 MB): .explainer/jobrunner.explainer.json, 8 of 12 files embedded (referenced: 18.4 KB of source; --files all adds 4 files, 6.7 KB), index 17.2 KB (72.0 KB as plain JSON, pruned from 85.8 KB), mode present, tour tour:intro
 $ xpl bundle jobrunner -o all.html --files all
-wrote all.html (2.3 MB): .explainer/jobrunner.explainer.json, 12 files embedded (all: 25.1 KB of source), index 82.2 KB, mode explore
+wrote all.html (1.1 MB): .explainer/jobrunner.explainer.json, 12 files embedded (all: 25.1 KB of source), index 20.8 KB (85.8 KB as plain JSON), mode explore
 ```
 
 **With a change recorded** (`xpl change`), every changed file that exists after the change is embedded, whatever `--files` says, and so is the code before the change of every modified, renamed or deleted file (`baseFiles` in the page, read from git). The summary line adds `change 5774f2c..349730f: 1 changed file in, code before the change of 1 file (3.2 KB)`, and names the changed files the selection had left out (`(2 added to the selection: ...)`).
 
-`--json`: `{ok, path, absolutePath, bytes, mode, tour?, anchors: {total, drifted, missing}, files: {embedded, choice, referenced?, boundary?: {added: [{file, reason: caller|callee|test, refs}], cut: [same], max, symbols}, embeddedBytes, indexed, indexedBytes}, change?: {base, head, changedFiles, addedToSelection: [paths], baseFiles: [paths], baseBytes, baseMissing?}, index: {path, commit, choice: "full"|"pruned", pruned, bytes, fullBytes, symbols: {embedded, indexed}, refs: {embedded, indexed}}}` (`index.bytes` and `fullBytes`: the embedded and the whole index as compact JSON).
+`--json`: `{ok, path, absolutePath, bytes, mode, tour?, anchors: {total, drifted, missing}, files: {embedded, choice, referenced?, boundary?: {added: [{file, reason: caller|callee|test, refs}], cut: [same], max, symbols}, embeddedBytes, indexed, indexedBytes}, change?: {base, head, changedFiles, addedToSelection: [paths], baseFiles: [paths], baseBytes, baseMissing?}, index: {path, commit, choice: "full"|"pruned", pruned, bytes, fullBytes, packedBytes, symbols: {embedded, indexed}, refs: {embedded, indexed}}}` (`index.bytes` and `fullBytes`: the embedded and the whole index as compact JSON; `packedBytes`: the embedded one as the page holds it).
 
 ## `--json` shapes (the ones worth scripting)
 

@@ -68,7 +68,7 @@ between two commits. For a change, `xpl change` records the diff in the explaine
 ## 1. Repository layout and conventions
 
 ```
-package.json            npm workspaces root (ESM). Scripts: build, test, typecheck, test:e2e, format
+package.json            npm workspaces root (ESM). Scripts: build, test, typecheck, test:e2e, format, format:check
 tsconfig.base.json      strict, ES2022, NodeNext
 packages/
   core/     @xpl/core     schema types + pure logic (hash, anchors, derivation, validation, patches).
@@ -77,10 +77,16 @@ packages/
   cli/      @xpl/cli      `xpl` command; esbuild bundle → packages/cli/dist/xpl.mjs, with dist/wasm/ (the
                           tree-sitter .wasm files) and dist/viewer.html (a copy of the built viewer) beside it
   viewer/   @xpl/viewer   React 19 + CodeMirror 6 + dagre; vite single-file build → packages/viewer/dist/index.html
-skill/code-explainer/   Claude skill: SKILL.md, README.md, reference/ (cli.md, patch-format.md, writing.md,
+skill/code-explainer/   Claude skill: SKILL.md, README.md, reference/ (quick.md, cli.md, patch-format.md, writing.md,
                         explain-change.md, examples/), bin/xpl (a symlink-safe node launcher for the built CLI)
 fixtures/{ts,py,go}-jobrunner/   tiny real repos + committed explainers in .explainer/
-docs/                   handoff.md, ARCHITECTURE.md, review-2026-10-01.md, images/
+docs/                   handoff.md, ARCHITECTURE.md, analysis-2026-09-30.txt, review-*.md (review notes),
+                        review-2026-10-03-real-runs/ (the per-run reports of that review), images/
+.explainer/             xpl's own explainer (xpl.explainer.json), checked by packages/cli/test/self-explainer.test.ts
+AGENTS.md, CLAUDE.md    guidance for coding agents working on this repo (CLAUDE.md imports AGENTS.md)
+.claude/skills/         skills for working on this repo (.agents/skills links here; code-explainer links to skill/)
+scripts/                pr-screenshots.sh: before/after viewer screenshots for a PR (packages/viewer/scripts/pr-shots.ts)
+.github/                pull_request_template.md
 ```
 
 Conventions (all packages):
@@ -122,7 +128,8 @@ Conventions (all packages):
    of a precise language that keep heuristic references because the tool did not describe them (§3).
 5. `IndexedFile.language: FileLanguage` = `typescript | tsx | javascript | python | go | yaml | json | toml |
    text`.
-6. `Edge.kind` adds `"references"` (lifted type-refs).
+6. `Edge.kind` adds `"references"` (lifted type-refs) and, for stored edges to related files, `"loads"`,
+   `"discovers"`, `"configures"` and `"overrides"` (`EDGE_KINDS` in `ids.ts`; `related-files.ts` lists them).
 7. `GraphView` adds `edgeKinds?: Edge["kind"][]`: the derived edge kinds shown. Default
    `DEFAULT_EDGE_KINDS` = `["calls", "extends", "implements"]`. Stored edges are always shown.
 8. `GraphView` adds `excludeFiles?: string[]`: globs on repo paths (`packages/core/src/glob.ts`: `**` crosses
@@ -140,8 +147,8 @@ Conventions (all packages):
     the outside symbols of partly shown files folded into one "rest of <file>" ghost, the ghosts beyond the
     8 into "+N more" (§4.4). `all` draws one ghost per outside element, `none` no stubs at all.
 12. `Tour` adds optional `provenance` (the handoff's tours have none): new tours get `{ origin: actor, commit }`,
-    the viewer's tour panel records `userFields` (`title`, `steps`), and `applyPatch` protects a tour like any
-    element (§4.7). A tour without one (an older file) counts as `llm`.
+    the viewer's tour panel records `userFields` (`title`, `summary`, `steps`), and `applyPatch` protects a
+    tour like any element (§4.7). A tour without one (an older file) counts as `llm`.
 13. `SymbolIndex` adds `pruned?: { files, symbols, refs }`: the counts of the full index, set when `xpl bundle`
     embeds a copy with something dropped (§5, Bundle payload). Every file entry is kept, so `files` only repeats
     `files.length`; `symbols.length` and `refs.length` say what is left, and `languages` still describes the
@@ -194,8 +201,9 @@ Conventions (all packages):
     `Edge.via?: ElementId[]`: what an edge passes through without a box; an llm edge's evidence is per hop,
     and a hop the index shows (`hopRefs`) needs no anchors.
 18. `SymbolIndex` adds `resources?: ResourceReference[]`: files that code loads or discovers by a literal path
-    or glob (`readFile("x.json")`, `glob("plugins/*.py")`, an import of a `.json`), with `kind` (`loads`,
-    `discovers`), the call `site` and `resolution: "static" | "inferred"`. The viewer lists them as related
+    or glob (`readFile("x.json")`, `glob("plugins/*.py")`, an import of a `.json`), with `kind` (the indexer
+    emits `loads` and `discovers`; the type also allows `configures`, `overrides`), the call `site`, the glob
+    as `pattern` (`discovers`) and `resolution: "static" | "inferred"`. The viewer lists them as related
     files of the selection; a matching file does not prove it is loaded at run time.
 19. `Node` adds three architecture fields, so an overview can read top-down like the C4 model (a system map,
     then the inside of one service, then code):
@@ -211,6 +219,9 @@ Conventions (all packages):
     then anchored at the code that talks to it, and `containsCode` counts its own anchors as its code, so an
     `llm` edge to it finds its evidence there. On a view that shows a group instead of the boxes a stored edge
     ends on, stored edges lifted to the same pair of boxes and kind are drawn as one (§4.4).
+20. `Explainer` adds `scope?: ExplainerScope` = `{ audience?: string }`: who the page is for and how deep it
+    goes, one line (at most `AUDIENCE_MAX` = 120 characters) shown under the title. Not a view's `Scope`. A
+    patch's top-level `scope` is merged in; `null` (for it or for `audience`) clears.
 
 Patch-side types (never stored) live in `packages/core/src/patch.ts`; its header holds the authoritative
 merge rules and `skill/code-explainer/reference/patch-format.md` is the practical guide. What Claude writes:
@@ -226,6 +237,7 @@ interface AnchorInput {
 }
 interface ExplainerPatch {
   title?: string;
+  scope?: { audience?: string | null } | null;
   nodes?: PatchNode[]; edges?: PatchEdge[]; concepts?: PatchConcept[];
   views?: PatchView[]; tours?: PatchTour[];
   remove?: string[];  // element / view / tour / step ids
@@ -233,8 +245,8 @@ interface ExplainerPatch {
 ```
 
 - **Patch elements are partial.** `id` is the only required field of an existing element, view or tour. Absent
-  fields keep their values; `null` clears an optional field (`summary detail members related edgeKinds hidden
-  excludeFiles stubs layout frames`); arrays and nested objects (`members include steps scope layout …`)
+  fields keep their values; `null` clears an optional field (`summary detail members related via edgeKinds
+  hidden excludeFiles stubs layout frames`); arrays and nested objects (`members include steps scope layout …`)
   replace wholesale. A sequence view's `steps` are sent whole (keep every step id; `remove` deletes single
   steps), or edited by id with `stepsUpdate` (below). Unknown fields are errors. `provenance` is optional: new
   elements get `{ origin: actor, commit }`.
@@ -294,9 +306,13 @@ Pipeline: discover files → per file: read, hash, parse once, `pack.extract`, f
 warning covers them all and names the first lines (`N file(s) have syntax errors; symbols near these lines may
 be incomplete: a.ts:12,40`; at most 5 files and 3 lines each), and errors a pack knows cost no symbol are not
 reported (`errorInTypePosition`: the TS grammar cannot read a labelled tuple element such as `[symbol:
-string]`, and its recovery stays inside the tuple). An extraction failure is a warning and a file without
-symbols. References are sorted by file, position and kind. `resolvers` replaces the registry (tests inject
-fakes); `languages` restricts the build to some `FileLanguage`s (the CLI does not expose it).
+string]`, and its recovery stays inside the tuple; for the JSON pack, the trailing commas of JSONC). Files under
+`testdata/`, `fixtures/` or `__fixtures__/` are never reported. An extraction failure is a warning and a file
+without symbols. References are sorted by file, position and kind. The same walk collects resource sites
+(`resources.ts`, TS/JS, Python, Go: literal paths and globs passed to file-reading and glob calls, relative
+imports of `.json`/`.yaml`/`.toml`), resolved against the indexed files into `SymbolIndex.resources` (§2.18).
+`resolvers` replaces the registry (tests inject fakes); `languages` restricts the build to some `FileLanguage`s
+(the CLI does not expose it).
 
 **Files.** `git ls-files --cached --others --exclude-standard` when `root` is inside a git work tree (limited
 to the root's subtree), otherwise a walk that skips `.git node_modules dist build out vendor target
@@ -314,7 +330,8 @@ POSIX, repo-root-relative, sorted.
 `wt-` + first 10 hex of sha256 over the sorted `path\0hash\n` list: deterministic, which is why fixtures
 living inside this monorepo get stable ids.
 
-**Language packs** (`src/languages/<lang>.ts`, registry in `languages/index.ts`). A pack turns one parsed
+**Language packs** (`src/languages/<lang>.ts`, the larger ones split into `<lang>/`; registry in
+`languages/index.ts`). A pack turns one parsed
 file into plain facts. It never assigns ids, `~N` suffixes, hashes or parents, and never resolves anything:
 the framework (`build.ts`, `symbols.ts`) and the language-agnostic heuristic resolver do.
 
@@ -323,6 +340,8 @@ interface LanguagePack {
   id: string; languages: FileLanguage[]; grammarFor(language): GrammarId;
   extensions?: string[];               // `text` files this pack parses too (a format with no FileLanguage of its own; none does now)
   packageScope: "file" | "directory";  // how far a top-level name is visible without an import (Go: the package dir)
+  importsReexport?: boolean;           // a module's imports are importable from it (Python `__init__.py`)
+  offByDefault?(path, repo): boolean;  // a default build leaves the file out (Go build constraints): tried last
   refs: "heuristic" | "none";          // does the pack emit sites (references are derived from them)?
   extract(ctx: FileContext): FileFacts;                        // one walk of the syntax tree
   classifySite(ctx, line, col): ClassifiedSite | undefined;    // the same rules as extract, for SCIP occurrences
@@ -345,11 +364,12 @@ interface FileFacts {
   is not a name in the code): the resolvers leave it out of name lookup, so `describe("Queue")` cannot capture
   `Queue()` from the code under test, and no reference points at it; it still is the `from` of the references
   inside it. Not stored in the index.
-- `SiteDraft { kind, name, qualifier, site }` (`kind`: `call import extends implements type-ref write read`):
+- `SiteDraft { kind, name, qualifier, site, local? }` (`kind`: `call import extends implements type-ref write read`):
   `qualifier` is the receiver chain left to right, with the receiver normalised to `"this"` (TS `this`, Python
   `self`/`cls`, the Go receiver variable; TS `super` stays): `this.pool.lease()` → `["this", "pool"]`,
   `lease`. `x()` in a chain is the result of calling `x`, `:T` a value of declared type `T`. A receiver the
-  pack cannot spell (`arr[0].run()`) yields no site.
+  pack cannot spell (`arr[0].run()`) yields no site. `local`: a bare name that something around the site binds
+  (a local callable, a callback parameter, a nested function); it resolves only through the scope chain.
 - `ImportBinding { localName, module, importedName?, site, typeOnly? }`. `typeOnly`: TS `import type { A }` /
   `import { type A }`, Python imports under `if TYPE_CHECKING:` (that branch, `elif` included): erased at run time,
   so the reference made for it is a `type-ref`, not an `import`.
@@ -400,7 +420,8 @@ exactly like sites.
 
 1. no qualifier: the lexical scope chain (nested functions, namespaces), then the file's top-level symbols,
    then import bindings (through `resolveModule`, following re-exports), then star exports, then, for
-   `packageScope: "directory"` languages (Go), the top-level symbols of the other files of the directory;
+   `packageScope: "directory"` languages (Go), the top-level symbols of the other files of the directory.
+   A `local` site resolves through the scope chain only (a callback parameter `fact` is not the module's);
 2. `this` (`self`, receiver): a member of the enclosing class, then of its base classes; `this.f.m()` through
    the declared type of field `f` (TS field or constructor parameter property, Python `self.f: T` /
    `self.f = T(...)` / annotated `__init__` parameter, Go struct field); `super.m()`: a base-class member;
@@ -411,7 +432,8 @@ exactly like sites.
    it (`bus = new EventBus()`);
 5. last resort, only when the receiver's type is completely unknown: a class named like the qualifier
    (case-insensitively) that has the member (`queue.pop()` → `Queue.pop`), preferring the same file, then a
-   class the file imports, then the same directory. Ambiguity drops the site. Calls and writes only.
+   class the file imports, then the same directory (Go: the same package before the imports). Ambiguity
+   drops the site. Calls and writes only.
 
 A `read` site resolves by 1–4 and only to a variable or field: a re-export chain that finds a class or function
 drops it, and the nearest member of that name decides (a property that overrides a base-class attribute is not
@@ -479,7 +501,10 @@ other.
 documents of its index) lose their heuristic references to the tool's. Files it did not describe (build-tagged
 Go files, files a Python project's pyright configuration excludes, unreadable ones) keep their heuristic
 references, are named in a warning, and are counted in `LanguageInfo.heuristicFiles`. A language none of
-whose files was described is not precise: that run counts as failed. `precise: "auto"` (the default) turns a
+whose files was described is not precise: that run counts as failed. A file whose occurrences fall outside
+its text (`//line` directives of generated Go code) counts as not described. Where the tool saw an occurrence
+it could not link (`PreciseOutput.blind`), the innermost heuristic reference holding that position is kept,
+unless the tool has the same edge on that line. `precise: "auto"` (the default) turns a
 failed or missing tool into a warning and keeps the heuristic references; `"require"` fails instead; `"off"`
 never runs SCIP. Other environment: `XPL_WASM_DIR` (where the `.wasm` files come from: `dist/wasm/` next to
 the bundled CLI, `node_modules` in development).
@@ -491,7 +516,8 @@ the bundled CLI, `node_modules` in development).
 Modules of `packages/core/src`: `schema`, `patch`, `constants`, `text` (hashing), `glob`, `ids`,
 `index-model` (`IndexModel`), `implementations`, `anchors`, `change` (change records and their analysis),
 `model` (`ExplainerModel`), `stubs`, `graph`, `focus`, `sequence`, `flow`, `related-files`, `validate`, `apply`,
-`bundle`, `prune`.
+`bundle`, `index-pack`, `prune`, `levels`; all re-exported from `index.ts` except the internal helpers of
+`util` (`cmp`, `cloneJson`, `deepEqual`, …).
 
 ### 4.1 Text and hashing
 
@@ -578,7 +604,8 @@ and `ghost:more:in` / `ghost:more:out` (§4.4), `stub:<in|out>:<insideId>->ghost
 id splits into file and path at the first `#` (the index-aware helpers try every `#`).
 
 `ExplainerModel(explainer, indexModel)` merges derived structural nodes with stored overlays (a stored node
-with the same id overrides label/summary/detail/anchors/provenance) and indexes every element, step and
+with the same id overrides label/summary/detail/anchors/provenance and adds members/role/tech/opens) and
+indexes every element, step (sequence and flow views) and
 derived id. Default labels: repo name, dir/file basename, a symbol's last path segment (methods keep
 `Class.method`). Hand-edited files are tolerated: entries without an id are skipped, the first of a repeated
 id wins (validation reports the duplicates).
@@ -592,7 +619,8 @@ id wins (validation reports the duplicates).
   each level the groups that contain the element before moving to the structural parent. An included node
   that others render inside is a **container**. Cycles between nested groups are broken.
 - **Derived edges:** each index reference `(from, to, kind)` maps to `(repr(from), repr(to))`; skip it if
-  either end is outside (→ stub), both are equal, or one end renders inside the other (in the render tree, at
+  either end is outside (→ stub), both are equal (except a call of a symbol to itself when the box is that
+  symbol: a loop on its box), or one end renders inside the other (in the render tree, at
   any depth: a call from a child of an opened file to a sibling that is not shown lifts to the file, and an
   arrow from a box to its own container says nothing). Kind map: call→calls, import→imports, extends,
   implements, type-ref→references, read→reads, write→writes; only kinds in `edgeKinds` (default
@@ -608,7 +636,11 @@ id wins (validation reports the duplicates).
   ends, the group box being its end when the group is included, and leaves through `ghost:grp:<slug>` when
   it is not. Stored edges **lifted** to other boxes than their own ends (the parts of a service, drawn as one
   service box on a system map) merge per `(kind, a, b)`: the first by id keeps its id and gains the others'
-  anchors and `count`; its label is dropped when theirs differ.
+  anchors and `count`; its label is dropped when theirs differ, its summary always. A stored edge of an
+  element to itself is a loop on its box. A stored edge with `via` (what it passes through without a box of
+  its own) and both ends shown absorbs the references from its ends into the `via` elements (no stubs for
+  them); it is drawn with `via` labels and, without anchors of its own, takes the references of its hops
+  (`viaHops`, `hopRefs`, `viaAnchors`) as its derived anchors.
 - **Stubs:** references (and stored edges) with exactly one end inside. Ghost target = the highest structural
   ancestor of the outside end, below `repo`, that contains no included node (a group is its own target); a
   target that holds the inside node itself (a stored edge to one's own file) is dropped. Aggregate per
@@ -634,9 +666,11 @@ id wins (validation reports the duplicates).
   That includes the folded ones (`ghost:rest:file:<path>`, `ghost:more:out`, `stub:…->ghost:more:in`), and an
   element that is hidden, or whose old plain ghost id (`ghost:sym:…`) is, leaves the ghost it was folded into.
   Hidden ghosts and stubs are dropped before the ranking, so they free their place among the top ghosts.
-- `deriveGraph(view, model, { edgeKinds? }) → { nodes, edges, stubs, ghosts }`, sorted by id. `nodes[i] = { id,
-  label, kind, symbolKind?, container, parent? }`; `edges[i]` adds `count`, `stored` and `resolution: "precise" |
-  "heuristic" | "llm" | "user" | "static"`; `ghosts[i] = { id, key, kind: "target" | "rest" | "more", label,
+- `deriveGraph(view, model, { edgeKinds? }) → { nodes, edges, stubs, ghosts }`, sorted by id (the option
+  overrides `view.edgeKinds`). `nodes[i] = { id, label, kind, symbolKind?, container, parent?, role?, tech?,
+  opens?, expandable? }` (`expandable`: it opens a graph view, see `levels.ts`); `edges[i] = { id, from, to,
+  kind, label?, summary?, count, stored, anchors, via?, resolution: "precise" | "heuristic" | "llm" | "user" |
+  "static" }`; `ghosts[i] = { id, key, kind: "target" | "rest" | "more", label,
   target?, kinds, count, direction: "in" | "out" | "both", targets }`; `stubs[i] = { id, direction, inside,
   ghost (the key), ghostLabel, targets, kinds, count }`.
 - Pure view edits: `expandStub(view, stub)`: `include += ghost target` (nothing for a folded ghost).
@@ -654,8 +688,9 @@ id wins (validation reports the duplicates).
   are lines of the base commit, not of the code the editor shows). When an element has no usable anchor
   (none, or all missing) it **falls back**: symbol → its range; file → the whole file; dir and repo → their
   files (at most 50); group → its members' focus; derived edge, or a stored overlay of one without anchors →
-  the derived anchors (reference sites plus target definitions). Concepts, stored edges and steps without
-  usable anchors have no focus. Unknown ids are skipped.
+  the derived anchors (reference sites plus target definitions); stored edge with `via` → the references of
+  its hops (`viaAnchors`). Concepts, other stored edges and steps without usable anchors have no focus.
+  Unknown ids are skipped.
 - `mergeFocusByFile(ranges)`: per file (the first focused file first), overlapping ranges merged into
   whole-line runs, keeping every role and source range.
 - `buildReverseIndex(candidateIds, model)`: interval entries from `codeFocus` of each candidate.
@@ -678,6 +713,8 @@ patch from. Rules:
 
 - Shapes and enums; `schema` = `code-explainer@0`; `repo` and `index` present. An `index.commit` other than
   the given index's is a warning (`commit`) that points at `xpl resolve --write`. A tour's `summary` is a string.
+  An empty `title` is a warning; the explainer's `scope` is `{ audience? }`, one line of at most `AUDIENCE_MAX`
+  (120) characters (longer is a warning). A node's `role` is one of `NODE_ROLES`, its `tech` a string.
 - `change` (`changeShapeIssues`): full SHAs, known statuses, `oldPath` only and always on a renamed file, no
   path twice, well-formed hunks; a problem is an error (code `change`, path under `change.`), since only a hand
   edit makes one. A `change.head` that is not the commit of the index in use is a warning that says to check
@@ -688,13 +725,21 @@ patch from. Rules:
 - Every referenced id exists or is derivable: `parent`, `members`, edge `from`/`to`, `related`, `scope.root`,
   `scope.entryPoints` (symbol ids in the index), `include`, `hidden` (nodes, edges, ghosts, stubs),
   `participants`, `layout` keys, step `from`/`to`/`edge`, tour `view` and `focus` (a focused step that
-  belongs to another view is a warning), `editor.primary` (an indexed file).
+  belongs to another view is a warning), `editor.primary` (an indexed file), a node's `opens` (a view of the
+  explainer), an edge's `via` (non-empty, nodes that are not an end of the edge, each once; not on a
+  derived-edge overlay).
 - Groups: need a parent and members; no self-membership and no cycles, transitively; an empty group is a
-  warning.
+  warning, unless it has a `role` (a box for an outside system), which then warns only when it has no
+  anchors either.
 - Graph views: `edgeKinds` are edge kinds; `excludeFiles` are strings (warnings for an empty pattern, a
-  leading `/` or `./`, a backslash); `layout` positions are finite numbers; duplicates are warnings.
-- Sequence views: step `from`/`to` must be participants; frames name steps of their own view, `fromStep` not
-  after `toStep`; partially overlapping frames are a warning.
+  leading `/` or `./`, a backslash); `stubs` is `{ mode?, max? }` (unknown fields are warnings); `layout`
+  positions are finite numbers; duplicates are warnings.
+- Sequence and flow views: step `from`/`to` must be participants; frames name steps of their own view,
+  `fromStep` not after `toStep`; partially overlapping frames are a warning; `layout` is `code-first` or
+  `diagram`. Flow fields: `shape` (`stage`, `decision`, `terminal`), `next` links to steps of the view (a
+  `return` link may leave out its step; `kind` `recurse` or `return`; a `recurse` link to a later step is a
+  warning), no outgoing links from a terminal but `return` ones. In a flow view, a step whose first current
+  anchor is not inside its `from` is a warning (`step`) that names the participant holding the code.
 - Anchors: `role` and `hash` present; strict → every anchor resolves `ok`/`moved`; lenient (after
   regeneration) → drifted and missing anchors, **and ids of files, directories and symbols that vanished from
   the index**, are warnings. The messages say what to do, and, for an element whose anchors the user owns
@@ -704,17 +749,21 @@ patch from. Rules:
   change record are `anchor-invalid` errors in every mode. Otherwise they resolve against the base text
   (§4.2) and count like any other anchor: `ok`/`moved` pass, `drifted`/`missing` follow the mode.
 - `llm` edges carry at least one anchor inside `from` and one inside `to` (file → same file; dir → under it;
-  symbol → same symbol or a descendant; group → any member): `containsCode`, code `evidence`. Base anchors
-  do not count as evidence: the edge is about the current code.
+  symbol → same symbol or a descendant; group → any member, or the group's own anchors; repo → anything):
+  `containsCode`, code `evidence`. With `via`, evidence is checked hop by hop: a hop the index shows
+  (`hopRefs`) is its own evidence, any other needs an anchor inside each of its ends. Base anchors do not
+  count as evidence: the edge is about the current code.
 
 ### 4.7 Patches (`apply.ts`)
 
 `applyPatch(explainer, patch, index, getText, { actor: "llm" | "user" }) → { ok, explainer, issues, changed }`,
 atomic: any error → `ok: false` and the input explainer, untouched.
 
-- Upsert by id, shallow-merged as in §2. An id twice in one patch, or upserted and removed by the same patch,
-  is an error. `remove` takes elements, views, tours and single steps (an unknown id is a warning); dropping a
-  step id by resending a view's `steps` is a warning (`step`: tours may point at it).
+- Upsert by id, shallow-merged as in §2. An id twice in one patch, or upserted (or changed by a `stepsUpdate`)
+  and removed by the same patch, is an error. Top-level keys: `title scope nodes edges concepts views tours
+  remove`; `scope` merges `{ audience }` into the explainer's (`null` clears). `remove` takes elements,
+  views, tours and single steps (an unknown id is a warning); dropping a step id by resending a view's
+  `steps` is a warning (`step`: tours may point at it).
 - **Ownership.** `actor: "llm"` never modifies (skipped with a `protected` warning) an element, view or tour
   whose origin is `user`, and keeps the fields listed in `userFields` (a tour's are `title`, `summary` and
   `steps`). It cannot create `origin: "user"` elements and cannot change `provenance`. It cannot remove an
@@ -740,8 +789,8 @@ atomic: any error → `ok: false` and the input explainer, untouched.
   exception: an `llm` patch that changes an element whose anchors the user owns is not rejected for the drift
   of those anchors, which it cannot repair; the problem stays a warning (`userLocked`).
 - `changed` lists the ids of elements, views, tours and steps the patch added, changed or removed (upserts
-  that change nothing are not listed), plus `"title"`; a `stepsUpdate` lists the view and each step it changed
-  (a tour's steps as `<tour id>/<step id>`).
+  that change nothing are not listed), plus `"title"` and `"scope"` when they change; a `stepsUpdate` lists
+  the view and each step it changed (a tour's steps as `<tour id>/<step id>`).
 
 ### 4.8 Also in core
 
@@ -757,7 +806,11 @@ atomic: any error → `ok: false` and the input explainer, untouched.
   (`resolveFrames`), disambiguated lifeline labels. `flow.ts`: `processFlow(view)`, the stages and labelled
   transitions of a flow view (or a sequence read as a flow, `projected`). `related-files.ts`: `relatedFiles`,
   the config, test and `resources` files linked to a selection. `bundle.ts`: the viewer's data format (§5).
-  `glob.ts`, `constants.ts` (`DEFAULT_EDGE_KINDS`, `TEST_FILE_GLOBS`, schema names).
+  `index-pack.ts`: `packIndex` / `unpackIndex`, the compact index of a bundle (`xpl-index-pack@1`, §5).
+  `prune.ts`: `pruneIndex`, the index cut down to what a bundle's viewer can draw (§5). `levels.ts`: the
+  levels of an architecture explainer, a box's `opens` (`opensView`, `parentLevel`, `zoomTrail`), and boxes
+  opened in place (`expandInPlace`, `canExpandInPlace`; §6). `glob.ts`, `constants.ts` (`DEFAULT_EDGE_KINDS`,
+  `TEST_FILE_GLOBS`, `NODE_ROLES`, `OUTSIDE_ROLES`, schema names).
 - `change.ts`: lookups on the change record (`changedFile`, which also finds a renamed file by its old path;
   `baseFileOf`, `basePathOf`, `hasBaseVersion`, `baseVersionFiles`, `headPathsOf`, `describeChange` →
   `85c3b74..2284ff0`), its shape check (`changeShapeIssues`), and the **change analysis** that `xpl change`
@@ -808,14 +861,15 @@ stdout (a rejection exits 1); fatal errors (`error: …`) and warnings (`warning
 | `xpl status <explainer> [--view <id>]` | the skill's to-do list, read-only: per view the shown nodes, stored edges and steps without a summary (static edges optional), concepts without one, drift (user-owned drift counted apart), missing anchors, broken references (ids gone from the index), stale derived-edge overlays, queued requests; per graph view the ghosts and stubs it draws (counts, the most referenced ghost ids, and for each folded ghost up to 3 of the elements it stands for with their counts; `--json`: every ghost with its count and all its `targets` (`{id, count}`), and every stub id, in `views[].ghosts`) with a warning above 12 ghosts; the tours (id, step count, steps whose focus ids or view are gone); `--view <id>`: that view only, with what it draws (each arrow: id, kind, ends, references, stored or derived, label; each `hidden` id and what it takes out; a flow's step links) |
 | `xpl lint <explainer> [--patch <file\|->] [--warn-only]` | checks the text a reader sees (the index, when there is one, counts the boxes and arrows of maps): rules below; `--patch` lints the explainer as it would be after `xpl apply` of that patch (merged in memory as actor `llm`, nothing written; a patch apply would reject prints the rejection and exits 1); exit 1 with any finding (so `lint --patch && apply` stops on one), 0 with `--warn-only` unless a `todo-left` error |
 | `xpl change <explainer> [<base>..<head>]` | records the change from git in the explainer and prints its analysis (§4.8; below); without a range, prints the analysis of the change already recorded |
-| `xpl draft change\|repo\|path <explainer> [<entry id>] [-o file]` | prints a patch skeleton built from the index (and the change record) with no LLM, `TODO:` in every text to write (below); the summary goes to stderr |
+| `xpl draft change\|repo\|path <explainer> [<entry id> ...] [-o file]` | prints a patch skeleton built from the index (and the change record) with no LLM, `TODO:` in every text to write (below); the summary goes to stderr |
 | `xpl view <explainer> [--port p] [--host h] [--no-open]` | local server (below) |
-| `xpl bundle <explainer> -o out.html [--mode explore\|present] [--tour id] [--files referenced\|boundary\|all] [--boundary-max n] [--embed-index full\|pruned]` | self-contained HTML; `--tour` (`tour:intro` or `intro`) implies present mode; embeds the files the explainer references by default and prints what went in (`8 of 12 files embedded (referenced: 18.4 KB of source; --files all adds 4 files, 6.7 KB)`), `--files boundary` adds the direct callers, callees and tests of anchored symbols (at most `--boundary-max`, default 40), `--files all` every indexed file; with a change recorded, every changed file at head and the base text of the changed files go in too; the symbol index in it is pruned to what the viewer can draw with `--files referenced` or `boundary` and whole with `--files all` (`--embed-index` overrides) and packed (the summary line says `index 0.3 MB (1.3 MB as plain JSON, pruned from 9.0 MB)`) |
+| `xpl bundle <explainer> -o out.html [--mode explore\|present] [--tour id] [--files referenced\|boundary\|all] [--boundary-max n] [--embed-index full\|pruned] [--allow-drift]` | self-contained HTML; anchors are re-resolved first, and drifted or missing ones make it refuse (exit 1) unless `--allow-drift` (the page then says so); `--tour` (`tour:intro` or `intro`) implies present mode; embeds the files the explainer references by default and prints what went in (`8 of 12 files embedded (referenced: 18.4 KB of source; --files all adds 4 files, 6.7 KB)`), `--files boundary` adds the direct callers, callees and tests of anchored symbols (at most `--boundary-max`, default 40), `--files all` every indexed file; with a change recorded, every changed file at head and the base text of the changed files go in too; the symbol index in it is pruned to what the viewer can draw with `--files referenced` or `boundary` and whole with `--files all` (`--embed-index` overrides) and packed (the summary line says `index 0.3 MB (1.3 MB as plain JSON, pruned from 9.0 MB)`) |
 
 **Exit codes.** 0 ok (warnings allowed); 1 rejected or failed: unknown id, no index, a rejected patch, a patch
 that changed nothing because the user owns everything it touched, validation errors, `resolve --write` on a
-stale index, port in use, `xpl change` without git or with a head that is not the index commit, `xpl draft
-change` without a change record, `xpl lint` with findings; 2 usage error. **Environment:**
+stale index, an explicit `--port` in use, `xpl bundle` with drifted or missing anchors (without `--allow-drift`),
+`xpl change` without git or with a head that is not the index commit, `xpl draft change` without a change
+record, `xpl lint` with findings; 2 usage error. **Environment:**
 `XPL_VIEWER_HTML` (viewer page for `view` and `bundle`), `XPL_SKIP_STALE_CHECK=1`, `XPL_WASM_DIR`,
 `XPL_SCIP_TIMEOUT_MS`, `XPL_DEBUG=1` (stack traces), `XPL_CLI` (the skill launcher: an `xpl.mjs` to run).
 
@@ -920,13 +974,16 @@ total, counts, findings, patch?, changed?, protectedIds? }`.
 taken (`--port 0` = any; an explicit port that is taken is an error). `--host` other than loopback exposes
 your source and edit rights, and warns. It opens the browser best-effort (`--no-open`) and fails early when
 the viewer is not built or there is no index. The server keeps no explainer state: every request re-reads
-the explainer, its index and the working tree, so `xpl apply` while the viewer is open shows up after a
-reload (the page does not reload itself), and viewer edits never overwrite it.
+the explainer, its index and the working tree, and the page polls `GET /api/explainer` every 2 seconds, so
+`xpl apply` while the viewer is open shows up without a reload, and viewer edits never overwrite it. Drifted
+or missing anchors do not stop it (unlike `xpl bundle`): it warns, and the page says which parts may be out
+of date.
 
 | Route | |
 |---|---|
 | `GET /` | the viewer HTML with the bundle injected (`server: { api: "/api" }`, `mode: "explore"`, `files` = the files the explainer references; others are fetched lazily; `baseFiles` whole, when the explainer has a change: only the changed files, so it is small) |
 | `GET /api/bundle` | the same bundle as JSON |
+| `GET /api/explainer` | the explainer with its anchors re-resolved (as in the bundle), with an `ETag` of the file; 304 on a matching `If-None-Match` |
 | `GET /api/file?path=` | text of one indexed file (`text/plain`); 400 for a malformed path (absolute, `..`, backslash, NUL), 404 for anything not in the index (with `suggestions`) or unreadable |
 | `GET /api/base-file?path=` | the code before the change of one changed file (`text/plain`, read with `git show`); `path` is `ChangedFile.path`; 400 for a malformed path; 404 when the explainer has no change, the file is not a modified, renamed or deleted file of it (with the list of those; the old path of a renamed file is not a key), or git cannot read it |
 | `PUT /api/views/<id>` | a view patch (`{ type, …changed fields }`) applied as actor `user` and written; 200 with the updated view; 400 `{ error, issues }` when rejected |
@@ -1153,8 +1210,26 @@ Both splits (diagram / panels, diagram / code) are resizable. Below 900 px the h
   `lookup(file, line)` (§4.5) marks the matching diagram elements and concepts `is-match`.
 - **Details:** kind, label, provenance badge (origin, commit, fields you edited), the id, summary and detail,
   facts, related elements and the anchors with their status (`ok`, `moved`, `drifted`, `missing`; clicking one
-  opens the file at its lines). Actions: "Explain this" (queues a request under `xpl view`, otherwise shows
-  `/code-explainer expand <id>` to copy), "Add … to the view" for a stub, "Open children", "Collapse".
+  opens the file at its lines). Actions: "Explain this", or "Send to Claude" with feedback typed above it
+  (`feedback`: "What should Claude change?"; queues a request with the feedback as its note under `xpl view`,
+  otherwise shows `/code-explainer expand <id>` to copy), "Add … to the view" for a stub, "Open children",
+  "Collapse".
+
+**Reading aids.** A "Key" button beside the zoom buttons says what the diagram's marks mean (`Legend.tsx`:
+`Legend`, `FlowKey`, `SequenceKey`; rows for marks not on screen are left out). "Called from" (`callers.ts`;
+in the details and the topic rail, 6 rows then "Show N more") lists the code that calls the picked file or
+symbol, one row per calling symbol, a function's calls to itself as one "itself (recursion)" row; for a
+change the details also say what it did to the element ("Added by this change", "+5 −2 in it"), and a Guide
+section lists "Code that calls what changed". A name in the code has a hover with "Who calls it"
+(Shift+F12) and "Go to definition" (F12, or Ctrl/Cmd+click). A pane header folds the pane or gives it the
+whole column, steps through its changes (`pane-hunks`) or its places (`RangeStepper`), and names the function
+the code is in ("in X"). The file tree has a filter (matching paths, flat), change marks (A, M, R, D; removed
+files are listed) and a "context" tag on files a `--files boundary` bundle carries only for context. When
+anchors drifted or went missing (`xpl bundle --allow-drift`, or `xpl view`), a banner under the header counts
+them (`DriftBanner.tsx`), drifted lines are striped (`xpl-hl-drifted`) and the pane says "changed since". The
+scope's `audience` line shows under the Guide's title. Under `xpl view` the page polls `GET /api/explainer`
+every 2 s (ETag, 304 while unchanged) and shows what `xpl apply` wrote without a reload, keeping the view,
+step and selection as far as they still exist; not while edits made on the page are unsaved.
 
 **Tours.** Edit → "Edit the guide's steps" opens the tour panel: add the current view and selection as a step
 to a tour, or to a new one (`tour:<slug of the title>`); edit each step's note (markdown), reorder, delete with
@@ -1165,8 +1240,9 @@ its `editor` options (`dimOthers`, `hideFileTree`, `primary`), and shows a capti
 Guide) and the rest of its note. The counter and the progress bar are in the header. The diagram is
 read-only: no drill-in, expand or collapse, and ghosts are pictures. Framing rules:
 
-- Layout: the diagram over the caption on the left (40% of the width, at least 340 px; 52% for a tour with
-  a flow step, since a flow is tall and branches sideways: the split is chosen once per tour, so the slide does
+- Layout: the diagram over the caption on the left (40% of the width, at least 300 px; 52%, at least 340 px,
+  for a tour with a flow step, since a flow is tall and branches sideways, narrowed back toward 40% when the
+  tour's focused lines need the room, `present/split.ts`: the split is chosen once per tour, so the slide does
   not re-split between steps), the code on the right, no file tree unless a step sets `hideFileTree: false`.
 - A diagram never starts below a readable zoom: graphs and sequences at zoom 1 (`PRESENT_READABLE_ZOOM`, so
   the smallest 12-unit text is 12 px or more); a flow with its text at 16 px (`PRESENT_FLOW_MAX_ZOOM`), fitted
@@ -1247,18 +1323,24 @@ from `GET /api/base-file` (each file once; an error shows in its pane).
   `data-step` (1-based) and `data-step-id`.
 - `data-testid`: header: `mode-present`, `present-exit`, `perspective-<guide|map|flow|code>`, `views-button`,
   `views-menu`, `edit-button`, `edit-menu`, `edit-explore`, `edit-read`, `edit-tours`, `edit-save-html`,
-  `edit-download`, `edit-retry`; tours: `tour-panel`, `tour-target`, `tour-new-title`, `tour-add`,
+  `edit-download`, `edit-retry`, `view-strip`, `view-tabs-frame`, `strip-arrow-start`, `strip-arrow-end`;
+  tours: `tour-panel`, `tour-target`, `tour-new-title`, `tour-add`,
   `tour-step`, `tour-step-title`, `tour-step-note`, `tour-step-up`, `tour-step-down`, `tour-step-delete`,
   `tour-undo`, `tour-present`, `tour-picker`, `guide-tour-picker`, `tour-prev`, `tour-next`, `tour-counter`,
   `tour-detour`, `tour-caption`, `tour-title`, `tour-note`; Read: `guide`, `tour-summary`, `section-note`,
   `focus-summary`, `guide-snapshot`, `snapshot-open`, `guide-mini-self`, `guide-tests`, `change-files`,
-  `change-file` (with `data-path` and `data-status`), `topic-summary`, `breadcrumb-topic`, `process-flow`;
-  code: `pane-before`, `pane-change`, `show-changes`, `tree-foot` (the "N of M files" footer of a static
-  bundle); diagrams: `stubs-control`, `ghost-menu`, `ghost-targets` (the list in the details panel of a stub
-  to a folded ghost), `pz-badge` (the "Fit all" / "Readable size" badge of a diagram that is too big to read
-  fitted), `sticky-heads`; other: `explain-command`, `no-data`, `present`.
+  `change-file` (with `data-path` and `data-status`), `topic-summary`, `breadcrumb-topic`, `process-flow`,
+  `audience`, `guide-step-picker` (phone width), `guide-callers`, `snapshot-more`, `caption-owner`,
+  `caption-insides`, `step-neighbours`, `switch-notice`, `topic-off-view`, `topic-around-flow`, `topic-facts`,
+  `context-close`; code: `pane-before`, `pane-change`, `show-changes`, `pane-fold`, `pane-expand`,
+  `pane-hunks`, `pane-ranges`, `pane-inside`, `pane-drifted`, `symbol-actions` (the hover on a name),
+  `tree-filter`, `tree-change-mark`, `tree-context`, `tree-foot` (the "N of M files" footer of a static
+  bundle); diagrams: `zoom-trail`, `legend-button`, `legend`, `legend-icons`, `pz-more`, `stubs-control`,
+  `ghost-menu`, `ghost-targets` (the list in the details panel of a stub to a folded ghost), `pz-badge` (the "Fit all" / "Readable size" badge of a diagram that is too big to read
+  fitted), `sticky-heads`; other: `callers`, `element-change`, `feedback`, `explain-command`, `drift-banner`,
+  `no-data`, `present`.
 - Editor panes `[data-file="<path>"]`; every line `.cm-line[data-line="<n>"]`; decorations `xpl-hl`,
-  `xpl-hl-<role>`, `xpl-dim`, and `xpl-site` on the exact call or usage expression when the range has
+  `xpl-hl-<role>`, `xpl-hl-drifted`, `xpl-dim`, and `xpl-site` on the exact call or usage expression when the range has
   columns; the diff: `xpl-add`, `xpl-chg`, `xpl-gone`, `xpl-removed` (with `data-at="before|after:<line>"`,
   `data-removed-from`, `data-removed-count`) and `xpl-removed-line`.
 - `window.__xpl` (same actions as the UI): `select(ids)`, `selection()`, `focus()` (core `FocusRange`s in pane
@@ -1283,14 +1365,17 @@ only says how they use the CLI.
 Claude first chooses one of three scopes: `explain <question>` (part of a project), `explain repo` (the whole
 project) or `explain change <base>..<head>` (a diff). The reader sees the tour title and its `summary` first,
 then the steps, then the maps and the code on demand, so the tour is written top-down: the big picture, the
-main path, the details, edge cases last.
+main path, the details, edge cases last. Fast mode ("quickly", "the gist"): the draft's one picture and
+about 5 steps, no other views, concepts or `llm` edges; the checks still apply. `reference/quick.md` puts the
+workflow, the rules and the lint checks on one page.
 
 Workflow: `xpl index` → `xpl new <name>` → (for a change: `xpl change <name> <base>..<head>`) → optionally
 `xpl draft change|repo|path` for the structure → read the code (`outline`, `search`, `show`, `refs`; `show --at
 base` for the old code) → write the patch → `xpl lint --patch` → `xpl apply` (a rejection writes nothing and
 lists every error at once: fix the patch, apply again) → `xpl validate`, `xpl status` (until `0 unexplained`)
-and `xpl anchors` (read what every span landed on) → the tour → `xpl lint` and small fixes (single elements,
-`stepsUpdate`) → `xpl bundle --files boundary` (the default in cloud sessions) or `xpl view`.
+and `xpl anchors` (read what every span landed on) → the tour → the accuracy pass (a fresh subagent or a
+second pass: no claim beyond its anchors) → `xpl lint` and small fixes (single elements, `stepsUpdate`), a
+newcomer's re-read → `xpl bundle --files boundary` (the default in cloud sessions) or `xpl view`.
 
 - **`explain <question>`**: ask one short question if the scope is really ambiguous; find entry points
   (`search -i`, `outline`); trace (`show <entry> --refs`, `refs --out --kind call` at depth 1 and a targeted
@@ -1327,10 +1412,16 @@ and `xpl anchors` (read what every span landed on) → the tour → `xpl lint` a
   all as `views[].ghosts.list[].targets`; the viewer's menu, `outline --under file:p` and `refs <shown id> --out`
   show them too) or `file:p` for the whole file as one box; `hidden` takes ghost and stub ids
   (`xpl status --json` lists them); `stubs.mode` `all` is for small views only, `none` draws no stubs.
+- **`feedback [<id> <what to change>]`**: what the user typed under "Explain this" in `xpl view` (the
+  queued requests with a note in `xpl status`). Per request: read the element and its code, make the
+  smallest patch that does what the note asks (more to show is `expand`; a claim the code contradicts is
+  fixed in the text, never by bending the anchor; a note wrong about the code changes nothing), all in one
+  patch, lint, apply, delete `.explainer/requests.json`; the open page picks the change up by itself.
 - **`make tour`**: a `summary` and 5–9 steps (up to 12 for a change), each of the form
   `{ id: "t1", view, focus: [ids], note, code, editor: { primary } }`, each note starting with
-  `### <plain title>` and each `code` override holding at most 2 ranges; ids `tour:<slug>`, steps `t1`,
-  `t2`…; one note is fixed later with the tour's `stepsUpdate`; apply, read `xpl anchors <name> tour:<slug>`
+  `### <plain title>` and each `code` override holding at most 2 ranges; ids `tour:<slug>` (`tour:talk-…`
+  for a talk, so `xpl lint` keeps its notes short: `long-talk-note`), steps `t1`, `t2`… (a change draft
+  numbers them `t10`, `t20`…, so an inserted step takes a free number between its neighbours); one note is fixed later with the tour's `stepsUpdate`; apply, read `xpl anchors <name> tour:<slug>`
   (what each step will show: its `code`, else the ranges derived from its `focus`), then
   `xpl bundle -o … --tour tour:<slug>`. A tour the user edited in the tour panel is protected: a new tour
   (new slug) takes the changes.
@@ -1350,7 +1441,8 @@ text the user dictates; views and tours the user edited are theirs too); summari
 about this code, every claim visible in the code their anchors show; for a change, never describe old
 behaviour that was not read in the base code; lazy; ask rather than guess.
 
-`reference/`: `patch-format.md` (a template for every element, merge rules, rejection messages and their
+`reference/`: `quick.md` (the one-page quick reference: the loop, what every patch needs, the lint checks),
+`patch-format.md` (a template for every element, merge rules, rejection messages and their
 fixes; its `json patch` blocks are applied by a test), `cli.md` (every command with sample output),
 `writing.md` (which field holds what, plain-language rules, the tour summary, rewrites; `xpl lint` checks the
 mechanical part), `explain-change.md` (the PR, MR and branch guide),
@@ -1408,7 +1500,12 @@ apply and validate; `cli/test/draft.test.ts` applies each draft as it is and che
 `anchors` are clean and `lint` reports only `todo-left`; `cli/test/lint.test.ts` covers every rule and
 `--patch`. The e2e suite covers Read (the guide, titles said once, the header at 1280×720 and 1440×900, text
 of 12 px or more in Present), explore, tours, the diff view (`change.spec.ts`), `xpl view`'s API from the
-browser (`/api/base-file` included), degraded (malformed) explainers and both colour schemes.
+browser (`/api/base-file` included), degraded (malformed) explainers and both colour schemes; besides,
+architecture maps (`architecture.spec.ts`, on the Python fixture with the skill's worked overview), many views
+in one header (`header.spec.ts`), big diagrams (`large-graph.spec.ts`), crowded views (`stubs.spec.ts`), the
+file tree (`file-tree.spec.ts`), recursion and the code-first layout (`recursion.spec.ts`), and the Key,
+keyboard and small screens (`a11y.spec.ts`). `screenshots.spec.ts` (and screenshots in other specs) write to
+`packages/viewer/e2e/screenshots/`, which is gitignored.
 
 ---
 
@@ -1416,7 +1513,8 @@ browser (`/api/base-file` included), degraded (malformed) explainers and both co
 
 **Exists and tested:** the four packages and the skill as described above; three language packs with
 heuristic references, SCIP-precise references for all three, config keys of YAML, JSON and TOML files, the
-full CLI (with `change`, `draft` and `lint`), Read, Explore and Present with tours, change explainers with
+full CLI (with `change`, `draft` and `lint`), Read, Explore and Present with tours, feedback from the page
+under `xpl view` and its live update, architecture maps (`role`, `opens`), change explainers with
 base anchors and a diff view, and example explainers for the three fixtures.
 
 **Known limitations**
@@ -1430,8 +1528,9 @@ base anchors and a diff view, and example explainers for the three fixtures.
   (`xpl status --json` lists the derived edge ids).
 - The layout runs on the main thread: laying out a very large graph blocks the page, so views
   should stay coarse (whole-repo views start at packages) and are expanded by hand.
-- No live reload: `xpl view` re-reads everything per request, but an open page needs a manual reload after
-  `xpl apply`.
+- Live update covers the explainer only: under `xpl view` the page polls `/api/explainer` every 2 s and
+  shows what `xpl apply` wrote, but not while edits made on the page are unsaved; source files already open
+  are not re-read, and a static bundle never updates.
 - Heuristic references are hints, and the limits are in §3: no overloads, generics, unions or narrowing;
   Python instance attributes are not linked. A precise index needs the tools: `npx` for
   TypeScript and Python, Go ≥ 1.25 (or the network for the automatic toolchain) for Go, and the first run
@@ -1461,8 +1560,7 @@ base anchors and a diff view, and example explainers for the three fixtures.
 
 **Next steps, roughly by value** (the review in `docs/review-2026-10-01.md` has the roadmap): an independent
 accuracy pass for change explainers; a word-level diff in rewritten lines; editable step titles and code in
-the viewer; live reload for `xpl view` (poll `/api/bundle`, or a server-sent event when the explainer file
-changes); a UI for hiding and pinning, or dropping the unused `layout` field; the layout in a Web Worker; more
+the viewer; a server-sent event instead of polling `/api/explainer`, and re-reading changed source files; a UI for hiding and pinning, or dropping the unused `layout` field; the layout in a Web Worker; more
 language packs (each needs `extract`, `classifySite`, `resolveModule`, and optionally a SCIP resolver);
 publishing the CLI and packaging the skill so that install is one step; a regeneration mode in the skill that
 walks `xpl status` on its own.

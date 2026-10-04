@@ -474,8 +474,8 @@ export interface SequenceView extends ViewBase {
   /**
    * (amended) How Read and Explore lay the view out. `"code-first"`: the code is the main pane and the diagram
    * a narrow outline beside it that follows the selection and the caret (made for the steps of one function).
-   * `"diagram"`: the diagram is the main pane. Absent: code-first when every step's code is in one function,
-   * else the diagram.
+   * `"diagram"`: the diagram is the main pane. Absent: code-first when the view has at least 3 steps and
+   * every step's code (current, not base anchors) is in one file, else the diagram.
    */
   layout?: "code-first" | "diagram";
 }

@@ -143,9 +143,12 @@ blind (a re-export it misnames, generated code with `//line` directives), the he
 | `packages/indexer`     | `@xpl/indexer`: file discovery, tree-sitter (WASM) language packs, heuristic resolver, SCIP import.      |
 | `packages/cli`         | `@xpl/cli`: the `xpl` command, bundled to `packages/cli/dist/xpl.mjs`.                                   |
 | `packages/viewer`      | `@xpl/viewer`: React + CodeMirror 6 + dagre, built to one `index.html`.                                  |
-| `skill/code-explainer` | The Claude skill: `SKILL.md`, CLI and patch references, worked examples, launcher.                       |
+| `skill/code-explainer` | The Claude skill: `SKILL.md`, quick, CLI, patch and writing references, worked examples, launcher.       |
 | `fixtures/`            | Tiny real repos (a job runner in TS, Python and Go) with committed explainers.                           |
-| `docs/`                | Architecture, the original design brief, images.                                                         |
+| `docs/`                | Architecture, the original design brief, dated review reports, images.                                   |
+| `.explainer/`          | xpl's own explainer (`xpl.explainer.json`), committed; its indexes are git-ignored.                      |
+| `AGENTS.md`            | Guidance for coding agents; project skills in `.claude/skills/`.                                         |
+| `scripts/`             | `pr-screenshots.sh`: before/after viewer screenshots for a pull request.                                 |
 
 ## Development
 
@@ -154,7 +157,7 @@ npm install          # dependency install scripts are disabled on purpose, see .
 npm run typecheck    # tsc --noEmit in every package
 npm test             # vitest: unit tests of all packages (packages/*/test)
 npm run build        # viewer (Vite single file) first, then the CLI bundle
-npm run test:e2e     # builds the viewer, then Playwright against dist/index.html
+npm run test:e2e     # builds the viewer, then Playwright on fixture bundles made from dist/index.html
 XPL_TEST_SCIP=1 npx vitest run packages/indexer/test/scip-integration.test.ts   # real SCIP indexers
 npm run format       # prettier --write . (format:check to verify)
 ```
@@ -168,12 +171,16 @@ build step between packages in development. After `npm run build`, `node package
   `packages/indexer/src/wasm.ts`, never `Parser.init()`. `XPL_WASM_DIR` redirects the wasm files.
 - Playwright must match the browsers preinstalled in `PLAYWRIGHT_BROWSERS_PATH` (`/opt/pw-browsers` in the
   sandbox), hence `@playwright/test@1.56.1`. Do not run `playwright install` there. The e2e run rewrites the
-  screenshots in `packages/viewer/e2e/screenshots/`; the two above are copies in `docs/images/`.
+  screenshots in `packages/viewer/e2e/screenshots/` (git-ignored); the first two images above are copies of
+  `dispatch-step-selected-light.png` and `tour-step-2-light.png` in `docs/images/`. The two architecture map
+  images are not made by the e2e run.
 - `.npmrc` sets `ignore-scripts=true`, so npm also skips `pre*`/`post*` scripts of our own packages.
 - Fixture line numbers are load-bearing (anchors, acceptance tests): prettier ignores `fixtures/`.
 
 ## Docs
 
+- [AGENTS.md](AGENTS.md): the guide for coding agents working on this repo (commands, invariants, PR rules),
+  with project skills in `.claude/skills/`.
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): how it is built: schema (change records and base anchors
   included), indexer, anchors and patches, CLI (`change`, `draft`, `lint`) and server API, viewer (Read,
   Explore, Present, the diff view), known limitations.
@@ -181,8 +188,15 @@ build step between packages in development. After `npm run build`, `node package
 - [docs/review-2026-10-01.md](docs/review-2026-10-01.md): review of four generated explainers (two PRs,
   a whole repo, a subsystem), what that iteration changed, a validation run on an unseen PR, and the
   roadmap.
+- [docs/review-2026-10-03-ui.md](docs/review-2026-10-03-ui.md): a UI review of the viewer on the fixture
+  bundles (five personas, screenshots at five widths), what was changed, and a second round on the open items.
+- [docs/review-2026-10-03-real-runs.md](docs/review-2026-10-03-real-runs.md): the skill, CLI and viewer on
+  three unseen projects (ky, itsdangerous, chi) at four levels (system, feature, algorithm, change), with the
+  persona reports and authoring logs in [docs/review-2026-10-03-real-runs/](docs/review-2026-10-03-real-runs/).
 - [docs/review-2026-10-03-stress.md](docs/review-2026-10-03-stress.md): a stress test on seven large repositories
   (zod, vue, django, sympy, jinja, prometheus, hcl) and on recursive edge cases: accuracy, speed, what was fixed
   and what is still open.
-- [skill/code-explainer/](skill/code-explainer/): what Claude reads: `SKILL.md`, `reference/` (the CLI,
-  the patch format, the writing rules, the guide for changes).
+- [docs/analysis-2026-09-30.txt](docs/analysis-2026-09-30.txt): an earlier analysis of the project (plain text).
+- [skill/code-explainer/](skill/code-explainer/): what Claude reads: `SKILL.md`, `reference/` (the one-page
+  quick reference, the CLI, the patch format, the writing rules, the guide for changes, and two worked example
+  patches in `examples/`).

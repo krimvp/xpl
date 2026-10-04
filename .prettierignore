@@ -11,3 +11,5 @@ fixtures
 docs
 # Appendix B of docs/handoff.md, kept byte-identical (apart from the import path).
 packages/core/test/types/example.explainer.ts
+# Written by `xpl apply` / `xpl change` in their own format; never reformat by hand.
+.explainer

@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "xpl viewer: React + CodeMirror 6 + elkjs, built into one self-contained dist/index.html.",
+  "description": "xpl viewer: React + CodeMirror 6 + dagre, built into one self-contained dist/index.html.",
   "scripts": {
     "dev": "vite",
     "build": "vite build",

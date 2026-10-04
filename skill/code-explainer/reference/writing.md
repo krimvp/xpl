@@ -15,23 +15,23 @@ Write the tour `summary` for the manager, the notes for the newcomer, and keep e
 
 Say each fact once, in the place where it belongs.
 
-| Field                              | Says                                                                                     | Length                         | Format          |
-| ---------------------------------- | ---------------------------------------------------------------------------------------- | ------------------------------ | --------------- |
-| tour `summary`                     | what this is and why it matters; for a change: the behaviour change, the risk, the tests | 2-4 sentences (a change: 2-5)  | markdown        |
-| tour `title`                       | the question the tour answers, or what it covers; for a change, the change               | about 8 words                  | plain           |
-| note heading (`### ...`)           | the point of this step, as a statement                                                   | about 8 words                  | plain           |
-| note body                          | what to notice here and why it matters; what no summary says                             | 1-4 sentences                  | markdown        |
-| element `summary`                  | what this code does, with its conditions                                                 | 1-2 sentences                  | inline markdown |
-| element `detail`                   | the cases, conditions and lists that do not fit in the summary                           | only when needed               | markdown        |
-| view `title`                       | what the picture shows                                                                   | about 8 words                  | plain           |
-| flow step `label`                  | the stage, in plain words ("Find a handler", "Answer 400")                               | 2-5 words                      | plain           |
-| sequence step `label`              | the call, as written in the code (`requeue(job, backoff)`)                               | the call text                  | plain           |
-| step `summary`                     | what happens at this step, with its condition                                            | 1-2 sentences                  | inline markdown |
-| group, concept and edge labels     | a plain noun phrase; an edge label may be the topic or key (`job.completed`)             | 1-4 words                      | plain           |
-| box `label` on an architecture map | what the part is to a reader ("Payments", "Orders database"), not its folder or class    | 1-3 words                      | plain           |
-| box `tech`                         | the technology ("PostgreSQL", "REST API", "Go service")                                  | 1-3 words                      | plain           |
-| arrow label to an outside box      | what passes ("stores orders", "charges cards", "sends receipts")                         | 1-4 words                      | plain           |
-| frame `label`                      | when the steps inside run ("attempts left", "for each route")                            | a short condition, may be code | plain           |
+| Field                              | Says                                                                                     | Length                          | Format          |
+| ---------------------------------- | ---------------------------------------------------------------------------------------- | ------------------------------- | --------------- |
+| tour `summary`                     | what this is and why it matters; for a change: the behaviour change, the risk, the tests | 2-4 sentences (a change: 2-5)   | markdown        |
+| tour `title`                       | the question the tour answers, or what it covers; for a change, the change               | about 8 words                   | plain           |
+| note heading (`### ...`)           | the point of this step, as a statement                                                   | about 8 words                   | plain           |
+| note body                          | what to notice here and why it matters; what no summary says                             | 1-3 sentences, 60 words at most | markdown        |
+| element `summary`                  | what this code does, with its conditions                                                 | 1-2 sentences                   | inline markdown |
+| element `detail`                   | the cases, conditions and lists that do not fit in the summary                           | only when needed                | markdown        |
+| view `title`                       | what the picture shows                                                                   | about 8 words                   | plain           |
+| flow step `label`                  | the stage, in plain words ("Find a handler", "Answer 400")                               | 2-5 words                       | plain           |
+| sequence step `label`              | the call, as written in the code (`requeue(job, backoff)`)                               | the call text                   | plain           |
+| step `summary`                     | what happens at this step, with its condition                                            | 1-2 sentences                   | inline markdown |
+| group, concept and edge labels     | a plain noun phrase; an edge label may be the topic or key (`job.completed`)             | 1-4 words                       | plain           |
+| box `label` on an architecture map | what the part is to a reader ("Payments", "Orders database"), not its folder or class    | 1-3 words                       | plain           |
+| box `tech`                         | the technology ("PostgreSQL", "REST API", "Go service")                                  | 1-3 words                       | plain           |
+| arrow label to an outside box      | what passes ("stores orders", "charges cards", "sends receipts")                         | 1-4 words                       | plain           |
+| frame `label`                      | when the steps inside run ("attempts left", "for each route")                            | a short condition, may be code  | plain           |
 
 **Formats.** _Markdown_ fields render markdown. Headings and links go only in a note body or a `detail`. _Inline markdown_ fields render code spans and emphasis (`` `Queue.requeue` ``, `**Changed:**`), but no headings or links. _Plain_ fields are shown as written, so `**Changed:**` appears with its asterisks: write no markup there. Backticks around identifiers are fine everywhere. The reply to the user is not a field: SKILL.md, "Show the result", says what it holds.
 
