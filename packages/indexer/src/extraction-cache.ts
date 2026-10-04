@@ -5,8 +5,8 @@
  * detects damaged payloads. Missing/invalid entries and failed writes never affect the published index.
  */
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { lstat, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import { performance } from "node:perf_hooks";
 import pkg from "../package.json" with { type: "json" };
 import { GRAMMAR_WASM, RUNTIME_WASM, resolveWasmFile, type GrammarId } from "./wasm-files.js";
@@ -70,6 +70,31 @@ export class ExtractionCache {
     };
   }
 
+  /** Discovery excludes the lexical .explainer path, so never redirect output through its directories. */
+  private async safeLocation(): Promise<boolean> {
+    if (!this.report.enabled) return false;
+    for (const path of [
+      dirname(dirname(this.directory)),
+      dirname(this.directory),
+      this.directory,
+    ]) {
+      try {
+        if (!(await lstat(path)).isSymbolicLink()) continue;
+      } catch (error) {
+        if (
+          error &&
+          typeof error === "object" &&
+          "code" in error &&
+          (error.code === "ENOENT" || error.code === "ENOTDIR")
+        )
+          return true;
+      }
+      this.report.enabled = false;
+      return false;
+    }
+    return true;
+  }
+
   private fingerprint(grammar: GrammarId): Promise<string | undefined> {
     let value = this.fingerprints.get(grammar);
     if (!value) {
@@ -103,7 +128,9 @@ export class ExtractionCache {
   ): Promise<T> {
     const started = performance.now();
     try {
-      const fingerprint = this.report.enabled ? await this.fingerprint(profile.grammar) : undefined;
+      const fingerprint = (await this.safeLocation())
+        ? await this.fingerprint(profile.grammar)
+        : undefined;
       const input = JSON.stringify({
         format: CACHE_FORMAT,
         revision: EXTRACTION_REVISION,
@@ -140,7 +167,12 @@ export class ExtractionCache {
       }
       this.report.misses++;
       const value = await extract();
-      if (fingerprint && compatibleWasm(fingerprint) && reusable(value)) {
+      if (
+        fingerprint &&
+        compatibleWasm(fingerprint) &&
+        reusable(value) &&
+        (await this.safeLocation())
+      ) {
         const temp = `${target}.${randomUUID()}.tmp`;
         try {
           if (!plainData(value)) throw new Error("extraction returned non-JSON data");

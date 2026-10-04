@@ -371,7 +371,11 @@ written through unique temporary files and rename. Missing, corrupt or wrong-inp
 extraction; cache write failures do not change the index or its diagnostics. Orphaned temporary files are
 ignored. Published indexes also use unique temporary names and atomic rename. Old content entries remain
 until `.explainer/cache` is removed; no eviction policy is added here. The whole `.explainer/` directory is
-excluded from discovery and clean-tree checks, so cache and temporary outputs cannot change snapshot identity.
+excluded from discovery and clean-tree checks. Cache reads and writes are bypassed if `.explainer`, `cache`
+or `extraction-v1` is a symlink, including one targeting outside the repository; `extraction.enabled` becomes
+false. The check runs before lookup and again before persistence. This prevents generated facts from entering
+discoverable source directories while leaving ordinary source at a symlink target discoverable. The cache
+location is fixed: no option or environment variable redirects it. An indexed root may itself be a symlink.
 
 Every build discovers and captures sources again, recomputes source hashes, assigns IDs/hashes/parents,
 resolves all heuristic sites (including Go inference), resolves resources, runs selected semantic providers,

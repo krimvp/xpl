@@ -6,6 +6,10 @@ and runs semantic providers on every build. `xpl index --no-cache` reads and wri
 The [architecture contract](ARCHITECTURE.md#3-indexer-xplindexer) documents the key and revision rules.
 
 Cache entries live in `.explainer/cache/extraction-v1/`, excluded from discovery and snapshot identity.
+If `.explainer`, `cache` or `extraction-v1` is a symlink, reads and writes are bypassed and
+`extraction.enabled` is false. This also applies to links outside the repository. Bypassing keeps generated
+facts out of source directories without hiding source at the link target. No option or environment variable
+redirects the cache directory; an indexed root may itself be a symlink.
 Old entries remain until that directory is removed. Each entry stores the full source/key input and plain
 JSON facts, with an input/payload checksum. Address collisions cannot reuse a different stored input.
 Syntax errors and pack warnings from successful extraction are replayed; extraction failures are retried.

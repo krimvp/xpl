@@ -44,6 +44,8 @@ options and actual grammar/runtime bytes change the key. Syntax recovery diagnos
 extraction is retried. Repository configuration is read fresh by resolution/tools, so a cached caller can
 resolve differently after a declaration, re-export or alias change. Missing/corrupt entries fall back safely.
 Keep scratch files and artifacts outside the indexed repository; `.explainer/cache` is excluded automatically.
+If `.explainer`, `cache` or `extraction-v1` is a symlink, cache reads and writes are bypassed, even for an
+external target. The cache directory is fixed; no option or environment variable redirects it.
 
 The summary also prints scoped extraction hits/misses and wall milliseconds, plus fresh heuristic-resolution
 time and semantic runs/time. `--json` includes `extraction` (`enabled`, `scope`, `hits`, `misses`,

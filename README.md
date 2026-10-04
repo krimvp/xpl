@@ -164,6 +164,7 @@ Repeated `xpl index` builds reuse file-local tree-sitter and Rust tags extractio
 Discovery, source hashes, heuristic resolution and semantic tools still run on every build. The summary
 reports extraction hits/misses and wall time separately from fresh resolution and semantic work.
 `xpl index --no-cache` reads and writes no cached facts; removing `.explainer/cache` reclaims old entries.
+Symlinked directories within `.explainer/cache/extraction-v1` bypass reuse to keep cache output out of source.
 See [cache keys, equivalence checks and measurements](docs/extraction-cache.md).
 
 `xpl index --scip <artifact|manifest.json>` imports generated SCIP declarations and supported references,

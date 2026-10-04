@@ -1,13 +1,15 @@
 import { expect, it } from "vitest";
 import {
   copyFileSync,
+  mkdirSync,
   readFileSync,
   readdirSync,
   renameSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
-import { join, resolve } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { buildIndex } from "../src/index.js";
@@ -15,6 +17,51 @@ import { ExtractionCache, type ExtractionProfile } from "../src/extraction-cache
 import { allWasmSources, resolveWasmFile, setWasmDir } from "../src/wasm-files.js";
 import { makeDir, makeRepo, providerFacts, writeFiles } from "./helpers.js";
 import type { IndexProvider, ProviderSource } from "../src/providers.js";
+
+it.each(
+  [".explainer/cache", ".explainer", ".explainer/cache/extraction-v1"].flatMap((path) =>
+    [false, true].map((git) => ({ path, git })),
+  ),
+)("bypasses redirected cache at $path with git discovery $git", async ({ path, git }) => {
+  const sources = {
+    "a.ts": "export function run() {}",
+    "shared-cache/source.ts": "export const source = 1;",
+  };
+  const root = git ? makeRepo(sources) : makeDir(sources);
+  const link = join(root, path);
+  mkdirSync(dirname(link), { recursive: true });
+  symlinkSync(relative(dirname(link), join(root, "shared-cache")), link, "dir");
+  const first = await buildIndex({ root, precise: "off" });
+  const second = await buildIndex({ root, precise: "off" });
+  // The symlink target is ordinary source. It stays discoverable, but receives no generated output.
+  expect(second.index.files.map((file) => file.path)).toEqual(["a.ts", "shared-cache/source.ts"]);
+  expect(second.index.symbols.map((symbol) => symbol.id)).toEqual([
+    "a.ts#run",
+    "shared-cache/source.ts#source",
+  ]);
+  expect(readdirSync(join(root, "shared-cache"))).toEqual(["source.ts"]);
+  expect(second.extraction).toMatchObject({ enabled: false, hits: 0, misses: 2 });
+  expect(JSON.stringify(second.index)).toBe(JSON.stringify(first.index));
+  const clean = await buildIndex({ root, precise: "off", cache: false });
+  expect(JSON.stringify(second.index)).toBe(JSON.stringify(clean.index));
+  expect(second.warnings).toEqual(clean.warnings);
+});
+
+it("bypasses existing cache entries redirected outside the source tree", async () => {
+  const root = makeDir({ "a.ts": "export function run() {}" });
+  const cold = await buildIndex({ root, precise: "off" });
+  expect(cold.extraction).toMatchObject({ enabled: true, hits: 0, misses: 1 });
+  const redirected = join(makeDir(), "cache");
+  const cache = join(root, ".explainer", "cache");
+  renameSync(cache, redirected);
+  symlinkSync(redirected, cache, "dir");
+  const entries = readdirSync(join(redirected, "extraction-v1"));
+  expect(entries).toHaveLength(1);
+  const bypassed = await buildIndex({ root, precise: "off" });
+  expect(bypassed.extraction).toMatchObject({ enabled: false, hits: 0, misses: 1 });
+  expect(JSON.stringify(bypassed.index)).toBe(JSON.stringify(cold.index));
+  expect(readdirSync(join(redirected, "extraction-v1"))).toEqual(entries);
+});
 
 const equivalenceRoots = [
   resolve("."),
