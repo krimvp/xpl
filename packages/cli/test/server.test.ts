@@ -87,6 +87,34 @@ async function json(res: Response): Promise<any> {
 }
 
 describe("xpl view", () => {
+  it("export snapshots include source behind stubs and check current workspace hashes", async () => {
+    const dir = cloneDir(demo);
+    const view = await serve(dir);
+    const before = parseBundle(await (await fetch(`${view.url}/api/export`)).text());
+    expect(before.exportInfo?.report.scope).toBe("workspace");
+    expect(before.exportInfo?.report.findings.filter((f) => f.code === "stale-index")).toEqual([]);
+    expect(before.files["src/main.ts"]).toBe(readFile(dir, "src/main.ts"));
+    expect(Object.keys(before.files).sort()).toEqual([
+      "config/default.yaml",
+      "src/bus.ts",
+      "src/main.ts",
+      "src/metrics.ts",
+      "src/queue.ts",
+      "src/runner.ts",
+      "src/worker.ts",
+      "test/retry.test.ts",
+    ]);
+    editFile(dir, "src/queue.ts", (text) =>
+      text.replace("Date.now() + delayMs", "Date.now() + delayMs + 7"),
+    );
+    const after = parseBundle(await (await fetch(`${view.url}/api/export`)).text());
+    expect(after.exportInfo?.report).toMatchObject({ ready: false, scope: "workspace" });
+    expect(after.exportInfo!.report.findings.filter((f) => f.code === "stale-index")).toMatchObject(
+      [{ severity: "error", field: "index", hint: expect.stringContaining("xpl index") }],
+    );
+    expect(after.files["src/queue.ts"]).toContain("Date.now() + delayMs + 7");
+  });
+
   it("keeps a viewer edit and its ownership while CLI apply waits for stdin", async () => {
     const dir = cloneDir(demo);
     const view = await serve(dir);

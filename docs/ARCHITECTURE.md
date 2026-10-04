@@ -84,7 +84,7 @@ packages/
                           tree-sitter .wasm files) and dist/viewer.html (a copy of the built viewer) beside it
   viewer/   @xpl/viewer   React 19 + CodeMirror 6 + dagre; vite single-file build → packages/viewer/dist/index.html
 skill/code-explainer/   Claude skill: SKILL.md, README.md, reference/ (quick.md, cli.md, patch-format.md, writing.md,
-                        explain-change.md, examples/), bin/xpl (a symlink-safe node launcher for the built CLI)
+                        explain-change.md, examples/), bin/xpl (an installed CLI launcher with a source fallback)
 fixtures/{ts,py,go}-jobrunner/   tiny real repos + committed explainers in .explainer/
 docs/                   handoff.md, ARCHITECTURE.md, analysis-2026-09-30.txt, review-*.md (review notes),
                         review-2026-10-03-real-runs/ (the per-run reports of that review), images/,
@@ -452,9 +452,11 @@ position instead of treating the widened inclusive column as a character on that
 
 `mergeProvider` replaces relationships only for the advertised kinds and explicitly analyzed files of
 supported or partial results. Failed, unsupported and unexamined scopes keep previous hints. Checked node
-replacement requires both symbols and declaration ranges; range-only coverage updates existing nodes without
-changing their identities. Nesting changes only under explicit nesting coverage. A blind occurrence preserves
-the smallest enclosing heuristic hint. Source and resolution provenance remains on each fact; report version,
+replacement requires both symbols and declaration ranges and at least one placed declaration. Partial
+structural results cannot remove existing IDs: they fall back to range-only updates of matching nodes.
+Range-only coverage keeps the existing symbol set. Nesting changes only for matching nodes under explicit
+nesting coverage; unmatched nodes keep their parents. A blind occurrence preserves the smallest enclosing
+heuristic hint. Source and resolution provenance remains on each fact; report version,
 configuration and snapshot identities remain in the index and bundles. No format alone determines trust:
 each relationship explicitly says `heuristic` or `precise`. A generic reference is not converted to a call.
 Relationship coverage also records resolution, including empty results. Language summaries and `require`
@@ -490,8 +492,8 @@ reuse is safe only when source, provider version and relevant configuration/depe
 The built-in tool adapters keep SCIP relationship mapping over existing syntax declarations. The separate
 `scipArtifactProvider({ artifact, manifest?, languages? })` imports declarations without a language pack.
 The CLI selects it with `xpl index --scip <artifact|manifest.json>` instead of automatic semantic tools,
-retaining registered syntax-mode providers first. Artifact import can then replace their declarations where
-source-verified coverage allows it. In a mixed repository, `require` still needs precise relationships for
+retaining registered syntax-mode providers first. Artifact import keeps existing syntax symbol sets and may update matching
+checked declaration ranges. Files without existing symbols can receive the artifact's placed declarations. In a mixed repository, `require` still needs precise relationships for
 Rust; an artifact covering only other source files cannot make Rust satisfy that requirement.
 Unknown extensions keep the closed `FileLanguage` value `text`; imported symbols work in outlines, queries,
 checked anchors and bundles. `--precise off` skips semantic providers; combining it with `--scip` is an error.
@@ -509,9 +511,11 @@ an old artifact. Dependency/toolchain changes outside the captured files are not
 
 Only definition occurrences with full `enclosing_range`, valid positions and identifier evidence become
 symbols. Identifier-only/synthetic definitions are filtered before normalization so one omitted definition
-does not discard valid coverage. Symbol replacement supplies the file's entire retained set, with partial
-coverage and explicit omissions; it does not append to syntax declarations. Kinds map to xpl's coarse kinds;
-unknown kinds become `other` with diagnostics. Descriptor paths preserve nesting; overload identities stay
+does not discard valid coverage. Structural coverage names only files with placed declarations. The
+artifact claims `symbols` only where no existing provider supplied a symbol set; elsewhere it claims checked
+ranges and keeps the existing IDs and nesting. Each result's `analyzedFiles` identifies its provider's files,
+and each symbol's provenance identifies the provider of its checked range. Empty structure claims cannot
+erase previous declarations. Kinds map to xpl's coarse kinds; unknown kinds become `other` with diagnostics. Descriptor paths preserve nesting; overload identities stay
 distinct while canonical duplicate paths receive source-ordered `~N` suffixes. Reordering overloads can
 change their IDs. Locals are scoped to the document. Explicit parents or exact descriptor prefixes (including
 overload tags) require checked same-file containment. Missing parents are omitted and nesting stays partial.
@@ -524,9 +528,19 @@ Only role-backed reads, writes and imports, and mentions of known types, become 
 Other occurrences become `blind` and retain applicable heuristic hints. SCIP roles cannot classify calls;
 the importer reports calls as unsupported. `SymbolInformation.relationships` are diagnosed and omitted:
 implementation/override flags cannot establish class inheritance or relationship direction by themselves.
+Source-checked definition identifiers can link SCIP identities to existing same-file syntax symbols when
+the definition occurrence exactly matches a source-checked declaration identifier (file, line and column
+range), the descriptor and kind are supported, and the match is unique. Both references and range updates
+use that existing canonical ID, including its duplicate suffix. Missing identifier evidence, unsupported
+descriptors and ambiguous matches are diagnosed and omitted. Name and declaration start line do not establish
+identity. Checked identifier spans stay in the in-memory provider lookup; they add no stored index field.
+This creates no declaration from an identifier extent.
 External symbols and accessor targets without checked definitions never create local declarations.
-Reports remain partial, including empty results. Producer ranges may omit leading documentation; the importer
-never substitutes an identifier extent for a full declaration. The CLI reference documents generation and
+Relationship coverage requires retained checked targets, either imported or linked to existing symbols.
+A range-less standalone artifact with no targets cannot earn `precise` or satisfy `require`; explicit
+analysis with checked targets and zero relationships still can. Reports remain partial, including empty
+results. Producer ranges may omit leading documentation; the importer never substitutes an identifier extent
+for a full declaration. The CLI reference documents generation and
 manifest creation. Java uses this importer without a language pack or new `FileLanguage` value.
 `scripts/java-scip.ts` runs the pinned Maven producer workflow, captures source/config hashes before
 generation, checks them afterward, and writes a manifest only for a successful run with a fresh artifact.
@@ -715,7 +729,7 @@ the bundled CLI, `node_modules` in development).
 Modules of `packages/core/src`: `schema`, `patch`, `constants`, `text` (hashing), `glob`, `ids`,
 `index-model` (`IndexModel`), `implementations`, `anchors`, `change` (change records and their analysis),
 `model` (`ExplainerModel`), `stubs`, `graph`, `focus`, `sequence`, `flow`, `related-files`, `validate`, `apply`,
-`bundle`, `index-pack`, `prune`, `levels`; all re-exported from `index.ts` except the internal helpers of
+`bundle`, `index-pack`, `prune`, `levels`, `lint`, `readiness`, `source-files`; all re-exported from `index.ts` except the internal helpers of
 `util` (`cmp`, `cloneJson`, `deepEqual`, …).
 
 ### 4.1 Text and hashing
@@ -955,6 +969,34 @@ patch from. Rules:
   (`hopRefs`) is its own evidence, any other needs an anchor inside each of its ends. Base anchors do not
   count as evidence: the edge is about the current code.
 
+**Readiness (`readiness.ts`).** `checkReadiness(explainer, index, texts, { scope, sourceWarning?,
+decisionNote? })` combines strict validation, source availability/hashes, the required text counted by
+`viewContentStatuses` (also used by `xpl status`), and `lintExplainer` (now in core). Errors block ready
+export; reader warnings remain visible for author judgment. Required text includes visible nodes and
+participants, stored arrows, flow/sequence steps, concepts, tour summaries and step notes. Hidden deeper
+nodes and static arrows do not need summaries. A guide needs a view; a tour needs steps. Cached anchor
+resolutions cannot substitute for missing source, including the before-source of a change. `source-files.ts`
+selects the same referenced source for readiness and CLI embedding, including source behind stubs.
+
+The report is `{ ready, scope: "workspace" | "embedded-snapshot", identity, errors, warnings, findings,
+decisionNote? }`. Each finding has `{ severity, code, elementId, field, message, hint }`; structural `field`
+values retain validation's JSON paths. `decisionNote` records an author's reason for warnings or omissions;
+it never overrides an error. Workspace discovery stays in the CLI: it compares all indexed/discovered file
+hashes, including added/deleted files, and passes any difference as `sourceWarning`. An offline re-save can
+check only its embedded snapshot. Source checks establish locations, freshness and required text; they do
+not establish prose truth, exhaustive execution coverage or formal reviewer approval.
+
+`artifactIdentity(explainer, index)` returns `{ explainerHash, sourceHash }` using `hashText` over canonical
+JSON (sorted object keys, array order retained, undefined fields omitted). `explainerHash` covers the whole
+stored explanation, including provenance, anchors, resolved ranges and index metadata. `sourceHash` covers
+the sorted full indexed `{ path, hash }` manifest plus optional change base/head SHAs; the base SHA identifies
+the before-source. Explanation edits change the first hash; changed indexed source or change commits change
+the second. Source embedding choices, index pruning, launch mode, server URL and HTML do not change identity.
+Re-resolving metadata can change `explainerHash`; reindexing identical source leaves `sourceHash` unchanged.
+This identity lives in core for export and feedback/revision consumers, independent of reviewer records.
+`sourceHash` identifies indexed source: a stale draft/workspace can contain code that differs from it.
+Consumers must also check readiness/freshness before accepting a revision or retargeting feedback.
+
 ### 4.7 Patches (`apply.ts`)
 
 `applyPatch(explainer, patch, index, getText, { actor: "llm" | "user" }) → { ok, explainer, issues, changed }`,
@@ -1063,15 +1105,45 @@ stdout (a rejection exits 1); fatal errors (`error: …`) and warnings (`warning
 | `xpl resolve <explainer> [--write] [--allow-stale]` | §4.2 re-resolve against the index of the current code; report drifted llm elements, missing anchors; `--write` saves |
 | `xpl feedback <explainer> [--import <file> \| --export <file> \| --outcomes <file>]` | durable reader feedback: stable-ID import deduplication, snapshot context inspection, portable export and selected-ID outcome merges; no generation |
 | `xpl status <explainer> [--view <id>]` | the skill's to-do list, read-only: per view the shown nodes, stored edges and steps without a summary (static edges optional), concepts without one, drift (user-owned drift counted apart), missing anchors, broken references (ids gone from the index), stale derived-edge overlays, queued requests; per graph view the ghosts and stubs it draws (counts, the most referenced ghost ids, and for each folded ghost up to 3 of the elements it stands for with their counts; `--json`: every ghost with its count and all its `targets` (`{id, count}`), and every stub id, in `views[].ghosts`) with a warning above 12 ghosts; the tours (id, step count, steps whose focus ids or view are gone); `--view <id>`: that view only, with what it draws (each arrow: id, kind, ends, references, stored or derived, label; each `hidden` id and what it takes out; a flow's step links) |
+| `xpl ready <explainer> [--note reason]` | shared readiness report before export; `--json` adds `ok` to the report above; 0 ready (warnings allowed), 1 blockers/failure, 2 usage; writes nothing; a note records intentional warning/omission decisions |
 | `xpl lint <explainer> [--patch <file\|->] [--warn-only]` | checks the text a reader sees (the index, when there is one, counts the boxes and arrows of maps): rules below; `--patch` lints the explainer as it would be after `xpl apply` of that patch (merged in memory as actor `llm`, nothing written; a patch apply would reject prints the rejection and exits 1); exit 1 with any finding (so `lint --patch && apply` stops on one), 0 with `--warn-only` unless a `todo-left` error |
 | `xpl change <explainer> [<base>..<head>]` | records the change from git in the explainer and prints its analysis (§4.8; below); without a range, prints the analysis of the change already recorded |
 | `xpl draft change\|repo\|path <explainer> [<entry id> ...] [-o file]` | prints a patch skeleton built from the index (and the change record) with no LLM, `TODO:` in every text to write (below); the summary goes to stderr |
 | `xpl view <explainer> [--port p] [--host h] [--no-open]` | local server (below) |
-| `xpl bundle <explainer> -o out.html [--mode explore\|present] [--tour id] [--files referenced\|boundary\|all] [--boundary-max n] [--embed-index full\|pruned] [--allow-drift]` | self-contained HTML; anchors are re-resolved first, and drifted or missing ones make it refuse (exit 1) unless `--allow-drift` (the page then says so); `--tour` (`tour:intro` or `intro`) implies present mode; embeds the files the explainer references by default and prints what went in (`8 of 12 files embedded (referenced: 18.4 KB of source; --files all adds 4 files, 6.7 KB)`), `--files boundary` adds the direct callers, callees and tests of anchored symbols (at most `--boundary-max`, default 40), `--files all` every indexed file; with a change recorded, every changed file at head and the base text of the changed files go in too; the symbol index in it is pruned to what the viewer can draw with `--files referenced` or `boundary` and whole with `--files all` (`--embed-index` overrides) and packed (the summary line says `index 0.3 MB (1.3 MB as plain JSON, pruned from 9.0 MB)`) |
+| `xpl bundle <explainer> -o out.html [--mode explore\|present] [--tour id] [--files referenced\|boundary\|all] [--boundary-max n] [--embed-index full\|pruned] [--draft] [--note reason] [--allow-drift]` | self-contained HTML after the shared readiness check (exit 1 before writing with errors); `--draft` writes a labelled preview with findings; `--allow-drift` is a legacy draft flag that still refuses stale indexes; warnings and optional author notes are retained; `--tour` (`tour:intro` or `intro`) implies present mode; embeds the files the explainer references by default and prints what went in (`8 of 12 files embedded (referenced: 18.4 KB of source; --files all adds 4 files, 6.7 KB)`), `--files boundary` adds the direct callers, callees and tests of anchored symbols (at most `--boundary-max`, default 40), `--files all` every indexed file; with a change recorded, every changed file at head and the base text of the changed files go in too; the symbol index in it is pruned to what the viewer can draw with `--files referenced` or `boundary` and whole with `--files all` (`--embed-index` overrides) and packed (the summary line says `index 0.3 MB (1.3 MB as plain JSON, pruned from 9.0 MB)`) |
+| `xpl doctor [--agent none\|claude] [--skill-dir path]` | local setup report: Node, artifact hashes, grammar loading, installed skill and optional git/npx/Go; selected Claude Code availability; no downloads or authentication probes; required failures exit 1 |
+| `xpl skill install [--dir path]` | copies the bundled skill and writes its CLI binding; repeat to update; defaults to `~/.claude/skills/code-explainer`; refuses unmanaged directories, symlinks and local edits |
+
+**Installed artifact.** Workspace packages remain private. `npm run build` writes standalone package
+metadata in `packages/cli/dist`, with `@xpl/cli`'s version, a `bin` entry, Node >=22.12 and no dependencies
+or install scripts. The viewer is required at build time. The directory carries the bundled CLI, viewer,
+WASM runtime and grammars, Rust tags query, the skill and `integrity.json`. `npm run pack --
+--pack-destination <outside-repo-dir>` builds and packs that directory. Install its local tarball with
+`npm install --global --prefix "$HOME/.local" --offline --ignore-scripts <absolute-tarball-path>`; put
+`$HOME/.local/bin` on PATH. No source build is needed at installation. Registry/channel publication remains
+a separate decision; nothing is published by build, pack, diagnosis or skill installation.
+
+`doctor` checks SHA-256 hashes from the artifact inventory and loads every grammar. Hashes detect damage,
+not publisher identity. Skill availability is optional for reading, required with `--agent claude`.
+It checks the managed copy's hashes and executes its launcher with `--version`. Optional tools are checked
+only with local version commands; their presence does not prove precise analysis or agent authentication.
+The Go probe forces `GOTOOLCHAIN=local`, ignores user Go configuration and disables telemetry without
+writing settings. Git tracing is disabled for its probe. No Python or SCIP tool launcher is invoked.
+Recovery instructions distinguish reinstalling the artifact, reinstalling the skill, precise fallback and
+separate Claude Code setup. `--precise off`, local viewing and HTML export need no hosted xpl service.
+Precise tool/toolchain bootstrap and repository dependencies may need network; agent provider access has
+separate network requirements. Trust labels remain unchanged. Generation remains explicitly user-invoked.
+
+`npm run test:install -- <scratch-dir>` builds, packs, installs offline and exercises TS/Python/Go fixture
+copies, local viewing and offline HTML in pinned Chromium. It checks refusal before writing unfinished
+ready output, explicit draft labels and disconnected ready exports. CLI subprocesses have Node filesystem permissions
+for scratch only, with a negative checkout-read probe. The harness permits child processes for local git
+and version checks; it is a check of CLI file reads, not an OS sandbox for arbitrary child tools.
+Only Linux x64 (WSL2, Node 22.23.1) has been exercised against the installed artifact.
 
 **Exit codes.** 0 ok (warnings allowed); 1 rejected or failed: unknown id, no index, a rejected patch, a patch
 that changed nothing because the user owns everything it touched, validation errors, `resolve --write` on a
-stale index, an explicit `--port` in use, `xpl bundle` with drifted or missing anchors (without `--allow-drift`),
+stale index, an explicit `--port` in use, `xpl ready` or ready `xpl bundle` with readiness blockers,
 `xpl change` without git or with a head that is not the index commit, `xpl draft change` without a change
 record, `xpl lint` with findings; 2 usage error. **Environment:**
 `XPL_VIEWER_HTML` (viewer page for `view` and `bundle`), `XPL_SKIP_STALE_CHECK=1`, `XPL_WASM_DIR`,
@@ -1151,10 +1223,13 @@ why the code is as it is are left to Claude.
 **`xpl lint`** reads the explainer (and the index when there is one, for map counts) and checks the text a reader sees, against the skill's writing rules
 (`reference/writing.md`). Code spans are left out of the word checks. Each finding names the element, the
 field, a short quote and a fix. Rules (thresholds and word lists live in `LINT_LIMITS`, `FILLER_WORDS`,
-`ABSOLUTE_WORDS` in `packages/cli/src/lint.ts`):
+`ABSOLUTE_WORDS` in `packages/core/src/lint.ts`):
 
-- `todo-left`: a `TODO` left in reader text or a view's question; the one error-level finding (exit 1 even
-  with `--warn-only`; any other finding exits 1 without it).
+- `todo-left`: a `TODO` in any authored string, including frame/transition labels, audience, technology
+  and view questions. A recursive pass checks text by default, excluding IDs, paths, anchors and other
+  structural metadata. Each stored field gets one error; a tour note includes its heading and body.
+  Nested text names its field path (`next[0].label`) and nearest element ID. Exit 1 even with `--warn-only`;
+  any other finding exits 1 without it.
 - Tours: `tour-summary` (missing, or not 2-4 sentences), `tour-first-step` (the first step focuses a test, a
   concept that lights up nothing, or a flow when the tour has a map, or its title says "edge case"),
   `tour-covers-map` (a box of a used map of at most 10 boxes that no step focuses and no note names),
@@ -1196,6 +1271,7 @@ parts may be out of date.
 |---|---|
 | `GET /` | the viewer HTML with the bundle injected (`server: { api: "/api" }`, `mode: "explore"`, `files` = the files the explainer references; others are fetched lazily; `baseFiles` whole, when the explainer has a change: only the changed files, so it is small) |
 | `GET /api/bundle` | the same bundle as JSON |
+| `GET /api/export` | current export snapshot with all referenced source (including stubs), base source and a forced workspace freshness check; `exportInfo.report` has shared readiness findings; no HTML is written |
 | `GET /api/explainer` | the explainer with its anchors re-resolved (as in the bundle), with an `ETag` of the file; 304 on a matching `If-None-Match` |
 | `GET /api/file?path=` | text of one indexed file (`text/plain`); 400 for a malformed path (absolute, `..`, backslash, NUL), 404 for anything not in the index (with `suggestions`) or unreadable |
 | `GET /api/base-file?path=` | the code before the change of one changed file (`text/plain`, read with `git show`); `path` is `ChangedFile.path`; 400 for a malformed path; 404 when the explainer has no change, the file is not a modified, renamed or deleted file of it (with the list of those; the old path of a renamed file is not a key), or git cannot read it |
@@ -1229,7 +1305,8 @@ context copied exactly. It updates those IDs only. Failed writes leave the prior
 The actual selected revision operation and acceptance/diff workflow belong to #30.
 
 **Bundle payload** (`ViewerBundle`, also `/api/bundle`): `{ schema: "code-explainer/bundle@0", explainer,
-index, files: Record<FilePath, string>, baseFiles?, mode?, tour?, server?, feedback? }`, embedded as `<script
+index, files: Record<FilePath, string>, baseFiles?, mode?, tour?, server?, sourceWarning?, exportInfo?,
+feedback? }`, embedded as `<script
 id="xpl-data" type="application/json">` with `<` escaped as `\u003c` (and U+2028/2029 escaped). Under `xpl
 view` `files` may be partial and the viewer fetches the rest from `/api/file`. `xpl bundle` embeds the files
 the explainer needs (`--files referenced`, the default; `--files all` embeds every indexed file): those of
@@ -1244,6 +1321,11 @@ left out (`change 85c3b74..2284ff0: 2 changed files in (1 added to the selection
 2 files (64.6 KB)`). The viewer's file tree lists only the embedded files of a static bundle, with an "N of M
 files included" footer. The viewer HTML comes from `XPL_VIEWER_HTML`, else `dist/viewer.html` next to the
 running bundle, else `packages/viewer/dist/index.html`.
+
+**Export information.** `exportInfo: { status: "ready" | "draft", report: ReadinessReport }` records
+identity, checked source scope, findings and the author's optional decision note. CLI ready output checks the
+workspace; offline re-saves record `embedded-snapshot`, never a claim about the current repository. Draft
+pages show a persistent preview banner. Legacy bundles can still open; saving them runs the same checks.
 
 **Base files.** `baseFiles: Record<FilePath, string>` is the code before the change: the base text of every
 modified, renamed and deleted file of `explainer.change`, keyed by `ChangedFile.path` (the new path of a
@@ -1333,12 +1415,20 @@ panel), the Stubs control and edge-kind toggles of a graph view (Explore only, u
 HTML", "Download explainer JSON", and "Retry save" after a failed save. The menu works with ↑ ↓ Esc and Tab.
 At 1280×720 the header fits without cutting a control off.
 
-**Save as HTML** (Edit menu, `saveHtml.ts`) saves the page as it was loaded, with the edited explainer in its
-`<script id="xpl-data">`. A copy of the document is kept when the viewer starts, before React renders into it,
+**Save as HTML** (Edit menu, `saveHtml.ts`) opens a readiness inspection dialog with errors, reader warnings
+and an optional author decision note. Save ready HTML is disabled with blockers; Save draft preview remains
+available and names the output `*.draft.html`. Live saves flush pending edits, request `/api/export` and
+refresh the paths loaded in the viewer from the workspace, then recheck at the final click. `/api/export`
+refreshes referenced source; `/api/file` refreshes loaded paths outside that selection without cache reuse.
+Failed saves/fetches prevent downloads; offline saves
+check only embedded source and say so. Both paths use core's `checkReadiness`, and `savedPage` gates ready
+serialization too. It saves the page as loaded with the checked explainer in its `<script id="xpl-data">`. A copy of the document is kept when the viewer starts, before React renders into it,
 so what is saved is the page as loaded, not the rendered one. The saved copy keeps the index and the embedded
 files, adds the files and base files fetched since the page opened, and drops `server`: it opens without
 `xpl`, with the edits in it. Under `xpl view` the edits are saved by the server already; the HTML file is a copy
-to share.
+to share. Both ready and draft copies carry current feedback with its original IDs, context and outcomes.
+The save refreshes browser records and live disk outcomes before export. Feedback capture works on both
+ready pages and draft previews; an export decision never retargets a request to the exported explanation.
 
 **Read.** The page opens here unless the URL or the bundle asks for another mode. The tabs:
 
@@ -1606,11 +1696,17 @@ from `GET /api/base-file` (each file once; an error shows in its pane).
 
 ## 7. Skill (`skill/code-explainer`)
 
-`SKILL.md` drives the operations below, plus regeneration, through the CLI (`<skill-dir>/bin/xpl`). The
-launcher finds `packages/cli/dist/xpl.mjs` relative to its own real path, so the skill directory is symlinked,
-not copied (`XPL_CLI=<xpl.mjs>` overrides the lookup). Everything Claude writes is a patch; it never edits an
-explainer by hand. SKILL.md and its `reference/` files are the source of truth for the rules; this section
-only says how they use the CLI.
+`SKILL.md` drives the operations below, plus regeneration, through the CLI (`<skill-dir>/bin/xpl`).
+`xpl skill install` copies the artifact's bundled skill, with `xpl-install.json` recording the installed
+CLI's absolute path, skill version and owned file hashes. Repeating installation updates the copy and
+launcher under a directory lock. It stages a replacement beside the destination and rolls back if the
+replacement fails. It refuses symlinks, unmanaged directories, changed owned files and extra files;
+move them aside to preserve edits before reinstalling. A moved CLI is repaired by rerunning installation.
+`XPL_CLI=<xpl.mjs>` overrides the binding; a source-development skill still finds
+`packages/cli/dist/xpl.mjs` relative to its real path. Everything Claude writes is a patch; it never edits
+an explainer by hand. SKILL.md and its `reference/` files are the source of truth for the rules; this section
+only says how they use the CLI. Claude Code installation, authentication and provider access are separate;
+the skill never starts a resident generation worker.
 
 Claude first chooses one of three scopes: `explain <question>` (part of a project), `explain repo` (the whole
 project) or `explain change <base>..<head>` (a diff). The reader sees the tour title and its `summary` first,
@@ -1625,7 +1721,7 @@ base` for the old code) → write the patch → `xpl lint --patch` → `xpl appl
 lists every error at once: fix the patch, apply again) → `xpl validate`, `xpl status` (until `0 unexplained`)
 and `xpl anchors` (read what every span landed on) → the tour → the accuracy pass (a fresh subagent or a
 second pass: no claim beyond its anchors) → `xpl lint` and small fixes (single elements, `stepsUpdate`), a
-newcomer's re-read → `xpl bundle --files boundary` (the default in cloud sessions) or `xpl view`.
+newcomer's re-read → `xpl ready` → `xpl bundle --files boundary` (the default in cloud sessions) or `xpl view`.
 
 - **`explain <question>`**: ask one short question if the scope is really ambiguous; find entry points
   (`search -i`, `outline`); trace (`show <entry> --refs`, `refs --out --kind call` at depth 1 and a targeted
@@ -1826,12 +1922,13 @@ identities to syntax ranges. This is a proposed contract revision, not a change 
   depth 1, so a path whose layers call each other through a variable (`self.app`) is not rebuilt.
 - `xpl lint` is mechanical: it catches slogans, absolute words, long sentences, code titles and order
   problems, not wrong claims. `repeats-summary` finds near-verbatim repeats only.
-- Not published: the packages are private and `xpl` runs from a clone (`npm install && npm run build`), which
-  is also what the skill launcher expects. Node ≥ 22.12 is required; only Linux has been exercised.
+- Not published: workspace packages are private; build/pack produce a standalone local npm tarball with
+  its viewer, grammars and skill. Install/update and reader/export checks cover Linux x64/WSL2 only.
+  Node ≥22.12 is required. Registry name, release version and channel still need a publication decision.
 
 **Next steps, roughly by value** (the review in `docs/review-2026-10-01.md` has the roadmap): an independent
 accuracy pass for change explainers; a word-level diff in rewritten lines; editable step titles and code in
 the viewer; a UI for hiding and pinning, or dropping the unused `layout` field; the layout in a Web Worker; more
 language packs (each needs `extract`, `classifySite`, `resolveModule`, and optionally a SCIP resolver);
-publishing the CLI and packaging the skill so that install is one step; a regeneration mode in the skill that
+publishing the packaged CLI through a selected release channel; a regeneration mode in the skill that
 walks `xpl status` on its own.

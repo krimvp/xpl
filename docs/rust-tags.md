@@ -12,8 +12,12 @@ and highlights.
 
 `xpl search dispatch --code` searches Rust source, and `xpl draft repo` includes Rust code and labels its
 service boxes Rust. Both use the shared code-language classification in core. `--scip` retains Rust tags
-alongside the artifact provider. With `--precise auto`, source outside the artifact keeps its syntax
-declarations; `require` rejects Rust without usable precise relationship coverage.
+alongside the artifact provider. A range-less artifact keeps every tag symbol, including files it describes.
+Source-checked definition identifiers can attach supported references to same-file tag symbols; the artifact
+cannot supply full ranges or nesting there. Coverage labels `rust-tags` as the symbol provider and leaves
+the artifact's structural `analyzedFiles` empty. A standalone range-less import has no checked targets and
+reports `refs: none`; `require` rejects it. Checked targets can support explicit precise analysis with zero
+relationships. Calls remain unsupported because SCIP roles do not distinguish calls from values.
 
 This is a tags-path experiment for #13, under #7. It adds no Rust scope/module resolver or semantic import.
 The standard tagging convention supplies `@name` and `@definition.*`; the generic adapter converts them to

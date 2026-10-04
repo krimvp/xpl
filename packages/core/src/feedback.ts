@@ -1,5 +1,5 @@
 /** Reader feedback stays separate from explanation content. Context never changes on import or retry. */
-import type { ArtifactIdentity } from "./feedback-identity.js";
+import type { ArtifactIdentity } from "./readiness.js";
 
 export const FEEDBACK_SCHEMA = "code-explainer/feedback@1";
 export type FeedbackKind = "correct" | "explain" | "expand";

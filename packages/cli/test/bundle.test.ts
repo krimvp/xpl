@@ -28,6 +28,46 @@ beforeAll(async () => {
   demo = cloneDir(indexed);
   await xpl(demo, "new", "demo");
   expect((await xpl(demo, "apply", "demo", PATCH_PATH)).code).toBe(0);
+  // Complete the old structural example through apply: ready export requires the text status counts.
+  const completed = await invoke(["apply", "demo", "-"], {
+    cwd: demo,
+    stdin: JSON.stringify({
+      nodes: [
+        { id: "file:src/metrics.ts", summary: "Counts the jobs completed by workers." },
+        { id: "file:src/worker.ts", summary: "Runs the assigned job with a timeout." },
+        { id: "file:src/queue.ts", summary: "Stores waiting jobs and schedules retries." },
+      ],
+      views: [
+        {
+          id: "view:dispatch",
+          type: "sequence",
+          stepsUpdate: [
+            { id: "dispatch:1", summary: "The runner removes the next waiting job." },
+            { id: "dispatch:2", summary: "The worker runs the selected job." },
+            { id: "dispatch:3", summary: "The queue schedules a failed job for retry." },
+          ],
+        },
+      ],
+      tours: [
+        {
+          id: "tour:intro",
+          summary:
+            "The scheduler sends queued jobs to workers. Failed jobs return to the queue with a delay.",
+          stepsUpdate: [
+            {
+              id: "t1",
+              note: "### Scheduling\n\nScheduling is two files. Metrics counts completed work; the worker runs each job.",
+            },
+            {
+              id: "t2",
+              note: "### Failure handling\n\nThe queue retries failed jobs with backoff.",
+            },
+          ],
+        },
+      ],
+    }),
+  });
+  expect(completed.code, completed.err).toBe(0);
   viewerEnv = { XPL_VIEWER_HTML: writeViewerStub() };
 });
 
@@ -82,7 +122,7 @@ describe("xpl bundle", () => {
     });
     await writeIndex(dir, index);
     expect((await xpl(dir, "new", "coverage")).code).toBe(0);
-    const result = await invoke(["bundle", "coverage", "-o", "coverage.html"], {
+    const result = await invoke(["bundle", "coverage", "-o", "coverage.html", "--draft"], {
       cwd: dir,
       env: viewerEnv,
     });
@@ -190,7 +230,7 @@ describe("xpl bundle", () => {
     const apply = (patch: object) =>
       invoke(["apply", "other", "-"], { cwd: dir, stdin: JSON.stringify(patch) });
     const filesOf = async (out: string) => {
-      const { code } = await invoke(["bundle", "other", "-o", out, "--root", dir], {
+      const { code } = await invoke(["bundle", "other", "-o", out, "--draft", "--root", dir], {
         cwd: dir,
         env: viewerEnv,
       });
@@ -274,7 +314,7 @@ describe("xpl bundle", () => {
         }),
       });
     const filesOf = async (out: string) => {
-      const { code } = await invoke(["bundle", "solo", "-o", out, "--root", dir], {
+      const { code } = await invoke(["bundle", "solo", "-o", out, "--draft", "--root", dir], {
         cwd: dir,
         env: viewerEnv,
       });
@@ -494,7 +534,7 @@ function viewerEnvBuilt(): boolean {
 }
 
 describe("xpl bundle: what the reader would see by mistake", () => {
-  it("warns when texts still hold TODO placeholders, and writes the page", async () => {
+  it("refuses unfinished text before writing ready HTML, with an explicit draft path", async () => {
     const dir = cloneDir(demo);
     const scratch = makeTempDir("xpl-bundle-todo-");
     const patch = join(scratch, "todo-patch.json");
@@ -507,10 +547,89 @@ describe("xpl bundle: what the reader would see by mistake", () => {
     expect((await xpl(dir, "apply", "demo", patch)).code).toBe(0);
     const out = join(scratch, "page.html");
     const r = await bundle(dir, "-o", out);
-    expect(r.code).toBe(0);
-    expect(r.err).toMatch(
-      /1 text of \.explainer\/demo\.explainer\.json still holds a TODO placeholder/,
+    expect(r.code).toBe(1);
+    expect(r.err).toContain("todo-left");
+    expect(r.err).toContain("concept:todo.summary");
+    expect(existsSync(out)).toBe(false);
+    const draft = await bundle(dir, "-o", out, "--draft");
+    expect(draft.code).toBe(0);
+    expect(bundleOf(readFileSync(out, "utf8")).exportInfo).toMatchObject({
+      status: "draft",
+      report: { ready: false, scope: "workspace" },
+    });
+  });
+});
+
+describe("xpl ready", () => {
+  it("checks a real untouched path draft without lint, refuses HTML, and records machine findings before output", async () => {
+    const dir = cloneDir(await indexedFixture());
+    const scratch = makeTempDir("xpl-ready-path-");
+    const patch = join(scratch, "path.json");
+    expect((await xpl(dir, "new", "path")).code).toBe(0);
+    const drafted = await xpl(
+      dir,
+      "draft",
+      "path",
+      "path",
+      "src/runner.ts#Runner.dispatch",
+      "-o",
+      patch,
     );
-    expect(readFileSync(out, "utf8").length).toBeGreaterThan(0);
+    expect(drafted.code, drafted.err).toBe(0);
+    expect((await xpl(dir, "apply", "path", patch)).code).toBe(0);
+    expect((await xpl(dir, "validate", "path")).code).toBe(0);
+    const checked = await xplJson<any>(
+      dir,
+      "ready",
+      "path",
+      "--note",
+      "This is an unfinished draft.",
+    );
+    expect(checked.code).toBe(1);
+    expect(checked.json).toMatchObject({
+      ok: false,
+      ready: false,
+      scope: "workspace",
+      decisionNote: "This is an unfinished draft.",
+    });
+    expect(checked.json.findings.filter((f: any) => f.code === "todo-left")).toHaveLength(28);
+    const out = join(scratch, "ready.html");
+    const exported = await invoke(["bundle", "path", "-o", out, "--json"], {
+      cwd: dir,
+      env: viewerEnv,
+    });
+    expect(exported.code).toBe(1);
+    const { ok: _ok, decisionNote: _note, ...report } = checked.json;
+    expect(JSON.parse(exported.out).readiness).toEqual(report);
+    expect(existsSync(out)).toBe(false);
+  });
+
+  it("exports a completed fixture with the same ready report, embedded source and provenance", async () => {
+    const dir = cloneDir(demo);
+    const checked = await xplJson<any>(
+      dir,
+      "ready",
+      "demo",
+      "--note",
+      "The tour leaves helper calls for the code reader.",
+    );
+    expect(checked.code).toBe(0);
+    expect(checked.json).toMatchObject({ ok: true, ready: true, errors: 0, scope: "workspace" });
+    const out = join(makeTempDir("xpl-ready-complete-"), "complete.html");
+    const exported = await bundle(
+      dir,
+      "-o",
+      out,
+      "--note",
+      "The tour leaves helper calls for the code reader.",
+    );
+    expect(exported.code, exported.err).toBe(0);
+    const saved = bundleOf(readFileSync(out, "utf8"));
+    const { ok: _ok, ...report } = checked.json;
+    expect(saved.exportInfo).toEqual({ status: "ready", report });
+    expect(saved.files["src/runner.ts"]).toBe(readFile(dir, "src/runner.ts"));
+    expect(saved.explainer.nodes[0]!.provenance).toEqual(
+      readJson(dir, ".explainer/demo.explainer.json").nodes[0].provenance,
+    );
   });
 });

@@ -4,6 +4,7 @@
  *   GET  /                    the viewer HTML with the bundle injected (`server: { api: "/api" }`,
  *                             `files` = the files the explainer references; others are fetched lazily)
  *   GET  /api/bundle          the same bundle as JSON
+ *   GET  /api/export          current complete export snapshot with its readiness report
  *   GET  /api/explainer       the explainer alone, with an ETag; 304 when If-None-Match still matches (the
  *                             viewer polls it, so changes made by `xpl apply` show up without a reload)
 
@@ -36,11 +37,13 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import type { AddressInfo } from "node:net";
 import {
   applyPatch,
+  checkReadiness,
   baseFileOf,
   basePathOf,
   baseVersionFiles,
   injectBundle,
   type ExplainerPatch,
+  type ViewerBundle,
 } from "@xpl/core";
 import { collectBaseFiles, collectFiles, freshAnchors, makeBundle } from "./bundle-data.js";
 import type { RepoEnv } from "./context.js";
@@ -209,7 +212,7 @@ export async function startViewServer(options: ViewServerOptions): Promise<ViewS
     return hash.digest("hex");
   }
 
-  async function bundleOf() {
+  async function bundleOf(forExport = false) {
     const state = await loadState();
     const explainer = freshExplainer(state);
     const collected = collectFiles({
@@ -220,12 +223,12 @@ export async function startViewServer(options: ViewServerOptions): Promise<ViewS
       choice: "referenced",
       // the viewer fetches what is not here on demand, so what lies behind a stub can wait for its click
       measure: false,
-      stubs: false,
+      stubs: forExport,
     });
     // the code before the change: only the changed files, so it is small enough to send whole
     const base = collectBaseFiles(explainer, state.tree.texts);
     const stale = await stalenessOf(env, state.tree, state.index, state.indexFile, state.loaded);
-    return {
+    const bundle: ViewerBundle = {
       ...makeBundle({
         explainer,
         index: state.index,
@@ -236,6 +239,14 @@ export async function startViewServer(options: ViewServerOptions): Promise<ViewS
       }),
       ...(stale ? { sourceWarning: stale.message } : {}),
     };
+    if (forExport) {
+      const report = checkReadiness(explainer, state.index, state.tree.texts, {
+        scope: "workspace",
+        ...(stale ? { sourceWarning: stale.message } : {}),
+      });
+      bundle.exportInfo = { status: report.ready ? "ready" : "draft", report };
+    }
+    return bundle;
   }
 
   // View edits and request appends run one at a time: each is a read-modify-write of a file.
@@ -270,6 +281,11 @@ export async function startViewServer(options: ViewServerOptions): Promise<ViewS
       allow("GET", "HEAD");
       const html = injectBundle(options.viewerHtml(), await bundleOf());
       send(req, res, 200, html, "text/html; charset=utf-8");
+      return;
+    }
+    if (pathname === `${API}/export`) {
+      allow("GET", "HEAD");
+      sendJson(req, res, 200, await bundleOf(true));
       return;
     }
     if (pathname === `${API}/bundle`) {

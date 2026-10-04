@@ -4139,3 +4139,50 @@ code {
   margin-bottom: 12px;
   overflow-wrap: anywhere;
 }
+
+.save-html-dialog {
+  width: min(720px, calc(100vw - 40px));
+  max-height: calc(100vh - 60px);
+  overflow: auto;
+  padding: 24px;
+  color: var(--fg);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.save-html-dialog::backdrop {
+  background: rgb(0 0 0 / 45%);
+}
+.save-html-dialog h2 {
+  margin-top: 0;
+}
+.save-html-dialog p {
+  line-height: 1.5;
+}
+.readiness-findings {
+  padding-left: 20px;
+  max-height: min(40vh, 360px);
+  overflow: auto;
+}
+.readiness-findings li {
+  margin-block: 12px;
+  overflow-wrap: anywhere;
+}
+.save-html-dialog label {
+  display: block;
+  margin-bottom: 8px;
+}
+.save-html-dialog textarea {
+  width: 100%;
+  min-height: 70px;
+  color: inherit;
+  background: var(--bg);
+  border: 1px solid var(--border);
+}
+.save-html-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 20px;
+  flex-wrap: wrap;
+}

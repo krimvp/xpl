@@ -6,6 +6,7 @@ import {
   reresolveExplainer,
   resolveStubPolicy,
   validateExplainer,
+  viewContentStatuses,
   type DerivedGraph,
   type DriftedElement,
   type Ghost,
@@ -122,42 +123,12 @@ function tourStatuses(model: ExplainerModel): TourStatus[] {
 }
 
 function viewStatuses(model: ExplainerModel): ViewStatus[] {
-  const out: ViewStatus[] = [];
-  const explained = (id: string) => {
-    const summary = model.node(id)?.summary;
-    return typeof summary === "string" && summary.trim() !== "";
-  };
-  for (const view of model.views) {
-    const status: ViewStatus = {
-      id: view.id,
-      type: view.type,
-      title: view.title,
-      nodes: { total: 0, unexplained: [] },
-      edges: { total: 0, unexplained: [] },
-      steps: { total: 0, unexplained: [] },
-    };
-    if (view.type === "graph") {
-      const graph = deriveGraph(view, model);
-      status.nodes.total = graph.nodes.length;
-      status.nodes.unexplained = graph.nodes.filter((n) => !explained(n.id)).map((n) => n.id);
-      status.edges.total = graph.edges.length;
-      status.edges.unexplained = graph.edges
-        .filter((e) => !(typeof e.summary === "string" && e.summary.trim() !== ""))
-        .map((e) => ({ id: e.id, stored: e.stored }));
-      status.ghosts = ghostStatus(graph, view.stubs);
-    } else {
-      const participants = Array.isArray(view.participants) ? view.participants : [];
-      status.nodes.total = participants.length;
-      status.nodes.unexplained = participants.filter((id) => model.hasNode(id) && !explained(id));
-      const steps = Array.isArray(view.steps) ? view.steps : [];
-      status.steps.total = steps.length;
-      status.steps.unexplained = steps
-        .filter((s) => !(typeof s.summary === "string" && s.summary.trim() !== ""))
-        .map((s) => s.id);
-    }
-    out.push(status);
-  }
-  return out;
+  return viewContentStatuses(model).map((status) => {
+    const view = model.view(status.id)!;
+    return view.type === "graph"
+      ? { ...status, ghosts: ghostStatus(deriveGraph(view, model), view.stubs) }
+      : status;
+  });
 }
 
 /** Ids of the edges the views show without a summary, at most `max`, then how many more there are. */

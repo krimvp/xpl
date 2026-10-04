@@ -14,13 +14,35 @@
 
 **Exit codes:** 0 ok · 1 rejected or failed (bad id, rejected patch, a patch that changed nothing because the user owns everything it touches, `resolve --write` on a stale index, validation errors, `lint` findings, `bundle` with drifted or missing anchors) · 2 usage error.
 **Streams:** results, issue lists and rejections print on stdout (a rejection also exits 1); fatal errors (`error: ...`: unknown id, no index, bad JSON, unreadable file) and `warning:` lines go to stderr, so use `2>&1` to capture both. With `--json` there is one object on stdout, errors included (`{"ok": false, "error": ...}`).
-**Environment:** `XPL_CLI` (launcher: path of an `xpl.mjs` to run instead of the repo's build), `XPL_VIEWER_HTML` (viewer page for `view`/`bundle`), `XPL_SKIP_STALE_CHECK=1` (skip advisory freshness checks; strict validation and export still check), `XPL_SCIP_TIMEOUT_MS` (time limit of each SCIP indexer, default 10 minutes), `XPL_WASM_DIR` (where the tree-sitter `.wasm` files are), `XPL_DEBUG=1` (stack traces).
+**Environment:** `XPL_CLI` (launcher: path of an `xpl.mjs` overriding the installed CLI binding or development build), `XPL_VIEWER_HTML` (viewer page for `view`/`bundle`), `XPL_SKIP_STALE_CHECK=1` (skip advisory freshness checks; strict validation and export still check), `XPL_SCIP_TIMEOUT_MS` (time limit of each SCIP indexer, default 10 minutes), `XPL_WASM_DIR` (where the tree-sitter `.wasm` files are), `XPL_DEBUG=1` (stack traces).
 
 **Ids** are accepted loosely: `sym:src/a.ts#A.b`, `src/a.ts#A.b`, `file:src/a.ts`, `src/a.ts`, `dir:src`. The outputs always print the exact `sym:`/`file:`/`dir:` form: paste those into patches.
 
 **Staleness.** When the working tree changed since the index was built, commands print ``warning: index … does not match the working tree (wt-…): 2 changed (src/queue.ts, src/runner.ts). Line numbers and offsets may be off; run `xpl index`…``. Re-index before anchoring anything.
 
 ---
+
+## `xpl doctor [--agent none|claude] [--skill-dir <path>]`
+
+Diagnoses installed setup without downloading tools or starting authoring. Node >=22.12, artifact hashes
+and grammar loading are mandatory. Skill availability is optional by default; `--agent claude` makes
+the managed skill and Claude Code availability required. Optional git/npx/Go checks run local version
+commands. Go uses the installed toolchain, ignores user Go configuration and disables telemetry without
+writing settings; Git tracing is disabled. No Python or SCIP tool launcher runs during diagnosis.
+Missing precise prerequisites suggest `xpl index --precise off`; automatic precise mode may
+bootstrap tools and dependencies over the network. Presence is not a test of precise analysis,
+agent authentication or provider access. Required failures exit 1; JSON includes `ok`, `platform`,
+`agent`, `checks` (`id`, `required`, `status`, `detail`, `recovery`) and `network`.
+
+## `xpl skill install [--dir <path>]`
+
+Copies the bundled code-explainer skill to `~/.claude/skills/code-explainer`, or the chosen directory,
+and binds `bin/xpl` to this installed CLI. Rerun after updating or moving the CLI. Refuses symlinks,
+unmanaged directories, added files and locally edited skill files; move them aside first to preserve them.
+The current agent integration is Claude Code. Install/authenticate it separately and invoke the skill
+explicitly. Other agents can read the instructions, but their integration is unverified.
+Local reading, `index --precise off`, viewing and HTML export use bundled assets after setup.
+Precise tools/dependencies and agent authoring can have separate network requirements.
 
 ## `xpl index [--precise auto|off|require] [--commit c] [--scip artifact|manifest.json]`
 
@@ -107,7 +129,14 @@ checked symbols or relationships. Documents must belong to discovered sources; g
 and external symbols are not turned into local declarations. A supplied project-root URI must match `--root`.
 
 `--scip` selects the artifact provider instead of automatic SCIP tools. Registered syntax providers such as
-Rust tags still run first. `auto` reports failures and keeps available syntax declarations and hints;
+Rust tags still run first. Existing syntax symbol sets survive partial or range-less artifacts; matching
+checked ranges can update their provenance. Coverage names each provider and its analyzed files; a
+range-less artifact claims no structural files. References and range updates attach only when a definition
+occurrence exactly matches one source-checked syntax identifier in the same file, including its line and
+column range, and the descriptor and kind are supported. The existing canonical ID is retained. Missing
+identifier evidence, unsupported descriptors and ambiguous matches are reported and omitted. A standalone range-less artifact
+with no checked targets reports `refs: none` and cannot satisfy `require`. An explicit precise analysis with
+checked targets can still have zero relationships. `auto` reports failures and keeps available syntax declarations and hints;
 `require` rejects unusable imports and programming languages without usable precise relationship coverage. `--precise off` cannot be combined with `--scip`.
 Unknown extensions remain `text`, but imported symbols work with `outline`, `show`, `apply`, `validate` and
 `bundle`. Only definitions with full producer ranges become checked symbols. Missing ranges, parents and
@@ -607,7 +636,7 @@ Checks the text a reader sees (the index, when there is one, only counts the box
 
 | Rule                  | Finds                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `todo-left`           | a `TODO` placeholder left in any text lint checks, or in a view's `scope.question` (`xpl draft` writes them; `TODO` inside a code span does not count). The one finding with `severity: "error"`: it exits 1 even with `--warn-only`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `todo-left`           | A `TODO` in any authored text, including frame/transition labels, audience, technology and view questions. One error per stored field; a tour note includes its heading and body. IDs, paths, anchors and metadata are excluded. Nested text names its field path and nearest element ID. Exit 1 even with `--warn-only`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | `tour-summary`        | a tour without a `summary`, or one of fewer than 2 or more than 4 sentences (5 when the explainer has a `change`)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | `tour-first-step`     | the first step does not show the big picture: it focuses a test (a file the index counts as a test, or a group of them), or only a concept that lights up nothing in its picture; it opens on a flow or sequence when the tour has a map; or its title says "edge case", "corner case", "gotcha" or "open question"                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | `tour-covers-map`     | a map (graph view) of at most 10 boxes that the tour uses has boxes that never come up: no step focuses the box, something inside it, a group it belongs to, a step or edge that starts or ends there, or a concept related to it, and no note or the summary names it (by its label, symbol or file name, or a method by its own name: `findEdge` for `nodes.findEdge`). Names match by word stems, case-insensitive, with or without backticks: "the web server" names "Web servers". Lists the boxes (`ids` in `--json`). Give each a step, name it in a note in plain words, or take it off the map                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
@@ -774,19 +803,42 @@ $ xpl view jobrunner --no-open --port 0
 serving .explainer/jobrunner.explainer.json at http://127.0.0.1:34971/  (Ctrl-C to stop)
 ```
 
-API (for scripts): `GET /api/bundle`, `GET /api/explainer` (the explainer with its anchors re-resolved, with an `ETag`; what the page polls), `GET /api/file?path=`, `GET /api/base-file?path=` (the code before the recorded change of a modified, renamed or deleted file), `PUT /api/views/<id>`, `PUT /api/tours/<id>`, `GET|POST /api/requests`.
+API (for scripts): `GET /api/bundle`, `GET /api/export` (current complete export snapshot and shared readiness report), `GET /api/explainer` (the explainer with its anchors re-resolved, with an `ETag`; what the page polls), `GET /api/file?path=`, `GET /api/base-file?path=` (the code before the recorded change of a modified, renamed or deleted file), `PUT /api/views/<id>`, `PUT /api/tours/<id>`, `GET|POST /api/requests`.
 
-## `xpl bundle <explainer> -o out.html [--mode explore|present] [--tour id] [--files referenced|boundary|all] [--boundary-max n] [--embed-index full|pruned] [--allow-drift]`
+## `xpl ready <explainer> [--note reason]`
 
-A stale index is refused, including with `--allow-drift` or `XPL_SKIP_STALE_CHECK=1`. Reindex and resolve
+Checks strict structure/references, workspace/index freshness, required text (visible summaries and guide
+content), source availability and reader lint. Errors block ready export; warnings invite author judgment.
+`--note "reason"` records an intentional omission or warning decision, without overriding errors. Pass the
+same note to `bundle` to keep it in HTML. This check needs no service or reviewer record and writes nothing.
+
+`--json` emits `{ok, ready, scope: "workspace", identity: {explainerHash, sourceHash}, errors, warnings,
+findings: [{severity, code, elementId, field, message, hint}], decisionNote?}`. Exit 0 ready (warnings allowed),
+1 blockers/failure, 2 usage. Bundle failures include this report as `readiness`. The identity function lives in
+core `readiness.ts`; explanation content/provenance/anchors/index metadata change `explainerHash`, while
+indexed file path/hash changes or change base/head SHAs change `sourceHash`. HTML, launch mode, server URL,
+source embedding and index pruning do not change identity.
+
+Source checks verify locations and freshness, not prose claims or complete runtime coverage. Viewer Save as
+HTML uses the same check, fetching current source at the final click under `xpl view`. Offline re-saves check
+only embedded source; they cannot detect later repository changes. Findings and author decisions stay in the
+saved snapshot's `exportInfo: {status: "ready" | "draft", report}`.
+
+## `xpl bundle <explainer> -o out.html [--mode explore|present] [--tour id] [--files referenced|boundary|all] [--boundary-max n] [--embed-index full|pruned] [--draft] [--note reason] [--allow-drift]`
+
+Ready output refuses a stale index, including with `--allow-drift` or `XPL_SKIP_STALE_CHECK=1`. Reindex and resolve
 first. `--allow-drift` only permits drift against a current index. Generated XPL HTML pages are excluded
 from discovery so exports do not feed back into subsequent indexes.
 
 Writes one self-contained HTML file: the viewer, the explainer, the index and source files inline. Works offline and can be shared. `--tour <id>` (`tour:intro` or `intro`) starts that tour and implies `--mode present`.
 
-Every anchor is **re-resolved** first, against the index and the code that go into the page, so an anchor whose code moved is highlighted at its new lines (`moved`), whatever the explainer file's cached `resolved` says; nothing is written back. When anchors **drifted** (their code changed) or are **missing** (their code is gone), bundle **refuses** (exit 1): the page would point at the wrong code. Run `xpl resolve <explainer> --write` and fix what it lists, then bundle again. `--allow-drift` writes the page anyway: it warns, the page shows a banner with the counts, and the drifted code is marked on its pane.
+Every anchor is **re-resolved** first, against the index and the code that go into the page, so an anchor whose code moved is highlighted at its new lines (`moved`), whatever the explainer file's cached `resolved` says; nothing is written back. When anchors **drifted** (their code changed) or are **missing** (their code is gone), bundle **refuses** (exit 1): the page would point at the wrong code. Run `xpl resolve <explainer> --write` and fix what it lists, then bundle again. `--draft` writes an explicit preview with its report and a persistent draft banner; the drifted code is marked on its pane. `--allow-drift` is a legacy draft flag that still refuses stale indexes.
 
-It also warns, and writes the page, when a text still holds a `TODO` placeholder (the reader would see it: `xpl lint` lists them), and when the page is over 20 MB (`--files referenced` embeds fewer files).
+The shared ready check runs before writing. TODO placeholders, empty required story text, broken references,
+missing source and drifted anchors block ready output (exit 1, no output written). `--draft` permits these
+for preview/repair and the summary says `draft preview`. Reader warnings are printed and retained; `--note`
+records an author's reason about omissions or warnings without overriding blockers. Pages over 20 MB still
+produce a size warning (`--files referenced` embeds fewer files).
 
 ```
 $ xpl bundle jobrunner -o jobrunner.html
@@ -808,18 +860,20 @@ wrote metrics.html (2.2 MB): .explainer/metrics.explainer.json, 2 of 12 files em
 
 The symbol index, most of the page for a large repository, is **pruned** with `--files referenced` (and `boundary`, for the files it embeds): every file entry stays, and so do the symbols of the embedded files and of what the explainer names or its graph views show (with their parents), and the references that touch an embedded file (`read` references: both ends), lie on a graph view or make up a derived edge the explainer names. The views, tours and code behave as with the whole index. `--files all` embeds the whole index; `--embed-index full|pruned` overrides either. The page holds the index packed (each symbol id once, every symbol and reference a short array of numbers: about a fifth of the plain JSON; the viewer unpacks it). The summary line says the size in the page, then as plain JSON and what was saved (`index 17.2 KB (72.0 KB as plain JSON, pruned from 85.8 KB)`; no `pruned from` when nothing was dropped) and the embedded index carries `pruned: {files, symbols, refs}`, the counts of the whole one. One limit: a ghost the reader expands into a file whose code is not embedded opens only into the symbols the kept references end in, and edges between two such ghosts are missing (use `--files all`, or `--embed-index full`, when the reader should explore freely).
 
+After completing the required text in the fixture explainer:
+
 ```
-$ xpl bundle jobrunner -o jobrunner.html
-wrote jobrunner.html (1.1 MB): .explainer/jobrunner.explainer.json, 8 of 12 files embedded (referenced: 18.4 KB of source; --files all adds 4 files, 6.7 KB), index 17.2 KB (72.0 KB as plain JSON, pruned from 85.8 KB), mode explore
-$ xpl bundle jobrunner -o talk.html --tour tour:intro
-wrote talk.html (1.1 MB): .explainer/jobrunner.explainer.json, 8 of 12 files embedded (referenced: 18.4 KB of source; --files all adds 4 files, 6.7 KB), index 17.2 KB (72.0 KB as plain JSON, pruned from 85.8 KB), mode present, tour tour:intro
-$ xpl bundle jobrunner -o all.html --files all
-wrote all.html (1.1 MB): .explainer/jobrunner.explainer.json, 12 files embedded (all: 25.1 KB of source), index 20.8 KB (85.8 KB as plain JSON), mode explore
+$ xpl bundle complete -o complete.html
+wrote complete.html (1.2 MB): .explainer/complete.explainer.json, 8 of 12 files embedded (referenced: 18.4 KB of source; --files all adds 4 files, 6.7 KB), index 20.9 KB (77.3 KB as plain JSON, pruned from 92.3 KB), mode explore
+$ xpl bundle complete -o talk.html --tour tour:intro
+wrote talk.html (1.2 MB): .explainer/complete.explainer.json, 8 of 12 files embedded (referenced: 18.4 KB of source; --files all adds 4 files, 6.7 KB), index 20.9 KB (77.3 KB as plain JSON, pruned from 92.3 KB), mode present, tour tour:intro
+$ xpl bundle complete -o all.html --files all
+wrote all.html (1.2 MB): .explainer/complete.explainer.json, 12 files embedded (all: 25.1 KB of source), index 24.7 KB (92.3 KB as plain JSON), mode explore
 ```
 
 **With a change recorded** (`xpl change`), every changed file that exists after the change is embedded, whatever `--files` says, and so is the code before the change of every modified, renamed or deleted file (`baseFiles` in the page, read from git). The summary line adds `change 5774f2c..349730f: 1 changed file in, code before the change of 1 file (3.2 KB)`, and names the changed files the selection had left out (`(2 added to the selection: ...)`).
 
-`--json`: `{ok, path, absolutePath, bytes, mode, tour?, anchors: {total, drifted, missing}, files: {embedded, choice, referenced?, boundary?: {added: [{file, reason: caller|callee|test, refs}], cut: [same], max, symbols}, embeddedBytes, indexed, indexedBytes}, change?: {base, head, changedFiles, addedToSelection: [paths], baseFiles: [paths], baseBytes, baseMissing?}, index: {path, commit, choice: "full"|"pruned", pruned, bytes, fullBytes, packedBytes, symbols: {embedded, indexed}, refs: {embedded, indexed}}}` (`index.bytes` and `fullBytes`: the embedded and the whole index as compact JSON; `packedBytes`: the embedded one as the page holds it).
+`--json`: `{ok, readiness, exportStatus: "ready"|"draft", path, absolutePath, bytes, mode, tour?, anchors: {total, drifted, missing}, files: {embedded, choice, referenced?, boundary?: {added: [{file, reason: caller|callee|test, refs}], cut: [same], max, symbols}, embeddedBytes, indexed, indexedBytes}, change?: {base, head, changedFiles, addedToSelection: [paths], baseFiles: [paths], baseBytes, baseMissing?}, index: {path, commit, choice: "full"|"pruned", pruned, bytes, fullBytes, packedBytes, symbols: {embedded, indexed}, refs: {embedded, indexed}}}` (`index.bytes` and `fullBytes`: the embedded and the whole index as compact JSON; `packedBytes`: the embedded one as the page holds it).
 
 ## `--json` shapes (the ones worth scripting)
 

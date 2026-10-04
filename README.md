@@ -14,21 +14,28 @@ The page opens on a guide: a short summary, then the steps, each with a picture 
 
 ## Quick start
 
-Needs Node 22.12 or newer.
+Needs Node 22.12 or newer and npm for installation. The local artifact is exercised on Linux x64
+(WSL2, Node 22.23.1). Other platforms have not been verified. This workflow uses a local
+`xpl-cli-0.0.0.tgz` from a maintainer; the publication target and release channel are undecided.
 
 XPL helps an author publish a focused explanation of code. Choose a reader and a question before
 drafting. Readers can check the linked source and tests; a valid anchor checks a location and
 freshness, while the author remains responsible for the explanation's claims and omitted behavior.
 
 ```sh
-npm install && npm run build
-node packages/cli/dist/xpl.mjs --help            # CLI works independently of Claude Code
-mkdir -p ~/.claude/skills && ln -s "$PWD/skill/code-explainer" ~/.claude/skills/code-explainer
-alias xpl="$HOME/.claude/skills/code-explainer/bin/xpl"   # the CLI, for your own use
+npm install --global --prefix "$HOME/.local" --offline --ignore-scripts /absolute/path/xpl-cli-0.0.0.tgz
+export PATH="$HOME/.local/bin:$PATH"
+xpl doctor                                    # runtime, artifact hashes, grammars and optional tools
+xpl skill install                             # copies the bundled skill and binds its launcher
+xpl doctor --agent claude                      # also checks the skill and Claude Code availability
 ```
 
-Link it, do not copy it: the skill's launcher finds the built CLI relative to its real path. Then, in any
-TypeScript, Python or Go repository, ask Claude Code:
+No source checkout or build is needed to install. After installing a newer tarball, rerun `xpl skill install`
+to update the skill and its launcher. The launcher records the installed CLI's absolute path; rerun the
+installer after moving the CLI. For one project, use `xpl skill install --dir .claude/skills/code-explainer`.
+The installer refuses to overwrite a symlink, an unmanaged skill or local edits: move the old directory
+aside to preserve it, then retry. Claude Code needs its own installation, authentication and provider
+access. In a TypeScript, Python or Go repository, explicitly ask it:
 
 ```
 /code-explainer explain How does X work?
@@ -43,6 +50,13 @@ saved for the next explicit revision pass). Other things to ask for: `explain th
 branch), `expand <node>`, `make a tour` (Present mode: arrow keys step through it). More in
 [skill/code-explainer/README.md](skill/code-explainer/README.md).
 
+Reading, `xpl index --precise off`, local viewing and HTML export use bundled assets without hosted xpl
+infrastructure after installation. `xpl index` defaults to optional precise tools: npm/Go tool bootstrap,
+toolchains and repository dependencies can need network access. Use `--precise off` offline; heuristic
+references stay labeled as hints. `--precise require` fails if precise analysis cannot run. Authoring
+through Claude Code has separate provider network requirements. `doctor` runs local version checks;
+it does not download precise tools or verify agent authentication. No resident generation worker is needed.
+
 In the viewer, Guide tells the story, Map shows relationships, Flow follows steps, and Code opens
 source. Present plays a tour with arrow-key navigation. Feedback saves corrections, explanation requests
 and expansions against a selected element and source range. `xpl view` saves to disk; a disconnected
@@ -55,7 +69,7 @@ Browser storage can be unavailable; the panel reports this and JSON export or Sa
 new indexes refresh in a live viewer; a saved HTML page stays at its exported version. Unsaved edits
 postpone live refresh. Reindex changed code to restore reliable source locations and references.
 
-No Claude at hand? Every fixture ships an explainer:
+No Claude at hand? The source repository's fixtures ship example explainers (fixtures are not in the tarball):
 
 ```sh
 cp -r fixtures/ts-jobrunner /tmp/jobrunner && cd /tmp/jobrunner
@@ -79,6 +93,7 @@ xpl apply myrepo /tmp/draft.json                 # check and merge the patch: al
 xpl validate myrepo                             # every id and anchor still resolves?
 xpl lint myrepo                                 # plain-language, tour and reader checks (exit 1 on any; --warn-only)
 xpl view myrepo                                 # http://127.0.0.1:4747 (falls back to a free port)
+xpl ready myrepo                               # check source, required text and reader findings
 xpl bundle myrepo -o myrepo.html                # one self-contained HTML file (--files boundary|all; --tour <id>)
 ```
 
@@ -93,10 +108,16 @@ collapsed targets. Check conditions, loops and callback execution before describ
 In heuristic indexes, function values and callback registration are `read` references; invocation is a `call`. Reads are
 available through `xpl refs` and the Map edge filters without creating recursion or execution steps.
 
-Strict validation and export require a current index, even with `XPL_SKIP_STALE_CHECK=1`.
+Strict validation and ready export require a current index, even with `XPL_SKIP_STALE_CHECK=1`.
 After changing code, run `xpl index`, `xpl resolve myrepo --write`, review the drift, and rebuild
 the affected explanations before validating and bundling. `validate --lenient` supports repair work;
-`bundle --allow-drift` permits unresolved anchors against a current index, with a visible warning.
+`xpl ready myrepo --json` reports source, structural, required-content and reader findings. Ready export
+refuses before writing when required text is unfinished or source links are broken. Reader warnings invite
+author judgment; `--note "reason"` records intentional omissions or warnings in the report and HTML.
+`bundle --draft` writes a labelled preview for repair; `--allow-drift` is a legacy draft flag against a current
+index. Edit > Save as HTML uses the same rules, with separate ready and draft actions. Offline re-saves check
+only included source, and say they cannot detect later repository changes. Source checks do not verify prose
+claims or every runtime path.
 Generated XPL HTML pages are excluded from indexing, so exporting inside a repo does not stale its index.
 
 ### Explaining a change
@@ -169,7 +190,9 @@ Go files, for one) keep their heuristic references and are named in a warning; t
 `xpl index --scip <artifact|manifest.json>` imports generated SCIP declarations and supported references,
 including sources without a language pack (their language stays `text`). Documents need embedded source text
 or an artifact-bound manifest of pre-generation source hashes. Missing full ranges, parents and call
-classification remain explicit limits. See the [artifact workflow](skill/code-explainer/reference/cli.md#generated-scip-artifacts).
+classification remain explicit limits. Partial artifacts keep existing syntax symbol sets; a range-less
+artifact can attach supported references to source-checked syntax symbols but cannot create declarations.
+Standalone imports without checked targets report `refs: none` and fail under `--precise require`. See the [artifact workflow](skill/code-explainer/reference/cli.md#generated-scip-artifacts).
 
 The built-in TS/JS, Python, Go and configuration paths have maintained language packs and acceptance tests.
 Rust tags and the [Java workflow](docs/java-scip.md) are **experimental**, tested on jobrunner fixtures and
@@ -215,6 +238,8 @@ npm install          # dependency install scripts are disabled on purpose, see .
 npm run typecheck    # tsc --noEmit in every package
 npm test             # vitest: unit tests of all packages (packages/*/test)
 npm run build        # viewer (Vite single file) first, then the CLI bundle
+npm run pack -- --pack-destination /tmp         # build and pack the standalone CLI, viewer, grammars and skill
+npm run test:install -- /tmp/xpl-install        # install the tarball offline and exercise its CLI and reader
 npm run test:e2e     # builds the viewer, then Playwright on fixture bundles made from dist/index.html
 XPL_TEST_SCIP=1 npx vitest run packages/indexer/test/scip-integration.test.ts   # real SCIP indexers
 npm run format       # prettier --write . (format:check to verify)
@@ -223,6 +248,13 @@ npm run format       # prettier --write . (format:check to verify)
 Workspace packages export their TypeScript sources; vitest, tsx and vite read them directly, so there is no
 build step between packages in development. After `npm run build`, `node packages/cli/dist/xpl.mjs __smoke`
 (hidden) loads every tree-sitter grammar from `dist/wasm`.
+
+The workspace packages stay private. The build writes standalone npm metadata in `packages/cli/dist`
+with the CLI package's version and no install dependencies or scripts. `npm run pack` packs that directory,
+not the workspace package. `integrity.json` records SHA-256 hashes for bundled files; `doctor` detects
+missing or changed files. These hashes detect damage, not the identity of an artifact's publisher.
+The install check copies fixture inputs to scratch, denies CLI checkout reads with Node permissions,
+and tests TS/Python/Go indexing, local viewing and disconnected HTML reading with pinned Chromium.
 
 - The tree-sitter grammars are the `.wasm` files shipped inside their npm packages (versions pinned exactly:
   the wasm ABI has to match `web-tree-sitter`). Use `initParser()` / `loadLanguage()` from

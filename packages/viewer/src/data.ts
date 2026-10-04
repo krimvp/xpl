@@ -12,6 +12,7 @@
  *     PUT  {api}/tours/<tour id>      persist a tour edit: JSON `{ "title": ..., "steps": [...] }` (the whole tour;
  *                                     a new tour is created the same way)
  *     GET  {api}/bundle               current index, explainer, referenced source and freshness warning
+ *     GET  {api}/export               current complete export snapshot with its readiness report
  *     GET  {api}/explainer            the explainer as it is on disk now, with an ETag (304 while unchanged):
  *                                     polled, so what Claude applies shows up without a reload
  *     POST {api}/requests             save a validated FeedbackRequest with stable ID and original snapshot context
@@ -55,6 +56,12 @@ export type ExplainRequest = FeedbackRequest;
 
 /** The local `xpl view` API. Every method rejects with an Error whose message is fit to show. */
 export class ServerApi {
+  /** Current workspace export snapshot: complete referenced source and a forced freshness check. */
+  async exportBundle(): Promise<ViewerBundle> {
+    const response = await this.check(await fetch(this.url("/export"), { cache: "no-store" }));
+    return parseBundle(await response.text());
+  }
+
   /** Current index and referenced source, refreshed after the workspace ETag changes. */
   async bundle(): Promise<ViewerBundle> {
     const response = await this.check(await fetch(this.url("/bundle"), { cache: "no-store" }));
@@ -88,7 +95,7 @@ export class ServerApi {
   /** Source text of a file. Accepts plain text, or JSON: a string, or an object with `text` / `content`. */
   async file(path: string): Promise<string> {
     const response = await this.check(
-      await fetch(this.url(`/file?path=${encodeURIComponent(path)}`)),
+      await fetch(this.url(`/file?path=${encodeURIComponent(path)}`), { cache: "no-store" }),
     );
     const type = response.headers.get("content-type") ?? "";
     if (!type.includes("application/json")) return response.text();

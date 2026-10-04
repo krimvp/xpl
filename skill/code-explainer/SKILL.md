@@ -33,10 +33,16 @@ The reader sees the tour title and its **summary** first, then the steps (a titl
 
 ## Setup
 
-1. **The CLI** is `bin/xpl` in this skill's directory (else `ls -d ~/.claude/skills/code-explainer .claude/skills/code-explainer`). Below, `xpl` means that path, written in full. Run it from the repo root, or pass `--root <dir>`. If it says "the CLI is not built", tell the user to run `npm install && npm run build` in the xpl repo.
+1. **The CLI** is `bin/xpl` in this installed skill's directory (else `ls -d ~/.claude/skills/code-explainer .claude/skills/code-explainer`). Below, `xpl` means that path, written in full. Run it from the repo root, or pass `--root <dir>`. If its CLI is unavailable, reinstall the local xpl tarball and run `xpl skill install` (or `--dir <this skill directory>`). Rerun that installer after CLI updates or moves; it preserves local edits by refusing to replace them. `xpl doctor --agent claude` diagnoses Node, bundled assets, the skill, optional precise tools and Claude Code availability. Node >=22.12 is required; the installed workflow is verified on Linux x64 only.
 2. **Index:** `xpl index`. Run it again when the code changed or a command warns that the index `does not match the working tree`. A language with `refs: heuristic` has hints, not facts: confirm each call with `show`. `--precise off` is fast, for a big repo.
 3. **Name it:** `xpl new <name> --title "..."` unless the explainer exists. One explainer per repo (the repo name, kebab-case); a new question adds views and a tour to it. A change gets its own explainer, titled after it: `xpl new <repo>-pr-42 --title "PR 42: <what it does>"`. Say who the page is for, fit to its level, in one short line: `"scope": {"audience": "Overview, for anyone new to ky"}` (a repo), `"Deep dive, for engineers working on the router"` (an algorithm), `"For reviewers of this change, and anyone who uses the option"` (a change); the viewer shows it under the title (patch-format.md 3.11).
 4. **Patch files** go outside the repo (the scratchpad or `$TMPDIR`).
+
+Local reading, `index --precise off`, viewing and HTML export use bundled assets without hosted xpl
+infrastructure after setup. Precise tool bootstrap and dependencies can need network access; keep the
+heuristic path and its trust labels when tools cannot run. Claude Code authoring needs separate
+authentication and provider access. Run generation only when the user invokes this skill; no resident
+agent worker is required. Other agents may read these instructions, but their integration is not verified.
 
 ## Choose the scope
 
@@ -151,10 +157,11 @@ The viewer shows each claim next to its code, so a wrong claim looks checked. Ch
 1. **Accuracy pass** (a change): if you can start a fresh subagent, give it the `xpl` path, the repo, the explainer name and path, and the range. Ask it to check each title, summary, note and detail against its anchors (`xpl anchors <name>`), each "before" claim against the base (`xpl show --at base <path>`, `git show <base>:<path>`), and what each cited test asserts. It rates each claim correct, imprecise, overstated, unanchored or wrong, quotes the lines, and changes no file. Without a subagent, do a second, separate pass yourself, one claim at a time. Fix what the pass finds.
 2. `xpl lint <name>`: `todo-left` must be zero before you bundle. Fix the other findings, including what the reader will see (`untitled-step`, `far-ranges`, `big-map`, `crowded-map`), or say in the reply why you kept one.
 3. Re-read the tour in order as a newcomer, with the checklist in `reference/writing.md` section 7.
+4. `xpl ready <name>` combines strict validation, current-source checks, required summaries/story text and reader lint. Fix every error. Record justified omissions or warning decisions with `--note "reason"`, and pass the same note to `bundle`. The source check does not verify prose truth or every execution path.
 
 ## Show the result
 
-- `xpl bundle <name> -o <name>.html`: one self-contained HTML file that works offline; for a change it shows the diff, the code before, New and Changed badges and the file list. It embeds the files the explainer refers to (`--files referenced`, the default); add `--files boundary` for a change or a subsystem, so the callers, callees and tests come along. A bundle is **what you give the user in remote or cloud sessions**: give them the path. It refuses while anchors are drifted or missing: fix them ("After the code changed"); `--allow-drift` only when the user asks for the page as it is, and say so in the reply. Attach or publish it only when asked: it holds their source code. `--tour tour:<slug>` opens the tour as a presentation.
+- `xpl bundle <name> -o <name>.html`: one self-contained HTML file that works offline; for a change it shows the diff, the code before, New and Changed badges and the file list. It embeds the files the explainer refers to (`--files referenced`, the default); add `--files boundary` for a change or a subsystem, so the callers, callees and tests come along. A bundle is **what you give the user in remote or cloud sessions**: give them the path. It runs the shared ready check before writing and refuses unfinished required content, stale indexes and broken source links. Fix the findings ("After the code changed"); use `--draft` only when the user asks for a preview for repair, and say it is a draft in the reply. `--allow-drift` is a legacy draft flag. Attach or publish it only when asked: it holds their source code. `--tour tour:<slug>` opens the tour as a presentation.
 - `xpl view <name>`: a local server for a user at the machine who keeps iterating; run it in the background.
 - **The reply:** first the answer in 3-6 sentences (for a change: the behaviour change, then the risk). Then one line each: the scope and any assumption; for a change, the changed files with `+/-` counts; what you checked by running code; what you left out or could not check; the bundle path and what it embeds. Say that `.explainer/` was written into the repo. Do not retell the tour.
 

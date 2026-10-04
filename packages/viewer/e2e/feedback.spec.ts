@@ -155,7 +155,7 @@ test("saved-page feedback retains terminal outcomes and reports changed explanat
     (requests) => {
       const getItem = Storage.prototype.getItem;
       Storage.prototype.getItem = function (key) {
-        return key.startsWith("xpl-feedback:")
+        return key.startsWith("xpl-feedback:") && !key.includes(":request:")
           ? JSON.stringify({
               schema: "code-explainer/feedback@1",
               requests: requests.map((r) => ({
@@ -185,13 +185,46 @@ test("saved-page feedback retains terminal outcomes and reports changed explanat
   );
   await panel.getByRole("button", { name: "Close feedback" }).click();
   await openEditMenu(page);
-  const downloading = page.waitForEvent("download");
   await page.getByRole("menuitem", { name: "Save as HTML" }).click();
-  const path = await (await downloading).path();
+  await expect(page.getByTestId("save-html-ready")).toBeDisabled();
+  const [download] = await Promise.all([
+    page.waitForEvent("download"),
+    page.getByTestId("save-html-draft").click(),
+  ]);
+  const path = await download.path();
   expect(path).not.toBeNull();
   const saved = readFileSync(path!, "utf8");
   const script = /<script id="xpl-data"[^>]*>([\s\S]*?)<\/script>/.exec(saved)!;
   expect(JSON.parse(script[1]!).feedback).toEqual(bundle.feedback);
+  expect(JSON.parse(script[1]!).exportInfo.status).toBe("draft");
+  await page.unroute("http://feedback.test/**");
+  await page.route("http://feedback.test/**", (route) =>
+    route.fulfill({ contentType: "text/html", body: saved }),
+  );
+  await page.goto("http://feedback.test/");
+  await expect(page.getByTestId("draft-banner")).toBeVisible();
+  await page.evaluate(() => window.__xpl!.select(["concept:retry-policy"]));
+  await page.getByRole("button", { name: /^Feedback \(1\)/ }).click();
+  await panel.getByLabel("Feedback note").fill("Explain retries in this draft.");
+  await panel.getByRole("button", { name: "Save feedback", exact: true }).click();
+  await expect(panel.getByRole("status")).toContainText("Saved in this browser");
+  const requests = (await exported(page)).requests;
+  expect(requests).toHaveLength(2);
+  expect(requests[0]).toEqual((bundle.feedback as { requests: unknown[] }).requests[0]);
+  expect(requests[1]).toMatchObject({
+    elementId: "concept:retry-policy",
+    note: "Explain retries in this draft.",
+    outcome: { status: "pending", reason: "Awaiting an explicit revision pass." },
+  });
+  await panel.getByRole("button", { name: "Close feedback" }).click();
+  await (await openEditMenu(page)).getByTestId("edit-save-html").click();
+  const [again] = await Promise.all([
+    page.waitForEvent("download"),
+    page.getByTestId("save-html-draft").click(),
+  ]);
+  const reexported = readFileSync((await again.path())!, "utf8");
+  const data = /<script id="xpl-data"[^>]*>([\s\S]*?)<\/script>/.exec(reexported)!;
+  expect(JSON.parse(data[1]!).feedback.requests).toEqual(requests);
 });
 
 test("before-source feedback keeps the selected range when browser storage refuses writes", async ({

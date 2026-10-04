@@ -5,6 +5,7 @@
  */
 import { isPackedIndex, packIndex, unpackIndex } from "./index-pack.js";
 import { parseFeedbackFile, type FeedbackFile } from "./feedback.js";
+import type { ReadinessReport } from "./readiness.js";
 import type { Explainer, FilePath, SymbolIndex } from "./schema.js";
 
 export const BUNDLE_SCHEMA = "code-explainer/bundle@0";
@@ -35,6 +36,8 @@ export interface ViewerBundle {
   sourceWarning?: string;
   /** Feedback carried by a saved page; every request retains its original snapshot identity. */
   feedback?: FeedbackFile;
+  /** Export decision and checked source scope, preserved in disconnected HTML. */
+  exportInfo?: { status: "ready" | "draft"; report: ReadinessReport };
 }
 
 export interface SerializeOptions {

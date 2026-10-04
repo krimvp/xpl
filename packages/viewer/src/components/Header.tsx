@@ -19,7 +19,8 @@ import { DEFAULT_EDGE_KINDS, resolveStubPolicy } from "@xpl/core";
 import { explainerFileName } from "../edits.js";
 import { useStore, useViewerState } from "../hooks.js";
 import { stepNumber } from "../modes.js";
-import { canSaveHtml, htmlFileName, savedPage } from "../saveHtml.js";
+import { canSaveHtml } from "../saveHtml.js";
+import { SaveHtml } from "./SaveHtml.js";
 import { FeedbackPanel } from "./FeedbackPanel.js";
 import { EdgeKindToggles } from "./EdgeKinds.js";
 import { StubsControl } from "./StubsControl.js";
@@ -235,6 +236,7 @@ function EditMenu({ toursOpen, onTours }: { toursOpen: boolean; onTours: () => v
   const store = useStore();
   const state = useViewerState();
   const [open, setOpen] = useState(false);
+  const [htmlOpen, setHtmlOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);
   const button = useRef<HTMLButtonElement>(null);
   const menuId = useId();
@@ -284,6 +286,15 @@ function EditMenu({ toursOpen, onTours }: { toursOpen: boolean; onTours: () => v
 
   return (
     <div ref={root} className="edit-menu">
+      {htmlOpen && (
+        <SaveHtml
+          onClose={() => {
+            setHtmlOpen(false);
+            button.current?.focus();
+          }}
+          onDownload={(name, html) => download(name, html, "text/html")}
+        />
+      )}
       <button
         ref={button}
         type="button"
@@ -346,9 +357,7 @@ function EditMenu({ toursOpen, onTours }: { toursOpen: boolean; onTours: () => v
                   ? "A copy of this page with your edits, to share: it opens without xpl"
                   : "This page with your edits in it: open the file to see them again"
               }
-              onClick={run(() =>
-                download(htmlFileName(state.explainer), savedPage(state), "text/html"),
-              )}
+              onClick={run(() => setHtmlOpen(true))}
             />
           )}
           <MenuItem
