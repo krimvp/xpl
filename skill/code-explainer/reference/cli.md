@@ -107,7 +107,12 @@ checked symbols or relationships. Documents must belong to discovered sources; g
 and external symbols are not turned into local declarations. A supplied project-root URI must match `--root`.
 
 `--scip` selects the artifact provider instead of automatic SCIP tools. Registered syntax providers such as
-Rust tags still run first. `auto` reports failures and keeps available syntax declarations and hints;
+Rust tags still run first. Existing syntax symbol sets survive partial or range-less artifacts; matching
+checked ranges can update their provenance. Coverage names each provider and its analyzed files; a
+range-less artifact claims no structural files. Source-checked definition identifiers can attach supported
+references to same-file syntax symbols without creating new declarations. A standalone range-less artifact
+with no checked targets reports `refs: none` and cannot satisfy `require`. An explicit precise analysis with
+checked targets can still have zero relationships. `auto` reports failures and keeps available syntax declarations and hints;
 `require` rejects unusable imports and programming languages without usable precise relationship coverage. `--precise off` cannot be combined with `--scip`.
 Unknown extensions remain `text`, but imported symbols work with `outline`, `show`, `apply`, `validate` and
 `bundle`. Only definitions with full producer ranges become checked symbols. Missing ranges, parents and

@@ -162,7 +162,9 @@ Go files, for one) keep their heuristic references and are named in a warning; t
 `xpl index --scip <artifact|manifest.json>` imports generated SCIP declarations and supported references,
 including sources without a language pack (their language stays `text`). Documents need embedded source text
 or an artifact-bound manifest of pre-generation source hashes. Missing full ranges, parents and call
-classification remain explicit limits. See the [artifact workflow](skill/code-explainer/reference/cli.md#generated-scip-artifacts).
+classification remain explicit limits. Partial artifacts keep existing syntax symbol sets; a range-less
+artifact can attach supported references to source-checked syntax symbols but cannot create declarations.
+Standalone imports without checked targets report `refs: none` and fail under `--precise require`. See the [artifact workflow](skill/code-explainer/reference/cli.md#generated-scip-artifacts).
 
 The [Java workflow](docs/java-scip.md) pins scip-java/JDK/Maven and demonstrates fixture/Gson imports and a
 checked bundle. Java retains checked declarations and type references; calls and inheritance remain unsupported.

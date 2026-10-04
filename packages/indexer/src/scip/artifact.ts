@@ -187,6 +187,7 @@ export function scipArtifactProvider(options: ScipArtifactOptions): IndexProvide
       );
       const diagnostics: string[] = [];
       const definitions = new Map<string, Definition>();
+      const existingTargets = new Map<string, IndexedSymbol>();
       const ambiguous = new Set<string>();
       const sourceHashes: Record<string, string> = {};
       const documents = new Map<
@@ -247,6 +248,22 @@ export function scipArtifactProvider(options: ScipArtifactOptions): IndexProvide
           const declaration = rangeOf(occ.enclosingRange, encoding);
           const idSpan = identifier && normalizeProviderRange(lines, identifier);
           const span = declaration && normalizeProviderRange(lines, declaration);
+          const key = identity(file, occ.symbol);
+          if (definitions.has(key) || existingTargets.has(key)) ambiguous.add(key);
+          // A checked syntax declaration supplies the body; an identifier only links the SCIP identity.
+          if (idSpan && idSpan.startLine === idSpan.endLine && !isLocalSymbol(occ.symbol)) {
+            const name = lines[idSpan.startLine - 1]!.slice(idSpan.startCol - 1, idSpan.endCol);
+            const entry = input.lookup.innermostEntry(file, idSpan.startLine, idSpan.startCol);
+            if (
+              entry &&
+              !entry.anchorOnly &&
+              contains(entry.span, idSpan) &&
+              entry.span.startLine === idSpan.startLine &&
+              entry.basePath.split(".").at(-1) === name &&
+              name === (info?.displayName || parsed?.descriptors.at(-1)?.name)
+            )
+              existingTargets.set(key, entry.symbol);
+          }
           if (!idSpan || idSpan.startLine !== idSpan.endLine || !span || !contains(span, idSpan)) {
             diagnostics.push(
               `${file}: ${occ.symbol}: full declaration/identifier range missing or invalid; definition omitted`,
@@ -272,8 +289,6 @@ export function scipArtifactProvider(options: ScipArtifactOptions): IndexProvide
             );
             continue;
           }
-          const key = identity(file, occ.symbol);
-          if (definitions.has(key)) ambiguous.add(key);
           definitions.set(key, {
             raw: occ.symbol,
             info,
@@ -295,8 +310,11 @@ export function scipArtifactProvider(options: ScipArtifactOptions): IndexProvide
       for (const key of ambiguous) {
         diagnostics.push(`${key}: multiple definitions for one identity; all omitted`);
         definitions.delete(key);
+        existingTargets.delete(key);
       }
-      const nestingFiles = new Set(documents.keys());
+      const syntaxFiles = new Set(input.symbols.map((s) => s.file));
+      const placedFiles = new Set([...definitions.values()].map((d) => d.fact.file));
+      const nestingFiles = new Set([...placedFiles].filter((f) => !syntaxFiles.has(f)));
       const checkedParents = new Set<string>();
       const byDescriptor = new Map(
         [...definitions.values()]
@@ -343,7 +361,7 @@ export function scipArtifactProvider(options: ScipArtifactOptions): IndexProvide
           );
         }
       }
-      for (const file of checkedParents) nestingFiles.add(file);
+      for (const file of checkedParents) if (!syntaxFiles.has(file)) nestingFiles.add(file);
       const localPath = (d: Definition): string => {
         if (!isLocalSymbol(d.raw) || !d.fact.parent) return d.fact.path!;
         return `${localPath(definitions.get(d.fact.parent)!)}.${d.fact.name}`;
@@ -365,18 +383,20 @@ export function scipArtifactProvider(options: ScipArtifactOptions): IndexProvide
             );
             continue;
           }
-          const target = definitions.get(identity(file, occ.symbol));
+          const key = identity(file, occ.symbol);
+          const definition = definitions.get(key);
+          const existing = existingTargets.get(key);
+          const target = existing
+            ? { identity: existing.id, kind: existing.kind }
+            : definition && !syntaxFiles.has(definition.fact.file)
+              ? definition.fact
+              : undefined;
           const kinds: Reference["kind"][] = [];
           if (occ.symbolRoles & SymbolRole.Import) kinds.push("import");
           else {
             if (occ.symbolRoles & SymbolRole.ReadAccess) kinds.push("read");
             if (occ.symbolRoles & SymbolRole.WriteAccess) kinds.push("write");
-            if (!kinds.length && target && TYPE_KINDS.has(target.fact.kind)) kinds.push("type-ref");
-          }
-          for (const kind of kinds) {
-            const set = covered.get(kind) ?? new Set<string>();
-            set.add(file);
-            covered.set(kind, set);
+            if (!kinds.length && target && TYPE_KINDS.has(target.kind)) kinds.push("type-ref");
           }
           if (!target || !kinds.length) {
             blind.push({ file, line: site.startLine, col: site.startCol });
@@ -386,21 +406,33 @@ export function scipArtifactProvider(options: ScipArtifactOptions): IndexProvide
             continue;
           }
           const enclosing = lookup.innermost(site.startLine, site.startCol);
-          for (const kind of kinds)
+          for (const kind of kinds) {
+            const set = covered.get(kind) ?? new Set<string>();
+            set.add(file);
+            covered.set(kind, set);
             relationships.push({
-              from:
-                enclosing && contains(enclosing.span, site) ? enclosing.fact.identity : `${file}#`,
-              to: target.fact.identity,
+              from: syntaxFiles.has(file)
+                ? input.lookup.fromId(file, site.startLine, site.startCol)
+                : enclosing && contains(enclosing.span, site)
+                  ? enclosing.fact.identity
+                  : `${file}#`,
+              to: target.identity,
               file,
               kind,
               evidence: providerRange(site, text),
               resolution: "precise",
             });
+          }
         }
         // A type mention may be absent in a described file, but its absence does not prove completeness.
-        const types = covered.get("type-ref") ?? new Set<string>();
-        types.add(file);
-        covered.set("type-ref", types);
+        if (
+          (!syntaxFiles.has(file) && fileDefs.length) ||
+          [...existingTargets.values()].some((s) => s.file === file)
+        ) {
+          const types = covered.get("type-ref") ?? new Set<string>();
+          types.add(file);
+          covered.set("type-ref", types);
+        }
         if (doc.symbols.some((s) => s.relationships.length))
           diagnostics.push(
             `${file}: SymbolInformation relationships omitted; implementation/override direction and class inheritance are not established by these flags`,
@@ -408,17 +440,27 @@ export function scipArtifactProvider(options: ScipArtifactOptions): IndexProvide
       }
       const files = [...sources.keys()];
       const described = [...documents.keys()];
+      const structuralLimits = [
+        ...LIMITS,
+        ...(described.length < files.length
+          ? ["Some source files are absent, stale or have unknown positions."]
+          : []),
+      ];
       const results: AnalysisResult[] = [
         {
-          capabilities: ["symbols", "declarationRanges"],
+          capabilities: ["symbols"],
           status: "partial",
-          analyzedFiles: described,
+          analyzedFiles: [...placedFiles].filter((f) => !syntaxFiles.has(f)),
           limitations: [
-            ...LIMITS,
-            ...(described.length < files.length
-              ? ["Some source files are absent, stale or have unknown positions."]
-              : []),
+            ...structuralLimits,
+            "Files with syntax symbols keep that provider's symbol set; the artifact supplies only checked matching ranges and relationships.",
           ],
+        },
+        {
+          capabilities: ["declarationRanges"],
+          status: "partial",
+          analyzedFiles: [...placedFiles],
+          limitations: structuralLimits,
         },
         {
           capabilities: ["nesting"],

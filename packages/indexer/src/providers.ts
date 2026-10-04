@@ -402,13 +402,33 @@ export function mergeProvider(
             r.analyzedFiles.includes(file),
         ),
     );
-  const structure = (file: string) => covers("symbols", file) && covers("declarationRanges", file);
+  const previousById = new Map(previous.entries.map((e) => [e.symbol.id, e]));
+  const nextById = new Map(nextEntries.map((e) => [e.symbol.id, e]));
+  // Partial or empty structure cannot erase checked declarations. Fall back to range-only updates.
+  const structureFiles = new Set(
+    nextEntries
+      .filter((e) => covers("symbols", e.symbol.file) && covers("declarationRanges", e.symbol.file))
+      .map((e) => e.symbol.file),
+  );
+  for (const entry of previous.entries) {
+    if (
+      !nextById.has(entry.symbol.id) &&
+      next.analysis.some((report) =>
+        report.results.some(
+          (r) =>
+            r.status === "partial" &&
+            r.capabilities.some((c) => c === "symbols" || c === "declarationRanges") &&
+            r.analyzedFiles.includes(entry.symbol.file),
+        ),
+      )
+    )
+      structureFiles.delete(entry.symbol.file);
+  }
+  const structure = (file: string) => structureFiles.has(file);
   const entries = [
     ...previous.entries.filter((e) => !structure(e.symbol.file)),
     ...nextEntries.filter((e) => structure(e.symbol.file)),
   ];
-  const previousById = new Map(previous.entries.map((e) => [e.symbol.id, e]));
-  const nextById = new Map(nextEntries.map((e) => [e.symbol.id, e]));
   const ids = new Set(entries.map((e) => e.symbol.id));
   for (let i = 0; i < entries.length; i++) {
     const entry = entries[i]!;
@@ -431,9 +451,10 @@ export function mergeProvider(
         },
       };
     }
-    const parent = covers("nesting", entry.symbol.file)
-      ? replacement?.symbol.parent
-      : old?.symbol.parent;
+    const parent =
+      replacement && covers("nesting", entry.symbol.file)
+        ? replacement.symbol.parent
+        : old?.symbol.parent;
     if (parent && ids.has(parent)) updated.symbol.parent = parent;
     else delete updated.symbol.parent;
     entries[i] = updated;

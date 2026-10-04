@@ -451,9 +451,11 @@ position instead of treating the widened inclusive column as a character on that
 
 `mergeProvider` replaces relationships only for the advertised kinds and explicitly analyzed files of
 supported or partial results. Failed, unsupported and unexamined scopes keep previous hints. Checked node
-replacement requires both symbols and declaration ranges; range-only coverage updates existing nodes without
-changing their identities. Nesting changes only under explicit nesting coverage. A blind occurrence preserves
-the smallest enclosing heuristic hint. Source and resolution provenance remains on each fact; report version,
+replacement requires both symbols and declaration ranges and at least one placed declaration. Partial
+structural results cannot remove existing IDs: they fall back to range-only updates of matching nodes.
+Range-only coverage keeps the existing symbol set. Nesting changes only for matching nodes under explicit
+nesting coverage; unmatched nodes keep their parents. A blind occurrence preserves the smallest enclosing
+heuristic hint. Source and resolution provenance remains on each fact; report version,
 configuration and snapshot identities remain in the index and bundles. No format alone determines trust:
 each relationship explicitly says `heuristic` or `precise`. A generic reference is not converted to a call.
 Relationship coverage also records resolution, including empty results. Language summaries and `require`
@@ -489,8 +491,8 @@ reuse is safe only when source, provider version and relevant configuration/depe
 The built-in tool adapters keep SCIP relationship mapping over existing syntax declarations. The separate
 `scipArtifactProvider({ artifact, manifest?, languages? })` imports declarations without a language pack.
 The CLI selects it with `xpl index --scip <artifact|manifest.json>` instead of automatic semantic tools,
-retaining registered syntax-mode providers first. Artifact import can then replace their declarations where
-source-verified coverage allows it. In a mixed repository, `require` still needs precise relationships for
+retaining registered syntax-mode providers first. Artifact import keeps existing syntax symbol sets and may update matching
+checked declaration ranges. Files without existing symbols can receive the artifact's placed declarations. In a mixed repository, `require` still needs precise relationships for
 Rust; an artifact covering only other source files cannot make Rust satisfy that requirement.
 Unknown extensions keep the closed `FileLanguage` value `text`; imported symbols work in outlines, queries,
 checked anchors and bundles. `--precise off` skips semantic providers; combining it with `--scip` is an error.
@@ -508,9 +510,11 @@ an old artifact. Dependency/toolchain changes outside the captured files are not
 
 Only definition occurrences with full `enclosing_range`, valid positions and identifier evidence become
 symbols. Identifier-only/synthetic definitions are filtered before normalization so one omitted definition
-does not discard valid coverage. Symbol replacement supplies the file's entire retained set, with partial
-coverage and explicit omissions; it does not append to syntax declarations. Kinds map to xpl's coarse kinds;
-unknown kinds become `other` with diagnostics. Descriptor paths preserve nesting; overload identities stay
+does not discard valid coverage. Structural coverage names only files with placed declarations. The
+artifact claims `symbols` only where no existing provider supplied a symbol set; elsewhere it claims checked
+ranges and keeps the existing IDs and nesting. Each result's `analyzedFiles` identifies its provider's files,
+and each symbol's provenance identifies the provider of its checked range. Empty structure claims cannot
+erase previous declarations. Kinds map to xpl's coarse kinds; unknown kinds become `other` with diagnostics. Descriptor paths preserve nesting; overload identities stay
 distinct while canonical duplicate paths receive source-ordered `~N` suffixes. Reordering overloads can
 change their IDs. Locals are scoped to the document. Explicit parents or exact descriptor prefixes (including
 overload tags) require checked same-file containment. Missing parents are omitted and nesting stays partial.
@@ -523,9 +527,14 @@ Only role-backed reads, writes and imports, and mentions of known types, become 
 Other occurrences become `blind` and retain applicable heuristic hints. SCIP roles cannot classify calls;
 the importer reports calls as unsupported. `SymbolInformation.relationships` are diagnosed and omitted:
 implementation/override flags cannot establish class inheritance or relationship direction by themselves.
+Source-checked definition identifiers can link SCIP identities to existing same-file syntax symbols when
+containment, declaration start line and name agree. This creates no declaration from an identifier extent.
 External symbols and accessor targets without checked definitions never create local declarations.
-Reports remain partial, including empty results. Producer ranges may omit leading documentation; the importer
-never substitutes an identifier extent for a full declaration. The CLI reference documents generation and
+Relationship coverage requires retained checked targets, either imported or linked to existing symbols.
+A range-less standalone artifact with no targets cannot earn `precise` or satisfy `require`; explicit
+analysis with checked targets and zero relationships still can. Reports remain partial, including empty
+results. Producer ranges may omit leading documentation; the importer never substitutes an identifier extent
+for a full declaration. The CLI reference documents generation and
 manifest creation. Java uses this importer without a language pack or new `FileLanguage` value.
 `scripts/java-scip.ts` runs the pinned Maven producer workflow, captures source/config hashes before
 generation, checks them afterward, and writes a manifest only for a successful run with a fresh artifact.
