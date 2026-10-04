@@ -136,7 +136,8 @@ symbols (`config/default.yaml#retry.maxRetries` or `pyproject.toml#project.scrip
 a function). Rust has experimental syntax tags for named declarations and lexical nesting, with no resolved
 relationships. Its tags provider runs with `--precise off` and needs no Rust toolchain; see
 [the Rust experiment](docs/rust-tags.md) for coverage, measurements and commands. Any other text file is indexed as
-plain text. Symbols always come from tree-sitter (WASM, nothing to install). References (calls, imports, inheritance, type uses, reads of variables and fields) come from a
+plain text. The built-in language packs get symbols from tree-sitter (WASM, nothing to install); generated
+SCIP artifacts can supply source-checked symbols too. References (calls, imports, inheritance, type uses, reads of variables and fields) come from a
 scope-aware heuristic resolver, or, when the tool can run, from a compiler-grade SCIP indexer. `xpl index`
 tries SCIP by default and prints what each language got: `refs: precise (scip-go@0.2.7)` or `refs: heuristic`.
 The viewer draws heuristic edges lighter, and Claude treats them as hints.
@@ -164,8 +165,20 @@ including sources without a language pack (their language stays `text`). Documen
 or an artifact-bound manifest of pre-generation source hashes. Missing full ranges, parents and call
 classification remain explicit limits. See the [artifact workflow](skill/code-explainer/reference/cli.md#generated-scip-artifacts).
 
-The [Java workflow](docs/java-scip.md) pins scip-java/JDK/Maven and demonstrates fixture/Gson imports and a
-checked bundle. Java retains checked declarations and type references; calls and inheritance remain unsupported.
+The built-in TS/JS, Python, Go and configuration paths have maintained language packs and acceptance tests.
+Rust tags and the [Java workflow](docs/java-scip.md) are **experimental**, tested on jobrunner fixtures and
+pinned bat/Gson repositories. Those bounded checks do not establish production maturity across either
+language's build ecosystems. Java requires an explicitly generated artifact and a working JDK/Maven build;
+it retains checked declarations and type references, while calls and inheritance remain unsupported.
+Java stays plain text: use explicit views and `search` without `--code`.
+
+The [language-support decision](docs/assessment-2026-10-04-language-support.md) compares both producers on
+the same Rust sources and records the next slices. Use `--precise off` for Rust today. The pinned
+rust-analyzer SCIP producer omits full declaration ranges; importing it can erase valid Rust tags and
+still pass `--precise require` with no semantic edges. It is an investigation path, not supported Rust
+precision. Its cached offline run needs a build-script override; a cold offline prep run crashed.
+Missing semantic tools or failed builds require a fresh successful artifact. Java's `--precise off`
+fallback keeps file anchors and config symbols, without Java named symbols or relationships.
 
 Precise is not free on a big repository: on django (2,900 Python files) it took 4 minutes and 4.6 GB, on
 sympy and prometheus 9 to 10 minutes and up to 7 GB, where `--precise off` took 15 to 40 seconds. The heuristic

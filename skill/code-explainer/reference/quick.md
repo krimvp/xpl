@@ -17,6 +17,13 @@ One page to keep open while you work. `SKILL.md` says why; `patch-format.md`, `w
 
 Keep a finding on purpose: `xpl lint ... --warn-only` (a `todo-left` error still exits 1), and say why in the reply.
 
+Rust tags and Java artifact import are experimental. Rust uses `--precise off` for checked syntax
+declarations, without resolved edges. Java needs a successful configured SCIP build; file anchors remain
+available with `--precise off` when generation fails. Use `search` without `--code` and explicit Java views.
+Do not treat a precise type mention as a call or inheritance edge. The measured rust-analyzer artifact
+has no full ranges and currently erases tags on import, even when `--precise require` succeeds. See the
+[language-support decision](../../../docs/assessment-2026-10-04-language-support.md) before choosing a path.
+
 ## What every patch needs
 
 - **A summary for every box and participant** a view shows: overlays (`{id, summary}`) in the same patch as the view. `xpl status` counts the rest as unexplained.
