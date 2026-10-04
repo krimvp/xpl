@@ -1,3 +1,4 @@
+import { performance } from "node:perf_hooks";
 import { hashText, splitLines } from "@xpl/core";
 import type { FileLanguage, FilePath, IndexedFile, Reference } from "@xpl/core";
 import pkg from "../package.json" with { type: "json" };
@@ -29,6 +30,7 @@ import type {
 } from "./providers.js";
 import { FILE_LANGUAGES } from "./files.js";
 import { SourceRepoView } from "./repo.js";
+import type { ExtractionCache } from "./extraction-cache.js";
 
 /** Tree-sitter extraction and heuristic resolution keep their internal language-pack seams. */
 export class TreeSitterProvider implements IndexProvider {
@@ -38,6 +40,7 @@ export class TreeSitterProvider implements IndexProvider {
   usedPacks: { pack: LanguagePack; language: FileLanguage }[] = [];
   resourceSites: ResourceSite[] = [];
   warnings: string[] = [];
+  resolutionMs = 0;
   async analyze(input: ProviderInput): Promise<ProviderOutput> {
     const warnings: string[] = [];
     // 2. Read, hash, parse once, extract facts, free the tree.
@@ -60,6 +63,7 @@ export class TreeSitterProvider implements IndexProvider {
           syntaxErrors,
           warnings,
           resourceSites,
+          input.extractionCache,
         );
         files.push(indexed.file);
         extractionOutcomes.set(indexed.file.path, indexed.outcome);
@@ -96,9 +100,11 @@ export class TreeSitterProvider implements IndexProvider {
       (path) => input.sources.find((s) => s.path === path)?.text ?? input.readText(path),
     );
     const heuristicFiles = resolverFiles.filter((f) => f.pack.refs === "heuristic");
+    const resolutionStarted = performance.now();
     let refs = resolveHeuristic({ files: heuristicFiles, entries, lookup, repo });
     refs = refs.concat(inferPackRefs(heuristicFiles, entries, lookup, repo, refs));
 
+    this.resolutionMs = performance.now() - resolutionStarted;
     this.usedPacks = usedPacks;
     this.resourceSites = resourceSites;
     this.warnings = warnings;
@@ -167,6 +173,7 @@ async function indexFile(
   syntaxErrors: SyntaxErrorFile[],
   warnings: string[],
   resourceSites: ResourceSite[],
+  cache: ExtractionCache | undefined,
 ): Promise<{ file: IndexedFile; pack: LanguagePack | undefined; outcome: ExtractionOutcome }> {
   const text = discovered.text;
   const lines = splitLines(text);
@@ -178,54 +185,26 @@ async function indexFile(
     lines: lines.length,
   };
   const pack = packForFile(discovered.path, discovered.language);
-  const outcome: ExtractionOutcome = { status: "supported", limitations: [] };
-  if (!pack) return { file, pack, outcome };
-
-  let facts: FileFacts | undefined;
-  try {
-    const parsed = await parseFile(pool, discovered.path, discovered.language, text);
-    if (parsed) {
-      try {
-        facts = pack.extract(parsed.ctx);
-        resourceSites.push(...collectResourceSites(parsed.ctx));
-        const errors = significantSyntaxErrors(
-          discovered.path,
-          findSyntaxErrors(parsed.ctx.tree.rootNode, pack),
-        );
-        if (errors) {
-          outcome.status = "partial";
-          outcome.limitations.push("Syntax errors may leave symbols and relationships incomplete.");
-        }
-        // test data is odd on purpose (Go fuzz corpora named `.json`, broken files a parser test reads)
-        if (errors && !isTestData(discovered.path)) syntaxErrors.push(errors);
-      } finally {
-        parsed.dispose();
-      }
-    }
-  } catch (error) {
-    outcome.diagnostics = [
-      `${discovered.path}: ${error instanceof Error ? error.message : String(error)}`,
-    ];
-    warnings.push(
-      `${discovered.path}: ${discovered.language} extraction failed: ${error instanceof Error ? error.message : String(error)}`,
-    );
-  }
-  if (!facts)
-    return {
-      file,
-      pack,
-      outcome: {
-        diagnostics: outcome.diagnostics,
-        status: "failed",
-        limitations: ["Source analysis failed; only file anchors are available."],
-      },
-    };
-  if (facts.warnings?.length) {
-    outcome.status = "partial";
-    outcome.limitations.push(...facts.warnings);
-    outcome.diagnostics = facts.warnings.map((w) => `${discovered.path}: ${w}`);
-  }
-  for (const warning of facts.warnings ?? []) warnings.push(`${discovered.path}: ${warning}`);
+  if (!pack) return { file, pack, outcome: { status: "supported", limitations: [] } };
+  const extract = () => extractFile(discovered, pool, pack);
+  const extracted = cache
+    ? await cache.extract(
+        discovered,
+        {
+          provider: `tree-sitter:${pack.id}`,
+          version: pkg.version,
+          grammar: pack.grammarFor(discovered.language),
+          configuration: JSON.stringify({ capabilities: pack.capabilities, refs: pack.refs }),
+        },
+        extract,
+        (value) => value.outcome.status !== "failed",
+      )
+    : await extract();
+  const { facts, outcome } = extracted;
+  resourceSites.push(...extracted.resourceSites);
+  if (extracted.syntaxErrors) syntaxErrors.push(extracted.syntaxErrors);
+  warnings.push(...extracted.warnings);
+  if (!facts) return { file, pack, outcome };
   facts.symbols.forEach((draft, i) =>
     declarations.push({
       identity: `${discovered.path}:${String(i).padStart(8, "0")}`,
@@ -249,6 +228,64 @@ async function indexFile(
     ...(facts.data !== undefined ? { data: facts.data } : {}),
   });
   return { file, pack, outcome };
+}
+
+interface FileExtraction {
+  facts?: FileFacts;
+  outcome: ExtractionOutcome;
+  resourceSites: ResourceSite[];
+  syntaxErrors?: SyntaxErrorFile;
+  warnings: string[];
+}
+
+/** All output is file-local and JSON data; the tree is deleted before the cache sees it. */
+async function extractFile(
+  source: ProviderSource,
+  pool: ParserPool,
+  pack: LanguagePack,
+): Promise<FileExtraction> {
+  const result: FileExtraction = {
+    outcome: { status: "supported", limitations: [] },
+    resourceSites: [],
+    warnings: [],
+  };
+  try {
+    const parsed = await parseFile(pool, source.path, source.language, source.text);
+    if (parsed) {
+      try {
+        result.facts = pack.extract(parsed.ctx);
+        result.resourceSites = collectResourceSites(parsed.ctx);
+        const errors = significantSyntaxErrors(
+          source.path,
+          findSyntaxErrors(parsed.ctx.tree.rootNode, pack),
+        );
+        if (errors) {
+          result.outcome.status = "partial";
+          result.outcome.limitations.push(
+            "Syntax errors may leave symbols and relationships incomplete.",
+          );
+        }
+        if (errors && !isTestData(source.path)) result.syntaxErrors = errors;
+      } finally {
+        parsed.dispose();
+      }
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    result.facts = undefined;
+    result.outcome.diagnostics = [`${source.path}: ${message}`];
+    result.warnings.push(`${source.path}: ${source.language} extraction failed: ${message}`);
+  }
+  if (!result.facts) {
+    result.outcome.status = "failed";
+    result.outcome.limitations = ["Source analysis failed; only file anchors are available."];
+  } else if (result.facts.warnings?.length) {
+    result.outcome.status = "partial";
+    result.outcome.limitations.push(...result.facts.warnings);
+    result.outcome.diagnostics = result.facts.warnings.map((w) => `${source.path}: ${w}`);
+    result.warnings.push(...result.outcome.diagnostics);
+  }
+  return result;
 }
 
 function isTestData(path: string): boolean {

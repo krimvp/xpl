@@ -17,6 +17,7 @@ import { FileHasher } from "./hash.js";
 import { assembleSymbols, SymbolLookup } from "./symbols.js";
 import type { SymbolEntry } from "./symbols.js";
 import type { Span, SymbolDraft } from "./languages/types.js";
+import type { ExtractionCache } from "./extraction-cache.js";
 
 export type ColumnEncoding = "utf8" | "utf16" | "utf32";
 /** Zero-based lines and columns, end exclusive, measured against the supplied source snapshot. */
@@ -30,7 +31,10 @@ export interface ProviderSource {
   language: FileLanguage;
   text: string;
 }
+
 export interface ProviderInput {
+  /** Built-in syntax adapters reuse file-local facts only; semantic adapters still run in full. */
+  extractionCache?: ExtractionCache;
   root: string;
   languages: readonly FileLanguage[];
   files: readonly IndexedFile[];

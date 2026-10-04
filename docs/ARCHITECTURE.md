@@ -308,13 +308,14 @@ interface ExplainerPatch {
 
 ```ts
 buildIndex(opts: { root: string; commit?: string; precise?: "auto" | "off" | "require";
-                   languages?: string[]; providers?: readonly IndexProvider[] })
-  : Promise<{ index: SymbolIndex; warnings: string[] }>
+                   languages?: string[]; providers?: readonly IndexProvider[]; cache?: boolean })
+  : Promise<{ index: SymbolIndex; warnings: string[]; extraction: ExtractionReport;
+              work: { heuristicResolutionMs: number; semanticMs: number; semanticRuns: number } }>
 writeIndex(root: string, index: SymbolIndex): Promise<string>
-// atomic write of <root>/.explainer/index-<commit>.json; keeps `index-*.json` in .explainer/.gitignore
+// atomic write of <root>/.explainer/index-<commit>.json; ignores indexes and cache/ in .explainer/.gitignore
 ```
 
-Pipeline: discover files → per file: read, hash, parse once, `pack.extract`, free the tree → assemble symbols
+Pipeline: discover files → per file: read, hash, reuse extraction or parse/`pack.extract`/free the tree → assemble symbols
 (ids, `~N` suffixes, whole-line ranges, hashes, parents) → heuristic resolution of every site, plus the packs'
 `inferRefs` → providers normalize and merge declarations and references by capability and file → commit id → `SymbolIndex`. `tool` =
 `xpl-indexer@<v> web-tree-sitter@<v> <grammar>@<v> …`. A file with syntax errors is indexed anyway: one
@@ -344,6 +345,50 @@ Paths are POSIX, repo-root-relative, sorted.
 `root` is the git top-level and the work tree is clean (ignoring `.explainer/`): short HEAD (7 chars). Else
 `wt-` + first 10 hex of sha256 over the sorted `path\0hash\n` list: deterministic, which is why fixtures
 living inside this monorepo get stable ids.
+
+**Extraction cache** (`src/extraction-cache.ts`). By default `buildIndex` reuses file-local facts in
+`.explainer/cache/extraction-v1/`. `cache: false` (`xpl index --no-cache`) reads and writes no cache entries.
+The cached value is `FileFacts` (symbols, sites, imports, types, exports, warnings and pack-private JSON data),
+resource sites and syntax diagnostics, or a syntax tags file's declarations/recovery diagnostics. No live
+nodes, trees, parsers or final relationships are serialized. Successful syntax recovery is reusable; failed
+extraction is retried. JSON-incompatible pack data is used for this build but never persisted.
+
+The address is full SHA-256 of a JSON input containing the exact captured source string (BOM/CRLF included),
+repo-relative path, language, provider ID/version/profile configuration, indexer version, format
+`xpl-extraction@1`, `EXTRACTION_REVISION`, grammar ID, pinned runtime/grammar package versions and SHA-256
+of the actual runtime/grammar WASM bytes. Built-in profiles include pack capabilities and reference mode;
+tags profiles include query text, kinds, method parents and limitations. `EXTRACTION_REVISION` must increase
+when extraction logic, resource collection, tag labels or diagnostics change without a package/profile
+version change. Change `CACHE_FORMAT` and the directory version when the envelope/serialization changes.
+No abbreviated anchor hash is used as a cache key. Stored input must equal the full expected input, so an
+address collision becomes a miss rather than wrong facts. The payload checksum covers input and payload;
+SHA-256 integrity is corruption detection, not authentication of a hostile local writer.
+
+WASM hashes cover bytes passed to the loader. A process retains loaded WASM; if disk replacements disagree
+with those resident bytes, cache reads/writes are bypassed. Configure overrides before parser initialization
+and restart after a toolchain upgrade. Missing WASM never becomes a cache hit. Checksummed JSON entries are
+written through unique temporary files and rename. Missing, corrupt or wrong-input entries fall back to
+extraction; cache write failures do not change the index or its diagnostics. Orphaned temporary files are
+ignored. Published indexes also use unique temporary names and atomic rename. Old content entries remain
+until `.explainer/cache` is removed; no eviction policy is added here. The whole `.explainer/` directory is
+excluded from discovery and clean-tree checks, so cache and temporary outputs cannot change snapshot identity.
+
+Every build discovers and captures sources again, recomputes source hashes, assigns IDs/hashes/parents,
+resolves all heuristic sites (including Go inference), resolves resources, runs selected semantic providers,
+and normalizes/merges coverage. Renames/language changes miss because identity is in the key; deletions and
+filters simply stop consuming old entries. Repository configuration (`tsconfig` aliases, package exports,
+Python/Go module settings) is read fresh during resolution/tooling, so unchanged callers may resolve differently
+without re-extraction. It is not an input to the current file-local extractors. Language filters, precise mode
+and commit overrides likewise do not affect a retained file's extraction. A future extractor that reads
+configuration must include its content in the profile configuration key. Dependency-aware semantic reuse is
+left to #17; this cache never treats a source-only key as semantic evidence.
+
+`BuildIndexResult.extraction` and CLI JSON expose enabled/scope/hits/misses/write failures and wall milliseconds
+for cache lookup, parsing/extraction and cache writes only. Plain text includes that scope. Text files without
+an extractor count as neither hits nor misses. `work` reports fresh heuristic-resolution wall time, semantic
+provider runs and their wall time (including failed attempts), separately from extraction. Timings never enter
+`SymbolIndex`, capability reports or bundles. [extraction-cache.md](extraction-cache.md) gives the repeatable
+whole-index equivalence check, pinned benchmark commands, CPU/wall time, peak RSS and disk costs.
 
 **Language packs** (`src/languages/<lang>.ts`, the larger ones split into `<lang>/`; registry in
 `languages/index.ts`). A pack turns one parsed
@@ -483,8 +528,8 @@ external artifacts must report hashes of the source they actually consumed, not 
 facts. The built-in SCIP adapters check source/config hashes before and after tool execution, including changes
 that leave positions in bounds. They cannot detect a file changed and restored during execution. `configuration`
 names the adapter's active profile (`builtin-packs` or `tool-defaults`); snapshot identity covers captured files.
-Toolchain/environment dependencies outside that snapshot are not reusable evidence. No cross-run cache is added:
-reuse is safe only when source, provider version and relevant configuration/dependency identities agree.
+Toolchain/environment dependencies outside that snapshot are not reusable semantic evidence. File-local extraction
+is reused as described below; repository-wide resolution and semantic providers always run again.
 
 The built-in tool adapters keep SCIP relationship mapping over existing syntax declarations. The separate
 `scipArtifactProvider({ artifact, manifest?, languages? })` imports declarations without a language pack.
@@ -1050,7 +1095,7 @@ stdout (a rejection exits 1); fatal errors (`error: …`) and warnings (`warning
 
 | Command | Does |
 |---|---|
-| `xpl index [--precise auto\|off\|require] [--commit c] [--scip artifact\|manifest.json]` | build + write the index; `--scip` selects source-verified artifact import instead of automatic tools; writes `.explainer/.gitignore` (`index-*.json`); prints per-language trust, independent coverage and names explainers bound to another index |
+| `xpl index [--precise auto\|off\|require] [--commit c] [--no-cache] [--scip artifact\|manifest.json]` | build + write the index; caches file-local extraction by default, `--no-cache` bypasses reads/writes, resolution and semantic tooling stay fresh; `--scip` selects source-verified artifact import instead of automatic tools; writes `.explainer/.gitignore` (`index-*.json`); prints per-language trust, independent coverage and names explainers bound to another index |
 | `xpl outline [--under <id>] [--depth n] [--kind k,...] [--keys] [--limit n]` | dir/file/symbol tree with kind, lines, fan-in/fan-out (references into/out of the subtree); default depth 2; config keys only with `--keys`; `--kind method,function` keeps only those symbol kinds, with the dirs, files and parents that hold a match; the repo line carries the name `xpl new` records |
 | `xpl show <id> [--refs] [--context n] [--lines a-b] [--max-lines n]` | code with 0-based offsets relative to the symbol (the numbers spans use); dirs and the repo list children; `--refs` appends outgoing and incoming references with `+offset`. `xpl show --at base <path> [--lines a-b] [--explainer name]`: a changed file as it was before the change the explainer records, with the offsets a base anchor's span uses (from line 1) and `-` on the lines the change removes or rewrites; paths only (a symbol id is a usage error); `--explainer` picks the explainer when several record a change |
 | `xpl refs <id> [--in\|--out] [--kind k] [--depth n] [--max-children n] [--limit n] [--tests]` | call/reference hierarchy with sites; hops through interfaces as `impl` lines and through base classes (TS, JS, Python) as `override` lines; test doubles and test subclasses hidden unless `--tests`; a subtree is printed once (later occurrences: `(expanded above)`), at most `--max-children` (default 15) references under a line of a hierarchy (`... +8 more`); `--kind read` finds the readers of a variable or field |
@@ -1076,7 +1121,8 @@ record, `xpl lint` with findings; 2 usage error. **Environment:**
 `XPL_SCIP_TIMEOUT_MS`, `XPL_DEBUG=1` (stack traces), `XPL_CLI` (the skill launcher: an `xpl.mjs` to run).
 
 **Files in `.explainer/`:** `index-<commit>.json` (generated, git-ignored by `.explainer/.gitignore`),
-`<name>.explainer.json` (committed), `requests.json` (the queue below). Writes are atomic (temp file + rename).
+`cache/extraction-v1/` (generated file-local facts, git-ignored), `<name>.explainer.json` (committed),
+`requests.json` (the queue below). Writes are atomic (temp file + rename).
 CLI apply/resolve, creation, viewer edits and request appends also share per-file directory locks across processes.
 Read input before locking; read the latest file, merge and check ownership, then write while holding the lock.
 Locks are never stolen on a timer. A crashed writer may leave `<file>.lock`: after verifying the writer has terminated,
