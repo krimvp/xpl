@@ -33,6 +33,7 @@ import { EDGE_KINDS, listIds, nodeKindOfId, parseId, REPO_ID, suggestIds } from 
 import { asIndexModel, type IndexModel } from "./index-model.js";
 import { defaultLabel, ExplainerModel } from "./model.js";
 import type { AnchorInput, ExplainerPatch } from "./patch.js";
+import { checkReview, reviewShapeIssues } from "./review.js";
 import type {
   Anchor,
   Concept,
@@ -60,7 +61,7 @@ export interface ApplyResult {
   issues: Issue[];
   /**
    * Ids of the elements, views, tours and steps the patch added, changed or removed (in patch order;
-   * upserts that change nothing are not listed), plus `"title"` when the title changed.
+   * upserts that change nothing are not listed), plus `"title"`, `"scope"` and `"review"` when changed.
    */
   changed: string[];
 }
@@ -245,7 +246,17 @@ const PROVENANCE_SPEC: Spec = {
   fields: { origin: ORIGINS, userFields: "string[]", commit: "string" },
   nullable: [],
 };
-const PATCH_KEYS = ["title", "scope", "nodes", "edges", "concepts", "views", "tours", "remove"];
+const PATCH_KEYS = [
+  "title",
+  "scope",
+  "nodes",
+  "edges",
+  "concepts",
+  "views",
+  "tours",
+  "remove",
+  "review",
+];
 
 function matches(value: unknown, type: FieldType): boolean {
   if (typeof type !== "string") return typeof value === "string" && type.includes(value);
@@ -440,6 +451,47 @@ class Applier {
 
   // ─── Driver ─────────────────────────────────────────────────────────────────────────────────
 
+  private setReview(raw: unknown): void {
+    if (this.actor !== "user") {
+      this.error(
+        "review",
+        "Only user patches can record or remove a review.",
+        undefined,
+        "protected",
+      );
+      return;
+    }
+    if (raw === null) {
+      if (this.work.review !== undefined) {
+        delete this.work.review;
+        this.changed.push("review");
+      }
+      return;
+    }
+    const issues = reviewShapeIssues(raw, false);
+    if (issues.length) {
+      for (const issue of issues) this.error(issue.path, issue.message, undefined, "review");
+      return;
+    }
+    const input = raw as NonNullable<ExplainerPatch["review"]>;
+    const record = { ...cloneJson(input), sourceCommit: this.index.commit };
+    if (
+      checkReview({ ...this.work, review: record }, this.index, this.texts).status !== "reviewed"
+    ) {
+      this.error(
+        "review.fingerprint",
+        "Reviewed content or evidence changed; inspect the current scope before recording a review.",
+        undefined,
+        "review",
+      );
+      return;
+    }
+    if (!deepEqual(record, this.work.review)) {
+      this.work.review = record;
+      this.changed.push("review");
+    }
+  }
+
   run(patch: ExplainerPatch): ApplyResult {
     if (this.actor !== "llm" && this.actor !== "user") {
       this.error("", `actor must be "llm" or "user"`);
@@ -448,7 +500,7 @@ class Applier {
     if (!isRecord(patch)) {
       this.error(
         "",
-        "patch must be an object {title?, scope?, nodes?, edges?, concepts?, views?, tours?, remove?}",
+        "patch must be an object {title?, scope?, nodes?, edges?, concepts?, views?, tours?, remove?, review?}",
       );
       return this.fail();
     }
@@ -524,6 +576,7 @@ class Applier {
     }
     if (patch.scope !== undefined) this.setScope(patch.scope);
     this.remove(removals);
+    if (Object.hasOwn(patch, "review")) this.setReview(patch.review);
     // Validation runs whatever went wrong above: it is what finds the references that are wrong too.
     return this.validate();
   }

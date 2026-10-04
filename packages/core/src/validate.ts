@@ -33,6 +33,7 @@ import { hopRefs, viaHops } from "./graph.js";
 import { ExplainerModel } from "./model.js";
 import { resolveFrames } from "./sequence.js";
 import { parseGhostKey, STUB_MODES } from "./stubs.js";
+import { reviewShapeIssues } from "./review.js";
 import type {
   Anchor,
   AnchorStatus,
@@ -59,6 +60,7 @@ export type IssueSeverity = "error" | "warning";
  * - `evidence`: an llm edge lacks an anchor inside `from` or `to`.
  * - `frame`, `cycle`, `step`, `commit`: the remaining structural rules.
  * - `change`: the change record (`Explainer.change`) is malformed, or its head is not the commit of the index.
+ * - `review`: a stored author-review record has a malformed shape (outdated scopes are retained).
  * - `protected`: (patches only) a change was skipped because the element or field belongs to the user.
  */
 export type IssueCode =
@@ -75,6 +77,7 @@ export type IssueCode =
   | "step"
   | "commit"
   | "change"
+  | "review"
   | "protected";
 
 export interface Issue {
@@ -249,6 +252,9 @@ class Validator {
     if (typeof ex.title !== "string" || ex.title === "")
       this.warn("title", "title should be a non-empty string");
     if (ex.scope !== undefined) this.checkExplainerScope(ex.scope);
+    if (ex.review !== undefined)
+      for (const issue of reviewShapeIssues(ex.review))
+        this.error(issue.path, issue.message, undefined, "review");
     if (
       !isRecord(ex.repo) ||
       typeof ex.repo.name !== "string" ||
