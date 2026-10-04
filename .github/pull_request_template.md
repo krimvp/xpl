@@ -11,13 +11,14 @@ skill), in 2-4 plain sentences. Then how it works, briefly. -->
 - [ ] `npm test` (includes the self-explainer and skill-examples checks)
 - [ ] `npm run format:check`
 - [ ] `npm run test:e2e` (viewer, graph derivation or bundle changes)
+- [ ] `test-audit` skill run on the tests this change adds or touches (strongly recommended): <!-- result -->
 - [ ] Ran the real thing: <!-- e.g. `xpl index && xpl validate` on a fixture copy, a real repository -->
 
 ## Screenshots
 
 <!-- Required when the PR changes the viewer's UI or UX, or can change abstraction levels (what a map shows
 at the system, service or code level; grouping, zoom/opens, stubs, lifted or derived edges, draft levels,
-package boundaries). Before/After from `scripts/pr-screenshots.sh <base>`, see
+package boundaries). Before/After from `scripts/pr-screenshots.sh origin/main --publish` (prints this section), see
 .claude/skills/pr-screenshots/SKILL.md. One line on what to look at, then the image.
 If nothing visible changed, say why and paste the compare/index.md summary. Otherwise write "n/a". -->
 

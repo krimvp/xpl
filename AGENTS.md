@@ -60,8 +60,8 @@ After `npm run build`, the CLI is `node packages/cli/dist/xpl.mjs` (alias it `xp
 fixture, never in `fixtures/` itself: `cp -r fixtures/ts-jobrunner /tmp/j && cd /tmp/j && xpl index && xpl
 validate jobrunner`. You can also run xpl on this repository (`xpl index --precise off && xpl outline`).
 
-There is no CI workflow yet: the commands above are the gate. Before pushing, `typecheck`, `test` and
-`format:check` must pass, plus `test:e2e` for viewer changes.
+CI (`.github/workflows/ci.yml`) runs the same checks on every push and pull request; run them locally first
+so a push is green.
 
 ## Invariants and gotchas
 
@@ -84,7 +84,7 @@ There is no CI workflow yet: the commands above are the gate. Before pushing, `t
 - **`.npmrc` sets `ignore-scripts=true`**, so npm also skips `pre*`/`post*` scripts of our own packages. Do
   not add any.
 - **Playwright is pinned to 1.56.1** to match the preinstalled browsers (`PLAYWRIGHT_BROWSERS_PATH`). Never
-  run `playwright install`.
+  run `playwright install` in a sandbox that has them; only CI installs its own.
 - **Keep patch files and scratch output outside the repo.** A new file in the repo changes the index commit id.
 - **Docs are part of the change.** Where code and `docs/ARCHITECTURE.md` disagree, fix one of them in the
   same commit. That includes `--help` text, the product skill references, and the self-explainer:
@@ -108,15 +108,45 @@ The ones this codebase is built on (ARCHITECTURE §0 has the full reasoning):
 6. **Readers first.** Explainers go top-down (system, then a service, then code) in plain words; the viewer
    is judged by what a reader sees.
 
+## Done means
+
+An agent does not call work finished until each item is done or the reply says why it does not apply:
+
+1. **Run the `test-audit` skill. This is a strong recommendation, not a formality.** Put every test the
+   change adds or touches through its authoring gate, and check the tests that own the changed code: does
+   each one protect behaviour at its owning seam, and would it fail on the regression it claims to catch? A
+   regression test must have failed before the fix. Report what the audit found, even "nothing to change".
+2. `npm run typecheck`, `npm test`, `npm run format:check` pass, plus `npm run test:e2e` for viewer changes.
+3. Docs, `--help` text, the product skill and `.explainer/xpl.explainer.json` match the code (`docs-sync`).
+4. Screenshots are published and in the PR description when `scripts/needs-screenshots.sh` says so.
+5. The reply says what changed for a user of xpl, what you ran to prove it, and what you did not check.
+
+## Automation
+
+Do yourself everything a tool can do; ask the user only for decisions, never to run a step.
+
+- **CI** (`.github/workflows/ci.yml`): typecheck, unit tests, format and e2e on every push and PR. On a PR
+  that needs screenshots it takes them, pushes them to the `pr-assets` branch and posts or updates one
+  comment with Before/After images.
+- **Scripts**: `scripts/needs-screenshots.sh` (are screenshots required?), `scripts/pr-screenshots.sh`
+  (take them; `--publish` also pushes them and prints the PR section), `scripts/publish-pr-shots.sh` (push a
+  compare directory to `pr-assets`). The `pr-assets` branch only holds screenshots; push to it freely.
+- **Claude Code hooks** (`.claude/hooks/`, registered in `.claude/settings.json`): `session-start.sh`
+  installs dependencies, builds the CLI and viewer and fetches `origin/main` in cloud sessions;
+  `format-on-edit.sh` runs prettier on every file an agent edits; `stop-check.sh` stops an agent once per
+  state of the change, before it finishes, with the "Done means" list above filled in for its diff (which
+  tests changed, whether screenshots are required). Other agents run the same steps by hand.
+
 ## Pull requests
 
 - Use `.github/pull_request_template.md`. Lead with what changes for a user of xpl, then the proof you ran.
 - **Screenshots are required** in the PR description, Before and After, when a change touches the viewer's
   UI or UX, **or can affect abstraction levels**: what a map shows at the system, service or code level,
   grouping and zoom (`opens`, trails), stubs, lifted or derived edges, `xpl draft repo` levels, or which
-  package owns what. Take them with `scripts/pr-screenshots.sh <base-ref>` (the `pr-screenshots` skill),
-  which photographs base and head the same way and pairs the changed shots side by side. If nothing visible
-  changed, say why in the Screenshots section.
+  package owns what. `scripts/needs-screenshots.sh` says whether a change needs them.
+  `scripts/pr-screenshots.sh origin/main --publish` (the `pr-screenshots` skill) photographs base and head
+  the same way, publishes the changed shots side by side and prints the Screenshots section to paste. Do it
+  without asking; CI also posts them as a PR comment.
 - Commits: conventional, scoped by package (`fix(indexer):`, `feat(viewer):`, `docs(explainer):`), with the
   subject stating the new behaviour in plain words (see recent `git log`).
 - Never push to `main` directly, never force-push a shared branch, never skip or loosen a test to get green.

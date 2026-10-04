@@ -85,8 +85,10 @@ docs/                   handoff.md, ARCHITECTURE.md, analysis-2026-09-30.txt, re
 .explainer/             xpl's own explainer (xpl.explainer.json), checked by packages/cli/test/self-explainer.test.ts
 AGENTS.md, CLAUDE.md    guidance for coding agents working on this repo (CLAUDE.md imports AGENTS.md)
 .claude/skills/         skills for working on this repo (.agents/skills links here; code-explainer links to skill/)
-scripts/                pr-screenshots.sh: before/after viewer screenshots for a PR (packages/viewer/scripts/pr-shots.ts)
-.github/                pull_request_template.md
+.claude/hooks/          Claude Code hooks: session-start.sh, format-on-edit.sh, stop-check.sh (AGENTS.md, Automation)
+scripts/                pr-screenshots.sh (before/after viewer screenshots; packages/viewer/scripts/pr-shots.ts),
+                        needs-screenshots.sh (does a change need them), publish-pr-shots.sh (push to pr-assets)
+.github/                pull_request_template.md, workflows/ci.yml (checks, e2e, PR screenshots)
 ```
 
 Conventions (all packages):

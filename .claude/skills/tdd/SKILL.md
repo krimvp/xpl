@@ -46,7 +46,8 @@ test only owns what the CLI adds (messages, exit codes, files).
 
 ## Finish
 
-`npm run typecheck && npm test`, plus `npm run test:e2e` when the viewer changed. Report the red run you saw
-and the green run after.
+Run `test-audit` on the tests you wrote (strongly recommended before calling it done), then
+`npm run typecheck && npm test`, plus `npm run test:e2e` when the viewer changed. Report the red run you saw,
+the green run after, and what the audit changed.
 
 Adapted from Matt Pocock's `tdd` (MIT, © 2026 Matt Pocock); see `../THIRD_PARTY.md`.

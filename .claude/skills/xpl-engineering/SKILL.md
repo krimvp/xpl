@@ -20,7 +20,7 @@ Read `AGENTS.md` first. This skill adds the working method.
 | A change that crosses a package boundary, adds or changes a schema field, a patch rule, a CLI command, or the levels of a map | `architect`                                  |
 | New behaviour or a bug fix with a clear seam                                                                                  | `tdd`                                        |
 | Something is broken, flaky or slow and the cause is unknown                                                                   | `diagnose`                                   |
-| Writing, changing or reviewing tests                                                                                          | `test-audit`                                 |
+| Writing, changing or reviewing tests, and before calling any change finished                                                  | `test-audit`                                 |
 | Any code you are about to write                                                                                               | `ponytail` (the ladder)                      |
 | Reviewing a diff for things to delete                                                                                         | `ponytail-review`                            |
 | The change touches behaviour that docs, the product skill or `.explainer/xpl.explainer.json` describe                         | `docs-sync`                                  |
@@ -60,15 +60,23 @@ Each one names when it applies and what it changes.
 
 ## Autonomy
 
-Proceed on reversible work without asking: edits, tests, builds, local scripts. Ask before anything outward or
-irreversible: pushing to a shared branch, force-pushes, deleting branches, publishing. When the request has two
+Do everything a tool can do yourself, without asking: edits, tests, builds, scripts, screenshots, pushing
+your own branch and the `pr-assets` branch, re-anchoring the self-explainer. Ask the user only for decisions:
+a product or design choice no experiment settles, or anything irreversible on shared state (pushing to
+`main`, force-pushes, deleting branches someone else uses). When the request has two
 materially different readings, ask one short question with concrete options; otherwise state your assumption
 and go.
 
 ## Done means
 
+The list in `AGENTS.md` ("Done means"); the stop hook (`.claude/hooks/stop-check.sh`) hands it back to you
+filled in for your diff. In short:
+
+- **Run `test-audit` before you call it finished. Strongly recommended, every time code or tests changed.**
+  Gate each new or changed test, check the tests that own the changed code, and say what the audit found.
 - `npm run typecheck`, `npm test`, `npm run format:check` pass (and `npm run test:e2e` for viewer changes).
 - Docs, the product skill and the self-explainer agree with the code (`docs-sync`).
+- Screenshots are published when `scripts/needs-screenshots.sh` says so (`pr-screenshots`).
 - The reply says what changed for a user of xpl, what you ran to prove it, and what you did not check.
 
 Adapted from poteto's `poteto-mode` (cursor/plugins pstack, MIT, © 2026 Lauren Tan); see `../THIRD_PARTY.md`.

@@ -148,7 +148,7 @@ blind (a re-export it misnames, generated code with `//line` directives), the he
 | `docs/`                | Architecture, the original design brief, dated review reports, images.                                   |
 | `.explainer/`          | xpl's own explainer (`xpl.explainer.json`), committed; its indexes are git-ignored.                      |
 | `AGENTS.md`            | Guidance for coding agents; project skills in `.claude/skills/`.                                         |
-| `scripts/`             | `pr-screenshots.sh`: before/after viewer screenshots for a pull request.                                 |
+| `scripts/`             | Before/after screenshots for a pull request: `needs-screenshots.sh`, `pr-screenshots.sh`, publishing.    |
 
 ## Development
 

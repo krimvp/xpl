@@ -19,6 +19,9 @@ npm run test:e2e              # when packages/viewer, core derivation or bundle 
 Re-read your own diff (`git diff origin/main...`) as a reviewer would: what would make this wrong? Run
 `ponytail-review` on it and take the cuts that are plainly right.
 
+Then run `test-audit` (strongly recommended): gate every test the change adds or touches, and check the
+tests that own the changed code. Fix what it finds before pushing, and mention the result in the PR.
+
 ## 2. Keep the record true
 
 - Docs, help text and the product skill match the change (`docs-sync`).
@@ -27,10 +30,10 @@ Re-read your own diff (`git diff origin/main...`) as a reviewer would: what woul
 
 ## 3. Screenshots
 
-If the change touches the viewer's UI or UX, or can change abstraction levels (what a map shows at the system,
-service or code level, grouping, zoom, stubs, derived edges, package boundaries), run `pr-screenshots` and put
-the Before/After images in the PR's Screenshots section. Not optional: a PR in these areas without images
-says why nothing visible changed and includes the zero-change `index.md`.
+`scripts/needs-screenshots.sh` decides. When it says they are needed, run
+`scripts/pr-screenshots.sh origin/main --publish` (the `pr-screenshots` skill) without asking and paste the
+printed Screenshots section into the PR description, with one line per image on what to look at. With no
+visible change it prints a section saying so; paste that. CI posts the same images as a PR comment.
 
 ## 4. Commit
 
