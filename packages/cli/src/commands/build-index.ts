@@ -1,8 +1,8 @@
-import { readdirSync } from "node:fs";
-import { join } from "node:path";
+import { readFileSync, readdirSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import type { LanguageInfo } from "@xpl/core";
 import { describeAnalysis } from "@xpl/core";
-import { buildIndex, writeIndex } from "@xpl/indexer";
+import { buildIndex, scipArtifactProvider, writeIndex } from "@xpl/indexer";
 import type { CommandSpec } from "../command.js";
 import { CliError, errorMessage } from "../errors.js";
 import { plural } from "../format.js";
@@ -47,7 +47,7 @@ export function describeRefs(info: LanguageInfo): string {
 
 export const indexCommand: CommandSpec = {
   name: "index",
-  usage: "xpl index [--precise auto|off|require] [--commit c]",
+  usage: "xpl index [--precise auto|off|require] [--commit c] [--scip artifact|manifest.json]",
   summary: "Build and write the symbol index; print a per-language summary",
   details: [
     "Indexes every text file under --root (git-aware) and writes .explainer/index-<commit>.json.",
@@ -55,13 +55,23 @@ export const indexCommand: CommandSpec = {
     "--precise auto uses SCIP indexers when available (heuristic references otherwise, with a warning);",
     "off never runs them; syntax-only providers (Rust tags) still run. require fails instead of falling back.",
     "Each language line ends with how far its references can be trusted: `refs: precise (tool)`, `refs: heuristic`",
-    "(hints: confirm each call with `xpl show`), `refs: none` (rust, yaml, json, toml, text), or, when the precise tool did not",
+    "(hints: confirm each call with `xpl show`), `refs: none` (rust, yaml, json, toml, text without an artifact provider),",
+    "or, when the precise tool did not",
     "describe every file, `refs: precise 64/82 (scip-python@0.6.6), 18 heuristic`: the references of those 18 files",
     "are hints.",
     "Analysis coverage lists independent source and relationship abilities, analyzed files, limits and failures.",
     "Empty relationships do not prove complete coverage. Saved indexes and exported viewers retain this report.",
+    "--scip imports a generated artifact with embedded source text, or a JSON manifest naming its artifact.",
+    "Textless artifacts require artifactSha256 and pre-generation sourceHashes in the manifest.",
+    "Unspecified positions require a verified manifest.defaultEncoding. Unknown extensions stay text.",
+    "This replaces automatic SCIP tool selection for the run. --precise off cannot import an artifact.",
   ],
   options: {
+    scip: {
+      type: "string",
+      arg: "<artifact|manifest.json>",
+      desc: "Import source-verified SCIP declarations and supported references",
+    },
     precise: {
       type: "string",
       arg: "auto|off|require",
@@ -73,11 +83,35 @@ export const indexCommand: CommandSpec = {
   async run(ctx, args) {
     const precise = args.choice("precise", PRECISE) ?? "auto";
     const commit = args.str("commit");
+    const scip = args.str("scip");
+    if (scip && precise === "off") throw new CliError("--scip requires --precise auto or require");
     let result;
     try {
+      let providers;
+      if (scip) {
+        const path = resolve(ctx.cwd, scip);
+        if (path.endsWith(".json")) {
+          const manifest: unknown = JSON.parse(readFileSync(path, "utf8"));
+          if (
+            !manifest ||
+            typeof manifest !== "object" ||
+            !("artifact" in manifest) ||
+            typeof manifest.artifact !== "string" ||
+            !manifest.artifact
+          )
+            throw new Error("SCIP manifest requires an artifact path relative to the manifest");
+          providers = [
+            scipArtifactProvider({
+              artifact: readFileSync(resolve(dirname(path), manifest.artifact)),
+              manifest,
+            }),
+          ];
+        } else providers = [scipArtifactProvider({ artifact: readFileSync(path) })];
+      }
       result = await buildIndex({
         root: ctx.root,
         precise,
+        ...(providers ? { providers } : {}),
         ...(commit !== undefined ? { commit } : {}),
       });
     } catch (error) {

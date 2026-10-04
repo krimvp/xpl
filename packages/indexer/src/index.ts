@@ -77,5 +77,7 @@ export type {
   IndexProvider,
 } from "./providers.js";
 export { TreeSitterProvider } from "./tree-sitter.js";
+export { scipArtifactProvider } from "./scip/artifact.js";
+export type { ScipArtifactManifest, ScipArtifactOptions } from "./scip/artifact.js";
 export { resolveHeuristic } from "./resolve/heuristic.js";
 export type { ResolverFile, ResolverInput } from "./resolve/heuristic.js";

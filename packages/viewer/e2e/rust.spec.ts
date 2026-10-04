@@ -23,10 +23,10 @@ test("Rust symbol selection highlights source and reports structural support wit
   const notice = page.getByTestId("analysis-coverage");
   await notice.locator("summary").click();
   await expect(notice).toContainText(
-    "rust: named symbols, full declaration ranges, nesting partial (9/9 files analyzed)",
+    "rust (rust-tags): named symbols, full declaration ranges, nesting partial (9/9 files analyzed)",
   );
   await expect(notice).toContainText(
-    "rust: calls, imports, inheritance, implementations, type references, reads, writes unsupported (0/9 files analyzed)",
+    "rust (rust-tags): calls, imports, inheritance, implementations, type references, reads, writes unsupported (0/9 files analyzed)",
   );
   await expect(notice).toContainText("Syntax tags omit macro-generated declarations");
   await expect(notice).not.toContainText("rust-analyzer");

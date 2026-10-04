@@ -22,7 +22,7 @@
 
 ---
 
-## `xpl index [--precise auto|off|require] [--commit c]`
+## `xpl index [--precise auto|off|require] [--commit c] [--scip artifact|manifest.json]`
 
 Builds `.explainer/index-<commit>.json` (and `.explainer/.gitignore` with `index-*.json`). The commit id is the short HEAD when the repo root is a clean git top-level, else `wt-<hash>` of the files. Files: `git ls-files` (or a walk that skips `node_modules`, `dist`, dot-dirs…), text only, ≤ 1 MB.
 
@@ -37,20 +37,82 @@ typescript  8 files    121 symbols   refs: precise (scip-typescript@0.4.0)
 yaml        1 file     16 symbols    refs: none
 ```
 
-The summary is followed by **Analysis coverage** and per-capability outcomes (`supported`, `partial`,
-`unsupported`, `failed`) with analyzed file counts and limits. `--json` includes the same `analysis`
-reports as the saved index. Abilities are separate from observed coverage: a described file or empty
-reference list never proves complete relationships. Exported viewers keep the report even when their
+The summary is followed by **Analysis coverage** and per-capability outcomes labeled by analysis provider
+(`supported`, `partial`, `unsupported`, `failed`) with analyzed file counts and limits.
+`--json` includes the same `analysis` reports as the saved index. Abilities are separate from observed coverage:
+a described file or empty reference list never proves complete relationships. Exported viewers keep the report even when their
 symbol index is pruned. Legacy indexes without reports load with coverage unknown; file anchors remain
 available, but symbol and relationship completeness cannot be inferred.
+Provider labels separate a file-only fallback's limits from an artifact provider's usable symbols.
+Tool commands and diagnostic details are omitted from these summaries.
 
-- The last column is how far a language's references can be trusted. `refs: precise (tool)`: SCIP resolved them (TypeScript, Python, Go). `refs: heuristic`: tree-sitter scope-aware guesses, drawn lighter in the viewer; confirm calls with `show`. `refs: none`: rust, yaml, json, toml, text. Rust tags provide partial named declarations and lexical nesting, without resolved relationships or macro expansion.
+- The last column is how far a language's references can be trusted. `refs: precise (tool)`: SCIP resolved them (TypeScript, Python, Go). `refs: heuristic`: tree-sitter scope-aware guesses, drawn lighter in the viewer; confirm calls with `show`. `refs: none`: usually rust, yaml, json, toml and text without an artifact provider. Rust tags provide partial named declarations and lexical nesting, without resolved relationships or macro expansion.
 - `refs: precise 10/11 (scip-go@0.2.7), 1 heuristic`: the tool described only 10 of the 11 files (build-tagged Go files, files a project's own configuration excludes). Those files keep heuristic references, so **their references are hints**; a warning above the summary names them: `warning: scip-go@0.2.7 did not describe 1 file(s) (excluded by build constraints or by the tool's own configuration, or unreadable?); their references stay heuristic: internal/queue/windows_only.go`.
 - `--precise auto` (default) falls back to heuristic with a warning, e.g. ``warning: precise resolver "scip-go" failed (scip-go@v0.2.7 could not be started (is `go` installed and on PATH?): spawn go ENOENT); using heuristic references for go``. `off` never runs SCIP (faster); syntax-only providers such as Rust tags still run. `require` exits 1 instead of falling back.
 - A file with syntax errors is indexed anyway. One warning covers all such files, with the first lines to look at: `warning: 1 file(s) have syntax errors; symbols near these lines may be incomplete: src/broken.ts:2` (at most 5 files and 3 lines each). Errors that cannot have cost a symbol (a TS labelled tuple element such as `[symbol: string]`) are not reported.
-- Reference kinds: `call import extends implements type-ref read write`. A `read` is a use of a module- or package-level variable or constant, or of a field whose type is known, that is not a call or an assignment (`this.config.retry`, `LIMIT`); locals and parameters are not references. A TS `import type` and a Python `import` under `TYPE_CHECKING` are `type-ref`, not `import`: `import` references are runtime dependencies.
+- Reference kinds: `call import extends implements type-ref read write`. A `read` is a use of a module- or package-level variable or constant, or of a field whose type is known, that is not a call or an assignment (`this.config.retry`, `LIMIT`); the built-in syntax/tool adapters omit locals and parameters, while artifact imports can retain role-backed references to checked local declarations. A TS `import type` and a Python `import` under `TYPE_CHECKING` are `type-ref`, not `import`: `import` references are runtime dependencies.
 - Symbols beyond declarations: config keys (`kind: key`) of yaml, json and toml files (`config/default.yaml#retry.maxRetries`, `pyproject.toml#project.scripts.flask`); TS test blocks (statement-level `describe`/`suite`/`context`/`it`/`test` calls with a string title), whose path is the nested titles (`test/retry.test.ts#fails twice, then succeeds: acked after two requeues`; `.` and `#` in a title become `_`). Test blocks can be anchored and outlined but nothing references them by name.
 - Re-run after every code change. Explainers bound to an older index print ``hint: 1 explainer (jobrunner) is bound to another index; run `xpl resolve <name> --write` to move it to this one.``
+
+### Generated SCIP artifacts
+
+`xpl index --scip /tmp/run/index.scip` imports an artifact whose documents carry matching source text and
+explicit position encodings. For textless documents, pass a JSON manifest instead. Its `artifact` path is
+relative to the manifest; `artifactSha256` is the full SHA-256 of the protobuf bytes, and `sourceHashes` maps
+repository-relative source paths to xpl's versioned hashes. Add `defaultEncoding` only after verifying how
+the producer counts columns when it omits `position_encoding` (`utf8`, `utf16` or `utf32`). Metadata's source
+encoding does not establish position encoding.
+
+Keep artifacts and manifests outside the indexed repository. Capture the source index **before** generation
+and preserve it before another indexing run can overwrite it:
+
+```sh
+mkdir -p /tmp/xpl-scip-run
+xpl index --precise off --json > /tmp/xpl-scip-run/before.json
+node --input-type=module -e '
+  import { readFileSync, copyFileSync } from "node:fs";
+  const result = JSON.parse(readFileSync("/tmp/xpl-scip-run/before.json", "utf8"));
+  copyFileSync(result.absolutePath, "/tmp/xpl-scip-run/sources.json");
+'
+```
+
+Run your pinned producer successfully with a **fresh output path** `/tmp/xpl-scip-run/index.scip`. Its build
+configuration must describe the intended source files. Then check that the source snapshot did not change
+and bind that snapshot to the artifact:
+
+```sh
+xpl index --precise off --json > /tmp/xpl-scip-run/after.json
+node --input-type=module -e '
+  import { readFileSync, writeFileSync } from "node:fs";
+  import { createHash } from "node:crypto";
+  const dir = "/tmp/xpl-scip-run/";
+  const before = JSON.parse(readFileSync(dir + "sources.json", "utf8"));
+  const result = JSON.parse(readFileSync(dir + "after.json", "utf8"));
+  const after = JSON.parse(readFileSync(result.absolutePath, "utf8"));
+  const hashes = index => Object.fromEntries(index.files.map(f => [f.path, f.hash]));
+  const sourceHashes = hashes(before);
+  if (JSON.stringify(sourceHashes) !== JSON.stringify(hashes(after)))
+    throw new Error("Sources changed during generation; regenerate in a stable tree");
+  const artifactSha256 = createHash("sha256").update(readFileSync(dir + "index.scip")).digest("hex");
+  writeFileSync(dir + "manifest.json", JSON.stringify({ artifact: "index.scip", artifactSha256, sourceHashes }));
+'
+xpl index --scip /tmp/xpl-scip-run/manifest.json --precise require
+```
+
+The manifest attests to a successful run against that snapshot. Hashes cannot prove compilation success or
+detect a file changed and restored during generation. Never stamp current hashes onto an old artifact.
+Embedded source takes precedence for documents that supply it. A leading BOM is preserved as source content;
+adding or removing it changes the snapshot identity. Stale or unverified documents supply no
+checked symbols or relationships. Documents must belong to discovered sources; generated build outputs
+and external symbols are not turned into local declarations. A supplied project-root URI must match `--root`.
+
+`--scip` selects the artifact provider instead of automatic SCIP tools. `auto` reports failures and keeps
+available syntax hints; `require` rejects unusable imports. `--precise off` cannot be combined with `--scip`.
+Unknown extensions remain `text`, but imported symbols work with `outline`, `show`, `apply`, `validate` and
+`bundle`. Only definitions with full producer ranges become checked symbols. Missing ranges, parents and
+unclassified occurrences remain limits in `analysis`; diagnostics identify omitted facts. Only role-backed
+reads/writes/imports and mentions of known types become precise references. Calls and ambiguous inheritance
+flags are unsupported. Overloads receive source-ordered `~N` suffixes; reordering can change IDs.
 
 ## `xpl outline [--under <id>] [--depth n] [--kind k,...] [--keys] [--limit n]`
 

@@ -126,7 +126,9 @@ it("Rust symbols can be outlined, shown, anchored and exported with their suppor
   const dir = copyFixture("rs-jobrunner");
   const indexed = await xpl(dir, "index", "--precise", "off");
   expect(indexed.code).toBe(0);
-  expect(indexed.out).toContain("rust: named symbols, full declaration ranges, nesting partial");
+  expect(indexed.out).toContain(
+    "rust (rust-tags): named symbols, full declaration ranges, nesting partial (9/9 files analyzed)",
+  );
   const outlined = await xpl(dir, "outline", "--under", "src/runner.rs", "--depth", "4");
   expect(outlined.code).toBe(0);
   expect(outlined.out).toContain("impl Runner<Q>.dispatch");

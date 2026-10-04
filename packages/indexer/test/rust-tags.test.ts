@@ -88,7 +88,7 @@ it("keeps fixture macro definitions and physical impls without inventing expande
   ).toEqual(expected);
   expect(index.symbols.filter((s) => s.path === "RunnerStats" || s.path === "$name")).toEqual([]);
   expect(index.refs).toEqual([]);
-  expect(describeAnalysis(index).details.filter((s) => s.startsWith("rust:"))).not.toContainEqual(
+  expect(describeAnalysis(index).details.filter((s) => s.startsWith("rust ("))).not.toContainEqual(
     expect.stringContaining("Only file anchors are available"),
   );
 });
@@ -104,13 +104,13 @@ it("reports syntax recovery and does not promise precise Rust relationships", as
   expect(warnings).toEqual([
     "1 file(s) have syntax errors; symbols near these lines may be incomplete: a.rs:2",
   ]);
-  expect(describeAnalysis(index).details.filter((s) => s.startsWith("rust:"))).toEqual([
-    "rust: file anchors supported (1/1 files analyzed).",
+  expect(describeAnalysis(index).details.filter((s) => s.startsWith("rust ("))).toEqual([
+    "rust (files): file anchors supported (1/1 files analyzed).",
     expect.stringContaining(
-      "named symbols, full declaration ranges, nesting partial (1/1 files analyzed)",
+      "rust (rust-tags): named symbols, full declaration ranges, nesting partial (1/1 files analyzed)",
     ),
     expect.stringContaining(
-      "calls, imports, inheritance, implementations, type references, reads, writes unsupported (0/1 files analyzed)",
+      "rust (rust-tags): calls, imports, inheritance, implementations, type references, reads, writes unsupported (0/1 files analyzed)",
     ),
   ]);
   expect(describeAnalysis(index).details.join("\n")).toContain(

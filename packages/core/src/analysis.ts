@@ -45,7 +45,7 @@ export function describeAnalysis(index: SymbolIndex): { summary: string; details
       .join("/");
     return report.results.map((result) => {
       const names = result.capabilities.map((c) => labels[c]).join(", ");
-      return `${languages || "files"}: ${names} ${result.status} (${result.analyzedFiles.length}/${report.files.length} files analyzed).${result.limitations.length ? ` ${result.limitations.join(" ")}` : ""}`;
+      return `${languages || "files"} (${report.provider}): ${names} ${result.status} (${result.analyzedFiles.length}/${report.files.length} files analyzed).${result.limitations.length ? ` ${result.limitations.join(" ")}` : ""}`;
     });
   });
   return { summary, details };

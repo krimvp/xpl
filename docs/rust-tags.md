@@ -5,7 +5,8 @@ ABI 14 with `web-tree-sitter@0.27.0`. No Cargo or Rust compiler runs. The additi
 `syntax`, so `xpl index --precise off` still produces named symbols, declaration ranges and lexical nesting.
 All three capabilities are partial. Every relationship kind is unavailable. `--precise require` fails for
 Rust until a semantic provider supplies precise relationships. CLI and viewer show these limits from the
-same saved analysis report. Identical outcomes share one report with combined file counts; syntax-error
+same saved analysis report, labeled `rust (rust-tags):`. Identical outcomes share one report with combined
+file counts; syntax-error
 files retain a separate report and limitation. Rust code renders as plain text in the viewer, with selection
 and highlights.
 

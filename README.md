@@ -159,6 +159,11 @@ Empty relationships do not mean complete analysis. Older indexes still load, wit
 Go files, for one) keep their heuristic references and are named in a warning; the summary then reads
 `refs: precise 10/11 (scip-go@0.2.7), 1 heuristic`.
 
+`xpl index --scip <artifact|manifest.json>` imports generated SCIP declarations and supported references,
+including sources without a language pack (their language stays `text`). Documents need embedded source text
+or an artifact-bound manifest of pre-generation source hashes. Missing full ranges, parents and call
+classification remain explicit limits. See the [artifact workflow](skill/code-explainer/reference/cli.md#generated-scip-artifacts).
+
 Precise is not free on a big repository: on django (2,900 Python files) it took 4 minutes and 4.6 GB, on
 sympy and prometheus 9 to 10 minutes and up to 7 GB, where `--precise off` took 15 to 40 seconds. The heuristic
 references agree with SCIP on 97 to 99.9% of the calls both find (see
