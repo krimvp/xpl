@@ -12,11 +12,13 @@ import { startViewServer } from "../src/server.js";
 import {
   cloneDir,
   git,
+  invoke,
   makeTempDir,
   readFile,
   readJson,
   STUB_VIEWER_HTML,
   writeFile,
+  writeViewerStub,
   xpl,
   xplJson,
 } from "./helpers.js";
@@ -434,10 +436,13 @@ describe("base anchors through the CLI", () => {
 
 describe("bundle and server with a change", () => {
   let dir: string;
+  // The viewer stub, so these tests never depend on the viewer build (CI runs them before any build).
+  let env: { XPL_VIEWER_HTML: string };
+  const runBundle = (...argv: string[]) => invoke(["bundle", ...argv], { cwd: dir, env });
   beforeAll(async () => {
     dir = cloneDir(repo);
     expect((await xpl(dir, "change", "demo", "HEAD~1..HEAD")).code).toBe(0);
-    writeFile(dir, "viewer.html", STUB_VIEWER_HTML);
+    env = { XPL_VIEWER_HTML: writeViewerStub() };
   });
 
   const bundleOf = (path: string) => {
@@ -448,17 +453,7 @@ describe("bundle and server with a change", () => {
 
   for (const files of ["referenced", "boundary"] as const) {
     it(`--files ${files}: every changed head file and the base of modified, renamed and deleted ones`, async () => {
-      const r = await xpl(
-        dir,
-        "bundle",
-        "demo",
-        "-o",
-        `${files}.html`,
-        "--files",
-        files,
-        "--root",
-        dir,
-      );
+      const r = await runBundle("demo", "-o", `${files}.html`, "--files", files, "--root", dir);
       expect(r.code).toBe(0);
       expect(r.out).toContain(
         `change ${base.slice(0, 7)}..${head.slice(0, 7)}: 4 changed files in (4 added to the selection`,
@@ -478,13 +473,8 @@ describe("bundle and server with a change", () => {
   }
 
   it("--json reports the change part", async () => {
-    const { json } = await xplJson<{ change: Record<string, unknown> }>(
-      dir,
-      "bundle",
-      "demo",
-      "-o",
-      "j.html",
-    );
+    const r = await runBundle("demo", "-o", "j.html", "--json");
+    const json = JSON.parse(r.out) as { change: Record<string, unknown> };
     expect(json.change).toMatchObject({
       base,
       head,
