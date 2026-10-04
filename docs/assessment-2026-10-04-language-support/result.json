@@ -1,0 +1,302 @@
+{
+  "implementationPin": "d006ff67fe0f620442a1354b178280c690c9e193",
+  "node": "v22.23.1",
+  "rustMode": "cached dependencies; offline; buildScripts override /bin/true; procMacro disabled; fresh target",
+  "javaMode": "cached dependencies; offline clean test-compile; fresh target",
+  "generation": [
+    {
+      "corpus": "rs-fixture",
+      "seconds": 3.73,
+      "peakRssKiB": 380556
+    },
+    {
+      "corpus": "bat",
+      "seconds": 10.67,
+      "peakRssKiB": 743684
+    },
+    {
+      "corpus": "java-fixture",
+      "seconds": 3.54,
+      "peakRssKiB": 195068
+    },
+    {
+      "corpus": "gson",
+      "seconds": 8.38,
+      "peakRssKiB": 520652
+    }
+  ],
+  "imports": [
+    {
+      "label": "rs-fixture-tags",
+      "seconds": 0.22,
+      "peakRssKiB": 121560,
+      "mode": "tags",
+      "language": "rust",
+      "buildMs": 46.406614000000005,
+      "indexedFiles": 9,
+      "sourceFiles": 9,
+      "physicalLines": 825,
+      "snapshotBytes": 24408,
+      "symbols": 82,
+      "refs": 0,
+      "symbolProviders": {
+        "tree-sitter": 0,
+        "rust-tags": 82
+      },
+      "referenceKinds": {},
+      "diagnostics": 0,
+      "warnings": []
+    },
+    {
+      "label": "rs-fixture-scip-only",
+      "seconds": 0.19,
+      "peakRssKiB": 104108,
+      "mode": "scip-only",
+      "language": "rust",
+      "buildMs": 25.636122,
+      "indexedFiles": 9,
+      "sourceFiles": 9,
+      "physicalLines": 825,
+      "snapshotBytes": 24408,
+      "symbols": 0,
+      "refs": 0,
+      "symbolProviders": {
+        "tree-sitter": 0,
+        "scip-artifact": 0
+      },
+      "referenceKinds": {},
+      "diagnostics": 1717,
+      "warnings": [],
+      "artifactBytes": 176290,
+      "raw": {
+        "documents": 9,
+        "symbolInformation": 328,
+        "occurrences": 1717,
+        "definitions": 315,
+        "definitionsWithFullRange": 0,
+        "roles": [0, 1],
+        "encodings": [1],
+        "symbolRelationships": 0,
+        "outsideSourceDocuments": [],
+        "duplicateGlobalIdentities": 1,
+        "missingSourceDocuments": 0,
+        "producer": "rust-analyzer@0.3.2308-standalone"
+      }
+    },
+    {
+      "label": "rs-fixture-combined",
+      "seconds": 0.23,
+      "peakRssKiB": 122040,
+      "mode": "combined",
+      "language": "rust",
+      "buildMs": 56.465097000000014,
+      "indexedFiles": 9,
+      "sourceFiles": 9,
+      "physicalLines": 825,
+      "snapshotBytes": 24408,
+      "symbols": 0,
+      "refs": 0,
+      "symbolProviders": {
+        "tree-sitter": 0,
+        "rust-tags": 0,
+        "scip-artifact": 0
+      },
+      "referenceKinds": {},
+      "diagnostics": 1717,
+      "warnings": [],
+      "artifactBytes": 176290,
+      "raw": {
+        "documents": 9,
+        "symbolInformation": 328,
+        "occurrences": 1717,
+        "definitions": 315,
+        "definitionsWithFullRange": 0,
+        "roles": [0, 1],
+        "encodings": [1],
+        "symbolRelationships": 0,
+        "outsideSourceDocuments": [],
+        "duplicateGlobalIdentities": 1,
+        "missingSourceDocuments": 0,
+        "producer": "rust-analyzer@0.3.2308-standalone"
+      }
+    },
+    {
+      "label": "bat-tags",
+      "seconds": 0.41,
+      "peakRssKiB": 133264,
+      "mode": "tags",
+      "language": "rust",
+      "buildMs": 250.15273000000002,
+      "indexedFiles": 67,
+      "sourceFiles": 67,
+      "physicalLines": 13786,
+      "snapshotBytes": 484845,
+      "symbols": 968,
+      "refs": 0,
+      "symbolProviders": {
+        "tree-sitter": 0,
+        "rust-tags": 968
+      },
+      "referenceKinds": {},
+      "diagnostics": 0,
+      "warnings": [
+        "1 file(s) have syntax errors; symbols near these lines may be incomplete: tests/snapshots/sample.modified.rs:14",
+        "1 file(s) have syntax errors; symbols near these lines may be incomplete: tests/syntax-tests/highlighted/Rust/output.rs:1"
+      ]
+    },
+    {
+      "label": "bat-scip-only",
+      "seconds": 0.33,
+      "peakRssKiB": 137360,
+      "mode": "scip-only",
+      "language": "rust",
+      "buildMs": 145.755556,
+      "indexedFiles": 67,
+      "sourceFiles": 67,
+      "physicalLines": 13786,
+      "snapshotBytes": 484845,
+      "symbols": 0,
+      "refs": 0,
+      "symbolProviders": {
+        "tree-sitter": 0,
+        "scip-artifact": 0
+      },
+      "referenceKinds": {},
+      "diagnostics": 17344,
+      "warnings": [],
+      "artifactBytes": 1584575,
+      "raw": {
+        "documents": 61,
+        "symbolInformation": 2888,
+        "occurrences": 17338,
+        "definitions": 2784,
+        "definitionsWithFullRange": 0,
+        "roles": [0, 1],
+        "encodings": [1],
+        "symbolRelationships": 0,
+        "outsideSourceDocuments": [],
+        "duplicateGlobalIdentities": 10,
+        "missingSourceDocuments": 6,
+        "producer": "rust-analyzer@0.3.2308-standalone"
+      }
+    },
+    {
+      "label": "bat-combined",
+      "seconds": 0.5,
+      "peakRssKiB": 150680,
+      "mode": "combined",
+      "language": "rust",
+      "buildMs": 302.04585199999997,
+      "indexedFiles": 67,
+      "sourceFiles": 67,
+      "physicalLines": 13786,
+      "snapshotBytes": 484845,
+      "symbols": 40,
+      "refs": 0,
+      "symbolProviders": {
+        "tree-sitter": 0,
+        "rust-tags": 40,
+        "scip-artifact": 0
+      },
+      "referenceKinds": {},
+      "diagnostics": 17344,
+      "warnings": [
+        "1 file(s) have syntax errors; symbols near these lines may be incomplete: tests/snapshots/sample.modified.rs:14",
+        "1 file(s) have syntax errors; symbols near these lines may be incomplete: tests/syntax-tests/highlighted/Rust/output.rs:1"
+      ],
+      "artifactBytes": 1584575,
+      "raw": {
+        "documents": 61,
+        "symbolInformation": 2888,
+        "occurrences": 17338,
+        "definitions": 2784,
+        "definitionsWithFullRange": 0,
+        "roles": [0, 1],
+        "encodings": [1],
+        "symbolRelationships": 0,
+        "outsideSourceDocuments": [],
+        "duplicateGlobalIdentities": 10,
+        "missingSourceDocuments": 6,
+        "producer": "rust-analyzer@0.3.2308-standalone"
+      }
+    },
+    {
+      "label": "java-fixture-import",
+      "seconds": 0.2,
+      "peakRssKiB": 106340,
+      "mode": "scip-only",
+      "language": "text",
+      "buildMs": 32.807795999999996,
+      "indexedFiles": 16,
+      "sourceFiles": 13,
+      "physicalLines": 394,
+      "snapshotBytes": 16879,
+      "symbols": 223,
+      "refs": 79,
+      "symbolProviders": {
+        "tree-sitter": 0,
+        "scip-artifact": 223
+      },
+      "referenceKinds": {
+        "type-ref": 79
+      },
+      "diagnostics": 946,
+      "warnings": [],
+      "artifactBytes": 109220,
+      "raw": {
+        "documents": 13,
+        "symbolInformation": 245,
+        "occurrences": 1165,
+        "definitions": 245,
+        "definitionsWithFullRange": 223,
+        "roles": [0, 1],
+        "encodings": [0],
+        "symbolRelationships": 16,
+        "outsideSourceDocuments": [],
+        "duplicateGlobalIdentities": 0,
+        "missingSourceDocuments": 0,
+        "producer": "scip-java@0.0.0-SNAPSHOT"
+      }
+    },
+    {
+      "label": "gson-import",
+      "seconds": 0.79,
+      "peakRssKiB": 281388,
+      "mode": "scip-only",
+      "language": "text",
+      "buildMs": 452.796067,
+      "indexedFiles": 293,
+      "sourceFiles": 249,
+      "physicalLines": 53021,
+      "snapshotBytes": 1824890,
+      "symbols": 10474,
+      "refs": 7184,
+      "symbolProviders": {
+        "tree-sitter": 0,
+        "scip-artifact": 10474
+      },
+      "referenceKinds": {
+        "type-ref": 7184
+      },
+      "diagnostics": 58342,
+      "warnings": [],
+      "artifactBytes": 7915646,
+      "raw": {
+        "documents": 202,
+        "symbolInformation": 11034,
+        "occurrences": 73194,
+        "definitions": 11034,
+        "definitionsWithFullRange": 10638,
+        "roles": [0, 1],
+        "encodings": [0],
+        "symbolRelationships": 1362,
+        "outsideSourceDocuments": [
+          "gson/target/generated-sources/java-templates/com/google/gson/internal/GsonBuildConfig.java"
+        ],
+        "duplicateGlobalIdentities": 0,
+        "missingSourceDocuments": 48,
+        "producer": "scip-java@0.0.0-SNAPSHOT"
+      }
+    }
+  ]
+}

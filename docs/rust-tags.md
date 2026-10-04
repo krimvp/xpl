@@ -164,6 +164,8 @@ closed language union, extension/WASM registration, bundled query copy and plain
 adapter is generic; source validation, identity assignment, hashing, anchors, queries, bundles and capability
 presentation reuse existing code. No handwritten Rust scope/module resolver was added.
 
-SCIP-only declarations (#12), the Java adapter (#14), and producer comparison (#15) remain separate work.
-Macro expansion, receiver ownership, external module links and resolved relationships need semantic evidence;
-this experiment's syntax tags do not claim compiler-level Rust support.
+The [language-support decision](assessment-2026-10-04-language-support.md) compares this path with
+rust-analyzer SCIP on the same inputs and with Java's artifact import. Its measured xpl version predates
+#46: range-less artifact import removes valid tags and can still pass `require` without usable targets.
+Use `--precise off` for Rust until composition is fixed and checked. Macro expansion, receiver ownership,
+external module links and resolved relationships need semantic evidence; syntax tags remain experimental.

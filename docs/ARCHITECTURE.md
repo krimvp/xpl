@@ -1747,6 +1747,13 @@ Java artifact import is also exercised without a language pack: the pinned scip-
 retains source-checked declarations and type references, with file-anchor fallback and explicit losses
 ([docs/java-scip.md](java-scip.md)). Java stays `text`; semantic calls and inheritance are unsupported.
 
+The [language-support decision](assessment-2026-10-04-language-support.md) compares syntax tags and
+rust-analyzer SCIP on identical Rust inputs, and Java SCIP separately. Both new-language paths remain
+experimental. The measured Rust artifact has no full ranges: import removes tags in described files and
+`require` can still succeed without retained targets or relationships. Use Rust tags with `--precise off`.
+The decision recommends separating examined coverage from replacement authority before joining semantic
+identities to syntax ranges. This is a proposed contract revision, not a change to the current §3 contract.
+
 **Known limitations**
 
 - `read` references are conservative (§3): module or package variables and constants, and fields whose type is

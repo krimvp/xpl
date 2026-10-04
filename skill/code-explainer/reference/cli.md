@@ -121,6 +121,19 @@ stable before/after hashes. Java stays `text`; use explicit views and `search` w
 [Java workflow](../../../docs/java-scip.md) records the producer/JDK/Maven pins, fixture and Gson commands,
 literal ranges, failure fallback, losses and measured costs. It includes a checked overload bundle example.
 
+Rust tags and Java artifact import are experimental paths, checked on bounded fixtures and pinned bat/Gson
+inputs. They do not promise the maturity of the maintained TS/JS, Python, Go and config packs. Read the
+saved capability results before writing graph claims; a precise type mention does not establish a call,
+inheritance or an implementation edge. Java needs a successful configured JDK/Maven build. When generation
+fails, use `--precise off` for file anchors and config symbols, then regenerate into a fresh output directory.
+
+Use `--precise off` for Rust. The measured rust-analyzer 0.3.2308 artifact supplies no full declaration
+ranges. Importing it currently removes tags in described files, produces no semantic edges, and can still
+exit successfully with `--precise require`. A cached offline producer run needs the build-script override
+recorded in the report; a cold offline prep run crashed. Do not recommend this as Rust precise support.
+The [comparison and decision](../../../docs/assessment-2026-10-04-language-support.md) includes runnable
+measurements, manually checked source facts, mapping losses and the proposed provider-contract revision.
+
 ## `xpl outline [--under <id>] [--depth n] [--kind k,...] [--keys] [--limit n]`
 
 One line per element: `<id>  <kind>  <first>-<last line>  in=<fan-in> out=<fan-out>`. `in`/`out` count references into/out of the element's subtree (calls, imports, type uses, reads), so high numbers mark hubs; a symbol's calls of itself stay inside it and are not counted, and `recursive` after the counts marks a symbol that calls itself (`"recursive": true` in `--json`). `[+n]` = n children below the depth limit. Default depth 2, `--limit 400` lines. Config keys (yaml, json, toml) are hidden unless `--keys`. `--kind method,function` lists only symbols of those kinds (`class interface function method type variable enum key other`; repeat or comma-separate) together with the dirs, files and parent symbols that hold a match, so each keeps its place. The `repo` line carries the name `xpl new` records (from `package.json`, `go.mod`, `pyproject.toml`, the git remote), not the directory's.

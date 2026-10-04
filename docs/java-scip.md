@@ -307,6 +307,8 @@ need no installed Java toolchain. Fixture compilation, RetryTest, the demo, CLI 
 and a real browser bundle check ran. Gson tests were compiled but not executed. Only the Maven producer
 path and Linux pins above were exercised; Gradle, other JDKs and other producer releases were not checked.
 
-#15 can compare these producer/import phases with Rust tags. A later change may add Java language identity,
-colouring, code-only search and draft classification, or evidence-backed call/inheritance analysis. None
-of those abilities is inferred from a successful build or a nonempty symbol count here.
+The [language-support decision](assessment-2026-10-04-language-support.md) compares these producer/import
+phases with Rust tags and Rust SCIP on the same Rust sources. Java artifact import remains experimental;
+the measured sources and Maven profile do not establish production maturity across Java builds. The decision
+orders the next slices, including Java code identity and evidence-backed call classification. Those abilities
+are not inferred from a successful build or a nonempty symbol count here.
