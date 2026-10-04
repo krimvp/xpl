@@ -26,6 +26,12 @@ To add another question to a known guide, say `Existing guide: orders-overview` 
 
 ## Author through the installed commands
 
+GitHub input can be prepared first with `xpl pr prepare <url> --cache-dir /absolute/outside-cache`.
+It returns an isolated head repository and immutable input manifest using existing `gh`/git access.
+Use that root and its recorded full base/head range for manual change authoring below. Preparation alone
+invokes no agent and produces no ready result. Installed PR creation and current-head/supersession checks
+are future work; a manual guide describes the recorded commits, not a promise that the PR is still current.
+
 1. Run `xpl doctor` when setup is uncertain, then `xpl index` with the chosen mode. Report actual coverage, skipped analysis and `precise` or `heuristic` references. A valid anchor checks a location and freshness; it does not prove prose or runtime coverage.
 2. For a new guide, run `xpl new <name> --title "<title>"`. For an existing guide, read it and run `xpl status <name>` before patching. A change also needs `xpl change <name> <base>..<head>`; follow `explain-change.md`.
 3. Draft `repo`, `path` or `change`, with `--audience "<reader>" --question "<question>" -o /absolute/scratch/draft.json`. For a subsystem, find the entry id with `search` and `show` first. Put scratch outside the source root; a patch inside it changes the indexed snapshot.

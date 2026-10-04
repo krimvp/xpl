@@ -10,6 +10,7 @@ import { applyCommand } from "./commands/apply.js";
 import { indexCommand } from "./commands/build-index.js";
 import { bundleCommand } from "./commands/bundle.js";
 import { changeCommand } from "./commands/change.js";
+import { prCommand } from "./commands/pr.js";
 import { draftCommand } from "./commands/draft.js";
 import { feedbackCommand } from "./commands/feedback.js";
 import { doctorCommand } from "./commands/doctor.js";
@@ -48,6 +49,7 @@ export const COMMANDS: readonly CommandSpec[] = [
   lintCommand,
   readyCommand,
   changeCommand,
+  prCommand,
   draftCommand,
   viewCommand,
   bundleCommand,

@@ -45,6 +45,13 @@ For the three creation scopes and safe retries, see [Create a guide](skill/code-
 Choose a new guide or name the existing guide to extend; an existing file is never replaced by creation.
 The agent writes and checks the JSON patch for you.
 
+GitHub PR input is opt-in: `xpl pr prepare https://github.com/owner/repo/pull/42 --cache-dir /outside/pr-cache`
+uses existing `gh` and git access to fetch the returned full base/head commits into a separate detached
+repository. It indexes head with `--precise off` by default and saves an immutable `input.json` with
+before/after source and analysis labels. The developer checkout stays untouched. This command prepares
+input only; agent handoff, PR freshness checks and ready result export are future work. Network access
+to GitHub is required. Remove a retained input with `xpl pr cleanup <input-directory> --cache-dir /outside/pr-cache`.
+
 Claude indexes the repo, writes `.explainer/<name>.explainer.json` (commit it; the indexes beside it are
 git-ignored) and gives you the result. Open it yourself with `xpl bundle <name> -o <name>.html` (one
 self-contained file that carries the source files the explainer shows: works offline, easy to share;

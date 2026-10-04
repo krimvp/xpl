@@ -1177,6 +1177,8 @@ stdout (a rejection exits 1); fatal errors (`error: …`) and warnings (`warning
 | `xpl ready <explainer> [--note reason]` | shared readiness report before export; `--json` adds `ok` to the report above; 0 ready (warnings allowed), 1 blockers/failure, 2 usage; writes nothing; a note records intentional warning/omission decisions |
 | `xpl lint <explainer> [--patch <file\|->] [--warn-only]` | checks the text a reader sees (the index, when there is one, counts the boxes and arrows of maps): rules below; `--patch` lints the explainer as it would be after `xpl apply` of that patch (merged in memory as actor `llm`, nothing written; a patch apply would reject prints the rejection and exits 1); exit 1 with any finding (so `lint --patch && apply` stops on one), 0 with `--warn-only` unless a `todo-left` error |
 | `xpl change <explainer> [<base>..<head>]` | records the change from git in the explainer and prints its analysis (§4.8; below); without a range, prints the analysis of the change already recorded |
+| `xpl pr prepare <url\|owner/repo#number\|owner/repo> [number] [--cache-dir dir] [--precise off\|auto\|require]` | resolves GitHub base/head through existing `gh`, fetches an isolated detached head, indexes head only and publishes an immutable input manifest; no agent or ready result |
+| `xpl pr cleanup <directory> [--cache-dir dir]` | removes only a marked owned PR input directly under the selected cache; refuses symlinks and developer-tree paths |
 | `xpl draft change\|repo\|path <explainer> [<entry id> ...] [-o file]` | prints a patch skeleton built from the index (and the change record) with no LLM, `TODO:` in every text to write (below); the summary goes to stderr |
 | `xpl view <explainer> [--port p] [--host h] [--no-open]` | local server (below) |
 | `xpl bundle <explainer> -o out.html [--mode explore\|present] [--tour id] [--files referenced\|boundary\|all] [--boundary-max n] [--embed-index full\|pruned] [--draft] [--note reason] [--allow-drift]` | self-contained HTML after the shared readiness check (exit 1 before writing with errors); `--draft` writes a labelled preview with findings; `--allow-drift` is a legacy draft flag that still refuses stale indexes; warnings and optional author notes are retained; `--tour` (`tour:intro` or `intro`) implies present mode; embeds the files the explainer references by default and prints what went in (`8 of 12 files embedded (referenced: 18.4 KB of source; --files all adds 4 files, 6.7 KB)`), `--files boundary` adds the direct callers, callees and tests of anchored symbols (at most `--boundary-max`, default 40), `--files all` every indexed file; with a change recorded, every changed file at head and the base text of the changed files go in too; the symbol index in it is pruned to what the viewer can draw with `--files referenced` or `boundary` and whole with `--files all` (`--embed-index` overrides) and packed (the summary line says `index 0.3 MB (1.3 MB as plain JSON, pruned from 9.0 MB)`) |
@@ -1258,6 +1260,39 @@ tests, and the symbols with no test. Without a range it re-prints the analysis o
 `core/src/languages.ts` classifies every `FileLanguage` with a code display name or `undefined` for config
 and other text. Its derived `CODE_LANGUAGES` set is shared by code search and repo drafts; Rust participates
 in both, and its draft service boxes carry `tech: Rust`. Adding a language requires a classification.
+
+**GitHub PR inputs.** `pr.ts` parses GitHub.com URLs, `owner/repo#number`, or `owner/repo` plus a number.
+It calls `gh api --hostname github.com repos/<owner>/<repo>/pulls/<number>` using existing access,
+validates the response identity and records the returned full base/head SHAs, repositories and branch names.
+Only GitHub reads occur. Existing `gh`/git authentication and network access to GitHub are required;
+the command does not log in, prompt for credentials, comment, publish or start a service.
+
+`pr-checkout.ts` creates a separate repository in a fresh `input-*` directory under
+`$XDG_CACHE_HOME/xpl/pr` (otherwise `~/.cache/xpl/pr`), or `--cache-dir`. Canonical paths must stay outside
+both the developer's root/working directory and their git top level. No developer branch, ref, index or
+working file is written. Git hooks and submodule recursion are disabled. The base SHA is fetched first;
+head fetch tries its exact SHA in the base repository, the GitHub PR head ref, then the fork's exact SHA
+when known. A fetched ref is accepted only when the originally resolved head commit exists locally;
+a moved ref never silently substitutes another head. Each fetch has depth one, no tags or submodules.
+The head is checked out detached. Index output refuses repository-supplied `.explainer` symlinks, and
+head indexing uses fresh extraction with no repository-supplied cache. `--precise off` is the default;
+`auto` and `require` explicitly opt into optional analysis tools and their toolchain/network requirements.
+
+The CLI-only `PrInputManifest` has `schemaVersion: 1`, `kind: "github-pr-input"`, preparation time,
+`pr` identity, `change`, `sources`, `index`, head `analysis` and `warnings`. `change` uses the existing
+rename-aware `computeChange` over **API base..head**, not a computed merge base. `sources` retains each
+changed path, optional old path and before/after states: `text` with exact git text, `absent` for an added
+file's before or a deleted file's after, or `unavailable` with a reason (including binary source).
+`index` carries its relative path, full head commit, SHA-256 of the saved index, indexed path/hash manifest
+and language trust labels. Callers/tests come from head only, with existing precise/heuristic labels;
+they do not prove runtime impact or exhaustive test coverage. The input manifest is published atomically
+last and made read-only. Each run gets a separate directory; earlier manifests are never replaced.
+
+Failures remove only that run's owned directory and produce no input/ready result. A killed process can
+leave `.xpl-pr-owned.json`; explicit `cleanup` checks its canonical cache/directory ownership before removal.
+Stop any consumers before cleanup. Inputs are retained until cleanup; no timer removes them. This is
+preparation only: installed-agent handoff, base/head recheck, supersession and ready result/export remain
+future work. An input manifest alone must never be promoted as a ready or current version.
 
 **`xpl draft change|repo|path`** prints a patch that `xpl apply` accepts as it is: views, groups, overlays,
 participants, steps, anchors and a tour, with `TODO: <what to write>` in every text (tour notes as `### TODO:
