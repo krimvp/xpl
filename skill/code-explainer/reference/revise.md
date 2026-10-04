@@ -15,7 +15,7 @@ The returned `runId` names `.explainer/revisions/<runId>/run.json`. The journal 
 
 The guide stays unchanged. Resolution updates location-only moves and index metadata in memory, retaining prose, hashes and provenance. Drifted claims need reading and fresh anchors. Missing anchors remain present. Compare original ranges/context with current source; do not infer freshness from equal source hashes. The hashes identify indexed snapshots, which can be stale.
 
-Each request's element and optional view bound its patch. A selected sequence/tour step can be updated through its enclosing view/tour with `stepsUpdate`. Add explicit `--include <id,id>` at selection for extra existing or new explanation IDs needed by an expansion or repair. Guide title/audience cannot be changed through this operation. Read all user-owned fields before writing.
+Each request's selected element bounds its patch. The optional `view` records the reader's open view; it grants no permission to edit that view or sibling steps. A selected flow/sequence/tour step allows only that step's `stepsUpdate` through its enclosing view/tour. Whole-view edits require feedback selecting the view itself or an explicit `--include <view-id>` at selection. Add explicit `--include <id,id>` for extra existing or new explanation IDs needed by an expansion or repair. Guide title/audience cannot be changed through this operation. Read all user-owned fields before writing.
 
 ## Propose and inspect
 
@@ -41,7 +41,7 @@ For each ordinary patch, use `xpl apply <name> /tmp/patch.json --dry-run --index
 xpl revise myguide --run <runId> --proposal /tmp/proposal.json -o /tmp/proposal-review.json
 ```
 
-Review output contains `changes: [{id, before, after}]`, supporting `source: [{file, side, text}]`, the resolution report, protected-field warnings and readiness findings. Plain output prints BEFORE/AFTER and SOURCE blocks; `--json` emits the packet. The CLI refuses edits outside the selected scope and patches that change only protected content. Unfinished previews can be inspected but cannot be accepted as ready artifacts.
+Review output contains `changes: [{id, before, after}]`, supporting `source: [{file, side, text}]`, the resolution report, protected-field warnings and readiness findings. Plain output prints BEFORE/AFTER and SOURCE blocks, skipped-field warnings and detailed readiness findings with repair hints; `--json` emits the packet. The CLI refuses edits outside the selected scope and patches that change only protected content. Unfinished previews can be inspected but cannot be accepted as ready artifacts.
 
 ## Decide the exact subset, then accept
 

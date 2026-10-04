@@ -1,7 +1,9 @@
 import { resolve } from "node:path";
 import type { CommandSpec } from "../command.js";
 import { CliError } from "../errors.js";
+import { renderIssues } from "../format.js";
 import { atomicWrite, jsonFile } from "../fsutil.js";
+import { describeReadiness } from "../readiness.js";
 import { selectRevision, continueRevision } from "../revision.js";
 
 export const reviseCommand: CommandSpec = {
@@ -12,8 +14,10 @@ export const reviseCommand: CommandSpec = {
   details: [
     "Select immutable feedback IDs after xpl index. The guide is preserved; anchors are resolved in memory.",
     "A chosen agent supplies --proposal JSON: [{id, patch}], with ordinary xpl apply patches, actor llm.",
-    "Each patch is limited to its request's element/view and explicit --include IDs (including new IDs).",
-    "Guide title/audience and user-owned fields stay protected. Reviews show explanation before/after and source.",
+    "Each patch is limited to its request's selected element and explicit --include IDs (including new IDs).",
+    "Feedback's view is reading context; whole-view edits require selecting or explicitly including the view.",
+    "Selected steps allow only their stepsUpdate through the enclosing view/tour.",
+    "Guide title/audience and user-owned fields stay protected. Reviews show before/after, source, warnings and readiness findings.",
     "--decisions reads [{id, status, reason, reconciliation?, missing?}]: one per selected request.",
     "Status is addressed, rejected, unresolved or outdated. Only addressed patches enter the candidate.",
     'Outdated accepted context needs an author reconciliation reason. missing is [{id, action: "reanchor"|"remove"}],',
@@ -94,10 +98,9 @@ export const reviseCommand: CommandSpec = {
             (c) => `${c.id}\nBEFORE\n${jsonFile(c.before)}AFTER\n${jsonFile(c.after)}`,
           ),
           ...packet.source.map((s) => `SOURCE ${s.file}@${s.side}\n${s.text ?? "missing source"}`),
+          ...renderIssues(packet.issues),
           ...("readiness" in packet && packet.readiness
-            ? [
-                `Readiness: ${packet.readiness.ready ? "ready" : "blocked"} (${packet.readiness.errors} errors).`,
-              ]
+            ? [describeReadiness(packet.readiness)]
             : []),
           packet.state === "done"
             ? "Committed decisions; selected outcomes recorded."

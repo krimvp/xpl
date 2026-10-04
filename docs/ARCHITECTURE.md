@@ -1461,8 +1461,12 @@ and `xpl view` always serves the whole index.
 **Explicit revision** (`cli/revision.ts`, `xpl revise`). The installed skill asks the chosen agent for
 ordinary `ExplainerPatch` values, grouped by selected request ID. The CLI calls no model. Selection forces
 fresh index/source comparison, even under `XPL_SKIP_STALE_CHECK`, and resolves anchors in memory without
-writing the guide. Per-request patches are bounded to their element/view and author-listed extra/new IDs
-(`--include`). Title/audience cannot change; core `llm` provenance rules protect user-owned content.
+writing the guide. Per-request patches are bounded to their selected element and author-listed extra/new IDs
+(`--include`). Feedback's optional `view` records reading context and grants no edit scope. A selected step
+allows only its `stepsUpdate` through the enclosing view/tour; whole-view changes require that view to be
+selected or explicitly included. Title/audience cannot change; core `llm` provenance rules protect user-owned
+content. Plain reviews show patch warnings and detailed readiness findings with repair hints, alongside the
+explanation before/after and source.
 
 A run lives in `.explainer/revisions/<uuid>/run.json`; `previous.json` retains the previous artifact.
 Generated paths are excluded from discovery. Selection and continuation reject generated directory aliases

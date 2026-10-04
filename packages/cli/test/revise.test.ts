@@ -4,7 +4,7 @@ import { syncBuiltinESMExports } from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { artifactIdentity, type Explainer } from "@xpl/core";
-import { appendRequest, readRequests } from "../src/requests.js";
+import { appendRequest, importRequests, readRequests } from "../src/requests.js";
 import {
   applyStdin,
   cloneDir,
@@ -79,6 +79,120 @@ async function reviewed(root: string) {
   return run;
 }
 
+it.each([
+  { selected: "flow:1", target: "flow:2", allowed: false },
+  { selected: "flow:1", target: "flow:1", allowed: true },
+  { selected: "view:flow", target: "flow:2", allowed: true },
+])(
+  "bounds viewer feedback on $selected when changing $target",
+  async ({ selected, target, allowed }) => {
+    const root = cloneDir(demo);
+    const initial = await applyStdin(root, {
+      views: [
+        {
+          id: "view:flow",
+          type: "flow",
+          title: "Dispatch flow",
+          participants: ["sym:src/runner.ts#Runner.dispatch", "file:src/queue.ts"],
+          steps: ["flow:1", "flow:2"].map((id) => ({
+            id,
+            from: "sym:src/runner.ts#Runner.dispatch",
+            to: "file:src/queue.ts",
+            kind: "call",
+            label: "Take the next job",
+            summary: "The runner takes a queued job.",
+            anchors: [{ file: "src/runner.ts", symbol: "Runner.dispatch", role: "definition" }],
+          })),
+        },
+      ],
+    });
+    expect(initial.code, initial.out + initial.err).toBe(0);
+    const before = readJson<Explainer>(root, ".explainer/demo.explainer.json");
+    const at = "2026-10-04T12:00:00.000Z";
+    // The viewer records its open view even when the reader selects just one step.
+    await importRequests(root, [
+      {
+        id: "viewer-request",
+        kind: "correct",
+        elementId: selected,
+        at,
+        context: artifactIdentity(before, fullIndex(root)),
+        note: "Clarify which job the runner takes.",
+        view: "view:flow",
+        label: selected === "view:flow" ? "Dispatch flow" : "Take the next job",
+        range: { file: "src/runner.ts", fromLine: 20, toLine: 25, side: "head" },
+        outcome: {
+          revision: 0,
+          status: "pending",
+          reason: "Awaiting an explicit revision pass.",
+          at,
+        },
+      },
+    ]);
+    const selection = await xplJson(root, "revise", "demo", "--select", "viewer-request");
+    expect(selection.code, selection.out).toBe(0);
+    const run = selection.json.runId;
+    const proposed = writeFile(
+      makeTempDir(),
+      "proposal.json",
+      JSON.stringify([
+        {
+          id: "viewer-request",
+          patch: {
+            views: [
+              {
+                id: "view:flow",
+                type: "flow",
+                ...(selected === "view:flow" ? { title: "Taking the oldest job" } : {}),
+                stepsUpdate: [{ id: target, summary: "The runner takes the oldest queued job." }],
+              },
+            ],
+          },
+        },
+      ]),
+    );
+    const review = await xplJson(root, "revise", "demo", "--run", run, "--proposal", proposed);
+    expect(review.code, review.out).toBe(allowed ? 0 : 1);
+    if (!allowed) {
+      expect(review.json.error).toMatch(/changes view:flow outside its selected scope/);
+      expect(readJson(root, ".explainer/demo.explainer.json")).toEqual(before);
+      expect(readRequests(root).requests[0]!.outcome.status).toBe("pending");
+      return;
+    }
+    const decisions = writeFile(
+      makeTempDir(),
+      "decisions.json",
+      JSON.stringify([
+        { id: "viewer-request", status: "addressed", reason: "Checked the selected explanation." },
+      ]),
+    );
+    expect((await xpl(root, "revise", "demo", "--run", run, "--decisions", decisions)).code).toBe(
+      0,
+    );
+    const accepted = await xplJson(root, "revise", "demo", "--run", run, "--accept");
+    expect(accepted.code, accepted.out).toBe(0);
+    const next = readJson<Explainer>(root, ".explainer/demo.explainer.json");
+    const flow = next.views.find((v) => v.id === "view:flow")!;
+    expect(flow.type).toBe("flow");
+    if (flow.type !== "flow") throw new Error("Expected a flow view");
+    expect(flow.steps.map((step) => [step.id, step.summary])).toEqual([
+      [
+        "flow:1",
+        target === "flow:1"
+          ? "The runner takes the oldest queued job."
+          : "The runner takes a queued job.",
+      ],
+      [
+        "flow:2",
+        target === "flow:2"
+          ? "The runner takes the oldest queued job."
+          : "The runner takes a queued job.",
+      ],
+    ]);
+    expect(flow.title).toBe(selected === "view:flow" ? "Taking the oldest job" : "Dispatch flow");
+  },
+);
+
 it("retains the exact reviewed source and diff after acceptance and later source edits", async () => {
   const root = cloneDir(demo);
   const run = await reviewed(root);
@@ -94,6 +208,37 @@ it("retains the exact reviewed source and diff after acceptance and later source
   expect(history.json.state).toBe("done");
   expect(history.json.changes).toEqual(review.json.changes);
   expect(history.json.source).toEqual(review.json.source);
+});
+
+it("prints skipped user-field warnings and readiness repair findings in plain reviews", async () => {
+  const root = cloneDir(demo);
+  await feedback(root, "correct-runner", "sym:src/runner.ts#Runner.dispatch");
+  const selection = await xplJson(root, "revise", "demo", "--select", "correct-runner");
+  expect(selection.code, selection.out).toBe(0);
+  const recorded = JSON.parse(readFileSync(proposal, "utf8")).slice(0, 1);
+  recorded[0].patch.nodes[0].summary = "TODO: explain how dispatch runs a job.";
+  const file = writeFile(makeTempDir(), "proposal.json", JSON.stringify(recorded));
+  const review = await xpl(
+    root,
+    "revise",
+    "demo",
+    "--run",
+    selection.json.runId,
+    "--proposal",
+    file,
+  );
+  expect(review.code, review.out + review.err).toBe(0);
+  expect
+    .soft(review.out)
+    .toContain(
+      "warning nodes[0].label [sym:src/runner.ts#Runner.dispatch]: label of sym:src/runner.ts#Runner.dispatch was edited by the user and is kept as it is",
+    );
+  expect.soft(review.out).toContain("Not ready (workspace): 1 errors, 0 warnings.");
+  expect
+    .soft(review.out)
+    .toContain(
+      "error sym:src/runner.ts#Runner.dispatch.summary (todo-left): 1 TODO placeholder left: text nobody has written yet write what the TODO asks for, check it against the code, and remove the TODO",
+    );
 });
 
 it("refuses a journal directory alias into source before writing generated artifacts", async () => {

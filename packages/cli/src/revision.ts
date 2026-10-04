@@ -21,6 +21,7 @@ import {
   type ExplainerPatch,
   type FeedbackRequest,
   type FeedbackStatus,
+  type Issue,
   type ReadinessReport,
   type ResolveReport,
 } from "@xpl/core";
@@ -256,11 +257,7 @@ function decisions(ctx: Ctx, revision: Revision, file: string): Decision[] {
 
 function boundedPatch(revision: Revision, proposal: Proposal): void {
   const request = selected(revision, proposal.id);
-  const allowed = new Set([
-    request.elementId,
-    ...(request.view ? [request.view] : []),
-    ...revision.include,
-  ]);
+  const allowed = new Set([request.elementId, ...revision.include]);
   const patch = proposal.patch;
   if (patch.title !== undefined || patch.scope !== undefined)
     throw new CliError("revision patches cannot change the guide title or audience");
@@ -383,7 +380,7 @@ function packet(
   revision: Revision,
   next: Explainer,
   readiness?: ReadinessReport,
-  issues: unknown[] = [],
+  issues: Issue[] = [],
 ) {
   const before = owners(revision.previous);
   const after = owners(next);
