@@ -1,8 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { FeedbackRequest } from "@xpl/core";
 import { importRequests, readRequests, recordOutcomes } from "../src/requests.js";
 import { makeTempDir } from "./helpers.js";
-import { chmodSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, promises as filesystem } from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
 import { join } from "node:path";
 
 const context = { explainerHash: "explanation-1", sourceHash: "source-1" };
@@ -87,17 +88,31 @@ describe("durable feedback", () => {
     const original = request("retry");
     await importRequests(root, [original]);
     const directory = join(root, ".explainer");
-    const before = readFileSync(join(directory, "requests.json"), "utf8");
-    chmodSync(directory, 0o555);
+    const path = join(directory, "requests.json");
+    const before = readFileSync(path);
+    // Refuse publication only after the real lock, read, merge and temporary-file write succeed.
+    const rename = vi.spyOn(filesystem, "rename").mockImplementationOnce(async (from, to) => {
+      expect(existsSync(join(directory, "requests.json.lock"))).toBe(true);
+      expect(to).toBe(path);
+      expect(JSON.parse(readFileSync(String(from), "utf8"))[0].outcome).toMatchObject({
+        status: "unresolved",
+        reason: "Run failed.",
+      });
+      throw Object.assign(new Error("Publication failed"), { code: "EIO", syscall: "rename" });
+    });
+    syncBuiltinESMExports();
     try {
       await expect(
         recordOutcomes(root, [
           { id: "retry", context, status: "unresolved", reason: "Run failed." },
         ]),
-      ).rejects.toThrow();
-      expect(readFileSync(join(directory, "requests.json"), "utf8")).toBe(before);
+      ).rejects.toMatchObject({ code: "EIO", syscall: "rename" });
+      expect(rename).toHaveBeenCalledTimes(1);
+      expect(readFileSync(path)).toEqual(before);
+      expect(readdirSync(directory)).toEqual(["requests.json"]);
     } finally {
-      chmodSync(directory, 0o755);
+      rename.mockRestore();
+      syncBuiltinESMExports();
     }
     await recordOutcomes(root, [
       { id: "retry", context, status: "unresolved", reason: "Run failed; retry available." },
