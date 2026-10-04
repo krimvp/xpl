@@ -3,7 +3,8 @@
 A tiny job runner: an in-memory queue, a pool of workers, retry with exponential backoff,
 dead-lettering, and an event bus that feeds metrics. It is a fixture for the xpl code explainer;
 the same design is implemented in `../ts-jobrunner`, `../py-jobrunner` and `../go-jobrunner`.
-Java indexing is an experiment. This fixture has no xpl explainer yet.
+Java indexing uses a generated SCIP artifact; the [workflow](../../docs/java-scip.md) includes a checked
+explainer and bundle example. Java stays `text` with imported symbols and range highlighting.
 
 ## Layout
 
@@ -58,3 +59,8 @@ scip-java index -- --batch-mode clean test-compile
 This generates `index.scip` for main and test sources. The artifact and `target/` are ignored.
 The release launcher reports its version as `0.0.0-SNAPSHOT`; pin the release download and its checksum.
 No existing fixture's line numbers are changed. The `retry` mapping remains at lines 13–16 of the config.
+
+The xpl checkout helper `scripts/java-scip.ts ROOT FRESH_OUTPUT_DIR` captures source hashes before
+generation, checks them after a successful build and writes a manifest for `xpl index --scip`. Use a
+fixture copy and keep artifacts outside it. The workflow above records exact downloads, UTF-16 columns,
+missing-tool/build diagnostics, partial coverage and unsupported call/implementation classification.

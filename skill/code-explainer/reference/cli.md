@@ -114,6 +114,12 @@ unclassified occurrences remain limits in `analysis`; diagnostics identify omitt
 reads/writes/imports and mentions of known types become precise references. Calls and ambiguous inheritance
 flags are unsupported. Overloads receive source-ordered `~N` suffixes; reordering can change IDs.
 
+For Java, the checkout helper `scripts/java-scip.ts ROOT FRESH_OUTPUT_DIR [-- MAVEN_ARGS...]` runs the
+pinned scip-java/Maven workflow and writes a source-bound manifest only after successful generation and
+stable before/after hashes. Java stays `text`; use explicit views and `search` without `--code`. The
+[Java workflow](../../../docs/java-scip.md) records the producer/JDK/Maven pins, fixture and Gson commands,
+literal ranges, failure fallback, losses and measured costs. It includes a checked overload bundle example.
+
 ## `xpl outline [--under <id>] [--depth n] [--kind k,...] [--keys] [--limit n]`
 
 One line per element: `<id>  <kind>  <first>-<last line>  in=<fan-in> out=<fan-out>`. `in`/`out` count references into/out of the element's subtree (calls, imports, type uses, reads), so high numbers mark hubs; a symbol's calls of itself stay inside it and are not counted, and `recursive` after the counts marks a symbol that calls itself (`"recursive": true` in `--json`). `[+n]` = n children below the depth limit. Default depth 2, `--limit 400` lines. Config keys (yaml, json, toml) are hidden unless `--keys`. `--kind method,function` lists only symbols of those kinds (`class interface function method type variable enum key other`; repeat or comma-separate) together with the dirs, files and parent symbols that hold a match, so each keeps its place. The `repo` line carries the name `xpl new` records (from `package.json`, `go.mod`, `pyproject.toml`, the git remote), not the directory's.

@@ -161,6 +161,9 @@ including sources without a language pack (their language stays `text`). Documen
 or an artifact-bound manifest of pre-generation source hashes. Missing full ranges, parents and call
 classification remain explicit limits. See the [artifact workflow](skill/code-explainer/reference/cli.md#generated-scip-artifacts).
 
+The [Java workflow](docs/java-scip.md) pins scip-java/JDK/Maven and demonstrates fixture/Gson imports and a
+checked bundle. Java retains checked declarations and type references; calls and inheritance remain unsupported.
+
 Precise is not free on a big repository: on django (2,900 Python files) it took 4 minutes and 4.6 GB, on
 sympy and prometheus 9 to 10 minutes and up to 7 GB, where `--precise off` took 15 to 40 seconds. The heuristic
 references agree with SCIP on 97 to 99.9% of the calls both find (see
