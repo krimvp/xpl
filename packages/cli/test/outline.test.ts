@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it } from "vitest";
-import { indexedFixture, xpl, xplJson } from "./helpers.js";
+import { indexedFixture, makeTempDir, writeFile, xpl, xplJson } from "./helpers.js";
 
 let dir: string;
 beforeAll(async () => {
@@ -344,5 +344,30 @@ describe("xpl outline", () => {
     );
     expect(asJson.json.ok).toBe(false);
     expect(asJson.json.candidates).toContain("file:src/runner.ts");
+  });
+});
+
+describe("xpl outline: recursion", () => {
+  it("marks a symbol that calls itself, which the fan counts leave out", async () => {
+    const dir = makeTempDir("xpl-outline-rec-");
+    writeFile(
+      dir,
+      "a.ts",
+      "export function fact(n: number): number { return n ? n * fact(n - 1) : 1; }\nexport function once(): number { return fact(3); }\n",
+    );
+    expect((await xpl(dir, "index", "--precise", "off")).code).toBe(0);
+    const { out } = await xpl(dir, "outline", "--under", "file:a.ts");
+    expect(out).toContain("sym:a.ts#fact  function  1-1  in=1 out=0  recursive");
+    expect(out).toMatch(/sym:a\.ts#once  function  2-2  in=0 out=1$/m);
+    const { json } = await xplJson<{ tree: { children: { id: string; recursive?: boolean }[] } }>(
+      dir,
+      "outline",
+      "--under",
+      "file:a.ts",
+    );
+    expect(json.tree.children.map((c) => [c.id, c.recursive ?? false])).toEqual([
+      ["sym:a.ts#fact", true],
+      ["sym:a.ts#once", false],
+    ]);
   });
 });

@@ -22,6 +22,8 @@ export interface OutlineNode {
   symbols?: number;
   fanIn: number;
   fanOut: number;
+  /** A symbol that calls itself (recursion; not counted in `fanIn` / `fanOut`, which cross its boundary). */
+  recursive?: boolean;
   /** Children below the depth limit that are not shown. */
   more: number;
   /** Config keys of this file that are not shown (see `--keys`). */
@@ -32,6 +34,8 @@ export interface OutlineNode {
 export interface Fans {
   fanIn: Map<string, number>;
   fanOut: Map<string, number>;
+  /** Element ids of the symbols that call themselves. */
+  recursive: Set<string>;
 }
 
 const fanCache = new WeakMap<IndexModel, Fans>();
@@ -73,16 +77,19 @@ export function computeFans(model: IndexModel): Fans {
     return value;
   };
   const bump = (map: Map<string, number>, key: string) => map.set(key, (map.get(key) ?? 0) + 1);
+  const recursive = new Set<string>();
   for (const ref of model.refs) {
     const from = chain(ref.from);
     const to = chain(ref.to);
     if (from.length === 0 || to.length === 0) continue;
+    if (ref.kind === "call" && ref.from === ref.to && model.symbol(ref.from))
+      recursive.add(from[0]!);
     const fromSet = new Set(from);
     const toSet = new Set(to);
     for (const id of from) if (!toSet.has(id)) bump(fanOut, id);
     for (const id of to) if (!fromSet.has(id)) bump(fanIn, id);
   }
-  const fans = { fanIn, fanOut };
+  const fans = { fanIn, fanOut, recursive };
   fanCache.set(model, fans);
   return fans;
 }
@@ -180,6 +187,7 @@ function makeNode(model: IndexModel, fans: Fans, id: string, opts: OutlineOption
     id,
     fanIn: fans.fanIn.get(id) ?? 0,
     fanOut: fans.fanOut.get(id) ?? 0,
+    ...(fans.recursive.has(id) ? { recursive: true } : {}),
     more: 0,
     hiddenKeys: 0,
     children: [] as OutlineNode[],
@@ -260,7 +268,7 @@ export function renderOutline(root: OutlineNode): string[] {
       parts.push(node.kind);
       if (node.type === "dir") parts.push(`${node.files} file${node.files === 1 ? "" : "s"}`);
       if (node.range) parts.push(rangeText(node.range));
-      parts.push(`in=${node.fanIn} out=${node.fanOut}`);
+      parts.push(`in=${node.fanIn} out=${node.fanOut}${node.recursive ? "  recursive" : ""}`);
     }
     let line = `${"  ".repeat(indent)}${parts.join("  ")}`;
     if (node.more > 0) line += `  [+${node.more}]`;
@@ -284,6 +292,7 @@ export function outlineJson(node: OutlineNode): unknown {
     ...(node.symbols !== undefined ? { symbols: node.symbols } : {}),
     fanIn: node.fanIn,
     fanOut: node.fanOut,
+    ...(node.recursive ? { recursive: true } : {}),
     ...(node.more > 0 ? { more: node.more } : {}),
     ...(node.hiddenKeys > 0 ? { hiddenKeys: node.hiddenKeys } : {}),
     ...(node.children.length > 0 ? { children: node.children.map(outlineJson) } : {}),

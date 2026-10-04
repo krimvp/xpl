@@ -128,6 +128,13 @@ The viewer draws heuristic edges lighter, and Claude treats them as hints.
 Go files, for one) keep their heuristic references and are named in a warning; the summary then reads
 `refs: precise 10/11 (scip-go@0.2.7), 1 heuristic`.
 
+Precise is not free on a big repository: on django (2,900 Python files) it took 4 minutes and 4.6 GB, on
+sympy and prometheus 9 to 10 minutes and up to 7 GB, where `--precise off` took 15 to 40 seconds. The heuristic
+references agree with SCIP on 97 to 99.9% of the calls both find (see
+[the stress test](docs/review-2026-10-03-stress.md)), so start a big repository with `--precise off` and index
+precisely when the answer depends on generics, untyped parameters or narrowing. Where a SCIP tool is wrong or
+blind (a re-export it misnames, generated code with `//line` directives), the heuristic reference is kept.
+
 ## Repository layout
 
 | Path                   | What                                                                                                     |
