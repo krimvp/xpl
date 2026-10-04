@@ -6,6 +6,9 @@
  * commit id and language summary. xpl owns IDs, hashes, source evidence and canonical positions.
  */
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { performance } from "node:perf_hooks";
+import { randomUUID } from "node:crypto";
+import { ExtractionCache, type ExtractionReport } from "./extraction-cache.js";
 import { statSync } from "node:fs";
 import { join, normalize, resolve } from "node:path";
 import { splitLines, INDEX_SCHEMA, RELATIONSHIP_CAPABILITIES } from "@xpl/core";
@@ -44,6 +47,8 @@ import type { ProviderInput, ProviderSource } from "./providers.js";
 export interface BuildIndexOptions {
   /** Directory to index; paths in the index are relative to it. */
   root: string;
+  /** Reuse file-local extraction in .explainer/cache. false neither reads nor writes the cache. */
+  cache?: boolean;
   /** Commit id override. Default: short HEAD when clean, else `wt-<hash>` (see §3). */
   commit?: string;
   /** Precise (SCIP) references: "auto" falls back to heuristic refs, "require" fails instead, "off" skips. */
@@ -57,6 +62,8 @@ export interface BuildIndexOptions {
 export interface BuildIndexResult {
   index: SymbolIndex;
   warnings: string[];
+  extraction: ExtractionReport;
+  work: { heuristicResolutionMs: number; semanticMs: number; semanticRuns: number };
 }
 
 async function resolveRoot(root: string): Promise<string> {
@@ -194,7 +201,10 @@ export async function buildIndex(opts: BuildIndexOptions): Promise<BuildIndexRes
     files.map((f) => f.path),
   );
   const sourceText = new Map(sources.map((s) => [s.path, s.text]));
+  const extractionCache = new ExtractionCache(root, opts.cache !== false);
+  const work = { heuristicResolutionMs: 0, semanticMs: 0, semanticRuns: 0 };
   const providerInput: ProviderInput = {
+    extractionCache,
     root,
     sources,
     files,
@@ -206,6 +216,7 @@ export async function buildIndex(opts: BuildIndexOptions): Promise<BuildIndexRes
   };
   const syntax = new TreeSitterProvider();
   const syntaxOutput = await syntax.analyze(providerInput);
+  work.heuristicResolutionMs = syntax.resolutionMs;
   const normalizedSyntax = normalizeProvider(providerInput, syntaxOutput);
   let { entries, refs, providers } = mergeProvider({ entries: [], refs: [] }, normalizedSyntax);
   const additionalProviders = opts.providers ?? indexProviders();
@@ -295,7 +306,14 @@ export async function buildIndex(opts: BuildIndexOptions): Promise<BuildIndexRes
               diagnostics.push(message);
             },
           };
-          const output = await provider.analyze(input);
+          const started = performance.now();
+          if (provider.mode !== "syntax") work.semanticRuns++;
+          let output;
+          try {
+            output = await provider.analyze(input);
+          } finally {
+            if (provider.mode !== "syntax") work.semanticMs += performance.now() - started;
+          }
           const normalized = normalizeProvider(input, output);
           observed = normalized.analysis;
           const advertised = Object.keys(provider.capabilities);
@@ -431,7 +449,7 @@ export async function buildIndex(opts: BuildIndexOptions): Promise<BuildIndexRes
     analysis,
     ...(resources.length > 0 ? { resources } : {}),
   };
-  return { index, warnings };
+  return { index, warnings, extraction: extractionCache.report, work };
 }
 
 function summarizeLanguages(
@@ -474,7 +492,7 @@ function summarizeLanguages(
 }
 
 /** Contents `.explainer/.gitignore` must have: the generated indexes are never committed. */
-const GITIGNORE_LINE = "index-*.json";
+const GITIGNORE_LINES = ["index-*.json", "cache/"];
 
 /**
  * Write `<root>/.explainer/index-<commit>.json` (pretty-printed) and make sure `.explainer/.gitignore`
@@ -492,17 +510,18 @@ export async function writeIndex(root: string, index: SymbolIndex): Promise<stri
   } catch {
     existing = undefined;
   }
-  if (existing === undefined) {
-    await writeFile(ignorePath, `${GITIGNORE_LINE}\n`);
-  } else if (!existing.split(/\r?\n/).some((line) => line.trim() === GITIGNORE_LINE)) {
+  const missing = GITIGNORE_LINES.filter(
+    (line) => !(existing ?? "").split(/\r?\n/).some((old) => old.trim() === line),
+  );
+  if (missing.length) {
     await writeFile(
       ignorePath,
-      `${existing}${existing === "" || existing.endsWith("\n") ? "" : "\n"}${GITIGNORE_LINE}\n`,
+      `${existing ?? ""}${existing && !existing.endsWith("\n") ? "\n" : ""}${missing.join("\n")}\n`,
     );
   }
 
   const target = join(dir, `index-${commit}.json`);
-  const temp = join(dir, `.index-${commit}.json.${process.pid}.tmp`);
+  const temp = join(dir, `.index-${commit}.json.${randomUUID()}.tmp`);
   await writeFile(temp, `${JSON.stringify(index, null, 2)}\n`);
   await rename(temp, target);
   return normalize(target);

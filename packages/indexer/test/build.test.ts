@@ -339,7 +339,7 @@ describe("buildIndex", () => {
 });
 
 describe("writeIndex", () => {
-  it("writes .explainer/index-<commit>.json pretty-printed, and a .gitignore for index-*.json", async () => {
+  it("writes .explainer/index-<commit>.json pretty-printed, and a .gitignore for indexes and cache entries", async () => {
     const dir = makeDir(project);
     const { index } = await buildIndex({ root: dir, commit: "abc1234", precise: "off" });
     const path = await writeIndex(dir, index);
@@ -348,7 +348,9 @@ describe("writeIndex", () => {
     expect(text).toBe(`${JSON.stringify(index, null, 2)}\n`);
     expect(text.startsWith('{\n  "schema": "code-explainer/index@0"')).toBe(true);
     expect(JSON.parse(text)).toEqual(index);
-    expect(readFileSync(join(dir, ".explainer", ".gitignore"), "utf8")).toBe("index-*.json\n");
+    expect(readFileSync(join(dir, ".explainer", ".gitignore"), "utf8")).toBe(
+      "index-*.json\ncache/\n",
+    );
   });
 
   it("works for relative roots", async () => {
@@ -359,22 +361,22 @@ describe("writeIndex", () => {
     expect(existsSync(path)).toBe(true);
   });
 
-  it("keeps a customised .gitignore, adding the pattern once", async () => {
+  it("keeps a customised .gitignore, adding each pattern once", async () => {
     const dir = makeDir({ ".explainer/.gitignore": "requests.json" });
     const { index } = await buildIndex({ root: dir, commit: "c1", precise: "off" });
     await writeIndex(dir, index);
     await writeIndex(dir, index);
     expect(readFileSync(join(dir, ".explainer", ".gitignore"), "utf8")).toBe(
-      "requests.json\nindex-*.json\n",
+      "requests.json\nindex-*.json\ncache/\n",
     );
     writeFileSync(join(dir, ".explainer", ".gitignore"), "a\nindex-*.json\nb\n");
     await writeIndex(dir, index);
     expect(readFileSync(join(dir, ".explainer", ".gitignore"), "utf8")).toBe(
-      "a\nindex-*.json\nb\n",
+      "a\nindex-*.json\nb\ncache/\n",
     );
   });
 
-  it("overwrites an index of the same commit, leaves others, and leaves no temp files", async () => {
+  it("overwrites the same commit concurrently, leaves other indexes, and leaves no temp files", async () => {
     const dir = makeDir(project);
     const one = (await buildIndex({ root: dir, commit: "c1", precise: "off" })).index;
     const two = (await buildIndex({ root: dir, commit: "c2", precise: "off" })).index;
@@ -382,10 +384,11 @@ describe("writeIndex", () => {
     await writeIndex(dir, two);
     writeFileSync(join(dir, "README.md"), "# Changed\n");
     const changed = (await buildIndex({ root: dir, commit: "c1", precise: "off" })).index;
-    await writeIndex(dir, changed);
+    await Promise.all([writeIndex(dir, changed), writeIndex(dir, changed)]);
     const { readdirSync } = await import("node:fs");
     expect(readdirSync(join(dir, ".explainer")).sort()).toEqual([
       ".gitignore",
+      "cache",
       "index-c1.json",
       "index-c2.json",
     ]);

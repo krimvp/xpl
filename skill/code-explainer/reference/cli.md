@@ -44,9 +44,9 @@ explicitly. Other agents can read the instructions, but their integration is unv
 Local reading, `index --precise off`, viewing and HTML export use bundled assets after setup.
 Precise tools/dependencies and agent authoring can have separate network requirements.
 
-## `xpl index [--precise auto|off|require] [--commit c] [--scip artifact|manifest.json]`
+## `xpl index [--precise auto|off|require] [--commit c] [--no-cache] [--scip artifact|manifest.json]`
 
-Builds `.explainer/index-<commit>.json` (and `.explainer/.gitignore` with `index-*.json`). The commit id is the short HEAD when the repo root is a clean git top-level, else `wt-<hash>` of the files. Files: `git ls-files` (or a walk that skips `node_modules`, `dist`, dot-dirs…), text only, ≤ 1 MB.
+Builds `.explainer/index-<commit>.json` (and `.explainer/.gitignore` with `index-*.json` and `cache/`). The commit id is the short HEAD when the repo root is a clean git top-level, else `wt-<hash>` of the files. Files: `git ls-files` (or a walk that skips `node_modules`, `dist`, dot-dirs…), text only, ≤ 1 MB.
 
 ```
 $ xpl index
@@ -58,6 +58,26 @@ text        1 file     0 symbols     refs: none
 typescript  8 files    121 symbols   refs: precise (scip-typescript@0.4.0)
 yaml        1 file     16 symbols    refs: none
 ```
+
+Repeated builds reuse file-local tree-sitter and Rust tags facts from `.explainer/cache`. Source discovery,
+hashes, heuristic resolution, resource resolution and semantic providers still run in full. `--no-cache`
+reads and writes no cached facts. Changed paths/languages, exact source content, provider/profile revisions,
+options and actual grammar/runtime bytes change the key. Syntax recovery diagnostics are reused; failed
+extraction is retried. Repository configuration is read fresh by resolution/tools, so a cached caller can
+resolve differently after a declaration, re-export or alias change. Missing/corrupt entries fall back safely.
+Keep scratch files and artifacts outside the indexed repository; `.explainer/cache` is excluded automatically.
+Device/inode identities detect whether `.explainer`, `cache` or `extraction-v1` aliases a repository
+directory, including an empty target. Such aliases bypass cache reads and writes, whether created by a
+symlink, bind mount or another mechanism. Isolated external targets remain usable. The cache directory is
+fixed; no option or environment variable redirects it.
+
+The summary also prints scoped extraction hits/misses and wall milliseconds, plus fresh heuristic-resolution
+time and semantic runs/time. `--json` includes `extraction` (`enabled`, `scope`, `hits`, `misses`,
+`writeFailures`, `wallMs`, optional `bypassReason`) and `work` (`heuristicResolutionMs`, `semanticMs`,
+`semanticRuns`). The text summary also prints the bypass reason. Plain text
+without an extractor counts as neither a hit nor a miss. Measurements cover analysis stages, not CLI startup
+or index serialization. These incidental measurements are outside the saved index and exported viewers.
+Removing `.explainer/cache` reclaims old content entries; `--no-cache` leaves them untouched.
 
 The summary is followed by **Analysis coverage** and per-capability outcomes labeled by analysis provider
 (`supported`, `partial`, `unsupported`, `failed`) with analyzed file counts and limits.
