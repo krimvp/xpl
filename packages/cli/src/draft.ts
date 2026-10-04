@@ -57,7 +57,13 @@ import {
   type Reference,
   type TextCache,
 } from "@xpl/core";
-import { findOutsideSystems, isLibrary, ownModules, readmeUsage } from "./outside.js";
+import {
+  findOutsideSystems,
+  isLibrary,
+  ownModules,
+  readmeUsage,
+  workspaceParents,
+} from "./outside.js";
 
 export const DRAFT_LIMITS = {
   /** Boxes on a drafted map (the skill: 4-8). */
@@ -109,6 +115,10 @@ const NOT_DESIGN: readonly string[] = [
   "**/benchmark/**",
   "**/docs/**",
   "**/scripts/**",
+  "**/bench/**",
+  "**/fixtures/**",
+  "**/__fixtures__/**",
+  "**/__mocks__/**",
 ];
 
 const CODE_LANGUAGES: ReadonlySet<string> = new Set([
@@ -1435,9 +1445,15 @@ export function draftRepo(input: DraftInput): Draft {
     return n;
   };
 
+  // the package folders of a monorepo (`packages/*`): one box per package, not one for them all
+  const workspaces = new Set(workspaceParents(texts));
+
   /** The parts of the code under `root`: 4-8 boxes, and what did not fit on the map. */
   const partsOf = (root: string): { units: Unit[]; offMap: Unit[] } => {
     let units = children(root);
+    if (root === "" && units.some((u) => u.dir && workspaces.has(u.path))) {
+      units = units.flatMap((u) => (u.dir && workspaces.has(u.path) ? children(u.path) : [u]));
+    }
     // one folder for the whole tree (src, the package): start below it
     for (let hops = 0; hops < 8 && units.length === 1 && units[0]!.dir; hops++) {
       units = children(units[0]!.path);
@@ -1448,6 +1464,16 @@ export function draftRepo(input: DraftInput): Draft {
       if (!biggest) break;
       const inner = children(biggest.path);
       if (inner.length <= 1 || units.length - 1 + inner.length > L.mapBoxes) break;
+      units = units.flatMap((u) => (u === biggest ? inner : [u]));
+    }
+    // one folder with most of the code (sympy/ next to bin/, release/ and setup.py): its parts are the map,
+    // the eight that are linked the most, whatever else is around it
+    for (let hops = 0; hops < 8; hops++) {
+      const total = units.reduce((n, u) => n + u.files.length, 0);
+      const biggest = units.filter((u) => u.dir).sort((a, b) => b.files.length - a.files.length)[0];
+      if (!biggest || biggest.files.length * 4 < total * 3) break;
+      const inner = children(biggest.path);
+      if (inner.length <= 1) break;
       units = units.flatMap((u) => (u === biggest ? inner : [u]));
     }
     let offMap: Unit[] = [];

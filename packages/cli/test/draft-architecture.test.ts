@@ -341,3 +341,63 @@ describe("xpl draft repo: a library with its programs in cmd/", () => {
     );
   });
 });
+
+describe("xpl draft repo: monorepos and one big package", () => {
+  it("a pnpm workspace's packages are one box each, and benchmarks and fixtures are no part", async () => {
+    const dir = makeTempDir("xpl-arch-mono-");
+    writeFile(dir, "package.json", '{ "name": "mono", "private": true }\n');
+    writeFile(dir, "pnpm-workspace.yaml", "packages:\n  - 'packages/*'\n  - \"tools/*\" # tools\n");
+    for (const pkg of ["core", "dom", "server", "shared"]) {
+      writeFile(dir, `packages/${pkg}/package.json`, `{ "name": "@mono/${pkg}" }\n`);
+      writeFile(
+        dir,
+        `packages/${pkg}/src/index.ts`,
+        `export function ${pkg}(): number { return 1; }\n`,
+      );
+    }
+    writeFile(dir, "packages/bench/run.ts", "export function bench(): void {}\n");
+    writeFile(dir, "packages/core/fixtures/db.ts", 'import pg from "pg";\nexport const db = pg;\n');
+    writeFile(dir, "tools/release/main.ts", "export function release(): void {}\n");
+    writeFile(dir, "rollup.config.js", "export default {};\n");
+    writeFile(dir, "scripts/build.js", "export function build() {}\n");
+    const { patch, notes } = await drafted(dir);
+    const include = graph(patch, "view:overview")?.include ?? [];
+    expect(include).toEqual(
+      expect.arrayContaining([
+        "dir:packages/core/src",
+        "dir:packages/dom/src",
+        "dir:packages/server/src",
+        "dir:packages/shared/src",
+        "dir:tools/release",
+      ]),
+    );
+    expect(include.join(" ")).not.toMatch(/bench|fixtures|grp:postgres/);
+    expect(notes.join("\n")).not.toContain("PostgreSQL");
+  });
+
+  it("a folder with most of the code is opened, whatever is around it", async () => {
+    const dir = makeTempDir("xpl-arch-big-");
+    writeFile(dir, "setup.py", "from setuptools import setup\nsetup()\n");
+    writeFile(dir, "bin/run.py", "def main():\n    return 1\n");
+    writeFile(dir, "release/tag.py", "def tag():\n    return 1\n");
+    writeFile(dir, "tools/lint.py", "def lint():\n    return 1\n");
+    writeFile(dir, "ci/check.py", "def check():\n    return 1\n");
+    writeFile(dir, "isympy.py", "def shell():\n    return 1\n");
+    writeFile(dir, "lib/__init__.py", "");
+    for (const sub of ["core", "polys", "matrices", "printing", "sets"]) {
+      writeFile(dir, `lib/${sub}/__init__.py`, "");
+      for (const f of ["a", "b", "c"])
+        writeFile(dir, `lib/${sub}/${f}.py`, `def ${f}():\n    return 1\n`);
+    }
+    const { patch } = await drafted(dir);
+    expect(graph(patch, "view:overview")?.include).toEqual(
+      expect.arrayContaining([
+        "dir:lib/core",
+        "dir:lib/polys",
+        "dir:lib/matrices",
+        "dir:lib/printing",
+        "dir:lib/sets",
+      ]),
+    );
+  });
+});

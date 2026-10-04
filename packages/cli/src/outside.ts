@@ -615,3 +615,42 @@ export function readmeUsage(
   }
   return undefined;
 }
+
+/**
+ * The folders that hold the packages of a JS/TS monorepo: the parents of the `dir/*` patterns of the root
+ * `pnpm-workspace.yaml` (`packages:`) and of the root package.json's `workspaces` (an array, or `{packages}`).
+ * `packages/*` gives `packages`; a pattern that names one package, or a negation, gives nothing.
+ */
+export function workspaceParents(texts: TextCache): string[] {
+  const patterns: string[] = [];
+  const pnpm = texts.text("pnpm-workspace.yaml");
+  if (pnpm !== undefined) {
+    let inPackages = false;
+    for (const line of pnpm.split("\n")) {
+      if (/^packages\s*:/.test(line)) inPackages = true;
+      else if (/^\S/.test(line)) inPackages = false;
+      else if (inPackages) {
+        const item = /^\s*-\s*["']?([^"'#]+?)["']?\s*(?:#.*)?$/.exec(line)?.[1];
+        if (item) patterns.push(item);
+      }
+    }
+  }
+  const pkg = texts.text("package.json");
+  if (pkg !== undefined) {
+    try {
+      const workspaces = (JSON.parse(pkg) as { workspaces?: unknown }).workspaces;
+      const list = Array.isArray(workspaces)
+        ? workspaces
+        : (workspaces as { packages?: unknown } | undefined)?.packages;
+      if (Array.isArray(list)) for (const p of list) if (typeof p === "string") patterns.push(p);
+    } catch {
+      // not JSON: no workspaces
+    }
+  }
+  const parents = new Set<string>();
+  for (const pattern of patterns) {
+    const m = /^(?:\.\/)?([^!*][^*]*?)\/\*{1,2}$/.exec(pattern.trim());
+    if (m) parents.add(m[1]!);
+  }
+  return [...parents].sort();
+}
