@@ -19,7 +19,10 @@ describe("xpl refs", () => {
     // Queue.requeue: lines 76-78, offsets 34..36 (what a call-site anchor's span uses)
     expect(out).toContain(`  call  ${REQUEUE}  (src/runner.ts:76-78, heuristic)  +34..36`);
     expect(out).toContain("  call  sym:src/queue.ts#Queue.pop  (src/runner.ts:46, heuristic)  +4");
-    const sites = lines.slice(2).map((l) => Number(/src\/runner\.ts:(\d+)/.exec(l)![1]));
+    const sites = lines
+      .slice(2)
+      .filter((l) => l.startsWith("  "))
+      .map((l) => Number(/src\/runner\.ts:(\d+)/.exec(l)![1]));
     expect(sites).toEqual([...sites].sort((a, b) => a - b));
   });
 
@@ -402,5 +405,39 @@ describe("xpl refs: recursion", () => {
       "sym:a.ts#outer",
     ]);
     expect(ids((await calls("file:a.ts", "--out", "--kind", "call")).out)).toEqual([]);
+  });
+});
+
+describe("xpl refs: base classes", () => {
+  it("lists the overrides under a call of a base method, and the base method's callers above an override", async () => {
+    const repo = makeTempDir("xpl-refs-override-");
+    writeFile(
+      repo,
+      "a.ts",
+      [
+        "export abstract class Node {",
+        "  abstract visit(): number;",
+        "  walk(): number {",
+        "    return this.visit();",
+        "  }",
+        "}",
+        "export class Leaf extends Node {",
+        "  visit(): number {",
+        "    return 1;",
+        "  }",
+        "}",
+        "",
+      ].join("\n"),
+    );
+    expect((await xpl(repo, "index", "--precise", "off")).code).toBe(0);
+    const out = (await xpl(repo, "refs", "a.ts#Node.walk", "--out")).out;
+    expect(out).toContain("  call  sym:a.ts#Node.visit  (a.ts:4, heuristic)  +1");
+    expect(out).toContain("    override  sym:a.ts#Leaf.visit  (a.ts:8-10, heuristic)");
+    const into = (await xpl(repo, "refs", "a.ts#Leaf.visit", "--in")).out;
+    expect(into).toContain("in (0, plus 1 via base class):");
+    expect(into).toContain(
+      "  override  sym:a.ts#Node.visit  (a.ts:2, heuristic)  [the base method it overrides; its callers may run this one]",
+    );
+    expect(into).toContain("    call  sym:a.ts#Node.walk  (a.ts:4, heuristic)  +1");
   });
 });

@@ -12,8 +12,8 @@
  * - member level: `Impl.run implements Base.run`, from a precise (SCIP) index. Used as they are.
  *
  * An interface that extends another one passes its implementers on to it (whoever implements `ReadCloser`
- * implements `Reader`). Overriding a method of a base class is an `extends` relation, not an implementation,
- * and is not covered.
+ * implements `Reader`). Overriding a method of a base class is an `extends` relation, not an implementation:
+ * `overridesOf` and `overriddenBy` (below) answer it for the languages whose calls dispatch at run time.
  */
 import { dirOf, type IndexModel } from "./index-model.js";
 import type { IndexedSymbol, Reference, SymbolId } from "./schema.js";
@@ -187,4 +187,85 @@ export function implementedBy(index: IndexModel, id: SymbolId): Implementation[]
     }
   }
   return sorted(index, out, id);
+}
+
+// ─── Overrides ────────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Languages whose method calls dispatch on the class of the object at run time, so that a call of a base class's
+ * method may run a subclass's override (TS / JS, Python). Go is not one: embedding promotes methods, and a call
+ * on the embedded type never runs the outer type's method of the same name.
+ */
+const VIRTUAL_LANGUAGES: ReadonlySet<string> = new Set(["typescript", "tsx", "javascript", "python"]);
+
+/** Constructors are not overridden in this sense: `new Base()` or `super().__init__()` never runs a subclass's. */
+const CONSTRUCTORS: ReadonlySet<string> = new Set(["constructor", "__init__", "__new__"]);
+
+/** The class a method of a dispatching language belongs to, and the method's name; undefined otherwise. */
+function overridable(
+  index: IndexModel,
+  sym: IndexedSymbol,
+): { owner: IndexedSymbol; name: string } | undefined {
+  if (sym.kind !== "method" || !VIRTUAL_LANGUAGES.has(index.file(sym.file)?.language ?? "")) return;
+  const name = nameOf(sym.path);
+  if (CONSTRUCTORS.has(name)) return undefined;
+  const owner = index.parentSymbol(sym.id);
+  return owner?.kind === "class" ? { owner, name } : undefined;
+}
+
+/**
+ * The methods of subclasses (transitively) that override `id`, a method of a class, sorted by file and line. A
+ * call of `id` may run any of them. Empty for anything else, and for Go.
+ */
+export function overridesOf(index: IndexModel, id: SymbolId): Implementation[] {
+  const sym = index.symbol(id);
+  const target = sym ? overridable(index, sym) : undefined;
+  if (!target) return [];
+  const out = new Map<SymbolId, Implementation>();
+  const seen = new Set<SymbolId>([target.owner.id]);
+  const visit = (cls: SymbolId, resolution: Implementation["resolution"]): void => {
+    for (const ref of index.refsTo(cls)) {
+      if (ref.kind !== "extends") continue;
+      const sub = index.symbol(ref.from);
+      if (sub?.kind !== "class" || seen.has(sub.id)) continue;
+      seen.add(sub.id);
+      const via = resolution === "precise" && ref.resolution === "precise" ? "precise" : "heuristic";
+      const member = index.symbolAt(sub.file, `${sub.path}.${target.name}`);
+      if (member?.kind === "method") add(out, member.id, via);
+      visit(sub.id, via);
+    }
+  };
+  visit(target.owner.id, "precise");
+  return sorted(index, out, id);
+}
+
+/**
+ * The method that `id` overrides: the nearest base class (breadth first, bases in their order) that has a
+ * method of that name. At most one; empty for anything else, and for Go.
+ */
+export function overriddenBy(index: IndexModel, id: SymbolId): Implementation[] {
+  const sym = index.symbol(id);
+  const target = sym ? overridable(index, sym) : undefined;
+  if (!target) return [];
+  const seen = new Set<SymbolId>([target.owner.id]);
+  let level: { cls: IndexedSymbol; resolution: Implementation["resolution"] }[] = [
+    { cls: target.owner, resolution: "precise" },
+  ];
+  while (level.length > 0) {
+    const next: typeof level = [];
+    for (const { cls, resolution } of level) {
+      for (const ref of index.refsFrom(cls.id)) {
+        if (ref.kind !== "extends") continue;
+        const base = index.symbol(ref.to);
+        if (base?.kind !== "class" || seen.has(base.id)) continue;
+        seen.add(base.id);
+        const via = resolution === "precise" && ref.resolution === "precise" ? "precise" : "heuristic";
+        const member = index.symbolAt(base.file, `${base.path}.${target.name}`);
+        if (member?.kind === "method") return [{ id: member.id, resolution: via }];
+        next.push({ cls: base, resolution: via });
+      }
+    }
+    level = next;
+  }
+  return [];
 }

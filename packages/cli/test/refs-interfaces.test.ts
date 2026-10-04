@@ -296,10 +296,13 @@ describe("TypeScript: implements clauses", () => {
 });
 
 describe("languages without implements references are unaffected", () => {
-  it("Python fixture: no impl lines, no notes", async () => {
+  it("Python fixture: no impl lines; the test subclasses that override a callee are counted, not listed", async () => {
     const py = await indexedFixture("py-jobrunner");
     const { out } = await xpl(py, "refs", "jobrunner/runner.py#Runner.dispatch", "--kind", "call");
-    expect(out).not.toContain("impl");
-    expect(out).not.toContain("left out");
+    expect(out).not.toMatch(/^\s+(impl|override) /m);
+    expect(out).not.toContain("implementations in test files");
+    expect(out).toMatch(
+      /^\(\d+ overrides? in test files left out: test subclasses; --tests lists them\)$/m,
+    );
   });
 });

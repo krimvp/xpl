@@ -37,8 +37,10 @@ export const refsCommand: CommandSpec = {
     "methods of the implementing types), and with --depth n they are expanded in place of the bodiless",
     "declaration. Implementations in test files (test doubles) are left out unless --tests, or the call is in",
     "a test file itself. In --in, a method that implements an interface method also lists that method as",
-    "`impl`, with the interface method's callers below it. Python base classes and TS abstract classes are",
-    "`extends`, not `implements`: not hopped.",
+    "`impl`, with the interface method's callers below it. Base classes (TS, JS, Python; not Go embedding) are",
+    "hopped the same way as `override` lines: under a call, --out lists the subclass methods that override the",
+    "callee (the call may run any of them); --in lists the base method a method overrides, with its callers below.",
+    "Constructors are not hopped.",
   ],
   options: {
     in: { type: "boolean", desc: "References into the element (who uses it)" },
@@ -109,6 +111,7 @@ export const refsCommand: CommandSpec = {
           : {}),
         truncated: trees.some(({ tree }) => tree.truncated),
         hiddenTestImplementations: trees.reduce((sum, { tree }) => sum + tree.hiddenTests, 0),
+        hiddenTestOverrides: trees.reduce((sum, { tree }) => sum + tree.hiddenTestOverrides, 0),
       });
       return 0;
     }
@@ -119,7 +122,12 @@ export const refsCommand: CommandSpec = {
         lines.push(`${direction}: none${kinds ? ` (kind ${[...kinds].join(", ")})` : ""}`);
         continue;
       }
-      const via = tree.hops > 0 ? `, plus ${tree.hops} via interface` : "";
+      const hopsOf = (kind: string) => tree.nodes.filter((n) => n.entry.kind === kind).length;
+      const overrides = direction === "in" ? hopsOf("override") : 0;
+      const viaInterface = tree.hops - overrides;
+      const via =
+        (viaInterface > 0 ? `, plus ${viaInterface} via interface` : "") +
+        (overrides > 0 ? `, plus ${overrides} via base class` : "");
       lines.push(
         `${direction} (${tree.total}${via}${tree.truncated && tree.total > tree.nodes.length ? `, first ${tree.nodes.length} shown` : ""}):`,
       );
@@ -132,6 +140,12 @@ export const refsCommand: CommandSpec = {
     if (hidden > 0) {
       lines.push(
         `(${plural(hidden, "implementation")} in test files left out: test doubles; --tests lists them)`,
+      );
+    }
+    const overrides = trees.reduce((sum, { tree }) => sum + tree.hiddenTestOverrides, 0);
+    if (overrides > 0) {
+      lines.push(
+        `(${plural(overrides, "override")} in test files left out: test subclasses; --tests lists them)`,
       );
     }
     ctx.out(lines.join("\n"));

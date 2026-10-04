@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { implementationsOf, implementedBy } from "../src/index.js";
+import { implementationsOf, implementedBy, overriddenBy, overridesOf } from "../src/index.js";
 import { makeWorld } from "./helpers.js";
 
 /**
@@ -175,5 +175,54 @@ describe("implementedBy", () => {
     expect(ids(implementedBy(go.model, "runner/retry_test.go#recordingQueue.Requeue"))).toEqual([
       "runner/runner.go#JobQueue.Requeue",
     ]);
+  });
+});
+
+describe("overrides (base classes of TS and Python; not Go)", () => {
+  const world = (language: "typescript" | "python" | "go") =>
+    makeWorld({
+      files: [{ path: `a.${language}`, lines: 40, language }],
+      symbols: [
+        { id: `a.${language}#Node`, kind: "class", start: 1, end: 9 },
+        { id: `a.${language}#Node.visit`, kind: "method", start: 2, end: 3 },
+        { id: `a.${language}#Node.constructor`, kind: "method", start: 4, end: 5 },
+        { id: `a.${language}#Node.walk`, kind: "method", start: 6, end: 8 },
+        { id: `a.${language}#Leaf`, kind: "class", start: 10, end: 19 },
+        { id: `a.${language}#Leaf.visit`, kind: "method", start: 11, end: 12 },
+        { id: `a.${language}#Leaf.constructor`, kind: "method", start: 13, end: 14 },
+        { id: `a.${language}#Red`, kind: "class", start: 20, end: 29 },
+        { id: `a.${language}#Red.visit`, kind: "method", start: 21, end: 22 },
+        { id: `a.${language}#Odd`, kind: "class", start: 30, end: 39 },
+        { id: `a.${language}#Odd.walk`, kind: "method", start: 31, end: 32 },
+      ],
+      refs: [
+        // Red extends Leaf extends Node; Odd extends Leaf; a cycle back to Node does not loop
+        { from: `a.${language}#Leaf`, to: `a.${language}#Node`, kind: "extends", line: 10 },
+        { from: `a.${language}#Red`, to: `a.${language}#Leaf`, kind: "extends", line: 20 },
+        { from: `a.${language}#Odd`, to: `a.${language}#Leaf`, kind: "extends", line: 30 },
+        { from: `a.${language}#Node`, to: `a.${language}#Red`, kind: "extends", line: 1 },
+      ],
+    }).model;
+  const ids = (list: { id: string }[]) => list.map((i) => i.id);
+
+  it("lists the overrides in every subclass below, and the nearest base method above", () => {
+    const m = world("typescript");
+    expect(ids(overridesOf(m, "a.typescript#Node.visit"))).toEqual([
+      "a.typescript#Leaf.visit",
+      "a.typescript#Red.visit",
+    ]);
+    expect(ids(overridesOf(m, "a.typescript#Node.walk"))).toEqual(["a.typescript#Odd.walk"]);
+    expect(ids(overriddenBy(m, "a.typescript#Red.visit"))).toEqual(["a.typescript#Leaf.visit"]);
+    expect(ids(overriddenBy(m, "a.typescript#Odd.walk"))).toEqual(["a.typescript#Node.walk"]);
+    expect(overriddenBy(m, "a.typescript#Node.walk")).toEqual([]);
+  });
+
+  it("leaves out constructors, Go (embedding is not overriding) and what is not a method", () => {
+    const m = world("typescript");
+    expect(overridesOf(m, "a.typescript#Node.constructor")).toEqual([]);
+    expect(overriddenBy(m, "a.typescript#Leaf.constructor")).toEqual([]);
+    expect(overridesOf(m, "a.typescript#Node")).toEqual([]);
+    expect(ids(overridesOf(world("python"), "a.python#Node.visit"))).toHaveLength(2);
+    expect(overridesOf(world("go"), "a.go#Node.visit")).toEqual([]);
   });
 });

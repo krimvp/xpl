@@ -11,6 +11,8 @@ import {
   elementIdForSymbolId,
   implementationsOf,
   implementedBy,
+  overriddenBy,
+  overridesOf,
   isTestFile,
   parseId,
   type IndexModel,
@@ -58,7 +60,12 @@ export interface RefEntry {
  * `site` describe the symbol the line shows (`offset` spans all of it).
  */
 export interface ImplEntry extends Omit<RefEntry, "kind"> {
-  kind: "impl";
+  /**
+   * `impl`: an interface hop. `override`: a hop through a base class (TS, JS, Python): under a call of a method,
+   * the subclass methods that override it (the call may run any of them); for a method's callers, the base
+   * method it overrides, with that method's callers below.
+   */
+  kind: "impl" | "override";
 }
 
 /** What a line of the reference tree shows: a reference, or an interface hop. */
@@ -162,8 +169,8 @@ export function groupByKind(entries: readonly RefEntry[]): RefEntry[] {
  * printed id is the referencing symbol itself, and for a method's outgoing references it is the subject.)
  */
 export function refLine(entry: TreeEntry, showFrom = false): string {
-  if (entry.kind === "impl") {
-    return `impl  ${entry.id}  (${entry.file}:${linesText(entry.site)}, ${entry.resolution})`;
+  if (entry.kind === "impl" || entry.kind === "override") {
+    return `${entry.kind}  ${entry.id}  (${entry.file}:${linesText(entry.site)}, ${entry.resolution})`;
   }
   const from = showFrom ? ` in ${entry.from}` : "";
   return `${entry.kind}  ${entry.id}  (${entry.file}:${linesText(entry.site)}, ${entry.resolution})  ${offsetText(entry.offset)}${from}`;
@@ -171,7 +178,12 @@ export function refLine(entry: TreeEntry, showFrom = false): string {
 
 /** Does an outgoing entry of `subject` need its referencing symbol spelled out? */
 export function needsFrom(entry: TreeEntry, direction: RefDirection, subject: string): boolean {
-  return direction === "out" && entry.kind !== "impl" && entry.from !== subject;
+  return (
+    direction === "out" &&
+    entry.kind !== "impl" &&
+    entry.kind !== "override" &&
+    entry.from !== subject
+  );
 }
 
 export function countByKind(entries: readonly RefEntry[]): string {
@@ -205,6 +217,8 @@ export interface RefTree {
   hops: number;
   /** Implementations that were left out because they sit in test files (`--tests` shows them). */
   hiddenTests: number;
+  /** The same for overrides (subclass methods in test files). */
+  hiddenTestOverrides: number;
   /** First-level references left out because of `maxChildren` (only for a hierarchy: `depth` 2 or more). */
   more: number;
 }
@@ -220,10 +234,11 @@ function implEntry(
   implementer: IndexedSymbol,
   implemented: IndexedSymbol,
   resolution: Reference["resolution"],
+  kind: ImplEntry["kind"] = "impl",
 ): ImplEntry {
   const shown = direction === "out" ? implementer : implemented;
   return {
-    kind: "impl",
+    kind,
     id: `sym:${shown.id}`,
     from: `sym:${implementer.id}`,
     to: `sym:${implemented.id}`,
@@ -273,6 +288,7 @@ export function buildRefTree(
     path: new Set<string>([target.id]),
     hopped: new Set<string>(),
     hiddenTests: 0,
+    hiddenTestOverrides: 0,
   };
   const cap = opts.maxChildren !== undefined && opts.maxChildren > 0 ? opts.maxChildren : Infinity;
   let total = 0;
@@ -303,7 +319,12 @@ export function buildRefTree(
   const addImplementations = (node: RefNode, depth: number): void => {
     const shown = symbolOf(model, node.entry.id);
     if (!shown) return;
-    const impls = implementationsOf(model, shown.id);
+    const impls: { id: string; resolution: Reference["resolution"]; kind: ImplEntry["kind"] }[] = [
+      ...implementationsOf(model, shown.id).map((i) => ({ ...i, kind: "impl" as const })),
+      ...(node.entry.kind === "call"
+        ? overridesOf(model, shown.id).map((i) => ({ ...i, kind: "override" as const }))
+        : []),
+    ];
     if (impls.length === 0) return;
     if (state.hopped.has(node.entry.id)) {
       node.note ??= "seen";
@@ -312,12 +333,14 @@ export function buildRefTree(
     state.hopped.add(node.entry.id);
     // Test doubles are noise for production code that calls the interface, and the point when a test does.
     const showTests =
-      opts.tests === true || (node.entry.kind !== "impl" && isTestFile(node.entry.file));
+      opts.tests === true ||
+      (node.entry.kind !== "impl" && node.entry.kind !== "override" && isTestFile(node.entry.file));
     const visible = impls.filter((impl) => {
       const symbol = model.symbol(impl.id);
       if (!symbol) return false;
       if (!showTests && isTestFile(symbol.file)) {
-        state.hiddenTests++;
+        if (impl.kind === "override") state.hiddenTestOverrides++;
+        else state.hiddenTests++;
         return false;
       }
       return true;
@@ -331,7 +354,7 @@ export function buildRefTree(
       }
       state.budget--;
       const child: RefNode = {
-        entry: implEntry("out", model.symbol(impl.id)!, shown, impl.resolution),
+        entry: implEntry("out", model.symbol(impl.id)!, shown, impl.resolution, impl.kind),
       };
       if (depth > 1) expandId(child, child.entry.id, depth - 1);
       (node.children ??= []).push(child);
@@ -344,7 +367,11 @@ export function buildRefTree(
     if (current.type !== "symbol" || !["method", "variable"].includes(current.symbol.kind))
       return [];
     const out: RefNode[] = [];
-    for (const impl of implementedBy(model, current.symbolId)) {
+    const hops = [
+      ...implementedBy(model, current.symbolId).map((i) => ({ ...i, kind: "impl" as const })),
+      ...overriddenBy(model, current.symbolId).map((i) => ({ ...i, kind: "override" as const })),
+    ];
+    for (const impl of hops) {
       const implemented = model.symbol(impl.id);
       if (!implemented) continue;
       if (state.budget <= 0) {
@@ -353,7 +380,7 @@ export function buildRefTree(
       }
       state.budget--;
       const node: RefNode = {
-        entry: implEntry("in", current.symbol, implemented, impl.resolution),
+        entry: implEntry("in", current.symbol, implemented, impl.resolution, impl.kind),
       };
       if (state.hopped.has(node.entry.id)) node.note = "seen";
       else if (state.path.has(node.entry.id)) node.note = "cycle";
@@ -416,6 +443,7 @@ export function buildRefTree(
     truncated: state.truncated,
     hops,
     hiddenTests: state.hiddenTests,
+    hiddenTestOverrides: state.hiddenTestOverrides,
     more: rootMore,
   };
 }
@@ -436,7 +464,9 @@ export function renderRefTree(
     const hop =
       direction === "in" && node.entry.kind === "impl"
         ? "  [the interface member it implements; its callers follow]"
-        : "";
+        : direction === "in" && node.entry.kind === "override"
+          ? "  [the base method it overrides; its callers may run this one]"
+          : "";
     const line = refLine(node.entry, needsFrom(node.entry, direction, subject));
     out.push(`${"  ".repeat(indent)}${line}${hop}${note}`);
     if (node.children) {
