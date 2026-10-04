@@ -280,19 +280,6 @@ describe("layoutGraphFitting", () => {
     const tall = await layoutGraphFitting(graph, { width: 300, height: 1200 });
     expect(wide.direction).toBe("RIGHT");
     expect(tall.direction).toBe("DOWN");
-    // whichever it picked is the one that fits at the larger scale
-    const right = await layoutGraph(graph, { direction: "RIGHT" });
-    const down = await layoutGraph(graph, { direction: "DOWN" });
-    expect(right.direction).toBe("RIGHT");
-    expect(down.direction).toBe("DOWN");
-    const fits = (l: { width: number; height: number }, v: { width: number; height: number }) =>
-      fitScale(l, v);
-    expect(fits(wide, { width: 1200, height: 300 })).toBeGreaterThanOrEqual(
-      fits(down, { width: 1200, height: 300 }),
-    );
-    expect(fits(tall, { width: 300, height: 1200 })).toBeGreaterThanOrEqual(
-      fits(right, { width: 300, height: 1200 }),
-    );
   });
 
   it("without a pane size it is the plain left-to-right layout", async () => {

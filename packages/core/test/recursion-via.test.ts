@@ -97,6 +97,11 @@ describe("flow: recurse and return links", () => {
     expect(errors(terminal)[0]!.message).toContain('only "return" links');
   });
 
+  it("rejects a link to a step that is not in the view", () => {
+    const bad = flow([{ next: [{ step: "walk:404" }] }]);
+    expect(errors(bad).map((i) => i.path)).toEqual(["views[0].steps[0].next[0]"]);
+  });
+
   it("a return may leave out its step (back to the caller); no other link may", () => {
     const back = flow([
       { next: [{ step: "walk:1", kind: "recurse" }] },

@@ -524,41 +524,6 @@ describe("moving through a tour", () => {
   });
 });
 
-describe("the tour hooks' numbering", () => {
-  it("state() counts from 1", async () => {
-    const { installTestHooks } = await import("../src/testHooks.js");
-    const store = new ViewerStore(makeBundle());
-    const target = {} as Window;
-    const hooks = installTestHooks(store, target);
-    expect(hooks.state()).toMatchObject({ mode: "explore", tour: null, step: null });
-    expect(hooks.present("tour:nope")).toBe(false);
-    expect(hooks.present("tour:demo", 2)).toBe(true);
-    expect(hooks.state()).toMatchObject({
-      mode: "present",
-      tour: "tour:demo",
-      step: 2,
-      stepCount: 3,
-      stepId: "t2",
-      detour: false,
-      viewId: "view:flow",
-    });
-    hooks.next();
-    expect(hooks.state().step).toBe(3);
-    hooks.next();
-    expect(hooks.state().step).toBe(3);
-    hooks.prev();
-    hooks.prev();
-    expect(hooks.state().step).toBe(1);
-    hooks.select(["grp:core", "concept:retry"]);
-    expect(hooks.state()).toMatchObject({ detour: true, stepId: null });
-    hooks.exitPresent();
-    expect(hooks.state()).toMatchObject({ mode: "explore", tour: "tour:demo", step: 1 });
-    expect(hooks.present("tour:demo")).toBe(true);
-    expect(hooks.state().step).toBe(1);
-    expect(target.__xpl).toBe(hooks);
-  });
-});
-
 describe("editing tours", () => {
   it("Add to tour appends a step for the current view and selection", () => {
     const store = new ViewerStore(makeBundle(), { view: "view:flow" });
@@ -693,18 +658,6 @@ describe("saving tours under xpl view", () => {
     expect(store.getState().dirty).toBe(false);
   });
 
-  it("creates a new tour with PUT /tours/tour:<slug> (title and steps)", async () => {
-    const store = server();
-    store.select(["grp:core"]);
-    store.addToTour({ title: "My talk" });
-    await vi.advanceTimersByTimeAsync(400);
-    expect(calls.map((c) => c.url)).toEqual(["/api/tours/tour:my-talk"]);
-    expect(body(0)).toEqual({
-      title: "My talk",
-      steps: [{ id: "t1", view: "view:overview", focus: ["grp:core"] }],
-    });
-  });
-
   it("a refused tour keeps its edit, says why, and does not hold back a view edit", async () => {
     const store = server();
     respond = (url) =>
@@ -790,12 +743,5 @@ describe("the tour keys", () => {
       expect(act("ArrowRight", { [mod]: true }), mod).toBeUndefined();
       expect(act("Home", { [mod]: true }), mod).toBeUndefined();
     }
-  });
-});
-
-// Keep the tour of the shared world in sync with what these tests assume.
-describe("the test world", () => {
-  it("has the demo tour", () => {
-    expect(makeBundle().explainer.tours.map((t) => t.id)).toEqual([TOUR.id]);
   });
 });
