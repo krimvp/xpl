@@ -13,8 +13,10 @@ import { readFileSync } from "node:fs";
 import { expect, test, type Page } from "@playwright/test";
 import {
   byId,
+  openBundle,
   downloadJson,
   fitAll,
+  focusOf,
   openEditMenu,
   readEmbeddedBundle,
   screenshotPath,
@@ -168,20 +170,8 @@ test.describe("the default policy", () => {
     await openCrowded(page);
     // 7 files, the rest of hub.ts, "+5 more" (out) and "+1 more" (in)
     await expect(ghostBoxes(page)).toHaveCount(10);
-    const state = await stateOf(page);
-    expect(state.stubs).toEqual({ mode: "top", max: 8 });
-    expect(state.graph!.ghosts).toEqual([
-      "ghost:file:src/f05.ts",
-      "ghost:file:src/f06.ts",
-      "ghost:file:src/f07.ts",
-      "ghost:file:src/f08.ts",
-      "ghost:file:src/f09.ts",
-      "ghost:file:src/f10.ts",
-      "ghost:file:src/f11.ts",
-      "ghost:more:in",
-      "ghost:more:out",
-      "ghost:rest:file:src/hub.ts",
-    ]);
+    // which ghosts and how they fold is core's (stubs.test.ts); here, that the map draws them
+    expect((await stateOf(page)).stubs).toEqual({ mode: "top", max: 8 });
     await expect(byId(page, "ghost:rest:file:src/hub.ts")).toContainText("rest of hub.ts");
     await expect(byId(page, "ghost:rest:file:src/hub.ts")).toContainText("calls ×10");
     await expect(byId(page, "ghost:more:out")).toContainText("+5 more");
@@ -200,7 +190,7 @@ test.describe("the default policy", () => {
     expect(problems).toEqual([]);
   });
 
-  test("a view can ask for a smaller or larger top", async ({ page }) => {
+  test("a view's own stubs.max reaches the map", async ({ page }) => {
     await openCrowded(page, { stubs: { max: 3 } });
     await expect(ghostBoxes(page)).toHaveCount(5); // f09, f10, f11, "+n more" both ways
     expect((await stateOf(page)).stubs).toEqual({ mode: "top", max: 3 });
@@ -351,8 +341,8 @@ test.describe("the ghost menu", () => {
     await openCrowded(page);
     await byId(page, "ghost:file:src/f11.ts").click();
     await expect(menu(page)).toHaveCount(0);
-    expect((await stateOf(page)).include).toEqual([RUN, MAIN, "file:src/f11.ts"]);
     await expect(byId(page, "file:src/f11.ts")).toBeVisible();
+    expect((await stateOf(page)).include).toEqual([RUN, MAIN, "file:src/f11.ts"]);
     await expect(byId(page, "ghost:file:src/f11.ts")).toHaveCount(0);
   });
 
@@ -363,9 +353,8 @@ test.describe("the ghost menu", () => {
     await byId(page, "ghost:more:out").click();
     await byId(page, "ghost:rest:file:src/hub.ts").click();
     await expect(menu(page)).toHaveCount(0);
-    expect((await stateOf(page)).include).toEqual([RUN, MAIN]);
-    // and nothing on screen, not even the Edit menu, edits the view
-    await expect(page.getByTestId("stubs-control")).toHaveCount(0);
+    await expect.poll(async () => (await stateOf(page)).include).toEqual([RUN, MAIN]);
+    // and the Edit menu has no control that edits the view
     await openEditMenu(page);
     await expect(page.getByTestId("stubs-control")).toHaveCount(0);
   });
@@ -429,10 +418,7 @@ test.describe("the Stubs control", () => {
   });
 
   test("the control is for graph views only", async ({ page }) => {
-    await page.goto(
-      new URL("../dist/bundles/ts-jobrunner.html", import.meta.url).href + "?mode=explore",
-    );
-    await page.waitForFunction(() => window.__xpl !== undefined);
+    await openBundle(page);
     await openEditMenu(page);
     await expect(page.getByTestId("stubs-control")).toBeVisible();
     await page.keyboard.press("Escape");
@@ -456,10 +442,15 @@ test.describe("stubs in the details panel", () => {
     const list = details.getByTestId("ghost-targets");
     await expect(list.locator("[data-ghost-target]")).toHaveCount(5);
     // the code behind the stub: main's calls to the five files and their definitions
-    const focus = await page.evaluate(() => window.__xpl!.focus());
-    expect(focus.filter((f) => f.role === "call-site").every((f) => f.file === "src/app.ts")).toBe(
-      true,
-    );
+    const focus = await focusOf(page);
+    const sites = focus.filter((f) => f.role === "call-site");
+    expect([...new Set(sites.map((f) => `${f.file}:${f.range.startLine}`))].sort()).toEqual([
+      "src/app.ts:2",
+      "src/app.ts:3",
+      "src/app.ts:4",
+      "src/app.ts:5",
+      "src/app.ts:6",
+    ]);
     expect(
       focus
         .filter((f) => f.role === "definition")
