@@ -14,10 +14,17 @@
  *     GET  {api}/bundle               current index, explainer, referenced source and freshness warning
  *     GET  {api}/explainer            the explainer as it is on disk now, with an ETag (304 while unchanged):
  *                                     polled, so what Claude applies shows up without a reload
- *     POST {api}/requests             queue an "explain this" request: JSON `{ kind, id, note?, view?, label? }`
+ *     POST {api}/requests             save a validated FeedbackRequest with stable ID and original snapshot context
  * - without `server` every edit stays in memory (the header offers "Download explainer JSON").
  */
-import { BUNDLE_SCRIPT_ID, parseBundle, type Explainer, type ViewerBundle } from "@xpl/core";
+import {
+  BUNDLE_SCRIPT_ID,
+  parseBundle,
+  parseFeedbackRequest,
+  type Explainer,
+  type ViewerBundle,
+  type FeedbackRequest,
+} from "@xpl/core";
 
 export type LoadedBundle = { ok: true; bundle: ViewerBundle } | { ok: false; error: string };
 
@@ -44,18 +51,7 @@ export function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-/** Body of `POST {api}/requests`. `kind: "expand"` is what `/code-explainer expand <id>` does. */
-export interface ExplainRequest {
-  kind: "expand";
-  /** The element to explain (a node, edge, concept or sequence step id). */
-  id: string;
-  /** What the user wants changed, in their words ("too long", "show the caller"); none = expand it. */
-  note?: string;
-  /** The view the user was looking at. */
-  view?: string;
-  /** Display label of the element, for humans reading the queue. */
-  label?: string;
-}
+export type ExplainRequest = FeedbackRequest;
 
 /** The local `xpl view` API. Every method rejects with an Error whose message is fit to show. */
 export class ServerApi {
@@ -158,6 +154,12 @@ export class ServerApi {
     };
   }
 
+  async requests(): Promise<FeedbackRequest[]> {
+    const response = await this.check(await fetch(this.url("/requests"), { cache: "no-store" }));
+    const data = (await response.json()) as { requests: unknown[] };
+    return data.requests.map(parseFeedbackRequest);
+  }
+
   async postRequest(request: ExplainRequest): Promise<void> {
     await this.check(
       await fetch(this.url("/requests"), {
@@ -167,12 +169,6 @@ export class ServerApi {
       }),
     );
   }
-}
-
-/** The command that does what "Explain this" queues, for people without a server. */
-export function explainCommand(id: string, note?: string): string {
-  const text = note?.trim().replace(/\s+/g, " ");
-  return text ? `/code-explainer feedback ${id} ${text}` : `/code-explainer expand ${id}`;
 }
 
 /**

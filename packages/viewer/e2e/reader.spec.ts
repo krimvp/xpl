@@ -621,11 +621,9 @@ test.describe("the reader's screen", () => {
     await byId(page, "concept:retry-policy").click();
     await page.getByRole("button", { name: "Explain this" }).click();
     await expect(page.locator(".explain-note")).toContainText(
-      "Ask Claude to explain this: paste this into Claude Code.",
+      "Saved in this browser for the next explicit pass.",
     );
-    await expect(page.getByTestId("explain-command")).toHaveText(
-      "/code-explainer expand concept:retry-policy",
-    );
+    await expect(page.getByTestId("explain-command")).toHaveText("/code-explainer feedback");
   });
 });
 

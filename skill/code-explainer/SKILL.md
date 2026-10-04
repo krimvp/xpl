@@ -175,15 +175,16 @@ Patch only what changes, and lint the patch first.
 1. Resolve it to an id and read it: `show <id> --refs`, `outline --under <id> --depth 1`.
 2. Add it and the children worth showing with `includeAdd` on the graph view. A view with `origin: "user"` takes no `llm` edit: use a new view.
 3. `status <name>` names what became visible and has no summary: explain those and only those.
-4. `status` also lists `requests queued by the viewer`: do 1-3 for each (one with a note: `feedback`), then `rm .explainer/requests.json`.
+4. `status` also lists durable feedback. Inspect it with `xpl feedback <name> --json`, select pending or retryable request IDs with current context, and do 1-3 for those. Record only their outcomes with `xpl feedback <name> --outcomes /tmp/outcomes.json`; never delete the store.
 
 ## feedback [<id> <what to change>]
 
-What the user typed under "Explain this" in `xpl view`: the queued requests with a note in `xpl status <name>` (or the one `<id>` given). The note says what to change about that element, in their words: "too long", "wrong, it retries 3 times", "show the caller".
+Reader requests from the Feedback panel or "Explain this", in a saved page or `xpl view`. Saving a request never starts generation. Import an offline `feedback.json` with `xpl feedback <name> --import /path/to/feedback.json`; repeated imports retain local outcomes and deduplicate by stable ID.
 
-1. For each request: read the element and its code (`show <id> --refs`), then make the smallest patch that does what the note asks, by the rules of `writing.md`. More to show is `expand`; a claim the code contradicts is fixed in the text, never by bending the anchor. If the note is wrong about the code, change nothing and say why.
-2. Put all of them in one patch: `xpl lint <name> --patch <file>`, then `xpl apply`. A request without a note is an `expand`.
-3. `rm .explainer/requests.json`, then reply with one line per request: what changed, or why not. The open page shows the change by itself within a few seconds.
+1. Inspect `xpl feedback <name> --json`. Select an explicit batch by request IDs and original `context`. Keep that selection unchanged while working. Requests with `contextStatus: "outdated"` require explicit reconciliation with the reader; never assume their element or range means the same thing in a newer explanation or source snapshot. Legacy unbound requests are outdated too.
+2. For selected pending or retryable requests with current context: read the original element, selected source range and code (`show <id> --refs`). Make the smallest patch the note asks for, by `writing.md`. More to show is `expand`; a contradicted claim is fixed in the text, never by bending the anchor. If the note is wrong, change nothing and explain why. Preserve user-owned fields. Lint and apply the patch, then validate it.
+3. Record one explicit result per selected request with `xpl feedback <name> --outcomes /tmp/outcomes.json`. The file is an array of `{id, context, status, reason}`; copy the request ID and original `{explainerHash, sourceHash}` exactly. Status is `addressed`, `unresolved`, `rejected` or `outdated`, with a concrete reason. A failed pass stays pending or unresolved and retryable. Never delete `.explainer/requests.json`: unselected requests and feedback added during the pass must survive. Outcomes are separate from author notes.
+4. Reply with one line per selected request: what changed or why it could not be handled. `xpl feedback <name> --export /tmp/feedback.json` carries original IDs, context, ranges and outcomes. A live page picks up applied explanation changes; a saved page keeps its original snapshot.
 
 ## make tour
 

@@ -7,6 +7,15 @@
  * the current view, code focus, reverse lookup, matches) lives in derive.ts and is memoised per state.
  */
 import {
+  artifactIdentity,
+  FEEDBACK_SCHEMA,
+  parseFeedbackFile,
+  parseFeedbackRequest,
+  sameFeedbackContent,
+  type FeedbackKind,
+  type FeedbackRequest,
+} from "@xpl/core";
+import {
   asIndexModel,
   codeFocus,
   collapse as collapseView,
@@ -59,6 +68,7 @@ export interface Cursor {
   file: FilePath;
   fromLine: number;
   toLine: number;
+  side?: "base";
 }
 
 export type SaveState =
@@ -169,6 +179,8 @@ export interface ViewerState {
   save: SaveState;
   /** Running under `xpl view`. */
   serverMode: boolean;
+  feedback: FeedbackRequest[];
+  feedbackStorageError?: string;
   /** The live source no longer matches its index; reindex before trusting locations and edges. */
   sourceWarning: string | undefined;
   /**
@@ -250,7 +262,9 @@ export class ViewerStore {
       save: { status: "idle" },
       serverMode: this.api !== undefined,
       sourceWarning: bundle.sourceWarning,
+      feedback: [],
     };
+    this.loadFeedback(bundle.feedback);
     if (this.state.perspective !== "explore") this.reading = this.state.perspective;
     if (present) this.present();
     else if (launch.perspective && asked && launch.step) {
@@ -502,12 +516,26 @@ export class ViewerStore {
    * The caret (or the lines of a selection) moved in an editor. Drives the reverse lookup. Real cursor
    * moves and `window.__xpl.setCursor` both end up here.
    */
-  setCursor(file: FilePath, fromLine: number, toLine: number = fromLine): void {
+  setCursor(
+    file: FilePath,
+    fromLine: number,
+    toLine: number = fromLine,
+    side: "head" | "base" = "head",
+  ): void {
     const from = Math.max(1, Math.floor(fromLine));
     const to = Math.max(from, Math.floor(toLine));
     const cur = this.state.cursor;
-    if (cur && cur.file === file && cur.fromLine === from && cur.toLine === to) return;
-    this.set({ cursor: { file, fromLine: from, toLine: to } });
+    if (
+      cur &&
+      cur.file === file &&
+      cur.fromLine === from &&
+      cur.toLine === to &&
+      (cur.side ?? "head") === side
+    )
+      return;
+    this.set({
+      cursor: { file, fromLine: from, toLine: to, ...(side === "base" ? { side } : {}) },
+    });
   }
 
   clearCursor(): void {
@@ -1068,20 +1096,110 @@ export class ViewerStore {
 
   // ─── Explain requests and export ─────────────────────────────────────────────────────────────
 
-  /**
-   * "Explain this": queues a request on the server (`"queued"`); without one the caller shows the
-   * command to run instead (`"command"`). Rejects with a readable message when the server refuses.
-   */
-  async requestExplain(id: ElementId, note?: string): Promise<"queued" | "command"> {
-    if (!this.api) return "command";
-    const text = note?.trim();
-    await this.api.postRequest({
-      kind: "expand",
-      id,
-      ...(text ? { note: text } : {}),
-      ...(this.state.viewId !== undefined ? { view: this.state.viewId } : {}),
+  private feedbackKey(): string {
+    const identity = artifactIdentity(this.state.explainer, this.state.model.index.index);
+    return `xpl-feedback:${identity.explainerHash}:${identity.sourceHash}`;
+  }
+
+  /** Persist before returning. Storage refusal stays visible and exports remain available. */
+  private keepFeedback(requests: FeedbackRequest[]): void {
+    this.set({ feedback: requests });
+    if (this.state.feedbackStorageError) return;
+    try {
+      localStorage.setItem(
+        this.feedbackKey(),
+        JSON.stringify({ schema: FEEDBACK_SCHEMA, requests }),
+      );
+      this.set({ feedbackStorageError: undefined });
+    } catch (error) {
+      this.set({
+        feedbackStorageError: `Browser storage unavailable: ${String(error)}. Export feedback JSON to keep it.`,
+      });
+    }
+  }
+
+  private loadFeedback(embedded: ViewerBundle["feedback"]): void {
+    try {
+      const requests = embedded ? parseFeedbackFile(embedded).requests : [];
+      this.set({ feedback: requests });
+      const saved = localStorage.getItem(this.feedbackKey());
+      const stored = saved ? parseFeedbackFile(JSON.parse(saved)).requests : [];
+      const merged = new Map(requests.map((r) => [r.id, r]));
+      for (const r of stored) {
+        const original = merged.get(r.id);
+        if (original && !sameFeedbackContent(original, r))
+          throw new Error(`Conflicting original content for request ${r.id}`);
+        if (!original || Date.parse(r.outcome.at) > Date.parse(original.outcome.at))
+          merged.set(r.id, r);
+      }
+      this.set({ feedback: [...merged.values()], feedbackStorageError: undefined });
+    } catch (error) {
+      this.set({
+        feedbackStorageError: `Could not reload browser feedback: ${String(error)}. Export feedback JSON before closing this page.`,
+      });
+    }
+  }
+
+  async refreshFeedback(): Promise<void> {
+    if (!this.api) return;
+    const saved = await this.api.requests();
+    const merged = new Map(this.state.feedback.map((r) => [r.id, r]));
+    for (const r of saved) {
+      const original = merged.get(r.id);
+      if (original && !sameFeedbackContent(original, r))
+        throw new Error(`Conflicting original content for request ${r.id}`);
+      merged.set(r.id, r);
+    }
+    this.keepFeedback([...merged.values()]);
+  }
+
+  feedbackJson(): string {
+    return (
+      JSON.stringify({ schema: FEEDBACK_SCHEMA, requests: this.state.feedback }, null, 2) + "\n"
+    );
+  }
+
+  /** Capture the element and selected inclusive lines against exactly the snapshot being viewed. */
+  async requestExplain(
+    id: ElementId,
+    note?: string,
+    kind: FeedbackKind = "expand",
+  ): Promise<"queued" | "command"> {
+    const at = new Date().toISOString();
+    const cursor = this.state.cursor;
+    const focus = codeFocus([id], this.state.model)[0];
+    const range = cursor
+      ? { ...cursor, side: cursor.side ?? ("head" as const) }
+      : focus
+        ? {
+            file: focus.file,
+            fromLine: focus.range.startLine,
+            toLine: focus.range.endLine,
+            side: "head" as const,
+          }
+        : undefined;
+    const request = parseFeedbackRequest({
+      id:
+        crypto.randomUUID?.() ??
+        Array.from(crypto.getRandomValues(new Uint8Array(16)), (n) =>
+          n.toString(16).padStart(2, "0"),
+        ).join(""),
+      kind,
+      elementId: id,
+      at,
+      context: artifactIdentity(this.state.explainer, this.state.model.index.index),
+      ...(this.state.sourceWarning ? { sourceWarning: this.state.sourceWarning } : {}),
+      ...(note?.trim() ? { note: note.trim() } : {}),
+      ...(this.state.viewId ? { view: this.state.viewId } : {}),
       label: this.state.model.label(id),
+      ...(range ? { range } : {}),
+      outcome: { status: "pending", reason: "Awaiting an explicit revision pass.", at },
     });
+    // Reread before merging, so another tab's saved requests are retained.
+    this.loadFeedback({ schema: FEEDBACK_SCHEMA, requests: this.state.feedback });
+    this.keepFeedback([...this.state.feedback, request]);
+    if (!this.api) return "command";
+    await this.api.postRequest(request);
     return "queued";
   }
 

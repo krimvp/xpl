@@ -637,7 +637,7 @@ describe("xpl view", () => {
     const body = await json(res);
     expect(body).toMatchObject({
       ok: true,
-      pending: 1,
+      pending: 0,
       request: {
         elementId: "sym:src/runner.ts#Runner.dispatch",
         note: "why a loop?",
@@ -657,7 +657,7 @@ describe("xpl view", () => {
       "file:src/bus.ts",
     ]);
     expect(queue[1].note).toBeUndefined();
-    expect((await json(await fetch(`${view.url}/api/requests`))).pending).toBe(2);
+    expect((await json(await fetch(`${view.url}/api/requests`))).pending).toBe(0);
 
     // the skill sees it in `xpl status`
     const status = await xpl(dir, "status", "demo");

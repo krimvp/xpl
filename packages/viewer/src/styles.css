@@ -2561,7 +2561,8 @@ code {
 }
 
 /* What the user wants Claude to change about the selected element (Details `feedback`). */
-.details textarea.feedback {
+.details textarea.feedback,
+.feedback-panel textarea.feedback {
   display: block;
   box-sizing: border-box;
   width: 100%;
@@ -4123,4 +4124,18 @@ code {
 
 .zoom-trail button:hover {
   text-decoration: underline;
+}
+
+.feedback-panel label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.feedback-list {
+  padding-left: 18px;
+  font-size: 12px;
+}
+.feedback-list li {
+  margin-bottom: 12px;
+  overflow-wrap: anywhere;
 }

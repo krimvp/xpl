@@ -16,6 +16,7 @@ import {
 import type { CommandSpec } from "../command.js";
 import { CliError } from "../errors.js";
 import { listText, plural, renderIssues } from "../format.js";
+import { artifactIdentity, feedbackContextReason } from "@xpl/core";
 import { readRequests, type QueuedRequest } from "../requests.js";
 import { loadExplainer, openWorkspace } from "../repo.js";
 import { renderResolveReport } from "./resolve.js";
@@ -450,7 +451,7 @@ export const statusCommand: CommandSpec = {
     "    user owns is counted apart (ask the user),",
     "  - broken references: ids that vanished from the index (overlays of deleted symbols, include, members,",
     "    related, participants, step ends), and stored derived-edge overlays that no graph view derives now,",
-    "  - explain-this requests the viewer queued in .explainer/requests.json (delete the file once handled).",
+    "  - explain-this requests the viewer queued in .explainer/requests.json (record selected outcomes with xpl feedback --outcomes).",
     "",
     "--view <id>: only that view, and what it draws: a graph view's edges (id, kind, ends, references, stored or",
     "derived, label, whether it has a summary) and each id in its `hidden` with the edge it takes out; a flow's",
@@ -509,7 +510,10 @@ export const statusCommand: CommandSpec = {
     const queue = readRequests(ctx.root);
     if (queue.error) ctx.warn(queue.error);
     const requests: QueuedRequest[] = queue.requests.filter(
-      (r) => r.explainer === undefined || r.explainer === loaded.name,
+      (r) =>
+        (r.explainer === undefined || r.explainer === loaded.name) &&
+        r.outcome.status !== "addressed" &&
+        r.outcome.status !== "rejected",
     );
 
     // What the skill must do: nodes, stored edges, steps and concepts without a summary.
@@ -616,7 +620,7 @@ export const statusCommand: CommandSpec = {
     if (requests.length > 0) {
       lines.push(
         "",
-        `requests queued by the viewer (${requests.length}; delete .explainer/requests.json when handled):`,
+        `requests queued by the viewer (${requests.length}; record selected outcomes with xpl feedback --outcomes):`,
       );
       for (const r of requests) {
         const details = [
@@ -627,6 +631,12 @@ export const statusCommand: CommandSpec = {
           r.note ? `  "${r.note}"` : "",
         ];
         lines.push(`  ${r.at}  ${details.join("")}`);
+        const contextReason =
+          feedbackContextReason(r, artifactIdentity(loaded.explainer, ws.index)) ??
+          ws.stale?.message;
+        lines.push(
+          `    ${r.id}  ${r.outcome.status}: ${r.outcome.reason}${contextReason ? ` (outdated context: ${contextReason})` : ""}`,
+        );
       }
     }
     ctx.out(lines.join("\n"));

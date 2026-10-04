@@ -342,20 +342,26 @@ describe("under xpl view (server mode)", () => {
     await expect(store.requestExplain("concept:retry")).resolves.toBe("queued");
     expect(calls[0]!.url).toBe("/api/requests");
     expect(calls[0]!.init!.method).toBe("POST");
-    expect(body(0)).toEqual({
+    expect(body(0)).toMatchObject({
       kind: "expand",
-      id: "concept:retry",
+      elementId: "concept:retry",
+      id: expect.any(String),
+      context: { explainerHash: expect.any(String), sourceHash: expect.any(String) },
+      outcome: { status: "pending", reason: "Awaiting an explicit revision pass." },
       view: "view:overview",
       label: "Retry",
     });
     respond = () => new Response("busy", { status: 503, statusText: "Unavailable" });
     await expect(store.requestExplain("concept:retry")).rejects.toThrow("503 Unavailable: busy");
+    expect(
+      JSON.parse(store.feedbackJson()).requests.map((r: { elementId: string }) => r.elementId),
+    ).toEqual(["concept:retry", "concept:retry"]);
   });
 
   it("sends what the user wants changed as the request's note", async () => {
     const store = graphStore(true);
     await store.requestExplain("concept:retry", "  too long  ");
-    expect(body(0)).toMatchObject({ kind: "expand", id: "concept:retry", note: "too long" });
+    expect(body(0)).toMatchObject({ kind: "expand", elementId: "concept:retry", note: "too long" });
     await store.requestExplain("concept:retry", "   ");
     expect(body(1)).not.toHaveProperty("note");
   });

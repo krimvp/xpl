@@ -11,7 +11,7 @@ import { opensView } from "@xpl/core";
 import { callersOf, callerSubject, changeSummary, type Caller } from "../callers.js";
 import { describeElement, type AnchorRow, type ElementInfo } from "../details.js";
 import { changeOf } from "../diff.js";
-import { explainCommand, messageOf } from "../data.js";
+import { messageOf } from "../data.js";
 import { useDerived, useStore, useViewerState } from "../hooks.js";
 import { renderInline, renderMarkdown } from "../markdown.js";
 import { readerBadge, roleWords } from "../readerWords.js";
@@ -115,8 +115,8 @@ export function Details({
           <ExplainButton
             id={info.id}
             note={feedback.id === info.id ? feedback.text : ""}
-            onPhase={(phase, note) => {
-              setExplain({ id: info.id, phase, ...(note ? { note } : {}) });
+            onPhase={(phase) => {
+              setExplain({ id: info.id, phase });
               if (phase.kind === "queued") setFeedback({ id: "", text: "" });
             }}
           />
@@ -138,9 +138,7 @@ export function Details({
         </div>
       )}
 
-      {!reader && explain.id === info.id && (
-        <ExplainNote id={info.id} phase={explain.phase} note={explain.note} />
-      )}
+      {!reader && explain.id === info.id && <ExplainNote phase={explain.phase} />}
 
       {selection.length > 1 && (
         <div className="selected-chips" aria-label="Selected elements">
@@ -321,8 +319,7 @@ type ExplainPhase =
 
 /**
  * "Explain this", or with feedback typed above it "Send to Claude": with a server the request (and the
- * feedback as its note) is queued (`xpl status` shows the queue and the skill drains it); without one
- * the button shows the command to run in Claude (see ExplainNote).
+ * feedback as its note) is saved. Offline, browser storage and JSON export preserve the original context.
  */
 function ExplainButton({
   id,
@@ -331,7 +328,7 @@ function ExplainButton({
 }: {
   id: string;
   note: string;
-  onPhase: (phase: ExplainPhase, note: string) => void;
+  onPhase: (phase: ExplainPhase) => void;
 }) {
   const store = useStore();
   const text = note.trim();
@@ -341,8 +338,8 @@ function ExplainButton({
       className="btn is-primary"
       onClick={() => {
         store.requestExplain(id, text).then(
-          (result) => onPhase({ kind: result }, text),
-          (error: unknown) => onPhase({ kind: "error", message: messageOf(error) }, text),
+          (result) => onPhase({ kind: result }),
+          (error: unknown) => onPhase({ kind: "error", message: messageOf(error) }),
         );
       }}
     >
@@ -351,7 +348,7 @@ function ExplainButton({
   );
 }
 
-function ExplainNote({ id, phase, note }: { id: string; phase: ExplainPhase; note?: string }) {
+function ExplainNote({ phase }: { phase: ExplainPhase }) {
   const [copied, setCopied] = useState(false);
   useEffect(() => {
     if (!copied) return;
@@ -359,15 +356,15 @@ function ExplainNote({ id, phase, note }: { id: string; phase: ExplainPhase; not
     return () => clearTimeout(timer);
   }, [copied]);
 
-  const command = explainCommand(id, note);
+  const command = "/code-explainer feedback";
   switch (phase.kind) {
     case "idle":
       return null;
     case "queued":
       return (
         <p className="note explain-note" role="status">
-          Queued. Run <code>/code-explainer feedback</code> in Claude Code: this page updates by
-          itself once the change is applied.
+          Queued for the next explicit pass. Run <code>/code-explainer feedback</code> in your
+          chosen agent. Saving feedback does not start generation.
         </p>
       );
     case "error":
@@ -379,7 +376,11 @@ function ExplainNote({ id, phase, note }: { id: string; phase: ExplainPhase; not
     case "command":
       return (
         <div className="command explain-note" role="status">
-          <p className="note">Ask Claude to explain this: paste this into Claude Code.</p>
+          <p className="note">
+            Saved in this browser for the next explicit pass. Use Feedback &gt; Export feedback
+            JSON, then import it with xpl feedback &lt;guide&gt; --import feedback.json. Saving
+            feedback does not start generation.
+          </p>
           <div className="command-line">
             <code data-testid="explain-command">{command}</code>
             <button

@@ -39,13 +39,19 @@ git-ignored) and gives you the result. Open it yourself with `xpl bundle <name> 
 self-contained file that carries the source files the explainer shows: works offline, easy to share;
 `--files boundary` adds the callers, callees and tests around them, `--files all` every file of the repo) or
 `xpl view <name>` (a local server with live repo access: your edits are saved and "Explain this" clicks are
-queued for Claude). Other things to ask for: `explain this repo`, `explain change main...HEAD` (a PR or a
+saved for the next explicit revision pass). Other things to ask for: `explain this repo`, `explain change main...HEAD` (a PR or a
 branch), `expand <node>`, `make a tour` (Present mode: arrow keys step through it). More in
 [skill/code-explainer/README.md](skill/code-explainer/README.md).
 
 In the viewer, Guide tells the story, Map shows relationships, Flow follows steps, and Code opens
-source. Present plays a tour with arrow-key navigation. "Explain this" queues feedback; run
-`/code-explainer feedback` in Claude Code to process it. Applied explanations, source changes and
+source. Present plays a tour with arrow-key navigation. Feedback saves corrections, explanation requests
+and expansions against a selected element and source range. `xpl view` saves to disk; a disconnected
+saved page keeps requests in browser storage and offers **Export feedback JSON**. Import that file with
+`xpl feedback <name> --import /path/to/feedback.json`, then invoke `/code-explainer feedback` in your chosen
+agent for the next pass. Saving does not start generation. Stable IDs deduplicate repeated imports;
+original snapshot hashes, ranges, outcomes and reasons stay available. Changed snapshots are reported as
+outdated and require explicit reconciliation. Export browser feedback before clearing browser data.
+Browser storage can be unavailable; the panel reports this and JSON export or Save as HTML keeps the requests. Applied explanations, source changes and
 new indexes refresh in a live viewer; a saved HTML page stays at its exported version. Unsaved edits
 postpone live refresh. Reindex changed code to restore reliable source locations and references.
 

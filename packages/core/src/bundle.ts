@@ -4,6 +4,7 @@
  * viewer then fetches missing files from `${server.api}/file?path=`).
  */
 import { isPackedIndex, packIndex, unpackIndex } from "./index-pack.js";
+import { parseFeedbackFile, type FeedbackFile } from "./feedback.js";
 import type { Explainer, FilePath, SymbolIndex } from "./schema.js";
 
 export const BUNDLE_SCHEMA = "code-explainer/bundle@0";
@@ -32,6 +33,8 @@ export interface ViewerBundle {
   server?: { api: string };
   /** Live workspace warning when source and index differ. Never implies prose was verified. */
   sourceWarning?: string;
+  /** Feedback carried by a saved page; every request retains its original snapshot identity. */
+  feedback?: FeedbackFile;
 }
 
 export interface SerializeOptions {
@@ -80,6 +83,7 @@ export function parseBundle(text: string): ViewerBundle {
   if (bundle?.schema !== BUNDLE_SCHEMA) {
     throw new Error(`not a ${BUNDLE_SCHEMA} payload (schema: ${String(bundle?.schema)})`);
   }
+  if (bundle.feedback !== undefined) bundle.feedback = parseFeedbackFile(bundle.feedback);
   if (isPackedIndex(bundle.index)) bundle.index = unpackIndex(bundle.index);
   return bundle;
 }

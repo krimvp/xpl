@@ -12,6 +12,8 @@ import {
   BUNDLE_SCRIPT_ID,
   parseBundle,
   serializeBundle,
+  FEEDBACK_SCHEMA,
+  type FeedbackFile,
   type Explainer,
   type SymbolIndex,
 } from "@xpl/core";
@@ -37,6 +39,7 @@ export interface LoadedTexts {
   /** A refreshed workspace replaces old source/index data, including deleted files and stale warnings. */
   index?: SymbolIndex;
   sourceWarning?: string;
+  feedback?: FeedbackFile;
 }
 
 /**
@@ -60,6 +63,7 @@ export function withExplainer(
       {
         ...rest,
         explainer,
+        ...(loaded.feedback ? { feedback: loaded.feedback } : {}),
         ...(loaded.index
           ? { index: loaded.index, sourceWarning: loaded.sourceWarning, baseFiles }
           : {}),
@@ -88,7 +92,7 @@ export function canSaveHtml(): boolean {
  */
 export function savedPage(
   state: Pick<ViewerState, "explainer"> &
-    Partial<Pick<ViewerState, "files" | "baseFiles" | "model" | "sourceWarning">>,
+    Partial<Pick<ViewerState, "files" | "baseFiles" | "model" | "sourceWarning" | "feedback">>,
 ): string {
   if (!page) return "";
   const root = page.root.cloneNode(true) as Element;
@@ -96,6 +100,9 @@ export function savedPage(
   const text =
     script &&
     withExplainer(script.textContent ?? "", state.explainer, {
+      ...(state.feedback
+        ? { feedback: { schema: FEEDBACK_SCHEMA, requests: state.feedback } }
+        : {}),
       ...(state.files ? { files: state.files } : {}),
       ...(state.baseFiles ? { baseFiles: state.baseFiles } : {}),
       ...(state.model
