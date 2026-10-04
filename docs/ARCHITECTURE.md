@@ -469,8 +469,44 @@ names the adapter's active profile (`builtin-packs` or `tool-defaults`); snapsho
 Toolchain/environment dependencies outside that snapshot are not reusable evidence. No cross-run cache is added:
 reuse is safe only when source, provider version and relevant configuration/dependency identities agree.
 
-This slice keeps SCIP relationship mapping over existing syntax declarations. SCIP-only declarations (#12)
-and Rust tags (#13) are separate adapters/import work; neither is implemented here.
+The built-in tool adapters keep SCIP relationship mapping over existing syntax declarations. The separate
+`scipArtifactProvider({ artifact, manifest?, languages? })` imports declarations without a language pack.
+The CLI selects it with `xpl index --scip <artifact|manifest.json>` instead of automatic tool selection.
+Unknown extensions keep the closed `FileLanguage` value `text`; imported symbols work in outlines, queries,
+checked anchors and bundles. `--precise off` skips semantic providers; combining it with `--scip` is an error.
+Rust tags (#13) remain separate work.
+
+**Artifact evidence and losses** (`src/scip/artifact.ts`). Each document needs source evidence: embedded
+`Document.text`, or a manifest's pre-generation xpl source hash. The evidence must match the captured source.
+A manifest binds the exact artifact bytes with `artifactSha256` and names the artifact for the CLI (relative
+to the manifest). Missing or stale evidence excludes that document from every replacement capability.
+Absolute, non-canonical, undiscovered and generated paths are excluded, even when a file exists on disk.
+A supplied `project_root` must be a file URI for the indexed root; an absent root uses document paths.
+The manifest is an author attestation, not proof of successful compilation. Capture source hashes before
+generation, check them after a successful run, and use a fresh output path. Never attach current hashes to
+an old artifact. Dependency/toolchain changes outside the captured files are not verified by this policy.
+
+Only definition occurrences with full `enclosing_range`, valid positions and identifier evidence become
+symbols. Identifier-only/synthetic definitions are filtered before normalization so one omitted definition
+does not discard valid coverage. Symbol replacement supplies the file's entire retained set, with partial
+coverage and explicit omissions; it does not append to syntax declarations. Kinds map to xpl's coarse kinds;
+unknown kinds become `other` with diagnostics. Descriptor paths preserve nesting; overload identities stay
+distinct while canonical duplicate paths receive source-ordered `~N` suffixes. Reordering overloads can
+change their IDs. Locals are scoped to the document. Explicit parents or exact descriptor prefixes (including
+overload tags) require checked same-file containment. Missing parents are omitted and nesting stays partial.
+Ambiguous repeated definitions and paths containing canonical ID punctuation are diagnosed and omitted.
+
+Position encoding must be explicit in the document, or verified and recorded as the manifest's
+`defaultEncoding` (`utf8`, `utf16`, `utf32`). Source text encoding is separate and cannot establish columns.
+Strict conversion rejects offsets inside Unicode characters and outside source, rather than clamping them.
+Only role-backed reads, writes and imports, and mentions of known types, become precise relationships.
+Other occurrences become `blind` and retain applicable heuristic hints. SCIP roles cannot classify calls;
+the importer reports calls as unsupported. `SymbolInformation.relationships` are diagnosed and omitted:
+implementation/override flags cannot establish class inheritance or relationship direction by themselves.
+External symbols and accessor targets without checked definitions never create local declarations.
+Reports remain partial, including empty results. Producer ranges may omit leading documentation; the importer
+never substitutes an identifier extent for a full declaration. The CLI reference documents generation and
+manifest creation. Java tool orchestration and a Java language identity belong to #14.
 
 **Analysis coverage** (`core/src/analysis.ts`, `indexer/src/analysis.ts`). An `AnalysisReport` contains a
 stable `provider` id, advertised `capabilities`, scoped `files`, and observed `results`. Capabilities are
@@ -969,7 +1005,7 @@ stdout (a rejection exits 1); fatal errors (`error: …`) and warnings (`warning
 
 | Command | Does |
 |---|---|
-| `xpl index [--precise auto\|off\|require] [--commit c]` | build + write the index; writes `.explainer/.gitignore` (`index-*.json`); prints a per-language summary whose last column is the trust of its references (`precise (tool)`, `precise 64/82 (tool), 18 heuristic` when the tool described only some files, `heuristic`, `none`) and names explainers bound to another index |
+| `xpl index [--precise auto\|off\|require] [--commit c] [--scip artifact\|manifest.json]` | build + write the index; `--scip` selects source-verified artifact import instead of automatic tools; writes `.explainer/.gitignore` (`index-*.json`); prints per-language trust, independent coverage and names explainers bound to another index |
 | `xpl outline [--under <id>] [--depth n] [--kind k,...] [--keys] [--limit n]` | dir/file/symbol tree with kind, lines, fan-in/fan-out (references into/out of the subtree); default depth 2; config keys only with `--keys`; `--kind method,function` keeps only those symbol kinds, with the dirs, files and parents that hold a match; the repo line carries the name `xpl new` records |
 | `xpl show <id> [--refs] [--context n] [--lines a-b] [--max-lines n]` | code with 0-based offsets relative to the symbol (the numbers spans use); dirs and the repo list children; `--refs` appends outgoing and incoming references with `+offset`. `xpl show --at base <path> [--lines a-b] [--explainer name]`: a changed file as it was before the change the explainer records, with the offsets a base anchor's span uses (from line 1) and `-` on the lines the change removes or rewrites; paths only (a symbol id is a usage error); `--explainer` picks the explainer when several record a change |
 | `xpl refs <id> [--in\|--out] [--kind k] [--depth n] [--max-children n] [--limit n] [--tests]` | call/reference hierarchy with sites; hops through interfaces as `impl` lines and through base classes (TS, JS, Python) as `override` lines; test doubles and test subclasses hidden unless `--tests`; a subtree is printed once (later occurrences: `(expanded above)`), at most `--max-children` (default 15) references under a line of a hierarchy (`... +8 more`); `--kind read` finds the readers of a variable or field |
