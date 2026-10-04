@@ -39,8 +39,7 @@
  *
  * Not handled: type inference beyond the evident (no signature or generics inference, no element types of
  * slices and maps, only the first result of a multi-value call gets a type), receivers that are index
- * expressions, method values (`bus.Subscribe(b, "x", m.Handle)` is not a call), function-local type
- * declarations, cgo, build constraints, vendor directories, packages whose `package` clause differs from
+ * expressions, function-local type declarations, cgo, vendor directories, packages whose `package` clause differs from
  * their directory name, and package-level variables (of another file, or `pkg.Var`) as receivers: the resolver
  * looks type facts up per file.
  */

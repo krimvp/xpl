@@ -388,7 +388,8 @@ file.
 a value whose type is known (`this.queue`, `job.attempts`), that is not a call, a target or a declaration.
 Locals and parameters are not references: the pack leaves out a bare name that a function, block, loop,
 `catch`, comprehension or class body around the use binds, and the resolver decides the rest (only variables
-and fields count: a function passed as a value is not a read of it). A call or assignment spanning more than
+and fields count; a function or method used as a value, such as a callback, a Go method value or a Python
+property, becomes a `call`: it runs when the value is called). A call or assignment spanning more than
 10 lines is reported by its callee or target only. `from` is not given by the pack: the framework takes the
 innermost symbol containing the site's start (line and column), else the module scope `"<file>#"`.
 `classifySite(ctx, line, col)` applies the same rules to one position, so SCIP occurrences are classified
@@ -428,7 +429,8 @@ imports, `src/` layouts, nested project roots and namespace packages; Go every `
 Not handled: overload resolution, generics and type arguments, union types, control-flow narrowing, locals
 reassigned to another type, dynamic access, CommonJS `module.exports` shapes. Go: inference beyond the
 evident (no signatures or generics, no element types of slices and maps, one type for a multi-value call),
-method values, function-local types, cgo, build constraints, vendor directories. Python: instance attributes
+function-local types, cgo, vendor directories (build constraints: a file a default linux/amd64 build leaves out
+is tried last). Python: instance attributes
 assigned only in methods are not symbols, so writes to them are not linked.
 
 `inferRefs` (Go) adds `implements` references for implicit interface satisfaction: a type implements an
@@ -453,8 +455,9 @@ at the definition (a module or package → the module scope of the defining file
 Go package; a constructor → its class; a test block is never a target). `kind` and `site` come from the pack's
 `classifySite` (an `import` becomes a `type-ref` for a type-only import, by the syntax of the statement). The
 indexers do not tell reads from writes (scip-typescript sets no role, the others call everything a read), so
-the pack's syntax decides: a `read` is kept only when its target is a variable of ours (a field, a constant; a
-function passed as a value, or a class used as a namespace, falls through to the rules below), a `bare` one
+the pack's syntax decides: a `read` is kept when its target is a variable of ours (a field, a constant), becomes a
+`call` when it is a function or method (used as a value: a callback, a method value, a property), and a class
+used as a namespace falls through to the rules below, a `bare` one
 (`ClassifiedSite.bare`: `LIMIT`, not `this.limit`) whose target is a class member is dropped (SCIP reports the
 property of an object-literal shorthand `{ retry }`, which reads no field), and a WriteAccess role turns it
 into a `write`. When the pack does not classify an occurrence: a quoted module specifier → `import` of the
@@ -1426,7 +1429,7 @@ base anchors and a diff view, and example explainers for the three fixtures.
 - No live reload: `xpl view` re-reads everything per request, but an open page needs a manual reload after
   `xpl apply`.
 - Heuristic references are hints, and the limits are in §3: no overloads, generics, unions or narrowing;
-  Python instance attributes and Go method values are not linked. A precise index needs the tools: `npx` for
+  Python instance attributes are not linked. A precise index needs the tools: `npx` for
   TypeScript and Python, Go ≥ 1.25 (or the network for the automatic toolchain) for Go, and the first run
   downloads them. Files a tool did not describe stay heuristic (`heuristicFiles`).
 - "Explain this" is a queue, not a live call: an explanation appears the next time the skill runs.

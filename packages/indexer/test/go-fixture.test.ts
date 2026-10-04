@@ -256,9 +256,11 @@ describe("go-jobrunner: what the static index cannot see", () => {
     expect(refsFrom(`${METRICS}#Register`, `${BUS}#Subscribe`, "call")).toHaveLength(1);
   });
 
-  it("nothing calls OnJobCompleted: it is passed as a method value", () => {
+  it("OnJobCompleted is passed to the bus as a method value: a call from Register, where it is handed over", () => {
     const callers = index.refs.filter((r) => r.to === `${METRICS}#Metrics.OnJobCompleted`);
-    expect(callers).toEqual([]);
+    expect(callers.map((r) => `${r.from} ${r.kind} ${r.site.startLine}`)).toEqual([
+      `${METRICS}#Register call 39`,
+    ]);
   });
 });
 

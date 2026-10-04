@@ -215,7 +215,11 @@ describe("imports", () => {
       },
       "call",
     );
-    expect(r).toEqual(["use.ts#go -> core/vmodel.ts#tm (call)"]);
+    // (the barrel's own `{ model: tm }` hands its imported `tm` over: a call of that one)
+    expect(r).toEqual([
+      "dom/index.ts#opts -> dom/vmodel.ts#tm (call)",
+      "use.ts#go -> core/vmodel.ts#tm (call)",
+    ]);
   });
 
   it("uses the import's own position: an import inside a function comes from that function", async () => {

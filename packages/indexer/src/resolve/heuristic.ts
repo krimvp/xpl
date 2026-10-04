@@ -137,8 +137,9 @@ const WANT: Record<"any" | "call" | "type" | "write" | "read", Want> = {
     s.kind !== "type" &&
     s.kind !== "enum" &&
     s.kind !== "key",
-  // Only variables and fields are read: a function used as a value is not a read of it, a class is not either.
-  read: (s) => s.kind === "variable",
+  // Variables and fields are read. A function or method used as a value (a callback, a Go method value, a
+  // Python property) is too, and becomes a call: it runs when the value is called. A class is not.
+  read: (s) => s.kind === "variable" || s.kind === "function" || s.kind === "method",
 };
 
 /** Safety bound for chained evaluations (facts are memoised and cycle-safe, so this is rarely reached). */
@@ -963,9 +964,13 @@ class Resolver {
       if (owner.k === "type" && owner.sym.kind === "enum") target = owner.sym;
     }
     // Re-export chains look names up without regard to their kind (`from .app import Flask as Flask` finds the
-    // class): a read only ever points at a variable.
-    if (target && site.kind === "read" && target.kind !== "variable") target = undefined;
-    if (target) this.add(ctx, target.id, site.kind, site.site);
+    // class): a read only ever points at a variable, or at a function used as a value (then it is a call).
+    let kind = site.kind;
+    if (target && site.kind === "read" && target.kind !== "variable") {
+      if (target.kind === "function" || target.kind === "method") kind = "call";
+      else target = undefined;
+    }
+    if (target) this.add(ctx, target.id, kind, site.site);
   }
 
   /** The symbol `qualifier.name` refers to at `ctx`, if it can be found. */

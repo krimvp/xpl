@@ -333,7 +333,7 @@ describe("py-jobrunner: imports, heritage, the demo and the tests", () => {
     expect(count(index.refs, (r) => r.kind)).toEqual({
       import: 44,
       "type-ref": 50,
-      call: 93,
+      call: 94, // `queue.size` reads a property: a call of its getter
       write: 4,
       extends: 1,
       read: 74,

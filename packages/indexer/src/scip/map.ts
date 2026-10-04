@@ -815,7 +815,16 @@ class Mapper {
         // occurrence. The indexers do not tell reads from writes (scip-typescript sets no role, the others say
         // "read" for everything), the pack's syntax does; a WriteAccess role, when there is one, wins.
         const target = this.lookup.get(c.target.id);
-        if (target?.kind !== "variable" || (cls.bare && this.isMember(target))) cls = undefined;
+        const callable =
+          (target?.kind === "function" || target?.kind === "method") &&
+          (c.roles & SymbolRole.Import) === 0;
+        if (
+          (target?.kind !== "variable" && !callable) ||
+          (target && cls.bare && this.isMember(target))
+        )
+          cls = undefined;
+        else if (callable)
+          cls = { kind: "call", site: cls.site }; // a function used as a value runs when called
         else if ((c.roles & SymbolRole.WriteAccess) !== 0) cls = { kind: "write", site: cls.site };
       }
       if (cls) {

@@ -120,7 +120,8 @@ export type SiteKind = "call" | "import" | "extends" | "implements" | "type-ref"
  *   and `qualifier` as for a call (`this.pool.size` -> ["this", "pool"], `size`); `site` is the identifier or
  *   member expression (only the member's name if it spans more than 10 lines). Locals and parameters are not
  *   references: the pack leaves out bare names that are bound around the use. What the name resolves to
- *   decides: only variables and fields count (a function passed as a value does not).
+ *   decides: variables and fields are reads; a function or method used as a value is a `call` (it runs when
+ *   the value is called).
  *
  * The "from" symbol of a site is *not* given: the framework finds the innermost symbol containing
  * `site.startLine/startCol`, or the module scope (`"<file>#"`). That also attributes sites correctly when

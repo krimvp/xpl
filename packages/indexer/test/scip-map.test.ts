@@ -906,14 +906,14 @@ export function ⟦use⟧(): number {
     ]);
   });
 
-  it("everything else is dropped: plain reads of functions (not variables), self references", async () => {
+  it("a function read as a value is a call (it runs when the value is called), of itself too", async () => {
     const { refs } = await run({ "a.ts": src.text }, [
       doc([
         [5, ts("a.ts", "other().")],
         [9, ts("a.ts", "use().")],
       ]),
     ]);
-    expect(refs).toEqual([]);
+    expect(triples(refs)).toEqual(["call a.ts#use -> a.ts#other", "call a.ts#use -> a.ts#use"]);
   });
 
   it("a plain read of a variable is a `read` (the pack says it is one, the symbol says it is a variable)", async () => {
@@ -924,12 +924,13 @@ export function ⟦use⟧(): number {
         [8, ts("a.ts", "counter.")],
       ]),
     ]);
-    // one reference per site
+    // one reference per site; `other` read as a value is a call
     expect(triples(refs)).toEqual([
+      "call a.ts#use -> a.ts#other",
       "read a.ts#use -> a.ts#counter",
       "read a.ts#use -> a.ts#counter",
     ]);
-    expect(refs.map((r) => r.site.startLine)).toEqual([7, 9]);
+    expect(refs.filter((r) => r.kind === "read").map((r) => r.site.startLine)).toEqual([7, 9]);
   });
 });
 
