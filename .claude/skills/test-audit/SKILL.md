@@ -6,8 +6,7 @@ description: Value bar for tests in xpl. An authoring gate for every new or chan
 # Test audit
 
 **Before any change is called finished, run the authoring gate on every test it adds or touches, and check
-the tests that own the changed code.** AGENTS.md lists this first under "Done means", and the stop hook
-reminds you. Report what you found, even "no change needed".
+the tests that own the changed code.** AGENTS.md lists this first under "Done means". Report what you found, even "no change needed".
 
 Two modes, one bar. **Authoring**: gate every new or changed test as you write it. **Audit**: sweep a package
 for tests that do not earn their upkeep. Optimise for confidence, not for a deletion count.
