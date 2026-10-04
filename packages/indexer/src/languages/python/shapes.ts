@@ -94,6 +94,31 @@ export function heritageShapes(classDef: Node, lines: readonly string[]): SiteSh
   const bases = classDef.childForFieldName("superclasses");
   if (!bases) return out;
   for (const base of named(bases)) {
+    // `metaclass=Singleton`: the class's metaclass, a type reference (not a base)
+    if (base.type === "keyword_argument") {
+      const value = base.childForFieldName("value");
+      if (base.childForFieldName("name")?.text !== "metaclass" || !value) continue;
+      if (value.type === "identifier")
+        out.push({
+          kind: "type-ref",
+          name: value.text,
+          nameNode: value,
+          site: nodeSpan(value, lines),
+        });
+      else if (value.type === "attribute") {
+        const attr = value.childForFieldName("attribute");
+        const object = value.childForFieldName("object");
+        if (attr && object)
+          out.push({
+            kind: "type-ref",
+            name: attr.text,
+            nameNode: attr,
+            qualifierNode: object,
+            site: nodeSpan(value, lines),
+          });
+      }
+      continue;
+    }
     let head = base;
     let typeArgs: Node[] = [];
     if (base.type === "subscript") {
@@ -272,7 +297,8 @@ function isBaseClass(node: Node): boolean {
       return (
         n.parent?.type === "class_definition" &&
         n.parent.childForFieldName("superclasses")?.id === n.id &&
-        child.type !== "keyword_argument"
+        // `metaclass=M` is a type reference (`heritageShapes`); other keywords (`flag=LIMIT`) are reads
+        (child.type !== "keyword_argument" || child.childForFieldName("name")?.text === "metaclass")
       );
     }
     if (n.type === "block" || n.type === "module") return false;

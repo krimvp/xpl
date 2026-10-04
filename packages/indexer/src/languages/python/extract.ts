@@ -428,14 +428,16 @@ export class Extractor implements Env {
 
   private onReads(): void {
     if (this.readNames.length === 0 && this.readMembers.length === 0) return;
-    // What the file declares or imports: a bare name can only be a variable read when it is one of these
-    // (or when a star import may have brought it in).
+    // What the file declares or imports: a bare name can only be a read when it is one of these (or when a
+    // star import may have brought it in).
     const bare = new Set<string>();
     const roots = new Set<string>();
     for (const draft of this.drafts) {
       const name = lastSegment(draft.path);
       roots.add(name);
-      if (draft.kind === "variable") bare.add(name);
+      // a variable, or a class or function used as a value (a callback, `isinstance(x, C)`)
+      if (draft.kind === "variable" || draft.kind === "class" || draft.kind === "function")
+        bare.add(name);
     }
     for (const binding of this.imports) {
       bare.add(binding.localName);

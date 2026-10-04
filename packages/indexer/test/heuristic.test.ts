@@ -479,6 +479,46 @@ describe("calls: scope chain and same-file symbols", () => {
     ]);
   });
 
+  it("a class used as a value or as a metaclass is a type reference, as in precise mode", async () => {
+    const r = await refs({
+      "a.py": src(
+        "class Meta(type):",
+        "    pass",
+        "class Error(Exception):",
+        "    pass",
+        "class Model(metaclass=Meta):",
+        "    pass",
+        "def check(x):",
+        "    if not isinstance(x, Model):",
+        "        raise Error",
+      ),
+    });
+    expect(r.filter((t) => t.includes("type-ref"))).toEqual([
+      "a.py#Model -> a.py#Meta (type-ref)",
+      "a.py#check -> a.py#Model (type-ref)",
+      "a.py#check -> a.py#Error (type-ref)",
+    ]);
+  });
+
+  it("TS: a function or class of the file used as a value; a nested function handed over", async () => {
+    const r = await refs({
+      "a.ts": src(
+        "export class Box {}",
+        "function cb(x: number) { return x; }",
+        "export function use(v: unknown) {",
+        "  function inner(x: number) { return x + 1; }",
+        "  [1].map(cb).map(inner);",
+        "  return v instanceof Box;",
+        "}",
+      ),
+    });
+    expect(r.filter((t) => !t.includes("(read)"))).toEqual([
+      "a.ts#use -> a.ts#cb (call)",
+      "a.ts#use -> a.ts#use.inner (call)",
+      "a.ts#use -> a.ts#Box (type-ref)",
+    ]);
+  });
+
   it("resolves calls to overloaded functions to the implementation", async () => {
     const r = await refs(
       {
@@ -991,7 +1031,12 @@ describe("qualifier-name fallback and unresolved sites", () => {
       },
       "call",
     );
-    expect(r).toEqual([]);
+    // only `f` handing itself over (`debounce(f)`, `.then(f)`, `setTimeout(f, 1)`): a call of itself, later
+    expect(r).toEqual([
+      "a.ts#f -> a.ts#f (call)",
+      "a.ts#f -> a.ts#f (call)",
+      "a.ts#f -> a.ts#f (call)",
+    ]);
   });
 });
 

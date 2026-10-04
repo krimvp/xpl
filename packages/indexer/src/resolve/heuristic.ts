@@ -138,8 +138,16 @@ const WANT: Record<"any" | "call" | "type" | "write" | "read", Want> = {
     s.kind !== "enum" &&
     s.kind !== "key",
   // Variables and fields are read. A function or method used as a value (a callback, a Go method value, a
-  // Python property) is too, and becomes a call: it runs when the value is called. A class is not.
-  read: (s) => s.kind === "variable" || s.kind === "function" || s.kind === "method",
+  // Python property) is too, and becomes a call: it runs when the value is called. A class or other type used
+  // as a value (`isinstance(x, C)`, `raise Error`, a class passed on) becomes a type-ref, as in precise mode.
+  read: (s) =>
+    s.kind === "variable" ||
+    s.kind === "function" ||
+    s.kind === "method" ||
+    s.kind === "class" ||
+    s.kind === "interface" ||
+    s.kind === "enum" ||
+    s.kind === "type",
 };
 
 /** Safety bound for chained evaluations (facts are memoised and cycle-safe, so this is rarely reached). */
@@ -968,6 +976,7 @@ class Resolver {
     let kind = site.kind;
     if (target && site.kind === "read" && target.kind !== "variable") {
       if (target.kind === "function" || target.kind === "method") kind = "call";
+      else if (isTypeLike(target) && target.kind !== "other") kind = "type-ref";
       else target = undefined;
     }
     if (target) this.add(ctx, target.id, kind, site.site);

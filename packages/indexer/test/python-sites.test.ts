@@ -286,7 +286,7 @@ describe("Python imports without bindings (dynamic imports)", () => {
 });
 
 describe("Python class bases: `extends`", () => {
-  it("every positional base, qualified and generic ones included; keyword arguments are not bases", async () => {
+  it("every positional base, qualified and generic ones included; keyword arguments are not bases (a metaclass is a type reference)", async () => {
     const source = src(
       "class A(B, mod.C, D[int], pkg.E[Job], metaclass=Meta, flag=True):",
       "    pass",
@@ -304,6 +304,7 @@ describe("Python class bases: `extends`", () => {
     expect(await sitesOf(source, ["type-ref"])).toEqual([
       "type-ref int «int»",
       "type-ref Job «Job»",
+      "type-ref Meta «Meta»", // the metaclass
     ]);
   });
 });

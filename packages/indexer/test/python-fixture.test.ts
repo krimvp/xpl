@@ -332,7 +332,7 @@ describe("py-jobrunner: imports, heritage, the demo and the tests", () => {
   it("counts of references by kind (a regression net for the pack)", () => {
     expect(count(index.refs, (r) => r.kind)).toEqual({
       import: 44,
-      "type-ref": 50,
+      "type-ref": 52, // two classes used as values: type references, as in precise mode
       call: 94, // `queue.size` reads a property: a call of its getter
       write: 4,
       extends: 1,

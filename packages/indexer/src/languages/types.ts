@@ -121,7 +121,8 @@ export type SiteKind = "call" | "import" | "extends" | "implements" | "type-ref"
  *   member expression (only the member's name if it spans more than 10 lines). Locals and parameters are not
  *   references: the pack leaves out bare names that are bound around the use. What the name resolves to
  *   decides: variables and fields are reads; a function or method used as a value is a `call` (it runs when
- *   the value is called).
+ *   the value is called), and a class or enum used as a value is a `type-ref`. A bare name bound around the
+ *   use is only a candidate when it is a nested function (then `local`).
  *
  * The "from" symbol of a site is *not* given: the framework finds the innermost symbol containing
  * `site.startLine/startCol`, or the module scope (`"<file>#"`). That also attributes sites correctly when

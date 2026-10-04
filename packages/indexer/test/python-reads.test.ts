@@ -130,6 +130,7 @@ describe("Python read sites", () => {
       "38: read ms «ms»",
       "38: read ms.VALUE «ms.VALUE»",
       "39: read this.attr «self.attr»",
+      "39: read C «C»", // the class itself, used as a namespace: a type reference once resolved
       "39: read C.attr «C.attr»",
       "39: read os «os»",
       "39: read os.sep «os.sep»",
@@ -144,7 +145,7 @@ describe("Python read sites", () => {
     ]);
   });
 
-  it("annotations and the bases of a class are not reads, its keyword arguments and default values are", async () => {
+  it("annotations, the bases and the metaclass of a class are not reads, its other keyword arguments and default values are", async () => {
     const source = src(
       "from lib import Alias, Base, Meta",
       "X = 1",
@@ -161,8 +162,8 @@ describe("Python read sites", () => {
       "class D(C[X]):",
       "    pass",
     );
+    // (`metaclass=Meta` is a type reference)
     expect(await reads(source, "a.py")).toEqual([
-      "5: read Meta «Meta»",
       "5: read X «X»",
       "6: read X «X»",
       "8: read X «X»",

@@ -81,6 +81,7 @@ describe("read sites: names, members, and what is left out", () => {
       "15: read this.size «this.size»",
       "15: read other.size «other.size»",
       "17: read this.#secret «this.#secret»",
+      "17: read Box «Box»", // the class used as a namespace: a type reference once resolved
       "17: read Box.kind «Box.kind»",
       "17: read ns «ns»",
       "17: read ns.VALUE «ns.VALUE»",
@@ -169,6 +170,7 @@ describe("read sites: names, members, and what is left out", () => {
       "28: read this.other «this.other»",
       "28: read this.other.x «this.other?.x»",
       "28: read this.other.x.y «this.other?.x.y»",
+      "30: read K «K»",
       "30: read K.s2 «K.s2»",
       "31: read E «E»",
       "33: read A «A»",

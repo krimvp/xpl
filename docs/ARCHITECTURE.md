@@ -389,7 +389,8 @@ a value whose type is known (`this.queue`, `job.attempts`), that is not a call, 
 Locals and parameters are not references: the pack leaves out a bare name that a function, block, loop,
 `catch`, comprehension or class body around the use binds, and the resolver decides the rest (only variables
 and fields count; a function or method used as a value, such as a callback, a Go method value or a Python
-property, becomes a `call`: it runs when the value is called). A call or assignment spanning more than
+property, becomes a `call`: it runs when the value is called; a class or enum used as a value, such as `x instanceof C`,
+`isinstance(x, C)` or `Color.Red`, is a `type-ref`, as in precise mode). A Python `metaclass=M` is a `type-ref`. A call or assignment spanning more than
 10 lines is reported by its callee or target only. `from` is not given by the pack: the framework takes the
 innermost symbol containing the site's start (line and column), else the module scope `"<file>#"`.
 `classifySite(ctx, line, col)` applies the same rules to one position, so SCIP occurrences are classified

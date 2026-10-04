@@ -1639,11 +1639,21 @@ class Extractor {
     // What the file declares or imports: a bare name can only be a variable read when it is one of these.
     const bare = new Set<string>();
     const roots = new Set<string>();
+    const nestedFunctions = new Set<string>();
     for (const draft of this.drafts) {
       if (this.testDrafts.has(draft)) continue;
       const name = lastSegment(draft.path);
       roots.add(name);
-      if (draft.kind === "variable") bare.add(name);
+      // a variable, or a class, enum or function used as a value (a callback, `x instanceof C`)
+      if (
+        draft.kind === "variable" ||
+        draft.kind === "class" ||
+        draft.kind === "enum" ||
+        draft.kind === "function"
+      )
+        bare.add(name);
+      // functions nested in functions: bound locally, a value use is still theirs (`SiteDraft.local`)
+      if (draft.kind === "function" && draft.parentPath !== undefined) nestedFunctions.add(name);
     }
     for (const binding of this.imports) {
       bare.add(binding.localName);
@@ -1678,11 +1688,19 @@ class Extractor {
         const name = leaf.text;
         if (!bare.has(name)) continue;
         const shape = bareRead(leaf, name, this.lines);
-        if (shape && !this.scopes.isBound(leaf, name, shape.holder))
-          reads.push({
-            at: leaf.startIndex,
-            site: { kind: "read", name, qualifier: [], site: shape.site },
-          });
+        if (!shape) continue;
+        const bound = this.scopes.isBound(leaf, name, shape.holder);
+        if (bound && !nestedFunctions.has(name)) continue;
+        reads.push({
+          at: leaf.startIndex,
+          site: {
+            kind: "read",
+            name,
+            qualifier: [],
+            site: shape.site,
+            ...(bound ? { local: true } : {}),
+          },
+        });
       }
     }
     for (const member of this.readMembers) {
