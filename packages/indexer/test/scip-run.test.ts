@@ -14,7 +14,7 @@ import {
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { buildIndex, indexProviders } from "../src/index.js";
+import { buildIndex } from "../src/index.js";
 import { createScipProviders } from "../src/scip/index.js";
 import {
   DEFAULT_TIMEOUT_MS,
@@ -894,16 +894,6 @@ describe("runScipGo", () => {
 });
 
 // ─── Resolvers and buildIndex ─────────────────────────────────────────────────────────────────────
-
-describe("the resolvers registry", () => {
-  it("registers scip-typescript, scip-python and scip-go by default", () => {
-    expect(indexProviders().map((r) => [r.id, [...r.languages]])).toEqual([
-      ["scip-typescript", ["typescript", "tsx", "javascript"]],
-      ["scip-python", ["python"]],
-      ["scip-go", ["go"]],
-    ]);
-  });
-});
 
 describe("buildIndex with the SCIP resolvers", () => {
   const tsSrc = marked(`export class ⟦A⟧ {

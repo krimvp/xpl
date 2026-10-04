@@ -133,8 +133,10 @@ words, before any code name (`xpl lint` flags notes that are long or lean on cod
 
 TypeScript/JavaScript, Python and Go get symbols and references. YAML, JSON and TOML get their keys as
 symbols (`config/default.yaml#retry.maxRetries` or `pyproject.toml#project.scripts.flask` can be anchored like
-a function); any other text file is indexed as plain text. Symbols always come from tree-sitter (WASM, nothing
-to install). References (calls, imports, inheritance, type uses, reads of variables and fields) come from a
+a function). Rust has experimental syntax tags for named declarations and lexical nesting, with no resolved
+relationships. Its tags provider runs with `--precise off` and needs no Rust toolchain; see
+[the Rust experiment](docs/rust-tags.md) for coverage, measurements and commands. Any other text file is indexed as
+plain text. Symbols always come from tree-sitter (WASM, nothing to install). References (calls, imports, inheritance, type uses, reads of variables and fields) come from a
 scope-aware heuristic resolver, or, when the tool can run, from a compiler-grade SCIP indexer. `xpl index`
 tries SCIP by default and prints what each language got: `refs: precise (scip-go@0.2.7)` or `refs: heuristic`.
 The viewer draws heuristic edges lighter, and Claude treats them as hints.
@@ -149,6 +151,7 @@ Empty relationships do not mean complete analysis. Older indexes still load, wit
 | TS / JS          | `npx` and, on first use, network access: `scip-typescript` 0.4.0                    |
 | Python           | `npx` and, on first use, network access: `scip-python` 0.6.6                        |
 | Go               | Go 1.25 or newer, or an older `go` that may download the toolchain: `scip-go` 0.2.7 |
+| Rust             | nothing: syntax declarations only; relationships are unavailable                    |
 | YAML, JSON, TOML | nothing: keys are symbols, there are no references                                  |
 
 `--precise off` skips SCIP (fast, heuristic), `--precise require` fails instead of falling back;
