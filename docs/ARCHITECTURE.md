@@ -62,6 +62,11 @@ between two commits. For a change, `xpl change` records the diff in the explaine
 9. **Drafts without an LLM.** Most of an explainer is structure: boxes, steps, anchors, tour order.
    `xpl draft` builds that from the index and the change record, with `TODO:` in every text a person writes.
    Claude then writes and checks only the text. `xpl lint` reports each `TODO` left as an error.
+10. **Code-graph formats are interchange only.** SCIP, Kythe entries and Joern CPG exports map onto
+   `ProviderOutput` (§3) with stated losses; xpl stores only its own `SymbolIndex`, and `normalizeProvider`
+   alone decides source checks, IDs and positions. SCIP is the import format (#12). A Kythe or CPG importer is
+   not built: Kythe adds little where a SCIP tool exists, and CPG frontends differ in positions, synthetic nodes
+   and coverage. Measured on `fixtures/go-jobrunner` in `docs/assessment-2026-10-04-graph-formats.md`.
 
 ---
 
@@ -81,7 +86,8 @@ skill/code-explainer/   Claude skill: SKILL.md, README.md, reference/ (quick.md,
                         explain-change.md, examples/), bin/xpl (a symlink-safe node launcher for the built CLI)
 fixtures/{ts,py,go}-jobrunner/   tiny real repos + committed explainers in .explainer/
 docs/                   handoff.md, ARCHITECTURE.md, analysis-2026-09-30.txt, review-*.md (review notes),
-                        review-2026-10-03-real-runs/ (the per-run reports of that review), images/
+                        review-2026-10-03-real-runs/ (the per-run reports of that review), images/,
+                        assessment-2026-10-04-graph-formats.md (+ its reproducible scripts)
 .explainer/             xpl's own explainer (xpl.explainer.json), checked by packages/cli/test/self-explainer.test.ts
 AGENTS.md, CLAUDE.md    guidance for coding agents working on this repo (CLAUDE.md imports AGENTS.md)
 .claude/skills/         skills for working on this repo (.agents/skills links here; code-explainer links to skill/)
@@ -462,6 +468,12 @@ reuse is safe only when source, provider version and relevant configuration/depe
 
 This slice keeps SCIP relationship mapping over existing syntax declarations. SCIP-only declarations (#12)
 and Rust tags (#13) are separate adapters/import work; neither is implemented here.
+
+Adapter rules (from mapping SCIP, Kythe and CPG artifacts, `docs/assessment-2026-10-04-graph-formats.md` §5.2):
+send only facts xpl can check, since one rejected fact removes its file from all of the report's coverage; claim
+`symbols` for a file only with its complete symbol set (next to a language pack, claim `declarationRanges` and
+use the pack's `<file>#<path>` IDs as endpoints); never advertise a kind the adapter does not map, withdraw
+coverage per file and kind where facts were dropped, and report seen-but-unresolved positions as `blind`.
 
 **Analysis coverage** (`core/src/analysis.ts`, `indexer/src/analysis.ts`). An `AnalysisReport` contains a
 stable `provider` id, advertised `capabilities`, scoped `files`, and observed `results`. Capabilities are
