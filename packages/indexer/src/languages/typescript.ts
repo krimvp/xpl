@@ -1737,15 +1737,18 @@ class Extractor {
     }
     const parts = calleeParts(fn);
     if (!parts) return;
-    this.pushSite("call", parts, callSpan(n, fn, this.lines));
-    if (fn.type === "identifier" && this.scopes.isBound(fn, fn.text))
+    const alias = fn.type === "identifier" ? ownNameOf(fn) : undefined;
+    this.pushSite("call", alias ? { ...parts, name: alias } : parts, callSpan(n, fn, this.lines));
+    if (!alias && fn.type === "identifier" && this.scopes.isBound(fn, fn.text))
       this.sites.at(-1)!.local = true;
   }
 
   private onNew(n: Node): void {
     const ctor = n.childForFieldName("constructor");
     const parts = calleeParts(ctor);
-    if (parts && ctor) this.pushSite("call", parts, callSpan(n, ctor, this.lines));
+    if (!parts || !ctor) return;
+    const alias = ctor.type === "identifier" ? ownNameOf(ctor) : undefined;
+    this.pushSite("call", alias ? { ...parts, name: alias } : parts, callSpan(n, ctor, this.lines));
   }
 
   private onAssignment(n: Node): void {
@@ -2212,3 +2215,26 @@ export const typescriptPack: LanguagePack = {
 
   errorInTypePosition,
 };
+
+/**
+ * The declared name a function or class expression's own name stands for, when `id` uses that own name from
+ * inside it: `const fib = function inner(n) { return inner(n - 1); }` calls `fib`, `const Anon = class Self {
+ * make() { return new Self(); } }` constructs `Anon`. Undefined for any other name.
+ */
+function ownNameOf(id: Node): string | undefined {
+  for (let n = id.parent; n; n = n.parent) {
+    if (n.type !== "function_expression" && n.type !== "generator_function" && n.type !== "class")
+      continue;
+    if (n.childForFieldName("name")?.text !== id.text) continue;
+    let holder = n.parent;
+    while (
+      holder &&
+      (holder.type === "parenthesized_expression" || holder.type === "as_expression")
+    )
+      holder = holder.parent;
+    const declared =
+      holder?.type === "variable_declarator" ? holder.childForFieldName("name") : null;
+    return declared?.type === "identifier" && declared.text !== id.text ? declared.text : undefined;
+  }
+  return undefined;
+}

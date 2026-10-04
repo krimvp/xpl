@@ -458,6 +458,27 @@ describe("calls: scope chain and same-file symbols", () => {
     expect(r).toEqual(["engine/use.ts#stop -> engine/near.ts#Closer.close (call)"]);
   });
 
+  it("a function or class expression that uses its own name means the symbol it is declared as", async () => {
+    const r = await refs(
+      {
+        "a.ts": src(
+          "export const fib = function inner(n: number): number {",
+          "  return n < 2 ? n : inner(n - 1) + inner(n - 2);",
+          "};",
+          "export const Anon = class Self {",
+          "  make() { return new Self(); }",
+          "};",
+        ),
+      },
+      "call",
+    );
+    expect(r).toEqual([
+      "a.ts#fib -> a.ts#fib (call)",
+      "a.ts#fib -> a.ts#fib (call)",
+      "a.ts#Anon.make -> a.ts#Anon (call)",
+    ]);
+  });
+
   it("resolves calls to overloaded functions to the implementation", async () => {
     const r = await refs(
       {
