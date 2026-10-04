@@ -838,6 +838,9 @@ Foreground is the default; stop it with Ctrl-C or `xpl service stop`. `--backgro
 CLI as a detached process and logs to `.explainer/service/service.log`. It opens no browser automatically.
 The first start needs a guide. Later starts reuse the saved guide, port, pinned index and backend label:
 
+`--index` resolves from the working directory first, then the repository root, as for `view`. The service
+checks that the resolved index stays inside its repository and saves that absolute path for restart.
+
 ```sh
 xpl service start jobrunner --background --port 0
 xpl service status --json

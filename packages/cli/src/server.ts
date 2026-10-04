@@ -181,6 +181,12 @@ export async function startViewServer(options: ViewServerOptions): Promise<ViewS
     }
   }
 
+  function checkRequestStore() {
+    checkServicePaths(join(env.root, ".explainer"));
+    const path = join(env.root, ".explainer", "requests.json");
+    if (existsSync(path)) checkServicePaths(path);
+  }
+
   /** Everything a request needs, read fresh: the explainer, its index, the working tree. */
   async function loadState() {
     checkServicePaths(explainerPath);
@@ -304,8 +310,6 @@ export async function startViewServer(options: ViewServerOptions): Promise<ViewS
     }
 
     checkServicePaths(join(env.root, ".explainer"));
-    const requestsPath = join(env.root, ".explainer", "requests.json");
-    if (existsSync(requestsPath)) checkServicePaths(requestsPath);
 
     if (pathname === "/" || pathname === "/index.html") {
       allow("GET", "HEAD");
@@ -447,12 +451,13 @@ export async function startViewServer(options: ViewServerOptions): Promise<ViewS
           }
           if (request.explainer !== undefined && request.explainer !== name)
             throw new HttpError(400, "feedback names a different explainer");
-          await serial(() => importRequests(env.root, [request]));
+          await serial(() => importRequests(env.root, [request], checkRequestStore));
           const state = await loadState();
           const contextReason =
             feedbackContextReason(request, artifactIdentity(freshExplainer(state), state.index)) ??
             (await stalenessOf(env, state.tree, state.index, state.indexFile, state.loaded))
               ?.message;
+          checkRequestStore();
           sendJson(req, res, 201, {
             ok: true,
             request: readRequests(env.root).requests.find((r) => r.id === request.id),
@@ -486,19 +491,24 @@ export async function startViewServer(options: ViewServerOptions): Promise<ViewS
         const view = text("view", 200);
         const label = text("label", 500);
         const saved = await serial(() =>
-          appendRequest(env.root, {
-            elementId,
-            ...(note !== undefined ? { note } : {}),
-            kind,
-            ...(view !== undefined ? { view } : {}),
-            ...(label !== undefined ? { label } : {}),
-            explainer: name,
-            context: null,
-          }),
+          appendRequest(
+            env.root,
+            {
+              elementId,
+              ...(note !== undefined ? { note } : {}),
+              kind,
+              ...(view !== undefined ? { view } : {}),
+              ...(label !== undefined ? { label } : {}),
+              explainer: name,
+              context: null,
+            },
+            checkRequestStore,
+          ),
         );
         sendJson(req, res, 201, { ok: true, ...saved });
         return;
       }
+      checkRequestStore();
       const { requests, error } = readRequests(env.root);
       if (error) throw new HttpError(500, error);
       const mine = requests.filter((r) => r.explainer === undefined || r.explainer === name);

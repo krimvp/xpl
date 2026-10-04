@@ -1366,6 +1366,8 @@ waits for its IPC readiness acknowledgement, then detaches; output appends to `s
 start needs a guide; later starts reuse the selected guide, actual port, optional pinned index and backend.
 An explicitly occupied port fails; a first start without a port tries 4747, then a free port. Restart keeps
 the previous address unless `--port` overrides it. Another repository attaches its own service with `--root`.
+An explicit `--index` uses the same resolver as `view`: working-directory path first, repository-root
+fallback second. Service checks containment and saves the resolved absolute path.
 
 The canonical `realpath` root owns `.explainer/service/` (private permissions, git-ignored). `context.json`
 uses `xpl-service-context@1`: root, repository-relative guide, backend (`none|claude`), port and nullable
@@ -1374,6 +1376,9 @@ pinned index path. `instance.json` uses `xpl-service-instance@1`: root, UUID, PI
 `withFileLock` and `atomicWrite`. The instance is reserved before listening, preventing concurrent starts.
 Guides, pinned indexes and state paths must remain within the root. Managed server requests also check
 artifact paths so a guide or requests symlink cannot attach another repository's state.
+Both feedback POST paths check the requests file after acquiring its filesystem lock and immediately
+before the synchronous read/merge. They recheck before unlocked response reads too; a symlink swapped
+while a writer waits cannot import another root's feedback.
 
 `status` reports `stopped`, `starting`, `running`, `unavailable` or `interrupted`, with actual UUID, PID,
 address, root, guide and backend. UUID/root and secret bearer-token replies from `GET /api/service` verify

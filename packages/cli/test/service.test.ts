@@ -1,7 +1,8 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, symlinkSync, unlinkSync } from "node:fs";
+import { lstatSync, mkdirSync, readdirSync, rmdirSync, symlinkSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 import {
   cloneDir,
   indexedFixture,
@@ -52,6 +53,152 @@ async function serve(root: string, ...extra: string[]) {
 }
 
 describe("repository service lifecycle", () => {
+  const feedback = {
+    id: "held-request",
+    elementId: "file:src/queue.ts",
+    kind: "explain",
+    at: "2026-10-04T12:00:00.000Z",
+    context: null,
+    outcome: {
+      revision: 0,
+      status: "outdated",
+      reason: "Original snapshot unavailable.",
+      at: "2026-10-04T12:00:00.000Z",
+    },
+    explainer: "demo",
+  };
+
+  it.each([
+    ["legacy", { elementId: "file:src/queue.ts" }],
+    ["snapshot-bound", feedback],
+  ])(
+    "rejects a requests symlink swapped while %s feedback waits for its lock",
+    async (_kind, body) => {
+      const root = cloneDir(demo);
+      const other = cloneDir(demo);
+      const foreign = JSON.stringify([
+        { ...feedback, id: "foreign-request", elementId: "file:src/runner.ts" },
+      ]);
+      const foreignPath = writeFile(other, ".explainer/requests.json", foreign);
+      const running = await serve(root, "demo");
+      const lock = join(root, ".explainer/requests.json.lock");
+      mkdirSync(lock);
+      let pending: Promise<Response> | undefined;
+      try {
+        expect((await fetch(new URL("/api/requests", running.server.url))).status).toBe(200);
+        let settled = false;
+        pending = fetch(new URL("/api/requests", running.server.url), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        pending.then(() => {
+          settled = true;
+        });
+        // Keep the transaction blocked while the POST reaches the existing filesystem lock.
+        await delay(250);
+        expect(settled).toBe(false);
+        symlinkSync(foreignPath, join(root, ".explainer/requests.json"));
+        rmdirSync(lock);
+        const response = await pending;
+        expect(response.status).toBe(403);
+        expect(await response.json()).toEqual({
+          error: "service artifact path leaves its repository",
+        });
+        expect(lstatSync(join(root, ".explainer/requests.json")).isSymbolicLink()).toBe(true);
+        expect(readFile(other, ".explainer/requests.json")).toBe(foreign);
+      } finally {
+        try {
+          rmdirSync(lock);
+        } catch {
+          /* released by test */
+        }
+        await pending;
+        await running.close();
+      }
+    },
+  );
+
+  it("resolves a repo-relative pinned index from outside the repository and persists its resolved path", async () => {
+    const root = cloneDir(demo);
+    const outside = makeTempDir();
+    const index = join(
+      ".explainer",
+      readdirSync(join(root, ".explainer")).find((name) => /^index-.+\.json$/.test(name))!,
+    );
+    const abort = new AbortController();
+    let ready!: (server: ViewServer) => void;
+    const listening = new Promise<ViewServer>((resolve) => {
+      ready = resolve;
+    });
+    const done = invoke(
+      ["service", "start", "demo", "--root", root, "--index", index, "--port", "0"],
+      { cwd: outside, env: { XPL_VIEWER_HTML: viewer }, signal: abort.signal, onServer: ready },
+    );
+    try {
+      const server = await Promise.race([
+        listening,
+        done.then((r) => {
+          throw new Error(r.err || r.out);
+        }),
+      ]);
+      expect((await fetch(new URL("/api/bundle", server.url))).status).toBe(200);
+      expect(readJson(root, ".explainer/service/context.json").index).toBe(join(root, index));
+    } finally {
+      abort.abort();
+      await done;
+    }
+  });
+
+  it("persists queued feedback before ownership becomes stopped while its request lock is held", async () => {
+    const root = cloneDir(demo);
+    const running = await serve(root, "demo");
+    const lock = join(root, ".explainer/requests.json.lock");
+    mkdirSync(lock);
+    let pending: Promise<unknown> | undefined;
+    try {
+      expect((await fetch(new URL("/api/requests", running.server.url))).status).toBe(200);
+      let settled = false;
+      pending = fetch(new URL("/api/requests", running.server.url), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(feedback),
+      }).catch(() => undefined);
+      pending.then(() => {
+        settled = true;
+      });
+      await delay(250);
+      expect(settled).toBe(false);
+      const record = readJson(root, ".explainer/service/instance.json");
+      const stop = await fetch(new URL("/api/service/stop", running.server.url), {
+        method: "POST",
+        headers: { Authorization: `Bearer ${record.token}`, "Content-Type": "application/json" },
+        body: "{}",
+      });
+      expect(stop.status).toBe(200);
+      expect(await stop.json()).toEqual({ instanceId: record.instanceId, root });
+      // Give a premature shutdown time to mark ownership stopped while the writer is still blocked.
+      await delay(50);
+      expect(readJson(root, ".explainer/service/instance.json").state).toBe("running");
+      rmdirSync(lock);
+      await expect
+        .poll(() => {
+          if (readJson(root, ".explainer/service/instance.json").state !== "stopped") return null;
+          return readJson(root, ".explainer/requests.json");
+        })
+        .toEqual([feedback]);
+      expect((await running.done).code).toBe(0);
+    } finally {
+      try {
+        rmdirSync(lock);
+      } catch {
+        /* released by test */
+      }
+      await pending;
+      await running.close();
+    }
+  });
+
   it("identifies an exited owner and requires explicit recovery while preserving interrupted records and artifacts", async () => {
     const root = cloneDir(demo);
     const first = await serve(root, "demo");

@@ -3,13 +3,13 @@ import { spawn } from "node:child_process";
 import { randomBytes, randomUUID } from "node:crypto";
 import { existsSync, readFileSync, realpathSync, openSync, closeSync } from "node:fs";
 import { chmod, mkdir } from "node:fs/promises";
-import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { dirname, isAbsolute, join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { CommandSpec } from "../command.js";
 import type { Ctx } from "../context.js";
 import { CliError, UsageError } from "../errors.js";
 import { atomicWrite, jsonFile, parseJson, toPosix, withFileLock } from "../fsutil.js";
-import { loadExplainer, openWorkspace } from "../repo.js";
+import { chooseIndexFile, loadExplainer, openWorkspace, WorkingTree } from "../repo.js";
 import type { ViewServer } from "../server.js";
 import { readViewerHtml } from "../viewer-html.js";
 import { listen, untilStopped } from "./view.js";
@@ -258,6 +258,8 @@ export const serviceCommand: CommandSpec = {
     "The selected guide, port and backend label persist under the canonical repository root. A later start",
     "without a guide reuses that context. Stop the service before selecting another guide; use --root to",
     "attach another repository's separate service. One owner per canonical root is allowed.",
+    "--index resolves from the working directory, then the repository root, as for view; its resolved",
+    "repository-local path is saved for restart.",
     "Status reports instance UUID, PID, address, root, guide and backend. Stop verifies a secret ownership",
     "token over loopback, never signals a PID. A dead owner is interrupted; --recover explicitly archives",
     "its record and starts another instance. A live unverified PID or crashed writer lock needs inspection.",
@@ -337,7 +339,7 @@ export const serviceCommand: CommandSpec = {
     const loaded = loadExplainer(ctx, guide);
     loaded.abs = localPath(p.root, loaded.abs);
     const index = ctx.indexOption
-      ? localPath(p.root, resolve(ctx.cwd, ctx.indexOption))
+      ? localPath(p.root, await chooseIndexFile(ctx, new WorkingTree(p.root)))
       : (saved?.index ?? null);
     if (index) localPath(p.root, index);
     ctx = { ...ctx, indexOption: index ?? undefined };
