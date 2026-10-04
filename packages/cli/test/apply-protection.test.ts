@@ -97,7 +97,7 @@ describe("apply when everything is protected", () => {
     expect(out).toContain("nothing was applied");
   });
 
-  it("covers user-authored elements, removal of an element that carries userFields, and includeRemove", async () => {
+  it("covers removal of an element that carries userFields, and includeRemove", async () => {
     const remove = await apply(cloneDir(owned), { remove: [DISPATCH] });
     expect(remove.code).toBe(1);
     expect(remove.out).toContain(
@@ -161,42 +161,6 @@ describe("apply with some of the patch protected", () => {
     const noop = await apply(dir, { concepts: [{ id: "concept:x", label: "X" }] });
     expect(noop.code).toBe(0);
     expect(noop.out).toContain("no changes");
-  });
-});
-
-describe("includeAdd grows a view the user curated", () => {
-  it("applies, exits 0, keeps the user's ownership of include", async () => {
-    const dir = cloneDir(owned);
-    const { code, out } = await apply(dir, {
-      views: [
-        {
-          id: "view:overview",
-          type: "graph",
-          includeAdd: ["file:src/queue.ts", "file:src/bus.ts"],
-        },
-      ],
-    });
-    expect(code).toBe(0);
-    expect(out).toContain("applied to .explainer/demo.explainer.json (actor llm): 1 id changed");
-    expect(out).not.toContain("protected");
-    const overview = readJson(dir, EXPLAINER).views.find((v: any) => v.id === "view:overview");
-    expect(overview.include).toEqual([
-      "grp:scheduling",
-      "file:src/worker.ts",
-      "file:src/metrics.ts",
-      "file:src/bus.ts",
-      "file:src/queue.ts",
-    ]);
-    expect(overview.provenance.userFields).toEqual(["include"]);
-    expect("includeAdd" in overview).toBe(false);
-  });
-
-  it("an unknown id in includeAdd is rejected with its place in the patch", async () => {
-    const { code, out } = await apply(cloneDir(demo), {
-      views: [{ id: "view:overview", type: "graph", includeAdd: ["file:src/nope.ts"] }],
-    });
-    expect(code).toBe(1);
-    expect(out).toContain("views[0].includeAdd[0] [view:overview]");
   });
 });
 

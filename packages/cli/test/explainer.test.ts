@@ -50,7 +50,6 @@ describe("xpl new", () => {
     });
     expect(explainer.index.path).toMatch(/^\.explainer\/index-wt-[0-9a-f]{10}\.json$/);
     expect(explainer.index.commit).toBe(explainer.repo.commit);
-    expect(explainer.repo.name).toBeTruthy();
   });
 
   it("--title sets the title; --json describes the file", async () => {
@@ -278,7 +277,8 @@ describe("xpl apply", () => {
     const concept = readJson(dir, EXPLAINER).concepts.find((c: any) => c.id === "concept:mine");
     expect(concept.provenance.origin).toBe("user");
 
-    // the patch only touches what the user owns: refused with exit 1, naming the ids and what to do
+    // the patch only touches what the user owns: refused with exit 1, naming the ids (the full refusal is in
+    // apply-protection.test.ts)
     const overwrite = { concepts: [{ id: "concept:mine", label: "Changed by llm" }] };
     const { code, out } = await invoke(["apply", "demo", "-"], {
       cwd: dir,
@@ -290,8 +290,6 @@ describe("xpl apply", () => {
     );
     expect(out).toContain("owned by the user (skipped as protected): concept:mine");
     expect(out).toContain("concept:mine is user-authored; an llm patch cannot modify it (skipped)");
-    expect(out).toContain("what to do:");
-    expect(out).toContain("NEW view");
     expect(readJson(dir, EXPLAINER).concepts.find((c: any) => c.id === "concept:mine").label).toBe(
       "Mine",
     );

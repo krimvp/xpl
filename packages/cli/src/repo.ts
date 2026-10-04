@@ -245,16 +245,6 @@ export interface Staleness {
 }
 
 /** Why the index does not match the working tree, or undefined when it does. */
-export async function stalenessWarning(
-  env: RepoEnv,
-  tree: WorkingTree,
-  index: SymbolIndex,
-  indexFile: string,
-  explainer?: LoadedExplainer,
-): Promise<string | undefined> {
-  return (await stalenessOf(env, tree, index, indexFile, explainer))?.message;
-}
-
 export async function stalenessOf(
   env: RepoEnv,
   tree: WorkingTree,
