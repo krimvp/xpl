@@ -4,23 +4,29 @@ Turns "how does X work?", "give me an overview of this repo", "explain this PR" 
 
 ## Install
 
-1. Build the repo once (Node >= 22.12):
+1. Install the local CLI tarball (Node >=22.12 and npm; verified on Linux x64/WSL2 only):
 
    ```sh
-   cd <path to xpl repo>
-   npm install && npm run build
+   npm install --global --prefix "$HOME/.local" --offline --ignore-scripts /absolute/path/xpl-cli-0.0.0.tgz
+   export PATH="$HOME/.local/bin:$PATH"
+   xpl doctor
    ```
 
-2. Symlink the skill directory (a symlink, not a copy: the launcher finds the CLI relative to the real path of `bin/xpl`):
+2. Install the bundled skill, with a launcher bound to the installed CLI:
 
    ```sh
    # for every project
-   mkdir -p ~/.claude/skills && ln -s "$PWD/skill/code-explainer" ~/.claude/skills/code-explainer
+   xpl skill install
    # or for one project
-   mkdir -p <project>/.claude/skills && ln -s "$PWD/skill/code-explainer" <project>/.claude/skills/code-explainer
+   xpl skill install --dir <project>/.claude/skills/code-explainer
    ```
 
-3. Check it: `~/.claude/skills/code-explainer/bin/xpl --version` prints `0.0.0`. If it says the CLI is not built, repeat step 1. For a copy that is not inside the repo, set `XPL_CLI=<repo>/packages/cli/dist/xpl.mjs`.
+3. Check it: `~/.claude/skills/code-explainer/bin/xpl --version` prints the CLI version. Run `xpl doctor --agent claude` to check the chosen authoring setup. Install and authenticate Claude Code separately; diagnosis does not verify provider access.
+
+After updating or moving the CLI, rerun `xpl skill install` with the same destination. No source checkout
+or manual symlink is needed. Updates refuse unmanaged directories, symlinks and local skill edits; move
+the old directory aside to preserve it, then install again. `XPL_CLI=<path to xpl.mjs>` overrides the
+launcher binding. For source development, `bin/xpl` still finds `packages/cli/dist/xpl.mjs` in its checkout.
 
 ## Use
 
@@ -38,12 +44,17 @@ Claude indexes the repo, starts from a draft that `xpl draft` builds from the in
 
 The index gets precise references from SCIP indexers when they can run (`npx` for TypeScript and Python, the Go toolchain for Go); without them it falls back to heuristic references and says so.
 
+`xpl index --precise off`, local viewing and self-contained HTML reading/export need no hosted xpl service
+after setup. Precise tool bootstrap, toolchains and dependencies may need network access. Claude Code
+authoring has separate authentication and provider network requirements. Generation runs only when you
+invoke the skill; no continuously running authoring worker is required.
+
 ## Contents
 
 | Path                          | What                                                                                                 |
 | ----------------------------- | ---------------------------------------------------------------------------------------------------- |
 | `SKILL.md`                    | the skill: workflow, the three scopes, drafts, tour, accuracy, hard rules                            |
-| `bin/xpl`                     | launcher for the built CLI (`packages/cli/dist/xpl.mjs`), symlink-safe                               |
+| `bin/xpl`                     | launcher bound by the installer to the installed CLI; `XPL_CLI` overrides it                         |
 | `reference/writing.md`        | plain-language rules, what goes in which field, before/after rewrites                                |
 | `reference/explain-change.md` | how to explain a PR, MR or branch diff: before/after checks, callers, tests                          |
 | `reference/patch-format.md`   | every patch element with examples, merge rules, rejection messages and fixes                         |

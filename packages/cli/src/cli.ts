@@ -11,6 +11,8 @@ import { indexCommand } from "./commands/build-index.js";
 import { bundleCommand } from "./commands/bundle.js";
 import { changeCommand } from "./commands/change.js";
 import { draftCommand } from "./commands/draft.js";
+import { doctorCommand } from "./commands/doctor.js";
+import { skillCommand } from "./commands/skill.js";
 import { lintCommand } from "./commands/lint.js";
 import { newCommand } from "./commands/new.js";
 import { outlineCommand } from "./commands/outline.js";
@@ -45,6 +47,8 @@ export const COMMANDS: readonly CommandSpec[] = [
   draftCommand,
   viewCommand,
   bundleCommand,
+  doctorCommand,
+  skillCommand,
 ];
 
 const defaultIo: Io = {
@@ -80,6 +84,7 @@ function helpText(): string {
     "<id> arguments accept sym:..., file:..., dir:..., src/a.ts#A.b and src/a.ts.",
     "Environment: XPL_VIEWER_HTML=<file> overrides the viewer page (view, bundle); XPL_SKIP_STALE_CHECK=1 skips",
     "the comparison of the index with the working tree (about a second per 5000 files); XPL_WASM_DIR, XPL_DEBUG.",
+    "Setup: xpl doctor; xpl skill install; xpl doctor --agent claude. Offline indexing: xpl index --precise off.",
     "Typical use: xpl index; xpl outline; xpl show <id> --refs; xpl new <name>; xpl apply <name> patch.json;",
     "xpl lint <name>; xpl view <name>. Exit codes: 0 ok, 1 rejected or failed, 2 usage error.",
     "See docs/ARCHITECTURE.md section 5.",
