@@ -5,12 +5,14 @@
  * Symbols (kind; path):
  * - class -> `class`; def / async def -> `function`, or `method` when directly in a class body
  * - simple assignments at module or class level, annotated or not (`x = 1`, `x: int = 1`, `id: str`
- *   as in dataclasses, `Alias = Callable[..., int]`) -> `variable`; one symbol per statement, only when the
- *   target is a single name (no tuple unpacking, no `self.x`); PEP 695 `type X = ...` -> `type`
+ *   as in dataclasses, `Alias = Callable[..., int]`) -> `variable`; one symbol per name of the target (`x`,
+ *   or each of `x, y = ...`; not `self.x` or `a[0]`); PEP 695 `type X = ...` -> `type`
  * - defs and classes nested in functions or classes -> `outer.inner`, `Class.Inner.method`
  * - definitions inside `if` / `try` / `with` / `for` / `while` / `match` blocks belong to the scope around
- *   them; assignments there do not count. `if __name__ == "__main__":` is skipped as a whole (the script
- *   body is not module API), its calls still count from module scope
+ *   them. Assignments count in `if` / `try` / `with` (not in loops or `match`): the first one of a name, unless
+ *   the scope assigns it directly too or the file imports it (`except ImportError: x = None` stands in for
+ *   the import). `if __name__ == "__main__":` is skipped as a whole (the script body is not module API), its
+ *   calls still count from module scope
  * - `@overload` stubs are skipped when an implementation with the same name is in the same block
  * - `@property def x` plus `@x.setter def x` give two drafts with the same path (the framework numbers the
  *   second `x~2`)

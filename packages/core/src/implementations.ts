@@ -196,7 +196,12 @@ export function implementedBy(index: IndexModel, id: SymbolId): Implementation[]
  * method may run a subclass's override (TS / JS, Python). Go is not one: embedding promotes methods, and a call
  * on the embedded type never runs the outer type's method of the same name.
  */
-const VIRTUAL_LANGUAGES: ReadonlySet<string> = new Set(["typescript", "tsx", "javascript", "python"]);
+const VIRTUAL_LANGUAGES: ReadonlySet<string> = new Set([
+  "typescript",
+  "tsx",
+  "javascript",
+  "python",
+]);
 
 /** Constructors are not overridden in this sense: `new Base()` or `super().__init__()` never runs a subclass's. */
 const CONSTRUCTORS: ReadonlySet<string> = new Set(["constructor", "__init__", "__new__"]);
@@ -229,7 +234,8 @@ export function overridesOf(index: IndexModel, id: SymbolId): Implementation[] {
       const sub = index.symbol(ref.from);
       if (sub?.kind !== "class" || seen.has(sub.id)) continue;
       seen.add(sub.id);
-      const via = resolution === "precise" && ref.resolution === "precise" ? "precise" : "heuristic";
+      const via =
+        resolution === "precise" && ref.resolution === "precise" ? "precise" : "heuristic";
       const member = index.symbolAt(sub.file, `${sub.path}.${target.name}`);
       if (member?.kind === "method") add(out, member.id, via);
       visit(sub.id, via);
@@ -259,7 +265,8 @@ export function overriddenBy(index: IndexModel, id: SymbolId): Implementation[] 
         const base = index.symbol(ref.to);
         if (base?.kind !== "class" || seen.has(base.id)) continue;
         seen.add(base.id);
-        const via = resolution === "precise" && ref.resolution === "precise" ? "precise" : "heuristic";
+        const via =
+          resolution === "precise" && ref.resolution === "precise" ? "precise" : "heuristic";
         const member = index.symbolAt(base.file, `${base.path}.${target.name}`);
         if (member?.kind === "method") return [{ id: member.id, resolution: via }];
         next.push({ cls: base, resolution: via });

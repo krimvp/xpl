@@ -78,7 +78,7 @@ describe("Python symbols: kinds and paths (ARCHITECTURE.md §3 table)", () => {
     expect(symbol(index, "a.py", "top")!.parent).toBeUndefined();
   });
 
-  it("class-level and module-level variables are simple single-name assignments only", async () => {
+  it("class-level and module-level variables are single-name assignments and the names of tuple targets", async () => {
     const source = src(
       "a = 1", // 1
       "b: int = 2", // 2
@@ -102,10 +102,13 @@ describe("Python symbols: kinds and paths (ARCHITECTURE.md §3 table)", () => {
       "variable a 1-1",
       "variable b 2-2",
       "variable c 3-3", // a chain defines a symbol for its first target
+      "variable e 4-4", // each name of a tuple target, with the statement's range
+      "variable f 4-4",
       "variable k 8-8", // a lambda is still a variable
       "variable l 9-12", // multi-line statements keep their whole extent
       "class C 15-17",
       "variable C.o 16-16",
+      "variable C.q 17-17",
     ]);
   });
 
@@ -264,7 +267,41 @@ describe("Python symbols: blocks and the main guard", () => {
     ]);
   });
 
-  it("definitions in if/try/with/for/while/match blocks belong to the scope around them; assignments there do not", async () => {
+  it("assignments in if/try/with blocks define a name once, unless the file imports it or the scope defines it directly", async () => {
+    const source = src(
+      "try:", // 1
+      "    from fast import speedup", // 2
+      "except ImportError:", // 3
+      "    speedup = None", // 4  stands in for the import: not a symbol
+      "if USE_CACHE:", // 5
+      "    cacheit = with_cache", // 6
+      "elif OTHER:", // 7
+      "    cacheit = other", // 8  defined already
+      "else:", // 9
+      "    cacheit = no_cache", // 10
+      "    LIMIT = 1", // 11 defined directly below
+      "LIMIT = 2", // 12
+      "for i in range(3):", // 13
+      "    temp = i", // 14 a loop's temporary
+      "    if i:", // 15
+      "        deeper = i", // 16 still in the loop
+      "with lock:", // 17
+      "    a, b = 1, 2", // 18
+      "class K:", // 19
+      "    if FLAG:", // 20
+      "        mode = 1", // 21
+    );
+    expect(await symbolsOf(source)).toEqual([
+      "variable cacheit 6-6",
+      "variable LIMIT 12-12",
+      "variable a 18-18",
+      "variable b 18-18",
+      "class K 19-21",
+      "variable K.mode 21-21",
+    ]);
+  });
+
+  it("definitions in if/try/with/for/while/match blocks belong to the scope around them", async () => {
     const source = src(
       "try:", // 1
       "    import fast", // 2
@@ -298,6 +335,7 @@ describe("Python symbols: blocks and the main guard", () => {
     );
     expect(await symbolsOf(source)).toEqual([
       "function slow 4-4",
+      "variable fallback 5-5",
       "function fine 7-7",
       "function last 9-9",
       "class Only 11-11",

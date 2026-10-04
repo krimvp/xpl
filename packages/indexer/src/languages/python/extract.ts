@@ -123,16 +123,23 @@ export class Extractor implements Env {
   private readonly baseSpans: [number, number][] = [];
   private readonly scopes = new PyScopes((fn) => this.globalsOf(fn));
 
+  /** Names the file's imports bind (anywhere in it). */
+  private importedNames: ReadonlySet<string> = new Set();
+  /** Paths of the variables emitted so far: a conditional assignment does not define a name twice. */
+  private readonly variables = new Set<string>();
+
   constructor(private readonly ctx: FileContext) {
     this.lines = ctx.lines;
   }
 
   run(): FileFacts {
     const root = this.ctx.tree.rootNode;
-    this.visitStatements(named(root), { kind: "module", path: "" });
-    // Imports first: `import a.b.c` changes how later qualifiers are spelled.
+    // Imports first: `import a.b.c` changes how later qualifiers are spelled, and an imported name is not
+    // defined by the fallback assignment that stands in for it (`except ImportError: x = None`).
     for (const stmt of root.descendantsOfType(["import_statement", "import_from_statement"]))
       this.onImport(stmt);
+    this.importedNames = new Set(this.imports.map((i) => i.localName));
+    this.visitStatements(named(root), { kind: "module", path: "" });
     this.scan(root);
     this.flushFields();
     this.submoduleExports(root);
@@ -195,10 +202,17 @@ export class Extractor implements Env {
 
   /**
    * `direct`: the statements are the body of the scope itself, not of an `if`/`try`/`for`... inside it.
-   * Only direct assignments are variables: `try: import x` / `except: x = None` and `if a: X = 1` are
-   * conditional definitions, and a fallback assignment must not shadow the import it stands in for.
+   * Assignments there are conditional definitions (`if CACHE: cacheit = ...` / `else: cacheit = ...`): the
+   * first one is the variable, unless the name is defined directly in the scope or imported in the file
+   * (`try: import x` / `except: x = None`: the fallback must not shadow the import it stands in for).
    */
-  private visitStatements(stmts: readonly Node[], scope: Scope, direct = true): void {
+  private visitStatements(
+    stmts: readonly Node[],
+    scope: Scope,
+    direct = true,
+    /** In an `if` / `try` / `with` (not a loop): its assignments are conditional definitions. */
+    assigns = true,
+  ): void {
     // Names that have an implementation: `@overload` stubs of them are not symbols.
     const implemented = new Set<string>();
     for (const stmt of stmts) {
@@ -206,7 +220,15 @@ export class Extractor implements Env {
       const name = def?.type === "function_definition" ? def.childForFieldName("name") : null;
       if (def && name && !isOverload(def)) implemented.add(name.text);
     }
-    for (const stmt of stmts) this.visitStatement(stmt, scope, implemented, direct);
+    if (direct && scope.kind !== "function") {
+      const names = new Set<string>();
+      for (const stmt of stmts) {
+        const name = definitionOf(stmt)?.childForFieldName("name")?.text ?? directTarget(stmt);
+        if (name) names.add(name);
+      }
+      this.directNames.set(scope.path, names);
+    }
+    for (const stmt of stmts) this.visitStatement(stmt, scope, implemented, direct, assigns);
   }
 
   private visitStatement(
@@ -214,6 +236,7 @@ export class Extractor implements Env {
     scope: Scope,
     implemented: ReadonlySet<string>,
     direct: boolean,
+    assigns: boolean,
   ): void {
     const def = definitionOf(stmt);
     if (def) {
@@ -222,7 +245,8 @@ export class Extractor implements Env {
     }
     switch (stmt.type) {
       case "expression_statement":
-        if (direct && scope.kind !== "function") this.assignmentSymbol(stmt, scope);
+        if (scope.kind !== "function" && (direct || assigns))
+          this.assignmentSymbol(stmt, scope, direct);
         break;
       case "type_alias_statement":
         if (direct && scope.kind !== "function") this.typeAliasSymbol(stmt, scope);
@@ -232,7 +256,14 @@ export class Extractor implements Env {
         // guard is the script's own body, not module API.
         if (!isMainGuard(stmt)) {
           const nested = nestedStatements(stmt);
-          if (nested.length > 0) this.visitStatements(nested, scope, false);
+          // a loop's assignments are its temporaries, not definitions of the scope
+          if (nested.length > 0)
+            this.visitStatements(
+              nested,
+              scope,
+              false,
+              assigns && CONDITIONAL_BLOCKS.has(stmt.type),
+            );
         }
         break;
     }
@@ -257,18 +288,35 @@ export class Extractor implements Env {
     if (body) this.visitStatements(named(body), { kind: "function", path });
   }
 
-  /** `x = 1`, `x: int = 1`, `x: int` at module or class level. */
-  private assignmentSymbol(stmt: Node, scope: Scope): void {
+  /**
+   * `x = 1`, `x: int = 1`, `x: int`, and each name of `x, y = ...` / `(x, y) = ...`, at module or class level.
+   * A conditional one (`direct` false) only for a name not imported in the file nor defined yet in the scope.
+   */
+  private assignmentSymbol(stmt: Node, scope: Scope, direct: boolean): void {
     const assignment = named(stmt)[0];
     if (assignment?.type !== "assignment") return;
     const left = assignment.childForFieldName("left");
-    if (left?.type !== "identifier") return;
-    this.emit(
-      scope.path === "" ? left.text : `${scope.path}.${left.text}`,
-      "variable",
-      stmt,
-      scope.path,
-    );
+    const names =
+      left?.type === "identifier"
+        ? [left.text]
+        : left?.type === "pattern_list" || left?.type === "tuple_pattern"
+          ? named(left).flatMap((n) => (n.type === "identifier" ? [n.text] : []))
+          : [];
+    // a defined name of the scope (a direct `x = ...` comes first whatever the order)
+    for (const name of names) {
+      const path = scope.path === "" ? name : `${scope.path}.${name}`;
+      if (!direct && (this.variables.has(path) || this.importedNames.has(name))) continue;
+      if (!direct && this.definedDirectly(scope, name)) continue;
+      this.variables.add(path);
+      this.emit(path, "variable", stmt, scope.path);
+    }
+  }
+
+  private readonly directNames = new Map<string, Set<string>>();
+
+  /** Is `name` assigned or defined by a statement directly in the scope's body (any position)? */
+  private definedDirectly(scope: Scope, name: string): boolean {
+    return this.directNames.get(scope.path)?.has(name) ?? false;
   }
 
   /** `type Pair = tuple[int, int]` (PEP 695). */
@@ -649,3 +697,24 @@ export class Extractor implements Env {
     return inferred;
   }
 }
+
+/** The name a direct `x = ...` statement assigns (single-name targets only). */
+function directTarget(stmt: Node): string | undefined {
+  if (stmt.type !== "expression_statement") return undefined;
+  const assignment = named(stmt)[0];
+  const left = assignment?.type === "assignment" ? assignment.childForFieldName("left") : null;
+  return left?.type === "identifier" ? left.text : undefined;
+}
+
+/** Blocks whose assignments are conditional definitions of the scope around them (not loops or `match`). */
+const CONDITIONAL_BLOCKS: ReadonlySet<string> = new Set([
+  "if_statement",
+  "try_statement",
+  "with_statement",
+  // the clauses of those (a loop's `else` is under the loop, which already turned assignments off)
+  "elif_clause",
+  "else_clause",
+  "except_clause",
+  "except_group_clause",
+  "finally_clause",
+]);
