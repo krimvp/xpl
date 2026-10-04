@@ -9,6 +9,7 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { performance } from "node:perf_hooks";
 import { randomUUID } from "node:crypto";
 import { ExtractionCache, type ExtractionReport } from "./extraction-cache.js";
+import type { TypeScriptResolutionExperiment } from "./resolve/typescript-experiment.js";
 import { statSync } from "node:fs";
 import { join, normalize, resolve } from "node:path";
 import { splitLines, INDEX_SCHEMA, RELATIONSHIP_CAPABILITIES } from "@xpl/core";
@@ -49,6 +50,8 @@ export interface BuildIndexOptions {
   root: string;
   /** Reuse file-local extraction in .explainer/cache. false neither reads nor writes the cache. */
   cache?: boolean;
+  /** Off-default, in-memory TypeScript heuristic investigation; not used by the CLI. */
+  experimentalResolution?: TypeScriptResolutionExperiment;
   /** Commit id override. Default: short HEAD when clean, else `wt-<hash>` (see §3). */
   commit?: string;
   /** Precise (SCIP) references: "auto" falls back to heuristic refs, "require" fails instead, "off" skips. */
@@ -214,7 +217,7 @@ export async function buildIndex(opts: BuildIndexOptions): Promise<BuildIndexRes
     warn: (m) => warnings.push(m),
     readText: (path) => sourceText.get(path) ?? repo.readText(path),
   };
-  const syntax = new TreeSitterProvider();
+  const syntax = new TreeSitterProvider(opts.experimentalResolution);
   const syntaxOutput = await syntax.analyze(providerInput);
   work.heuristicResolutionMs = syntax.resolutionMs;
   const normalizedSyntax = normalizeProvider(providerInput, syntaxOutput);

@@ -21,7 +21,8 @@ The first build includes cache writes. A hit skips parsing, extraction and resou
 it still regenerates checked declarations, IDs, hashes, parents and reports. Project configuration is
 consumed fresh during heuristic resolution and semantic work. For example, changing a `tsconfig` alias or
 re-export can change an unchanged caller's target even when its file-local facts hit the cache.
-No dependency-aware semantic reuse is implemented; #17 owns that decision.
+The default pipeline retains full resolution. The [off-default #17 experiment](assessment-2026-10-04-semantic-invalidation.md)
+records the decision on dependency-aware semantic reuse; it does not change `xpl index`.
 
 The key binds exact source (including BOM and line endings), path/language, provider/profile version,
 configuration, indexer version, extraction revision and runtime/grammar versions and actual WASM hashes.

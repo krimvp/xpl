@@ -31,9 +31,11 @@ import type {
 import { FILE_LANGUAGES } from "./files.js";
 import { SourceRepoView } from "./repo.js";
 import type { ExtractionCache } from "./extraction-cache.js";
+import type { TypeScriptResolutionExperiment } from "./resolve/typescript-experiment.js";
 
 /** Tree-sitter extraction and heuristic resolution keep their internal language-pack seams. */
 export class TreeSitterProvider implements IndexProvider {
+  constructor(private readonly experiment?: TypeScriptResolutionExperiment) {}
   readonly id = "tree-sitter";
   readonly languages = FILE_LANGUAGES;
   readonly capabilities = { ...STRUCTURE_SUPPORT, ...HEURISTIC_SUPPORT };
@@ -52,6 +54,7 @@ export class TreeSitterProvider implements IndexProvider {
     const syntaxErrors: SyntaxErrorFile[] = [];
     const resourceSites: ResourceSite[] = [];
     const extractionOutcomes = new Map<FilePath, ExtractionOutcome>();
+    const identities = new Map<string, string>();
     const pool = new ParserPool();
     try {
       for (const discovered of input.sources) {
@@ -64,6 +67,7 @@ export class TreeSitterProvider implements IndexProvider {
           warnings,
           resourceSites,
           input.extractionCache,
+          this.experiment ? (path, identity) => identities.set(path, identity) : undefined,
         );
         files.push(indexed.file);
         extractionOutcomes.set(indexed.file.path, indexed.outcome);
@@ -101,7 +105,10 @@ export class TreeSitterProvider implements IndexProvider {
     );
     const heuristicFiles = resolverFiles.filter((f) => f.pack.refs === "heuristic");
     const resolutionStarted = performance.now();
-    let refs = resolveHeuristic({ files: heuristicFiles, entries, lookup, repo });
+    const resolverInput = { files: heuristicFiles, entries, lookup, repo };
+    let refs = this.experiment
+      ? this.experiment.resolve(resolverInput, input.sources, identities)
+      : resolveHeuristic(resolverInput);
     refs = refs.concat(inferPackRefs(heuristicFiles, entries, lookup, repo, refs));
 
     this.resolutionMs = performance.now() - resolutionStarted;
@@ -174,6 +181,7 @@ async function indexFile(
   warnings: string[],
   resourceSites: ResourceSite[],
   cache: ExtractionCache | undefined,
+  onIdentity?: (path: string, identity: string) => void,
 ): Promise<{ file: IndexedFile; pack: LanguagePack | undefined; outcome: ExtractionOutcome }> {
   const text = discovered.text;
   const lines = splitLines(text);
@@ -198,6 +206,7 @@ async function indexFile(
         },
         extract,
         (value) => value.outcome.status !== "failed",
+        onIdentity ? (identity) => onIdentity(discovered.path, identity) : undefined,
       )
     : await extract();
   const { facts, outcome } = extracted;
