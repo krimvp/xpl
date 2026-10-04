@@ -38,8 +38,12 @@ aside to preserve it, then retry. Claude Code needs its own installation, authen
 access. In a TypeScript, Python or Go repository, explicitly ask it:
 
 ```
-/code-explainer explain How does X work?
+/code-explainer explain How does X work? Root: /absolute/path/to/repo. Audience: maintainers. New guide: subsystem-guide.
 ```
+
+For the three creation scopes and safe retries, see [Create a guide](skill/code-explainer/reference/create.md).
+Choose a new guide or name the existing guide to extend; an existing file is never replaced by creation.
+The agent writes and checks the JSON patch for you.
 
 Claude indexes the repo, writes `.explainer/<name>.explainer.json` (commit it; the indexes beside it are
 git-ignored) and gives you the result. Open it yourself with `xpl bundle <name> -o <name>.html` (one

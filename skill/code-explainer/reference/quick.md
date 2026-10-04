@@ -4,6 +4,8 @@ One page to keep open while you work. `SKILL.md` says why; `patch-format.md`, `w
 
 ## The loop
 
+Choose the root, audience, question and guide name first. List existing guides; extend one only when it is the intended target. Use `reference/create.md` for installed entry examples and recovery. Pass `--audience` and `--question` to the draft. Patches and output snapshots go outside the indexed tree.
+
 | Step              | Command                                                                      | Done when                                     |
 | ----------------- | ---------------------------------------------------------------------------- | --------------------------------------------- |
 | Index, name       | `xpl index`, `xpl new <name> --title "..."`                                  | the index matches the working tree            |
@@ -13,7 +15,10 @@ One page to keep open while you work. `SKILL.md` says why; `patch-format.md`, `w
 | Lint, then apply  | `xpl lint <name> --patch <file> && xpl apply <name> <file>`                  | lint exits 0 (it exits 1 on any finding)      |
 | Check             | `xpl validate <name>`, `xpl status <name>`, `xpl anchors <name> tour:<slug>` | valid, `0 unexplained`, each step's code fits |
 | Accuracy, re-read | a fresh subagent or a second pass; `xpl lint <name>`                         | no claim beyond its anchors; `todo-left` 0    |
+| Ready             | `xpl ready <name>` (`--note "reason"` for intentional omissions)             | no blockers; warning decisions recorded       |
 | Show              | `xpl bundle <name> -o <name>.html` (`--files boundary` for a change)         | the path is in the reply                      |
+
+Ready export checks the current source and required content before writing. Pass the same `--note` to `bundle`; a note never overrides an error. `--draft` is an explicitly labelled repair preview, not a finished guide. Inspect the offline HTML or open `xpl view <name>` locally before replying.
 
 Keep a finding on purpose: `xpl lint ... --warn-only` (a `todo-left` error still exits 1), and say why in the reply.
 
