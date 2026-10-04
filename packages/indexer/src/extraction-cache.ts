@@ -63,6 +63,28 @@ function plainData(value: unknown): boolean {
   return Object.values(value).every(plainData);
 }
 
+/** Include empty and ignored directories: new output can also change Git's clean-tree decision. */
+export async function repositoryDirectoryIdentities(root: string): Promise<Map<string, string>> {
+  const directories = new Map<string, string>();
+  const visit = async (path: string): Promise<void> => {
+    const info = await stat(join(root, path), { bigint: true }).catch((error: unknown) => {
+      if (path && missingPath(error)) return undefined; // Deleted or dangling directory link.
+      throw error;
+    });
+    if (!info?.isDirectory()) return;
+    const identity = `${info.dev}:${info.ino}`;
+    if (directories.has(identity)) return; // Directory aliases must not make the census recurse forever.
+    directories.set(identity, path || ".");
+    for (const entry of await readdir(join(root, path), { withFileTypes: true })) {
+      if (!entry.isDirectory() && !entry.isSymbolicLink()) continue;
+      if (!path && (entry.name === ".explainer" || entry.name === ".git")) continue;
+      await visit(join(path, entry.name));
+    }
+  };
+  await visit("");
+  return directories;
+}
+
 /** One instance per build: WASM bytes are fingerprinted once per grammar, never across builds. */
 export class ExtractionCache {
   readonly report: ExtractionReport;
@@ -85,34 +107,12 @@ export class ExtractionCache {
     };
   }
 
-  /** Include empty and ignored directories: new output can also change Git's clean-tree decision. */
-  private async repositoryDirectories(): Promise<Map<string, string>> {
-    const directories = new Map<string, string>();
-    const visit = async (path: string): Promise<void> => {
-      const info = await stat(join(this.root, path), { bigint: true }).catch((error: unknown) => {
-        if (path && missingPath(error)) return undefined; // Deleted or dangling directory link.
-        throw error;
-      });
-      if (!info?.isDirectory()) return;
-      const identity = `${info.dev}:${info.ino}`;
-      if (directories.has(identity)) return; // Directory aliases must not make the census recurse forever.
-      directories.set(identity, path || ".");
-      for (const entry of await readdir(join(this.root, path), { withFileTypes: true })) {
-        if (!entry.isDirectory() && !entry.isSymbolicLink()) continue;
-        if (!path && (entry.name === ".explainer" || entry.name === ".git")) continue;
-        await visit(join(path, entry.name));
-      }
-    };
-    await visit("");
-    return directories;
-  }
-
   /** Symlinks, mounts and other aliases share one device/inode check, independent of path shape. */
   private async safeLocation(): Promise<boolean> {
     if (!this.report.enabled) return false;
     let directories: Map<string, string>;
     try {
-      directories = await (this.directories ??= this.repositoryDirectories());
+      directories = await (this.directories ??= repositoryDirectoryIdentities(this.root));
     } catch {
       this.report.enabled = false;
       this.report.bypassReason = "cannot inspect repository directory identities";

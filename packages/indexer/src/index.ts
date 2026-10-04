@@ -12,6 +12,7 @@ export * from "./wasm.js";
 
 export { buildIndex, writeIndex } from "./build.js";
 export type { ExtractionReport } from "./extraction-cache.js";
+export { repositoryDirectoryIdentities } from "./extraction-cache.js";
 export type { BuildIndexOptions, BuildIndexResult } from "./build.js";
 
 export {

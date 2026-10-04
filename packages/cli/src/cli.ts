@@ -18,6 +18,7 @@ import { lintCommand } from "./commands/lint.js";
 import { newCommand } from "./commands/new.js";
 import { outlineCommand } from "./commands/outline.js";
 import { readyCommand } from "./commands/ready.js";
+import { reviseCommand } from "./commands/revise.js";
 import { refsCommand } from "./commands/refs.js";
 import { resolveCommand } from "./commands/resolve.js";
 import { searchCommand } from "./commands/search.js";
@@ -45,6 +46,7 @@ export const COMMANDS: readonly CommandSpec[] = [
   resolveCommand,
   statusCommand,
   feedbackCommand,
+  reviseCommand,
   lintCommand,
   readyCommand,
   changeCommand,

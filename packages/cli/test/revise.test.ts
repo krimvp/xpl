@@ -1,0 +1,566 @@
+import { beforeAll, expect, it, vi } from "vitest";
+import { existsSync, mkdirSync, readFileSync, symlinkSync, promises as filesystem } from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { artifactIdentity, type Explainer } from "@xpl/core";
+import { appendRequest, readRequests } from "../src/requests.js";
+import {
+  applyStdin,
+  cloneDir,
+  fullIndex,
+  git,
+  indexedFixture,
+  editFile,
+  invoke,
+  makeTempDir,
+  readJson,
+  writeFile,
+  xpl,
+  xplJson,
+} from "./helpers.js";
+
+const proposal = join(dirname(fileURLToPath(import.meta.url)), "fixtures/revision-proposal.json");
+let demo: string;
+beforeAll(async () => {
+  demo = await indexedFixture();
+  expect((await xpl(demo, "new", "demo", "--title", "Dispatch guide")).code).toBe(0);
+  const initial = await applyStdin(demo, {
+    nodes: [
+      {
+        id: "sym:src/runner.ts#Runner.dispatch",
+        summary: "Dispatch runs a queued job.",
+        anchors: [{ file: "src/runner.ts", symbol: "Runner.dispatch", role: "definition" }],
+      },
+      { id: "file:src/queue.ts", summary: "Queue holds pending jobs." },
+    ],
+    views: [
+      {
+        id: "view:dispatch",
+        type: "graph",
+        title: "Dispatch",
+        scope: { root: "repo", depth: 1 },
+        edgeKinds: [],
+        stubs: { mode: "none" },
+        include: ["sym:src/runner.ts#Runner.dispatch", "file:src/queue.ts"],
+      },
+    ],
+  });
+  expect(initial.code, initial.out + initial.err).toBe(0);
+  expect(
+    (
+      await applyStdin(
+        demo,
+        {
+          nodes: [{ id: "sym:src/runner.ts#Runner.dispatch", label: "My dispatch label" }],
+        },
+        "--actor",
+        "user",
+      )
+    ).code,
+  ).toBe(0);
+  expect((await xpl(demo, "ready", "demo")).code).toBe(0);
+});
+
+async function reviewed(root: string) {
+  await feedback(root, "correct-runner", "sym:src/runner.ts#Runner.dispatch");
+  const selection = await xplJson(root, "revise", "demo", "--select", "correct-runner");
+  expect(selection.code, selection.out).toBe(0);
+  const run = selection.json.runId;
+  const recorded = JSON.parse(readFileSync(proposal, "utf8")).slice(0, 1);
+  const file = writeFile(makeTempDir(), "proposal.json", JSON.stringify(recorded));
+  expect((await xpl(root, "revise", "demo", "--run", run, "--proposal", file)).code).toBe(0);
+  const choices = writeFile(
+    makeTempDir(),
+    "decisions.json",
+    JSON.stringify([{ id: "correct-runner", status: "addressed", reason: "Checked source." }]),
+  );
+  expect((await xpl(root, "revise", "demo", "--run", run, "--decisions", choices)).code).toBe(0);
+  return run;
+}
+
+it("retains the exact reviewed source and diff after acceptance and later source edits", async () => {
+  const root = cloneDir(demo);
+  const run = await reviewed(root);
+  const review = await xplJson(root, "revise", "demo", "--run", run);
+  expect((await xpl(root, "revise", "demo", "--run", run, "--accept")).code).toBe(0);
+  editFile(
+    root,
+    "src/runner.ts",
+    (text) => text + "\n// Later source, outside the accepted snapshot.\n",
+  );
+  const history = await xplJson(root, "revise", "demo", "--run", run);
+  expect(history.code, history.out).toBe(0);
+  expect(history.json.state).toBe("done");
+  expect(history.json.changes).toEqual(review.json.changes);
+  expect(history.json.source).toEqual(review.json.source);
+});
+
+it("refuses a journal directory alias into source before writing generated artifacts", async () => {
+  const root = cloneDir(demo);
+  await feedback(root, "correct-runner", "sym:src/runner.ts#Runner.dispatch");
+  mkdirSync(join(root, "generated-review"));
+  symlinkSync(join(root, "generated-review"), join(root, ".explainer", "revisions"), "dir");
+  const selection = await xplJson(root, "revise", "demo", "--select", "correct-runner");
+  expect(selection.code, selection.out).toBe(1);
+  expect(selection.json.error).toMatch(/aliases repository directory generated-review/);
+  expect(await filesystem.readdir(join(root, "generated-review"))).toEqual([]);
+  expect(readRequests(root).requests[0]!.outcome.status).toBe("pending");
+});
+
+it.each(["artifact", "source", "added-file"])(
+  "refuses a changed %s after review, even with freshness skipping enabled",
+  async (changed) => {
+    const root = cloneDir(demo);
+    const run = await reviewed(root);
+    const requests = readRequests(root).requests;
+    if (changed === "artifact") {
+      expect(
+        (
+          await applyStdin(
+            root,
+            { nodes: [{ id: "file:src/queue.ts", summary: "Author's newer queue text." }] },
+            "--actor",
+            "user",
+          )
+        ).code,
+      ).toBe(0);
+    } else if (changed === "source") editFile(root, "src/runner.ts", (text) => "\n" + text);
+    else writeFile(root, "src/added.ts", "export const added = 1;\n");
+    const beforeAcceptance = readJson(root, ".explainer/demo.explainer.json");
+    const refused = await invoke(["revise", "demo", "--run", run, "--accept", "--json"], {
+      cwd: root,
+      env: { XPL_SKIP_STALE_CHECK: "1" },
+    });
+    expect(refused.code, refused.out).toBe(1);
+    expect(JSON.parse(refused.out).error).toMatch(
+      /changed since review|does not match the working tree/,
+    );
+    expect(readJson(root, ".explainer/demo.explainer.json")).toEqual(beforeAcceptance);
+    expect(readRequests(root).requests).toEqual(requests);
+  },
+);
+
+it("accepts a source-location-only move with an empty patch and byte-identical prose", async () => {
+  const root = cloneDir(demo);
+  const before = readJson<Explainer>(root, ".explainer/demo.explainer.json");
+  await feedback(root, "move", "sym:src/runner.ts#Runner.dispatch");
+  editFile(root, "src/runner.ts", (text) => "\n\n" + text);
+  expect((await xpl(root, "index", "--precise", "off")).code).toBe(0);
+  const selection = await xplJson(root, "revise", "demo", "--select", "move");
+  expect(selection.code, selection.out).toBe(0);
+  expect(selection.json.resolve.counts).toMatchObject({ moved: 1, drifted: 0, missing: 0 });
+  const run = selection.json.runId;
+  const patch = writeFile(makeTempDir(), "move.json", JSON.stringify([{ id: "move", patch: {} }]));
+  expect((await xpl(root, "revise", "demo", "--run", run, "--proposal", patch)).code).toBe(0);
+  const decisions = (reconciliation?: string) =>
+    writeFile(
+      makeTempDir(),
+      "decisions.json",
+      JSON.stringify([
+        {
+          id: "move",
+          status: "addressed",
+          reason: "Same code moved two lines.",
+          ...(reconciliation ? { reconciliation } : {}),
+        },
+      ]),
+    );
+  const unreconciled = await xplJson(
+    root,
+    "revise",
+    "demo",
+    "--run",
+    run,
+    "--decisions",
+    decisions(),
+  );
+  expect(unreconciled.code).toBe(1);
+  expect(unreconciled.json.error).toMatch(/outdated context/);
+  expect(
+    (
+      await xpl(
+        root,
+        "revise",
+        "demo",
+        "--run",
+        run,
+        "--decisions",
+        decisions("Only blank lines were added; the anchor text is identical."),
+      )
+    ).code,
+  ).toBe(0);
+  expect((await xpl(root, "revise", "demo", "--run", run, "--accept")).code).toBe(0);
+  const next = readJson<Explainer>(root, ".explainer/demo.explainer.json");
+  expect(next.nodes.map((n) => [n.id, n.summary, n.label, n.provenance])).toEqual(
+    before.nodes.map((n) => [n.id, n.summary, n.label, n.provenance]),
+  );
+  expect(next.views).toEqual(before.views);
+  expect(next.nodes[0]!.anchors[0]!.resolved!.range.startLine).toBe(
+    before.nodes[0]!.anchors[0]!.resolved!.range.startLine + 2,
+  );
+  expect((await xpl(root, "ready", "demo")).code).toBe(0);
+});
+
+it.each(["artifact", "outcomes", "receipt"])(
+  "recovers interruption at %s publication without applying or recording twice",
+  async (boundary) => {
+    const root = cloneDir(demo);
+    const run = await reviewed(root);
+    const before = readJson(root, ".explainer/demo.explainer.json");
+    const originalRename = filesystem.rename;
+    let interrupted = false;
+    const rename = vi.spyOn(filesystem, "rename").mockImplementation(async (from, to) => {
+      const destination = String(to);
+      const content = JSON.parse(readFileSync(String(from), "utf8"));
+      const stop =
+        !interrupted &&
+        ((boundary === "artifact" && destination.endsWith("demo.explainer.json")) ||
+          (boundary === "outcomes" && destination.endsWith("requests.json")) ||
+          (boundary === "receipt" && destination.endsWith("run.json") && content.state === "done"));
+      if (stop) {
+        if (boundary === "artifact") {
+          expect(
+            existsSync(join(root, ".explainer", "requests.json.lock")),
+            "artifact publication also holds the selected-outcome lock",
+          ).toBe(true);
+        }
+        interrupted = true;
+        throw new Error(`Interrupted ${boundary} publication`);
+      }
+      return originalRename(from, to);
+    });
+    syncBuiltinESMExports();
+    try {
+      const failed = await xplJson(root, "revise", "demo", "--run", run, "--accept");
+      expect(failed.code, failed.out).toBe(1);
+      expect(failed.json.error).toBe(`Interrupted ${boundary} publication`);
+      expect(readRequests(root).requests[0]!.outcome.revision).toBe(boundary === "receipt" ? 1 : 0);
+      if (boundary === "artifact")
+        expect(readJson(root, ".explainer/demo.explainer.json")).toEqual(before);
+    } finally {
+      rename.mockRestore();
+      syncBuiltinESMExports();
+    }
+    const added = (await feedback(root, "during-retry", "file:src/queue.ts")).request;
+    const completed = await xplJson(root, "revise", "demo", "--run", run, "--accept");
+    expect(completed.code, completed.out).toBe(0);
+    expect(completed.json.state).toBe("done");
+    expect(readJson(root, completed.json.previousArtifact)).toEqual(before);
+    const after = readJson(root, ".explainer/demo.explainer.json");
+    const outcomes = readRequests(root).requests;
+    expect(outcomes.map((r) => [r.id, r.outcome.status, r.outcome.revision])).toEqual([
+      ["correct-runner", "addressed", 1],
+      ["during-retry", "pending", 0],
+    ]);
+    expect(outcomes[1]).toEqual(added);
+    expect((await xpl(root, "revise", "demo", "--run", run, "--accept")).code).toBe(0);
+    expect(readJson(root, ".explainer/demo.explainer.json")).toEqual(after);
+    expect(readRequests(root).requests).toEqual(outcomes);
+  },
+);
+
+it.each(["remove", "reanchor"] as const)(
+  "keeps missing anchors pending until an explicit author %s decision",
+  async (action) => {
+    const root = cloneDir(demo);
+    const initial = await applyStdin(root, {
+      concepts: [
+        {
+          id: "concept:ack",
+          label: "Acknowledgement",
+          summary: "Acknowledgement removes the in-flight job.",
+          anchors: [{ file: "src/queue.ts", symbol: "Queue.ack", role: "definition" }],
+        },
+      ],
+    });
+    expect(initial.code, initial.out).toBe(0);
+    await feedback(root, "missing-ack", "concept:ack");
+    const before = readJson(root, ".explainer/demo.explainer.json");
+    editFile(root, "src/queue.ts", (text) => text.replace("async ack(", "async complete("));
+    expect((await xpl(root, "index", "--precise", "off")).code).toBe(0);
+    const selection = await xplJson(root, "revise", "demo", "--select", "missing-ack");
+    expect(selection.code).toBe(0);
+    expect(selection.json.resolve.missing.map((m: any) => m.elementId)).toEqual(["concept:ack"]);
+    const run = selection.json.runId;
+    const scratch = makeTempDir();
+    const noop = writeFile(
+      scratch,
+      "noop.json",
+      JSON.stringify([{ id: "missing-ack", patch: {} }]),
+    );
+    const choose = (missing?: unknown[]) =>
+      writeFile(
+        scratch,
+        "decisions.json",
+        JSON.stringify([
+          {
+            id: "missing-ack",
+            status: "addressed",
+            reason: "Remove vanished evidence explicitly.",
+            reconciliation: "The method was renamed; this concept is no longer source-linked.",
+            ...(missing ? { missing } : {}),
+          },
+        ]),
+      );
+    expect((await xpl(root, "revise", "demo", "--run", run, "--proposal", noop)).code).toBe(0);
+    const preview = await xplJson(root, "revise", "demo", "--run", run, "--decisions", choose());
+    expect(preview.json.readiness.ready).toBe(false);
+    const blocked = await xplJson(root, "revise", "demo", "--run", run, "--accept");
+    expect(blocked.code).toBe(1);
+    expect(blocked.json.error).toMatch(/not ready/);
+    expect(readRequests(root).requests[0]!.outcome.status).toBe("pending");
+    const remove = writeFile(
+      scratch,
+      "remove.json",
+      JSON.stringify([
+        {
+          id: "missing-ack",
+          patch: {
+            concepts: [
+              {
+                id: "concept:ack",
+                anchors:
+                  action === "remove"
+                    ? []
+                    : [{ file: "src/queue.ts", symbol: "Queue.complete", role: "definition" }],
+              },
+            ],
+          },
+        },
+      ]),
+    );
+    expect((await xpl(root, "revise", "demo", "--run", run, "--proposal", remove)).code).toBe(0);
+    const implicit = await xplJson(root, "revise", "demo", "--run", run, "--decisions", choose());
+    expect(implicit.code).toBe(1);
+    expect(implicit.json.error).toMatch(/missing anchor.*explicitly/);
+    expect(readJson(root, ".explainer/demo.explainer.json")).toEqual(before);
+    const explicit = await xplJson(
+      root,
+      "revise",
+      "demo",
+      "--run",
+      run,
+      "--decisions",
+      choose([{ id: "concept:ack", action }]),
+    );
+    expect(explicit.code, explicit.out).toBe(0);
+    expect((await xpl(root, "revise", "demo", "--run", run, "--accept")).code).toBe(0);
+    expect(readJson(root, ".explainer/demo.explainer.json").concepts[0]).toMatchObject({
+      summary: "Acknowledgement removes the in-flight job.",
+    });
+    const repaired = readJson<Explainer>(root, ".explainer/demo.explainer.json").concepts[0]!
+      .anchors;
+    if (action === "remove") expect(repaired).toEqual([]);
+    else
+      expect(repaired.map((a) => [a.file, a.symbol, a.resolved?.status])).toEqual([
+        ["src/queue.ts", "Queue.complete", "ok"],
+      ]);
+    expect(readRequests(root).requests[0]!.outcome).toMatchObject({
+      status: "addressed",
+      revision: 1,
+    });
+  },
+);
+
+it("shows the original base source for a renamed file in a change revision review", async () => {
+  const root = cloneDir(demo);
+  const originalSource = readFileSync(join(root, "src/queue.ts"), "utf8");
+  git(root, "init", "-b", "main");
+  git(root, "add", ".");
+  git(root, "commit", "-m", "base");
+  const base = git(root, "rev-parse", "HEAD");
+  git(root, "mv", "src/queue.ts", "src/jobs.ts");
+  git(root, "commit", "-m", "rename queue");
+  expect((await xpl(root, "index", "--precise", "off")).code).toBe(0);
+  expect((await xpl(root, "new", "historical", "--title", "Queue move")).code).toBe(0);
+  expect((await xpl(root, "change", "historical", `${base}..HEAD`)).code).toBe(0);
+  const patch = writeFile(
+    makeTempDir(),
+    "guide.json",
+    JSON.stringify({
+      nodes: [{ id: "file:src/jobs.ts", summary: "Queue holds pending jobs." }],
+      concepts: [
+        {
+          id: "concept:before-queue",
+          label: "Previous queue",
+          summary: "The queue interface stayed the same when its file moved.",
+          anchors: [
+            { file: "src/jobs.ts", at: "base", find: "export interface Job {", role: "definition" },
+          ],
+        },
+      ],
+      views: [
+        {
+          id: "view:queue",
+          type: "graph",
+          title: "Queue file move",
+          scope: { root: "repo", depth: 1 },
+          include: ["file:src/jobs.ts"],
+          edgeKinds: [],
+          stubs: { mode: "none" },
+        },
+      ],
+    }),
+  );
+  const applied = await xpl(root, "apply", "historical", patch);
+  expect(applied.code, applied.out + applied.err).toBe(0);
+  const ready = await xplJson(root, "ready", "historical");
+  expect(ready.code, ready.out).toBe(0);
+  await appendRequest(root, {
+    id: "base-request",
+    elementId: "concept:before-queue",
+    explainer: "historical",
+    kind: "explain",
+    context: ready.json.identity,
+    range: { file: "src/jobs.ts", fromLine: 1, toLine: 3, side: "base" },
+  });
+  const selected = await xplJson(root, "revise", "historical", "--select", "base-request");
+  expect(selected.code, selected.out).toBe(0);
+  expect(
+    selected.json.source.find((s: any) => s.file === "src/jobs.ts" && s.side === "base").text,
+  ).toBe(originalSource);
+});
+
+it("refuses unrelated edits and incomplete next artifacts without losing retryable feedback", async () => {
+  const root = cloneDir(demo);
+  await feedback(root, "correct-runner", "sym:src/runner.ts#Runner.dispatch");
+  const selection = await xplJson(root, "revise", "demo", "--select", "correct-runner");
+  const run = selection.json.runId;
+  const before = readJson(root, ".explainer/demo.explainer.json");
+  const outside = writeFile(
+    makeTempDir(),
+    "outside.json",
+    JSON.stringify([
+      {
+        id: "correct-runner",
+        patch: {
+          nodes: [{ id: "file:src/queue.ts", summary: "Unrelated replacement." }],
+        },
+      },
+    ]),
+  );
+  const rejected = await xplJson(root, "revise", "demo", "--run", run, "--proposal", outside);
+  expect(rejected.code).toBe(1);
+  expect(rejected.json.error).toMatch(/outside its selected scope/);
+  const unfinished = writeFile(
+    makeTempDir(),
+    "unfinished.json",
+    JSON.stringify([
+      {
+        id: "correct-runner",
+        patch: {
+          nodes: [{ id: "sym:src/runner.ts#Runner.dispatch", summary: "TODO: explain dispatch" }],
+        },
+      },
+    ]),
+  );
+  expect((await xpl(root, "revise", "demo", "--run", run, "--proposal", unfinished)).code).toBe(0);
+  const decisions = writeFile(
+    makeTempDir(),
+    "decisions.json",
+    JSON.stringify([
+      { id: "correct-runner", status: "addressed", reason: "Inspect completion blocker." },
+    ]),
+  );
+  const preview = await xplJson(root, "revise", "demo", "--run", run, "--decisions", decisions);
+  expect(
+    preview.json.readiness.findings
+      .filter((f: any) => f.severity === "error")
+      .map((f: any) => f.code),
+  ).toEqual(["todo-left"]);
+  const refused = await xplJson(root, "revise", "demo", "--run", run, "--accept");
+  expect(refused.code).toBe(1);
+  expect(refused.json.error).toMatch(/not ready/);
+  expect(readJson(root, ".explainer/demo.explainer.json")).toEqual(before);
+  expect(readRequests(root).requests[0]!.outcome.status).toBe("pending");
+});
+
+async function feedback(root: string, id: string, elementId: string) {
+  return appendRequest(root, {
+    id,
+    elementId,
+    kind: "correct",
+    explainer: "demo",
+    note: "Explain this code.",
+    context: artifactIdentity(
+      readJson<Explainer>(root, ".explainer/demo.explainer.json"),
+      fullIndex(root),
+    ),
+    range: { file: "src/runner.ts", fromLine: 20, toLine: 25, side: "head" },
+  });
+}
+
+it("reviews recorded proposals and commits only accepted requests while retaining user edits and prior artifacts", async () => {
+  const root = cloneDir(demo);
+  const before = readJson<Explainer>(root, ".explainer/demo.explainer.json");
+  await feedback(root, "correct-runner", "sym:src/runner.ts#Runner.dispatch");
+  await feedback(root, "expand-queue", "file:src/queue.ts");
+  const unselected = (await feedback(root, "unselected", "file:src/queue.ts")).request;
+  const selected = await xplJson(root, "revise", "demo", "--select", "correct-runner,expand-queue");
+  expect(selected.code, selected.out).toBe(0);
+  const run = selected.json.runId;
+  const reviewed = await xplJson(root, "revise", "demo", "--run", run, "--proposal", proposal);
+  expect(reviewed.code, reviewed.out).toBe(0);
+  expect(
+    reviewed.json.changes.find((c: any) => c.id === "sym:src/runner.ts#Runner.dispatch"),
+  ).toMatchObject({
+    before: { summary: "Dispatch runs a queued job.", label: "My dispatch label" },
+    after: {
+      summary: "Dispatch leases a worker, runs the job and requeues failures.",
+      label: "My dispatch label",
+    },
+  });
+  expect(reviewed.json.source.find((s: any) => s.file === "src/runner.ts").text).toContain(
+    "async dispatch",
+  );
+  expect(readJson(root, ".explainer/demo.explainer.json")).toEqual(before);
+  const decisions = writeFile(
+    makeTempDir(),
+    "decisions.json",
+    JSON.stringify([
+      { id: "correct-runner", status: "addressed", reason: "Checked dispatch against source." },
+      { id: "expand-queue", status: "rejected", reason: "Keep the shorter queue explanation." },
+    ]),
+  );
+  const decisionReview = await xplJson(
+    root,
+    "revise",
+    "demo",
+    "--run",
+    run,
+    "--decisions",
+    decisions,
+  );
+  expect(decisionReview.code, decisionReview.out).toBe(0);
+  expect(decisionReview.json.readiness.ready).toBe(true);
+  expect(readRequests(root).requests.map((r) => r.outcome.status)).toEqual([
+    "pending",
+    "pending",
+    "pending",
+  ]);
+  const added = (await feedback(root, "added-during-review", "file:src/queue.ts")).request;
+  const accepted = await xplJson(root, "revise", "demo", "--run", run, "--accept");
+  expect(accepted.code, accepted.out).toBe(0);
+  const next = readJson<Explainer>(root, ".explainer/demo.explainer.json");
+  expect(next.nodes.find((n) => n.id === "sym:src/runner.ts#Runner.dispatch")).toMatchObject({
+    summary: "Dispatch leases a worker, runs the job and requeues failures.",
+    label: "My dispatch label",
+    provenance: { userFields: ["label"] },
+  });
+  expect(next.nodes.find((n) => n.id === "file:src/queue.ts")).toEqual(
+    before.nodes.find((n) => n.id === "file:src/queue.ts"),
+  );
+  expect(readJson(root, accepted.json.previousArtifact)).toEqual(before);
+  const requests = readRequests(root).requests;
+  expect(requests.map((r) => [r.id, r.outcome.status, r.outcome.revision])).toEqual([
+    ["correct-runner", "addressed", 1],
+    ["expand-queue", "rejected", 1],
+    ["unselected", "pending", 0],
+    ["added-during-review", "pending", 0],
+  ]);
+  expect(requests[2]).toEqual(unselected);
+  expect(requests[3]).toEqual(added);
+  expect((await xpl(root, "revise", "demo", "--run", run, "--accept")).code).toBe(0);
+  expect(readRequests(root).requests).toEqual(requests);
+});
