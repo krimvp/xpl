@@ -9,8 +9,9 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { readFileSync, statSync } from "node:fs";
 import { isAbsolute, join, normalize, posix, resolve } from "node:path";
-import { splitLines, INDEX_SCHEMA } from "@xpl/core";
+import { splitLines, INDEX_SCHEMA, RELATIONSHIP_CAPABILITIES } from "@xpl/core";
 import type {
+  AnalysisReport,
   FileLanguage,
   FilePath,
   IndexedFile,
@@ -337,6 +338,7 @@ export async function buildIndex(opts: BuildIndexOptions): Promise<BuildIndexRes
         if (languages.length === 0) continue;
         const reportFiles = files.filter((f) => languages.includes(f.language)).map((f) => f.path);
         const diagnostics: string[] = [];
+        let failedReport: AnalysisReport | undefined;
         try {
           const output = await resolver.resolve({
             root,
@@ -356,13 +358,25 @@ export async function buildIndex(opts: BuildIndexOptions): Promise<BuildIndexRes
               diagnostics.push(message);
             },
           });
+          const advertisedKinds = RELATIONSHIP_CAPABILITIES.filter(
+            (kind) => !resolver.capabilities || resolver.capabilities[kind],
+          );
+          if (
+            advertisedKinds.length > 0 &&
+            advertisedKinds.every((kind) => output.coverage?.[kind]?.status === "failed")
+          ) {
+            failedReport = preciseReport(resolver, reportFiles, output, diagnostics);
+            throw new Error("all advertised relationship kinds failed");
+          }
           const covered = new Set<FileLanguage>(languages);
           const replacesKind = (kind: Reference["kind"], file: FilePath): boolean => {
             if (resolver.capabilities && !resolver.capabilities[kind]) return false;
             const observation = output.coverage?.[kind];
             return (
               !observation ||
-              (observation.status !== "failed" && observation.analyzedFiles.includes(file))
+              (observation.status !== "failed" &&
+                observation.status !== "unsupported" &&
+                observation.analyzedFiles.includes(file))
             );
           };
           const preciseRefs = output.refs.filter((ref) => {
@@ -370,7 +384,7 @@ export async function buildIndex(opts: BuildIndexOptions): Promise<BuildIndexRes
             const language = languageOfFile.get(file);
             return language !== undefined && covered.has(language) && replacesKind(ref.kind, file);
           });
-          // Replace supported kinds in described files; unexamined or failed kinds keep heuristic hints.
+          // Replace supported kinds in described files; unexamined, unsupported or failed kinds keep heuristic hints.
           // Describing a file controls replacement, not the completeness recorded in its analysis report.
           // Materialize once: describedFiles may be a single-use iterable.
           const described = new Set<FilePath>(output.describedFiles ?? []);
@@ -425,7 +439,11 @@ export async function buildIndex(opts: BuildIndexOptions): Promise<BuildIndexRes
           }
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
-          analysis.push(preciseReport(resolver, reportFiles, undefined, [...diagnostics, message]));
+          analysis.push(
+            failedReport
+              ? { ...failedReport, diagnostics: [...diagnostics, message] }
+              : preciseReport(resolver, reportFiles, undefined, [...diagnostics, message]),
+          );
           if (precise === "require")
             throw new Error(`precise resolver "${resolver.id}" failed: ${message}`);
           warnings.push(

@@ -27,7 +27,10 @@ class JsonWalker {
   constructor(private readonly ctx: FileContext) {}
 
   visit(node: Node, segments: string[], keyDepth: number, parentPath: string | undefined): void {
-    if (segments.length > MAX_NESTING) return;
+    if (segments.length > MAX_NESTING) {
+      this.keys.nestingLimited = true;
+      return;
+    }
     switch (node.type) {
       case "document":
         for (const child of node.namedChildren) this.visit(child, segments, keyDepth, parentPath);
@@ -57,7 +60,10 @@ class JsonWalker {
     keyDepth: number,
     parentPath: string | undefined,
   ): void {
-    if (keyDepth >= MAX_KEY_DEPTH) return;
+    if (keyDepth >= MAX_KEY_DEPTH) {
+      this.keys.depthLimited = true;
+      return;
+    }
     const key = pair.childForFieldName("key");
     if (!key) return;
     const name = stringValue(key);

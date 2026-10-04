@@ -102,7 +102,7 @@ class TomlWalker {
           if (tableDepth <= MAX_KEY_DEPTH) {
             const path = table.join(".");
             if (this.emit(path, node, undefined)) tableSymbol = path;
-          }
+          } else this.keys.depthLimited = true;
           for (const pair of named(node)) {
             if (pair.type === "pair") this.pair(pair, table, tableDepth, tableSymbol);
           }
@@ -150,12 +150,18 @@ class TomlWalker {
 
   /** `key = value` (key possibly dotted) under the table `prefix`, whose symbol is `parent`. */
   private pair(node: Node, prefix: readonly string[], depth: number, parent: string | undefined) {
-    if (prefix.length > MAX_NESTING) return;
+    if (prefix.length > MAX_NESTING) {
+      this.keys.nestingLimited = true;
+      return;
+    }
     const parts = named(node);
     const key = keySegments(parts[0]);
     if (key.length === 0) return;
     const keyDepth = depth + key.length;
-    if (keyDepth > MAX_KEY_DEPTH) return;
+    if (keyDepth > MAX_KEY_DEPTH) {
+      this.keys.depthLimited = true;
+      return;
+    }
     const segments = [...prefix, ...key];
     const path = segments.join(".");
     if (!this.emit(path, node, parent)) return;
@@ -165,7 +171,10 @@ class TomlWalker {
 
   /** The keys inside an inline table or array value: `segments` is the path of the value. */
   private value(node: Node, segments: readonly string[], depth: number, parent: string): void {
-    if (segments.length > MAX_NESTING) return;
+    if (segments.length > MAX_NESTING) {
+      this.keys.nestingLimited = true;
+      return;
+    }
     if (node.type === "inline_table") {
       for (const pair of named(node)) {
         if (pair.type === "pair") this.pair(pair, segments, depth, parent);

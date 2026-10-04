@@ -170,15 +170,19 @@ export function preciseReport(
         analyzedFiles.length === files.length &&
         !output.blind?.length;
       const status =
-        observation?.status === "failed" ? "failed" : complete ? "supported" : "partial";
+        observation?.status === "failed" || observation?.status === "unsupported"
+          ? observation.status
+          : complete
+            ? "supported"
+            : "partial";
       const limitations = [...(observation?.limitations ?? [])];
-      if (!complete && status !== "failed")
+      if (status === "partial")
         limitations.push(
           "Precise relationships may be missing; described files and empty results do not establish complete coverage.",
         );
-      if (analyzedFiles.length < files.length)
+      if (status !== "unsupported" && analyzedFiles.length < files.length)
         limitations.push("Files outside this analysis keep heuristic hints.");
-      if (output.blind?.length)
+      if (status !== "unsupported" && output.blind?.length)
         limitations.push("Some occurrences could not be linked to their targets.");
       if (!resolver.capabilities)
         limitations.push("Independent relationship support was not recorded.");

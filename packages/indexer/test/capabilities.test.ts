@@ -66,43 +66,49 @@ it("reports partial described-file coverage and preserves relationship kinds a t
   expect(index.refs.map((r) => [r.kind, r.resolution])).toEqual([["import", "heuristic"]]);
 });
 
-it("keeps heuristic hints when a declared relationship analysis reports failure", async () => {
-  const { index } = await indexFiles(
-    {
-      "a.ts": "export function a() {}\nexport function b() { a(); }\n",
-    },
-    {
-      precise: "auto",
-      resolvers: [
-        {
-          id: "calls-only",
-          languages: ["typescript"],
-          capabilities: { call: "supported" },
-          async resolve() {
-            return {
-              tool: "calls-only@1",
-              refs: [],
-              describedFiles: ["a.ts"],
-              coverage: {
-                call: {
-                  status: "failed",
-                  analyzedFiles: [],
-                  limitations: ["Call analysis failed."],
-                },
-              },
-            };
+it.each(["auto", "require"] as const)(
+  "treats a wholly failed precise attempt as failure in %s mode",
+  async (precise) => {
+    const files = { "a.ts": "export function a() {}\nexport function b() { a(); }\n" };
+    const resolver: PreciseResolver = {
+      id: "calls-only",
+      languages: ["typescript"],
+      capabilities: { call: "supported" },
+      async resolve() {
+        return {
+          tool: "calls-only@1",
+          refs: [],
+          describedFiles: ["a.ts"],
+          coverage: {
+            call: { status: "failed", analyzedFiles: [], limitations: ["Call analysis failed."] },
           },
-        },
-      ],
-    },
-  );
-  expect(index.refs.map((r) => [r.kind, r.resolution])).toEqual([["call", "heuristic"]]);
-  expect(
-    index.analysis
-      ?.find((r) => r.provider === "calls-only")
-      ?.results.find((r) => r.capabilities.includes("call")),
-  ).toMatchObject({ status: "failed", analyzedFiles: [] });
-});
+        };
+      },
+    };
+    if (precise === "require") {
+      await expect(indexFiles(files, { precise, resolvers: [resolver] })).rejects.toThrow(
+        'precise resolver "calls-only" failed: all advertised relationship kinds failed',
+      );
+      return;
+    }
+    const { index, warnings } = await indexFiles(files, { precise, resolvers: [resolver] });
+    expect(index.refs.map((r) => [r.kind, r.resolution])).toEqual([["call", "heuristic"]]);
+    expect(index.languages.typescript?.refs).toBe("heuristic");
+    expect(index.languages.typescript?.tool).toMatch(/^xpl-heuristic@/);
+    expect(warnings).toEqual([
+      'precise resolver "calls-only" failed (all advertised relationship kinds failed); using heuristic references for typescript',
+    ]);
+    expect(
+      index.analysis
+        ?.find((r) => r.provider === "calls-only")
+        ?.results.find((r) => r.capabilities.includes("call")),
+    ).toMatchObject({
+      status: "failed",
+      analyzedFiles: [],
+      limitations: ["Call analysis failed.", "Files outside this analysis keep heuristic hints."],
+    });
+  },
+);
 
 it("keeps unsupported kinds separate from an explicitly analyzed empty result and tool failure", async () => {
   const resolver: PreciseResolver = {
@@ -150,3 +156,113 @@ it("keeps unsupported kinds separate from an explicitly analyzed empty result an
       ?.results.find((r) => r.capabilities.includes("call")),
   ).toMatchObject({ status: "failed", analyzedFiles: [] });
 });
+
+it.each([
+  ["json", '{"a":{"b":{"c":{"d":{"e":{"f":{"g":1}}}}}}}'],
+  ["yaml", "a:\n  b:\n    c:\n      d:\n        e:\n          f:\n            g: 1\n"],
+  ["toml", "[a.b.c.d.e.f]\ng = 1\n[a.b.c.d.e.f.g]\nh = 1\n"],
+])(
+  "reports truncated %s key structure as partial only in the affected file",
+  async (format, source) => {
+    const { index, warnings } = await indexFiles({
+      [`deep.${format}`]: source,
+      [`shallow.${format}`]: format === "json" ? '{"a":1}' : format === "yaml" ? "a: 1" : "a = 1",
+    });
+    const report = index.analysis?.find((r) => r.provider === format);
+    expect(report?.capabilities).toEqual({
+      symbols: "supported",
+      declarationRanges: "supported",
+      nesting: "supported",
+    });
+    expect(report?.results.filter((r) => r.capabilities.includes("symbols"))).toEqual([
+      {
+        capabilities: ["symbols", "declarationRanges", "nesting"],
+        status: "supported",
+        analyzedFiles: [`shallow.${format}`],
+        limitations: [],
+      },
+      {
+        capabilities: ["symbols", "declarationRanges", "nesting"],
+        status: "partial",
+        analyzedFiles: [`deep.${format}`],
+        limitations: ["Keys beyond depth 6 were not indexed."],
+      },
+    ]);
+    expect(warnings).toEqual([`deep.${format}: Keys beyond depth 6 were not indexed.`]);
+    expect(index.symbols.filter((s) => s.file === `deep.${format}`).map((s) => s.path)).toEqual(
+      format === "toml"
+        ? ["a.b.c.d.e.f"]
+        : ["a", "a.b", "a.b.c", "a.b.c.d", "a.b.c.d.e", "a.b.c.d.e.f"],
+    );
+  },
+);
+
+it.each([{ analyzedFiles: [] }, { analyzedFiles: ["a.ts"] }])(
+  "preserves an unsupported call observation and its heuristic hints ($analyzedFiles)",
+  async ({ analyzedFiles }) => {
+    const { index } = await indexFiles(
+      { "a.ts": "export function a() {}\nexport function b() { a(); }\n" },
+      {
+        precise: "auto",
+        resolvers: [
+          {
+            id: "calls-only",
+            languages: ["typescript"],
+            capabilities: { call: "supported" },
+            async resolve() {
+              return {
+                tool: "calls-only@1",
+                refs: [],
+                describedFiles: ["a.ts"],
+                coverage: {
+                  call: {
+                    status: "unsupported",
+                    analyzedFiles,
+                    limitations: ["Call analysis is unavailable for this project."],
+                  },
+                },
+              };
+            },
+          },
+        ],
+      },
+    );
+    expect(index.refs.map((r) => [r.kind, r.resolution])).toEqual([["call", "heuristic"]]);
+    const report = index.analysis?.find((r) => r.provider === "calls-only");
+    expect(report?.capabilities).toEqual({ call: "supported" });
+    expect(report?.results.find((r) => r.capabilities.includes("call"))).toMatchObject({
+      status: "unsupported",
+      analyzedFiles,
+      limitations: ["Call analysis is unavailable for this project."],
+    });
+  },
+);
+
+it.each(["json", "yaml", "toml"])(
+  "reports the %s nesting safety limit as partial",
+  async (format) => {
+    const leaf = format === "json" ? '{"lost":1}' : format === "yaml" ? "{lost: 1}" : "{lost = 1}";
+    const nested = "[".repeat(65) + leaf + "]".repeat(65);
+    const source =
+      format === "json"
+        ? `{"root":${nested}}`
+        : format === "yaml"
+          ? `root: ${nested}`
+          : `root = ${nested}`;
+    const { index, warnings } = await indexFiles({ [`deep.${format}`]: source });
+    expect(index.symbols.map((s) => s.path)).toEqual(["root"]);
+    expect(
+      index.analysis
+        ?.find((r) => r.provider === format)
+        ?.results.find((r) => r.capabilities.includes("symbols")),
+    ).toEqual({
+      capabilities: ["symbols", "declarationRanges", "nesting"],
+      status: "partial",
+      analyzedFiles: [`deep.${format}`],
+      limitations: ["Structure beyond nesting depth 64 was not indexed."],
+    });
+    expect(warnings).toEqual([
+      `deep.${format}: Structure beyond nesting depth 64 was not indexed.`,
+    ]);
+  },
+);

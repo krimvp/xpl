@@ -345,6 +345,7 @@ the framework (`build.ts`, `symbols.ts`) and the language-agnostic heuristic res
 ```ts
 interface LanguagePack {
   id: string; languages: FileLanguage[]; grammarFor(language): GrammarId;
+  capabilities: AnalysisCapabilities; // advertised abilities; a missing capability key means unsupported
   extensions?: string[];               // `text` files this pack parses too (a format with no FileLanguage of its own; none does now)
   packageScope: "file" | "directory";  // how far a top-level name is visible without an import (Go: the package dir)
   importsReexport?: boolean;           // a module's imports are importable from it (Python `__init__.py`)
@@ -364,6 +365,8 @@ interface FileFacts {
 }
 ```
 
+- `capabilities` declares each independent ability as `supported` or `partial`. A missing key means
+  unsupported; it does not mean an empty result. Per-file extraction outcomes record observed limits separately.
 - Positions are `Span`s: 1-based inclusive lines and columns in UTF-16 (`nodeSpan`/`spanBetween` convert
   tree-sitter's points). A pack must not keep tree nodes: the tree is freed right after `extract`.
 - `SymbolDraft { path, kind, range, parentPath?, anchorOnly? }`: dotted, pre-dedup paths. `anchorOnly` marks a
@@ -412,12 +415,15 @@ All indexed files get file anchors. Configuration packs provide key symbols, ran
 relationships. Programming packs provide heuristic relationship hints; Python's heuristic pack has no
 `implements` analysis (the precise provider can read implementation relationships). Go's declaration ranges
 are partial because some type ranges omit leading syntax. Syntax
-errors and extraction limits produce partial outcomes; extraction failures retain file anchors and
-record failed source analysis. Precise attempts record failures even after heuristic fallback.
+errors and extraction limits produce partial outcomes; config packs warn when keys exceed depth 6,
+structure exceeds nesting depth 64, or the file exceeds 2000 keys. Only affected files become partial.
+Extraction failures retain file anchors and record failed source analysis. Precise attempts record failures
+even after heuristic fallback.
 `PreciseResolver.capabilities` declares supported kinds; replacement preserves heuristic references for
 kinds the tool does not support. Older resolvers without declarations keep their previous replacement
 behaviour but report partial, unknown ability. `PreciseOutput.coverage` can explicitly report each kind;
-without it, described files and empty reference lists establish only partial coverage. Explicit success
+without it, described files and empty reference lists establish only partial coverage. Explicit unsupported
+or failed observations retain their status independently of advertised ability. Explicit success
 still becomes partial when files are missing, the ability is partial, or occurrences cannot be linked.
 The existing SCIP providers remain conservative: describing a document is not a completeness claim.
 
@@ -537,8 +543,10 @@ documents of its index) replace heuristic references of supported, examined kind
 Unsupported and explicitly failed kinds keep their heuristic hints. Files it did not describe (build-tagged
 Go files, files a Python project's pyright configuration excludes, unreadable ones) keep their heuristic
 references, are named in a warning, and are counted in `LanguageInfo.heuristicFiles`. A language none of
-whose files was described is not precise: that run counts as failed. A file whose occurrences fall outside
-its text (`//line` directives of generated Go code) counts as not described. Where the tool saw an occurrence
+whose files was described is not precise: that run counts as failed. A run whose advertised relationship
+kinds all report failure also counts as failed: automatic mode warns and retains the heuristic label;
+required mode rejects it. The observed failure results and limits remain in the report. A file whose
+occurrences fall outside its text (`//line` directives of generated Go code) counts as not described. Where the tool saw an occurrence
 it could not link (`PreciseOutput.blind`), the innermost heuristic reference holding that position is kept,
 unless the tool has the same edge on that line. `precise: "auto"` (the default) turns a
 failed or missing tool into a warning and keeps the heuristic references; `"require"` fails instead; `"off"`
