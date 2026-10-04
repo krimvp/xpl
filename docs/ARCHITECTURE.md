@@ -1180,8 +1180,11 @@ why the code is as it is are left to Claude.
 field, a short quote and a fix. Rules (thresholds and word lists live in `LINT_LIMITS`, `FILLER_WORDS`,
 `ABSOLUTE_WORDS` in `packages/core/src/lint.ts`):
 
-- `todo-left`: a `TODO` left in reader text or a view's question; the one error-level finding (exit 1 even
-  with `--warn-only`; any other finding exits 1 without it).
+- `todo-left`: a `TODO` in any authored string, including frame/transition labels, audience, technology
+  and view questions. A recursive pass checks text by default, excluding IDs, paths, anchors and other
+  structural metadata. Each stored field gets one error; a tour note includes its heading and body.
+  Nested text names its field path (`next[0].label`) and nearest element ID. Exit 1 even with `--warn-only`;
+  any other finding exits 1 without it.
 - Tours: `tour-summary` (missing, or not 2-4 sentences), `tour-first-step` (the first step focuses a test, a
   concept that lights up nothing, or a flow when the tour has a map, or its title says "edge case"),
   `tour-covers-map` (a box of a used map of at most 10 boxes that no step focuses and no note names),
@@ -1352,7 +1355,9 @@ At 1280×720 the header fits without cutting a control off.
 **Save as HTML** (Edit menu, `saveHtml.ts`) opens a readiness inspection dialog with errors, reader warnings
 and an optional author decision note. Save ready HTML is disabled with blockers; Save draft preview remains
 available and names the output `*.draft.html`. Live saves flush pending edits, request `/api/export` and
-recheck the current workspace at the final click. Failed saves/fetches prevent downloads; offline saves
+refresh the paths loaded in the viewer from the workspace, then recheck at the final click. `/api/export`
+refreshes referenced source; `/api/file` refreshes loaded paths outside that selection without cache reuse.
+Failed saves/fetches prevent downloads; offline saves
 check only embedded source and say so. Both paths use core's `checkReadiness`, and `savedPage` gates ready
 serialization too. It saves the page as loaded with the checked explainer in its `<script id="xpl-data">`. A copy of the document is kept when the viewer starts, before React renders into it,
 so what is saved is the page as loaded, not the rendered one. The saved copy keeps the index and the embedded

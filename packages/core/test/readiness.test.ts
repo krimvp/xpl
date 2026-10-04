@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { artifactIdentity, checkReadiness, type Explainer } from "../src/index.js";
-import { anchor, emptyExplainer, graphView, LLM, makeWorld } from "./helpers.js";
+import { anchor, emptyExplainer, graphView, sequenceView, LLM, makeWorld } from "./helpers.js";
 
 function example() {
   const world = makeWorld({
@@ -33,6 +33,107 @@ function example() {
 }
 
 describe("ready export rules", () => {
+  it("leaves repository identities, IDs and code references out of authored text checks", () => {
+    const world = makeWorld({ files: [{ path: "TODO.ts", text: "export const TODO = 1;" }] });
+    const explainer = emptyExplainer({
+      repo: { name: "TODO", commit: "c1" },
+      nodes: [
+        {
+          id: "file:TODO.ts",
+          kind: "file",
+          parent: "repo",
+          label: "Tasks",
+          summary: "Stores the `TODO` marker.",
+          anchors: [
+            anchor(world, { file: "TODO.ts", role: "definition", span: { from: 0, to: 0 } }),
+          ],
+          provenance: LLM,
+        },
+      ],
+      views: [
+        graphView("view:tasks", ["file:TODO.ts"], { title: "Tasks", stubs: { mode: "none" } }),
+      ],
+    });
+    expect(
+      checkReadiness(explainer, world.index, world.getText, { scope: "embedded-snapshot" }),
+    ).toMatchObject({ ready: true, errors: 0, findings: [] });
+  });
+
+  it.each(["frame", "transition", "audience", "technology"])(
+    "rejects a TODO in %s text on an otherwise-ready explanation",
+    (field) => {
+      const { world, explainer } = example();
+      const view = sequenceView(
+        "view:retry",
+        ["file:a.ts"],
+        [
+          {
+            id: "retry:1",
+            from: "file:a.ts",
+            to: "file:a.ts",
+            label: "Try again",
+            kind: "call",
+            summary: "Reads the starting value.",
+            anchors: [],
+            next: [{ step: "retry:1", label: "Try again", kind: "recurse" }],
+          },
+        ],
+        {
+          type: field === "frame" ? "sequence" : "flow",
+          title: "Retry",
+          frames: [
+            {
+              id: "frame:retry",
+              kind: "loop",
+              label: "Retry loop",
+              fromStep: "retry:1",
+              toStep: "retry:1",
+            },
+          ],
+        },
+      );
+      if (field === "frame") delete view.steps[0]!.next;
+      explainer.views.push(view);
+      explainer.scope = { audience: "For maintainers" };
+      explainer.nodes[0]!.tech = "TypeScript";
+      const check = () =>
+        checkReadiness(explainer, world.index, world.getText, { scope: "embedded-snapshot" });
+      expect(check().findings.filter((f) => f.severity === "error")).toEqual([]);
+      expect(check().ready).toBe(true);
+      let elementId: string;
+      let expectedField: string;
+      if (field === "frame") {
+        view.frames![0]!.label = "TODO: explain retry loop";
+        elementId = "frame:retry";
+        expectedField = "label";
+      } else if (field === "transition") {
+        view.steps[0]!.next![0]!.label = "TODO: explain condition";
+        elementId = "retry:1";
+        expectedField = "next[0].label";
+      } else if (field === "audience") {
+        explainer.scope.audience = "TODO: name the audience";
+        elementId = "(explainer)";
+        expectedField = "scope.audience";
+      } else {
+        explainer.nodes[0]!.tech = "TODO: name the technology";
+        elementId = "file:a.ts";
+        expectedField = "tech";
+      }
+      const report = check();
+      expect(report).toMatchObject({ ready: false, errors: 1 });
+      expect(report.findings.filter((finding) => finding.severity === "error")).toEqual([
+        {
+          severity: "error",
+          code: "todo-left",
+          elementId,
+          field: expectedField,
+          message: "1 TODO placeholder left: text nobody has written yet",
+          hint: "write what the TODO asks for, check it against the code, and remove the TODO",
+        },
+      ]);
+    },
+  );
+
   it("requires visible content, leaving hidden nodes optional", () => {
     const { world, explainer } = example();
     const ready = checkReadiness(explainer, world.index, world.getText, {

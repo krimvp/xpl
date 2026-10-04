@@ -63,7 +63,7 @@ export function snapshotReadiness(
   });
 }
 
-/** A live save fetches a current complete export snapshot after persisting pending edits. */
+/** A live save refreshes referenced and previously loaded source after persisting pending edits. */
 export async function prepareHtmlSave(store: ViewerStore): Promise<ViewerBundle> {
   const script = page?.root.querySelector(`#${BUNDLE_SCRIPT_ID}`);
   if (!script) throw new Error("This page has no embedded snapshot to save.");
@@ -74,7 +74,18 @@ export async function prepareHtmlSave(store: ViewerStore): Promise<ViewerBundle>
     if (state.dirty || state.save.status === "error")
       throw new Error("Save the pending edits before exporting HTML.");
     if (!original.server) throw new Error("The live workspace API is unavailable.");
-    return new ServerApi(original.server.api).exportBundle();
+    const api = new ServerApi(original.server.api);
+    const bundle = await api.exportBundle();
+    const indexed = new Set(bundle.index.files.map(({ path }) => path));
+    // Keep loaded paths, never their old text: /export already refreshes the referenced source.
+    await Promise.all(
+      Object.keys(state.files)
+        .filter((path) => indexed.has(path) && !(path in bundle.files))
+        .map(async (path) => {
+          bundle.files[path] = await api.file(path);
+        }),
+    );
+    return bundle;
   }
   const state = store.getState();
   return {

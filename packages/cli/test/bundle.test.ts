@@ -592,7 +592,7 @@ describe("xpl ready", () => {
       scope: "workspace",
       decisionNote: "This is an unfinished draft.",
     });
-    expect(checked.json.findings.filter((f: any) => f.code === "todo-left")).toHaveLength(37);
+    expect(checked.json.findings.filter((f: any) => f.code === "todo-left")).toHaveLength(28);
     const out = join(scratch, "ready.html");
     const exported = await invoke(["bundle", "path", "-o", out, "--json"], {
       cwd: dir,

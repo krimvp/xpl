@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { expect, test } from "@playwright/test";
-import { parseBundle } from "@xpl/core";
+import { hashText, parseBundle } from "@xpl/core";
 import {
   openEditMenu,
   openVariant,
@@ -156,4 +156,61 @@ test("a live save checks the workspace at the export click, even before polling 
   await expect(page.locator(".readiness-findings")).toContainText("stale-index");
   await expect(page.getByTestId("save-html-ready")).toBeDisabled();
   expect(exports).toBe(2);
+});
+
+test("live ready HTML refreshes fetched source and keeps it available after disconnected reopening", async ({
+  page,
+}) => {
+  const { html, bundle: embedded } = readEmbeddedBundle();
+  const bundle: Loose = embedded;
+  complete(bundle);
+  bundle.server = { api: "/api" };
+  delete bundle.files["README.md"];
+  const initial = "Notes read while the workspace is open.";
+  const fresh = "Updated notes saved for offline readers.";
+  let workspaceText = initial;
+  bundle.index.files.find((file: Loose) => file.path === "README.md").hash = hashText(initial);
+  const fetched: string[] = [];
+  await page.route("http://xpl.test/**", (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname === "/")
+      return route.fulfill({ contentType: "text/html", body: withBundle(html, bundle) });
+    if (url.pathname === "/api/explainer") return route.fulfill({ status: 304 });
+    if (url.pathname === "/api/file" && url.searchParams.get("path") === "README.md") {
+      fetched.push(workspaceText);
+      return route.fulfill({ contentType: "text/plain", body: workspaceText });
+    }
+    if (url.pathname === "/api/export") {
+      const current = structuredClone(bundle);
+      current.index.files.find((file: Loose) => file.path === "README.md").hash =
+        hashText(workspaceText);
+      return route.fulfill({ contentType: "application/json", body: JSON.stringify(current) });
+    }
+    return route.fulfill({ status: 404 });
+  });
+  await page.goto("http://xpl.test/?perspective=code");
+  await page.locator('.tree-row[data-path="README.md"]').click();
+  await expect(page.locator('[data-file="README.md"] .cm-content')).toContainText(initial);
+  workspaceText = fresh;
+  await (await openEditMenu(page)).getByTestId("edit-save-html").click();
+  await expect(page.getByTestId("readiness-summary")).toContainText("Ready: 0 errors");
+  const [download] = await Promise.all([
+    page.waitForEvent("download"),
+    page.getByTestId("save-html-ready").click(),
+  ]);
+  const saved = readFileSync((await download.path())!, "utf8");
+  expect(dataOf(saved).files["README.md"]).toBe(fresh);
+  expect(fetched).toEqual([initial, fresh, fresh]);
+  await page.unroute("http://xpl.test/**");
+  const requests: string[] = [];
+  await page.route("http://xpl.test/**", (route) => {
+    if (new URL(route.request().url()).pathname === "/")
+      return route.fulfill({ contentType: "text/html", body: saved });
+    requests.push(route.request().url());
+    return route.abort();
+  });
+  await page.goto("http://xpl.test/?perspective=code");
+  await page.locator('.tree-row[data-path="README.md"]').click();
+  await expect(page.locator('[data-file="README.md"] .cm-content')).toContainText(fresh);
+  expect(requests).toEqual([]);
 });

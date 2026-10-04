@@ -5,7 +5,8 @@
  *
  * The text checks read the explainer only (no index): titles (the explainer's, the tours', the views', the
  * `### heading` line of a tour note, group and concept labels), tour summaries, tour notes, flow and sequence
- * step labels and summaries, and the summaries and details of nodes, edges and concepts. Code spans (`...`) are
+ * step labels and summaries, and the summaries and details of nodes, edges and concepts. Placeholder checks
+ * walk every authored string, including frame and transition labels, audience and technology. Code spans (`...`) are
  * left out of the word checks, so a backticked identifier never counts as a long word, a filler word or an
  * absolute. Every finding names the element, the field, a short quote and a fix.
  *
@@ -98,20 +99,20 @@ export const LINT_RULES: Record<LintRule, string> = {
 };
 
 export type LintElementKind =
-  "explainer" | "tour" | "tour-step" | "view" | "step" | "node" | "edge" | "concept";
+  "explainer" | "tour" | "tour-step" | "view" | "step" | "frame" | "node" | "edge" | "concept";
 
 export interface LintFinding {
   rule: LintRule;
   /** `error` for `todo-left` (text nobody wrote yet); absent for the other rules, which are warnings. */
   severity?: "error";
-  /** `(explainer)`, a tour id, `tour:x/t1` for a tour step, a view id, a step id, a node, edge or concept id. */
+  /** `(explainer)`, a tour id, `tour:x/t1` for a tour step, or a view, step, frame, node, edge or concept id. */
   elementId: string;
   kind: LintElementKind;
   /** For a flow or sequence step: its view. For `tour-covers-map`: the map. */
   view?: string;
   /**
    * `title`, `summary`, `note`, `note heading`, `label` or `detail`; for the order checks `steps` (the tour as a
-   * whole) or `focus` (what the first step focuses).
+   * whole) or `focus` (what the first step focuses). Nested authored text uses its path (`next[0].label`).
    */
   field: string;
   /** A short excerpt of the text the finding is about. */
@@ -964,7 +965,6 @@ class Linter {
   title(where: Where, title: unknown, evidence?: Evidence): void {
     if (typeof title !== "string" || title.trim() === "") return;
     this.checked++;
-    this.todos(where, title);
     const why = codeLikeTitle(title);
     if (why !== undefined) {
       this.add(
@@ -995,7 +995,6 @@ class Linter {
     if (typeof value !== "string" || value.trim() === "") return;
     if (count) {
       this.checked++;
-      this.todos(where, value);
     }
     const found = findMarks(value, MARKDOWN_MARKS);
     if (found.length === 0) return;
@@ -1032,7 +1031,6 @@ class Linter {
   prose(where: Where, value: unknown, opts: ProseOptions = {}): Masked | undefined {
     if (typeof value !== "string" || value.trim() === "") return undefined;
     this.checked++;
-    this.todos(where, value);
     const masked = mask(value);
     const list = sentences(masked.text);
     const counts = list.map((s) => words(s).length);
@@ -1714,6 +1712,89 @@ function mapChecks(
   }
 }
 
+/** Structural metadata is not authored prose. New string fields are checked unless explicitly structural. */
+const STRUCTURAL_TEXT_FIELDS = new Set([
+  "schema",
+  "id",
+  "kind",
+  "type",
+  "role",
+  "layout",
+  "stubs",
+  "anchors",
+  "code",
+  "provenance",
+  "index",
+  "change",
+  "commit",
+  "url",
+  "parent",
+  "members",
+  "related",
+  "from",
+  "to",
+  "via",
+  "opens",
+  "edge",
+  "view",
+  "root",
+  "entryPoints",
+  "include",
+  "hidden",
+  "edgeKinds",
+  "excludeFiles",
+  "participants",
+  "fromStep",
+  "toStep",
+  "step",
+  "focus",
+  "primary",
+]);
+
+/** Walk all authored strings, including nested frame/transition labels and future schema text fields. */
+function placeholderChecks(lint: Linter, explainer: Explainer): void {
+  const kinds: Record<string, LintElementKind> = {
+    nodes: "node",
+    edges: "edge",
+    concepts: "concept",
+    views: "view",
+    tours: "tour",
+    frames: "frame",
+  };
+  function walk(value: unknown, where: Where): void {
+    if (typeof value === "string") {
+      lint.todos(where, value);
+    } else if (Array.isArray(value)) {
+      value.forEach((item, i) => walk(item, { ...where, field: `${where.field}[${i}]` }));
+    } else if (value && typeof value === "object") {
+      const item = record(value);
+      const id = str(item.id);
+      const owner =
+        id === undefined
+          ? where
+          : {
+              ...where,
+              elementId: where.kind === "tour-step" ? `${where.elementId}/${id}` : id,
+              field: "",
+              ...(where.kind === "view" ? { view: id } : {}),
+            };
+      for (const [key, child] of Object.entries(item)) {
+        if (STRUCTURAL_TEXT_FIELDS.has(key)) continue;
+        // Repository names come from package/git identity, even when the model uses one as a box label.
+        if (owner.kind === "explainer" && owner.field === "repo" && key === "name") continue;
+        const kind =
+          key === "steps"
+            ? owner.kind === "tour"
+              ? "tour-step"
+              : "step"
+            : (kinds[key] ?? owner.kind);
+        walk(child, { ...owner, kind, field: owner.field ? `${owner.field}.${key}` : key });
+      }
+    }
+  }
+  walk(explainer, { elementId: "(explainer)", kind: "explainer", field: "" });
+}
+
 /** The checks of `xpl lint` on one explainer, in document order (see the file comment). */
 export function lintExplainer(explainer: Explainer, model?: ExplainerModel): LintResult {
   const lint = new Linter();
@@ -1893,8 +1974,6 @@ export function lintExplainer(explainer: Explainer, model?: ExplainerModel): Lin
     const viewTitle: Where = { elementId: viewId, kind: "view", field: "title" };
     lint.title(viewTitle, view.title);
     lint.plain(viewTitle, view.title);
-    // the viewer shows the question under the view's title
-    lint.todos({ elementId: viewId, kind: "view", field: "question" }, record(view.scope).question);
     if (view.type !== "sequence" && view.type !== "flow") continue;
     for (const stepValue of list(view.steps)) {
       const step = record(stepValue);
@@ -1943,6 +2022,7 @@ export function lintExplainer(explainer: Explainer, model?: ExplainerModel): Lin
 
   mapChecks(lint, explainer, byId, model);
   changeChecks(lint, explainer, byId);
+  placeholderChecks(lint, explainer);
 
   return { findings: lint.findings, checked: lint.checked };
 }

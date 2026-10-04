@@ -99,7 +99,7 @@ export class ServerApi {
   /** Source text of a file. Accepts plain text, or JSON: a string, or an object with `text` / `content`. */
   async file(path: string): Promise<string> {
     const response = await this.check(
-      await fetch(this.url(`/file?path=${encodeURIComponent(path)}`)),
+      await fetch(this.url(`/file?path=${encodeURIComponent(path)}`), { cache: "no-store" }),
     );
     const type = response.headers.get("content-type") ?? "";
     if (!type.includes("application/json")) return response.text();
