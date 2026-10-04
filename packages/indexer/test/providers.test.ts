@@ -158,6 +158,25 @@ it("identifier-only facts cannot establish a checked full-declaration anchor", (
   expect(result.analysis[0]?.results[0]?.analyzedFiles).toEqual([]);
 });
 
+it.each([
+  ["supported", false],
+  ["partial", false],
+  ["partial", true],
+] as const)(
+  "keeps syntax symbols under %s structural coverage with declarations: %s",
+  async (status, placed) => {
+    const before = normalizeProvider(input, await new TreeSitterProvider().analyze(input));
+    const facts = output();
+    facts.declarations = placed ? facts.declarations : [];
+    facts.analysis[0]!.results[0]!.status = status;
+    const after = mergeProvider(before, normalizeProvider(input, facts));
+    expect(after.entries.map((e) => [e.symbol.id, e.symbol.provider])).toEqual([
+      ["a.ts#emoji", 0],
+      ["a.ts#f", placed ? 1 : 0],
+    ]);
+  },
+);
+
 it.each(["tree-sitter", "scip"])(
   "%s preserves declarations and distinguishes a function value from invocation at buildIndex",
   async (adapter) => {

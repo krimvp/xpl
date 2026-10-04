@@ -77,7 +77,7 @@ export const viewCommand: CommandSpec = {
     "does not refuse an explainer whose anchors drifted or are missing: it warns, and the page says which parts",
     "may be out of date.",
     "The server binds to 127.0.0.1 unless --host says otherwise: anything else exposes your source code.",
-    "Needs the viewer build (`npm run build`), or XPL_VIEWER_HTML=<viewer html file>.",
+    "The installed CLI includes the viewer. For source development, run npm run build; XPL_VIEWER_HTML overrides it.",
   ],
   options: {
     port: {

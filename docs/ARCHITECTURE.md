@@ -83,7 +83,7 @@ packages/
                           tree-sitter .wasm files) and dist/viewer.html (a copy of the built viewer) beside it
   viewer/   @xpl/viewer   React 19 + CodeMirror 6 + dagre; vite single-file build → packages/viewer/dist/index.html
 skill/code-explainer/   Claude skill: SKILL.md, README.md, reference/ (quick.md, cli.md, patch-format.md, writing.md,
-                        explain-change.md, examples/), bin/xpl (a symlink-safe node launcher for the built CLI)
+                        explain-change.md, examples/), bin/xpl (an installed CLI launcher with a source fallback)
 fixtures/{ts,py,go}-jobrunner/   tiny real repos + committed explainers in .explainer/
 docs/                   handoff.md, ARCHITECTURE.md, analysis-2026-09-30.txt, review-*.md (review notes),
                         review-2026-10-03-real-runs/ (the per-run reports of that review), images/,
@@ -451,9 +451,11 @@ position instead of treating the widened inclusive column as a character on that
 
 `mergeProvider` replaces relationships only for the advertised kinds and explicitly analyzed files of
 supported or partial results. Failed, unsupported and unexamined scopes keep previous hints. Checked node
-replacement requires both symbols and declaration ranges; range-only coverage updates existing nodes without
-changing their identities. Nesting changes only under explicit nesting coverage. A blind occurrence preserves
-the smallest enclosing heuristic hint. Source and resolution provenance remains on each fact; report version,
+replacement requires both symbols and declaration ranges and at least one placed declaration. Partial
+structural results cannot remove existing IDs: they fall back to range-only updates of matching nodes.
+Range-only coverage keeps the existing symbol set. Nesting changes only for matching nodes under explicit
+nesting coverage; unmatched nodes keep their parents. A blind occurrence preserves the smallest enclosing
+heuristic hint. Source and resolution provenance remains on each fact; report version,
 configuration and snapshot identities remain in the index and bundles. No format alone determines trust:
 each relationship explicitly says `heuristic` or `precise`. A generic reference is not converted to a call.
 Relationship coverage also records resolution, including empty results. Language summaries and `require`
@@ -489,8 +491,8 @@ reuse is safe only when source, provider version and relevant configuration/depe
 The built-in tool adapters keep SCIP relationship mapping over existing syntax declarations. The separate
 `scipArtifactProvider({ artifact, manifest?, languages? })` imports declarations without a language pack.
 The CLI selects it with `xpl index --scip <artifact|manifest.json>` instead of automatic semantic tools,
-retaining registered syntax-mode providers first. Artifact import can then replace their declarations where
-source-verified coverage allows it. In a mixed repository, `require` still needs precise relationships for
+retaining registered syntax-mode providers first. Artifact import keeps existing syntax symbol sets and may update matching
+checked declaration ranges. Files without existing symbols can receive the artifact's placed declarations. In a mixed repository, `require` still needs precise relationships for
 Rust; an artifact covering only other source files cannot make Rust satisfy that requirement.
 Unknown extensions keep the closed `FileLanguage` value `text`; imported symbols work in outlines, queries,
 checked anchors and bundles. `--precise off` skips semantic providers; combining it with `--scip` is an error.
@@ -508,9 +510,11 @@ an old artifact. Dependency/toolchain changes outside the captured files are not
 
 Only definition occurrences with full `enclosing_range`, valid positions and identifier evidence become
 symbols. Identifier-only/synthetic definitions are filtered before normalization so one omitted definition
-does not discard valid coverage. Symbol replacement supplies the file's entire retained set, with partial
-coverage and explicit omissions; it does not append to syntax declarations. Kinds map to xpl's coarse kinds;
-unknown kinds become `other` with diagnostics. Descriptor paths preserve nesting; overload identities stay
+does not discard valid coverage. Structural coverage names only files with placed declarations. The
+artifact claims `symbols` only where no existing provider supplied a symbol set; elsewhere it claims checked
+ranges and keeps the existing IDs and nesting. Each result's `analyzedFiles` identifies its provider's files,
+and each symbol's provenance identifies the provider of its checked range. Empty structure claims cannot
+erase previous declarations. Kinds map to xpl's coarse kinds; unknown kinds become `other` with diagnostics. Descriptor paths preserve nesting; overload identities stay
 distinct while canonical duplicate paths receive source-ordered `~N` suffixes. Reordering overloads can
 change their IDs. Locals are scoped to the document. Explicit parents or exact descriptor prefixes (including
 overload tags) require checked same-file containment. Missing parents are omitted and nesting stays partial.
@@ -523,9 +527,19 @@ Only role-backed reads, writes and imports, and mentions of known types, become 
 Other occurrences become `blind` and retain applicable heuristic hints. SCIP roles cannot classify calls;
 the importer reports calls as unsupported. `SymbolInformation.relationships` are diagnosed and omitted:
 implementation/override flags cannot establish class inheritance or relationship direction by themselves.
+Source-checked definition identifiers can link SCIP identities to existing same-file syntax symbols when
+the definition occurrence exactly matches a source-checked declaration identifier (file, line and column
+range), the descriptor and kind are supported, and the match is unique. Both references and range updates
+use that existing canonical ID, including its duplicate suffix. Missing identifier evidence, unsupported
+descriptors and ambiguous matches are diagnosed and omitted. Name and declaration start line do not establish
+identity. Checked identifier spans stay in the in-memory provider lookup; they add no stored index field.
+This creates no declaration from an identifier extent.
 External symbols and accessor targets without checked definitions never create local declarations.
-Reports remain partial, including empty results. Producer ranges may omit leading documentation; the importer
-never substitutes an identifier extent for a full declaration. The CLI reference documents generation and
+Relationship coverage requires retained checked targets, either imported or linked to existing symbols.
+A range-less standalone artifact with no targets cannot earn `precise` or satisfy `require`; explicit
+analysis with checked targets and zero relationships still can. Reports remain partial, including empty
+results. Producer ranges may omit leading documentation; the importer never substitutes an identifier extent
+for a full declaration. The CLI reference documents generation and
 manifest creation. Java uses this importer without a language pack or new `FileLanguage` value.
 `scripts/java-scip.ts` runs the pinned Maven producer workflow, captures source/config hashes before
 generation, checks them afterward, and writes a manifest only for a successful run with a fresh artifact.
@@ -1095,6 +1109,35 @@ stdout (a rejection exits 1); fatal errors (`error: …`) and warnings (`warning
 | `xpl draft change\|repo\|path <explainer> [<entry id> ...] [-o file]` | prints a patch skeleton built from the index (and the change record) with no LLM, `TODO:` in every text to write (below); the summary goes to stderr |
 | `xpl view <explainer> [--port p] [--host h] [--no-open]` | local server (below) |
 | `xpl bundle <explainer> -o out.html [--mode explore\|present] [--tour id] [--files referenced\|boundary\|all] [--boundary-max n] [--embed-index full\|pruned] [--draft] [--note reason] [--allow-drift]` | self-contained HTML after the shared readiness check (exit 1 before writing with errors); `--draft` writes a labelled preview with findings; `--allow-drift` is a legacy draft flag that still refuses stale indexes; warnings and optional author notes are retained; `--tour` (`tour:intro` or `intro`) implies present mode; embeds the files the explainer references by default and prints what went in (`8 of 12 files embedded (referenced: 18.4 KB of source; --files all adds 4 files, 6.7 KB)`), `--files boundary` adds the direct callers, callees and tests of anchored symbols (at most `--boundary-max`, default 40), `--files all` every indexed file; with a change recorded, every changed file at head and the base text of the changed files go in too; the symbol index in it is pruned to what the viewer can draw with `--files referenced` or `boundary` and whole with `--files all` (`--embed-index` overrides) and packed (the summary line says `index 0.3 MB (1.3 MB as plain JSON, pruned from 9.0 MB)`) |
+| `xpl doctor [--agent none\|claude] [--skill-dir path]` | local setup report: Node, artifact hashes, grammar loading, installed skill and optional git/npx/Go; selected Claude Code availability; no downloads or authentication probes; required failures exit 1 |
+| `xpl skill install [--dir path]` | copies the bundled skill and writes its CLI binding; repeat to update; defaults to `~/.claude/skills/code-explainer`; refuses unmanaged directories, symlinks and local edits |
+
+**Installed artifact.** Workspace packages remain private. `npm run build` writes standalone package
+metadata in `packages/cli/dist`, with `@xpl/cli`'s version, a `bin` entry, Node >=22.12 and no dependencies
+or install scripts. The viewer is required at build time. The directory carries the bundled CLI, viewer,
+WASM runtime and grammars, Rust tags query, the skill and `integrity.json`. `npm run pack --
+--pack-destination <outside-repo-dir>` builds and packs that directory. Install its local tarball with
+`npm install --global --prefix "$HOME/.local" --offline --ignore-scripts <absolute-tarball-path>`; put
+`$HOME/.local/bin` on PATH. No source build is needed at installation. Registry/channel publication remains
+a separate decision; nothing is published by build, pack, diagnosis or skill installation.
+
+`doctor` checks SHA-256 hashes from the artifact inventory and loads every grammar. Hashes detect damage,
+not publisher identity. Skill availability is optional for reading, required with `--agent claude`.
+It checks the managed copy's hashes and executes its launcher with `--version`. Optional tools are checked
+only with local version commands; their presence does not prove precise analysis or agent authentication.
+The Go probe forces `GOTOOLCHAIN=local`, ignores user Go configuration and disables telemetry without
+writing settings. Git tracing is disabled for its probe. No Python or SCIP tool launcher is invoked.
+Recovery instructions distinguish reinstalling the artifact, reinstalling the skill, precise fallback and
+separate Claude Code setup. `--precise off`, local viewing and HTML export need no hosted xpl service.
+Precise tool/toolchain bootstrap and repository dependencies may need network; agent provider access has
+separate network requirements. Trust labels remain unchanged. Generation remains explicitly user-invoked.
+
+`npm run test:install -- <scratch-dir>` builds, packs, installs offline and exercises TS/Python/Go fixture
+copies, local viewing and offline HTML in pinned Chromium. It checks refusal before writing unfinished
+ready output, explicit draft labels and disconnected ready exports. CLI subprocesses have Node filesystem permissions
+for scratch only, with a negative checkout-read probe. The harness permits child processes for local git
+and version checks; it is a check of CLI file reads, not an OS sandbox for arbitrary child tools.
+Only Linux x64 (WSL2, Node 22.23.1) has been exercised against the installed artifact.
 
 **Exit codes.** 0 ok (warnings allowed); 1 rejected or failed: unknown id, no index, a rejected patch, a patch
 that changed nothing because the user owns everything it touched, validation errors, `resolve --write` on a
@@ -1617,11 +1660,17 @@ from `GET /api/base-file` (each file once; an error shows in its pane).
 
 ## 7. Skill (`skill/code-explainer`)
 
-`SKILL.md` drives the operations below, plus regeneration, through the CLI (`<skill-dir>/bin/xpl`). The
-launcher finds `packages/cli/dist/xpl.mjs` relative to its own real path, so the skill directory is symlinked,
-not copied (`XPL_CLI=<xpl.mjs>` overrides the lookup). Everything Claude writes is a patch; it never edits an
-explainer by hand. SKILL.md and its `reference/` files are the source of truth for the rules; this section
-only says how they use the CLI.
+`SKILL.md` drives the operations below, plus regeneration, through the CLI (`<skill-dir>/bin/xpl`).
+`xpl skill install` copies the artifact's bundled skill, with `xpl-install.json` recording the installed
+CLI's absolute path, skill version and owned file hashes. Repeating installation updates the copy and
+launcher under a directory lock. It stages a replacement beside the destination and rolls back if the
+replacement fails. It refuses symlinks, unmanaged directories, changed owned files and extra files;
+move them aside to preserve edits before reinstalling. A moved CLI is repaired by rerunning installation.
+`XPL_CLI=<xpl.mjs>` overrides the binding; a source-development skill still finds
+`packages/cli/dist/xpl.mjs` relative to its real path. Everything Claude writes is a patch; it never edits
+an explainer by hand. SKILL.md and its `reference/` files are the source of truth for the rules; this section
+only says how they use the CLI. Claude Code installation, authentication and provider access are separate;
+the skill never starts a resident generation worker.
 
 Claude first chooses one of three scopes: `explain <question>` (part of a project), `explain repo` (the whole
 project) or `explain change <base>..<head>` (a diff). The reader sees the tour title and its `summary` first,
@@ -1835,12 +1884,13 @@ identities to syntax ranges. This is a proposed contract revision, not a change 
   depth 1, so a path whose layers call each other through a variable (`self.app`) is not rebuilt.
 - `xpl lint` is mechanical: it catches slogans, absolute words, long sentences, code titles and order
   problems, not wrong claims. `repeats-summary` finds near-verbatim repeats only.
-- Not published: the packages are private and `xpl` runs from a clone (`npm install && npm run build`), which
-  is also what the skill launcher expects. Node ≥ 22.12 is required; only Linux has been exercised.
+- Not published: workspace packages are private; build/pack produce a standalone local npm tarball with
+  its viewer, grammars and skill. Install/update and reader/export checks cover Linux x64/WSL2 only.
+  Node ≥22.12 is required. Registry name, release version and channel still need a publication decision.
 
 **Next steps, roughly by value** (the review in `docs/review-2026-10-01.md` has the roadmap): an independent
 accuracy pass for change explainers; a word-level diff in rewritten lines; editable step titles and code in
 the viewer; a UI for hiding and pinning, or dropping the unused `layout` field; the layout in a Web Worker; more
 language packs (each needs `extract`, `classifySite`, `resolveModule`, and optionally a SCIP resolver);
-publishing the CLI and packaging the skill so that install is one step; a regeneration mode in the skill that
+publishing the packaged CLI through a selected release channel; a regeneration mode in the skill that
 walks `xpl status` on its own.

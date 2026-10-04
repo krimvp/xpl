@@ -33,10 +33,16 @@ The reader sees the tour title and its **summary** first, then the steps (a titl
 
 ## Setup
 
-1. **The CLI** is `bin/xpl` in this skill's directory (else `ls -d ~/.claude/skills/code-explainer .claude/skills/code-explainer`). Below, `xpl` means that path, written in full. Run it from the repo root, or pass `--root <dir>`. If it says "the CLI is not built", tell the user to run `npm install && npm run build` in the xpl repo.
+1. **The CLI** is `bin/xpl` in this installed skill's directory (else `ls -d ~/.claude/skills/code-explainer .claude/skills/code-explainer`). Below, `xpl` means that path, written in full. Run it from the repo root, or pass `--root <dir>`. If its CLI is unavailable, reinstall the local xpl tarball and run `xpl skill install` (or `--dir <this skill directory>`). Rerun that installer after CLI updates or moves; it preserves local edits by refusing to replace them. `xpl doctor --agent claude` diagnoses Node, bundled assets, the skill, optional precise tools and Claude Code availability. Node >=22.12 is required; the installed workflow is verified on Linux x64 only.
 2. **Index:** `xpl index`. Run it again when the code changed or a command warns that the index `does not match the working tree`. A language with `refs: heuristic` has hints, not facts: confirm each call with `show`. `--precise off` is fast, for a big repo.
 3. **Name it:** `xpl new <name> --title "..."` unless the explainer exists. One explainer per repo (the repo name, kebab-case); a new question adds views and a tour to it. A change gets its own explainer, titled after it: `xpl new <repo>-pr-42 --title "PR 42: <what it does>"`. Say who the page is for, fit to its level, in one short line: `"scope": {"audience": "Overview, for anyone new to ky"}` (a repo), `"Deep dive, for engineers working on the router"` (an algorithm), `"For reviewers of this change, and anyone who uses the option"` (a change); the viewer shows it under the title (patch-format.md 3.11).
 4. **Patch files** go outside the repo (the scratchpad or `$TMPDIR`).
+
+Local reading, `index --precise off`, viewing and HTML export use bundled assets without hosted xpl
+infrastructure after setup. Precise tool bootstrap and dependencies can need network access; keep the
+heuristic path and its trust labels when tools cannot run. Claude Code authoring needs separate
+authentication and provider access. Run generation only when the user invokes this skill; no resident
+agent worker is required. Other agents may read these instructions, but their integration is not verified.
 
 ## Choose the scope
 

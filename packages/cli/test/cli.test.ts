@@ -3,10 +3,10 @@ import { COMMANDS } from "../src/cli.js";
 import { indexedFixture, invoke, makeTempDir, xpl } from "./helpers.js";
 
 describe("xpl cli", () => {
-  it("--help lists every command of ARCHITECTURE.md section 5", async () => {
+  it("--help prints the registered commands and global options", async () => {
     const { code, out } = await invoke(["--help"]);
     expect(code).toBe(0);
-    for (const command of COMMANDS) expect(out).toContain(command.name);
+    for (const command of COMMANDS) expect(out).toMatch(new RegExp(`^  ${command.name}\\s`, "m"));
     expect(out).toContain("--root");
     expect(out).toContain("--json");
     expect(out).toContain("--index");
