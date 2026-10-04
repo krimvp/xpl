@@ -1,14 +1,18 @@
 import { beforeAll, describe, expect, it } from "vitest";
-import { cloneDir, editFile, indexedFixture, invoke, PATCH_PATH, xpl, xplJson } from "./helpers.js";
+import {
+  applyStdin,
+  cloneDir,
+  editFile,
+  indexedFixture,
+  PATCH_PATH,
+  xpl,
+  xplJson,
+} from "./helpers.js";
 
 const DISPATCH = "sym:src/runner.ts#Runner.dispatch";
 
 let indexed: string;
 let demo: string;
-
-async function apply(dir: string, patch: object, ...flags: string[]) {
-  return invoke(["apply", "demo", "-", ...flags], { cwd: dir, stdin: JSON.stringify(patch) });
-}
 
 beforeAll(async () => {
   indexed = await indexedFixture();
@@ -104,7 +108,7 @@ describe("xpl anchors", () => {
     const dir = cloneDir(demo);
     expect(
       (
-        await apply(dir, {
+        await applyStdin(dir, {
           tours: [
             {
               id: "tour:intro",
@@ -162,7 +166,7 @@ describe("xpl anchors", () => {
     ];
     expect(
       (
-        await apply(dir, {
+        await applyStdin(dir, {
           concepts: [{ id: "concept:bare", label: "Bare" }],
           tours: [{ id: "tour:talk", title: "Talk", steps }],
         })
@@ -426,7 +430,7 @@ describe("xpl anchors after the code changed", () => {
     const dir = cloneDir(demo);
     expect(
       (
-        await apply(
+        await applyStdin(
           dir,
           {
             concepts: [

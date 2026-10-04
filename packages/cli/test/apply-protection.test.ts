@@ -1,5 +1,13 @@
 import { beforeAll, describe, expect, it } from "vitest";
-import { cloneDir, indexedFixture, invoke, PATCH_PATH, readJson, xpl } from "./helpers.js";
+import {
+  applyStdin,
+  cloneDir,
+  indexedFixture,
+  invoke,
+  PATCH_PATH,
+  readJson,
+  xpl,
+} from "./helpers.js";
 
 const EXPLAINER = ".explainer/demo.explainer.json";
 const DISPATCH = "sym:src/runner.ts#Runner.dispatch";
@@ -8,10 +16,6 @@ let demo: string;
 /** The demo explainer after the user rewrote the summary of Runner.dispatch and curated view:overview. */
 let owned: string;
 
-async function apply(dir: string, patch: object, ...flags: string[]) {
-  return invoke(["apply", "demo", "-", ...flags], { cwd: dir, stdin: JSON.stringify(patch) });
-}
-
 beforeAll(async () => {
   const indexed = await indexedFixture();
   demo = cloneDir(indexed);
@@ -19,7 +23,7 @@ beforeAll(async () => {
   expect((await xpl(demo, "apply", "demo", PATCH_PATH)).code).toBe(0);
 
   owned = cloneDir(demo);
-  const edit = await apply(
+  const edit = await applyStdin(
     owned,
     {
       nodes: [{ id: DISPATCH, summary: "Mine: the loop." }],
@@ -59,7 +63,7 @@ describe("apply when everything is protected", () => {
   it("exits 1 and names the protected ids and what to do", async () => {
     const dir = cloneDir(owned);
     const before = JSON.stringify(readJson(dir, EXPLAINER));
-    const { code, out, err } = await apply(dir, rewrite);
+    const { code, out, err } = await applyStdin(dir, rewrite);
     expect(code).toBe(1);
     expect(err).toBe("");
     expect(out).toContain(
@@ -78,7 +82,7 @@ describe("apply when everything is protected", () => {
   });
 
   it("--json: ok false, no change, the ids, and an error string", async () => {
-    const { code, out } = await apply(cloneDir(owned), rewrite, "--json");
+    const { code, out } = await applyStdin(cloneDir(owned), rewrite, "--json");
     const json = JSON.parse(out);
     expect(code).toBe(1);
     expect(json).toMatchObject({
@@ -92,18 +96,18 @@ describe("apply when everything is protected", () => {
   });
 
   it("--dry-run says the same", async () => {
-    const { code, out } = await apply(cloneDir(owned), rewrite, "--dry-run");
+    const { code, out } = await applyStdin(cloneDir(owned), rewrite, "--dry-run");
     expect(code).toBe(1);
     expect(out).toContain("nothing was applied");
   });
 
   it("covers removal of an element that carries userFields, and includeRemove", async () => {
-    const remove = await apply(cloneDir(owned), { remove: [DISPATCH] });
+    const remove = await applyStdin(cloneDir(owned), { remove: [DISPATCH] });
     expect(remove.code).toBe(1);
     expect(remove.out).toContain(
       `${DISPATCH} has fields edited by the user (summary); an llm patch cannot remove it (skipped)`,
     );
-    const includeRemove = await apply(cloneDir(owned), {
+    const includeRemove = await applyStdin(cloneDir(owned), {
       views: [{ id: "view:overview", type: "graph", includeRemove: ["file:src/bus.ts"] }],
     });
     expect(includeRemove.code).toBe(1);
@@ -113,7 +117,7 @@ describe("apply when everything is protected", () => {
 
   it("an actor user patch is not refused", async () => {
     const dir = cloneDir(owned);
-    const { code, out } = await apply(dir, rewrite, "--actor", "user");
+    const { code, out } = await applyStdin(dir, rewrite, "--actor", "user");
     expect(code).toBe(0);
     expect(out).toContain("applied to");
   });
@@ -127,7 +131,7 @@ describe("apply with some of the patch protected", () => {
 
   it("stays exit 0, and ends with the skipped ids", async () => {
     const dir = cloneDir(owned);
-    const { code, out } = await apply(dir, mixed);
+    const { code, out } = await applyStdin(dir, mixed);
     expect(code).toBe(0);
     const lines = out.split("\n");
     expect(lines[0]).toBe("applied to .explainer/demo.explainer.json (actor llm): 2 ids changed");
@@ -147,7 +151,7 @@ describe("apply with some of the patch protected", () => {
   });
 
   it("--json lists the ids too", async () => {
-    const { code, out } = await apply(cloneDir(owned), mixed, "--json");
+    const { code, out } = await applyStdin(cloneDir(owned), mixed, "--json");
     const json = JSON.parse(out);
     expect(code).toBe(0);
     expect(json).toMatchObject({ ok: true, applied: true, protectedIds: [DISPATCH] });
@@ -155,10 +159,10 @@ describe("apply with some of the patch protected", () => {
 
   it("no summary line when nothing was protected; a plain no-op is still exit 0", async () => {
     const dir = cloneDir(demo);
-    const fine = await apply(dir, { concepts: [{ id: "concept:x", label: "X" }] });
+    const fine = await applyStdin(dir, { concepts: [{ id: "concept:x", label: "X" }] });
     expect(fine.code).toBe(0);
     expect(fine.out).not.toContain("skipped as protected");
-    const noop = await apply(dir, { concepts: [{ id: "concept:x", label: "X" }] });
+    const noop = await applyStdin(dir, { concepts: [{ id: "concept:x", label: "X" }] });
     expect(noop.code).toBe(0);
     expect(noop.out).toContain("no changes");
   });

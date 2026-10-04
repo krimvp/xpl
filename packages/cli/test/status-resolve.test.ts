@@ -1,5 +1,6 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import {
+  applyStdin,
   cloneDir,
   editFile,
   indexedFixture,
@@ -15,10 +16,6 @@ const EXPLAINER = ".explainer/demo.explainer.json";
 
 let indexed: string;
 let demo: string;
-
-async function apply(dir: string, patch: object, ...flags: string[]) {
-  return invoke(["apply", "demo", "-", ...flags], { cwd: dir, stdin: JSON.stringify(patch) });
-}
 
 async function reindex(dir: string) {
   const result = await xpl(dir, "index", "--precise", "off");
@@ -70,7 +67,7 @@ describe("xpl status: unexplained edges", () => {
     ];
     expect(
       (
-        await apply(dir, {
+        await applyStdin(dir, {
           views: [
             {
               id: "view:wide",
@@ -94,7 +91,7 @@ describe("xpl status: drift the user owns", () => {
   it("counts it in the total and again apart: `4 drifted (1 user-owned: ask the user)`", async () => {
     const dir = cloneDir(demo);
     // the user adds a concept of their own, anchored on the requeue call...
-    const mine = await apply(
+    const mine = await applyStdin(
       dir,
       {
         concepts: [
@@ -133,7 +130,7 @@ describe("xpl status: drift the user owns", () => {
   it("an llm element whose anchors the user rewrote counts as user-owned too", async () => {
     const dir = cloneDir(demo);
     // the user re-anchors the retry-policy concept: `anchors` becomes one of its userFields
-    const edit = await apply(
+    const edit = await applyStdin(
       dir,
       {
         concepts: [
@@ -198,7 +195,7 @@ describe("xpl status: broken references", () => {
     dir = cloneDir(demo);
     expect(
       (
-        await apply(dir, {
+        await applyStdin(dir, {
           nodes: [
             { id: "sym:src/queue.ts#Queue.pop", summary: "Takes the next job." },
             {
@@ -270,7 +267,7 @@ describe("xpl status: broken references", () => {
       concepts: [{ id: "concept:queueing", related: null }],
       views: [{ id: "view:parts", type: "graph", includeRemove: ["sym:src/queue.ts#Queue.pop"] }],
     };
-    const applied = await apply(fixed, patch);
+    const applied = await applyStdin(fixed, patch);
     expect(applied.code, applied.out).toBe(0);
     const { out } = await xpl(fixed, "status", "demo");
     expect(out).not.toContain("broken references");
@@ -286,7 +283,7 @@ describe("xpl status: stale derived-edge overlays", () => {
     // label the derived edge, then make the view show something else at its end
     expect(
       (
-        await apply(dir, {
+        await applyStdin(dir, {
           edges: [
             {
               id: OVERLAY,
@@ -309,7 +306,7 @@ describe("xpl status: stale derived-edge overlays", () => {
     const before = await xpl(dir, "status", "demo");
     expect(before.out).not.toContain("stale edge overlays");
 
-    const moved = await apply(dir, {
+    const moved = await applyStdin(dir, {
       views: [
         {
           id: "view:overview",
@@ -336,7 +333,7 @@ describe("xpl status: stale derived-edge overlays", () => {
     const dir = cloneDir(demo);
     expect(
       (
-        await apply(dir, {
+        await applyStdin(dir, {
           edges: [
             {
               id: OVERLAY,
@@ -400,7 +397,7 @@ describe("a renamed symbol: Runner.dispatch becomes Runner.run", () => {
   });
 
   it("the patch that follows the rename is accepted, and the same patch with the old name is not", async () => {
-    const stale = await apply(cloneDir(dir), {
+    const stale = await applyStdin(cloneDir(dir), {
       concepts: [
         {
           id: "concept:retry-policy",
@@ -418,7 +415,7 @@ describe("a renamed symbol: Runner.dispatch becomes Runner.run", () => {
     expect(stale.code).toBe(1);
     expect(stale.out).toContain('symbol "Runner.dispatch" not found in src/runner.ts');
     expect(stale.out).toContain("Did you mean: sym:src/runner.ts#Runner.run (anchor: file:");
-    const fixed = await apply(cloneDir(dir), {
+    const fixed = await applyStdin(cloneDir(dir), {
       concepts: [
         {
           id: "concept:retry-policy",

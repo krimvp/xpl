@@ -5,6 +5,7 @@
  */
 import { beforeAll, describe, expect, it } from "vitest";
 import {
+  applyStdin,
   cloneDir,
   indexedFixture,
   invoke,
@@ -18,10 +19,6 @@ const EXPLAINER = ".explainer/demo.explainer.json";
 
 let demo: string;
 
-async function apply(dir: string, patch: unknown, ...flags: string[]) {
-  return invoke(["apply", "demo", "-", ...flags], { cwd: dir, stdin: JSON.stringify(patch) });
-}
-
 beforeAll(async () => {
   const indexed = await indexedFixture();
   demo = cloneDir(indexed);
@@ -33,7 +30,7 @@ describe("xpl apply: stepsUpdate", () => {
   it("fixes one step's summary and names the step in `changed`", async () => {
     const dir = cloneDir(demo);
     const before = readJson(dir, EXPLAINER).views.find((v: any) => v.id === "view:dispatch");
-    const r = await apply(dir, {
+    const r = await applyStdin(dir, {
       views: [
         {
           id: "view:dispatch",
@@ -57,7 +54,7 @@ describe("xpl apply: stepsUpdate", () => {
     expect(after.steps[2]).toEqual(before.steps[2]);
     expect(after.frames).toEqual(before.frames);
     // the same update again changes nothing
-    const again = await apply(dir, {
+    const again = await applyStdin(dir, {
       views: [
         {
           id: "view:dispatch",
@@ -71,7 +68,7 @@ describe("xpl apply: stepsUpdate", () => {
 
   it("an unknown step id is a rejection that names the steps, on stdout, exit 1", async () => {
     const dir = cloneDir(demo);
-    const r = await apply(dir, {
+    const r = await applyStdin(dir, {
       views: [
         {
           id: "view:dispatch",
@@ -93,7 +90,7 @@ describe("xpl apply: stepsUpdate", () => {
     // the user rewrites a step's summary (through the viewer, or --actor user)
     expect(
       (
-        await apply(
+        await applyStdin(
           dir,
           {
             views: [
@@ -111,7 +108,7 @@ describe("xpl apply: stepsUpdate", () => {
     ).toBe(0);
     const view = readJson(dir, EXPLAINER).views.find((v: any) => v.id === "view:dispatch");
     expect(view.provenance.userFields).toEqual(["steps"]);
-    const r = await apply(dir, {
+    const r = await applyStdin(dir, {
       views: [
         {
           id: "view:dispatch",
@@ -158,7 +155,7 @@ describe("xpl apply: one wave of errors", () => {
 
   it("shows a bad span, a bad focus and a bad related id in one rejection", async () => {
     const dir = cloneDir(demo);
-    const r = await apply(dir, badPatch);
+    const r = await applyStdin(dir, badPatch);
     expect(r.code).toBe(1);
     expect(r.out).toContain("rejected: 3 errors, nothing was applied");
     const errors = r.out.split("\n").filter((l) => l.startsWith("error"));
@@ -174,7 +171,7 @@ describe("xpl apply: one wave of errors", () => {
     expect(readJson(dir, EXPLAINER).tours.map((t: any) => t.id)).toEqual(["tour:intro"]);
     expect(readJson(dir, EXPLAINER).concepts.map((c: any) => c.id)).not.toContain("concept:x");
     // the same in JSON: every issue, each with its code
-    const json = await apply(dir, badPatch, "--json");
+    const json = await applyStdin(dir, badPatch, "--json");
     const parsed = JSON.parse(json.out);
     expect(parsed).toMatchObject({
       ok: false,
@@ -195,7 +192,7 @@ describe("xpl apply: spans on blank lines", () => {
     // Runner.dispatch: offsets 38..40 are `deadLetter(...)`, a closing brace and a blank line (file line 85)
     const shown = await xpl(dir, "show", "src/runner.ts#Runner.dispatch", "--lines", "80-86");
     expect(shown.out).toMatch(/\n85 43│\s*\n/);
-    const r = await apply(dir, {
+    const r = await applyStdin(dir, {
       concepts: [
         {
           id: "concept:tail",
@@ -224,7 +221,7 @@ describe("xpl apply: spans on blank lines", () => {
 
   it("stays quiet for spans on code", async () => {
     const dir = cloneDir(demo);
-    const r = await apply(dir, {
+    const r = await applyStdin(dir, {
       concepts: [
         {
           id: "concept:ok",
@@ -260,11 +257,11 @@ describe("xpl apply: which stream says what", () => {
 
   it("a rejection is on stdout (exit 1, nothing on stderr); the result of a valid patch too", async () => {
     const dir = cloneDir(demo);
-    const rejected = await apply(dir, { concepts: [{ id: "concept:x" }] });
+    const rejected = await applyStdin(dir, { concepts: [{ id: "concept:x" }] });
     expect(rejected.code).toBe(1);
     expect(rejected.err).toBe("");
     expect(rejected.out).toMatch(/^rejected: 1 error, nothing was applied/);
-    const applied = await apply(dir, { concepts: [{ id: "concept:x", label: "X" }] });
+    const applied = await applyStdin(dir, { concepts: [{ id: "concept:x", label: "X" }] });
     expect(applied.code).toBe(0);
     expect(applied.err).toBe("");
     expect(applied.out).toMatch(/^applied to /);
@@ -301,7 +298,7 @@ describe("xpl apply: which stream says what", () => {
       ok: false,
       error: expect.stringContaining("not valid JSON"),
     });
-    const rejected = await apply(dir, { concepts: [{ id: "concept:x" }] }, "--json");
+    const rejected = await applyStdin(dir, { concepts: [{ id: "concept:x" }] }, "--json");
     expect(rejected.code).toBe(1);
     expect(rejected.err).toBe("");
     expect(JSON.parse(rejected.out)).toMatchObject({ ok: false, applied: false });

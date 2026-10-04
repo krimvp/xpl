@@ -3,14 +3,14 @@
  * anchored symbol and the tests that reference one, capped by `--boundary-max`; the summary line, `--json`, and an
  * index pruned for exactly the embedded files.
  */
-import { readdirSync } from "node:fs";
-import { join } from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
-import { IndexModel, parseBundle, type SymbolIndex, type ViewerBundle } from "@xpl/core";
+import { IndexModel } from "@xpl/core";
 import { expectSameViewer } from "../../core/test/prune-equivalence.js";
 import { boundaryFiles } from "../src/bundle-data.js";
 import {
+  bundleOf,
   cloneDir,
+  fullIndex,
   indexedFixture,
   invoke,
   makeTempDir,
@@ -22,24 +22,12 @@ import {
 } from "./helpers.js";
 
 const viewerEnv = { XPL_VIEWER_HTML: writeViewerStub() };
-const DATA_SCRIPT = /<script id="xpl-data" type="application\/json">([\s\S]*?)<\/script>/;
 /** Where the pages go: outside the repositories, so that they never count as a change of the working tree. */
 const OUT = makeTempDir("xpl-boundary-out-");
-
-function bundleOf(out: string): ViewerBundle {
-  const match = DATA_SCRIPT.exec(readFile(OUT, out));
-  expect(match, `${out} has an xpl-data script`).not.toBeNull();
-  return parseBundle(match![1]!);
-}
 
 /** `xpl bundle <name> -o <out> ... --root <dir>`, run in `OUT`. */
 function bundle(dir: string, name: string, out: string, ...argv: string[]) {
   return invoke(["bundle", name, "-o", out, ...argv, "--root", dir], { cwd: OUT, env: viewerEnv });
-}
-
-function fullIndex(dir: string): SymbolIndex {
-  const name = readdirSync(join(dir, ".explainer")).find((file) => /^index-.+\.json$/.test(file))!;
-  return readJson<SymbolIndex>(dir, `.explainer/${name}`);
 }
 
 /** A new explainer `name` in `dir` with one concept anchored at `anchors` (no views: only the anchors count). */
@@ -69,7 +57,7 @@ describe("--files boundary", () => {
   it("adds the files of direct callers, callees and tests, and says so", async () => {
     const referenced = await bundle(dir, "metrics", "ref.html");
     expect(referenced.code, referenced.err).toBe(0);
-    expect(Object.keys(bundleOf("ref.html").files)).toEqual(["src/metrics.ts"]);
+    expect(Object.keys(bundleOf(readFile(OUT, "ref.html")).files)).toEqual(["src/metrics.ts"]);
 
     const { code, out, err } = await bundle(dir, "metrics", "b.html", "--files", "boundary");
     expect(err).toBe("");
@@ -77,7 +65,7 @@ describe("--files boundary", () => {
     expect(out).toMatch(
       /^wrote b\.html \([\d.]+ KB\): \.explainer\/metrics\.explainer\.json, 4 of 12 files embedded \(referenced 1, boundary \+3: callers 1, callees 1, tests 1; [\d.]+ KB of source; --files all adds 8 files, [\d.]+ KB\), index [\d.]+ KB \([\d.]+ KB as plain JSON, pruned from [\d.]+ KB\), mode explore$/,
     );
-    const data = bundleOf("b.html");
+    const data = bundleOf(readFile(OUT, "b.html"));
     expect(Object.keys(data.files).sort()).toEqual([
       "src/bus.ts", // callee: EventBus.on
       "src/main.ts", // caller: main()
@@ -123,7 +111,7 @@ describe("--files boundary", () => {
     expect(out).toContain(
       "2 of 12 files embedded (referenced 1, boundary +1: callers 1, callees 0, tests 0; 2 more cut at --boundary-max 1: test/retry.test.ts, src/bus.ts;",
     );
-    expect(Object.keys(bundleOf("cap.html").files).sort()).toEqual([
+    expect(Object.keys(bundleOf(readFile(OUT, "cap.html")).files).sort()).toEqual([
       "src/main.ts",
       "src/metrics.ts",
     ]);
@@ -137,7 +125,7 @@ describe("--files boundary", () => {
       "0",
     );
     expect(zero.out).toContain("boundary +0: callers 0, callees 0, tests 0; 3 more cut");
-    expect(Object.keys(bundleOf("zero.html").files)).toEqual(["src/metrics.ts"]);
+    expect(Object.keys(bundleOf(readFile(OUT, "zero.html")).files)).toEqual(["src/metrics.ts"]);
   });
 
   it("the cap takes callers, tests and callees in turn", () => {
@@ -173,7 +161,7 @@ describe("--files boundary", () => {
     ]);
     const { code } = await bundle(ctor, "ctor", "c.html", "--files", "boundary");
     expect(code).toBe(0);
-    expect(Object.keys(bundleOf("c.html").files).sort()).toEqual([
+    expect(Object.keys(bundleOf(readFile(OUT, "c.html")).files).sort()).toEqual([
       "src/main.ts", // new Queue(...)
       "src/queue.ts",
       "test/retry.test.ts", // class RecordingQueue extends Queue
@@ -191,7 +179,7 @@ describe("--files boundary", () => {
     for (const name of ["demo", "narrow"]) {
       const { code } = await bundle(demo, name, `${name}.html`, "--files", "boundary");
       expect(code).toBe(0);
-      const data = bundleOf(`${name}.html`);
+      const data = bundleOf(readFile(OUT, `${name}.html`));
       const embedded = Object.keys(data.files);
       expectSameViewer(full, data.index, data.explainer, { embedded });
       // every symbol of an embedded file is in the embedded index (the code panel and the boxes need them)

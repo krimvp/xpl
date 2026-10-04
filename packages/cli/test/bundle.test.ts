@@ -1,9 +1,10 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
-import { BUNDLE_SCHEMA, collectAnchors, parseBundle, type ViewerBundle } from "@xpl/core";
+import { BUNDLE_SCHEMA, collectAnchors } from "@xpl/core";
 import { findViewerHtml, viewerHtmlCandidates } from "../src/viewer-html.js";
 import {
+  bundleOf,
   cloneDir,
   editFile,
   indexedFixture,
@@ -28,14 +29,6 @@ beforeAll(async () => {
   expect((await xpl(demo, "apply", "demo", PATCH_PATH)).code).toBe(0);
   viewerEnv = { XPL_VIEWER_HTML: writeViewerStub() };
 });
-
-const DATA_SCRIPT = /<script id="xpl-data" type="application\/json">([\s\S]*?)<\/script>/;
-
-function bundleOf(html: string): ViewerBundle {
-  const match = DATA_SCRIPT.exec(html);
-  expect(match, "the page has an xpl-data script").not.toBeNull();
-  return parseBundle(match![1]!);
-}
 
 function bundle(dir: string, ...argv: string[]) {
   return invoke(["bundle", "demo", ...argv, "--root", dir], { cwd: dir, env: viewerEnv });
