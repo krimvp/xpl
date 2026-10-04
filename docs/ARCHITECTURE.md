@@ -1082,6 +1082,8 @@ a separate decision; nothing is published by build, pack, diagnosis or skill ins
 not publisher identity. Skill availability is optional for reading, required with `--agent claude`.
 It checks the managed copy's hashes and executes its launcher with `--version`. Optional tools are checked
 only with local version commands; their presence does not prove precise analysis or agent authentication.
+The Go probe forces `GOTOOLCHAIN=local`, ignores user Go configuration and disables telemetry without
+writing settings. Git tracing is disabled for its probe. No Python or SCIP tool launcher is invoked.
 Recovery instructions distinguish reinstalling the artifact, reinstalling the skill, precise fallback and
 separate Claude Code setup. `--precise off`, local viewing and HTML export need no hosted xpl service.
 Precise tool/toolchain bootstrap and repository dependencies may need network; agent provider access has

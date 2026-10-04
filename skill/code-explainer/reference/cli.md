@@ -27,7 +27,9 @@
 Diagnoses installed setup without downloading tools or starting authoring. Node >=22.12, artifact hashes
 and grammar loading are mandatory. Skill availability is optional by default; `--agent claude` makes
 the managed skill and Claude Code availability required. Optional git/npx/Go checks run local version
-commands. Missing precise prerequisites suggest `xpl index --precise off`; automatic precise mode may
+commands. Go uses the installed toolchain, ignores user Go configuration and disables telemetry without
+writing settings; Git tracing is disabled. No Python or SCIP tool launcher runs during diagnosis.
+Missing precise prerequisites suggest `xpl index --precise off`; automatic precise mode may
 bootstrap tools and dependencies over the network. Presence is not a test of precise analysis,
 agent authentication or provider access. Required failures exit 1; JSON includes `ok`, `platform`,
 `agent`, `checks` (`id`, `required`, `status`, `detail`, `recovery`) and `network`.

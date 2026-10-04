@@ -16,7 +16,8 @@ export const doctorCommand: CommandSpec = {
   details: [
     "Checks Node >=22.12, bundled file hashes and grammar loading. Required failures exit 1.",
     "Skill and Claude Code are required only with --agent claude; the default none checks reader/index/export setup.",
-    "Optional git, npx and Go checks run --version locally. Availability does not prove a precise indexer can run.",
+    "Optional git, npx and Go checks report local versions. Availability does not prove a precise indexer can run.",
+    "Go uses the installed toolchain with user configuration and telemetry disabled; Git tracing is disabled.",
     "Use xpl index --precise off offline. Auto precise mode may download tools/dependencies; require fails if unavailable.",
     "Claude Code authoring needs its own installation, authentication and provider access. Generation is user-invoked.",
   ],
@@ -117,7 +118,32 @@ export const doctorCommand: CommandSpec = {
     ] as const) {
       await check(id, false, recovery, async () => {
         const result = await execute(id, [id === "go" ? "version" : "--version"], {
-          env: ctx.env,
+          env:
+            id === "go"
+              ? {
+                  ...ctx.env,
+                  GOTOOLCHAIN: "local",
+                  GOENV: "off",
+                  // Go 1.23+ opens telemetry before handling `version`. No user config directory
+                  // leaves telemetry off, without writing a mode file or changing the user's settings.
+                  HOME: "",
+                  XDG_CONFIG_HOME: "",
+                  APPDATA: "",
+                  TEST_TELEMETRY_DIR: "",
+                }
+              : id === "git"
+                ? {
+                    ...ctx.env,
+                    ...Object.fromEntries(
+                      Object.keys(ctx.env)
+                        .filter((key) => key.startsWith("GIT_TRACE"))
+                        .map((key) => [key, "0"]),
+                    ),
+                    GIT_TRACE2: "0",
+                    GIT_TRACE2_EVENT: "0",
+                    GIT_TRACE2_PERF: "0",
+                  }
+                : ctx.env,
           timeout: 5000,
         });
         return result.stdout.trim();
