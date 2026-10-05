@@ -5,6 +5,7 @@ import { captionCap, captionFit } from "../src/present/caption.js";
 import { rangePlaces, talkPanes } from "../src/present/ranges.js";
 import { focusColumns } from "../src/present/split.js";
 import { ViewerStore } from "../src/store.js";
+import { readLaunchParams } from "../src/data.js";
 import { searchFor, watchUrl } from "../src/url.js";
 import { makeBundle } from "./world.js";
 
@@ -122,6 +123,19 @@ function fakeWindow(search: string) {
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 describe("Back, Forward and a talk", () => {
+  it("keeps each Present detour selection in the address bar", () => {
+    const store = new ViewerStore(makeBundle(), { mode: "present", tour: "tour:demo" });
+    const page = fakeWindow("?mode=present&tour=tour:demo&step=1");
+    const stop = watchUrl(store, undefined, page.win);
+    store.select(["concept:retry"]);
+    expect(readLaunchParams(page.win.location.search).focus).toEqual(["concept:retry"]);
+    store.select(["flow:1"]);
+    expect(readLaunchParams(page.win.location.search).focus).toEqual(["flow:1"]);
+    store.select([]);
+    expect(readLaunchParams(page.win.location.search).focus).toEqual([""]);
+    stop();
+  });
+
   it("Esc leaves a talk started on the page like Back does: the address then says what is on screen", async () => {
     const store = new ViewerStore(makeBundle(), { perspective: "guide" });
     const page = fakeWindow("?perspective=guide");
@@ -157,16 +171,29 @@ describe("Back, Forward and a talk", () => {
     const store = new ViewerStore(bundle, {});
     const page = fakeWindow("");
     watchUrl(store, "present", page.win);
-    expect(page.win.location.search).toBe("?mode=present&tour=tour:demo&step=1");
+    expect(page.win.location.search).toBe("?mode=present&tour=tour:demo&step=1&step-id=t1");
     store.nextStep();
     store.exitPresent();
     expect(page.entries.length).toBe(2);
-    expect(page.win.location.search).toBe("?mode=explore&tour=tour:demo&step=2");
+    expect(readLaunchParams(page.win.location.search)).toEqual({
+      mode: "explore",
+      perspective: "explore",
+      view: "view:flow",
+      focus: ["flow:1", "concept:retry"],
+      tour: "tour:demo",
+      step: 2,
+      stepId: "t2",
+    });
     page.back();
     await settle();
     expect(store.getState().mode).toBe("present");
     expect(store.getState().tour!.step).toBe(1);
-    expect(page.win.location.search).toBe("?mode=present&tour=tour:demo&step=2");
+    expect(readLaunchParams(page.win.location.search)).toEqual({
+      mode: "present",
+      tour: "tour:demo",
+      step: 2,
+      stepId: "t2",
+    });
   });
 });
 

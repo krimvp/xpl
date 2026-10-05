@@ -23,6 +23,7 @@ const NAVIGATION = [
   "perspective",
   "file",
   "range",
+  "side",
 ];
 const rangeText = (range: Range) =>
   `${range.startLine}${range.startCol === undefined ? "" : `:${range.startCol}`}-${range.endLine}${range.endCol === undefined ? "" : `:${range.endCol}`}`;

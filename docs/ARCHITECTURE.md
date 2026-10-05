@@ -1859,7 +1859,7 @@ context copied exactly. It updates those IDs and increments their revisions only
 the prior file and counters intact and retryable.
 The selected revision operation below commits reviewed decisions before recording their outcomes.
 
-**Local ready versions (34A).** `cli/stage.ts` reuses workspace readiness, artifactIdentity and bundle
+**Local ready versions (34A/34B).** `cli/stage.ts` reuses workspace readiness, artifactIdentity and bundle
 file selection. `xpl stage <guide> --dir <outside-folder> --preview` lists sorted head/base source paths
 and readiness without creating storage or reading the viewer HTML. Ordinary staging prints that list
 before writing; machine callers use `--preview --json` for a separate inspection step. `--files` selects
@@ -1888,18 +1888,45 @@ PR guides require `--pr-result` from `xpl pr finish` and the retained prepared c
 Staging verifies the ready result's input/explainer/index/HTML SHA-256 hashes, commits, source list and
 artifact identity; prepared or superseded results are refused. It recomputes embedded readiness and
 checks the prepared HEAD/raw source plus workspace readiness against that exact result. The version
-contains the original HTML bytes and the full ready result manifest with its SHA-256 hash. After writing,
-GitHub base/head are rechecked under the destination lock, then local readiness/freshness is checked
+contains the validated HTML with publication metadata and the full original ready result manifest with
+its SHA-256 hash. The original ready HTML hash remains in that result; the staged artifact hash covers
+the delivered page. Source, explanation, index, readiness and artifactIdentity remain unchanged.
+After writing, GitHub base/head are rechecked under the destination lock, then local readiness/freshness is checked
 again before promotion. API failures and superseded commits retain current. `--files` and `--note` cannot
 alter a PR result. `--require-review` checks the optional policy without rewriting its original HTML.
 
-This slice provides local staging only. Version/step/element/range restoration belongs to 34B; a chosen
-destination, audience, credentialed delivery and one PR link/Action belong to 34C. Local storage does not
-establish private team access or close those acceptance criteria.
+This slice provides local staging and version-bound navigation. A chosen destination, audience,
+credentialed delivery and one PR link/Action belong to 34C. Local storage does not establish private team access or close those acceptance criteria.
+
+**Version navigation (34B).** `ViewerBundle.publication` carries a current `PublishedVersion` and prior
+summaries captured under the staging lock from retained immutable manifests. Each summary reuses locator,
+time, index/change commits, artifactIdentity, included head/base files and review state. The viewer never
+fetches a manifest/catalog or repository API to read it. Bundle parsing rejects unsafe/duplicate locators,
+malformed metadata and a publication combined with a live server. Opening `current/index.html` replaces
+the location with the captured `version-*/index.html?version=...` before installing navigation. Generated
+links use sibling immutable paths; a version query that disagrees with the embedded page is refused.
+Standalone HTML copies preserve the snapshot and saved navigation but do not advertise sibling links.
+Old pages retain only history that existed when staged. About this explanation lists prior versions,
+exact included source and author review; a state link uses the existing query serializer.
+
+The existing launch query gains `side=head|base` and `version`, retaining `view`, repeated `focus`,
+`perspective`, `tour`, numeric `step`, stable `step-id`, `file` and inclusive `range`. Explore selections
+and stable Present step IDs are preserved. Present detours retain their view and focus; an explicit
+empty `focus=` preserves a cleared selection instead of reapplying the tour step. URL writes track
+applied step changes as well as the tour counter, so a step's stable ID cannot lag behind its position. Base ranges validate against embedded
+base text using changed-file head keys, including deleted files, without a base index. Unknown sides
+and unavailable/invalid ranges never silently select head source.
+
+`ViewerBundle.launch` stores a query string when Save as HTML captures navigation, with no service
+attachment. The store restores it only when no explicit navigation was supplied; a new linked target
+replaces saved navigation as a whole, avoiding conflicting saved focus/range targets. Re-saves retain
+publication metadata only while artifactIdentity matches the staged record; author changes drop it.
+No saved state changes explanation provenance, source text, readiness or identity. Destination adapters,
+access control and PR Actions are reserved for 34C.
 
 **Bundle payload** (`ViewerBundle`, also `/api/bundle`): `{ schema: "code-explainer/bundle@0", explainer,
 index, files: Record<FilePath, string>, baseFiles?, mode?, tour?, server?, sourceWarning?, exportInfo?,
-feedback?, guideId?, guides?, readOnlyGuide? }`, embedded as `<script
+feedback?, guideId?, guides?, readOnlyGuide?, publication?, launch? }`, embedded as `<script
 id="xpl-data" type="application/json">` with `<` escaped as `\u003c` (and U+2028/2029 escaped). Under `xpl
 view` `files` may be partial and the viewer fetches the rest from `/api/file`. `xpl bundle` embeds the files
 the explainer needs (`--files referenced`, the default; `--files all` embeds every indexed file): those of

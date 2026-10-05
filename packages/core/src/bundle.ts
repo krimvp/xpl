@@ -13,6 +13,16 @@ export const BUNDLE_SCHEMA = "code-explainer/bundle@0";
 /** `<script id="xpl-data" type="application/json">` holds the serialized bundle. */
 export const BUNDLE_SCRIPT_ID = "xpl-data";
 
+/** A staged directory locator and its checked snapshot, using the existing artifact identity. */
+export interface PublishedVersion {
+  version: string;
+  createdAt: string;
+  commits: { index: string; base?: string; head?: string };
+  identity: ReadinessReport["identity"];
+  includedSource: { head: string[]; base: string[] };
+  review: ReadinessReport["review"];
+}
+
 /** One contained guide, with its own source boundary; no live API or nested library. */
 export type GuideSnapshot = Pick<
   ViewerBundle,
@@ -60,6 +70,10 @@ export interface ViewerBundle {
   feedback?: FeedbackFile;
   /** Export decision and checked source scope, preserved in disconnected HTML. */
   exportInfo?: { status: "ready" | "draft"; report: ReadinessReport };
+  /** Staging captures history here so file:// pages need no manifest fetch or live API. */
+  publication?: { current: PublishedVersion; previous: PublishedVersion[] };
+  /** Saved navigation, expressed with the same query parameters as a shared URL. */
+  launch?: string;
 }
 
 export interface SerializeOptions {
@@ -119,6 +133,34 @@ export function parseBundle(text: string): ViewerBundle {
     throw new Error(`not a ${BUNDLE_SCHEMA} payload (schema: ${String(bundle?.schema)})`);
   }
   if (bundle.feedback !== undefined) bundle.feedback = parseFeedbackFile(bundle.feedback);
+  if (bundle.launch !== undefined && typeof bundle.launch !== "string")
+    throw new Error("invalid saved navigation");
+  if (bundle.publication !== undefined) {
+    const publication = bundle.publication;
+    if (!publication || !Array.isArray(publication.previous) || bundle.server)
+      throw new Error("invalid published snapshot");
+    const ids = new Set<string>();
+    for (const entry of [publication.current, ...publication.previous]) {
+      if (
+        !entry ||
+        typeof entry.version !== "string" ||
+        !/^version-[A-Za-z0-9_-]+$/.test(entry.version) ||
+        ids.has(entry.version) ||
+        typeof entry.createdAt !== "string" ||
+        !Number.isFinite(Date.parse(entry.createdAt)) ||
+        typeof entry.commits?.index !== "string" ||
+        typeof entry.identity?.explainerHash !== "string" ||
+        typeof entry.identity.sourceHash !== "string" ||
+        ![entry.includedSource?.head, entry.includedSource?.base].every(
+          (paths) => Array.isArray(paths) && paths.every((path) => typeof path === "string"),
+        ) ||
+        (entry.review !== undefined &&
+          !["unchecked", "current", "out-of-date"].includes(entry.review.status))
+      )
+        throw new Error("invalid or duplicate published version");
+      ids.add(entry.version);
+    }
+  }
   if (isPackedIndex(bundle.index)) bundle.index = unpackIndex(bundle.index);
   if (bundle.guides !== undefined) {
     if (!Array.isArray(bundle.guides)) throw new Error("invalid embedded guide library");

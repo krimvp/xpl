@@ -11,14 +11,25 @@
  *   Back from there returns to the talk, at the step it was left on.
  * - Whatever Back or Forward land on, the address ends up saying what is on screen.
  *
- * Navigation parameters are written only when the mode, tour or step changes. A managed service also
- * records its repository/guide attachment once on load, so bookmarks stay scoped to that guide. Leaving Present drops `tour` and `step`; when the bundle itself opens in Present (its `mode`
- * field), `mode=explore` is written instead, with the tour and step, so that a reload does not throw the
- * user back into the talk and Present resumes where it was. Other parameters are left alone.
+ * Navigation parameters follow the mode, view, focus, source range and stable tour step. A managed
+ * service also records its repository/guide attachment once on load. Leaving Present preserves the
+ * reading perspective and tour position; a Present bundle also writes `mode=explore`, so reloading
+ * keeps the reader out of the talk. Other parameters are left alone.
  */
 import { readLaunchParams } from "./data.js";
 import { stepNumber } from "./modes.js";
 import type { ViewerState, ViewerStore } from "./store.js";
+
+/** Sibling links work on file:// and static hosts; standalone HTML copies have no staged tree. */
+export function versionUrl(href: string, version: string): URL | undefined {
+  if (!/^version-[A-Za-z0-9_-]+$/.test(version)) return undefined;
+  const url = new URL(href);
+  if (!/\/(?:current|version-[A-Za-z0-9_-]+)\/index\.html$/.test(url.pathname)) return undefined;
+  url.pathname = url.pathname.replace(/\/[^/]+\/index\.html$/, `/${version}/index.html`);
+  url.searchParams.set("version", version);
+  url.searchParams.delete("attachment");
+  return url;
+}
 
 /** The query string (with the leading `?`, or empty) for a state, on top of the current `search`. */
 export function searchFor(
@@ -43,8 +54,8 @@ export function searchFor(
       }
     } else params.delete("mode");
   }
-  if (state.mode !== "present" && state.perspective && state.perspective !== "explore") {
-    params.delete("mode");
+  if (state.mode !== "present" && state.perspective) {
+    if (bundleMode !== "present") params.delete("mode");
     params.set("perspective", state.perspective);
     if (state.viewId) params.set("view", state.viewId);
     if (state.tour) {
@@ -53,12 +64,20 @@ export function searchFor(
     }
     params.delete("focus");
     for (const id of state.selection ?? []) params.append("focus", id);
+    if (params.has("tour") && !state.applied && state.selection?.length === 0)
+      params.set("focus", "");
   } else {
     params.delete("perspective");
     params.delete("focus");
+    if (state.mode === "present" && "applied" in state && !state.applied) {
+      if (state.viewId) params.set("view", state.viewId);
+      for (const id of state.selection ?? []) params.append("focus", id);
+      if (state.selection?.length === 0) params.set("focus", "");
+    }
   }
-  if (state.cursor && !state.cursor.side) {
+  if (state.cursor) {
     params.set("file", state.cursor.file);
+    params.set("side", state.cursor.side ?? "head");
     const c = state.cursor;
     params.set(
       "range",
@@ -67,21 +86,19 @@ export function searchFor(
   } else if ("cursor" in state) {
     params.delete("file");
     params.delete("range");
+    params.delete("side");
   }
-  if (
-    state.applied &&
-    params.has("tour") &&
-    (params.has("step-id") || (state.mode !== "present" && state.perspective !== "explore"))
-  )
+  if (state.applied && params.has("tour") && state.applied.stepId)
     params.set("step-id", state.applied.stepId);
   else if ("applied" in state) params.delete("step-id");
+  if (state.mode === "present" && state.applied) params.delete("view");
   // Ids are `tour:intro`: a colon is fine in a query string, and much easier to read than `%3A`.
   const text = params.toString().replace(/%3A/gi, ":");
   return text === "" ? "" : `?${text}`;
 }
 
 /**
- * Starts writing the URL whenever the mode, the tour or the step changes (and once now when the page
+ * Starts writing the URL whenever navigation changes (and once now when the page
  * opens in Present, so the address always names the slide). Returns the unsubscribe.
  */
 export function watchUrl(
@@ -115,13 +132,16 @@ export function watchUrl(
     }
   };
   const key = (state: ViewerState) =>
-    JSON.stringify(state.cursor) +
-    "|" +
-    (state.mode === "present"
-      ? `present|${state.tour?.tourId}|${state.tour?.step}`
-      : state.perspective === "explore"
-        ? "explore"
-        : `${state.perspective}|${state.viewId}|${state.tour?.tourId}|${state.tour?.step}|${JSON.stringify(state.selection)}`);
+    JSON.stringify([
+      state.mode,
+      state.perspective,
+      state.viewId,
+      state.selection,
+      state.cursor,
+      state.applied?.stepId,
+      state.tour?.tourId,
+      state.tour?.step,
+    ]);
   let last = key(store.getState());
   let mode = store.getState().mode;
   /** The talk on screen was started on this page, with an entry of its own. */
@@ -149,7 +169,7 @@ export function watchUrl(
                 ? asked.step - 1
                 : undefined,
           );
-        if (asked.file && asked.range) store.openRange(asked.file, asked.range);
+        if (asked.file && asked.range) store.openRange(asked.file, asked.range, asked.side);
       } finally {
         popping = false;
       }

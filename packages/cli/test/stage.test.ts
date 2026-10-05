@@ -85,6 +85,9 @@ it("previews the included source without creating storage, then stages an immuta
   expect(manifest.includedSource).toEqual({ head: ["app.ts"], base: [] });
   expect(manifest.review.status).toBe("unchecked");
   expect(bundle.server).toBeUndefined();
+  expect(bundle.publication?.current.version).toBe(output.version);
+  expect(bundle.publication?.current.identity).toEqual(manifest.identity);
+  expect(bundle.publication?.previous).toEqual([]);
   expect(bundle.files).toEqual({ "app.ts": "export function app() { return 1; }\n" });
   expect(statSync(join(f.dir, output.version, "manifest.json")).mode & 0o222).toBe(0);
 });
@@ -114,6 +117,10 @@ it("retains prior version bytes when promoting another ready version", async () 
   expect(next.code, next.out).toBe(0);
   const output = JSON.parse(next.out);
   expect(output.version).not.toBe(old.version);
+  const published = bundleOf(readFileSync(join(f.dir, "current/index.html"), "utf8")).publication;
+  expect(published?.previous.map((entry) => entry.version)).toEqual([old.version]);
+  expect(published?.previous[0]?.includedSource).toEqual({ head: ["app.ts"], base: [] });
+  expect(published?.previous[0]?.review?.status).toBe("unchecked");
   expect(readlinkSync(join(f.dir, "current"))).toBe(output.version);
   expect(output.includedSource).toEqual({ head: ["app.ts", "other.ts"], base: [] });
   expect(bundleOf(readFileSync(join(f.dir, "current/index.html"), "utf8")).explainer.title).toBe(

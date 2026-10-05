@@ -23,6 +23,7 @@ import {
 import { snapshotTexts } from "./snapshot.js";
 import type { ViewerStore } from "./store.js";
 import { ServerApi } from "./data.js";
+import { searchFor } from "./url.js";
 
 let page: { doctype: string; root: Element; name: string | undefined } | undefined;
 
@@ -93,12 +94,14 @@ export async function prepareHtmlSave(
     );
     return {
       ...bundle,
+      launch: searchFor(store.getState(), "", bundle.mode),
       feedback: store.feedbackFile(bundle.feedback),
     };
   }
   const state = store.getState();
   return {
     ...store.library,
+    launch: searchFor(state, "", store.library.mode),
     explainer: state.explainer,
     files: state.files,
     baseFiles: state.baseFiles,
@@ -119,6 +122,12 @@ export function savedPage(
     throw new Error("Not ready: repair the findings or save an explicit draft preview.");
   const { server: _server, ...offline } = bundle;
   void _server;
+  if (
+    offline.publication &&
+    (offline.publication.current.identity.explainerHash !== report.identity.explainerHash ||
+      offline.publication.current.identity.sourceHash !== report.identity.sourceHash)
+  )
+    delete offline.publication;
   const root = page.root.cloneNode(true) as Element;
   const script = root.querySelector(`#${BUNDLE_SCRIPT_ID}`);
   if (!script) throw new Error("This page has no embedded snapshot to save.");

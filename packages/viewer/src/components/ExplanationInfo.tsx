@@ -1,10 +1,16 @@
 import { checkReview, reviewShapeIssues } from "@xpl/core";
 import { snapshotTexts } from "../snapshot.js";
-import { useViewerState } from "../hooks.js";
+import { useStore, useViewerState } from "../hooks.js";
+import { searchFor, versionUrl } from "../url.js";
 
 /** Reader guidance belongs beside the story, rather than behind the author tools. */
 export function ExplanationInfo() {
   const state = useViewerState();
+  const store = useStore();
+  const publication = state.dirty ? undefined : store.library.publication;
+  const link = publication && versionUrl(location.href, publication.current.version);
+  if (link)
+    link.search = searchFor(state, `?version=${publication!.current.version}`, store.library.mode);
   const record = state.explainer.review;
   const review = record && reviewShapeIssues(record).length === 0 ? record : undefined;
   const status = checkReview(state.explainer, state.model.index.index, snapshotTexts(state)).status;
@@ -14,6 +20,68 @@ export function ExplanationInfo() {
       <summary>
         About this explanation <span data-testid="review-status">Author review: {label}</span>
       </summary>
+      {publication && (
+        <section aria-label="Staged versions">
+          <p>
+            Version <code>{publication.current.version}</code>, staged{" "}
+            {publication.current.createdAt}.
+            {link && (
+              <>
+                {" "}
+                <a href={link.href}>Link to this state</a>
+              </>
+            )}
+          </p>
+          <p>
+            Source snapshot: {publication.current.commits.index}.
+            {publication.current.commits.base && (
+              <>
+                {" "}
+                Base: {publication.current.commits.base}; head: {publication.current.commits.head}.
+              </>
+            )}
+          </p>
+          <details>
+            <summary>
+              Included source: {publication.current.includedSource.head.length} head,{" "}
+              {publication.current.includedSource.base.length} base files
+            </summary>
+            <p>Head: {publication.current.includedSource.head.join(", ") || "none"}</p>
+            <p>Base: {publication.current.includedSource.base.join(", ") || "none"}</p>
+          </details>
+          <p>Earlier versions captured at staging ({publication.previous.length}):</p>
+          <ul>
+            {publication.previous.map((version) => {
+              const url = versionUrl(location.href, version.version);
+              if (url) url.search = `?version=${version.version}`;
+              return (
+                <li key={version.version}>
+                  {url ? <a href={url.href}>{version.version}</a> : <code>{version.version}</code>}{" "}
+                  ({version.createdAt}); snapshot {version.commits.index}; author review:{" "}
+                  {version.review?.status ?? "unchecked"}.
+                  {version.commits.base && (
+                    <p>
+                      Base: {version.commits.base}; head: {version.commits.head}.
+                    </p>
+                  )}
+                  <details>
+                    <summary>
+                      Included source: {version.includedSource.head.length} head,{" "}
+                      {version.includedSource.base.length} base files
+                    </summary>
+                    <p>Head: {version.includedSource.head.join(", ") || "none"}</p>
+                    <p>Base: {version.includedSource.base.join(", ") || "none"}</p>
+                  </details>
+                </li>
+              );
+            })}
+          </ul>
+          <p>
+            Version links require the staged directory tree. This page captures history at staging;
+            it does not contact a repository service.
+          </p>
+        </section>
+      )}
       {review && (
         <p>
           {review.reviewer} (self-reported), reviewed {review.reviewedAt}. Content:{" "}

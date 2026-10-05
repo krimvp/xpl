@@ -63,7 +63,7 @@ import {
   type WatchAttention,
 } from "@xpl/core";
 import { snapshotTexts } from "./snapshot.js";
-import { messageOf, ServerApi, type LaunchParams } from "./data.js";
+import { messageOf, readLaunchParams, ServerApi, type LaunchParams } from "./data.js";
 import { changeAt, changeOf, hasBase } from "./diff.js";
 import { workspaceView } from "./workspace.js";
 import { serializeExplainer, withViewFields } from "./edits.js";
@@ -285,6 +285,7 @@ export class ViewerStore {
     launch: LaunchParams = {},
   ) {
     const bundle = library;
+    if (Object.keys(launch).length === 0 && bundle.launch) launch = readLaunchParams(bundle.launch);
     this.editAttachment = bundle.server?.attachment;
     this.editStorageKey = this.editAttachment
       ? `xpl-edits:${JSON.stringify([this.editAttachment.root, this.editAttachment.guide])}`
@@ -379,7 +380,7 @@ export class ViewerStore {
     }
     if (this.state.perspective !== "explore") this.reading = this.state.perspective;
     if (present) this.present();
-    else if (launch.perspective && asked && launch.step) {
+    else if (asked && launch.step && (launch.perspective || launch.stepId)) {
       this.applyStep(asked, stepIndex(launch.step, asked.steps.length));
       const same = (ids: readonly string[] | undefined) =>
         JSON.stringify(ids) === JSON.stringify(launch.focus);
@@ -395,10 +396,16 @@ export class ViewerStore {
           });
       }
     }
+    if (present && launch.focus)
+      this.set({
+        selection: launch.focus.filter((id) => model.hasElement(id)),
+        viewId: views.find((view) => view.id === launch.view)?.id ?? this.state.viewId,
+        applied: undefined,
+      });
     const perspective = this.state.perspective;
     if (!present && (perspective === "map" || perspective === "flow"))
       this.set({ viewId: workspaceView(this.state, perspective)?.id ?? this.state.viewId });
-    if (launch.file && launch.range) this.openRange(launch.file, launch.range);
+    if (launch.file && launch.range) this.openRange(launch.file, launch.range, launch.side);
   }
 
   /** The model of an explainer, over tours that are sound (hand-edited files may not be). */
@@ -690,9 +697,14 @@ export class ViewerStore {
   }
 
   /** Search and shared links use inclusive source columns, only within supplied snapshot text. */
-  openRange(file: FilePath, range: Range): void {
-    const text = this.state.files[file];
-    if (text === undefined || !this.indexModel.hasFile(file)) return;
+  openRange(file: FilePath, range: Range, side: "head" | "base" = "head"): void {
+    const base = side === "base";
+    const text = (base ? this.state.baseFiles : this.state.files)[file];
+    if (
+      text === undefined ||
+      (base ? !hasBase(changeOf(this.state.explainer), file) : !this.indexModel.hasFile(file))
+    )
+      return;
     const lines = text.split("\n");
     const { startLine, endLine, startCol, endCol } = range;
     if (
@@ -716,13 +728,14 @@ export class ViewerStore {
       selection: [],
       applied: undefined,
       openedFile: file,
-      openedBase: false,
-      openedLine: undefined,
+      openedBase: base,
+      openedLine: base ? startLine : undefined,
       openSeq: this.state.openSeq + 1,
       cursor: {
         file,
         fromLine: startLine,
         toLine: endLine,
+        ...(base ? { side: "base" as const } : {}),
         ...(startCol !== undefined ? { fromCol: startCol, toCol: endCol } : {}),
       },
     });

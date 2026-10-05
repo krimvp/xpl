@@ -162,3 +162,53 @@ describe("related stages of a flow", () => {
     expect(related([RUN], false)).toEqual([]);
   });
 });
+
+it("round-trips an Explore element link without losing its view or focus", () => {
+  const store = new ViewerStore(makeBundle(), { mode: "explore", view: "view:overview" });
+  store.select(["concept:retry"]);
+  const reopened = new ViewerStore(
+    makeBundle(),
+    readLaunchParams(searchFor(store.getState(), "", undefined)),
+  );
+  expect(reopened.getState()).toMatchObject({
+    perspective: "explore",
+    viewId: "view:overview",
+    selection: ["concept:retry"],
+  });
+});
+
+it("restores saved query state, while an explicit target replaces the saved target", () => {
+  const bundle = { ...makeBundle(), launch: "?file=src/a.ts&range=12:6-12:9" };
+  expect(new ViewerStore(bundle).getState().cursor).toEqual({
+    file: "src/a.ts",
+    fromLine: 12,
+    toLine: 12,
+    fromCol: 6,
+    toCol: 9,
+  });
+  const linked = new ViewerStore(bundle, readLaunchParams("?perspective=map&focus=concept:retry"));
+  expect(linked.getState()).toMatchObject({
+    perspective: "map",
+    selection: ["concept:retry"],
+    cursor: undefined,
+  });
+});
+
+it.each(["present", "explore"] as const)(
+  "restores a %s detour or cleared selection without reapplying the tour step",
+  (mode) => {
+    const store = new ViewerStore(makeBundle(), { mode: "present", tour: "tour:demo", step: 2 });
+    if (mode === "explore") store.exitPresent();
+    store.select(mode === "present" ? ["file:src/a.ts"] : []);
+    const reopened = new ViewerStore(
+      makeBundle(),
+      readLaunchParams(searchFor(store.getState(), "", undefined)),
+    );
+    expect(reopened.getState()).toMatchObject({
+      mode,
+      selection: mode === "present" ? ["file:src/a.ts"] : [],
+      applied: undefined,
+      tour: { tourId: "tour:demo", step: 1 },
+    });
+  },
+);

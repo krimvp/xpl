@@ -53,6 +53,11 @@ export function loadBundle(doc: Document = document): LoadedBundle {
       parseBundle(element.textContent ?? ""),
       new URLSearchParams(doc.location?.search ?? "").get("guide"),
     );
+    const version = new URLSearchParams(doc.location?.search ?? "").get("version");
+    if (version && version !== bundle.publication?.current.version)
+      throw new Error(
+        `This page does not contain version "${version}". Open its immutable version link.`,
+      );
     if (!bundle.explainer || !bundle.index) throw new Error("the bundle has no explainer or index");
     bundle.files = bundle.files ?? {};
     return { ok: true, bundle };
@@ -295,6 +300,7 @@ export interface LaunchParams {
   file?: string;
   range?: Range;
   stepId?: string;
+  side?: "head" | "base";
 }
 
 export function readLaunchParams(search: string = location.search): LaunchParams {
@@ -321,8 +327,10 @@ export function readLaunchParams(search: string = location.search): LaunchParams
   const stepId = params.get("step-id");
   if (stepId) out.stepId = stepId;
   const file = params.get("file");
+  if (file) out.file = file;
+  const side = params.get("side");
   const range = /^(\d+)(?::(\d+))?-(\d+)(?::(\d+))?$/.exec(params.get("range") ?? "");
-  if (file && range) {
+  if (file && range && (side === null || side === "head" || side === "base")) {
     const [startLine, startCol, endLine, endCol] = [range[1], range[2], range[3], range[4]].map(
       (n) => (n === undefined ? undefined : Number(n)),
     );
@@ -336,6 +344,7 @@ export function readLaunchParams(search: string = location.search): LaunchParams
     ) {
       out.file = file;
       out.range = { startLine, endLine, ...(startCol !== undefined ? { startCol, endCol } : {}) };
+      if (side) out.side = side;
     }
   }
   return out;
