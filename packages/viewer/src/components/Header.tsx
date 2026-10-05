@@ -185,6 +185,14 @@ function StepProgress() {
 /** What the save state is, in words (none when there is nothing to say). */
 function saveStatus(state: ReturnType<typeof useViewerState>) {
   const { save, dirty, serverMode } = state;
+  if (state.editError)
+    return { text: `Not saved: ${state.editError}`, tone: "error", title: state.editError };
+  if (state.editDraft && !state.editBusy)
+    return {
+      text: "Unsaved text draft",
+      tone: "warn",
+      title: "Save or cancel the text draft in Details.",
+    };
   if (serverMode) {
     if (save.status === "saving")
       return { text: "Saving…", tone: "busy", title: "Saving your edits" };
@@ -351,6 +359,27 @@ function EditMenu({ toursOpen, onTours }: { toursOpen: boolean; onTours: () => v
             expanded={toursOpen}
             onClick={run(onTours)}
           />
+          {!present && (state.undoCount > 0 || state.redoCount > 0) && (
+            <>
+              <MenuItem
+                testId="edit-undo"
+                title={`Undo ${store.editHistoryDescription()}`}
+                disabled={!state.undoCount || state.editBusy || state.editDraft}
+                onClick={run(() => void store.undoEdit().catch(() => undefined))}
+              />
+              <MenuItem
+                testId="edit-redo"
+                title={`Redo ${store.editHistoryDescription(true)}`}
+                disabled={!state.redoCount || state.editBusy || state.editDraft}
+                onClick={run(() => void store.undoEdit(true).catch(() => undefined))}
+              />
+            </>
+          )}
+          {state.editHistoryError && (
+            <p role="alert" className="edit-note is-error">
+              {state.editHistoryError}
+            </p>
+          )}
           {graph && (
             <div className="edit-group" role="group" aria-label="This view">
               <p className="edit-group-title">This view</p>
@@ -378,6 +407,7 @@ function EditMenu({ toursOpen, onTours }: { toursOpen: boolean; onTours: () => v
           )}
           <MenuItem
             testId="edit-download"
+            disabled={state.editBusy || state.editDraft}
             title="Download explainer JSON"
             hint="The file with the edits made here"
             onClick={run(() => download(fileName, store.explainerJson(), "application/json"))}
@@ -389,13 +419,15 @@ function EditMenu({ toursOpen, onTours }: { toursOpen: boolean; onTours: () => v
                 : status.text}
             </p>
           )}
-          {state.serverMode && state.save.status === "error" && (
-            <MenuItem
-              testId="edit-retry"
-              title="Retry save"
-              onClick={run(() => void store.flush())}
-            />
-          )}
+          {state.serverMode &&
+            state.save.status === "error" &&
+            (!state.editError || state.dirty) && (
+              <MenuItem
+                testId="edit-retry"
+                title="Retry save"
+                onClick={run(() => void store.flush())}
+              />
+            )}
         </div>
       )}
     </div>
@@ -407,12 +439,14 @@ function MenuItem({
   title,
   hint,
   expanded,
+  disabled,
   onClick,
 }: {
   testId: string;
   title: string;
   hint?: string;
   expanded?: boolean;
+  disabled?: boolean;
   onClick: () => void;
 }) {
   return (
@@ -422,6 +456,7 @@ function MenuItem({
       className="edit-item"
       data-testid={testId}
       aria-expanded={expanded}
+      disabled={disabled}
       aria-controls={expanded !== undefined ? "tour-panel" : undefined}
       onClick={onClick}
     >

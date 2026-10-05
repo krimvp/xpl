@@ -33,13 +33,13 @@ export interface ViewerBundle {
   /** Set by `xpl view`: base URL of the local API (e.g. "/api"). Absent in a static bundle. */
   server?: {
     api: string;
-    /** Managed service attachment. Root/guide survive restarts; instanceId identifies this process. */
+    /** Canonical repository and guide identity for every live page; managed fields describe its service. */
     attachment?: {
       root: string;
       guide: string;
-      instanceId: string;
-      backend: "none" | "claude";
-      backendAvailable: boolean;
+      instanceId?: string;
+      backend?: "none" | "claude";
+      backendAvailable?: boolean;
     };
   };
   /** Live workspace warning when source and index differ. Never implies prose was verified. */

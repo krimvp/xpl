@@ -8,6 +8,7 @@
  *                                     (plain text; JSON `"..."` or `{ "text": "..." }` also works)
  *     GET  {api}/base-file?path=<file> the code before the change of a changed file missing from
  *                                     `bundle.baseFiles` (plain text, like `/file`)
+ *     PUT  {api}/edits                bounded user edits with inspected artifact version and field preconditions
  *     PUT  {api}/review               persist/remove author review; rejects changed inspected fingerprint
  *     PUT  {api}/views/<view id>      persist a view edit: JSON `{ "type": <view type>, ...changed fields }`
  *     PUT  {api}/tours/<tour id>      persist a tour edit: JSON `{ "title": ..., "steps": [...] }` (the whole tour;
@@ -25,6 +26,8 @@ import {
   parseFeedbackRequest,
   type Explainer,
   type ExplainerPatch,
+  type ArtifactIdentity,
+  type UserEdit,
   type ViewerBundle,
   type FeedbackRequest,
 } from "@xpl/core";
@@ -140,6 +143,25 @@ export class ServerApi {
       await this.request(`/base-file?path=${encodeURIComponent(path)}`),
     );
     return response.text();
+  }
+
+  /** Bounded author fields with an inspected version; the response includes the conditional inverse. */
+  async putEdits(
+    version: ArtifactIdentity,
+    edits: UserEdit[],
+  ): Promise<{ explainer: Explainer; inverse: UserEdit[] }> {
+    if (!this.attachment)
+      throw new Error(
+        "This page has no live repository or guide identity. Reopen it before saving.",
+      );
+    const response = await this.check(
+      await this.request("/edits", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ version, edits }),
+      }),
+    );
+    return response.json();
   }
 
   /** Author-only metadata; the server applies this bounded patch as actor user. */

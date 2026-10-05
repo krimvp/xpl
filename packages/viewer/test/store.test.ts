@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { reviewFingerprint, type ReviewScope } from "@xpl/core";
+import { artifactIdentity, reviewFingerprint, type ReviewScope } from "@xpl/core";
 import { ServerApi } from "../src/data.js";
 import { ViewerStore } from "../src/store.js";
 import { makeBundle, TEXTS } from "./world.js";
@@ -12,6 +12,67 @@ function graphStore(server = false, files = makeBundle().files) {
   if (view.type === "graph") view.include = ["sym:src/a.ts#A.run"];
   return new ViewerStore(bundle);
 }
+
+it("checks the stored attachment identity and keeps history across a managed restart", () => {
+  const history = JSON.stringify({
+    identity: '["attachment","/repo/a","guide-a"]',
+    undo: [
+      [
+        {
+          collection: "concepts",
+          id: "concept:retry",
+          before: { summary: "Saved." },
+          after: { summary: null },
+        },
+      ],
+    ],
+    redo: [],
+  });
+  // Browser storage is untrusted; a copied record must be checked even if the key matches.
+  vi.stubGlobal("localStorage", { getItem: () => history });
+  try {
+    const counts = [
+      { root: "/repo/a", guide: "guide-a", instanceId: "restarted" },
+      { root: "/repo/b", guide: "guide-a", instanceId: "restarted" },
+      { root: "/repo/a", guide: "guide-b", instanceId: "restarted" },
+    ].map(
+      (attachment) =>
+        new ViewerStore(
+          makeBundle({
+            server: Object.assign({ api: "/api" }, { attachment }),
+          }),
+        ).getState().undoCount,
+    );
+    expect(counts).toEqual([1, 0, 0]);
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
+it("does not restore content-derived history on a live page without attachment identity", () => {
+  const bundle = makeBundle({ server: { api: "/api" } });
+  const identity = artifactIdentity(bundle.explainer, bundle.index);
+  const record = JSON.stringify({
+    identity: JSON.stringify(["explainer", identity.explainerHash, identity.sourceHash]),
+    undo: [
+      [
+        {
+          collection: "concepts",
+          id: "concept:retry",
+          before: { summary: "Saved." },
+          after: { summary: null },
+        },
+      ],
+    ],
+    redo: [],
+  });
+  vi.stubGlobal("localStorage", { getItem: () => record });
+  try {
+    expect(new ViewerStore(bundle).getState().undoCount).toBe(0);
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
 
 describe("selection", () => {
   it("replaces, toggles and clears; a selection change clears the caret and the opened file", () => {
@@ -236,6 +297,65 @@ describe("under xpl view (server mode)", () => {
   });
 
   const body = (i: number) => JSON.parse(String(calls[i]!.init!.body)) as Record<string, unknown>;
+
+  it("does not retry an author save accepted after going offline", async () => {
+    const bundle = makeBundle({
+      server: {
+        api: "/api",
+        attachment: {
+          root: "/repos/jobrunner",
+          guide: ".explainer/demo.explainer.json",
+          instanceId: "author",
+          backend: "none",
+          backendAvailable: false,
+        },
+      },
+    });
+    const store = new ViewerStore(structuredClone(bundle));
+    const captured = store.captureEdit("concepts", "concept:retry", {
+      summary: "Saved author text.",
+    });
+    let finish!: (response: Response) => void;
+    respond = () =>
+      new Promise<Response>((resolve) => {
+        finish = resolve;
+      });
+    const saving = store.saveEdits([captured.edit], captured.version);
+    await vi.waitFor(() => expect(calls.map(({ url }) => url)).toEqual(["/api/edits"]));
+    store.useOfflineSnapshot();
+    bundle.explainer.concepts[0]!.summary = "Saved author text.";
+    finish(
+      new Response(
+        JSON.stringify({
+          explainer: bundle.explainer,
+          inverse: [
+            {
+              collection: "concepts",
+              id: "concept:retry",
+              before: { summary: "Saved author text." },
+              after: { summary: "Tries again." },
+            },
+          ],
+        }),
+      ),
+    );
+    await saving;
+    expect(store.getState().dirty).toBe(false);
+    expect(store.getState().connection.status).toBe("offline");
+    store.setStubMode("none");
+    const view = store.view();
+    expect(view?.type === "graph" && view.stubs).toEqual({ mode: "none" });
+    expect(store.getState().dirty).toBe(true);
+    expect(store.getState().undoCount).toBe(1);
+    expect(store.getState().textDrafts).toEqual({});
+    respond = (url) =>
+      new Response(JSON.stringify(url === "/api/bundle" ? bundle : bundle.explainer));
+    await store.reconnect();
+    await store.flush();
+    expect(calls.filter(({ url }) => url === "/api/edits")).toHaveLength(1);
+    expect(store.getState().dirty).toBe(false);
+    expect(store.getState().undoCount).toBe(1);
+  });
 
   it("binds review saves to the loaded repository and guide", async () => {
     const api = new ServerApi("/api", {
@@ -718,5 +838,20 @@ describe("under xpl view (server mode)", () => {
     changed.concepts.find((c) => c.id === "concept:retry")!.summary = "From disk.";
     expect(store.adoptExplainer(changed)).toBe(false);
     expect(store.getState().model.concept("concept:retry")?.summary).not.toBe("From disk.");
+  });
+
+  it("keeps the selected item and open text draft until save or cancel", () => {
+    const store = new ViewerStore(makeBundle());
+    store.select(["concept:retry"]);
+    store.captureEdit("concepts", "concept:retry", {
+      summary: store.getState().model.concept("concept:retry")?.summary ?? null,
+    });
+    store.updateEditDraft("concept:retry", { summary: "Draft." });
+    const changed = { ...store.getState().explainer, concepts: [] };
+    expect(store.adoptExplainer(changed)).toBe(false);
+    expect(store.getState().selection).toEqual(["concept:retry"]);
+    store.cancelEdit("concept:retry");
+    expect(store.adoptExplainer(changed)).toBe(true);
+    expect(store.getState().selection).toEqual([]);
   });
 });

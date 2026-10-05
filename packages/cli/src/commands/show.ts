@@ -21,7 +21,7 @@ import {
   type RefDirection,
   type RefEntry,
 } from "../ref-data.js";
-import { loadExplainer, listExplainerNames, openWorkspace, type Workspace } from "../repo.js";
+import { loadExplainer, loadRepositoryGuides, openWorkspace, type Workspace } from "../repo.js";
 import { detectRepoName } from "../repo-name.js";
 import { resolveTarget, type Target } from "../target.js";
 
@@ -309,8 +309,11 @@ async function showBase(ctx: Ctx, args: Args, options: CodeOptions): Promise<num
   let loaded;
   if (explainerName !== undefined) loaded = loadExplainer(ctx, explainerName);
   else {
-    const withChange = listExplainerNames(ctx.root)
-      .map((name) => loadExplainer(ctx, name))
+    const withChange = loadRepositoryGuides(ctx)
+      .map((entry) => {
+        if ("error" in entry) throw new CliError(entry.error);
+        return entry.loaded;
+      })
       .filter((candidate) => candidate.explainer.change !== undefined);
     if (withChange.length === 0) {
       throw new CliError(
@@ -440,7 +443,7 @@ export const showCommand: CommandSpec = {
     "--at base <path> prints a changed file as it was before the change the explainer records (`xpl change`): the",
     "  offsets are those a base anchor's span uses (0-based from line 1 of the base file), and `-` marks the lines",
     "  the change removes or rewrites. Paths only (the base commit is not indexed); --explainer picks the explainer",
-    "  when more than one records a change.",
+    "  when more than one records a change. Automatic selection reads the discovered guide files directly.",
   ],
   options: {
     refs: { type: "boolean", desc: "Append outgoing and incoming references grouped by kind" },

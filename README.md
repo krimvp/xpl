@@ -58,6 +58,12 @@ to GitHub is required. Remove a retained input with `xpl pr cleanup <input-direc
 Inherited Git repository overrides cannot redirect PR reads into the developer checkout. Preparation
 refuses checkout filters or line-ending conversion that change the head's raw source bytes.
 
+`xpl guides` lists locally saved guides by title, recorded questions, audience and source/index commits.
+It works without a service or index file. `xpl search <pattern>` searches available indexed working-tree
+text; unavailable files produce a warning, and `--json` records searchable paths and analysis scope.
+Loadable guides with invalid metadata stay listed by ID/path with a metadata error. Guide metadata is
+descriptive; use `xpl ready <name>` to check a guide before exporting it.
+
 Claude indexes the repo, writes `.explainer/<name>.explainer.json` (commit it; the indexes beside it are
 git-ignored) and gives you the result. Open it yourself with `xpl bundle <name> -o <name>.html` (one
 self-contained file that carries the source files the explainer shows: works offline, easy to share;
@@ -206,6 +212,16 @@ index. Edit > Save as HTML uses the same rules, with separate ready and draft ac
 only included source, and say they cannot detect later repository changes. Source checks do not verify prose
 claims or every runtime path.
 Generated XPL HTML pages are excluded from indexing, so exporting inside a repo does not stale its index.
+
+In Explore, select a box, stored arrow or concept and choose **Edit text** in Details. Correct its label,
+summary or Markdown detail; concepts also have a related-elements selector. **Save text** retains user
+ownership, and **Cancel** drops the draft. Live saves survive reload and reject stale inspected versions.
+Drafts survive switching boxes and returning to reading until saved or cancelled. Save/Cancel stay visible.
+Edit > **Undo** / **Redo** names the fields and element and saves only changed fields, preserving another author's
+unrelated edits and refusing conflicts on the same field. Live history retains up to 50 edits in browser
+storage, bound to the canonical repository root and guide. Copied or renamed guides inherit no history;
+pages without a live identity keep only in-session undo. Offline edits remain **Unsaved** until exported as HTML or JSON. Source stays read-only; broken
+evidence still needs the existing explicit patch/repair workflow.
 
 Edit > Record author review records a self-reported name, inspected content/evidence scope and named
 omissions. About this explanation shows **unchecked**, **reviewed** or **out of date** separately from
