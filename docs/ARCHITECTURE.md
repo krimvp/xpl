@@ -1784,9 +1784,37 @@ Managed services expose `GET /api/jobs`, `GET /api/jobs/<UUID>` and `POST /api/j
 `{id, selectedRequestIds, include?}`, plus `POST /api/jobs/<UUID>/<cancel|supersede>` with `{}` and
 `POST /api/jobs/<UUID>/retry` with `{expectedAttempt}`.
 Routes use the existing Host, attachment, JSON, origin and size guards and filter to the attached guide.
-No acceptance route exists. Backend `none` reports 503 for submission/retry; history and cancellation
-remain usable. Controlled runners prove lifecycle behavior only. 39C adds progress/review UI and fenced
-acceptance through the existing revision commit/outcome recovery. Answer scopes remain later work.
+Backend `none` reports 503 for submission/retry; history, cancellation and review of completed work
+remain usable. Controlled runners prove lifecycle behavior only. Answer scopes remain later work.
+
+**Job review and acceptance (39C).** The browser-safe `core/jobs.ts` types describe the existing ledger
+and revision packet; no second proposal engine is introduced. `RepositoryJobs.review` holds the ledger's
+repository lock, requires a completed job and its exact `owner.attemptId`, and calls `continueRevision`.
+`GET /api/jobs/<id>/review?attemptId=<uuid>` reads the review; `POST .../review` takes
+`{attemptId, decisions?}` and `POST .../accept` takes `{attemptId}`. Both share the existing attachment,
+origin/body and repository guards. Decision inputs use #30's status/reason/reconciliation/missing format.
+Every selected request needs a decision. Reviewing changes no guide or outcomes.
+
+The service job journal fence `{id, attemptId}` is required for proposal/decision/accept writes.
+Independent manual writes cannot bypass it; read-only `xpl revise --run` remains available. Retries may
+replace a failed attempt's uncommitted proposal only through its new guarded attempt. Ownership is
+rechecked after the journal, artifact and selected-outcome lock waits, and before publication. Acceptance
+reuses #30's freshness, exact candidate identity, readiness and user-field protection checks. The guide
+commits before selected outcomes; later feedback is merged untouched. Committing/committed/done journals
+cannot be cancelled or superseded: their remaining outcome publication must recover first. Repeating
+acceptance uses the same journal and never republishes the candidate or advances outcomes twice.
+`result.accepted` is a display receipt derived only from the matching done journal, not a lifecycle state
+or an independent permission. Recovery does not compare the old job input with the already committed guide.
+
+Packets retain source before/after and per-request changes computed by the existing candidate function.
+The viewer's Jobs disclosure lists all seven lifecycle states, progress and actionable runner errors;
+start/cancel/retry/review flush pending writes and reject unsaved author drafts. Offline history stays
+readable. Responses are ignored when the API attachment changes. Submission retries reuse their delivery
+UUID. Job polling updates history even while author drafts prevent bundle adoption; bundle feedback merges
+by immutable ID and outcome revision. The review modal renders safe Markdown and marked changed words,
+concise evidence and plain field values; raw JSON is behind Show raw change. Each request owns its decision
+and reason. Review decisions must succeed before explicit acceptance; changing a choice invalidates the
+inspected candidate. Interrupted publication exposes Recover acceptance using the same journal.
 
 **Configured Claude runner (39B).** `cli/claude-runner.ts` is the single process adapter behind `JobRunner`.
 Explicit `service --backend claude` selects it. The saved `--skill-dir` identifies a verified managed

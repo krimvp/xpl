@@ -381,7 +381,7 @@ describe("repository service lifecycle", () => {
           await fetch(new URL(`/api/jobs/${submission.id}/accept`, running.server.url), {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: "{}",
+            body: JSON.stringify({ attemptId: "00000000-0000-4000-8000-000000000001" }),
           })
         ).status,
       ).toBe(404);

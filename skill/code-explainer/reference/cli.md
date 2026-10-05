@@ -1046,7 +1046,16 @@ ownership rechecks, valid ready proposals enter the existing revision journal as
 `xpl revise <guide> --run <revisionRunId>` before deciding anything. Creation fills a guide explicitly
 initialized by `xpl new`/draft authoring, with selected creation requests and included new IDs; it does
 not create a second proposal format or overwrite a name. Service-owned journals refuse manual
-`revise --accept`; review stays available, but job review UI and guarded acceptance are 39C.
+proposal/decision/accept writes; read-only `revise --run` stays available. In the viewer, **Jobs** lets the
+author select feedback, start/cancel/retry and inspect progress or failures. **Review proposal** shows
+readable changed text with marks, concise evidence and source before/after. Each selected request needs
+a decision and reason. **Review decisions** validates the exact candidate; **Accept reviewed revision**
+then uses #30's freshness/readiness, user fields and outcome journal. New feedback is preserved.
+Interrupted acceptance exposes **Recover acceptance** without publishing the patch twice.
+The guarded API is `GET /api/jobs/<id>/review?attemptId=<uuid>`, `POST .../review` with
+`{attemptId, decisions?}`, and `POST .../accept` with `{attemptId}`. Decisions use the same statuses,
+reconciliation and missing-anchor permissions as `xpl revise`. Cancelled/superseded/old attempts and stale
+candidates cannot apply. Once journaled acceptance begins, recover it before cancelling or superseding.
 Controlled executables prove adapter/lifecycle failures only; a real installed Claude job proves the
 provider integration. `claude --version` does not establish authentication.
 

@@ -453,24 +453,15 @@ describe("configured Claude adapter (stub executable, no provider)", () => {
       );
       expect(journal.state).toBe("proposed");
       expect(journal.serviceJob.id).toBe(submitted.id);
-      const decisions = writeFile(
-        tooling,
-        "decisions.json",
-        JSON.stringify([{ id: request.id, status: "addressed", reason: "Checked the proposal." }]),
-      );
+      const completed = await jobs.get("demo", submitted.id);
       expect(
         (
-          await xpl(
-            root,
-            "revise",
-            "demo",
-            "--run",
-            submitted.input.revisionRunId,
-            "--decisions",
-            decisions,
-          )
-        ).code,
-      ).toBe(0);
+          await jobs.review("demo", submitted.id, {
+            attemptId: completed.owner!.attemptId,
+            decisions: [{ id: request.id, status: "addressed", reason: "Checked the proposal." }],
+          })
+        ).state,
+      ).toBe("reviewed");
       await jobs.fence("demo", submitted.id, "superseded");
       const accepted = await xpl(
         root,

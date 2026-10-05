@@ -20,6 +20,7 @@
  *
  * - `--evidence-editor` opens the retry concept evidence editor, where available, with runner line 75.
  * - `--graph-authoring` groups worker/metrics and hides their stored arrow, where available.
+ * - `--jobs history|review` adds controlled job history and an explicit review, where available.
  * - `--service` intercepts a loopback API; unmanaged omits attachment metadata for plain-view shots.
  * - `--attention affected|paused` adds watch/guide evidence; `--attention-open` opens its repair offer.
  * - `--text-draft` opens and edits the TS fixture retry concept without saving.
@@ -53,6 +54,7 @@ async function shoot(argv: string[]): Promise<void> {
       scheme: { type: "string", default: "light" },
       size: { type: "string", default: "1440x900" },
       service: { type: "string" },
+      jobs: { type: "string" },
       attention: { type: "string" },
       "attention-open": { type: "boolean", default: false },
       "text-draft": { type: "boolean", default: false },
@@ -65,6 +67,8 @@ async function shoot(argv: string[]): Promise<void> {
     !["connected", "configured", "disconnected", "unmanaged"].includes(values.service)
   )
     throw new Error("--service must be connected, configured, disconnected or unmanaged");
+  if (values.jobs && !["history", "review"].includes(values.jobs))
+    throw new Error("--jobs must be history or review");
   if (values.attention && !["affected", "paused"].includes(values.attention))
     throw new Error("--attention must be affected or paused");
   const out = resolve(positionals[0] ?? "pr-shots");
@@ -122,6 +126,112 @@ async function shoot(argv: string[]): Promise<void> {
                 },
               }),
         };
+        const owner = data.explainer.nodes.find(
+          (node: any) => node.id === "sym:src/runner.ts#Runner.dispatch",
+        );
+        const request = {
+          id: "shot-request",
+          elementId: owner.id,
+          kind: "correct",
+          explainer: "jobrunner",
+          note: "Explain dispatch before the worker runs",
+          context: { explainerHash: "shot", sourceHash: "shot" },
+          at: "2026-10-05T12:00:00Z",
+          outcome: {
+            revision: 0,
+            status: "pending",
+            reason: "Awaiting review",
+            at: "2026-10-05T12:00:00Z",
+          },
+        };
+        const jobStates = [
+          "queued",
+          "running",
+          "completed",
+          "failed",
+          "cancelled",
+          "superseded",
+          "interrupted",
+        ];
+        const jobs = jobStates.map((state, i) => ({
+          id: `00000000-0000-4000-8000-00000000000${i}`,
+          scope: { kind: "revision", guide: ".explainer/jobrunner.explainer.json", include: [] },
+          selectedRequestIds: [request.id],
+          input: {
+            revisionRunId: "shot-run",
+            expected: request.context,
+            index: data.explainer.index,
+            requests: [request],
+          },
+          state,
+          createdAt: request.at,
+          updatedAt: request.at,
+          attempt: state === "queued" ? 0 : 1,
+          owner: { instanceId: "demo-instance", attemptId: "00000000-0000-4000-8000-000000000009" },
+          progress: [
+            {
+              at: request.at,
+              message:
+                state === "running"
+                  ? "Reading selected source and feedback"
+                  : "Proposal checked against the recorded source",
+            },
+          ],
+          error:
+            state === "failed"
+              ? "Claude is rate limited. Wait and retry."
+              : state === "interrupted"
+                ? "Service stopped during this attempt. Explicitly retry after restart."
+                : null,
+          result: state === "completed" ? { revisionRunId: "shot-run" } : null,
+        }));
+        const changes = [
+          {
+            id: owner.id,
+            before: owner,
+            after: {
+              ...owner,
+              summary: "The runner takes one queued job and hands it to the worker.",
+              detail: "Dispatch **claims** the next job before calling the worker.",
+            },
+          },
+        ];
+        const source = [
+          { file: "src/runner.ts", side: "head", text: data.files["src/runner.ts"] ?? null },
+        ];
+        const review = {
+          ok: true,
+          runId: "shot-run",
+          state: "proposed",
+          expected: request.context,
+          index: data.explainer.index,
+          previousArtifact: "previous.json",
+          requests: [{ ...request, contextReason: null }],
+          include: [],
+          resolve: {
+            commit: data.index.commit,
+            total: 0,
+            counts: {},
+            moved: 0,
+            drifted: [],
+            driftedOther: [],
+            missing: [],
+          },
+          decisions: [],
+          changes,
+          proposals: [{ id: request.id, changes }],
+          sourceBefore: source,
+          source,
+          issues: [],
+          readiness: {
+            ready: true,
+            scope: "workspace",
+            identity: request.context,
+            errors: 0,
+            warnings: 0,
+            findings: [],
+          },
+        };
         const body = html.replace(
           script,
           (_all, start, _data, end) => start + JSON.stringify(data).replace(/</g, "\\u003c") + end,
@@ -167,8 +277,12 @@ async function shoot(argv: string[]): Promise<void> {
                 ],
               },
             });
+          if (path === "/api/jobs" && values.jobs)
+            return route.fulfill({ json: { available: true, reason: null, jobs } });
+          if (path.endsWith("/review") && values.jobs) return route.fulfill({ json: { review } });
           if (path === "/api/explainer") return route.fulfill({ status: 304 });
-          if (path === "/api/requests") return route.fulfill({ json: { requests: [] } });
+          if (path === "/api/requests")
+            return route.fulfill({ json: { requests: values.jobs ? [request] : [] } });
           return route.fulfill({ status: 404 });
         });
         await page.goto("http://127.0.0.1:4747/" + query);
@@ -199,6 +313,20 @@ async function shoot(argv: string[]): Promise<void> {
           .fill("Inspect changed evidence before revising.");
         await page.locator(".save-status").filter({ hasText: "Unsaved draft" }).waitFor();
         await page.evaluate(() => window.scrollTo(0, 0));
+      }
+      if (values.jobs) {
+        const jobsButton = page.getByRole("button", { name: "Jobs", exact: true });
+        if (await jobsButton.count()) {
+          await jobsButton.click();
+          await page.getByTestId("jobs-panel").locator('[data-job-state="completed"]').waitFor();
+          if (values.jobs === "review") {
+            await page.getByRole("button", { name: "Review proposal" }).click();
+            await page
+              .getByRole("dialog", { name: "Review job proposal" })
+              .getByRole("region", { name: "Summary change" })
+              .waitFor();
+          }
+        }
       }
       await page.waitForTimeout(400);
       if (values["graph-authoring"]) {

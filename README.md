@@ -199,10 +199,17 @@ Cleanup failure stops scheduling. Service death kills that group through the lau
 time before terminating any remaining group and allowing retry. Reused PIDs are left alone.
 Verified execution currently requires Linux /proc; manual revision works on other platforms. With `--backend claude`, submission generates an ordinary proposal,
 validates it through `xpl revise` and leaves it awaiting explicit author review. Source is read-only; the
-agent can write only its owned output. No job applies a patch or finalizes feedback. Creation proposals
+agent can write only its owned output. Job completion does not apply a patch or finalize feedback. Creation proposals
 fill an explicitly initialized guide with selected requests and included IDs through the same journal.
-Service-owned runs refuse manual `revise --accept` to preserve cancellation fencing.
-The job review UI and guarded acceptance are later work; `xpl revise <guide> --run <id>` inspects the proposal.
+Open **Jobs** in the connection bar to select feedback, start a job, inspect progress, cancel or retry.
+**Review proposal** shows readable field changes with marked text, evidence as file/lines/role/status,
+and source before/after. Raw changes sit behind **Show raw change**. Choose accept, reject or leave
+unresolved for each request and give a reason. **Review decisions** checks the exact combined candidate;
+only then can **Accept reviewed revision** commit it and finalize those selected outcomes.
+New feedback stays pending. Cancelled, superseded, stale and old-attempt results cannot apply.
+After an interrupted acceptance, reopen the review and **Recover acceptance**; it does not apply twice.
+Service-owned runs refuse manual proposal/decision/accept writes to preserve these fences;
+`xpl revise <guide> --run <id>` still inspects the journal. Offline feedback and manual revisions remain available.
 
 ## Using the CLI directly
 

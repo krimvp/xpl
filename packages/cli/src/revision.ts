@@ -1,5 +1,6 @@
 /** Explicit revision journals join a reviewed artifact commit to selected, retryable feedback outcomes. */
 import { randomUUID } from "node:crypto";
+import { existsSync } from "node:fs";
 import { stat } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { repositoryDirectoryIdentities } from "@xpl/indexer";
@@ -21,7 +22,8 @@ import {
   type Explainer,
   type ExplainerPatch,
   type FeedbackRequest,
-  type FeedbackStatus,
+  type RevisionDecision,
+  type RevisionReview,
   type Issue,
   type ReadinessReport,
   type ResolveReport,
@@ -35,7 +37,7 @@ import {
   jsonFile,
   parseJson,
   readTextFile,
-  withFileLock,
+  withRepositoryLock,
 } from "./fsutil.js";
 import { loadExplainer, openWorkspace, type LoadedExplainer, type Workspace } from "./repo.js";
 import { readRequests, recordOutcomes } from "./requests.js";
@@ -44,15 +46,7 @@ interface Proposal {
   id: string;
   patch: ExplainerPatch;
 }
-interface Decision {
-  id: string;
-  status: Exclude<FeedbackStatus, "pending">;
-  reason: string;
-  /** Required when accepting a request whose original snapshot differs. */
-  reconciliation?: string;
-  /** Explicit author permission for these missing-anchor owners to be repaired or removed. */
-  missing?: { id: string; action: "reanchor" | "remove" }[];
-}
+type Decision = RevisionDecision;
 interface Revision {
   schema: "code-explainer/revision@1";
   runId: string;
@@ -66,11 +60,13 @@ interface Revision {
   requests: FeedbackRequest[];
   include: string[];
   proposals: Proposal[];
+  proposalChanges?: RevisionReview["proposals"];
   /** Service proposals need the guarded job acceptance path, never independent manual acceptance. */
   serviceJob?: { id: string; attemptId: string };
   decisions: Decision[];
   next?: Explainer;
   nextIdentity?: ArtifactIdentity;
+  sourceBefore?: { file: string; side: "head" | "base"; text: string | null }[];
   source: { file: string; side: "head" | "base"; text: string | null }[];
 }
 
@@ -187,6 +183,7 @@ export async function selectRevision(ctx: Ctx, name: string, ids: string[], incl
       source: [],
     };
     revision.source = sourceFor(revision, resolved, ws);
+    revision.sourceBefore = sourceFor(revision, revision.previous, ws);
     const path = pathFor(ctx, revision.runId);
     await atomicWrite(join(path, "..", "previous.json"), jsonFile(loaded.explainer));
     await atomicWrite(path, jsonFile(revision));
@@ -436,7 +433,8 @@ function packet(
   next: Explainer,
   readiness?: ReadinessReport,
   issues: Issue[] = [],
-) {
+  proposalChanges: RevisionReview["proposals"] = revision.proposalChanges ?? [],
+): RevisionReview {
   const before = owners(revision.previous);
   const after = owners(next);
   const changes = [...new Set([...before.keys(), ...after.keys()])]
@@ -460,10 +458,27 @@ function packet(
     resolve: revision.resolve,
     decisions: revision.decisions,
     changes,
+    proposals: proposalChanges,
+    sourceBefore: revision.sourceBefore ?? revision.source,
     source: revision.source,
     issues,
     ...(readiness ? { readiness } : {}),
   };
+}
+
+/** Read-only recovery/fence receipt; no proposal engine lives in the job ledger. */
+export function revisionStatus(
+  ctx: Ctx,
+  runId: string,
+): Pick<Revision, "state" | "serviceJob"> | undefined {
+  try {
+    return object(
+      parseJson(readTextFile(pathFor(ctx, runId), "revision journal"), "revision journal"),
+    ) as unknown as Revision;
+  } catch (error) {
+    if (!existsSync(pathFor(ctx, runId))) return undefined;
+    throw error;
+  }
 }
 
 /** Proposals and decisions are reviews only. Acceptance publishes the exact reviewed candidate. */
@@ -481,9 +496,27 @@ export async function continueRevision(
 ) {
   await assertRevisionLocation(ctx, runId);
   const path = pathFor(ctx, runId);
-  return withFileLock(path, async () => {
+  return withRepositoryLock(ctx.root, path, async () => {
     const revision = readRevision(ctx, name, runId);
-    if (action.accept) return accept(ctx, name, revision);
+    action.assertCurrent?.();
+    const matchingJob =
+      revision.serviceJob &&
+      action.serviceJob?.id === revision.serviceJob.id &&
+      action.serviceJob.attemptId === revision.serviceJob.attemptId;
+    const replacement = action.proposal && action.serviceJob?.id === revision.serviceJob?.id;
+    if (
+      revision.serviceJob &&
+      (!matchingJob || !action.assertCurrent) &&
+      !(!action.proposal && !action.decisions && !action.accept)
+    ) {
+      if (!(replacement && action.assertCurrent))
+        throw new CliError(
+          "Service job proposals require guarded job review; manual --accept cannot bypass cancellation or supersession.",
+        );
+    }
+    if (action.serviceJob && !action.assertCurrent)
+      throw new CliError("service job requires a current ownership guard");
+    if (action.accept) return accept(ctx, name, revision, action.assertCurrent);
     if (
       ["committing", "committed", "done"].includes(revision.state) &&
       (action.proposal || action.decisions)
@@ -532,17 +565,22 @@ export async function continueRevision(
       revision.next = next;
       revision.nextIdentity = artifactIdentity(next, ws.index);
     }
+    const perProposal = revision.proposals.map((proposal) => {
+      const { next: one } = candidate(revision, ws, [proposal], false);
+      return { id: proposal.id, changes: packet(ctx, revision, one).changes };
+    });
     if (action.proposal || action.decisions) {
+      revision.proposalChanges = perProposal;
       revision.source = sourceFor(revision, next, ws);
       action.assertCurrent?.();
       await atomicWrite(path, jsonFile(revision));
     }
-    return packet(ctx, revision, next, readiness, issues);
+    return packet(ctx, revision, next, readiness, issues, perProposal);
   });
 }
 
-async function accept(ctx: Ctx, name: string, revision: Revision) {
-  if (revision.serviceJob)
+async function accept(ctx: Ctx, name: string, revision: Revision, assertCurrent?: () => void) {
+  if (revision.serviceJob && !assertCurrent)
     throw new CliError(
       "Service job proposals require guarded job acceptance; manual --accept cannot bypass cancellation or supersession. Inspect the review and wait for the job acceptance flow, or start a separate manual revision selection.",
     );
@@ -557,6 +595,7 @@ async function accept(ctx: Ctx, name: string, revision: Revision) {
   const reviewedNext = revision.next;
   const reviewedIdentity = revision.nextIdentity;
   return withLockedExplainer(ctx, name, async (loaded, save) => {
+    assertCurrent?.();
     // A new workspace is mandatory: WorkingTree caches both text and discovered hashes.
     const ws = await openWorkspace(
       { ...ctx, indexOption: revision.index },
@@ -630,15 +669,18 @@ async function accept(ctx: Ctx, name: string, revision: Revision) {
         };
       }),
       async () => {
+        assertCurrent?.();
         if (publish) {
           revision.state = "committing";
           await atomicWrite(path, jsonFile(revision));
+          assertCurrent?.();
           if (changed) await save(reviewedNext);
         }
         revision.state = "committed";
         await atomicWrite(path, jsonFile(revision));
       },
     );
+    assertCurrent?.();
     revision.state = "done";
     await atomicWrite(path, jsonFile(revision));
     return packet(
