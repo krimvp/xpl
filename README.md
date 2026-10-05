@@ -148,6 +148,12 @@ It defaults to heuristic references (`--precise off`); `--precise auto|require` 
 Watch options are selected again on restart. Recovery retires the previous watch pointer. Pause/resume, viewer attention controls and offered revisions
 follow in 29B. Stop the service to return to manual indexing and revision.
 
+The service also keeps job history in `.explainer/service/jobs.json` and exposes it at `GET /api/jobs`.
+Running attempts become interrupted after restart; completed proposals stay recorded, and cancelled or
+superseded results stay fenced. Submission and retry report unavailable until a real runner is supplied.
+This lifecycle storage has been tested with a controlled runner only. Real execution and a job review UI
+are follow-up work; manual `xpl revise` remains the revision workflow.
+
 ## Using the CLI directly
 
 Run these inside the repository you want to explain (or pass `--root <dir>`); every command takes `--json`.

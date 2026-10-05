@@ -21,6 +21,9 @@
  *   GET  /api/requests        durable feedback, outcomes and context warnings for this explainer
  *   POST /api/requests        a snapshot-bound FeedbackRequest, merged by its stable request ID;
  *                             legacy element-only input is stored as outdated, without invented context
+ *   GET/POST /api/jobs        managed-service history / snapshot-bound selection (runner required)
+ *   GET /api/jobs/<UUID>      one job for this guide; results remain proposals
+ *   POST /api/jobs/<UUID>/<cancel|supersede|retry>   durable fenced lifecycle actions; no acceptance
  *
  * Both the bundle and /api/explainer carry the explainer with its anchors re-resolved against the index and the
  * working tree (`freshAnchors`, as `xpl bundle` does), never the stale `resolved` cache of the file.
@@ -51,6 +54,7 @@ import type { RepoEnv } from "./context.js";
 import { CliError, errorMessage } from "./errors.js";
 import { atomicWrite, withFileLock, withRepositoryLock, displayPath, jsonFile } from "./fsutil.js";
 import { importRequests, appendRequest, readRequests } from "./requests.js";
+import type { openJobs, JobSubmission } from "./jobs.js";
 import {
   WorkingTree,
   chooseIndexFile,
@@ -76,6 +80,7 @@ export interface ViewServerOptions {
     instanceId: string;
     root: string;
     backend: "none" | "claude";
+    jobs?: Awaited<ReturnType<typeof openJobs>>;
     stop(): void;
   };
 }
@@ -199,6 +204,7 @@ export async function startViewServer(options: ViewServerOptions): Promise<ViewS
 
   function checkRequestStore() {
     checkServicePaths(join(env.root, ".explainer"));
+
     const path = join(env.root, ".explainer", "requests.json");
     if (existsSync(path)) checkServicePaths(path);
   }
@@ -343,6 +349,46 @@ export async function startViewServer(options: ViewServerOptions): Promise<ViewS
 
     checkServicePaths(join(env.root, ".explainer"));
 
+    if (pathname === `${API}/jobs` || pathname.startsWith(`${API}/jobs/`)) {
+      const jobs = options.control?.jobs;
+      if (!jobs) throw new HttpError(404, "jobs require a managed repository service");
+      const name = displayPath(env.root, explainerPath);
+      const parts = pathname.slice(`${API}/jobs`.length).split("/").filter(Boolean);
+      try {
+        if (parts.length === 0) {
+          allow("GET", "HEAD", "POST");
+          if (method === "POST") {
+            const body = await readJsonBody(req);
+            if (Object.keys(body).some((k) => !["id", "selectedRequestIds", "include"].includes(k)))
+              throw new HttpError(400, "Expected id, selectedRequestIds and optional include.");
+            const job = await serial(() => jobs.submit(name, body as unknown as JobSubmission));
+            sendJson(req, res, 200, { job });
+          } else sendJson(req, res, 200, { ...jobs.availability, jobs: await jobs.list(name) });
+        } else if (parts.length === 1) {
+          allow("GET", "HEAD");
+          sendJson(req, res, 200, { job: await jobs.get(name, parts[0]!) });
+        } else if (parts.length === 2 && ["cancel", "supersede", "retry"].includes(parts[1]!)) {
+          allow("POST");
+          const body = await readJsonBody(req);
+          if (Object.keys(body).some((k) => parts[1] !== "retry" || k !== "expectedAttempt"))
+            throw new HttpError(
+              400,
+              "Retry expects only expectedAttempt; cancel/supersede expect an empty object.",
+            );
+          const job = await serial(() =>
+            parts[1] === "retry"
+              ? jobs.retry(name, parts[0]!, body.expectedAttempt)
+              : jobs.fence(name, parts[0]!, parts[1] === "cancel" ? "cancelled" : "superseded"),
+          );
+          sendJson(req, res, 200, { job });
+        } else throw new HttpError(404, "unknown job route");
+      } catch (error) {
+        if (error instanceof CliError)
+          throw new HttpError(Number(error.extra.status ?? 400), error.message);
+        throw error;
+      }
+      return;
+    }
     if (pathname === "/" || pathname === "/index.html") {
       allow("GET", "HEAD");
       const html = injectBundle(options.viewerHtml(), await bundleOf());

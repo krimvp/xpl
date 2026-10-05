@@ -1578,12 +1578,11 @@ the UUID identifies a process and participates in the workspace ETag. Every view
 with 409 before reads or writes. The page also preserves root/guide in its `attachment` URL query, checked
 before HTML injection, so a bookmark cannot silently open another guide on a reused port.
 
-Backend selection is a persisted label, with jobs unavailable; there is no agent execution or job
-completion state. Local serving needs no provider network or credentials. A later configured Claude
-runner needs its own authentication and provider access. Offline HTML and manual CLI commands remain
-independent of the service. The installed-artifact check exercises detached processes, saved-context and
-same-page/bookmark restart, a real crash and explicit recovery, then manual export and blocked-network
-reading of an HTML snapshot saved from a stopped page.
+Backend selection is a persisted label, with execution unavailable. Local serving needs no provider
+network or credentials. A later configured Claude runner needs its own authentication and provider access.
+Offline HTML and manual CLI commands remain independent of the service. The installed-artifact check
+exercises detached processes, saved-context and same-page/bookmark restart, a real crash and explicit
+recovery, then manual export and blocked-network reading of an HTML snapshot saved from a stopped page.
 
 **Opt-in watching** (`watch.ts`, 29A): `service start --watch` polls input metadata every 500 ms and
 requires a quiet observation for at least 300 ms before a full rebuild. Recursive filesystem events were
@@ -1620,6 +1619,56 @@ build reports every guide's moved/drifted/missing counts; `status --all` recompu
 including user-owned drift, broken references and unreadable guides. Moved anchors receive new locations
 in memory; guide files, prose, provenance, review records and pending feedback are untouched. Generated
 index/cache/service files, named guides/patches and exported xpl HTML cannot start an output loop.
+
+**Durable jobs, lifecycle contract (39A).** `cli/jobs.ts` owns one atomic ledger at
+`.explainer/service/jobs.json`: `{schema: "xpl-jobs@1", root, jobs}`. Job metadata stays outside the
+explainer and bundle. The service reserves its instance before opening the ledger. All ledger writes use
+`withRepositoryLock`; ownership is checked again after waiting. Storage cannot follow symlinks into
+source or another repository. A corrupt ledger refuses startup rather than erasing history.
+
+A watched start reserves the new instance and retires the prior watch pointer before opening jobs.
+Opening the ledger marks old running attempts interrupted; watching starts after the instance is running.
+The watcher owns index and watch records; jobs own the ledger. Stop drains the watcher, server and job
+worker before releasing service ownership. Neither subsystem can publish for a replaced instance.
+
+Each job has a caller-supplied UUID `id` (the delivery/idempotency key), revision `scope: {kind: "revision",
+guide, include}`, `selectedRequestIds`, and immutable `input: {revisionRunId, expected, index, requests}`.
+`guide` and `index` are repository-relative paths, resolved from the canonical repository root for
+selection, history, dispatch and retry, even when the service starts from another working directory.
+`expected` is the existing `ArtifactIdentity`.
+`requests` retain #28's original IDs, context, content and outcome baselines. `revisionRunId` refers to
+#30's journal, which retains the previous/resolved guide and source text. Selection calls `selectRevision`;
+there is no second proposal format or acceptance implementation. Re-delivery of the same ID and selection
+returns the saved job; conflicting reuse of an ID is refused. New feedback is never added to an existing
+job or removed from the request queue.
+
+Lifecycle `state` is `queued | running | completed | failed | cancelled | superseded | interrupted`.
+Jobs retain `createdAt`, `updatedAt`, numeric `attempt`, nullable `owner: {instanceId, attemptId}`,
+bounded progress messages, nullable failure reason and nullable `result: {revisionRunId}`. One runner
+per repository claims queued jobs in ledger order; cancelling a running job aborts its signal but does
+not start conflicting work until that invocation exits. Progress and completion check both owner IDs
+and running state under the ledger lock. Cancelled/superseded results and late old-attempt results are
+discarded. Completion records a proposal reference, never applies a patch or finalizes feedback.
+
+Restart marks previously running jobs `interrupted`, retains their input and progress, and requires an
+explicit retry. Queued jobs remain queued until a runner is available. Retry keeps the job and selection
+IDs, rechecks guide/source/request baselines, clears previous result/error and starts a new attempt.
+Only failed/interrupted jobs can start another attempt. Retry supplies `expectedAttempt` from the
+inspected job; an older baseline returns the saved receipt, including an already failed/completed retry.
+A future baseline is refused. Re-delivery while queued/running also returns the same attempt.
+Cancel and supersede also fence completed proposals. No state transition can restore them to completed.
+Shutdown marks running work interrupted and aborts it; instance replacement fences any late callbacks.
+Locks left by a killed transaction still require inspection/removal, never timeout-based theft.
+
+Managed services expose `GET /api/jobs`, `GET /api/jobs/<UUID>` and `POST /api/jobs` with
+`{id, selectedRequestIds, include?}`, plus `POST /api/jobs/<UUID>/<cancel|supersede>` with `{}` and
+`POST /api/jobs/<UUID>/retry` with `{expectedAttempt}`.
+Routes use the existing Host, attachment, JSON, origin and size guards and filter to the attached guide.
+No acceptance route exists in 39A. The installed service has no runner: submission/retry reports 503
+with an actionable unavailable reason, while history and cancellation remain usable after restart.
+An injected controlled runner proves lifecycle behavior only. 39B supplies one real configured runner
+and validates proposals through `xpl revise`; 39C adds progress/review UI and fenced acceptance through
+the existing revision commit/outcome recovery. Creation/answer scopes belong to those later changes.
 
 **Feedback contract** (`core/feedback.ts`): exports are `{schema: "code-explainer/feedback@1", requests}`.
 Each request has `id`, `elementId`, `kind` (`correct`, `explain`, `expand`), `at`, optional `note`, `view`,
