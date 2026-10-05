@@ -1,9 +1,12 @@
-/** Durable service jobs. Runners return proposals; this module never applies patches or records outcomes. */
+/** Durable revision proposals and question answers share attempt fences; neither accepts guide changes. */
 import { randomUUID } from "node:crypto";
 import { existsSync, lstatSync, readFileSync, realpathSync } from "node:fs";
 import { dirname, join, resolve, sep } from "node:path";
 import {
   artifactIdentity,
+  validateFeedbackAnswer,
+  parseAnswerSources,
+  type FeedbackAnswer,
   parseFeedbackRequest,
   sameFeedbackContent,
   sameFeedbackContext,
@@ -14,7 +17,8 @@ import type { Ctx } from "./context.js";
 import { CliError, errorMessage } from "./errors.js";
 import { atomicWrite, jsonFile, parseJson, withRepositoryLock } from "./fsutil.js";
 import { loadExplainer, openWorkspace } from "./repo.js";
-import { readRequests } from "./requests.js";
+import { answerContextReason, selectAnswer, type AnswerInput } from "./answers.js";
+import { readRequests, recordAnswer } from "./requests.js";
 import { terminateJobProcess, type JobProcess, type JobCleanup } from "./job-process.js";
 import { continueRevision, selectRevision } from "./revision.js";
 
@@ -52,10 +56,30 @@ export type JobRunner = (
   progress: (message: string) => Promise<void>,
   started: (process: JobProcess) => Promise<void>,
 ) => Promise<{ revisionRunId: string; proposals?: unknown }>;
+export interface AnswerJob extends Omit<Job, "scope" | "input" | "result"> {
+  scope: { kind: "answer"; guide: string; include: string[] };
+  input: AnswerInput;
+  result: FeedbackAnswer | null;
+  contextReason: string | null;
+}
+export interface AnswerSubmission {
+  id: string;
+  requestId: string;
+}
+export type AnswerRunner = (
+  job: AnswerJob,
+  signal: AbortSignal,
+  progress: Parameters<JobRunner>[2],
+  started: Parameters<JobRunner>[3],
+) => Promise<unknown>;
+type WorkerJob = Job | AnswerJob;
+function isAnswer(job: WorkerJob): job is AnswerJob {
+  return job.scope.kind === "answer";
+}
 interface Ledger {
   schema: "xpl-jobs@1";
   root: string;
-  jobs: Job[];
+  jobs: WorkerJob[];
 }
 
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
@@ -117,16 +141,28 @@ class RepositoryJobs {
     private readonly ctx: Ctx,
     private readonly instanceId: string,
     private readonly runner?: JobRunner,
+    private readonly answerRunner?: AnswerRunner,
   ) {
     this.path = join(ctx.root, ".explainer", "service", "jobs.json");
   }
 
   get availability() {
     return {
-      available: !!this.runner && !this.closed && !this.fatal,
+      available: !!(this.runner || this.answerRunner) && !this.closed && !this.fatal,
       reason:
         this.fatal ??
-        (this.closed ? "Service job worker stopped." : this.runner ? null : UNAVAILABLE),
+        (this.closed
+          ? "Service job worker stopped."
+          : this.runner || this.answerRunner
+            ? null
+            : UNAVAILABLE),
+    };
+  }
+
+  get answerAvailability() {
+    return {
+      available: this.availability.available && !!this.answerRunner,
+      reason: this.answerRunner ? this.availability.reason : UNAVAILABLE,
     };
   }
 
@@ -173,22 +209,52 @@ class RepositoryJobs {
         const expected = record(input.expected);
         strings(scope.include, "include");
         const ids = strings(j.selectedRequestIds, "selectedRequestIds");
-        uuid(input.revisionRunId);
-        if (
-          scope.kind !== "revision" ||
-          !local(scope.guide) ||
-          !local(input.index) ||
-          !ids.length ||
-          typeof expected.explainerHash !== "string" ||
-          typeof expected.sourceHash !== "string" ||
-          !expected.explainerHash ||
-          !expected.sourceHash ||
-          !Array.isArray(input.requests)
-        )
-          throw new Error("invalid snapshot");
-        const requests = input.requests.map(parseFeedbackRequest);
-        if (JSON.stringify(requests.map((r) => r.id)) !== JSON.stringify(ids))
-          throw new Error("selection does not match snapshot");
+        if (scope.kind === "answer") {
+          const request = parseFeedbackRequest(input.request);
+          const sources = parseAnswerSources(input.sources);
+          if (
+            !local(scope.guide) ||
+            !local(input.index) ||
+            ids.length !== 1 ||
+            ids[0] !== request.id ||
+            !sameFeedbackContext(request.context, expected as unknown as ArtifactIdentity) ||
+            typeof input.guide !== "object" ||
+            input.guide === null ||
+            !(j.contextReason === null || typeof j.contextReason === "string")
+          )
+            throw new Error("invalid answer snapshot");
+          if (j.result !== null) {
+            const receipt = parseFeedbackRequest({ ...request, answers: [j.result] }).answers![0]!;
+            const checked = validateFeedbackAnswer(
+              { text: receipt.text, references: receipt.references },
+              request,
+              sources,
+              j.id as string,
+              receipt.at,
+            );
+            if (JSON.stringify(checked) !== JSON.stringify(receipt))
+              throw new Error("answer receipt does not match recorded job identity or evidence");
+          }
+          input.sources = sources;
+          input.request = request;
+        } else {
+          uuid(input.revisionRunId);
+          if (
+            scope.kind !== "revision" ||
+            !local(scope.guide) ||
+            !local(input.index) ||
+            !ids.length ||
+            typeof expected.explainerHash !== "string" ||
+            typeof expected.sourceHash !== "string" ||
+            !expected.explainerHash ||
+            !expected.sourceHash ||
+            !Array.isArray(input.requests)
+          )
+            throw new Error("invalid snapshot");
+          const requests = input.requests.map(parseFeedbackRequest);
+          if (JSON.stringify(requests.map((r) => r.id)) !== JSON.stringify(ids))
+            throw new Error("selection does not match snapshot");
+        }
         if (
           !STATES.includes(j.state as JobState) ||
           !date(j.createdAt) ||
@@ -229,7 +295,8 @@ class RepositoryJobs {
           throw new Error("running job has no owner");
         if (
           j.result !== null &&
-          (j.state !== "completed" || record(j.result).revisionRunId !== input.revisionRunId)
+          (j.state !== "completed" ||
+            (scope.kind !== "answer" && record(j.result).revisionRunId !== input.revisionRunId))
         )
           throw new Error("invalid proposal reference");
         if (j.state === "completed" && j.result === null)
@@ -247,7 +314,7 @@ class RepositoryJobs {
           )
             throw new Error("invalid cleanup barrier");
         }
-        return j as unknown as Job;
+        return j as unknown as WorkerJob;
       });
       if (
         new Set(jobs.map((j) => j.id)).size !== jobs.length ||
@@ -262,14 +329,19 @@ class RepositoryJobs {
     }
   }
 
-  private async mutate<T>(change: (ledger: Ledger) => Promise<T> | T): Promise<T> {
+  private async mutate<T>(
+    change: (ledger: Ledger, publish: () => Promise<void>) => Promise<T> | T,
+  ): Promise<T> {
     this.assertOwner();
     return withRepositoryLock(this.ctx.root, this.path, async () => {
       this.assertOwner();
       const ledger = this.read();
-      const result = await change(ledger);
-      this.assertOwner();
-      await atomicWrite(this.path, jsonFile(ledger));
+      const publish = async () => {
+        this.assertOwner();
+        await atomicWrite(this.path, jsonFile(ledger));
+      };
+      const result = await change(ledger, publish);
+      await publish();
       return structuredClone(result);
     });
   }
@@ -292,6 +364,7 @@ class RepositoryJobs {
         }
       }
     });
+    await this.reconcileAnswers();
     this.kick();
   }
 
@@ -304,7 +377,7 @@ class RepositoryJobs {
 
   async list(name: string) {
     const guide = this.guide(name);
-    return this.read().jobs.filter((j) => j.scope.guide === guide);
+    return this.read().jobs.filter((j): j is Job => j.scope.guide === guide && !isAnswer(j));
   }
 
   async get(name: string, id: string): Promise<Job> {
@@ -314,8 +387,90 @@ class RepositoryJobs {
     return job;
   }
 
-  private requireRunner() {
-    if (!this.availability.available)
+  private async lookup(name: string, id: string): Promise<WorkerJob> {
+    uuid(id);
+    const guide = this.guide(name);
+    const job = this.read().jobs.find((j) => j.id === id && j.scope.guide === guide);
+    if (!job) throw new CliError("unknown job for this guide", 1, { status: 404 });
+    return job;
+  }
+
+  private async reconcileAnswers() {
+    for (const job of this.read().jobs)
+      if (isAnswer(job) && job.state === "completed" && job.result)
+        await recordAnswer(this.ctx.root, job.input.request, job.result);
+  }
+
+  async listAnswers(name: string): Promise<AnswerJob[]> {
+    const guide = this.guide(name);
+    await this.reconcileAnswers();
+    const jobs = this.read().jobs.filter(
+      (j): j is AnswerJob => isAnswer(j) && j.scope.guide === guide,
+    );
+    for (const job of jobs)
+      job.contextReason = await answerContextReason(this.ctx, guide, job.input);
+    return jobs;
+  }
+
+  async getAnswer(name: string, id: string): Promise<AnswerJob> {
+    const job = await this.lookup(name, id);
+    if (!isAnswer(job)) throw new CliError("unknown answer job for this guide", 1, { status: 404 });
+    await this.reconcileAnswers();
+    job.contextReason = await answerContextReason(this.ctx, job.scope.guide, job.input);
+    return job;
+  }
+
+  async submitAnswer(name: string, submission: AnswerSubmission): Promise<AnswerJob> {
+    uuid(submission.id);
+    if (
+      typeof submission.requestId !== "string" ||
+      !submission.requestId ||
+      submission.requestId.length > 200
+    )
+      throw new CliError("answer submission requires a stable requestId");
+    const guide = this.guide(name);
+    const result = await this.mutate(async (ledger) => {
+      const existing = ledger.jobs.find((j) => j.id === submission.id);
+      if (existing) {
+        if (
+          !isAnswer(existing) ||
+          existing.scope.guide !== guide ||
+          existing.input.request.id !== submission.requestId
+        )
+          throw new CliError("job ID already used for a different question", 1, { status: 409 });
+        return existing;
+      }
+      this.requireRunner("answer");
+      const input = await selectAnswer(
+        this.ctx,
+        resolve(this.ctx.root, guide),
+        submission.requestId,
+      );
+      const at = new Date().toISOString();
+      const job: AnswerJob = {
+        id: submission.id,
+        scope: { kind: "answer", guide, include: [] },
+        selectedRequestIds: [submission.requestId],
+        input,
+        state: "queued",
+        createdAt: at,
+        updatedAt: at,
+        attempt: 0,
+        owner: null,
+        progress: [],
+        error: null,
+        result: null,
+        contextReason: null,
+      };
+      ledger.jobs.push(job);
+      return job;
+    });
+    this.kick();
+    return result;
+  }
+
+  private requireRunner(kind: "revision" | "answer" = "revision") {
+    if (!this.availability.available || !(kind === "answer" ? this.answerRunner : this.runner))
       throw new CliError(this.availability.reason ?? UNAVAILABLE, 1, { status: 503 });
   }
 
@@ -330,6 +485,7 @@ class RepositoryJobs {
       const existing = ledger.jobs.find((j) => j.id === submission.id);
       if (existing) {
         if (
+          isAnswer(existing) ||
           existing.scope.guide !== guide ||
           JSON.stringify(existing.selectedRequestIds) !== JSON.stringify(ids) ||
           JSON.stringify(existing.scope.include) !== JSON.stringify(include)
@@ -397,14 +553,14 @@ class RepositoryJobs {
     }
   }
 
-  async retry(name: string, id: string, expectedAttempt: unknown): Promise<Job> {
+  async retry(name: string, id: string, expectedAttempt: unknown): Promise<WorkerJob> {
     if (
       typeof expectedAttempt !== "number" ||
       !Number.isSafeInteger(expectedAttempt) ||
       expectedAttempt < 0
     )
       throw new CliError("retry requires a non-negative expectedAttempt from the inspected job");
-    const selected = await this.get(name, id);
+    const selected = await this.lookup(name, id);
     const result = await this.mutate(async (ledger) => {
       const job = ledger.jobs.find((j) => j.id === selected.id)!;
       if (expectedAttempt < job.attempt) return job;
@@ -415,8 +571,8 @@ class RepositoryJobs {
         throw new CliError(`cannot retry ${job.state} job; submit a new selection`, 1, {
           status: 409,
         });
-      this.requireRunner();
-      await this.fresh(job);
+      this.requireRunner(isAnswer(job) ? "answer" : "revision");
+      if (!isAnswer(job)) await this.fresh(job);
       job.state = "queued";
       job.owner = null;
       job.error = null;
@@ -428,11 +584,13 @@ class RepositoryJobs {
     return result;
   }
 
-  async fence(name: string, id: string, state: "cancelled" | "superseded"): Promise<Job> {
-    const selected = await this.get(name, id);
+  async fence(name: string, id: string, state: "cancelled" | "superseded"): Promise<WorkerJob> {
+    const selected = await this.lookup(name, id);
     const result = await this.mutate(async (ledger) => {
       const job = ledger.jobs.find((j) => j.id === selected.id)!;
       if (job.state === "cancelled" || job.state === "superseded") return job;
+      if (isAnswer(job) && job.state === "completed")
+        throw new CliError("completed answer history is immutable", 1, { status: 409 });
       if (this.active?.id === id) this.active.abort.abort();
       if (job.cleanup) return job; // A terminal fence cannot erase an unresolved cleanup barrier.
       if (job.state === "running" && !(await this.drain(job))) return job;
@@ -460,7 +618,7 @@ class RepositoryJobs {
       });
   }
 
-  private async drain(job: Job): Promise<boolean> {
+  private async drain(job: WorkerJob): Promise<boolean> {
     if (!job.owner?.process) return true;
     try {
       await terminateJobProcess(job.owner.process);
@@ -471,7 +629,7 @@ class RepositoryJobs {
     }
   }
 
-  private cleanupFailed(job: Job, error: unknown) {
+  private cleanupFailed(job: WorkerJob, error: unknown) {
     if (!(error instanceof CliError) || error.extra.code !== "JOB_PROCESS_CLEANUP") throw error;
     const groupId = error.extra.groupId ?? job.owner?.process?.groupId;
     const startTime = error.extra.startTime ?? job.owner?.process?.startTime;
@@ -492,7 +650,9 @@ class RepositoryJobs {
       const job = await this.mutate((ledger) => {
         if (!this.availability.available) return undefined;
         if (ledger.jobs.some((j) => j.state === "running")) return undefined;
-        const next = ledger.jobs.find((j) => j.state === "queued");
+        const next = ledger.jobs.find(
+          (j) => j.state === "queued" && (isAnswer(j) ? !!this.answerRunner : !!this.runner),
+        );
         if (!next) return undefined;
         next.state = "running";
         next.attempt++;
@@ -503,9 +663,11 @@ class RepositoryJobs {
       if (!job) return;
       const abort = new AbortController();
       this.active = { id: job.id, abort };
-      const update = async (change: (current: Job) => void | Promise<void>) => {
+      const update = async (
+        change: (current: WorkerJob, publish: () => Promise<void>) => void | Promise<void>,
+      ) => {
         if (this.closed) return false;
-        return this.mutate(async (ledger) => {
+        return this.mutate(async (ledger, publish) => {
           const current = ledger.jobs.find((j) => j.id === job.id)!;
           if (
             current.state !== "running" ||
@@ -513,18 +675,24 @@ class RepositoryJobs {
             current.owner.attemptId !== job.owner!.attemptId
           )
             return false;
-          await change(current);
+          await change(current, publish);
           current.updatedAt = new Date().toISOString();
           return true;
         });
       };
       try {
-        await this.fresh(job);
+        if (!isAnswer(job)) await this.fresh(job);
         // Cancellation can win the claim before the invocation's abort controller exists.
-        if (this.closed || (await this.get(job.scope.guide, job.id)).state !== "running") continue;
-        const result = await this.runner!(
-          structuredClone(job),
-          abort.signal,
+        if (this.closed || (await this.lookup(job.scope.guide, job.id)).state !== "running")
+          continue;
+        const run = async (
+          progress: Parameters<JobRunner>[2],
+          started: Parameters<JobRunner>[3],
+        ) =>
+          isAnswer(job)
+            ? this.answerRunner!(structuredClone(job), abort.signal, progress, started)
+            : this.runner!(structuredClone(job), abort.signal, progress, started);
+        const result = await run(
           async (message) => {
             if (typeof message !== "string" || !message.trim() || message.length > 2000)
               throw new CliError("progress must be non-empty text of at most 2000 characters");
@@ -543,16 +711,39 @@ class RepositoryJobs {
               throw new CliError("Claude attempt no longer owns this job; process discarded.");
           },
         );
-        if (record(result).revisionRunId !== job.input.revisionRunId)
+        if (!isAnswer(job) && record(result).revisionRunId !== job.input.revisionRunId)
           throw new CliError("runner result does not match the selected revision");
-        await update(async (current) => {
-          if (result.proposals !== undefined) {
+        await update(async (current, publish) => {
+          if (isAnswer(current)) {
+            const answer = validateFeedbackAnswer(
+              result,
+              current.input.request,
+              current.input.sources,
+              current.id,
+              new Date().toISOString(),
+            );
+            const contextReason = await answerContextReason(
+              this.ctx,
+              current.scope.guide,
+              current.input,
+            );
+            await recordAnswer(this.ctx.root, current.input.request, answer, async () => {
+              current.result = answer;
+              current.contextReason = contextReason;
+              current.state = "completed";
+              current.updatedAt = new Date().toISOString();
+              await publish();
+            });
+            return;
+          }
+          const revisionResult = record(result);
+          if (revisionResult.proposals !== undefined) {
             const proposal = join(dirname(this.path), `proposal-${job.owner!.attemptId}.json`);
-            await atomicWrite(proposal, jsonFile(result.proposals));
+            await atomicWrite(proposal, jsonFile(revisionResult.proposals));
             const review = await continueRevision(
               this.ctx,
               resolve(this.ctx.root, job.scope.guide),
-              job.input.revisionRunId,
+              current.input.revisionRunId,
               {
                 proposal,
                 serviceJob: { id: job.id, attemptId: job.owner!.attemptId },
@@ -568,8 +759,9 @@ class RepositoryJobs {
               );
           }
           current.state = "completed";
-          current.result = { revisionRunId: job.input.revisionRunId };
+          current.result = { revisionRunId: current.input.revisionRunId };
         });
+        await this.reconcileAnswers();
       } catch (error) {
         await update((current) => {
           if (error instanceof CliError && error.extra.code === "JOB_PROCESS_CLEANUP") {
@@ -601,12 +793,17 @@ class RepositoryJobs {
   }
 }
 
-export async function openJobs(ctx: Ctx, instanceId: string, runner?: JobRunner) {
+export async function openJobs(
+  ctx: Ctx,
+  instanceId: string,
+  runner?: JobRunner,
+  answerRunner?: AnswerRunner,
+) {
   const root = realpathSync(ctx.root);
   // Jobs resolve repository-owned paths, rather than command-line paths relative to the caller.
   ctx = { ...ctx, root, cwd: root };
   uuid(instanceId);
-  const jobs = new RepositoryJobs(ctx, instanceId, runner);
+  const jobs = new RepositoryJobs(ctx, instanceId, runner, answerRunner);
   await jobs.start();
   return jobs;
 }
