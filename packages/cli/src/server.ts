@@ -32,8 +32,8 @@
  */
 import { artifactIdentity, feedbackContextReason, parseFeedbackRequest } from "@xpl/core";
 import { createHash } from "node:crypto";
-import { statSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, realpathSync, statSync } from "node:fs";
+import { join, sep } from "node:path";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import {
@@ -49,7 +49,7 @@ import {
 import { collectBaseFiles, collectFiles, freshAnchors, makeBundle } from "./bundle-data.js";
 import type { RepoEnv } from "./context.js";
 import { CliError, errorMessage } from "./errors.js";
-import { atomicWrite, withFileLock, displayPath, jsonFile } from "./fsutil.js";
+import { atomicWrite, withFileLock, withRepositoryLock, displayPath, jsonFile } from "./fsutil.js";
 import { importRequests, appendRequest, readRequests } from "./requests.js";
 import {
   WorkingTree,
@@ -70,6 +70,8 @@ export interface ViewServerOptions {
   port: number;
   /** Viewer HTML, read per request so a rebuilt viewer shows up on reload. */
   viewerHtml: () => string;
+  /** Local lifecycle control, present only for a managed repository service. Never injected into HTML. */
+  control?: { token: string; instanceId: string; root: string; stop(): void };
 }
 
 export interface ViewServer {
@@ -171,8 +173,24 @@ export async function startViewServer(options: ViewServerOptions): Promise<ViewS
   const { env, explainerPath, host } = options;
   let allowedHosts: Set<string> | undefined;
 
+  function checkServicePaths(...paths: string[]) {
+    if (!options.control) return;
+    for (const path of paths) {
+      if (!realpathSync(path).startsWith(options.control.root + sep)) {
+        throw new HttpError(403, "service artifact path leaves its repository");
+      }
+    }
+  }
+
+  function checkRequestStore() {
+    checkServicePaths(join(env.root, ".explainer"));
+    const path = join(env.root, ".explainer", "requests.json");
+    if (existsSync(path)) checkServicePaths(path);
+  }
+
   /** Everything a request needs, read fresh: the explainer, its index, the working tree. */
   async function loadState() {
+    checkServicePaths(explainerPath);
     const explainer = readExplainerFile(explainerPath);
     const loaded: LoadedExplainer = {
       abs: explainerPath,
@@ -183,6 +201,7 @@ export async function startViewServer(options: ViewServerOptions): Promise<ViewS
     const tree = new WorkingTree(env.root);
     // A live workspace follows a newly generated index; an explicit --index still wins.
     const indexFile = await chooseIndexFile(env, tree, { skipExplainerIndex: true });
+    checkServicePaths(indexFile);
     const { index, model } = loadIndexFile(indexFile);
     return { loaded, tree, indexFile, index, model };
   }
@@ -278,6 +297,21 @@ export async function startViewServer(options: ViewServerOptions): Promise<ViewS
       }
     };
 
+    if (options.control && (pathname === `${API}/service` || pathname === `${API}/service/stop`)) {
+      const control = options.control;
+      if (req.headers.authorization !== `Bearer ${control.token}`)
+        throw new HttpError(403, "service ownership token required");
+      allow(pathname.endsWith("/stop") ? "POST" : "GET");
+      if (method === "POST") {
+        await readJsonBody(req);
+        res.once("finish", control.stop);
+      }
+      sendJson(req, res, 200, { instanceId: control.instanceId, root: control.root });
+      return;
+    }
+
+    checkServicePaths(join(env.root, ".explainer"));
+
     if (pathname === "/" || pathname === "/index.html") {
       allow("GET", "HEAD");
       const html = injectBundle(options.viewerHtml(), await bundleOf());
@@ -366,7 +400,7 @@ export async function startViewServer(options: ViewServerOptions): Promise<ViewS
       if (!Object.hasOwn(body, "review") || Object.keys(body).length !== 1)
         throw new HttpError(400, "Expected only a review field (record or null).");
       const saved = await serial(() =>
-        withFileLock(explainerPath, async () => {
+        withRepositoryLock(env.root, explainerPath, async () => {
           const state = await loadState();
           const result = applyPatch(
             state.loaded.explainer,
@@ -449,12 +483,13 @@ export async function startViewServer(options: ViewServerOptions): Promise<ViewS
           }
           if (request.explainer !== undefined && request.explainer !== name)
             throw new HttpError(400, "feedback names a different explainer");
-          await importRequests(env.root, [request]);
+          await serial(() => importRequests(env.root, [request]));
           const state = await loadState();
           const contextReason =
             feedbackContextReason(request, artifactIdentity(freshExplainer(state), state.index)) ??
             (await stalenessOf(env, state.tree, state.index, state.indexFile, state.loaded))
               ?.message;
+          checkRequestStore();
           sendJson(req, res, 201, {
             ok: true,
             request: readRequests(env.root).requests.find((r) => r.id === request.id),
@@ -487,18 +522,25 @@ export async function startViewServer(options: ViewServerOptions): Promise<ViewS
           throw new HttpError(400, "unknown feedback kind");
         const view = text("view", 200);
         const label = text("label", 500);
-        const saved = await appendRequest(env.root, {
-          elementId,
-          ...(note !== undefined ? { note } : {}),
-          kind,
-          ...(view !== undefined ? { view } : {}),
-          ...(label !== undefined ? { label } : {}),
-          explainer: name,
-          context: null,
-        });
+        const saved = await serial(() =>
+          appendRequest(
+            env.root,
+            {
+              elementId,
+              ...(note !== undefined ? { note } : {}),
+              kind,
+              ...(view !== undefined ? { view } : {}),
+              ...(label !== undefined ? { label } : {}),
+              explainer: name,
+              context: null,
+            },
+            checkRequestStore,
+          ),
+        );
         sendJson(req, res, 201, { ok: true, ...saved });
         return;
       }
+      checkRequestStore();
       const { requests, error } = readRequests(env.root);
       if (error) throw new HttpError(500, error);
       const mine = requests.filter((r) => r.explainer === undefined || r.explainer === name);
@@ -528,6 +570,8 @@ export async function startViewServer(options: ViewServerOptions): Promise<ViewS
 
   const server: Server = createServer((req, res) => {
     handle(req, res).catch((error: unknown) => {
+      if (error instanceof CliError && error.extra.code === "REPOSITORY_ESCAPE")
+        error = new HttpError(403, error.message);
       if (res.headersSent) {
         res.destroy();
         return;
@@ -581,10 +625,12 @@ export async function startViewServer(options: ViewServerOptions): Promise<ViewS
     host,
     port,
     explainerPath,
-    close: () =>
-      new Promise<void>((resolve) => {
+    close: async () => {
+      await new Promise<void>((resolve) => {
         server.closeAllConnections();
         server.close(() => resolve());
-      }),
+      });
+      await queue;
+    },
   };
 }

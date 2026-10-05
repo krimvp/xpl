@@ -138,6 +138,29 @@ describe("xpl view", () => {
     expect(readJson(dir, ".explainer/demo.explainer.json").review).toBeUndefined();
   });
 
+  it("refuses review writes when a live guide is replaced by an external symlink", async () => {
+    const { symlinkSync, unlinkSync } = await import("node:fs");
+    const dir = cloneDir(demo);
+    const outside = cloneDir(demo);
+    const view = await serve(dir);
+    const guide = ".explainer/demo.explainer.json";
+    const before = readFile(outside, guide);
+    // A valid clear would normally write this guide; the repository fence must run first.
+    unlinkSync(join(dir, guide));
+    symlinkSync(join(outside, guide), join(dir, guide));
+    const response = await fetch(`${view.url}/api/review`, {
+      method: "PUT",
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ review: null }),
+    });
+    expect(response.status).toBe(403);
+    expect(await json(response)).toMatchObject({
+      error: "service artifact path leaves its repository",
+    });
+    expect(readFile(outside, guide)).toBe(before);
+    expect(readFile(dir, guide)).toBe(before);
+  });
+
   it("export snapshots include source behind stubs and check current workspace hashes", async () => {
     const dir = cloneDir(demo);
     const view = await serve(dir);

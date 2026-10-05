@@ -261,6 +261,115 @@ try {
     );
     assert.equal(exported.exportStatus, "ready");
     assert.equal(exported.readiness.ready, true);
+    if (language === "ts") {
+      const artifactPath = join(fixture, ".explainer/ready-demo.explainer.json");
+      const beforeArtifact = readFileSync(artifactPath, "utf8");
+      const service = JSON.parse(
+        run(
+          [
+            "service",
+            "start",
+            "ready-demo",
+            "--background",
+            "--port",
+            "0",
+            "--backend",
+            "claude",
+            "--json",
+          ],
+          fixture,
+        ),
+      );
+      try {
+        assert.equal(service.state, "running");
+        assert.equal(service.root, fixture);
+        assert.equal(service.guide, ".explainer/ready-demo.explainer.json");
+        assert.equal(service.backend, "claude");
+        assert.match(service.url, /^http:\/\/127\.0\.0\.1:\d+\/$/);
+        assert.equal((await fetch(service.url)).status, 200);
+        assert.match(
+          rejected(["service", "start", "ready-demo", "--json"], fixture).error,
+          /already running/,
+        );
+        assert.equal(JSON.parse(run(["service", "stop", "--json"], fixture)).state, "stopped");
+        const restarted = JSON.parse(run(["service", "start", "--background", "--json"], fixture));
+        assert.equal(restarted.url, service.url);
+        assert.equal(restarted.guide, service.guide);
+        assert.equal(restarted.backend, "claude");
+        assert.notEqual(restarted.instanceId, service.instanceId);
+      } finally {
+        run(["service", "stop", "--json"], fixture);
+      }
+
+      // Own this child directly so its exit is reaped before testing explicit crash recovery.
+      const crashed = spawn(cli, ["service", "start", "--port", "0", "--json"], {
+        cwd: fixture,
+        env,
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      let startup = "";
+      let crashErrors = "";
+      crashed.stderr.on("data", (chunk) => {
+        crashErrors += chunk;
+      });
+      try {
+        await new Promise((resolveReady, reject) => {
+          const timer = setTimeout(
+            () => reject(new Error(`service did not start: ${crashErrors}`)),
+            15000,
+          );
+          crashed.once("exit", () => {
+            clearTimeout(timer);
+            reject(new Error(`service exited: ${crashErrors}`));
+          });
+          crashed.stdout.on("data", (chunk) => {
+            startup += chunk;
+            try {
+              JSON.parse(startup);
+              clearTimeout(timer);
+              resolveReady();
+            } catch {
+              /* wait for complete JSON */
+            }
+          });
+        });
+      } finally {
+        const exited = once(crashed, "exit");
+        crashed.kill("SIGKILL");
+        await exited;
+      }
+      const interrupted = JSON.parse(run(["service", "status", "--json"], fixture));
+      assert.equal(interrupted.state, "interrupted");
+      assert.match(
+        rejected(["service", "start", "--json"], fixture).error,
+        /interrupted.*--recover/,
+      );
+      const recovered = JSON.parse(
+        run(["service", "start", "--recover", "--background", "--json"], fixture),
+      );
+      try {
+        assert.equal(recovered.state, "running");
+        assert.equal(recovered.guide, service.guide);
+        assert(
+          existsSync(
+            join(fixture, `.explainer/service/interrupted-${interrupted.instanceId}.json`),
+          ),
+        );
+        assert.equal(readFileSync(artifactPath, "utf8"), beforeArtifact);
+      } finally {
+        run(["service", "stop", "--json"], fixture);
+      }
+      // Manual export and the offline reader below run after stopping the optional service.
+      assert.equal(
+        JSON.parse(run(["bundle", "ready-demo", "-o", readyOutput, "--json"], fixture))
+          .exportStatus,
+        "ready",
+      );
+      run(["validate", "ready-demo"], fixture);
+      results.push(
+        "ts: packed background start/stop/restart, saved root/guide/backend, duplicate refusal, real crash/recovery and manual export after stop passed",
+      );
+    }
     const offline = await browser.newPage();
     await offline.route(/^https?:/, (route) => route.abort());
     await offline.goto(pathToFileURL(readyOutput).href + "?perspective=code");
