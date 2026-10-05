@@ -9,6 +9,7 @@ import { anchorsCommand } from "./commands/anchors.js";
 import { applyCommand } from "./commands/apply.js";
 import { indexCommand } from "./commands/build-index.js";
 import { bundleCommand } from "./commands/bundle.js";
+import { stageCommand } from "./commands/stage.js";
 import { changeCommand } from "./commands/change.js";
 import { prCommand } from "./commands/pr.js";
 import { draftCommand } from "./commands/draft.js";
@@ -59,6 +60,7 @@ export const COMMANDS: readonly CommandSpec[] = [
   viewCommand,
   serviceCommand,
   bundleCommand,
+  stageCommand,
   doctorCommand,
   skillCommand,
 ];

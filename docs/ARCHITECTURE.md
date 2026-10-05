@@ -1351,6 +1351,7 @@ stdout (a rejection exits 1); fatal errors (`error: …`) and warnings (`warning
 | `xpl service <start\|pause\|resume\|stop\|status> [explainer] [--background] [--port p] [--backend none\|claude] [--skill-dir folder] [--job-timeout seconds] [--recover] [--watch]` | optional repository-scoped lifecycle around the same viewer server; loopback only; persisted context and explicit interrupted-owner recovery |
 | `xpl bundle <explainer> -o out.html [--mode explore\|present] [--tour id] [--files referenced\|boundary\|all] [--boundary-max n] [--embed-index full\|pruned] [--draft] [--note reason] [--require-review] [--allow-drift]` | self-contained HTML after the shared readiness check (exit 1 before writing with errors); `--draft` writes a labelled preview with findings; `--allow-drift` is a legacy draft flag that still refuses stale indexes; warnings and optional author notes are retained; `--tour` (`tour:intro` or `intro`) implies present mode; embeds the files the explainer references by default and prints what went in (`8 of 12 files embedded (referenced: 18.4 KB of source; --files all adds 4 files, 6.7 KB)`), `--files boundary` adds the direct callers, callees and tests of anchored symbols (at most `--boundary-max`, default 40), `--files all` every indexed file; with a change recorded, every changed file at head and the base text of the changed files go in too; the symbol index in it is pruned to what the viewer can draw with `--files referenced` or `boundary` and whole with `--files all` (`--embed-index` overrides) and packed (the summary line says `index 0.3 MB (1.3 MB as plain JSON, pruned from 9.0 MB)`) |
 | `xpl doctor [--agent none\|claude] [--skill-dir path]` | local setup report: Node, artifact hashes, grammar loading, installed skill and optional git/npx/Go; selected Claude Code availability; no downloads or authentication probes; required failures exit 1 |
+| `xpl stage <explainer> --dir <outside-folder> [--preview] [--files referenced\|boundary\|all] [--note reason] [--require-review] [--pr-result result.json]` | previews included head/base files; stages only ready local HTML and an immutable manifest, rechecks inputs before promoting an atomic current symlink under a lock; retains prior versions; PR guides require a verified ready result and a final GitHub base/head check |
 | `xpl skill install [--dir path]` | copies the bundled skill and writes its CLI binding; repeat to update; defaults to `~/.claude/skills/code-explainer`; refuses unmanaged directories, symlinks and local edits |
 
 **Installed artifact.** Workspace packages remain private. `npm run build` writes standalone package
@@ -1856,6 +1857,44 @@ never silently rebound. `--outcomes` reads an array of `{id, context, status, re
 context copied exactly. It updates those IDs and increments their revisions only. Failed writes leave
 the prior file and counters intact and retryable.
 The selected revision operation below commits reviewed decisions before recording their outcomes.
+
+**Local ready versions (34A).** `cli/stage.ts` reuses workspace readiness, artifactIdentity and bundle
+file selection. `xpl stage <guide> --dir <outside-folder> --preview` lists sorted head/base source paths
+and readiness without creating storage or reading the viewer HTML. Ordinary staging prints that list
+before writing; machine callers use `--preview --json` for a separate inspection step. `--files` selects
+referenced (default), boundary or all source through the existing bundle helpers. Review evidence and
+changed-file before/after source follow the ordinary export rules. There is no draft override.
+
+Storage resolves existing ancestors and rejects paths inside the source root or its Git checkout,
+including symlink aliases. PR preparation shares this guard. Each unique `version-*` directory holds
+read-only `index.html` and `manifest.json`; the directory becomes read-only too. Its schemaVersion 1
+`xpl-ready-version` manifest records a directory locator, creation time, index/change commits, the
+existing artifactIdentity, SHA-256 hashes of input explainer/index bytes and HTML, the readiness report,
+included head/base paths, and author review state. The directory locator does not define another content
+identity. The HTML has no live server API and retains the existing source scope and review display.
+
+The existing `withFileLock` holds `current.lock` for the complete staging/promotion transaction. After
+writing both files and preparing a relative symlink, staging reloads the guide/index/source and reruns
+readiness, comparing exact input bytes, identity and bundled content with the preview. The final rename
+replaces `current` atomically; readers open `current/index.html` or a retained `version-*/index.html`.
+Failures before promotion remove the attempted version and temporary pointer, retaining all previous
+version bytes and the old current link. A crashed writer's lock requires explicit removal after checking
+the writer stopped; no timer steals it. Storage has one current pointer per configured directory.
+If lock release fails after the atomic rename, the command reports successful promotion with a cleanup
+warning. It does not report a failed staging run after current has already changed.
+
+PR guides require `--pr-result` from `xpl pr finish` and the retained prepared checkout as `--root`.
+Staging verifies the ready result's input/explainer/index/HTML SHA-256 hashes, commits, source list and
+artifact identity; prepared or superseded results are refused. It recomputes embedded readiness and
+checks the prepared HEAD/raw source plus workspace readiness against that exact result. The version
+contains the original HTML bytes and the full ready result manifest with its SHA-256 hash. After writing,
+GitHub base/head are rechecked under the destination lock, then local readiness/freshness is checked
+again before promotion. API failures and superseded commits retain current. `--files` and `--note` cannot
+alter a PR result. `--require-review` checks the optional policy without rewriting its original HTML.
+
+This slice provides local staging only. Version/step/element/range restoration belongs to 34B; a chosen
+destination, audience, credentialed delivery and one PR link/Action belong to 34C. Local storage does not
+establish private team access or close those acceptance criteria.
 
 **Bundle payload** (`ViewerBundle`, also `/api/bundle`): `{ schema: "code-explainer/bundle@0", explainer,
 index, files: Record<FilePath, string>, baseFiles?, mode?, tour?, server?, sourceWarning?, exportInfo?,
