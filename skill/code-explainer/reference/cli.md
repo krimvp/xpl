@@ -652,6 +652,31 @@ outcome. A changed explanation/source snapshot or stale source needs explicit re
 silently rebound to the newer guide. Legacy records lacking a snapshot are unbound and outdated.
 Keep feedback exports/outcome input files outside the source tree so they do not stale the index.
 
+## `xpl revise <explainer> --select <id,id> | --run <id>`
+
+See [revise.md](revise.md) for the installed feedback revision workflow. Selection retains original request
+IDs/context, checks actual source freshness and resolves in memory. `--include <id,id>` explicitly bounds
+extra/new explanation IDs; `-o /tmp/review.json` saves a source and explanation before/after packet.
+
+`--run <id> --proposal /tmp/proposal.json` reviews `[{id, patch}]` using ordinary apply patches as `llm`.
+`--decisions /tmp/decisions.json` reviews one `{id, status, reason, reconciliation?, missing?}` per selected
+request; only `addressed` patches enter the candidate. Accepted outdated context needs a reconciliation
+reason. Missing owners need `missing: [{id, action: "reanchor"|"remove"}]`. Location-only moves use `{}`.
+Neither review writes the guide or outcomes. Show the exact decision review before explicit `--accept`.
+
+Acceptance checks expected artifact/source identity, actual working-tree freshness, selected outcome
+baselines and shared readiness before publication. `.explainer/revisions/<id>/previous.json` preserves the
+old artifact; `run.json` retains the reviewed source and commit intent. Retry the same `--run <id> --accept`
+after interruption: changes and outcome increments occur once. New/unselected feedback survives. A wholly
+declined batch records reasons without changing the guide. Historical `--run <id>` inspection works after
+source changes. After a killed process, remove only reported locks whose writers have stopped.
+
+`--json` emits `{ok, runId, state, expected, index, previousArtifact, requests, include, resolve, decisions,
+changes, source, issues, readiness?}`. `changes` contains `{id, before, after}`; `source` contains
+`{file, side, text}` from the review snapshot. States: selected, proposed, reviewed, committing, committed,
+done. Readiness blockers remain visible in a review (exit 0), but `--accept` refuses them (exit 1). Rejected
+patches, scope/identity/freshness conflicts and malformed input also exit 1. No model is called.
+
 ## `xpl lint <explainer> [--patch <file|->] [--warn-only]`
 
 Checks the text a reader sees (the index, when there is one, only counts the boxes and arrows of maps): the explainer title, tour titles, tour `summary`, tour step notes, view titles, flow and sequence step labels and summaries, the `summary` and `detail` of nodes, edges and concepts, and the labels of groups and concepts. It also checks the order of each tour, and what the viewer will show (a step it must title itself, a crowded map). It applies the rules of `reference/writing.md`. Run it before `xpl bundle`, and fix what it finds with a patch.

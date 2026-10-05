@@ -5,7 +5,25 @@ import type { Ctx } from "../context.js";
 import { CliError } from "../errors.js";
 import { issueSummary, plural, renderIssues } from "../format.js";
 import { atomicWrite, withFileLock, jsonFile, parseJson, readTextFile } from "../fsutil.js";
-import { loadExplainer, openWorkspace, resolveExplainerPath } from "../repo.js";
+import {
+  loadExplainer,
+  openWorkspace,
+  resolveExplainerPath,
+  type LoadedExplainer,
+} from "../repo.js";
+import type { Explainer } from "@xpl/core";
+
+/** Both ordinary apply and reviewed revision acceptance load and publish under the same lock. */
+export async function withLockedExplainer<T>(
+  ctx: Ctx,
+  name: string,
+  job: (loaded: LoadedExplainer, save: (next: Explainer) => Promise<void>) => Promise<T>,
+): Promise<T> {
+  return withFileLock(resolveExplainerPath(ctx, name), async () => {
+    const loaded = loadExplainer(ctx, name);
+    return job(loaded, (next) => atomicWrite(loaded.abs, jsonFile(next)));
+  });
+}
 
 async function defaultReadStdin(arg: string): Promise<string> {
   if (process.stdin.isTTY) {
@@ -97,10 +115,9 @@ export const applyCommand: CommandSpec = {
   async run(ctx, args) {
     const actor = args.choice("actor", ["llm", "user"] as const) ?? "llm";
     const dryRun = args.flag("dry-run");
-    const path = resolveExplainerPath(ctx, args.positionals[0]!);
+    resolveExplainerPath(ctx, args.positionals[0]!);
     const { patch, label } = await readPatch(ctx, args.positionals[1]!);
-    return withFileLock(path, async () => {
-      const loaded = loadExplainer(ctx, args.positionals[0]!);
+    return withLockedExplainer(ctx, args.positionals[0]!, async (loaded, save) => {
       const ws = await openWorkspace(ctx, { explainer: loaded });
       const result = applyPatch(loaded.explainer, patch as ExplainerPatch, ws.model, ws.texts, {
         actor,
@@ -115,7 +132,7 @@ export const applyCommand: CommandSpec = {
       // Everything the patch changes belongs to the user: that is not "no changes", it is a refusal.
       const allProtected = result.ok && result.changed.length === 0 && protectedIssues.length > 0;
       const write = result.ok && !dryRun && result.changed.length > 0;
-      if (write) await atomicWrite(loaded.abs, jsonFile(result.explainer));
+      if (write) await save(result.explainer);
 
       if (ctx.json) {
         ctx.emit({

@@ -339,7 +339,7 @@ describe("buildIndex", () => {
 });
 
 describe("writeIndex", () => {
-  it("writes .explainer/index-<commit>.json pretty-printed, and a .gitignore for indexes and cache entries", async () => {
+  it("writes .explainer/index-<commit>.json pretty-printed, and a .gitignore for indexes, cache entries and revision journals", async () => {
     const dir = makeDir(project);
     const { index } = await buildIndex({ root: dir, commit: "abc1234", precise: "off" });
     const path = await writeIndex(dir, index);
@@ -349,7 +349,7 @@ describe("writeIndex", () => {
     expect(text.startsWith('{\n  "schema": "code-explainer/index@0"')).toBe(true);
     expect(JSON.parse(text)).toEqual(index);
     expect(readFileSync(join(dir, ".explainer", ".gitignore"), "utf8")).toBe(
-      "index-*.json\ncache/\n",
+      "index-*.json\ncache/\nrevisions/\n",
     );
   });
 
@@ -367,12 +367,12 @@ describe("writeIndex", () => {
     await writeIndex(dir, index);
     await writeIndex(dir, index);
     expect(readFileSync(join(dir, ".explainer", ".gitignore"), "utf8")).toBe(
-      "requests.json\nindex-*.json\ncache/\n",
+      "requests.json\nindex-*.json\ncache/\nrevisions/\n",
     );
     writeFileSync(join(dir, ".explainer", ".gitignore"), "a\nindex-*.json\nb\n");
     await writeIndex(dir, index);
     expect(readFileSync(join(dir, ".explainer", ".gitignore"), "utf8")).toBe(
-      "a\nindex-*.json\nb\ncache/\n",
+      "a\nindex-*.json\nb\ncache/\nrevisions/\n",
     );
   });
 
