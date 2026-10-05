@@ -12,6 +12,7 @@ import { atomicWrite, jsonFile, parseJson, toPosix, withRepositoryLock } from ".
 import { chooseIndexFile, loadExplainer, openWorkspace, WorkingTree } from "../repo.js";
 import type { ViewServer } from "../server.js";
 import { readViewerHtml } from "../viewer-html.js";
+import { openJobs } from "../jobs.js";
 import { listen, untilStopped } from "./view.js";
 
 type Backend = "none" | "claude";
@@ -266,6 +267,9 @@ export const serviceCommand: CommandSpec = {
     "Managed viewer bookmarks retain root/guide and reconnect after restart. After stop, choose Use loaded",
     "snapshot offline for manual edits and HTML export; Retry connection resumes this attachment.",
     "--backend records none (default) or claude as a future selection; no agent or job runs in this command.",
+    "Durable job history lives in .explainer/service/jobs.json. Restart marks running attempts interrupted;",
+    "cancelled/superseded proposals stay fenced. Execution and retry need a configured runner (not yet supplied).",
+    "Job routes never accept proposals; use the existing explicit xpl revise review/accept workflow.",
     "Local serving requires no network or agent credentials. A later Claude job requires its own configured",
     "authentication and provider network access. Manual commands and offline HTML work with the service stopped.",
   ],
@@ -409,12 +413,15 @@ export const serviceCommand: CommandSpec = {
       ctx.io.signal ? AbortSignal.any([ctx.io.signal, abort.signal]) : abort.signal,
     );
     let server: ViewServer | undefined;
+    let jobs: Awaited<ReturnType<typeof openJobs>> | undefined;
     try {
+      jobs = await openJobs(ctx, instance.instanceId);
       server = await listen(ctx, loaded.abs, "127.0.0.1", port, {
         token: instance.token,
         instanceId: instance.instanceId,
         root: p.root,
         backend,
+        jobs,
         stop: () => abort.abort(),
       });
       instance.state = "running";
@@ -438,6 +445,7 @@ export const serviceCommand: CommandSpec = {
     } finally {
       abort.abort();
       await server?.close();
+      await jobs?.close();
       await withRepositoryLock(p.root, p.instance, async () => {
         if (readInstance(p.instance, p.root)?.instanceId === instance.instanceId) {
           instance.state = "stopped";

@@ -967,7 +967,18 @@ and API requests refuse another attachment at the same address. Restart reuses s
 the open page's instance while keeping navigation and unsaved edits. After stop, choose **Use loaded snapshot
 offline** for manual edits, browser feedback and embedded-snapshot HTML export. **Retry connection** resumes
 the original address; **Edit → Retry save** persists queued offline edits. Export/import offline feedback
-explicitly. Manual iteration and offline HTML work with the service stopped; durable jobs are follow-up work.
+explicitly. Manual iteration and offline HTML work with the service stopped.
+
+The service persists durable lifecycle records in `.explainer/service/jobs.json`. `GET /api/jobs` reports
+runner availability and this guide's history; `GET /api/jobs/<UUID>` reads one job. Restart marks running
+attempts interrupted, while queued work and completed proposal references survive. Cancellation and
+supersession discard results and fence late callbacks. `POST /api/jobs/<UUID>/cancel` and `/supersede`
+take `{}`. Retry takes `{expectedAttempt}` from the inspected job, so repeated delivery cannot start
+another attempt after a fast failure. Job input retains the existing revision journal and original selected
+feedback IDs; no job route applies a patch or finalizes an outcome. The installed service still has no
+configured runner, so submission/retry reports 503 with a manual `xpl revise` recovery instruction.
+Controlled lifecycle tests do not prove a real authoring backend. Execution, validation and job review UI
+are later steps; continue using the installed manual revision workflow.
 
 ## `xpl ready <explainer> [--note reason] [--require-review]`
 
