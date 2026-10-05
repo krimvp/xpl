@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { ServerApi } from "../src/data.js";
 import { ViewerStore } from "../src/store.js";
 import { makeBundle, TEXTS } from "./world.js";
 
@@ -234,6 +235,26 @@ describe("under xpl view (server mode)", () => {
   });
 
   const body = (i: number) => JSON.parse(String(calls[i]!.init!.body)) as Record<string, unknown>;
+
+  it("binds review saves to the loaded repository and guide", async () => {
+    const api = new ServerApi("/api", {
+      root: "/repos/jobrunner",
+      guide: ".explainer/demo.explainer.json",
+      instanceId: "first",
+      backend: "none",
+      backendAvailable: false,
+    });
+    await api.putReview(null);
+    expect(calls.map(({ url, init }) => ({ url, method: init?.method }))).toEqual([
+      { url: "/api/review", method: "PUT" },
+    ]);
+    expect(body(0)).toEqual({ review: null });
+    const header = new Headers(calls[0]!.init?.headers).get("X-Xpl-Attachment");
+    expect(header === null ? null : JSON.parse(decodeURIComponent(header))).toEqual({
+      root: "/repos/jobrunner",
+      guide: ".explainer/demo.explainer.json",
+    });
+  });
 
   it("detects a stopped attachment with unsaved edits, supports offline feedback, and retries the same guide", async () => {
     const bundle = makeBundle({ server: { api: "/api" } });

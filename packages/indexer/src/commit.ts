@@ -13,7 +13,7 @@
  * runs.
  */
 import { createHash } from "node:crypto";
-import type { GitInfo } from "./files.js";
+import type { GitInfo, GitOptions } from "./files.js";
 import { runGit } from "./files.js";
 
 /** Characters a commit id may contain: it becomes part of a file name (`index-<commit>.json`). */
@@ -37,22 +37,19 @@ export function workingTreeId(files: readonly { path: string; hash: string }[]):
 }
 
 /** Short (7 char) HEAD of the work tree at `cwd`, or undefined (no git, no commits). */
-export async function shortHead(cwd: string): Promise<string | undefined> {
-  const out = await runGit(cwd, ["rev-parse", "HEAD"]);
+export async function shortHead(cwd: string, options?: GitOptions): Promise<string | undefined> {
+  const out = await runGit(cwd, ["rev-parse", "HEAD"], options);
   const head = out?.trim();
   return head && /^[0-9a-f]{7,}$/i.test(head) ? head.slice(0, 7).toLowerCase() : undefined;
 }
 
 /** True when nothing but `.explainer/` differs from HEAD (no modified, staged or untracked files). */
-export async function isWorkTreeClean(cwd: string): Promise<boolean> {
-  const out = await runGit(cwd, [
-    "status",
-    "--porcelain=v1",
-    "--ignore-submodules=all",
-    "--",
-    ".",
-    ":(exclude).explainer",
-  ]);
+export async function isWorkTreeClean(cwd: string, options?: GitOptions): Promise<boolean> {
+  const out = await runGit(
+    cwd,
+    ["status", "--porcelain=v1", "--ignore-submodules=all", "--", ".", ":(exclude).explainer"],
+    options,
+  );
   return out !== undefined && out.trim() === "";
 }
 
@@ -65,14 +62,15 @@ export interface CommitIdOptions {
   files: readonly { path: string; hash: string }[];
   /** Root directory of the index. */
   root: string;
+  gitOptions?: GitOptions;
 }
 
 export async function resolveCommitId(options: CommitIdOptions): Promise<string> {
   if (options.commit !== undefined && options.commit !== "")
     return validateCommitId(options.commit);
   const git = options.git;
-  if (git?.atToplevel && (await isWorkTreeClean(options.root))) {
-    const head = await shortHead(options.root);
+  if (git?.atToplevel && (await isWorkTreeClean(options.root, options.gitOptions))) {
+    const head = await shortHead(options.root, options.gitOptions);
     if (head) return head;
   }
   return workingTreeId(options.files);

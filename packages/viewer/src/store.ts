@@ -8,6 +8,8 @@
  */
 import {
   artifactIdentity,
+  applyPatch,
+  type ExplainerPatch,
   FEEDBACK_SCHEMA,
   parseFeedbackFile,
   parseFeedbackRequest,
@@ -48,6 +50,7 @@ import {
   type View,
   type ViewerBundle,
 } from "@xpl/core";
+import { snapshotTexts } from "./snapshot.js";
 import { messageOf, ServerApi, type LaunchParams } from "./data.js";
 import { changeAt, changeOf, hasBase } from "./diff.js";
 import { workspaceView } from "./workspace.js";
@@ -1035,6 +1038,35 @@ export class ViewerStore {
       else this.set({ save: { status: "error", message: messageOf(firstError) } });
     })();
     await this.saving;
+  }
+
+  /** Bind the author action to the inspected snapshot, never regenerate its fingerprint at save time. */
+  async recordReview(snapshot: ViewerBundle, review: ExplainerPatch["review"]): Promise<void> {
+    await this.flush();
+    if (this.api && (this.state.dirty || this.state.save.status === "error"))
+      throw new Error("Save the pending edits before recording a review.");
+    const current = this.state.explainer;
+    const result = applyPatch(
+      current,
+      { review },
+      this.indexModel,
+      snapshotTexts({ ...snapshot, explainer: current }),
+      { actor: "user" },
+    );
+    if (!result.ok)
+      throw new Error(
+        result.issues.find((i) => i.severity === "error")?.message ?? "Review rejected.",
+      );
+    if (this.api) {
+      await this.api.putReview(review);
+      const bundle = await this.api.bundle();
+      if (!this.adoptExplainer(bundle.explainer, bundle)) {
+        // Preserve edits made during the request. They may invalidate the newly stored record.
+        const explainer = { ...this.state.explainer, review: bundle.explainer.review };
+        this.set({ explainer, model: this.modelOf(explainer) });
+      }
+    } else
+      this.set({ explainer: result.explainer, model: this.modelOf(result.explainer), dirty: true });
   }
 
   // ─── Tour edits (Explore): persisted like view edits ─────────────────────────────────────────

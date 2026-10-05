@@ -727,6 +727,39 @@ nothing linted: fix the patch, then run `xpl lint --patch` again
 
 A flow step is named with its view (`host-check:1 (step in view:host-check)`). `--json`: `{ok, path, patch?, changed?, protectedIds?, strict, checked, total, counts: {<rule>: n}, findings: [{rule, severity?, elementId, kind: explainer|tour|tour-step|view|step|node|edge|concept, view?, field, quote, message, hint, ids?}]}` (`ok` is false when the exit code is 1: a finding (with `--warn-only`, a `todo-left` error), or a rejected patch, which gives `{ok: false, path, patch, changed: [], issues, error}` as `apply` does; `field` is `title`, `summary`, `note`, `note heading`, `label`, `detail`, `steps` for the order checks, `code` for `far-ranges`, `change` for `change-not-shown`, `include` or `hidden` for the map checks; `strict` is false with `--warn-only`; `view` names the map of a `tour-covers-map` finding; `ids` lists the boxes, files or edges a finding is about).
 
+## `xpl pr prepare <url|owner/repo#number|owner/repo> [number]`
+
+Prepare GitHub.com PR input with existing `gh` and git access:
+
+```sh
+xpl pr prepare https://github.com/owner/repo/pull/42 --cache-dir /absolute/pr-cache --json
+xpl pr prepare owner/repo 42 --cache-dir /absolute/pr-cache --precise off
+xpl pr cleanup /absolute/pr-cache/input-XXXXXX --cache-dir /absolute/pr-cache
+```
+
+Storage defaults to `$XDG_CACHE_HOME/xpl/pr` or `~/.cache/xpl/pr`, outside the developer checkout.
+Each run resolves the API base/head full SHAs and fetches a separate detached head. The base repository's
+PR ref can supply an inaccessible/deleted fork, but the resolved exact head must exist after fetch;
+a ref that moved to another commit is not substituted. Only head is indexed. `--precise off` is the default;
+`auto`/`require` explicitly opt into optional analysis tools. No developer branch, index, refs or files change.
+Inherited Git directory/work-tree/index overrides are removed from the owned Git context, which is passed
+through indexing, diff computation and source reads. Checkout bytes must match the raw head blobs before
+indexing. A configured smudge, encoding or line-ending conversion that changes content fails preparation
+and removes staging; disable that conversion for the PR run before retrying.
+
+JSON output gives `directory`, `repository`, `manifestPath` and `pr` identity. The immutable `input.json`
+records `schemaVersion: 1`, `kind: "github-pr-input"`, preparation time, PR identity, the rename-aware
+API base..head change, changed-file before/after source, head analysis and warnings. Text is read from
+the exact git commits; added-before and deleted-after sides are absent, and binary/unreadable sides have
+an explicit unavailable reason. Index metadata carries the full head, relative index path, SHA-256,
+file hashes and trust labels. Callers and tests describe head analysis only.
+
+This prepares input, not an explanation or ready result. No agent is invoked, and no freshness/supersession
+recheck or current-version promotion occurs. Keep old inputs as historical snapshots. Failures remove
+the failed staging directory; a killed process can leave a marked input for explicit cleanup. Cleanup
+refuses unowned paths and symlinks; stop consumers first. GitHub access/fetch/index failures exit 1;
+bad arguments exit 2. No credentials are created and nothing is written to GitHub.
+
 ## `xpl change <explainer> [<base>..<head>]`
 
 Records the change an explainer is about, from git, and prints what it touches. Run it once, at the start of explaining a PR or MR, on a checkout of the head with the index built (`xpl index`). Nothing is written to the repository.
@@ -829,7 +862,7 @@ $ xpl view jobrunner --no-open --port 0
 serving .explainer/jobrunner.explainer.json at http://127.0.0.1:34971/  (Ctrl-C to stop)
 ```
 
-API (for scripts): `GET /api/bundle`, `GET /api/export` (current complete export snapshot and shared readiness report), `GET /api/explainer` (the explainer with its anchors re-resolved, with an `ETag`; what the page polls), `GET /api/file?path=`, `GET /api/base-file?path=` (the code before the recorded change of a modified, renamed or deleted file), `PUT /api/views/<id>`, `PUT /api/tours/<id>`, `GET|POST /api/requests`.
+API (for scripts): `GET /api/bundle`, `GET /api/export` (current complete export snapshot and shared readiness report), `GET /api/explainer` (the explainer with its anchors re-resolved, with an `ETag`; what the page polls), `GET /api/file?path=`, `GET /api/base-file?path=` (the code before the recorded change of a modified, renamed or deleted file), `PUT /api/views/<id>`, `PUT /api/tours/<id>`, `PUT /api/review` (bounded author review user patch), `GET|POST /api/requests`.
 
 ## `xpl service <start|stop|status> [explainer] [--background] [--port p] [--backend none|claude] [--recover]`
 
@@ -872,15 +905,16 @@ offline** for manual edits, browser feedback and embedded-snapshot HTML export. 
 the original address; **Edit → Retry save** persists queued offline edits. Export/import offline feedback
 explicitly. Manual iteration and offline HTML work with the service stopped; durable jobs are follow-up work.
 
-## `xpl ready <explainer> [--note reason]`
+## `xpl ready <explainer> [--note reason] [--require-review]`
 
 Checks strict structure/references, workspace/index freshness, required text (visible summaries and guide
 content), source availability and reader lint. Errors block ready export; warnings invite author judgment.
 `--note "reason"` records an intentional omission or warning decision, without overriding errors. Pass the
-same note to `bundle` to keep it in HTML. This check needs no service or reviewer record and writes nothing.
+same note to `bundle` to keep it in HTML. This check writes nothing and needs no service; ordinary checks
+require no reviewer record.
 
 `--json` emits `{ok, ready, scope: "workspace", identity: {explainerHash, sourceHash}, errors, warnings,
-findings: [{severity, code, elementId, field, message, hint}], decisionNote?}`. Exit 0 ready (warnings allowed),
+findings: [{severity, code, elementId, field, message, hint}], review: {status, required}, decisionNote?}`. Exit 0 ready (warnings allowed),
 1 blockers/failure, 2 usage. Bundle failures include this report as `readiness`. The identity function lives in
 core `readiness.ts`; explanation content/provenance/anchors/index metadata change `explainerHash`, while
 indexed file path/hash changes or change base/head SHAs change `sourceHash`. HTML, launch mode, server URL,
@@ -891,7 +925,18 @@ HTML uses the same check, fetching current source at the final click under `xpl 
 only embedded source; they cannot detect later repository changes. Findings and author decisions stay in the
 saved snapshot's `exportInfo: {status: "ready" | "draft", report}`.
 
-## `xpl bundle <explainer> -o out.html [--mode explore|present] [--tour id] [--files referenced|boundary|all] [--boundary-max n] [--embed-index full|pruned] [--draft] [--note reason] [--allow-drift]`
+Review state is `unchecked`, `reviewed` or `out-of-date`, independently of anchor status. Ordinary readiness
+has no reviewer requirement. `--require-review` explicitly requires a current author record with
+`scope.content: "all"` and its chosen evidence scope; a narrow or outdated record adds `review-required`.
+Use the same flag with `bundle`. Named omissions remain visible and do not override other errors.
+
+The author records through Edit > Record author review in live or offline pages. Names are self-reported,
+not authenticated. The inspected fingerprint is checked again as a user patch; LLM patches cannot record or
+remove reviews. Selected IDs cover those stored records and their own anchors, not dependencies. Repository
+scope and named whole files widen evidence and are included in exports. The Save as HTML team policy
+checkbox is off by default and retains its explicit choice for offline re-saves.
+
+## `xpl bundle <explainer> -o out.html [--mode explore|present] [--tour id] [--files referenced|boundary|all] [--boundary-max n] [--embed-index full|pruned] [--draft] [--note reason] [--require-review] [--allow-drift]`
 
 Ready output refuses a stale index, including with `--allow-drift` or `XPL_SKIP_STALE_CHECK=1`. Reindex and resolve
 first. `--allow-drift` only permits drift against a current index. Generated XPL HTML pages are excluded

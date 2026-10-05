@@ -4,18 +4,24 @@ import { describeReadiness, workspaceReadiness } from "../readiness.js";
 
 export const readyCommand: CommandSpec = {
   name: "ready",
-  usage: "xpl ready <explainer> [--note <reason>]",
+  usage: "xpl ready <explainer> [--note <reason>] [--require-review]",
   summary: "Check source links, required content and reader findings before export",
   details: [
+    "Review state is reported separately. --require-review opts into a team policy requiring a current",
+    "author review of all stored content and its scoped evidence; the default has no review requirement.",
     "Combines strict validation, working-tree/index freshness, required summaries/story text and reader lint.",
     "Errors block ready HTML; warnings invite author judgment. --note records intentional omissions or warning",
     "decisions in the report, without overriding errors. Add the same note to bundle to preserve it in HTML.",
     "Each finding names the element, field, code, message and repair hint. --json emits ReadinessReport.",
     "Source checks verify locations and freshness, not prose truth or every runtime path. Offline re-saves",
-    "check only embedded source; this command checks the current workspace. No service or reviewer required.",
+    "check only embedded source; this command checks the current workspace. Ordinary checks need no reviewer.",
     "Exit codes: 0 ready (warnings allowed), 1 blockers or failure, 2 usage error. Nothing is written.",
   ],
   options: {
+    "require-review": {
+      type: "boolean",
+      desc: "Team policy: require a current author review of all stored content",
+    },
     note: {
       type: "string",
       arg: "<reason>",
@@ -28,6 +34,7 @@ export const readyCommand: CommandSpec = {
       ctx,
       loadExplainer(ctx, args.positionals[0]!),
       args.str("note"),
+      args.flag("require-review"),
     );
     if (ctx.json) ctx.emit({ ok: report.ready, ...report });
     else ctx.out(describeReadiness(report));

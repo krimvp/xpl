@@ -13,6 +13,7 @@ import { ExplainerModel } from "./model.js";
 import type { Explainer, SymbolIndex } from "./schema.js";
 import { referencedFiles } from "./source-files.js";
 import { hashText } from "./text.js";
+import { checkReview } from "./review.js";
 import { validateExplainer } from "./validate.js";
 
 export interface ArtifactIdentity {
@@ -75,6 +76,8 @@ export interface ReadinessReport {
   errors: number;
   warnings: number;
   findings: ReadinessFinding[];
+  /** Absent in legacy reports; freshly checked reports always include this state. */
+  review?: ReturnType<typeof checkReview> & { required: boolean };
   /** Author's explanation of intentional omissions or warnings; never overrides blockers. */
   decisionNote?: string;
 }
@@ -84,6 +87,8 @@ export interface ReadinessOptions {
   /** CLI compares all discovered working-tree file hashes, including added/deleted files. */
   sourceWarning?: string;
   decisionNote?: string;
+  /** Explicit team policy: require a current review of all stored explanation content. */
+  requireReview?: boolean;
 }
 
 function hasText(value: unknown): value is string {
@@ -298,11 +303,28 @@ export function checkReadiness(
       hint: finding.hint,
     });
   }
+  const review = {
+    ...checkReview(explainer, index, texts),
+    required: options.requireReview === true,
+  };
+  if (
+    review.required &&
+    (review.status !== "reviewed" || explainer.review?.scope.content !== "all")
+  )
+    findings.push({
+      severity: "error",
+      code: "review-required",
+      elementId: "(explainer)",
+      field: "review",
+      message: "Team policy requires a current author review of all stored explanation content.",
+      hint: "Inspect the content and evidence, then record an all-content review from Edit, or explicitly turn off the optional policy.",
+    });
   const errors = findings.filter((f) => f.severity === "error").length;
   return {
     ready: errors === 0,
     scope: options.scope,
     identity: artifactIdentity(explainer, index),
+    review,
     errors,
     warnings: findings.length - errors,
     findings,

@@ -106,9 +106,12 @@ function describeIndex(e: EmbeddedIndex): string {
 export const bundleCommand: CommandSpec = {
   name: "bundle",
   usage:
-    "xpl bundle <explainer> -o out.html [--mode explore|present] [--tour id] [--files referenced|boundary|all] [--boundary-max n] [--embed-index full|pruned] [--draft] [--note reason] [--allow-drift]",
+    "xpl bundle <explainer> -o out.html [--mode explore|present] [--tour id] [--files referenced|boundary|all] [--boundary-max n] [--embed-index full|pruned] [--draft] [--note reason] [--require-review] [--allow-drift]",
   summary: "Check readiness, then write one self-contained HTML file",
   details: [
+    "Review state is reported separately. --require-review opts into a team policy requiring a current",
+    "author review of all stored content and its scoped evidence; the default has no review requirement.",
+    "Source files explicitly covered by a review are embedded too, so its evidence remains available offline.",
     "Runs the shared xpl ready check before writing: unfinished required text, structural errors, stale indexes",
     "and broken source links block ready output (exit 1; no output written). Reader warnings are reported.",
     "--draft explicitly writes a draft preview with its findings. --note records justified omissions or warning",
@@ -154,6 +157,10 @@ export const bundleCommand: CommandSpec = {
     draft: {
       type: "boolean",
       desc: "Write an explicitly labelled draft preview, even with readiness errors",
+    },
+    "require-review": {
+      type: "boolean",
+      desc: "Team policy: require a current author review of all stored content",
     },
     note: {
       type: "string",
@@ -223,6 +230,7 @@ export const bundleCommand: CommandSpec = {
       ctx,
       loaded,
       args.str("note"),
+      args.flag("require-review"),
     );
     const draft = args.flag("draft") || args.flag("allow-drift");
     if (ws.stale && !args.flag("draft")) {

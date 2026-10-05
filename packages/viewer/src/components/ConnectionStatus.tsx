@@ -41,7 +41,11 @@ export function ConnectionStatus() {
             {attachment.backend === "claude" ? " (Claude selected)" : " (none selected)"}. No agent
             is configured. Use <code>xpl apply</code> for a manual revision.
           </p>
-          {message && <p>{message}</p>}
+          {message && (
+            <p title={status === "disconnected" ? message : undefined}>
+              {status === "disconnected" ? "Could not reach the xpl service." : message}
+            </p>
+          )}
         </details>
       )}
       <div className="connection-actions">

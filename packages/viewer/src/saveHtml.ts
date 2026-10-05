@@ -11,8 +11,8 @@
 import {
   BUNDLE_SCRIPT_ID,
   checkReadiness,
-  TextCache,
-  basePathOf,
+  reviewSourceFiles,
+  type ReviewScope,
   type ReadinessReport,
   type ReadinessOptions,
   type ViewerBundle,
@@ -20,6 +20,7 @@ import {
   parseBundle,
   serializeBundle,
 } from "@xpl/core";
+import { snapshotTexts } from "./snapshot.js";
 import type { ViewerStore } from "./store.js";
 import { ServerApi } from "./data.js";
 
@@ -49,14 +50,7 @@ export function snapshotReadiness(
   bundle: ViewerBundle,
   options: ReadinessOptions,
 ): ReadinessReport {
-  const texts = new TextCache(
-    (path) => bundle.files[path],
-    (commit, path) => {
-      if (commit !== bundle.explainer.change?.base) return undefined;
-      const file = bundle.explainer.change.files.find((f) => basePathOf(f) === path);
-      return file ? bundle.baseFiles?.[file.path] : undefined;
-    },
-  );
+  const texts = snapshotTexts(bundle);
   return checkReadiness(bundle.explainer, bundle.index, texts, {
     ...options,
     ...(bundle.sourceWarning ? { sourceWarning: bundle.sourceWarning } : {}),
@@ -64,7 +58,10 @@ export function snapshotReadiness(
 }
 
 /** A live save refreshes referenced and previously loaded source after persisting pending edits. */
-export async function prepareHtmlSave(store: ViewerStore): Promise<ViewerBundle> {
+export async function prepareHtmlSave(
+  store: ViewerStore,
+  reviewScope?: ReviewScope,
+): Promise<ViewerBundle> {
   const script = page?.root.querySelector(`#${BUNDLE_SCRIPT_ID}`);
   if (!script) throw new Error("This page has no embedded snapshot to save.");
   const original = parseBundle(script.textContent ?? "");
@@ -81,7 +78,12 @@ export async function prepareHtmlSave(store: ViewerStore): Promise<ViewerBundle>
     const indexed = new Set(bundle.index.files.map(({ path }) => path));
     // Keep loaded paths, never their old text: /export already refreshes the referenced source.
     await Promise.all(
-      Object.keys(state.files)
+      [
+        ...new Set([
+          ...Object.keys(state.files),
+          ...(reviewScope ? reviewSourceFiles(reviewScope, bundle.index) : []),
+        ]),
+      ]
         .filter((path) => indexed.has(path) && !(path in bundle.files))
         .map(async (path) => {
           bundle.files[path] = await api.file(path);

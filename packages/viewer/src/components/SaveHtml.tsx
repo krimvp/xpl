@@ -13,13 +13,18 @@ export function SaveHtml({
 }) {
   const store = useStore();
   const dialog = useRef<HTMLDialogElement>(null);
+  const snapshot = useRef<ViewerBundle>(undefined);
+  const [requireReview, setRequireReview] = useState(
+    store.getState().exportInfo?.report.review?.required ?? false,
+  );
   const [report, setReport] = useState<ReadinessReport>();
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(true);
   const [note, setNote] = useState("");
   const scope = store.getState().serverMode ? "workspace" : "embedded-snapshot";
   const inspect = (bundle: ViewerBundle, decisionNote = note) => {
-    const checked = snapshotReadiness(bundle, { scope, decisionNote });
+    snapshot.current = bundle;
+    const checked = snapshotReadiness(bundle, { scope, decisionNote, requireReview });
     setReport(checked);
     return checked;
   };
@@ -29,9 +34,12 @@ export function SaveHtml({
     prepareHtmlSave(store)
       .then((bundle) => {
         if (active) {
+          snapshot.current = bundle;
           const previousNote = bundle.exportInfo?.report.decisionNote ?? "";
           setNote(previousNote);
-          setReport(snapshotReadiness(bundle, { scope, decisionNote: previousNote }));
+          setReport(
+            snapshotReadiness(bundle, { scope, decisionNote: previousNote, requireReview }),
+          );
         }
       })
       .catch((cause: unknown) => {
@@ -56,7 +64,7 @@ export function SaveHtml({
       const name = htmlFileName(bundle.explainer).replace(/\.draft(?=\.html?$)/i, "");
       onDownload(
         draft ? name.replace(/\.html?$/i, ".draft.html") : name,
-        savedPage(bundle, { scope, draft, decisionNote: note }),
+        savedPage(bundle, { scope, draft, decisionNote: note, requireReview }),
       );
       onClose();
     } catch (cause) {
@@ -83,6 +91,30 @@ export function SaveHtml({
         Source links and required text are checked. Prose claims and complete runtime coverage need
         author judgment.
       </p>
+      <label>
+        <input
+          type="checkbox"
+          checked={requireReview}
+          disabled={busy}
+          onChange={(event) => {
+            const required = event.target.checked;
+            setRequireReview(required);
+            if (snapshot.current)
+              setReport(
+                snapshotReadiness(snapshot.current, {
+                  scope,
+                  decisionNote: note,
+                  requireReview: required,
+                }),
+              );
+          }}
+        />{" "}
+        Require a current review of all stored content (team policy)
+      </label>
+      <p>
+        Optional and off by default. Named omissions remain author judgment. Turning it on requires
+        a current all-content inspection, without changing source or text checks.
+      </p>
       {busy && <p role="status">Checking readiness…</p>}
       {error && <p role="alert">{error}</p>}
       {report && (
@@ -90,6 +122,12 @@ export function SaveHtml({
           <p data-testid="readiness-summary">
             <strong>{report.ready ? "Ready" : "Not ready"}</strong>: {report.errors} errors,{" "}
             {report.warnings} warnings.
+          </p>
+          <p data-testid="save-review-status">
+            Author review:{" "}
+            {report.review?.status === "out-of-date"
+              ? "out of date"
+              : (report.review?.status ?? "unchecked")}
           </p>
           <ul className="readiness-findings">
             {report.findings.map((finding, i) => (

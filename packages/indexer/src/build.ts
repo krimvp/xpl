@@ -25,6 +25,7 @@ import type {
 import pkg from "../package.json" with { type: "json" };
 import { resolveCommitId, validateCommitId } from "./commit.js";
 import { FILE_LANGUAGES, detectGit, discoverFiles, readSource } from "./files.js";
+import type { GitOptions } from "./files.js";
 import { FileHasher } from "./hash.js";
 import { packForFile } from "./languages/index.js";
 import type { LanguagePack } from "./languages/types.js";
@@ -48,6 +49,8 @@ import type { ProviderInput, ProviderSource } from "./providers.js";
 export interface BuildIndexOptions {
   /** Directory to index; paths in the index are relative to it. */
   root: string;
+  /** Git subprocess context for an isolated owned checkout; omitted for ordinary workspace indexing. */
+  gitOptions?: GitOptions;
   /** Reuse file-local extraction in .explainer/cache. false neither reads nor writes the cache. */
   cache?: boolean;
   /** Off-default, in-memory TypeScript heuristic investigation; not used by the CLI. */
@@ -181,8 +184,12 @@ export async function buildIndex(opts: BuildIndexOptions): Promise<BuildIndexRes
   const warnings: string[] = [];
 
   // 1. Discover files.
-  const git = await detectGit(root);
-  const discovery = await discoverFiles(root, { git, languages: languageFilter });
+  const git = await detectGit(root, opts.gitOptions);
+  const discovery = await discoverFiles(root, {
+    git,
+    languages: languageFilter,
+    gitOptions: opts.gitOptions,
+  });
   warnings.push(...discovery.warnings);
 
   const sources: ProviderSource[] = [];
@@ -429,7 +436,13 @@ export async function buildIndex(opts: BuildIndexOptions): Promise<BuildIndexRes
   refs.sort(compareRefs);
 
   // 5. Commit id, language summary, tool string.
-  const commit = await resolveCommitId({ commit: opts.commit, git, files, root });
+  const commit = await resolveCommitId({
+    commit: opts.commit,
+    git,
+    files,
+    root,
+    gitOptions: opts.gitOptions,
+  });
   const languages = summarizeLanguages(files, entries, usedPacks, preciseTools, keptHeuristicFiles);
   const tool =
     `xpl-indexer@${pkg.version} web-tree-sitter@${pkg.dependencies["web-tree-sitter"]} ${grammarVersions(usedPacks).join(" ")}`.trim();
