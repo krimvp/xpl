@@ -923,8 +923,12 @@ or authentication. Later Claude jobs need their configured authentication and pr
 After a crash, inspect artifacts and use `xpl service start --recover`. It archives the interrupted owner
 record and preserves the last valid index/explanation. A live unverified PID is never replaced, and a
 crashed writer lock must be inspected and removed explicitly; no lock is stolen because it is old.
-Viewer connection/backend controls and durable jobs are follow-ups. `view`, manual iteration and offline
-HTML export/reading work independently while this service is stopped.
+The viewer shows its connection and unavailable backend below the header. Repository/guide bookmarks
+and API requests refuse another attachment at the same address. Restart reuses saved context and refreshes
+the open page's instance while keeping navigation and unsaved edits. After stop, choose **Use loaded snapshot
+offline** for manual edits, browser feedback and embedded-snapshot HTML export. **Retry connection** resumes
+the original address; **Edit → Retry save** persists queued offline edits. Export/import offline feedback
+explicitly. Manual iteration and offline HTML work with the service stopped; durable jobs are follow-up work.
 
 ## `xpl ready <explainer> [--note reason] [--require-review]`
 

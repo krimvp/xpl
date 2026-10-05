@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { reviewFingerprint, type ReviewScope } from "@xpl/core";
+import { ServerApi } from "../src/data.js";
 import { ViewerStore } from "../src/store.js";
 import { makeBundle, TEXTS } from "./world.js";
 
@@ -235,6 +237,276 @@ describe("under xpl view (server mode)", () => {
 
   const body = (i: number) => JSON.parse(String(calls[i]!.init!.body)) as Record<string, unknown>;
 
+  it("binds review saves to the loaded repository and guide", async () => {
+    const api = new ServerApi("/api", {
+      root: "/repos/jobrunner",
+      guide: ".explainer/demo.explainer.json",
+      instanceId: "first",
+      backend: "none",
+      backendAvailable: false,
+    });
+    await api.putReview(null);
+    expect(calls.map(({ url, init }) => ({ url, method: init?.method }))).toEqual([
+      { url: "/api/review", method: "PUT" },
+    ]);
+    expect(body(0)).toEqual({ review: null });
+    const header = new Headers(calls[0]!.init?.headers).get("X-Xpl-Attachment");
+    expect(header === null ? null : JSON.parse(decodeURIComponent(header))).toEqual({
+      root: "/repos/jobrunner",
+      guide: ".explainer/demo.explainer.json",
+    });
+  });
+
+  it("detects a stopped attachment with unsaved edits, supports offline feedback, and retries the same guide", async () => {
+    const bundle = makeBundle({ server: { api: "/api" } });
+    bundle.server!.attachment = {
+      root: "/repos/jobrunner",
+      guide: ".explainer/demo.explainer.json",
+      instanceId: "first",
+      backend: "claude",
+      backendAvailable: false,
+    };
+    const store = new ViewerStore(bundle);
+    store.select(["concept:retry"]);
+    const fresh = () =>
+      new Response(JSON.stringify(bundle), { headers: { "content-type": "application/json" } });
+    respond = (url) =>
+      url === "/api/bundle"
+        ? fresh()
+        : new Response(JSON.stringify(bundle.explainer), { headers: { etag: '"first"' } });
+    const stop = store.watchExplainer(1000);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(store.getState().connection.status).toBe("connected");
+    store.toggleEdgeKind("reads");
+    respond = () => {
+      throw new TypeError("Failed to fetch");
+    };
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(store.getState().connection.status).toBe("disconnected");
+    expect(store.getState().dirty).toBe(true);
+    store.useOfflineSnapshot();
+    expect(store.getState().serverMode).toBe(false);
+    store.setStubMode("none");
+    await expect(store.requestExplain("concept:retry", "Offline note")).resolves.toBe("command");
+    const before = calls.length;
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(calls).toHaveLength(before);
+    bundle.server!.attachment.instanceId = "restarted";
+    respond = (url) =>
+      url === "/api/bundle"
+        ? fresh()
+        : new Response(JSON.stringify(bundle.explainer), { headers: { etag: '"restarted"' } });
+    await store.reconnect();
+    expect(store.getState().connection.status).toBe("connected");
+    expect(store.getState().connection.attachment?.instanceId).toBe("restarted");
+    expect(store.getState().selection).toEqual(["concept:retry"]);
+    expect(store.getState().dirty).toBe(true);
+    expect(JSON.parse(store.feedbackJson()).requests[0].note).toBe("Offline note");
+    const header = new Headers(calls.at(-1)!.init!.headers).get("X-Xpl-Attachment")!;
+    expect(JSON.parse(decodeURIComponent(header))).toEqual({
+      root: "/repos/jobrunner",
+      guide: ".explainer/demo.explainer.json",
+    });
+    await store.flush();
+    expect(store.getState().dirty).toBe(false);
+    expect(JSON.parse(String(calls.at(-1)!.init!.body))).toMatchObject({
+      stubs: { mode: "none" },
+      edgeKinds: ["calls", "extends", "implements", "reads"],
+    });
+    stop();
+  });
+
+  it("refuses a changed guide in a refreshed bundle and keeps polling a managed unavailable service", async () => {
+    const bundle = makeBundle({
+      server: {
+        api: "/api",
+        attachment: {
+          root: "/repos/jobrunner",
+          guide: ".explainer/demo.explainer.json",
+          instanceId: "first",
+          backend: "none",
+          backendAvailable: false,
+        },
+      },
+    });
+    const store = new ViewerStore(bundle);
+    const changed = structuredClone(bundle);
+    changed.server!.attachment!.guide = ".explainer/other.explainer.json";
+    changed.explainer.title = "Another guide";
+    respond = (url) =>
+      new Response(JSON.stringify(url === "/api/bundle" ? changed : changed.explainer));
+    const stop = store.watchExplainer(1000);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(store.getState().connection.status).toBe("unavailable");
+    expect(store.getState().explainer.title).toBe(bundle.explainer.title);
+    respond = () => new Response("temporarily missing", { status: 404 });
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(store.getState().connection.status).toBe("unavailable");
+    respond = (url) =>
+      new Response(JSON.stringify(url === "/api/bundle" ? bundle : bundle.explainer));
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(store.getState().connection.status).toBe("connected");
+    stop();
+  });
+
+  it.each(["single", "tour", "newer view edit"] as const)(
+    "reconciles an in-flight save across offline mode with %s pending",
+    async (remaining) => {
+      const store = graphStore(true);
+      store.setStubMode("none");
+      if (remaining === "tour") store.addToTour({ title: "Offline boundary" });
+      let finish!: (response: Response) => void;
+      respond = () =>
+        new Promise<Response>((resolve) => {
+          finish = resolve;
+        });
+      const saving = store.flush();
+      expect(calls.map(({ url }) => url)).toEqual(["/api/views/view:overview"]);
+      store.useOfflineSnapshot();
+      if (remaining === "newer view edit") store.setStubMode("all");
+      respond = () => new Response("{}", { status: 200 });
+      finish(new Response("{}", { status: 200 }));
+      await saving;
+      expect(calls.map(({ url }) => url)).toEqual(["/api/views/view:overview"]);
+      expect(store.getState().dirty).toBe(remaining !== "single");
+      expect(store.getState().connection.status).toBe("offline");
+      expect(store.getState().save.status).toBe(remaining === "single" ? "saved" : "idle");
+      if (remaining === "single") {
+        expect(store.adoptExplainer(makeBundle().explainer)).toBe(true);
+        const bundle = makeBundle({ server: { api: "/api" } });
+        respond = (url) =>
+          new Response(JSON.stringify(url === "/api/bundle" ? bundle : bundle.explainer));
+        await store.reconnect();
+        expect(store.getState().dirty).toBe(false);
+        expect(store.getState().save.status).toBe("saved");
+      }
+    },
+  );
+
+  it.each([
+    ["addition", false],
+    ["addition", true],
+    ["removal", false],
+    ["removal", true],
+  ] as const)(
+    "retries an offline review %s alongside queued view edits: %s",
+    async (action, edit) => {
+      const bundle = makeBundle({ server: { api: "/api" } });
+      const scope: ReviewScope = { content: ["concept:retry"], source: "anchored" };
+      const review = {
+        reviewer: "Offline reader",
+        reviewedAt: "2026-10-05T06:00:00Z",
+        scope,
+        omissions: [],
+        fingerprint: reviewFingerprint(
+          bundle.explainer,
+          bundle.index,
+          (file) => bundle.files[file],
+          scope,
+        ),
+      };
+      if (action === "removal")
+        bundle.explainer.review = { ...review, sourceCommit: bundle.index.commit };
+      const store = new ViewerStore(structuredClone(bundle));
+      const stop = store.watchExplainer(1000);
+      store.useOfflineSnapshot();
+      if (edit) store.setStubMode("none");
+      await store.recordReview(
+        { ...bundle, explainer: store.getState().explainer },
+        action === "removal" ? null : review,
+      );
+      expect(store.getState().dirty).toBe(true);
+      expect(store.getState().explainer.review?.reviewer).toBe(
+        action === "removal" ? undefined : "Offline reader",
+      );
+      let refuse = true;
+      respond = (url, init) => {
+        if (url === "/api/review") {
+          if (refuse)
+            return new Response(JSON.stringify({ error: "Review must be inspected again." }), {
+              status: 409,
+            });
+          const saved = JSON.parse(String(init?.body)).review;
+          if (saved === null) delete bundle.explainer.review;
+          else bundle.explainer.review = { ...saved, sourceCommit: bundle.index.commit };
+          return new Response("{}");
+        }
+        return new Response(JSON.stringify(url === "/api/bundle" ? bundle : bundle.explainer));
+      };
+      await store.reconnect();
+      await store.flush();
+      expect(calls.filter(({ url }) => url === "/api/review")).toHaveLength(1);
+      expect(store.getState().dirty).toBe(true);
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(store.getState().explainer.review?.reviewer).toBe(
+        action === "removal" ? undefined : "Offline reader",
+      );
+      refuse = false;
+      await store.flush();
+      const reviews = calls.filter(({ url }) => url === "/api/review");
+      expect(reviews).toHaveLength(2);
+      expect(JSON.parse(String(reviews[1]!.init!.body))).toEqual({
+        review: action === "removal" ? null : review,
+      });
+      expect(store.getState().dirty).toBe(false);
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(store.getState().explainer.review?.reviewer).toBe(
+        action === "removal" ? undefined : "Offline reader",
+      );
+      stop();
+    },
+  );
+
+  it("a refused live review leaves concurrent failed edits retryable", async () => {
+    const bundle = makeBundle({ server: { api: "/api" } });
+    const scope: ReviewScope = { content: "all", source: "anchored" };
+    const review = {
+      reviewer: "Live reader",
+      reviewedAt: "2026-10-05T06:00:00Z",
+      scope,
+      omissions: [],
+      fingerprint: reviewFingerprint(
+        bundle.explainer,
+        bundle.index,
+        (file) => bundle.files[file],
+        scope,
+      ),
+    };
+    const store = new ViewerStore(bundle);
+    let finish!: (response: Response) => void;
+    respond = () =>
+      new Promise<Response>((resolve) => {
+        finish = resolve;
+      });
+    const recording = store.recordReview(bundle, review);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(calls.map(({ url }) => url)).toEqual(["/api/review"]);
+    store.toggleEdgeKind("reads");
+    respond = () => new Response(JSON.stringify({ error: "View write refused." }), { status: 403 });
+    const refused = expect(recording).rejects.toThrow("inspect again");
+    finish(
+      new Response(JSON.stringify({ error: "Reviewed content changed; inspect again." }), {
+        status: 400,
+      }),
+    );
+    await refused;
+    expect(store.getState().explainer.review).toBeUndefined();
+    expect(store.getState().dirty).toBe(true);
+    expect(store.getState().save.status).toBe("error");
+    respond = () => new Response("{}");
+    await store.flush();
+    expect(calls.map(({ url }) => url)).toEqual([
+      "/api/review",
+      "/api/views/view:overview",
+      "/api/views/view:overview",
+    ]);
+    expect(body(2)).toEqual({
+      type: "graph",
+      edgeKinds: ["calls", "extends", "implements", "reads"],
+    });
+    expect(store.getState().dirty).toBe(false);
+  });
+
   it("persists view edits with PUT /views/<id>, coalescing quick edits into one request", async () => {
     const store = graphStore(true);
     store.expandStub({ ghost: GHOST_TARGET });
@@ -394,6 +666,11 @@ describe("under xpl view (server mode)", () => {
     respond = () => new Response("not found", { status: 404, statusText: "Not Found" });
     await vi.advanceTimersByTimeAsync(3000);
     expect(calls).toHaveLength(4);
+    // Explicit Retry still checks an older server; it must not remain "connecting" forever.
+    await store.reconnect();
+    expect(store.getState().connection.status).toBe("unavailable");
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(calls).toHaveLength(5);
     stop();
   });
 

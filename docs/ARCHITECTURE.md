@@ -1488,12 +1488,19 @@ which archives its record as `interrupted-<UUID>.json` before reserving another 
 never stolen on a timer: a crashed transaction requires explicit inspection/removal of its lock directory.
 An unexpected exit leaves the last valid index/explainer and interrupted instance record intact.
 
-This is lifecycle/context only (38A). Backend selection is a persisted label, with jobs unavailable;
-there is no agent execution, watching or job completion state. Local serving needs no provider network or
-credentials. A later configured Claude runner needs its own authentication and provider access. Viewer
-attachment/reconnect/backend availability belongs to 38B. Offline HTML and manual CLI commands remain
-independent of the service. The installed-artifact check exercises detached processes, saved-context
-restart, a real crash and explicit recovery, then manual export and disconnected reading after stop.
+Managed bundles add `server.attachment`: canonical root, repository-relative guide, instance UUID,
+backend selection and `backendAvailable: false`. Root/guide identify the attachment across restarts;
+the UUID identifies a process and participates in the workspace ETag. Every viewer API call sends
+`X-Xpl-Attachment` (URI-encoded root/guide JSON). The server rejects a different or unmanaged attachment
+with 409 before reads or writes. The page also preserves root/guide in its `attachment` URL query, checked
+before HTML injection, so a bookmark cannot silently open another guide on a reused port.
+
+Backend selection is a persisted label, with jobs unavailable; there is no agent execution, watching or
+job completion state. Local serving needs no provider network or credentials. A later configured Claude
+runner needs its own authentication and provider access. Offline HTML and manual CLI commands remain
+independent of the service. The installed-artifact check exercises detached processes, saved-context and
+same-page/bookmark restart, a real crash and explicit recovery, then manual export and blocked-network
+reading of an HTML snapshot saved from a stopped page.
 
 **Feedback contract** (`core/feedback.ts`): exports are `{schema: "code-explainer/feedback@1", requests}`.
 Each request has `id`, `elementId`, `kind` (`correct`, `explain`, `expand`), `at`, optional `note`, `view`,
@@ -1653,6 +1660,21 @@ notes, `detail`) is sanitised: raw HTML shows as text, images become their alt t
 mailto and in-page targets. Element and step summaries are rendered as inline markdown (`renderInline`: code
 spans, bold, emphasis); titles and labels are plain text. The page title is "<tour title> · xpl" while a tour
 is open (the Guide, Present), else "<explainer title> · xpl".
+
+**Connection** (`components/ConnectionStatus.tsx`): below the header, managed service pages report offline, connecting,
+connected, disconnected (network failure) or service unavailable (HTTP refusal). Managed pages name their
+guide; a disclosure shows root, last instance and backend unavailability. Existing two-second explainer
+polling also checks availability with unsaved edits; requests have a five-second deadline. A stopped or
+unavailable managed service keeps retrying the same address, never searches ports or changes roots.
+Unmanaged `xpl view` pages keep their existing layout without this strip. An unmanaged old server
+without `/explainer` stops polling on 404 for compatibility.
+
+**Use loaded snapshot offline** disables API reads/writes and polling, keeping loaded source, navigation,
+edits and browser feedback. Missing source says it is absent from the snapshot. Save as HTML uses embedded
+readiness and removes service metadata. **Retry connection** resumes the original scoped API; unsaved edits
+remain local until **Retry save**. View edits, tour edits and review additions/removals share one pending-write queue, including offline
+changes. Dirty state follows that queue. Writes stay pending while in flight; success removes only the
+write sent, preserving newer edits. Reconnect does not overwrite unsaved changes with server state. Browser feedback is exported/imported explicitly, never auto-submitted.
 
 **Three modes, one header.** **Read** is the default screen, for readers. **Explore** is the author's
 workbench. **Present** plays a tour as slides. The header is one row built the same way in each: the title,
@@ -1852,7 +1874,7 @@ anchors drifted or went missing (`xpl bundle --allow-drift`, or `xpl view`), a b
 them (`DriftBanner.tsx`), drifted lines are striped (`xpl-hl-drifted`) and the pane says "changed since". The
 scope's `audience` line shows under the Guide's title. Under `xpl view` the page polls `GET /api/explainer`
 every 2 s (ETag, 304 while unchanged) and shows what `xpl apply` wrote without a reload, keeping the view,
-step and selection as far as they still exist; not while edits made on the page are unsaved.
+step and selection as far as they still exist; workspace adoption waits while edits made on the page are unsaved, but connection status still updates.
 
 **Tours.** Edit → "Edit the guide's steps" opens the tour panel: add the current view and selection as a step
 to a tour, or to a new one (`tour:<slug of the title>`); edit each step's note (markdown), reorder, delete with
@@ -2191,7 +2213,7 @@ identities to syntax ranges. This is a proposed contract revision, not a change 
 - The layout runs on the main thread: laying out a very large graph blocks the page, so views
   should stay coarse (whole-repo views start at packages) and are expanded by hand.
 - Live refresh is polling-based: updates appear on the next poll while the page is visible and has no
-  unsaved edits. Source locations and reference edges need reindexing after source changes.
+  unsaved edits; connection checks continue with unsaved edits. Source locations and reference edges need reindexing after source changes.
 - Heuristic references are hints, and the limits are in §3: no overloads, generics, unions or narrowing;
   Python instance attributes are not linked. A precise index needs the tools: `npx` for
   TypeScript and Python, Go ≥ 1.25 (or the network for the automatic toolchain) for Go, and the first run

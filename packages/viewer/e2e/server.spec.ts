@@ -3,6 +3,7 @@
  * edits and queues explain requests over HTTP. The "server" is Playwright's request interception on a
  * fake origin; the requests recorded here are the contract `xpl view` has to serve.
  */
+import { readFileSync } from "node:fs";
 import { expect, test, type Page } from "@playwright/test";
 import {
   byId,
@@ -24,6 +25,7 @@ interface Recorded {
   posts: Record<string, unknown>[];
   /** Status PUT answers with; a test may change it while the page is open. */
   putStatus: number;
+  serviceStatus: number;
   tourStatus: number;
   /** What GET /api/explainer serves; until a test sets it, the explainer is unchanged (304). */
   explainer?: unknown;
@@ -35,6 +37,7 @@ async function serve(
   opts: {
     /** Files the page does not carry: served on demand by GET /api/file. */
     withheld?: string[];
+    managed?: boolean;
     putStatus?: number;
     tourStatus?: number;
     fileStatus?: number;
@@ -47,10 +50,24 @@ async function serve(
     withheld[path] = files[path]!;
     delete files[path];
   }
-  bundle.server = { api: "/api" };
+  bundle.server = {
+    api: "/api",
+    ...(opts.managed
+      ? {
+          attachment: {
+            root: "/repos/jobrunner",
+            guide: ".explainer/jobrunner.explainer.json",
+            instanceId: "first",
+            backend: "claude",
+            backendAvailable: false,
+          },
+        }
+      : {}),
+  };
   const recorded: Recorded = {
     files: [],
     puts: [],
+    serviceStatus: 200,
     tourPuts: [],
     posts: [],
     putStatus: opts.putStatus ?? 200,
@@ -61,6 +78,13 @@ async function serve(
     const url = new URL(request.url());
     if (url.pathname === "/") {
       return route.fulfill({ contentType: "text/html", body: withBundle(html, bundle) });
+    }
+    if (recorded.serviceStatus !== 200 && url.pathname.startsWith("/api/")) {
+      if (recorded.serviceStatus === 0) return route.abort("connectionrefused");
+      return route.fulfill({
+        status: recorded.serviceStatus,
+        body: "This address serves a different repository or guide.",
+      });
     }
     if (url.pathname === "/api/file" && request.method() === "GET") {
       const path = url.searchParams.get("path")!;
@@ -125,6 +149,16 @@ async function serve(
   await page.waitForFunction(() => window.__xpl !== undefined);
   return recorded;
 }
+
+test("plain view keeps the reader layout without managed service controls", async ({ page }) => {
+  await serve(page);
+  await expect(page.getByRole("button", { name: "Edit", exact: true })).toBeVisible();
+  await expect(byId(page, "grp:scheduling")).toBeVisible();
+  await expect.poll(async () => (await stateOf(page)).serverMode).toBe(true);
+  await expect(page.getByTestId("connection-status")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Use loaded snapshot offline" })).toHaveCount(0);
+  expect(new URL(page.url()).searchParams.has("attachment")).toBe(false);
+});
 
 test("files missing from the bundle are fetched from GET /api/file when they are needed", async ({
   page,
@@ -413,4 +447,54 @@ test("readers can find the limits of source verification beside the guide", asyn
   await info.locator("summary").click();
   await expect(info).toContainText("they do not verify the claims");
   await expect(info).toContainText("applied changes appear here automatically");
+});
+
+test("a managed page shows backend unavailability, refuses another service, and exports its loaded snapshot after stop", async ({
+  page,
+}) => {
+  const recorded = await serve(page, { managed: true });
+  const connection = page.getByTestId("connection-status");
+  await expect(connection).toHaveAttribute("data-status", "connected");
+  expect(JSON.parse(new URL(page.url()).searchParams.get("attachment")!)).toEqual({
+    root: "/repos/jobrunner",
+    guide: ".explainer/jobrunner.explainer.json",
+  });
+  await connection.getByText("Repository and backend").click();
+  await expect(connection).toContainText(
+    "Agent backend unavailable (Claude selected). No agent is configured.",
+  );
+  await page.evaluate(() => window.__xpl!.select(["concept:retry"]));
+  recorded.serviceStatus = 409;
+  await expect(connection).toHaveAttribute("data-status", "unavailable");
+  await expect(connection).toContainText("different repository or guide");
+  recorded.serviceStatus = 0;
+  await connection.getByRole("button", { name: "Retry connection" }).click();
+  await expect(connection).toHaveAttribute("data-status", "disconnected");
+  await connection.getByRole("button", { name: "Use loaded snapshot offline" }).click();
+  await expect(connection).toHaveAttribute("data-status", "offline");
+  await page.getByRole("button", { name: /^Feedback/ }).click();
+  const panel = page.getByRole("dialog", { name: "Reader feedback" });
+  await panel.getByLabel("Feedback note").fill("Manual revision after stop.");
+  await panel.getByRole("button", { name: "Save feedback", exact: true }).click();
+  await expect(panel.getByRole("status")).toContainText("Saved in this browser");
+  await panel.getByRole("button", { name: "Close feedback" }).click();
+  await openEditMenu(page);
+  await page.getByRole("menuitem", { name: "Save as HTML" }).click();
+  const dialog = page.getByRole("dialog", { name: "Save as HTML" });
+  await expect(dialog).toContainText("Checks only the embedded source snapshot");
+  await expect(page.getByTestId("save-html-draft")).toBeEnabled();
+  const downloading = page.waitForEvent("download");
+  await page.getByTestId("save-html-draft").click();
+  const output = readFileSync((await (await downloading).path())!, "utf8");
+  const data = JSON.parse(
+    /<script id="xpl-data" type="application\/json">([\s\S]*?)<\/script>/.exec(output)![1]!,
+  );
+  expect(data.server).toBeUndefined();
+  expect(data.exportInfo.report.scope).toBe("embedded-snapshot");
+  expect(data.feedback.requests[0].note).toBe("Manual revision after stop.");
+  expect(recorded.posts).toEqual([]);
+  recorded.serviceStatus = 200;
+  await connection.getByRole("button", { name: "Retry connection" }).click();
+  await expect(connection).toHaveAttribute("data-status", "connected");
+  await expect.poll(() => selectionOf(page)).toEqual(["concept:retry"]);
 });

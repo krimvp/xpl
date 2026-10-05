@@ -263,6 +263,8 @@ export const serviceCommand: CommandSpec = {
     "Status reports instance UUID, PID, address, root, guide and backend. Stop verifies a secret ownership",
     "token over loopback, never signals a PID. A dead owner is interrupted; --recover explicitly archives",
     "its record and starts another instance. A live unverified PID or crashed writer lock needs inspection.",
+    "Managed viewer bookmarks retain root/guide and reconnect after restart. After stop, choose Use loaded",
+    "snapshot offline for manual edits and HTML export; Retry connection resumes this attachment.",
     "--backend records none (default) or claude as a future selection; no agent or job runs in this command.",
     "Local serving requires no network or agent credentials. A later Claude job requires its own configured",
     "authentication and provider network access. Manual commands and offline HTML work with the service stopped.",
@@ -412,6 +414,7 @@ export const serviceCommand: CommandSpec = {
         token: instance.token,
         instanceId: instance.instanceId,
         root: p.root,
+        backend,
         stop: () => abort.abort(),
       });
       instance.state = "running";

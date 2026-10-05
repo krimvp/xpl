@@ -60,16 +60,39 @@ export type ExplainRequest = FeedbackRequest;
 export class ServerApi {
   /** Current workspace export snapshot: complete referenced source and a forced freshness check. */
   async exportBundle(): Promise<ViewerBundle> {
-    const response = await this.check(await fetch(this.url("/export"), { cache: "no-store" }));
-    return parseBundle(await response.text());
+    const response = await this.check(await this.request("/export", { cache: "no-store" }));
+    return this.attachedBundle(await response.text());
   }
 
   /** Current index and referenced source, refreshed after the workspace ETag changes. */
   async bundle(): Promise<ViewerBundle> {
-    const response = await this.check(await fetch(this.url("/bundle"), { cache: "no-store" }));
-    return parseBundle(await response.text());
+    const response = await this.check(await this.request("/bundle", { cache: "no-store" }));
+    return this.attachedBundle(await response.text());
   }
-  constructor(readonly base: string) {}
+  constructor(
+    readonly base: string,
+    readonly attachment?: NonNullable<ViewerBundle["server"]>["attachment"],
+  ) {}
+
+  private request(path: string, init: RequestInit = {}): Promise<Response> {
+    const headers = new Headers(init.headers);
+    if (this.attachment) {
+      const { root, guide } = this.attachment;
+      headers.set("X-Xpl-Attachment", encodeURIComponent(JSON.stringify({ root, guide })));
+    }
+    return fetch(this.url(path), { ...init, headers, signal: AbortSignal.timeout(5000) });
+  }
+
+  private attachedBundle(text: string): ViewerBundle {
+    const bundle = parseBundle(text);
+    const actual = bundle.server?.attachment;
+    if (
+      this.attachment &&
+      (actual?.root !== this.attachment.root || actual?.guide !== this.attachment.guide)
+    )
+      throw new Error("409: This address serves a different repository or guide.");
+    return bundle;
+  }
 
   private url(path: string): string {
     return `${this.base.replace(/\/+$/, "")}${path}`;
@@ -97,7 +120,7 @@ export class ServerApi {
   /** Source text of a file. Accepts plain text, or JSON: a string, or an object with `text` / `content`. */
   async file(path: string): Promise<string> {
     const response = await this.check(
-      await fetch(this.url(`/file?path=${encodeURIComponent(path)}`), { cache: "no-store" }),
+      await this.request(`/file?path=${encodeURIComponent(path)}`, { cache: "no-store" }),
     );
     const type = response.headers.get("content-type") ?? "";
     if (!type.includes("application/json")) return response.text();
@@ -114,7 +137,7 @@ export class ServerApi {
   /** The code before the change of a changed file (`ChangedFile.path`), like `file`. */
   async baseFile(path: string): Promise<string> {
     const response = await this.check(
-      await fetch(this.url(`/base-file?path=${encodeURIComponent(path)}`)),
+      await this.request(`/base-file?path=${encodeURIComponent(path)}`),
     );
     return response.text();
   }
@@ -122,7 +145,7 @@ export class ServerApi {
   /** Author-only metadata; the server applies this bounded patch as actor user. */
   async putReview(review: ExplainerPatch["review"]): Promise<void> {
     await this.check(
-      await fetch(this.url("/review"), {
+      await this.request("/review", {
         method: "PUT",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ review }),
@@ -135,7 +158,7 @@ export class ServerApi {
     // View ids are slugs plus a "view:" prefix; keep the colon readable in the URL.
     const id = encodeURIComponent(viewId).replace(/%3A/gi, ":");
     await this.check(
-      await fetch(this.url(`/views/${id}`), {
+      await this.request(`/views/${id}`, {
         method: "PUT",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(fields),
@@ -147,7 +170,7 @@ export class ServerApi {
   async putTour(tourId: string, tour: { title: string; steps: readonly unknown[] }): Promise<void> {
     const id = encodeURIComponent(tourId).replace(/%3A/gi, ":");
     await this.check(
-      await fetch(this.url(`/tours/${id}`), {
+      await this.request(`/tours/${id}`, {
         method: "PUT",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ title: tour.title, steps: tour.steps }),
@@ -162,7 +185,7 @@ export class ServerApi {
   async getExplainer(
     etag: string | undefined,
   ): Promise<{ explainer: Explainer; etag: string | undefined } | undefined> {
-    const response = await fetch(this.url("/explainer"), {
+    const response = await this.request("/explainer", {
       headers: etag !== undefined ? { "if-none-match": etag } : {},
       cache: "no-store",
     });
@@ -175,14 +198,14 @@ export class ServerApi {
   }
 
   async requests(): Promise<FeedbackRequest[]> {
-    const response = await this.check(await fetch(this.url("/requests"), { cache: "no-store" }));
+    const response = await this.check(await this.request("/requests", { cache: "no-store" }));
     const data = (await response.json()) as { requests: unknown[] };
     return data.requests.map(parseFeedbackRequest);
   }
 
   async postRequest(request: ExplainRequest): Promise<void> {
     await this.check(
-      await fetch(this.url("/requests"), {
+      await this.request("/requests", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(request),

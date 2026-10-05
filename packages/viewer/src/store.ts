@@ -76,6 +76,12 @@ export interface Cursor {
   side?: "base";
 }
 
+export interface ConnectionState {
+  status: "offline" | "connecting" | "connected" | "disconnected" | "unavailable";
+  attachment?: NonNullable<ViewerBundle["server"]>["attachment"];
+  message?: string;
+}
+
 export type SaveState =
   | { status: "idle" }
   | { status: "saving" }
@@ -184,6 +190,7 @@ export interface ViewerState {
   save: SaveState;
   /** Running under `xpl view`. */
   serverMode: boolean;
+  connection: ConnectionState;
   feedback: FeedbackRequest[];
   feedbackStorageError?: string;
   /** The live source no longer matches its index; reindex before trusting locations and edges. */
@@ -208,15 +215,21 @@ function findTour(tours: readonly Tour[], id: string | undefined): Tour | undefi
   return tours.find((t) => t.id === id) ?? tours.find((t) => t.id === `tour:${id}`);
 }
 
+type PendingWrite =
+  | { kind: "edit"; fields: Record<string, unknown> }
+  | { kind: "review"; review: ExplainerPatch["review"] };
+
 export class ViewerStore {
   private state: ViewerState;
   private readonly listeners = new Set<() => void>();
-  private readonly api: ServerApi | undefined;
+  private api: ServerApi | undefined;
+  private readonly liveApi: ServerApi | undefined;
+  private pollConnection: (() => Promise<void>) | undefined;
   private indexModel: IndexModel;
   private workspaceRevision = 0;
   private readonly loading = new Set<FilePath>();
   private readonly loadingBase = new Set<FilePath>();
-  private readonly pending = new Map<string, Record<string, unknown>>();
+  private readonly pending = new Map<string, PendingWrite>();
   private saveTimer: ReturnType<typeof setTimeout> | undefined;
   private saving: Promise<void> | undefined;
   private readonly past: Navigation[] = [];
@@ -230,7 +243,10 @@ export class ViewerStore {
     const identity = artifactIdentity(bundle.explainer, bundle.index);
     this.feedbackStorageKey = `xpl-feedback:${identity.explainerHash}:${identity.sourceHash}`;
     this.indexModel = asIndexModel(bundle.index);
-    this.api = bundle.server?.api ? new ServerApi(bundle.server.api) : undefined;
+    this.api = bundle.server?.api
+      ? new ServerApi(bundle.server.api, bundle.server.attachment)
+      : undefined;
+    this.liveApi = this.api;
     const explainer = bundle.explainer;
     const model = this.modelOf(explainer);
     const views = model.views;
@@ -271,6 +287,10 @@ export class ViewerStore {
       dirty: false,
       save: { status: "idle" },
       serverMode: this.api !== undefined,
+      connection: {
+        status: this.api ? "connecting" : "offline",
+        attachment: bundle.server?.attachment,
+      },
       sourceWarning: bundle.sourceWarning,
       feedback: [],
       exportInfo: bundle.exportInfo,
@@ -316,7 +336,7 @@ export class ViewerStore {
   };
 
   private set(patch: Partial<ViewerState>): void {
-    this.state = { ...this.state, ...patch };
+    this.state = { ...this.state, ...patch, dirty: this.pending.size > 0 };
     if (this.state.perspective !== "explore") this.reading = this.state.perspective;
     for (const listener of [...this.listeners]) listener();
   }
@@ -918,16 +938,15 @@ export class ViewerStore {
     if (explainer === this.state.explainer) return;
     const model = this.modelOf(explainer);
     const selection = this.stillShown(model, viewId, this.state.selection);
+    this.queueSave(viewId, fields);
     this.set({
       explainer,
       model,
       ...(selection.length !== this.state.selection.length
         ? { selection, applied: undefined }
         : {}),
-      dirty: true,
       ...(this.api ? { save: { status: "saving" } as SaveState } : {}),
     });
-    if (this.api) this.queueSave(viewId, fields);
   }
 
   /**
@@ -958,15 +977,29 @@ export class ViewerStore {
    * "send this tour", which reads the tour as it is when the request goes out.
    */
   private queueSave(id: string, fields: Record<string, unknown>): void {
-    this.pending.set(id, { ...this.pending.get(id), ...fields });
+    const prior = this.pending.get(id);
+    this.pending.set(id, {
+      kind: "edit",
+      fields: { ...(prior?.kind === "edit" ? prior.fields : {}), ...fields },
+    });
+    this.scheduleSave();
+  }
+
+  private scheduleSave(): void {
     if (this.saveTimer !== undefined) clearTimeout(this.saveTimer);
+    if (!this.api) return;
     this.saveTimer = setTimeout(() => {
       this.saveTimer = undefined;
       void this.flush();
     }, SAVE_DELAY_MS);
   }
 
-  private async send(api: ServerApi, id: string, fields: Record<string, unknown>): Promise<void> {
+  private async send(api: ServerApi, id: string, write: PendingWrite): Promise<void> {
+    if (write.kind === "review") {
+      await api.putReview(write.review);
+      return;
+    }
+    const { fields } = write;
     if (parseId(id).type === "tour") {
       const tour = this.state.model.tour(id);
       if (tour) await api.putTour(id, { title: tour.title, steps: tour.steps });
@@ -993,30 +1026,37 @@ export class ViewerStore {
     const api = this.api;
     if (!api || this.pending.size === 0) return;
     this.saving = (async () => {
-      const failed = new Map<string, Record<string, unknown>>();
+      const failed = new Set<string>();
       let firstError: unknown;
       try {
         for (;;) {
-          const batch = [...this.pending].filter(([id]) => !failed.has(id));
-          if (batch.length === 0) break;
-          for (const [id, fields] of batch) {
-            this.pending.delete(id);
+          const batch = [...this.pending.keys()].filter((id) => !failed.has(id));
+          if (batch.length === 0 || this.api !== api) break;
+          for (const id of batch) {
+            if (this.api !== api) break;
+            const write = this.pending.get(id);
+            if (!write) continue;
             try {
-              await this.send(api, id, fields);
+              await this.send(api, id, write);
+              // A successful response owns only the exact write it sent, not any newer edit.
+              if (this.pending.get(id) === write) this.pending.delete(id);
             } catch (error) {
-              failed.set(id, fields);
+              failed.add(id);
               firstError ??= error;
             }
           }
         }
       } finally {
-        for (const [id, fields] of failed) {
-          this.pending.set(id, { ...fields, ...this.pending.get(id) });
-        }
         this.saving = undefined;
+        this.set({
+          save:
+            this.pending.size === 0
+              ? { status: "saved" }
+              : firstError === undefined
+                ? { status: "idle" }
+                : { status: "error", message: messageOf(firstError) },
+        });
       }
-      if (firstError === undefined) this.set({ dirty: false, save: { status: "saved" } });
-      else this.set({ save: { status: "error", message: messageOf(firstError) } });
     })();
     await this.saving;
   }
@@ -1038,16 +1078,34 @@ export class ViewerStore {
       throw new Error(
         result.issues.find((i) => i.severity === "error")?.message ?? "Review rejected.",
       );
-    if (this.api) {
-      await this.api.putReview(review);
-      const bundle = await this.api.bundle();
-      if (!this.adoptExplainer(bundle.explainer, bundle)) {
-        // Preserve edits made during the request. They may invalidate the newly stored record.
-        const explainer = { ...this.state.explainer, review: bundle.explainer.review };
-        this.set({ explainer, model: this.modelOf(explainer) });
+    const write: PendingWrite = { kind: "review", review };
+    this.pending.set("review", write);
+    this.set({ explainer: result.explainer, model: this.modelOf(result.explainer) });
+    const api = this.api;
+    if (api) {
+      await this.flush();
+      if (this.pending.has("review")) {
+        const message =
+          this.state.save.status === "error"
+            ? this.state.save.message
+            : "Review remains unsaved. Use Retry save.";
+        // An explicit author action refused by the server must be inspected again. Network failures
+        // and offline Retry saves retain their pending review; newer actions are never rolled back.
+        if (this.pending.get("review") === write && /^4\d\d\b/.test(message)) {
+          this.pending.delete("review");
+          const explainer = { ...this.state.explainer, review: current.review };
+          this.set({
+            explainer,
+            model: this.modelOf(explainer),
+            save: this.pending.size > 0 ? this.state.save : { status: "idle" },
+          });
+        }
+        throw new Error(message);
       }
-    } else
-      this.set({ explainer: result.explainer, model: this.modelOf(result.explainer), dirty: true });
+      if (this.api !== api) return;
+      const bundle = await api.bundle();
+      this.adoptExplainer(bundle.explainer, bundle);
+    }
   }
 
   // ─── Tour edits (Explore): persisted like view edits ─────────────────────────────────────────
@@ -1124,14 +1182,13 @@ export class ViewerStore {
         : choose
           ? { tourId: tour.id, step: 0 }
           : at;
+    this.queueSave(tour.id, {});
     this.set({
       explainer,
       model,
       tour: tourPosition,
-      dirty: true,
       ...(this.api ? { save: { status: "saving" } as SaveState } : {}),
     });
-    if (this.api) this.queueSave(tour.id, {});
   }
 
   // ─── Explain requests and export ─────────────────────────────────────────────────────────────
@@ -1244,34 +1301,73 @@ export class ViewerStore {
 
   // ─── Changes made on disk (Claude's `xpl apply`) ──────────────────────────────────────────────
 
+  get canReconnect(): boolean {
+    return this.liveApi !== undefined;
+  }
+
+  /** Keep loaded data and browser feedback usable after stopping the optional service. */
+  useOfflineSnapshot(): void {
+    this.api = undefined;
+    if (this.saveTimer !== undefined) clearTimeout(this.saveTimer);
+    this.saveTimer = undefined;
+    this.set({
+      serverMode: false,
+      connection: { ...this.state.connection, status: "offline", message: undefined },
+    });
+  }
+
+  /** Retry the page's original address and repository/guide, without discarding edits. */
+  async reconnect(): Promise<void> {
+    if (!this.liveApi) return;
+    this.api = this.liveApi;
+    this.set({
+      serverMode: true,
+      ...(this.state.dirty
+        ? {
+            save: {
+              status: "error" as const,
+              message: "Offline edits remain unsaved. Use Retry save to persist them.",
+            },
+          }
+        : {}),
+      connection: { ...this.state.connection, status: "connecting", message: undefined },
+    });
+    if (!this.pollConnection) this.watchExplainer();
+    await this.pollConnection?.();
+  }
+
   /**
    * Under `xpl view`, polls `GET {api}/explainer` and shows what changed on disk without a reload, so
    * source edits, new indexes and applied feedback arrive together. Fetches a fresh bundle after the
-   * workspace ETag changes and preserves unsaved edits and reader position. Stops for
-   * good on a server that has no such endpoint. Returns the function that stops it.
+   * workspace ETag changes and preserves unsaved edits and reader position. Availability still updates
+   * with unsaved edits. Only an unmanaged server without this endpoint stops automatic polling.
+   * Returns the function that stops it.
    */
   watchExplainer(intervalMs = WATCH_INTERVAL_MS): () => void {
-    const api = this.api;
-    if (!api) return () => undefined;
+    if (!this.liveApi) return () => undefined;
     let etag: string | undefined;
     let busy = false;
+    let stopped = false;
     const poll = async () => {
-      if (
-        busy ||
-        this.state.dirty ||
-        this.pending.size > 0 ||
-        this.saving ||
-        (typeof document !== "undefined" && document.hidden)
-      )
-        return;
+      const api = this.api;
+      if (!api || stopped || busy || (typeof document !== "undefined" && document.hidden)) return;
       busy = true;
       try {
         const fresh = await api.getExplainer(etag);
+        if (this.api !== api) return;
         if (fresh) {
           const bundle = await api.bundle();
+          if (this.api !== api) return;
+          this.set({
+            connection: {
+              status: "connected",
+              attachment: bundle.server?.attachment ?? api.attachment,
+            },
+          });
+          // Availability still updates while edits prevent adoption of a new workspace.
+          if (this.state.dirty || this.pending.size > 0 || this.saving) return;
           const files = { ...bundle.files };
           const fileErrors: Record<string, string> = {};
-          // Include files opened outside the explanation, rather than keeping their old cached text.
           await Promise.all(
             Object.keys(this.state.files)
               .filter((file) => !(file in files))
@@ -1283,18 +1379,42 @@ export class ViewerStore {
                 }
               }),
           );
-          // Do not acknowledge a skipped update: poll again once the user's edits are saved.
-          if (this.adoptExplainer(bundle.explainer, { ...bundle, files, fileErrors }))
+          if (
+            this.api === api &&
+            this.adoptExplainer(bundle.explainer, { ...bundle, files, fileErrors })
+          )
             etag = fresh.etag;
+        } else {
+          this.set({
+            connection: { ...this.state.connection, status: "connected", message: undefined },
+          });
         }
       } catch (error) {
-        if (/^404\b/.test(messageOf(error))) stop();
+        if (this.api !== api) return;
+        const message = messageOf(error);
+        this.set({
+          connection: {
+            ...this.state.connection,
+            status: /^\d{3}\b/.test(message) ? "unavailable" : "disconnected",
+            message,
+          },
+        });
+        // Old unmanaged viewers have no polling endpoint. Managed services keep retrying.
+        if (!api.attachment && /^404\b/.test(message)) stop();
       } finally {
         busy = false;
       }
     };
+    this.pollConnection = async () => {
+      etag = undefined;
+      await poll();
+    };
     const timer = setInterval(() => void poll(), intervalMs);
-    const stop = () => clearInterval(timer);
+    const stop = () => {
+      stopped = true;
+      clearInterval(timer);
+      this.pollConnection = undefined;
+    };
     return stop;
   }
 
