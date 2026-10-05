@@ -21,9 +21,12 @@ fi
 
 wt="$(mktemp -d)"
 trap 'git worktree remove --force "$wt" >/dev/null 2>&1 || rm -rf "$wt"' EXIT
-if git fetch -q origin pr-assets 2>/dev/null; then
+if git ls-remote --exit-code origin refs/heads/pr-assets >/dev/null; then
+  git fetch -q origin pr-assets || { echo "fetch of existing pr-assets branch failed" >&2; exit 1; }
   git worktree add -q --detach "$wt" FETCH_HEAD
 else
+  status=$?
+  [[ $status == 2 ]] || { echo "could not determine whether pr-assets exists" >&2; exit 1; }
   git worktree add -q --detach "$wt"
   git -C "$wt" checkout -q --orphan pr-assets-new
   git -C "$wt" rm -rfq . && git -C "$wt" clean -fdq

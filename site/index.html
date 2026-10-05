@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <meta
+      name="description"
+      content="xpl links diagrams and code in both directions, and checks every source link against your repository. Try a real code explainer."
+    />
+    <title>xpl — diagrams with the code attached</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to content</a>
+    <header class="masthead">
+      <a class="wordmark" href="#main" aria-label="xpl home">xpl<span> / code explainer</span></a>
+      <nav aria-label="Main navigation">
+        <a href="#how">How it works</a>
+        <a href="#start">Get started <span aria-hidden="true">↗</span></a>
+      </nav>
+    </header>
+    <main id="main">
+      <section class="hero" aria-labelledby="hero-title">
+        <p class="eyebrow">Follow the idea. Find the code.</p>
+        <h1 id="hero-title">A diagram you can check against the code.</h1>
+        <p class="intro">
+          xpl is a code explainer with diagrams linked both ways to the source, and every claim
+          checked against your repository.
+        </p>
+        <div class="actions">
+          <a
+            class="button"
+            href="demo/index.html?perspective=explore&amp;view=view:dispatch&amp;focus=dispatch:3"
+            >Try it <span aria-hidden="true">↗</span></a
+          >
+          <span>A real job runner. No setup.</span>
+        </div>
+      </section>
+
+      <section class="example" aria-labelledby="example-title">
+        <div class="section-heading">
+          <h2 id="example-title">Click a box. See the code.</h2>
+          <p>Put the cursor in the code. The diagram lights up too.</p>
+        </div>
+        <figure>
+          <a
+            class="product-shot"
+            href="demo/index.html?perspective=explore&amp;view=view:dispatch&amp;focus=sym:src/runner.ts%23Runner.dispatch"
+            aria-label="Try the job runner explainer, with the dispatch box selected"
+          >
+            <picture>
+              <source media="(prefers-color-scheme: dark)" srcset="images/jobrunner-dark.png" />
+              <img
+                src="images/jobrunner-light.png"
+                width="1440"
+                height="900"
+                alt="The Runner.dispatch box is selected in the diagram. The dispatch function in runner.ts is highlighted beside it, with the rest of the file dimmed."
+                fetchpriority="high"
+              />
+            </picture>
+          </a>
+          <figcaption>
+            <span>01 / The dispatch loop, with its source attached.</span> Click the retry step to
+            follow a failed job back to the queue.
+          </figcaption>
+        </figure>
+        <p class="example-note">
+          This is the TypeScript job runner included with xpl, built into a single HTML file.
+          <a href="demo/index.html" download="xpl-jobrunner.html">Download it</a> and open it
+          offline.
+        </p>
+      </section>
+
+      <section class="how section" id="how" aria-labelledby="how-title">
+        <div class="section-lead">
+          <p class="eyebrow">From repository to explanation</p>
+          <h2 id="how-title">The agent writes.<br />xpl checks.</h2>
+          <p>
+            The checks verify source locations and freshness. The author still has to get the
+            explanation right.
+          </p>
+        </div>
+        <ol class="steps">
+          <li>
+            <h3>Index the repository</h3>
+            <p>
+              xpl finds files, symbols and references. References say whether they come from a
+              precise tool or a heuristic.
+            </p>
+          </li>
+          <li>
+            <h3>The agent writes a patch</h3>
+            <p>
+              You ask a question. The agent adds diagrams, short explanations and anchors to the
+              code.
+            </p>
+          </li>
+          <li>
+            <h3>xpl checks every claim</h3>
+            <p>
+              Each anchor must resolve to real code. Changed or missing source links block a ready
+              export.
+            </p>
+          </li>
+          <li>
+            <h3>Read it. Share it.</h3>
+            <p>
+              Explore the diagrams beside the source, follow a guided tour, or export one HTML file
+              with the code inside.
+            </p>
+          </li>
+        </ol>
+      </section>
+
+      <section class="start section" id="start" aria-labelledby="start-title">
+        <div class="section-lead">
+          <p class="eyebrow">Try it on your repository</p>
+          <h2 id="start-title">Start with a question.</h2>
+          <p>
+            Install from npm with Node 22.12 or newer. You can also build from source with access to
+            the private repository.
+          </p>
+          <a class="text-link" href="https://github.com/krimvp/xpl"
+            >Source and installation notes (private repository, access required)
+            <span aria-hidden="true">↗</span></a
+          >
+        </div>
+        <div class="instructions">
+          <p>Install the CLI and authoring skill:</p>
+          <pre><code>npm install --global @krimvp/xpl
+xpl skill install</code></pre>
+          <p>Or build from a checkout of xpl:</p>
+          <pre><code>npm install &amp;&amp; npm run build
+npm pack ./packages/cli/dist
+npm install -g --ignore-scripts ./krimvp-xpl-0.1.0.tgz
+xpl skill install</code></pre>
+          <p>In your project, ask Claude Code:</p>
+          <pre
+            class="prompt"
+          ><code>/code-explainer explain How does a failed job get retried?</code></pre>
+          <p class="aside">
+            Claude Code needs its own installation and provider access. The skill indexes your
+            project, writes a patch and checks it before opening the guide.
+          </p>
+        </div>
+      </section>
+    </main>
+    <footer>
+      <a class="wordmark" href="#main">xpl</a>
+      <p>Keep the explanation close to the code.</p>
+      <a href="https://github.com/krimvp/xpl"
+        >GitHub (private repository, access required) <span aria-hidden="true">↗</span></a
+      >
+    </footer>
+  </body>
+</html>
