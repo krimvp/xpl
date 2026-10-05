@@ -1206,13 +1206,16 @@ atomic: any error → `ok: false` and the input explainer, untouched.
   the view and each step it changed (a tour's steps as `<tour id>/<step id>`).
 
 **Bounded user edits** (`user-edits.ts`) carry a collection (`nodes`, `edges`, `concepts`), item ID,
-and before/after values of the same fields. Only `label`, `summary`, `detail` and a concept's `related`
-are accepted, with at most 32 items per transaction. The HTTP body limit also applies.
+and before/after values of the same fields. Only `label`, `summary`, `detail`, `anchors` and a concept's `related`
+are accepted, with at most 32 items per transaction and 64 anchors per item. The HTTP body limit also applies.
 `applyUserEdits` checks touched fields against the current model, creates an ordinary `user` patch and
 returns a conditional inverse. Missing optional fields become `null`. The inverse never contains
 provenance or review records; undo keeps user ownership and lets scoped fingerprints follow content.
 For a new structural overlay, undo restores the effective default fields rather than deleting a record
-that another author may have enriched. Existing broken anchors on the edited item still reject the patch.
+that another author may have enriched. Anchor comparisons omit only the `resolved` cache, retaining hashes,
+roles, sides and coordinates. Inverse preconditions use the actual normalized, hash-checked saved anchors.
+`applyPatch` checks every proposed anchor; a repair must replace or remove all invalid evidence on that item.
+An inverse that would restore missing or drifted source is rejected without moving history.
 
 ### 4.8 Also in core
 
@@ -2151,8 +2154,20 @@ elements. Drafts live in the store, keyed by element, until saved or explicitly 
 returning to reading keeps them. Save/Cancel stay visible at the bottom of the editor. Summary-only corrections
 do not require fixing an existing empty label. The header names unsaved drafts, saving, saved and rejected edits.
 Live saves check the version captured when the editor opened; a stale form must be reopened and inspected.
-Source remains read-only. Missing/drifted evidence is not repaired implicitly; selection and repair controls
-belong to the next authoring step. A review record is optional and stays present when content changes.
+Source remains read-only. A review record is optional and stays present when content changes.
+
+**Source evidence.** In the same Details panel, **Edit evidence** previews selected source lines with
+`makeAnchor`, using the smallest symbol containing the full head selection or file-relative lines. Base panes
+use file-relative anchors checked against the change base. Head source must match the index before symbol
+coordinates are used; otherwise reindex and reload. Preview includes side, file/symbol, lines and selected text.
+**Replace with selected lines**, **Remove evidence** and **Add selected evidence** stage explicit changes.
+The editor reuses the resolver's `moved`, `drifted` and `missing` classifications; attention's Inspect element
+selection opens this same target, with no separate list. Text and evidence editors share one draft per element;
+finish or cancel one before opening the other. Drafts survive navigation. Before **Save evidence**, core checks
+the staged array locally; the server repeats the checks against fresh source under the lock, retaining the
+previewed hashes. Invalid siblings must all be repaired or removed; rejected saves retain their draft.
+Evidence changes use the existing author queue, version check and provenance. Later LLM patches cannot replace
+user-edited fields. JSON and HTML exports include saved evidence and source; reopened static HTML works offline.
 
 Edit → **Undo** / **Redo** names the changed fields and element and writes the inverse through the same patch
 route. Before a live
@@ -2165,7 +2180,8 @@ mismatched records are ignored. Undo requests carry the original root/guide iden
 independently of browser storage; touched-field preconditions still protect every save. Storage refusal is visible and does not
 undo a successful disk save. Static edits/history live in memory until JSON or HTML is
 exported; original-page reload discards them. An open form draft or save blocks HTML export. Undo never
-replaces an artifact or restores old provenance/review records. Existing tour/view edits keep their prior
+replaces an artifact or restores old provenance/review records. Restoring invalid historical evidence rejects
+and leaves the entry available; no hash is discarded to force undo. Existing tour/view edits keep their prior
 save paths and tour-step deletion undo.
 
 **Tours.** Edit → "Edit the guide's steps" opens the tour panel: add the current view and selection as a step

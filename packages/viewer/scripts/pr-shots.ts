@@ -18,6 +18,7 @@
  *   query is passed on (`?perspective=map&view=view:overview`, `?mode=present&tour=tour:intro&step=2`,
  *   `?perspective=explore&focus=edge:job-completed`). Without `--set` or `--shot`, `--set ux` is assumed.
  *
+ * - `--evidence-editor` opens the retry concept evidence editor, where available, with runner line 75.
  * - `--service` intercepts a loopback API; unmanaged omits attachment metadata for plain-view shots.
  * - `--attention affected|paused` adds watch/guide evidence; `--attention-open` opens its repair offer.
  * - `--text-draft` opens and edits the TS fixture retry concept without saving.
@@ -54,6 +55,7 @@ async function shoot(argv: string[]): Promise<void> {
       attention: { type: "string" },
       "attention-open": { type: "boolean", default: false },
       "text-draft": { type: "boolean", default: false },
+      "evidence-editor": { type: "boolean", default: false },
     },
   });
   if (values.service && !["connected", "disconnected", "unmanaged"].includes(values.service))
@@ -190,10 +192,25 @@ async function shoot(argv: string[]): Promise<void> {
         await page
           .getByLabel("Summary", { exact: true })
           .fill("Inspect changed evidence before revising.");
-        await page.locator(".save-status").filter({ hasText: "Unsaved text draft" }).waitFor();
+        await page.locator(".save-status").filter({ hasText: "Unsaved draft" }).waitFor();
         await page.evaluate(() => window.scrollTo(0, 0));
       }
       await page.waitForTimeout(400);
+      if (values["evidence-editor"]) {
+        const divider = page.getByRole("separator", {
+          name: "Resize the diagram and the panels below it",
+        });
+        await divider.focus();
+        for (let i = 0; i < 4; i++) await divider.press("Shift+ArrowUp");
+        const edit = page.getByTestId("evidence-edit");
+        const available = (await edit.count()) > 0;
+        if (available) await edit.click();
+        await page.evaluate(() => window.__xpl!.setCursor("src/runner.ts", 75));
+        if (available)
+          await page
+            .locator(".evidence-edit")
+            .evaluate((form) => form.scrollIntoView({ block: "start" }));
+      }
       await page.screenshot({ path: `${out}/${name}.png` });
       console.log(name);
       await page.close();

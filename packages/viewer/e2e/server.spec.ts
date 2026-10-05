@@ -198,7 +198,7 @@ test("managed attention distinguishes moved, drifted and missing evidence and of
         errors: [],
         elements: [
           { id: "file:src/queue.ts", file: "src/queue.ts", status: "moved" },
-          { id: "sym:src/runner.ts#Runner.dispatch", file: "src/runner.ts", status: "drifted" },
+          { id: "concept:retry-policy", file: "src/runner.ts", status: "drifted" },
           { id: "file:src/gone.ts", file: "src/gone.ts", status: "missing" },
         ],
         resolveCommand:
@@ -238,6 +238,16 @@ test("managed attention distinguishes moved, drifted and missing evidence and of
   expect(recorded.posts).toEqual([]);
   expect(recorded.puts).toEqual([]);
   expect(recorded.watchActions).toEqual([]);
+  // The inventory ID reaches the same Details target that owns evidence repair.
+  await panel.getByRole("button", { name: "Inspect element" }).nth(1).click();
+  await expect(page.locator('.details[data-details-id="concept:retry-policy"]')).toBeVisible();
+  await panel.locator(".attention-list > summary").click();
+  await page.getByTestId("evidence-edit").click();
+  await expect(page.getByRole("form", { name: "Edit source evidence" })).toBeVisible();
+  await expect(page.locator(".evidence-list")).toContainText("src/runner.ts");
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  expect(recorded.posts).toEqual([]);
+  expect(recorded.puts).toEqual([]);
   await panel.getByText("Watch controls", { exact: true }).click();
   await panel.getByRole("button", { name: "Pause watch" }).click();
   await expect(panel).toContainText("Paused");

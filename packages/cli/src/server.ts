@@ -13,7 +13,7 @@
  *   GET  /api/base-file?path= the code before the change of one changed file (text/plain): only for the
  *                             modified, renamed and deleted files of the explainer's change record (`path` is
  *                             `ChangedFile.path`); 400 for a malformed path, 404 for anything else
- *   PUT  /api/edits          { version, edits }, bounded user fields and conditional inverses; 409 on conflicts.
+ *   PUT  /api/edits          { version, edits }, bounded user text/evidence and conditional inverses; 409 on conflicts.
  *   PUT  /api/review         { review: record | null }, applied as actor "user"; fingerprint checked at write.
  *   PUT  /api/views/<id>      a view patch, applied as actor "user", written to disk; 200 with the
  *                             updated view, 400 with { error, issues } when rejected
