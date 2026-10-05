@@ -22,48 +22,52 @@ export function ConnectionStatus() {
                   ? "Disconnected"
                   : "Service unavailable"}
         </strong>
-        {attachment && <span> · {attachment.guide}</span>}
-        {!live && <span> · Reading and manual edits use loaded source.</span>}
-        {failed && <span> · Loaded source remains readable. Restart the service, then retry.</span>}
-        {dirty && !live && <span> Download your edits before closing this page.</span>}
       </div>
       {attachment && (
-        <details>
-          <summary>Repository and backend</summary>
-          <p>
-            Repository: <code>{attachment.root}</code>
-          </p>
-          <p>
-            Last service instance: <code>{attachment.instanceId}</code>
-          </p>
-          <p>
-            {attachment.backend === "claude" && attachment.backendAvailable ? (
-              "Agent: Claude Code (configured; sign-in is checked when a job runs)"
-            ) : (
-              <>
-                No agent is configured. Use <code>xpl revise</code> for a manual revision.
-              </>
-            )}
-          </p>
-          {message && (
-            <p title={status === "disconnected" ? message : undefined}>
-              {status === "disconnected" ? "Could not reach the xpl service." : message}
+        <details name="service-status">
+          <summary>Connection details</summary>
+          <div className="service-disclosure">
+            <p>
+              Guide: <code>{attachment.guide}</code>
             </p>
-          )}
+            {!live && <p>Reading and manual edits use loaded source.</p>}
+            {failed && <p>Loaded source remains readable. Restart the service, then retry.</p>}
+            {dirty && !live && <p>Download your edits before closing this page.</p>}
+            <p>
+              Repository: <code>{attachment.root}</code>
+            </p>
+            <p>
+              Last service instance: <code>{attachment.instanceId}</code>
+            </p>
+            <p>
+              {attachment.backend === "claude" && attachment.backendAvailable ? (
+                "Agent: Claude Code (configured; sign-in is checked when a job runs)"
+              ) : (
+                <>
+                  No agent is configured. Use <code>xpl revise</code> for a manual revision.
+                </>
+              )}
+            </p>
+            {message && (
+              <p title={status === "disconnected" ? message : undefined}>
+                {status === "disconnected" ? "Could not reach the xpl service." : message}
+              </p>
+            )}
+            <div className="connection-actions">
+              {(failed || (!live && store.canReconnect)) && (
+                <button className="btn" onClick={() => void store.reconnect()}>
+                  Retry connection
+                </button>
+              )}
+              {live && (
+                <button className="btn" onClick={() => store.useOfflineSnapshot()}>
+                  Use loaded snapshot offline
+                </button>
+              )}
+            </div>
+          </div>
         </details>
       )}
-      <div className="connection-actions">
-        {(failed || (!live && store.canReconnect)) && (
-          <button className="btn" onClick={() => void store.reconnect()}>
-            Retry connection
-          </button>
-        )}
-        {live && (
-          <button className="btn" onClick={() => store.useOfflineSnapshot()}>
-            Use loaded snapshot offline
-          </button>
-        )}
-      </div>
     </div>
   );
 }

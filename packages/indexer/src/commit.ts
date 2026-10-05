@@ -8,13 +8,14 @@
  *    indexed files (`hash` = `IndexedFile.hash`). Deterministic, so fixtures living inside a bigger
  *    repository get a stable id.
  *
- * "Clean" ignores `.explainer/`: writing the index (and `.explainer/.gitignore`, and the explainers
- * themselves) must not turn a clean tree into a dirty one, or the id would change every time `xpl index`
- * runs.
+ * "Clean" uses discovery's path/content filters. Writing generated indexes, guides, patches or exports
+ * must not turn a clean tree dirty, or the next watch poll would rebuild solely for its own output.
  */
 import { createHash } from "node:crypto";
 import type { GitInfo, GitOptions } from "./files.js";
-import { runGit } from "./files.js";
+import { join } from "node:path";
+import { lstat } from "node:fs/promises";
+import { runGit, isIndexInputPath, isIndexInputFile } from "./files.js";
 
 /** Characters a commit id may contain: it becomes part of a file name (`index-<commit>.json`). */
 const COMMIT_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
@@ -43,19 +44,65 @@ export async function shortHead(cwd: string, options?: GitOptions): Promise<stri
   return head && /^[0-9a-f]{7,}$/i.test(head) ? head.slice(0, 7).toLowerCase() : undefined;
 }
 
+/** Poll-owned eligibility cache: reuse content filters until a file's metadata changes. */
+export type StatusFileCache = Map<string, { version: string; eligible: boolean | undefined }>;
+
+async function statusInput(path: string, cache?: StatusFileCache): Promise<boolean | undefined> {
+  if (!cache) return isIndexInputFile(path);
+  let version = "missing";
+  try {
+    const s = await lstat(path, { bigint: true });
+    version = `${s.dev}:${s.ino}:${s.size}:${s.mtimeNs}:${s.ctimeNs}`;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+  const previous = cache.get(path);
+  if (previous?.version === version) return previous.eligible;
+  const eligible = await isIndexInputFile(path);
+  cache.set(path, { version, eligible });
+  return eligible;
+}
+
 /** The exact discovery/staging cleanliness input used by resolveCommitId. */
 export async function workTreeStatus(
   cwd: string,
   options?: GitOptions,
+  cache?: StatusFileCache,
 ): Promise<string | undefined> {
-  return runGit(
+  const output = await runGit(
     cwd,
-    ["status", "--porcelain=v1", "--ignore-submodules=all", "--", ".", ":(exclude).explainer"],
+    [
+      "status",
+      "--porcelain=v1",
+      "-z",
+      "--untracked-files=all",
+      "--ignore-submodules=all",
+      "--",
+      ".",
+      ":(exclude).explainer",
+    ],
     options,
   );
+  if (output === undefined) return undefined;
+  const records = output.split("\0");
+  const kept: string[] = [];
+  for (let i = 0; i < records.length; i++) {
+    const record = records[i]!;
+    if (!record) continue;
+    const paths = [record.slice(3)];
+    // In -z output a rename/copy's destination precedes its original path.
+    if (/[RC]/.test(record.slice(0, 2))) paths.push(records[++i]!);
+    for (const path of paths) {
+      if (isIndexInputPath(path) && (await statusInput(join(cwd, path), cache)) !== false) {
+        kept.push(record, ...paths.slice(1));
+        break;
+      }
+    }
+  }
+  return kept.join("\0");
 }
 
-/** True when nothing but `.explainer/` differs from HEAD (no modified, staged or untracked files). */
+/** True when no discovery-eligible files differ from HEAD (no modified, staged or untracked files). */
 export async function isWorkTreeClean(cwd: string, options?: GitOptions): Promise<boolean> {
   const out = await workTreeStatus(cwd, options);
   return out !== undefined && out.trim() === "";

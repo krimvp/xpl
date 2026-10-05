@@ -61,6 +61,8 @@ import type { RepoEnv } from "./context.js";
 import { CliError, errorMessage } from "./errors.js";
 import { atomicWrite, withRepositoryLock, displayPath, jsonFile } from "./fsutil.js";
 import { importRequests, appendRequest, readRequests } from "./requests.js";
+import { watchAttention } from "./attention.js";
+import type { watchControl } from "./watch-control.js";
 import type { openJobs, JobSubmission } from "./jobs.js";
 import {
   WorkingTree,
@@ -88,6 +90,7 @@ export interface ViewServerOptions {
     root: string;
     backend: "none" | "claude";
     jobs?: Awaited<ReturnType<typeof openJobs>>;
+    watch?: ReturnType<typeof watchControl>;
     stop(): void;
   };
 }
@@ -229,12 +232,17 @@ export async function startViewServer(options: ViewServerOptions): Promise<ViewS
       name: explainerName(explainerPath),
       explainer,
     };
+    return { loaded, ...(await loadRepositoryIndex()) };
+  }
+
+  /** Watch inventory and controls survive a missing or unreadable attached guide. */
+  async function loadRepositoryIndex() {
     const tree = new WorkingTree(env.root);
     // A live workspace follows a newly generated index; an explicit --index still wins.
     const indexFile = await chooseIndexFile(env, tree, { skipExplainerIndex: true });
     checkServicePaths(indexFile);
     const { index, model } = loadIndexFile(indexFile);
-    return { loaded, tree, indexFile, index, model };
+    return { tree, indexFile, index, model };
   }
 
   /** The explainer with its anchors re-resolved against the index and the working tree, as `xpl bundle` does. */
@@ -248,6 +256,7 @@ export async function startViewServer(options: ViewServerOptions): Promise<ViewS
     for (const path of [
       state.indexFile,
       env.root,
+      ...(options.control ? [join(env.root, ".explainer/service/watch.json")] : []),
       ...state.model.directories.map((dir) => join(env.root, dir)),
       ...state.index.files.map((file) => join(env.root, file.path)),
     ]) {
@@ -358,6 +367,53 @@ export async function startViewServer(options: ViewServerOptions): Promise<ViewS
     }
 
     checkServicePaths(join(env.root, ".explainer"));
+
+    if (pathname === `${API}/watch`) {
+      const control = options.control;
+      if (!control) throw new HttpError(404, "watch controls require a managed repository service");
+      allow("GET", "POST");
+      if (method === "POST") {
+        const body = await readJsonBody(req);
+        if (
+          Object.keys(body).some((key) => !["action", "instanceId"].includes(key)) ||
+          !["pause", "resume", "stop"].includes(String(body.action))
+        )
+          throw new HttpError(400, "watch action must be pause, resume or stop");
+        if (req.headers.authorization !== `Bearer ${control.token}`) {
+          if (expected === undefined || expected === null)
+            throw new HttpError(403, "managed attachment required for watch controls");
+          if (body.instanceId !== control.instanceId)
+            throw new HttpError(
+              409,
+              "Service instance changed. Refresh attention before controlling it.",
+            );
+        }
+        if (body.action === "stop") {
+          res.once("finish", control.stop);
+          sendJson(req, res, 200, { stopping: true, instanceId: control.instanceId });
+          return;
+        } else {
+          if (!control.watch)
+            throw new HttpError(409, "watching is not enabled; restart with --watch");
+          await serial(() => control.watch!.change(body.action as "pause" | "resume"));
+        }
+      }
+      const state = await loadRepositoryIndex();
+      sendJson(
+        req,
+        res,
+        200,
+        watchAttention(
+          env,
+          state.model,
+          state.tree.texts,
+          !!control.watch,
+          control.instanceId,
+          attachment.guide,
+        ),
+      );
+      return;
+    }
 
     if (pathname === `${API}/jobs` || pathname.startsWith(`${API}/jobs/`)) {
       const jobs = options.control?.jobs;

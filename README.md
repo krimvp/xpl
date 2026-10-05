@@ -130,7 +130,7 @@ enables the installed Claude Code proposal runner; `none` (default) disables exe
 `--skill-dir <folder>` for a non-default managed skill installation and `--job-timeout <seconds>` for a
 run deadline (default 300). Both choices persist. Availability means configured, not authenticated;
 actual jobs report tooling, login and provider failures. The viewer reports connection and backend
-availability below the header, without claiming sign-in. Open **Repository and backend** for the root and last service instance.
+availability below the header, without claiming sign-in. Open **Connection details** for the root and last service instance.
 Bookmarks retain the repository and guide; an address serving another guide is refused. Restart with
 `xpl service start` and the open page reconnects to that saved guide, keeping your selection and unsaved edits.
 
@@ -145,6 +145,8 @@ Watching is opt-in on each start:
 
 ```sh
 xpl service start jobrunner --watch --background
+xpl service pause             # keep the service and jobs running; retain a stale snapshot
+xpl service resume            # check inputs and rebuild
 xpl status --all --json                         # every guide: moved, drifted or missing anchors
 ```
 
@@ -154,8 +156,13 @@ keep the previous index marked out of date. Moved code keeps its prose; drifted 
 block ready export. Watching saves no guide text, accepts no generated revisions and leaves feedback intact.
 It defaults to heuristic references (`--precise off`); `--precise auto|require` enables semantic tools and
 `--scip <artifact|manifest.json>` observes supplied provider inputs. A watched service cannot pin `--index`.
-Watch options are selected again on restart. Recovery retires the previous watch pointer. Pause/resume, viewer attention controls and offered revisions
-follow in 29B. Stop the service to return to manual indexing and revision.
+Generated exports and other excluded outputs do not dirty the watched index, even from a clean Git tree.
+Watch options are selected again on restart. Recovery retires the previous watch pointer. The managed
+viewer has one compact status bar with separate connection, attention and watch-control disclosures.
+Inspect moved, drifted or missing evidence, pause/resume the watch, or stop the service. Attention scrolls
+without shrinking the diagram; controls stay available if the attached guide becomes unreadable. Paused snapshots cannot become ready. An offered
+revision names `xpl revise` with feedback IDs you choose; inspect and accept its proposal separately.
+Plain `xpl view` and saved HTML have no service controls. Stop the service to return to manual indexing.
 
 The service also keeps job history in `.explainer/service/jobs.json` and exposes it at `GET /api/jobs`.
 Running attempts become interrupted after restart; completed proposals stay recorded, and cancelled or
