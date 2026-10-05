@@ -85,6 +85,15 @@ how to stop the current repository service before starting the exact selected gu
 checked snapshots for offline switching, with a 20 MiB limit on additional guide data. Each keeps its own
 source and index scope. Unsaved drafts or pending edits must be saved or cancelled before switching.
 
+`xpl stage <guide> --dir /outside/versions --preview` lists the head/base source files that will be
+included and checks readiness without writing. Omit `--preview` to stage immutable HTML and a manifest,
+then atomically promote `/outside/versions/current/index.html` under a lock. Previous version folders
+remain available. The manifest records commits, artifact and input hashes, readiness, source scope and
+author review state. Source or guide changes during staging leave the previous current version intact.
+For PR guides, pass `--pr-result <result.json>` from `xpl pr finish` and `--root <prepared-repository>`;
+staging verifies the result and rechecks GitHub base/head before promotion. This is local storage only.
+Configured remote delivery, exact version links and the PR Action are later slices of #34.
+
 `xpl guides` lists locally saved guides by title, recorded questions, audience and source/index commits.
 It works without a service or index file. `xpl search <pattern>` searches available indexed working-tree
 text; unavailable files produce a warning, and `--json` records searchable paths and analysis scope.

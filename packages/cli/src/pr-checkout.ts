@@ -80,19 +80,22 @@ async function outsideDeveloperTree(ctx: Ctx, path: string): Promise<void> {
     }
     if (within(protectedRoot, path) || (gitRoot && within(await realpath(gitRoot), path))) {
       throw new CliError(
-        `PR storage ${path} is inside the developer checkout. Choose --cache-dir outside it; no source or git state was changed.`,
+        `storage ${path} is inside the developer checkout. Choose a directory outside it; no source or git state was changed.`,
       );
     }
   }
 }
 
 export async function prCacheDirectory(ctx: Ctx, option: string | undefined): Promise<string> {
-  const path = await canonical(
-    resolve(
-      ctx.cwd,
-      option ?? join(ctx.env.XDG_CACHE_HOME ?? join(homedir(), ".cache"), "xpl", "pr"),
-    ),
+  return outsideSourceDirectory(
+    ctx,
+    option ?? join(ctx.env.XDG_CACHE_HOME ?? join(homedir(), ".cache"), "xpl", "pr"),
   );
+}
+
+/** Shared by PR inputs and ready-version storage; checks ancestors before any directory is created. */
+export async function outsideSourceDirectory(ctx: Ctx, option: string): Promise<string> {
+  const path = await canonical(resolve(ctx.cwd, option));
   await outsideDeveloperTree(ctx, path);
   return path;
 }
