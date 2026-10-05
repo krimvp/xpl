@@ -132,6 +132,12 @@ changes. Download edits before closing. **Retry connection** attaches the origin
 imported with `xpl feedback`. Manual commands and portable HTML work with the service stopped. Local serving
 needs no provider network or credentials; a future Claude runner needs separate configured access.
 
+The service also keeps job history in `.explainer/service/jobs.json` and exposes it at `GET /api/jobs`.
+Running attempts become interrupted after restart; completed proposals stay recorded, and cancelled or
+superseded results stay fenced. Submission and retry report unavailable until a real runner is supplied.
+This lifecycle storage has been tested with a controlled runner only. Real execution and a job review UI
+are follow-up work; manual `xpl revise` remains the revision workflow.
+
 ## Using the CLI directly
 
 Run these inside the repository you want to explain (or pass `--root <dir>`); every command takes `--json`.

@@ -64,6 +64,62 @@ async function serve(root: string, ...extra: string[]) {
 }
 
 describe("repository service lifecycle", () => {
+  it("exposes local job history but rejects submission without a runner before selecting feedback", async () => {
+    const root = cloneDir(demo);
+    const running = await serve(root, "demo");
+    try {
+      const history = await fetch(new URL("/api/jobs", running.server.url));
+      expect(history.status).toBe(200);
+      expect(await history.json()).toEqual({
+        available: false,
+        reason:
+          "Job runner unavailable. This service supports lifecycle storage only; use the manual xpl revise workflow until a real runner is configured.",
+        jobs: [],
+      });
+      const submission = {
+        id: "39a00000-0000-4000-8000-000000000001",
+        selectedRequestIds: ["request-does-not-exist"],
+      };
+      const submit = (body: unknown, headers: Record<string, string> = {}) =>
+        fetch(new URL("/api/jobs", running.server.url), {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...headers },
+          body: JSON.stringify(body),
+        });
+      expect((await submit(submission, { Origin: "https://foreign.example" })).status).toBe(403);
+      expect((await submit(submission, { "Content-Type": "text/plain" })).status).toBe(415);
+      expect((await submit({ ...submission, patch: {} })).status).toBe(400);
+      const unavailable = await submit(submission);
+      expect(unavailable.status).toBe(503);
+      expect(await unavailable.json()).toMatchObject({
+        error: expect.stringContaining("manual xpl revise"),
+      });
+      expect(existsSync(join(root, ".explainer/revisions"))).toBe(false);
+      expect(readJson(root, ".explainer/service/jobs.json").jobs).toEqual([]);
+      const unknown = await fetch(new URL(`/api/jobs/${submission.id}`, running.server.url));
+      expect(unknown.status).toBe(404);
+      expect(
+        (
+          await fetch(new URL(`/api/jobs/${submission.id}/accept`, running.server.url), {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: "{}",
+          })
+        ).status,
+      ).toBe(404);
+    } finally {
+      await running.close();
+    }
+    const restarted = await serve(root);
+    try {
+      expect(await (await fetch(new URL("/api/jobs", restarted.server.url))).json()).toMatchObject({
+        jobs: [],
+      });
+    } finally {
+      await restarted.close();
+    }
+  });
+
   it("publishes a stable guide attachment and refreshes its instance after restart", async () => {
     const root = cloneDir(demo);
     const first = await serve(root, "demo", "--backend", "claude");
