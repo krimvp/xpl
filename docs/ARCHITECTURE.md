@@ -1220,7 +1220,8 @@ roles, sides and coordinates. Inverse preconditions use the actual normalized, h
 An inverse that would restore missing or drifted source is rejected without moving history.
 
 `makeGraphEdits` groups at least two visible sibling boxes from the stored include list, keeping those
-boxes included inside the new group. For a nested group, its parent group's direct membership changes
+boxes included inside the new group. Siblings share an effective parent before hiding is applied; a hidden
+container still owns its children. For a nested group, that parent group's direct membership changes
 to contain the new group. Structural parents, evidence, stored edge endpoints and tours are untouched.
 Ungroup replaces the group in this view's include with its members, retaining the stored group for other
 references. Hide/restore changes only `hidden`, including IDs drawn by a transiently opened level. Inverses retain

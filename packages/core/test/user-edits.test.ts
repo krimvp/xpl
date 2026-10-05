@@ -265,6 +265,134 @@ it("groups visible siblings, undoes their exact structure, and preserves referen
   );
 });
 
+it("regroups visible children of a hidden container and undoes its exact membership", () => {
+  const w = makeWorld({ files: [{ path: "a.ts" }, { path: "b.ts" }, { path: "outside.ts" }] });
+  const setup = applyPatch(
+    createExplainer({
+      title: "Demo",
+      repoName: "Demo",
+      indexPath: ".explainer/index-c1.json",
+      index: w.index,
+    }),
+    {
+      nodes: [
+        { id: "grp:old", label: "Old", members: ["file:a.ts", "file:outside.ts", "file:b.ts"] },
+      ],
+      views: [
+        {
+          id: "view:map",
+          type: "graph",
+          title: "Map",
+          include: ["grp:old", "file:a.ts", "file:b.ts"],
+        },
+      ],
+    },
+    w.model,
+    w.getText,
+    { actor: "user" },
+  );
+  if (!setup.ok) throw new Error(JSON.stringify(setup.issues));
+  const hidden = applyUserEdits(
+    setup.explainer,
+    makeGraphEdits(setup.explainer, w.model, "view:map", { type: "hide", ids: ["grp:old"] }),
+    w.model,
+    w.getText,
+  );
+  const parents = (explainer: typeof setup.explainer) => {
+    const model = new ExplainerModel(explainer, w.model);
+    return deriveGraph(model.view("view:map") as GraphView, model).nodes.map((n) => [
+      n.id,
+      n.parent,
+    ]);
+  };
+  expect(parents(hidden.explainer)).toEqual([
+    ["file:a.ts", undefined],
+    ["file:b.ts", undefined],
+  ]);
+  const grouped = applyUserEdits(
+    hidden.explainer,
+    makeGraphEdits(hidden.explainer, w.model, "view:map", {
+      type: "group",
+      id: "grp:z-new",
+      label: "New",
+      members: ["file:a.ts", "file:b.ts"],
+    }),
+    w.model,
+    w.getText,
+  );
+  expect(parents(grouped.explainer)).toEqual([
+    ["file:a.ts", "grp:z-new"],
+    ["file:b.ts", "grp:z-new"],
+    ["grp:z-new", undefined],
+  ]);
+  expect(grouped.explainer.nodes.find((n) => n.id === "grp:old")?.members).toEqual([
+    "file:outside.ts",
+    "grp:z-new",
+  ]);
+  expect(grouped.explainer.nodes.find((n) => n.id === "grp:z-new")?.parent).toBe("grp:old");
+  const undone = applyUserEdits(grouped.explainer, grouped.inverse, w.model, w.getText);
+  expect(undone.explainer.nodes.map((n) => [n.id, n.members])).toEqual(
+    hidden.explainer.nodes.map((n) => [n.id, n.members]),
+  );
+  expect(undone.explainer.views).toEqual(hidden.explainer.views);
+  expect(parents(undone.explainer)).toEqual([
+    ["file:a.ts", undefined],
+    ["file:b.ts", undefined],
+  ]);
+});
+
+it("ungroups inside a hidden parent while retaining containment and exact undo", () => {
+  const w = makeWorld({ files: [{ path: "a.ts" }, { path: "b.ts" }] });
+  const setup = applyPatch(
+    createExplainer({
+      title: "Demo",
+      repoName: "Demo",
+      indexPath: ".explainer/index-c1.json",
+      index: w.index,
+    }),
+    {
+      nodes: [
+        { id: "grp:old", label: "Old", members: ["grp:inner"] },
+        { id: "grp:inner", parent: "grp:old", label: "Inner", members: ["file:a.ts", "file:b.ts"] },
+      ],
+      views: [
+        {
+          id: "view:map",
+          type: "graph",
+          title: "Map",
+          include: ["grp:old", "grp:inner"],
+          hidden: ["grp:old"],
+        },
+      ],
+    },
+    w.model,
+    w.getText,
+    { actor: "user" },
+  );
+  if (!setup.ok) throw new Error(JSON.stringify(setup.issues));
+  const ungrouped = applyUserEdits(
+    setup.explainer,
+    makeGraphEdits(setup.explainer, w.model, "view:map", { type: "ungroup", id: "grp:inner" }),
+    w.model,
+    w.getText,
+  );
+  const model = new ExplainerModel(ungrouped.explainer, w.model);
+  const view = model.view("view:map") as GraphView;
+  expect(deriveGraph(view, model).nodes.map((n) => [n.id, n.parent])).toEqual([
+    ["file:a.ts", undefined],
+    ["file:b.ts", undefined],
+  ]);
+  expect(deriveGraph({ ...view, hidden: [] }, model).nodes.map((n) => [n.id, n.parent])).toEqual([
+    ["file:a.ts", "grp:old"],
+    ["file:b.ts", "grp:old"],
+    ["grp:old", undefined],
+  ]);
+  expect(ungrouped.explainer.nodes).toEqual(setup.explainer.nodes);
+  const undone = applyUserEdits(ungrouped.explainer, ungrouped.inverse, w.model, w.getText);
+  expect(undone.explainer.views).toEqual(setup.explainer.views);
+  expect(undone.explainer.nodes).toEqual(setup.explainer.nodes);
+});
+
 it("hides and restores derived arrows and stubs without changing evidence, and undo restores absent hidden", () => {
   const w = makeWorld({
     files: [{ path: "a.ts" }, { path: "b.ts" }, { path: "outside.ts" }],

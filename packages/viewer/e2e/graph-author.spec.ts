@@ -172,3 +172,49 @@ test("offline grouping and visibility survive HTML export and remain explicit au
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("regrouping visible children of a hidden container nests both boxes and keeps undo and ungroup", async ({
+  page,
+}) => {
+  await openBundle(page, "view:overview");
+  await group(page);
+  await page.evaluate((id) => window.__xpl!.select([id]), GROUP);
+  await (
+    await openGraphControls(page)
+  )
+    .getByRole("button", { name: "Hide selected items" })
+    .click();
+  await expect(byId(page, GROUP)).toHaveCount(0);
+  await expect(byId(page, MEMBERS[0]!)).toBeVisible();
+  await expect(byId(page, MEMBERS[1]!)).toBeVisible();
+  await page.evaluate((ids) => window.__xpl!.select(ids), MEMBERS);
+  const controls = await openGraphControls(page);
+  await controls.getByLabel("Group name").fill("Z new");
+  await controls.getByRole("button", { name: "Group selected boxes" }).click();
+  const newGroup = byId(page, "grp:z-new");
+  await expect(newGroup).toBeVisible();
+  await expect(newGroup.locator('[data-element-id="file:src/worker.ts"]')).toBeVisible();
+  await expect(newGroup.locator('[data-element-id="file:src/metrics.ts"]')).toBeVisible();
+  await history(page);
+  await expect(newGroup).toHaveCount(0);
+  await (
+    await openGraphControls(page)
+  )
+    .getByRole("button", { name: "Restore all hidden items" })
+    .click();
+  await expect(byId(page, GROUP).locator('[data-element-id="file:src/worker.ts"]')).toBeVisible();
+  await expect(byId(page, GROUP).locator('[data-element-id="file:src/metrics.ts"]')).toBeVisible();
+  await history(page);
+  await expect(byId(page, GROUP)).toHaveCount(0);
+  await page.evaluate((ids) => window.__xpl!.select(ids), MEMBERS);
+  await controls.getByLabel("Group name").fill("Z new");
+  await controls.getByRole("button", { name: "Group selected boxes" }).click();
+  await page.evaluate(() => window.__xpl!.select(["grp:z-new"]));
+  await controls.getByRole("button", { name: "Ungroup in this map" }).click();
+  await expect(newGroup).toHaveCount(0);
+  await expect(byId(page, MEMBERS[0]!)).toBeVisible();
+  await expect(byId(page, MEMBERS[1]!)).toBeVisible();
+  await history(page);
+  await expect(newGroup.locator('[data-element-id="file:src/worker.ts"]')).toBeVisible();
+  await expect(newGroup.locator('[data-element-id="file:src/metrics.ts"]')).toBeVisible();
+});

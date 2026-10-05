@@ -244,11 +244,14 @@ export function makeGraphEdits(
     if (!action.label.trim()) throw new UserEditError("Name the group.");
     if (model.hasElement(action.id)) throw new UserEditError("This group ID already exists.", true);
     const members = [...new Set(action.members)];
-    const graph = deriveGraph(view, model);
+    // Hidden containers still own their members; hiding only changes their rendered parents.
+    const graph = deriveGraph({ ...view, hidden: [] }, model);
     const nodes = members.map((id) => graph.nodes.find((node) => node.id === id));
     if (
       members.length < 2 ||
-      nodes.some((node) => !node || !view.include.includes(node.id)) ||
+      nodes.some(
+        (node) => !node || !view.include.includes(node.id) || view.hidden?.includes(node.id),
+      ) ||
       nodes.some((node) => node?.parent !== nodes[0]?.parent)
     )
       throw new UserEditError("Select at least two visible sibling boxes included in this map.");
