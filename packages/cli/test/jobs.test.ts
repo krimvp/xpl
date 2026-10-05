@@ -228,6 +228,38 @@ describe("durable job lifecycle (controlled runner only)", () => {
     }
   });
 
+  it("selects, dispatches and retries with repository-owned guide/index paths from another cwd", async () => {
+    const { root, ctx, request, instanceId } = await setup();
+    const outside = cloneDir(demo);
+    const index = readJson(root, ".explainer/demo.explainer.json").index.path;
+    writeFile(outside, index, "{}");
+    let calls = 0;
+    const jobs = await openJobs(
+      { ...ctx, cwd: outside, indexOption: index },
+      instanceId,
+      async (job) => {
+        if (++calls === 1)
+          throw new Error("Controlled failure after reading the attached snapshot");
+        return { revisionRunId: job.input.revisionRunId };
+      },
+    );
+    try {
+      const job = await jobs.submit("demo", { id: randomUUID(), selectedRequestIds: [request.id] });
+      await expect.poll(async () => (await jobs.get("demo", job.id)).state).toBe("failed");
+      expect((await jobs.get("demo", job.id)).error).toBe(
+        "Controlled failure after reading the attached snapshot",
+      );
+      expect(job.scope.guide).toBe(".explainer/demo.explainer.json");
+      expect(job.input.index).toBe(index);
+      await jobs.retry("demo", job.id, 1);
+      await expect.poll(async () => (await jobs.get("demo", job.id)).state).toBe("completed");
+      expect(calls).toBe(2);
+      expect(readFile(outside, index)).toBe("{}");
+    } finally {
+      await jobs.close();
+    }
+  });
+
   it("recovers an interrupted owner without replaying completed jobs or publishing the old owner's late result", async () => {
     const { root, ctx, request, instanceId } = await setup();
     const entered = deferred<void>();
@@ -351,37 +383,57 @@ describe("durable job lifecycle (controlled runner only)", () => {
     },
   );
 
-  it("rechecks service ownership and job storage after waiting for a writer lock", async () => {
-    const { root, ctx, request, instanceId } = await setup();
-    const jobs = await openJobs(ctx, instanceId, async () => {
-      throw new Error("Retryable tool failure");
-    });
-    const job = await jobs.submit("demo", { id: randomUUID(), selectedRequestIds: [request.id] });
-    await expect.poll(async () => (await jobs.get("demo", job.id)).state).toBe("failed");
-    const path = ".explainer/service/jobs.json";
-    const original = readFile(root, path);
-    const held = deferred<void>();
-    const release = deferred<void>();
-    const holder = withRepositoryLock(root, `${root}/${path}`, async () => {
-      held.resolve();
-      await release.promise;
-    });
-    await held.promise;
-    const cancel = jobs.fence("demo", job.id, "cancelled");
-    // The synchronous preflight has run; the writer is now waiting for its directory lock.
-    await new Promise<void>((resolve) => setImmediate(resolve));
-    renameSync(`${root}/${path}`, `${root}/${path}.held`);
-    const foreign = cloneDir(demo);
-    const foreignPath = writeFile(foreign, path, original);
-    symlinkSync(foreignPath, `${root}/${path}`);
-    release.resolve();
-    await holder;
-    await expect(cancel).rejects.toThrow("leaves its repository");
-    expect(readFile(foreign, path)).toBe(original);
-    unlinkSync(`${root}/${path}`);
-    renameSync(`${root}/${path}.held`, `${root}/${path}`);
-    await jobs.close();
-  });
+  it.each(["storage", "owner"] as const)(
+    "rechecks %s after waiting for a writer lock without changing ledger bytes",
+    async (target) => {
+      const { root, ctx, request, instanceId } = await setup();
+      const jobs = await openJobs(ctx, instanceId, async () => {
+        throw new Error("Retryable tool failure");
+      });
+      const job = await jobs.submit("demo", { id: randomUUID(), selectedRequestIds: [request.id] });
+      await expect.poll(async () => (await jobs.get("demo", job.id)).state).toBe("failed");
+      const path = ".explainer/service/jobs.json";
+      const original = readFile(root, path);
+      const instancePath = ".explainer/service/instance.json";
+      const originalInstance = readFile(root, instancePath);
+      const held = deferred<void>();
+      const release = deferred<void>();
+      const holder = withRepositoryLock(root, `${root}/${path}`, async () => {
+        held.resolve();
+        await release.promise;
+      });
+      await held.promise;
+      const cancel = jobs.fence("demo", job.id, "cancelled");
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      const foreign = cloneDir(demo);
+      if (target === "storage") {
+        renameSync(`${root}/${path}`, `${root}/${path}.held`);
+        const foreignPath = writeFile(foreign, path, original);
+        symlinkSync(foreignPath, `${root}/${path}`);
+      } else {
+        writeFile(
+          root,
+          instancePath,
+          JSON.stringify({ ...JSON.parse(originalInstance), instanceId: randomUUID() }),
+        );
+      }
+      release.resolve();
+      await holder;
+      try {
+        await expect(cancel).rejects.toThrow(
+          target === "storage" ? "leaves its repository" : "no longer owns this repository service",
+        );
+        expect(readFile(root, path)).toBe(original);
+        if (target === "storage") expect(readFile(foreign, path)).toBe(original);
+      } finally {
+        if (target === "storage") {
+          unlinkSync(`${root}/${path}`);
+          renameSync(`${root}/${path}.held`, `${root}/${path}`);
+        } else writeFile(root, instancePath, originalInstance);
+        await jobs.close();
+      }
+    },
+  );
 
   it("adapts submission, scoped status and cancellation through the managed HTTP routes", async () => {
     const { root, ctx, request, instanceId } = await setup();

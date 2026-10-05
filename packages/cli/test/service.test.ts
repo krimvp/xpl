@@ -306,6 +306,39 @@ describe("repository service lifecycle", () => {
     },
   );
 
+  it("keeps foreground --root job history attached when another cwd has the same guide", async () => {
+    const root = cloneDir(demo);
+    const outside = cloneDir(demo);
+    const abort = new AbortController();
+    let ready!: (server: ViewServer) => void;
+    const listening = new Promise<ViewServer>((resolve) => {
+      ready = resolve;
+    });
+    const done = invoke(["service", "start", "demo", "--root", root, "--port", "0"], {
+      cwd: outside,
+      env: { XPL_VIEWER_HTML: viewer },
+      signal: abort.signal,
+      onServer: ready,
+    });
+    try {
+      const server = await Promise.race([
+        listening,
+        done.then((result) => {
+          throw new Error(result.err || result.out);
+        }),
+      ]);
+      const bundle = await fetch(new URL("/api/bundle", server.url));
+      expect(bundle.status).toBe(200);
+      expect(parseBundle(await bundle.text()).server!.attachment!.root).toBe(root);
+      const history = await fetch(new URL("/api/jobs", server.url));
+      expect(history.status).toBe(200);
+      expect(await history.json()).toMatchObject({ available: false, jobs: [] });
+    } finally {
+      abort.abort();
+      await done;
+    }
+  });
+
   it("resolves a repo-relative pinned index from outside the repository and persists its resolved path", async () => {
     const root = cloneDir(demo);
     const outside = makeTempDir();

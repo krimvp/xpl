@@ -1545,7 +1545,9 @@ source or another repository. A corrupt ledger refuses startup rather than erasi
 
 Each job has a caller-supplied UUID `id` (the delivery/idempotency key), revision `scope: {kind: "revision",
 guide, include}`, `selectedRequestIds`, and immutable `input: {revisionRunId, expected, index, requests}`.
-`guide` and `index` are repository-relative paths; `expected` is the existing `ArtifactIdentity`.
+`guide` and `index` are repository-relative paths, resolved from the canonical repository root for
+selection, history, dispatch and retry, even when the service starts from another working directory.
+`expected` is the existing `ArtifactIdentity`.
 `requests` retain #28's original IDs, context, content and outcome baselines. `revisionRunId` refers to
 #30's journal, which retains the previous/resolved guide and source text. Selection calls `selectRevision`;
 there is no second proposal format or acceptance implementation. Re-delivery of the same ID and selection

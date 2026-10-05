@@ -1,7 +1,7 @@
 /** Durable service jobs. Runners return proposals; this module never applies patches or records outcomes. */
 import { randomUUID } from "node:crypto";
 import { existsSync, lstatSync, readFileSync, realpathSync } from "node:fs";
-import { dirname, join, sep } from "node:path";
+import { dirname, join, resolve, sep } from "node:path";
 import {
   artifactIdentity,
   parseFeedbackRequest,
@@ -306,7 +306,7 @@ class RepositoryJobs {
         return existing;
       }
       this.requireRunner();
-      const selected = await selectRevision(this.ctx, guide, ids, include);
+      const selected = await selectRevision(this.ctx, resolve(this.ctx.root, guide), ids, include);
       const at = new Date().toISOString();
       const job: Job = {
         id: submission.id,
@@ -335,9 +335,9 @@ class RepositoryJobs {
   }
 
   private async fresh(job: Job) {
-    const loaded = loadExplainer(this.ctx, job.scope.guide);
+    const loaded = loadExplainer(this.ctx, resolve(this.ctx.root, job.scope.guide));
     const ws = await openWorkspace(
-      { ...this.ctx, indexOption: job.input.index },
+      { ...this.ctx, indexOption: resolve(this.ctx.root, job.input.index) },
       {
         explainer: loaded,
         skipExplainerIndex: true,
@@ -500,7 +500,9 @@ class RepositoryJobs {
 }
 
 export async function openJobs(ctx: Ctx, instanceId: string, runner?: JobRunner) {
-  ctx = { ...ctx, root: realpathSync(ctx.root) };
+  const root = realpathSync(ctx.root);
+  // Jobs resolve repository-owned paths, rather than command-line paths relative to the caller.
+  ctx = { ...ctx, root, cwd: root };
   uuid(instanceId);
   const jobs = new RepositoryJobs(ctx, instanceId, runner);
   await jobs.start();
