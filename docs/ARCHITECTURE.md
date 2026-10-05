@@ -1407,6 +1407,8 @@ Empty string titles stay recorded as empty. Directory read failures remain failu
 read/metadata errors are separate from a valid empty library. No readiness/freshness check or write occurs.
 `inventory.ts` uses the same loader for `status --all` and watch attention reports, then re-resolves
 and validates copies. Its moved, drifted and missing classifications and report fields stay unchanged.
+Implicit `show --at base` selection uses this loader too, so a guide name ending in `.json` cannot
+select a different repository JSON file. Unreadable guides still fail selection.
 
 `core/src/languages.ts` classifies every `FileLanguage` with a code display name or `undefined` for config
 and other text. Its derived `CODE_LANGUAGES` set is shared by code search and repo drafts; Rust participates

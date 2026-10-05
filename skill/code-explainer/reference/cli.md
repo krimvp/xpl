@@ -254,6 +254,8 @@ incoming refs: 1 (call 1)
 A config key shows like any symbol: `xpl show config/default.yaml#retry` prints `13 0│ retry:` … `16 3│   maxDelayMs: 30000`.
 
 `--at base <path>` prints a changed file as it was **before** the change the explainer records (`xpl change`, below). The offsets count from line 1 of the old file: they are what a base anchor's `span` uses. `-` marks the lines the change removes or rewrites. Paths only (the old code is not indexed). A renamed file takes its old or new path. With several explainers that record a change, pick one with `--explainer <name>`.
+Automatic selection reads the discovered `.explainer/*.explainer.json` files directly, even when a
+guide name such as `retry.json` matches a different repository JSON file. Unreadable guides fail selection.
 
 ```
 $ xpl show --at base src/runner.ts --lines 80-82
