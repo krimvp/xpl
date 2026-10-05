@@ -8,6 +8,10 @@
  */
 import {
   artifactIdentity,
+  applyUserEdits,
+  makeUserEdit,
+  type UserEdit,
+  type ArtifactIdentity,
   applyPatch,
   type ExplainerPatch,
   FEEDBACK_SCHEMA,
@@ -182,6 +186,12 @@ export interface ViewerState {
   /** Edits exist that are not persisted (always true after an edit without a server). */
   dirty: boolean;
   save: SaveState;
+  editBusy: boolean;
+  editDraft: boolean;
+  undoCount: number;
+  redoCount: number;
+  editHistoryError?: string;
+  editError?: string;
   /** Running under `xpl view`. */
   serverMode: boolean;
   feedback: FeedbackRequest[];
@@ -221,12 +231,16 @@ export class ViewerStore {
   private saving: Promise<void> | undefined;
   private readonly past: Navigation[] = [];
   private readonly future: Navigation[] = [];
+  private readonly undoEdits: UserEdit[][] = [];
+  private readonly redoEdits: UserEdit[][] = [];
+  private readonly editStorageKey: string;
   /** The reading tab (Guide, Map, Flow, Code) last on screen: where "Back to reading" goes from Explore. */
   private reading: Exclude<Perspective, "explore"> = "guide";
   /** Namespace of the page as loaded; edits change request context, never where requests are saved. */
   private readonly feedbackStorageKey: string;
 
   constructor(bundle: ViewerBundle, launch: LaunchParams = {}) {
+    this.editStorageKey = `xpl-edits:${JSON.stringify([bundle.explainer.repo?.name, bundle.explainer.title, bundle.server?.api, typeof location !== "undefined" ? location.pathname : ""])}`;
     const identity = artifactIdentity(bundle.explainer, bundle.index);
     this.feedbackStorageKey = `xpl-feedback:${identity.explainerHash}:${identity.sourceHash}`;
     this.indexModel = asIndexModel(bundle.index);
@@ -270,12 +284,32 @@ export class ViewerStore {
       showChanges: true,
       dirty: false,
       save: { status: "idle" },
+      editBusy: false,
+      editDraft: false,
+      undoCount: 0,
+      redoCount: 0,
       serverMode: this.api !== undefined,
       sourceWarning: bundle.sourceWarning,
       feedback: [],
       exportInfo: bundle.exportInfo,
     };
     this.loadFeedback(bundle.feedback);
+    // Offline reload opens the original embedded artifact. Its in-memory edits must first be exported.
+    if (this.api && typeof localStorage !== "undefined") {
+      try {
+        const stored = JSON.parse(localStorage.getItem(this.editStorageKey) ?? "null") as {
+          undo: UserEdit[][];
+          redo: UserEdit[][];
+        } | null;
+        if (stored && Array.isArray(stored.undo) && Array.isArray(stored.redo)) {
+          this.undoEdits.push(...stored.undo.slice(-50));
+          this.redoEdits.push(...stored.redo.slice(-50));
+          this.set({ undoCount: this.undoEdits.length, redoCount: this.redoEdits.length });
+        }
+      } catch (error) {
+        this.set({ editHistoryError: `Undo history could not be loaded: ${messageOf(error)}` });
+      }
+    }
     if (this.state.perspective !== "explore") this.reading = this.state.perspective;
     if (present) this.present();
     else if (launch.perspective && asked && launch.step) {
@@ -914,6 +948,7 @@ export class ViewerStore {
   }
 
   private editView(viewId: string, fields: Record<string, unknown>): void {
+    if (this.state.editBusy) return;
     const explainer = withViewFields(this.state.explainer, viewId, fields);
     if (explainer === this.state.explainer) return;
     const model = this.modelOf(explainer);
@@ -1021,8 +1056,130 @@ export class ViewerStore {
     await this.saving;
   }
 
+  /** Capture fields and version when the author opens the editor, before typing begins. */
+  captureEdit(
+    collection: UserEdit["collection"],
+    id: string,
+    fields: Record<string, unknown>,
+  ): { edit: UserEdit; version: ArtifactIdentity } {
+    return {
+      edit: makeUserEdit(this.state.explainer, this.indexModel, collection, id, fields),
+      version: artifactIdentity(this.state.explainer, this.indexModel.index),
+    };
+  }
+
+  setEditDraft(dirty: boolean): void {
+    this.set({ editDraft: dirty });
+  }
+
+  cancelEdit(): void {
+    this.set({
+      editDraft: false,
+      ...(this.state.editError
+        ? { editError: undefined, save: { status: "idle" } as SaveState }
+        : {}),
+    });
+  }
+
+  private keepEditHistory(): void {
+    this.set({ undoCount: this.undoEdits.length, redoCount: this.redoEdits.length });
+    if (!this.api || typeof localStorage === "undefined") return;
+    try {
+      localStorage.setItem(
+        this.editStorageKey,
+        JSON.stringify({ undo: this.undoEdits, redo: this.redoEdits }),
+      );
+      this.set({ editHistoryError: undefined });
+    } catch (error) {
+      this.set({
+        editHistoryError: `Edits are saved, but undo history could not be retained: ${messageOf(error)}`,
+      });
+    }
+  }
+
+  async saveEdits(edits: UserEdit[], version: ArtifactIdentity): Promise<void> {
+    const inverse = await this.writeEdits(edits, version);
+    this.undoEdits.push(inverse);
+    if (this.undoEdits.length > 50) this.undoEdits.shift();
+    this.redoEdits.length = 0;
+    this.set({ editDraft: false });
+    this.keepEditHistory();
+  }
+
+  /** Refresh unrelated content first; touched-field preconditions still forbid overwriting another author. */
+  async undoEdit(redo = false): Promise<void> {
+    if (this.state.editDraft) throw new Error("Save or cancel the text draft before undo or redo.");
+    const from = redo ? this.redoEdits : this.undoEdits;
+    const to = redo ? this.undoEdits : this.redoEdits;
+    const edits = from.at(-1);
+    if (!edits) return;
+    const inverse = await this.writeEdits(edits);
+    from.pop();
+    to.push(inverse);
+    this.keepEditHistory();
+  }
+
+  private async writeEdits(edits: UserEdit[], version?: ArtifactIdentity): Promise<UserEdit[]> {
+    if (this.state.editBusy) throw new Error("Wait for the current edit to finish saving.");
+    this.set({ editBusy: true, save: { status: "saving" } });
+    try {
+      await this.flush();
+      if (this.api && this.state.dirty)
+        throw new Error("Save the pending view or tour edits first.");
+      this.set({ save: { status: "saving" } });
+      let current = this.state.explainer;
+      if (!version && this.api) {
+        const bundle = await this.api.bundle();
+        // Adoption is blocked during this write, so retain its fresh source explicitly.
+        this.indexModel = asIndexModel(bundle.index);
+        this.workspaceRevision++;
+        current = bundle.explainer;
+        this.set({
+          explainer: current,
+          model: this.modelOf(current),
+          files: bundle.files,
+          baseFiles: bundle.baseFiles ?? {},
+          fileErrors: {},
+          baseErrors: {},
+          sourceWarning: bundle.sourceWarning,
+          exportInfo: bundle.exportInfo,
+        });
+      }
+      const expected = version ?? artifactIdentity(current, this.indexModel.index);
+      if (
+        !this.api &&
+        JSON.stringify(expected) !==
+          JSON.stringify(artifactIdentity(current, this.indexModel.index))
+      )
+        throw new Error(
+          "This explanation changed while you were editing. Reopen the editor and inspect it before saving.",
+        );
+      const result = this.api
+        ? await this.api.putEdits(expected, edits)
+        : applyUserEdits(current, edits, this.indexModel, snapshotTexts(this.state));
+      this.set({
+        explainer: result.explainer,
+        model: this.modelOf(result.explainer),
+        dirty: !this.api,
+        save: { status: "saved" },
+        editError: undefined,
+      });
+      return result.inverse;
+    } catch (error) {
+      this.set({
+        editError: messageOf(error),
+        save: { status: "error", message: messageOf(error) },
+      });
+      throw error;
+    } finally {
+      this.set({ editBusy: false });
+    }
+  }
+
   /** Bind the author action to the inspected snapshot, never regenerate its fingerprint at save time. */
   async recordReview(snapshot: ViewerBundle, review: ExplainerPatch["review"]): Promise<void> {
+    if (this.state.editBusy || this.state.editDraft)
+      throw new Error("Save or cancel the text edit before recording a review.");
     await this.flush();
     if (this.api && (this.state.dirty || this.state.save.status === "error"))
       throw new Error("Save the pending edits before recording a review.");
@@ -1112,6 +1269,7 @@ export class ViewerStore {
   }
 
   private editTour(tour: Tour, choose = false): void {
+    if (this.state.editBusy) return;
     const before = this.state.model.tour(tour.id);
     if (before === tour) return;
     const explainer = withTour(this.state.explainer, tour);
@@ -1258,6 +1416,8 @@ export class ViewerStore {
     const poll = async () => {
       if (
         busy ||
+        this.state.editBusy ||
+        this.state.editDraft ||
         this.state.dirty ||
         this.pending.size > 0 ||
         this.saving ||
@@ -1307,7 +1467,14 @@ export class ViewerStore {
     explainer: Explainer,
     workspace?: ViewerBundle & { fileErrors?: Record<string, string> },
   ): boolean {
-    if (this.state.dirty || this.pending.size > 0 || this.saving) return false;
+    if (
+      this.state.editBusy ||
+      this.state.editDraft ||
+      this.state.dirty ||
+      this.pending.size > 0 ||
+      this.saving
+    )
+      return false;
     if (!workspace && serializeExplainer(explainer) === serializeExplainer(this.state.explainer))
       return false;
     if (workspace) {

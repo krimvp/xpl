@@ -4218,3 +4218,33 @@ code {
 .review-dialog details {
   margin-block: 10px;
 }
+
+.text-edit {
+  margin-block: 12px;
+}
+.text-edit fieldset {
+  border: 0;
+  padding: 0;
+  min-width: 0;
+}
+.text-edit label {
+  display: grid;
+  gap: 4px;
+  margin-block: 10px;
+}
+.text-edit input,
+.text-edit textarea,
+.text-edit select {
+  width: 100%;
+  box-sizing: border-box;
+  font: inherit;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 6px;
+}
+.edit-item:disabled {
+  opacity: 0.5;
+  cursor: default;
+}

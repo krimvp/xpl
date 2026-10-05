@@ -13,6 +13,7 @@
  *   GET  /api/base-file?path= the code before the change of one changed file (text/plain): only for the
  *                             modified, renamed and deleted files of the explainer's change record (`path` is
  *                             `ChangedFile.path`); 400 for a malformed path, 404 for anything else
+ *   PUT  /api/edits          { version, edits }, bounded user fields and conditional inverses; 409 on conflicts.
  *   PUT  /api/review         { review: record | null }, applied as actor "user"; fingerprint checked at write.
  *   PUT  /api/views/<id>      a view patch, applied as actor "user", written to disk; 200 with the
  *                             updated view, 400 with { error, issues } when rejected
@@ -30,7 +31,13 @@
  * It binds to 127.0.0.1 by default. Against DNS rebinding and cross-site writes it checks the Host
  * header (loopback binds), and requires an application/json body and a same-origin Origin for PUT/POST.
  */
-import { artifactIdentity, feedbackContextReason, parseFeedbackRequest } from "@xpl/core";
+import {
+  artifactIdentity,
+  applyUserEdits,
+  UserEditError,
+  feedbackContextReason,
+  parseFeedbackRequest,
+} from "@xpl/core";
 import { createHash } from "node:crypto";
 import { existsSync, realpathSync, statSync } from "node:fs";
 import { join, sep } from "node:path";
@@ -393,6 +400,40 @@ export async function startViewServer(options: ViewServerOptions): Promise<ViewS
       send(req, res, 200, text, "text/plain; charset=utf-8");
       return;
     }
+    if (pathname === `${API}/edits`) {
+      allow("PUT");
+      const body = await readJsonBody(req);
+      if (Object.keys(body).sort().join(",") !== "edits,version" || !isRecord(body.version))
+        throw new HttpError(400, "Expected only version and bounded edits.");
+      const expectedVersion = body.version;
+      const saved = await serial(() =>
+        withRepositoryLock(env.root, explainerPath, async () => {
+          const state = await loadState();
+          const current = freshExplainer(state);
+          const version = artifactIdentity(current, state.index);
+          if (
+            expectedVersion.explainerHash !== version.explainerHash ||
+            expectedVersion.sourceHash !== version.sourceHash
+          )
+            throw new HttpError(
+              409,
+              "This explanation changed since you inspected it. Reload and inspect it before saving.",
+            );
+          try {
+            const result = applyUserEdits(current, body.edits, state.model, state.tree.texts);
+            await atomicWrite(state.loaded.abs, jsonFile(result.explainer));
+            return { ...result, version: artifactIdentity(result.explainer, state.index) };
+          } catch (error) {
+            if (error instanceof UserEditError)
+              throw new HttpError(error.conflict ? 409 : 400, error.message);
+            throw error;
+          }
+        }),
+      );
+      sendJson(req, res, 200, saved);
+      return;
+    }
+
     // Only review metadata enters this route; core checks the inspected fingerprint as a user patch.
     if (pathname === `${API}/review`) {
       allow("PUT");

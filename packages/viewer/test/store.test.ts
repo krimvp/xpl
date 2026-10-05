@@ -442,4 +442,16 @@ describe("under xpl view (server mode)", () => {
     expect(store.adoptExplainer(changed)).toBe(false);
     expect(store.getState().model.concept("concept:retry")?.summary).not.toBe("From disk.");
   });
+
+  it("keeps the selected item and open text draft until save or cancel", () => {
+    const store = new ViewerStore(makeBundle());
+    store.select(["concept:retry"]);
+    store.setEditDraft(true);
+    const changed = { ...store.getState().explainer, concepts: [] };
+    expect(store.adoptExplainer(changed)).toBe(false);
+    expect(store.getState().selection).toEqual(["concept:retry"]);
+    store.cancelEdit();
+    expect(store.adoptExplainer(changed)).toBe(true);
+    expect(store.getState().selection).toEqual([]);
+  });
 });

@@ -4,6 +4,9 @@ import { join } from "node:path";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import {
   BUNDLE_SCHEMA,
+  artifactIdentity,
+  makeUserEdit,
+  asIndexModel,
   reviewFingerprint,
   TextCache,
   collectAnchors,
@@ -89,6 +92,59 @@ async function json(res: Response): Promise<any> {
 }
 
 describe("xpl view", () => {
+  it("version-checks bounded edits and persists undo without replacing concurrent fields", async () => {
+    const dir = cloneDir(demo);
+    const view = await serve(dir);
+    const snapshot = async () => parseBundle(await (await fetch(`${view.url}/api/bundle`)).text());
+    const initial = await snapshot();
+    const edit = makeUserEdit(
+      initial.explainer,
+      asIndexModel(initial.index),
+      "nodes",
+      "file:src/runner.ts",
+      { summary: "Corrected runner summary." },
+    );
+    const put = (version: unknown, edits: unknown) =>
+      fetch(`${view.url}/api/edits`, {
+        method: "PUT",
+        headers: JSON_HEADERS,
+        body: JSON.stringify({ version, edits }),
+      });
+    const version = artifactIdentity(initial.explainer, initial.index);
+    const saved = await put(version, [edit]);
+    expect(saved.status).toBe(200);
+    const { inverse } = await json(saved);
+    expect(
+      readJson(dir, ".explainer/demo.explainer.json").nodes.find((n: any) => n.id === edit.id)
+        .summary,
+    ).toBe("Corrected runner summary.");
+    expect((await put(version, [edit])).status).toBe(409);
+    expect(
+      (
+        await invoke(["apply", "demo", "-", "--actor", "user"], {
+          cwd: dir,
+          stdin: JSON.stringify({ nodes: [{ id: edit.id, detail: "Concurrent detail." }] }),
+        })
+      ).code,
+    ).toBe(0);
+    const current = await snapshot();
+    const undo = await put(artifactIdentity(current.explainer, current.index), inverse);
+    expect(undo.status).toBe(200);
+    const disk = readJson(dir, ".explainer/demo.explainer.json");
+    expect(disk.nodes.find((n: any) => n.id === edit.id).detail).toBe("Concurrent detail.");
+    expect(disk.nodes.find((n: any) => n.id === edit.id).summary).toBe(
+      initial.explainer.nodes.find((n) => n.id === edit.id)?.summary,
+    );
+    const restored = await snapshot();
+    expect(
+      (
+        await put(artifactIdentity(restored.explainer, restored.index), [
+          { ...edit, after: { provenance: { origin: "llm" } } },
+        ])
+      ).status,
+    ).toBe(400);
+  });
+
   it("records and removes author reviews on disk, rejects stale inspected content, and embeds broad evidence", async () => {
     const dir = cloneDir(demo);
     const view = await serve(dir);
