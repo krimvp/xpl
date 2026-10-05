@@ -75,7 +75,7 @@ between two commits. For a change, `xpl change` records the diff in the explaine
 ## 1. Repository layout and conventions
 
 ```
-package.json            npm workspaces root (ESM). Scripts: build, test, typecheck, test:e2e, format, format:check
+package.json            npm workspaces root (ESM). Scripts: build, site, test, typecheck, test:e2e, format, format:check
 tsconfig.base.json      strict, noUncheckedIndexedAccess, noUnusedLocals, ES2022, NodeNext
 packages/
   core/     @xpl/core     schema types + pure logic (hash, anchors, derivation, validation, patches).
@@ -91,16 +91,26 @@ docs/                   handoff.md, ARCHITECTURE.md, analysis-2026-09-30.txt, re
                         review-2026-10-03-real-runs/ (the per-run reports of that review), images/,
                         assessment-2026-10-04-graph-formats.md (+ its reproducible scripts)
 .explainer/             xpl's own explainer (xpl.explainer.json), checked by packages/cli/test/self-explainer.test.ts
+site/                   public landing page: hand-written HTML/CSS and jobrunner screenshots
 AGENTS.md, CLAUDE.md    guidance for coding agents working on this repo (CLAUDE.md imports AGENTS.md)
 .claude/skills/         skills for working on this repo (.agents/skills links here; code-explainer links to skill/)
 .claude/hooks/          Claude Code hooks (registered in .claude/settings.json): session-start.sh, format-on-edit.sh,
                         stop-check.sh (AGENTS.md, Automation)
 scripts/                pr-screenshots.sh (before/after viewer screenshots; packages/viewer/scripts/pr-shots.ts),
-                        needs-screenshots.sh (does a change need them), publish-pr-shots.sh (push to pr-assets)
-.github/                pull_request_template.md, workflows/ci.yml (checks, e2e, PR screenshots)
+                        needs-screenshots.sh (does a change need them), publish-pr-shots.sh (push to pr-assets),
+                        build-site.mjs (build xpl, bundle a fixture copy, check local site links/assets)
+.github/                pull_request_template.md, workflows/ci.yml (checks, e2e, PR screenshots),
+                        workflows/pages.yml (build on PRs; publish the site on main pushes or manual dispatch)
 ```
 
 Conventions (all packages):
+
+- `npm run site` writes `_site/` (git-ignored). It copies only `site/` and bundles a temporary copy of
+  `fixtures/ts-jobrunner` with the built CLI (`index --precise off`, a text-only patch through `apply`,
+  then `bundle jobrunner`). The patch fills required summaries missing from the committed fixture. Local page
+  and CSS references and the embedded demo payload are checked before success. Pages deploys this output
+  at `https://krimvp.github.io/xpl/`; pull requests build without deploying. The public artifact contains
+  the landing page and fixture example, not internal docs or the repository's own explainer.
 
 - ESM, TypeScript `strict`. Relative imports use `.js` suffixes (NodeNext style; bundlers accept it).
 - Workspace packages export their TS sources (`"exports": { ".": "./src/index.ts" }`; the indexer also
@@ -1346,11 +1356,16 @@ stdout (a rejection exits 1); fatal errors (`error: …`) and warnings (`warning
 **Installed artifact.** Workspace packages remain private. `npm run build` writes standalone package
 metadata in `packages/cli/dist`, with `@xpl/cli`'s version, a `bin` entry, Node >=22.12 and no dependencies
 or install scripts. The viewer is required at build time. The directory carries the bundled CLI, viewer,
-WASM runtime and grammars, Rust tags query, the skill and `integrity.json`. `npm run pack --
---pack-destination <outside-repo-dir>` builds and packs that directory. Install its local tarball with
+WASM runtime and grammars, Rust tags query, the skill, a short README, MIT LICENSE and `integrity.json`.
+The published name is `publishName` (`@krimvp/xpl`) in the private `@xpl/cli` workspace manifest; its version is
+0.1.0. The installed-artifact check retains service restart/recovery and checks watch pause/resume,
+durable job history and unavailable-runner submission. It also checks the published name/version, license
+and packed file inventory. npm rejected `xpl` as too similar to an existing name; `@krimvp/xpl` is the selected fallback.
+`npm run pack -- --pack-destination <outside-repo-dir>` builds and packs that directory. Install its local tarball with
 `npm install --global --prefix "$HOME/.local" --offline --ignore-scripts <absolute-tarball-path>`; put
-`$HOME/.local/bin` on PATH. No source build is needed at installation. Registry/channel publication remains
-a separate decision; nothing is published by build, pack, diagnosis or skill installation.
+`$HOME/.local/bin` on PATH. No source build is needed at installation. `@krimvp/xpl` 0.1.0 is published on npm
+under MIT; install with `npm install --global @krimvp/xpl`. Releases are published from main only. Publication is a
+separate step; nothing is published by build, pack, diagnosis or skill installation.
 
 `doctor` checks SHA-256 hashes from the artifact inventory and loads every grammar. Hashes detect damage,
 not publisher identity. Skill availability is optional for reading, required with `--agent claude`.
@@ -2575,9 +2590,9 @@ identities to syntax ranges. This is a proposed contract revision, not a change 
   depth 1, so a path whose layers call each other through a variable (`self.app`) is not rebuilt.
 - `xpl lint` is mechanical: it catches slogans, absolute words, long sentences, code titles and order
   problems, not wrong claims. `repeats-summary` finds near-verbatim repeats only.
-- Not published: workspace packages are private; build/pack produce a standalone local npm tarball with
+- Workspace packages are private; build/pack produce a standalone local npm tarball with
   its viewer, grammars and skill. Install/update and reader/export checks cover Linux x64/WSL2 only.
-  Node ≥22.12 is required. Registry name, release version and channel still need a publication decision.
+  Node ≥22.12 is required. `@krimvp/xpl` 0.1.0 is published on npm under MIT. Releases are published from main only.
 
 **Next steps, roughly by value** (the review in `docs/review-2026-10-01.md` has the roadmap): an independent
 accuracy pass for change explainers; a word-level diff in rewritten lines; editable step titles and code in

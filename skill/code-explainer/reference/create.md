@@ -1,5 +1,21 @@
 # Create a guide
 
+## Install
+
+Install from npm (Node 22.12 or newer):
+
+```sh
+npm install --global @krimvp/xpl
+xpl skill install
+xpl doctor --agent claude
+```
+
+Alternatively, with access to the private [source repository](https://github.com/krimvp/xpl),
+run `npm install && npm run build`, then `npm pack ./packages/cli/dist` and
+`npm install -g --ignore-scripts ./krimvp-xpl-0.1.0.tgz`. Install a maintainer's tarball offline with
+`npm install -g --offline --ignore-scripts <tarball>`, then run `xpl skill install`.
+Claude Code needs separate installation, authentication and provider access.
+
 Use the installed skill's `bin/xpl` launcher for the commands below. Run from the repository root, or pass `--root /absolute/path/to/repo`. The authoring agent reads the code and writes the JSON patch; the user supplies the intent.
 
 ## Start with the intent
@@ -50,7 +66,7 @@ PR input when it changes. `pr prepare` remains available for input-only local ch
 
 | Failure                                      | Next action                                                                                                                                                                                                                                                                                                                   |
 | -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Node, launcher or bundled asset unavailable  | Run `xpl doctor`. Repair Node or reinstall the tarball; rerun `xpl skill install --dir <same-skill-dir>` after moving/updating the CLI. Preserve local skill edits by moving that directory aside before reinstalling.                                                                                                        |
+| Node, launcher or bundled asset unavailable  | Run `xpl doctor`. Repair Node or reinstall the npm package or tarball; rerun `xpl skill install --dir <same-skill-dir>` after moving/updating the CLI. Preserve local skill edits by moving that directory aside before reinstalling.                                                                                         |
 | Precise tools cannot run                     | Show the tool failure. If precise results are required, repair its toolchain/dependencies and retry. Otherwise explicitly rerun `xpl index --precise off` and keep `heuristic` labels; confirm calls by reading source.                                                                                                       |
 | Index failed or reports a stale working tree | Fix the reported root, file or tool problem, then rerun indexing with the selected mode. Keep the existing guide. After source changes, follow `SKILL.md`'s anchor repair workflow before applying old patches.                                                                                                               |
 | Agent stopped or provider access failed      | Repair authentication/provider access and explicitly invoke the same scope, root and guide again. Read the stored guide and outside patch first; do not rerun `new` over it. If lint passed but apply was interrupted, inspect status and the saved fields before retrying the patch.                                         |
