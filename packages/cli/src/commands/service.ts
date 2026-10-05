@@ -12,7 +12,7 @@ import { atomicWrite, jsonFile, parseJson, toPosix, withRepositoryLock } from ".
 import { chooseIndexFile, loadExplainer, openWorkspace, WorkingTree } from "../repo.js";
 import type { ViewServer } from "../server.js";
 import { readViewerHtml } from "../viewer-html.js";
-import { claudeRunner } from "../claude-runner.js";
+import { claudeRunner, claudeAnswerRunner } from "../claude-runner.js";
 import { openJobs } from "../jobs.js";
 import { listen, untilStopped } from "./view.js";
 import { watchControl } from "../watch-control.js";
@@ -304,6 +304,9 @@ export const serviceCommand: CommandSpec = {
     "Completed jobs do not apply patches. Acceptance rechecks source/readiness and records only selected outcomes.",
     "Another view's changed decisions stop acceptance and reload the review for inspection.",
     "Interrupted acceptance recovers through the same journal; cancelled/superseded attempts cannot apply.",
+    "Headless /api/answers jobs answer saved explain requests against frozen guide/source snapshots.",
+    "Every returned quote is checked against recorded head/base lines; answers remain in portable feedback history.",
+    "Source changes mark answer context outdated. Answers never finalize outcomes or accept guide patches.",
     "Local serving requires no network or agent credentials. A later Claude job requires its own configured",
     "authentication and provider network access. Manual commands and offline HTML work with the service stopped.",
   ],
@@ -537,6 +540,9 @@ export const serviceCommand: CommandSpec = {
         instance.instanceId,
         backend === "claude"
           ? claudeRunner(ctx, { skillDir, timeoutMs: jobTimeout * 1000 })
+          : undefined,
+        backend === "claude"
+          ? claudeAnswerRunner(ctx, { skillDir, timeoutMs: jobTimeout * 1000 })
           : undefined,
       );
       server = await listen(ctx, loaded.abs, "127.0.0.1", port, {

@@ -356,7 +356,9 @@ Pins travel in live saves and offline exports. Leave user-owned `layout` unchang
 `layout: null` resets placement only when the user explicitly asks for it. Opening another level, pan and
 zoom remain navigation. Each map uses its own pins, including when another map is opened inside it.
 
-**Code first.** A flow or sequence whose steps' code is all in one file (the steps of one function) is read code first: the code is the main pane and the flow a narrow outline beside it that follows the caret. `"layout": "diagram"` keeps the diagram as the main pane; `"layout": "code-first"` asks for the code-first layout for any flow; `null` goes back to the default.
+**Code first.** In Read and Explore, a flow with at least three steps, each with current-code anchors all in one file, defaults to code first: the code is the main pane and a narrow process outline follows the caret. `"layout": "diagram"` keeps the diagram as the main pane; `"layout": "code-first"` requests code first for any flow; `null` restores the default.
+
+Read always keeps a sequence in the diagram pane, even when its code is all in one file or its `layout` is `"code-first"`. **Show source** opens the linked code beside it. Explore uses a narrow diagram column and a larger code pane for a sequence only with explicit `"layout": "code-first"`; it still draws lifelines, arrows and frames, without a caret-following process outline. A one-file sequence otherwise keeps Explore's usual diagram layout.
 
 ```json patch
 {
@@ -475,7 +477,7 @@ zoom remain navigation. Each map uses its own pins, including when another map i
 }
 ```
 
-A sequence view also appears in the reader's Process flow tab, as an ordered list of its calls; that list is not a model of the decisions. Write a flow view when the decisions are the point.
+A sequence view appears in the reader's **Flow** tab as a sequence diagram, with the same lifelines, call arrows and frames as its Guide picture and Explore. Write a flow view when stages, decisions and branches are the point.
 
 **Supporting files.** For configuration and files that code loads by name, use configuration-key anchors (`role: "config"`) and edges with `kind: "loads"`, `"discovers"`, `"configures"` or `"overrides"`, anchored at both ends. A loader points to the loaded file or plugin directory (or group); configuration points to the code that reads it; an overriding file points to the file it overrides. Say the conditions and the order of precedence in the edge summary, as the code shows them: file names and reading order do not prove precedence. Index `resources` records resolve literal paths and supported globs, with `static` or `inferred` labels; a matching file does not prove that it is loaded at runtime.
 

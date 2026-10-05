@@ -24,6 +24,7 @@
  *   POST /api/requests        a snapshot-bound FeedbackRequest, merged by its stable request ID;
  *                             legacy element-only input is stored as outdated, without invented context
  *   GET/POST /api/jobs        managed-service history / snapshot-bound selection (runner required)
+ *   GET/POST /api/answers     frozen question jobs; history also lives in portable feedback
  *   GET /api/jobs/<UUID>      one job for this guide; results remain proposals
  *   GET/POST /api/jobs/<UUID>/review; POST .../accept   guarded #30 decisions and outcome recovery
  *   POST /api/jobs/<UUID>/<cancel|supersede|retry>   durable fenced lifecycle actions
@@ -66,7 +67,7 @@ import { atomicWrite, withRepositoryLock, displayPath, jsonFile } from "./fsutil
 import { importRequests, appendRequest, readRequests } from "./requests.js";
 import { watchAttention } from "./attention.js";
 import type { watchControl } from "./watch-control.js";
-import type { openJobs, JobSubmission } from "./jobs.js";
+import type { openJobs, JobSubmission, AnswerSubmission } from "./jobs.js";
 import {
   loadRepositoryGuides,
   WorkingTree,
@@ -443,25 +444,53 @@ export async function startViewServer(options: ViewServerOptions): Promise<ViewS
       return;
     }
 
-    if (pathname === `${API}/jobs` || pathname.startsWith(`${API}/jobs/`)) {
+    const answering = pathname === `${API}/answers` || pathname.startsWith(`${API}/answers/`);
+    if (answering || pathname === `${API}/jobs` || pathname.startsWith(`${API}/jobs/`)) {
       const jobs = options.control?.jobs;
       if (!jobs) throw new HttpError(404, "jobs require a managed repository service");
       const name = attachment.guide;
-      const parts = pathname.slice(`${API}/jobs`.length).split("/").filter(Boolean);
+      const parts = pathname
+        .slice(`${API}/${answering ? "answers" : "jobs"}`.length)
+        .split("/")
+        .filter(Boolean);
       try {
         if (parts.length === 0) {
           allow("GET", "HEAD", "POST");
           if (method === "POST") {
             const body = await readJsonBody(req);
-            if (Object.keys(body).some((k) => !["id", "selectedRequestIds", "include"].includes(k)))
-              throw new HttpError(400, "Expected id, selectedRequestIds and optional include.");
-            const job = await serial(() => jobs.submit(name, body as unknown as JobSubmission));
+            if (
+              Object.keys(body).some(
+                (k) =>
+                  !(
+                    answering ? ["id", "requestId"] : ["id", "selectedRequestIds", "include"]
+                  ).includes(k),
+              )
+            )
+              throw new HttpError(
+                400,
+                answering
+                  ? "Expected id and requestId."
+                  : "Expected id, selectedRequestIds and optional include.",
+              );
+            const job = await serial(async () =>
+              answering
+                ? await jobs.submitAnswer(name, body as unknown as AnswerSubmission)
+                : await jobs.submit(name, body as unknown as JobSubmission),
+            );
             sendJson(req, res, 200, { job });
-          } else sendJson(req, res, 200, { ...jobs.availability, jobs: await jobs.list(name) });
+          } else
+            sendJson(req, res, 200, {
+              ...(answering ? jobs.answerAvailability : jobs.availability),
+              jobs: answering ? await jobs.listAnswers(name) : await jobs.list(name),
+            });
         } else if (parts.length === 1) {
           allow("GET", "HEAD");
-          sendJson(req, res, 200, { job: await jobs.get(name, parts[0]!) });
-        } else if (parts.length === 2 && ["review", "accept"].includes(parts[1]!)) {
+          sendJson(req, res, 200, {
+            job: answering
+              ? await jobs.getAnswer(name, parts[0]!)
+              : await jobs.get(name, parts[0]!),
+          });
+        } else if (!answering && parts.length === 2 && ["review", "accept"].includes(parts[1]!)) {
           allow("GET", "HEAD", "POST");
           if (parts[1] === "accept" && method !== "POST")
             throw new HttpError(405, "Acceptance requires POST.");
@@ -500,6 +529,7 @@ export async function startViewServer(options: ViewServerOptions): Promise<ViewS
               400,
               "Retry expects only expectedAttempt; cancel/supersede expect an empty object.",
             );
+          await (answering ? jobs.getAnswer(name, parts[0]!) : jobs.get(name, parts[0]!));
           const job = await serial(() =>
             parts[1] === "retry"
               ? jobs.retry(name, parts[0]!, body.expectedAttempt)

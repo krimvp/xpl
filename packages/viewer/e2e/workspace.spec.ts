@@ -20,8 +20,7 @@ test("opens a readable guide with optional synchronized map, flow and source", a
   await expect(page.locator(".workspace-diagram svg")).toBeVisible();
   expect(await selectionOf(page)).toEqual(selection);
   await page.getByTestId("perspective-flow").click();
-  await expect(page.getByTestId("process-flow")).toBeVisible();
-  await expect(page.locator(".flow-projection")).toContainText("Read from top to bottom");
+  await expect(page.locator(".workspace-diagram .sequence")).toBeVisible();
   expect(await selectionOf(page)).toEqual(selection);
   await page.getByTestId("perspective-code").click();
   await expect(page.locator(".editor-host").first()).toBeVisible();
@@ -57,7 +56,7 @@ test("shows configuration keys, opens supporting files and restores the topic on
   await page.getByTestId("perspective-flow").click();
   const selection = await selectionOf(page);
   await page.reload();
-  await expect(page.getByTestId("process-flow")).toBeVisible();
+  await expect(page.locator(".workspace-diagram .sequence")).toBeVisible();
   expect(await selectionOf(page)).toEqual(selection);
   expect((await stateOf(page)).stepId).toBe("t2");
   expect(problems).toEqual([]);
@@ -144,11 +143,11 @@ for (const scheme of ["light", "dark"] as const) {
       .nth(1)
       .click();
     await page.getByTestId("perspective-flow").click();
-    await expect(page.locator(".flow-stage").first()).toBeVisible();
+    await expect(page.locator(".workspace-diagram .step").first()).toBeVisible();
     await page.screenshot({ path: screenshotPath(`workspace-flow-${scheme}`) });
     await page.getByRole("button", { name: "Show source", exact: true }).click();
     await page.evaluate(() => window.__xpl!.setCursor("src/runner.ts", 76));
-    await expect(page.locator('[data-element-id="dispatch:3"]')).toHaveClass(/is-matched/);
+    await expect(page.locator('[data-element-id="dispatch:3"]')).toHaveClass(/is-match/);
     await page.screenshot({ path: screenshotPath(`workspace-source-${scheme}`) });
     await page.setViewportSize({ width: 390, height: 844 });
     await page.getByTestId("perspective-guide").click();
@@ -196,7 +195,7 @@ test("keeps the reader available when an associated diagram is malformed", async
   await page.getByTestId("perspective-map").click();
   await expect(page.locator(".diagram-message")).toContainText("shows nothing yet");
   await page.getByTestId("perspective-flow").click();
-  await expect(page.locator(".flow-stage").first()).toBeVisible();
+  await expect(page.locator(".workspace-diagram .step").first()).toBeVisible();
   expect(problems).toEqual([]);
 });
 

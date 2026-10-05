@@ -6,7 +6,7 @@ import { chmodSync, existsSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
 import { artifactIdentity } from "@xpl/core";
-import { claudeRunner } from "../src/claude-runner.js";
+import { claudeRunner, claudeAnswerRunner } from "../src/claude-runner.js";
 import { createCtx } from "../src/context.js";
 import { openJobs } from "../src/jobs.js";
 import { loadExplainer, openWorkspace } from "../src/repo.js";
@@ -651,4 +651,32 @@ describe("configured Claude adapter (stub executable, no provider)", () => {
       }
     },
   );
+});
+
+it("uses the installed Claude process adapter for frozen source-linked answers without a revision journal", async () => {
+  const body = `const input=JSON.parse(fs.readFileSync('input.json','utf8')); const source=input.sources.find(s=>s.file==='src/queue.ts' && s.side==='head'); fs.writeFileSync(output, JSON.stringify({text:'Queue holds pending jobs.',references:[{file:source.file,side:source.side,fromLine:1,toLine:1,quote:source.text.split(/\\r?\\n/)[0]}]})); console.log(JSON.stringify({is_error:false,result:'Answer written'}));`;
+  const { root, ctx, skillDir, tooling, instanceId, request } = await setup(body);
+  const { request: question } = await appendRequest(root, {
+    ...request,
+    id: "question-1",
+    kind: "explain",
+  });
+  const jobs = await openJobs(ctx, instanceId, undefined, claudeAnswerRunner(ctx, { skillDir }));
+  try {
+    const before = readFile(root, ".explainer/demo.explainer.json");
+    const job = await jobs.submitAnswer("demo", { id: randomUUID(), requestId: question.id });
+    await expect
+      .poll(async () => (await jobs.getAnswer("demo", job.id)).state, { timeout: 5000 })
+      .toBe("completed");
+    expect((await jobs.getAnswer("demo", job.id)).result?.text).toBe("Queue holds pending jobs.");
+    const capture = readJson(tooling, "capture.json");
+    expect(capture.prompt).toContain("Use only the recorded sources");
+    expect(capture.prompt).toContain("No patches, guide changes or author outcome decisions");
+    expect(capture.output.endsWith("/answer.json")).toBe(true);
+    expect(capture.args).toContain("--restricted");
+    expect(existsSync(join(root, ".explainer/revisions"))).toBe(false);
+    expect(readFile(root, ".explainer/demo.explainer.json")).toBe(before);
+  } finally {
+    await jobs.close();
+  }
 });
