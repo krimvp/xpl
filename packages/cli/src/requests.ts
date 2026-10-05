@@ -10,6 +10,8 @@ import {
   type ArtifactIdentity,
   type FeedbackRequest,
   type FeedbackStatus,
+  type FeedbackAnswer,
+  sameFeedbackContent,
 } from "@xpl/core";
 import { CliError, errorMessage } from "./errors.js";
 import { atomicWrite, withRepositoryLock, jsonFile } from "./fsutil.js";
@@ -42,16 +44,20 @@ function storedRequest(value: unknown, position: number): FeedbackRequest {
   return parseFeedbackRequest(value);
 }
 
+function parseStore(data: unknown): FeedbackRequest[] {
+  if (!Array.isArray(data)) throw new Error("expected a JSON array");
+  const requests = data.map(storedRequest);
+  if (new Set(requests.map((r) => r.id)).size !== requests.length)
+    throw new Error("duplicate request IDs in store");
+  return mergeFeedbackRequests(requests);
+}
+
 export function readRequests(root: string): { requests: FeedbackRequest[]; error?: string } {
   const path = requestsPath(root);
   if (!existsSync(path)) return { requests: [] };
   try {
     const data: unknown = JSON.parse(readFileSync(path, "utf8"));
-    if (!Array.isArray(data)) throw new Error("expected a JSON array");
-    const requests = data.map(storedRequest);
-    if (new Set(requests.map((r) => r.id)).size !== requests.length)
-      throw new Error("duplicate request IDs in store");
-    return { requests };
+    return { requests: parseStore(data) };
   } catch (error) {
     return { requests: [], error: `${path} is not a valid request queue: ${errorMessage(error)}` };
   }
@@ -60,12 +66,15 @@ export function readRequests(root: string): { requests: FeedbackRequest[]; error
 async function mutate<T>(
   root: string,
   merge: (requests: FeedbackRequest[]) => T | Promise<T>,
+  beforePublish?: () => Promise<void>,
 ): Promise<T> {
   return withRepositoryLock(root, requestsPath(root), async () => {
     const { requests, error } = readRequests(root);
     if (error) throw new CliError(error);
     const result = await merge(requests);
-    await atomicWrite(requestsPath(root), jsonFile(requests));
+    const checked = parseStore(mergeFeedbackRequests(requests));
+    await beforePublish?.();
+    await atomicWrite(requestsPath(root), jsonFile(checked));
     return result;
   });
 }
@@ -129,43 +138,78 @@ export async function recordOutcomes(
   /** Called under the outcome lock, after validation, before outcomes become visible. */
   commitDecision?: () => Promise<void>,
 ): Promise<void> {
-  await mutate(root, async (requests) => {
-    if (new Set(updates.map((u) => u.id)).size !== updates.length)
-      throw new CliError("duplicate selected request IDs");
-    for (const update of updates) {
-      const i = requests.findIndex((r) => r.id === update.id);
-      if (i === -1) throw new CliError(`unknown request ID ${update.id}`);
-      const original = requests[i]!;
-      if (
-        !(original.context === null && update.context === null) &&
-        !sameFeedbackContext(original.context, update.context)
-      )
-        throw new CliError(`original context does not match request ${update.id}`);
-      if (update.expectedRevision !== undefined) {
-        if (!Number.isSafeInteger(update.expectedRevision) || update.expectedRevision < 0)
-          throw new CliError("expectedRevision must be a non-negative safe integer");
+  await mutate(
+    root,
+    (requests) => {
+      if (new Set(updates.map((u) => u.id)).size !== updates.length)
+        throw new CliError("duplicate selected request IDs");
+      for (const update of updates) {
+        const i = requests.findIndex((r) => r.id === update.id);
+        if (i === -1) throw new CliError(`unknown request ID ${update.id}`);
+        const original = requests[i]!;
         if (
-          original.outcome.revision === update.expectedRevision + 1 &&
-          original.outcome.status === update.status &&
-          original.outcome.reason === update.reason
+          !(original.context === null && update.context === null) &&
+          !sameFeedbackContext(original.context, update.context)
         )
-          continue;
-        if (original.outcome.revision !== update.expectedRevision)
-          throw new CliError(
-            `outcome changed since selection for request ${update.id}; reconcile before retrying`,
-          );
+          throw new CliError(`original context does not match request ${update.id}`);
+        if (update.expectedRevision !== undefined) {
+          if (!Number.isSafeInteger(update.expectedRevision) || update.expectedRevision < 0)
+            throw new CliError("expectedRevision must be a non-negative safe integer");
+          if (
+            original.outcome.revision === update.expectedRevision + 1 &&
+            original.outcome.status === update.status &&
+            original.outcome.reason === update.reason
+          )
+            continue;
+          if (original.outcome.revision !== update.expectedRevision)
+            throw new CliError(
+              `outcome changed since selection for request ${update.id}; reconcile before retrying`,
+            );
+        }
+        const recorded = parseFeedbackRequest({
+          ...original,
+          outcome: {
+            revision: original.outcome.revision + 1,
+            status: update.status,
+            reason: update.reason,
+            at: new Date().toISOString(),
+          },
+        });
+        requests[i] = mergeFeedbackRequests([original, recorded])[0]!;
       }
-      const recorded = parseFeedbackRequest({
-        ...original,
-        outcome: {
-          revision: original.outcome.revision + 1,
-          status: update.status,
-          reason: update.reason,
-          at: new Date().toISOString(),
-        },
-      });
-      requests[i] = mergeFeedbackRequests([original, recorded])[0]!;
-    }
-    await commitDecision?.();
-  });
+    },
+    commitDecision,
+  );
+}
+
+/** The completed job is the publication receipt. Replays union immutable answers without changing outcomes. */
+export async function recordAnswer(
+  root: string,
+  original: FeedbackRequest,
+  answer: FeedbackAnswer,
+  /** Commit the job receipt after whole-store validation, before the history write. */
+  commitReceipt?: () => Promise<void>,
+): Promise<void> {
+  const stored = readRequests(root);
+  if (stored.error) throw new CliError(stored.error);
+  const existing = stored.requests.find((r) => r.id === original.id);
+  if (
+    !commitReceipt &&
+    existing &&
+    sameFeedbackContent(existing, original) &&
+    existing.answers?.some(
+      (a) => a.id === answer.id && JSON.stringify(a) === JSON.stringify(answer),
+    )
+  )
+    return;
+  await mutate(
+    root,
+    (requests) => {
+      const index = requests.findIndex((r) => r.id === original.id);
+      if (index < 0) throw new CliError(`unknown question request ${original.id}`);
+      const incoming = parseFeedbackRequest({ ...original, answers: [answer] });
+      requests.push(incoming);
+    },
+    commitReceipt,
+  );
 }
