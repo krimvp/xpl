@@ -240,3 +240,38 @@ test("live catalog stays scoped to its attachment and switching refuses unsaved 
   await expect(panel).toContainText("Repository guides");
   await expect(panel).toContainText("When does retry stop?");
 });
+
+for (const width of [1440, 390]) {
+  test(`search covers open map author controls at ${width}px and restores placement access`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto(
+      new URL("../dist/bundles/ts-jobrunner.html", import.meta.url).href +
+        "?mode=explore&perspective=explore&view=view:overview",
+    );
+    await page.waitForFunction(() => !!window.__xpl);
+    await page.evaluate(() => window.__xpl!.select(["file:src/worker.ts"]));
+    const author = page.getByTestId("graph-author");
+    await author.locator("summary").click();
+    await expect(author.getByRole("button", { name: "Reset selected placement" })).toBeVisible();
+    await page.getByRole("button", { name: "Search and guides" }).click();
+    const panel = page.getByRole("dialog", { name: "Search and guides" });
+    await expect(panel).toBeVisible();
+    await expect
+      .poll(() =>
+        author.locator(".graph-author-controls").evaluate((controls) => {
+          const rect = controls.getBoundingClientRect();
+          const x = rect.x + rect.width / 2;
+          const y = rect.y + 30;
+          return Boolean(document.elementFromPoint(x, y)?.closest(".search-backdrop"));
+        }),
+      )
+      .toBe(true);
+    await panel.getByRole("button", { name: "Close search" }).click();
+    await expect(panel).toBeHidden();
+    await expect(author.getByRole("button", { name: "Reset selected placement" })).toBeVisible();
+    await page.getByRole("button", { name: "Move worker.ts", exact: true }).focus();
+    await expect(page.getByRole("button", { name: "Move worker.ts", exact: true })).toBeFocused();
+  });
+}

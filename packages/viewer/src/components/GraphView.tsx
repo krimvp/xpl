@@ -8,7 +8,7 @@
  * A ghost that stands for several elements ("rest of <file>", "N more") opens a menu of them instead
  * (GhostMenu), and adding one of them expands the view.
  */
-import { codeFocus, type DerivedGraph } from "@xpl/core";
+import { codeFocus, type DerivedGraph, type GraphView as StoredGraphView } from "@xpl/core";
 import {
   createContext,
   memo,
@@ -35,6 +35,8 @@ import {
   EDGE_BOUNDS_PAD,
   labelWidth,
   layoutGraphFitting,
+  nodeBox,
+  graphBounds,
   PILL_GAP,
   startAnchor,
   startFocus,
@@ -43,8 +45,14 @@ import {
   type LayoutEdge,
   type LayoutNode,
 } from "../layout/graphLayout.js";
-import { arrowHeadPath, distanceToSegment, roundedPath, routeBox, type Box } from "../svg.js";
-import { unionBox } from "../viewport.js";
+import {
+  arrowHeadPath,
+  distanceToSegment,
+  roundedPath,
+  routeBox,
+  type Box,
+  type Point,
+} from "../svg.js";
 import { changeMarks, changeOf } from "../diff.js";
 import { useStore, useViewerState } from "../hooks.js";
 import { mapKeyShows } from "../keyMarks.js";
@@ -151,7 +159,13 @@ function containerPad(node: LayoutNode): number {
   if (known !== undefined) return known;
   let pad = CONTAINER_BOUNDS_PAD;
   const fit = (left: number, top: number, right: number, bottom: number) => {
-    pad = Math.max(pad, -left, -top, right - node.width, bottom - node.height);
+    pad = Math.max(
+      pad,
+      (node.frame?.x ?? 0) - left,
+      (node.frame?.y ?? 0) - top,
+      right - (node.frame?.x ?? 0) - node.width,
+      bottom - (node.frame?.y ?? 0) - node.height,
+    );
   };
   for (const edge of node.edges) {
     const reach = edgeReach(edge);
@@ -166,10 +180,10 @@ function containerPad(node: LayoutNode): number {
     if (child.children.length === 0) continue;
     const inner = containerPad(child);
     fit(
-      child.x - inner,
-      child.y - inner,
-      child.x + child.width + inner,
-      child.y + child.height + inner,
+      nodeBox(child).x - inner,
+      nodeBox(child).y - inner,
+      nodeBox(child).x + child.width + inner,
+      nodeBox(child).y + child.height + inner,
     );
   }
   pad = Math.ceil(pad) + 1;
@@ -179,42 +193,6 @@ function containerPad(node: LayoutNode): number {
 
 const additive = (event: MouseEvent | KeyboardEvent) =>
   event.shiftKey || event.metaKey || event.ctrlKey;
-
-/** Room around what is drawn: strokes, arrowheads, halos, focus rings and corner buttons stick out a little. */
-const CANVAS_MARGIN = 12;
-
-/**
- * The part of the layout that is drawn: its boxes, and its edges' routes and labels. The invisible `bounds`
- * rects (they place the centre of a box or an edge where a click aims) reach well past what is drawn, on
- * the far side of an edge's anchor, and must not make the diagram's frame wider or taller: a fit would
- * leave empty bands around the picture and draw it smaller. They still exist, outside the canvas if need be.
- */
-function canvasBounds(layout: GraphLayout): Box {
-  const boxes: Box[] = [];
-  const edges = (list: LayoutEdge[], x: number, y: number) => {
-    for (const edge of list) {
-      const route = routeBox(edge.points, edge.label);
-      boxes.push({ ...route, x: x + route.x, y: y + route.y });
-    }
-  };
-  const visit = (list: LayoutNode[], x: number, y: number) => {
-    for (const node of list) {
-      const at = { x: x + node.x, y: y + node.y };
-      boxes.push({ ...at, width: node.width, height: node.height });
-      edges(node.edges, at.x, at.y);
-      visit(node.children, at.x, at.y);
-    }
-  };
-  edges(layout.edges, 0, 0);
-  visit(layout.nodes, 0, 0);
-  const all = unionBox(boxes) ?? { x: 0, y: 0, width: layout.width, height: layout.height };
-  return {
-    x: all.x - CANVAS_MARGIN,
-    y: all.y - CANVAS_MARGIN,
-    width: all.width + 2 * CANVAS_MARGIN,
-    height: all.height + 2 * CANVAS_MARGIN,
-  };
-}
 
 /** a11y: how far the keyboard focus ring sits outside a box (the gap shows the canvas). */
 const FOCUS_RING_GAP = 5;
@@ -236,11 +214,32 @@ function activate(event: KeyboardEvent, run: () => void) {
   }
 }
 
+interface MoveApi {
+  disabled: boolean;
+  cancel: () => void;
+  start: () => void;
+  preview: (node: LayoutNode, position: Point) => void;
+  finish: (node: LayoutNode, position?: Point) => void;
+}
+const Move = createContext<MoveApi | undefined>(undefined);
+
+/** Frame decorations move around negative children; the children keep their saved coordinates. */
+function Frame({ node, children }: { node: LayoutNode; children: ReactNode }) {
+  return node.frame?.x || node.frame?.y ? (
+    <g className="node-frame" transform={`translate(${node.frame.x} ${node.frame.y})`}>
+      {children}
+    </g>
+  ) : (
+    <>{children}</>
+  );
+}
+
 export interface GraphViewProps {
   viewId: string;
   /** A new key starts the diagram over (its first view); default: the view id. */
   resetKey?: string;
   graph: DerivedGraph;
+  pins?: StoredGraphView["layout"];
   selection: readonly string[];
   matches: readonly string[];
   related: ReadonlySet<string>;
@@ -256,11 +255,14 @@ export interface GraphViewProps {
 }
 
 const NO_ORDER: readonly string[] = [];
+// 14px graph labels stay above 12px; larger pinned maps pan at this size.
+const GRAPH_READABLE_ZOOM = 0.9;
 
 export function GraphView({
   viewId,
   resetKey = viewId,
   graph,
+  pins,
   selection,
   matches,
   related,
@@ -269,10 +271,24 @@ export function GraphView({
   reader = false,
 }: GraphViewProps) {
   const store = useStore();
+  const state = useViewerState();
   const host = useRef<HTMLDivElement>(null);
+  const [preview, setPreview] = useState<StoredGraphView["layout"]>();
+  const frozenCanvas = useRef<Box | undefined>(undefined);
+  const activePins = preview ?? pins;
+  const pinned = Object.keys(pins ?? {}).length > 0;
+  const canMove =
+    !present &&
+    !reader &&
+    state.mode === "explore" &&
+    state.perspective === "explore" &&
+    !state.editDraft &&
+    state.model.view(viewId)?.type === "graph";
+
   const changes = useGraphChanges(graph);
   const [layout, setLayout] = useState<GraphLayout | undefined>();
   const [error, setError] = useState<string | undefined>();
+  const [moveError, setMoveError] = useState<string>();
   const [menu, setMenu] = useState<GhostMenuState | undefined>();
   const [hovered, setHovered] = useState<string | undefined>();
   // Stable while nothing selected, matched or related changes, so unchanged shapes are not re-rendered.
@@ -281,7 +297,33 @@ export function GraphView({
     [selection, matches, related],
   );
 
-  const canvas = useMemo(() => (layout ? canvasBounds(layout) : undefined), [layout]);
+  const drawnCanvas = useMemo(() => (layout ? graphBounds(layout) : undefined), [layout]);
+  const canvas = preview ? (frozenCanvas.current ?? drawnCanvas) : drawnCanvas;
+  const move: MoveApi | undefined = canMove
+    ? {
+        disabled: state.editBusy,
+        cancel() {
+          setPreview(undefined);
+        },
+        start() {
+          frozenCanvas.current = canvas;
+          setMoveError(undefined);
+        },
+        preview(node, position) {
+          setPreview({ ...pins, [node.id]: position });
+        },
+        finish(node, position) {
+          setPreview(undefined);
+          if (position)
+            void store
+              .editGraph(viewId, { type: "pin", id: node.id, position })
+              .catch((failure: unknown) =>
+                setMoveError(failure instanceof Error ? failure.message : String(failure)),
+              );
+        },
+      }
+    : undefined;
+  useEffect(() => setPreview(undefined), [viewId, graph, selection, canMove]);
   // The first view frames the selection and its neighbours (or the first box of the view); the selection
   // is kept in sight when it changes or the pane is resized. Both in the canvas' coordinates.
   const shift = useCallback(
@@ -325,6 +367,7 @@ export function GraphView({
       present ? PRESENT_MAX_FIT_ZOOM : undefined,
       present ? PRESENT_FIT_PADDING : undefined,
       changes,
+      activePins,
     ).then(
       (result) => {
         if (cancelled) return;
@@ -338,7 +381,7 @@ export function GraphView({
     return () => {
       cancelled = true;
     };
-  }, [graph, present, changes]);
+  }, [graph, present, changes, activePins]);
 
   // The menu belongs to the layout it was opened on.
   useEffect(() => setMenu(undefined), [graph, present, viewId]);
@@ -400,9 +443,11 @@ export function GraphView({
         label="Diagram. Drag to pan, scroll to zoom."
         maxFitZoom={present ? PRESENT_MAX_FIT_ZOOM : undefined}
         fitPadding={present ? PRESENT_FIT_PADDING : undefined}
-        readableZoom={present ? PRESENT_READABLE_ZOOM : undefined}
+        minFitZoom={pinned ? GRAPH_READABLE_ZOOM : undefined}
+        readableZoom={present ? PRESENT_READABLE_ZOOM : pinned ? GRAPH_READABLE_ZOOM : undefined}
+        readableMin={pinned ? GRAPH_READABLE_ZOOM : undefined}
         focus={focus}
-        keepInView={selectionBox}
+        keepInView={preview ? undefined : selectionBox}
         onBackgroundClick={() => store.clearSelection()}
         tools={
           <Legend
@@ -443,29 +488,36 @@ export function GraphView({
     );
   }
   return (
-    <ReadOnly.Provider value={present}>
-      <Reader.Provider value={present || reader}>
-        <BoxNames.Provider value={names}>
-          <SetHovered.Provider value={setHovered}>
-            <Hovered.Provider value={hovered}>
-              <GhostMenuContext.Provider value={menuApi}>
-                <div
-                  className="graph-host"
-                  ref={host}
-                  onPointerDownCapture={dismiss}
-                  onWheelCapture={menu ? dismissOnWheel : undefined}
-                >
-                  {body}
-                  {menu && menuGhost?.ghostFold && (
-                    <GhostMenu node={menuGhost} anchor={menu.anchor} onClose={closeMenu} />
-                  )}
-                </div>
-              </GhostMenuContext.Provider>
-            </Hovered.Provider>
-          </SetHovered.Provider>
-        </BoxNames.Provider>
-      </Reader.Provider>
-    </ReadOnly.Provider>
+    <Move.Provider value={move}>
+      <ReadOnly.Provider value={present}>
+        <Reader.Provider value={present || reader}>
+          <BoxNames.Provider value={names}>
+            <SetHovered.Provider value={setHovered}>
+              <Hovered.Provider value={hovered}>
+                <GhostMenuContext.Provider value={menuApi}>
+                  <div
+                    className="graph-host"
+                    ref={host}
+                    onPointerDownCapture={dismiss}
+                    onWheelCapture={menu ? dismissOnWheel : undefined}
+                  >
+                    {body}
+                    {moveError && (
+                      <p className="placement-error" role="alert">
+                        {moveError}
+                      </p>
+                    )}
+                    {menu && menuGhost?.ghostFold && (
+                      <GhostMenu node={menuGhost} anchor={menu.anchor} onClose={closeMenu} />
+                    )}
+                  </div>
+                </GhostMenuContext.Provider>
+              </Hovered.Provider>
+            </SetHovered.Provider>
+          </BoxNames.Provider>
+        </Reader.Provider>
+      </ReadOnly.Provider>
+    </Move.Provider>
   );
 }
 
@@ -635,37 +687,48 @@ function BoxShape({ node, marks }: { node: LayoutNode; marks: Marks }) {
             ? `${node.label} (${node.badge}): double-click to open what it contains`
             : `${node.label} (${node.badge})`}
       </title>
+      <Frame node={node}>
+        {container && (
+          <rect
+            className="bounds"
+            x={-containerPad(node)}
+            y={-containerPad(node)}
+            width={node.width + 2 * containerPad(node)}
+            height={node.height + 2 * containerPad(node)}
+          />
+        )}
+        {node.role && !container ? (
+          <RoleBox role={node.role} width={node.width} height={node.height} />
+        ) : (
+          <rect className="box" width={node.width} height={node.height} rx={container ? 10 : 8} />
+        )}
+        {!still && <FocusRing width={node.width} height={node.height} rx={container ? 10 : 8} />}
+        {container ? (
+          <>
+            <BoxIcon name={icon} x={13} y={9} />
+            <text className="label" x={textX} y={22}>
+              {node.label}
+            </text>
+            {badgeText && (
+              <Badge x={textX + labelWidth(node.label) + 8} y={9} text={badgeText} width={badge} />
+            )}
+            {node.change && (
+              <ChangePill
+                x={textX + labelWidth(node.label) + 8 + (badgeText ? badge + PILL_GAP : 0)}
+                y={9}
+                change={node.change}
+              />
+            )}
+          </>
+        ) : (
+          <>
+            <LeafText node={node} x={textX} badgeText={badgeText} badge={badge} lid={lid} />
+            <BoxIcon name={icon} x={13} y={lid + (node.height - lid) / 2 - 8} />
+          </>
+        )}
+      </Frame>
       {container && (
-        <rect
-          className="bounds"
-          x={-containerPad(node)}
-          y={-containerPad(node)}
-          width={node.width + 2 * containerPad(node)}
-          height={node.height + 2 * containerPad(node)}
-        />
-      )}
-      {node.role && !container ? (
-        <RoleBox role={node.role} width={node.width} height={node.height} />
-      ) : (
-        <rect className="box" width={node.width} height={node.height} rx={container ? 10 : 8} />
-      )}
-      {!still && <FocusRing width={node.width} height={node.height} rx={container ? 10 : 8} />}
-      {container ? (
         <>
-          <BoxIcon name={icon} x={13} y={9} />
-          <text className="label" x={textX} y={22}>
-            {node.label}
-          </text>
-          {badgeText && (
-            <Badge x={textX + labelWidth(node.label) + 8} y={9} text={badgeText} width={badge} />
-          )}
-          {node.change && (
-            <ChangePill
-              x={textX + labelWidth(node.label) + 8 + (badgeText ? badge + PILL_GAP : 0)}
-              y={9}
-              change={node.change}
-            />
-          )}
           {/* What the container holds: its own edges under its children. */}
           <g className="edges">
             {node.edges.map((edge) => (
@@ -676,51 +739,52 @@ function BoxShape({ node, marks }: { node: LayoutNode; marks: Marks }) {
           {readingOrder(node.children).map((child) => (
             <NodeShape key={child.id} node={child} marks={marks} />
           ))}
-          {showCollapse && (
-            <g
-              className="collapse"
-              role="button"
-              tabIndex={0}
-              aria-label={expandedHere ? `Fold ${node.label} back` : `Collapse ${node.label}`}
-              data-collapse-id={node.id}
-              transform={`translate(${node.width - 30} 8)`}
-              onClick={(event) => {
-                event.stopPropagation();
-                if (expandedHere) store.toggleExpanded(node.id);
-                else store.collapse(node.id);
-              }}
-              onDoubleClick={(event) => event.stopPropagation()}
-              onKeyDown={(event) =>
-                activate(event, () =>
-                  expandedHere ? store.toggleExpanded(node.id) : store.collapse(node.id),
-                )
-              }
-            >
-              <title>
-                {expandedHere
-                  ? "Fold back: show it as one box again"
-                  : "Collapse: remove what is inside"}
-              </title>
-              <rect width={20} height={18} rx={4} />
-              <path d="M5 9h10" />
-            </g>
-          )}
-          {centerIsCovered(node) && (
-            <circle className="hit" cx={node.width / 2} cy={node.height / 2} r={10} />
-          )}
-          {/* inside a container (a group), its buttons stay with it */}
-          {cornerButtons}
+          <Frame node={node}>
+            {showCollapse && (
+              <g
+                className="collapse"
+                role="button"
+                tabIndex={0}
+                aria-label={expandedHere ? `Fold ${node.label} back` : `Collapse ${node.label}`}
+                data-collapse-id={node.id}
+                transform={`translate(${node.width - 30} 8)`}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  if (expandedHere) store.toggleExpanded(node.id);
+                  else store.collapse(node.id);
+                }}
+                onDoubleClick={(event) => event.stopPropagation()}
+                onKeyDown={(event) =>
+                  activate(event, () =>
+                    expandedHere ? store.toggleExpanded(node.id) : store.collapse(node.id),
+                  )
+                }
+              >
+                <title>
+                  {expandedHere
+                    ? "Fold back: show it as one box again"
+                    : "Collapse: remove what is inside"}
+                </title>
+                <rect width={20} height={18} rx={4} />
+                <path d="M5 9h10" />
+              </g>
+            )}
+            {centerIsCovered(node) && (
+              <circle className="hit" cx={node.width / 2} cy={node.height / 2} r={10} />
+            )}
+            {/* inside a container (a group), its buttons stay with it */}
+            {cornerButtons}
+          </Frame>
         </>
-      ) : (
-        <>
-          <LeafText node={node} x={textX} badgeText={badgeText} badge={badge} lid={lid} />
-          {/* centred on the text block beside it */}
-          <BoxIcon name={icon} x={13} y={lid + (node.height - lid) / 2 - 8} />
-        </>
+      )}
+      {container && !still && selected && (
+        <Frame node={node}>
+          <MoveHandle node={node} />
+        </Frame>
       )}
     </g>
   );
-  if (container || (!zoomable && !expandable)) return shape;
+  if (container) return shape;
   // a11y: a box is a button, so its corner buttons are drawn beside it, over it, not inside it
   return (
     <>
@@ -731,8 +795,126 @@ function BoxShape({ node, marks }: { node: LayoutNode; marks: Marks }) {
         transform={`translate(${node.x} ${node.y})`}
       >
         {cornerButtons}
+        {!still && selected && <MoveHandle node={node} />}
       </g>
     </>
+  );
+}
+
+/** A separate handle leaves box clicks and canvas panning available to readers. */
+function MoveHandle({ node }: { node: LayoutNode }) {
+  const move = useContext(Move);
+  const gesture = useRef<
+    | {
+        inverse: DOMMatrix;
+        start: DOMPoint;
+        position: Point;
+        moved: boolean;
+      }
+    | undefined
+  >(undefined);
+  const cancel = useRef(move?.cancel);
+  if (move) cancel.current = move.cancel;
+  useEffect(
+    () => () => {
+      if (gesture.current) {
+        gesture.current = undefined;
+        cancel.current?.();
+      }
+    },
+    [],
+  );
+  const blocked = !move || move.disabled;
+  useEffect(() => {
+    if (blocked && gesture.current) {
+      gesture.current = undefined;
+      cancel.current?.();
+    }
+  }, [blocked]);
+  if (!move) return null;
+  return (
+    <g
+      className="move-handle"
+      role="button"
+      tabIndex={0}
+      aria-disabled={move.disabled}
+      aria-label={`Move ${node.label}`}
+      transform={`translate(6 ${node.height - 26})`}
+      onClick={(event) => event.stopPropagation()}
+      onDoubleClick={(event) => event.stopPropagation()}
+      onPointerDown={(event) => {
+        if (event.button !== 0 || move.disabled) return;
+        event.preventDefault();
+        event.stopPropagation();
+        event.currentTarget.focus();
+        const parent = event.currentTarget.closest(".node, .node-buttons")
+          ?.parentElement as SVGGraphicsElement | null;
+        const matrix = parent?.getScreenCTM();
+        if (!matrix) return;
+        const inverse = matrix.inverse();
+        gesture.current = {
+          inverse,
+          start: new DOMPoint(event.clientX, event.clientY).matrixTransform(inverse),
+          position: { x: node.x, y: node.y },
+          moved: false,
+        };
+        event.currentTarget.setPointerCapture(event.pointerId);
+        move.start();
+      }}
+      onPointerMove={(event) => {
+        const drag = gesture.current;
+        if (!drag) return;
+        event.stopPropagation();
+        const at = new DOMPoint(event.clientX, event.clientY).matrixTransform(drag.inverse);
+        const dx = at.x - drag.start.x,
+          dy = at.y - drag.start.y;
+        if (!drag.moved && Math.hypot(dx, dy) < 3) return;
+        drag.moved = true;
+        move.preview(node, { x: drag.position.x + dx, y: drag.position.y + dy });
+      }}
+      onPointerUp={(event) => {
+        const drag = gesture.current;
+        if (!drag) return;
+        event.stopPropagation();
+        const at = new DOMPoint(event.clientX, event.clientY).matrixTransform(drag.inverse);
+        gesture.current = undefined;
+        move.finish(node, {
+          x: drag.position.x + (drag.moved ? at.x - drag.start.x : 0),
+          y: drag.position.y + (drag.moved ? at.y - drag.start.y : 0),
+        });
+      }}
+      onPointerCancel={() => {
+        gesture.current = undefined;
+        move.finish(node);
+      }}
+      onLostPointerCapture={() => {
+        if (gesture.current) {
+          gesture.current = undefined;
+          move.finish(node);
+        }
+      }}
+      onKeyDown={(event) => {
+        event.stopPropagation();
+        if (move.disabled) return;
+        const delta = {
+          ArrowLeft: [-20, 0],
+          ArrowRight: [20, 0],
+          ArrowUp: [0, -20],
+          ArrowDown: [0, 20],
+        }[event.key];
+        if (event.key === "Escape" && gesture.current) {
+          gesture.current = undefined;
+          move.finish(node);
+        } else if (delta || event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          move.finish(node, { x: node.x + (delta?.[0] ?? 0), y: node.y + (delta?.[1] ?? 0) });
+        }
+      }}
+    >
+      <title>Drag to pin; arrow keys move by 20 pixels</title>
+      <rect width={22} height={22} rx={5} />
+      <path d="M11 3v16M3 11h16M8 6l3-3 3 3M8 16l3 3 3-3M6 8l-3 3 3 3M16 8l3 3-3 3" />
+    </g>
   );
 }
 
@@ -869,15 +1051,15 @@ function CornerButton({
  * click on the container.
  */
 function centerIsCovered(node: LayoutNode): boolean {
-  const c = { x: node.width / 2, y: node.height / 2 };
+  const c = { x: (node.frame?.x ?? 0) + node.width / 2, y: (node.frame?.y ?? 0) + node.height / 2 };
   const near = 8;
   if (
     node.children.some(
       (child) =>
-        c.x >= child.x - near &&
-        c.x <= child.x + child.width + near &&
-        c.y >= child.y - near &&
-        c.y <= child.y + child.height + near,
+        c.x >= nodeBox(child).x - near &&
+        c.x <= nodeBox(child).x + child.width + near &&
+        c.y >= nodeBox(child).y - near &&
+        c.y <= nodeBox(child).y + child.height + near,
     )
   ) {
     return true;

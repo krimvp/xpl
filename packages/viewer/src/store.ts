@@ -1415,6 +1415,7 @@ export class ViewerStore {
                     anchors: "evidence",
                     include: "grouping",
                     hidden: "visibility",
+                    layout: "placement",
                     node: "group",
                   })[field] ?? field,
               )

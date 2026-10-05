@@ -485,7 +485,8 @@ export interface GraphView extends ViewBase {
    * a crowded view stays readable (see StubPolicy).
    */
   stubs?: StubPolicy;
-  /** Positions you pinned by hand; everything else is auto-laid-out. */
+  /** Finite positions relative to the rendered container's stable origin (canvas for roots).
+   * Negative children expand the frame around that origin. Everything else is auto-laid-out. */
   layout?: Record<ElementId, { x: number; y: number }>;
 }
 
