@@ -38,6 +38,7 @@ async function serve(
     /** Files the page does not carry: served on demand by GET /api/file. */
     withheld?: string[];
     managed?: boolean;
+    backendAvailable?: boolean;
     putStatus?: number;
     tourStatus?: number;
     fileStatus?: number;
@@ -59,7 +60,7 @@ async function serve(
             guide: ".explainer/jobrunner.explainer.json",
             instanceId: "first",
             backend: "claude",
-            backendAvailable: false,
+            backendAvailable: opts.backendAvailable ?? false,
           },
         }
       : {}),
@@ -449,6 +450,16 @@ test("readers can find the limits of source verification beside the guide", asyn
   await expect(info).toContainText("applied changes appear here automatically");
 });
 
+test("a managed page reports configured Claude without claiming sign-in", async ({ page }) => {
+  await serve(page, { managed: true, backendAvailable: true });
+  const connection = page.getByTestId("connection-status");
+  await expect(connection).toHaveAttribute("data-status", "connected");
+  await connection.getByText("Repository and backend").click();
+  await expect(connection).toContainText(
+    "Agent: Claude Code (configured; sign-in is checked when a job runs)",
+  );
+});
+
 test("a managed page shows backend unavailability, refuses another service, and exports its loaded snapshot after stop", async ({
   page,
 }) => {
@@ -461,7 +472,7 @@ test("a managed page shows backend unavailability, refuses another service, and 
   });
   await connection.getByText("Repository and backend").click();
   await expect(connection).toContainText(
-    "Agent backend unavailable (Claude selected). No agent is configured.",
+    "No agent is configured. Use xpl revise for a manual revision.",
   );
   await page.evaluate(() => window.__xpl!.select(["concept:retry"]));
   recorded.serviceStatus = 409;

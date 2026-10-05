@@ -1,3 +1,6 @@
+import { spawn } from "node:child_process";
+import { once } from "node:events";
+import { fileURLToPath } from "node:url";
 import { randomUUID, createHash } from "node:crypto";
 import { chmodSync, existsSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
@@ -17,6 +20,7 @@ import {
   readJson,
   writeFile,
   xpl,
+  writeViewerStub,
 } from "./helpers.js";
 
 let demo: string;
@@ -106,6 +110,164 @@ async function setup(body: string, creation = false) {
 const valid = `fs.writeFileSync(output,JSON.stringify([{id:'request-original',patch:{nodes:[{id:'file:src/queue.ts',summary:'Stores jobs until a worker claims them.'}]}}]));\nconsole.log(JSON.stringify({type:'result',is_error:false,result:'Proposal written'}));`;
 
 describe("configured Claude adapter (stub executable, no provider)", () => {
+  it.each(["parent death", "recovery"])(
+    "kills a crashed service's stub group on %s before retrying without overlap",
+    async (guard) => {
+      const body = [
+        "const {spawn}=await import('node:child_process');",
+        "const active=(pid)=>{try{return !/\\) Z /.test(fs.readFileSync('/proc/'+pid+'/stat','utf8'));}catch{return false;}};",
+        "if(fs.existsSync(process.env.STUB_RETRY)){",
+        "const prior=JSON.parse(fs.readFileSync(process.env.STUB_PRIOR,'utf8'));",
+        "const capture=JSON.parse(fs.readFileSync(process.env.STUB_CAPTURE,'utf8'));",
+        "fs.writeFileSync(process.env.STUB_CAPTURE,JSON.stringify({...capture,overlap:[prior.pid,prior.grandchild].some(active)}));",
+        valid,
+        "}else{",
+        "const grandchild=spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{stdio:'ignore'});",
+        "const capture=JSON.parse(fs.readFileSync(process.env.STUB_CAPTURE,'utf8'));",
+        "fs.writeFileSync(process.env.STUB_CAPTURE,JSON.stringify({...capture,grandchild:grandchild.pid}));",
+        "setInterval(()=>{},1000);}",
+      ].join("\n");
+      const { root, tooling, skillDir, ctx, request } = await setup(body);
+      unlinkSync(join(root, ".explainer/service/instance.json"));
+      const env = {
+        ...ctx.env,
+        PATH: tooling + ":" + process.env.PATH,
+        XPL_VIEWER_HTML: writeViewerStub(),
+        STUB_RETRY: join(tooling, "retry"),
+        STUB_PRIOR: join(tooling, "prior.json"),
+      };
+      const start = (recover = false) =>
+        spawn(
+          process.execPath,
+          [
+            "--import",
+            "tsx",
+            fileURLToPath(new URL("../src/main.ts", import.meta.url)),
+            "service",
+            "start",
+            "demo",
+            "--root",
+            root,
+            "--port",
+            "0",
+            "--backend",
+            "claude",
+            "--skill-dir",
+            skillDir,
+            "--job-timeout",
+            "30",
+            ...(recover ? ["--recover"] : []),
+          ],
+          { env, stdio: "ignore" },
+        );
+      const active = (pid: number) => {
+        try {
+          return !/\) Z /.test(readFile("/proc", String(pid) + "/stat"));
+        } catch {
+          return false;
+        }
+      };
+      const ready = async (pid: number) => {
+        await expect
+          .poll(
+            () => {
+              try {
+                const instance = readJson(root, ".explainer/service/instance.json");
+                return instance.pid === pid && instance.state === "running" ? instance.url : null;
+              } catch {
+                return null;
+              }
+            },
+            { timeout: 10000 },
+          )
+          .toMatch(/^http:\/\/127\.0\.0\.1:/);
+        return readJson(root, ".explainer/service/instance.json").url as string;
+      };
+      const service = start();
+      let recovered: ReturnType<typeof start> | undefined;
+      let capture: { pid: number; grandchild: number } | undefined;
+      let groupId: number | undefined;
+      try {
+        const url = await ready(service.pid!);
+        const id = randomUUID();
+        const response = await fetch(new URL("/api/jobs", url), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id, selectedRequestIds: [request.id] }),
+        });
+        expect(response.status).toBe(200);
+        await expect
+          .poll(
+            () => {
+              try {
+                return readJson(tooling, "capture.json").grandchild;
+              } catch {
+                return null;
+              }
+            },
+            { timeout: 10000 },
+          )
+          .toBeTypeOf("number");
+        capture = readJson(tooling, "capture.json");
+        writeFile(tooling, "prior.json", JSON.stringify(capture));
+        const attempt = readJson(root, ".explainer/service/jobs.json").jobs[0];
+        groupId = attempt.owner.process?.groupId ?? capture!.pid;
+        if (guard === "recovery") process.kill(groupId!, "SIGSTOP");
+        const exited = once(service, "exit");
+        service.kill("SIGKILL");
+        await exited;
+        if (guard === "parent death") {
+          await expect
+            .poll(() => [active(capture!.pid), active(capture!.grandchild)])
+            .toEqual([false, false]);
+        }
+        recovered = start(true);
+        const recoveredUrl = await ready(recovered.pid!);
+        await expect
+          .poll(() => [active(capture!.pid), active(capture!.grandchild)])
+          .toEqual([false, false]);
+        const interrupted = readJson(root, ".explainer/service/jobs.json").jobs[0];
+        expect(interrupted.state).toBe("interrupted");
+        expect(interrupted.owner.process).toEqual({
+          groupId,
+          startTime: expect.stringMatching(/^[a-f0-9-]{36}:\d+$/),
+        });
+        writeFile(tooling, "retry", "retry");
+        const retry = await fetch(new URL("/api/jobs/" + id + "/retry", recoveredUrl), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ expectedAttempt: 1 }),
+        });
+        expect(retry.status).toBe(200);
+        await expect
+          .poll(() => readJson(root, ".explainer/service/jobs.json").jobs[0].state, {
+            timeout: 10000,
+          })
+          .toBe("completed");
+        expect(readJson(tooling, "capture.json").overlap).toBe(false);
+        expect(readJson(root, ".explainer/service/jobs.json").jobs[0].attempt).toBe(2);
+        expect(readJson(root, ".explainer/requests.json")[0].outcome.status).toBe("pending");
+      } finally {
+        for (const child of [service, recovered])
+          if (child && child.exitCode === null && child.signalCode === null) {
+            const exited = once(child, "exit");
+            child.kill("SIGKILL");
+            await exited;
+          }
+        // Also clean up the orphan on the red run, including a stopped process.
+        for (const pid of [groupId, capture?.pid, capture?.grandchild])
+          if (pid) {
+            try {
+              process.kill(-pid, "SIGKILL");
+            } catch {}
+            try {
+              process.kill(pid, "SIGKILL");
+            } catch {}
+          }
+      }
+    },
+  );
+
   it("writes a validated reviewable revision without changing the guide or outcomes", async () => {
     const { root, ctx, skillDir, tooling, instanceId, request } = await setup(valid);
     const original = readFile(root, ".explainer/demo.explainer.json");

@@ -1,3 +1,5 @@
+import { spawn } from "node:child_process";
+import { once } from "node:events";
 import { randomUUID } from "node:crypto";
 import { renameSync, symlinkSync, unlinkSync } from "node:fs";
 import { beforeAll, describe, expect, it } from "vitest";
@@ -260,11 +262,20 @@ describe("durable job lifecycle (controlled runner only)", () => {
     }
   });
 
-  it("recovers an interrupted owner without replaying completed jobs or publishing the old owner's late result", async () => {
+  it("recovers without killing a reused process ID, replaying completed jobs or publishing a late result", async () => {
     const { root, ctx, request, instanceId } = await setup();
+    const unrelated = spawn(process.execPath, ["-e", "setInterval(()=>{},1000)"], {
+      detached: true,
+      stdio: "ignore",
+    });
+    await once(unrelated, "spawn");
     const entered = deferred<void>();
     const finish = deferred<{ revisionRunId: string }>();
-    const old = await openJobs(ctx, instanceId, async () => {
+    const old = await openJobs(ctx, instanceId, async (_job, _signal, _progress, started) => {
+      await started({
+        groupId: unrelated.pid!,
+        startTime: "00000000-0000-0000-0000-000000000000:0",
+      });
       entered.resolve();
       return finish.promise;
     });
@@ -288,6 +299,7 @@ describe("durable job lifecycle (controlled runner only)", () => {
     });
     try {
       expect((await restarted.get("demo", job.id)).state).toBe("interrupted");
+      expect(() => process.kill(unrelated.pid!, 0)).not.toThrow();
       expect(calls).toBe(0);
       await restarted.retry("demo", job.id, 1);
       await expect.poll(async () => (await restarted.get("demo", job.id)).state).toBe("completed");
@@ -308,6 +320,11 @@ describe("durable job lifecycle (controlled runner only)", () => {
       }
     } finally {
       if (restarted.availability.available) await restarted.close();
+      if (unrelated.exitCode === null && unrelated.signalCode === null) {
+        const exited = once(unrelated, "exit");
+        unrelated.kill("SIGKILL");
+        await exited;
+      }
     }
   });
 

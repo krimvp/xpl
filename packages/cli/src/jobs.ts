@@ -15,6 +15,7 @@ import { CliError, errorMessage } from "./errors.js";
 import { atomicWrite, jsonFile, parseJson, withRepositoryLock } from "./fsutil.js";
 import { loadExplainer, openWorkspace } from "./repo.js";
 import { readRequests } from "./requests.js";
+import { terminateJobProcess, type JobProcess } from "./job-process.js";
 import { continueRevision, selectRevision } from "./revision.js";
 
 type JobState =
@@ -33,7 +34,7 @@ export interface Job {
   createdAt: string;
   updatedAt: string;
   attempt: number;
-  owner: { instanceId: string; attemptId: string } | null;
+  owner: { instanceId: string; attemptId: string; process?: JobProcess } | null;
   progress: { at: string; message: string }[];
   error: string | null;
   result: { revisionRunId: string } | null;
@@ -48,6 +49,7 @@ export type JobRunner = (
   job: Job,
   signal: AbortSignal,
   progress: (message: string) => Promise<void>,
+  started: (process: JobProcess) => Promise<void>,
 ) => Promise<{ revisionRunId: string; proposals?: unknown }>;
 interface Ledger {
   schema: "xpl-jobs@1";
@@ -211,6 +213,16 @@ class RepositoryJobs {
           const owner = record(j.owner);
           uuid(owner.instanceId);
           uuid(owner.attemptId);
+          if (owner.process !== undefined) {
+            const child = record(owner.process);
+            if (
+              !Number.isSafeInteger(child.groupId) ||
+              Number(child.groupId) <= 1 ||
+              typeof child.startTime !== "string" ||
+              !/^[a-f0-9-]{36}:\d+$/.test(child.startTime)
+            )
+              throw new Error("invalid process identity");
+          }
         }
         if (j.state === "running" && (j.owner === null || j.attempt === 0))
           throw new Error("running job has no owner");
@@ -249,8 +261,10 @@ class RepositoryJobs {
   }
 
   async start() {
-    await this.mutate((ledger) => {
-      for (const job of ledger.jobs)
+    await this.mutate(async (ledger) => {
+      for (const job of ledger.jobs) {
+        if (job.owner?.process && job.owner.instanceId !== this.instanceId)
+          await terminateJobProcess(job.owner.process);
         if (job.state === "running") {
           if (job.owner?.instanceId === this.instanceId)
             throw new CliError("this service instance already owns a running job");
@@ -259,6 +273,7 @@ class RepositoryJobs {
             "Service interrupted this attempt. Inspect its progress and explicitly retry.";
           job.updatedAt = new Date().toISOString();
         }
+      }
     });
     this.kick();
   }
@@ -443,31 +458,45 @@ class RepositoryJobs {
       const abort = new AbortController();
       this.active = { id: job.id, abort };
       const update = async (change: (current: Job) => void | Promise<void>) => {
-        if (this.closed) return;
-        await this.mutate(async (ledger) => {
+        if (this.closed) return false;
+        return this.mutate(async (ledger) => {
           const current = ledger.jobs.find((j) => j.id === job.id)!;
           if (
             current.state !== "running" ||
             current.owner?.instanceId !== this.instanceId ||
             current.owner.attemptId !== job.owner!.attemptId
           )
-            return;
+            return false;
           await change(current);
           current.updatedAt = new Date().toISOString();
+          return true;
         });
       };
       try {
         await this.fresh(job);
         // Cancellation can win the claim before the invocation's abort controller exists.
         if (this.closed || (await this.get(job.scope.guide, job.id)).state !== "running") continue;
-        const result = await this.runner!(structuredClone(job), abort.signal, async (message) => {
-          if (typeof message !== "string" || !message.trim() || message.length > 2000)
-            throw new CliError("progress must be non-empty text of at most 2000 characters");
-          await update((current) => {
-            current.progress.push({ at: new Date().toISOString(), message });
-            current.progress = current.progress.slice(-100);
-          });
-        });
+        const result = await this.runner!(
+          structuredClone(job),
+          abort.signal,
+          async (message) => {
+            if (typeof message !== "string" || !message.trim() || message.length > 2000)
+              throw new CliError("progress must be non-empty text of at most 2000 characters");
+            await update((current) => {
+              current.progress.push({ at: new Date().toISOString(), message });
+              current.progress = current.progress.slice(-100);
+            });
+          },
+          async (process) => {
+            abort.signal.throwIfAborted();
+            if (
+              !(await update((current) => {
+                current.owner!.process = process;
+              }))
+            )
+              throw new CliError("Claude attempt no longer owns this job; process discarded.");
+          },
+        );
         if (record(result).revisionRunId !== job.input.revisionRunId)
           throw new CliError("runner result does not match the selected revision");
         await update(async (current) => {

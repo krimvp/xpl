@@ -4,7 +4,7 @@
  *
  *   npx tsx scripts/pr-shots.ts shoot <outDir> [--viewer-dir <dir>] [--build] [--set ux]
  *                                     [--shot <name>=<bundle>[?query]]... [--scheme light|dark]
- *                                     [--size 1440x900] [--service connected|disconnected|unmanaged]
+ *                                     [--size 1440x900] [--service connected|configured|disconnected|unmanaged]
  *   npx tsx scripts/pr-shots.ts compare <beforeDir> <afterDir> <outDir>
  *
  * shoot:
@@ -51,8 +51,11 @@ async function shoot(argv: string[]): Promise<void> {
       service: { type: "string" },
     },
   });
-  if (values.service && !["connected", "disconnected", "unmanaged"].includes(values.service))
-    throw new Error("--service must be connected, disconnected or unmanaged");
+  if (
+    values.service &&
+    !["connected", "configured", "disconnected", "unmanaged"].includes(values.service)
+  )
+    throw new Error("--service must be connected, configured, disconnected or unmanaged");
   const out = resolve(positionals[0] ?? "pr-shots");
   const viewerDir = resolve(values["viewer-dir"]);
   mkdirSync(out, { recursive: true });
@@ -104,7 +107,7 @@ async function shoot(argv: string[]): Promise<void> {
                   guide: ".explainer/jobrunner.explainer.json",
                   instanceId: "demo-instance",
                   backend: "claude",
-                  backendAvailable: false,
+                  backendAvailable: values.service === "configured",
                 },
               }),
         };

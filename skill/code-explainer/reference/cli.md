@@ -973,7 +973,8 @@ Local serving and manual commands need no provider network or authentication.
 After a crash, inspect artifacts and use `xpl service start --recover`. It archives the interrupted owner
 record and preserves the last valid index/explanation. A live unverified PID is never replaced, and a
 crashed writer lock must be inspected and removed explicitly; no lock is stolen because it is old.
-The viewer shows its connection and configured backend below the header. Repository/guide bookmarks
+The viewer shows its connection and configured backend below the header. Configured Claude says
+sign-in is checked when a job runs; availability never implies authentication. Repository/guide bookmarks
 and API requests refuse another attachment at the same address. Restart reuses saved context and refreshes
 the open page's instance while keeping navigation and unsaved edits. After stop, choose **Use loaded snapshot
 offline** for manual edits, browser feedback and embedded-snapshot HTML export. **Retry connection** resumes
@@ -990,7 +991,11 @@ feedback IDs; no job route applies a patch or finalizes an outcome. With backend
 reports 503. With `claude`, `POST /api/jobs` takes `{id: UUID, selectedRequestIds, include?}` and runs one
 non-interactive process at a time. Source and the installed skill are read-only; only the attempt-owned
 proposal file is writable. Commands, subagents, MCP and inherited hooks are disabled. Cancellation,
-supersession and timeout kill the child process group and discard unpublished output. After source and
+supersession and timeout kill the child process group and discard unpublished output. Service death
+closes the attempt launcher's pipe and kills the group too. Before running Claude, the job records the
+group ID and Linux boot/start ticks under its attempt lock. Recovery verifies that identity, terminates
+the old group and waits before allowing retry; a reused PID is never signalled. Verified execution
+requires Linux /proc; other platforms report a job failure and can use manual revision. After source and
 ownership rechecks, valid ready proposals enter the existing revision journal as `proposed`. Inspect
 `xpl revise <guide> --run <revisionRunId>` before deciding anything. Creation fills a guide explicitly
 initialized by `xpl new`/draft authoring, with selected creation requests and included new IDs; it does

@@ -124,7 +124,7 @@ enables the installed Claude Code proposal runner; `none` (default) disables exe
 `--skill-dir <folder>` for a non-default managed skill installation and `--job-timeout <seconds>` for a
 run deadline (default 300). Both choices persist. Availability means configured, not authenticated;
 actual jobs report tooling, login and provider failures. The viewer reports connection and backend
-availability below the header. Open **Repository and backend** for the root and last service instance.
+availability below the header, without claiming sign-in. Open **Repository and backend** for the root and last service instance.
 Bookmarks retain the repository and guide; an address serving another guide is refused. Restart with
 `xpl service start` and the open page reconnects to that saved guide, keeping your selection and unsaved edits.
 
@@ -153,7 +153,10 @@ follow in 29B. Stop the service to return to manual indexing and revision.
 
 The service also keeps job history in `.explainer/service/jobs.json` and exposes it at `GET /api/jobs`.
 Running attempts become interrupted after restart; completed proposals stay recorded, and cancelled or
-superseded results stay fenced. With `--backend claude`, submission generates an ordinary proposal,
+superseded results stay fenced. Each Claude attempt records its group and start identity before launch.
+Service death kills that group through the launcher's pipe; recovery verifies the recorded Linux start
+time before terminating any remaining group and allowing retry. Reused PIDs are left alone.
+Verified execution currently requires Linux /proc; manual revision works on other platforms. With `--backend claude`, submission generates an ordinary proposal,
 validates it through `xpl revise` and leaves it awaiting explicit author review. Source is read-only; the
 agent can write only its owned output. No job applies a patch or finalizes feedback. Creation proposals
 fill an explicitly initialized guide with selected requests and included IDs through the same journal.

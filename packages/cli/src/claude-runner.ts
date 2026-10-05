@@ -1,17 +1,36 @@
 /** One installed Claude Code process writes an owned proposal; the job scheduler validates and journals it. */
+import type { Writable } from "node:stream";
 import { spawn } from "node:child_process";
 import { lstat, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import type { Ctx } from "./context.js";
 import { CliError, errorMessage } from "./errors.js";
+import { readJobProcess } from "./job-process.js";
 import type { JobRunner } from "./jobs.js";
 import { defaultSkillDir, verifySkill } from "./setup.js";
+
+// Per-attempt launcher: fd 3 is held only by the service. EOF kills this group,
+// including descendants. Claude cannot start until its identity is durable.
+const launcher = [
+  "const {spawn}=require('node:child_process');",
+  "const {Socket}=require('node:net');",
+  "const life=new Socket({fd:3});",
+  "const stop=()=>{try{process.kill(-process.pid,'SIGKILL');}catch{process.exit(1);}};",
+  "life.on('end',stop);life.on('error',stop);",
+  "life.once('data',()=>{",
+  "const child=spawn('claude',process.argv.slice(1),{stdio:['inherit','inherit','inherit']});",
+  "child.on('error',e=>{console.error(e.code==='ENOENT'?'Claude Code is not installed on PATH. Install/restore the chosen CLI outside xpl, then retry.':e.message);process.exit(1);});",
+  "child.on('exit',code=>process.exit(code??1));",
+  "});",
+].join("\n");
 
 // Claude uses gitignore patterns for Edit permissions, including the Write tool.
 const literal = (path: string) => path.replace(/[\\*?\[\]]/g, "\\$&");
 
 function failure(text: string): string {
+  if (/Claude Code is not installed on PATH/.test(text))
+    return "Claude Code is not installed on PATH. Install/restore the chosen CLI outside xpl, then retry.";
   if (
     /not logged in|authentication|invalid.*(?:api.?key|token)|oauth.*expired|401|login required/i.test(
       text,
@@ -30,8 +49,9 @@ export function claudeRunner(
   options: { skillDir?: string; timeoutMs?: number } = {},
 ): JobRunner {
   const timeoutMs = options.timeoutMs ?? 300_000;
-  return async (job, signal, progress) => {
+  return async (job, signal, progress, started) => {
     signal.throwIfAborted();
+    await readJobProcess(process.pid);
     let skillDir: string;
     try {
       skillDir = await realpath(options.skillDir ?? defaultSkillDir(ctx.env));
@@ -71,8 +91,11 @@ export function claudeRunner(
       signal.throwIfAborted();
       const text = await new Promise<string>((yes, no) => {
         const child = spawn(
-          "claude",
+          process.execPath,
           [
+            "-e",
+            launcher,
+            "--",
             "--print",
             "--output-format",
             "json",
@@ -99,7 +122,7 @@ export function claudeRunner(
             cwd: directory,
             env: ctx.env,
             detached: process.platform !== "win32",
-            stdio: ["pipe", "pipe", "pipe"],
+            stdio: ["pipe", "pipe", "pipe", "pipe"],
           },
         );
         let stdout = "",
@@ -148,8 +171,20 @@ export function claudeRunner(
           else if (code !== 0) no(new CliError(failure(stderr + "\n" + stdout)));
           else yes(stdout);
         });
+        const life = child.stdio[3] as Writable;
+        life.on("error", () => {});
+        child.once("spawn", () => {
+          void (async () => {
+            const identity = await readJobProcess(child.pid!);
+            if (!identity)
+              throw new CliError("Claude launcher exited before ownership was recorded.");
+            await started(identity);
+            signal.throwIfAborted();
+            life.write("start");
+            child.stdin.end(prompt);
+          })().catch((error) => kill(new CliError(errorMessage(error))));
+        });
         if (signal.aborted) abort();
-        child.stdin.end(prompt);
       });
       signal.throwIfAborted();
       let data: unknown;

@@ -1658,6 +1658,12 @@ inspected job; an older baseline returns the saved receipt, including an already
 A future baseline is refused. Re-delivery while queued/running also returns the same attempt.
 Cancel and supersede also fence completed proposals. No state transition can restore them to completed.
 Shutdown marks running work interrupted and aborts it; instance replacement fences any late callbacks.
+Configured attempts add optional owner.process: {groupId, startTime}. The groupId names the launcher
+and its POSIX process group; startTime is Linux's boot UUID plus the leader's kernel start ticks.
+The runner records it under the ledger lock and current attempt fence before Claude can start.
+On a new owner, recovery checks the start time and group identity before signalling a recorded group
+and waits for that leader to stop before marking running work interrupted or dispatching queued work.
+A missing, exited or reused PID is not signalled. Older/control-only attempts have no process record.
 Locks left by a killed transaction still require inspection/removal, never timeout-based theft.
 
 Managed services expose `GET /api/jobs`, `GET /api/jobs/<UUID>` and `POST /api/jobs` with
@@ -1672,6 +1678,8 @@ acceptance through the existing revision commit/outcome recovery. Answer scopes 
 Explicit `service --backend claude` selects it. The saved `--skill-dir` identifies a verified managed
 installation (default `~/.claude/skills/code-explainer`); `--job-timeout` bounds each call (300 seconds by
 default, 1–3600 seconds). Enabled means configured; only an actual job establishes usable provider access.
+The viewer renders backendAvailable from the attachment: configured Claude is labelled without a
+sign-in claim; the unavailable state points to manual revision.
 Missing tooling/skill, authentication, rate limits and timeout failures leave the job retryable with a
 recovery message. No keys, accounts, provider setup or hosted xpl backend are created.
 
@@ -1682,7 +1690,12 @@ additional read directories with explicit Edit deny rules. Only an exact absolut
 `proposal.json` permits the Write tool; Claude uses Edit rules for all file modifications. Shell, agents
 and MCP tools are unavailable. The prompt reads the installed skill and asks for ordinary per-request
 patches, never applies or accepts them. Output must be a bounded regular file with one entry per selected
-request. Abort and timeout kill the process group; temporary output is removed after reading or failure.
+request. A per-attempt Node launcher holds a service pipe: closing the pipe, including service death,
+kills the whole group. The launcher starts Claude only after receiving the service's durable-ownership
+acknowledgement. Abort and timeout also kill the group; recovery verifies the recorded start time as
+a second guard if the launcher was paused. No supervisor daemon is installed. Verified process
+ownership currently requires Linux /proc; other platforms fail before starting Claude and can use
+manual revision. Temporary output is removed after reading or failure.
 
 The adapter returns untrusted proposals. The scheduler rechecks instance/attempt/running state under
 `withRepositoryLock`, stages the proposal in its service area, and calls #30's `continueRevision` for
