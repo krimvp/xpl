@@ -127,7 +127,12 @@ function Shell() {
       <div className="workspace-warnings">
         {state.readOnlyGuide && (
           <p className="read-only-guide">
-            Read-only guide preview. To edit this guide, open its own service:{" "}
+            Read-only guide preview. To edit this guide, first stop the current repository service:
+            <br />
+            <code>{state.readOnlyGuide.stopCommand ?? "xpl service stop"}</code>
+            <br />
+            Then start this guide's service:
+            <br />
             <code>{state.readOnlyGuide.command}</code>
           </p>
         )}

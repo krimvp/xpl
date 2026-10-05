@@ -3,7 +3,7 @@ import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { injectBundle, parseBundle } from "@xpl/core";
+import { injectBundle, parseBundle, hashText } from "@xpl/core";
 import { readEmbeddedBundle, stateOf, watchProblems, openEditMenu, toExplore } from "./helpers.js";
 
 // A real file:// page: no service can fill in omitted source or guide snapshots.
@@ -100,6 +100,49 @@ test("offline library searches supplied source and prose, opens exact links and 
   }
 });
 
+test("source saturation keeps symbols and explanations reachable through bounded group pages", async ({
+  page,
+}) => {
+  const dir = mkdtempSync(join(tmpdir(), "xpl-search-saturated-"));
+  try {
+    const { html, bundle: raw } = readEmbeddedBundle();
+    const bundle = parseBundle(JSON.stringify(raw));
+    bundle.files["src/metrics.ts"] +=
+      "\n" + Array.from({ length: 100 }, (_, i) => `// requeue usage ${i}`).join("\n");
+    bundle.index.files.find((f) => f.path === "src/metrics.ts")!.hash = hashText(
+      bundle.files["src/metrics.ts"]!,
+    );
+    bundle.explainer.tours[0]!.steps[1]!.note = "Requeue failed jobs with the retry policy.";
+    writeFileSync(join(dir, "saturated.html"), injectBundle(html, bundle));
+    await page.goto(pathToFileURL(join(dir, "saturated.html")).href);
+    await page.getByRole("button", { name: "Search and guides" }).click();
+    const panel = page.getByRole("dialog", { name: "Search and guides" });
+    await panel.getByRole("searchbox").fill("requeue");
+    await expect(panel.locator('[data-kind="source"]')).toHaveCount(16);
+    await expect(panel.locator('[data-kind="symbol"]').first()).toBeVisible();
+    await expect(panel.locator('[data-kind="concept"]').first()).toBeVisible();
+    await expect(
+      panel.locator('[data-kind="step"]').filter({ hasText: "Requeue failed jobs" }),
+    ).toBeVisible();
+    const source = panel.getByRole("region", { name: "Source" });
+    await expect(source).toContainText("1–16 of 112 matches");
+    await source.getByRole("button", { name: "Next Source results" }).click();
+    await expect(source).toContainText("17–32 of 112 matches");
+    await expect(panel.locator('[data-kind="source"]')).toHaveCount(16);
+    await expect(panel.locator('[data-kind="symbol"]').first()).toBeVisible();
+    await source.getByRole("button", { name: "Previous Source results" }).click();
+    await expect(source).toContainText("1–16 of 112 matches");
+    await panel.locator('[data-kind="step"]').filter({ hasText: "Requeue failed jobs" }).click();
+    await expect.poll(() => stateOf(page).then((s) => s.stepId)).toBe("t2");
+    await page.getByRole("button", { name: "Search and guides" }).click();
+    await panel.getByRole("searchbox").fill("requeue");
+    await panel.locator('[data-kind="symbol"]').first().click();
+    await expect.poll(() => stateOf(page).then((s) => s.openedFile)).toBe("src/queue.ts");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("live catalog stays scoped to its attachment and switching refuses unsaved drafts", async ({
   page,
 }) => {
@@ -116,6 +159,7 @@ test("live catalog stays scoped to its attachment and switching refuses unsaved 
     explainer: { ...bundle.explainer, title: "Retry subsystem" },
     server: undefined,
     readOnlyGuide: {
+      stopCommand: "xpl service stop --root '/repo'",
       command: "xpl service start '.explainer/retry.json.explainer.json' --root '/repo'",
     },
   };
@@ -177,6 +221,10 @@ test("live catalog stays scoped to its attachment and switching refuses unsaved 
   await expect(page.getByText("Read-only guide preview.", { exact: false })).toContainText(
     "xpl service start",
   );
+  await expect(page.locator(".read-only-guide code")).toHaveText([
+    "xpl service stop --root '/repo'",
+    "xpl service start '.explainer/retry.json.explainer.json' --root '/repo'",
+  ]);
   await toExplore(page);
   await page.evaluate(() => window.__xpl!.select(["concept:retry-policy"]));
   await expect(page.getByTestId("text-edit")).toBeDisabled();
@@ -185,4 +233,10 @@ test("live catalog stays scoped to its attachment and switching refuses unsaved 
   await page.getByRole("button", { name: "Search and guides" }).click();
   await expect(panel).toContainText("Contained guides");
   expect(requests.slice(prior)).toEqual([]);
+  await expect(panel.getByRole("link", { name: "Back to library" })).toHaveAttribute("href", "./");
+  await panel.getByRole("link", { name: "Back to library" }).click();
+  await expect(page.locator(".header .title")).toHaveText("Job runner");
+  await page.getByRole("button", { name: "Search and guides" }).click();
+  await expect(panel).toContainText("Repository guides");
+  await expect(panel).toContainText("When does retry stop?");
 });

@@ -111,6 +111,7 @@ describe("xpl view", () => {
     const preview = parseBundle(await previewResponse.text());
     expect(preview.explainer.title).toBe("Retry guide");
     expect(preview.server).toBeUndefined();
+    expect(preview.readOnlyGuide?.stopCommand).toBe(`xpl service stop --root '${dir}'`);
     expect(preview.readOnlyGuide?.command).toContain(".explainer/retry.json.explainer.json");
     const page = bundleOf(await (await fetch(`${view.url}/?guide=retry.json`)).text());
     expect(page.explainer.title).toBe("Retry guide");

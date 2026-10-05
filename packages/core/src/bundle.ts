@@ -30,7 +30,7 @@ export interface ViewerBundle {
   /** Opt-in additional offline snapshots. Search never treats these as access to the repository. */
   guides?: GuideSnapshot[];
   /** A different guide inspected through a service, without changing its write attachment. */
-  readOnlyGuide?: { command: string };
+  readOnlyGuide?: { command: string; stopCommand?: string };
   /**
    * The code before the change, when the explainer has a change record (`explainer.change`): the base text of
    * every changed file that is modified, renamed or deleted, keyed by `ChangedFile.path` (the new path of a

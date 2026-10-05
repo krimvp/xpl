@@ -1078,7 +1078,10 @@ failing readiness writes no page. Use `--draft` explicitly for unfinished includ
 The viewer's Search panel works on supplied bundle text offline. Typed source/symbol results open exact
 inclusive ranges, and guide phrases open recorded tour steps. The panel lists only contained guides in
 exported HTML; a live page reads `GET /api/guides` and opens other guides as read-only previews, without
-changing its service attachment. Missing source, pruning and unavailable analysis are distinct from no matches.
+changing its service attachment. Results have separate 16-row pages and counts for symbols, concepts,
+steps, guides/tours and source; source matches cannot hide explanations. Preview pages offer Back to library.
+To edit another live guide, stop the current repository service, then run the exact start command shown.
+Missing source, pruning and unavailable analysis are distinct from no matches.
 
 Writes one self-contained HTML file: the viewer, the explainer, the index and source files inline. Works offline and can be shared. `--tour <id>` (`tour:intro` or `intro`) starts that tour and implies `--mode present`.
 

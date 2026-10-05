@@ -1221,7 +1221,8 @@ An inverse that would restore missing or drifted source is rejected without movi
   A zero-width regex match names the whole line. Symbols carry their indexed declaration range. Guide
   results carry a catalog key and the guide's index commit, with stable element/tour/step/view IDs;
   tour steps also carry their zero-based position and focus IDs. These are navigation targets, not URLs
-  or newly verified anchors. `limit` defaults to 50; 0 returns all. Totals count before limiting.
+  or newly verified anchors. `limit` defaults to 50; 0 returns all. Optional `offset` skips matches
+  before retaining a page; totals count every match before offset and limit. Both must be non-negative integers.
   Code source comes first, then config, then other text; retained symbols follow, then supplied guide
   context in catalog order. Literal search keeps lower-case substring semantics; regex uses JavaScript.
 
@@ -1781,7 +1782,9 @@ Legacy bundles use the viewer key `current`. Save as HTML preserves the containe
 `GET /api/guides` reads the same catalog adapter as `xpl guides`. `?id=<key>` returns a bounded checked
 snapshot; `/?guide=<key>` renders it without live server metadata. Existing repository/guide attachment
 guards still apply. A different guide is explicitly read-only (`readOnlyGuide.command` gives its own
-`xpl service start` command). The running service's attachment, polling and writes never change guides.
+`xpl service start` command and optional `stopCommand` stops that exact repository's service first).
+The live preview picker offers a Back to library link to the attached guide's root page, without
+fetching a catalog or polling from the preview. The running service's attachment and writes never change guides.
 
 **Export information.** `exportInfo: { status: "ready" | "draft", report: ReadinessReport }` records
 identity, checked source scope, findings and the author's optional decision note. CLI ready output checks the
@@ -1903,7 +1906,10 @@ is open (the Guide, Present), else "<explainer title> · xpl".
 **Search and guides** (`components/SearchLibrary.tsx`): one header entry opens an accessible dialog. A
 150 ms debounce sends literal, case-insensitive queries to an inline Web Worker; both index construction
 and scanning run off the UI thread. The worker calls core's pure `query` using supplied text only. Results
-are bounded to 80 rows and 400-character snippets around matches while retaining total counts and scope; stale request IDs are ignored. Source and
+have independent 16-row pages for symbols, concepts, steps, guides/tours and source (80 rows maximum).
+Each group reports its visible range and total, with Previous/Next controls; source lines cannot crowd out
+explanations or symbol results. Snippets retain at most 400 characters around matches. Stale request IDs
+are ignored, and changing the query or supplied snapshot resets all pages. Source and
 symbols refer to the active snapshot; prose can refer to any contained guide. Missing source, retained/
 total symbols and references, and unavailable analysis remain visible independently of no matches.
 

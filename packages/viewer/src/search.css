@@ -150,3 +150,26 @@
     border-top: 1px solid var(--border);
   }
 }
+
+.search-group {
+  margin: 20px 0;
+}
+.search-group-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+}
+.search-group-head h3 {
+  margin: 0;
+  font-size: 14px;
+}
+.search-group-head span {
+  font-size: 12px;
+  color: var(--muted);
+}
+.search-pages {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}

@@ -321,6 +321,7 @@ export async function startViewServer(options: ViewServerOptions): Promise<ViewS
       schema: BUNDLE_SCHEMA,
       ...snapshot,
       readOnlyGuide: {
+        stopCommand: `xpl service stop --root ${quote(root)}`,
         command: `xpl service start ${quote(entry.loaded.rel)} --root ${quote(root)}`,
       },
     };

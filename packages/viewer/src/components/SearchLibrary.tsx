@@ -7,7 +7,7 @@ import {
   type Range,
 } from "@xpl/core";
 import SearchWorker from "../search-worker.ts?worker&inline";
-import type { SearchMessage, SearchReply, SearchResult } from "../search-worker.js";
+import type { SearchMessage, SearchReply, SearchResult, SearchPages } from "../search-worker.js";
 import { containedGuides } from "../library.js";
 import { ServerApi, messageOf } from "../data.js";
 import { useStore, useViewerState } from "../hooks.js";
@@ -57,6 +57,7 @@ export function SearchLibrary({ onClose }: { onClose: () => void }) {
   const state = useViewerState();
   const current = store.library.guideId ?? "current";
   const [pattern, setPattern] = useState("");
+  const [pages, setPages] = useState<SearchPages>({});
   const [result, setResult] = useState<SearchResult>();
   const [error, setError] = useState("");
   const [catalogError, setCatalogError] = useState("");
@@ -83,6 +84,8 @@ export function SearchLibrary({ onClose }: { onClose: () => void }) {
     state.dirty || state.editDraft || state.editBusy || state.save.status === "saving";
 
   useEffect(() => {
+    setPages({});
+    setResult(undefined);
     const controller = new SearchWorker();
     worker.current = controller;
     controller.onmessage = (event: MessageEvent<SearchReply>) => {
@@ -115,18 +118,22 @@ export function SearchLibrary({ onClose }: { onClose: () => void }) {
 
   useEffect(() => {
     const id = ++request.current;
-    setResult(undefined);
     setError("");
     const text = pattern.trim();
     setBusy(!!text);
     if (!text) return;
     const timer = setTimeout(
       () =>
-        worker.current?.postMessage({ kind: "query", id, pattern: text } satisfies SearchMessage),
+        worker.current?.postMessage({
+          kind: "query",
+          id,
+          pattern: text,
+          pages,
+        } satisfies SearchMessage),
       150,
     );
     return () => clearTimeout(timer);
-  }, [pattern, index, state.files, embedded]);
+  }, [pattern, pages, index, state.files, embedded]);
 
   useEffect(() => {
     input.current?.focus();
@@ -157,7 +164,11 @@ export function SearchLibrary({ onClose }: { onClose: () => void }) {
       onClose();
     }
     if (event.key === "Tab") {
-      const focusable = [...panel.current!.querySelectorAll<HTMLElement>("input, button, a[href]")];
+      const focusable = [
+        ...panel.current!.querySelectorAll<HTMLElement>(
+          "input:not(:disabled), button:not(:disabled), a[href]",
+        ),
+      ];
       const first = focusable[0],
         last = focusable.at(-1);
       if (event.shiftKey && document.activeElement === first) {
@@ -226,7 +237,11 @@ export function SearchLibrary({ onClose }: { onClose: () => void }) {
                 ref={input}
                 type="search"
                 value={pattern}
-                onChange={(e) => setPattern(e.target.value)}
+                onChange={(e) => {
+                  setPattern(e.target.value);
+                  setPages({});
+                  setResult(undefined);
+                }}
                 placeholder="A symbol, source text or phrase from a guide"
               />
             </label>
@@ -269,55 +284,99 @@ export function SearchLibrary({ onClose }: { onClose: () => void }) {
                 ? "Searching supplied snapshot…"
                 : result
                   ? result.total
-                    ? `${result.hits.length} of ${result.total} matches`
+                    ? `${result.total} matches across result groups`
                     : "No matches in the supplied snapshot."
                   : "Type to search source, symbols, concepts and tour steps."}
             </p>
             {error && <p role="alert">{error}</p>}
-            <ul className="search-results">
-              {result?.hits.map((hit, i) => {
-                const guide = "guide" in hit ? hit.guide : current;
-                const unavailable =
-                  (hit.kind === "source" || hit.kind === "symbol") && !(hit.file in state.files);
-                const label =
-                  hit.kind === "step" ? ("tour" in hit ? "Tour step" : "Flow step") : hit.kind;
-                const context =
-                  "file" in hit
-                    ? `${hit.file}:${rangeText(hit.range)}`
-                    : `${embedded.find((g) => g.guideId === guide)?.explainer.title || guide}${"tour" in hit ? ` · ${hit.tour}` : ""}${"step" in hit ? ` · ${hit.step}` : ""}`;
-                const content = (
-                  <>
-                    <span className="search-kind">{label}</span>
-                    <span className="search-result-text">{hit.text}</span>
-                    <small>
-                      {context}
-                      {unavailable ? " · source not supplied" : ""}
-                    </small>
-                  </>
-                );
-                return (
-                  <li key={`${hit.kind}:${i}`}>
-                    {unavailable ? (
-                      <div className="search-result is-unavailable" data-kind={hit.kind}>
-                        {content}
-                      </div>
-                    ) : (
-                      <a
-                        className="search-result"
-                        data-kind={hit.kind}
-                        href={destination(guide, hit)}
-                        onClick={(e) => open(e, guide, hit)}
-                      >
-                        {content}
-                      </a>
-                    )}
-                  </li>
-                );
-              })}
-            </ul>
+            {result?.groups
+              .filter((group) => group.total > 0)
+              .map((group) => (
+                <section className="search-group" aria-label={group.title} key={group.id}>
+                  <header className="search-group-head">
+                    <h3>{group.title}</h3>
+                    <span>
+                      {group.offset + 1}–{group.offset + group.hits.length} of {group.total} matches
+                    </span>
+                  </header>
+                  <div className="search-pages">
+                    <button
+                      type="button"
+                      className="btn"
+                      aria-label={`Previous ${group.title} results`}
+                      disabled={busy || group.offset === 0}
+                      onClick={() =>
+                        setPages((p) => ({ ...p, [group.id]: (p[group.id] ?? 0) - 1 }))
+                      }
+                    >
+                      Previous
+                    </button>
+                    <button
+                      type="button"
+                      className="btn"
+                      aria-label={`Next ${group.title} results`}
+                      disabled={busy || group.offset + group.hits.length >= group.total}
+                      onClick={() =>
+                        setPages((p) => ({ ...p, [group.id]: (p[group.id] ?? 0) + 1 }))
+                      }
+                    >
+                      Next
+                    </button>
+                  </div>
+                  <ul className="search-results">
+                    {group.hits.map((hit, i) => {
+                      const guide = "guide" in hit ? hit.guide : current;
+                      const unavailable =
+                        (hit.kind === "source" || hit.kind === "symbol") &&
+                        !(hit.file in state.files);
+                      const label =
+                        hit.kind === "step"
+                          ? "tour" in hit
+                            ? "Tour step"
+                            : "Flow step"
+                          : hit.kind;
+                      const context =
+                        "file" in hit
+                          ? `${hit.file}:${rangeText(hit.range)}`
+                          : `${embedded.find((g) => g.guideId === guide)?.explainer.title || guide}${"tour" in hit ? ` · ${hit.tour}` : ""}${"step" in hit ? ` · ${hit.step}` : ""}`;
+                      const content = (
+                        <>
+                          <span className="search-kind">{label}</span>
+                          <span className="search-result-text">{hit.text}</span>
+                          <small>
+                            {context}
+                            {unavailable ? " · source not supplied" : ""}
+                          </small>
+                        </>
+                      );
+                      return (
+                        <li key={`${hit.kind}:${i}`}>
+                          {unavailable ? (
+                            <div className="search-result is-unavailable" data-kind={hit.kind}>
+                              {content}
+                            </div>
+                          ) : (
+                            <a
+                              className="search-result"
+                              data-kind={hit.kind}
+                              href={destination(guide, hit)}
+                              onClick={(e) => open(e, guide, hit)}
+                            >
+                              {content}
+                            </a>
+                          )}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </section>
+              ))}
           </div>
           <aside className="search-guides" aria-label="Guide library">
             <h3>{catalog ? "Repository guides" : "Contained guides"}</h3>
+            {state.readOnlyGuide && /^https?:$/.test(location.protocol) && (
+              <a href="./">Back to library</a>
+            )}
             {!catalog && <p>Only guides contained in this page are available offline.</p>}
             {catalogError && <p role="alert">{catalogError}</p>}
             {blocked && <p>Save or cancel drafts and pending edits before switching guides.</p>}
