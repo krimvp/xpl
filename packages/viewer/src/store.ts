@@ -763,13 +763,12 @@ export class ViewerStore {
     file: FilePath,
     range: Range,
     side: "head" | "base" = "head",
-    source: Pick<ViewerState, "files" | "baseFiles" | "explainer"> = this.state,
   ): Cursor | undefined {
     const base = side === "base";
-    const text = (base ? source.baseFiles : source.files)[file];
+    const text = (base ? this.state.baseFiles : this.state.files)[file];
     if (
       text === undefined ||
-      (base ? !hasBase(changeOf(source.explainer), file) : !this.indexModel.hasFile(file))
+      (base ? !hasBase(changeOf(this.state.explainer), file) : !this.indexModel.hasFile(file))
     )
       return;
     const lines = text.split("\n");
@@ -784,8 +783,8 @@ export class ViewerStore {
           !Number.isInteger(endCol) ||
           startCol < 1 ||
           endCol! < 1 ||
-          startCol > lines[startLine - 1]!.replace(/\r$/, "").length ||
-          endCol! > lines[endLine - 1]!.replace(/\r$/, "").length ||
+          startCol > lines[startLine - 1]!.replace(/\r$/, "").length + 1 ||
+          endCol! > lines[endLine - 1]!.replace(/\r$/, "").length + 1 ||
           (startLine === endLine && endCol! < startCol)))
     )
       return;

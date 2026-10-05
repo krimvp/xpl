@@ -1,4 +1,5 @@
 import { expect, it } from "vitest";
+import type { Range } from "@xpl/core";
 import { readLaunchParams } from "../src/data.js";
 import { ViewerStore, type ViewerState } from "../src/store.js";
 import { searchFor } from "../src/url.js";
@@ -19,7 +20,7 @@ const fields = (
   cursor: state.cursor,
 });
 
-it("round-trips serialized navigation across short action sequences and the b1/b2 cases", () => {
+it("round-trips serialized navigation across short action sequences and the b1/b2/b3 cases", () => {
   const actions: Record<string, (store: ViewerStore) => void> = {
     t1: (s) => s.previewStep("tour:demo", 0),
     t2: (s) => s.previewStep("tour:demo", 1),
@@ -43,6 +44,32 @@ it("round-trips serialized navigation across short action sequences and the b1/b
     },
     exit: (s) => s.exitPresent(),
   };
+  const boundaries: [string, "head" | "base", Range][] = [
+    ["first-column", "head", { startLine: 1, endLine: 1, startCol: 1, endCol: 1 }],
+    ["line-end", "head", { startLine: 1, endLine: 1, startCol: 8, endCol: 8 }],
+    ["last-line-end", "head", { startLine: 30, endLine: 30, startCol: 9, endCol: 9 }],
+    ["multiline-ends", "head", { startLine: 1, endLine: 30, startCol: 8, endCol: 9 }],
+    ["first-to-end", "base", { startLine: 1, endLine: 1, startCol: 1, endCol: 11 }],
+    ["empty-line", "base", { startLine: 2, endLine: 2, startCol: 1, endCol: 1 }],
+    ["last-empty-line", "base", { startLine: 4, endLine: 4, startCol: 1, endCol: 1 }],
+    ["multiline-empty", "base", { startLine: 2, endLine: 4, startCol: 1, endCol: 1 }],
+  ];
+  for (const [name, side, range] of boundaries) {
+    const file = side === "head" ? "src/a.ts" : "old.ts";
+    actions[`cursor-${name}`] = (s) =>
+      s.setCursor(file, range.startLine, range.endLine, side, range.startCol, range.endCol);
+    actions[`range-${name}`] = (s) => {
+      s.openRange(file, range, side);
+      expect(s.getState().cursor, name).toEqual({
+        file,
+        fromLine: range.startLine,
+        toLine: range.endLine,
+        fromCol: range.startCol,
+        toCol: range.endCol,
+        ...(side === "base" ? { side } : {}),
+      });
+    };
+  }
   const cases: Record<string, string[]> = {
     "b1 saved Present with cursor": ["present", "cursor"],
     "b1 saved Present Code with cursor": ["code", "present", "cursor"],
@@ -66,7 +93,7 @@ it("round-trips serialized navigation across short action sequences and the b1/b
       head: "b".repeat(40),
       files: [{ path: "old.ts", status: "deleted", hunks: [] }],
     };
-    bundle.baseFiles = { "old.ts": "old source\nsecond line" };
+    bundle.baseFiles = { "old.ts": "old source\n\nlast line\n" };
     for (const [name, sequence] of Object.entries(cases)) {
       const store = new ViewerStore(bundle);
       for (const action of sequence) actions[action]!(store);

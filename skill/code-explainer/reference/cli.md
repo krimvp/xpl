@@ -439,8 +439,9 @@ Opening current resolves to its immutable version folder before navigation. The 
 explanation panel shows its version, included source and captured prior versions with their scope and
 author review state. The existing query contract uses `version=<version-folder>`, `tour=<id>&step-id=<id>`,
 `view=<id>&focus=<element>` (repeatable), or `file=<path>&range=1:1-1:6&side=head|base`.
-Ranges use 1-based lines and inclusive UTF-16 columns; omitted columns select whole lines. Base paths are
-change head keys, including renamed files and deleted files. Links resolve only supplied source.
+Ranges use 1-based lines and inclusive UTF-16 columns; omitted columns select whole lines.
+Column positions allow line length + 1, including column 1 on an empty line. Base paths are change head
+keys, including renamed files and deleted files. Links resolve only supplied source.
 Mismatched version queries refuse to show another snapshot. About this explanation offers a link to the
 current reading state and an Open latest version link through the sibling current page. Staging times
 use the reader’s local format; earlier versions and technical identifiers sit behind disclosures.

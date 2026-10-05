@@ -15,6 +15,7 @@ import {
   focusOf,
   linesWith,
   openTourEditor,
+  openEditMenu,
   readEmbeddedBundle,
   screenshotPath,
   stateOf,
@@ -67,6 +68,34 @@ const navigationOf = (page: Page) => {
 const present = (page: Page) => page.getByTestId("present");
 const counter = (page: Page) => page.getByTestId("tour-counter");
 const note = (page: Page) => page.getByTestId("tour-note");
+
+test("a keyboard selection starting at a line end survives reload and saved HTML", async ({
+  page,
+}) => {
+  await open(page);
+  await page.evaluate(() => window.__xpl!.select(["concept:retry-policy"]));
+  const source = page.locator('.pane[data-file="src/runner.ts"] .cm-content').first();
+  await source.click();
+  await source.press("Control+Home");
+  await source.press("End");
+  await source.press("Shift+ArrowDown");
+  const cursor = { file: "src/runner.ts", fromLine: 1, toLine: 2, fromCol: 60, toCol: 59 };
+  await expect.poll(() => stateOf(page).then((s) => s.cursor)).toEqual(cursor);
+  await expect.poll(() => new URL(page.url()).searchParams.get("range")).toBe("1:60-2:59");
+  await page.reload();
+  await expect.poll(() => stateOf(page).then((s) => s.cursor)).toEqual(cursor);
+  await (await openEditMenu(page)).getByTestId("edit-save-html").click();
+  const [download] = await Promise.all([
+    page.waitForEvent("download"),
+    page.getByTestId("save-html-draft").click(),
+  ]);
+  const html = await readFile((await download.path())!, "utf8");
+  await page.route("http://xpl-saved.test/**", (route) =>
+    route.fulfill({ contentType: "text/html", body: html }),
+  );
+  await page.goto("http://xpl-saved.test/");
+  await expect.poll(() => stateOf(page).then((s) => s.cursor)).toEqual(cursor);
+});
 
 test("reload keeps an applied step's code override after switching to Map", async ({ page }) => {
   await openVariant(

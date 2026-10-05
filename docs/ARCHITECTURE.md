@@ -1972,8 +1972,9 @@ applied step changes as well as the tour counter, so a step's stable ID cannot l
 An empty `step-id=` records that no step is applied. View, focus, perspective and cursor remain
 independent of the applied step; a perspective switch does not imply a detour. Older compact tour URLs
 without view/focus still apply the requested step. Base ranges validate against embedded
-base text using changed-file head keys, including deleted files, without a base index. Unknown sides
-and unavailable/invalid ranges never silently select head source.
+base text using changed-file head keys, including deleted files, without a base index. Column positions
+run from 1 through line length + 1, including empty lines and the position after the last character.
+Unknown sides and unavailable/invalid ranges never silently select head source.
 
 `ViewerBundle.launch` stores a query string when Save as HTML captures navigation, with no service
 attachment. The store restores it only when no explicit navigation was supplied; a new linked target
