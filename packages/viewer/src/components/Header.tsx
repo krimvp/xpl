@@ -189,9 +189,9 @@ function saveStatus(state: ReturnType<typeof useViewerState>) {
     return { text: `Not saved: ${state.editError}`, tone: "error", title: state.editError };
   if (state.editDraft && !state.editBusy)
     return {
-      text: "Unsaved text draft",
+      text: "Unsaved draft",
       tone: "warn",
-      title: "Save or cancel the text draft in Details.",
+      title: "Save or cancel the draft in Details.",
     };
   if (serverMode) {
     if (save.status === "saving")
