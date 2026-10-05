@@ -137,6 +137,22 @@ changes. Download edits before closing. **Retry connection** attaches the origin
 imported with `xpl feedback`. Manual commands and portable HTML work with the service stopped. Local serving
 needs no provider network or credentials; a future Claude runner needs separate configured access.
 
+Watching is opt-in on each start:
+
+```sh
+xpl service start jobrunner --watch --background
+xpl status --all --json                         # every guide: moved, drifted or missing anchors
+```
+
+The watcher polls paths and file metadata, capturing source and resolver configuration when inputs
+change. It follows ignored config chains regardless of filename, coalesces edits and rebuilds the full index. Superseded builds are discarded; readers see a complete snapshot. Failed or cancelled builds
+keep the previous index marked out of date. Moved code keeps its prose; drifted and missing evidence still
+block ready export. Watching saves no guide text, accepts no generated revisions and leaves feedback intact.
+It defaults to heuristic references (`--precise off`); `--precise auto|require` enables semantic tools and
+`--scip <artifact|manifest.json>` observes supplied provider inputs. A watched service cannot pin `--index`.
+Watch options are selected again on restart. Recovery retires the previous watch pointer. Pause/resume, viewer attention controls and offered revisions
+follow in 29B. Stop the service to return to manual indexing and revision.
+
 The service also keeps job history in `.explainer/service/jobs.json` and exposes it at `GET /api/jobs`.
 Running attempts become interrupted after restart; completed proposals stay recorded, and cancelled or
 superseded results stay fenced. Submission and retry report unavailable until a real runner is supplied.

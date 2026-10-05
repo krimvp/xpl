@@ -1,8 +1,9 @@
-import { readFileSync, readdirSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { readdirSync } from "node:fs";
+import { join, resolve } from "node:path";
 import type { LanguageInfo } from "@xpl/core";
 import { describeAnalysis } from "@xpl/core";
-import { buildIndex, indexProviders, scipArtifactProvider, writeIndex } from "@xpl/indexer";
+import { buildIndex, writeIndex } from "@xpl/indexer";
+import { scipProviders } from "../index-options.js";
 import type { CommandSpec } from "../command.js";
 import { CliError, errorMessage } from "../errors.js";
 import { plural } from "../format.js";
@@ -97,29 +98,7 @@ export const indexCommand: CommandSpec = {
     if (scip && precise === "off") throw new CliError("--scip requires --precise auto or require");
     let result;
     try {
-      let providers;
-      if (scip) {
-        const path = resolve(ctx.cwd, scip);
-        if (path.endsWith(".json")) {
-          const manifest: unknown = JSON.parse(readFileSync(path, "utf8"));
-          if (
-            !manifest ||
-            typeof manifest !== "object" ||
-            !("artifact" in manifest) ||
-            typeof manifest.artifact !== "string" ||
-            !manifest.artifact
-          )
-            throw new Error("SCIP manifest requires an artifact path relative to the manifest");
-          providers = [
-            scipArtifactProvider({
-              artifact: readFileSync(resolve(dirname(path), manifest.artifact)),
-              manifest,
-            }),
-          ];
-        } else providers = [scipArtifactProvider({ artifact: readFileSync(path) })];
-        // Artifact selection replaces semantic tools; registered syntax providers still run first.
-        providers.unshift(...indexProviders().filter((provider) => provider.mode === "syntax"));
-      }
+      const providers = scip ? scipProviders(resolve(ctx.cwd, scip)) : undefined;
       result = await buildIndex({
         root: ctx.root,
         precise,
