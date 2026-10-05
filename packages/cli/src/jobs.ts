@@ -15,7 +15,7 @@ import { CliError, errorMessage } from "./errors.js";
 import { atomicWrite, jsonFile, parseJson, withRepositoryLock } from "./fsutil.js";
 import { loadExplainer, openWorkspace } from "./repo.js";
 import { readRequests } from "./requests.js";
-import { selectRevision } from "./revision.js";
+import { continueRevision, selectRevision } from "./revision.js";
 
 type JobState =
   "queued" | "running" | "completed" | "failed" | "cancelled" | "superseded" | "interrupted";
@@ -43,12 +43,12 @@ export interface JobSubmission {
   selectedRequestIds: string[];
   include?: string[];
 }
-/** A controlled runner tests lifecycle only. 39B must validate real output through the revision flow. */
+/** Real adapters return untrusted proposals; controlled runners may return only a lifecycle receipt. */
 export type JobRunner = (
   job: Job,
   signal: AbortSignal,
   progress: (message: string) => Promise<void>,
-) => Promise<{ revisionRunId: string }>;
+) => Promise<{ revisionRunId: string; proposals?: unknown }>;
 interface Ledger {
   schema: "xpl-jobs@1";
   root: string;
@@ -66,7 +66,7 @@ const STATES: JobState[] = [
   "interrupted",
 ];
 const UNAVAILABLE =
-  "Job runner unavailable. This service supports lifecycle storage only; use the manual xpl revise workflow until a real runner is configured.";
+  "Job runner unavailable. Start the service with --backend claude to use the installed, authenticated Claude Code CLI, or use manual xpl revise.";
 function record(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value))
     throw new CliError("expected a job object");
@@ -442,9 +442,9 @@ class RepositoryJobs {
       if (!job) return;
       const abort = new AbortController();
       this.active = { id: job.id, abort };
-      const update = async (change: (current: Job) => void) => {
+      const update = async (change: (current: Job) => void | Promise<void>) => {
         if (this.closed) return;
-        await this.mutate((ledger) => {
+        await this.mutate(async (ledger) => {
           const current = ledger.jobs.find((j) => j.id === job.id)!;
           if (
             current.state !== "running" ||
@@ -452,7 +452,7 @@ class RepositoryJobs {
             current.owner.attemptId !== job.owner!.attemptId
           )
             return;
-          change(current);
+          await change(current);
           current.updatedAt = new Date().toISOString();
         });
       };
@@ -470,7 +470,28 @@ class RepositoryJobs {
         });
         if (record(result).revisionRunId !== job.input.revisionRunId)
           throw new CliError("runner result does not match the selected revision");
-        await update((current) => {
+        await update(async (current) => {
+          if (result.proposals !== undefined) {
+            const proposal = join(dirname(this.path), `proposal-${job.owner!.attemptId}.json`);
+            await atomicWrite(proposal, jsonFile(result.proposals));
+            const review = await continueRevision(
+              this.ctx,
+              resolve(this.ctx.root, job.scope.guide),
+              job.input.revisionRunId,
+              {
+                proposal,
+                serviceJob: { id: job.id, attemptId: job.owner!.attemptId },
+                assertCurrent: () => {
+                  this.assertOwner();
+                  abort.signal.throwIfAborted();
+                },
+              },
+            );
+            if (!review.readiness?.ready)
+              throw new CliError(
+                "Claude proposal is not ready for review; inspect xpl revise --run and repair the reported readiness blockers.",
+              );
+          }
           current.state = "completed";
           current.result = { revisionRunId: job.input.revisionRunId };
         });

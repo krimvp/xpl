@@ -1,0 +1,337 @@
+import { randomUUID, createHash } from "node:crypto";
+import { chmodSync, existsSync, unlinkSync } from "node:fs";
+import { join } from "node:path";
+import { beforeAll, describe, expect, it } from "vitest";
+import { artifactIdentity } from "@xpl/core";
+import { claudeRunner } from "../src/claude-runner.js";
+import { createCtx } from "../src/context.js";
+import { openJobs } from "../src/jobs.js";
+import { loadExplainer, openWorkspace } from "../src/repo.js";
+import { appendRequest } from "../src/requests.js";
+import {
+  cloneDir,
+  indexedFixture,
+  makeTempDir,
+  applyStdin,
+  readFile,
+  readJson,
+  writeFile,
+  xpl,
+} from "./helpers.js";
+
+let demo: string;
+beforeAll(async () => {
+  demo = await indexedFixture();
+  expect((await xpl(demo, "new", "demo")).code).toBe(0);
+  expect(
+    (
+      await applyStdin(demo, {
+        nodes: [{ id: "file:src/queue.ts", summary: "Queue holds pending jobs." }],
+        views: [
+          {
+            id: "view:queue",
+            type: "graph",
+            title: "Queue",
+            scope: { root: "repo", depth: 1 },
+            edgeKinds: [],
+            stubs: { mode: "none" },
+            include: ["file:src/queue.ts"],
+          },
+        ],
+      })
+    ).code,
+  ).toBe(0);
+  expect((await xpl(demo, "ready", "demo")).code).toBe(0);
+});
+
+async function setup(body: string, creation = false) {
+  const root = cloneDir(demo);
+  if (creation) expect((await xpl(root, "new", "creation")).code).toBe(0);
+  const name = creation ? "creation" : "demo";
+  const tooling = makeTempDir();
+  const skillDir = join(tooling, "skill");
+  const files = {
+    "SKILL.md": "Installed code-explainer instructions",
+    "bin/xpl": "installed launcher",
+  };
+  for (const [file, text] of Object.entries(files)) writeFile(skillDir, file, text);
+  writeFile(
+    skillDir,
+    "xpl-install.json",
+    JSON.stringify({
+      version: "0.0.0",
+      cli: process.execPath,
+      files: Object.fromEntries(
+        Object.entries(files).map(([p, s]) => [p, createHash("sha256").update(s).digest("hex")]),
+      ),
+    }),
+  );
+  const executable = writeFile(
+    tooling,
+    "claude",
+    `#!${process.execPath}\nimport fs from 'node:fs';\nconst args=process.argv.slice(2);\nconst prompt=fs.readFileSync(0,'utf8');\nconst output=JSON.parse(prompt.match(/^Output: (.+)$/m)[1]);\nfs.writeFileSync(process.env.STUB_CAPTURE,JSON.stringify({args,prompt,cwd:process.cwd(),output,pid:process.pid}));\n${body}\n`,
+  );
+  chmodSync(executable, 0o755);
+  const ctx = createCtx(
+    { out() {}, err() {} },
+    {
+      root,
+      cwd: root,
+      env: { ...process.env, PATH: tooling, STUB_CAPTURE: join(tooling, "capture.json") },
+      json: true,
+      indexOption: undefined,
+    },
+  );
+  const loaded = loadExplainer(ctx, name);
+  const ws = await openWorkspace(ctx, { explainer: loaded });
+  const request = (
+    await appendRequest(root, {
+      id: "request-original",
+      elementId: "file:src/queue.ts",
+      kind: "correct",
+      note: "Explain the queued job.",
+      explainer: name,
+      context: artifactIdentity(loaded.explainer, ws.index),
+    })
+  ).request;
+  const instanceId = randomUUID();
+  writeFile(
+    root,
+    ".explainer/service/instance.json",
+    JSON.stringify({ schema: "xpl-service-instance@1", root, instanceId, state: "running" }),
+  );
+  return { root, tooling, skillDir, ctx, instanceId, request, name };
+}
+
+const valid = `fs.writeFileSync(output,JSON.stringify([{id:'request-original',patch:{nodes:[{id:'file:src/queue.ts',summary:'Stores jobs until a worker claims them.'}]}}]));\nconsole.log(JSON.stringify({type:'result',is_error:false,result:'Proposal written'}));`;
+
+describe("configured Claude adapter (stub executable, no provider)", () => {
+  it("writes a validated reviewable revision without changing the guide or outcomes", async () => {
+    const { root, ctx, skillDir, tooling, instanceId, request } = await setup(valid);
+    const original = readFile(root, ".explainer/demo.explainer.json");
+    const jobs = await openJobs(ctx, instanceId, claudeRunner(ctx, { skillDir }));
+    try {
+      const submitted = await jobs.submit("demo", {
+        id: randomUUID(),
+        selectedRequestIds: [request.id],
+      });
+      await expect
+        .poll(async () => {
+          const current = await jobs.get("demo", submitted.id);
+          return { state: current.state, error: current.error };
+        })
+        .toEqual({ state: "completed", error: null });
+      const journal = readJson(
+        root,
+        `.explainer/revisions/${submitted.input.revisionRunId}/run.json`,
+      );
+      expect(journal.state).toBe("proposed");
+      expect(journal.serviceJob.id).toBe(submitted.id);
+      const decisions = writeFile(
+        tooling,
+        "decisions.json",
+        JSON.stringify([{ id: request.id, status: "addressed", reason: "Checked the proposal." }]),
+      );
+      expect(
+        (
+          await xpl(
+            root,
+            "revise",
+            "demo",
+            "--run",
+            submitted.input.revisionRunId,
+            "--decisions",
+            decisions,
+          )
+        ).code,
+      ).toBe(0);
+      await jobs.fence("demo", submitted.id, "superseded");
+      const accepted = await xpl(
+        root,
+        "revise",
+        "demo",
+        "--run",
+        submitted.input.revisionRunId,
+        "--accept",
+      );
+      expect(accepted.code).toBe(1);
+      expect(accepted.err).toContain("manual --accept cannot bypass cancellation or supersession");
+      expect(journal.proposals[0].patch.nodes[0].summary).toBe(
+        "Stores jobs until a worker claims them.",
+      );
+      expect(readFile(root, ".explainer/demo.explainer.json")).toBe(original);
+      expect(readJson(root, ".explainer/requests.json")[0].outcome.status).toBe("pending");
+      const capture = readJson(tooling, "capture.json");
+      expect(capture.args).toContain("--print");
+      expect(capture.args).toContain("--restricted");
+      expect(capture.args[capture.args.indexOf("--permission-mode") + 1]).toBe("dontAsk");
+      expect(capture.args[capture.args.indexOf("--tools") + 1]).toBe("Read,Glob,Grep,Write");
+      const settings = JSON.parse(capture.args[capture.args.indexOf("--settings") + 1]);
+      expect(settings.disableAllHooks).toBe(true);
+      expect(settings.permissions.allow).toEqual([`Edit(/${capture.output})`]);
+      expect(capture.cwd).not.toBe(root);
+      expect(capture.prompt).toContain(skillDir);
+    } finally {
+      await jobs.close();
+    }
+  });
+
+  it("creates a guide proposal from an initialized empty guide through the same revision journal", async () => {
+    const body = `fs.writeFileSync(output,JSON.stringify([{id:'request-original',patch:{nodes:[{id:'file:src/queue.ts',summary:'Stores jobs until a worker claims them.'}],views:[{id:'view:creation',type:'graph',title:'Queue',scope:{root:'repo',depth:1},edgeKinds:[],stubs:{mode:'none'},include:['file:src/queue.ts']}]}}]));console.log(JSON.stringify({is_error:false,result:'Creation proposal written'}));`;
+    const { root, ctx, skillDir, instanceId, request, name } = await setup(body, true);
+    const original = readFile(root, ".explainer/creation.explainer.json");
+    const jobs = await openJobs(ctx, instanceId, claudeRunner(ctx, { skillDir }));
+    try {
+      const job = await jobs.submit(name, {
+        id: randomUUID(),
+        selectedRequestIds: [request.id],
+        include: ["view:creation"],
+      });
+      await expect
+        .poll(async () => {
+          const current = await jobs.get(name, job.id);
+          return { state: current.state, error: current.error };
+        })
+        .toEqual({ state: "completed", error: null });
+      const journal = readJson(root, `.explainer/revisions/${job.input.revisionRunId}/run.json`);
+      expect(journal.previous.views).toEqual([]);
+      expect(journal.proposals[0].patch.views[0].id).toBe("view:creation");
+      expect(journal.state).toBe("proposed");
+      expect(readFile(root, ".explainer/creation.explainer.json")).toBe(original);
+    } finally {
+      await jobs.close();
+    }
+  });
+
+  it.each([
+    ["plain authentication error", `console.log('Not logged in');`, "Claude authentication failed"],
+    [
+      "malformed output",
+      `fs.writeFileSync(output,'{invalid');console.log('{}');`,
+      "proposal contains invalid JSON",
+    ],
+    [
+      "authentication",
+      `console.log(JSON.stringify({is_error:true,result:'Not logged in: 401'}));`,
+      "Claude authentication failed",
+    ],
+    ["rate limit", `console.error('Rate limit 429');process.exitCode=1;`, "Claude is rate limited"],
+    [
+      "missing output",
+      `console.log(JSON.stringify({is_error:false,result:'Could not write'}));`,
+      "produced no proposal file",
+    ],
+    [
+      "wrong selection",
+      `fs.writeFileSync(output,JSON.stringify([{id:'unselected',patch:{}}]));console.log('{}');`,
+      "one proposal per selected request",
+    ],
+    [
+      "invalid anchor",
+      `fs.writeFileSync(output,JSON.stringify([{id:'request-original',patch:{nodes:[{id:'file:src/queue.ts',anchors:[{file:'missing.ts',span:{from:1,to:2}}]}]}}]));console.log('{}');`,
+      "revision patch rejected",
+    ],
+    [
+      "scope escape",
+      `fs.writeFileSync(output,JSON.stringify([{id:'request-original',patch:{nodes:[{id:'file:src/worker.ts',summary:'Out of scope.'}]}}]));console.log('{}');`,
+      "outside its selected scope",
+    ],
+    [
+      "unfinished output",
+      `fs.writeFileSync(output,JSON.stringify([{id:'request-original',patch:{nodes:[{id:'file:src/queue.ts',summary:'TODO explain this'}]}}]));console.log('{}');`,
+      "not ready for review",
+    ],
+    [
+      "symlink output",
+      `fs.symlinkSync(process.env.STUB_CAPTURE,output);console.log('{}');`,
+      "regular owned file",
+    ],
+  ])(
+    "reports %s as a failed job without modifying guide or outcomes",
+    async (_name, body, message) => {
+      const { root, ctx, skillDir, instanceId, request } = await setup(body);
+      const original = readFile(root, ".explainer/demo.explainer.json");
+      const requests = readFile(root, ".explainer/requests.json");
+      const jobs = await openJobs(ctx, instanceId, claudeRunner(ctx, { skillDir }));
+      try {
+        const job = await jobs.submit("demo", {
+          id: randomUUID(),
+          selectedRequestIds: [request.id],
+        });
+        await expect.poll(async () => (await jobs.get("demo", job.id)).state).toBe("failed");
+        expect((await jobs.get("demo", job.id)).error).toContain(message);
+        expect((await jobs.get("demo", job.id)).result).toBeNull();
+        expect(readFile(root, ".explainer/demo.explainer.json")).toBe(original);
+        expect(readFile(root, ".explainer/requests.json")).toBe(requests);
+      } finally {
+        await jobs.close();
+      }
+    },
+  );
+
+  it("fails when Claude is absent from PATH instead of guessing authentication from version", async () => {
+    const { root, ctx, skillDir, tooling, instanceId, request } = await setup(valid);
+    unlinkSync(join(tooling, "claude"));
+    const jobs = await openJobs(ctx, instanceId, claudeRunner(ctx, { skillDir }));
+    try {
+      const job = await jobs.submit("demo", { id: randomUUID(), selectedRequestIds: [request.id] });
+      await expect.poll(async () => (await jobs.get("demo", job.id)).state).toBe("failed");
+      expect((await jobs.get("demo", job.id)).error).toContain("not installed on PATH");
+      expect(readJson(root, `.explainer/revisions/${job.input.revisionRunId}/run.json`).state).toBe(
+        "selected",
+      );
+    } finally {
+      await jobs.close();
+    }
+  });
+
+  it.each(["cancelled", "superseded", "timeout"] as const)(
+    "kills %s child and never journals its already written output",
+    async (action) => {
+      const { root, ctx, skillDir, tooling, instanceId, request } = await setup(
+        valid + "\nsetInterval(()=>{},1000);",
+      );
+      const jobs = await openJobs(
+        ctx,
+        instanceId,
+        claudeRunner(ctx, { skillDir, timeoutMs: action === "timeout" ? 1000 : 5000 }),
+      );
+      try {
+        const job = await jobs.submit("demo", {
+          id: randomUUID(),
+          selectedRequestIds: [request.id],
+        });
+        await expect.poll(() => existsSync(join(tooling, "capture.json"))).toBe(true);
+        const capture = readJson(tooling, "capture.json");
+        await expect.poll(() => existsSync(capture.output)).toBe(true);
+        if (action === "timeout") {
+          // Observe the configured deadline before checking death; a one-second poll would race it.
+          await expect
+            .poll(async () => (await jobs.get("demo", job.id)).state, { timeout: 3000 })
+            .toBe("failed");
+        } else await jobs.fence("demo", job.id, action);
+        await expect
+          .poll(() => {
+            try {
+              process.kill(capture.pid, 0);
+              return false;
+            } catch {
+              return true;
+            }
+          })
+          .toBe(true);
+        const stored = await jobs.get("demo", job.id);
+        expect(stored.result).toBeNull();
+        if (action === "timeout") {
+          expect(stored.error).toContain("timed out after 1000 ms");
+        } else expect(stored.state).toBe(action);
+        await expect.poll(() => existsSync(capture.cwd)).toBe(false);
+        expect(
+          readJson(root, `.explainer/revisions/${job.input.revisionRunId}/run.json`).state,
+        ).toBe("selected");
+      } finally {
+        await jobs.close();
+      }
+    },
+  );
+});

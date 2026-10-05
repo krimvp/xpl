@@ -1524,15 +1524,14 @@ never stolen on a timer: a crashed transaction requires explicit inspection/remo
 An unexpected exit leaves the last valid index/explainer and interrupted instance record intact.
 
 Managed bundles add `server.attachment`: canonical root, repository-relative guide, instance UUID,
-backend selection and `backendAvailable: false`. Root/guide identify the attachment across restarts;
+backend selection and `backendAvailable` (whether a runner is configured, not an authentication check). Root/guide identify the attachment across restarts;
 the UUID identifies a process and participates in the workspace ETag. Every viewer API call sends
 `X-Xpl-Attachment` (URI-encoded root/guide JSON). The server rejects a different or unmanaged attachment
 with 409 before reads or writes. The page also preserves root/guide in its `attachment` URL query, checked
 before HTML injection, so a bookmark cannot silently open another guide on a reused port.
 
-Backend selection is a persisted label, with execution unavailable. Local serving needs no provider
-network or credentials. A later configured Claude
-runner needs its own authentication and provider access. Offline HTML and manual CLI commands remain
+Backend `none` disables execution. Explicit `claude` selects the installed print-mode runner, using its
+existing login and provider access. Local serving needs no provider network or credentials. Offline HTML and manual CLI commands remain
 independent of the service. The installed-artifact check exercises detached processes, saved-context and
 same-page/bookmark restart, a real crash and explicit recovery, then manual export and blocked-network
 reading of an HTML snapshot saved from a stopped page.
@@ -1576,11 +1575,36 @@ Managed services expose `GET /api/jobs`, `GET /api/jobs/<UUID>` and `POST /api/j
 `{id, selectedRequestIds, include?}`, plus `POST /api/jobs/<UUID>/<cancel|supersede>` with `{}` and
 `POST /api/jobs/<UUID>/retry` with `{expectedAttempt}`.
 Routes use the existing Host, attachment, JSON, origin and size guards and filter to the attached guide.
-No acceptance route exists in 39A. The installed service has no runner: submission/retry reports 503
-with an actionable unavailable reason, while history and cancellation remain usable after restart.
-An injected controlled runner proves lifecycle behavior only. 39B supplies one real configured runner
-and validates proposals through `xpl revise`; 39C adds progress/review UI and fenced acceptance through
-the existing revision commit/outcome recovery. Creation/answer scopes belong to those later changes.
+No acceptance route exists. Backend `none` reports 503 for submission/retry; history and cancellation
+remain usable. Controlled runners prove lifecycle behavior only. 39C adds progress/review UI and fenced
+acceptance through the existing revision commit/outcome recovery. Answer scopes remain later work.
+
+**Configured Claude runner (39B).** `cli/claude-runner.ts` is the single process adapter behind `JobRunner`.
+Explicit `service --backend claude` selects it. The saved `--skill-dir` identifies a verified managed
+installation (default `~/.claude/skills/code-explainer`); `--job-timeout` bounds each call (300 seconds by
+default, 1–3600 seconds). Enabled means configured; only an actual job establishes usable provider access.
+Missing tooling/skill, authentication, rate limits and timeout failures leave the job retryable with a
+recovery message. No keys, accounts, provider setup or hosted xpl backend are created.
+
+Each invocation uses Claude Code print/JSON mode, `--restricted`, `dontAsk`, no session persistence,
+a read/Glob/Grep/Write tool list, empty MCP configuration and disabled inherited hooks. It starts in an
+xpl-owned temporary directory containing the frozen revision input. Source and the installed skill are
+additional read directories with explicit Edit deny rules. Only an exact absolute Edit permission for
+`proposal.json` permits the Write tool; Claude uses Edit rules for all file modifications. Shell, agents
+and MCP tools are unavailable. The prompt reads the installed skill and asks for ordinary per-request
+patches, never applies or accepts them. Output must be a bounded regular file with one entry per selected
+request. Abort and timeout kill the process group; temporary output is removed after reading or failure.
+
+The adapter returns untrusted proposals. The scheduler rechecks instance/attempt/running state under
+`withRepositoryLock`, stages the proposal in its service area, and calls #30's `continueRevision` for
+scope, anchor, provenance, source and readiness checks. Ownership is checked again immediately before
+the journal write. A completed job references a ready, `proposed` revision run awaiting author review;
+the guide and feedback outcomes remain unchanged. The journal records `serviceJob: {id, attemptId}`;
+manual `revise --accept` refuses service-owned runs so cancellation/supersession cannot be bypassed.
+39C supplies their guarded acceptance path. Invalid or unfinished output becomes a failed job.
+Creation proposals fill an explicitly initialized empty/draft guide, selected persisted requests and
+explicit included new IDs through this same revision contract. The runner does not create or replace
+a guide name. No competing creation/proposal engine or automatic decisions are added.
 
 **Feedback contract** (`core/feedback.ts`): exports are `{schema: "code-explainer/feedback@1", requests}`.
 Each request has `id`, `elementId`, `kind` (`correct`, `explain`, `expand`), `at`, optional `note`, `view`,

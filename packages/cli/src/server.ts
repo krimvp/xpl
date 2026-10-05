@@ -189,7 +189,7 @@ export async function startViewServer(options: ViewServerOptions): Promise<ViewS
         guide: displayPath(options.control.root, explainerPath),
         instanceId: options.control.instanceId,
         backend: options.control.backend,
-        backendAvailable: false,
+        backendAvailable: options.control.jobs?.availability.available ?? false,
       }
     : undefined;
 

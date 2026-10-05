@@ -3,7 +3,7 @@ import { spawn } from "node:child_process";
 import { randomBytes, randomUUID } from "node:crypto";
 import { existsSync, readFileSync, realpathSync, openSync, closeSync } from "node:fs";
 import { chmod, mkdir } from "node:fs/promises";
-import { dirname, isAbsolute, join, relative, sep } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { CommandSpec } from "../command.js";
 import type { Ctx } from "../context.js";
@@ -12,6 +12,7 @@ import { atomicWrite, jsonFile, parseJson, toPosix, withRepositoryLock } from ".
 import { chooseIndexFile, loadExplainer, openWorkspace, WorkingTree } from "../repo.js";
 import type { ViewServer } from "../server.js";
 import { readViewerHtml } from "../viewer-html.js";
+import { claudeRunner } from "../claude-runner.js";
 import { openJobs } from "../jobs.js";
 import { listen, untilStopped } from "./view.js";
 
@@ -23,6 +24,8 @@ interface ServiceContext {
   backend: Backend;
   port: number;
   index: string | null;
+  skillDir?: string;
+  jobTimeout?: number;
 }
 interface Instance {
   schema: "xpl-service-instance@1";
@@ -83,7 +86,17 @@ function readContext(path: string, root: string): ServiceContext | undefined {
     !Number.isInteger(data.port) ||
     Number(data.port) < 0 ||
     Number(data.port) > 65535 ||
-    !(data.index === null || typeof data.index === "string")
+    !(data.index === null || typeof data.index === "string") ||
+    !(
+      data.skillDir === undefined ||
+      (typeof data.skillDir === "string" && isAbsolute(data.skillDir))
+    ) ||
+    !(
+      data.jobTimeout === undefined ||
+      (Number.isInteger(data.jobTimeout) &&
+        Number(data.jobTimeout) >= 1 &&
+        Number(data.jobTimeout) <= 3600)
+    )
   )
     throw new CliError(`invalid service context ${path}; inspect it before recovery`);
   return data as unknown as ServiceContext;
@@ -251,7 +264,7 @@ async function background(ctx: Ctx, argv: string[], dir: string): Promise<void> 
 export const serviceCommand: CommandSpec = {
   name: "service",
   usage:
-    "xpl service <start|stop|status> [explainer] [--background] [--port p] [--backend none|claude] [--recover]",
+    "xpl service <start|stop|status> [explainer] [--background] [--port p] [--backend none|claude] [--skill-dir folder] [--job-timeout seconds] [--recover]",
   summary: "Start, stop or inspect a repository's optional local viewer service",
   details: [
     "Start runs in the foreground (Ctrl-C to stop); --background detaches the installed CLI and logs to",
@@ -266,9 +279,11 @@ export const serviceCommand: CommandSpec = {
     "its record and starts another instance. A live unverified PID or crashed writer lock needs inspection.",
     "Managed viewer bookmarks retain root/guide and reconnect after restart. After stop, choose Use loaded",
     "snapshot offline for manual edits and HTML export; Retry connection resumes this attachment.",
-    "--backend records none (default) or claude as a future selection; no agent or job runs in this command.",
+    "--backend none (default) disables execution; claude runs the installed, already-authenticated Claude Code CLI.",
+    "--skill-dir selects the installed code-explainer skill; --job-timeout bounds each invocation (300 seconds by default).",
+    "Both settings persist for restart. Configuration means enabled, not authenticated; job failures report setup/provider errors.",
     "Durable job history lives in .explainer/service/jobs.json. Restart marks running attempts interrupted;",
-    "cancelled/superseded proposals stay fenced. Execution and retry need a configured runner (not yet supplied).",
+    "cancelled/superseded proposals stay fenced. Claude reads source and writes only an owned proposal file.",
     "Job routes never accept proposals; use the existing explicit xpl revise review/accept workflow.",
     "Local serving requires no network or agent credentials. A later Claude job requires its own configured",
     "authentication and provider network access. Manual commands and offline HTML work with the service stopped.",
@@ -283,7 +298,17 @@ export const serviceCommand: CommandSpec = {
     backend: {
       type: "string",
       arg: "<none|claude>",
-      desc: "Persist backend selection only; jobs remain unavailable",
+      desc: "Select none or the installed Claude Code proposal runner",
+    },
+    "skill-dir": {
+      type: "string",
+      arg: "<folder>",
+      desc: "Installed code-explainer skill (saved folder, else ~/.claude/skills/code-explainer)",
+    },
+    "job-timeout": {
+      type: "string",
+      arg: "<seconds>",
+      desc: "Claude timeout in seconds (saved value, else 300; maximum 3600)",
     },
     recover: {
       type: "boolean",
@@ -302,10 +327,12 @@ export const serviceCommand: CommandSpec = {
         args.flag("recover") ||
         args.str("port") ||
         args.str("backend") ||
+        args.str("skill-dir") ||
+        args.str("job-timeout") ||
         ctx.indexOption)
     )
       throw new UsageError(
-        "guide, --background, --recover, --port, --backend and --index apply only to service start",
+        "guide, --background, --recover, --port, --backend, --skill-dir, --job-timeout and --index apply only to service start",
       );
     const p = paths(ctx);
     ctx = { ...ctx, root: p.root };
@@ -350,6 +377,11 @@ export const serviceCommand: CommandSpec = {
     if (index) localPath(p.root, index);
     ctx = { ...ctx, indexOption: index ?? undefined };
     const port = args.int("port", { max: 65535 }) ?? saved?.port;
+    const skillDir = args.str("skill-dir")
+      ? resolve(ctx.cwd, args.str("skill-dir")!)
+      : saved?.skillDir;
+    const jobTimeout = args.int("job-timeout", { max: 3600 }) ?? saved?.jobTimeout ?? 300;
+    if (jobTimeout < 1) throw new UsageError("--job-timeout must be at least 1 second");
     const backend = args.choice("backend", ["none", "claude"] as const) ?? saved?.backend ?? "none";
     readViewerHtml(ctx.env);
     await openWorkspace(ctx, { explainer: loaded });
@@ -369,6 +401,9 @@ export const serviceCommand: CommandSpec = {
           backend,
           ...(port !== undefined ? ["--port", String(port)] : []),
           ...(index ? ["--index", index] : []),
+          ...(skillDir ? ["--skill-dir", skillDir] : []),
+          "--job-timeout",
+          String(jobTimeout),
           ...(args.flag("recover") ? ["--recover"] : []),
         ],
         p.dir,
@@ -415,7 +450,13 @@ export const serviceCommand: CommandSpec = {
     let server: ViewServer | undefined;
     let jobs: Awaited<ReturnType<typeof openJobs>> | undefined;
     try {
-      jobs = await openJobs(ctx, instance.instanceId);
+      jobs = await openJobs(
+        ctx,
+        instance.instanceId,
+        backend === "claude"
+          ? claudeRunner(ctx, { skillDir, timeoutMs: jobTimeout * 1000 })
+          : undefined,
+      );
       server = await listen(ctx, loaded.abs, "127.0.0.1", port, {
         token: instance.token,
         instanceId: instance.instanceId,
@@ -433,6 +474,8 @@ export const serviceCommand: CommandSpec = {
         backend,
         port: server.port,
         index,
+        ...(skillDir ? { skillDir } : {}),
+        jobTimeout,
       };
       await withRepositoryLock(p.root, p.instance, async () => {
         await atomicWrite(p.context, jsonFile(context));

@@ -73,7 +73,7 @@ describe("repository service lifecycle", () => {
       expect(await history.json()).toEqual({
         available: false,
         reason:
-          "Job runner unavailable. This service supports lifecycle storage only; use the manual xpl revise workflow until a real runner is configured.",
+          "Job runner unavailable. Start the service with --backend claude to use the installed, authenticated Claude Code CLI, or use manual xpl revise.",
         jobs: [],
       });
       const submission = {
@@ -122,10 +122,23 @@ describe("repository service lifecycle", () => {
 
   it("publishes a stable guide attachment and refreshes its instance after restart", async () => {
     const root = cloneDir(demo);
-    const first = await serve(root, "demo", "--backend", "claude");
+    const first = await serve(
+      root,
+      "demo",
+      "--backend",
+      "claude",
+      "--skill-dir",
+      `${root}/chosen-skill`,
+      "--job-timeout",
+      "17",
+    );
     let etag: string | null;
     let instanceId: string;
     try {
+      expect(readJson(root, ".explainer/service/context.json")).toMatchObject({
+        skillDir: `${root}/chosen-skill`,
+        jobTimeout: 17,
+      });
       const response = await fetch(new URL("/api/bundle", first.server.url));
       const bundle = parseBundle(await response.text());
       instanceId = readJson(root, ".explainer/service/instance.json").instanceId;
@@ -134,7 +147,7 @@ describe("repository service lifecycle", () => {
         guide: ".explainer/demo.explainer.json",
         instanceId,
         backend: "claude",
-        backendAvailable: false,
+        backendAvailable: true,
       });
       etag = (await fetch(new URL("/api/explainer", first.server.url))).headers.get("etag");
     } finally {
@@ -142,6 +155,10 @@ describe("repository service lifecycle", () => {
     }
     const restarted = await serve(root);
     try {
+      expect(readJson(root, ".explainer/service/context.json")).toMatchObject({
+        skillDir: `${root}/chosen-skill`,
+        jobTimeout: 17,
+      });
       const bundle = parseBundle(
         await (await fetch(new URL("/api/bundle", restarted.server.url))).text(),
       );
