@@ -4292,3 +4292,32 @@ code {
   background: var(--panel);
   border-top: 1px solid var(--border);
 }
+
+.evidence-preview {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 8px;
+}
+.evidence-preview pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 160px;
+  overflow: auto;
+  font-size: 12px;
+}
+.evidence-list {
+  list-style: none;
+  padding: 0;
+}
+.evidence-list li {
+  padding-block: 8px;
+  border-bottom: 1px solid var(--border);
+}
+.evidence-list code {
+  overflow-wrap: anywhere;
+}
+.evidence-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}

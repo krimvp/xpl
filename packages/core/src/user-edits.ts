@@ -5,6 +5,7 @@ import type { IndexModel } from "./index-model.js";
 import { ExplainerModel } from "./model.js";
 import type { ExplainerPatch } from "./patch.js";
 import type { Explainer } from "./schema.js";
+import { deepEqual } from "./util.js";
 
 export interface UserEdit {
   collection: "nodes" | "edges" | "concepts";
@@ -34,7 +35,9 @@ function fields(
   if (!record(value) || Object.keys(value).length === 0)
     throw new UserEditError("An edit needs changed fields.");
   for (const [name, field] of Object.entries(value)) {
-    if (name === "related" && collection === "concepts") {
+    if (name === "anchors" && Array.isArray(field) && field.length <= 64 && field.every(record)) {
+      continue;
+    } else if (name === "related" && collection === "concepts") {
       if (field === null || (Array.isArray(field) && field.every((id) => typeof id === "string")))
         continue;
     } else if (["label", "summary", "detail"].includes(name)) {
@@ -43,6 +46,15 @@ function fields(
     }
     throw new UserEditError(`Invalid or unsupported edit field: ${name}.`);
   }
+}
+
+/** Resolution is a cache, not an author edit; keep every evidence hash and coordinate. */
+function editValue(name: string, value: unknown): unknown {
+  return name === "anchors" && Array.isArray(value)
+    ? value.map((anchor) =>
+        Object.fromEntries(Object.entries(anchor).filter(([key]) => key !== "resolved")),
+      )
+    : value;
 }
 
 function target(
@@ -75,7 +87,7 @@ export function makeUserEdit(
   const before = Object.fromEntries(
     Object.keys(after).map((name) => [
       name,
-      (item as unknown as Record<string, unknown>)[name] ?? null,
+      editValue(name, (item as unknown as Record<string, unknown>)[name] ?? null),
     ]),
   );
   return { collection, id, before, after };
@@ -112,7 +124,7 @@ export function applyUserEdits(
     seen.add(key);
     const current = makeUserEdit(explainer, index, collection, raw.id, raw.after);
     for (const name of Object.keys(raw.before)) {
-      if (JSON.stringify(current.before[name]) !== JSON.stringify(raw.before[name]))
+      if (!deepEqual(current.before[name], editValue(name, raw.before[name])))
         throw new UserEditError(
           `${raw.id}: ${name} changed since this edit. Reload and inspect it before saving.`,
           true,
@@ -127,5 +139,15 @@ export function applyUserEdits(
     throw new UserEditError(
       result.issues.find((i) => i.severity === "error")?.message ?? "Edit rejected.",
     );
+  for (const edit of inverse) {
+    // find/base-path normalization and generated hashes belong to the actual stored result.
+    edit.before = makeUserEdit(
+      result.explainer,
+      index,
+      edit.collection,
+      edit.id,
+      edit.before,
+    ).before;
+  }
   return { explainer: result.explainer, inverse };
 }
