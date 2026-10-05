@@ -292,7 +292,7 @@ try {
         await connection.getByText("Repository and backend").click();
         await expect(connection).toContainText(service.instanceId);
         await expect(connection).toContainText(
-          "Agent backend unavailable (Claude selected). No agent is configured.",
+          "Agent: Claude Code (configured; sign-in is checked when a job runs)",
         );
         await attached.locator(`.tree-row[data-path="${file}"]`).click();
         await expect(attached.locator(`[data-file="${file}"] .cm-content`)).toContainText("Runner");
@@ -425,7 +425,7 @@ try {
       );
       run(["validate", "ready-demo"], fixture);
       results.push(
-        "ts: packed start/stop/restart, same-page and bookmarked guide reconnect, unavailable backend, stopped-page snapshot save with blocked-network reading, saved context, duplicate refusal, crash/recovery and manual export after stop passed",
+        "ts: packed start/stop/restart, same-page and bookmarked guide reconnect, configured backend label, stopped-page snapshot save with blocked-network reading, saved context, duplicate refusal, crash/recovery and manual export after stop passed",
       );
     }
     const offline = await browser.newPage();

@@ -3,6 +3,7 @@ import { once } from "node:events";
 import { randomUUID } from "node:crypto";
 import { renameSync, symlinkSync, unlinkSync } from "node:fs";
 import { beforeAll, describe, expect, it } from "vitest";
+import { CliError } from "../src/errors.js";
 import { createCtx } from "../src/context.js";
 import { openJobs, type JobRunner } from "../src/jobs.js";
 import { appendRequest } from "../src/requests.js";
@@ -172,6 +173,43 @@ describe("durable job lifecycle (controlled runner only)", () => {
       }
     },
   );
+
+  it("retains running history and stops scheduling when group cleanup fails", async () => {
+    const { ctx, request, instanceId } = await setup();
+    const entered = deferred<void>();
+    const finish = deferred<void>();
+    let invocations = 0;
+    const jobs = await openJobs(ctx, instanceId, async () => {
+      invocations++;
+      entered.resolve();
+      await finish.promise;
+      throw new CliError("Claude group still has live members", 1, { code: "JOB_PROCESS_CLEANUP" });
+    });
+    try {
+      const first = await jobs.submit("demo", {
+        id: randomUUID(),
+        selectedRequestIds: [request.id],
+      });
+      await entered.promise;
+      const second = await jobs.submit("demo", {
+        id: randomUUID(),
+        selectedRequestIds: [request.id],
+      });
+      finish.resolve();
+      await expect.poll(() => jobs.availability.available).toBe(false);
+      expect(jobs.availability.reason).toContain("Claude group still has live members");
+      expect((await jobs.list("demo")).map(({ state }) => state)).toEqual(["running", "queued"]);
+      expect(invocations).toBe(1);
+      expect((await jobs.retry("demo", first.id, 1)).state).toBe("running");
+      expect((await jobs.get("demo", second.id)).attempt).toBe(0);
+      await expect(
+        jobs.submit("demo", { id: randomUUID(), selectedRequestIds: [request.id] }),
+      ).rejects.toThrow("Job scheduler stopped");
+    } finally {
+      finish.resolve();
+      await jobs.close();
+    }
+  });
 
   it("retries a failed invocation once with the same job, revision and immutable request IDs", async () => {
     const { ctx, request, instanceId } = await setup();

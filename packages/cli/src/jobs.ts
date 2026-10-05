@@ -413,9 +413,12 @@ class RepositoryJobs {
 
   async fence(name: string, id: string, state: "cancelled" | "superseded"): Promise<Job> {
     const selected = await this.get(name, id);
-    const result = await this.mutate((ledger) => {
+    const result = await this.mutate(async (ledger) => {
       const job = ledger.jobs.find((j) => j.id === selected.id)!;
       if (job.state === "cancelled" || job.state === "superseded") return job;
+      if (this.active?.id === id) this.active.abort.abort();
+      if (job.state === "running" && job.owner?.process)
+        await terminateJobProcess(job.owner.process);
       job.state = state;
       job.result = null;
       job.error = null;
@@ -525,6 +528,7 @@ class RepositoryJobs {
           current.result = { revisionRunId: job.input.revisionRunId };
         });
       } catch (error) {
+        if (error instanceof CliError && error.extra.code === "JOB_PROCESS_CLEANUP") throw error;
         await update((current) => {
           current.state = "failed";
           current.error = errorMessage(error).slice(0, 5000);
@@ -536,10 +540,12 @@ class RepositoryJobs {
   }
 
   async close() {
-    await this.mutate((ledger) => {
+    await this.mutate(async (ledger) => {
       this.closed = true;
+      this.active?.abort.abort();
       for (const job of ledger.jobs)
         if (job.state === "running" && job.owner?.instanceId === this.instanceId) {
+          if (job.owner.process) await terminateJobProcess(job.owner.process);
           job.state = "interrupted";
           job.error = "Service stopped during this attempt. Explicitly retry after restart.";
           job.updatedAt = new Date().toISOString();

@@ -1718,7 +1718,7 @@ Configured attempts add optional owner.process: {groupId, startTime}. The groupI
 and its POSIX process group; startTime is Linux's boot UUID plus the leader's kernel start ticks.
 The runner records it under the ledger lock and current attempt fence before Claude can start.
 On a new owner, recovery checks the start time and group identity before signalling a recorded group
-and waits for that leader to stop before marking running work interrupted or dispatching queued work.
+and waits for every live group member to stop before marking running work interrupted or dispatching queued work.
 A missing, exited or reused PID is not signalled. Older/control-only attempts have no process record.
 Locks left by a killed transaction still require inspection/removal, never timeout-based theft.
 
@@ -1748,7 +1748,12 @@ and MCP tools are unavailable. The prompt reads the installed skill and asks for
 patches, never applies or accepts them. Output must be a bounded regular file with one entry per selected
 request. A per-attempt Node launcher holds a service pipe: closing the pipe, including service death,
 kills the whole group. The launcher starts Claude only after receiving the service's durable-ownership
-acknowledgement. Abort and timeout also kill the group; recovery verifies the recorded start time as
+acknowledgement. It remains alive after Claude exits, reporting the original exit code on that pipe.
+Every attempt ends through verified group teardown: normal/error exit, timeout, cancellation and
+recovery kill the group and scan Linux /proc until no live member remains, bounded to two seconds.
+Exited zombies cannot execute; the OS reaps them. Terminal job state is written after that drain,
+including cancellation and shutdown. Cleanup failure retains interrupted/running history and stops
+scheduling instead of allowing an overlapping retry. Recovery verifies the recorded start time as
 a second guard if the launcher was paused. No supervisor daemon is installed. Verified process
 ownership currently requires Linux /proc; other platforms fail before starting Claude and can use
 manual revision. Temporary output is removed after reading or failure.

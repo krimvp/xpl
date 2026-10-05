@@ -160,7 +160,8 @@ follow in 29B. Stop the service to return to manual indexing and revision.
 The service also keeps job history in `.explainer/service/jobs.json` and exposes it at `GET /api/jobs`.
 Running attempts become interrupted after restart; completed proposals stay recorded, and cancelled or
 superseded results stay fenced. Each Claude attempt records its group and start identity before launch.
-Service death kills that group through the launcher's pipe; recovery verifies the recorded Linux start
+Every attempt drains its process group before final state or more work, including normal and error exits.
+Cleanup failure stops scheduling. Service death kills that group through the launcher's pipe; recovery verifies the recorded Linux start
 time before terminating any remaining group and allowing retry. Reused PIDs are left alone.
 Verified execution currently requires Linux /proc; manual revision works on other platforms. With `--backend claude`, submission generates an ordinary proposal,
 validates it through `xpl revise` and leaves it awaiting explicit author review. Source is read-only; the
