@@ -1,6 +1,9 @@
+import { spawn } from "node:child_process";
+import { once } from "node:events";
 import { randomUUID } from "node:crypto";
 import { renameSync, symlinkSync, unlinkSync } from "node:fs";
 import { beforeAll, describe, expect, it } from "vitest";
+import { CliError } from "../src/errors.js";
 import { createCtx } from "../src/context.js";
 import { openJobs, type JobRunner } from "../src/jobs.js";
 import { appendRequest } from "../src/requests.js";
@@ -171,6 +174,50 @@ describe("durable job lifecycle (controlled runner only)", () => {
     },
   );
 
+  it("records failed cleanup and stops scheduling until recovery verifies the group gone", async () => {
+    const { ctx, request, instanceId } = await setup();
+    const entered = deferred<void>();
+    const finish = deferred<void>();
+    let invocations = 0;
+    const jobs = await openJobs(ctx, instanceId, async () => {
+      invocations++;
+      entered.resolve();
+      await finish.promise;
+      throw new CliError("Claude group still has live members", 1, { code: "JOB_PROCESS_CLEANUP" });
+    });
+    try {
+      const first = await jobs.submit("demo", {
+        id: randomUUID(),
+        selectedRequestIds: [request.id],
+      });
+      await entered.promise;
+      const second = await jobs.submit("demo", {
+        id: randomUUID(),
+        selectedRequestIds: [request.id],
+      });
+      finish.resolve();
+      await expect.poll(() => jobs.availability.available).toBe(false);
+      expect(jobs.availability.reason).toContain("Claude group still has live members");
+      expect((await jobs.list("demo")).map(({ state }) => state)).toEqual(["failed", "queued"]);
+      expect((await jobs.get("demo", first.id)).cleanup).toEqual({});
+      expect(invocations).toBe(1);
+      await expect(jobs.retry("demo", first.id, 1)).rejects.toThrow("Job scheduler stopped");
+      expect((await jobs.fence("demo", first.id, "cancelled")).cleanup).toEqual({});
+      expect((await jobs.get("demo", second.id)).attempt).toBe(0);
+      await expect(
+        jobs.submit("demo", { id: randomUUID(), selectedRequestIds: [request.id] }),
+      ).rejects.toThrow("Job scheduler stopped");
+      const ledger = readFile(ctx.root, ".explainer/service/jobs.json");
+      await expect(
+        openJobs(ctx, instanceId, async (job) => ({ revisionRunId: job.input.revisionRunId })),
+      ).rejects.toThrow("group identity unknown");
+      expect(readFile(ctx.root, ".explainer/service/jobs.json")).toBe(ledger);
+    } finally {
+      finish.resolve();
+      await jobs.close();
+    }
+  });
+
   it("retries a failed invocation once with the same job, revision and immutable request IDs", async () => {
     const { ctx, request, instanceId } = await setup();
     let calls = 0;
@@ -260,11 +307,20 @@ describe("durable job lifecycle (controlled runner only)", () => {
     }
   });
 
-  it("recovers an interrupted owner without replaying completed jobs or publishing the old owner's late result", async () => {
+  it("recovers without killing a reused process ID, replaying completed jobs or publishing a late result", async () => {
     const { root, ctx, request, instanceId } = await setup();
+    const unrelated = spawn(process.execPath, ["-e", "setInterval(()=>{},1000)"], {
+      detached: true,
+      stdio: "ignore",
+    });
+    await once(unrelated, "spawn");
     const entered = deferred<void>();
     const finish = deferred<{ revisionRunId: string }>();
-    const old = await openJobs(ctx, instanceId, async () => {
+    const old = await openJobs(ctx, instanceId, async (_job, _signal, _progress, started) => {
+      await started({
+        groupId: unrelated.pid!,
+        startTime: "00000000-0000-0000-0000-000000000000:0",
+      });
       entered.resolve();
       return finish.promise;
     });
@@ -288,6 +344,7 @@ describe("durable job lifecycle (controlled runner only)", () => {
     });
     try {
       expect((await restarted.get("demo", job.id)).state).toBe("interrupted");
+      expect(() => process.kill(unrelated.pid!, 0)).not.toThrow();
       expect(calls).toBe(0);
       await restarted.retry("demo", job.id, 1);
       await expect.poll(async () => (await restarted.get("demo", job.id)).state).toBe("completed");
@@ -308,6 +365,11 @@ describe("durable job lifecycle (controlled runner only)", () => {
       }
     } finally {
       if (restarted.availability.available) await restarted.close();
+      if (unrelated.exitCode === null && unrelated.signalCode === null) {
+        const exited = once(unrelated, "exit");
+        unrelated.kill("SIGKILL");
+        await exited;
+      }
     }
   });
 

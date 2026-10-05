@@ -66,6 +66,8 @@ interface Revision {
   requests: FeedbackRequest[];
   include: string[];
   proposals: Proposal[];
+  /** Service proposals need the guarded job acceptance path, never independent manual acceptance. */
+  serviceJob?: { id: string; attemptId: string };
   decisions: Decision[];
   next?: Explainer;
   nextIdentity?: ArtifactIdentity;
@@ -469,7 +471,13 @@ export async function continueRevision(
   ctx: Ctx,
   name: string,
   runId: string,
-  action: { proposal?: string; decisions?: string; accept?: boolean },
+  action: {
+    proposal?: string;
+    decisions?: string;
+    accept?: boolean;
+    assertCurrent?: () => void;
+    serviceJob?: { id: string; attemptId: string };
+  },
 ) {
   await assertRevisionLocation(ctx, runId);
   const path = pathFor(ctx, runId);
@@ -492,6 +500,7 @@ export async function continueRevision(
       throw new CliError("explanation changed since selection; start a new revision run");
     if (action.proposal) {
       revision.proposals = proposals(ctx, revision, action.proposal);
+      if (action.serviceJob) revision.serviceJob = action.serviceJob;
       revision.decisions = [];
       delete revision.next;
       delete revision.nextIdentity;
@@ -525,6 +534,7 @@ export async function continueRevision(
     }
     if (action.proposal || action.decisions) {
       revision.source = sourceFor(revision, next, ws);
+      action.assertCurrent?.();
       await atomicWrite(path, jsonFile(revision));
     }
     return packet(ctx, revision, next, readiness, issues);
@@ -532,6 +542,10 @@ export async function continueRevision(
 }
 
 async function accept(ctx: Ctx, name: string, revision: Revision) {
+  if (revision.serviceJob)
+    throw new CliError(
+      "Service job proposals require guarded job acceptance; manual --accept cannot bypass cancellation or supersession. Inspect the review and wait for the job acceptance flow, or start a separate manual revision selection.",
+    );
   const path = pathFor(ctx, revision.runId);
   if (
     !revision.next ||

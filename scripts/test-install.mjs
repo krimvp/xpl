@@ -278,7 +278,7 @@ try {
     if (language === "ts") {
       const artifactPath = join(fixture, ".explainer/ready-demo.explainer.json");
       const beforeArtifact = readFileSync(artifactPath, "utf8");
-      const service = JSON.parse(
+      let service = JSON.parse(
         run(
           [
             "service",
@@ -288,7 +288,7 @@ try {
             "--port",
             "0",
             "--backend",
-            "claude",
+            "none",
             "--watch",
             "--json",
           ],
@@ -331,6 +331,29 @@ try {
         await attached.goto(service.url + "?perspective=code");
         const connection = attached.getByTestId("connection-status");
         await expect(connection).toHaveAttribute("data-status", "connected");
+        await connection.getByText("Connection details").click();
+        await expect(connection).toContainText(
+          "No agent is configured. Use xpl revise for a manual revision.",
+        );
+        run(["service", "stop", "--json"], fixture);
+        service = JSON.parse(
+          run(
+            ["service", "start", "--background", "--backend", "claude", "--watch", "--json"],
+            fixture,
+          ),
+        );
+        await expect
+          .poll(() => JSON.parse(run(["service", "status", "--json"], fixture)).watch?.state, {
+            timeout: 15000,
+          })
+          .toBe("current");
+        const configuredHistory = await fetch(new URL("/api/jobs", service.url));
+        assert.equal(configuredHistory.status, 200);
+        const configuredJobs = await configuredHistory.json();
+        assert.deepEqual(configuredJobs.jobs, []);
+        assert.equal(configuredJobs.available, true);
+        await attached.goto(service.url + "?perspective=code");
+        await expect(connection).toHaveAttribute("data-status", "connected");
         assert.deepEqual(JSON.parse(new URL(attached.url()).searchParams.get("attachment")), {
           root: fixture,
           guide: service.guide,
@@ -338,7 +361,7 @@ try {
         await connection.getByText("Connection details").click();
         await expect(connection).toContainText(service.instanceId);
         await expect(connection).toContainText(
-          "Agent backend unavailable (Claude selected). No agent is configured.",
+          "Agent: Claude Code (configured; sign-in is checked when a job runs)",
         );
         await attached.locator(`.tree-row[data-path="${file}"]`).click();
         await expect(attached.locator(`[data-file="${file}"] .cm-content`)).toContainText("Runner");
@@ -471,7 +494,7 @@ try {
       );
       run(["validate", "ready-demo"], fixture);
       results.push(
-        "ts: packed start/stop/restart, watched index and pause/resume, durable job history and unavailable submission, same-page and bookmarked guide reconnect, unavailable backend, stopped-page snapshot save with blocked-network reading, saved context, duplicate refusal, crash/recovery and manual export after stop passed",
+        "ts: packed start/stop/restart, watched index and pause/resume, durable job history and unavailable submission, same-page and bookmarked guide reconnect, configured backend label, stopped-page snapshot save with blocked-network reading, saved context, duplicate refusal, crash/recovery and manual export after stop passed",
       );
     }
     const offline = await browser.newPage();

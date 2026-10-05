@@ -40,9 +40,13 @@ export function ConnectionStatus() {
               Last service instance: <code>{attachment.instanceId}</code>
             </p>
             <p>
-              Agent backend unavailable
-              {attachment.backend === "claude" ? " (Claude selected)" : " (none selected)"}. No
-              agent is configured. Use <code>xpl apply</code> for a manual revision.
+              {attachment.backend === "claude" && attachment.backendAvailable ? (
+                "Agent: Claude Code (configured; sign-in is checked when a job runs)"
+              ) : (
+                <>
+                  No agent is configured. Use <code>xpl revise</code> for a manual revision.
+                </>
+              )}
             </p>
             {message && (
               <p title={status === "disconnected" ? message : undefined}>

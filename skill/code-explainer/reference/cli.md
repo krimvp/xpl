@@ -974,7 +974,7 @@ serving .explainer/jobrunner.explainer.json at http://127.0.0.1:34971/  (Ctrl-C 
 
 API (for scripts): `GET /api/bundle`, `GET /api/export` (current complete export snapshot and shared readiness report), `GET /api/explainer` (the explainer with its anchors re-resolved, with an `ETag`; what the page polls), `GET /api/file?path=`, `GET /api/base-file?path=` (the code before the recorded change of a modified, renamed or deleted file), `PUT /api/views/<id>`, `PUT /api/tours/<id>`, `PUT /api/review` (bounded author review user patch), `GET|POST /api/requests`.
 
-## `xpl service <start|pause|resume|stop|status> [explainer] [--background] [--port p] [--backend none|claude] [--recover] [--watch]`
+## `xpl service <start|pause|resume|stop|status> [explainer] [--background] [--port p] [--backend none|claude] [--skill-dir folder] [--job-timeout seconds] [--recover] [--watch]`
 
 Starts the existing viewer server on loopback (`127.0.0.1`) with one owner per canonical repository root.
 Foreground is the default; stop it with Ctrl-C or `xpl service stop`. `--background` starts the installed
@@ -1002,14 +1002,18 @@ separate service; guides and state paths must stay inside that canonical root. A
 with a `--port` hint. Without a saved/explicit port, start tries 4747 and falls back to a free port.
 Record writes recheck the directory after acquiring the filesystem lock, including first startup with
 no saved records. A service-directory symlink swapped during that wait is refused before publishing state.
-`--backend none|claude` persists selection; agent execution remains unavailable. Durable job history is
-local. Serving needs no network or authentication. Later Claude jobs need their configured authentication
-and provider network access.
+`--backend none` (default) disables execution; `claude` selects the installed Claude Code print-mode
+proposal runner, using its existing login and provider access. `--skill-dir <folder>` selects a managed
+installed code-explainer skill (default `~/.claude/skills/code-explainer`); `--job-timeout <seconds>` bounds
+each invocation (default 300, range 1–3600). Both settings persist. Availability means configured, not
+authenticated: missing tooling/skill, login, rate limits and timeouts become actionable job failures.
+Local serving and manual commands need no provider network or authentication.
 
 After a crash, inspect artifacts and use `xpl service start --recover`. It archives the interrupted owner
 record and preserves the last valid index/explanation. A live unverified PID is never replaced, and a
 crashed writer lock must be inspected and removed explicitly; no lock is stolen because it is old.
-The viewer shows its connection and unavailable backend below the header. Repository/guide bookmarks
+The viewer shows its connection and configured backend below the header. Configured Claude says
+sign-in is checked when a job runs; availability never implies authentication. Repository/guide bookmarks
 and API requests refuse another attachment at the same address. Restart reuses saved context and refreshes
 the open page's instance while keeping navigation and unsaved edits. After stop, choose **Use loaded snapshot
 offline** for manual edits, browser feedback and embedded-snapshot HTML export. **Retry connection** resumes
@@ -1022,10 +1026,29 @@ attempts interrupted, while queued work and completed proposal references surviv
 supersession discard results and fence late callbacks. `POST /api/jobs/<UUID>/cancel` and `/supersede`
 take `{}`. Retry takes `{expectedAttempt}` from the inspected job, so repeated delivery cannot start
 another attempt after a fast failure. Job input retains the existing revision journal and original selected
-feedback IDs; no job route applies a patch or finalizes an outcome. The installed service still has no
-configured runner, so submission/retry reports 503 with a manual `xpl revise` recovery instruction.
-Controlled lifecycle tests do not prove a real authoring backend. Execution, validation and job review UI
-are later steps; continue using the installed manual revision workflow.
+feedback IDs; no job route applies a patch or finalizes an outcome. With backend `none`, submission/retry
+reports 503. With `claude`, `POST /api/jobs` takes `{id: UUID, selectedRequestIds, include?}` and runs one
+non-interactive process at a time. Source and the installed skill are read-only; only the attempt-owned
+proposal file is writable. Commands, subagents, MCP and inherited hooks are disabled. Cancellation,
+supersession and timeout kill the child process group and discard unpublished output. Normal and error
+exits use the same teardown in one post-spawn finally, including failed identity reads; the launcher reports
+the original CLI exit code without exiting first. One two-second deadline bounds identity checks, group
+drain and launcher exit. Inherited stream close cannot delay completion; teardown destroys pipes and
+releases the child handle after drain or deadline, so shutdown can exit. Cleanup failure writes a failed
+job with `JOB_PROCESS_CLEANUP`, its group/verification details and a durable scheduling barrier.
+Restart/recovery clears that barrier only after verifying the old group gone; an unverified group is never
+signalled by PID. Service death
+closes the attempt launcher's pipe and kills the group too. Before running Claude, the job records the
+group ID and Linux boot/start ticks under its attempt lock. Recovery verifies that identity, terminates
+the old group and waits before allowing retry; a reused PID is never signalled. Verified execution
+requires Linux /proc; other platforms report a job failure and can use manual revision. After source and
+ownership rechecks, valid ready proposals enter the existing revision journal as `proposed`. Inspect
+`xpl revise <guide> --run <revisionRunId>` before deciding anything. Creation fills a guide explicitly
+initialized by `xpl new`/draft authoring, with selected creation requests and included new IDs; it does
+not create a second proposal format or overwrite a name. Service-owned journals refuse manual
+`revise --accept`; review stays available, but job review UI and guarded acceptance are 39C.
+Controlled executables prove adapter/lifecycle failures only; a real installed Claude job proves the
+provider integration. `claude --version` does not establish authentication.
 
 `service start --watch` opts this start into metadata polling and coherent full rebuilds. Unchanged polls
 read no source/configuration content. Changed inputs trigger full capture, including ignored configuration

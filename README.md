@@ -140,8 +140,11 @@ Recovery archives the old instance record. A live PID whose identity cannot be v
 or replaced. Crashed artifact-writer locks need explicit inspection and removal; elapsed time is no proof.
 
 The git-ignored `.explainer/service/` directory keeps local context and ownership records. `--backend claude`
-only saves a future backend selection; no jobs or agent run. The viewer reports connection and backend
-availability below the header. Open **Connection details** for the root and last service instance.
+enables the installed Claude Code proposal runner; `none` (default) disables execution. Use
+`--skill-dir <folder>` for a non-default managed skill installation and `--job-timeout <seconds>` for a
+run deadline (default 300). Both choices persist. Availability means configured, not authenticated;
+actual jobs report tooling, login and provider failures. The viewer reports connection and backend
+availability below the header, without claiming sign-in. Open **Connection details** for the root and last service instance.
 Bookmarks retain the repository and guide; an address serving another guide is refused. Restart with
 `xpl service start` and the open page reconnects to that saved guide, keeping your selection and unsaved edits.
 
@@ -150,7 +153,7 @@ save HTML from the loaded source. The export checks the embedded snapshot; it ca
 changes. Download edits before closing. **Retry connection** attaches the original address again; use
 **Edit → Retry save** to persist offline edits. Offline feedback stays in the browser until exported and
 imported with `xpl feedback`. Manual commands and portable HTML work with the service stopped. Local serving
-needs no provider network or credentials; a future Claude runner needs separate configured access.
+needs no provider network or credentials; Claude jobs use the CLI's existing login and provider access.
 
 Watching is opt-in on each start:
 
@@ -177,9 +180,16 @@ Plain `xpl view` and saved HTML have no service controls. Stop the service to re
 
 The service also keeps job history in `.explainer/service/jobs.json` and exposes it at `GET /api/jobs`.
 Running attempts become interrupted after restart; completed proposals stay recorded, and cancelled or
-superseded results stay fenced. Submission and retry report unavailable until a real runner is supplied.
-This lifecycle storage has been tested with a controlled runner only. Real execution and a job review UI
-are follow-up work; manual `xpl revise` remains the revision workflow.
+superseded results stay fenced. Each Claude attempt records its group and start identity before launch.
+Every attempt drains its process group before final state or more work, including normal and error exits.
+Cleanup failure stops scheduling. Service death kills that group through the launcher's pipe; recovery verifies the recorded Linux start
+time before terminating any remaining group and allowing retry. Reused PIDs are left alone.
+Verified execution currently requires Linux /proc; manual revision works on other platforms. With `--backend claude`, submission generates an ordinary proposal,
+validates it through `xpl revise` and leaves it awaiting explicit author review. Source is read-only; the
+agent can write only its owned output. No job applies a patch or finalizes feedback. Creation proposals
+fill an explicitly initialized guide with selected requests and included IDs through the same journal.
+Service-owned runs refuse manual `revise --accept` to preserve cancellation fencing.
+The job review UI and guarded acceptance are later work; `xpl revise <guide> --run <id>` inspects the proposal.
 
 ## Using the CLI directly
 
