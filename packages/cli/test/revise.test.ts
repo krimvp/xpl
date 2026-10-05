@@ -904,3 +904,85 @@ it("reviews recorded proposals and commits only accepted requests while retainin
   expect((await xpl(root, "revise", "demo", "--run", run, "--accept")).code).toBe(0);
   expect(readRequests(root).requests).toEqual(requests);
 });
+
+it("a later accepted revision preserves author text and repaired evidence while adding unedited detail", async () => {
+  const root = cloneDir(demo);
+  const id = "sym:src/runner.ts#Runner.dispatch";
+  expect(
+    (
+      await applyStdin(
+        root,
+        {
+          nodes: [
+            {
+              id,
+              summary: "The author checked this queue dispatch.",
+              anchors: [
+                {
+                  file: "src/runner.ts",
+                  symbol: "Runner.dispatch",
+                  span: { from: 0, to: 1 },
+                  role: "definition",
+                },
+              ],
+            },
+          ],
+        },
+        "--actor",
+        "user",
+      )
+    ).code,
+  ).toBe(0);
+  const saved = readJson<Explainer>(root, ".explainer/demo.explainer.json").nodes.find(
+    (n) => n.id === id,
+  )!;
+  await feedback(root, "repair-followup", id);
+  const selected = await xplJson(root, "revise", "demo", "--select", "repair-followup");
+  expect(selected.code, selected.out).toBe(0);
+  const run = selected.json.runId;
+  const file = writeFile(
+    makeTempDir(),
+    "proposal.json",
+    JSON.stringify([
+      {
+        id: "repair-followup",
+        patch: {
+          nodes: [
+            {
+              id,
+              summary: "Generated replacement.",
+              anchors: [{ file: "not-present.ts", role: "usage" }],
+              detail: "Dispatch also leases a worker.",
+            },
+          ],
+        },
+      },
+    ]),
+  );
+  const preview = await xplJson(root, "revise", "demo", "--run", run, "--proposal", file);
+  expect(preview.code, preview.out).toBe(0);
+  const decisions = writeFile(
+    makeTempDir(),
+    "decisions.json",
+    JSON.stringify([
+      {
+        id: "repair-followup",
+        status: "addressed",
+        reason: "Added the lease detail and kept author evidence.",
+      },
+    ]),
+  );
+  const decided = await xpl(root, "revise", "demo", "--run", run, "--decisions", decisions);
+  expect(decided.code, decided.out + decided.err).toBe(0);
+  const accepted = await xpl(root, "revise", "demo", "--run", run, "--accept");
+  expect(accepted.code, accepted.out + accepted.err).toBe(0);
+  expect(
+    readJson<Explainer>(root, ".explainer/demo.explainer.json").nodes.find((n) => n.id === id),
+  ).toMatchObject({
+    label: "My dispatch label",
+    summary: "The author checked this queue dispatch.",
+    anchors: saved.anchors,
+    detail: "Dispatch also leases a worker.",
+    provenance: { userFields: ["label", "summary", "anchors"] },
+  });
+});

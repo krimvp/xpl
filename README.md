@@ -211,8 +211,13 @@ Drafts survive switching boxes and returning to reading until saved or cancelled
 Edit > **Undo** / **Redo** names the fields and element and saves only changed fields, preserving another author's
 unrelated edits and refusing conflicts on the same field. Live history retains up to 50 edits in browser
 storage, bound to the canonical repository root and guide. Copied or renamed guides inherit no history;
-pages without a live identity keep only in-session undo. Offline edits remain **Unsaved** until exported as HTML or JSON. Source stays read-only; broken
-evidence still needs the existing explicit patch/repair workflow.
+pages without a live identity keep only in-session undo. Offline edits remain **Unsaved** until exported as HTML or JSON.
+
+**Edit evidence** previews lines selected in the read-only source pane, checked against a symbol or file
+(and the base for change guides). Explicitly replace, remove or add anchors, then **Save evidence**.
+Repair or remove all invalid anchors on that element; rejected saves keep the draft. Source that differs
+from its index requires reindexing and reload. Undo refuses to restore evidence that no longer resolves.
+Later LLM revisions preserve your edited fields. Exported HTML includes the edits and source and opens offline.
 
 Edit > Record author review records a self-reported name, inspected content/evidence scope and named
 omissions. About this explanation shows **unchecked**, **reviewed** or **out of date** separately from
