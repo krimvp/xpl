@@ -215,6 +215,8 @@ function activate(event: KeyboardEvent, run: () => void) {
 }
 
 interface MoveApi {
+  disabled: boolean;
+  cancel: () => void;
   start: () => void;
   preview: (node: LayoutNode, position: Point) => void;
   finish: (node: LayoutNode, position?: Point) => void;
@@ -253,6 +255,8 @@ export interface GraphViewProps {
 }
 
 const NO_ORDER: readonly string[] = [];
+// 14px graph labels stay above 12px; larger pinned maps pan at this size.
+const GRAPH_READABLE_ZOOM = 0.9;
 
 export function GraphView({
   viewId,
@@ -272,12 +276,12 @@ export function GraphView({
   const [preview, setPreview] = useState<StoredGraphView["layout"]>();
   const frozenCanvas = useRef<Box | undefined>(undefined);
   const activePins = preview ?? pins;
+  const pinned = Object.keys(pins ?? {}).length > 0;
   const canMove =
     !present &&
     !reader &&
     state.mode === "explore" &&
     state.perspective === "explore" &&
-    !state.editBusy &&
     !state.editDraft &&
     state.model.view(viewId)?.type === "graph";
 
@@ -297,6 +301,10 @@ export function GraphView({
   const canvas = preview ? (frozenCanvas.current ?? drawnCanvas) : drawnCanvas;
   const move: MoveApi | undefined = canMove
     ? {
+        disabled: state.editBusy,
+        cancel() {
+          setPreview(undefined);
+        },
         start() {
           frozenCanvas.current = canvas;
           setMoveError(undefined);
@@ -315,7 +323,7 @@ export function GraphView({
         },
       }
     : undefined;
-  useEffect(() => setPreview(undefined), [viewId, graph]);
+  useEffect(() => setPreview(undefined), [viewId, graph, selection, canMove]);
   // The first view frames the selection and its neighbours (or the first box of the view); the selection
   // is kept in sight when it changes or the pane is resized. Both in the canvas' coordinates.
   const shift = useCallback(
@@ -435,7 +443,9 @@ export function GraphView({
         label="Diagram. Drag to pan, scroll to zoom."
         maxFitZoom={present ? PRESENT_MAX_FIT_ZOOM : undefined}
         fitPadding={present ? PRESENT_FIT_PADDING : undefined}
-        readableZoom={present ? PRESENT_READABLE_ZOOM : undefined}
+        minFitZoom={pinned ? GRAPH_READABLE_ZOOM : undefined}
+        readableZoom={present ? PRESENT_READABLE_ZOOM : pinned ? GRAPH_READABLE_ZOOM : undefined}
+        readableMin={pinned ? GRAPH_READABLE_ZOOM : undefined}
         focus={focus}
         keepInView={preview ? undefined : selectionBox}
         onBackgroundClick={() => store.clearSelection()}
@@ -803,20 +813,40 @@ function MoveHandle({ node }: { node: LayoutNode }) {
       }
     | undefined
   >(undefined);
+  const cancel = useRef(move?.cancel);
+  if (move) cancel.current = move.cancel;
+  useEffect(
+    () => () => {
+      if (gesture.current) {
+        gesture.current = undefined;
+        cancel.current?.();
+      }
+    },
+    [],
+  );
+  const blocked = !move || move.disabled;
+  useEffect(() => {
+    if (blocked && gesture.current) {
+      gesture.current = undefined;
+      cancel.current?.();
+    }
+  }, [blocked]);
   if (!move) return null;
   return (
     <g
       className="move-handle"
       role="button"
       tabIndex={0}
+      aria-disabled={move.disabled}
       aria-label={`Move ${node.label}`}
       transform={`translate(6 ${node.height - 26})`}
       onClick={(event) => event.stopPropagation()}
       onDoubleClick={(event) => event.stopPropagation()}
       onPointerDown={(event) => {
-        if (event.button !== 0) return;
+        if (event.button !== 0 || move.disabled) return;
         event.preventDefault();
         event.stopPropagation();
+        event.currentTarget.focus();
         const parent = event.currentTarget.closest(".node, .node-buttons")
           ?.parentElement as SVGGraphicsElement | null;
         const matrix = parent?.getScreenCTM();
@@ -865,6 +895,7 @@ function MoveHandle({ node }: { node: LayoutNode }) {
       }}
       onKeyDown={(event) => {
         event.stopPropagation();
+        if (move.disabled) return;
         const delta = {
           ArrowLeft: [-20, 0],
           ArrowRight: [20, 0],

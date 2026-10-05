@@ -2195,7 +2195,9 @@ status stays in the sticky Save/Cancel bar, including the disabled Save reason.
   pictures share those positions and bounds, including offline HTML. Hidden pins stay stored until
   restored; opening a map inside another uses the outer map's pins. Each stored level has its own layout.
   A selected box in Explore has a move handle: drag previews locally, release writes one `editGraph`
-  pin through author history; Enter pins here and arrow keys move by 20 px. Cancel leaves no edit.
+  pin through author history; Enter pins here and arrow keys move by 20 px. The focused handle stays
+  mounted while a save disables its actions. Escape, pointer cancellation and selection changes discard
+  the local preview without an edit.
   **Edit map** resets selected/all placement to automatic layout with the same undo. Pan/zoom remain
   transient navigation. If the layout throws, a grid layout keeps the diagram usable (`data-fallback`). Edges are styled by resolution: precise,
   heuristic (thinner and lighter), `llm`, `user`; stubs are dashed and lead to ghost boxes (at most 8 by
@@ -2218,11 +2220,12 @@ status stays in the sticky Save/Cancel bar, including the disabled Save reason.
   collapse button folds it back. Nothing is stored. Every box has an icon left of its label
   (`components/icons.tsx`): its role, else the kind of code (folder, file, group, a letter per symbol kind).
   Not while presenting. Pan by dragging, zoom with
-  the wheel, the buttons or `+`/`-`, "Fit" (or `0`) for all of it. The first view is the fit, unless the
-  diagram is too big to read fitted (a fit scale below 0.6, as for seventeen boxes with groups): then it
-  starts at zoom 0.75 on the selection, else on the first box of `view.include` that is drawn, and a badge
-  (`pz-badge`) says part of it is out of sight and offers "Fit all" (once all of it is in sight: "Readable
-  size" to come back). Sequence diagrams pan and zoom the same way, and each tour step starts its diagram over
+  the wheel, the buttons or `+`/`-`, and "Fit" (or `0`). Maps with saved pins keep at least zoom 0.9 on load and
+  Fit (14 px labels render at 12.6 px or more); larger pinned maps pan instead of shrinking further.
+  Their "Pan to explore" badge returns to the starting focus. Automatic maps offer "Fit all" and start
+  framed at zoom 0.75 when fitting below 0.6 would hide their labels. The first frame starts on the
+  selection, else on the first drawn box of `view.include`.
+  Sequence diagrams pan and zoom the same way, and each tour step starts its diagram over
   on the step's focus, even within one view. View edits (expand, drill in, collapse, edge-kind toggles, the
   Stubs control) are stored on the view. Selecting a stub focuses the reference sites that cross the boundary
   there plus the definitions on the far side (of every element a folded ghost stands for); its details list

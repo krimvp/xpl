@@ -292,11 +292,18 @@ test("live pins reload, reset with exact undo and export linked system, service 
       });
       const handle = page.getByRole("button", { name: `Move ${label}`, exact: true });
       await handle.focus();
-      await handle.press("ArrowRight");
-      const position = { x: before.x + 20, y: before.y };
+      for (const step of [1, 2, 3]) {
+        await page.keyboard.press("ArrowRight");
+        await expect
+          .poll(() => saved().views.find((v: { id: string }) => v.id === view).layout?.[id!])
+          .toEqual({ x: before.x + step * 20, y: before.y });
+        await expect(handle).toBeFocused();
+        await expect(handle).toHaveAttribute("aria-disabled", "false");
+      }
+      const position = { x: before.x + 60, y: before.y };
       placements[view!] = position;
       await expect
-        .poll(() => saved().views.find((v: { id: string }) => v.id === view).layout[id!])
+        .poll(() => saved().views.find((v: { id: string }) => v.id === view).layout?.[id!])
         .toEqual(position);
       await expect(node).toHaveAttribute("transform", `translate(${position.x} ${position.y})`);
       await page.reload();
@@ -315,29 +322,57 @@ test("live pins reload, reset with exact undo and export linked system, service 
     const code = byId(page, levels[2]![1]!);
     const handle = page.getByRole("button", { name: "Move Worker.run", exact: true });
     const rect = (await handle.boundingBox())!;
-    const scale = await code.evaluate((el) => (el as SVGGraphicsElement).getScreenCTM()!.a);
-    const expectedDrag = {
-      x: placements["view:code"]!.x + 35 / scale,
-      y: placements["view:code"]!.y + 25 / scale,
-    };
     const beforeDrag = readFileSync(path, "utf8");
-    await handle.focus();
     await page.mouse.move(rect.x + rect.width / 2, rect.y + rect.height / 2);
     await page.mouse.down();
     await page.mouse.move(rect.x + rect.width / 2 + 15, rect.y + rect.height / 2 + 15);
+    await expect(code).not.toHaveAttribute(
+      "transform",
+      `translate(${placements["view:code"]!.x} ${placements["view:code"]!.y})`,
+    );
     await page.keyboard.press("Escape");
+    await expect.poll(() => selectionOf(page)).toEqual([levels[2]![1]!]);
     await page.mouse.up();
     await expect(code).toHaveAttribute(
       "transform",
       `translate(${placements["view:code"]!.x} ${placements["view:code"]!.y})`,
     );
     expect(readFileSync(path, "utf8")).toBe(beforeDrag);
+    for (const interruption of ["selection", "pointercancel"] as const) {
+      const at = (await handle.boundingBox())!;
+      await page.mouse.move(at.x + at.width / 2, at.y + at.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(at.x + at.width / 2 + 15, at.y + at.height / 2 + 15);
+      await expect(code).not.toHaveAttribute(
+        "transform",
+        `translate(${placements["view:code"]!.x} ${placements["view:code"]!.y})`,
+      );
+      if (interruption === "selection") await page.evaluate(() => window.__xpl!.select([]));
+      else await handle.dispatchEvent("pointercancel");
+      await page.mouse.up();
+      await expect(code).toHaveAttribute(
+        "transform",
+        `translate(${placements["view:code"]!.x} ${placements["view:code"]!.y})`,
+      );
+      expect(readFileSync(path, "utf8")).toBe(beforeDrag);
+      await page.evaluate((id) => window.__xpl!.select([id]), levels[2]![1]!);
+    }
 
-    await page.mouse.move(rect.x + rect.width / 2, rect.y + rect.height / 2);
+    const dragRect = (await handle.boundingBox())!;
+    const scale = await code.evaluate((el) => (el as SVGGraphicsElement).getScreenCTM()!.a);
+    const expectedDrag = {
+      x: placements["view:code"]!.x + 35 / scale,
+      y: placements["view:code"]!.y + 25 / scale,
+    };
+    await page.mouse.move(dragRect.x + dragRect.width / 2, dragRect.y + dragRect.height / 2);
     await page.mouse.down();
-    await page.mouse.move(rect.x + rect.width / 2 + 35, rect.y + rect.height / 2 + 25, {
-      steps: 5,
-    });
+    await page.mouse.move(
+      dragRect.x + dragRect.width / 2 + 35,
+      dragRect.y + dragRect.height / 2 + 25,
+      {
+        steps: 5,
+      },
+    );
     expect(readFileSync(path, "utf8")).toBe(beforeDrag);
     await page.mouse.up();
     await expect
@@ -427,6 +462,13 @@ test("live pins reload, reset with exact undo and export linked system, service 
         await page.goto(pathToFileURL(exportPath).href + `?perspective=map&view=${view}`);
         await page.waitForFunction(() => !!window.__xpl);
         const pos = placements[view!]!;
+        const scale = () =>
+          byId(page, id!).evaluate((el) =>
+            Number((el as SVGGraphicsElement).getScreenCTM()!.a.toFixed(3)),
+          );
+        await expect.poll(scale).toBeGreaterThanOrEqual(0.9);
+        await page.getByRole("button", { name: "Fit to view" }).click();
+        await expect.poll(scale).toBeGreaterThanOrEqual(0.9);
         await expect(byId(page, id!)).toHaveAttribute("transform", `translate(${pos.x} ${pos.y})`);
         await page.evaluate((id) => window.__xpl!.select([id]), id!);
         await expect
