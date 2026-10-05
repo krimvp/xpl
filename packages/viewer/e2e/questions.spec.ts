@@ -346,6 +346,37 @@ test("an unavailable managed backend saves the question on disk for the explicit
   }
 });
 
+test("a connected worker answers live when browser storage refuses writes", async ({ page }) => {
+  let calls = 0;
+  const app = await service(async (job) => {
+    calls++;
+    return evidence(job);
+  });
+  try {
+    await page.addInitScript(() => {
+      Storage.prototype.setItem = () => {
+        throw new DOMException("Full", "QuotaExceededError");
+      };
+    });
+    await page.goto(app.server.url + "?mode=explore");
+    await page.waitForFunction(() => !!window.__xpl);
+    await page.evaluate(() => window.__xpl!.select(["file:src/queue.ts"]));
+    await expect(page.getByTestId("connection-status")).toContainText("Connected");
+    await page.getByRole("button", { name: /^Feedback/ }).click();
+    const panel = page.getByRole("dialog", { name: "Reader feedback" });
+    await panel.getByLabel("Feedback note").fill("How does the queue hold jobs?");
+    await panel.getByRole("button", { name: "Ask a question", exact: true }).click();
+    await expect(panel.getByRole("alert")).toContainText("Browser storage unavailable");
+    await expect(panel.getByRole("region", { name: "Answer", exact: true })).toContainText(
+      "Queue holds pending jobs.",
+    );
+    expect(readRequests(app.root).requests[0]?.answers).toHaveLength(1);
+    expect(calls).toBe(1);
+  } finally {
+    await app.close();
+  }
+});
+
 test("a disconnected service keeps the question in browser feedback through reload", async ({
   page,
 }) => {
@@ -461,6 +492,11 @@ for (const side of ["head", "base"] as const)
     });
     await expect(panel.getByRole("region", { name: "Answer", exact: true })).toContainText(
       "Retry waits before dispatching again.",
+    );
+    await expect(panel.getByText("Answered", { exact: true })).toBeVisible();
+    await expect(panel).toContainText("Revision: not yet reviewed");
+    expect(JSON.parse(await exportFeedback(page)).requests[0].outcome).toEqual(
+      feedback.requests[0].outcome,
     );
     await panel.getByRole("button", { name: `src/runner.ts:76–77 (${side})`, exact: true }).click();
     await expect

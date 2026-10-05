@@ -118,9 +118,9 @@ export function FeedbackPanel({ onClose }: { onClose: () => void }) {
       </header>
       <p className="tp-intro">
         Ask a question for a source-linked answer from the connected local worker. Answers never
-        edit the guide. Saving feedback does not start generation. Offline, export the JSON, run{" "}
-        <code>xpl feedback &lt;guide&gt; --import feedback.json</code> locally, then invoke{" "}
-        <code>/code-explainer feedback</code> in your chosen agent.
+        edit the guide. Saving for the next revision pass does not start generation. Offline, export
+        the JSON, run <code>xpl feedback &lt;guide&gt; --import feedback.json</code> locally, then
+        invoke <code>/code-explainer feedback</code> in your chosen agent.
       </p>
       <p>
         {id ? (
@@ -185,7 +185,7 @@ export function FeedbackPanel({ onClose }: { onClose: () => void }) {
           </button>
         )}
         <button
-          className="btn is-primary"
+          className="btn"
           type="button"
           disabled={!id || busy}
           onClick={async () => {
@@ -208,7 +208,7 @@ export function FeedbackPanel({ onClose }: { onClose: () => void }) {
             }
           }}
         >
-          Save feedback
+          Save for the next revision pass
         </button>
         <button
           className="btn"
@@ -273,7 +273,11 @@ export function FeedbackPanel({ onClose }: { onClose: () => void }) {
               <strong>
                 {request.kind}: {request.label ?? request.elementId}
               </strong>{" "}
-              · {request.outcome.status}
+              {request.answers?.length ? (
+                <>
+                  · <strong>Answered</strong>
+                </>
+              ) : null}
               {outdated ? " · outdated context" : ""}
               {request.note && <p>{request.note}</p>}
               {request.range && (
@@ -282,7 +286,13 @@ export function FeedbackPanel({ onClose }: { onClose: () => void }) {
                   {request.range.side})
                 </p>
               )}
-              <p>{request.outcome.reason}</p>
+              <p>
+                Revision:{" "}
+                {request.outcome.status === "pending" ? "not yet reviewed" : request.outcome.status}
+              </p>
+              {request.outcome.reason !== "Awaiting an explicit revision pass." && (
+                <p>{request.outcome.reason}</p>
+              )}
               {outdated && <p>{outdated}</p>}
               <code>{request.id}</code>
               {request.kind === "explain" &&

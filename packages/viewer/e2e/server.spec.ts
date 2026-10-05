@@ -696,7 +696,7 @@ test("a managed page shows backend unavailability, refuses another service, and 
   await page.getByRole("button", { name: /^Feedback/ }).click();
   const panel = page.getByRole("dialog", { name: "Reader feedback" });
   await panel.getByLabel("Feedback note").fill("Manual revision after stop.");
-  await panel.getByRole("button", { name: "Save feedback", exact: true }).click();
+  await panel.getByRole("button", { name: "Save for the next revision pass", exact: true }).click();
   await expect(panel.getByRole("status")).toContainText("Saved in this browser");
   await panel.getByRole("button", { name: "Close feedback" }).click();
   await openEditMenu(page);

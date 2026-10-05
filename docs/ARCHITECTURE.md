@@ -1810,6 +1810,9 @@ An `AnswerJob` shares the durable job ledger, scheduler, process ownership and a
 kind is `answer`; input is `{expected, index, request, guide, sources}`. Revision history APIs keep revision
 jobs separate. `POST /api/answers` takes `{id: UUID, requestId}`; GET collection/item and POST
 `/<UUID>/<retry|cancel|supersede>` use the same attachment/loopback guards and retry baseline as jobs.
+Submission checks the request ID under the ledger lock. A request has at most one answer job;
+concurrent submissions with different job UUIDs return the existing job, including terminal jobs and
+after restart. Failed/interrupted jobs use explicit retry; cancelled questions need a new request.
 Only a configured answer runner accepts new work. Frozen questions can finish or retry after source or
 explanation changes; `contextReason` reports the current difference without changing the original input.
 
@@ -2376,12 +2379,15 @@ are shown as outdated context. Instructions say to import feedback and invoke th
 **Ask about selected lines**, enabled with a cursor selection; this preserves inclusive head/base lines.
 Range-only questions use the file element ID even without a diagram selection. Both actions open Feedback,
 whose **Ask a question** requires a non-empty note and captures an `explain` request before contacting the
-worker. **Save feedback** retains its explicit offline behavior. Revision proposals remain separate.
+worker. **Ask a question** is the primary action; **Save for the next revision pass** saves feedback
+without starting generation. Revision proposals remain separate.
 
 The panel uses 40A's `/api/answers` API directly. While open, it polls answer history once per second,
 with one refresh in flight. Queued/running jobs offer cancellation;
 failed/interrupted jobs offer retry with the inspected attempt counter. Completed answers remain immutable.
-A stable submission ID is saved before POST so uncertain delivery and reload reuse the question's job.
+A name-based UUID is derived from the request ID before POST, without reading or writing browser storage.
+Uncertain delivery, reload and separate browser sessions reuse the question's job; the service also
+enforces one job per request under its ledger lock. Browser storage refusal cannot prevent live answering.
 Existing jobs for a request are inspected instead of starting another answer. Backend/network refusal
 retains pending feedback and names export, CLI import and `/code-explainer feedback` as the next steps.
 
@@ -2390,6 +2396,8 @@ outcome revisions. JSON import validates the prospective union before mutation, 
 and the 1,000-answer limit. Live import also sends the original requests/results to the existing request
 endpoint. Reload, JSON export and Save as HTML use that same history; no separate answer cache is stored.
 Source/explanation hashes and freshness warnings mark outdated context, including changes during a run.
+Questions with an answer show **Answered**, including imported history without a live job. Revision status
+is separate: pending outcomes show **Revision: not yet reviewed**, without changing the stored outcome.
 Answers show text, their original identity, exact references and recorded excerpts. Reference clicks compare
 recorded source hashes with loaded source before using existing file/cursor linking, including base panes.
 If text changed or is unavailable, the highlighted recorded excerpt stays in Feedback; current lines are

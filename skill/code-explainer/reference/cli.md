@@ -1107,9 +1107,14 @@ feedback export/import unions history by stable answer ID independently of outco
 answer content or invalid imported evidence is refused; an older export cannot erase history. Each answer
 ID belongs to one question. Imports or completions exceeding 1,000 answers for a question fail without
 changing history or publishing a result receipt; saved answers are never truncated. Without an
-answer backend the request stays pending for `/code-explainer feedback`. The viewer's Feedback panel
+answer backend the request stays pending for `/code-explainer feedback`. Submission deduplicates by request
+ID under the job ledger lock, even with different supplied job UUIDs or after restart. Existing terminal jobs
+are returned; failed/interrupted jobs use explicit retry and cancelled questions need a new request.
+The viewer derives its job UUID from the request ID without browser storage. The viewer's Feedback panel
 uses these routes for **Ask a question**, progress, retry/cancel and answer history. Details and selected
 head/base code lines open that panel. JSON import/export preserves answers independently of outcomes.
+Questions with saved answers show **Answered**, separately from the revision outcome. **Save for the next
+revision pass** saves feedback without starting generation; **Ask a question** starts answering explicitly.
 Reference clicks select matching source; changed or unavailable source shows the highlighted recorded
 excerpt. An answer never accepts a guide change; optional revisions still require explicit review.
 

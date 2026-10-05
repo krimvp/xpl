@@ -152,7 +152,10 @@ Use **Ask a question** in Details, **Ask about selected lines** in the code, or 
 for a source-linked answer when the service uses `--backend claude`. Questions retain their exact head/base
 range and snapshot. Feedback shows progress, retry/cancel controls, answers and context-change warnings.
 Reference clicks select matching code; changed source shows the recorded excerpt instead. Answers never edit
-a guide or finalize revision outcomes. History survives reload and feedback JSON import/export. Without a
+a guide or finalize revision outcomes. **Answered** marks questions with answers; revision status appears
+separately. **Save for the next revision pass** saves feedback without asking the worker. Each question has
+one answer job, even across concurrent submissions; refused browser storage does not prevent live answers.
+History survives reload and feedback JSON import/export. Without a
 connected answer backend, the question stays pending for the next explicit offline feedback pass.
 History merges reject reused answer IDs and more than 1,000 answers per question, preserving the stored history.
 

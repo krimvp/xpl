@@ -103,6 +103,40 @@ function history(root: string, request: FeedbackRequest, count: number, prefix: 
   return Array.from({ length: count }, (_, i) => ({ ...answer, id: `${prefix}-${i}` }));
 }
 
+it("concurrent submissions share one answer job per non-UUID request, including after restart", async () => {
+  const { root, ctx, request, instanceId } = await setup();
+  let calls = 0;
+  const jobs = await openJobs(ctx, instanceId, undefined, async (job) => {
+    calls++;
+    return evidence(job);
+  });
+  try {
+    const submitted = await Promise.all([
+      jobs.submitAnswer("demo", { id: randomUUID(), requestId: request.id }),
+      jobs.submitAnswer("demo", { id: randomUUID(), requestId: request.id }),
+    ]);
+    expect(submitted[1]!.id).toBe(submitted[0]!.id);
+    const id = submitted[0]!.id;
+    await expect.poll(async () => (await jobs.getAnswer("demo", id)).state).toBe("completed");
+    expect((await jobs.listAnswers("demo")).map((job) => job.id)).toEqual([id]);
+    expect(readRequests(root).requests[0]?.answers?.map((answer) => answer.id)).toEqual([id]);
+    expect(calls).toBe(1);
+    await jobs.close();
+    const restarted = await openJobs(ctx, instanceId);
+    try {
+      const repeated = await restarted.submitAnswer("demo", {
+        id: randomUUID(),
+        requestId: request.id,
+      });
+      expect([repeated.id, repeated.state]).toEqual([id, "completed"]);
+    } finally {
+      await restarted.close();
+    }
+  } finally {
+    await jobs.close();
+  }
+});
+
 it("rejects an overflowing history import without changing the readable store", async () => {
   const { root, request } = await setup();
   await importRequests(root, [{ ...request, answers: history(root, request, 600, "first") }]);
@@ -280,8 +314,17 @@ it.each(["cancelled", "superseded"] as const)(
     try {
       const job = await jobs.submitAnswer("demo", { id: randomUUID(), requestId: request.id });
       await expect.poll(() => typeof finish).toBe("function");
-      const next = await jobs.submitAnswer("demo", { id: randomUUID(), requestId: request.id });
+      const nextRequest = {
+        ...request,
+        id: "question-next",
+        note: "When does a job leave the queue?",
+      };
+      await importRequests(root, [nextRequest]);
+      const next = await jobs.submitAnswer("demo", { id: randomUUID(), requestId: nextRequest.id });
       await jobs.fence("demo", job.id, state);
+      expect(
+        (await jobs.submitAnswer("demo", { id: randomUUID(), requestId: request.id })).id,
+      ).toBe(job.id);
       expect(signal.aborted).toBe(true);
       expect(calls).toBe(1);
       finish();
@@ -290,7 +333,8 @@ it.each(["cancelled", "superseded"] as const)(
         .toBe("completed");
       expect((await jobs.getAnswer("demo", job.id)).state).toBe(state);
       expect((await jobs.getAnswer("demo", job.id)).result).toBeNull();
-      expect(readRequests(root).requests[0]?.answers?.map((a) => a.id)).toEqual([next.id]);
+      expect(readRequests(root).requests[0]?.answers).toBeUndefined();
+      expect(readRequests(root).requests[1]?.answers?.map((a) => a.id)).toEqual([next.id]);
       expect(readRequests(root).requests[0]?.outcome).toEqual(request.outcome);
     } finally {
       finish?.();

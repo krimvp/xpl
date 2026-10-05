@@ -1738,15 +1738,14 @@ export class ViewerStore {
       await this.refreshAnswers();
       return;
     }
-    // One durable ID per question also covers uncertain POST delivery and a browser reload.
-    const key = `${this.feedbackStorageKey}:answer-job:${encodeURIComponent(request.id)}`;
-    let id = localStorage.getItem(key);
-    if (!id) {
-      id = /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(request.id)
-        ? request.id
-        : crypto.randomUUID();
-      localStorage.setItem(key, id);
-    }
+    // A name-based UUID needs no browser storage; the service also deduplicates by request ID.
+    const bytes = new Uint8Array(
+      await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`xpl-answer:${request.id}`)),
+    ).slice(0, 16);
+    bytes[6] = (bytes[6]! & 0x0f) | 0x80;
+    bytes[8] = (bytes[8]! & 0x3f) | 0x80;
+    const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+    const id = `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
     await this.api.startAnswer(id, request.id);
     await this.refreshAnswers();
   }
