@@ -1,0 +1,468 @@
+import { beforeAll, describe, expect, it } from "vitest";
+import { execFileSync } from "node:child_process";
+import {
+  lstatSync,
+  mkdirSync,
+  readdirSync,
+  renameSync,
+  rmdirSync,
+  statSync,
+  symlinkSync,
+  unlinkSync,
+} from "node:fs";
+import { join } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
+import {
+  cloneDir,
+  indexedFixture,
+  invoke,
+  PATCH_PATH,
+  readJson,
+  writeViewerStub,
+  xpl,
+  xplJson,
+  makeTempDir,
+  readFile,
+  writeFile,
+} from "./helpers.js";
+import type { ViewServer } from "../src/server.js";
+
+let demo: string;
+let viewer: string;
+beforeAll(async () => {
+  demo = await indexedFixture();
+  expect((await xpl(demo, "new", "demo")).code).toBe(0);
+  expect((await xpl(demo, "apply", "demo", PATCH_PATH)).code).toBe(0);
+  viewer = writeViewerStub();
+});
+
+async function serve(root: string, ...extra: string[]) {
+  const abort = new AbortController();
+  let ready!: (server: ViewServer) => void;
+  const listening = new Promise<ViewServer>((resolve) => (ready = resolve));
+  const done = invoke(["service", "start", "--port", "0", "--root", root, ...extra], {
+    env: { XPL_VIEWER_HTML: viewer },
+    signal: abort.signal,
+    onServer: ready,
+  });
+  const server = await Promise.race([
+    listening,
+    done.then((r) => {
+      throw new Error(r.err || r.out);
+    }),
+  ]);
+  return {
+    server,
+    done,
+    async close() {
+      abort.abort();
+      return done;
+    },
+  };
+}
+
+describe("repository service lifecycle", () => {
+  it("refuses an empty foreign service directory swapped while startup waits for ownership", async () => {
+    const root = cloneDir(demo);
+    const other = cloneDir(demo);
+    const dir = join(root, ".explainer/service");
+    const held = join(root, ".explainer/service-held");
+    const foreign = join(other, ".explainer/service");
+    mkdirSync(dir, { mode: 0o755 });
+    mkdirSync(foreign);
+    mkdirSync(join(dir, "instance.json.lock"));
+    const abort = new AbortController();
+    let settled = false;
+    const done = invoke(["service", "start", "demo", "--root", root, "--port", "0"], {
+      env: { XPL_VIEWER_HTML: viewer },
+      signal: abort.signal,
+    });
+    done.then(() => {
+      settled = true;
+    });
+    try {
+      // Startup has checked and prepared this directory, but its ownership transaction is blocked.
+      await expect.poll(() => statSync(dir).mode & 0o777).toBe(0o700);
+      await delay(250);
+      expect(settled).toBe(false);
+      renameSync(dir, held);
+      symlinkSync(foreign, dir);
+      rmdirSync(join(held, "instance.json.lock"));
+      const result = await done;
+      expect(readdirSync(foreign)).toEqual([]);
+      expect(result.code).toBe(1);
+      expect(result.err).toContain("service artifact path leaves its repository");
+    } finally {
+      for (const path of [join(dir, "instance.json.lock"), join(held, "instance.json.lock")]) {
+        try {
+          rmdirSync(path);
+        } catch {
+          /* released by test */
+        }
+      }
+      abort.abort();
+      await done;
+    }
+  });
+
+  const feedback = {
+    id: "held-request",
+    elementId: "file:src/queue.ts",
+    kind: "explain",
+    at: "2026-10-04T12:00:00.000Z",
+    context: null,
+    outcome: {
+      revision: 0,
+      status: "outdated",
+      reason: "Original snapshot unavailable.",
+      at: "2026-10-04T12:00:00.000Z",
+    },
+    explainer: "demo",
+  };
+
+  it.each([
+    ["legacy", { elementId: "file:src/queue.ts" }],
+    ["snapshot-bound", feedback],
+  ])(
+    "rejects a requests symlink swapped while %s feedback waits for its lock",
+    async (_kind, body) => {
+      const root = cloneDir(demo);
+      const other = cloneDir(demo);
+      const foreign = JSON.stringify([
+        { ...feedback, id: "foreign-request", elementId: "file:src/runner.ts" },
+      ]);
+      const foreignPath = writeFile(other, ".explainer/requests.json", foreign);
+      const running = await serve(root, "demo");
+      const lock = join(root, ".explainer/requests.json.lock");
+      mkdirSync(lock);
+      let pending: Promise<Response> | undefined;
+      try {
+        expect((await fetch(new URL("/api/requests", running.server.url))).status).toBe(200);
+        let settled = false;
+        pending = fetch(new URL("/api/requests", running.server.url), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        pending.then(() => {
+          settled = true;
+        });
+        // Keep the transaction blocked while the POST reaches the existing filesystem lock.
+        await delay(250);
+        expect(settled).toBe(false);
+        symlinkSync(foreignPath, join(root, ".explainer/requests.json"));
+        rmdirSync(lock);
+        const response = await pending;
+        expect(response.status).toBe(403);
+        expect(await response.json()).toEqual({
+          error: "service artifact path leaves its repository",
+        });
+        expect(lstatSync(join(root, ".explainer/requests.json")).isSymbolicLink()).toBe(true);
+        expect(readFile(other, ".explainer/requests.json")).toBe(foreign);
+      } finally {
+        try {
+          rmdirSync(lock);
+        } catch {
+          /* released by test */
+        }
+        await pending;
+        await running.close();
+      }
+    },
+  );
+
+  it("resolves a repo-relative pinned index from outside the repository and persists its resolved path", async () => {
+    const root = cloneDir(demo);
+    const outside = makeTempDir();
+    const index = join(
+      ".explainer",
+      readdirSync(join(root, ".explainer")).find((name) => /^index-.+\.json$/.test(name))!,
+    );
+    const abort = new AbortController();
+    let ready!: (server: ViewServer) => void;
+    const listening = new Promise<ViewServer>((resolve) => {
+      ready = resolve;
+    });
+    const done = invoke(
+      ["service", "start", "demo", "--root", root, "--index", index, "--port", "0"],
+      { cwd: outside, env: { XPL_VIEWER_HTML: viewer }, signal: abort.signal, onServer: ready },
+    );
+    try {
+      const server = await Promise.race([
+        listening,
+        done.then((r) => {
+          throw new Error(r.err || r.out);
+        }),
+      ]);
+      expect((await fetch(new URL("/api/bundle", server.url))).status).toBe(200);
+      expect(readJson(root, ".explainer/service/context.json").index).toBe(join(root, index));
+    } finally {
+      abort.abort();
+      await done;
+    }
+  });
+
+  it("persists queued feedback before ownership becomes stopped while its request lock is held", async () => {
+    const root = cloneDir(demo);
+    const running = await serve(root, "demo");
+    const lock = join(root, ".explainer/requests.json.lock");
+    mkdirSync(lock);
+    let pending: Promise<unknown> | undefined;
+    try {
+      expect((await fetch(new URL("/api/requests", running.server.url))).status).toBe(200);
+      let settled = false;
+      pending = fetch(new URL("/api/requests", running.server.url), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(feedback),
+      }).catch(() => undefined);
+      pending.then(() => {
+        settled = true;
+      });
+      await delay(250);
+      expect(settled).toBe(false);
+      const record = readJson(root, ".explainer/service/instance.json");
+      const stop = await fetch(new URL("/api/service/stop", running.server.url), {
+        method: "POST",
+        headers: { Authorization: `Bearer ${record.token}`, "Content-Type": "application/json" },
+        body: "{}",
+      });
+      expect(stop.status).toBe(200);
+      expect(await stop.json()).toEqual({ instanceId: record.instanceId, root });
+      // Give a premature shutdown time to mark ownership stopped while the writer is still blocked.
+      await delay(50);
+      expect(readJson(root, ".explainer/service/instance.json").state).toBe("running");
+      rmdirSync(lock);
+      await expect
+        .poll(() => {
+          if (readJson(root, ".explainer/service/instance.json").state !== "stopped") return null;
+          return readJson(root, ".explainer/requests.json");
+        })
+        .toEqual([feedback]);
+      expect((await running.done).code).toBe(0);
+    } finally {
+      try {
+        rmdirSync(lock);
+      } catch {
+        /* released by test */
+      }
+      await pending;
+      await running.close();
+    }
+  });
+
+  it("identifies an exited owner and requires explicit recovery while preserving interrupted records and artifacts", async () => {
+    const root = cloneDir(demo);
+    const first = await serve(root, "demo");
+    await first.close();
+    const old = readJson(root, ".explainer/service/instance.json");
+    const deadPid = Number(
+      execFileSync(process.execPath, ["-e", "console.log(process.pid)"], {
+        encoding: "utf8",
+      }).trim(),
+    );
+    old.state = "running";
+    old.pid = deadPid;
+    writeFile(root, ".explainer/service/instance.json", JSON.stringify(old));
+    const artifact = readFile(root, ".explainer/demo.explainer.json");
+    expect((await xplJson(root, "service", "status")).json).toMatchObject({
+      state: "interrupted",
+      instanceId: old.instanceId,
+    });
+    const refused = await invoke(["service", "start", "--json"], {
+      cwd: root,
+      env: { XPL_VIEWER_HTML: viewer },
+    });
+    expect(refused.code).toBe(1);
+    expect(JSON.parse(refused.out).error).toMatch(/interrupted.*--recover/);
+    expect(readFile(root, ".explainer/demo.explainer.json")).toBe(artifact);
+    const recovered = await serve(root, "--recover");
+    try {
+      expect(readJson(root, `.explainer/service/interrupted-${old.instanceId}.json`)).toEqual(old);
+      expect((await xplJson(root, "service", "status")).json.state).toBe("running");
+      expect(readFile(root, ".explainer/demo.explainer.json")).toBe(artifact);
+    } finally {
+      await recovered.close();
+    }
+  });
+
+  it("refuses stop/recovery for unverified live ownership and reports transaction locks without stealing them", async () => {
+    const root = cloneDir(demo);
+    const running = await serve(root, "demo");
+    try {
+      const record = readJson(root, ".explainer/service/instance.json");
+      writeFile(
+        root,
+        ".explainer/service/instance.json",
+        JSON.stringify({ ...record, token: "0".repeat(64) }),
+      );
+      expect((await xplJson(root, "service", "status")).json.state).toBe("unavailable");
+      expect((await xplJson(root, "service", "stop")).json.error).toMatch(
+        /cannot verify service ownership/,
+      );
+      const refused = await invoke(["service", "start", "--recover", "--json"], {
+        cwd: root,
+        env: { XPL_VIEWER_HTML: viewer },
+      });
+      expect(refused.code).toBe(1);
+      expect(JSON.parse(refused.out).error).toMatch(/PID is alive/);
+      expect((await fetch(new URL("/api/bundle", running.server.url))).status).toBe(200);
+      writeFile(root, ".explainer/service/instance.json", JSON.stringify(record));
+    } finally {
+      await running.close();
+    }
+    mkdirSync(join(root, ".explainer/service/instance.json.lock"));
+    expect((await xplJson(root, "service", "status")).json).toMatchObject({
+      state: "stopped",
+      ownershipLock: true,
+    });
+  });
+
+  it("reattaches saved guide/backend on restart and keeps canonical repository owners separate", async () => {
+    const root = cloneDir(demo);
+    const other = cloneDir(demo);
+    const alias = join(makeTempDir(), "alias");
+    symlinkSync(root, alias);
+    const first = await serve(root, "demo", "--backend", "claude");
+    const second = await serve(other, "demo");
+    try {
+      expect((await xplJson(alias, "service", "status")).json).toMatchObject({
+        root,
+        url: first.server.url,
+      });
+      const duplicate = await invoke(["service", "start", "demo", "--json"], {
+        cwd: alias,
+        env: { XPL_VIEWER_HTML: viewer },
+      });
+      expect(duplicate.code).toBe(1);
+      expect(JSON.parse(duplicate.out).error).toMatch(/already running/);
+      const firstId = (await xplJson(root, "service", "status")).json.instanceId;
+      await first.close();
+      const restarted = await serve(root);
+      try {
+        const status = (await xplJson(root, "service", "status")).json;
+        expect(status).toMatchObject({
+          root,
+          guide: ".explainer/demo.explainer.json",
+          backend: "claude",
+        });
+        expect(status.instanceId).not.toBe(firstId);
+        expect((await xplJson(other, "service", "status")).json).toMatchObject({
+          state: "running",
+          backend: "none",
+          url: second.server.url,
+        });
+        expect((await fetch(new URL("/api/bundle", second.server.url))).status).toBe(200);
+      } finally {
+        await restarted.close();
+      }
+    } finally {
+      await first.close();
+      await second.close();
+    }
+  });
+
+  it("refuses busy ports and missing or cross-repository guide paths without changing saved artifacts", async () => {
+    const root = cloneDir(demo);
+    const other = cloneDir(demo);
+    const first = await serve(other, "demo");
+    const artifact = readFile(root, ".explainer/demo.explainer.json");
+    try {
+      const busy = await invoke(
+        ["service", "start", "demo", "--port", String(first.server.port), "--root", root],
+        { env: { XPL_VIEWER_HTML: viewer } },
+      );
+      expect(busy.code).toBe(1);
+      expect(busy.err).toMatch(/already in use; pick another with --port/);
+      expect((await xplJson(root, "service", "status")).json.state).toBe("stopped");
+      expect((await xplJson(root, "service", "start", "missing")).json.error).toMatch(
+        /no explainer/,
+      );
+      expect(
+        (await xplJson(root, "service", "start", join(other, ".explainer/demo.explainer.json")))
+          .json.error,
+      ).toMatch(/must stay inside repository/);
+      symlinkSync(
+        join(other, ".explainer/demo.explainer.json"),
+        join(root, ".explainer/linked.explainer.json"),
+      );
+      expect((await xplJson(root, "service", "start", "linked")).json.error).toMatch(
+        /must stay inside repository/,
+      );
+      expect((await invoke(["service", "status", "--root", join(root, "missing")])).err).toMatch(
+        /is not a directory/,
+      );
+      expect(readFile(root, ".explainer/demo.explainer.json")).toBe(artifact);
+    } finally {
+      await first.close();
+    }
+  });
+
+  it("refuses a guide replaced with another repository's symlink while serving", async () => {
+    const root = cloneDir(demo);
+    const other = cloneDir(demo);
+    const running = await serve(root, "demo");
+    try {
+      unlinkSync(join(root, ".explainer/demo.explainer.json"));
+      symlinkSync(
+        join(other, ".explainer/demo.explainer.json"),
+        join(root, ".explainer/demo.explainer.json"),
+      );
+      const response = await fetch(new URL("/api/bundle", running.server.url));
+      expect(response.status).toBe(403);
+      expect(await response.json()).toMatchObject({
+        error: "service artifact path leaves its repository",
+      });
+    } finally {
+      await running.close();
+    }
+  });
+
+  it("reports the actual instance and context, rejects duplicates and stops only its own server", async () => {
+    const root = cloneDir(demo);
+    const running = await serve(root, "demo", "--backend", "claude");
+    try {
+      const status = await xplJson(root, "service", "status");
+      expect(status.json).toMatchObject({
+        ok: true,
+        state: "running",
+        root,
+        guide: ".explainer/demo.explainer.json",
+        backend: "claude",
+        url: running.server.url,
+        pid: process.pid,
+      });
+      expect(status.json.instanceId).toMatch(/^[0-9a-f-]{36}$/);
+      const record = readJson(root, ".explainer/service/instance.json");
+      expect(status.out).not.toContain(record.token);
+      const headers = {
+        Authorization: `Bearer ${record.token}`,
+        "Content-Type": "application/json",
+        Origin: "http://unrelated.example",
+      };
+      expect(
+        (
+          await fetch(new URL("/api/service/stop", running.server.url), {
+            method: "POST",
+            headers,
+            body: "{}",
+          })
+        ).status,
+      ).toBe(403);
+      const duplicate = await invoke(["service", "start", "demo", "--json"], {
+        cwd: root,
+        env: { XPL_VIEWER_HTML: viewer },
+      });
+      expect(duplicate.code).toBe(1);
+      expect(JSON.parse(duplicate.out).error).toMatch(/already running/);
+      expect(
+        (await fetch(new URL("/api/service/stop", running.server.url), { method: "POST" })).status,
+      ).toBe(403);
+      expect((await xplJson(root, "service", "stop")).json.state).toBe("stopped");
+      expect((await running.done).code).toBe(0);
+      expect((await xplJson(root, "service", "status")).json.state).toBe("stopped");
+    } finally {
+      await running.close();
+    }
+  });
+});

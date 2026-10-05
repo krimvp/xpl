@@ -80,6 +80,31 @@ cp -r fixtures/ts-jobrunner /tmp/jobrunner && cd /tmp/jobrunner
 xpl index && xpl view jobrunner    # http://127.0.0.1:4747
 ```
 
+## Optional repository service
+
+`xpl service start <guide>` runs the local viewer in the foreground; Ctrl-C stops it. Add `--background`
+to detach the installed CLI. `xpl service status` reports its instance, address, canonical repository root,
+selected guide and backend label. `xpl service stop` verifies that instance before stopping it.
+
+```sh
+xpl service start jobrunner --background        # loopback only; logs in .explainer/service/service.log
+xpl service status --json
+xpl service stop
+xpl service start                               # reuse saved guide, port and backend selection
+xpl service status --root /path/to/other/repo    # another repository has its own service
+```
+
+One service owns each canonical root, including symlink aliases. Stop it before selecting another guide.
+An exited owner is reported as interrupted; inspect the artifacts, then use `xpl service start --recover`.
+Recovery archives the old instance record. A live PID whose identity cannot be verified is never signalled
+or replaced. Crashed artifact-writer locks need explicit inspection and removal; elapsed time is no proof.
+
+The git-ignored `.explainer/service/` directory keeps local context and ownership records. `--backend claude`
+only saves a future backend selection; this lifecycle step runs no jobs or agent. Local serving needs no
+network access or credentials. Claude jobs will require separate configured authentication and provider
+access. Viewer connection/backend controls are follow-up work. Manual commands and portable HTML work with
+the service stopped.
+
 ## Using the CLI directly
 
 Run these inside the repository you want to explain (or pass `--root <dir>`); every command takes `--json`.
