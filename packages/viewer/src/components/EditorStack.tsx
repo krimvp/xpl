@@ -619,6 +619,17 @@ const EditorPane = memo(function EditorPane({
             {language} · {lines} lines
           </span>
         )}
+        {!folded && (
+          <button
+            className="pane-toggle"
+            type="button"
+            disabled={!cursor}
+            title={cursor ? "Ask about these exact source lines" : "Select code lines first"}
+            onClick={() => store.openFeedback()}
+          >
+            Ask about selected lines
+          </button>
+        )}
         {(toggle || (hunks.length > 0 && !folded)) && (
           // The change controls: on a second row when the pane is narrow.
           <span className="pane-changes">

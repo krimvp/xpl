@@ -1107,8 +1107,11 @@ feedback export/import unions history by stable answer ID independently of outco
 answer content or invalid imported evidence is refused; an older export cannot erase history. Each answer
 ID belongs to one question. Imports or completions exceeding 1,000 answers for a question fail without
 changing history or publishing a result receipt; saved answers are never truncated. Without an
-answer backend the request stays pending for `/code-explainer feedback`. Question/history UI is 40B;
-this contract is headless and does not change the existing viewer's feedback controls.
+answer backend the request stays pending for `/code-explainer feedback`. The viewer's Feedback panel
+uses these routes for **Ask a question**, progress, retry/cancel and answer history. Details and selected
+head/base code lines open that panel. JSON import/export preserves answers independently of outcomes.
+Reference clicks select matching source; changed or unavailable source shows the highlighted recorded
+excerpt. An answer never accepts a guide change; optional revisions still require explicit review.
 
 `service start --watch` opts this start into metadata polling and coherent full rebuilds. Unchanged polls
 read no source/configuration content. Changed inputs trigger full capture, including ignored configuration

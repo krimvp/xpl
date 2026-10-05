@@ -148,10 +148,12 @@ xpl index && xpl view jobrunner    # http://127.0.0.1:4747
 to detach the installed CLI. `xpl service status` reports its instance, address, canonical repository root,
 selected guide and backend label. `xpl service stop` verifies that instance before stopping it.
 
-The service also exposes headless snapshot-bound question jobs at `/api/answers` when the Claude backend
-is selected. They validate exact head/base source quotes and retain answers in portable feedback history;
-source or guide changes mark the original context outdated. An answer never edits a guide or finalizes a
-revision outcome. The question/history UI follows in #40B; current feedback controls keep their offline workflow.
+Use **Ask a question** in Details, **Ask about selected lines** in the code, or the Feedback panel
+for a source-linked answer when the service uses `--backend claude`. Questions retain their exact head/base
+range and snapshot. Feedback shows progress, retry/cancel controls, answers and context-change warnings.
+Reference clicks select matching code; changed source shows the recorded excerpt instead. Answers never edit
+a guide or finalize revision outcomes. History survives reload and feedback JSON import/export. Without a
+connected answer backend, the question stays pending for the next explicit offline feedback pass.
 History merges reject reused answer IDs and more than 1,000 answers per question, preserving the stored history.
 
 ```sh

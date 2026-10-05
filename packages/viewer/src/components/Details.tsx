@@ -81,6 +81,9 @@ export function Details({
         </header>
       )}
       {info.where && <p className="where">{info.where}</p>}
+      <button className="btn" type="button" onClick={() => store.openFeedback(info.id)}>
+        Ask a question
+      </button>
       {!reader && (
         <p className="element-id">
           <code>{info.id}</code>

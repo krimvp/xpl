@@ -1794,7 +1794,7 @@ Routes use the existing Host, attachment, JSON, origin and size guards and filte
 No acceptance route exists. Backend `none` reports 503 for submission/retry; history and cancellation
 remain usable. Controlled runners prove lifecycle behavior only. 39C adds progress/review UI and fenced
 acceptance through the existing revision commit/outcome recovery. Headless answer jobs are described below;
-question/history UI remains 40B.
+question/history UI uses the Feedback panel (§6).
 
 **Snapshot-bound answers (40A).** `cli/answers.ts` captures a saved `explain` feedback request with a
 non-empty question in `note`. The request keeps its stable feedback ID, element/range and original
@@ -1838,7 +1838,7 @@ reads replay missing mirrors, so interruption between writes cannot lose or dupl
 an answer. Concurrent new feedback and newer author outcomes survive this merge. Cancellation or
 supersession before completion fences late output; completed answer history is immutable. Disconnected
 submission retains ordinary pending feedback for the next explicit offline iteration. The question UI,
-progress controls, context warnings and browser interaction proof remain 40B.
+progress controls and context warnings use the Feedback panel (§6).
 
 **Configured Claude runner (39B).** `cli/claude-runner.ts` is the single process adapter behind `JobRunner`.
 Explicit `service --backend claude` selects it. The saved `--skill-dir` identifies a verified managed
@@ -2371,6 +2371,30 @@ the same validated contract, including outcomes and reasons. Storage refusal is 
 export JSON or save the page before closing it in that case. Live requests use `POST /api/requests`;
 opening the panel reads saved disk outcomes. Current and original source warnings and changed hashes
 are shown as outdated context. Instructions say to import feedback and invoke the next pass explicitly.
+
+**Live questions (40B).** Details exposes **Ask a question** to readers and authors. A code pane exposes
+**Ask about selected lines**, enabled with a cursor selection; this preserves inclusive head/base lines.
+Range-only questions use the file element ID even without a diagram selection. Both actions open Feedback,
+whose **Ask a question** requires a non-empty note and captures an `explain` request before contacting the
+worker. **Save feedback** retains its explicit offline behavior. Revision proposals remain separate.
+
+The panel uses 40A's `/api/answers` API directly. While open, it polls answer history once per second,
+with one refresh in flight. Queued/running jobs offer cancellation;
+failed/interrupted jobs offer retry with the inspected attempt counter. Completed answers remain immutable.
+A stable submission ID is saved before POST so uncertain delivery and reload reuse the question's job.
+Existing jobs for a request are inspected instead of starting another answer. Backend/network refusal
+retains pending feedback and names export, CLI import and `/code-explainer feedback` as the next steps.
+
+Completed answers are read through the existing validated feedback store and merge independently of
+outcome revisions. JSON import validates the prospective union before mutation, including answer ownership
+and the 1,000-answer limit. Live import also sends the original requests/results to the existing request
+endpoint. Reload, JSON export and Save as HTML use that same history; no separate answer cache is stored.
+Source/explanation hashes and freshness warnings mark outdated context, including changes during a run.
+Answers show text, their original identity, exact references and recorded excerpts. Reference clicks compare
+recorded source hashes with loaded source before using existing file/cursor linking, including base panes.
+If text changed or is unavailable, the highlighted recorded excerpt stays in Feedback; current lines are
+never presented as the old evidence. Answers cannot alter guide content or author outcomes. Optional changes
+still need explicit revision review and acceptance through #30/#39C.
 
 **Reading aids.** A "Key" button beside the zoom buttons says what the diagram's marks mean (`Legend.tsx`:
 `Legend`, `FlowKey`, `SequenceKey`; rows for marks not on screen are left out). "Called from" (`callers.ts`;
