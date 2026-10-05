@@ -349,7 +349,12 @@ The box shows the `label` in large type, so a flow label names a stage (`writing
 restores individual IDs through `hidden`. These actions share text/evidence undo and user protection.
 Ungroup keeps the stored group for existing anchors, arrows, maps and tour references. Regeneration must
 keep user-owned groups and membership/visibility fields; additive `includeAdd` remains available.
-Coordinate pins in `GraphView.layout` are accepted but still not drawn.
+`GraphView.layout` pins drawn boxes at finite `{x, y}` coordinates relative to their rendered container
+(or the canvas for root boxes). A container keeps that origin while its frame expands around negative
+child positions. Explore offers a move handle and placement reset, both through the same author history.
+Pins travel in live saves and offline exports. Leave user-owned `layout` unchanged during regeneration;
+`layout: null` resets placement only when the user explicitly asks for it. Opening another level, pan and
+zoom remain navigation. Each map uses its own pins, including when another map is opened inside it.
 
 **Code first.** A flow or sequence whose steps' code is all in one file (the steps of one function) is read code first: the code is the main pane and the flow a narrow outline beside it that follows the caret. `"layout": "diagram"` keeps the diagram as the main pane; `"layout": "code-first"` asks for the code-first layout for any flow; `null` goes back to the default.
 

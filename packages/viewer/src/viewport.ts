@@ -43,6 +43,8 @@ export interface FitOptions {
   padding: number;
   /** Fitting never enlarges a small diagram by more than this. */
   maxZoom: number;
+  /** Keep text readable when fitting leaves part of the canvas outside the pane. */
+  minZoom?: number;
 }
 
 /** The scale at which the whole diagram fits the pane, not yet bounded (0 when there is nothing to fit). */
@@ -55,11 +57,11 @@ export function rawFitScale(size: Size, content: Pick<Box, "width" | "height">, 
 export function fitTransform(
   size: Size,
   content: Pick<Box, "width" | "height">,
-  { padding, maxZoom }: FitOptions,
+  { padding, maxZoom, minZoom = MIN_ZOOM }: FitOptions,
 ): Transform | undefined {
   const raw = rawFitScale(size, content, padding);
   if (raw <= 0) return undefined;
-  const k = clamp(raw, MIN_ZOOM, maxZoom);
+  const k = clamp(raw, minZoom, maxZoom);
   return {
     k,
     x: (size.w - content.width * k) / 2,

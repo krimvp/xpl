@@ -1,3 +1,4 @@
+import { createPortal } from "react-dom";
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import {
   describeAnalysis,
@@ -212,7 +213,7 @@ export function SearchLibrary({ onClose }: { onClose: () => void }) {
     onClose();
   };
 
-  return (
+  return createPortal(
     <div className="search-backdrop" onClick={onClose}>
       <section
         ref={panel}
@@ -409,6 +410,7 @@ export function SearchLibrary({ onClose }: { onClose: () => void }) {
           </aside>
         </div>
       </section>
-    </div>
+    </div>,
+    document.body,
   );
 }

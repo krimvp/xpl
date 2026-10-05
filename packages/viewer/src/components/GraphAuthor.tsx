@@ -113,6 +113,31 @@ export function GraphAuthor({ view }: { view: GraphView }) {
           </button>
         </div>
         <p>Ungroup keeps the group available to other maps, arrows and tour steps.</p>
+        <h3>Placement</h3>
+        <p>{Object.keys(view.layout ?? {}).length} pinned boxes in this map.</p>
+        <p>
+          Select a box, then drag its move handle to pin it. Arrow keys on the handle move it by 20
+          pixels; Enter pins it here.
+        </p>
+        <div className="actions">
+          <button
+            type="button"
+            className="btn"
+            disabled={blocked || !selected.some((id) => view.layout?.[id])}
+            onClick={() => void apply({ type: "reset", ids: selected })}
+          >
+            Reset selected placement
+          </button>
+          <button
+            type="button"
+            className="btn"
+            disabled={blocked || !Object.keys(view.layout ?? {}).length}
+            onClick={() => void apply({ type: "reset" })}
+          >
+            Reset all placement
+          </button>
+        </div>
+        <p>Reset returns boxes to automatic layout. Pan and zoom only change your view.</p>
         {hidden.length > 0 && (
           <>
             <h3>Hidden in this map</h3>
