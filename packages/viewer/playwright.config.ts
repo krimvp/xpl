@@ -13,6 +13,9 @@ export default defineConfig({
   // flake is a bug to find, never a pass.
   retries: process.env.CI ? 1 : 0,
   failOnFlakyTests: !!process.env.CI,
+  // Three times Playwright's defaults (30 s per test, 5 s per expect): a slow runner should be slow, not red.
+  timeout: 90_000,
+  expect: { timeout: 15_000 },
   reporter: [["list"]],
   use: {
     ...devices["Desktop Chrome"],

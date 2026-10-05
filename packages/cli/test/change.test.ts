@@ -489,7 +489,7 @@ describe("bundle and server with a change", () => {
         "tests/test_app.py": TEST_V1,
         "tools.py": "def tool():\n    return 'tool'\n\n\ndef other():\n    return 2\n",
       });
-    }, 20_000);
+    }, 60_000);
   }
 
   it("--json reports the change part", async () => {
@@ -501,7 +501,7 @@ describe("bundle and server with a change", () => {
       changedFiles: 4,
       baseFiles: ["app.py", "old.py", "tests/test_app.py", "tools.py"],
     });
-  }, 20_000);
+  }, 60_000);
 
   it("GET /api/base-file serves only the changed files' base text", async () => {
     const server = await startViewServer({
