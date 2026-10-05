@@ -370,8 +370,10 @@ when there is no recorded view scope. This is not a readiness or freshness check
 export checks; `status <name>` inspects evidence after indexing.
 
 `--json`: `{ok, guides: [{id, path, title, audience?, questions[], roots[], kind, commit, indexCommit,
-change?: {base, head}}], errors: [{id, error}]}`. Unreadable, invalid or out-of-repository guides are reported
-separately and exit 1; no local guides is a valid empty library and exits 0. No files are written.
+change?: {base, head}}], errors: [{id, error}]}`. Loadable guides with invalid metadata stay in `guides`
+as `{id, path, metadataError}`, also reported in `errors`. Empty string titles stay recorded as empty.
+Each guide is read from its discovered path, even when its name matches another repository JSON file.
+Read or metadata errors exit 1; no local guides is a valid empty library and exits 0. No files are written.
 
 ## `xpl new <name> [--title t] [--repo r] [--url u]`
 
@@ -559,7 +561,9 @@ drifted and missing anchors, user-owned drift, broken references and unreadable 
 current locations in memory; no guide is saved. `--json` adds `{index, stale, watch, guides}`; each guide has
 `name`, `path`, `title`, `attention`, anchor counts/affected locations, drift/missing reports and validation
 errors, or an unreadable-guide error. `attention` means evidence or structure needs repair; it does not
-claim that all required prose is finished. Do not combine `--all` with a guide or `--view`.
+claim that all required prose is finished. Catalog metadata checks do not gate these evidence reports;
+an empty title is a warning, so it does not replace the report or trigger attention.
+Do not combine `--all` with a guide or `--view`.
 
 The skill's to-do list, read-only: per view, the shown nodes, participants, stored edges and steps without a `summary` (and the ids of the static edges without one, which you need to overlay them); per graph view, where it stops (its ghosts and stubs); concepts without a summary; the tours; drifted llm elements; missing anchors; **broken references**; stale edge overlays; requests queued by the viewer. Static edges are optional. `status` reads the explainer through the index it is bound to: after manual `xpl index`, run `xpl resolve <name> --write` first so that it sees the new code. A running watcher supplies the current index without saving the guide.
 

@@ -16,12 +16,9 @@ import { lstatSync, readdirSync, realpathSync, statSync } from "node:fs";
 import { basename, join, resolve, sep } from "node:path";
 import {
   INDEX_SCHEMA,
-  EXPLAINER_SCHEMA,
   TextCache,
   asIndexModel,
   splitLines,
-  guideCatalog,
-  type GuideDescriptor,
   type Explainer,
   type IndexModel,
   type SymbolIndex,
@@ -374,7 +371,7 @@ export function explainerName(path: string): string {
     : base.replace(/\.json$/, "");
 }
 
-export function listExplainerNames(root: string): string[] {
+function listExplainerPaths(root: string): string[] {
   let present = false;
   try {
     const dir = join(root, EXPLAINER_DIR);
@@ -386,12 +383,16 @@ export function listExplainerNames(root: string): string[] {
       throw new CliError("guide directory leaves its repository");
     return readdirSync(dir)
       .filter((name) => name.endsWith(EXPLAINER_SUFFIX))
-      .map((name) => name.slice(0, -EXPLAINER_SUFFIX.length))
-      .sort();
+      .sort()
+      .map((name) => join(dir, name));
   } catch (error) {
     if (!present && (error as NodeJS.ErrnoException).code === "ENOENT") return [];
     throw new CliError(`cannot list repository guides: ${errorMessage(error)}`);
   }
+}
+
+export function listExplainerNames(root: string): string[] {
+  return listExplainerPaths(root).map(explainerName);
 }
 
 /** `demo`, `demo.explainer.json`, `.explainer/demo.explainer.json` or any path to the file. */
@@ -431,39 +432,25 @@ export function loadExplainer(env: RepoEnv, arg: string): LoadedExplainer {
   };
 }
 
-/** The one local discovery boundary for metadata and affected-guide inventories. No index is required. */
+/** Load the discovered files for catalog and evidence readers; neither metadata nor an index gates loading. */
 export function loadRepositoryGuides(
   env: RepoEnv,
-): (
-  | { name: string; loaded: LoadedExplainer; descriptor: GuideDescriptor }
-  | { name: string; error: string }
-)[] {
-  return listExplainerNames(env.root).map((name) => {
+): ({ name: string; loaded: LoadedExplainer } | { name: string; error: string })[] {
+  return listExplainerPaths(env.root).map((abs) => {
+    const name = explainerName(abs);
     try {
-      const abs = resolveExplainerPath(env, name);
-      if (!realpathSync(abs).startsWith(realpathSync(env.root) + sep))
+      const canonical = realpathSync(abs);
+      if (!canonical.startsWith(realpathSync(env.root) + sep))
         throw new CliError("guide path leaves its repository");
-      const loaded = loadExplainer(env, name);
-      const e = loaded.explainer;
-      if (
-        e.schema !== EXPLAINER_SCHEMA ||
-        typeof e.title !== "string" ||
-        !e.title.trim() ||
-        typeof e.repo?.commit !== "string" ||
-        typeof e.index?.commit !== "string" ||
-        (e.scope?.audience !== undefined && typeof e.scope.audience !== "string") ||
-        !Array.isArray(e.views) ||
-        e.views.some(
-          (v) =>
-            !v ||
-            typeof v.scope?.root !== "string" ||
-            (v.scope.question !== undefined && typeof v.scope.question !== "string"),
-        ) ||
-        (e.change !== undefined &&
-          (typeof e.change?.base !== "string" || typeof e.change?.head !== "string"))
-      )
-        throw new CliError("invalid guide metadata");
-      return { name, loaded, descriptor: guideCatalog([{ id: name, explainer: e }])[0]! };
+      return {
+        name,
+        loaded: {
+          abs,
+          rel: displayPath(env.root, abs),
+          name,
+          explainer: readExplainerFile(canonical),
+        },
+      };
     } catch (error) {
       return { name, error: errorMessage(error) };
     }

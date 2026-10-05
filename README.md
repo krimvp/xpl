@@ -61,7 +61,8 @@ refuses checkout filters or line-ending conversion that change the head's raw so
 `xpl guides` lists locally saved guides by title, recorded questions, audience and source/index commits.
 It works without a service or index file. `xpl search <pattern>` searches available indexed working-tree
 text; unavailable files produce a warning, and `--json` records searchable paths and analysis scope.
-Guide metadata is descriptive; use `xpl ready <name>` to check a guide before exporting it.
+Loadable guides with invalid metadata stay listed by ID/path with a metadata error. Guide metadata is
+descriptive; use `xpl ready <name>` to check a guide before exporting it.
 
 Claude indexes the repo, writes `.explainer/<name>.explainer.json` (commit it; the indexes beside it are
 git-ignored) and gives you the result. Open it yourself with `xpl bundle <name> -o <name>.html` (one

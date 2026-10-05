@@ -1389,10 +1389,13 @@ CLI `--under` still resolves targets and globs with suggestions; CLI text comes 
 Its existing hit JSON fields remain unchanged. `--json` adds `scope` from the pure query; unavailable
 source paths also produce a warning. Text search does not require successful symbol analysis.
 
-`repo.ts` owns local discovery and bounded loading through `listExplainerNames` and
-`loadRepositoryGuides`. Guide metadata does not require an index, does not check readiness/freshness
-and does not write guides. `xpl guides` reports catalog metadata and paths; directory read failures
-remain failures, and per-guide read/metadata errors are separate from a valid empty library.
+`repo.ts` discovers concrete `.explainer/*.explainer.json` paths. `listExplainerNames` derives keys
+from those paths; `loadRepositoryGuides` checks each canonical boundary and reads that exact file,
+without resolving keys through the command's name-or-path resolver. Loading requires no index and
+does not gate evidence on catalog metadata. `xpl guides` checks metadata and reports descriptors;
+loadable files with invalid metadata stay listed by ID/path with `metadataError`, also in `errors`.
+Empty string titles stay recorded as empty. Directory read failures remain failures, and per-guide
+read/metadata errors are separate from a valid empty library. No readiness/freshness check or write occurs.
 `inventory.ts` uses the same loader for `status --all` and watch attention reports, then re-resolves
 and validates copies. Its moved, drifted and missing classifications and report fields stay unchanged.
 

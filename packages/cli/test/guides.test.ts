@@ -1,4 +1,4 @@
-import { readFileSync, rmSync, symlinkSync } from "node:fs";
+import { copyFileSync, readFileSync, rmSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
 import { expect, it } from "vitest";
 import { indexedFixture, makeTempDir, writeFile, xpl, xplJson } from "./helpers.js";
@@ -68,10 +68,34 @@ it("reports unreadable/malformed and escaping guides separately from an empty li
     "guides",
   );
   expect(result.code).toBe(1);
-  expect(result.json.guides).toEqual([]);
+  expect(result.json.guides).toEqual([
+    {
+      id: "wrong",
+      path: ".explainer/wrong.explainer.json",
+      metadataError: "invalid guide metadata",
+    },
+  ]);
   expect(result.json.errors.map((e) => e.id)).toEqual(["broken", "escape", "wrong"]);
   expect(result.json.errors[1]!.error).toContain("guide path leaves its repository");
   expect(JSON.stringify(result.json)).not.toContain("outside content");
+});
+
+it("loads the discovered guide when its legal name collides with a repository JSON path", async () => {
+  const dir = await indexedFixture();
+  expect((await xpl(dir, "new", "retry.json", "--title", "Retry guide")).code).toBe(0);
+  expect((await xpl(dir, "new", "decoy", "--title", "Root JSON decoy")).code).toBe(0);
+  copyFileSync(join(dir, ".explainer/decoy.explainer.json"), join(dir, "retry.json"));
+  rmSync(join(dir, ".explainer/decoy.explainer.json"));
+
+  const result = await xplJson<{ guides: Record<string, unknown>[]; errors: unknown[] }>(
+    dir,
+    "guides",
+  );
+  expect(result.code).toBe(0);
+  expect(result.json.errors).toEqual([]);
+  expect(result.json.guides.map(({ id, title, path }) => ({ id, title, path }))).toEqual([
+    { id: "retry.json", title: "Retry guide", path: ".explainer/retry.json.explainer.json" },
+  ]);
 });
 
 it("reports a failed inventory read instead of claiming the library is empty", async () => {
