@@ -70,7 +70,8 @@ export interface RepoView {
   readonly files: ReadonlySet<FilePath>;
   /** Indexed files that live directly in `dir` (`""` = the root), sorted. */
   filesInDir(dir: string): readonly FilePath[];
-  /** Text of any file under the root, indexed or not (cached); undefined when missing or unreadable. */
+  /** Text under the root, indexed or not (cached); undefined when missing or unreadable.
+   * A supplied reader may also cover ancestor configuration paths relative to root. */
   readText(path: FilePath): string | undefined;
 }
 

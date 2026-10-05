@@ -980,6 +980,10 @@ explicitly. Manual iteration and offline HTML work with the service stopped; dur
 read no source/configuration content. Changed inputs trigger full capture, including ignored configuration
 chains read by the resolver regardless of filename, local configuration declared by enabled semantic
 providers, and Git staging/cleanliness changes. Capture reads that configuration without starting tools.
+Python's pinned tool checks `scip-pyrightconfig.json` before `pyrightconfig.json`, nearest directory first,
+then TOML if neither JSON config exists. Missing higher-priority paths are observed, including ancestor
+configurations, so creating one later triggers a rebuild. Provider declarations record the tool version
+and lookup source to recheck on upgrades.
 It defaults to `--precise off`; `--precise auto|require` enables semantic tools, and `--scip` observes a
 supplied artifact or manifest/artifact pair. `--watch` rejects an explicit `--index` and clears a saved pin.
 Repeat watch options on restart. Recovery retires the previous watch pointer. Freshness checks reuse the

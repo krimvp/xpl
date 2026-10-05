@@ -1,5 +1,7 @@
-import { renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, renameSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { SourceRepoView } from "../src/repo.js";
+import { runCommand } from "../src/scip/run.js";
 import { describe, expect, it } from "vitest";
 import { buildIndex, captureIndexInputs, indexInputsChanged } from "../src/index.js";
 import {
@@ -8,9 +10,214 @@ import {
   scipTypescriptProvider,
 } from "../src/scip/resolvers.js";
 import { encodeIndex } from "./scip-encode.js";
-import { makeRepo, writeFiles, git } from "./helpers.js";
+import { makeDir, makeRepo, writeFiles, git } from "./helpers.js";
 
 describe("captured index inputs", () => {
+  it("declares Python config priority and records a missing higher-priority choice", () => {
+    const reads: string[] = [];
+    const configuration = new Map([
+      ["pyproject.toml", '[project]\nname = "demo"\n'],
+      ["scip-pyrightconfig.json", '{"include":["one"]}'],
+      ["pyrightconfig.json", '{"include":["two"]}'],
+    ]);
+    const provider = scipPythonProvider();
+    const declare = () => {
+      reads.length = 0;
+      provider.readConfiguration!(
+        "a.py",
+        new SourceRepoView("/repo", ["a.py"], (path) => {
+          reads.push(path);
+          return configuration.get(path);
+        }),
+      );
+      return [...reads];
+    };
+    expect(declare()).toEqual(["pyproject.toml", "scip-pyrightconfig.json"]);
+    configuration.delete("scip-pyrightconfig.json");
+    expect(declare()).toEqual(["pyproject.toml", "scip-pyrightconfig.json", "pyrightconfig.json"]);
+  });
+
+  it("declares TS exact-file extends before .json and directory references without a .json sibling", () => {
+    const configuration = new Map([
+      ["tsconfig.json", '{"extends":"./base","references":[{"path":"./child"}]}'],
+      ["base.json", '{"compilerOptions":{"strict":true}}'],
+      ["child.json", '{"extends":"./wrong"}'],
+      ["child/tsconfig.json", "{}"],
+      ["package.json", '{"name":"demo"}'],
+    ]);
+    const reads: string[] = [];
+    scipTypescriptProvider().readConfiguration!(
+      "child/a.ts",
+      new SourceRepoView("/repo", ["tsconfig.json", "child/a.ts"], (path) => {
+        reads.push(path);
+        return configuration.get(path);
+      }),
+    );
+    expect(reads).toEqual([
+      "tsconfig.json",
+      "base",
+      "base.json",
+      "child/tsconfig.json",
+      "child/package.json",
+      "package.json",
+    ]);
+  });
+
+  it("declares Go workspace priority, workspace vendor metadata and ignored member modules", () => {
+    const reads: string[] = [];
+    const configuration = new Map([
+      ["app/go.mod", "module example.com/app\ngo 1.25\n"],
+      ["go.work", "go 1.25\nuse (\n ./app\n ./ignored\n)\n"],
+      ["vendor/modules.txt", "## workspace\n"],
+      ["ignored/go.mod", "module example.com/ignored\ngo 1.25\n"],
+    ]);
+    const provider = scipGoProvider({ env: {} });
+    provider.readConfiguration!(
+      "app/a.go",
+      new SourceRepoView("/repo", ["app/a.go", "app/go.mod"], (path) => {
+        reads.push(path);
+        return configuration.get(path);
+      }),
+    );
+    expect(reads).toEqual([
+      "app/go.mod",
+      "app/go.work",
+      "go.work",
+      "go.work.sum",
+      "vendor/modules.txt",
+      "app/go.sum",
+      "ignored/go.mod",
+      "ignored/go.sum",
+    ]);
+  });
+
+  it("declares Go persisted flags below process overrides, alternate sums and overlay backing files", () => {
+    const configuration = new Map([
+      [
+        "config/go.env",
+        "GOWORK=ignored/go.work\nGOFLAGS='-modfile=local config.mod' -overlay=overlay.json\n",
+      ],
+      [
+        "app/go.mod",
+        'module example.com/app\ngo 1.25\nreplace example.com/local => ../local\nreplace example.com/root => ".."\n',
+      ],
+      ["app/local config.mod", "module example.com/alternate\ngo 1.25\n"],
+      ["app/overlay.json", '{"Replace":{"a.go":"../backing/a.go"}}'],
+    ]);
+    const reads: string[] = [];
+    scipGoProvider({ env: { GOENV: "/repo/config/go.env", GOWORK: "off" } }).readConfiguration!(
+      "app/a.go",
+      new SourceRepoView("/repo", ["app/a.go", "app/go.mod"], (path) => {
+        reads.push(path);
+        return configuration.get(path);
+      }),
+    );
+    expect(reads).toEqual([
+      "config/go.env",
+      "app/go.mod",
+      "app/go.sum",
+      "local/go.mod",
+      "local/go.sum",
+      "go.mod",
+      "go.sum",
+      "app/vendor/modules.txt",
+      "app/local config.mod",
+      "app/local config.sum",
+      "app/overlay.json",
+      "backing/a.go",
+    ]);
+  });
+
+  it("observes creation of ancestor Python JSON config ahead of root TOML", async () => {
+    const parent = makeDir({
+      "nested/a.py": "def value():\n    return 1\n",
+      "nested/pyproject.toml": '[project]\nname = "demo"\n[tool.scip]\ninclude = ["."]\n',
+    });
+    const root = join(parent, "nested");
+    git(root, "init", "-q", "-b", "main");
+    git(root, "add", ".");
+    git(root, "commit", "-qm", "initial");
+    const options = { root, precise: "auto" as const, providers: [scipPythonProvider()] };
+    const first = await captureIndexInputs(options);
+    writeFiles(parent, { "scip-pyrightconfig.json": '{"include":["nested"]}\n' });
+    expect(await indexInputsChanged(first)).toBe(true);
+    const changed = await captureIndexInputs(options);
+    expect(changed.fingerprint).not.toBe(first.fingerprint);
+    expect(changed.texts.get("../scip-pyrightconfig.json")).toBe('{"include":["nested"]}\n');
+  });
+
+  it("observes a directory replaced by a higher-priority exact TS config file", async () => {
+    const root = makeRepo({
+      ".gitignore": "base\nbase.json\n",
+      "a.ts": "export const value = 1;\n",
+      "tsconfig.json": '{"extends":"./base"}',
+    });
+    writeFiles(root, { "base.json": '{"compilerOptions":{"strict":true}}' });
+    const options = { root, precise: "auto" as const, providers: [scipTypescriptProvider()] };
+    const missing = await captureIndexInputs(options);
+    mkdirSync(join(root, "base"));
+    const first = await captureIndexInputs(options);
+    expect(await indexInputsChanged(missing)).toBe(true);
+    expect(first.fingerprint).not.toBe(missing.fingerprint);
+    rmSync(join(root, "base"), { recursive: true });
+    writeFiles(root, { base: '{"compilerOptions":{"strict":false}}' });
+    expect(await indexInputsChanged(first)).toBe(true);
+    expect((await captureIndexInputs(options)).fingerprint).not.toBe(first.fingerprint);
+  });
+
+  it.skipIf(!process.env.XPL_TEST_SCIP_PYTHON)(
+    "observes ignored scip-pyrightconfig priority with the real pinned Python tool",
+    async () => {
+      const executable = process.env.XPL_TEST_SCIP_PYTHON!;
+      const version = await runCommand(executable, ["--version"], {
+        cwd: process.cwd(),
+        env: process.env,
+        timeoutMs: 30_000,
+      });
+      expect(version.code).toBe(0);
+      expect(version.stdout.trim()).toBe("0.6.6");
+      const root = makeRepo({
+        ".gitignore": "scip-pyrightconfig.json\npyrightconfig.json\n",
+        "pyproject.toml": '[project]\nname = "demo"\n',
+        "one/dep.py": "def helper():\n    return 1\n\nhelper()\n",
+        "two/dep.py": "def helper():\n    return 2\n\nhelper()\n",
+      });
+      writeFiles(root, {
+        "scip-pyrightconfig.json": '{"include":["one"]}\n',
+        "pyrightconfig.json": '{"include":["two"]}\n',
+      });
+      const providers = [
+        scipPythonProvider({
+          run: (_command, args, options) => runCommand(executable, args.slice(2), options),
+        }),
+      ];
+      const options = { root, precise: "require" as const, providers };
+      const calls = (index: Awaited<ReturnType<typeof buildIndex>>["index"]) =>
+        index.refs.filter((r) => r.kind === "call").map((r) => [r.to, r.resolution]);
+      const first = await captureIndexInputs(options);
+      const initial = await buildIndex(options);
+      expect(calls(initial.index)).toEqual([
+        ["one/dep.py#helper", "precise"],
+        ["two/dep.py#helper", "heuristic"],
+      ]);
+      writeFiles(root, { "scip-pyrightconfig.json": '{"include":["two"]}\n' });
+      const clean = await buildIndex(options);
+      expect(calls(clean.index)).toEqual([
+        ["one/dep.py#helper", "heuristic"],
+        ["two/dep.py#helper", "precise"],
+      ]);
+      expect(await indexInputsChanged(first)).toBe(true);
+      const changed = await captureIndexInputs(options);
+      expect(changed.fingerprint).not.toBe(first.fingerprint);
+      expect((await buildIndex({ ...options, snapshot: changed })).index).toEqual(clean.index);
+      unlinkSync(join(root, "scip-pyrightconfig.json"));
+      const fallback = await captureIndexInputs(options);
+      writeFiles(root, { "scip-pyrightconfig.json": '{"include":["one"]}\n' });
+      expect(await indexInputsChanged(fallback)).toBe(true);
+    },
+    90_000,
+  );
+
   it.each<{
     name: string;
     files: Record<string, string>;

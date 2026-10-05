@@ -96,7 +96,7 @@ export function parseJsonc(text: string): unknown {
   }
 }
 
-/** Local JSON configuration extends/reference chains consumed by semantic tools, without running them. */
+/** scip-typescript@0.4.0 src/main.ts delegates these local probes to TypeScript's config loader. */
 export function readProjectConfiguration(
   repo: RepoView,
   path: string,
@@ -108,18 +108,33 @@ export function readProjectConfiguration(
   seen.add(path);
   const config = parseJsonc(text);
   if (!isRecord(config)) return true;
+  // TypeScript 5.9.3 lib/typescript.js getExtendsConfigPath: exact local path, then .json;
+  // a local extends is never a directory's tsconfig. Package extends are external dependencies.
   const extended = Array.isArray(config.extends) ? config.extends : [config.extends];
-  const references = Array.isArray(config.references) ? config.references : [];
-  const entries = [
-    ...extended.filter((p): p is string => typeof p === "string" && p.startsWith(".")),
-    ...references.flatMap((r) => (isRecord(r) && typeof r.path === "string" ? [r.path] : [])),
-  ];
-  for (const entry of entries) {
-    const target = repoPath(posix.join(posix.dirname(path), entry));
-    if (target !== undefined)
-      readProjectConfiguration(repo, target, seen) ||
-        readProjectConfiguration(repo, `${target}.json`, seen) ||
-        readProjectConfiguration(repo, `${target}/tsconfig.json`, seen);
+  for (const entry of extended) {
+    if (
+      typeof entry !== "string" ||
+      !(entry.startsWith("./") || entry.startsWith("../") || posix.isAbsolute(entry))
+    )
+      continue;
+    const target = posix.isAbsolute(entry)
+      ? posix.relative(repo.root, entry)
+      : posix.normalize(posix.join(posix.dirname(path), entry));
+    if (!readProjectConfiguration(repo, target, seen) && !target.endsWith(".json"))
+      readProjectConfiguration(repo, `${target}.json`, seen);
+  }
+  // src/main.ts indexSingleProject: reference directories select tsconfig.json;
+  // a reference naming a JSON file selects that file, without probing a sibling <dir>.json.
+  for (const ref of Array.isArray(config.references) ? config.references : []) {
+    if (!isRecord(ref) || typeof ref.path !== "string") continue;
+    const target = posix.isAbsolute(ref.path)
+      ? posix.relative(repo.root, ref.path)
+      : posix.normalize(posix.join(posix.dirname(path), ref.path));
+    readProjectConfiguration(
+      repo,
+      target.endsWith(".json") ? target : `${target}/tsconfig.json`,
+      seen,
+    );
   }
   return true;
 }

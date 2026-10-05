@@ -366,8 +366,25 @@ no filename-extension allowlist: ignored extends chains, package manifests and a
 captured through the same `SourceRepoView` reader. Packs and providers share the pure
 `ConfigurationReader.readConfiguration(file, repo)` seam. `precise` defaults to `off` for capture;
 callers match the real build's mode and provider selection. Enabled semantic providers preload local
-inputs through the same recording reader without running tools: Python project-name and pyright config,
-TypeScript local extends/references and package manifests, and Go module/sum/workspace/vendor metadata.
+inputs through the same recording reader without running tools. Declarations name the pinned tool version
+and the source file whose lookup they mirror; recheck them when bumping a tool:
+
+- Python 0.6.6 searches `scip-pyrightconfig.json` before `pyrightconfig.json`, nearest directory first,
+  through ancestors. Only without any JSON config does it search `pyproject.toml`; `[tool.scip]` wins
+  over `[tool.pyright]`. This version does not load JSON `extends`. The adapter separately reads root
+  `[project]` name, then `setup.cfg` metadata. Missing higher-priority paths are observed too.
+- TypeScript 0.4.0 loads each selected tsconfig directory or jsconfig file, local `extends` by exact path
+  then `.json`, and directory references by `tsconfig.json` (without a sibling `.json` fallback).
+  Nearest package manifests supply package identity. The synthetic leftover config is generated.
+- Go 0.2.7 reads module metadata and delegates loading to `go/packages`. Process settings override
+  persisted `go/env` settings. `GOWORK=off` disables workspace lookup; an explicit workfile wins over
+  the nearest `go.work`. Workspace sums and vendor metadata belong beside the workfile; module sums,
+  workspace members and local replacements are observed too. `GOFLAGS` alternate module and overlay
+  files, including overlay backing files, use the recording reader. The private Go source copy bounds
+  implicit workspace lookup to the copied root.
+
+A supplied `SourceRepoView` reader owns its path namespace, so provider capture can record ancestor
+configuration. The default filesystem view still confines reads to its root.
 TypeScript's pack also reads nearest tsconfig/jsconfig chains for every source file without semantic tools.
 Capture also observes local/ancestor ignore rules, Git configuration/exclusions, explicitly supplied SCIP
 inputs and the staging/work-tree cleanliness used by `resolveCommitId`. A captured clean HEAD label wins

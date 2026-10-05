@@ -110,8 +110,8 @@ export async function captureIndexInputs(options: {
     let version = "missing";
     try {
       const before = statSync(abs, { bigint: true });
-      if (!before.isFile()) return undefined;
-      bytes = readFileSync(abs);
+      // A directory is an absent config candidate too; replacing it with a file changes priority.
+      if (before.isFile()) bytes = readFileSync(abs);
       const after = statSync(abs, { bigint: true });
       const signature = (s: typeof before) =>
         `${s.dev}:${s.ino}:${s.size}:${s.mtimeNs}:${s.ctimeNs}`;
@@ -123,7 +123,11 @@ export async function captureIndexInputs(options: {
     }
     paths.set(abs, path);
     values.set(abs, {
-      digest: bytes ? createHash("sha256").update(bytes).digest("hex") : "missing",
+      digest: bytes
+        ? createHash("sha256").update(bytes).digest("hex")
+        : version === "missing"
+          ? "missing"
+          : "not-file",
       version,
     });
     if (bytes) texts.set(path, bytes.toString("utf8"));
