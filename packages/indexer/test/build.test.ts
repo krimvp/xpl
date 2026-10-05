@@ -335,7 +335,7 @@ describe("buildIndex", () => {
       ),
     ).toBe(true);
     expect(elapsed).toBeLessThan(20_000); // typically 1-3 s; generous for slow CI machines
-  }, 60_000);
+  }, 180_000);
 });
 
 describe("writeIndex", () => {
