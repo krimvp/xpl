@@ -54,29 +54,25 @@ export function searchFor(
       }
     } else params.delete("mode");
   }
-  if (state.mode !== "present" && state.perspective) {
-    if (bundleMode !== "present") params.delete("mode");
-    params.set("perspective", state.perspective);
+  if (state.perspective !== undefined) {
+    if (state.mode !== "present" && bundleMode !== "present") params.delete("mode");
+    if (state.mode !== "present" || state.perspective !== "explore")
+      params.set("perspective", state.perspective);
+    else params.delete("perspective");
+  }
+  if ("viewId" in state) {
     if (state.viewId) params.set("view", state.viewId);
-    if (state.tour) {
-      params.set("tour", state.tour.tourId);
-      params.set("step", String(stepNumber(state.tour.step)));
-    }
+    else params.delete("view");
+  }
+  if ("selection" in state) {
     params.delete("focus");
     for (const id of state.selection ?? []) params.append("focus", id);
-    if (params.has("tour") && !state.applied && state.selection?.length === 0)
-      params.set("focus", "");
-  } else {
-    params.delete("perspective");
-    params.delete("focus");
-    if (state.mode === "present" && "applied" in state && !state.applied) {
-      if (state.viewId) params.set("view", state.viewId);
-      for (const id of state.selection ?? []) params.append("focus", id);
-      if (state.selection?.length === 0) params.set("focus", "");
-    }
+    if (state.selection?.length === 0) params.set("focus", "");
   }
-  if (state.mode === "present" && state.perspective && state.perspective !== "explore")
-    params.set("perspective", state.perspective);
+  if (state.tour && state.perspective !== undefined) {
+    params.set("tour", state.tour.tourId);
+    params.set("step", String(stepNumber(state.tour.step)));
+  }
   if (state.cursor) {
     params.set("file", state.cursor.file);
     params.set("side", state.cursor.side ?? "head");
@@ -90,10 +86,10 @@ export function searchFor(
     params.delete("range");
     params.delete("side");
   }
-  if (state.applied && params.has("tour") && state.applied.stepId)
-    params.set("step-id", state.applied.stepId);
-  else if ("applied" in state) params.delete("step-id");
-  if (state.mode === "present" && state.applied) params.delete("view");
+  if ("applied" in state) {
+    if (params.has("tour")) params.set("step-id", state.applied?.stepId ?? "");
+    else params.delete("step-id");
+  }
   // Ids are `tour:intro`: a colon is fine in a query string, and much easier to read than `%3A`.
   const text = params.toString().replace(/%3A/gi, ":");
   return text === "" ? "" : `?${text}`;
@@ -154,29 +150,18 @@ export function watchUrl(
   let popping = false;
   if (mode === "present") write(store.getState());
   const onPop = () => {
-    const state = store.getState();
-    if (leaving) leaving = false;
-    else {
-      const asked = readLaunchParams(win.location.search);
-      popping = true;
-      try {
-        // Back out of a talk: leave Present, where the reader was. Back (or Forward) into one: resume it.
-        if (state.mode === "present" && asked.mode !== "present") store.exitPresent();
-        else if (state.mode !== "present" && asked.mode === "present")
-          store.present(
-            asked.tour,
-            asked.stepId
-              ? state.model.tour(asked.tour ?? "")?.steps.findIndex((s) => s.id === asked.stepId)
-              : asked.step !== undefined
-                ? asked.step - 1
-                : undefined,
-          );
-        if (asked.file && asked.range) store.openRange(asked.file, asked.range, asked.side);
-      } finally {
-        popping = false;
-      }
-      pushed = false;
+    if (leaving) {
+      leaving = false;
+      // Esc keeps the last reading state while removing the talk's history entry.
+      write(store.getState());
     }
+    popping = true;
+    try {
+      store.restoreNavigation(readLaunchParams(win.location.search));
+    } finally {
+      popping = false;
+    }
+    pushed = false;
     const now = store.getState();
     last = key(now);
     mode = now.mode;

@@ -97,7 +97,8 @@ versions, included head/base files and author review state, with a link to the c
 Step, element and head/base range links reopen that same version after a newer version is promoted.
 Save as HTML restores the saved navigation; an explicit URL target overrides it. Keep the staged tree
 for sibling history and latest-version links. Restored focus, view and source cursor can be combined
-with a tour step. Configured remote delivery and the PR Action remain later work in #34.
+with a tour step. Reload and browser Back/Forward restore those fields independently; switching to Map
+keeps a step's source override. Configured remote delivery and the PR Action remain later work in #34.
 
 `xpl guides` lists locally saved guides by title, recorded questions, audience and source/index commits.
 It works without a service or index file. `xpl search <pattern>` searches available indexed working-tree

@@ -448,8 +448,10 @@ Browser bookmarks retain the reading state. Earlier pages capture only history t
 at staging. Keep the staged directory tree for sibling links; detached copies remain self-contained but
 cannot navigate missing sibling versions. Save as HTML preserves navigation with the same query keys,
 without live service attachment. An explicit navigation target overrides saved navigation as a whole.
-Restoration combines tour defaults with explicit view, focus and source cursor fields; setting a saved
-cursor does not switch perspective or clear the applied step.
+Launch, saved HTML and browser Back/Forward share one restoration function. Applied step, view,
+perspective, focus and source cursor are independent; restoring one does not clear another.
+An empty `step-id=` records no applied step, including a tour detour. Older compact tour links without
+view/focus still apply the requested step. A perspective switch keeps the applied step's source override.
 Edited re-saves lose the staged version claim when their artifactIdentity changes.
 This command configures no server, remote destination, credentials, upload or PR Action. Configured team
 delivery remains a later slice of #34.

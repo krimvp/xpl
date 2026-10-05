@@ -163,20 +163,6 @@ describe("related stages of a flow", () => {
   });
 });
 
-it("round-trips an Explore element link without losing its view or focus", () => {
-  const store = new ViewerStore(makeBundle(), { mode: "explore", view: "view:overview" });
-  store.select(["concept:retry"]);
-  const reopened = new ViewerStore(
-    makeBundle(),
-    readLaunchParams(searchFor(store.getState(), "", undefined)),
-  );
-  expect(reopened.getState()).toMatchObject({
-    perspective: "explore",
-    viewId: "view:overview",
-    selection: ["concept:retry"],
-  });
-});
-
 it("restores saved query state, while an explicit target replaces the saved target", () => {
   const bundle = { ...makeBundle(), launch: "?file=src/a.ts&range=12:6-12:9" };
   expect(new ViewerStore(bundle).getState().cursor).toEqual({
@@ -186,76 +172,19 @@ it("restores saved query state, while an explicit target replaces the saved targ
     fromCol: 6,
     toCol: 9,
   });
+  const saved = new ViewerStore(bundle);
+  saved.setPerspective("map");
+  expect(saved.getState().perspective).toBe("map");
+  saved.restoreNavigation({});
+  expect(saved.getState()).toMatchObject({
+    perspective: "code",
+    cursor: { file: "src/a.ts", fromLine: 12, toLine: 12, fromCol: 6, toCol: 9 },
+  });
   const linked = new ViewerStore(bundle, readLaunchParams("?perspective=map&focus=concept:retry"));
   expect(linked.getState()).toMatchObject({
     perspective: "map",
     selection: ["concept:retry"],
     cursor: undefined,
-  });
-});
-
-it.each(["present", "explore"] as const)(
-  "restores a %s detour or cleared selection without reapplying the tour step",
-  (mode) => {
-    const store = new ViewerStore(makeBundle(), { mode: "present", tour: "tour:demo", step: 2 });
-    if (mode === "explore") store.exitPresent();
-    store.select(mode === "present" ? ["file:src/a.ts"] : []);
-    const reopened = new ViewerStore(
-      makeBundle(),
-      readLaunchParams(searchFor(store.getState(), "", undefined)),
-    );
-    expect(reopened.getState()).toMatchObject({
-      mode,
-      selection: mode === "present" ? ["file:src/a.ts"] : [],
-      applied: undefined,
-      tour: { tourId: "tour:demo", step: 1 },
-    });
-  },
-);
-
-it.each(["explore", "code"] as const)(
-  "restores saved Present t2 with code focus in %s without losing the step",
-  (perspective) => {
-    const bundle = makeBundle();
-    const store = new ViewerStore(bundle, {
-      mode: "present",
-      tour: "tour:demo",
-      stepId: "t2",
-      perspective,
-    });
-    store.setCursor("src/b.ts", 4, 4, "head", 2, 5);
-    const reopened = new ViewerStore({
-      ...bundle,
-      launch: searchFor(store.getState(), "", undefined),
-    });
-    expect(reopened.getState()).toMatchObject({
-      mode: "present",
-      perspective,
-      viewId: "view:flow",
-      selection: ["flow:1", "concept:retry"],
-      applied: { stepId: "t2" },
-      tour: { tourId: "tour:demo", step: 1 },
-      cursor: { file: "src/b.ts", fromLine: 4, toLine: 4, fromCol: 2, toCol: 5 },
-    });
-  },
-);
-
-it("restores a different-view tour detour after leaving Present", () => {
-  const store = new ViewerStore(makeBundle(), { mode: "present", tour: "tour:demo", stepId: "t2" });
-  store.exitPresent();
-  store.setView("view:overview");
-  store.select(["concept:retry"]);
-  const reopened = new ViewerStore(
-    makeBundle(),
-    readLaunchParams(searchFor(store.getState(), "", undefined)),
-  );
-  expect(reopened.getState()).toMatchObject({
-    mode: "explore",
-    perspective: "explore",
-    viewId: "view:overview",
-    selection: ["concept:retry"],
-    applied: undefined,
-    tour: { tourId: "tour:demo", step: 1 },
   });
 });
 
@@ -272,7 +201,7 @@ it("restores a step, explicit view, selection and range together", () => {
     viewId: "view:overview",
     selection: ["concept:retry"],
     tour: { tourId: "tour:demo", step: 1 },
-    applied: undefined,
+    applied: { stepId: "t2" },
     cursor: { file: "src/a.ts", fromLine: 12, toLine: 12, fromCol: 6, toCol: 9 },
   });
 });

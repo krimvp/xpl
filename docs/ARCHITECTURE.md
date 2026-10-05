@@ -1968,7 +1968,10 @@ The existing launch query gains `side=head|base` and `version`, retaining `view`
 `perspective`, `tour`, numeric `step`, stable `step-id`, `file` and inclusive `range`. Explore selections
 and stable Present step IDs are preserved. Present detours retain their view and focus; an explicit
 empty `focus=` preserves a cleared selection instead of reapplying the tour step. URL writes track
-applied step changes as well as the tour counter, so a step's stable ID cannot lag behind its position. Base ranges validate against embedded
+applied step changes as well as the tour counter, so a step's stable ID cannot lag behind its position.
+An empty `step-id=` records that no step is applied. View, focus, perspective and cursor remain
+independent of the applied step; a perspective switch does not imply a detour. Older compact tour URLs
+without view/focus still apply the requested step. Base ranges validate against embedded
 base text using changed-file head keys, including deleted files, without a base index. Unknown sides
 and unavailable/invalid ranges never silently select head source.
 
@@ -1976,9 +1979,12 @@ and unavailable/invalid ranges never silently select head source.
 attachment. The store restores it only when no explicit navigation was supplied; a new linked target
 replaces saved navigation as a whole, avoiding conflicting saved focus/range targets. Re-saves retain
 publication metadata only while artifactIdentity matches the staged record; author changes drop it.
-Launch restoration derives one state from tour defaults, then explicit mode/perspective, view, focus and
-validated head/base cursor fields win. It does not replay navigation actions: cursor restoration keeps
-the selection, applied step and reading perspective. No saved state changes explanation provenance, source text, readiness or identity. Destination adapters,
+`ViewerStore.restoreState(params)` derives navigation without changing the store. Launch, saved HTML
+and browser Back/Forward use it. Tour defaults fill absent fields; explicit mode/perspective, view,
+focus, applied step and validated head/base cursor fields are restored independently. The history
+adapter applies the result once, without replaying Present, selection or range actions. Cursor
+restoration keeps the selection, applied step and reading perspective. No saved state changes
+explanation provenance, source text, readiness or identity. Destination adapters,
 access control and PR Actions are reserved for 34C.
 
 **Bundle payload** (`ViewerBundle`, also `/api/bundle`): `{ schema: "code-explainer/bundle@0", explainer,

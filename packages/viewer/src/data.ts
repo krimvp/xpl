@@ -324,8 +324,7 @@ export function readLaunchParams(search: string = location.search): LaunchParams
   )
     out.perspective = perspective;
   if (params.has("focus")) out.focus = params.getAll("focus");
-  const stepId = params.get("step-id");
-  if (stepId) out.stepId = stepId;
+  if (params.has("step-id")) out.stepId = params.get("step-id")!;
   const file = params.get("file");
   if (file) out.file = file;
   const side = params.get("side");
