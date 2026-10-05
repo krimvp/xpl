@@ -419,13 +419,15 @@ function EditMenu({ toursOpen, onTours }: { toursOpen: boolean; onTours: () => v
                 : status.text}
             </p>
           )}
-          {state.serverMode && state.save.status === "error" && !state.editError && (
-            <MenuItem
-              testId="edit-retry"
-              title="Retry save"
-              onClick={run(() => void store.flush())}
-            />
-          )}
+          {state.serverMode &&
+            state.save.status === "error" &&
+            (!state.editError || state.dirty) && (
+              <MenuItem
+                testId="edit-retry"
+                title="Retry save"
+                onClick={run(() => void store.flush())}
+              />
+            )}
         </div>
       )}
     </div>

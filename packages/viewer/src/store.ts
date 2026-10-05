@@ -80,6 +80,12 @@ export interface Cursor {
   side?: "base";
 }
 
+export interface ConnectionState {
+  status: "offline" | "connecting" | "connected" | "disconnected" | "unavailable";
+  attachment?: NonNullable<ViewerBundle["server"]>["attachment"];
+  message?: string;
+}
+
 export type SaveState =
   | { status: "idle" }
   | { status: "saving" }
@@ -200,6 +206,7 @@ export interface ViewerState {
   editError?: string;
   /** Running under `xpl view`. */
   serverMode: boolean;
+  connection: ConnectionState;
   feedback: FeedbackRequest[];
   feedbackStorageError?: string;
   /** The live source no longer matches its index; reindex before trusting locations and edges. */
@@ -224,15 +231,29 @@ function findTour(tours: readonly Tour[], id: string | undefined): Tour | undefi
   return tours.find((t) => t.id === id) ?? tours.find((t) => t.id === `tour:${id}`);
 }
 
+type PendingWrite =
+  | { kind: "edit"; fields: Record<string, unknown> }
+  | { kind: "review"; review: ExplainerPatch["review"] }
+  | {
+      kind: "author";
+      edits: UserEdit[];
+      version?: ArtifactIdentity;
+      action: "save" | "undo" | "redo";
+      applied: boolean;
+    };
+
 export class ViewerStore {
   private state: ViewerState;
   private readonly listeners = new Set<() => void>();
-  private readonly api: ServerApi | undefined;
+  private api: ServerApi | undefined;
+  private readonly liveApi: ServerApi | undefined;
+  private pollConnection: (() => Promise<void>) | undefined;
   private indexModel: IndexModel;
   private workspaceRevision = 0;
   private readonly loading = new Set<FilePath>();
   private readonly loadingBase = new Set<FilePath>();
-  private readonly pending = new Map<string, Record<string, unknown>>();
+  private readonly pending = new Map<string, PendingWrite>();
+  private authorSequence = 0;
   private saveTimer: ReturnType<typeof setTimeout> | undefined;
   private saving: Promise<void> | undefined;
   private readonly past: Navigation[] = [];
@@ -255,8 +276,9 @@ export class ViewerStore {
     this.feedbackStorageKey = `xpl-feedback:${identity.explainerHash}:${identity.sourceHash}`;
     this.indexModel = asIndexModel(bundle.index);
     this.api = bundle.server?.api
-      ? new ServerApi(bundle.server.api, this.editAttachment)
+      ? new ServerApi(bundle.server.api, bundle.server.attachment)
       : undefined;
+    this.liveApi = this.api;
     const explainer = bundle.explainer;
     const model = this.modelOf(explainer);
     const views = model.views;
@@ -302,6 +324,10 @@ export class ViewerStore {
       undoCount: 0,
       redoCount: 0,
       serverMode: this.api !== undefined,
+      connection: {
+        status: this.api ? "connecting" : "offline",
+        attachment: bundle.server?.attachment,
+      },
       sourceWarning: bundle.sourceWarning,
       feedback: [],
       exportInfo: bundle.exportInfo,
@@ -369,7 +395,7 @@ export class ViewerStore {
   };
 
   private set(patch: Partial<ViewerState>): void {
-    this.state = { ...this.state, ...patch };
+    this.state = { ...this.state, ...patch, dirty: this.pending.size > 0 };
     if (this.state.perspective !== "explore") this.reading = this.state.perspective;
     for (const listener of [...this.listeners]) listener();
   }
@@ -972,16 +998,15 @@ export class ViewerStore {
     if (explainer === this.state.explainer) return;
     const model = this.modelOf(explainer);
     const selection = this.stillShown(model, viewId, this.state.selection);
+    this.queueSave(viewId, fields);
     this.set({
       explainer,
       model,
       ...(selection.length !== this.state.selection.length
         ? { selection, applied: undefined }
         : {}),
-      dirty: true,
       ...(this.api ? { save: { status: "saving" } as SaveState } : {}),
     });
-    if (this.api) this.queueSave(viewId, fields);
   }
 
   /**
@@ -1012,15 +1037,61 @@ export class ViewerStore {
    * "send this tour", which reads the tour as it is when the request goes out.
    */
   private queueSave(id: string, fields: Record<string, unknown>): void {
-    this.pending.set(id, { ...this.pending.get(id), ...fields });
+    const prior = this.pending.get(id);
+    this.pending.set(id, {
+      kind: "edit",
+      fields: { ...(prior?.kind === "edit" ? prior.fields : {}), ...fields },
+    });
+    this.scheduleSave();
+  }
+
+  private scheduleSave(): void {
     if (this.saveTimer !== undefined) clearTimeout(this.saveTimer);
+    if (!this.api) return;
     this.saveTimer = setTimeout(() => {
       this.saveTimer = undefined;
       void this.flush();
     }, SAVE_DELAY_MS);
   }
 
-  private async send(api: ServerApi, id: string, fields: Record<string, unknown>): Promise<void> {
+  private async send(api: ServerApi, id: string, write: PendingWrite): Promise<void> {
+    if (write.kind === "review") {
+      await api.putReview(write.review);
+      return;
+    }
+    if (write.kind === "author") {
+      this.set({ editBusy: true, save: { status: "saving" } });
+      try {
+        let version = write.version;
+        if (!version) {
+          const bundle = await api.bundle();
+          this.indexModel = asIndexModel(bundle.index);
+          this.workspaceRevision++;
+          this.set({
+            files: bundle.files,
+            baseFiles: bundle.baseFiles ?? {},
+            fileErrors: {},
+            baseErrors: {},
+            sourceWarning: bundle.sourceWarning,
+            exportInfo: bundle.exportInfo,
+          });
+          version = artifactIdentity(bundle.explainer, bundle.index);
+        }
+        const result = await api.putEdits(version, write.edits);
+        if (!write.applied) this.acceptAuthor(write, result);
+        this.set({ editError: undefined });
+      } catch (error) {
+        // Rejected author actions require inspection; transport failures stay retryable.
+        if (!write.applied && /^4\d\d\b/.test(messageOf(error)) && this.pending.get(id) === write)
+          this.pending.delete(id);
+        this.set({ editError: messageOf(error) });
+        throw error;
+      } finally {
+        this.set({ editBusy: false });
+      }
+      return;
+    }
+    const { fields } = write;
     if (parseId(id).type === "tour") {
       const tour = this.state.model.tour(id);
       if (tour) await api.putTour(id, { title: tour.title, steps: tour.steps });
@@ -1047,30 +1118,38 @@ export class ViewerStore {
     const api = this.api;
     if (!api || this.pending.size === 0) return;
     this.saving = (async () => {
-      const failed = new Map<string, Record<string, unknown>>();
+      const failed = new Set<string>();
       let firstError: unknown;
       try {
         for (;;) {
-          const batch = [...this.pending].filter(([id]) => !failed.has(id));
-          if (batch.length === 0) break;
-          for (const [id, fields] of batch) {
-            this.pending.delete(id);
+          const batch = [...this.pending.keys()].filter((id) => !failed.has(id));
+          if (batch.length === 0 || this.api !== api) break;
+          for (const id of batch) {
+            if (this.api !== api) break;
+            const write = this.pending.get(id);
+            if (!write) continue;
             try {
-              await this.send(api, id, fields);
+              await this.send(api, id, write);
+              // A successful response owns only the exact write it sent, not any newer edit.
+              if (this.pending.get(id) === write) this.pending.delete(id);
+              if (write.kind === "author") this.keepEditHistory();
             } catch (error) {
-              failed.set(id, fields);
+              failed.add(id);
               firstError ??= error;
             }
           }
         }
       } finally {
-        for (const [id, fields] of failed) {
-          this.pending.set(id, { ...fields, ...this.pending.get(id) });
-        }
         this.saving = undefined;
+        this.set({
+          save:
+            firstError !== undefined
+              ? { status: "error", message: messageOf(firstError) }
+              : this.pending.size === 0
+                ? { status: "saved" }
+                : { status: "idle" },
+        });
       }
-      if (firstError === undefined) this.set({ dirty: false, save: { status: "saved" } });
-      else this.set({ save: { status: "error", message: messageOf(firstError) } });
     })();
     await this.saving;
   }
@@ -1110,6 +1189,10 @@ export class ViewerStore {
   cancelEdit(id: string): void {
     const textDrafts = { ...this.state.textDrafts };
     delete textDrafts[id];
+    for (const [key, write] of this.pending) {
+      if (write.kind === "author" && !write.applied && write.edits.some((edit) => edit.id === id))
+        this.pending.delete(key);
+    }
     this.setTextDrafts(textDrafts);
     if (this.state.editError) this.set({ editError: undefined, save: { status: "idle" } });
   }
@@ -1122,7 +1205,13 @@ export class ViewerStore {
 
   private keepEditHistory(): void {
     this.set({ undoCount: this.undoEdits.length, redoCount: this.redoEdits.length });
-    if (!this.api || !this.editStorageKey || typeof localStorage === "undefined") return;
+    if (
+      !this.liveApi ||
+      !this.editStorageKey ||
+      typeof localStorage === "undefined" ||
+      [...this.pending.values()].some((write) => write.kind === "author" && write.applied)
+    )
+      return;
     try {
       localStorage.setItem(
         this.editStorageKey,
@@ -1141,13 +1230,41 @@ export class ViewerStore {
   }
 
   async saveEdits(edits: UserEdit[], version: ArtifactIdentity): Promise<void> {
-    const inverse = await this.writeEdits(edits, version);
-    this.undoEdits.push(inverse);
-    if (this.undoEdits.length > 50) this.undoEdits.shift();
-    this.redoEdits.length = 0;
-    const textDrafts = { ...this.state.textDrafts };
-    for (const edit of edits) delete textDrafts[edit.id];
-    this.setTextDrafts(textDrafts);
+    await this.writeEdits(edits, "save", version);
+  }
+
+  private acceptAuthor(
+    write: Extract<PendingWrite, { kind: "author" }>,
+    result: { explainer: Explainer; inverse: UserEdit[] },
+  ): void {
+    this.set({
+      explainer: result.explainer,
+      model: this.modelOf(result.explainer),
+      editError: undefined,
+    });
+    if (write.action === "save") {
+      this.undoEdits.push(result.inverse);
+      if (this.undoEdits.length > 50) this.undoEdits.shift();
+      this.redoEdits.length = 0;
+      const textDrafts = { ...this.state.textDrafts };
+      for (const edit of write.edits) {
+        const draft = textDrafts[edit.id];
+        if (
+          draft &&
+          Object.keys(edit.after).every(
+            (key) => JSON.stringify(draft.edit.after[key]) === JSON.stringify(edit.after[key]),
+          )
+        )
+          delete textDrafts[edit.id];
+      }
+      this.setTextDrafts(textDrafts);
+    } else {
+      const from = write.action === "redo" ? this.redoEdits : this.undoEdits;
+      const to = write.action === "redo" ? this.undoEdits : this.redoEdits;
+      from.pop();
+      to.push(result.inverse);
+    }
+    write.applied = true;
     this.keepEditHistory();
   }
 
@@ -1166,69 +1283,58 @@ export class ViewerStore {
   async undoEdit(redo = false): Promise<void> {
     if (this.state.editDraft) throw new Error("Save or cancel the text draft before undo or redo.");
     const from = redo ? this.redoEdits : this.undoEdits;
-    const to = redo ? this.undoEdits : this.redoEdits;
     const edits = from.at(-1);
     if (!edits) return;
-    const inverse = await this.writeEdits(edits);
-    from.pop();
-    to.push(inverse);
-    this.keepEditHistory();
+    await this.writeEdits(edits, redo ? "redo" : "undo");
   }
 
-  private async writeEdits(edits: UserEdit[], version?: ArtifactIdentity): Promise<UserEdit[]> {
+  private async writeEdits(
+    edits: UserEdit[],
+    action: "save" | "undo" | "redo",
+    version?: ArtifactIdentity,
+  ): Promise<void> {
     if (this.state.editBusy) throw new Error("Wait for the current edit to finish saving.");
-    this.set({ editBusy: true, save: { status: "saving" } });
     try {
+      if ([...this.pending.values()].some((write) => write.kind === "author" && !write.applied))
+        throw new Error("Retry or cancel the pending text save before submitting another edit.");
       await this.flush();
-      if (this.api && this.state.dirty)
-        throw new Error("Save the pending view or tour edits first.");
-      this.set({ save: { status: "saving" } });
-      let current = this.state.explainer;
-      if (!version && this.api) {
-        const bundle = await this.api.bundle();
-        // Adoption is blocked during this write, so retain its fresh source explicitly.
-        this.indexModel = asIndexModel(bundle.index);
-        this.workspaceRevision++;
-        current = bundle.explainer;
-        this.set({
-          explainer: current,
-          model: this.modelOf(current),
-          files: bundle.files,
-          baseFiles: bundle.baseFiles ?? {},
-          fileErrors: {},
-          baseErrors: {},
-          sourceWarning: bundle.sourceWarning,
-          exportInfo: bundle.exportInfo,
-        });
+      if (this.api && this.state.dirty) throw new Error("Save or cancel the pending edits first.");
+      const write: Extract<PendingWrite, { kind: "author" }> = {
+        kind: "author",
+        edits,
+        version,
+        action,
+        applied: false,
+      };
+      const id = `author:${++this.authorSequence}`;
+      if (!this.api) {
+        const current = this.state.explainer;
+        const expected = artifactIdentity(current, this.indexModel.index);
+        if (version && JSON.stringify(version) !== JSON.stringify(expected))
+          throw new Error(
+            "This explanation changed while you were editing. Reopen the editor and inspect it before saving.",
+          );
+        write.version = version ?? expected;
+        const result = applyUserEdits(current, edits, this.indexModel, snapshotTexts(this.state));
+        this.pending.set(id, write);
+        this.acceptAuthor(write, result);
+        return;
       }
-      const expected = version ?? artifactIdentity(current, this.indexModel.index);
-      if (
-        !this.api &&
-        JSON.stringify(expected) !==
-          JSON.stringify(artifactIdentity(current, this.indexModel.index))
-      )
+      this.pending.set(id, write);
+      this.set({ save: { status: "saving" } });
+      await this.flush();
+      if (!write.applied)
         throw new Error(
-          "This explanation changed while you were editing. Reopen the editor and inspect it before saving.",
+          this.state.save.status === "error"
+            ? this.state.save.message
+            : "Text edit remains unsaved. Use Retry save.",
         );
-      const result = this.api
-        ? await this.api.putEdits(expected, edits)
-        : applyUserEdits(current, edits, this.indexModel, snapshotTexts(this.state));
-      this.set({
-        explainer: result.explainer,
-        model: this.modelOf(result.explainer),
-        dirty: !this.api,
-        save: { status: "saved" },
-        editError: undefined,
-      });
-      return result.inverse;
     } catch (error) {
       this.set({
         editError: messageOf(error),
         save: { status: "error", message: messageOf(error) },
       });
       throw error;
-    } finally {
-      this.set({ editBusy: false });
     }
   }
 
@@ -1251,16 +1357,34 @@ export class ViewerStore {
       throw new Error(
         result.issues.find((i) => i.severity === "error")?.message ?? "Review rejected.",
       );
-    if (this.api) {
-      await this.api.putReview(review);
-      const bundle = await this.api.bundle();
-      if (!this.adoptExplainer(bundle.explainer, bundle)) {
-        // Preserve edits made during the request. They may invalidate the newly stored record.
-        const explainer = { ...this.state.explainer, review: bundle.explainer.review };
-        this.set({ explainer, model: this.modelOf(explainer) });
+    const write: PendingWrite = { kind: "review", review };
+    this.pending.set("review", write);
+    this.set({ explainer: result.explainer, model: this.modelOf(result.explainer) });
+    const api = this.api;
+    if (api) {
+      await this.flush();
+      if (this.pending.has("review")) {
+        const message =
+          this.state.save.status === "error"
+            ? this.state.save.message
+            : "Review remains unsaved. Use Retry save.";
+        // An explicit author action refused by the server must be inspected again. Network failures
+        // and offline Retry saves retain their pending review; newer actions are never rolled back.
+        if (this.pending.get("review") === write && /^4\d\d\b/.test(message)) {
+          this.pending.delete("review");
+          const explainer = { ...this.state.explainer, review: current.review };
+          this.set({
+            explainer,
+            model: this.modelOf(explainer),
+            save: this.pending.size > 0 ? this.state.save : { status: "idle" },
+          });
+        }
+        throw new Error(message);
       }
-    } else
-      this.set({ explainer: result.explainer, model: this.modelOf(result.explainer), dirty: true });
+      if (this.api !== api) return;
+      const bundle = await api.bundle();
+      this.adoptExplainer(bundle.explainer, bundle);
+    }
   }
 
   // ─── Tour edits (Explore): persisted like view edits ─────────────────────────────────────────
@@ -1338,14 +1462,13 @@ export class ViewerStore {
         : choose
           ? { tourId: tour.id, step: 0 }
           : at;
+    this.queueSave(tour.id, {});
     this.set({
       explainer,
       model,
       tour: tourPosition,
-      dirty: true,
       ...(this.api ? { save: { status: "saving" } as SaveState } : {}),
     });
-    if (this.api) this.queueSave(tour.id, {});
   }
 
   // ─── Explain requests and export ─────────────────────────────────────────────────────────────
@@ -1458,36 +1581,80 @@ export class ViewerStore {
 
   // ─── Changes made on disk (Claude's `xpl apply`) ──────────────────────────────────────────────
 
+  get canReconnect(): boolean {
+    return this.liveApi !== undefined;
+  }
+
+  /** Keep loaded data and browser feedback usable after stopping the optional service. */
+  useOfflineSnapshot(): void {
+    this.api = undefined;
+    if (this.saveTimer !== undefined) clearTimeout(this.saveTimer);
+    this.saveTimer = undefined;
+    this.set({
+      serverMode: false,
+      connection: { ...this.state.connection, status: "offline", message: undefined },
+    });
+  }
+
+  /** Retry the page's original address and repository/guide, without discarding edits. */
+  async reconnect(): Promise<void> {
+    if (!this.liveApi) return;
+    this.api = this.liveApi;
+    this.set({
+      serverMode: true,
+      ...(this.state.dirty
+        ? {
+            save: {
+              status: "error" as const,
+              message: "Offline edits remain unsaved. Use Retry save to persist them.",
+            },
+          }
+        : {}),
+      connection: { ...this.state.connection, status: "connecting", message: undefined },
+    });
+    if (!this.pollConnection) this.watchExplainer();
+    await this.pollConnection?.();
+  }
+
   /**
    * Under `xpl view`, polls `GET {api}/explainer` and shows what changed on disk without a reload, so
    * source edits, new indexes and applied feedback arrive together. Fetches a fresh bundle after the
-   * workspace ETag changes and preserves unsaved edits and reader position. Stops for
-   * good on a server that has no such endpoint. Returns the function that stops it.
+   * workspace ETag changes and preserves unsaved edits and reader position. Availability still updates
+   * with unsaved edits. Only an unmanaged server without this endpoint stops automatic polling.
+   * Returns the function that stops it.
    */
   watchExplainer(intervalMs = WATCH_INTERVAL_MS): () => void {
-    const api = this.api;
-    if (!api) return () => undefined;
+    if (!this.liveApi) return () => undefined;
     let etag: string | undefined;
     let busy = false;
+    let stopped = false;
     const poll = async () => {
-      if (
-        busy ||
-        this.state.editBusy ||
-        this.state.editDraft ||
-        this.state.dirty ||
-        this.pending.size > 0 ||
-        this.saving ||
-        (typeof document !== "undefined" && document.hidden)
-      )
-        return;
+      const api = this.api;
+      if (!api || stopped || busy || (typeof document !== "undefined" && document.hidden)) return;
       busy = true;
       try {
         const fresh = await api.getExplainer(etag);
+        if (this.api !== api) return;
         if (fresh) {
           const bundle = await api.bundle();
+          if (this.api !== api) return;
+          this.set({
+            connection: {
+              status: "connected",
+              attachment: bundle.server?.attachment ?? api.attachment,
+            },
+          });
+          // Availability still updates while edits prevent adoption of a new workspace.
+          if (
+            this.state.editBusy ||
+            this.state.editDraft ||
+            this.state.dirty ||
+            this.pending.size > 0 ||
+            this.saving
+          )
+            return;
           const files = { ...bundle.files };
           const fileErrors: Record<string, string> = {};
-          // Include files opened outside the explanation, rather than keeping their old cached text.
           await Promise.all(
             Object.keys(this.state.files)
               .filter((file) => !(file in files))
@@ -1499,18 +1666,42 @@ export class ViewerStore {
                 }
               }),
           );
-          // Do not acknowledge a skipped update: poll again once the user's edits are saved.
-          if (this.adoptExplainer(bundle.explainer, { ...bundle, files, fileErrors }))
+          if (
+            this.api === api &&
+            this.adoptExplainer(bundle.explainer, { ...bundle, files, fileErrors })
+          )
             etag = fresh.etag;
+        } else {
+          this.set({
+            connection: { ...this.state.connection, status: "connected", message: undefined },
+          });
         }
       } catch (error) {
-        if (/^404\b/.test(messageOf(error))) stop();
+        if (this.api !== api) return;
+        const message = messageOf(error);
+        this.set({
+          connection: {
+            ...this.state.connection,
+            status: /^\d{3}\b/.test(message) ? "unavailable" : "disconnected",
+            message,
+          },
+        });
+        // Old unmanaged viewers have no polling endpoint. Managed services keep retrying.
+        if (!api.attachment?.instanceId && /^404\b/.test(message)) stop();
       } finally {
         busy = false;
       }
     };
+    this.pollConnection = async () => {
+      etag = undefined;
+      await poll();
+    };
     const timer = setInterval(() => void poll(), intervalMs);
-    const stop = () => clearInterval(timer);
+    const stop = () => {
+      stopped = true;
+      clearInterval(timer);
+      this.pollConnection = undefined;
+    };
     return stop;
   }
 

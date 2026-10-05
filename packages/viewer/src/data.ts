@@ -123,7 +123,7 @@ export class ServerApi {
   /** Source text of a file. Accepts plain text, or JSON: a string, or an object with `text` / `content`. */
   async file(path: string): Promise<string> {
     const response = await this.check(
-      await fetch(this.url(`/file?path=${encodeURIComponent(path)}`), { cache: "no-store" }),
+      await this.request(`/file?path=${encodeURIComponent(path)}`, { cache: "no-store" }),
     );
     const type = response.headers.get("content-type") ?? "";
     if (!type.includes("application/json")) return response.text();
@@ -140,7 +140,7 @@ export class ServerApi {
   /** The code before the change of a changed file (`ChangedFile.path`), like `file`. */
   async baseFile(path: string): Promise<string> {
     const response = await this.check(
-      await fetch(this.url(`/base-file?path=${encodeURIComponent(path)}`)),
+      await this.request(`/base-file?path=${encodeURIComponent(path)}`),
     );
     return response.text();
   }
@@ -167,7 +167,7 @@ export class ServerApi {
   /** Author-only metadata; the server applies this bounded patch as actor user. */
   async putReview(review: ExplainerPatch["review"]): Promise<void> {
     await this.check(
-      await fetch(this.url("/review"), {
+      await this.request("/review", {
         method: "PUT",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ review }),
@@ -180,7 +180,7 @@ export class ServerApi {
     // View ids are slugs plus a "view:" prefix; keep the colon readable in the URL.
     const id = encodeURIComponent(viewId).replace(/%3A/gi, ":");
     await this.check(
-      await fetch(this.url(`/views/${id}`), {
+      await this.request(`/views/${id}`, {
         method: "PUT",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(fields),
@@ -192,7 +192,7 @@ export class ServerApi {
   async putTour(tourId: string, tour: { title: string; steps: readonly unknown[] }): Promise<void> {
     const id = encodeURIComponent(tourId).replace(/%3A/gi, ":");
     await this.check(
-      await fetch(this.url(`/tours/${id}`), {
+      await this.request(`/tours/${id}`, {
         method: "PUT",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ title: tour.title, steps: tour.steps }),
@@ -207,7 +207,7 @@ export class ServerApi {
   async getExplainer(
     etag: string | undefined,
   ): Promise<{ explainer: Explainer; etag: string | undefined } | undefined> {
-    const response = await fetch(this.url("/explainer"), {
+    const response = await this.request("/explainer", {
       headers: etag !== undefined ? { "if-none-match": etag } : {},
       cache: "no-store",
     });
@@ -220,14 +220,14 @@ export class ServerApi {
   }
 
   async requests(): Promise<FeedbackRequest[]> {
-    const response = await this.check(await fetch(this.url("/requests"), { cache: "no-store" }));
+    const response = await this.check(await this.request("/requests", { cache: "no-store" }));
     const data = (await response.json()) as { requests: unknown[] };
     return data.requests.map(parseFeedbackRequest);
   }
 
   async postRequest(request: ExplainRequest): Promise<void> {
     await this.check(
-      await fetch(this.url("/requests"), {
+      await this.request("/requests", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(request),

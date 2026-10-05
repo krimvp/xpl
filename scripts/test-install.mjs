@@ -280,7 +280,24 @@ try {
           fixture,
         ),
       );
+      const attached = await browser.newPage();
       try {
+        await attached.goto(service.url + "?perspective=code");
+        const connection = attached.getByTestId("connection-status");
+        await expect(connection).toHaveAttribute("data-status", "connected");
+        assert.deepEqual(JSON.parse(new URL(attached.url()).searchParams.get("attachment")), {
+          root: fixture,
+          guide: service.guide,
+        });
+        await connection.getByText("Repository and backend").click();
+        await expect(connection).toContainText(service.instanceId);
+        await expect(connection).toContainText(
+          "Agent backend unavailable (Claude selected). No agent is configured.",
+        );
+        await attached.locator(`.tree-row[data-path="${file}"]`).click();
+        await expect(attached.locator(`[data-file="${file}"] .cm-content`)).toContainText("Runner");
+        await attached.evaluate((id) => window.__xpl.select([id]), `file:${file}`);
+        const bookmarked = attached.url();
         assert.equal(service.state, "running");
         assert.equal(service.root, fixture);
         assert.equal(service.guide, ".explainer/ready-demo.explainer.json");
@@ -292,12 +309,53 @@ try {
           /already running/,
         );
         assert.equal(JSON.parse(run(["service", "stop", "--json"], fixture)).state, "stopped");
+        await expect(connection).toHaveAttribute("data-status", "disconnected");
+        // Export from the stopped page: no workspace claims or live dependency remain.
+        await connection.getByRole("button", { name: "Use loaded snapshot offline" }).click();
+        await expect(connection).toHaveAttribute("data-status", "offline");
+        await attached.getByRole("button", { name: "Edit", exact: true }).click();
+        await attached.getByRole("menuitem", { name: "Save as HTML" }).click();
+        await expect(attached.getByTestId("save-html-ready")).toBeEnabled();
+        const downloadPromise = attached.waitForEvent("download");
+        await attached.getByTestId("save-html-ready").click();
+        const download = await downloadPromise;
+        const stoppedOutput = join(scratch, "ts.stopped-snapshot.html");
+        await download.saveAs(stoppedOutput);
+        const stoppedData = JSON.parse(
+          /<script id="xpl-data" type="application\/json">([\s\S]*?)<\/script>/.exec(
+            readFileSync(stoppedOutput, "utf8"),
+          )[1],
+        );
+        assert.equal(stoppedData.server, undefined);
+        assert.equal(stoppedData.exportInfo.report.scope, "embedded-snapshot");
+        const saved = await browser.newPage();
+        try {
+          await saved.route(/^https?:/, (route) => route.abort());
+          await saved.goto(pathToFileURL(stoppedOutput).href + "?perspective=code");
+          await expect
+            .poll(() => saved.evaluate(() => window.__xpl?.state().serverMode))
+            .toBe(false);
+          await saved.locator(`.tree-row[data-path="${file}"]`).click();
+          await expect(saved.locator(`[data-file="${file}"] .cm-content`)).toContainText("Runner");
+        } finally {
+          await saved.close();
+        }
         const restarted = JSON.parse(run(["service", "start", "--background", "--json"], fixture));
         assert.equal(restarted.url, service.url);
         assert.equal(restarted.guide, service.guide);
         assert.equal(restarted.backend, "claude");
         assert.notEqual(restarted.instanceId, service.instanceId);
+        await connection.getByRole("button", { name: "Retry connection" }).click();
+        await expect(connection).toHaveAttribute("data-status", "connected");
+        await expect(connection).toContainText(restarted.instanceId);
+        await expect
+          .poll(() => attached.evaluate(() => window.__xpl.selection()))
+          .toEqual([`file:${file}`]);
+        await attached.goto(bookmarked);
+        await expect(connection).toHaveAttribute("data-status", "connected");
+        await expect(connection).toContainText(restarted.instanceId);
       } finally {
+        await attached.close();
         run(["service", "stop", "--json"], fixture);
       }
 
@@ -367,7 +425,7 @@ try {
       );
       run(["validate", "ready-demo"], fixture);
       results.push(
-        "ts: packed background start/stop/restart, saved root/guide/backend, duplicate refusal, real crash/recovery and manual export after stop passed",
+        "ts: packed start/stop/restart, same-page and bookmarked guide reconnect, unavailable backend, stopped-page snapshot save with blocked-network reading, saved context, duplicate refusal, crash/recovery and manual export after stop passed",
       );
     }
     const offline = await browser.newPage();

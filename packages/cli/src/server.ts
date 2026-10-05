@@ -22,6 +22,9 @@
  *   GET  /api/requests        durable feedback, outcomes and context warnings for this explainer
  *   POST /api/requests        a snapshot-bound FeedbackRequest, merged by its stable request ID;
  *                             legacy element-only input is stored as outdated, without invented context
+ *   GET/POST /api/jobs        managed-service history / snapshot-bound selection (runner required)
+ *   GET /api/jobs/<UUID>      one job for this guide; results remain proposals
+ *   POST /api/jobs/<UUID>/<cancel|supersede|retry>   durable fenced lifecycle actions; no acceptance
  *
  * Both the bundle and /api/explainer carry the explainer with its anchors re-resolved against the index and the
  * working tree (`freshAnchors`, as `xpl bundle` does), never the stale `resolved` cache of the file.
@@ -56,8 +59,9 @@ import {
 import { collectBaseFiles, collectFiles, freshAnchors, makeBundle } from "./bundle-data.js";
 import type { RepoEnv } from "./context.js";
 import { CliError, errorMessage } from "./errors.js";
-import { atomicWrite, withFileLock, withRepositoryLock, displayPath, jsonFile } from "./fsutil.js";
+import { atomicWrite, withRepositoryLock, displayPath, jsonFile } from "./fsutil.js";
 import { importRequests, appendRequest, readRequests } from "./requests.js";
+import type { openJobs, JobSubmission } from "./jobs.js";
 import {
   WorkingTree,
   chooseIndexFile,
@@ -77,8 +81,15 @@ export interface ViewServerOptions {
   port: number;
   /** Viewer HTML, read per request so a rebuilt viewer shows up on reload. */
   viewerHtml: () => string;
-  /** Local lifecycle control, present only for a managed repository service. Never injected into HTML. */
-  control?: { token: string; instanceId: string; root: string; stop(): void };
+  /** Managed lifecycle control. The token and stop callback never enter a viewer bundle. */
+  control?: {
+    token: string;
+    instanceId: string;
+    root: string;
+    backend: "none" | "claude";
+    jobs?: Awaited<ReturnType<typeof openJobs>>;
+    stop(): void;
+  };
 }
 
 export interface ViewServer {
@@ -186,7 +197,7 @@ export async function startViewServer(options: ViewServerOptions): Promise<ViewS
     ...(options.control
       ? {
           instanceId: options.control.instanceId,
-          backend: "none" as const,
+          backend: options.control.backend,
           backendAvailable: false,
         }
       : {}),
@@ -203,6 +214,7 @@ export async function startViewServer(options: ViewServerOptions): Promise<ViewS
 
   function checkRequestStore() {
     checkServicePaths(join(env.root, ".explainer"));
+
     const path = join(env.root, ".explainer", "requests.json");
     if (existsSync(path)) checkServicePaths(path);
   }
@@ -308,6 +320,22 @@ export async function startViewServer(options: ViewServerOptions): Promise<ViewS
       throw new HttpError(400, "malformed request URL");
     }
     const { pathname } = url;
+    const expected = req.headers["x-xpl-attachment"] ?? url.searchParams.get("attachment");
+    let context: { root?: unknown; guide?: unknown } | undefined;
+    if (expected !== undefined && expected !== null) {
+      try {
+        context = JSON.parse(
+          req.headers["x-xpl-attachment"] ? decodeURIComponent(String(expected)) : String(expected),
+        );
+      } catch {
+        throw new HttpError(400, "Invalid service attachment.");
+      }
+      if (!attachment || context?.root !== attachment.root || context?.guide !== attachment.guide)
+        throw new HttpError(
+          409,
+          "This address serves a different repository or guide. Open that service's own URL.",
+        );
+    }
     const allow = (...methods: string[]) => {
       if (!methods.includes(method)) {
         throw new HttpError(405, `${method} is not allowed here (use ${methods.join(", ")})`, {
@@ -331,6 +359,46 @@ export async function startViewServer(options: ViewServerOptions): Promise<ViewS
 
     checkServicePaths(join(env.root, ".explainer"));
 
+    if (pathname === `${API}/jobs` || pathname.startsWith(`${API}/jobs/`)) {
+      const jobs = options.control?.jobs;
+      if (!jobs) throw new HttpError(404, "jobs require a managed repository service");
+      const name = attachment.guide;
+      const parts = pathname.slice(`${API}/jobs`.length).split("/").filter(Boolean);
+      try {
+        if (parts.length === 0) {
+          allow("GET", "HEAD", "POST");
+          if (method === "POST") {
+            const body = await readJsonBody(req);
+            if (Object.keys(body).some((k) => !["id", "selectedRequestIds", "include"].includes(k)))
+              throw new HttpError(400, "Expected id, selectedRequestIds and optional include.");
+            const job = await serial(() => jobs.submit(name, body as unknown as JobSubmission));
+            sendJson(req, res, 200, { job });
+          } else sendJson(req, res, 200, { ...jobs.availability, jobs: await jobs.list(name) });
+        } else if (parts.length === 1) {
+          allow("GET", "HEAD");
+          sendJson(req, res, 200, { job: await jobs.get(name, parts[0]!) });
+        } else if (parts.length === 2 && ["cancel", "supersede", "retry"].includes(parts[1]!)) {
+          allow("POST");
+          const body = await readJsonBody(req);
+          if (Object.keys(body).some((k) => parts[1] !== "retry" || k !== "expectedAttempt"))
+            throw new HttpError(
+              400,
+              "Retry expects only expectedAttempt; cancel/supersede expect an empty object.",
+            );
+          const job = await serial(() =>
+            parts[1] === "retry"
+              ? jobs.retry(name, parts[0]!, body.expectedAttempt)
+              : jobs.fence(name, parts[0]!, parts[1] === "cancel" ? "cancelled" : "superseded"),
+          );
+          sendJson(req, res, 200, { job });
+        } else throw new HttpError(404, "unknown job route");
+      } catch (error) {
+        if (error instanceof CliError)
+          throw new HttpError(Number(error.extra.status ?? 400), error.message);
+        throw error;
+      }
+      return;
+    }
     if (pathname === "/" || pathname === "/index.html") {
       allow("GET", "HEAD");
       const html = injectBundle(options.viewerHtml(), await bundleOf());
@@ -352,7 +420,11 @@ export async function startViewServer(options: ViewServerOptions): Promise<ViewS
       const state = await loadState();
       const fresh = freshExplainer(state);
       const text = JSON.stringify(fresh, null, 2);
-      const etag = `"${createHash("sha1").update(text).update(sourceFingerprint(state)).digest("hex")}"`;
+      const etag = `"${createHash("sha1")
+        .update(text)
+        .update(sourceFingerprint(state))
+        .update(attachment?.instanceId ?? "")
+        .digest("hex")}"`;
       if (req.headers["if-none-match"] === etag) {
         res.writeHead(304, { ETag: etag, "Cache-Control": "no-store" });
         res.end();
@@ -414,22 +486,10 @@ export async function startViewServer(options: ViewServerOptions): Promise<ViewS
     }
     if (pathname === `${API}/edits`) {
       allow("PUT");
-      let expected: unknown;
-      try {
-        const header = req.headers["x-xpl-attachment"];
-        if (typeof header !== "string") throw new Error("missing attachment");
-        expected = JSON.parse(decodeURIComponent(header));
-      } catch {
+      if (typeof req.headers["x-xpl-attachment"] !== "string")
         throw new HttpError(400, "Expected a live repository and guide attachment.");
-      }
-      if (
-        !isRecord(expected) ||
-        typeof expected.root !== "string" ||
-        typeof expected.guide !== "string"
-      )
+      if (!context || typeof context.root !== "string" || typeof context.guide !== "string")
         throw new HttpError(400, "Invalid service attachment.");
-      if (expected.root !== attachment.root || expected.guide !== attachment.guide)
-        throw new HttpError(409, "This address serves a different repository or guide.");
       const body = await readJsonBody(req);
       if (Object.keys(body).sort().join(",") !== "edits,version" || !isRecord(body.version))
         throw new HttpError(400, "Expected only version and bounded edits.");
@@ -515,7 +575,7 @@ export async function startViewServer(options: ViewServerOptions): Promise<ViewS
         throw new HttpError(400, `the id in the body (${String(body.id)}) does not match ${id}`);
       }
       const saved = await serial(() =>
-        withFileLock(explainerPath, async () => {
+        withRepositoryLock(env.root, explainerPath, async () => {
           const state = await loadState();
           const patch = { [record.collection]: [{ ...body, id }] } as unknown as ExplainerPatch;
           const result = applyPatch(state.loaded.explainer, patch, state.model, state.tree.texts, {

@@ -91,6 +91,93 @@ test("an existing empty arrow label does not block a summary correction", async 
   }
 });
 
+test("a failed author save survives offline mode and retries once after reconnect", async ({
+  page,
+}) => {
+  const dir = mkdtempSync(join(tmpdir(), "xpl-reconnect-text-e2e-"));
+  cpSync(new URL("../../../fixtures/ts-jobrunner", import.meta.url), dir, { recursive: true });
+  expect(await command(dir, ["index", "--precise", "off"])).toBe(0);
+  expect(await command(dir, ["new", "demo"])).toBe(0);
+  expect(await command(dir, ["apply", "demo", PATCH_PATH])).toBe(0);
+  const copied = mkdtempSync(join(tmpdir(), "xpl-reconnect-copy-e2e-"));
+  const serve = (root = dir, port = 0) =>
+    startViewServer({
+      env: { root, cwd: root, env: process.env, indexOption: undefined, warn() {} },
+      explainerPath: join(root, ".explainer/demo.explainer.json"),
+      host: "127.0.0.1",
+      port,
+      viewerHtml: () => readFileSync(new URL("../dist/index.html", import.meta.url), "utf8"),
+      control: {
+        root,
+        instanceId: "text-reconnect",
+        backend: "none",
+        token: "local-test",
+        stop() {},
+      },
+    });
+  let server = await serve();
+  let attempts = 0;
+  let disconnected = true;
+  await page.route("**/api/edits", async (route) => {
+    attempts++;
+    if (disconnected) await route.abort("connectionrefused");
+    else await route.continue();
+  });
+  try {
+    await page.goto(server.url + "?mode=explore");
+    await page.waitForFunction(() => !!window.__xpl);
+    await page.evaluate((id) => window.__xpl!.select([id]), RUNNER);
+    await page.getByTestId("text-edit").click();
+    await page.getByLabel("Summary", { exact: true }).fill("Keep the draft through reconnect.");
+    await page.getByTestId("text-save").click();
+    await expect(page.getByRole("alert")).toContainText("Failed to fetch");
+    await page.getByRole("button", { name: "Use loaded snapshot offline" }).click();
+    await expect(page.getByLabel("Summary", { exact: true })).toHaveValue(
+      "Keep the draft through reconnect.",
+    );
+    disconnected = false;
+    await page.getByRole("button", { name: "Retry connection" }).click();
+    await expect(page.getByTestId("connection-status")).toContainText("Connected");
+    await expect(page.getByLabel("Summary", { exact: true })).toHaveValue(
+      "Keep the draft through reconnect.",
+    );
+    await (await openEditMenu(page)).getByTestId("edit-retry").click();
+    await expect(page.getByTestId("text-edit")).toBeVisible();
+    await expect(page.locator(".details .summary")).toHaveText("Keep the draft through reconnect.");
+    expect(attempts).toBe(2);
+    expect(
+      readJson(dir, ".explainer/demo.explainer.json").nodes.find(
+        (n: { id: string }) => n.id === RUNNER,
+      ).summary,
+    ).toBe("Keep the draft through reconnect.");
+    await (await openEditMenu(page)).getByTestId("edit-undo").click();
+    await expect(page.locator(".details .summary")).toHaveText(
+      "The hot loop: pop, lease a worker, run, ack or requeue.",
+    );
+    await expect((await openEditMenu(page)).getByTestId("edit-undo")).toBeDisabled();
+    await (await openEditMenu(page)).getByTestId("edit-redo").click();
+    await expect(page.locator(".details .summary")).toHaveText("Keep the draft through reconnect.");
+    cpSync(dir, copied, { recursive: true });
+    const port = server.port;
+    await page.getByRole("button", { name: "Use loaded snapshot offline" }).click();
+    await server.close();
+    server = await serve(copied, port);
+    await page.getByRole("button", { name: "Retry connection" }).click();
+    await expect(page.getByTestId("connection-status")).toContainText("Service unavailable");
+    await (await openEditMenu(page)).getByTestId("edit-undo").click();
+    await expect(page.locator(".save-status")).toContainText("different repository or guide");
+    expect(
+      readJson(copied, ".explainer/demo.explainer.json").nodes.find(
+        (n: { id: string }) => n.id === RUNNER,
+      ).summary,
+    ).toBe("Keep the draft through reconnect.");
+  } finally {
+    await server.close();
+    rmSync(dir, { recursive: true, force: true });
+    rmSync(copied, { recursive: true, force: true });
+  }
+});
+
 test("live text saves, reload, and undo/redo retain unrelated concurrent edits", async ({
   page,
 }) => {
@@ -262,7 +349,7 @@ test("restarting at the same address for another guide cannot inherit its undo",
         (n: { id: string }) => n.id === RUNNER,
       ).summary,
     ).toBe("Independently authored matching summary.");
-    await page.reload();
+    await page.goto(server.url + "?mode=explore");
     await page.waitForFunction(() => !!window.__xpl);
     await page.evaluate((id) => window.__xpl!.select([id]), RUNNER);
     await expect(page.locator(".details .summary")).toHaveText(
@@ -276,7 +363,7 @@ test("restarting at the same address for another guide cannot inherit its undo",
     ).toBe("Independently authored matching summary.");
     await server.close();
     server = await serve("b", port);
-    await page.reload();
+    await page.goto(server.url + "?mode=explore");
     await page.waitForFunction(() => !!window.__xpl);
     await page.evaluate((id) => window.__xpl!.select([id]), RUNNER);
     await expect(page.locator(".details .summary")).toHaveText(

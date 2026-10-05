@@ -49,7 +49,11 @@ GitHub PR input is opt-in: `xpl pr prepare https://github.com/owner/repo/pull/42
 uses existing `gh` and git access to fetch the returned full base/head commits into a separate detached
 repository. It indexes head with `--precise off` by default and saves an immutable `input.json` with
 before/after source and analysis labels. The developer checkout stays untouched. This command prepares
-input only; agent handoff, PR freshness checks and ready result export are future work. Network access
+input only. `xpl pr create <url> --name pr-guide --audience reviewers --question "What changes?"` also
+runs the installed skill launcher to scaffold a guide and returns an explicit agent invocation. After
+authoring, `xpl pr finish <input-directory>` checks readiness, exports HTML and rechecks both API commits.
+Its immutable result manifest is ready only for matching commits; changed commits are superseded and
+remain historical. No model starts automatically and no current link is published. Network access
 to GitHub is required. Remove a retained input with `xpl pr cleanup <input-directory> --cache-dir /outside/pr-cache`.
 Inherited Git repository overrides cannot redirect PR reads into the developer checkout. Preparation
 refuses checkout filters or line-ending conversion that change the head's raw source bytes.
@@ -82,6 +86,13 @@ Browser storage can be unavailable; the panel reports this and JSON export or Sa
 new indexes refresh in a live viewer; a saved HTML page stays at its exported version. Unsaved edits
 postpone live refresh. Reindex changed code to restore reliable source locations and references.
 
+The next pass uses `xpl revise`: select request IDs, inspect ordinary per-request patch proposals with
+explanation before/after and source, review the author's accepted/rejected subset, then explicitly accept.
+Acceptance rechecks live source, snapshot identity and readiness. It preserves user-owned content and the
+previous artifact, and records only selected outcomes. Interrupted acceptance resumes without applying or
+recording twice. Missing anchors need an explicit re-anchor or removal decision; location-only moves keep
+prose unchanged. See the installed skill's [revision workflow](skill/code-explainer/reference/revise.md).
+
 No Claude at hand? The source repository's fixtures ship example explainers (fixtures are not in the tarball):
 
 ```sh
@@ -109,10 +120,39 @@ Recovery archives the old instance record. A live PID whose identity cannot be v
 or replaced. Crashed artifact-writer locks need explicit inspection and removal; elapsed time is no proof.
 
 The git-ignored `.explainer/service/` directory keeps local context and ownership records. `--backend claude`
-only saves a future backend selection; this lifecycle step runs no jobs or agent. Local serving needs no
-network access or credentials. Claude jobs will require separate configured authentication and provider
-access. Viewer connection/backend controls are follow-up work. Manual commands and portable HTML work with
-the service stopped.
+only saves a future backend selection; no jobs or agent run. The viewer reports connection and backend
+availability below the header. Open **Repository and backend** for the root and last service instance.
+Bookmarks retain the repository and guide; an address serving another guide is refused. Restart with
+`xpl service start` and the open page reconnects to that saved guide, keeping your selection and unsaved edits.
+
+After stop, choose **Use loaded snapshot offline** to keep reading, edit manually, capture feedback and
+save HTML from the loaded source. The export checks the embedded snapshot; it cannot check later repository
+changes. Download edits before closing. **Retry connection** attaches the original address again; use
+**Edit → Retry save** to persist offline edits. Offline feedback stays in the browser until exported and
+imported with `xpl feedback`. Manual commands and portable HTML work with the service stopped. Local serving
+needs no provider network or credentials; a future Claude runner needs separate configured access.
+
+Watching is opt-in on each start:
+
+```sh
+xpl service start jobrunner --watch --background
+xpl status --all --json                         # every guide: moved, drifted or missing anchors
+```
+
+The watcher polls paths and file metadata, capturing source and resolver configuration when inputs
+change. It follows ignored config chains regardless of filename, coalesces edits and rebuilds the full index. Superseded builds are discarded; readers see a complete snapshot. Failed or cancelled builds
+keep the previous index marked out of date. Moved code keeps its prose; drifted and missing evidence still
+block ready export. Watching saves no guide text, accepts no generated revisions and leaves feedback intact.
+It defaults to heuristic references (`--precise off`); `--precise auto|require` enables semantic tools and
+`--scip <artifact|manifest.json>` observes supplied provider inputs. A watched service cannot pin `--index`.
+Watch options are selected again on restart. Recovery retires the previous watch pointer. Pause/resume, viewer attention controls and offered revisions
+follow in 29B. Stop the service to return to manual indexing and revision.
+
+The service also keeps job history in `.explainer/service/jobs.json` and exposes it at `GET /api/jobs`.
+Running attempts become interrupted after restart; completed proposals stay recorded, and cancelled or
+superseded results stay fenced. Submission and retry report unavailable until a real runner is supplied.
+This lifecycle storage has been tested with a controlled runner only. Real execution and a job review UI
+are follow-up work; manual `xpl revise` remains the revision workflow.
 
 ## Using the CLI directly
 

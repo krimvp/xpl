@@ -16,7 +16,7 @@ import { pointsToSpan, spanContains } from "./ast.js";
 import { FileHasher } from "./hash.js";
 import { assembleSymbols, SymbolLookup } from "./symbols.js";
 import type { SymbolEntry } from "./symbols.js";
-import type { Span, SymbolDraft } from "./languages/types.js";
+import type { ConfigurationReader, Span, SymbolDraft } from "./languages/types.js";
 import type { ExtractionCache } from "./extraction-cache.js";
 
 export type ColumnEncoding = "utf8" | "utf16" | "utf32";
@@ -100,7 +100,7 @@ export interface ProviderOutput {
   /** Occurrences that were observed but unresolved; the smallest enclosing heuristic hint survives. */
   blind?: readonly { file: string; line: number; col: number }[];
 }
-export interface IndexProvider {
+export interface IndexProvider extends ConfigurationReader {
   /** Syntax providers always run; semantic providers (the default) honor precise mode. */
   readonly mode?: "syntax" | "semantic";
   readonly id: string;

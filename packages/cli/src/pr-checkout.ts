@@ -97,6 +97,41 @@ export async function prCacheDirectory(ctx: Ctx, option: string | undefined): Pr
   return path;
 }
 
+/** Compare tracked source bytes with raw Git objects; authoring may update only .explainer outputs. */
+export async function verifyPrCheckout(
+  ctx: Ctx,
+  repository: string,
+  head: string,
+  authoring = false,
+) {
+  const options = prGitOptions(ctx.env, repository);
+  const git = (args: string[]) =>
+    prProcess("git", args, repository, options.env, ctx.io.signal, options);
+  // Status/diff would run clean filters again and can hide a smudge or line-ending transformation.
+  // Compare raw blob IDs instead, before any transformed bytes enter an index claiming this head.
+  const tree = (await git(["ls-tree", "-r", "-z", head])).split("\0").filter(Boolean);
+  for (const entry of tree) {
+    const tab = entry.indexOf("\t");
+    const [mode, type, blob] = entry.slice(0, tab).split(" ");
+    if (type !== "blob") continue; // Submodules are not materialized or indexed.
+    const path = entry.slice(tab + 1);
+    if (authoring && (path === ".explainer" || path.startsWith(".explainer/"))) continue;
+    const absolute = join(repository, path);
+    const bytes =
+      mode === "120000"
+        ? await readlink(absolute, { encoding: "buffer" })
+        : await readFile(absolute);
+    const actual = createHash(head.length === 40 ? "sha1" : "sha256")
+      .update(`blob ${bytes.length}\0`)
+      .update(bytes)
+      .digest("hex");
+    if (actual !== blob)
+      throw new CliError(
+        `${path} differs from the raw head blob; checkout filters or line-ending conversion changed the snapshot. Disable that conversion for PR preparation and retry.`,
+      );
+  }
+}
+
 export async function preparePr(
   ctx: Ctx,
   pr: ResolvedPr,
@@ -148,28 +183,7 @@ export async function preparePr(
         `cannot fetch exact head ${pr.head.sha}; the PR ref may have moved or fork access may be unavailable. ${failures.join("; ")}. Resolve the PR again or check existing git access.`,
       );
     await git(["-c", "submodule.recurse=false", "checkout", "--quiet", "--detach", pr.head.sha]);
-    // Status/diff would run clean filters again and can hide a smudge or line-ending transformation.
-    // Compare raw blob IDs instead, before any transformed bytes enter an index claiming this head.
-    const tree = (await git(["ls-tree", "-r", "-z", pr.head.sha])).split("\0").filter(Boolean);
-    for (const entry of tree) {
-      const tab = entry.indexOf("\t");
-      const [mode, type, blob] = entry.slice(0, tab).split(" ");
-      if (type !== "blob") continue; // Submodules are not materialized or indexed.
-      const path = entry.slice(tab + 1);
-      const absolute = join(repository, path);
-      const bytes =
-        mode === "120000"
-          ? await readlink(absolute, { encoding: "buffer" })
-          : await readFile(absolute);
-      const actual = createHash(pr.head.sha.length === 40 ? "sha1" : "sha256")
-        .update(`blob ${bytes.length}\0`)
-        .update(bytes)
-        .digest("hex");
-      if (actual !== blob)
-        throw new CliError(
-          `${path} differs from the raw head blob; checkout filters or line-ending conversion changed the snapshot. Disable that conversion for PR preparation and retry.`,
-        );
-    }
+    await verifyPrCheckout(ctx, repository, pr.head.sha);
     // Index writes must not follow a repository-supplied .explainer symlink out of owned storage.
     const explainerDir = await lstat(join(repository, ".explainer")).catch(
       (error: NodeJS.ErrnoException) => {
@@ -268,7 +282,12 @@ export async function preparePr(
   }
 }
 
-export async function cleanupPr(ctx: Ctx, directory: string, cache: string): Promise<void> {
+/** Validate ownership without removing an input; creation and cleanup share the same boundary. */
+export async function ownedPrDirectory(
+  ctx: Ctx,
+  directory: string,
+  cache: string,
+): Promise<string> {
   directory = resolve(ctx.cwd, directory);
   if (
     dirname(directory) !== cache ||
@@ -299,5 +318,9 @@ export async function cleanupPr(ctx: Ctx, directory: string, cache: string): Pro
     marker.cache !== cache
   )
     throw new CliError("cleanup refused: directory does not match its xpl PR ownership marker");
-  await rm(directory, { recursive: true });
+  return directory;
+}
+
+export async function cleanupPr(ctx: Ctx, directory: string, cache: string): Promise<void> {
+  await rm(await ownedPrDirectory(ctx, directory, cache), { recursive: true });
 }

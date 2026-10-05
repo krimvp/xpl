@@ -70,8 +70,14 @@ export interface RepoView {
   readonly files: ReadonlySet<FilePath>;
   /** Indexed files that live directly in `dir` (`""` = the root), sorted. */
   filesInDir(dir: string): readonly FilePath[];
-  /** Text of any file under the root, indexed or not (cached); undefined when missing or unreadable. */
+  /** Text under the root, indexed or not (cached); undefined when missing or unreadable.
+   * A supplied reader may also cover ancestor configuration paths relative to root. */
   readText(path: FilePath): string | undefined;
+}
+
+/** Pure configuration reads through the supplied view; never starts an analysis tool. */
+export interface ConfigurationReader {
+  readConfiguration?(file: FilePath, repo: RepoView): void;
 }
 
 // ─── Facts ────────────────────────────────────────────────────────────────────────────────────────
@@ -268,7 +274,7 @@ export interface InferRefsInput {
 
 // ─── The pack ─────────────────────────────────────────────────────────────────────────────────────
 
-export interface LanguagePack {
+export interface LanguagePack extends ConfigurationReader {
   /** Independent advertised abilities. Missing keys are unsupported. */
   readonly capabilities: AnalysisCapabilities;
   /** Pack id, e.g. "typescript" (one pack may serve several file languages). */

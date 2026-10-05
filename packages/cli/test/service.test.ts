@@ -1,6 +1,7 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { execFileSync } from "node:child_process";
 import {
+  existsSync,
   lstatSync,
   mkdirSync,
   readdirSync,
@@ -25,6 +26,11 @@ import {
   readFile,
   writeFile,
 } from "./helpers.js";
+import { artifactIdentity, parseBundle } from "@xpl/core";
+import { randomUUID } from "node:crypto";
+import { createCtx } from "../src/context.js";
+import { openJobs, type Job } from "../src/jobs.js";
+import { appendRequest } from "../src/requests.js";
 import type { ViewServer } from "../src/server.js";
 
 let demo: string;
@@ -62,6 +68,350 @@ async function serve(root: string, ...extra: string[]) {
 }
 
 describe("repository service lifecycle", () => {
+  it("retires an interrupted watch before recovering without watching and returns to manual indexes", async () => {
+    const root = cloneDir(demo);
+    const initial = await serve(root, "demo", "--watch");
+    await expect
+      .poll(
+        () => {
+          try {
+            return readJson(root, ".explainer/service/watch.json").state;
+          } catch {
+            return "absent";
+          }
+        },
+        { timeout: 15000 },
+      )
+      .toBe("current");
+    await initial.close();
+    const instance = readJson(root, ".explainer/service/instance.json");
+    writeFile(
+      root,
+      ".explainer/service/instance.json",
+      JSON.stringify({ ...instance, state: "running", pid: 2147483647 }),
+    );
+    const watch = readJson(root, ".explainer/service/watch.json");
+    writeFile(
+      root,
+      ".explainer/service/watch.json",
+      JSON.stringify({ ...watch, state: "current" }),
+    );
+    const recovering = await serve(root, "demo", "--recover");
+    try {
+      writeFile(root, "README.md", "manual indexing after recovery\n");
+      const manual = (await xplJson(root, "index", "--precise", "off")).json;
+      expect((await xplJson(root, "status", "--all")).json.index.commit).toBe(manual.commit);
+      const bundle = (await (
+        await fetch(new URL("/api/bundle", recovering.server.url))
+      ).json()) as { index: { commit: string } };
+      expect(bundle.index.commit).toBe(manual.commit);
+      expect(readJson(root, ".explainer/service/watch.json").state).toBe("stopped");
+    } finally {
+      await recovering.close();
+    }
+    expect((await xplJson(root, "status", "--all")).json.watch.state).toBe("stopped");
+  });
+
+  it("recovers a watched service with its attachment and interrupts the previous job attempt", async () => {
+    const root = cloneDir(demo);
+    const initial = await serve(root, "demo", "--watch", "--backend", "claude");
+    const currentWatch = () => readJson(root, ".explainer/service/watch.json");
+    await expect.poll(() => currentWatch().state, { timeout: 15000 }).toBe("current");
+    const watch = currentWatch();
+    const guide = readFile(root, ".explainer/demo.explainer.json");
+    const instance = readJson(root, ".explainer/service/instance.json");
+    const bundle = parseBundle(
+      await (await fetch(new URL("/api/bundle", initial.server.url))).text(),
+    );
+    const ctx = createCtx(
+      { out() {}, err() {} },
+      {
+        root,
+        cwd: root,
+        env: {},
+        json: true,
+        indexOption: undefined,
+      },
+    );
+    const request = (
+      await appendRequest(root, {
+        id: "request-interrupted",
+        elementId: "file:src/queue.ts",
+        kind: "correct",
+        note: "Explain the queued job.",
+        explainer: "demo",
+        context: artifactIdentity(bundle.explainer, bundle.index),
+      })
+    ).request;
+    // Save a genuine running ledger, then restore it with the dead owner as a crash fixture.
+    const jobs = await openJobs(
+      ctx,
+      instance.instanceId,
+      async (_job, signal) =>
+        new Promise((_resolve, reject) =>
+          signal.addEventListener("abort", () => reject(new Error("stopped")), { once: true }),
+        ),
+    );
+    let ledger: { jobs: Job[] };
+    try {
+      const job = await jobs.submit("demo", { id: randomUUID(), selectedRequestIds: [request.id] });
+      await expect.poll(async () => (await jobs.get("demo", job.id)).state).toBe("running");
+      ledger = readJson<{ jobs: Job[] }>(root, ".explainer/service/jobs.json");
+    } finally {
+      await jobs.close();
+      await initial.close();
+    }
+    writeFile(
+      root,
+      ".explainer/service/instance.json",
+      JSON.stringify({ ...instance, pid: 2147483647 }),
+    );
+    writeFile(root, ".explainer/service/watch.json", JSON.stringify(watch));
+    writeFile(root, ".explainer/service/jobs.json", JSON.stringify(ledger));
+    writeFile(root, "README.md", "changed after watched owner exited\n");
+    const recovered = await serve(root, "--recover", "--watch");
+    try {
+      const owner = readJson(root, ".explainer/service/instance.json");
+      expect(owner.instanceId).not.toBe(instance.instanceId);
+      await expect
+        .poll(() => [currentWatch().state, currentWatch().instanceId], { timeout: 15000 })
+        .toEqual(["current", owner.instanceId]);
+      const publication = currentWatch();
+      expect(publication.generation).toBe(watch.generation + 1);
+      expect(publication.index.commit).not.toBe(watch.index.commit);
+      const attached = parseBundle(
+        await (await fetch(new URL("/api/bundle", recovered.server.url))).text(),
+      );
+      expect(attached.server!.attachment!).toEqual({
+        root,
+        guide: ".explainer/demo.explainer.json",
+        instanceId: owner.instanceId,
+        backend: "claude",
+        backendAvailable: false,
+      });
+      expect(attached.index.commit).toBe(publication.index.commit);
+      const history = (await (await fetch(new URL("/api/jobs", recovered.server.url))).json()) as {
+        jobs: Job[];
+      };
+      expect(history.jobs).toEqual([
+        {
+          ...ledger.jobs[0],
+          state: "interrupted",
+          error: "Service interrupted this attempt. Inspect its progress and explicitly retry.",
+          updatedAt: expect.any(String),
+        },
+      ]);
+      expect(readFile(root, ".explainer/demo.explainer.json")).toBe(guide);
+      expect(readJson(root, ".explainer/requests.json")[0].outcome.status).toBe("pending");
+    } finally {
+      await recovered.close();
+    }
+  });
+
+  it("exposes local job history but rejects submission without a runner before selecting feedback", async () => {
+    const root = cloneDir(demo);
+    const running = await serve(root, "demo");
+    try {
+      const history = await fetch(new URL("/api/jobs", running.server.url));
+      expect(history.status).toBe(200);
+      expect(await history.json()).toEqual({
+        available: false,
+        reason:
+          "Job runner unavailable. This service supports lifecycle storage only; use the manual xpl revise workflow until a real runner is configured.",
+        jobs: [],
+      });
+      const submission = {
+        id: "39a00000-0000-4000-8000-000000000001",
+        selectedRequestIds: ["request-does-not-exist"],
+      };
+      const submit = (body: unknown, headers: Record<string, string> = {}) =>
+        fetch(new URL("/api/jobs", running.server.url), {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...headers },
+          body: JSON.stringify(body),
+        });
+      expect((await submit(submission, { Origin: "https://foreign.example" })).status).toBe(403);
+      expect((await submit(submission, { "Content-Type": "text/plain" })).status).toBe(415);
+      expect((await submit({ ...submission, patch: {} })).status).toBe(400);
+      const unavailable = await submit(submission);
+      expect(unavailable.status).toBe(503);
+      expect(await unavailable.json()).toMatchObject({
+        error: expect.stringContaining("manual xpl revise"),
+      });
+      expect(existsSync(join(root, ".explainer/revisions"))).toBe(false);
+      expect(readJson(root, ".explainer/service/jobs.json").jobs).toEqual([]);
+      const unknown = await fetch(new URL(`/api/jobs/${submission.id}`, running.server.url));
+      expect(unknown.status).toBe(404);
+      expect(
+        (
+          await fetch(new URL(`/api/jobs/${submission.id}/accept`, running.server.url), {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: "{}",
+          })
+        ).status,
+      ).toBe(404);
+    } finally {
+      await running.close();
+    }
+    const restarted = await serve(root);
+    try {
+      expect(await (await fetch(new URL("/api/jobs", restarted.server.url))).json()).toMatchObject({
+        jobs: [],
+      });
+    } finally {
+      await restarted.close();
+    }
+  });
+
+  it("publishes a stable guide attachment and refreshes its instance after restart", async () => {
+    const root = cloneDir(demo);
+    const first = await serve(root, "demo", "--backend", "claude");
+    let etag: string | null;
+    let instanceId: string;
+    try {
+      const response = await fetch(new URL("/api/bundle", first.server.url));
+      const bundle = parseBundle(await response.text());
+      instanceId = readJson(root, ".explainer/service/instance.json").instanceId;
+      expect(bundle.server!.attachment!).toEqual({
+        root,
+        guide: ".explainer/demo.explainer.json",
+        instanceId,
+        backend: "claude",
+        backendAvailable: false,
+      });
+      etag = (await fetch(new URL("/api/explainer", first.server.url))).headers.get("etag");
+    } finally {
+      await first.close();
+    }
+    const restarted = await serve(root);
+    try {
+      const bundle = parseBundle(
+        await (await fetch(new URL("/api/bundle", restarted.server.url))).text(),
+      );
+      expect(bundle.server!.attachment!.root).toBe(root);
+      expect(bundle.server!.attachment!.guide).toBe(".explainer/demo.explainer.json");
+      expect(bundle.server!.attachment!.instanceId).not.toBe(instanceId!);
+      expect(
+        (await fetch(new URL("/api/explainer", restarted.server.url))).headers.get("etag"),
+      ).not.toBe(etag!);
+    } finally {
+      await restarted.close();
+    }
+  });
+
+  it.each(["restart", "recover"])(
+    "reattaches its saved guide to the new watched publication after %s",
+    async (action) => {
+      const root = cloneDir(demo);
+      const published = async (instanceId: string) => {
+        await expect
+          .poll(
+            () => {
+              try {
+                const watch = readJson(root, ".explainer/service/watch.json");
+                return { state: watch.state, instanceId: watch.instanceId };
+              } catch {
+                return null;
+              }
+            },
+            { timeout: 15000 },
+          )
+          .toEqual({ state: "current", instanceId });
+        return readJson(root, ".explainer/service/watch.json");
+      };
+      const first = await serve(root, "demo", "--watch", "--backend", "claude");
+      const firstId = readJson(root, ".explainer/service/instance.json").instanceId;
+      let previous;
+      try {
+        previous = await published(firstId);
+      } finally {
+        await first.close();
+      }
+      expect(readJson(root, ".explainer/service/watch.json").state).toBe("stopped");
+      if (action === "recover") {
+        const instance = readJson(root, ".explainer/service/instance.json");
+        writeFile(
+          root,
+          ".explainer/service/instance.json",
+          JSON.stringify({ ...instance, state: "running", pid: 2147483647 }),
+        );
+        writeFile(root, ".explainer/service/watch.json", JSON.stringify(previous));
+      }
+      writeFile(root, "README.md", "source changed while watch was stopped\n");
+      const restarted = await serve(
+        root,
+        "--watch",
+        ...(action === "recover" ? ["--recover"] : []),
+      );
+      try {
+        const instanceId = readJson(root, ".explainer/service/instance.json").instanceId;
+        expect(instanceId).not.toBe(firstId);
+        const current = await published(instanceId);
+        expect(current.index.commit).not.toBe(previous.index.commit);
+        const attachment = { root, guide: ".explainer/demo.explainer.json" };
+        const response = await fetch(new URL("/api/bundle", restarted.server.url), {
+          headers: { "X-Xpl-Attachment": encodeURIComponent(JSON.stringify(attachment)) },
+        });
+        expect(response.status).toBe(200);
+        const bundle = parseBundle(await response.text());
+        expect(bundle.server!.attachment).toEqual({
+          ...attachment,
+          instanceId,
+          backend: "claude",
+          backendAvailable: false,
+        });
+        expect(bundle.index.commit).toBe(current.index.commit);
+        expect((await xplJson(root, "status", "--all")).json.index.commit).toBe(
+          current.index.commit,
+        );
+      } finally {
+        await restarted.close();
+      }
+    },
+  );
+
+  it.each(["root", "guide"])(
+    "refuses an attached page's different %s before reads or writes",
+    async (field) => {
+      const root = cloneDir(demo);
+      const running = await serve(root, "demo");
+      const attachment = { root, guide: ".explainer/demo.explainer.json" };
+      const encode = () => encodeURIComponent(JSON.stringify(attachment));
+      try {
+        expect(
+          (
+            await fetch(new URL("/api/requests", running.server.url), {
+              headers: { "X-Xpl-Attachment": encode() },
+            })
+          ).status,
+        ).toBe(200);
+        attachment[field as "root" | "guide"] =
+          field === "root" ? cloneDir(demo) : ".explainer/another.explainer.json";
+        for (const method of ["GET", "POST"]) {
+          const response = await fetch(new URL("/api/requests", running.server.url), {
+            method,
+            headers: { "X-Xpl-Attachment": encode(), "Content-Type": "application/json" },
+            ...(method === "POST"
+              ? { body: JSON.stringify({ elementId: "file:src/queue.ts" }) }
+              : {}),
+          });
+          expect(response.status).toBe(409);
+          expect(await response.json()).toEqual({
+            error:
+              "This address serves a different repository or guide. Open that service's own URL.",
+          });
+        }
+        const bookmark = new URL(running.server.url);
+        bookmark.searchParams.set("attachment", JSON.stringify(attachment));
+        expect((await fetch(bookmark)).status).toBe(409);
+        expect(existsSync(join(root, ".explainer/requests.json"))).toBe(false);
+      } finally {
+        await running.close();
+      }
+    },
+  );
+
   it("refuses an empty foreign service directory swapped while startup waits for ownership", async () => {
     const root = cloneDir(demo);
     const other = cloneDir(demo);
@@ -170,6 +520,39 @@ describe("repository service lifecycle", () => {
       }
     },
   );
+
+  it("keeps foreground --root job history attached when another cwd has the same guide", async () => {
+    const root = cloneDir(demo);
+    const outside = cloneDir(demo);
+    const abort = new AbortController();
+    let ready!: (server: ViewServer) => void;
+    const listening = new Promise<ViewServer>((resolve) => {
+      ready = resolve;
+    });
+    const done = invoke(["service", "start", "demo", "--root", root, "--port", "0"], {
+      cwd: outside,
+      env: { XPL_VIEWER_HTML: viewer },
+      signal: abort.signal,
+      onServer: ready,
+    });
+    try {
+      const server = await Promise.race([
+        listening,
+        done.then((result) => {
+          throw new Error(result.err || result.out);
+        }),
+      ]);
+      const bundle = await fetch(new URL("/api/bundle", server.url));
+      expect(bundle.status).toBe(200);
+      expect(parseBundle(await bundle.text()).server!.attachment!.root).toBe(root);
+      const history = await fetch(new URL("/api/jobs", server.url));
+      expect(history.status).toBe(200);
+      expect(await history.json()).toMatchObject({ available: false, jobs: [] });
+    } finally {
+      abort.abort();
+      await done;
+    }
+  });
 
   it("resolves a repo-relative pinned index from outside the repository and persists its resolved path", async () => {
     const root = cloneDir(demo);

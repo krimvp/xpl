@@ -54,7 +54,8 @@ between two commits. For a change, `xpl change` records the diff in the explaine
    show; other nodes are explained on `expand`. The viewer cannot generate text itself. Its "Explain this"
    button saves a request in `.explainer/requests.json` under `xpl view`; offline pages use browser storage
    and JSON export. `xpl feedback` imports, inspects and exports requests and records selected outcomes.
-   Saving feedback never starts generation. The next explicit pass handles a selected batch.
+   Saving feedback never starts generation. `xpl revise` handles an explicitly selected batch through
+   proposal and decision reviews, then ready acceptance with recoverable selected outcomes.
 8. **Changes: one index, at the head.** A change explainer describes the head of the change, the code the
    index was built from. The base is never indexed. Its text is read from git when it is needed
    (`git show <base>:<path>`): for base anchors, `xpl show --at base`, and the "before" side of the viewer.
@@ -316,7 +317,7 @@ interface ExplainerPatch {
 ```ts
 buildIndex(opts: { root: string; commit?: string; precise?: "auto" | "off" | "require";
                    languages?: string[]; providers?: readonly IndexProvider[]; cache?: boolean;
-                   gitOptions?: GitOptions })
+                   gitOptions?: GitOptions; snapshot?: IndexInputs; getText?: GetText })
   : Promise<{ index: SymbolIndex; warnings: string[]; extraction: ExtractionReport;
               work: { heuristicResolutionMs: number; semanticMs: number; semanticRuns: number } }>
 writeIndex(root: string, index: SymbolIndex): Promise<string>
@@ -347,7 +348,53 @@ deleted but still tracked, and lockfiles (`*-lock.json`, `*.lock`, `go.sum`, `pn
 `npm-shrinkwrap.json`). Every remaining text file is an `IndexedFile` (unknown extensions → `text`), so
 file-relative anchors work anywhere. Language by extension: `.ts .mts .cts` typescript, `.tsx` tsx, `.js .mjs
 .cjs .jsx` javascript, `.py .pyi` python, `.go` go, `.rs` rust, `.yaml .yml` yaml, `.json` json, `.toml` toml.
-Paths are POSIX, repo-root-relative, sorted.
+Named `*.explainer.json` and `*.patch.json` outputs are excluded in both modes. Exported xpl HTML is
+also excluded by its embedded bundle marker; ordinary HTML remains source. Paths are POSIX,
+repo-root-relative, sorted.
+
+**Watched input capture** (`src/snapshot.ts`): `captureIndexInputs({root, inputPaths?, gitOptions?, precise?, providers?})`
+returns sources, local configuration text, the captured clean HEAD label (when applicable), a
+content/discovery/HEAD fingerprint and a revision including
+ctime, mtime and inode. `buildIndex({snapshot})` uses that captured source and configuration instead of
+reading them again. Snapshot roots must match; language filtering still applies. Semantic tools may read
+disk, so the caller must recheck the revision before publishing. A changed-and-restored input supersedes a
+build even when its content fingerprint matches. Source reads are checked before and after capture.
+
+Configuration capture runs a syntax-only, cache-free resolver pass with `getText` recording every local
+configuration read, including missing paths. The returned text map is frozen for the real build. There is
+no filename-extension allowlist: ignored extends chains, package manifests and any other pack reads are
+captured through the same `SourceRepoView` reader. Packs and providers share the pure
+`ConfigurationReader.readConfiguration(file, repo)` seam. `precise` defaults to `off` for capture;
+callers match the real build's mode and provider selection. Enabled semantic providers preload local
+inputs through the same recording reader without running tools. Declarations name the pinned tool version
+and the source file whose lookup they mirror; recheck them when bumping a tool:
+
+- Python 0.6.6 searches `scip-pyrightconfig.json` before `pyrightconfig.json`, nearest directory first,
+  through ancestors. Only without any JSON config does it search `pyproject.toml`; `[tool.scip]` wins
+  over `[tool.pyright]`. This version does not load JSON `extends`. The adapter separately reads root
+  `[project]` name, then `setup.cfg` metadata. Missing higher-priority paths are observed too.
+- TypeScript 0.4.0 loads each selected tsconfig directory or jsconfig file, local `extends` by exact path
+  then `.json`, and directory references by `tsconfig.json` (without a sibling `.json` fallback).
+  Nearest package manifests supply package identity. The synthetic leftover config is generated.
+- Go 0.2.7 reads module metadata and delegates loading to `go/packages`. Process settings override
+  persisted `go/env` settings. `GOWORK=off` disables workspace lookup; an explicit workfile wins over
+  the nearest `go.work`. Workspace sums and vendor metadata belong beside the workfile; module sums,
+  workspace members and local replacements are observed too. `GOFLAGS` alternate module and overlay
+  files, including overlay backing files, use the recording reader. The private Go source copy bounds
+  implicit workspace lookup to the copied root.
+
+A supplied `SourceRepoView` reader owns its path namespace, so provider capture can record ancestor
+configuration. The default filesystem view still confines reads to its root.
+TypeScript's pack also reads nearest tsconfig/jsconfig chains for every source file without semantic tools.
+Capture also observes local/ancestor ignore rules, Git configuration/exclusions, explicitly supplied SCIP
+inputs and the staging/work-tree cleanliness used by `resolveCommitId`. A captured clean HEAD label wins
+for snapshot builds; dirty snapshots derive the id from captured files, without reading live staging.
+
+`indexInputsChanged(snapshot)` compares candidate paths and file size/mtime/ctime/inode plus Git state,
+without sniffing or reading source/configuration bytes. Unchanged idle polls reuse the captured inputs.
+A change triggers full content capture; building and publication still recheck full captured revisions.
+External dependencies, tool installation and process-environment changes are outside the watch boundary.
+Restart or manually index after changing those inputs.
 
 **Commit id.** `--commit` wins (letters, digits, `.`, `_`, `-` only: it becomes part of a file name). Else, if
 `root` is the git top-level and the work tree is clean (ignoring `.explainer/`): short HEAD (7 chars). Else
@@ -433,6 +480,7 @@ interface LanguagePack {
   capabilities: AnalysisCapabilities; // advertised abilities; a missing capability key means unsupported
   extensions?: string[];               // `text` files this pack parses too (a format with no FileLanguage of its own; none does now)
   packageScope: "file" | "directory";  // how far a top-level name is visible without an import (Go: the package dir)
+  readConfiguration?(file, repo): void; // preload local config through the shared reader
   importsReexport?: boolean;           // a module's imports are importable from it (Python `__init__.py`)
   offByDefault?(path, repo): boolean;  // a default build leaves the file out (Go build constraints): tried last
   refs: "heuristic" | "none";          // does the pack emit sites (references are derived from them)?
@@ -498,6 +546,7 @@ The old `PreciseResolver` interface and registry were removed; `providers` is th
 interface IndexProvider {
   id: string; mode?: "syntax" | "semantic";  // omitted = semantic
   languages: readonly FileLanguage[]; capabilities: AnalysisCapabilities;
+  readConfiguration?(file: FilePath, repo: RepoView): void; // pure local reads, shared with packs
   analyze(input: ProviderInput): Promise<ProviderOutput>;
 }
 // Input: root, scoped languages, captured sources {path, language, text}, indexed files,
@@ -1230,7 +1279,8 @@ stdout (a rejection exits 1); fatal errors (`error: …`) and warnings (`warning
 | `xpl anchors <explainer> [id...] [--full] [--max-lines n]` | each anchor of an element (or of every element) resolved now: role, `file#symbol +span`, status, lines, and the code at them with offsets (a long anchor: its first lines, an elision line, its last lines); a base anchor prints as `<file>@base +a..b … [before the change]` with the base code; `tour:<id>` (or `tour:<id>/<step>`) also shows what a step without `code` derives from its `focus`, marked derived; verifies spans without reading JSON |
 | `xpl resolve <explainer> [--write] [--allow-stale]` | §4.2 re-resolve against the index of the current code; report drifted llm elements, missing anchors; `--write` saves |
 | `xpl feedback <explainer> [--import <file> \| --export <file> \| --outcomes <file>]` | durable reader feedback: stable-ID import deduplication, snapshot context inspection, portable export and selected-ID outcome merges; no generation |
-| `xpl status <explainer> [--view <id>]` | the skill's to-do list, read-only: per view the shown nodes, stored edges and steps without a summary (static edges optional), concepts without one, drift (user-owned drift counted apart), missing anchors, broken references (ids gone from the index), stale derived-edge overlays, queued requests; per graph view the ghosts and stubs it draws (counts, the most referenced ghost ids, and for each folded ghost up to 3 of the elements it stands for with their counts; `--json`: every ghost with its count and all its `targets` (`{id, count}`), and every stub id, in `views[].ghosts`) with a warning above 12 ghosts; the tours (id, step count, steps whose focus ids or view are gone); `--view <id>`: that view only, with what it draws (each arrow: id, kind, ends, references, stored or derived, label; each `hidden` id and what it takes out; a flow's step links) |
+| `xpl revise <explainer> --select <id,id> [--include <id,id>] [-o file]` / `--run <id> [--proposal file \| --decisions file \| --accept]` | explicitly selected feedback; bounded ordinary patch proposals, source and explanation diff; author subset/missing-anchor decisions; identity/freshness/readiness before atomic acceptance; prior artifact and retry journal |
+| `xpl status [explainer] [--view <id>] [--all]` | `--all` inventories every repository guide against one current index, without saving prose; otherwise the skill's to-do list, read-only: per view the shown nodes, stored edges and steps without a summary (static edges optional), concepts without one, drift (user-owned drift counted apart), missing anchors, broken references (ids gone from the index), stale derived-edge overlays, queued requests; per graph view the ghosts and stubs it draws (counts, the most referenced ghost ids, and for each folded ghost up to 3 of the elements it stands for with their counts; `--json`: every ghost with its count and all its `targets` (`{id, count}`), and every stub id, in `views[].ghosts`) with a warning above 12 ghosts; the tours (id, step count, steps whose focus ids or view are gone); `--view <id>`: that view only, with what it draws (each arrow: id, kind, ends, references, stored or derived, label; each `hidden` id and what it takes out; a flow's step links) |
 | `xpl ready <explainer> [--note reason] [--require-review]` | shared readiness report before export; `--json` adds `ok` to the report above; 0 ready (warnings allowed), 1 blockers/failure, 2 usage; writes nothing; a note records intentional warning/omission decisions |
 | `xpl lint <explainer> [--patch <file\|->] [--warn-only]` | checks the text a reader sees (the index, when there is one, counts the boxes and arrows of maps): rules below; `--patch` lints the explainer as it would be after `xpl apply` of that patch (merged in memory as actor `llm`, nothing written; a patch apply would reject prints the rejection and exits 1); exit 1 with any finding (so `lint --patch && apply` stops on one), 0 with `--warn-only` unless a `todo-left` error |
 | `xpl change <explainer> [<base>..<head>]` | records the change from git in the explainer and prints its analysis (§4.8; below); without a range, prints the analysis of the change already recorded |
@@ -1238,7 +1288,7 @@ stdout (a rejection exits 1); fatal errors (`error: …`) and warnings (`warning
 | `xpl pr cleanup <directory> [--cache-dir dir]` | removes only a marked owned PR input directly under the selected cache; refuses symlinks and developer-tree paths |
 | `xpl draft change\|repo\|path <explainer> [<entry id> ...] [-o file]` | prints a patch skeleton built from the index (and the change record) with no LLM, `TODO:` in every text to write (below); the summary goes to stderr |
 | `xpl view <explainer> [--port p] [--host h] [--no-open]` | local server (below) |
-| `xpl service <start\|stop\|status> [explainer] [--background] [--port p] [--backend none\|claude] [--recover]` | optional repository-scoped lifecycle around the same viewer server; loopback only; persisted context and explicit interrupted-owner recovery |
+| `xpl service <start\|stop\|status> [explainer] [--background] [--port p] [--backend none\|claude] [--recover] [--watch]` | optional repository-scoped lifecycle around the same viewer server; loopback only; persisted context and explicit interrupted-owner recovery |
 | `xpl bundle <explainer> -o out.html [--mode explore\|present] [--tour id] [--files referenced\|boundary\|all] [--boundary-max n] [--embed-index full\|pruned] [--draft] [--note reason] [--require-review] [--allow-drift]` | self-contained HTML after the shared readiness check (exit 1 before writing with errors); `--draft` writes a labelled preview with findings; `--allow-drift` is a legacy draft flag that still refuses stale indexes; warnings and optional author notes are retained; `--tour` (`tour:intro` or `intro`) implies present mode; embeds the files the explainer references by default and prints what went in (`8 of 12 files embedded (referenced: 18.4 KB of source; --files all adds 4 files, 6.7 KB)`), `--files boundary` adds the direct callers, callees and tests of anchored symbols (at most `--boundary-max`, default 40), `--files all` every indexed file; with a change recorded, every changed file at head and the base text of the changed files go in too; the symbol index in it is pruned to what the viewer can draw with `--files referenced` or `boundary` and whole with `--files all` (`--embed-index` overrides) and packed (the summary line says `index 0.3 MB (1.3 MB as plain JSON, pruned from 9.0 MB)`) |
 | `xpl doctor [--agent none\|claude] [--skill-dir path]` | local setup report: Node, artifact hashes, grammar loading, installed skill and optional git/npx/Go; selected Claude Code availability; no downloads or authentication probes; required failures exit 1 |
 | `xpl skill install [--dir path]` | copies the bundled skill and writes its CLI binding; repeat to update; defaults to `~/.claude/skills/code-explainer`; refuses unmanaged directories, symlinks and local edits |
@@ -1280,8 +1330,10 @@ record, `xpl lint` with findings; 2 usage error. **Environment:**
 
 **Files in `.explainer/`:** `index-<commit>.json` (generated, git-ignored by `.explainer/.gitignore`),
 `cache/extraction-v1/` (generated file-local facts, git-ignored), `<name>.explainer.json` (committed),
-`requests.json` (the queue below). Writes are atomic (temp file + rename).
-CLI apply/resolve, creation, viewer edits and request appends also share per-file directory locks across processes.
+`requests.json` (the queue below), `revisions/<uuid>/` (generated, git-ignored revision journal and prior
+artifact). Writes are atomic (temp file + rename).
+CLI apply/resolve/revise, creation, viewer edits and request appends also share per-file directory locks
+across processes.
 Read input before locking; read the latest file, merge and check ownership, then write while holding the lock.
 Locks are never stolen on a timer. A crashed writer may leave `<file>.lock`: after verifying the writer has terminated,
 remove that directory and retry (writers time out after 30 seconds with that instruction).
@@ -1355,9 +1407,44 @@ last and made read-only. Each run gets a separate directory; earlier manifests a
 
 Failures remove only that run's owned directory and produce no input/ready result. A killed process can
 leave `.xpl-pr-owned.json`; explicit `cleanup` checks its canonical cache/directory ownership before removal.
-Stop any consumers before cleanup. Inputs are retained until cleanup; no timer removes them. This is
-preparation only: installed-agent handoff, base/head recheck, supersession and ready result/export remain
-future work. An input manifest alone must never be promoted as a ready or current version.
+Stop any consumers before cleanup. Inputs are retained until cleanup; no timer removes them. An input
+manifest alone must never be promoted as a ready or current version.
+
+`pr-creation.ts` owns the manual creation handoff and local result contract. `xpl pr create` prepares the
+input, verifies the installed skill inventory/absolute CLI binding and runs that skill's launcher for
+`new`, `change API-base..head` and `draft change`. `--name`, `--audience` and `--question` are required;
+`--skill-dir` selects a managed installation. `handoff.json` binds the input digest, guide name and CLI
+path/hash. Its explicit `/code-explainer` invocation tells the author to read the installed skill and
+create.md, inspect source and complete the draft. Its reusable `env` command prefix excludes inherited
+Git repository/config overrides, pins owned Git paths and the installed CLI, disables hooks/fsmonitor,
+and supplies the exact root/index. No generation backend, model subprocess or service is started.
+
+`xpl pr finish <input-directory>` serializes finish calls with the existing file lock, revalidates owned
+paths/input/index hashes after waiting, and requires the guide's complete change record and index to
+match the input. Raw tracked source outside `.explainer/` must still equal head blobs, including
+line endings, before and after export. `.explainer/` is excluded only during authoring because it holds
+generated outputs; preparation checks every blob. The installed launcher runs ordinary `bundle --files
+boundary` with the shared workspace readiness check and optional `--note`/`--require-review` policy.
+A source-backed exported snapshot is required; changed authored text/index during export refuses it.
+The checked explainer, full original head index and HTML are copied to a unique `result-*` directory.
+
+After export, `gh api` resolves the PR again. Both returned full base and head must match before a result
+is marked ready; a base-only target update also supersedes it. `result.json` is published atomically last
+and made read-only, as are snapshot files. `PrResultManifest` is CLI-owned, `schemaVersion: 1`,
+`kind: "github-pr-result"`, with `status: ready | superseded`, original `pr`, observed `pr`, `checkedAt`,
+input path/digest, installed skill/CLI identity, portable readiness report/identity, explainer/index/HTML
+relative paths and SHA-256 digests, and sorted included head/base file keys. Renamed base text uses the
+head path as its bundle key; input evidence retains `oldPath`. Unsupported source remains labeled in
+input evidence and is not falsely claimed as embedded. A superseded result is historical and exits 1;
+its common content readiness does not establish current PR eligibility. Access/export failures remove
+only the result staging directory, preserving the input/guide for retry; no result manifest is promoted.
+Each finish creates a new immutable snapshot, preserving previous results. CLI failures include recovery
+instructions, and interrupted locks require explicit removal only after their writer has stopped.
+
+Ready means the API matched at `checkedAt`; GitHub cannot lock an external PR during local export.
+#34 must verify artifact/input hashes and recheck both commits before its own current-pointer promotion
+or publication. This step starts no publishing workflow, writes no GitHub state and creates no current
+pointer. The offline HTML remains readable independently of GitHub or the retained checkout.
 
 **`xpl draft change|repo|path`** prints a patch that `xpl apply` accepts as it is: views, groups, overlays,
 participants, steps, anchors and a tour, with `TODO: <what to write>` in every text (tour notes as `### TODO:
@@ -1496,12 +1583,104 @@ which archives its record as `interrupted-<UUID>.json` before reserving another 
 never stolen on a timer: a crashed transaction requires explicit inspection/removal of its lock directory.
 An unexpected exit leaves the last valid index/explainer and interrupted instance record intact.
 
-This is lifecycle/context only (38A). Backend selection is a persisted label, with jobs unavailable;
-there is no agent execution, watching or job completion state. Local serving needs no provider network or
-credentials. A later configured Claude runner needs its own authentication and provider access. Viewer
-attachment/reconnect/backend availability belongs to 38B. Offline HTML and manual CLI commands remain
-independent of the service. The installed-artifact check exercises detached processes, saved-context
-restart, a real crash and explicit recovery, then manual export and disconnected reading after stop.
+Managed bundles add `server.attachment`: canonical root, repository-relative guide, instance UUID,
+backend selection and `backendAvailable: false`. Root/guide identify the attachment across restarts;
+the UUID identifies a process and participates in the workspace ETag. Every viewer API call sends
+`X-Xpl-Attachment` (URI-encoded root/guide JSON). The server rejects a different or unmanaged attachment
+with 409 before reads or writes. The page also preserves root/guide in its `attachment` URL query, checked
+before HTML injection, so a bookmark cannot silently open another guide on a reused port.
+
+Backend selection is a persisted label, with execution unavailable. Local serving needs no provider
+network or credentials. A later configured Claude runner needs its own authentication and provider access.
+Offline HTML and manual CLI commands remain independent of the service. The installed-artifact check
+exercises detached processes, saved-context and same-page/bookmark restart, a real crash and explicit
+recovery, then manual export and blocked-network reading of an HTML snapshot saved from a stopped page.
+
+**Opt-in watching** (`watch.ts`, 29A): `service start --watch` polls input metadata every 500 ms and
+requires a quiet observation for at least 300 ms before a full rebuild. Recursive filesystem events were
+not chosen: polling reuses the indexer's discovery rules, observes ignored configuration and works with
+Git worktrees and non-Git directories. Watching defaults to `--precise off`; `auto|require` explicitly
+enables semantic tools. `--scip` reloads and watches a supplied artifact or manifest/artifact pair.
+Watch options are per-start, never saved as an automatic opt-in. A pinned `--index` is rejected; a watched
+start clears a previously saved pin. Stop drains the running build and prevents cancelled publication.
+Restart and `--recover` reuse the saved guide/backend attachment with a new instance UUID. Passing
+`--watch` again publishes for that instance; live bundles retain the guide attachment and follow its
+current checked index. Recovery without `--watch` retires the old pointer and returns to manual indexes.
+Pause/resume, attention UI and revision handoff belong to 29B.
+
+The watcher compares captured revisions after building and again after acquiring all three publication
+locks (index, .gitignore and watch pointer), checking cancellation there before promoting the result. Obsolete results are discarded and the latest inputs are retried after quiet. `writeIndex` publishes
+by rename under `withRepositoryLock`; its .gitignore is fenced too. The watcher then atomically replaces
+`.explainer/service/watch.json` (`xpl-watch@1`): canonical root, instance UUID, state
+(`pending|building|current|failed|stopped`), stale flag, publication generation, last index path/commit,
+fingerprint, index-content digest, precise mode, nullable SCIP path and error. Source/configuration edits mark the old
+pointer stale before building. Failure retains that pointer and retries after another input revision or a
+new watched start.
+Cancellation keeps its stale mark. Repeated identical capture failures do not flood the log.
+
+While watching, default index selection follows the publication pointer before a guide's old binding.
+Freshness checks compare the full observed input fingerprint, including ignored configuration, and refuse
+ready export for pending/failed builds. The index digest also rejects an out-of-band replacement at the
+same path, even when the indexed file manifest is unchanged. Explicit `--index` still selects an index for
+manual commands.
+Freshness uses the watch record's precise mode and supplied artifact selection. Older records without
+that selection require a watched restart before readiness can be established.
+Every new service owner retires the prior watch record under the ownership lock before serving.
+Recovery without watching and stop return default selection and manual index/resolve to the offline path. Each completed
+build reports every guide's moved/drifted/missing counts; `status --all` recomputes the inventory on demand,
+including user-owned drift, broken references and unreadable guides. Moved anchors receive new locations
+in memory; guide files, prose, provenance, review records and pending feedback are untouched. Generated
+index/cache/service files, named guides/patches and exported xpl HTML cannot start an output loop.
+
+**Durable jobs, lifecycle contract (39A).** `cli/jobs.ts` owns one atomic ledger at
+`.explainer/service/jobs.json`: `{schema: "xpl-jobs@1", root, jobs}`. Job metadata stays outside the
+explainer and bundle. The service reserves its instance before opening the ledger. All ledger writes use
+`withRepositoryLock`; ownership is checked again after waiting. Storage cannot follow symlinks into
+source or another repository. A corrupt ledger refuses startup rather than erasing history.
+
+A watched start reserves the new instance and retires the prior watch pointer before opening jobs.
+Opening the ledger marks old running attempts interrupted; watching starts after the instance is running.
+The watcher owns index and watch records; jobs own the ledger. Stop drains the watcher, server and job
+worker before releasing service ownership. Neither subsystem can publish for a replaced instance.
+
+Each job has a caller-supplied UUID `id` (the delivery/idempotency key), revision `scope: {kind: "revision",
+guide, include}`, `selectedRequestIds`, and immutable `input: {revisionRunId, expected, index, requests}`.
+`guide` and `index` are repository-relative paths, resolved from the canonical repository root for
+selection, history, dispatch and retry, even when the service starts from another working directory.
+`expected` is the existing `ArtifactIdentity`.
+`requests` retain #28's original IDs, context, content and outcome baselines. `revisionRunId` refers to
+#30's journal, which retains the previous/resolved guide and source text. Selection calls `selectRevision`;
+there is no second proposal format or acceptance implementation. Re-delivery of the same ID and selection
+returns the saved job; conflicting reuse of an ID is refused. New feedback is never added to an existing
+job or removed from the request queue.
+
+Lifecycle `state` is `queued | running | completed | failed | cancelled | superseded | interrupted`.
+Jobs retain `createdAt`, `updatedAt`, numeric `attempt`, nullable `owner: {instanceId, attemptId}`,
+bounded progress messages, nullable failure reason and nullable `result: {revisionRunId}`. One runner
+per repository claims queued jobs in ledger order; cancelling a running job aborts its signal but does
+not start conflicting work until that invocation exits. Progress and completion check both owner IDs
+and running state under the ledger lock. Cancelled/superseded results and late old-attempt results are
+discarded. Completion records a proposal reference, never applies a patch or finalizes feedback.
+
+Restart marks previously running jobs `interrupted`, retains their input and progress, and requires an
+explicit retry. Queued jobs remain queued until a runner is available. Retry keeps the job and selection
+IDs, rechecks guide/source/request baselines, clears previous result/error and starts a new attempt.
+Only failed/interrupted jobs can start another attempt. Retry supplies `expectedAttempt` from the
+inspected job; an older baseline returns the saved receipt, including an already failed/completed retry.
+A future baseline is refused. Re-delivery while queued/running also returns the same attempt.
+Cancel and supersede also fence completed proposals. No state transition can restore them to completed.
+Shutdown marks running work interrupted and aborts it; instance replacement fences any late callbacks.
+Locks left by a killed transaction still require inspection/removal, never timeout-based theft.
+
+Managed services expose `GET /api/jobs`, `GET /api/jobs/<UUID>` and `POST /api/jobs` with
+`{id, selectedRequestIds, include?}`, plus `POST /api/jobs/<UUID>/<cancel|supersede>` with `{}` and
+`POST /api/jobs/<UUID>/retry` with `{expectedAttempt}`.
+Routes use the existing Host, attachment, JSON, origin and size guards and filter to the attached guide.
+No acceptance route exists in 39A. The installed service has no runner: submission/retry reports 503
+with an actionable unavailable reason, while history and cancellation remain usable after restart.
+An injected controlled runner proves lifecycle behavior only. 39B supplies one real configured runner
+and validates proposals through `xpl revise`; 39C adds progress/review UI and fenced acceptance through
+the existing revision commit/outcome recovery. Creation/answer scopes belong to those later changes.
 
 **Feedback contract** (`core/feedback.ts`): exports are `{schema: "code-explainer/feedback@1", requests}`.
 Each request has `id`, `elementId`, `kind` (`correct`, `explain`, `expand`), `at`, optional `note`, `view`,
@@ -1525,7 +1704,7 @@ from the stored outcome, preserving an imported terminal result and its reason. 
 never silently rebound. `--outcomes` reads an array of `{id, context, status, reason}` with the original
 context copied exactly. It updates those IDs and increments their revisions only. Failed writes leave
 the prior file and counters intact and retryable.
-The actual selected revision operation and acceptance/diff workflow belong to #30.
+The selected revision operation below commits reviewed decisions before recording their outcomes.
 
 **Bundle payload** (`ViewerBundle`, also `/api/bundle`): `{ schema: "code-explainer/bundle@0", explainer,
 index, files: Record<FilePath, string>, baseFiles?, mode?, tour?, server?, sourceWarning?, exportInfo?,
@@ -1598,6 +1777,53 @@ whose code is not embedded, opens only into the symbols the kept references end 
 file, and edges between two such ghosts are missing. `--files all` (or `--embed-index full`) keeps everything,
 and `xpl view` always serves the whole index.
 
+**Explicit revision** (`cli/revision.ts`, `xpl revise`). The installed skill asks the chosen agent for
+ordinary `ExplainerPatch` values, grouped by selected request ID. The CLI calls no model. Selection forces
+fresh index/source comparison, even under `XPL_SKIP_STALE_CHECK`, and resolves anchors in memory without
+writing the guide. Per-request patches are bounded to their selected element and author-listed extra/new IDs
+(`--include`). Feedback's optional `view` records reading context and grants no edit scope. A selected step
+allows only its `stepsUpdate` through the enclosing view/tour; whole-view changes require that view to be
+selected or explicitly included. Title/audience cannot change; core `llm` provenance rules protect user-owned
+content. Plain reviews show patch warnings and detailed readiness findings with repair hints, alongside the
+explanation before/after and source.
+
+Scope checks compare `(collection, id)` for top-level elements and `(collection, containerId, stepId)`
+for steps, encoded as JSON tuples so arbitrary tour-local IDs cannot alias another container's identity.
+Selection and `--include` are resolved against the retained artifact. Raw flow/sequence feedback IDs resolve
+to their actual owning view; reading context can disambiguate that step, not authorize the whole view.
+Explicit step addresses use `<view-id>/<step-id>` or `<tour-id>/<step-id>`. Every patch entry is checked in
+its actual collection. Only `stepsUpdate` may use step permission; full arrays, frames, graph include
+operations and other container fields require the container itself. Removal IDs resolve against the current
+candidate, so a preceding proposal cannot move a local ID and carry its old removal permission with it.
+Ordinary patch, stored element and feedback ID formats stay unchanged.
+
+A run lives in `.explainer/revisions/<uuid>/run.json`; `previous.json` retains the previous artifact.
+Generated paths are excluded from discovery. Selection and continuation reject generated directory aliases
+into source using the indexer's shared device/inode directory census (`repositoryDirectoryIdentities`),
+including empty/ignored directories, rather than guessing from path text. The journal retains original
+requests/outcome baselines, expected `artifactIdentity`, current index path, resolved candidate, reviewed
+source, proposals and decisions. Historical inspection returns the retained source and explanation diff.
+
+`--proposal` reviews `[{id, patch}]`; `--decisions` reviews one `{id, status, reason, reconciliation?,
+missing?}` per selected request. Only `addressed` patches enter the exact candidate; others stay stored with
+reasons. Accepted outdated context needs explicit reconciliation. Legacy unbound requests remain outdated.
+Missing anchors require an explicit `missing: [{id, action: "reanchor"|"remove"}]` decision for their owner.
+The patch supplies the repair/removal. Unrepaired missing anchors block ready acceptance. Location-only
+moves accept an empty patch and preserve prose. A wholly declined batch records decisions without changing
+or rebinding an unfinished artifact.
+
+`--accept` rechecks the current artifact against selection, live source hashes including additions/deletions,
+selected immutable request content/outcome baselines, and shared readiness on the exact reviewed candidate.
+It uses ordinary apply's `withLockedExplainer` publication seam. Lock order is journal, artifact, feedback.
+`recordOutcomes` validates under the feedback lock and calls revision's decision-commit callback before
+publishing any outcomes; concurrent feedback is merged against the latest store. Intent is journaled before
+atomic artifact publication, then committed state, selected outcomes, and the done receipt. Recovery accepts
+either the expected original artifact or already-published candidate; any other artifact refuses overwrite.
+Expected outcome revisions make the same result idempotent under the existing monotonic merge, while a
+conflicting newer outcome refuses replacement. Failed checks/write attempts keep feedback retryable. Killed
+writers require explicit removal of their reported locks after verifying they stopped. No watcher or service
+is involved; later #24/#29 integrations can invoke this same operation.
+
 ---
 
 ## 6. Viewer (`@xpl/viewer`)
@@ -1614,6 +1840,25 @@ notes, `detail`) is sanitised: raw HTML shows as text, images become their alt t
 mailto and in-page targets. Element and step summaries are rendered as inline markdown (`renderInline`: code
 spans, bold, emphasis); titles and labels are plain text. The page title is "<tour title> · xpl" while a tour
 is open (the Guide, Present), else "<explainer title> · xpl".
+
+**Connection** (`components/ConnectionStatus.tsx`): below the header, managed service pages report offline, connecting,
+connected, disconnected (network failure) or service unavailable (HTTP refusal). Managed pages name their
+guide; a disclosure shows root, last instance and backend unavailability. Existing two-second explainer
+polling also checks availability with unsaved edits; requests have a five-second deadline. A stopped or
+unavailable managed service keeps retrying the same address, never searches ports or changes roots.
+Unmanaged `xpl view` pages keep their existing layout without this strip. An unmanaged old server
+without `/explainer` stops polling on 404 for compatibility.
+
+**Use loaded snapshot offline** disables API reads/writes and polling, keeping loaded source, navigation,
+edits and browser feedback. Missing source says it is absent from the snapshot. Save as HTML uses embedded
+readiness and removes service metadata. **Retry connection** resumes the original scoped API; unsaved edits
+remain local until **Retry save**. View edits, tour edits, review additions/removals and bounded author edits share one pending-write queue, including offline
+changes. Dirty state follows that queue. Writes stay pending while in flight; success removes only the
+write sent, preserving newer edits. Author saves retain drafts on transport failure; Retry save records their
+inverse once. Rejected author writes leave the draft and history available for inspection. Static/offline
+author actions apply locally and remain unsaved in this page; reconnectable actions retain captured
+versions and retry against the original service.
+Reconnect does not overwrite unsaved changes with server state. Browser feedback is exported/imported explicitly, never auto-submitted.
 
 **Three modes, one header.** **Read** is the default screen, for readers. **Explore** is the author's
 workbench. **Present** plays a tour as slides. The header is one row built the same way in each: the title,
@@ -1813,7 +2058,7 @@ anchors drifted or went missing (`xpl bundle --allow-drift`, or `xpl view`), a b
 them (`DriftBanner.tsx`), drifted lines are striped (`xpl-hl-drifted`) and the pane says "changed since". The
 scope's `audience` line shows under the Guide's title. Under `xpl view` the page polls `GET /api/explainer`
 every 2 s (ETag, 304 while unchanged) and shows what `xpl apply` wrote without a reload, keeping the view,
-step and selection as far as they still exist; not while edits made on the page are unsaved.
+step and selection as far as they still exist; workspace adoption waits while edits made on the page are unsaved, but connection status still updates.
 
 **Text and concepts.** In Explore, select a node, stored arrow or concept and use **Edit text** in Details.
 Label, summary and Markdown detail stay in a form draft until **Save text**; concepts can also select related
@@ -2175,7 +2420,9 @@ identities to syntax ranges. This is a proposed contract revision, not a change 
 - The layout runs on the main thread: laying out a very large graph blocks the page, so views
   should stay coarse (whole-repo views start at packages) and are expanded by hand.
 - Live refresh is polling-based: updates appear on the next poll while the page is visible and has no
-  unsaved edits. Source locations and reference edges need reindexing after source changes.
+  unsaved edits; connection checks continue with unsaved edits. Source locations and reference edges
+  need reindexing after source changes; `service start --watch` supplies it automatically. Viewer
+  pause/resume, attention and revision controls remain follow-up work.
 - Heuristic references are hints, and the limits are in §3: no overloads, generics, unions or narrowing;
   Python instance attributes are not linked. A precise index needs the tools: `npx` for
   TypeScript and Python, Go ≥ 1.25 (or the network for the automatic toolchain) for Go, and the first run

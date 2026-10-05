@@ -12,6 +12,7 @@ export * from "./wasm.js";
 
 export { buildIndex, writeIndex } from "./build.js";
 export type { ExtractionReport } from "./extraction-cache.js";
+export { repositoryDirectoryIdentities } from "./extraction-cache.js";
 export type { BuildIndexOptions, BuildIndexResult } from "./build.js";
 
 export {
@@ -83,3 +84,6 @@ export { scipArtifactProvider } from "./scip/artifact.js";
 export type { ScipArtifactManifest, ScipArtifactOptions } from "./scip/artifact.js";
 export { resolveHeuristic } from "./resolve/heuristic.js";
 export type { ResolverFile, ResolverInput } from "./resolve/heuristic.js";
+
+export { captureIndexInputs, indexInputsChanged } from "./snapshot.js";
+export type { IndexInputs } from "./snapshot.js";

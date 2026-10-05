@@ -43,13 +43,21 @@ export async function shortHead(cwd: string, options?: GitOptions): Promise<stri
   return head && /^[0-9a-f]{7,}$/i.test(head) ? head.slice(0, 7).toLowerCase() : undefined;
 }
 
-/** True when nothing but `.explainer/` differs from HEAD (no modified, staged or untracked files). */
-export async function isWorkTreeClean(cwd: string, options?: GitOptions): Promise<boolean> {
-  const out = await runGit(
+/** The exact discovery/staging cleanliness input used by resolveCommitId. */
+export async function workTreeStatus(
+  cwd: string,
+  options?: GitOptions,
+): Promise<string | undefined> {
+  return runGit(
     cwd,
     ["status", "--porcelain=v1", "--ignore-submodules=all", "--", ".", ":(exclude).explainer"],
     options,
   );
+}
+
+/** True when nothing but `.explainer/` differs from HEAD (no modified, staged or untracked files). */
+export async function isWorkTreeClean(cwd: string, options?: GitOptions): Promise<boolean> {
+  const out = await workTreeStatus(cwd, options);
   return out !== undefined && out.trim() === "";
 }
 

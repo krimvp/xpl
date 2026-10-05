@@ -132,7 +132,7 @@ describe("xpl view", () => {
       const refused = await put(savedVersion, inverse, wrong);
       expect(refused.status).toBe(409);
       expect(await json(refused)).toMatchObject({
-        error: "This address serves a different repository or guide.",
+        error: "This address serves a different repository or guide. Open that service's own URL.",
       });
     }
     expect((await put(savedVersion, inverse, null)).status).toBe(400);
