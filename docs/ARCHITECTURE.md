@@ -1233,6 +1233,9 @@ array order and the absent hidden state.
 Undoing creation checks the entire group for enrichment and atomically restores include/membership and
 removes it. A later reference to that group makes removal fail rather than leave a dangling reference.
 User ownership survives every inverse; LLM refreshes preserve groups and edited membership/visibility.
+Pin and reset replace the stored map's bounded `layout` object (finite x/y pairs, node IDs only), marking
+that field as user-owned. Their conditional inverses restore its exact previous value, including absence.
+Reset may clear selected pins or all pins; a later placement edit conflicts rather than lose another pin.
 
 ### 4.8 Also in core
 
@@ -2078,7 +2081,18 @@ status stays in the sticky Save/Cancel bar, including the disabled Save reason.
   for nested includes, laid out inside-out with room for their header; an edge that crosses a container's
   border gets a port there (a node of its own in the container's first or last layer), so the part inside
   is routed around the boxes; edges routed inside their lowest common container, right-angled, with the ends that share a side of a box spread along it and the turns in one gap
-  between layers on separate tracks. If the layout throws, a grid layout keeps the diagram usable (`data-fallback`). Edges are styled by resolution: precise,
+  between layers on separate tracks. `GraphView.layout` replaces automatic positions at each container
+  level before sizing its parent. Pins are finite logical coordinates relative to the rendered container,
+  or to the canvas for roots. Negative child coordinates expand the container frame to the left/top
+  without translating those children or changing saved pins. Routes reconnect to the moved frames;
+  unpinned siblings yield space when a pin occupies their old position. Changed levels discard stale
+  dagre tracks and detour around other boxes. Live maps, Reader and Guide
+  pictures share those positions and bounds, including offline HTML. Hidden pins stay stored until
+  restored; opening a map inside another uses the outer map's pins. Each stored level has its own layout.
+  A selected box in Explore has a move handle: drag previews locally, release writes one `editGraph`
+  pin through author history; Enter pins here and arrow keys move by 20 px. Cancel leaves no edit.
+  **Edit map** resets selected/all placement to automatic layout with the same undo. Pan/zoom remain
+  transient navigation. If the layout throws, a grid layout keeps the diagram usable (`data-fallback`). Edges are styled by resolution: precise,
   heuristic (thinner and lighter), `llm`, `user`; stubs are dashed and lead to ghost boxes (at most 8 by
   default plus one "+N more" per direction, see §4.4; ghosts that stand for several elements have a dotted
   border and a list icon). Click selects (shift/ctrl/cmd adds, the background clears); clicking a ghost for
@@ -2542,9 +2556,6 @@ identities to syntax ranges. This is a proposed contract revision, not a change 
   known. A read of a local or parameter, through a receiver of unknown type or by dynamic access is not
   recorded, and `reads` edges are off by default (`DEFAULT_EDGE_KINDS`; the viewer's toggle and `edgeKinds`
   switch them on; stored `reads` edges are always shown).
-- `GraphView.layout` (hand-pinned positions) is validated and accepted in patches but the viewer never reads
-  it. Explore offers grouping and individual visibility with undo; rendered pins and placement reset
-  remain follow-up work.
 - The layout runs on the main thread: laying out a very large graph blocks the page, so views
   should stay coarse (whole-repo views start at packages) and are expanded by hand.
 - Live refresh is polling-based: updates appear on the next poll while the page is visible and has no
@@ -2581,7 +2592,7 @@ identities to syntax ranges. This is a proposed contract revision, not a change 
 
 **Next steps, roughly by value** (the review in `docs/review-2026-10-01.md` has the roadmap): an independent
 accuracy pass for change explainers; a word-level diff in rewritten lines; editable step titles and code in
-the viewer; a UI for hiding and pinning, or dropping the unused `layout` field; the layout in a Web Worker; more
+the viewer; the layout in a Web Worker; more
 language packs (each needs `extract`, `classifySite`, `resolveModule`, and optionally a SCIP resolver);
 publishing the packaged CLI through a selected release channel; a regeneration mode in the skill that
 walks `xpl status` on its own.

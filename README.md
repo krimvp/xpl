@@ -231,7 +231,9 @@ Shift-click boxes to select them together. **Ungroup in this map** shows the mem
 group available to other maps, arrows and tour steps. **Hide selected items** hides individual boxes or
 arrows; the same menu lists hidden IDs with **Restore** and **Restore all hidden items**.
 These actions share text/evidence undo, persist live and travel in HTML/JSON exports. Opening another
-level remains navigation. Saved coordinate pins are still not rendered; placement is follow-up work.
+level remains navigation. Select a box and drag its move handle to pin it, or use arrow keys on the handle.
+**Reset selected placement** or **Reset all placement** returns boxes to automatic layout. Pins are finite
+coordinates relative to their container; nested frames and arrows follow them. Pan and zoom do not edit the map.
 
 Edit > Record author review records a self-reported name, inspected content/evidence scope and named
 omissions. About this explanation shows **unchecked**, **reviewed** or **out of date** separately from

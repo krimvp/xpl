@@ -218,3 +218,229 @@ test("regrouping visible children of a hidden container nests both boxes and kee
   await expect(newGroup.locator('[data-element-id="file:src/worker.ts"]')).toBeVisible();
   await expect(newGroup.locator('[data-element-id="file:src/metrics.ts"]')).toBeVisible();
 });
+
+test("live pins reload, reset with exact undo and export linked system, service and nested code maps", async ({
+  page,
+}) => {
+  const dir = mkdtempSync(join(tmpdir(), "xpl-pins-e2e-"));
+  cpSync(new URL("../../../fixtures/py-jobrunner", import.meta.url), dir, { recursive: true });
+  const command = (args: string[]) =>
+    run([...args, "--root", dir], { cwd: dir, out() {}, err() {} });
+  expect(await command(["index", "--precise", "off"])).toBe(0);
+  expect(await command(["new", "demo"])).toBe(0);
+  expect(
+    await command([
+      "apply",
+      "demo",
+      new URL(
+        "../../../skill/code-explainer/reference/examples/py-overview.patch.json",
+        import.meta.url,
+      ).pathname,
+    ]),
+  ).toBe(0);
+  const patchPath = join(dir, "code.patch.json");
+  writeFileSync(
+    patchPath,
+    JSON.stringify({
+      views: [
+        {
+          id: "view:code",
+          type: "graph",
+          title: "Worker code",
+          include: [
+            "file:jobrunner/worker.py",
+            "sym:jobrunner/worker.py#Worker",
+            "sym:jobrunner/worker.py#Worker.run",
+            "sym:jobrunner/worker.py#WorkerPool",
+            "sym:jobrunner/worker.py#WorkerPool.lease",
+          ],
+          layout: {
+            "sym:jobrunner/worker.py#Worker": { x: -30, y: 100 },
+            "sym:jobrunner/worker.py#Worker.run": { x: 140, y: -10 },
+          },
+          stubs: { mode: "none" },
+        },
+      ],
+    }),
+  );
+  expect(await command(["apply", "demo", patchPath])).toBe(0);
+  const path = join(dir, ".explainer/demo.explainer.json");
+  const saved = () => JSON.parse(readFileSync(path, "utf8"));
+  const server = await startViewServer({
+    env: { root: dir, cwd: dir, env: process.env, indexOption: undefined, warn() {} },
+    explainerPath: path,
+    host: "127.0.0.1",
+    port: 0,
+    viewerHtml: () => readFileSync(new URL("../dist/index.html", import.meta.url), "utf8"),
+  });
+  const levels = [
+    ["view:system", "grp:job-runner", "Job runner"],
+    ["view:overview", "file:jobrunner/worker.py", "Workers"],
+    ["view:code", "sym:jobrunner/worker.py#Worker.run", "Worker.run"],
+  ];
+  const placements: Record<string, { x: number; y: number }> = {};
+  try {
+    for (const [view, id, label] of levels) {
+      await page.goto(server.url + `?mode=explore&view=${view}`);
+      await page.waitForFunction(() => !!window.__xpl);
+      await page.evaluate((id) => window.__xpl!.select([id]), id!);
+      const node = byId(page, id!);
+      await expect(node).toBeVisible();
+      const before = await node.evaluate((el) => {
+        const t = (el as SVGGraphicsElement).transform.baseVal.getItem(0).matrix;
+        return { x: t.e, y: t.f };
+      });
+      const handle = page.getByRole("button", { name: `Move ${label}`, exact: true });
+      await handle.focus();
+      await handle.press("ArrowRight");
+      const position = { x: before.x + 20, y: before.y };
+      placements[view!] = position;
+      await expect
+        .poll(() => saved().views.find((v: { id: string }) => v.id === view).layout[id!])
+        .toEqual(position);
+      await expect(node).toHaveAttribute("transform", `translate(${position.x} ${position.y})`);
+      await page.reload();
+      await page.waitForFunction(() => !!window.__xpl);
+      await expect(node).toHaveAttribute("transform", `translate(${position.x} ${position.y})`);
+      await page.evaluate((id) => window.__xpl!.select([id]), id!);
+      await expect
+        .poll(async () => (await focusOf(page)).map((f) => f.file))
+        .toContain("jobrunner/worker.py");
+    }
+    // A real drag in a nested container follows SVG coordinates and writes only on release.
+    await expect(byId(page, "file:jobrunner/worker.py").locator(".focus-ring").first()).toHaveCSS(
+      "fill",
+      "none",
+    );
+    const code = byId(page, levels[2]![1]!);
+    const handle = page.getByRole("button", { name: "Move Worker.run", exact: true });
+    const rect = (await handle.boundingBox())!;
+    const scale = await code.evaluate((el) => (el as SVGGraphicsElement).getScreenCTM()!.a);
+    const expectedDrag = {
+      x: placements["view:code"]!.x + 35 / scale,
+      y: placements["view:code"]!.y + 25 / scale,
+    };
+    const beforeDrag = readFileSync(path, "utf8");
+    await handle.focus();
+    await page.mouse.move(rect.x + rect.width / 2, rect.y + rect.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(rect.x + rect.width / 2 + 15, rect.y + rect.height / 2 + 15);
+    await page.keyboard.press("Escape");
+    await page.mouse.up();
+    await expect(code).toHaveAttribute(
+      "transform",
+      `translate(${placements["view:code"]!.x} ${placements["view:code"]!.y})`,
+    );
+    expect(readFileSync(path, "utf8")).toBe(beforeDrag);
+
+    await page.mouse.move(rect.x + rect.width / 2, rect.y + rect.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(rect.x + rect.width / 2 + 35, rect.y + rect.height / 2 + 25, {
+      steps: 5,
+    });
+    expect(readFileSync(path, "utf8")).toBe(beforeDrag);
+    await page.mouse.up();
+    await expect
+      .poll(() => {
+        const position = saved().views.find((v: { id: string }) => v.id === "view:code").layout[
+          levels[2]![1]!
+        ];
+        return [Number(position.x.toFixed(3)), Number(position.y.toFixed(3))];
+      })
+      .toEqual([Number(expectedDrag.x.toFixed(3)), Number(expectedDrag.y.toFixed(3))]);
+    await history(page);
+    await expect(code).toHaveAttribute(
+      "transform",
+      `translate(${placements["view:code"]!.x} ${placements["view:code"]!.y})`,
+    );
+    const controls = await openGraphControls(page);
+    await controls.getByRole("button", { name: "Reset selected placement" }).click();
+    await expect
+      .poll(
+        () =>
+          saved().views.find((v: { id: string }) => v.id === "view:code").layout[levels[2]![1]!],
+      )
+      .toBeUndefined();
+    await history(page);
+    await expect(code).toHaveAttribute(
+      "transform",
+      `translate(${placements["view:code"]!.x} ${placements["view:code"]!.y})`,
+    );
+    // Navigation does not author a graph patch.
+    await controls.locator("summary").click();
+    const beforeZoom = readFileSync(path, "utf8");
+    await page.getByRole("button", { name: "Zoom in", exact: true }).click();
+    expect(readFileSync(path, "utf8")).toBe(beforeZoom);
+    // A generated refresh respects existing user ownership, including 32A's group and hidden IDs.
+    await page.evaluate(() => window.__xpl!.setView("view:overview"));
+    await page.evaluate(() => window.__xpl!.select(["file:jobrunner/worker.py", "grp:events"]));
+    const serviceControls = await openGraphControls(page);
+    await serviceControls.getByLabel("Group name").fill("Execution");
+    await serviceControls.getByRole("button", { name: "Group selected boxes" }).click();
+    await expect(byId(page, "grp:execution")).toBeVisible();
+    await page.evaluate(() => window.__xpl!.select(["file:jobrunner/__main__.py"]));
+    await serviceControls.getByRole("button", { name: "Hide selected items" }).click();
+    await expect(byId(page, "file:jobrunner/__main__.py")).toHaveCount(0);
+    const prior = saved();
+    writeFileSync(
+      patchPath,
+      JSON.stringify({
+        remove: ["grp:execution"],
+        views: [
+          {
+            id: "view:overview",
+            title: "Regenerated parts",
+            include: ["file:jobrunner/worker.py"],
+            hidden: [],
+            layout: {},
+          },
+        ],
+      }),
+    );
+    expect(await command(["apply", "demo", patchPath])).toBe(0);
+    const regenerated = saved();
+    expect(regenerated.nodes.find((n: { id: string }) => n.id === "grp:execution")).toEqual(
+      prior.nodes.find((n: { id: string }) => n.id === "grp:execution"),
+    );
+    const service = regenerated.views.find((v: { id: string }) => v.id === "view:overview");
+    const priorService = prior.views.find((v: { id: string }) => v.id === "view:overview");
+    expect({ include: service.include, hidden: service.hidden, layout: service.layout }).toEqual({
+      include: priorService.include,
+      hidden: priorService.hidden,
+      layout: priorService.layout,
+    });
+    await page.goto(server.url + "?mode=explore&view=view:overview");
+    await page.waitForFunction(() => !!window.__xpl);
+    await expect(byId(page, "grp:execution")).toBeVisible();
+    await expect(byId(page, "file:jobrunner/__main__.py")).toHaveCount(0);
+    await (await openEditMenu(page)).getByTestId("edit-save-html").click();
+    const [download] = await Promise.all([
+      page.waitForEvent("download"),
+      page.getByTestId("save-html-draft").click(),
+    ]);
+    const exportPath = join(dir, "pinned.html");
+    await download.saveAs(exportPath);
+    await page.context().setOffline(true);
+    for (const width of [1440, 390]) {
+      await page.setViewportSize({ width, height: 900 });
+      for (const [view, id] of levels) {
+        await page.goto(pathToFileURL(exportPath).href + `?perspective=map&view=${view}`);
+        await page.waitForFunction(() => !!window.__xpl);
+        const pos = placements[view!]!;
+        await expect(byId(page, id!)).toHaveAttribute("transform", `translate(${pos.x} ${pos.y})`);
+        await page.evaluate((id) => window.__xpl!.select([id]), id!);
+        await expect
+          .poll(async () => (await focusOf(page)).map((f) => f.file))
+          .toContain("jobrunner/worker.py");
+        await expect(page.locator(".move-handle")).toHaveCount(0);
+        await page.getByRole("button", { name: "Show source", exact: true }).click();
+        await expect(page.locator(".cm-editor").first()).toBeVisible();
+        if (view === "view:code")
+          await expect(page.locator(".cm-line.xpl-hl").first()).toBeVisible();
+      }
+    }
+  } finally {
+    await server.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
