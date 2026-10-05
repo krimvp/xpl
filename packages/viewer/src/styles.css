@@ -4248,3 +4248,12 @@ code {
   opacity: 0.5;
   cursor: default;
 }
+
+.text-edit .actions {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  padding-block: 8px;
+  background: var(--panel);
+  border-top: 1px solid var(--border);
+}

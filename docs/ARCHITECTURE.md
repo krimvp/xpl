@@ -1815,16 +1815,22 @@ step and selection as far as they still exist; not while edits made on the page 
 
 **Text and concepts.** In Explore, select a node, stored arrow or concept and use **Edit text** in Details.
 Label, summary and Markdown detail stay in a form draft until **Save text**; concepts can also select related
-elements. The header names unsaved drafts, saving, saved and rejected edits. Cancel drops only the form draft.
+elements. Drafts live in the store, keyed by element, until saved or explicitly cancelled; switching boxes or
+returning to reading keeps them. Save/Cancel stay visible at the bottom of the editor. Summary-only corrections
+do not require fixing an existing empty label. The header names unsaved drafts, saving, saved and rejected edits.
 Live saves check the version captured when the editor opened; a stale form must be reopened and inspected.
 Source remains read-only. Missing/drifted evidence is not repaired implicitly; selection and repair controls
 belong to the next authoring step. A review record is optional and stays present when content changes.
 
-Edit → **Undo text edit** / **Redo text edit** writes the inverse through the same patch route. Before a live
+Edit → **Undo** / **Redo** names the changed fields and element and writes the inverse through the same patch
+route. Before a live
 undo, the viewer fetches the current bundle, then checks only the touched field values and submits its current
 artifact version. Unrelated concurrent edits survive; edits to the same field reject without moving history.
-History holds at most 50 operations and is retained in browser storage for live reloads; storage refusal is
-visible and does not undo a successful disk save. Static edits/history live in memory until JSON or HTML is
+History holds at most 50 operations. Persisted records carry a checked identity as well as a storage key:
+managed attachments use repository root and guide name, excluding the process instance. Without an attachment,
+only an exact explainer/source identity match restores history on reload. Legacy or mismatched records are
+ignored; touched-field preconditions still protect every server save. Storage refusal is visible and does not
+undo a successful disk save. Static edits/history live in memory until JSON or HTML is
 exported; original-page reload discards them. An open form draft or save blocks HTML export. Undo never
 replaces an artifact or restores old provenance/review records. Existing tour/view edits keep their prior
 save paths and tour-step deletion undo.

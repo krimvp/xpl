@@ -121,6 +121,11 @@ type Navigation = Pick<
   | "applied"
 >;
 
+export interface AuthorDraft {
+  edit: UserEdit;
+  version: ArtifactIdentity;
+}
+
 export interface ViewerState {
   perspective: Perspective;
   canGoBack: boolean;
@@ -188,6 +193,7 @@ export interface ViewerState {
   save: SaveState;
   editBusy: boolean;
   editDraft: boolean;
+  textDrafts: Readonly<Record<string, AuthorDraft>>;
   undoCount: number;
   redoCount: number;
   editHistoryError?: string;
@@ -234,13 +240,23 @@ export class ViewerStore {
   private readonly undoEdits: UserEdit[][] = [];
   private readonly redoEdits: UserEdit[][] = [];
   private readonly editStorageKey: string;
+  private readonly editAttachment: { root: string; guide: string } | undefined;
   /** The reading tab (Guide, Map, Flow, Code) last on screen: where "Back to reading" goes from Explore. */
   private reading: Exclude<Perspective, "explore"> = "guide";
   /** Namespace of the page as loaded; edits change request context, never where requests are saved. */
   private readonly feedbackStorageKey: string;
 
   constructor(bundle: ViewerBundle, launch: LaunchParams = {}) {
-    this.editStorageKey = `xpl-edits:${JSON.stringify([bundle.explainer.repo?.name, bundle.explainer.title, bundle.server?.api, typeof location !== "undefined" ? location.pathname : ""])}`;
+    // #38B supplies the managed attachment; process instance IDs change on restart.
+    this.editAttachment =
+      bundle.server && "attachment" in bundle.server
+        ? (bundle.server.attachment as { root: string; guide: string } | undefined)
+        : undefined;
+    this.editStorageKey = `xpl-edits:${JSON.stringify(
+      this.editAttachment
+        ? [this.editAttachment.root, this.editAttachment.guide]
+        : [bundle.server?.api, typeof location !== "undefined" ? location.pathname : ""],
+    )}`;
     const identity = artifactIdentity(bundle.explainer, bundle.index);
     this.feedbackStorageKey = `xpl-feedback:${identity.explainerHash}:${identity.sourceHash}`;
     this.indexModel = asIndexModel(bundle.index);
@@ -286,6 +302,7 @@ export class ViewerStore {
       save: { status: "idle" },
       editBusy: false,
       editDraft: false,
+      textDrafts: {},
       undoCount: 0,
       redoCount: 0,
       serverMode: this.api !== undefined,
@@ -298,10 +315,15 @@ export class ViewerStore {
     if (this.api && typeof localStorage !== "undefined") {
       try {
         const stored = JSON.parse(localStorage.getItem(this.editStorageKey) ?? "null") as {
+          identity: string;
           undo: UserEdit[][];
           redo: UserEdit[][];
         } | null;
-        if (stored && Array.isArray(stored.undo) && Array.isArray(stored.redo)) {
+        if (
+          stored?.identity === this.editHistoryIdentity() &&
+          Array.isArray(stored.undo) &&
+          Array.isArray(stored.redo)
+        ) {
           this.undoEdits.push(...stored.undo.slice(-50));
           this.redoEdits.push(...stored.redo.slice(-50));
           this.set({ undoCount: this.undoEdits.length, redoCount: this.redoEdits.length });
@@ -1062,23 +1084,44 @@ export class ViewerStore {
     id: string,
     fields: Record<string, unknown>,
   ): { edit: UserEdit; version: ArtifactIdentity } {
-    return {
+    const draft = this.state.textDrafts[id] ?? {
       edit: makeUserEdit(this.state.explainer, this.indexModel, collection, id, fields),
       version: artifactIdentity(this.state.explainer, this.indexModel.index),
     };
+    this.set({ textDrafts: { ...this.state.textDrafts, [id]: draft } });
+    return draft;
   }
 
-  setEditDraft(dirty: boolean): void {
-    this.set({ editDraft: dirty });
-  }
-
-  cancelEdit(): void {
-    this.set({
-      editDraft: false,
-      ...(this.state.editError
-        ? { editError: undefined, save: { status: "idle" } as SaveState }
-        : {}),
+  updateEditDraft(id: string, values: Record<string, unknown>): void {
+    const draft = this.state.textDrafts[id];
+    if (!draft || this.state.editBusy) return;
+    this.setTextDrafts({
+      ...this.state.textDrafts,
+      [id]: { ...draft, edit: { ...draft.edit, after: values } },
     });
+  }
+
+  private setTextDrafts(textDrafts: ViewerState["textDrafts"]): void {
+    const editDraft = Object.values(textDrafts).some(({ edit }) =>
+      Object.keys(edit.after).some(
+        (key) => JSON.stringify(edit.after[key]) !== JSON.stringify(edit.before[key]),
+      ),
+    );
+    this.set({ textDrafts, editDraft });
+  }
+
+  cancelEdit(id: string): void {
+    const textDrafts = { ...this.state.textDrafts };
+    delete textDrafts[id];
+    this.setTextDrafts(textDrafts);
+    if (this.state.editError) this.set({ editError: undefined, save: { status: "idle" } });
+  }
+
+  private editHistoryIdentity(): string {
+    if (this.editAttachment)
+      return JSON.stringify(["attachment", this.editAttachment.root, this.editAttachment.guide]);
+    const identity = artifactIdentity(this.state.explainer, this.indexModel.index);
+    return JSON.stringify(["explainer", identity.explainerHash, identity.sourceHash]);
   }
 
   private keepEditHistory(): void {
@@ -1087,7 +1130,11 @@ export class ViewerStore {
     try {
       localStorage.setItem(
         this.editStorageKey,
-        JSON.stringify({ undo: this.undoEdits, redo: this.redoEdits }),
+        JSON.stringify({
+          identity: this.editHistoryIdentity(),
+          undo: this.undoEdits,
+          redo: this.redoEdits,
+        }),
       );
       this.set({ editHistoryError: undefined });
     } catch (error) {
@@ -1102,8 +1149,21 @@ export class ViewerStore {
     this.undoEdits.push(inverse);
     if (this.undoEdits.length > 50) this.undoEdits.shift();
     this.redoEdits.length = 0;
-    this.set({ editDraft: false });
+    const textDrafts = { ...this.state.textDrafts };
+    for (const edit of edits) delete textDrafts[edit.id];
+    this.setTextDrafts(textDrafts);
     this.keepEditHistory();
+  }
+
+  editHistoryDescription(redo = false): string {
+    return (
+      (redo ? this.redoEdits : this.undoEdits)
+        .at(-1)
+        ?.map(
+          (edit) => `${Object.keys(edit.after).join(", ")} of ${this.state.model.label(edit.id)}`,
+        )
+        .join("; ") ?? "text edit"
+    );
   }
 
   /** Refresh unrelated content first; touched-field preconditions still forbid overwriting another author. */

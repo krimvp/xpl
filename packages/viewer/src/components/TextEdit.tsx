@@ -1,13 +1,12 @@
-import { useEffect, useState } from "react";
-import type { UserEdit, ArtifactIdentity } from "@xpl/core";
+import type { UserEdit } from "@xpl/core";
+import type { AuthorDraft } from "../store.js";
 import { useStore, useViewerState } from "../hooks.js";
-import { messageOf } from "../data.js";
 
 /** Author text stays a draft until Save; source and evidence are read-only here. */
 export function TextEdit({ collection, id }: { collection: UserEdit["collection"]; id: string }) {
   const store = useStore();
   const state = useViewerState();
-  const [captured, setCaptured] = useState<{ edit: UserEdit; version: ArtifactIdentity }>();
+  const captured = state.textDrafts[id];
   if (!captured)
     return (
       <button
@@ -23,53 +22,36 @@ export function TextEdit({ collection, id }: { collection: UserEdit["collection"
                 ? state.model.edge(id)
                 : state.model.concept(id);
           if (!item) return;
-          setCaptured(
-            store.captureEdit(collection, id, {
-              label: item.label,
-              summary: item.summary ?? null,
-              detail: item.detail ?? null,
-              ...(collection === "concepts"
-                ? { related: state.model.concept(id)?.related ?? null }
-                : {}),
-            }),
-          );
+          store.captureEdit(collection, id, {
+            label: item.label,
+            summary: item.summary ?? null,
+            detail: item.detail ?? null,
+            ...(collection === "concepts"
+              ? { related: state.model.concept(id)?.related ?? null }
+              : {}),
+          });
         }}
       >
         Edit text{collection === "concepts" ? " and related elements" : ""}
       </button>
     );
-  return (
-    <TextDraft
-      captured={captured}
-      onClose={() => {
-        store.cancelEdit();
-        setCaptured(undefined);
-      }}
-    />
-  );
+  return <TextDraft captured={captured} />;
 }
 
-function TextDraft({
-  captured,
-  onClose,
-}: {
-  captured: { edit: UserEdit; version: ArtifactIdentity };
-  onClose(): void;
-}) {
+function TextDraft({ captured }: { captured: AuthorDraft }) {
   const store = useStore();
   const state = useViewerState();
-  const [values, setValues] = useState(captured.edit.after);
-  const [error, setError] = useState("");
+  const values = captured.edit.after;
+  const setValues = (next: Record<string, unknown>) =>
+    store.updateEditDraft(captured.edit.id, next);
+  const onClose = () => store.cancelEdit(captured.edit.id);
+  const error = state.editError;
   const changed = Object.fromEntries(
     Object.entries(values).filter(
       ([key, value]) => JSON.stringify(value) !== JSON.stringify(captured.edit.before[key]),
     ),
   );
   const dirty = Object.keys(changed).length > 0;
-  useEffect(() => {
-    store.setEditDraft(dirty);
-    return () => store.setEditDraft(false);
-  }, [store, dirty]);
   const related = values.related as string[] | null;
   const options = [
     ...new Set([
@@ -82,7 +64,6 @@ function TextDraft({
     ]),
   ];
   const save = async () => {
-    setError("");
     try {
       await store.saveEdits(
         [
@@ -97,8 +78,8 @@ function TextDraft({
         captured.version,
       );
       onClose();
-    } catch (cause) {
-      setError(messageOf(cause));
+    } catch {
+      // The store retains the failed draft and its error across navigation.
     }
   };
   return (
@@ -163,12 +144,7 @@ function TextDraft({
         </p>
         {error && <p role="alert">{error}</p>}
         <div className="actions">
-          <button
-            type="submit"
-            className="btn"
-            disabled={!dirty || !String(values.label).trim()}
-            data-testid="text-save"
-          >
+          <button type="submit" className="btn" disabled={!dirty} data-testid="text-save">
             Save text
           </button>
           <button type="button" className="btn" onClick={onClose}>

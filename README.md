@@ -161,7 +161,8 @@ Generated XPL HTML pages are excluded from indexing, so exporting inside a repo 
 In Explore, select a box, stored arrow or concept and choose **Edit text** in Details. Correct its label,
 summary or Markdown detail; concepts also have a related-elements selector. **Save text** retains user
 ownership, and **Cancel** drops the draft. Live saves survive reload and reject stale inspected versions.
-Edit > **Undo text edit** / **Redo text edit** saves only the changed fields, preserving another author's
+Drafts survive switching boxes and returning to reading until saved or cancelled. Save/Cancel stay visible.
+Edit > **Undo** / **Redo** names the fields and element and saves only changed fields, preserving another author's
 unrelated edits and refusing conflicts on the same field. Live history retains up to 50 edits in browser
 storage. Offline edits remain **Unsaved** until exported as HTML or JSON. Source stays read-only; broken
 evidence still needs the existing explicit patch/repair workflow.

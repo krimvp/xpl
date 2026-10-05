@@ -363,13 +363,13 @@ function EditMenu({ toursOpen, onTours }: { toursOpen: boolean; onTours: () => v
             <>
               <MenuItem
                 testId="edit-undo"
-                title="Undo text edit"
+                title={`Undo ${store.editHistoryDescription()}`}
                 disabled={!state.undoCount || state.editBusy || state.editDraft}
                 onClick={run(() => void store.undoEdit().catch(() => undefined))}
               />
               <MenuItem
                 testId="edit-redo"
-                title="Redo text edit"
+                title={`Redo ${store.editHistoryDescription(true)}`}
                 disabled={!state.redoCount || state.editBusy || state.editDraft}
                 onClick={run(() => void store.undoEdit(true).catch(() => undefined))}
               />

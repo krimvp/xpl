@@ -11,6 +11,42 @@ function graphStore(server = false, files = makeBundle().files) {
   return new ViewerStore(bundle);
 }
 
+it("checks the stored attachment identity and keeps history across a managed restart", () => {
+  const history = JSON.stringify({
+    identity: '["attachment","/repo/a","guide-a"]',
+    undo: [
+      [
+        {
+          collection: "concepts",
+          id: "concept:retry",
+          before: { summary: "Saved." },
+          after: { summary: null },
+        },
+      ],
+    ],
+    redo: [],
+  });
+  // Browser storage is untrusted; a copied record must be checked even if the key matches.
+  vi.stubGlobal("localStorage", { getItem: () => history });
+  try {
+    const counts = [
+      { root: "/repo/a", guide: "guide-a", instanceId: "restarted" },
+      { root: "/repo/b", guide: "guide-a", instanceId: "restarted" },
+      { root: "/repo/a", guide: "guide-b", instanceId: "restarted" },
+    ].map(
+      (attachment) =>
+        new ViewerStore(
+          makeBundle({
+            server: Object.assign({ api: "/api" }, { attachment }),
+          }),
+        ).getState().undoCount,
+    );
+    expect(counts).toEqual([1, 0, 0]);
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
 describe("selection", () => {
   it("replaces, toggles and clears; a selection change clears the caret and the opened file", () => {
     const store = new ViewerStore(makeBundle(), { view: "view:flow" });
@@ -446,11 +482,14 @@ describe("under xpl view (server mode)", () => {
   it("keeps the selected item and open text draft until save or cancel", () => {
     const store = new ViewerStore(makeBundle());
     store.select(["concept:retry"]);
-    store.setEditDraft(true);
+    store.captureEdit("concepts", "concept:retry", {
+      summary: store.getState().model.concept("concept:retry")?.summary ?? null,
+    });
+    store.updateEditDraft("concept:retry", { summary: "Draft." });
     const changed = { ...store.getState().explainer, concepts: [] };
     expect(store.adoptExplainer(changed)).toBe(false);
     expect(store.getState().selection).toEqual(["concept:retry"]);
-    store.cancelEdit();
+    store.cancelEdit("concept:retry");
     expect(store.adoptExplainer(changed)).toBe(true);
     expect(store.getState().selection).toEqual([]);
   });
