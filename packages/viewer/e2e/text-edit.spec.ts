@@ -131,6 +131,7 @@ test("a failed author save survives offline mode and retries once after reconnec
     await page.getByLabel("Summary", { exact: true }).fill("Keep the draft through reconnect.");
     await page.getByTestId("text-save").click();
     await expect(page.getByRole("alert")).toContainText("Failed to fetch");
+    await page.getByText("Connection details", { exact: true }).click();
     await page.getByRole("button", { name: "Use loaded snapshot offline" }).click();
     await expect(page.getByLabel("Summary", { exact: true })).toHaveValue(
       "Keep the draft through reconnect.",

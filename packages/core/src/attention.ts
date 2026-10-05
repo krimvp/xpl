@@ -16,6 +16,7 @@ export interface WatchAttention {
     counts: { moved: number; drifted: number; missing: number } | null;
     elements: { id: string; file: string; status: "moved" | "drifted" | "missing" }[];
     errors: string[];
+    resolveCommand: string;
     revisionCommand: string;
   }[];
 }

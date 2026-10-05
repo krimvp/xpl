@@ -153,9 +153,11 @@ keep the previous index marked out of date. Moved code keeps its prose; drifted 
 block ready export. Watching saves no guide text, accepts no generated revisions and leaves feedback intact.
 It defaults to heuristic references (`--precise off`); `--precise auto|require` enables semantic tools and
 `--scip <artifact|manifest.json>` observes supplied provider inputs. A watched service cannot pin `--index`.
+Generated exports and other excluded outputs do not dirty the watched index, even from a clean Git tree.
 Watch options are selected again on restart. Recovery retires the previous watch pointer. The managed
-viewer has a compact attention panel beside its connection status: inspect moved, drifted or missing
-evidence, pause/resume the watch, or stop the service. Paused snapshots cannot become ready. An offered
+viewer has one compact status bar with separate connection, attention and watch-control disclosures.
+Inspect moved, drifted or missing evidence, pause/resume the watch, or stop the service. Attention scrolls
+without shrinking the diagram; controls stay available if the attached guide becomes unreadable. Paused snapshots cannot become ready. An offered
 revision names `xpl revise` with feedback IDs you choose; inspect and accept its proposal separately.
 Plain `xpl view` and saved HTML have no service controls. Stop the service to return to manual indexing.
 

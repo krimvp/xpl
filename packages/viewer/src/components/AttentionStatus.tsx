@@ -42,107 +42,112 @@ export function AttentionStatus() {
       data-testid="attention-status"
       aria-label="Source watch and guide attention"
     >
-      <details>
+      <details name="service-status" className="attention-list">
         <summary>
           <strong>{label}</strong> ·{" "}
           {affected.length === 1
             ? "1 guide needs attention"
             : `${affected.length} guides need attention`}
         </summary>
-        <p>
-          Locations follow unchanged code. Watching never rewrites prose, accepts proposals or
-          removes feedback.
-        </p>
-        {watch?.stale && (
+        <div className="service-disclosure">
           <p>
-            Last index is out of date.{" "}
-            {watch.state === "paused"
-              ? "Resume to check source changes."
-              : "Wait for a checked build or stop the service to index manually."}
+            Locations follow unchanged code. Watching never rewrites prose, accepts proposals or
+            removes feedback.
           </p>
-        )}
-        {watch?.error && (
-          <p role="alert">
-            {watch.error} Retry by pausing and resuming, or restart the watched service.
-          </p>
-        )}
-        {!attention.enabled && (
-          <p>
-            Start the service with <code>--watch</code> to enable source watching.
-          </p>
-        )}
-        {attention.guides.map((g) => (
-          <article key={g.name}>
-            <h3>
-              {g.title} <small>({g.name})</small>
-            </h3>
-            {g.counts && (
-              <p>
-                {g.counts.moved} moved · {g.counts.drifted} drifted · {g.counts.missing} missing
-              </p>
-            )}
-            {g.errors.map((message, i) => (
-              <p role="alert" key={i}>
-                {message} Inspect and repair this guide before export.
-              </p>
-            ))}
-            <ul>
-              {g.elements.map((element, i) => (
-                <li key={i}>
-                  <code>{element.id}</code> · <code>{element.file}</code>
-                  <p>
-                    {element.status === "moved"
-                      ? "Moved: locations followed unchanged code. Keep the prose."
-                      : element.status === "drifted"
-                        ? "Drifted: inspect the changed code and revise its explanation."
-                        : "Missing: restore the code or explicitly replace/remove its evidence."}
-                  </p>
-                  {g.path === connection.attachment!.guide && (
-                    <button className="btn" onClick={() => store.select([element.id])}>
-                      Inspect element
-                    </button>
-                  )}
-                </li>
+          {watch?.stale && (
+            <p>
+              Last index is out of date.{" "}
+              {watch.state === "paused"
+                ? "Resume to check source changes."
+                : "Wait for a checked build or stop the service to index manually."}
+            </p>
+          )}
+          {watch?.error && (
+            <p role="alert">
+              {watch.error} Retry by pausing and resuming, or restart the watched service.
+            </p>
+          )}
+          {!attention.enabled && (
+            <p>
+              Start the service with <code>--watch</code> to enable source watching.
+            </p>
+          )}
+          {attention.guides.map((g) => (
+            <article key={g.name}>
+              <h3>
+                {g.title} <small>({g.name})</small>
+              </h3>
+              {g.counts && (
+                <p>
+                  {g.counts.moved} moved · {g.counts.drifted} drifted · {g.counts.missing} missing
+                </p>
+              )}
+              {g.errors.map((message, i) => (
+                <p role="alert" key={i}>
+                  {message} Inspect and repair this guide before export.
+                </p>
               ))}
-            </ul>
-            {g.counts && g.counts.drifted + g.counts.missing === 0 && !g.errors.length && (
-              <p>
-                No changed or missing evidence. Moved locations can be saved with{" "}
-                <code>xpl resolve {g.name} --write</code>.
-              </p>
-            )}
-            {(g.errors.length > 0 || (g.counts && g.counts.drifted + g.counts.missing > 0)) && (
-              <details className="revision-offer">
-                <summary>Offer revision</summary>
+              <ul>
+                {g.elements.map((element, i) => (
+                  <li key={i}>
+                    <code>{element.id}</code> · <code>{element.file}</code>
+                    <p>
+                      {element.status === "moved"
+                        ? "Moved: locations followed unchanged code. Keep the prose."
+                        : element.status === "drifted"
+                          ? "Drifted: inspect the changed code and revise its explanation."
+                          : "Missing: restore the code or explicitly replace/remove its evidence."}
+                    </p>
+                    {g.path === connection.attachment!.guide && (
+                      <button className="btn" onClick={() => store.select([element.id])}>
+                        Inspect element
+                      </button>
+                    )}
+                  </li>
+                ))}
+              </ul>
+              {g.counts && g.counts.drifted + g.counts.missing === 0 && !g.errors.length && (
                 <p>
-                  Create or choose feedback in the Feedback panel, then replace{" "}
-                  <code>&lt;request-id&gt;</code> with the IDs you select.
+                  No changed or missing evidence. Moved locations can be saved with{" "}
+                  <code>{g.resolveCommand}</code>.
                 </p>
-                <pre>{g.revisionCommand}</pre>
-                <p>
-                  This starts the explicit revision workflow. Inspect its diff and decisions. Accept
-                  a proposal separately; no changes are applied here.
-                </p>
-              </details>
-            )}
-          </article>
-        ))}
+              )}
+              {(g.errors.length > 0 || (g.counts && g.counts.drifted + g.counts.missing > 0)) && (
+                <details className="revision-offer">
+                  <summary>Offer revision</summary>
+                  <p>
+                    Create or choose feedback in the Feedback panel, then replace{" "}
+                    <code>&lt;request-id&gt;</code> with the IDs you select.
+                  </p>
+                  <pre>{g.revisionCommand}</pre>
+                  <p>
+                    This starts the explicit revision workflow. Inspect its diff and decisions.
+                    Accept a proposal separately; no changes are applied here.
+                  </p>
+                </details>
+              )}
+            </article>
+          ))}
+        </div>
       </details>
-      <div className="attention-actions">
-        {attention.enabled && (
-          <button
-            className="btn"
-            disabled={busy || !connected}
-            onClick={() => void change(watch?.state === "paused" ? "resume" : "pause")}
-          >
-            {watch?.state === "paused" ? "Resume watch" : "Pause watch"}
+      <details name="service-status" className="watch-controls">
+        <summary>Watch controls</summary>
+        <div className="service-disclosure attention-actions">
+          {attention.enabled && (
+            <button
+              className="btn"
+              disabled={busy || !connected}
+              onClick={() => void change(watch?.state === "paused" ? "resume" : "pause")}
+            >
+              {watch?.state === "paused" ? "Resume watch" : "Pause watch"}
+            </button>
+          )}
+          <button className="btn" disabled={busy || !connected} onClick={() => void change("stop")}>
+            Stop service
           </button>
-        )}
-        <button className="btn" disabled={busy || !connected} onClick={() => void change("stop")}>
-          Stop service
-        </button>
-        {busy && <span role="status">Finishing watch operation…</span>}
-      </div>
+          {busy && <span role="status">Finishing watch operation…</span>}
+        </div>
+      </details>
       {(error || attentionError) && (
         <p role="alert">
           {error || attentionError} Attention may be out of date; retry after reconnecting.

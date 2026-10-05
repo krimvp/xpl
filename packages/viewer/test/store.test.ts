@@ -404,6 +404,7 @@ describe("under xpl view (server mode)", () => {
       },
       guides: [],
     };
+    let guideMissing = false;
     respond = (url, init) => {
       if (url === "/api/watch") {
         if (init?.method === "POST")
@@ -413,7 +414,10 @@ describe("under xpl view (server mode)", () => {
           };
         return new Response(JSON.stringify(attention));
       }
-      if (url === "/api/explainer") return new Response(null, { status: 304 });
+      if (url === "/api/explainer")
+        return guideMissing
+          ? new Response("attached guide missing", { status: 500 })
+          : new Response(null, { status: 304 });
       return new Response("{}", { status: 403 });
     };
     store.toggleEdgeKind("reads");
@@ -434,6 +438,8 @@ describe("under xpl view (server mode)", () => {
             counts: { moved: 0, drifted: 1, missing: 0 },
             errors: [],
             elements: [{ id: "concept:retry", file: "src/a.ts", status: "drifted" }],
+            resolveCommand:
+              "xpl resolve --root '/repos/jobrunner' '/repos/jobrunner/.explainer/jobrunner.explainer.json' --write",
             revisionCommand: "xpl revise demo --select '<request-id>'",
           },
         ],
@@ -442,6 +448,11 @@ describe("under xpl view (server mode)", () => {
       expect(store.getState().attention).toEqual(attention);
       expect(store.getState().explainer).toBe(pendingGuide);
       expect(store.getState().selection).toEqual(["concept:retry"]);
+      guideMissing = true;
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(store.getState().connection.status).toBe("connected");
+      expect(store.getState().connection.message).toContain("attached guide missing");
+      expect(store.getState().explainer).toBe(pendingGuide);
       calls.length = 0;
       await store.controlWatch("pause");
       expect(

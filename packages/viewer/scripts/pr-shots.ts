@@ -152,6 +152,8 @@ async function shoot(argv: string[]): Promise<void> {
                       },
                       { id: "file:src/worker.ts", file: "src/worker.ts", status: "missing" },
                     ],
+                    resolveCommand:
+                      "xpl resolve --root '/repos/jobrunner' '/repos/jobrunner/.explainer/jobrunner.explainer.json' --write",
                     revisionCommand:
                       "xpl revise --root '/tmp/xpl-demo/jobrunner' '/tmp/xpl-demo/jobrunner/.explainer/jobrunner.explainer.json' --select '<request-id>'",
                   },
@@ -167,10 +169,14 @@ async function shoot(argv: string[]): Promise<void> {
         // The base viewer has no status strip; allow its first normal poll too.
         await page.waitForTimeout(2200);
         if (values["attention-open"]) {
-          const attention = page.locator(".attention-status > details");
+          const attention = page.locator(".attention-status > details").first();
           if (await attention.count()) {
             await attention.locator(":scope > summary").click();
             await page.locator(".revision-offer > summary").click();
+            // Keep the top of a bounded attention disclosure in the photograph.
+            await page.locator(".attention-list > .service-disclosure").evaluateAll((elements) => {
+              for (const element of elements) element.scrollTop = 0;
+            });
           }
         } else if (!values.attention) {
           const details = page.locator(".connection-status details");

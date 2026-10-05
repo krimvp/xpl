@@ -81,12 +81,19 @@ describe("repository service lifecycle", () => {
         const response = await fetch(new URL("/api/watch", running.server.url));
         expect(response.status).toBe(200);
         const report = (await response.json()) as {
-          guides: { name: string; path: string | null; title: string; revisionCommand: string }[];
+          guides: {
+            name: string;
+            path: string | null;
+            title: string;
+            revisionCommand: string;
+            resolveCommand: string;
+          }[];
         };
         const guide = report.guides.find((g) => g.name === "retry.json");
         expect(guide).toMatchObject({
           title: unreadable ? "retry.json" : "Job runner",
           path: unreadable ? null : ".explainer/retry.json.explainer.json",
+          resolveCommand: `xpl resolve --root '${root}' '${root}/.explainer/retry.json.explainer.json' --write`,
           revisionCommand: `xpl revise --root '${root}' '${root}/.explainer/retry.json.explainer.json' --select '<request-id>'`,
         });
       } finally {
@@ -148,6 +155,19 @@ describe("repository service lifecycle", () => {
           join(root, ".explainer/demo.explainer.json"),
           join(root, ".explainer/moved.explainer.json"),
         );
+        const missingReport = await fetch(new URL("/api/watch", running.server.url), { headers });
+        expect(missingReport.status).toBe(200);
+        const missingAttention = (await missingReport.json()) as {
+          guides: { name: string; errors: string[] }[];
+        };
+        expect(missingAttention.guides.find((g) => g.name === "demo")).toMatchObject({
+          errors: [expect.stringContaining("missing")],
+        });
+        expect(missingAttention.guides.find((g) => g.name === "moved")).toBeDefined();
+        if (enabled) {
+          expect((await post(body, headers)).status).toBe(200);
+          expect((await post({ ...body, action: "resume" }, headers)).status).toBe(200);
+        }
         const stopped = await post({ ...body, action: "stop" }, headers);
         expect(stopped.status).toBe(200);
         expect((await running.done).code).toBe(0);

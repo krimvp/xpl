@@ -1025,7 +1025,8 @@ Repeat watch options on restart. Recovery retires the previous watch pointer. Fr
 saved precise/artifact selection; older records without it need a watched restart. Validation after all
 publication locks prevents superseded/cancelled results from publishing. Failed builds retain the last index marked out of
 date; source/configuration freshness and anchor drift still block ready export. Builds report every guide;
-`xpl status --all` reads the inventory without saving prose. No generated revision is accepted and no
+`xpl status --all` reads the inventory without saving prose. Generated exports and excluded outputs do
+not change watched Git cleanliness or generation, including from a clean tree. No generated revision is accepted and no
 feedback is removed. Named `.patch.json`/`.explainer.json` files, `.explainer/` output and exported xpl HTML
 are excluded from source discovery. Keep other scratch output outside the source root.
 
@@ -1034,7 +1035,9 @@ It retains the last checked index marked stale; even unchanged paused evidence r
 `xpl service resume` starts a fresh input check and full rebuild. Repeated controls are safe. Stop drains
 the watch, server and jobs, then returns to manual indexing/revision.
 
-Managed viewer pages show a separate compact attention disclosure beside the connection strip. It lists
+Managed viewer pages share one compact bar with connection, attention and watch-control disclosures.
+Only one disclosure opens at a time; attention scrolls without shrinking the diagram or code.
+An unreadable attached guide appears as an error item while verified service controls remain available. It lists
 all guides, moved/drifted/missing elements and repair instructions. Moved locations keep their prose;
 drift needs inspection and revision, and missing evidence must be restored or explicitly replaced/removed.
 Attention refresh continues with unsaved edits without replacing them. Pause/resume and Stop service
@@ -1042,7 +1045,9 @@ require the inspected service instance and repository/guide attachment. Plain `x
 without this report and saved HTML keep their existing layout.
 
 **Offer revision** gives `xpl revise --root '<root>' '<guide-path>' --select '<request-id>'`.
-The absolute guide path avoids repository JSON collisions and dependence on the calling directory. Create or select
+All offered guide commands use one helper for shell-quoted absolute guide paths and `--root`, avoiding
+repository JSON collisions and dependence on the calling directory. Moved evidence offers
+`xpl resolve --root '<root>' '<guide-path>' --write`; drifted/missing evidence requires explicit repair. Create or select
 feedback, replace the placeholder with chosen IDs, and inspect the proposal's diff and decisions before
 explicit acceptance. No control submits feedback, runs an agent, accepts a proposal or erases requests.
 Local configuration and supplied SCIP files are watched; external dependency or tool/environment changes

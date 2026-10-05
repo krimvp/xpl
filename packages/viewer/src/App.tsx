@@ -126,8 +126,10 @@ function Shell() {
     <div className="app" data-mode={state.mode}>
       <Header />
       <div className="workspace-warnings">
-        <ConnectionStatus />
-        <AttentionStatus />
+        <div className="service-status">
+          <ConnectionStatus />
+          <AttentionStatus />
+        </div>
         <AnalysisCoverage />
         {state.exportInfo?.status === "draft" && (
           <div className="drift-banner" role="status" data-testid="draft-banner">

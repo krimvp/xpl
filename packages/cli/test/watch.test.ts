@@ -245,6 +245,10 @@ describe("opt-in coherent service watching", () => {
 
   it("polls an unchanged repository without reading source contents", async () => {
     const root = await setup();
+    git(root, "init", "-q");
+    git(root, "add", "-A");
+    git(root, "commit", "-qm", "baseline");
+    writeFile(root, "README.md", "unchanging dirty source\n");
     const running = await start(root, "--watch", "--precise", "off");
     const reads: string[] = [];
     let readSpy: ReturnType<typeof vi.spyOn> | undefined;
@@ -374,10 +378,28 @@ describe("opt-in coherent service watching", () => {
     );
     const guide = readFile(root, ".explainer/demo.explainer.json");
     const feedback = readFile(root, ".explainer/requests.json");
+    git(root, "init", "-q");
+    git(root, "add", "-A");
+    git(root, "commit", "-qm", "clean baseline");
+    const head = git(root, "rev-parse", "HEAD").slice(0, 7);
     const running = await start(root, "--watch", "--precise", "off");
     try {
       const first = await current(root);
       expect((await xplJson(root, "ready", "ready")).json.ready).toBe(true);
+      expect(first.index.commit).toBe(head);
+      const generated = await invoke(["bundle", "ready", "--draft", "-o", "export.html"], {
+        cwd: root,
+        env: { XPL_VIEWER_HTML: writeViewerStub() },
+      });
+      expect(generated.code, generated.err).toBe(0);
+      writeFile(root, "maintenance.patch.json", '{"nodes":[]}');
+      writeFile(root, "package-lock.json", "{}");
+      // Give clean-to-dirty output pollution several watch polls to trigger a build.
+      await delay(1800);
+      expect(readJson(root, watchPath)).toMatchObject({
+        generation: first.generation,
+        index: { commit: head },
+      });
       const source = readFile(root, "src/queue.ts");
       writeFile(root, "src/queue.ts", `// moved\n${source}`);
       writeFile(root, "src/queue.ts", `// moved twice\n// moved\n${source}`);

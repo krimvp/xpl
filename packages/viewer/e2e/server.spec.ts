@@ -201,10 +201,24 @@ test("managed attention distinguishes moved, drifted and missing evidence and of
           { id: "sym:src/runner.ts#Runner.dispatch", file: "src/runner.ts", status: "drifted" },
           { id: "file:src/gone.ts", file: "src/gone.ts", status: "missing" },
         ],
+        resolveCommand:
+          "xpl resolve --root '/repos/jobrunner' '/repos/jobrunner/.explainer/jobrunner.explainer.json' --write",
         revisionCommand: "xpl revise '.explainer/jobrunner.explainer.json' --select '<request-id>'",
       },
     ],
   };
+  recorded.attention.guides.push({
+    name: "retry.json",
+    path: ".explainer/retry.json.explainer.json",
+    title: "Retry",
+    counts: { moved: 1, drifted: 0, missing: 0 },
+    errors: [],
+    elements: [{ id: "file:src/queue.ts", file: "src/queue.ts", status: "moved" }],
+    resolveCommand:
+      "xpl resolve --root '/repos/jobrunner' '/repos/jobrunner/.explainer/retry.json.explainer.json' --write",
+    revisionCommand:
+      "xpl revise --root '/repos/jobrunner' '/repos/jobrunner/.explainer/retry.json.explainer.json' --select '<request-id>'",
+  });
   const panel = page.getByTestId("attention-status");
   await expect(panel).toContainText("1 guide needs attention");
   await panel.getByText("Watching", { exact: false }).first().click();
@@ -212,6 +226,9 @@ test("managed attention distinguishes moved, drifted and missing evidence and of
   await expect(panel).toContainText("Drifted: inspect the changed code and revise its explanation");
   await expect(panel).toContainText(
     "Missing: restore the code or explicitly replace/remove its evidence",
+  );
+  await expect(panel).toContainText(
+    "xpl resolve --root '/repos/jobrunner' '/repos/jobrunner/.explainer/retry.json.explainer.json' --write",
   );
   await panel.getByText("Offer revision", { exact: true }).click();
   await expect(panel).toContainText(
@@ -221,6 +238,7 @@ test("managed attention distinguishes moved, drifted and missing evidence and of
   expect(recorded.posts).toEqual([]);
   expect(recorded.puts).toEqual([]);
   expect(recorded.watchActions).toEqual([]);
+  await panel.getByText("Watch controls", { exact: true }).click();
   await panel.getByRole("button", { name: "Pause watch" }).click();
   await expect(panel).toContainText("Paused");
   await panel.getByRole("button", { name: "Resume watch" }).click();
@@ -230,6 +248,107 @@ test("managed attention distinguishes moved, drifted and missing evidence and of
   await expect(page.getByTestId("connection-status")).toContainText("Disconnected");
   await expect(byId(page, "grp:scheduling")).toBeVisible();
 });
+
+for (const [width, height] of [
+  [1440, 900],
+  [1280, 720],
+] as const) {
+  test(`expanded attention preserves diagram and source space at ${width}x${height}`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height });
+    const recorded = await serve(page, { managed: true });
+    recorded.attention = layoutAttention();
+    await page.evaluate(() => window.__xpl!.select(["file:src/queue.ts"]));
+    await expect(page.locator(".cm-editor").first()).toBeVisible();
+    const panel = page.getByTestId("attention-status");
+    await expect(panel).toContainText("3 guides need attention");
+    await panel.locator(":scope > details > summary").first().click();
+    await expect(panel).toContainText("sym:src/runner.ts#Runner.dispatch");
+    await expect
+      .poll(() =>
+        page
+          .locator(".diagram-body")
+          .first()
+          .evaluate((el) => el.getBoundingClientRect().height),
+      )
+      .toBeGreaterThan(180);
+    await expect
+      .poll(() =>
+        page
+          .locator(".cm-editor")
+          .first()
+          .evaluate((el) => el.getBoundingClientRect().height),
+      )
+      .toBeGreaterThan(180);
+    await expect(byId(page, "grp:scheduling")).toBeVisible();
+    await panel.getByRole("heading", { name: "workers (workers)" }).scrollIntoViewIfNeeded();
+    await expect(panel.getByRole("heading", { name: "workers (workers)" })).toBeVisible();
+  });
+}
+
+test("collapsed service connection, attention and controls fit a compact narrow bar", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const recorded = await serve(page, { managed: true });
+  recorded.attention = layoutAttention();
+  const panel = page.getByTestId("attention-status");
+  await expect(panel).toContainText("3 guides need attention");
+  await expect(page.getByTestId("connection-status")).toContainText("Connected");
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const connection = document
+          .querySelector('[data-testid="connection-status"]')!
+          .getBoundingClientRect();
+        const attention = document
+          .querySelector('[data-testid="attention-status"]')!
+          .getBoundingClientRect();
+        return (
+          Math.max(connection.bottom, attention.bottom) - Math.min(connection.top, attention.top)
+        );
+      }),
+    )
+    .toBeLessThan(90);
+  await expect(page.getByRole("button", { name: "Pause watch" })).toBeHidden();
+  await page.getByText("Watch controls", { exact: true }).click();
+  await expect(page.getByRole("button", { name: "Pause watch" })).toBeVisible();
+  await page.getByText("Connection details", { exact: true }).click();
+  await expect(page.getByRole("button", { name: "Pause watch" })).toBeHidden();
+  await expect(page.getByTestId("connection-status")).toContainText("/repos/jobrunner");
+});
+
+function layoutAttention(): WatchAttention {
+  return {
+    enabled: true,
+    instanceId: "first",
+    watch: {
+      state: "current",
+      stale: false,
+      generation: 2,
+      index: { path: ".explainer/index-test.json", commit: "test" },
+      error: null,
+    },
+    guides: ["jobrunner", "retry", "workers"].map((name) => ({
+      name,
+      path: `.explainer/${name}.explainer.json`,
+      title: name,
+      counts: { moved: 0, drifted: 2, missing: 2 },
+      errors: [],
+      elements: [
+        { id: "sym:src/runner.ts#Runner.dispatch", file: "src/runner.ts", status: "drifted" },
+        { id: "file:src/queue.ts", file: "src/queue.ts", status: "drifted" },
+        { id: "file:src/gone.ts", file: "src/gone.ts", status: "missing" },
+        { id: "file:src/gone-worker.ts", file: "src/gone-worker.ts", status: "missing" },
+      ],
+      resolveCommand:
+        "xpl resolve --root '/repos/jobrunner' '/repos/jobrunner/.explainer/jobrunner.explainer.json' --write",
+      revisionCommand:
+        "xpl revise --root '/repos/jobrunner' '/repos/jobrunner/.explainer/jobrunner.explainer.json' --select '<request-id>'",
+    })),
+  };
+}
 
 test("files missing from the bundle are fetched from GET /api/file when they are needed", async ({
   page,
@@ -530,7 +649,7 @@ test("a managed page shows backend unavailability, refuses another service, and 
     root: "/repos/jobrunner",
     guide: ".explainer/jobrunner.explainer.json",
   });
-  await connection.getByText("Repository and backend").click();
+  await connection.getByText("Connection details").click();
   await expect(connection).toContainText(
     "Agent backend unavailable (Claude selected). No agent is configured.",
   );

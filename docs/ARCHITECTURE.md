@@ -387,7 +387,10 @@ A supplied `SourceRepoView` reader owns its path namespace, so provider capture 
 configuration. The default filesystem view still confines reads to its root.
 TypeScript's pack also reads nearest tsconfig/jsconfig chains for every source file without semantic tools.
 Capture also observes local/ancestor ignore rules, Git configuration/exclusions, explicitly supplied SCIP
-inputs and the staging/work-tree cleanliness used by `resolveCommitId`. A captured clean HEAD label wins
+inputs and the staging/work-tree cleanliness used by `resolveCommitId`. Cleanliness shares discovery's
+path and content filters, so exports, patches, guides, dependencies, lockfiles and other excluded files
+cannot turn a clean watched snapshot dirty. File eligibility is reused until its metadata changes.
+A captured clean HEAD label wins
 for snapshot builds; dirty snapshots derive the id from captured files, without reading live staging.
 
 `indexInputsChanged(snapshot)` compares candidate paths and file size/mtime/ctime/inode plus Git state,
@@ -397,7 +400,8 @@ External dependencies, tool installation and process-environment changes are out
 Restart or manually index after changing those inputs.
 
 **Commit id.** `--commit` wins (letters, digits, `.`, `_`, `-` only: it becomes part of a file name). Else, if
-`root` is the git top-level and the work tree is clean (ignoring `.explainer/`): short HEAD (7 chars). Else
+`root` is the git top-level and the work tree is clean (ignoring discovery-excluded files): short HEAD
+(7 chars). Deleted or unreadable source changes still count as dirty. Else
 `wt-` + first 10 hex of sha256 over the sorted `path\0hash\n` list: deterministic, which is why fixtures
 living inside this monorepo get stable ids.
 
@@ -1681,8 +1685,9 @@ index/cache/service files, named guides/patches and exported xpl HTML cannot sta
 
 **Managed attention** (`attention.ts`, core's type-only `WatchAttention`): `GET /api/watch` reports the
 current instance's watch state and the read-only guide inventory: guide names/paths/titles, counts,
-affected element IDs/files/statuses and load errors. Each guide includes a shell-quoted manual revision
-command with a feedback-ID placeholder. Offers use the absolute discovered guide path; unreadable guides retain
+affected element IDs/files/statuses and load errors. Index/inventory loading is independent of the attached
+guide; a missing attachment appears as an inventory error and cannot disable service controls. One CLI
+helper constructs each shell-quoted manual command: resolve with `--write`, revise with a feedback-ID placeholder. Offers use the absolute discovered guide path; unreadable guides retain
 their expected `.explainer/<name>.explainer.json` path. A name ending in `.json` cannot select an unrelated
 repository JSON file, and the calling directory cannot select another guide. This report is outside `ViewerBundle` and the explainer schema.
 `POST /api/watch` takes `{action: "pause"|"resume"|"stop", instanceId}`. Browser controls require the
@@ -1901,7 +1906,8 @@ mailto and in-page targets. Element and step summaries are rendered as inline ma
 spans, bold, emphasis); titles and labels are plain text. The page title is "<tour title> · xpl" while a tour
 is open (the Guide, Present), else "<explainer title> · xpl".
 
-**Connection** (`components/ConnectionStatus.tsx`): below the header, managed service pages report offline, connecting,
+**Connection** (`components/ConnectionStatus.tsx`): in the shared status bar below the header, managed
+service pages report offline, connecting,
 connected, disconnected (network failure) or service unavailable (HTTP refusal). Managed pages name their
 guide; a disclosure shows root, last instance and backend unavailability. Existing two-second explainer
 polling also checks availability with unsaved edits; requests have a five-second deadline. A stopped or
@@ -1920,15 +1926,19 @@ author actions apply locally and remain unsaved in this page; reconnectable acti
 versions and retry against the original service.
 Reconnect does not overwrite unsaved changes with server state. Browser feedback is exported/imported explicitly, never auto-submitted.
 
-**Watch and attention** (`components/AttentionStatus.tsx`) is a separate wrapping row below the header,
-beside the connection strip. Only managed pages with an instance UUID and attention endpoint show it;
+**Watch and attention** (`components/AttentionStatus.tsx`) shares one compact bar below the header
+with connection status. Connection details, attention and watch controls have separate native disclosures;
+opening one closes the others. Content floats in a scrolling panel bounded to 40vh or 320px, so the diagram
+and code keep their height when a report lists many guides. Only managed pages with an instance UUID and attention endpoint show it;
 plain `xpl view`, old servers and saved HTML retain their layout. A collapsed disclosure shows watch state
 and the number of guides with drift, missing evidence or load errors. Expanded rows name each guide and
 element, distinguish moved/drifted/missing anchors, and give a repair action. Attached-guide elements can
 be selected for inspection. Moved evidence keeps its prose; drift/missing evidence requires explicit repair.
 Pause/resume and Stop service use the inspected instance, have a drain deadline, and leave loaded code
 readable after stop. Attention polling precedes the pending-write adoption guard, so local edits survive
-while reports refresh; using the loaded snapshot offline hides controls and stops these requests.
+while reports refresh. A successful attention response for the inspected instance verifies service
+availability independently of guide reads; guide errors preserve loaded data and Pause/Stop access.
+Using the loaded snapshot offline hides controls and stops these requests.
 
 **Offer revision** shows a manual `xpl revise` command scoped to the guide/root with an explicit selected-
 feedback placeholder. The reader creates or chooses feedback, runs the command, inspects the proposal,

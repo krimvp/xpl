@@ -1643,11 +1643,13 @@ export class ViewerStore {
       const api = this.api;
       if (!api || stopped || busy || (typeof document !== "undefined" && document.hidden)) return;
       busy = true;
+      let serviceAvailable = false;
       try {
         if (api.attachment?.instanceId) {
           try {
             const attention = await api.attention();
             if (this.api !== api || stopped) return;
+            serviceAvailable = attention?.instanceId === api.attachment.instanceId;
             this.set({ attention, attentionError: undefined });
           } catch (error) {
             if (this.api !== api || stopped) return;
@@ -1703,7 +1705,11 @@ export class ViewerStore {
         this.set({
           connection: {
             ...this.state.connection,
-            status: /^\d{3}\b/.test(message) ? "unavailable" : "disconnected",
+            status: serviceAvailable
+              ? "connected"
+              : /^\d{3}\b/.test(message)
+                ? "unavailable"
+                : "disconnected",
             message,
           },
         });

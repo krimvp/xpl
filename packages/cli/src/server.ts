@@ -232,12 +232,17 @@ export async function startViewServer(options: ViewServerOptions): Promise<ViewS
       name: explainerName(explainerPath),
       explainer,
     };
+    return { loaded, ...(await loadRepositoryIndex()) };
+  }
+
+  /** Watch inventory and controls survive a missing or unreadable attached guide. */
+  async function loadRepositoryIndex() {
     const tree = new WorkingTree(env.root);
     // A live workspace follows a newly generated index; an explicit --index still wins.
     const indexFile = await chooseIndexFile(env, tree, { skipExplainerIndex: true });
     checkServicePaths(indexFile);
     const { index, model } = loadIndexFile(indexFile);
-    return { loaded, tree, indexFile, index, model };
+    return { tree, indexFile, index, model };
   }
 
   /** The explainer with its anchors re-resolved against the index and the working tree, as `xpl bundle` does. */
@@ -393,12 +398,19 @@ export async function startViewServer(options: ViewServerOptions): Promise<ViewS
           await serial(() => control.watch!.change(body.action as "pause" | "resume"));
         }
       }
-      const state = await loadState();
+      const state = await loadRepositoryIndex();
       sendJson(
         req,
         res,
         200,
-        watchAttention(env, state.model, state.tree.texts, !!control.watch, control.instanceId),
+        watchAttention(
+          env,
+          state.model,
+          state.tree.texts,
+          !!control.watch,
+          control.instanceId,
+          attachment.guide,
+        ),
       );
       return;
     }
