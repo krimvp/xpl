@@ -74,6 +74,11 @@ export interface RepoView {
   readText(path: FilePath): string | undefined;
 }
 
+/** Pure configuration reads through the supplied view; never starts an analysis tool. */
+export interface ConfigurationReader {
+  readConfiguration?(file: FilePath, repo: RepoView): void;
+}
+
 // ─── Facts ────────────────────────────────────────────────────────────────────────────────────────
 
 /**
@@ -268,7 +273,7 @@ export interface InferRefsInput {
 
 // ─── The pack ─────────────────────────────────────────────────────────────────────────────────────
 
-export interface LanguagePack {
+export interface LanguagePack extends ConfigurationReader {
   /** Independent advertised abilities. Missing keys are unsupported. */
   readonly capabilities: AnalysisCapabilities;
   /** Pack id, e.g. "typescript" (one pack may serve several file languages). */
@@ -288,8 +293,6 @@ export interface LanguagePack {
    * every file of a package directory shares one namespace).
    */
   readonly packageScope: "file" | "directory";
-  /** Read/cache local configuration, including configs used by semantic tools when there are no imports. */
-  readConfiguration?(file: FilePath, repo: RepoView): void;
   /**
    * Optional. A module's imports are names other modules can import from it (Python: `from .a import x` in
    * `__init__.py` makes `pkg.x`). Without it (TS, Go), only what the module exports is, `export { x } from`.

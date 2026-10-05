@@ -40,7 +40,7 @@ import { listText } from "./format.js";
 import { displayPath, parseJson, readTextFile, workingTreeReader } from "./fsutil.js";
 import { gitShowReader } from "./git.js";
 import { readWatchState, indexDigest } from "./watch-state.js";
-import { scipInputPaths } from "./index-options.js";
+import { scipInputPaths, scipProviders } from "./index-options.js";
 
 export const EXPLAINER_DIR = ".explainer";
 export const EXPLAINER_SUFFIX = ".explainer.json";
@@ -265,14 +265,18 @@ export async function stalenessOf(
   ) {
     let reason = watched.stale
       ? `watch ${watched.state}${watched.error ? `: ${watched.error}` : ""}`
-      : undefined;
+      : watched.precise === undefined
+        ? "watch record lacks provider selection; restart the watched service"
+        : undefined;
     if (!reason && watched.indexDigest !== indexDigest(index))
       reason = "watched index was replaced outside its checked publication";
     if (!reason) {
       try {
         const inputs = await captureIndexInputs({
           root: env.root,
+          precise: watched.precise,
           inputPaths: scipInputPaths(watched.scip),
+          ...(watched.scip ? { providers: scipProviders(watched.scip) } : {}),
         });
         if (inputs.fingerprint !== watched.fingerprint)
           reason = "source or discovery/provider configuration changed since the watched snapshot";

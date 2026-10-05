@@ -1,5 +1,5 @@
 import { readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { join, posix, relative, resolve } from "node:path";
 import { splitLines } from "@xpl/core";
 import { FileHasher } from "../hash.js";
 /**
@@ -13,12 +13,17 @@ import type { ProviderInput, RelationshipResult, IndexProvider } from "../provid
 import { PRECISE_SUPPORT, relationshipOutput } from "../analysis.js";
 import { mapScip } from "./map.js";
 import type { ScipSource } from "./map.js";
+import type { RepoView } from "../languages/types.js";
+import { pathsConfigFor, readProjectConfiguration } from "../languages/ts-modules.js";
 import {
   SCIP_GO_VERSION,
   SCIP_PYTHON_VERSION,
   SCIP_TYPESCRIPT_VERSION,
   defaultTimeoutMs,
   inSkippedDir,
+  goModules,
+  pythonProjectName,
+  typescriptProjects,
   runCommand,
   runScipGo,
   runScipPython,
@@ -146,10 +151,29 @@ const TYPESCRIPT_LANGUAGES: readonly FileLanguage[] = ["typescript", "tsx", "jav
 /** scip-typescript for TypeScript, TSX and JavaScript. */
 export function scipTypescriptProvider(options: ScipOptions = {}): IndexProvider {
   const tool = `scip-typescript@${SCIP_TYPESCRIPT_VERSION}`;
+  const configured = new WeakSet<RepoView>();
   return {
     id: "scip-typescript",
     capabilities: PRECISE_SUPPORT,
     languages: TYPESCRIPT_LANGUAGES,
+    readConfiguration(file, repo) {
+      pathsConfigFor(repo, file);
+      let dir = posix.dirname(file);
+      for (;;) {
+        repo.readText(posix.join(dir, "package.json"));
+        if (dir === ".") break;
+        dir = posix.dirname(dir);
+      }
+      if (configured.has(repo)) return;
+      configured.add(repo);
+      const seen = new Set<string>();
+      for (const project of typescriptProjects([...repo.files].map((path) => ({ path }))))
+        readProjectConfiguration(
+          repo,
+          repo.files.has(project) ? project : posix.join(project, "tsconfig.json"),
+          seen,
+        );
+    },
     async analyze(input) {
       return relationshipOutput(
         input,
@@ -173,6 +197,10 @@ export function scipPythonProvider(options: ScipOptions = {}): IndexProvider {
     id: "scip-python",
     capabilities: PRECISE_SUPPORT,
     languages: ["python"],
+    readConfiguration(_file, repo) {
+      pythonProjectName(repo.root, (path) => repo.readText(path));
+      readProjectConfiguration(repo, "pyrightconfig.json");
+    },
     async analyze(input) {
       return relationshipOutput(
         input,
@@ -192,10 +220,37 @@ export function scipPythonProvider(options: ScipOptions = {}): IndexProvider {
 /** scip-go for Go (one run per go.mod). */
 export function scipGoProvider(options: ScipOptions = {}): IndexProvider {
   const tool = `scip-go@${SCIP_GO_VERSION.replace(/^v/, "")}`;
+  const configured = new WeakSet<RepoView>();
   return {
     id: "scip-go",
     capabilities: PRECISE_SUPPORT,
     languages: ["go"],
+    readConfiguration(_file, repo) {
+      if (configured.has(repo)) return;
+      configured.add(repo);
+      const env = options.env ?? process.env;
+      for (const dir of goModules([...repo.files].map((path) => ({ path })))) {
+        repo.readText(posix.join(dir, "go.mod"));
+        repo.readText(posix.join(dir, "go.sum"));
+        repo.readText(posix.join(dir, "vendor/modules.txt"));
+        if (env.GOWORK === "off") continue;
+        if (env.GOWORK && env.GOWORK !== "auto") {
+          const work = relative(repo.root, resolve(repo.root, env.GOWORK)).split("\\").join("/");
+          repo.readText(work);
+          repo.readText(`${work}.sum`);
+        } else {
+          let parent = dir;
+          for (;;) {
+            if (repo.readText(posix.join(parent, "go.work")) !== undefined) {
+              repo.readText(posix.join(parent, "go.work.sum"));
+              break;
+            }
+            if (!parent) break;
+            parent = posix.dirname(parent) === "." ? "" : posix.dirname(parent);
+          }
+        }
+      }
+    },
     async analyze(input) {
       return relationshipOutput(
         input,

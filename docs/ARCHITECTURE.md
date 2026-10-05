@@ -352,7 +352,7 @@ Named `*.explainer.json` and `*.patch.json` outputs are excluded in both modes. 
 also excluded by its embedded bundle marker; ordinary HTML remains source. Paths are POSIX,
 repo-root-relative, sorted.
 
-**Watched input capture** (`src/snapshot.ts`): `captureIndexInputs({root, inputPaths?, gitOptions?})`
+**Watched input capture** (`src/snapshot.ts`): `captureIndexInputs({root, inputPaths?, gitOptions?, precise?, providers?})`
 returns sources, local configuration text, the captured clean HEAD label (when applicable), a
 content/discovery/HEAD fingerprint and a revision including
 ctime, mtime and inode. `buildIndex({snapshot})` uses that captured source and configuration instead of
@@ -363,8 +363,12 @@ build even when its content fingerprint matches. Source reads are checked before
 Configuration capture runs a syntax-only, cache-free resolver pass with `getText` recording every local
 configuration read, including missing paths. The returned text map is frozen for the real build. There is
 no filename-extension allowlist: ignored extends chains, package manifests and any other pack reads are
-captured through the same `SourceRepoView` reader. `LanguagePack.readConfiguration` can preload inputs
-that also affect semantic tools; TypeScript reads nearest tsconfig/jsconfig chains for every source file.
+captured through the same `SourceRepoView` reader. Packs and providers share the pure
+`ConfigurationReader.readConfiguration(file, repo)` seam. `precise` defaults to `off` for capture;
+callers match the real build's mode and provider selection. Enabled semantic providers preload local
+inputs through the same recording reader without running tools: Python project-name and pyright config,
+TypeScript local extends/references and package manifests, and Go module/sum/workspace/vendor metadata.
+TypeScript's pack also reads nearest tsconfig/jsconfig chains for every source file without semantic tools.
 Capture also observes local/ancestor ignore rules, Git configuration/exclusions, explicitly supplied SCIP
 inputs and the staging/work-tree cleanliness used by `resolveCommitId`. A captured clean HEAD label wins
 for snapshot builds; dirty snapshots derive the id from captured files, without reading live staging.
@@ -525,6 +529,7 @@ The old `PreciseResolver` interface and registry were removed; `providers` is th
 interface IndexProvider {
   id: string; mode?: "syntax" | "semantic";  // omitted = semantic
   languages: readonly FileLanguage[]; capabilities: AnalysisCapabilities;
+  readConfiguration?(file: FilePath, repo: RepoView): void; // pure local reads, shared with packs
   analyze(input: ProviderInput): Promise<ProviderOutput>;
 }
 // Input: root, scoped languages, captured sources {path, language, text}, indexed files,
@@ -1580,7 +1585,7 @@ locks (index, .gitignore and watch pointer), checking cancellation there before 
 by rename under `withRepositoryLock`; its .gitignore is fenced too. The watcher then atomically replaces
 `.explainer/service/watch.json` (`xpl-watch@1`): canonical root, instance UUID, state
 (`pending|building|current|failed|stopped`), stale flag, publication generation, last index path/commit,
-fingerprint, index-content digest, nullable SCIP path and error. Source/configuration edits mark the old
+fingerprint, index-content digest, precise mode, nullable SCIP path and error. Source/configuration edits mark the old
 pointer stale before building. Failure retains that pointer and retries after another input revision or a
 new watched start.
 Cancellation keeps its stale mark. Repeated identical capture failures do not flood the log.
@@ -1590,6 +1595,8 @@ Freshness checks compare the full observed input fingerprint, including ignored 
 ready export for pending/failed builds. The index digest also rejects an out-of-band replacement at the
 same path, even when the indexed file manifest is unchanged. Explicit `--index` still selects an index for
 manual commands.
+Freshness uses the watch record's precise mode and supplied artifact selection. Older records without
+that selection require a watched restart before readiness can be established.
 Every new service owner retires the prior watch record under the ownership lock before serving.
 Recovery without watching and stop return default selection and manual index/resolve to the offline path. Each completed
 build reports every guide's moved/drifted/missing counts; `status --all` recomputes the inventory on demand,

@@ -1,10 +1,123 @@
-import { renameSync, unlinkSync } from "node:fs";
+import { renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { buildIndex, captureIndexInputs } from "../src/index.js";
+import { buildIndex, captureIndexInputs, indexInputsChanged } from "../src/index.js";
+import {
+  scipGoProvider,
+  scipPythonProvider,
+  scipTypescriptProvider,
+} from "../src/scip/resolvers.js";
+import { encodeIndex } from "./scip-encode.js";
 import { makeRepo, writeFiles, git } from "./helpers.js";
 
 describe("captured index inputs", () => {
+  it.each<{
+    name: string;
+    files: Record<string, string>;
+    configuration: Record<string, string>;
+    edit: string;
+    provider: typeof scipPythonProvider;
+  }>([
+    {
+      name: "TypeScript referenced config chain",
+      files: {
+        "a.ts": "export const value = 1;\n",
+        "tsconfig.json": '{"references":[{"path":"./project"}]}',
+      },
+      configuration: {
+        "project/tsconfig.json": '{"extends":"../semantic.settings"}',
+        "semantic.settings": '{"compilerOptions":{"strict":true}}',
+      },
+      edit: "semantic.settings",
+      provider: scipTypescriptProvider,
+    },
+    {
+      name: "Go module sums",
+      files: { "a.go": "package demo\n", "go.mod": "module example.com/demo\ngo 1.25\n" },
+      configuration: { "go.sum": "example.com/dependency v1.0.0 h1:first\n" },
+      edit: "go.sum",
+      provider: scipGoProvider,
+    },
+  ])("observes ignored $name inputs declared by the enabled provider", async (item) => {
+    const root = makeRepo({
+      ...item.files,
+      ".gitignore": Object.keys(item.configuration).join("\n") + "\n",
+    });
+    writeFiles(root, item.configuration);
+    let runs = 0;
+    const providers = [
+      item.provider({
+        run: async () => {
+          runs++;
+          throw new Error("capture ran a semantic tool");
+        },
+      }),
+    ];
+    const options = { root, precise: "auto" as const, providers };
+    const first = await captureIndexInputs(options);
+    writeFiles(root, { [item.edit]: "changed\n" });
+    expect(await indexInputsChanged(first)).toBe(true);
+    expect((await captureIndexInputs(options)).fingerprint).not.toBe(first.fingerprint);
+    expect(runs).toBe(0);
+  });
+
+  it.each(["auto", "require"] as const)(
+    "captures ignored Python semantic configuration without running tools in %s mode",
+    async (precise) => {
+      const root = makeRepo({
+        ".gitignore": "pyproject.toml\nsetup.cfg\n",
+        "a.py": "def value():\n    return 1\n",
+      });
+      writeFiles(root, { "pyproject.toml": '[project]\nname = "correct-project"\n' });
+      const names: string[] = [];
+      const providers = [
+        scipPythonProvider({
+          async run(_command, args) {
+            names.push(args[args.indexOf("--project-name") + 1]!);
+            writeFileSync(
+              args[args.indexOf("--output") + 1]!,
+              encodeIndex({
+                tool: { name: "scip-python", version: "0.6.6" },
+                documents: [{ path: "a.py" }],
+              }),
+            );
+            return { code: 0, stdout: "", stderr: "", timedOut: false };
+          },
+        }),
+      ];
+      const off = await captureIndexInputs({ root, precise: "off", providers });
+      const first = await captureIndexInputs({ root, precise, providers });
+      expect(names).toEqual([]);
+      const clean = await buildIndex({ root, precise, providers });
+      const captured = await buildIndex({ root, precise, providers, snapshot: first });
+      expect(names).toEqual(["correct-project", "correct-project"]);
+      expect(captured.index).toEqual(clean.index);
+      writeFiles(root, { "pyproject.toml": '[project]\nname = "changed-project"\n' });
+      expect(await indexInputsChanged(first)).toBe(true);
+      expect(await indexInputsChanged(off)).toBe(false);
+      const changed = await captureIndexInputs({ root, precise, providers });
+      expect(changed.fingerprint).not.toBe(first.fingerprint);
+      await buildIndex({ root, precise, providers, snapshot: changed });
+      await buildIndex({ root, precise, providers, snapshot: first });
+      expect(names).toEqual([
+        "correct-project",
+        "correct-project",
+        "changed-project",
+        "correct-project",
+      ]);
+      expect((await captureIndexInputs({ root, precise: "off", providers })).fingerprint).toBe(
+        off.fingerprint,
+      );
+      unlinkSync(join(root, "pyproject.toml"));
+      writeFiles(root, { "setup.cfg": "[metadata]\nname = fallback-project\n" });
+      const fallback = await captureIndexInputs({ root, precise, providers });
+      await buildIndex({ root, precise, providers, snapshot: fallback });
+      expect(names.at(-1)).toBe("fallback-project");
+      writeFiles(root, { "pyproject.toml": '[project]\nname = "restored-project"\n' });
+      expect(await indexInputsChanged(fallback)).toBe(true);
+    },
+  );
+
   it("observes staging cleanliness when source contents and HEAD stay unchanged", async () => {
     const root = makeRepo({ "a.ts": "export const a = 1;\n" });
     writeFiles(root, { "a.ts": "export const a = 2;\n" });

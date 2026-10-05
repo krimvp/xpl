@@ -8,7 +8,8 @@ import { buildIndex } from "./build.js";
 import { homedir } from "node:os";
 import { discoverFiles, detectGit, runGit } from "./files.js";
 import type { GitOptions } from "./files.js";
-import type { ProviderSource } from "./providers.js";
+import { indexProviders, type IndexProvider, type ProviderSource } from "./providers.js";
+import { SourceRepoView } from "./repo.js";
 
 export interface IndexInputs {
   root: string;
@@ -28,6 +29,9 @@ export async function captureIndexInputs(options: {
   gitOptions?: GitOptions;
   /** Supplied provider artifact and manifest paths, including ignored or external files. */
   inputPaths?: readonly string[];
+  /** Match the subsequent build's selection, but run only pure configuration readers. */
+  precise?: "off" | "auto" | "require";
+  providers?: readonly IndexProvider[];
 }): Promise<IndexInputs> {
   const root = resolve(options.root);
   const git = await detectGit(root, options.gitOptions);
@@ -133,6 +137,17 @@ export async function captureIndexInputs(options: {
     getText,
     snapshot: { root, sources, texts, fingerprint: "", revision: "" },
   });
+  const repo = new SourceRepoView(
+    root,
+    sources.map((s) => s.path),
+    getText,
+  );
+  for (const provider of options.providers ?? indexProviders()) {
+    if (provider.mode !== "syntax" && (options.precise ?? "off") === "off") continue;
+    for (const source of sources)
+      if (provider.languages.includes(source.language))
+        provider.readConfiguration?.(source.path, repo);
+  }
   if (configurationError) throw configurationError;
   const content = createHash("sha256");
   const revision = createHash("sha256");

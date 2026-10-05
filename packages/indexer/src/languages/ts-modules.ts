@@ -96,6 +96,34 @@ export function parseJsonc(text: string): unknown {
   }
 }
 
+/** Local JSON configuration extends/reference chains consumed by semantic tools, without running them. */
+export function readProjectConfiguration(
+  repo: RepoView,
+  path: string,
+  seen = new Set<string>(),
+): boolean {
+  if (seen.has(path)) return true;
+  const text = repo.readText(path);
+  if (text === undefined) return false;
+  seen.add(path);
+  const config = parseJsonc(text);
+  if (!isRecord(config)) return true;
+  const extended = Array.isArray(config.extends) ? config.extends : [config.extends];
+  const references = Array.isArray(config.references) ? config.references : [];
+  const entries = [
+    ...extended.filter((p): p is string => typeof p === "string" && p.startsWith(".")),
+    ...references.flatMap((r) => (isRecord(r) && typeof r.path === "string" ? [r.path] : [])),
+  ];
+  for (const entry of entries) {
+    const target = repoPath(posix.join(posix.dirname(path), entry));
+    if (target !== undefined)
+      readProjectConfiguration(repo, target, seen) ||
+        readProjectConfiguration(repo, `${target}.json`, seen) ||
+        readProjectConfiguration(repo, `${target}/tsconfig.json`, seen);
+  }
+  return true;
+}
+
 const isRecord = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v);
 

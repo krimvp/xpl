@@ -261,7 +261,7 @@ export const serviceCommand: CommandSpec = {
   summary: "Start, stop or inspect a repository's optional local viewer service",
   details: [
     "--watch opts this start into metadata polling (500 ms, then a quiet interval). It builds a full",
-    "index from source and resolver configuration reads, discards superseded builds and publishes by atomic rename.",
+    "index from source, resolver inputs and enabled provider configuration, discards superseded builds and publishes atomically.",
     "Failures keep the last snapshot marked out of date. xpl status --all inventories guides; no prose or feedback is saved.",
     "Watching defaults to --precise off. --precise auto|require enables semantic tools; --scip watches a supplied",
     "artifact/manifest pair. --index cannot pin a watched service. These options must be selected on each start.",

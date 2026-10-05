@@ -35,11 +35,17 @@ export async function watchRepository(
     indexDigest: indexDigest(initial.index),
     fingerprint: null,
     scip: options.scip,
+    precise: options.precise,
     error: null,
   };
   const save = () => withRepositoryLock(ctx.root, path, () => atomicWrite(path, jsonFile(state)));
   const capture = () =>
-    captureIndexInputs({ root: ctx.root, inputPaths: scipInputPaths(options.scip) });
+    captureIndexInputs({
+      root: ctx.root,
+      precise: options.precise,
+      inputPaths: scipInputPaths(options.scip),
+      ...(options.scip ? { providers: scipProviders(options.scip) } : {}),
+    });
   let polled: Awaited<ReturnType<typeof captureIndexInputs>> | undefined;
   let observed: string | undefined;
   let attempted: string | undefined;

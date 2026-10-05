@@ -21,6 +21,8 @@ export interface WatchState {
   indexDigest: string;
   fingerprint: string | null;
   scip: string | null;
+  /** Absent in older records: freshness must refuse until the watcher is restarted. */
+  precise?: "off" | "auto" | "require";
   error: string | null;
 }
 
@@ -49,6 +51,7 @@ export function readWatchState(root: string): WatchState | undefined {
     Number(value.generation) < 0 ||
     !(value.fingerprint === null || typeof value.fingerprint === "string") ||
     !(value.scip === null || typeof value.scip === "string") ||
+    !(value.precise === undefined || ["off", "auto", "require"].includes(value.precise)) ||
     !(value.error === null || typeof value.error === "string") ||
     !(
       value.index === null ||
