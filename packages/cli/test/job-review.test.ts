@@ -89,6 +89,108 @@ async function setup() {
   return { root, ctx, instanceId, request, jobs, job: finished, action, choices };
 }
 
+it.each(
+  (["current", "legacy"] as const).flatMap((format) =>
+    (["cancelled", "superseded"] as const).flatMap((state) =>
+      (["proposal", "decisions", "accept"] as const).map((action) => ({ format, state, action })),
+    ),
+  ),
+)(
+  "refuses manual $action on a $state $format job before its proposal arrives",
+  async ({ format, state, action }) => {
+    const root = cloneDir(demo);
+    const ctx = createCtx(
+      { out() {}, err() {} },
+      { root, cwd: root, env: {}, json: true, indexOption: undefined },
+    );
+    const loaded = loadExplainer(ctx, "demo");
+    const ws = await openWorkspace(ctx, { explainer: loaded });
+    const request = (
+      await appendRequest(root, {
+        id: "before-proposal",
+        elementId: "file:src/queue.ts",
+        kind: "correct",
+        explainer: "demo",
+        context: artifactIdentity(loaded.explainer, ws.index),
+      })
+    ).request;
+    const instanceId = randomUUID();
+    writeFile(
+      root,
+      ".explainer/service/instance.json",
+      JSON.stringify({ schema: "xpl-service-instance@1", root, instanceId, state: "running" }),
+    );
+    let entered = false;
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    const jobs = await openJobs(ctx, instanceId, async (job) => {
+      entered = true;
+      await held;
+      return { revisionRunId: job.input.revisionRunId };
+    });
+    try {
+      const job = await jobs.submit("demo", { id: randomUUID(), selectedRequestIds: [request.id] });
+      await expect.poll(() => entered).toBe(true);
+      await jobs.fence("demo", job.id, state);
+      const run = job.input.revisionRunId;
+      const journalPath = `.explainer/revisions/${run}/run.json`;
+      const journal = readJson(root, journalPath);
+      expect(journal.serviceJob).toEqual({ id: job.id });
+      if (format === "legacy") {
+        delete journal.serviceJob;
+        writeFile(root, journalPath, JSON.stringify(journal));
+      }
+      const inspect = await xpl(root, "revise", "demo", "--run", run, "--json");
+      expect(inspect.code, inspect.out).toBe(0);
+      expect(JSON.parse(inspect.out).state).toBe("selected");
+      const input = writeFile(
+        root,
+        ".explainer/manual-input.json",
+        JSON.stringify(
+          action === "proposal"
+            ? [
+                {
+                  id: request.id,
+                  patch: {
+                    nodes: [
+                      { id: request.elementId, summary: "The queue holds jobs until dispatch." },
+                    ],
+                  },
+                },
+              ]
+            : [{ id: request.id, status: "rejected", reason: "Decline this request." }],
+        ),
+      );
+      const paths = [
+        ".explainer/demo.explainer.json",
+        ".explainer/requests.json",
+        `.explainer/revisions/${run}/run.json`,
+      ];
+      const before = paths.map((path) => readFile(root, path));
+      const result = await xpl(
+        root,
+        "revise",
+        "demo",
+        "--run",
+        run,
+        `--${action}`,
+        ...(action === "accept" ? [] : [input]),
+        "--json",
+      );
+      expect(result.code, result.out).toBe(1);
+      expect(JSON.parse(result.out).error).toContain(
+        "Service job proposals require guarded job review",
+      );
+      expect(paths.map((path) => readFile(root, path))).toEqual(before);
+      expect((await jobs.get("demo", job.id)).state).toBe(state);
+      expect(readRequests(root).requests[0]!.outcome.status).toBe("pending");
+    } finally {
+      release();
+      await jobs.close();
+    }
+  },
+);
+
 it("reviews selected proposals then accepts once, preserving feedback added during review", async () => {
   const { root, request, jobs, job, action, choices } = await setup();
   try {

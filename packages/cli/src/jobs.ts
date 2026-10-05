@@ -489,7 +489,10 @@ class RepositoryJobs {
         return existing;
       }
       this.requireRunner();
-      const selected = await selectRevision(this.ctx, resolve(this.ctx.root, guide), ids, include);
+      const selected = await selectRevision(this.ctx, resolve(this.ctx.root, guide), ids, include, {
+        id: submission.id,
+        assertCurrent: () => this.assertOwner(),
+      });
       const at = new Date().toISOString();
       const job: Job = {
         id: submission.id,

@@ -31,7 +31,8 @@ export const reviseCommand: CommandSpec = {
     "Retry the same --run --accept after interruption: a published candidate is never applied twice and",
     "outcome revisions are never incremented twice. Failed reviews/acceptance leave requests retryable.",
     "Killed writers can leave locks; remove only the reported lock directories after verifying they stopped.",
-    "Service-owned runs are read-only here; use Jobs in the attached viewer for guarded review/acceptance.",
+    "Service-owned runs are read-only here from selection onward, even without a proposal or after cancellation/supersession.",
+    "Use Jobs in the attached viewer for guarded review/acceptance.",
     "-o writes the review packet outside the source tree; --json prints it. No model, watcher or service runs.",
   ],
   options: {

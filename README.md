@@ -224,7 +224,8 @@ only then can **Accept reviewed revision** commit it and finalize those selected
 If another view changes the decisions, acceptance stops and reloads the review for inspection.
 New feedback stays pending. Cancelled, superseded, stale and old-attempt results cannot apply.
 After an interrupted acceptance, reopen the review and **Recover acceptance**; it does not apply twice.
-Service-owned runs refuse manual proposal/decision/accept writes to preserve these fences;
+Service-owned runs refuse manual proposal/decision/accept writes from selection onward, even before a
+proposal arrives or after cancellation/supersession, to preserve these fences;
 `xpl revise <guide> --run <id>` still inspects the journal. Offline feedback and manual revisions remain available.
 
 ## Using the CLI directly

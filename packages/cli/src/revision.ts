@@ -62,7 +62,7 @@ interface Revision {
   proposals: Proposal[];
   proposalChanges?: RevisionReview["proposals"];
   /** Service proposals need the guarded job acceptance path, never independent manual acceptance. */
-  serviceJob?: { id: string; attemptId: string };
+  serviceJob?: { id: string; attemptId?: string };
   decisions: Decision[];
   next?: Explainer;
   nextIdentity?: ArtifactIdentity;
@@ -146,12 +146,19 @@ async function freshWorkspace(
 }
 
 /** Selection does not modify the guide. The old artifact and original requests remain in the journal. */
-export async function selectRevision(ctx: Ctx, name: string, ids: string[], include: string[]) {
+export async function selectRevision(
+  ctx: Ctx,
+  name: string,
+  ids: string[],
+  include: string[],
+  serviceJob?: { id: string; assertCurrent: () => void },
+) {
   await assertRevisionLocation(ctx);
   unique(ids);
   if (!ids.length || ids.some((id) => !id))
     throw new CliError("select at least one immutable request ID");
   return withLockedExplainer(ctx, name, async (loaded) => {
+    serviceJob?.assertCurrent();
     const ws = await freshWorkspace(ctx, loaded);
     const stored = queue(ctx);
     const requests = ids.map((id) => {
@@ -181,11 +188,14 @@ export async function selectRevision(ctx: Ctx, name: string, ids: string[], incl
       proposals: [],
       decisions: [],
       source: [],
+      ...(serviceJob ? { serviceJob: { id: serviceJob.id } } : {}),
     };
     revision.source = sourceFor(revision, resolved, ws);
     revision.sourceBefore = sourceFor(revision, revision.previous, ws);
     const path = pathFor(ctx, revision.runId);
+    serviceJob?.assertCurrent();
     await atomicWrite(join(path, "..", "previous.json"), jsonFile(loaded.explainer));
+    serviceJob?.assertCurrent();
     await atomicWrite(path, jsonFile(revision));
     return packet(ctx, revision, resolved);
   });
@@ -201,6 +211,30 @@ function readRevision(ctx: Ctx, name: string, runId: string): Revision {
   )
     throw new CliError("revision journal does not match this guide and run");
   const revision = data as unknown as Revision;
+  // Older service selections were journaled before their job ownership was recorded.
+  const ledgerPath = join(ctx.root, ".explainer", "service", "jobs.json");
+  if (!revision.serviceJob && existsSync(ledgerPath)) {
+    const ledger = object(parseJson(readTextFile(ledgerPath, "job ledger"), ledgerPath));
+    if (ledger.schema !== "xpl-jobs@1" || ledger.root !== ctx.root)
+      throw new CliError("job ledger does not match this repository");
+    const job = array(ledger.jobs)
+      .map(object)
+      .find((job) => {
+        const scope = object(job.scope);
+        return (
+          scope.kind === "revision" &&
+          scope.guide === revision.explainer &&
+          object(job.input).revisionRunId === runId
+        );
+      });
+    if (job) {
+      const attemptId = job.owner ? object(job.owner).attemptId : undefined;
+      revision.serviceJob = {
+        id: nonempty(job.id, "service job ID"),
+        ...(attemptId ? { attemptId: nonempty(attemptId, "service attempt ID") } : {}),
+      };
+    }
+  }
   revision.requests = array(data.requests).map(parseFeedbackRequest);
   unique(revision.requests.map((r) => r.id));
   return revision;

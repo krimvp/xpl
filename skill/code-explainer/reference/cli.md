@@ -1090,7 +1090,10 @@ ownership rechecks, valid ready proposals enter the existing revision journal as
 `xpl revise <guide> --run <revisionRunId>` before deciding anything. Creation fills a guide explicitly
 initialized by `xpl new`/draft authoring, with selected creation requests and included new IDs; it does
 not create a second proposal format or overwrite a name. Service-owned journals refuse manual
-proposal/decision/accept writes; read-only `revise --run` stays available. In the viewer, **Jobs** lets the
+proposal/decision/accept writes from selection onward, including cancellation or supersession before
+a proposal arrives. Selection records the job ID; the guarded proposal records its attempt ID. Older
+unbound service journals recover ownership from the matching revision job in the repository ledger.
+Read-only `revise --run` stays available. In the viewer, **Jobs** lets the
 author select feedback, start/cancel/retry and inspect progress or failures. **Review proposal** shows
 readable changed text with marks, concise evidence and source before/after. Each selected request needs
 a decision and reason. **Review decisions** validates the exact candidate; **Accept reviewed revision**

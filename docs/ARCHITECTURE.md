@@ -1810,8 +1810,12 @@ review again." The viewer reloads the decisions and requires another review befo
 Tokens are derived from the journal, so existing `revision@1` journals need no migration and restart
 retains the same token. Clients that omit the token receive 400; manual `xpl revise --accept` is unchanged.
 
-The service job journal fence `{id, attemptId}` is required for proposal/decision/accept writes.
-Independent manual writes cannot bypass it; read-only `xpl revise --run` remains available. Retries may
+Selection records `serviceJob: {id}` in the journal before returning a service job. Its first guarded
+proposal adds `attemptId`; later attempts may replace it through the same guard. The job owns the journal
+while queued, running or terminal, even if no proposal arrives. Legacy journals without this field recover
+ownership from the matching revision job in the repository ledger when read. Manual proposal, decision and
+acceptance writes are refused at every stage; read-only `xpl revise --run` remains available.
+The service job journal fence `{id, attemptId}` is required for guarded proposal/decision/accept writes. Retries may
 replace a failed attempt's uncommitted proposal only through its new guarded attempt. Ownership is
 rechecked after the journal, artifact and selected-outcome lock waits, and before publication. Acceptance
 reuses #30's freshness, exact candidate identity, readiness and user-field protection checks. The guide
