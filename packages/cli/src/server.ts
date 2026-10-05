@@ -13,6 +13,7 @@
  *   GET  /api/base-file?path= the code before the change of one changed file (text/plain): only for the
  *                             modified, renamed and deleted files of the explainer's change record (`path` is
  *                             `ChangedFile.path`); 400 for a malformed path, 404 for anything else
+ *   PUT  /api/edits          { version, edits }, bounded user fields and conditional inverses; 409 on conflicts.
  *   PUT  /api/review         { review: record | null }, applied as actor "user"; fingerprint checked at write.
  *   PUT  /api/views/<id>      a view patch, applied as actor "user", written to disk; 200 with the
  *                             updated view, 400 with { error, issues } when rejected
@@ -33,7 +34,13 @@
  * It binds to 127.0.0.1 by default. Against DNS rebinding and cross-site writes it checks the Host
  * header (loopback binds), and requires an application/json body and a same-origin Origin for PUT/POST.
  */
-import { artifactIdentity, feedbackContextReason, parseFeedbackRequest } from "@xpl/core";
+import {
+  artifactIdentity,
+  applyUserEdits,
+  UserEditError,
+  feedbackContextReason,
+  parseFeedbackRequest,
+} from "@xpl/core";
 import { createHash } from "node:crypto";
 import { existsSync, realpathSync, statSync } from "node:fs";
 import { join, sep } from "node:path";
@@ -52,7 +59,7 @@ import {
 import { collectBaseFiles, collectFiles, freshAnchors, makeBundle } from "./bundle-data.js";
 import type { RepoEnv } from "./context.js";
 import { CliError, errorMessage } from "./errors.js";
-import { atomicWrite, withFileLock, withRepositoryLock, displayPath, jsonFile } from "./fsutil.js";
+import { atomicWrite, withRepositoryLock, displayPath, jsonFile } from "./fsutil.js";
 import { importRequests, appendRequest, readRequests } from "./requests.js";
 import type { openJobs, JobSubmission } from "./jobs.js";
 import {
@@ -183,15 +190,18 @@ function wellFormedPath(path: string): boolean {
 export async function startViewServer(options: ViewServerOptions): Promise<ViewServer> {
   const { env, explainerPath, host } = options;
   let allowedHosts: Set<string> | undefined;
-  const attachment = options.control
-    ? {
-        root: options.control.root,
-        guide: displayPath(options.control.root, explainerPath),
-        instanceId: options.control.instanceId,
-        backend: options.control.backend,
-        backendAvailable: false,
-      }
-    : undefined;
+  const root = realpathSync(env.root);
+  const attachment: NonNullable<NonNullable<ViewerBundle["server"]>["attachment"]> = {
+    root,
+    guide: displayPath(root, realpathSync(explainerPath)),
+    ...(options.control
+      ? {
+          instanceId: options.control.instanceId,
+          backend: options.control.backend,
+          backendAvailable: false,
+        }
+      : {}),
+  };
 
   function checkServicePaths(...paths: string[]) {
     if (!options.control) return;
@@ -276,7 +286,7 @@ export async function startViewServer(options: ViewServerOptions): Promise<ViewS
         files: collected.files,
         ...(base !== undefined ? { baseFiles: base.files } : {}),
         mode: "explore",
-        server: { api: API, ...(attachment ? { attachment } : {}) },
+        server: { api: API, attachment },
       }),
       ...(stale ? { sourceWarning: stale.message } : {}),
     };
@@ -311,8 +321,8 @@ export async function startViewServer(options: ViewServerOptions): Promise<ViewS
     }
     const { pathname } = url;
     const expected = req.headers["x-xpl-attachment"] ?? url.searchParams.get("attachment");
+    let context: { root?: unknown; guide?: unknown } | undefined;
     if (expected !== undefined && expected !== null) {
-      let context: { root?: unknown; guide?: unknown };
       try {
         context = JSON.parse(
           req.headers["x-xpl-attachment"] ? decodeURIComponent(String(expected)) : String(expected),
@@ -352,7 +362,7 @@ export async function startViewServer(options: ViewServerOptions): Promise<ViewS
     if (pathname === `${API}/jobs` || pathname.startsWith(`${API}/jobs/`)) {
       const jobs = options.control?.jobs;
       if (!jobs) throw new HttpError(404, "jobs require a managed repository service");
-      const name = displayPath(env.root, explainerPath);
+      const name = attachment.guide;
       const parts = pathname.slice(`${API}/jobs`.length).split("/").filter(Boolean);
       try {
         if (parts.length === 0) {
@@ -474,6 +484,44 @@ export async function startViewServer(options: ViewServerOptions): Promise<ViewS
       send(req, res, 200, text, "text/plain; charset=utf-8");
       return;
     }
+    if (pathname === `${API}/edits`) {
+      allow("PUT");
+      if (typeof req.headers["x-xpl-attachment"] !== "string")
+        throw new HttpError(400, "Expected a live repository and guide attachment.");
+      if (!context || typeof context.root !== "string" || typeof context.guide !== "string")
+        throw new HttpError(400, "Invalid service attachment.");
+      const body = await readJsonBody(req);
+      if (Object.keys(body).sort().join(",") !== "edits,version" || !isRecord(body.version))
+        throw new HttpError(400, "Expected only version and bounded edits.");
+      const expectedVersion = body.version;
+      const saved = await serial(() =>
+        withRepositoryLock(env.root, explainerPath, async () => {
+          const state = await loadState();
+          const current = freshExplainer(state);
+          const version = artifactIdentity(current, state.index);
+          if (
+            expectedVersion.explainerHash !== version.explainerHash ||
+            expectedVersion.sourceHash !== version.sourceHash
+          )
+            throw new HttpError(
+              409,
+              "This explanation changed since you inspected it. Reload and inspect it before saving.",
+            );
+          try {
+            const result = applyUserEdits(current, body.edits, state.model, state.tree.texts);
+            await atomicWrite(state.loaded.abs, jsonFile(result.explainer));
+            return { ...result, version: artifactIdentity(result.explainer, state.index) };
+          } catch (error) {
+            if (error instanceof UserEditError)
+              throw new HttpError(error.conflict ? 409 : 400, error.message);
+            throw error;
+          }
+        }),
+      );
+      sendJson(req, res, 200, saved);
+      return;
+    }
+
     // Only review metadata enters this route; core checks the inspected fingerprint as a user patch.
     if (pathname === `${API}/review`) {
       allow("PUT");
@@ -527,7 +575,7 @@ export async function startViewServer(options: ViewServerOptions): Promise<ViewS
         throw new HttpError(400, `the id in the body (${String(body.id)}) does not match ${id}`);
       }
       const saved = await serial(() =>
-        withFileLock(explainerPath, async () => {
+        withRepositoryLock(env.root, explainerPath, async () => {
           const state = await loadState();
           const patch = { [record.collection]: [{ ...body, id }] } as unknown as ExplainerPatch;
           const result = applyPatch(state.loaded.explainer, patch, state.model, state.tree.texts, {

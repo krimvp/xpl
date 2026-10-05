@@ -16,6 +16,7 @@ export * from "./graph.js";
 export * from "./focus.js";
 export * from "./validate.js";
 export * from "./apply.js";
+export * from "./user-edits.js";
 export * from "./sequence.js";
 export * from "./bundle.js";
 export * from "./index-pack.js";
