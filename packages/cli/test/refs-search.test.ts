@@ -1,5 +1,7 @@
 import { beforeAll, describe, expect, it } from "vitest";
-import { indexedFixture, makeTempDir, writeFile, xpl, xplJson } from "./helpers.js";
+import { rmSync } from "node:fs";
+import { join } from "node:path";
+import { cloneDir, indexedFixture, makeTempDir, writeFile, xpl, xplJson } from "./helpers.js";
 
 let dir: string;
 beforeAll(async () => {
@@ -194,6 +196,20 @@ describe("xpl refs", () => {
 });
 
 describe("xpl search", () => {
+  it("reports missing indexed source separately from no matches and labels the searched snapshot", async () => {
+    const copy = cloneDir(dir);
+    rmSync(join(copy, "src/queue.ts"));
+    const { code, json } = await xplJson<{
+      total: number;
+      scope: { textOrigin: string; unavailableFiles: string[] };
+      warnings: string[];
+    }>(copy, "search", "no-such-text");
+    expect(code).toBe(0);
+    expect(json.total).toBe(0);
+    expect(json.scope.textOrigin).toBe("working-tree");
+    expect(json.scope.unavailableFiles).toEqual(["src/queue.ts"]);
+    expect(json.warnings).toContain("source unavailable for 1 indexed file: src/queue.ts");
+  });
   it("finds text with the enclosing symbol and the line's offset inside it", async () => {
     const { code, out } = await xpl(dir, "search", "job.completed");
     expect(code).toBe(0);
