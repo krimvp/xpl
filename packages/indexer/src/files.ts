@@ -155,6 +155,8 @@ export interface DiscoveredFile {
 }
 
 export interface DiscoverOptions {
+  /** False returns path candidates without reading/filtering content, for metadata polling. */
+  content?: boolean;
   /** Only files of these languages are returned. */
   languages?: readonly FileLanguage[];
   /** Result of `detectGit(root)`; detected when omitted. */
@@ -255,10 +257,25 @@ export async function discoverFiles(
   const wanted = options.languages ? new Set<FileLanguage>(options.languages) : undefined;
   const selected: DiscoveredFile[] = [];
   for (const path of candidates) {
-    if (path.endsWith("/") || inExcludedDir(path) || isLockfile(path)) continue;
+    if (
+      path.endsWith("/") ||
+      inExcludedDir(path) ||
+      isLockfile(path) ||
+      /\.(?:explainer|patch)\.json$/i.test(path)
+    )
+      continue;
     const language = languageForPath(path);
     if (wanted && !wanted.has(language)) continue;
     selected.push({ path, abs: join(root, ...path.split("/")), language });
+  }
+
+  if (options.content === false) {
+    selected.sort((a, b) => a.path.localeCompare(b.path));
+    return {
+      files: selected.filter((f, i) => i === 0 || f.path !== selected[i - 1]!.path),
+      usedGit,
+      warnings,
+    };
   }
 
   // Content filters (stat + NUL sniff), a bounded number of files at a time.

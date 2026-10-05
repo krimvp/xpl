@@ -30,8 +30,9 @@ export class SourceRepoView implements RepoView {
   readText(path: FilePath): string | undefined {
     if (this.texts.has(path)) return this.texts.get(path);
     let text: string | undefined;
+    // A supplied reader owns its namespace (configuration capture also records ancestor paths).
     const normalized = posix.normalize(path);
-    if (!normalized.startsWith("../") && !isAbsolute(normalized)) {
+    if (this.getText || (!normalized.startsWith("../") && !isAbsolute(normalized))) {
       try {
         text = this.getText
           ? this.getText(path)
