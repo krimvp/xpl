@@ -62,6 +62,8 @@ export async function prepareHtmlSave(
   store: ViewerStore,
   reviewScope?: ReviewScope,
 ): Promise<ViewerBundle> {
+  if (store.getState().editBusy || store.getState().editDraft)
+    throw new Error("Save or cancel the text edit before exporting HTML.");
   const script = page?.root.querySelector(`#${BUNDLE_SCRIPT_ID}`);
   if (!script) throw new Error("This page has no embedded snapshot to save.");
   const original = parseBundle(script.textContent ?? "");

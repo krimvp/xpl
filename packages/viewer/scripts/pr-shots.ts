@@ -20,6 +20,7 @@
  *
  * - `--service` intercepts a loopback API; unmanaged omits attachment metadata for plain-view shots.
  * - `--attention affected|paused` adds watch/guide evidence; `--attention-open` opens its repair offer.
+ * - `--text-draft` opens and edits the TS fixture retry concept without saving.
  *
  * compare: pairs the files of both directories by name and writes `<name>.png`, Before left and After right,
  * for each pair whose bytes differ, plus `index.md` listing changed, added, removed and unchanged shots.
@@ -52,6 +53,7 @@ async function shoot(argv: string[]): Promise<void> {
       service: { type: "string" },
       attention: { type: "string" },
       "attention-open": { type: "boolean", default: false },
+      "text-draft": { type: "boolean", default: false },
     },
   });
   if (values.service && !["connected", "disconnected", "unmanaged"].includes(values.service))
@@ -176,6 +178,15 @@ async function shoot(argv: string[]): Promise<void> {
         }
       } else await page.goto(pathToFileURL(file).href + query);
       await page.waitForFunction(() => !!window.__xpl);
+      if (values["text-draft"]) {
+        await page.evaluate(() => window.__xpl!.select(["concept:retry-policy"]));
+        await page.getByTestId("text-edit").click();
+        await page
+          .getByLabel("Summary", { exact: true })
+          .fill("Inspect changed evidence before revising.");
+        await page.locator(".save-status").filter({ hasText: "Unsaved text draft" }).waitFor();
+        await page.evaluate(() => window.scrollTo(0, 0));
+      }
       await page.waitForTimeout(400);
       await page.screenshot({ path: `${out}/${name}.png` });
       console.log(name);

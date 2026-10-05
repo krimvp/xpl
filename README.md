@@ -203,6 +203,16 @@ only included source, and say they cannot detect later repository changes. Sourc
 claims or every runtime path.
 Generated XPL HTML pages are excluded from indexing, so exporting inside a repo does not stale its index.
 
+In Explore, select a box, stored arrow or concept and choose **Edit text** in Details. Correct its label,
+summary or Markdown detail; concepts also have a related-elements selector. **Save text** retains user
+ownership, and **Cancel** drops the draft. Live saves survive reload and reject stale inspected versions.
+Drafts survive switching boxes and returning to reading until saved or cancelled. Save/Cancel stay visible.
+Edit > **Undo** / **Redo** names the fields and element and saves only changed fields, preserving another author's
+unrelated edits and refusing conflicts on the same field. Live history retains up to 50 edits in browser
+storage, bound to the canonical repository root and guide. Copied or renamed guides inherit no history;
+pages without a live identity keep only in-session undo. Offline edits remain **Unsaved** until exported as HTML or JSON. Source stays read-only; broken
+evidence still needs the existing explicit patch/repair workflow.
+
 Edit > Record author review records a self-reported name, inspected content/evidence scope and named
 omissions. About this explanation shows **unchecked**, **reviewed** or **out of date** separately from
 source checks. A narrow review covers named stored items and their own anchors; unrelated source edits do

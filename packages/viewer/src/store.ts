@@ -8,6 +8,10 @@
  */
 import {
   artifactIdentity,
+  applyUserEdits,
+  makeUserEdit,
+  type UserEdit,
+  type ArtifactIdentity,
   applyPatch,
   type ExplainerPatch,
   FEEDBACK_SCHEMA,
@@ -124,6 +128,11 @@ type Navigation = Pick<
   | "applied"
 >;
 
+export interface AuthorDraft {
+  edit: UserEdit;
+  version: ArtifactIdentity;
+}
+
 export interface ViewerState {
   perspective: Perspective;
   canGoBack: boolean;
@@ -189,6 +198,13 @@ export interface ViewerState {
   /** Edits exist that are not persisted (always true after an edit without a server). */
   dirty: boolean;
   save: SaveState;
+  editBusy: boolean;
+  editDraft: boolean;
+  textDrafts: Readonly<Record<string, AuthorDraft>>;
+  undoCount: number;
+  redoCount: number;
+  editHistoryError?: string;
+  editError?: string;
   /** Running under `xpl view`. */
   serverMode: boolean;
   connection: ConnectionState;
@@ -220,7 +236,14 @@ function findTour(tours: readonly Tour[], id: string | undefined): Tour | undefi
 
 type PendingWrite =
   | { kind: "edit"; fields: Record<string, unknown> }
-  | { kind: "review"; review: ExplainerPatch["review"] };
+  | { kind: "review"; review: ExplainerPatch["review"] }
+  | {
+      kind: "author";
+      edits: UserEdit[];
+      version?: ArtifactIdentity;
+      action: "save" | "undo" | "redo";
+      applied: boolean;
+    };
 
 export class ViewerStore {
   private state: ViewerState;
@@ -233,16 +256,25 @@ export class ViewerStore {
   private readonly loading = new Set<FilePath>();
   private readonly loadingBase = new Set<FilePath>();
   private readonly pending = new Map<string, PendingWrite>();
+  private authorSequence = 0;
   private saveTimer: ReturnType<typeof setTimeout> | undefined;
   private saving: Promise<void> | undefined;
   private readonly past: Navigation[] = [];
   private readonly future: Navigation[] = [];
+  private readonly undoEdits: UserEdit[][] = [];
+  private readonly redoEdits: UserEdit[][] = [];
+  private readonly editStorageKey: string | undefined;
+  private readonly editAttachment: NonNullable<ViewerBundle["server"]>["attachment"];
   /** The reading tab (Guide, Map, Flow, Code) last on screen: where "Back to reading" goes from Explore. */
   private reading: Exclude<Perspective, "explore"> = "guide";
   /** Namespace of the page as loaded; edits change request context, never where requests are saved. */
   private readonly feedbackStorageKey: string;
 
   constructor(bundle: ViewerBundle, launch: LaunchParams = {}) {
+    this.editAttachment = bundle.server?.attachment;
+    this.editStorageKey = this.editAttachment
+      ? `xpl-edits:${JSON.stringify([this.editAttachment.root, this.editAttachment.guide])}`
+      : undefined;
     const identity = artifactIdentity(bundle.explainer, bundle.index);
     this.feedbackStorageKey = `xpl-feedback:${identity.explainerHash}:${identity.sourceHash}`;
     this.indexModel = asIndexModel(bundle.index);
@@ -289,6 +321,11 @@ export class ViewerStore {
       showChanges: true,
       dirty: false,
       save: { status: "idle" },
+      editBusy: false,
+      editDraft: false,
+      textDrafts: {},
+      undoCount: 0,
+      redoCount: 0,
       serverMode: this.api !== undefined,
       connection: {
         status: this.api ? "connecting" : "offline",
@@ -299,6 +336,28 @@ export class ViewerStore {
       exportInfo: bundle.exportInfo,
     };
     this.loadFeedback(bundle.feedback);
+    // Offline reload opens the original embedded artifact. Its in-memory edits must first be exported.
+    if (this.api && this.editStorageKey && typeof localStorage !== "undefined") {
+      try {
+        const stored = JSON.parse(localStorage.getItem(this.editStorageKey) ?? "null") as {
+          identity: string;
+          undo: UserEdit[][];
+          redo: UserEdit[][];
+        } | null;
+        if (
+          stored &&
+          stored.identity === this.editHistoryIdentity() &&
+          Array.isArray(stored.undo) &&
+          Array.isArray(stored.redo)
+        ) {
+          this.undoEdits.push(...stored.undo.slice(-50));
+          this.redoEdits.push(...stored.redo.slice(-50));
+          this.set({ undoCount: this.undoEdits.length, redoCount: this.redoEdits.length });
+        }
+      } catch (error) {
+        this.set({ editHistoryError: `Undo history could not be loaded: ${messageOf(error)}` });
+      }
+    }
     if (this.state.perspective !== "explore") this.reading = this.state.perspective;
     if (present) this.present();
     else if (launch.perspective && asked && launch.step) {
@@ -937,6 +996,7 @@ export class ViewerStore {
   }
 
   private editView(viewId: string, fields: Record<string, unknown>): void {
+    if (this.state.editBusy) return;
     const explainer = withViewFields(this.state.explainer, viewId, fields);
     if (explainer === this.state.explainer) return;
     const model = this.modelOf(explainer);
@@ -1002,6 +1062,38 @@ export class ViewerStore {
       await api.putReview(write.review);
       return;
     }
+    if (write.kind === "author") {
+      this.set({ editBusy: true, save: { status: "saving" } });
+      try {
+        let version = write.version;
+        if (!version) {
+          const bundle = await api.bundle();
+          this.indexModel = asIndexModel(bundle.index);
+          this.workspaceRevision++;
+          this.set({
+            files: bundle.files,
+            baseFiles: bundle.baseFiles ?? {},
+            fileErrors: {},
+            baseErrors: {},
+            sourceWarning: bundle.sourceWarning,
+            exportInfo: bundle.exportInfo,
+          });
+          version = artifactIdentity(bundle.explainer, bundle.index);
+        }
+        const result = await api.putEdits(version, write.edits);
+        if (!write.applied) this.acceptAuthor(write, result);
+        this.set({ editError: undefined });
+      } catch (error) {
+        // Rejected author actions require inspection; transport failures stay retryable.
+        if (!write.applied && /^4\d\d\b/.test(messageOf(error)) && this.pending.get(id) === write)
+          this.pending.delete(id);
+        this.set({ editError: messageOf(error) });
+        throw error;
+      } finally {
+        this.set({ editBusy: false });
+      }
+      return;
+    }
     const { fields } = write;
     if (parseId(id).type === "tour") {
       const tour = this.state.model.tour(id);
@@ -1043,6 +1135,7 @@ export class ViewerStore {
               await this.send(api, id, write);
               // A successful response owns only the exact write it sent, not any newer edit.
               if (this.pending.get(id) === write) this.pending.delete(id);
+              if (write.kind === "author") this.keepEditHistory();
             } catch (error) {
               failed.add(id);
               firstError ??= error;
@@ -1053,19 +1146,205 @@ export class ViewerStore {
         this.saving = undefined;
         this.set({
           save:
-            this.pending.size === 0
-              ? { status: "saved" }
-              : firstError === undefined
-                ? { status: "idle" }
-                : { status: "error", message: messageOf(firstError) },
+            firstError !== undefined
+              ? { status: "error", message: messageOf(firstError) }
+              : this.pending.size === 0
+                ? { status: "saved" }
+                : { status: "idle" },
         });
       }
     })();
     await this.saving;
   }
 
+  /** Capture fields and version when the author opens the editor, before typing begins. */
+  captureEdit(
+    collection: UserEdit["collection"],
+    id: string,
+    fields: Record<string, unknown>,
+  ): { edit: UserEdit; version: ArtifactIdentity } {
+    const draft = this.state.textDrafts[id] ?? {
+      edit: makeUserEdit(this.state.explainer, this.indexModel, collection, id, fields),
+      version: artifactIdentity(this.state.explainer, this.indexModel.index),
+    };
+    this.set({ textDrafts: { ...this.state.textDrafts, [id]: draft } });
+    return draft;
+  }
+
+  updateEditDraft(id: string, values: Record<string, unknown>): void {
+    const draft = this.state.textDrafts[id];
+    if (!draft || this.state.editBusy) return;
+    this.setTextDrafts({
+      ...this.state.textDrafts,
+      [id]: { ...draft, edit: { ...draft.edit, after: values } },
+    });
+  }
+
+  private setTextDrafts(textDrafts: ViewerState["textDrafts"]): void {
+    const editDraft = Object.values(textDrafts).some(({ edit }) =>
+      Object.keys(edit.after).some(
+        (key) => JSON.stringify(edit.after[key]) !== JSON.stringify(edit.before[key]),
+      ),
+    );
+    this.set({ textDrafts, editDraft });
+  }
+
+  cancelEdit(id: string): void {
+    const textDrafts = { ...this.state.textDrafts };
+    delete textDrafts[id];
+    for (const [key, write] of this.pending) {
+      if (write.kind === "author" && !write.applied && write.edits.some((edit) => edit.id === id))
+        this.pending.delete(key);
+    }
+    this.setTextDrafts(textDrafts);
+    if (this.state.editError) this.set({ editError: undefined, save: { status: "idle" } });
+  }
+
+  private editHistoryIdentity(): string | undefined {
+    return this.editAttachment
+      ? JSON.stringify(["attachment", this.editAttachment.root, this.editAttachment.guide])
+      : undefined;
+  }
+
+  private keepEditHistory(): void {
+    this.set({ undoCount: this.undoEdits.length, redoCount: this.redoEdits.length });
+    if (
+      !this.liveApi ||
+      !this.editStorageKey ||
+      typeof localStorage === "undefined" ||
+      [...this.pending.values()].some((write) => write.kind === "author" && write.applied)
+    )
+      return;
+    try {
+      localStorage.setItem(
+        this.editStorageKey,
+        JSON.stringify({
+          identity: this.editHistoryIdentity(),
+          undo: this.undoEdits,
+          redo: this.redoEdits,
+        }),
+      );
+      this.set({ editHistoryError: undefined });
+    } catch (error) {
+      this.set({
+        editHistoryError: `Edits are saved, but undo history could not be retained: ${messageOf(error)}`,
+      });
+    }
+  }
+
+  async saveEdits(edits: UserEdit[], version: ArtifactIdentity): Promise<void> {
+    await this.writeEdits(edits, "save", version);
+  }
+
+  private acceptAuthor(
+    write: Extract<PendingWrite, { kind: "author" }>,
+    result: { explainer: Explainer; inverse: UserEdit[] },
+  ): void {
+    this.set({
+      explainer: result.explainer,
+      model: this.modelOf(result.explainer),
+      editError: undefined,
+    });
+    if (write.action === "save") {
+      this.undoEdits.push(result.inverse);
+      if (this.undoEdits.length > 50) this.undoEdits.shift();
+      this.redoEdits.length = 0;
+      const textDrafts = { ...this.state.textDrafts };
+      for (const edit of write.edits) {
+        const draft = textDrafts[edit.id];
+        if (
+          draft &&
+          Object.keys(edit.after).every(
+            (key) => JSON.stringify(draft.edit.after[key]) === JSON.stringify(edit.after[key]),
+          )
+        )
+          delete textDrafts[edit.id];
+      }
+      this.setTextDrafts(textDrafts);
+    } else {
+      const from = write.action === "redo" ? this.redoEdits : this.undoEdits;
+      const to = write.action === "redo" ? this.undoEdits : this.redoEdits;
+      from.pop();
+      to.push(result.inverse);
+    }
+    write.applied = true;
+    this.keepEditHistory();
+  }
+
+  editHistoryDescription(redo = false): string {
+    return (
+      (redo ? this.redoEdits : this.undoEdits)
+        .at(-1)
+        ?.map(
+          (edit) => `${Object.keys(edit.after).join(", ")} of ${this.state.model.label(edit.id)}`,
+        )
+        .join("; ") ?? "text edit"
+    );
+  }
+
+  /** Refresh unrelated content first; touched-field preconditions still forbid overwriting another author. */
+  async undoEdit(redo = false): Promise<void> {
+    if (this.state.editDraft) throw new Error("Save or cancel the text draft before undo or redo.");
+    const from = redo ? this.redoEdits : this.undoEdits;
+    const edits = from.at(-1);
+    if (!edits) return;
+    await this.writeEdits(edits, redo ? "redo" : "undo");
+  }
+
+  private async writeEdits(
+    edits: UserEdit[],
+    action: "save" | "undo" | "redo",
+    version?: ArtifactIdentity,
+  ): Promise<void> {
+    if (this.state.editBusy) throw new Error("Wait for the current edit to finish saving.");
+    try {
+      if ([...this.pending.values()].some((write) => write.kind === "author" && !write.applied))
+        throw new Error("Retry or cancel the pending text save before submitting another edit.");
+      await this.flush();
+      if (this.api && this.state.dirty) throw new Error("Save or cancel the pending edits first.");
+      const write: Extract<PendingWrite, { kind: "author" }> = {
+        kind: "author",
+        edits,
+        version,
+        action,
+        applied: false,
+      };
+      const id = `author:${++this.authorSequence}`;
+      if (!this.api) {
+        const current = this.state.explainer;
+        const expected = artifactIdentity(current, this.indexModel.index);
+        if (version && JSON.stringify(version) !== JSON.stringify(expected))
+          throw new Error(
+            "This explanation changed while you were editing. Reopen the editor and inspect it before saving.",
+          );
+        write.version = version ?? expected;
+        const result = applyUserEdits(current, edits, this.indexModel, snapshotTexts(this.state));
+        this.pending.set(id, write);
+        this.acceptAuthor(write, result);
+        return;
+      }
+      this.pending.set(id, write);
+      this.set({ save: { status: "saving" } });
+      await this.flush();
+      if (!write.applied)
+        throw new Error(
+          this.state.save.status === "error"
+            ? this.state.save.message
+            : "Text edit remains unsaved. Use Retry save.",
+        );
+    } catch (error) {
+      this.set({
+        editError: messageOf(error),
+        save: { status: "error", message: messageOf(error) },
+      });
+      throw error;
+    }
+  }
+
   /** Bind the author action to the inspected snapshot, never regenerate its fingerprint at save time. */
   async recordReview(snapshot: ViewerBundle, review: ExplainerPatch["review"]): Promise<void> {
+    if (this.state.editBusy || this.state.editDraft)
+      throw new Error("Save or cancel the text edit before recording a review.");
     await this.flush();
     if (this.api && (this.state.dirty || this.state.save.status === "error"))
       throw new Error("Save the pending edits before recording a review.");
@@ -1173,6 +1452,7 @@ export class ViewerStore {
   }
 
   private editTour(tour: Tour, choose = false): void {
+    if (this.state.editBusy) return;
     const before = this.state.model.tour(tour.id);
     if (before === tour) return;
     const explainer = withTour(this.state.explainer, tour);
@@ -1386,7 +1666,14 @@ export class ViewerStore {
             },
           });
           // Availability still updates while edits prevent adoption of a new workspace.
-          if (this.state.dirty || this.pending.size > 0 || this.saving) return;
+          if (
+            this.state.editBusy ||
+            this.state.editDraft ||
+            this.state.dirty ||
+            this.pending.size > 0 ||
+            this.saving
+          )
+            return;
           const files = { ...bundle.files };
           const fileErrors: Record<string, string> = {};
           await Promise.all(
@@ -1421,7 +1708,7 @@ export class ViewerStore {
           },
         });
         // Old unmanaged viewers have no polling endpoint. Managed services keep retrying.
-        if (!api.attachment && /^404\b/.test(message)) stop();
+        if (!api.attachment?.instanceId && /^404\b/.test(message)) stop();
       } finally {
         busy = false;
       }
@@ -1448,7 +1735,14 @@ export class ViewerStore {
     explainer: Explainer,
     workspace?: ViewerBundle & { fileErrors?: Record<string, string> },
   ): boolean {
-    if (this.state.dirty || this.pending.size > 0 || this.saving) return false;
+    if (
+      this.state.editBusy ||
+      this.state.editDraft ||
+      this.state.dirty ||
+      this.pending.size > 0 ||
+      this.saving
+    )
+      return false;
     if (!workspace && serializeExplainer(explainer) === serializeExplainer(this.state.explainer))
       return false;
     if (workspace) {
