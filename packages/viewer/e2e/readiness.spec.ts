@@ -254,17 +254,18 @@ test("live ready HTML refreshes fetched source and keeps it available after disc
   expect(dataOf(saved).files["README.md"]).toBe(fresh);
   expect(dataOf(saved).feedback?.requests).toEqual([prior]);
   expect(fetched).toEqual([initial, fresh, fresh]);
-  await page.unroute("http://xpl.test/**");
+  await page.close();
+  const offline = await page.context().newPage();
   const requests: string[] = [];
-  await page.route("http://xpl.test/**", (route) => {
+  await offline.route("http://xpl.test/**", (route) => {
     if (new URL(route.request().url()).pathname === "/")
       return route.fulfill({ contentType: "text/html", body: saved });
     requests.push(route.request().url());
     return route.abort();
   });
-  await page.goto("http://xpl.test/?perspective=code");
-  await page.locator('.tree-row[data-path="README.md"]').click();
-  await expect(page.locator('[data-file="README.md"] .cm-content')).toContainText(fresh);
+  await offline.goto("http://xpl.test/?perspective=code");
+  await offline.locator('.tree-row[data-path="README.md"]').click();
+  await expect(offline.locator('[data-file="README.md"] .cm-content')).toContainText(fresh);
   expect(requests).toEqual([]);
 });
 
