@@ -4,7 +4,7 @@
  *
  *   npx tsx scripts/pr-shots.ts shoot <outDir> [--viewer-dir <dir>] [--build] [--set ux]
  *                                     [--shot <name>=<bundle>[?query]]... [--scheme light|dark]
- *                                     [--size 1440x900]
+ *                                     [--size 1440x900] [--service connected|disconnected]
  *   npx tsx scripts/pr-shots.ts compare <beforeDir> <afterDir> <outDir>
  *
  * shoot:
@@ -17,6 +17,8 @@
  *   `py-architecture`, `ts-change`, `self` when the shell script made one) or a path to an .html file; the
  *   query is passed on (`?perspective=map&view=view:overview`, `?mode=present&tour=tour:intro&step=2`,
  *   `?perspective=explore&focus=edge:job-completed`). Without `--set` or `--shot`, `--set ux` is assumed.
+ *
+ * - `--service` injects a managed attachment and intercepts a loopback API for reproducible connection shots.
  *
  * compare: pairs the files of both directories by name and writes `<name>.png`, Before left and After right,
  * for each pair whose bytes differ, plus `index.md` listing changed, added, removed and unchanged shots.
@@ -46,8 +48,11 @@ async function shoot(argv: string[]): Promise<void> {
       shot: { type: "string", multiple: true, default: [] },
       scheme: { type: "string", default: "light" },
       size: { type: "string", default: "1440x900" },
+      service: { type: "string" },
     },
   });
+  if (values.service && !["connected", "disconnected"].includes(values.service))
+    throw new Error("--service must be connected or disconnected");
   const out = resolve(positionals[0] ?? "pr-shots");
   const viewerDir = resolve(values["viewer-dir"]);
   mkdirSync(out, { recursive: true });
@@ -85,7 +90,40 @@ async function shoot(argv: string[]): Promise<void> {
         continue;
       }
       const page = await browser.newPage({ viewport: { width, height }, colorScheme });
-      await page.goto(pathToFileURL(file).href + query);
+      if (values.service) {
+        const html = readFileSync(file, "utf8");
+        const script = /(<script id="xpl-data" type="application\/json">)([\s\S]*?)(<\/script>)/;
+        const data = JSON.parse(script.exec(html)![2]!);
+        data.server = {
+          api: "/api",
+          attachment: {
+            root: "/tmp/xpl-demo/jobrunner",
+            guide: ".explainer/jobrunner.explainer.json",
+            instanceId: "demo-instance",
+            backend: "claude",
+            backendAvailable: false,
+          },
+        };
+        const body = html.replace(
+          script,
+          (_all, start, _data, end) => start + JSON.stringify(data).replace(/</g, "\\u003c") + end,
+        );
+        await page.route("http://127.0.0.1:4747/**", (route) => {
+          const path = new URL(route.request().url()).pathname;
+          if (path === "/") return route.fulfill({ contentType: "text/html", body });
+          if (path === "/favicon.ico") return route.fulfill({ status: 204 });
+          if (values.service === "disconnected") return route.abort("connectionrefused");
+          if (path === "/api/explainer") return route.fulfill({ status: 304 });
+          if (path === "/api/requests") return route.fulfill({ json: { requests: [] } });
+          return route.fulfill({ status: 404 });
+        });
+        await page.goto("http://127.0.0.1:4747/" + query);
+        await page.waitForFunction(() => !!window.__xpl);
+        // The base viewer has no status strip; allow its first normal poll too.
+        await page.waitForTimeout(2200);
+        const details = page.locator(".connection-status details");
+        if (await details.count()) await details.locator("summary").click();
+      } else await page.goto(pathToFileURL(file).href + query);
       await page.waitForFunction(() => !!window.__xpl);
       await page.waitForTimeout(400);
       await page.screenshot({ path: `${out}/${name}.png` });

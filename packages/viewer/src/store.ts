@@ -73,6 +73,12 @@ export interface Cursor {
   side?: "base";
 }
 
+export interface ConnectionState {
+  status: "offline" | "connecting" | "connected" | "disconnected" | "unavailable";
+  attachment?: NonNullable<ViewerBundle["server"]>["attachment"];
+  message?: string;
+}
+
 export type SaveState =
   | { status: "idle" }
   | { status: "saving" }
@@ -181,6 +187,7 @@ export interface ViewerState {
   save: SaveState;
   /** Running under `xpl view`. */
   serverMode: boolean;
+  connection: ConnectionState;
   feedback: FeedbackRequest[];
   feedbackStorageError?: string;
   /** The live source no longer matches its index; reindex before trusting locations and edges. */
@@ -208,7 +215,9 @@ function findTour(tours: readonly Tour[], id: string | undefined): Tour | undefi
 export class ViewerStore {
   private state: ViewerState;
   private readonly listeners = new Set<() => void>();
-  private readonly api: ServerApi | undefined;
+  private api: ServerApi | undefined;
+  private readonly liveApi: ServerApi | undefined;
+  private pollConnection: (() => Promise<void>) | undefined;
   private indexModel: IndexModel;
   private workspaceRevision = 0;
   private readonly loading = new Set<FilePath>();
@@ -227,7 +236,10 @@ export class ViewerStore {
     const identity = artifactIdentity(bundle.explainer, bundle.index);
     this.feedbackStorageKey = `xpl-feedback:${identity.explainerHash}:${identity.sourceHash}`;
     this.indexModel = asIndexModel(bundle.index);
-    this.api = bundle.server?.api ? new ServerApi(bundle.server.api) : undefined;
+    this.api = bundle.server?.api
+      ? new ServerApi(bundle.server.api, bundle.server.attachment)
+      : undefined;
+    this.liveApi = this.api;
     const explainer = bundle.explainer;
     const model = this.modelOf(explainer);
     const views = model.views;
@@ -268,6 +280,10 @@ export class ViewerStore {
       dirty: false,
       save: { status: "idle" },
       serverMode: this.api !== undefined,
+      connection: {
+        status: this.api ? "connecting" : "offline",
+        attachment: bundle.server?.attachment,
+      },
       sourceWarning: bundle.sourceWarning,
       feedback: [],
       exportInfo: bundle.exportInfo,
@@ -924,7 +940,7 @@ export class ViewerStore {
       dirty: true,
       ...(this.api ? { save: { status: "saving" } as SaveState } : {}),
     });
-    if (this.api) this.queueSave(viewId, fields);
+    if (this.liveApi) this.queueSave(viewId, fields);
   }
 
   /**
@@ -957,6 +973,7 @@ export class ViewerStore {
   private queueSave(id: string, fields: Record<string, unknown>): void {
     this.pending.set(id, { ...this.pending.get(id), ...fields });
     if (this.saveTimer !== undefined) clearTimeout(this.saveTimer);
+    if (!this.api) return;
     this.saveTimer = setTimeout(() => {
       this.saveTimer = undefined;
       void this.flush();
@@ -995,8 +1012,9 @@ export class ViewerStore {
       try {
         for (;;) {
           const batch = [...this.pending].filter(([id]) => !failed.has(id));
-          if (batch.length === 0) break;
+          if (batch.length === 0 || this.api !== api) break;
           for (const [id, fields] of batch) {
+            if (this.api !== api) break;
             this.pending.delete(id);
             try {
               await this.send(api, id, fields);
@@ -1012,6 +1030,7 @@ export class ViewerStore {
         }
         this.saving = undefined;
       }
+      if (this.api !== api) return;
       if (firstError === undefined) this.set({ dirty: false, save: { status: "saved" } });
       else this.set({ save: { status: "error", message: messageOf(firstError) } });
     })();
@@ -1099,7 +1118,7 @@ export class ViewerStore {
       dirty: true,
       ...(this.api ? { save: { status: "saving" } as SaveState } : {}),
     });
-    if (this.api) this.queueSave(tour.id, {});
+    if (this.liveApi) this.queueSave(tour.id, {});
   }
 
   // ─── Explain requests and export ─────────────────────────────────────────────────────────────
@@ -1212,34 +1231,73 @@ export class ViewerStore {
 
   // ─── Changes made on disk (Claude's `xpl apply`) ──────────────────────────────────────────────
 
+  get canReconnect(): boolean {
+    return this.liveApi !== undefined;
+  }
+
+  /** Keep loaded data and browser feedback usable after stopping the optional service. */
+  useOfflineSnapshot(): void {
+    this.api = undefined;
+    if (this.saveTimer !== undefined) clearTimeout(this.saveTimer);
+    this.saveTimer = undefined;
+    this.set({
+      serverMode: false,
+      connection: { ...this.state.connection, status: "offline", message: undefined },
+    });
+  }
+
+  /** Retry the page's original address and repository/guide, without discarding edits. */
+  async reconnect(): Promise<void> {
+    if (!this.liveApi) return;
+    this.api = this.liveApi;
+    this.set({
+      serverMode: true,
+      ...(this.state.dirty
+        ? {
+            save: {
+              status: "error" as const,
+              message: "Offline edits remain unsaved. Use Retry save to persist them.",
+            },
+          }
+        : {}),
+      connection: { ...this.state.connection, status: "connecting", message: undefined },
+    });
+    if (!this.pollConnection) this.watchExplainer();
+    await this.pollConnection?.();
+  }
+
   /**
    * Under `xpl view`, polls `GET {api}/explainer` and shows what changed on disk without a reload, so
    * source edits, new indexes and applied feedback arrive together. Fetches a fresh bundle after the
-   * workspace ETag changes and preserves unsaved edits and reader position. Stops for
-   * good on a server that has no such endpoint. Returns the function that stops it.
+   * workspace ETag changes and preserves unsaved edits and reader position. Availability still updates
+   * with unsaved edits. Only an unmanaged server without this endpoint stops automatic polling.
+   * Returns the function that stops it.
    */
   watchExplainer(intervalMs = WATCH_INTERVAL_MS): () => void {
-    const api = this.api;
-    if (!api) return () => undefined;
+    if (!this.liveApi) return () => undefined;
     let etag: string | undefined;
     let busy = false;
+    let stopped = false;
     const poll = async () => {
-      if (
-        busy ||
-        this.state.dirty ||
-        this.pending.size > 0 ||
-        this.saving ||
-        (typeof document !== "undefined" && document.hidden)
-      )
-        return;
+      const api = this.api;
+      if (!api || stopped || busy || (typeof document !== "undefined" && document.hidden)) return;
       busy = true;
       try {
         const fresh = await api.getExplainer(etag);
+        if (this.api !== api) return;
         if (fresh) {
           const bundle = await api.bundle();
+          if (this.api !== api) return;
+          this.set({
+            connection: {
+              status: "connected",
+              attachment: bundle.server?.attachment ?? api.attachment,
+            },
+          });
+          // Availability still updates while edits prevent adoption of a new workspace.
+          if (this.state.dirty || this.pending.size > 0 || this.saving) return;
           const files = { ...bundle.files };
           const fileErrors: Record<string, string> = {};
-          // Include files opened outside the explanation, rather than keeping their old cached text.
           await Promise.all(
             Object.keys(this.state.files)
               .filter((file) => !(file in files))
@@ -1251,18 +1309,42 @@ export class ViewerStore {
                 }
               }),
           );
-          // Do not acknowledge a skipped update: poll again once the user's edits are saved.
-          if (this.adoptExplainer(bundle.explainer, { ...bundle, files, fileErrors }))
+          if (
+            this.api === api &&
+            this.adoptExplainer(bundle.explainer, { ...bundle, files, fileErrors })
+          )
             etag = fresh.etag;
+        } else {
+          this.set({
+            connection: { ...this.state.connection, status: "connected", message: undefined },
+          });
         }
       } catch (error) {
-        if (/^404\b/.test(messageOf(error))) stop();
+        if (this.api !== api) return;
+        const message = messageOf(error);
+        this.set({
+          connection: {
+            ...this.state.connection,
+            status: /^\d{3}\b/.test(message) ? "unavailable" : "disconnected",
+            message,
+          },
+        });
+        // Old unmanaged viewers have no polling endpoint. Managed services keep retrying.
+        if (!api.attachment && /^404\b/.test(message)) stop();
       } finally {
         busy = false;
       }
     };
+    this.pollConnection = async () => {
+      etag = undefined;
+      await poll();
+    };
     const timer = setInterval(() => void poll(), intervalMs);
-    const stop = () => clearInterval(timer);
+    const stop = () => {
+      stopped = true;
+      clearInterval(timer);
+      this.pollConnection = undefined;
+    };
     return stop;
   }
 

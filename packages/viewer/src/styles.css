@@ -4186,3 +4186,38 @@ code {
   margin-top: 20px;
   flex-wrap: wrap;
 }
+
+/* The local service is optional; status never blocks reading the loaded snapshot. */
+.connection-status {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  padding: 7px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel-2);
+  color: var(--muted);
+  font-size: 12px;
+}
+.connection-status[data-status="connected"] strong {
+  color: var(--ok);
+}
+.connection-status[data-status="disconnected"] strong,
+.connection-status[data-status="unavailable"] strong {
+  color: var(--warn);
+}
+.connection-status details {
+  max-width: 100%;
+}
+.connection-status summary {
+  cursor: pointer;
+}
+.connection-status p {
+  margin: 6px 0;
+  overflow-wrap: anywhere;
+}
+.connection-actions {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+}

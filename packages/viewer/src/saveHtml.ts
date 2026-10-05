@@ -76,7 +76,7 @@ export async function prepareHtmlSave(store: ViewerStore): Promise<ViewerBundle>
     if (state.dirty || state.save.status === "error")
       throw new Error("Save the pending edits before exporting HTML.");
     if (!original.server) throw new Error("The live workspace API is unavailable.");
-    const api = new ServerApi(original.server.api);
+    const api = new ServerApi(original.server.api, original.server.attachment);
     const bundle = await api.exportBundle();
     const indexed = new Set(bundle.index.files.map(({ path }) => path));
     // Keep loaded paths, never their old text: /export already refreshes the referenced source.

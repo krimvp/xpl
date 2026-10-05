@@ -69,8 +69,14 @@ export interface ViewServerOptions {
   port: number;
   /** Viewer HTML, read per request so a rebuilt viewer shows up on reload. */
   viewerHtml: () => string;
-  /** Local lifecycle control, present only for a managed repository service. Never injected into HTML. */
-  control?: { token: string; instanceId: string; root: string; stop(): void };
+  /** Managed lifecycle control. The token and stop callback never enter a viewer bundle. */
+  control?: {
+    token: string;
+    instanceId: string;
+    root: string;
+    backend: "none" | "claude";
+    stop(): void;
+  };
 }
 
 export interface ViewServer {
@@ -171,6 +177,15 @@ function wellFormedPath(path: string): boolean {
 export async function startViewServer(options: ViewServerOptions): Promise<ViewServer> {
   const { env, explainerPath, host } = options;
   let allowedHosts: Set<string> | undefined;
+  const attachment = options.control
+    ? {
+        root: options.control.root,
+        guide: displayPath(options.control.root, explainerPath),
+        instanceId: options.control.instanceId,
+        backend: options.control.backend,
+        backendAvailable: false,
+      }
+    : undefined;
 
   function checkServicePaths(...paths: string[]) {
     if (!options.control) return;
@@ -254,7 +269,7 @@ export async function startViewServer(options: ViewServerOptions): Promise<ViewS
         files: collected.files,
         ...(base !== undefined ? { baseFiles: base.files } : {}),
         mode: "explore",
-        server: { api: API },
+        server: { api: API, ...(attachment ? { attachment } : {}) },
       }),
       ...(stale ? { sourceWarning: stale.message } : {}),
     };
@@ -288,6 +303,22 @@ export async function startViewServer(options: ViewServerOptions): Promise<ViewS
       throw new HttpError(400, "malformed request URL");
     }
     const { pathname } = url;
+    const expected = req.headers["x-xpl-attachment"] ?? url.searchParams.get("attachment");
+    if (expected !== undefined && expected !== null) {
+      let context: { root?: unknown; guide?: unknown };
+      try {
+        context = JSON.parse(
+          req.headers["x-xpl-attachment"] ? decodeURIComponent(String(expected)) : String(expected),
+        );
+      } catch {
+        throw new HttpError(400, "Invalid service attachment.");
+      }
+      if (!attachment || context?.root !== attachment.root || context?.guide !== attachment.guide)
+        throw new HttpError(
+          409,
+          "This address serves a different repository or guide. Open that service's own URL.",
+        );
+    }
     const allow = (...methods: string[]) => {
       if (!methods.includes(method)) {
         throw new HttpError(405, `${method} is not allowed here (use ${methods.join(", ")})`, {
@@ -332,7 +363,11 @@ export async function startViewServer(options: ViewServerOptions): Promise<ViewS
       const state = await loadState();
       const fresh = freshExplainer(state);
       const text = JSON.stringify(fresh, null, 2);
-      const etag = `"${createHash("sha1").update(text).update(sourceFingerprint(state)).digest("hex")}"`;
+      const etag = `"${createHash("sha1")
+        .update(text)
+        .update(sourceFingerprint(state))
+        .update(attachment?.instanceId ?? "")
+        .digest("hex")}"`;
       if (req.headers["if-none-match"] === etag) {
         res.writeHead(304, { ETag: etag, "Cache-Control": "no-store" });
         res.end();

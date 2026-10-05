@@ -100,10 +100,17 @@ Recovery archives the old instance record. A live PID whose identity cannot be v
 or replaced. Crashed artifact-writer locks need explicit inspection and removal; elapsed time is no proof.
 
 The git-ignored `.explainer/service/` directory keeps local context and ownership records. `--backend claude`
-only saves a future backend selection; this lifecycle step runs no jobs or agent. Local serving needs no
-network access or credentials. Claude jobs will require separate configured authentication and provider
-access. Viewer connection/backend controls are follow-up work. Manual commands and portable HTML work with
-the service stopped.
+only saves a future backend selection; no jobs or agent run. The viewer reports connection and backend
+availability below the header. Open **Repository and backend** for the root and last service instance.
+Bookmarks retain the repository and guide; an address serving another guide is refused. Restart with
+`xpl service start` and the open page reconnects to that saved guide, keeping your selection and unsaved edits.
+
+After stop, choose **Use loaded snapshot offline** to keep reading, edit manually, capture feedback and
+save HTML from the loaded source. The export checks the embedded snapshot; it cannot check later repository
+changes. Download edits before closing. **Retry connection** attaches the original address again; use
+**Edit → Retry save** to persist offline edits. Offline feedback stays in the browser until exported and
+imported with `xpl feedback`. Manual commands and portable HTML work with the service stopped. Local serving
+needs no provider network or credentials; a future Claude runner needs separate configured access.
 
 ## Using the CLI directly
 
