@@ -13,7 +13,8 @@ import {
   symlinkSync,
 } from "node:fs";
 import { join, resolve } from "node:path";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { run } from "../src/cli.js";
 import {
   git,
   invoke,
@@ -24,6 +25,13 @@ import {
   bundleOf,
   xplJson,
 } from "./helpers.js";
+
+const stagedDirectories: string[] = [];
+afterEach(() => {
+  for (const directory of stagedDirectories.splice(0))
+    for (const name of readdirSync(directory))
+      if (name.startsWith("version-")) chmodSync(join(directory, name), 0o700);
+});
 
 function fixture() {
   const root = makeTempDir();
@@ -283,7 +291,7 @@ describe("PR input", () => {
     expect(readdirSync(output.directory).filter((path) => path.startsWith("result-"))).toEqual([]);
   });
 
-  it("finishes an installed recorded creation with exact source and immutable ready result identities", async () => {
+  it("finishes and stages an exact ready PR snapshot without changing developer work", async () => {
     const f = await creation();
     writeFile(f.root, "app.ts", "staged developer work\n");
     git(f.root, "add", "app.ts");
@@ -337,6 +345,76 @@ describe("PR input", () => {
     expect(html.exportInfo?.report.identity).toEqual(manifest.readiness.identity);
     expect(statSync(output.manifestPath).mode & 0o222).toBe(0);
 
+    const destination = makeTempDir();
+    stagedDirectories.push(destination);
+    const missingResult = await invoke(
+      ["stage", "review-change", "--root", f.repository, "--dir", destination, "--json"],
+      { cwd: f.root, env: f.env },
+    );
+    expect(missingResult.code, missingResult.out).toBe(1);
+    expect(JSON.parse(missingResult.out).error).toContain("require --pr-result");
+    expect(readdirSync(destination)).toEqual([]);
+    for (const invalid of ["superseded", "input", "html", "explainer", "index", "scope"] as const) {
+      const changed = structuredClone(manifest);
+      if (invalid === "superseded") changed.status = "superseded";
+      else if (invalid === "scope") changed.includedSource.head = [];
+      else
+        (invalid === "input" ? changed.input : changed.artifacts[invalid]).sha256 = "a".repeat(64);
+      const invalidPath = writeFile(
+        output.directory,
+        "invalid-result.json",
+        JSON.stringify(changed),
+      );
+      const rejected = await invoke(
+        [
+          "stage",
+          "review-change",
+          "--root",
+          f.repository,
+          "--pr-result",
+          invalidPath,
+          "--dir",
+          destination,
+          "--json",
+        ],
+        { cwd: f.root, env: f.env },
+      );
+      expect(rejected.code, rejected.out).toBe(1);
+      expect(JSON.parse(rejected.out).error).toContain(
+        invalid === "superseded"
+          ? "requires a ready"
+          : invalid === "scope"
+            ? "do not describe"
+            : "hash changed",
+      );
+      expect(readdirSync(destination)).toEqual([]);
+    }
+    const stage = await invoke(
+      [
+        "stage",
+        "review-change",
+        "--root",
+        f.repository,
+        "--pr-result",
+        output.manifestPath,
+        "--dir",
+        destination,
+        "--json",
+      ],
+      { cwd: f.root, env: f.env },
+    );
+    expect(stage.code, stage.out).toBe(0);
+    const version = readJson(destination, "current/manifest.json");
+    expect(version.prResult.manifest).toEqual(manifest);
+    expect(version.prResult.sha256).toBe(
+      createHash("sha256").update(readFileSync(output.manifestPath)).digest("hex"),
+    );
+    expect(version.commits).toEqual({ index: f.head, base: f.base, head: f.head });
+    expect(version.includedSource).toEqual(manifest.includedSource);
+    expect(readFileSync(join(destination, "current/index.html"))).toEqual(
+      readFileSync(join(output.directory, "guide.html")),
+    );
+
     expect(readFileSync(join(f.root, ".git/index"))).toEqual(developerIndex);
     expect(git(f.root, "symbolic-ref", "HEAD")).toBe(developerBranch);
     expect(git(f.root, "show-ref")).toBe(developerRefs);
@@ -351,6 +429,76 @@ describe("PR input", () => {
     expect(JSON.parse(repeat.out).directory).not.toBe(output.directory);
     expect(readFileSync(output.manifestPath)).toEqual(saved);
   });
+
+  it.each(["head", "base", "unavailable", "source-during-check"] as const)(
+    "keeps the previous local version when PR %s changes at promotion",
+    async (failure) => {
+      const f = await creation();
+      const finish = await invoke(["pr", "finish", f.directory, "--cache-dir", f.cache, "--json"], {
+        cwd: f.root,
+        env: f.env,
+      });
+      expect(finish.code, finish.out).toBe(0);
+      const ready = JSON.parse(finish.out);
+      const destination = makeTempDir();
+      stagedDirectories.push(destination);
+      const args = [
+        "stage",
+        "review-change",
+        "--root",
+        f.repository,
+        "--pr-result",
+        ready.manifestPath,
+        "--dir",
+        destination,
+      ];
+      const first = await invoke(args, { cwd: f.root, env: f.env });
+      expect(first.code, first.err).toBe(0);
+      const oldHtml = readFileSync(join(destination, "current/index.html"));
+      const oldManifest = readFileSync(join(destination, "current/manifest.json"));
+      const oldVersions = readdirSync(destination).sort();
+      const errors: string[] = [];
+      let staged = false;
+      const code = await run(args, {
+        cwd: f.root,
+        env: { ...process.env, ...f.env },
+        err: (text) => errors.push(text),
+        out: (text) => {
+          if (!text.startsWith("Staged ")) return;
+          staged = true;
+          if (failure === "head" || failure === "base") {
+            f.response[failure].sha = "a".repeat(40);
+            writeFile(f.tools, "response.json", JSON.stringify(f.response));
+          } else if (failure === "unavailable") {
+            writeFile(
+              f.tools,
+              "gh",
+              `#!${process.execPath}\nprocess.stderr.write('access unavailable');process.exit(1);\n`,
+            );
+          } else {
+            writeFile(
+              f.tools,
+              "gh",
+              `#!${process.execPath}\nconst fs=require('node:fs');fs.writeFileSync(${JSON.stringify(join(f.repository, "app.ts"))}, 'export function app() { return 99; }\\n');process.stdout.write(fs.readFileSync(process.env.GH_DATA));\n`,
+            );
+          }
+        },
+      });
+      expect(staged).toBe(true);
+      expect(code, errors.join("\n")).toBe(1);
+      expect(errors.join("\n")).toContain("previous current version retained");
+      expect(errors.join("\n")).toContain(
+        failure === "unavailable"
+          ? "access unavailable"
+          : failure === "source-during-check"
+            ? "differs from the raw head blob"
+            : "superseded",
+      );
+      expect(readFileSync(join(destination, "current/index.html"))).toEqual(oldHtml);
+      expect(readFileSync(join(destination, "current/manifest.json"))).toEqual(oldManifest);
+      expect(readdirSync(destination).sort()).toEqual(oldVersions);
+    },
+  );
 
   it.each(["head", "base"] as const)(
     "rechecks an updated %s after export, retains historical output and binds the next creation",

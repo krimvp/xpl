@@ -393,6 +393,50 @@ as `{id, path, metadataError}`, also reported in `errors`. Empty string titles s
 Each guide is read from its discovered path, even when its name matches another repository JSON file.
 Read or metadata errors exit 1; no local guides is a valid empty library and exits 0. No files are written.
 
+## `xpl stage <explainer> --dir <outside-folder> [--preview] [--files referenced|boundary|all] [--note reason] [--require-review] [--pr-result result.json]`
+
+Stages a ready guide locally, keeping earlier versions. First inspect the included source:
+
+```sh
+xpl stage guide --dir /absolute/outside/versions --preview --json
+xpl stage guide --dir /absolute/outside/versions
+```
+
+`--preview` emits readiness and sorted `includedSource: {head, base}` without creating storage or HTML.
+Ordinary staging prints these paths before writing. `--files` reuses bundle selection: referenced by
+default, boundary for direct callers/callees/tests, or all. Review evidence and change before/after files
+are included as with bundle. There is no draft override; unfinished content, drift and stale source block
+staging even with `XPL_SKIP_STALE_CHECK=1`. Ordinary staging needs no review; `--require-review` explicitly
+requires a current all-content author record. Names are self-reported.
+
+The directory must be outside the source root and its Git checkout, including symlink ancestors.
+Each read-only `version-*` folder contains `index.html` and `manifest.json`. The manifest records commits,
+artifactIdentity, input/HTML SHA-256 hashes, readiness, included source and review state. Staging rechecks
+the guide/index/source immediately before replacing a relative `current` symlink atomically under a lock.
+Open `<dir>/current/index.html` or `<dir>/<version>/index.html`. Failures retain the previous current page
+and remove the attempted version; previous successful versions are never overwritten.
+
+For a PR guide, retain its prepared checkout and use the ready result from `xpl pr finish`:
+
+```sh
+xpl stage pr-guide --root /absolute/pr-cache/input-XXXX/repository \
+  --pr-result /absolute/pr-cache/input-XXXX/result-YYYY/result.json --dir /absolute/outside/pr-versions
+```
+
+Staging verifies every recorded input/artifact hash and recomputes readiness against the prepared source.
+It copies the exact ready HTML and includes the ready result manifest. It rechecks GitHub base/head after
+writing and local freshness after that API call, before promotion. Superseded results, changed artifacts
+or API failures cannot replace current. PR results keep their recorded file selection and decision note;
+do not pass `--files` or `--note` with `--pr-result`.
+
+`--json` returns `{ok, directory, current, version, manifest, includedSource}` for staging, or
+`{ok, preview: true, destination, readiness, includedSource}` for preview. Exit 0 succeeds, 1 refuses or
+fails, 2 reports usage. A crashed writer's `current.lock` needs explicit removal after verifying it stopped.
+If lock cleanup fails after successful promotion, the command succeeds with a cleanup warning; the
+new current version remains usable.
+This command configures no server, remote destination, credentials, upload or PR Action. Exact version
+links and configured team delivery are later slices of #34.
+
 ## `xpl new <name> [--title t] [--repo r] [--url u]`
 
 Creates an empty `.explainer/<name>.explainer.json` bound to the selected index. Refuses to overwrite (`error: … already exists; not overwriting it`). The repository name it records (`repo.name`, the label of the repo box) is `--repo`, else the first of: `package.json` `name`, the last element of the `go.mod` module (`example.com/acme/jobrunner/v2` gives `jobrunner`), `[project] name` in `pyproject.toml`, the base name of the git remote (`origin`, else the first), the directory name. `--url` records where the repository lives; it is never taken from the git remote (which may carry credentials).
