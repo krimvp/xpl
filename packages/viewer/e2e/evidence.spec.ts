@@ -232,3 +232,22 @@ test("live repair rejects incomplete and stale evidence, persists explicit repai
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+for (const width of [1440, 390]) {
+  test(`disabled evidence Save keeps its reason visible at ${width}px with three anchors`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await openBundle(page);
+    await page.evaluate(() => window.__xpl!.select(["concept:retry-policy"]));
+    await page.getByTestId("evidence-edit").click();
+    await expect(page.locator(".evidence-list li")).toHaveCount(3);
+    const form = page.locator(".evidence-edit");
+    await form.evaluate((form) => form.scrollIntoView({ block: "start" }));
+    await expect(page.getByRole("button", { name: "Save evidence", exact: true })).toBeDisabled();
+    await expect(form.getByText("No changes", { exact: true })).toBeInViewport({ ratio: 1 });
+    await expect(page.getByRole("button", { name: "Save evidence", exact: true })).toBeInViewport({
+      ratio: 1,
+    });
+  });
+}

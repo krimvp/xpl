@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ANCHOR_ROLES, type Anchor, type AnchorRole, type UserEdit } from "@xpl/core";
+import { ANCHOR_ROLES, type Anchor, type AnchorRole } from "@xpl/core";
 import { useStore, useViewerState } from "../hooks.js";
 
 /** Evidence drafts use the same version, save queue and history as text edits. */
@@ -7,7 +7,7 @@ export function EvidenceEdit({
   collection,
   id,
 }: {
-  collection: UserEdit["collection"];
+  collection: "nodes" | "edges" | "concepts";
   id: string;
 }) {
   const store = useStore();
@@ -172,15 +172,15 @@ export function EvidenceEdit({
         >
           Add selected evidence
         </button>
-        <p role="status">
-          {state.editBusy ? "Saving…" : dirty ? "Unsaved evidence draft" : "No changes"}
-        </p>
         <p>
           Repair or remove every invalid anchor on this element before saving. Undo cannot restore
           evidence that no longer resolves.
         </p>
         {state.editError && <p role="alert">{state.editError}</p>}
         <div className="actions">
+          <p role="status">
+            {state.editBusy ? "Saving…" : dirty ? "Unsaved evidence draft" : "No changes"}
+          </p>
           <button type="submit" className="btn" disabled={!dirty}>
             Save evidence
           </button>

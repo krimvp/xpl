@@ -19,6 +19,7 @@
  *   `?perspective=explore&focus=edge:job-completed`). Without `--set` or `--shot`, `--set ux` is assumed.
  *
  * - `--evidence-editor` opens the retry concept evidence editor, where available, with runner line 75.
+ * - `--graph-authoring` groups worker/metrics and hides their stored arrow, where available.
  * - `--service` intercepts a loopback API; unmanaged omits attachment metadata for plain-view shots.
  * - `--attention affected|paused` adds watch/guide evidence; `--attention-open` opens its repair offer.
  * - `--text-draft` opens and edits the TS fixture retry concept without saving.
@@ -56,6 +57,7 @@ async function shoot(argv: string[]): Promise<void> {
       "attention-open": { type: "boolean", default: false },
       "text-draft": { type: "boolean", default: false },
       "evidence-editor": { type: "boolean", default: false },
+      "graph-authoring": { type: "boolean", default: false },
     },
   });
   if (values.service && !["connected", "disconnected", "unmanaged"].includes(values.service))
@@ -196,6 +198,28 @@ async function shoot(argv: string[]): Promise<void> {
         await page.evaluate(() => window.scrollTo(0, 0));
       }
       await page.waitForTimeout(400);
+      if (values["graph-authoring"]) {
+        await page.evaluate(() =>
+          window.__xpl!.select(["file:src/worker.ts", "file:src/metrics.ts"]),
+        );
+        const author = page.getByTestId("graph-author");
+        if (await author.count()) {
+          await author.locator("summary").click();
+          await author.getByLabel("Group name").fill("Execution");
+          await author.getByRole("button", { name: "Group selected boxes" }).click();
+          await page.waitForFunction(() =>
+            window.__xpl!.state().graph?.nodes.includes("grp:execution"),
+          );
+          await page.evaluate(() => window.__xpl!.select(["edge:job-completed"]));
+          await author.getByRole("button", { name: "Hide selected items" }).click();
+          await page.waitForFunction(
+            () => !window.__xpl!.state().graph?.edges.includes("edge:job-completed"),
+          );
+          await author.locator("summary").click();
+          await page.evaluate(() => window.__xpl!.select(["grp:execution"]));
+          await page.getByRole("button", { name: "Fit to view" }).click();
+        }
+      }
       if (values["evidence-editor"]) {
         const divider = page.getByRole("separator", {
           name: "Resize the diagram and the panels below it",
