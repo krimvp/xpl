@@ -646,3 +646,144 @@ it("rejects forged graph fields, structural existence edits and invalid group re
     expect(() => applyUserEdits(setup.explainer, [edit], w.model, w.getText)).toThrow(error);
   expect(setup.explainer.nodes).toEqual([]);
 });
+
+it("pins and resets through bounded history and retains graph edits during regeneration", () => {
+  const w = makeWorld({ files: [{ path: "a.ts" }, { path: "b.ts" }] });
+  const setup = applyPatch(
+    createExplainer({
+      title: "Demo",
+      repoName: "Demo",
+      indexPath: ".explainer/index-c1.json",
+      index: w.index,
+    }),
+    {
+      nodes: [{ id: "grp:work", label: "Work", members: ["file:a.ts", "file:b.ts"] }],
+      views: [
+        {
+          id: "view:map",
+          type: "graph",
+          title: "Map",
+          include: ["grp:work", "file:a.ts", "file:b.ts"],
+        },
+      ],
+    },
+    w.model,
+    w.getText,
+    { actor: "llm" },
+  );
+  if (!setup.ok) throw new Error(JSON.stringify(setup.issues));
+  const pin = applyUserEdits(
+    setup.explainer,
+    makeGraphEdits(setup.explainer, w.model, "view:map", {
+      type: "pin",
+      id: "file:a.ts",
+      position: { x: -25, y: 160 },
+    }),
+    w.model,
+    w.getText,
+  );
+  expect((pin.explainer.views[0] as GraphView).layout).toEqual({ "file:a.ts": { x: -25, y: 160 } });
+  expect(pin.explainer.views[0]!.provenance.userFields).toEqual(["layout"]);
+  const undone = applyUserEdits(pin.explainer, pin.inverse, w.model, w.getText);
+  expect((undone.explainer.views[0] as GraphView).layout).toBeUndefined();
+  const redone = applyUserEdits(undone.explainer, undone.inverse, w.model, w.getText);
+  expect((redone.explainer.views[0] as GraphView).layout).toEqual({
+    "file:a.ts": { x: -25, y: 160 },
+  });
+  const reset = applyUserEdits(
+    pin.explainer,
+    makeGraphEdits(pin.explainer, w.model, "view:map", { type: "reset" }),
+    w.model,
+    w.getText,
+  );
+  expect((reset.explainer.views[0] as GraphView).layout).toBeUndefined();
+  const resetUndo = applyUserEdits(reset.explainer, reset.inverse, w.model, w.getText);
+  expect((resetUndo.explainer.views[0] as GraphView).layout).toEqual({
+    "file:a.ts": { x: -25, y: 160 },
+  });
+  const grouped = applyUserEdits(
+    pin.explainer,
+    makeGraphEdits(pin.explainer, w.model, "view:map", {
+      type: "group",
+      id: "grp:inner",
+      label: "Inner",
+      members: ["file:a.ts", "file:b.ts"],
+    }),
+    w.model,
+    w.getText,
+  );
+  const hidden = applyUserEdits(
+    grouped.explainer,
+    makeGraphEdits(grouped.explainer, w.model, "view:map", { type: "hide", ids: ["file:b.ts"] }),
+    w.model,
+    w.getText,
+  );
+  const refresh = applyPatch(
+    hidden.explainer,
+    {
+      nodes: [{ id: "grp:work", members: [] }],
+      remove: ["grp:inner"],
+      views: [
+        {
+          id: "view:map",
+          type: "graph",
+          include: [],
+          hidden: [],
+          layout: { "file:a.ts": { x: 0, y: 0 } },
+        },
+      ],
+    },
+    w.model,
+    w.getText,
+    { actor: "llm" },
+  );
+  if (!refresh.ok) throw new Error(JSON.stringify(refresh.issues));
+  expect(refresh.explainer.nodes).toEqual(hidden.explainer.nodes);
+  expect(refresh.explainer.views).toEqual(hidden.explainer.views);
+  expect(() =>
+    applyUserEdits(
+      pin.explainer,
+      [
+        makeUserEdit(pin.explainer, w.model, "views", "view:map", {
+          layout: { "file:a.ts": { x: Infinity, y: 0 } },
+        }),
+      ],
+      w.model,
+      w.getText,
+    ),
+  ).toThrow(/layout/);
+  expect(() =>
+    applyUserEdits(
+      pin.explainer,
+      [
+        makeUserEdit(pin.explainer, w.model, "views", "view:map", {
+          layout: { "edge:bad": { x: 0, y: 0 } },
+        }),
+      ],
+      w.model,
+      w.getText,
+    ),
+  ).toThrow(/layout.*edge|layout.*node/i);
+  const otherPin = applyUserEdits(
+    pin.explainer,
+    makeGraphEdits(pin.explainer, w.model, "view:map", {
+      type: "pin",
+      id: "file:b.ts",
+      position: { x: 300, y: 200 },
+    }),
+    w.model,
+    w.getText,
+  );
+  expect(() => applyUserEdits(otherPin.explainer, pin.inverse, w.model, w.getText)).toThrow(
+    /layout changed/,
+  );
+  const selectedReset = applyUserEdits(
+    otherPin.explainer,
+    makeGraphEdits(otherPin.explainer, w.model, "view:map", { type: "reset", ids: ["file:b.ts"] }),
+    w.model,
+    w.getText,
+  );
+  expect((selectedReset.explainer.views[0] as GraphView).layout).toEqual({
+    "file:a.ts": { x: -25, y: 160 },
+  });
+});

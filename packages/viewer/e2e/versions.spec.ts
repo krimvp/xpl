@@ -15,7 +15,7 @@ import { pathToFileURL } from "node:url";
 import { expect, test } from "@playwright/test";
 import { parseBundle } from "@xpl/core";
 import { run } from "../../cli/src/cli.js";
-import { openEditMenu, stateOf, watchProblems } from "./helpers.js";
+import { byId, openEditMenu, stateOf, watchProblems } from "./helpers.js";
 
 // Stage through the real CLI; browser reads file:// only, including deleted base source.
 test("old staged links and downloaded navigation restore the exact version after promotion", async ({
@@ -57,6 +57,7 @@ test("old staged links and downloaded navigation restore the exact version after
         title: "Application",
         include: ["file:app.ts"],
         stubs: { mode: "none" },
+        layout: { "file:app.ts": { x: title === "First version" ? 120 : 320, y: 80 } },
       },
     ],
     tours: [
@@ -123,6 +124,12 @@ test("old staged links and downloaded navigation restore the exact version after
       pathToFileURL(join(first.directory, "index.html")).href + `?version=${first.version}`,
     );
 
+    await page.goto(
+      pathToFileURL(join(second.directory, "index.html")).href +
+        `?version=${second.version}&perspective=explore&view=view:app&focus=file:app.ts`,
+    );
+    await expect(byId(page, "file:app.ts")).toHaveAttribute("transform", "translate(320 80)");
+
     await page.goto(stepLink);
     await expect(page.locator(".header .title")).toHaveText("First version");
     await expect.poll(() => stateOf(page).then((s) => s.stepId)).toBe("read-app");
@@ -130,8 +137,10 @@ test("old staged links and downloaded navigation restore the exact version after
       pathToFileURL(join(first.directory, "index.html")).href + `?version=${first.version}`;
     await page.goto(immutable + "&perspective=explore&view=view:app&focus=file:app.ts");
     await expect.poll(() => stateOf(page).then((s) => s.selection)).toEqual(["file:app.ts"]);
+    await expect(byId(page, "file:app.ts")).toHaveAttribute("transform", "translate(120 80)");
     await page.reload();
     await expect.poll(() => stateOf(page).then((s) => s.selection)).toEqual(["file:app.ts"]);
+    await expect(byId(page, "file:app.ts")).toHaveAttribute("transform", "translate(120 80)");
 
     for (const [file, range, side, selected] of [
       ["app.ts", "2:3-2:11", "head", "return 2;"],
@@ -166,6 +175,10 @@ test("old staged links and downloaded navigation restore the exact version after
         .toBe(selected);
       await expect.poll(() => stateOf(page).then((s) => s.cursor?.side ?? "head")).toBe(side);
       await expect(page.locator(".header .title")).toHaveText("First version");
+      await page.goto(
+        pathToFileURL(savedPath).href + "?perspective=explore&view=view:app&focus=file:app.ts",
+      );
+      await expect(byId(page, "file:app.ts")).toHaveAttribute("transform", "translate(120 80)");
     }
     await page.goto(
       pathToFileURL(join(second.directory, "index.html")).href + `?version=${first.version}`,

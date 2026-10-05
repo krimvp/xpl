@@ -36,6 +36,92 @@ function graphOf(include: string[], over: Partial<GraphView> = {}) {
 const all = (nodes: LayoutNode[]): LayoutNode[] => nodes.flatMap((n) => [n, ...all(n.children)]);
 
 describe("layoutGraph", () => {
+  it("keeps automatic boxes clear of a pinned sibling without moving the pin", async () => {
+    const { graph } = graphOf(["file:src/a.ts", "file:src/b.ts"]);
+    const automatic = await layoutGraph(graph);
+    const position = { x: automatic.nodes[1]!.x, y: automatic.nodes[1]!.y };
+    const layout = await layoutGraph(graph, { pins: { "file:src/a.ts": position } });
+    const a = layout.nodes.find((n) => n.id === "file:src/a.ts")!;
+    const b = layout.nodes.find((n) => n.id === "file:src/b.ts")!;
+    expect({ x: a.x, y: a.y }).toEqual(position);
+    const overlapWidth = Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x);
+    const overlapHeight = Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y);
+    expect(Math.min(overlapWidth, overlapHeight)).toBeLessThanOrEqual(0);
+  });
+  it("routes around a box pinned across an arrow's old track", async () => {
+    const { graph } = graphOf(["file:src/a.ts", "file:src/b.ts", "file:config/c.yaml"]);
+    graph.edges = graph.edges.filter((e) => e.to === "file:src/b.ts");
+    const layout = await layoutGraph(graph, {
+      pins: {
+        "file:src/a.ts": { x: 20, y: 100 },
+        "file:src/b.ts": { x: 600, y: 100 },
+        "file:config/c.yaml": { x: 310, y: 85 },
+      },
+    });
+    const obstruction = absoluteBoxes(layout.nodes).get("file:config/c.yaml")!;
+    const edge = layout.edges[0]!;
+    expect(layout.edges).toHaveLength(1);
+    const crosses = edge.points.slice(1).filter((p, i) => {
+      const q = edge.points[i]!;
+      return p.y === q.y
+        ? p.y > obstruction.y &&
+            p.y < obstruction.y + obstruction.height &&
+            Math.max(p.x, q.x) > obstruction.x &&
+            Math.min(p.x, q.x) < obstruction.x + obstruction.width
+        : p.x > obstruction.x &&
+            p.x < obstruction.x + obstruction.width &&
+            Math.max(p.y, q.y) > obstruction.y &&
+            Math.min(p.y, q.y) < obstruction.y + obstruction.height;
+    });
+    expect(crosses).toEqual([]);
+  });
+  it("honors nested negative pins, sizes their containers and reroutes crossing arrows", async () => {
+    const pins = {
+      "file:src/a.ts": { x: -80, y: 120 },
+      "sym:src/a.ts#A": { x: -40, y: 100 },
+      "sym:src/a.ts#A.run": { x: 220, y: -30 },
+      "file:src/b.ts": { x: 700, y: 50 },
+    };
+    const { graph } = graphOf(Object.keys(pins));
+    const automatic = await layoutGraph(graph);
+    const layout = await layoutGraph(graph, { pins });
+    expect(layout.fallback).toBe(false);
+    const nodes = new Map(all(layout.nodes).map((n) => [n.id, n]));
+    for (const [id, position] of Object.entries(pins)) {
+      expect({ x: nodes.get(id)!.x, y: nodes.get(id)!.y }).toEqual(position);
+    }
+    const boxes = absoluteBoxes(layout.nodes);
+    for (const [parentId, childId] of [
+      ["file:src/a.ts", "sym:src/a.ts#A"],
+      ["sym:src/a.ts#A", "sym:src/a.ts#A.run"],
+    ]) {
+      const parent = boxes.get(parentId!)!;
+      const child = boxes.get(childId!)!;
+      expect(child.x).toBeGreaterThan(parent.x);
+      expect(child.y).toBeGreaterThanOrEqual(parent.y + 34);
+      expect(child.x + child.width).toBeLessThan(parent.x + parent.width);
+      expect(child.y + child.height).toBeLessThan(parent.y + parent.height);
+    }
+    const run = boxes.get("sym:src/a.ts#A.run")!;
+    const b = boxes.get("file:src/b.ts")!;
+    const edge = layout.edges.find((e) => e.from === "sym:src/a.ts#A.run")!;
+    const onBorder = (box: typeof b, p: { x: number; y: number }) =>
+      Math.min(
+        Math.abs(p.x - box.x),
+        Math.abs(p.x - box.x - box.width),
+        Math.abs(p.y - box.y),
+        Math.abs(p.y - box.y - box.height),
+      );
+    expect(onBorder(run, edge.points[0]!)).toBeLessThan(0.01);
+    expect(onBorder(b, edge.points.at(-1)!)).toBeLessThan(0.01);
+    expect(edge.points).not.toEqual(automatic.edges.find((e) => e.id === edge.id)!.points);
+    expect(
+      Math.min(
+        ...edge.points.slice(1).map((p, i) => distanceToSegment(edge.anchor, edge.points[i]!, p)),
+      ),
+    ).toBeLessThan(0.01);
+    expect(await layoutGraph(graph)).toEqual(automatic);
+  });
   it("lays boxes out left to right and routes every edge between its two ends", async () => {
     const { graph } = graphOf(["file:src/a.ts", "file:src/b.ts"]);
     expect(graph.edges.map((e) => e.id)).toEqual(["edge:calls:file:src/a.ts->file:src/b.ts"]);

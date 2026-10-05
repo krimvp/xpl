@@ -97,6 +97,8 @@ export interface PanZoomProps {
   label: string;
   /** How far fitting may enlarge a small diagram (default 1.25). */
   maxFitZoom?: number;
+  /** Fit preserves this scale and permits panning instead of shrinking text further. */
+  minFitZoom?: number;
   /** Room fitting leaves around the diagram, in px (default 24). */
   fitPadding?: number;
   /**
@@ -151,6 +153,7 @@ export function PanZoom({
   onBackgroundClick,
   label,
   maxFitZoom = MAX_FIT_ZOOM,
+  minFitZoom,
   fitPadding = FIT_PADDING,
   readableZoom,
   readableMin,
@@ -187,12 +190,13 @@ export function PanZoom({
     () => ({
       padding: fitPadding,
       maxZoom: maxFitZoom,
+      minZoom: minFitZoom,
       ...(readableZoom !== undefined
         ? { whole: readableMin ?? readableZoom, readable: readableZoom, readableMin }
         : {}),
       ...(focusMin !== undefined ? { focusMin } : {}),
     }),
-    [fitPadding, maxFitZoom, readableZoom, readableMin, focusMin],
+    [fitPadding, maxFitZoom, minFitZoom, readableZoom, readableMin, focusMin],
   );
   const floor = readableZoom !== undefined ? (readableMin ?? readableZoom) : READABLE_FLOOR;
 
@@ -394,19 +398,21 @@ export function PanZoom({
           className="pz-badge"
           data-testid="pz-badge"
           title={
-            allInSight
-              ? `The whole diagram is in view at ${Math.round(t.k * 100)}%, too small to read comfortably. Zoom back to a readable size.`
-              : "This diagram is too big to read at once, so it starts zoomed in and part of it is out of sight. Fit all of it in the view."
+            minFitZoom !== undefined
+              ? "This map keeps its labels readable. Drag to pan; click to return to the starting focus."
+              : allInSight
+                ? `The whole diagram is in view at ${Math.round(t.k * 100)}%, too small to read comfortably. Zoom back to a readable size.`
+                : "This diagram is too big to read at once, so it starts zoomed in and part of it is out of sight. Fit all of it in the view."
           }
           onPointerDown={(event) => event.stopPropagation()}
           onClick={() => {
-            if (allInSight) {
+            if (allInSight || minFitZoom !== undefined) {
               follow.current = "start";
               showStart();
             } else fitEverything();
           }}
         >
-          {allInSight ? "Readable size" : "Fit all"}
+          {minFitZoom !== undefined ? "Pan to explore" : allInSight ? "Readable size" : "Fit all"}
         </button>
       )}
       {more > 0 && (

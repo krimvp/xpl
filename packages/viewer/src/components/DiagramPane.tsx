@@ -50,6 +50,7 @@ export function DiagramPane() {
               viewId={view.id}
               resetKey={resetKey}
               graph={derived.view.graph}
+              pins={view.layout}
               selection={state.selection}
               matches={derived.matches}
               related={derived.selection.related}
