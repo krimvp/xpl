@@ -1435,18 +1435,20 @@ opened source files while preserving navigation. Unsaved viewer edits postpone a
 acknowledging the new ETag. A newly generated index is followed unless `--index` pins a specific one.
 Source edits are shown with a stale-index warning until reindexing; viewer edits never overwrite them.
 Drifted or missing anchors do not stop it (unlike `xpl bundle`): it warns, and the page says which
-parts may be out of date.
+parts may be out of date. Every live bundle carries `server.attachment` with the canonical repository root
+and repo-relative canonical guide path. Plain `xpl view` and managed services share that identity; only managed
+services add process/backend metadata. Offline exports strip `server` and retain in-session undo only.
 
 | Route | |
 |---|---|
-| `GET /` | the viewer HTML with the bundle injected (`server: { api: "/api" }`, `mode: "explore"`, `files` = the files the explainer references; others are fetched lazily; `baseFiles` whole, when the explainer has a change: only the changed files, so it is small) |
+| `GET /` | the viewer HTML with the bundle injected (`server: { api: "/api", attachment: { root, guide } }`, `mode: "explore"`, `files` = the files the explainer references; others are fetched lazily; `baseFiles` whole, when the explainer has a change: only the changed files, so it is small) |
 | `GET /api/bundle` | the same bundle as JSON |
 | `GET /api/export` | current export snapshot with all referenced source (including stubs), base source and a forced workspace freshness check; `exportInfo.report` has shared readiness findings; no HTML is written |
 | `GET /api/explainer` | the explainer with its anchors re-resolved (as in the bundle), with an `ETag` of the file; 304 on a matching `If-None-Match` |
 | `GET /api/file?path=` | text of one indexed file (`text/plain`); 400 for a malformed path (absolute, `..`, backslash, NUL), 404 for anything not in the index (with `suggestions`) or unreadable |
 | `GET /api/base-file?path=` | the code before the change of one changed file (`text/plain`, read with `git show`); `path` is `ChangedFile.path`; 400 for a malformed path; 404 when the explainer has no change, the file is not a modified, renamed or deleted file of it (with the list of those; the old path of a renamed file is not a key), or git cannot read it |
 | `PUT /api/views/<id>` | a view patch (`{ type, …changed fields }`) applied as actor `user` and written; 200 with the updated view; 400 `{ error, issues }` when rejected |
-| `PUT /api/edits` | `{ version: ArtifactIdentity, edits: UserEdit[] }` under the repository lock; compares the re-resolved artifact identity and touched before values, applies a bounded user patch and atomically saves; 200 `{ explainer, inverse, version }`, 409 for stale versions/field conflicts, 400 for invalid edits; no artifact replacement |
+| `PUT /api/edits` | `{ version: ArtifactIdentity, edits: UserEdit[] }` with required URI-encoded JSON `{ root, guide }` in `X-Xpl-Attachment`; wrong identities reject before any patch/write; under the repository lock; compares the re-resolved artifact identity and touched before values, applies a bounded user patch and atomically saves; 200 `{ explainer, inverse, version }`, 409 for wrong root/guide or stale versions/field conflicts, 400 for missing identity or invalid edits; no artifact replacement |
 | `PUT /api/review` | bounded `{ review: record \| null }` applied as actor `user` under the explainer lock; checks the captured fingerprint against current disk/source; 200 current explainer or 400 `{ error, issues }`; no content replacement fields |
 | `PUT /api/tours/<id>` | the same for a tour (`{ title?, steps? }`, both for a new tour) |
 | `GET /api/requests` | `{ requests, pending }` for this explainer |
@@ -1827,9 +1829,10 @@ route. Before a live
 undo, the viewer fetches the current bundle, then checks only the touched field values and submits its current
 artifact version. Unrelated concurrent edits survive; edits to the same field reject without moving history.
 History holds at most 50 operations. Persisted records carry a checked identity as well as a storage key:
-managed attachments use repository root and guide name, excluding the process instance. Without an attachment,
-only an exact explainer/source identity match restores history on reload. Legacy or mismatched records are
-ignored; touched-field preconditions still protect every server save. Storage refusal is visible and does not
+all live attachments use canonical repository root and guide path, excluding the process instance. Without
+a live attachment there is no history across reloads; only in-session undo remains. Content-derived, legacy or
+mismatched records are ignored. Undo requests carry the original root/guide identity, checked by the server
+independently of browser storage; touched-field preconditions still protect every save. Storage refusal is visible and does not
 undo a successful disk save. Static edits/history live in memory until JSON or HTML is
 exported; original-page reload discards them. An open form draft or save blocks HTML export. Undo never
 replaces an artifact or restores old provenance/review records. Existing tour/view edits keep their prior

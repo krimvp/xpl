@@ -63,16 +63,39 @@ export type ExplainRequest = FeedbackRequest;
 export class ServerApi {
   /** Current workspace export snapshot: complete referenced source and a forced freshness check. */
   async exportBundle(): Promise<ViewerBundle> {
-    const response = await this.check(await fetch(this.url("/export"), { cache: "no-store" }));
-    return parseBundle(await response.text());
+    const response = await this.check(await this.request("/export", { cache: "no-store" }));
+    return this.attachedBundle(await response.text());
   }
 
   /** Current index and referenced source, refreshed after the workspace ETag changes. */
   async bundle(): Promise<ViewerBundle> {
-    const response = await this.check(await fetch(this.url("/bundle"), { cache: "no-store" }));
-    return parseBundle(await response.text());
+    const response = await this.check(await this.request("/bundle", { cache: "no-store" }));
+    return this.attachedBundle(await response.text());
   }
-  constructor(readonly base: string) {}
+  constructor(
+    readonly base: string,
+    readonly attachment?: NonNullable<ViewerBundle["server"]>["attachment"],
+  ) {}
+
+  private request(path: string, init: RequestInit = {}): Promise<Response> {
+    const headers = new Headers(init.headers);
+    if (this.attachment) {
+      const { root, guide } = this.attachment;
+      headers.set("X-Xpl-Attachment", encodeURIComponent(JSON.stringify({ root, guide })));
+    }
+    return fetch(this.url(path), { ...init, headers, signal: AbortSignal.timeout(5000) });
+  }
+
+  private attachedBundle(text: string): ViewerBundle {
+    const bundle = parseBundle(text);
+    const actual = bundle.server?.attachment;
+    if (
+      this.attachment &&
+      (actual?.root !== this.attachment.root || actual?.guide !== this.attachment.guide)
+    )
+      throw new Error("409: This address serves a different repository or guide.");
+    return bundle;
+  }
 
   private url(path: string): string {
     return `${this.base.replace(/\/+$/, "")}${path}`;
@@ -127,8 +150,12 @@ export class ServerApi {
     version: ArtifactIdentity,
     edits: UserEdit[],
   ): Promise<{ explainer: Explainer; inverse: UserEdit[] }> {
+    if (!this.attachment)
+      throw new Error(
+        "This page has no live repository or guide identity. Reopen it before saving.",
+      );
     const response = await this.check(
-      await fetch(this.url("/edits"), {
+      await this.request("/edits", {
         method: "PUT",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ version, edits }),

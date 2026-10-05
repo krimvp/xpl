@@ -179,6 +179,18 @@ function wellFormedPath(path: string): boolean {
 export async function startViewServer(options: ViewServerOptions): Promise<ViewServer> {
   const { env, explainerPath, host } = options;
   let allowedHosts: Set<string> | undefined;
+  const root = realpathSync(env.root);
+  const attachment: NonNullable<NonNullable<ViewerBundle["server"]>["attachment"]> = {
+    root,
+    guide: displayPath(root, realpathSync(explainerPath)),
+    ...(options.control
+      ? {
+          instanceId: options.control.instanceId,
+          backend: "none" as const,
+          backendAvailable: false,
+        }
+      : {}),
+  };
 
   function checkServicePaths(...paths: string[]) {
     if (!options.control) return;
@@ -262,7 +274,7 @@ export async function startViewServer(options: ViewServerOptions): Promise<ViewS
         files: collected.files,
         ...(base !== undefined ? { baseFiles: base.files } : {}),
         mode: "explore",
-        server: { api: API },
+        server: { api: API, attachment },
       }),
       ...(stale ? { sourceWarning: stale.message } : {}),
     };
@@ -402,6 +414,22 @@ export async function startViewServer(options: ViewServerOptions): Promise<ViewS
     }
     if (pathname === `${API}/edits`) {
       allow("PUT");
+      let expected: unknown;
+      try {
+        const header = req.headers["x-xpl-attachment"];
+        if (typeof header !== "string") throw new Error("missing attachment");
+        expected = JSON.parse(decodeURIComponent(header));
+      } catch {
+        throw new HttpError(400, "Expected a live repository and guide attachment.");
+      }
+      if (
+        !isRecord(expected) ||
+        typeof expected.root !== "string" ||
+        typeof expected.guide !== "string"
+      )
+        throw new HttpError(400, "Invalid service attachment.");
+      if (expected.root !== attachment.root || expected.guide !== attachment.guide)
+        throw new HttpError(409, "This address serves a different repository or guide.");
       const body = await readJsonBody(req);
       if (Object.keys(body).sort().join(",") !== "edits,version" || !isRecord(body.version))
         throw new HttpError(400, "Expected only version and bounded edits.");

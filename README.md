@@ -164,7 +164,8 @@ ownership, and **Cancel** drops the draft. Live saves survive reload and reject 
 Drafts survive switching boxes and returning to reading until saved or cancelled. Save/Cancel stay visible.
 Edit > **Undo** / **Redo** names the fields and element and saves only changed fields, preserving another author's
 unrelated edits and refusing conflicts on the same field. Live history retains up to 50 edits in browser
-storage. Offline edits remain **Unsaved** until exported as HTML or JSON. Source stays read-only; broken
+storage, bound to the canonical repository root and guide. Copied or renamed guides inherit no history;
+pages without a live identity keep only in-session undo. Offline edits remain **Unsaved** until exported as HTML or JSON. Source stays read-only; broken
 evidence still needs the existing explicit patch/repair workflow.
 
 Edit > Record author review records a self-reported name, inspected content/evidence scope and named

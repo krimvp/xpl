@@ -134,6 +134,9 @@ test("live text saves, reload, and undo/redo retain unrelated concurrent edits",
         nodes: [{ id: RUNNER, detail: "Concurrent detail from another author." }],
       }),
     ).toBe(0);
+    await page.reload();
+    await page.waitForFunction(() => !!window.__xpl);
+    await page.evaluate((id) => window.__xpl!.select([id]), RUNNER);
     await (await openEditMenu(page)).getByTestId("edit-undo").click();
     await expect(page.locator(".details .summary")).toHaveText(
       "The hot loop: pop, lease a worker, run, ack or requeue.",
@@ -219,10 +222,11 @@ test("restarting at the same address for another guide cannot inherit its undo",
       ],
     }),
   ).toBe(0);
-  const serve = (guide: string, port = 0) =>
+  const copied = mkdtempSync(join(tmpdir(), "xpl-history-copy-e2e-"));
+  const serve = (guide: string, port = 0, root = dir) =>
     startViewServer({
-      env: { root: dir, cwd: dir, env: process.env, indexOption: undefined, warn() {} },
-      explainerPath: join(dir, `.explainer/${guide}.explainer.json`),
+      env: { root, cwd: root, env: process.env, indexOption: undefined, warn() {} },
+      explainerPath: join(root, `.explainer/${guide}.explainer.json`),
       host: "127.0.0.1",
       port,
       viewerHtml: () => readFileSync(new URL("../dist/index.html", import.meta.url), "utf8"),
@@ -239,7 +243,37 @@ test("restarting at the same address for another guide cannot inherit its undo",
     await page.getByTestId("text-save").click();
     await expect(page.getByTestId("text-edit")).toBeVisible();
     await expect((await openEditMenu(page)).getByTestId("edit-undo")).toBeEnabled();
+    cpSync(dir, copied, { recursive: true });
+    cpSync(
+      join(copied, ".explainer/a.explainer.json"),
+      join(copied, ".explainer/b.explainer.json"),
+    );
+    expect(readFileSync(join(copied, ".explainer/b.explainer.json"), "utf8")).toBe(
+      readFileSync(join(dir, ".explainer/a.explainer.json"), "utf8"),
+    );
     const port = server.port;
+    await server.close();
+    server = await serve("b", port, copied);
+    // The original page still owns A's history; it must not adopt or edit B before reload either.
+    await (await openEditMenu(page)).getByTestId("edit-undo").click();
+    await expect(page.locator(".save-status")).toContainText("different repository or guide");
+    expect(
+      readJson(copied, ".explainer/b.explainer.json").nodes.find(
+        (n: { id: string }) => n.id === RUNNER,
+      ).summary,
+    ).toBe("Independently authored matching summary.");
+    await page.reload();
+    await page.waitForFunction(() => !!window.__xpl);
+    await page.evaluate((id) => window.__xpl!.select([id]), RUNNER);
+    await expect(page.locator(".details .summary")).toHaveText(
+      "Independently authored matching summary.",
+    );
+    await expect((await openEditMenu(page)).getByTestId("edit-undo")).toHaveCount(0);
+    expect(
+      readJson(copied, ".explainer/b.explainer.json").nodes.find(
+        (n: { id: string }) => n.id === RUNNER,
+      ).summary,
+    ).toBe("Independently authored matching summary.");
     await server.close();
     server = await serve("b", port);
     await page.reload();
@@ -257,5 +291,6 @@ test("restarting at the same address for another guide cannot inherit its undo",
   } finally {
     await server.close();
     rmSync(dir, { recursive: true, force: true });
+    rmSync(copied, { recursive: true, force: true });
   }
 });

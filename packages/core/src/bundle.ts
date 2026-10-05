@@ -31,7 +31,17 @@ export interface ViewerBundle {
   /** Initial tour id for present mode. */
   tour?: string;
   /** Set by `xpl view`: base URL of the local API (e.g. "/api"). Absent in a static bundle. */
-  server?: { api: string };
+  server?: {
+    api: string;
+    /** Canonical repository and guide identity for every live page; managed fields describe its service. */
+    attachment?: {
+      root: string;
+      guide: string;
+      instanceId?: string;
+      backend?: "none" | "claude";
+      backendAvailable?: boolean;
+    };
+  };
   /** Live workspace warning when source and index differ. Never implies prose was verified. */
   sourceWarning?: string;
   /** Feedback carried by a saved page; every request retains its original snapshot identity. */

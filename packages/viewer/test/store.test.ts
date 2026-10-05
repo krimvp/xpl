@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { artifactIdentity } from "@xpl/core";
 import { ViewerStore } from "../src/store.js";
 import { makeBundle, TEXTS } from "./world.js";
 
@@ -42,6 +43,31 @@ it("checks the stored attachment identity and keeps history across a managed res
         ).getState().undoCount,
     );
     expect(counts).toEqual([1, 0, 0]);
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
+it("does not restore content-derived history on a live page without attachment identity", () => {
+  const bundle = makeBundle({ server: { api: "/api" } });
+  const identity = artifactIdentity(bundle.explainer, bundle.index);
+  const record = JSON.stringify({
+    identity: JSON.stringify(["explainer", identity.explainerHash, identity.sourceHash]),
+    undo: [
+      [
+        {
+          collection: "concepts",
+          id: "concept:retry",
+          before: { summary: "Saved." },
+          after: { summary: null },
+        },
+      ],
+    ],
+    redo: [],
+  });
+  vi.stubGlobal("localStorage", { getItem: () => record });
+  try {
+    expect(new ViewerStore(bundle).getState().undoCount).toBe(0);
   } finally {
     vi.unstubAllGlobals();
   }

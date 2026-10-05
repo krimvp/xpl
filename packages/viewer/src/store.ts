@@ -239,28 +239,24 @@ export class ViewerStore {
   private readonly future: Navigation[] = [];
   private readonly undoEdits: UserEdit[][] = [];
   private readonly redoEdits: UserEdit[][] = [];
-  private readonly editStorageKey: string;
-  private readonly editAttachment: { root: string; guide: string } | undefined;
+  private readonly editStorageKey: string | undefined;
+  private readonly editAttachment: NonNullable<ViewerBundle["server"]>["attachment"];
   /** The reading tab (Guide, Map, Flow, Code) last on screen: where "Back to reading" goes from Explore. */
   private reading: Exclude<Perspective, "explore"> = "guide";
   /** Namespace of the page as loaded; edits change request context, never where requests are saved. */
   private readonly feedbackStorageKey: string;
 
   constructor(bundle: ViewerBundle, launch: LaunchParams = {}) {
-    // #38B supplies the managed attachment; process instance IDs change on restart.
-    this.editAttachment =
-      bundle.server && "attachment" in bundle.server
-        ? (bundle.server.attachment as { root: string; guide: string } | undefined)
-        : undefined;
-    this.editStorageKey = `xpl-edits:${JSON.stringify(
-      this.editAttachment
-        ? [this.editAttachment.root, this.editAttachment.guide]
-        : [bundle.server?.api, typeof location !== "undefined" ? location.pathname : ""],
-    )}`;
+    this.editAttachment = bundle.server?.attachment;
+    this.editStorageKey = this.editAttachment
+      ? `xpl-edits:${JSON.stringify([this.editAttachment.root, this.editAttachment.guide])}`
+      : undefined;
     const identity = artifactIdentity(bundle.explainer, bundle.index);
     this.feedbackStorageKey = `xpl-feedback:${identity.explainerHash}:${identity.sourceHash}`;
     this.indexModel = asIndexModel(bundle.index);
-    this.api = bundle.server?.api ? new ServerApi(bundle.server.api) : undefined;
+    this.api = bundle.server?.api
+      ? new ServerApi(bundle.server.api, this.editAttachment)
+      : undefined;
     const explainer = bundle.explainer;
     const model = this.modelOf(explainer);
     const views = model.views;
@@ -312,7 +308,7 @@ export class ViewerStore {
     };
     this.loadFeedback(bundle.feedback);
     // Offline reload opens the original embedded artifact. Its in-memory edits must first be exported.
-    if (this.api && typeof localStorage !== "undefined") {
+    if (this.api && this.editStorageKey && typeof localStorage !== "undefined") {
       try {
         const stored = JSON.parse(localStorage.getItem(this.editStorageKey) ?? "null") as {
           identity: string;
@@ -320,7 +316,8 @@ export class ViewerStore {
           redo: UserEdit[][];
         } | null;
         if (
-          stored?.identity === this.editHistoryIdentity() &&
+          stored &&
+          stored.identity === this.editHistoryIdentity() &&
           Array.isArray(stored.undo) &&
           Array.isArray(stored.redo)
         ) {
@@ -1117,16 +1114,15 @@ export class ViewerStore {
     if (this.state.editError) this.set({ editError: undefined, save: { status: "idle" } });
   }
 
-  private editHistoryIdentity(): string {
-    if (this.editAttachment)
-      return JSON.stringify(["attachment", this.editAttachment.root, this.editAttachment.guide]);
-    const identity = artifactIdentity(this.state.explainer, this.indexModel.index);
-    return JSON.stringify(["explainer", identity.explainerHash, identity.sourceHash]);
+  private editHistoryIdentity(): string | undefined {
+    return this.editAttachment
+      ? JSON.stringify(["attachment", this.editAttachment.root, this.editAttachment.guide])
+      : undefined;
   }
 
   private keepEditHistory(): void {
     this.set({ undoCount: this.undoEdits.length, redoCount: this.redoEdits.length });
-    if (!this.api || typeof localStorage === "undefined") return;
+    if (!this.api || !this.editStorageKey || typeof localStorage === "undefined") return;
     try {
       localStorage.setItem(
         this.editStorageKey,

@@ -1,4 +1,5 @@
 import { request } from "node:http";
+import { realpathSync } from "node:fs";
 import { createServer as createNetServer } from "node:net";
 import { join } from "node:path";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
@@ -104,16 +105,37 @@ describe("xpl view", () => {
       "file:src/runner.ts",
       { summary: "Corrected runner summary." },
     );
-    const put = (version: unknown, edits: unknown) =>
+    const attachment = { root: realpathSync(dir), guide: ".explainer/demo.explainer.json" };
+    const put = (version: unknown, edits: unknown, expected: unknown = attachment) =>
       fetch(`${view.url}/api/edits`, {
         method: "PUT",
-        headers: JSON_HEADERS,
+        headers: {
+          ...JSON_HEADERS,
+          ...(expected ? { "X-Xpl-Attachment": encodeURIComponent(JSON.stringify(expected)) } : {}),
+        },
         body: JSON.stringify({ version, edits }),
       });
     const version = artifactIdentity(initial.explainer, initial.index);
     const saved = await put(version, [edit]);
     expect(saved.status).toBe(200);
     const { inverse } = await json(saved);
+    expect(
+      readJson(dir, ".explainer/demo.explainer.json").nodes.find((n: any) => n.id === edit.id)
+        .summary,
+    ).toBe("Corrected runner summary.");
+    const savedSnapshot = await snapshot();
+    const savedVersion = artifactIdentity(savedSnapshot.explainer, savedSnapshot.index);
+    for (const wrong of [
+      { ...attachment, root: attachment.root + "-copy" },
+      { ...attachment, guide: "other" },
+    ]) {
+      const refused = await put(savedVersion, inverse, wrong);
+      expect(refused.status).toBe(409);
+      expect(await json(refused)).toMatchObject({
+        error: "This address serves a different repository or guide.",
+      });
+    }
+    expect((await put(savedVersion, inverse, null)).status).toBe(400);
     expect(
       readJson(dir, ".explainer/demo.explainer.json").nodes.find((n: any) => n.id === edit.id)
         .summary,
@@ -341,7 +363,10 @@ describe("xpl view", () => {
     expect(html).toContain("<title>stub viewer</title>");
     const data = bundleOf(html);
     expect(data.schema).toBe(BUNDLE_SCHEMA);
-    expect(data.server).toEqual({ api: "/api" });
+    expect(data.server).toEqual({
+      api: "/api",
+      attachment: { root: realpathSync(demo), guide: ".explainer/demo.explainer.json" },
+    });
     expect(data.mode).toBe("explore");
     expect(data.explainer.title).toBe("Job runner");
     // the files referenced by anchors and views; the viewer fetches the rest lazily (what lies behind a stub too)
@@ -364,7 +389,10 @@ describe("xpl view", () => {
     expect(res.headers.get("content-type")).toContain("application/json");
     const bundle = (await json(res)) as ViewerBundle;
     expect(bundle.schema).toBe(BUNDLE_SCHEMA);
-    expect(bundle.server).toEqual({ api: "/api" });
+    expect(bundle.server).toEqual({
+      api: "/api",
+      attachment: { root: realpathSync(demo), guide: ".explainer/demo.explainer.json" },
+    });
     expect(bundle.explainer.views).toHaveLength(2);
     expect(Object.keys(bundle.files)).toContain("src/runner.ts");
     const html = await (await fetch(`${view.url}/`)).text();
