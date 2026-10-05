@@ -370,8 +370,15 @@ describe("under xpl view (server mode)", () => {
       expect(calls.map(({ url }) => url)).toEqual(["/api/views/view:overview"]);
       expect(store.getState().dirty).toBe(remaining !== "single");
       expect(store.getState().connection.status).toBe("offline");
+      expect(store.getState().save.status).toBe(remaining === "single" ? "saved" : "idle");
       if (remaining === "single") {
         expect(store.adoptExplainer(makeBundle().explainer)).toBe(true);
+        const bundle = makeBundle({ server: { api: "/api" } });
+        respond = (url) =>
+          new Response(JSON.stringify(url === "/api/bundle" ? bundle : bundle.explainer));
+        await store.reconnect();
+        expect(store.getState().dirty).toBe(false);
+        expect(store.getState().save.status).toBe("saved");
       }
     },
   );

@@ -1048,16 +1048,14 @@ export class ViewerStore {
         }
       } finally {
         this.saving = undefined;
-        this.set(
-          this.api !== api
-            ? {}
-            : {
-                save:
-                  firstError === undefined
-                    ? { status: "saved" }
-                    : { status: "error", message: messageOf(firstError) },
-              },
-        );
+        this.set({
+          save:
+            this.pending.size === 0
+              ? { status: "saved" }
+              : firstError === undefined
+                ? { status: "idle" }
+                : { status: "error", message: messageOf(firstError) },
+        });
       }
     })();
     await this.saving;
