@@ -1205,9 +1205,15 @@ atomic: any error → `ok: false` and the input explainer, untouched.
   that change nothing are not listed), plus `"title"`, `"scope"` and `"review"` when they change; a `stepsUpdate` lists
   the view and each step it changed (a tour's steps as `<tour id>/<step id>`).
 
-**Bounded user edits** (`user-edits.ts`) carry a collection (`nodes`, `edges`, `concepts`), item ID,
+**Bounded user edits** (`user-edits.ts`) carry a collection (`nodes`, `edges`, `concepts`, `views`,
+`groups`), item ID,
 and before/after values of the same fields. Only `label`, `summary`, `detail`, `anchors` and a concept's `related`
-are accepted, with at most 32 items per transaction and 64 anchors per item. The HTTP body limit also applies.
+are accepted on elements. Group nodes also allow `members`; graph views allow only `include` and `hidden`.
+`groups` is a bounded existence operation: `node` is either null (absent) or a complete group snapshot
+without id, kind or provenance. One side must be null. Creating/removing a group uses ordinary node
+upsert/removal, not a new stored collection. Snapshots require label, parent, members and anchors; optional
+text, role, tech and opens are accepted. At most 32 items per transaction, 64 anchors per item and 10,000
+graph IDs per list are accepted; each edit target ID is at most 200 characters. The HTTP body limit also applies.
 `applyUserEdits` checks touched fields against the current model, creates an ordinary `user` patch and
 returns a conditional inverse. Missing optional fields become `null`. The inverse never contains
 provenance or review records; undo keeps user ownership and lets scoped fingerprints follow content.
@@ -1216,6 +1222,17 @@ that another author may have enriched. Anchor comparisons omit only the `resolve
 roles, sides and coordinates. Inverse preconditions use the actual normalized, hash-checked saved anchors.
 `applyPatch` checks every proposed anchor; a repair must replace or remove all invalid evidence on that item.
 An inverse that would restore missing or drifted source is rejected without moving history.
+
+`makeGraphEdits` groups at least two visible sibling boxes from the stored include list, keeping those
+boxes included inside the new group. Siblings share an effective parent before hiding is applied; a hidden
+container still owns its children. For a nested group, that parent group's direct membership changes
+to contain the new group. Structural parents, evidence, stored edge endpoints and tours are untouched.
+Ungroup replaces the group in this view's include with its members, retaining the stored group for other
+references. Hide/restore changes only `hidden`, including IDs drawn by a transiently opened level. Inverses retain
+array order and the absent hidden state.
+Undoing creation checks the entire group for enrichment and atomically restores include/membership and
+removes it. A later reference to that group makes removal fail rather than leave a dangling reference.
+User ownership survives every inverse; LLM refreshes preserve groups and edited membership/visibility.
 
 ### 4.8 Also in core
 
@@ -2018,7 +2035,7 @@ is pruned. A legacy index shows coverage unknown. Live refresh and Save as HTML 
 | Explore | one tab per view (a strip that scrolls) and a Views menu                   | Present |
 | Present | a tour picker and `‹ n / N ›`, with a progress bar along the header's edge | Exit    |
 
-Present is disabled without tours, and its tooltip says how to get one. Every author tool sits in the Edit
+Present is disabled without tours, and its tooltip says how to get one. Most author tools sit in the Edit
 menu: "Explore the diagrams" (from Read) or "Back to reading" (from Explore), "Edit the guide's steps" (the tour
 panel), the Stubs control and edge-kind toggles of a graph view (Explore only, under "This view"), "Save as
 HTML", "Record author review", "Download explainer JSON", and "Retry save" after a failed save. The menu works with ↑ ↓ Esc and Tab.
@@ -2097,6 +2114,16 @@ static bundle lists only the files it embeds, with a footer "N of M files includ
 `tree-foot`; under `xpl view` every indexed file is listed and loaded when opened) beside the stack of
 CodeMirror editors (language modes for TS/TSX/JS, Python, Go, YAML and JSON; Rust, TOML and other text are plain).
 Both splits (diagram / panels, diagram / code) are resizable. Below 900 px the halves stack.
+
+**Graph authoring** (`components/GraphAuthor.tsx`): Explore's stored graph views offer **Edit map** beside
+the caption. Shift-click sibling boxes, name the group and explicitly group them. Ungroup removes the
+container from this map while retaining the stored group and its references. Hide selected boxes/arrows
+and restore individual hidden IDs or all of them in the same disclosure. The controls are absent in Read,
+Present and synthetic workspace maps. Transient in-place opens are never copied into stored include.
+These actions use the text/evidence author queue and conditional history, including live reload, offline
+edits and HTML/JSON export. Successful graph edits and inverses clear selections that the map no longer
+shows. Text/evidence editing and source refresh keep their existing source-focus behavior. Evidence draft
+status stays in the sticky Save/Cancel bar, including the disabled Save reason.
 
 - **Graph view:** a layered layout (dagre, `layout/layered.ts`), direction RIGHT, or DOWN when the pane is taller than wide; when the result
   would have to be scaled down to fit, the other direction is tried too (graphs of at most 150 elements) and
@@ -2569,8 +2596,8 @@ identities to syntax ranges. This is a proposed contract revision, not a change 
   recorded, and `reads` edges are off by default (`DEFAULT_EDGE_KINDS`; the viewer's toggle and `edgeKinds`
   switch them on; stored `reads` edges are always shown).
 - `GraphView.layout` (hand-pinned positions) is validated and accepted in patches but the viewer never reads
-  it, and `GraphView.hidden` is honoured by derivation but has no UI: hiding an edge or node is a patch
-  (`xpl status --json` lists the derived edge ids).
+  it. Explore offers grouping and individual visibility with undo; rendered pins and placement reset
+  remain follow-up work.
 - The layout runs on the main thread: laying out a very large graph blocks the page, so views
   should stay coarse (whole-repo views start at packages) and are expanded by hand.
 - Live refresh is polling-based: updates appear on the next poll while the page is visible and has no

@@ -236,6 +236,13 @@ Repair or remove all invalid anchors on that element; rejected saves keep the dr
 from its index requires reindexing and reload. Undo refuses to restore evidence that no longer resolves.
 Later LLM revisions preserve your edited fields. Exported HTML includes the edits and source and opens offline.
 
+In Explore, **Edit map** beside the map title groups selected sibling boxes under a named container.
+Shift-click boxes to select them together. **Ungroup in this map** shows the members and keeps the stored
+group available to other maps, arrows and tour steps. **Hide selected items** hides individual boxes or
+arrows; the same menu lists hidden IDs with **Restore** and **Restore all hidden items**.
+These actions share text/evidence undo, persist live and travel in HTML/JSON exports. Opening another
+level remains navigation. Saved coordinate pins are still not rendered; placement is follow-up work.
+
 Edit > Record author review records a self-reported name, inspected content/evidence scope and named
 omissions. About this explanation shows **unchecked**, **reviewed** or **out of date** separately from
 source checks. A narrow review covers named stored items and their own anchors; unrelated source edits do

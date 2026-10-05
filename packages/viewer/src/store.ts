@@ -10,6 +10,8 @@ import {
   artifactIdentity,
   applyUserEdits,
   makeUserEdit,
+  makeGraphEdits,
+  type GraphEdit,
   makeAnchor,
   type MakeAnchorResult,
   type AnchorRole,
@@ -32,6 +34,7 @@ import {
   collapse as collapseView,
   DEFAULT_EDGE_KINDS,
   deriveGraph,
+  expandInPlace,
   drillChildren,
   drillIn as drillInView,
   EDGE_KINDS,
@@ -1027,11 +1030,12 @@ export class ViewerStore {
   ): readonly ElementId[] {
     const view = model.view(viewId);
     if (view?.type !== "graph" || viewId !== this.state.viewId) return selection;
-    const graph = deriveGraph(view, model);
+    const graph = deriveGraph(expandInPlace(view, model, this.state.expanded), model);
     const shown = new Set<string>([
       ...graph.nodes.map((n) => n.id),
       ...graph.edges.map((e) => e.id),
       ...graph.stubs.map((s) => s.id),
+      ...graph.ghosts.map((g) => g.id),
     ]);
     return selection.filter(
       (id) => shown.has(id) || model.concept(id) !== undefined || parseId(id).type === "step",
@@ -1276,13 +1280,34 @@ export class ViewerStore {
     await this.writeEdits(edits, "save", version);
   }
 
+  /** Graph authoring shares bounded saves and history with text and evidence. */
+  async editGraph(viewId: string, action: GraphEdit): Promise<void> {
+    if (this.state.mode !== "explore" || this.state.perspective !== "explore")
+      throw new Error("Open Explore to edit this map.");
+    if (this.state.editDraft) throw new Error("Save or cancel the author draft first.");
+    const edits = makeGraphEdits(this.state.explainer, this.indexModel, viewId, action);
+    await this.saveEdits(edits, artifactIdentity(this.state.explainer, this.indexModel.index));
+  }
+
   private acceptAuthor(
     write: Extract<PendingWrite, { kind: "author" }>,
     result: { explainer: Explainer; inverse: UserEdit[] },
   ): void {
+    const model = this.modelOf(result.explainer);
+    const graphEdit = write.edits.some(
+      (edit) =>
+        edit.collection === "views" || edit.collection === "groups" || "members" in edit.after,
+    );
+    const selection =
+      graphEdit && this.state.viewId
+        ? this.stillShown(model, this.state.viewId, this.state.selection)
+        : this.state.selection.filter((id) => model.hasElement(id));
     this.set({
       explainer: result.explainer,
-      model: this.modelOf(result.explainer),
+      model,
+      ...(selection.length !== this.state.selection.length
+        ? { selection, applied: undefined }
+        : {}),
       editError: undefined,
     });
     if (write.action === "save") {
@@ -1318,7 +1343,15 @@ export class ViewerStore {
         ?.map(
           (edit) =>
             `${Object.keys(edit.after)
-              .map((field) => (field === "anchors" ? "evidence" : field))
+              .map(
+                (field) =>
+                  ({
+                    anchors: "evidence",
+                    include: "grouping",
+                    hidden: "visibility",
+                    node: "group",
+                  })[field] ?? field,
+              )
               .join(", ")} of ${this.state.model.label(edit.id)}`,
         )
         .join("; ") ?? "author edit"
