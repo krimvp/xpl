@@ -16,12 +16,14 @@ The examples use an invented change to `fixtures/ts-jobrunner` in the xpl repo: 
 
 ## 2. Record the change
 
-For a prepared GitHub input, use the returned `repository` as the root and `input.json`'s full
-`pr.base.sha..pr.head.sha` range. Its head index already exists. Preparation does not invoke an agent,
-recheck the PR or produce a ready artifact; installed creation/current-head promotion is future work.
-Any manually authored guide is a walkthrough of those recorded commits. Do not claim it reflects the
-current PR without a fresh API check. Cleanup removes the owned input; keep it while the guide needs git
-for its base anchors. See `cli.md` for manifest fields and failure recovery.
+For a GitHub creation handoff, read `handoff.json` and invoke its explicit installed skill prompt.
+Use its safe `command` prefix for authoring, the returned owned `repository` root and the immutable
+`input.json` full `pr.base.sha..pr.head.sha` range. The head index, guide/change record and outside draft
+already exist; read and complete them rather than running `new` again. `xpl pr finish <input-directory>`
+uses the installed ready/export flow and rechecks both commits before marking a local result ready.
+A base/head mismatch retains a superseded historical result; explicitly create the updated PR. No
+current link or publishing workflow is started. Input-only `pr prepare` also remains available; it
+makes no ready/current claim. Cleanup removes the input and its history; stop consumers first.
 
 `xpl change <name> <base>..<head>` needs an index built from the head commit. Find the base and the head:
 
