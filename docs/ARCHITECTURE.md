@@ -75,7 +75,7 @@ between two commits. For a change, `xpl change` records the diff in the explaine
 ## 1. Repository layout and conventions
 
 ```
-package.json            npm workspaces root (ESM). Scripts: build, test, typecheck, test:e2e, format, format:check
+package.json            npm workspaces root (ESM). Scripts: build, site, test, typecheck, test:e2e, format, format:check
 tsconfig.base.json      strict, noUncheckedIndexedAccess, noUnusedLocals, ES2022, NodeNext
 packages/
   core/     @xpl/core     schema types + pure logic (hash, anchors, derivation, validation, patches).
@@ -91,16 +91,26 @@ docs/                   handoff.md, ARCHITECTURE.md, analysis-2026-09-30.txt, re
                         review-2026-10-03-real-runs/ (the per-run reports of that review), images/,
                         assessment-2026-10-04-graph-formats.md (+ its reproducible scripts)
 .explainer/             xpl's own explainer (xpl.explainer.json), checked by packages/cli/test/self-explainer.test.ts
+site/                   public landing page: hand-written HTML/CSS and jobrunner screenshots
 AGENTS.md, CLAUDE.md    guidance for coding agents working on this repo (CLAUDE.md imports AGENTS.md)
 .claude/skills/         skills for working on this repo (.agents/skills links here; code-explainer links to skill/)
 .claude/hooks/          Claude Code hooks (registered in .claude/settings.json): session-start.sh, format-on-edit.sh,
                         stop-check.sh (AGENTS.md, Automation)
 scripts/                pr-screenshots.sh (before/after viewer screenshots; packages/viewer/scripts/pr-shots.ts),
-                        needs-screenshots.sh (does a change need them), publish-pr-shots.sh (push to pr-assets)
-.github/                pull_request_template.md, workflows/ci.yml (checks, e2e, PR screenshots)
+                        needs-screenshots.sh (does a change need them), publish-pr-shots.sh (push to pr-assets),
+                        build-site.mjs (build xpl, bundle a fixture copy, check local site links/assets)
+.github/                pull_request_template.md, workflows/ci.yml (checks, e2e, PR screenshots),
+                        workflows/pages.yml (build on PRs; publish the site on main pushes or manual dispatch)
 ```
 
 Conventions (all packages):
+
+- `npm run site` writes `_site/` (git-ignored). It copies only `site/` and bundles a temporary copy of
+  `fixtures/ts-jobrunner` with the built CLI (`index --precise off`, a text-only patch through `apply`,
+  then `bundle jobrunner`). The patch fills required summaries missing from the committed fixture. Local page
+  and CSS references and the embedded demo payload are checked before success. Pages deploys this output
+  at `https://krimvp.github.io/xpl/`; pull requests build without deploying. The public artifact contains
+  the landing page and fixture example, not internal docs or the repository's own explainer.
 
 - ESM, TypeScript `strict`. Relative imports use `.js` suffixes (NodeNext style; bundlers accept it).
 - Workspace packages export their TS sources (`"exports": { ".": "./src/index.ts" }`; the indexer also

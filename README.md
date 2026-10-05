@@ -1,5 +1,7 @@
 # xpl — code explainer
 
+[Try the live example](https://krimvp.github.io/xpl/) on the xpl site.
+
 Interactive diagrams linked to code in both directions. Click a box, an arrow, a sequence step or a concept
 and the editor highlights exactly the code it is about, across as many files as it touches, everything else
 dimmed. Put the cursor in the code and the diagram elements and concepts that cover that line light up.
