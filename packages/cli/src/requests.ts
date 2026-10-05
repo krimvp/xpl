@@ -10,6 +10,8 @@ import {
   type ArtifactIdentity,
   type FeedbackRequest,
   type FeedbackStatus,
+  type FeedbackAnswer,
+  sameFeedbackContent,
 } from "@xpl/core";
 import { CliError, errorMessage } from "./errors.js";
 import { atomicWrite, withRepositoryLock, jsonFile } from "./fsutil.js";
@@ -167,5 +169,30 @@ export async function recordOutcomes(
       requests[i] = mergeFeedbackRequests([original, recorded])[0]!;
     }
     await commitDecision?.();
+  });
+}
+
+/** The completed job is the publication receipt. Replays union immutable answers without changing outcomes. */
+export async function recordAnswer(
+  root: string,
+  original: FeedbackRequest,
+  answer: FeedbackAnswer,
+): Promise<void> {
+  const stored = readRequests(root);
+  if (stored.error) throw new CliError(stored.error);
+  const existing = stored.requests.find((r) => r.id === original.id);
+  if (
+    existing &&
+    sameFeedbackContent(existing, original) &&
+    existing.answers?.some(
+      (a) => a.id === answer.id && JSON.stringify(a) === JSON.stringify(answer),
+    )
+  )
+    return;
+  await mutate(root, (requests) => {
+    const index = requests.findIndex((r) => r.id === original.id);
+    if (index < 0) throw new CliError(`unknown question request ${original.id}`);
+    const incoming = parseFeedbackRequest({ ...original, answers: [answer] });
+    requests[index] = mergeFeedbackRequests([requests[index]!, incoming])[0]!;
   });
 }

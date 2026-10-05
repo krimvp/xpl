@@ -1787,7 +1787,46 @@ Managed services expose `GET /api/jobs`, `GET /api/jobs/<UUID>` and `POST /api/j
 Routes use the existing Host, attachment, JSON, origin and size guards and filter to the attached guide.
 No acceptance route exists. Backend `none` reports 503 for submission/retry; history and cancellation
 remain usable. Controlled runners prove lifecycle behavior only. 39C adds progress/review UI and fenced
-acceptance through the existing revision commit/outcome recovery. Answer scopes remain later work.
+acceptance through the existing revision commit/outcome recovery. Headless answer jobs are described below;
+question/history UI remains 40B.
+
+**Snapshot-bound answers (40A).** `cli/answers.ts` captures a saved `explain` feedback request with a
+non-empty question in `note`. The request keeps its stable feedback ID, element/range and original
+`ArtifactIdentity`. Selection follows the live server's current index and re-resolved guide. It also accepts
+the stored guide identity for current offline feedback; it never rebinds an older request. Selection refuses
+stale or changed context and invalid selected ranges. Under the guide lock it records the guide, current index
+path, text/hashes for guide-referenced and question-focused head files, and base files named by change records, base anchors or the selected range. Head text must match the index; base text comes from
+its recorded git commit, with rename mapping. A final freshness check rejects capture across a source edit.
+Inputs are limited to 5 MB; source arrays to 10,000 files. Selection reuses `referencedFiles` and `codeFocus`.
+No revision journal is opened for an answer.
+
+An `AnswerJob` shares the durable job ledger, scheduler, process ownership and attempt fences. Its scope
+kind is `answer`; input is `{expected, index, request, guide, sources}`. Revision history APIs keep revision
+jobs separate. `POST /api/answers` takes `{id: UUID, requestId}`; GET collection/item and POST
+`/<UUID>/<retry|cancel|supersede>` use the same attachment/loopback guards and retry baseline as jobs.
+Only a configured answer runner accepts new work. Frozen questions can finish or retry after source or
+explanation changes; `contextReason` reports the current difference without changing the original input.
+
+Untrusted answer output is exactly `{text, references}`. Each reference is `{file, side, fromLine,
+toLine, quote}`: positive inclusive lines and an exact complete-line excerpt from recorded head/base text.
+Missing files, out-of-bounds ranges and invented or wrong-side quotes fail the job. Extra output fields,
+including patches, are refused. These are source excerpts, not precise/heuristic call-graph facts.
+A completed receipt includes the job ID, request ID, original identity, timestamp, text, references and
+only the cited source files/text/hashes. Reload revalidates evidence against the job's frozen source too.
+
+`FeedbackRequest.answers` is optional in `code-explainer/feedback@1`. Existing exports remain readable.
+Parsing/import rechecks source hashes, exact excerpts, original request identity and duplicate answer IDs.
+Merging unions immutable answers by ID independently of outcome revisions; conflicting same-ID answers
+are refused, and exports without history never erase saved answers. Returning an answer leaves feedback
+pending and never changes the guide, user fields or author outcomes. Optional guide changes use the
+existing explicit `xpl revise` review/acceptance path; answer output cannot smuggle a patch into it.
+
+The completed job receipt is written before mirroring history under the request store's lock. Startup
+and answer-history reads replay missing mirrors, so interruption between writes cannot lose or duplicate
+an answer. Concurrent new feedback and newer author outcomes survive this merge. Cancellation or
+supersession before completion fences late output; completed answer history is immutable. Disconnected
+submission retains ordinary pending feedback for the next explicit offline iteration. The question UI,
+progress controls, context warnings and browser interaction proof remain 40B.
 
 **Configured Claude runner (39B).** `cli/claude-runner.ts` is the single process adapter behind `JobRunner`.
 Explicit `service --backend claude` selects it. The saved `--skill-dir` identifies a verified managed
@@ -1800,9 +1839,9 @@ recovery message. No keys, accounts, provider setup or hosted xpl backend are cr
 
 Each invocation uses Claude Code print/JSON mode, `--restricted`, `dontAsk`, no session persistence,
 a read/Glob/Grep/Write tool list, empty MCP configuration and disabled inherited hooks. It starts in an
-xpl-owned temporary directory containing the frozen revision input. Source and the installed skill are
+xpl-owned temporary directory containing frozen revision or question input. Source and the installed skill are
 additional read directories with explicit Edit deny rules. Only an exact absolute Edit permission for
-`proposal.json` permits the Write tool; Claude uses Edit rules for all file modifications. Shell, agents
+`proposal.json` (or `answer.json`) permits the Write tool; Claude uses Edit rules for all file modifications. Shell, agents
 and MCP tools are unavailable. The prompt reads the installed skill and asks for ordinary per-request
 patches, never applies or accepts them. Output must be a bounded regular file with one entry per selected
 request. A per-attempt Node launcher holds a service pipe: closing the pipe, including service death,

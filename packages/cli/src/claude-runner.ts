@@ -1,4 +1,4 @@
-/** One installed Claude Code process writes an owned proposal; the job scheduler validates and journals it. */
+/** One installed Claude Code process writes owned output; the scheduler validates a proposal or answer. */
 import type { Duplex } from "node:stream";
 import { spawn } from "node:child_process";
 import { lstat, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
@@ -7,7 +7,7 @@ import { join, resolve } from "node:path";
 import type { Ctx } from "./context.js";
 import { CliError, errorMessage } from "./errors.js";
 import { readJobProcess, terminateJobProcess, type JobProcess } from "./job-process.js";
-import type { JobRunner } from "./jobs.js";
+import type { JobRunner, AnswerRunner, AnswerJob, Job } from "./jobs.js";
 import { defaultSkillDir, verifySkill } from "./setup.js";
 
 // The launcher retains group identity and reports Claude's exit on fd 3.
@@ -45,12 +45,14 @@ function failure(text: string): string {
   return `Claude failed: ${text.trim().slice(-2000) || "no diagnostic output"}. Inspect the installed CLI/provider configuration, then explicitly retry.`;
 }
 
-export function claudeRunner(
-  ctx: Ctx,
-  options: { skillDir?: string; timeoutMs?: number } = {},
-): JobRunner {
+function runner(ctx: Ctx, options: { skillDir?: string; timeoutMs?: number } = {}) {
   const timeoutMs = options.timeoutMs ?? 300_000;
-  return async (job, signal, progress, started) => {
+  return async (
+    job: Job | AnswerJob,
+    signal: AbortSignal,
+    progress: Parameters<JobRunner>[2],
+    started: Parameters<JobRunner>[3],
+  ) => {
     signal.throwIfAborted();
     await readJobProcess(process.pid);
     let skillDir: string;
@@ -64,11 +66,18 @@ export function claudeRunner(
     }
     const root = await realpath(ctx.root);
     const directory = await mkdtemp(join(tmpdir(), "xpl-claude-"));
-    const output = join(directory, "proposal.json");
+    const answering = "request" in job.input;
+    const output = join(directory, answering ? "answer.json" : "proposal.json");
     try {
-      const journal = resolve(root, ".explainer/revisions", job.input.revisionRunId, "run.json");
       // Snapshot context is owned by xpl, not writable by the agent.
-      await writeFile(join(directory, "input.json"), await readFile(journal));
+      await writeFile(
+        join(directory, "input.json"),
+        "request" in job.input
+          ? JSON.stringify(job.input)
+          : await readFile(
+              resolve(root, ".explainer/revisions", job.input.revisionRunId, "run.json"),
+            ),
+      );
       const settings = {
         disableAllHooks: true,
         permissions: {
@@ -78,16 +87,28 @@ export function claudeRunner(
       };
       const prompt = [
         `Output: ${JSON.stringify(output)}`,
-        `Use the installed code-explainer skill at ${skillDir}/SKILL.md, reference/patch-format.md and reference/revise.md.`,
-        `Read input.json: it contains the frozen revision selection, original requests, previous/resolved guide, include IDs and source. Repository: ${root}.`,
-        `Write exactly one JSON array [{"id":"selected request ID","patch":{ordinary xpl patch}}] to Output, one entry per selected request.`,
-        "Produce the requested creation or revision proposal. An initialized empty/draft guide can be filled only within its explicit include IDs. Preserve user fields and unrelated content; do not change title or scope.",
-        "Read the actual source to check every claim. Use existing IDs and symbol/span anchors, never invent hashes. Follow the skill's writing and accuracy rules. No TODOs in required text.",
-        "Only the proposal file is writable. Do not run commands, apply patches, modify source/guide/index/requests, write decisions or accept anything. xpl validates the candidate after you exit; the author reviews and accepts later.",
+        ...(answering
+          ? [
+              `Use the installed code-explainer skill at ${skillDir}/SKILL.md and reference/writing.md.`,
+              "Read input.json: it contains the immutable question request, guide, ArtifactIdentity, and recorded head/base sources. Answer the request.note about its element and/or exact range.",
+              'Write one JSON object {"text":"answer", "references":[{"file":"recorded file", "side":"head or base", "fromLine":1, "toLine":2, "quote":"exact complete source lines"}]} to Output.',
+              "Use only the recorded sources in input.json for evidence, never live repository source. Every reference must contain exact full lines with inclusive 1-based line numbers. Quote at least one relevant source range; preserve base/head side.",
+              "Write plain words. No patches, guide changes or author outcome decisions. An answer stays in question history and does not accept a revision.",
+            ]
+          : [
+              `Use the installed code-explainer skill at ${skillDir}/SKILL.md, reference/patch-format.md and reference/revise.md.`,
+              `Read input.json: it contains the frozen revision selection, original requests, previous/resolved guide, include IDs and source. Repository: ${root}.`,
+              `Write exactly one JSON array [{"id":"selected request ID","patch":{ordinary xpl patch}}] to Output, one entry per selected request.`,
+              "Produce the requested creation or revision proposal. An initialized empty/draft guide can be filled only within its explicit include IDs. Preserve user fields and unrelated content; do not change title or scope.",
+              "Read the actual source to check every claim. Use existing IDs and symbol/span anchors, never invent hashes. Follow the skill's writing and accuracy rules. No TODOs in required text.",
+            ]),
+        "Only the output file is writable. Do not run commands, apply patches, modify source/guide/index/requests, write decisions or accept anything. xpl validates the candidate after you exit; the author reviews and accepts later.",
         "If tooling or authentication prevents completion, report that failure instead of inventing output. Keep this task small and do not delegate.",
       ].join("\n");
       await progress(
-        "Starting configured Claude Code; source is read-only and output awaits review.",
+        answering
+          ? "Starting configured Claude Code with frozen question source."
+          : "Starting configured Claude Code; source is read-only and output awaits review.",
       );
       signal.throwIfAborted();
       const child = spawn(
@@ -246,12 +267,13 @@ export function claudeRunner(
         );
       }
       if (
-        !Array.isArray(proposals) ||
-        proposals.length !== job.selectedRequestIds.length ||
-        proposals.some(
-          (p) => !p || typeof p !== "object" || !job.selectedRequestIds.includes(p.id),
-        ) ||
-        new Set(proposals.map((p) => p.id)).size !== proposals.length
+        !answering &&
+        (!Array.isArray(proposals) ||
+          proposals.length !== job.selectedRequestIds.length ||
+          proposals.some(
+            (p) => !p || typeof p !== "object" || !job.selectedRequestIds.includes(p.id),
+          ) ||
+          new Set(proposals.map((p) => p.id)).size !== proposals.length)
       )
         throw new CliError(
           "Claude must produce one proposal per selected request; output discarded.",
@@ -260,9 +282,26 @@ export function claudeRunner(
       await progress(
         `Claude finished: ${(result.result ?? "proposal written").slice(0, 1500)}. Validating for review.`,
       );
-      return { revisionRunId: job.input.revisionRunId, proposals };
+      return "request" in job.input
+        ? proposals
+        : { revisionRunId: job.input.revisionRunId, proposals };
     } finally {
       await rm(directory, { recursive: true, force: true });
     }
   };
+}
+
+export function claudeRunner(
+  ctx: Ctx,
+  options: { skillDir?: string; timeoutMs?: number } = {},
+): JobRunner {
+  const invoke = runner(ctx, options);
+  return async (...args) => (await invoke(...args)) as Awaited<ReturnType<JobRunner>>;
+}
+
+export function claudeAnswerRunner(
+  ctx: Ctx,
+  options: { skillDir?: string; timeoutMs?: number } = {},
+): AnswerRunner {
+  return runner(ctx, options);
 }

@@ -148,6 +148,11 @@ xpl index && xpl view jobrunner    # http://127.0.0.1:4747
 to detach the installed CLI. `xpl service status` reports its instance, address, canonical repository root,
 selected guide and backend label. `xpl service stop` verifies that instance before stopping it.
 
+The service also exposes headless snapshot-bound question jobs at `/api/answers` when the Claude backend
+is selected. They validate exact head/base source quotes and retain answers in portable feedback history;
+source or guide changes mark the original context outdated. An answer never edits a guide or finalizes a
+revision outcome. The question/history UI follows in #40B; current feedback controls keep their offline workflow.
+
 ```sh
 xpl service start jobrunner --background        # loopback only; logs in .explainer/service/service.log
 xpl service status --json
