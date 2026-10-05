@@ -41,6 +41,7 @@ async function serve(
     /** Files the page does not carry: served on demand by GET /api/file. */
     withheld?: string[];
     managed?: boolean;
+    backendAvailable?: boolean;
     putStatus?: number;
     tourStatus?: number;
     fileStatus?: number;
@@ -62,7 +63,7 @@ async function serve(
             guide: ".explainer/jobrunner.explainer.json",
             instanceId: "first",
             backend: "claude",
-            backendAvailable: false,
+            backendAvailable: opts.backendAvailable ?? false,
           },
         }
       : {}),
@@ -301,7 +302,7 @@ test("collapsed service connection, attention and controls fit a compact narrow 
   page,
 }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  const recorded = await serve(page, { managed: true });
+  const recorded = await serve(page, { managed: true, backendAvailable: true });
   recorded.attention = layoutAttention();
   const panel = page.getByTestId("attention-status");
   await expect(panel).toContainText("3 guides need attention");
@@ -327,6 +328,16 @@ test("collapsed service connection, attention and controls fit a compact narrow 
   await page.getByText("Connection details", { exact: true }).click();
   await expect(page.getByRole("button", { name: "Pause watch" })).toBeHidden();
   await expect(page.getByTestId("connection-status")).toContainText("/repos/jobrunner");
+  const details = page.getByTestId("connection-status").locator(".service-disclosure");
+  await expect(
+    details.getByText("Agent: Claude Code (configured; sign-in is checked when a job runs)"),
+  ).toBeVisible();
+  await expect
+    .poll(() => details.evaluate((element) => element.getBoundingClientRect().left))
+    .toBeGreaterThanOrEqual(0);
+  await expect
+    .poll(() => details.evaluate((element) => element.getBoundingClientRect().right))
+    .toBeLessThanOrEqual(390);
 });
 
 function layoutAttention(): WatchAttention {
@@ -649,6 +660,16 @@ test("readers can find the limits of source verification beside the guide", asyn
   await expect(info).toContainText("applied changes appear here automatically");
 });
 
+test("a managed page reports configured Claude without claiming sign-in", async ({ page }) => {
+  await serve(page, { managed: true, backendAvailable: true });
+  const connection = page.getByTestId("connection-status");
+  await expect(connection).toHaveAttribute("data-status", "connected");
+  await connection.getByText("Connection details").click();
+  await expect(connection).toContainText(
+    "Agent: Claude Code (configured; sign-in is checked when a job runs)",
+  );
+});
+
 test("a managed page shows backend unavailability, refuses another service, and exports its loaded snapshot after stop", async ({
   page,
 }) => {
@@ -661,7 +682,7 @@ test("a managed page shows backend unavailability, refuses another service, and 
   });
   await connection.getByText("Connection details").click();
   await expect(connection).toContainText(
-    "Agent backend unavailable (Claude selected). No agent is configured.",
+    "No agent is configured. Use xpl revise for a manual revision.",
   );
   await page.evaluate(() => window.__xpl!.select(["concept:retry"]));
   recorded.serviceStatus = 409;

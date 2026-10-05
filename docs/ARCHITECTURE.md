@@ -75,7 +75,7 @@ between two commits. For a change, `xpl change` records the diff in the explaine
 ## 1. Repository layout and conventions
 
 ```
-package.json            npm workspaces root (ESM). Scripts: build, test, typecheck, test:e2e, format, format:check
+package.json            npm workspaces root (ESM). Scripts: build, site, test, typecheck, test:e2e, format, format:check
 tsconfig.base.json      strict, noUncheckedIndexedAccess, noUnusedLocals, ES2022, NodeNext
 packages/
   core/     @xpl/core     schema types + pure logic (hash, anchors, derivation, validation, patches).
@@ -91,16 +91,26 @@ docs/                   handoff.md, ARCHITECTURE.md, analysis-2026-09-30.txt, re
                         review-2026-10-03-real-runs/ (the per-run reports of that review), images/,
                         assessment-2026-10-04-graph-formats.md (+ its reproducible scripts)
 .explainer/             xpl's own explainer (xpl.explainer.json), checked by packages/cli/test/self-explainer.test.ts
+site/                   public landing page: hand-written HTML/CSS and jobrunner screenshots
 AGENTS.md, CLAUDE.md    guidance for coding agents working on this repo (CLAUDE.md imports AGENTS.md)
 .claude/skills/         skills for working on this repo (.agents/skills links here; code-explainer links to skill/)
 .claude/hooks/          Claude Code hooks (registered in .claude/settings.json): session-start.sh, format-on-edit.sh,
                         stop-check.sh (AGENTS.md, Automation)
 scripts/                pr-screenshots.sh (before/after viewer screenshots; packages/viewer/scripts/pr-shots.ts),
-                        needs-screenshots.sh (does a change need them), publish-pr-shots.sh (push to pr-assets)
-.github/                pull_request_template.md, workflows/ci.yml (checks, e2e, PR screenshots)
+                        needs-screenshots.sh (does a change need them), publish-pr-shots.sh (push to pr-assets),
+                        build-site.mjs (build xpl, bundle a fixture copy, check local site links/assets)
+.github/                pull_request_template.md, workflows/ci.yml (checks, e2e, PR screenshots),
+                        workflows/pages.yml (build on PRs; publish the site on main pushes or manual dispatch)
 ```
 
 Conventions (all packages):
+
+- `npm run site` writes `_site/` (git-ignored). It copies only `site/` and bundles a temporary copy of
+  `fixtures/ts-jobrunner` with the built CLI (`index --precise off`, a text-only patch through `apply`,
+  then `bundle jobrunner`). The patch fills required summaries missing from the committed fixture. Local page
+  and CSS references and the embedded demo payload are checked before success. Pages deploys this output
+  at `https://krimvp.github.io/xpl/`; pull requests build without deploying. The public artifact contains
+  the landing page and fixture example, not internal docs or the repository's own explainer.
 
 - ESM, TypeScript `strict`. Relative imports use `.js` suffixes (NodeNext style; bundlers accept it).
 - Workspace packages export their TS sources (`"exports": { ".": "./src/index.ts" }`; the indexer also
@@ -1341,7 +1351,7 @@ stdout (a rejection exits 1); fatal errors (`error: …`) and warnings (`warning
 | `xpl pr cleanup <directory> [--cache-dir dir]` | removes only a marked owned PR input directly under the selected cache; refuses symlinks and developer-tree paths |
 | `xpl draft change\|repo\|path <explainer> [<entry id> ...] [-o file]` | prints a patch skeleton built from the index (and the change record) with no LLM, `TODO:` in every text to write (below); the summary goes to stderr |
 | `xpl view <explainer> [--port p] [--host h] [--no-open]` | local server (below) |
-| `xpl service <start\|pause\|resume\|stop\|status> [explainer] [--background] [--port p] [--backend none\|claude] [--recover] [--watch]` | optional repository-scoped lifecycle around the same viewer server; loopback only; persisted context and explicit interrupted-owner recovery |
+| `xpl service <start\|pause\|resume\|stop\|status> [explainer] [--background] [--port p] [--backend none\|claude] [--skill-dir folder] [--job-timeout seconds] [--recover] [--watch]` | optional repository-scoped lifecycle around the same viewer server; loopback only; persisted context and explicit interrupted-owner recovery |
 | `xpl bundle <explainer> -o out.html [--mode explore\|present] [--tour id] [--files referenced\|boundary\|all] [--boundary-max n] [--embed-index full\|pruned] [--draft] [--note reason] [--require-review] [--allow-drift]` | self-contained HTML after the shared readiness check (exit 1 before writing with errors); `--draft` writes a labelled preview with findings; `--allow-drift` is a legacy draft flag that still refuses stale indexes; warnings and optional author notes are retained; `--tour` (`tour:intro` or `intro`) implies present mode; embeds the files the explainer references by default and prints what went in (`8 of 12 files embedded (referenced: 18.4 KB of source; --files all adds 4 files, 6.7 KB)`), `--files boundary` adds the direct callers, callees and tests of anchored symbols (at most `--boundary-max`, default 40), `--files all` every indexed file; with a change recorded, every changed file at head and the base text of the changed files go in too; the symbol index in it is pruned to what the viewer can draw with `--files referenced` or `boundary` and whole with `--files all` (`--embed-index` overrides) and packed (the summary line says `index 0.3 MB (1.3 MB as plain JSON, pruned from 9.0 MB)`) |
 | `xpl doctor [--agent none\|claude] [--skill-dir path]` | local setup report: Node, artifact hashes, grammar loading, installed skill and optional git/npx/Go; selected Claude Code availability; no downloads or authentication probes; required failures exit 1 |
 | `xpl skill install [--dir path]` | copies the bundled skill and writes its CLI binding; repeat to update; defaults to `~/.claude/skills/code-explainer`; refuses unmanaged directories, symlinks and local edits |
@@ -1349,11 +1359,16 @@ stdout (a rejection exits 1); fatal errors (`error: …`) and warnings (`warning
 **Installed artifact.** Workspace packages remain private. `npm run build` writes standalone package
 metadata in `packages/cli/dist`, with `@xpl/cli`'s version, a `bin` entry, Node >=22.12 and no dependencies
 or install scripts. The viewer is required at build time. The directory carries the bundled CLI, viewer,
-WASM runtime and grammars, Rust tags query, the skill and `integrity.json`. `npm run pack --
---pack-destination <outside-repo-dir>` builds and packs that directory. Install its local tarball with
+WASM runtime and grammars, Rust tags query, the skill, a short README, MIT LICENSE and `integrity.json`.
+The published name is `publishName` (`@krimvp/xpl`) in the private `@xpl/cli` workspace manifest; its version is
+0.1.0. The installed-artifact check retains service restart/recovery and checks watch pause/resume,
+durable job history and unavailable-runner submission. It also checks the published name/version, license
+and packed file inventory. npm rejected `xpl` as too similar to an existing name; `@krimvp/xpl` is the selected fallback.
+`npm run pack -- --pack-destination <outside-repo-dir>` builds and packs that directory. Install its local tarball with
 `npm install --global --prefix "$HOME/.local" --offline --ignore-scripts <absolute-tarball-path>`; put
-`$HOME/.local/bin` on PATH. No source build is needed at installation. Registry/channel publication remains
-a separate decision; nothing is published by build, pack, diagnosis or skill installation.
+`$HOME/.local/bin` on PATH. No source build is needed at installation. `@krimvp/xpl` 0.1.0 is published on npm
+under MIT; install with `npm install --global @krimvp/xpl`. Releases are published from main only. Publication is a
+separate step; nothing is published by build, pack, diagnosis or skill installation.
 
 `doctor` checks SHA-256 hashes from the artifact inventory and loads every grammar. Hashes detect damage,
 not publisher identity. Skill availability is optional for reading, required with `--agent claude`.
@@ -1654,17 +1669,18 @@ never stolen on a timer: a crashed transaction requires explicit inspection/remo
 An unexpected exit leaves the last valid index/explainer and interrupted instance record intact.
 
 Managed bundles add `server.attachment`: canonical root, repository-relative guide, instance UUID,
-backend selection and `backendAvailable: false`. Root/guide identify the attachment across restarts;
+backend selection and `backendAvailable` (whether a runner is configured, not an authentication check). Root/guide identify the attachment across restarts;
 the UUID identifies a process and participates in the workspace ETag. Every viewer API call sends
-`X-Xpl-Attachment` (URI-encoded root/guide JSON). The server rejects a different or unmanaged attachment
-with 409 before reads or writes. The page also preserves root/guide in its `attachment` URL query, checked
+`X-Xpl-Attachment` (URI-encoded root/guide JSON). The server rejects a different repository or guide
+with 409 before reads or writes, for plain views and managed services alike. The page also preserves
+root/guide in its `attachment` URL query, checked
 before HTML injection, so a bookmark cannot silently open another guide on a reused port.
 
-Backend selection is a persisted label, with execution unavailable. Local serving needs no provider
-network or credentials. A later configured Claude runner needs its own authentication and provider access.
-Offline HTML and manual CLI commands remain independent of the service. The installed-artifact check
-exercises detached processes, saved-context and same-page/bookmark restart, a real crash and explicit
-recovery, then manual export and blocked-network reading of an HTML snapshot saved from a stopped page.
+Backend `none` disables execution. Explicit `claude` selects the installed print-mode runner, using its
+existing login and provider access. Local serving needs no provider network or credentials. Offline HTML and manual CLI commands remain
+independent of the service. The installed-artifact check exercises detached processes, saved-context and
+same-page/bookmark restart, a real crash and explicit recovery, then manual export and blocked-network
+reading of an HTML snapshot saved from a stopped page.
 
 **Opt-in watching** (`watch.ts`): `service start --watch` polls input metadata every 500 ms and
 requires a quiet observation for at least 300 ms before a full rebuild. Recursive filesystem events were
@@ -1758,17 +1774,67 @@ inspected job; an older baseline returns the saved receipt, including an already
 A future baseline is refused. Re-delivery while queued/running also returns the same attempt.
 Cancel and supersede also fence completed proposals. No state transition can restore them to completed.
 Shutdown marks running work interrupted and aborts it; instance replacement fences any late callbacks.
+Configured attempts add optional owner.process: {groupId, startTime}. The groupId names the launcher
+and its POSIX process group; startTime is Linux's boot UUID plus the leader's kernel start ticks.
+The runner records it under the ledger lock and current attempt fence before Claude can start.
+On a new owner, recovery checks the start time and group identity before signalling a recorded group
+and waits for every live group member to stop before marking running work interrupted or dispatching queued work.
+A missing, exited or reused PID is not signalled. Older/control-only attempts have no process record.
 Locks left by a killed transaction still require inspection/removal, never timeout-based theft.
 
 Managed services expose `GET /api/jobs`, `GET /api/jobs/<UUID>` and `POST /api/jobs` with
 `{id, selectedRequestIds, include?}`, plus `POST /api/jobs/<UUID>/<cancel|supersede>` with `{}` and
 `POST /api/jobs/<UUID>/retry` with `{expectedAttempt}`.
 Routes use the existing Host, attachment, JSON, origin and size guards and filter to the attached guide.
-No acceptance route exists in 39A. The installed service has no runner: submission/retry reports 503
-with an actionable unavailable reason, while history and cancellation remain usable after restart.
-An injected controlled runner proves lifecycle behavior only. 39B supplies one real configured runner
-and validates proposals through `xpl revise`; 39C adds progress/review UI and fenced acceptance through
-the existing revision commit/outcome recovery. Creation/answer scopes belong to those later changes.
+No acceptance route exists. Backend `none` reports 503 for submission/retry; history and cancellation
+remain usable. Controlled runners prove lifecycle behavior only. 39C adds progress/review UI and fenced
+acceptance through the existing revision commit/outcome recovery. Answer scopes remain later work.
+
+**Configured Claude runner (39B).** `cli/claude-runner.ts` is the single process adapter behind `JobRunner`.
+Explicit `service --backend claude` selects it. The saved `--skill-dir` identifies a verified managed
+installation (default `~/.claude/skills/code-explainer`); `--job-timeout` bounds each call (300 seconds by
+default, 1–3600 seconds). Enabled means configured; only an actual job establishes usable provider access.
+The viewer renders backendAvailable from the attachment: configured Claude is labelled without a
+sign-in claim; the unavailable state points to manual revision.
+Missing tooling/skill, authentication, rate limits and timeout failures leave the job retryable with a
+recovery message. No keys, accounts, provider setup or hosted xpl backend are created.
+
+Each invocation uses Claude Code print/JSON mode, `--restricted`, `dontAsk`, no session persistence,
+a read/Glob/Grep/Write tool list, empty MCP configuration and disabled inherited hooks. It starts in an
+xpl-owned temporary directory containing the frozen revision input. Source and the installed skill are
+additional read directories with explicit Edit deny rules. Only an exact absolute Edit permission for
+`proposal.json` permits the Write tool; Claude uses Edit rules for all file modifications. Shell, agents
+and MCP tools are unavailable. The prompt reads the installed skill and asks for ordinary per-request
+patches, never applies or accepts them. Output must be a bounded regular file with one entry per selected
+request. A per-attempt Node launcher holds a service pipe: closing the pipe, including service death,
+kills the whole group. The launcher starts Claude only after receiving the service's durable-ownership
+acknowledgement. It remains alive after Claude exits, reporting the original exit code on that pipe.
+From launcher spawn, one `try/finally` owns teardown, including failed identity reads. Normal/error exit,
+timeout, cancellation and recovery kill the verified group and scan Linux /proc until no live member
+remains. One two-second deadline bounds every identity read, scan, drain delay and launcher-exit wait.
+Stream `close` is never a completion signal: inherited pipes can outlive their group. Teardown destroys
+streams and releases the child handle after drain or deadline, so shutdown can exit. An unstarted launcher
+is killed through its live child handle if identity registration failed; Claude never starts in that case.
+Exited zombies cannot execute; the OS reaps them. Terminal state follows drain, including cancellation
+and shutdown. On cleanup failure, `JOB_PROCESS_CLEANUP` names the group, whether its recorded identity was
+verified and the unfinished stage. The locked ledger writes `failed`, no result, and an optional `cleanup`
+barrier containing `{groupId?, startTime?}`. Restart/recovery must verify that group gone before clearing
+the barrier. An unverified group is inspected without signalling its PID; unknown ownership blocks recovery.
+Recovery verifies the recorded start time as
+a second guard if the launcher was paused. No supervisor daemon is installed. Verified process
+ownership currently requires Linux /proc; other platforms fail before starting Claude and can use
+manual revision. Temporary output is removed after reading or failure.
+
+The adapter returns untrusted proposals. The scheduler rechecks instance/attempt/running state under
+`withRepositoryLock`, stages the proposal in its service area, and calls #30's `continueRevision` for
+scope, anchor, provenance, source and readiness checks. Ownership is checked again immediately before
+the journal write. A completed job references a ready, `proposed` revision run awaiting author review;
+the guide and feedback outcomes remain unchanged. The journal records `serviceJob: {id, attemptId}`;
+manual `revise --accept` refuses service-owned runs so cancellation/supersession cannot be bypassed.
+39C supplies their guarded acceptance path. Invalid or unfinished output becomes a failed job.
+Creation proposals fill an explicitly initialized empty/draft guide, selected persisted requests and
+explicit included new IDs through this same revision contract. The runner does not create or replace
+a guide name. No competing creation/proposal engine or automatic decisions are added.
 
 **Feedback contract** (`core/feedback.ts`): exports are `{schema: "code-explainer/feedback@1", requests}`.
 Each request has `id`, `elementId`, `kind` (`correct`, `explain`, `expand`), `at`, optional `note`, `view`,
@@ -1932,7 +1998,9 @@ is open (the Guide, Present), else "<explainer title> · xpl".
 **Connection** (`components/ConnectionStatus.tsx`): in the shared status bar below the header, managed
 service pages report offline, connecting,
 connected, disconnected (network failure) or service unavailable (HTTP refusal). Managed pages name their
-guide; a disclosure shows root, last instance and backend unavailability. Existing two-second explainer
+guide; Connection details shows root, last instance and configured backend availability. Claude Code is
+labelled configured; sign-in is checked only when a job runs. An unconfigured service points to manual
+`xpl revise`. Existing two-second explainer
 polling also checks availability with unsaved edits; requests have a five-second deadline. A stopped or
 unavailable managed service keeps retrying the same address, never searches ports or changes roots.
 Unmanaged `xpl view` pages keep their existing layout without this strip. An unmanaged old server
@@ -2586,9 +2654,9 @@ identities to syntax ranges. This is a proposed contract revision, not a change 
   depth 1, so a path whose layers call each other through a variable (`self.app`) is not rebuilt.
 - `xpl lint` is mechanical: it catches slogans, absolute words, long sentences, code titles and order
   problems, not wrong claims. `repeats-summary` finds near-verbatim repeats only.
-- Not published: workspace packages are private; build/pack produce a standalone local npm tarball with
+- Workspace packages are private; build/pack produce a standalone local npm tarball with
   its viewer, grammars and skill. Install/update and reader/export checks cover Linux x64/WSL2 only.
-  Node ≥22.12 is required. Registry name, release version and channel still need a publication decision.
+  Node ≥22.12 is required. `@krimvp/xpl` 0.1.0 is published on npm under MIT. Releases are published from main only.
 
 **Next steps, roughly by value** (the review in `docs/review-2026-10-01.md` has the roadmap): an independent
 accuracy pass for change explainers; a word-level diff in rewritten lines; editable step titles and code in
