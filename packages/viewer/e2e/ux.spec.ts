@@ -9,6 +9,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { packIndex, type SymbolIndex } from "@xpl/core";
 import {
   byId,
+  linesWith,
   type Loose,
   openEditMenu,
   openTourEditor,
@@ -422,8 +423,73 @@ test.describe("the Guide", () => {
     // "Open in Flow" opens the live diagram on the step: the flow's own step stays picked (the section's
     // concept would mark other boxes as related)
     await second.getByTestId("snapshot-open").click();
-    expect((await stateOf(page)).perspective).toBe("flow");
-    expect((await stateOf(page)).selection).toEqual(["dispatch:3"]);
+    await expect.poll(async () => (await stateOf(page)).perspective).toBe("flow");
+    await expect.poll(async () => (await stateOf(page)).selection).toEqual(["dispatch:3"]);
+    const sequence = page.locator(".workspace-diagram .sequence");
+    await expect(sequence.locator(".lifeline-head .label")).toHaveText([
+      "Runner.dispatch",
+      "queue.ts",
+      "worker.ts",
+    ]);
+    await expect(sequence.locator(".step .label")).toHaveText([
+      "pop()",
+      "run(job)",
+      "requeue(job, backoff)",
+    ]);
+    await expect(sequence.locator(".frame-kind")).toHaveText("loop");
+    await expect(sequence.locator(".frame-label")).toHaveText("[until success or maxRetries]");
+    const retry = sequence.locator('[data-frame-id="frame:retry"] .frame-box');
+    const loop = (await retry.boundingBox())!;
+    const pop = (await sequence.locator('[data-element-id="dispatch:1"] .label').boundingBox())!;
+    expect(pop.y + pop.height).toBeLessThan(loop.y);
+    for (const id of ["dispatch:2", "dispatch:3"]) {
+      const call = (await sequence.locator(`[data-element-id="${id}"] .label`).boundingBox())!;
+      expect(call.y).toBeGreaterThan(loop.y);
+      expect(call.y + call.height).toBeLessThan(loop.y + loop.height);
+    }
+    await expect(sequence.locator('[data-element-id="dispatch:3"]')).toHaveClass(/is-selected/);
+
+    await page.getByRole("button", { name: "Show source", exact: true }).click();
+    await sequence.locator('[data-element-id="dispatch:2"] .label').click();
+    await sequence.locator('[data-element-id="dispatch:3"] .label').click();
+    const runner = page.locator('.workspace-source .pane[data-file="src/runner.ts"]');
+    await expect.poll(() => linesWith(runner, ".xpl-hl-call-site")).toEqual([76, 77, 78]);
+    await runner.locator('.cm-line[data-line="77"]').click({ position: { x: 96, y: 9 } });
+    await expect(sequence.locator('[data-element-id="dispatch:3"]')).toHaveClass(/is-match/);
+    await runner.locator('.cm-line[data-line="73"]').click({ position: { x: 60, y: 9 } });
+    await expect(sequence.locator('[data-element-id="dispatch:3"]')).not.toHaveClass(/is-match/);
+    await expect(
+      sequence.locator('[data-element-id="sym:src/runner.ts#Runner.dispatch"]'),
+    ).toHaveClass(/is-match/);
+
+    await page.getByRole("button", { name: "Hide source", exact: true }).click();
+    await page.setViewportSize({ width: 390, height: 844 });
+    const pane = (await page.locator(".workspace-diagram .panzoom").boundingBox())!;
+    await expect
+      .poll(async () => {
+        const label = (await sequence
+          .locator('[data-element-id="dispatch:3"] .label')
+          .boundingBox())!;
+        return (
+          label.x >= pane.x &&
+          label.x + label.width <= pane.x + pane.width &&
+          label.y >= pane.y &&
+          label.y + label.height <= pane.y + pane.height
+        );
+      })
+      .toBe(true);
+    expect(
+      await sequence
+        .locator('[data-element-id="dispatch:3"] .label')
+        .evaluate(
+          (text) =>
+            parseFloat(getComputedStyle(text).fontSize) *
+            (text as SVGTextElement).getScreenCTM()!.a,
+        ),
+    ).toBeGreaterThanOrEqual(10);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+      390,
+    );
     expect(problems).toEqual([]);
   });
 
