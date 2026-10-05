@@ -356,6 +356,23 @@ src/config.ts:20  sym:src/config.ts#RunnerConfig.retry +0  retry: RetryConfig;
 ... 14 more matches (showing 3 of 17 in 4 files); raise --limit or narrow the pattern
 ```
 
+Unavailable source produces a warning rather than silently disappearing from the search. `--json`
+adds `scope`: index commit, text origin (`working-tree`), indexed/selected/searched/unavailable paths,
+retained/original symbol and reference counts and original analysis reports. Absent analysis is unknown;
+failed or unsupported symbol analysis does not disable text search. No matches refers only to searched text.
+
+## `xpl guides`
+
+Lists `.explainer/*.explainer.json` by stored title, audience, distinct view questions/roots and source/index
+commits. No symbol index or service is required. The filename is a stable key and path, not the guide's
+reader-facing identity. Scope is recorded metadata: change, question, repository, subsystem, or unknown
+when there is no recorded view scope. This is not a readiness or freshness check. Use `ready <name>` for
+export checks; `status <name>` inspects evidence after indexing.
+
+`--json`: `{ok, guides: [{id, path, title, audience?, questions[], roots[], kind, commit, indexCommit,
+change?: {base, head}}], errors: [{id, error}]}`. Unreadable, invalid or out-of-repository guides are reported
+separately and exit 1; no local guides is a valid empty library and exits 0. No files are written.
+
 ## `xpl new <name> [--title t] [--repo r] [--url u]`
 
 Creates an empty `.explainer/<name>.explainer.json` bound to the selected index. Refuses to overwrite (`error: … already exists; not overwriting it`). The repository name it records (`repo.name`, the label of the repo box) is `--repo`, else the first of: `package.json` `name`, the last element of the `go.mod` module (`example.com/acme/jobrunner/v2` gives `jobrunner`), `[project] name` in `pyproject.toml`, the base name of the git remote (`origin`, else the first), the directory name. `--url` records where the repository lives; it is never taken from the git remote (which may carry credentials).
