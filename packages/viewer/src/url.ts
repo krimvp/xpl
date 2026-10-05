@@ -11,8 +11,8 @@
  *   Back from there returns to the talk, at the step it was left on.
  * - Whatever Back or Forward land on, the address ends up saying what is on screen.
  *
- * Nothing is written until the mode, tour or step changes, so a page opened with parameters keeps its
- * URL as it is. Leaving Present drops `tour` and `step`; when the bundle itself opens in Present (its `mode`
+ * Navigation parameters are written only when the mode, tour or step changes. A managed service also
+ * records its repository/guide attachment once on load, so bookmarks stay scoped to that guide. Leaving Present drops `tour` and `step`; when the bundle itself opens in Present (its `mode`
  * field), `mode=explore` is written instead, with the tour and step, so that a reload does not throw the
  * user back into the talk and Present resumes where it was. Other parameters are left alone.
  */
@@ -71,6 +71,20 @@ export function watchUrl(
   bundleMode: "explore" | "present" | undefined,
   win: Window = window,
 ): () => void {
+  // Bind bookmarks and reloads to the guide as loaded, even if another service later owns the port.
+  const attachment = store.getState().connection.attachment;
+  if (attachment) {
+    try {
+      const url = new URL(win.location.href);
+      url.searchParams.set(
+        "attachment",
+        JSON.stringify({ root: attachment.root, guide: attachment.guide }),
+      );
+      win.history.replaceState(win.history.state, "", url);
+    } catch {
+      /* sandboxed frames may refuse */
+    }
+  }
   const write = (state: ViewerState, push = false) => {
     try {
       const { pathname, search, hash } = win.location;

@@ -1,6 +1,7 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { execFileSync } from "node:child_process";
 import {
+  existsSync,
   lstatSync,
   mkdirSync,
   readdirSync,
@@ -25,6 +26,7 @@ import {
   readFile,
   writeFile,
 } from "./helpers.js";
+import { parseBundle } from "@xpl/core";
 import type { ViewServer } from "../src/server.js";
 
 let demo: string;
@@ -105,6 +107,154 @@ describe("repository service lifecycle", () => {
     }
     expect((await xplJson(root, "status", "--all")).json.watch.state).toBe("stopped");
   });
+
+  it("publishes a stable guide attachment and refreshes its instance after restart", async () => {
+    const root = cloneDir(demo);
+    const first = await serve(root, "demo", "--backend", "claude");
+    let etag: string | null;
+    let instanceId: string;
+    try {
+      const response = await fetch(new URL("/api/bundle", first.server.url));
+      const bundle = parseBundle(await response.text());
+      instanceId = readJson(root, ".explainer/service/instance.json").instanceId;
+      expect(bundle.server!.attachment!).toEqual({
+        root,
+        guide: ".explainer/demo.explainer.json",
+        instanceId,
+        backend: "claude",
+        backendAvailable: false,
+      });
+      etag = (await fetch(new URL("/api/explainer", first.server.url))).headers.get("etag");
+    } finally {
+      await first.close();
+    }
+    const restarted = await serve(root);
+    try {
+      const bundle = parseBundle(
+        await (await fetch(new URL("/api/bundle", restarted.server.url))).text(),
+      );
+      expect(bundle.server!.attachment!.root).toBe(root);
+      expect(bundle.server!.attachment!.guide).toBe(".explainer/demo.explainer.json");
+      expect(bundle.server!.attachment!.instanceId).not.toBe(instanceId!);
+      expect(
+        (await fetch(new URL("/api/explainer", restarted.server.url))).headers.get("etag"),
+      ).not.toBe(etag!);
+    } finally {
+      await restarted.close();
+    }
+  });
+
+  it.each(["restart", "recover"])(
+    "reattaches its saved guide to the new watched publication after %s",
+    async (action) => {
+      const root = cloneDir(demo);
+      const published = async (instanceId: string) => {
+        await expect
+          .poll(
+            () => {
+              try {
+                const watch = readJson(root, ".explainer/service/watch.json");
+                return { state: watch.state, instanceId: watch.instanceId };
+              } catch {
+                return null;
+              }
+            },
+            { timeout: 15000 },
+          )
+          .toEqual({ state: "current", instanceId });
+        return readJson(root, ".explainer/service/watch.json");
+      };
+      const first = await serve(root, "demo", "--watch", "--backend", "claude");
+      const firstId = readJson(root, ".explainer/service/instance.json").instanceId;
+      let previous;
+      try {
+        previous = await published(firstId);
+      } finally {
+        await first.close();
+      }
+      expect(readJson(root, ".explainer/service/watch.json").state).toBe("stopped");
+      if (action === "recover") {
+        const instance = readJson(root, ".explainer/service/instance.json");
+        writeFile(
+          root,
+          ".explainer/service/instance.json",
+          JSON.stringify({ ...instance, state: "running", pid: 2147483647 }),
+        );
+        writeFile(root, ".explainer/service/watch.json", JSON.stringify(previous));
+      }
+      writeFile(root, "README.md", "source changed while watch was stopped\n");
+      const restarted = await serve(
+        root,
+        "--watch",
+        ...(action === "recover" ? ["--recover"] : []),
+      );
+      try {
+        const instanceId = readJson(root, ".explainer/service/instance.json").instanceId;
+        expect(instanceId).not.toBe(firstId);
+        const current = await published(instanceId);
+        expect(current.index.commit).not.toBe(previous.index.commit);
+        const attachment = { root, guide: ".explainer/demo.explainer.json" };
+        const response = await fetch(new URL("/api/bundle", restarted.server.url), {
+          headers: { "X-Xpl-Attachment": encodeURIComponent(JSON.stringify(attachment)) },
+        });
+        expect(response.status).toBe(200);
+        const bundle = parseBundle(await response.text());
+        expect(bundle.server!.attachment).toEqual({
+          ...attachment,
+          instanceId,
+          backend: "claude",
+          backendAvailable: false,
+        });
+        expect(bundle.index.commit).toBe(current.index.commit);
+        expect((await xplJson(root, "status", "--all")).json.index.commit).toBe(
+          current.index.commit,
+        );
+      } finally {
+        await restarted.close();
+      }
+    },
+  );
+
+  it.each(["root", "guide"])(
+    "refuses an attached page's different %s before reads or writes",
+    async (field) => {
+      const root = cloneDir(demo);
+      const running = await serve(root, "demo");
+      const attachment = { root, guide: ".explainer/demo.explainer.json" };
+      const encode = () => encodeURIComponent(JSON.stringify(attachment));
+      try {
+        expect(
+          (
+            await fetch(new URL("/api/requests", running.server.url), {
+              headers: { "X-Xpl-Attachment": encode() },
+            })
+          ).status,
+        ).toBe(200);
+        attachment[field as "root" | "guide"] =
+          field === "root" ? cloneDir(demo) : ".explainer/another.explainer.json";
+        for (const method of ["GET", "POST"]) {
+          const response = await fetch(new URL("/api/requests", running.server.url), {
+            method,
+            headers: { "X-Xpl-Attachment": encode(), "Content-Type": "application/json" },
+            ...(method === "POST"
+              ? { body: JSON.stringify({ elementId: "file:src/queue.ts" }) }
+              : {}),
+          });
+          expect(response.status).toBe(409);
+          expect(await response.json()).toEqual({
+            error:
+              "This address serves a different repository or guide. Open that service's own URL.",
+          });
+        }
+        const bookmark = new URL(running.server.url);
+        bookmark.searchParams.set("attachment", JSON.stringify(attachment));
+        expect((await fetch(bookmark)).status).toBe(409);
+        expect(existsSync(join(root, ".explainer/requests.json"))).toBe(false);
+      } finally {
+        await running.close();
+      }
+    },
+  );
 
   it("refuses an empty foreign service directory swapped while startup waits for ownership", async () => {
     const root = cloneDir(demo);
