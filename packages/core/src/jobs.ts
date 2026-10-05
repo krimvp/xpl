@@ -52,6 +52,8 @@ export interface RevisionReview {
   include: string[];
   resolve: ResolveReport;
   decisions: RevisionDecision[];
+  /** Required for service acceptance; binds the attempt, candidate and reviewed decisions. */
+  reviewToken?: string;
   changes: RevisionChange[];
   proposals: { id: string; changes: RevisionChange[] }[];
   sourceBefore: RevisionSource[];
@@ -68,4 +70,5 @@ export interface JobReviewAction {
   attemptId: string;
   decisions?: RevisionDecision[];
   accept?: boolean;
+  reviewToken?: string;
 }

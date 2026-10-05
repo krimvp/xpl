@@ -215,6 +215,7 @@ Open **Jobs** in the connection bar to select feedback, start a job, inspect pro
 and source before/after. Raw changes sit behind **Show raw change**. Choose accept, reject or leave
 unresolved for each request and give a reason. **Review decisions** checks the exact combined candidate;
 only then can **Accept reviewed revision** commit it and finalize those selected outcomes.
+If another view changes the decisions, acceptance stops and reloads the review for inspection.
 New feedback stays pending. Cancelled, superseded, stale and old-attempt results cannot apply.
 After an interrupted acceptance, reopen the review and **Recover acceptance**; it does not apply twice.
 Service-owned runs refuse manual proposal/decision/accept writes to preserve these fences;

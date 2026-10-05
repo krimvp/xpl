@@ -1097,9 +1097,15 @@ a decision and reason. **Review decisions** validates the exact candidate; **Acc
 then uses #30's freshness/readiness, user fields and outcome journal. New feedback is preserved.
 Interrupted acceptance exposes **Recover acceptance** without publishing the patch twice.
 The guarded API is `GET /api/jobs/<id>/review?attemptId=<uuid>`, `POST .../review` with
-`{attemptId, decisions?}`, and `POST .../accept` with `{attemptId}`. Decisions use the same statuses,
-reconciliation and missing-anchor permissions as `xpl revise`. Cancelled/superseded/old attempts and stale
-candidates cannot apply. Once journaled acceptance begins, recover it before cancelling or superseding.
+`{attemptId, decisions?}`, and `POST .../accept` with `{attemptId, reviewToken}`. The token comes from
+the inspected review and binds its exact candidate and decisions to the job attempt. Acceptance compares
+it under the journal lock, including recovery. Another view's changed decisions return 409 and reload
+the review; inspect it again before accepting. Tokens are derived from the saved journal without a
+migration. Older clients that omit the token receive 400; manual `revise --accept` is unchanged.
+Per-request previews advance through proposals in order; each shows its own changes relative to the
+preceding candidate. The chosen combined candidate must still pass readiness. Decisions use the same
+statuses, reconciliation and missing-anchor permissions as `xpl revise`. Cancelled/superseded/old attempts
+and stale candidates cannot apply. Once journaled acceptance begins, recover it before cancelling or superseding.
 Controlled executables prove adapter/lifecycle failures only; a real installed Claude job proves the
 provider integration. `claude --version` does not establish authentication.
 

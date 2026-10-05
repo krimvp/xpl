@@ -147,6 +147,7 @@ export class ServerApi {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           attemptId: action.attemptId,
+          ...(action.accept ? { reviewToken: action.reviewToken } : {}),
           ...(action.decisions ? { decisions: action.decisions } : {}),
         }),
         signal: AbortSignal.timeout(120000),

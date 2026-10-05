@@ -1,5 +1,5 @@
 /** Explicit revision journals join a reviewed artifact commit to selected, retryable feedback outcomes. */
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { stat } from "node:fs/promises";
 import { join, resolve } from "node:path";
@@ -427,6 +427,14 @@ function sourceFor(revision: Revision, next: Explainer, ws: Workspace) {
   });
 }
 
+function reviewToken(revision: Revision): string {
+  return createHash("sha256")
+    .update(
+      JSON.stringify([revision.runId, revision.serviceJob, revision.next, revision.decisions]),
+    )
+    .digest("hex");
+}
+
 function packet(
   ctx: Ctx,
   revision: Revision,
@@ -457,6 +465,7 @@ function packet(
     include: revision.include,
     resolve: revision.resolve,
     decisions: revision.decisions,
+    ...(revision.serviceJob && revision.next ? { reviewToken: reviewToken(revision) } : {}),
     changes,
     proposals: proposalChanges,
     sourceBefore: revision.sourceBefore ?? revision.source,
@@ -490,6 +499,7 @@ export async function continueRevision(
     proposal?: string;
     decisions?: string;
     accept?: boolean;
+    reviewToken?: string;
     assertCurrent?: () => void;
     serviceJob?: { id: string; attemptId: string };
   },
@@ -516,7 +526,7 @@ export async function continueRevision(
     }
     if (action.serviceJob && !action.assertCurrent)
       throw new CliError("service job requires a current ownership guard");
-    if (action.accept) return accept(ctx, name, revision, action.assertCurrent);
+    if (action.accept) return accept(ctx, name, revision, action.assertCurrent, action.reviewToken);
     if (
       ["committing", "committed", "done"].includes(revision.state) &&
       (action.proposal || action.decisions)
@@ -565,9 +575,12 @@ export async function continueRevision(
       revision.next = next;
       revision.nextIdentity = artifactIdentity(next, ws.index);
     }
+    let preview = revision.resolved;
     const perProposal = revision.proposals.map((proposal) => {
-      const { next: one } = candidate(revision, ws, [proposal], false);
-      return { id: proposal.id, changes: packet(ctx, revision, one).changes };
+      const previous = preview;
+      const { next: one } = candidate({ ...revision, resolved: previous }, ws, [proposal], false);
+      preview = one;
+      return { id: proposal.id, changes: packet(ctx, { ...revision, previous }, one).changes };
     });
     if (action.proposal || action.decisions) {
       revision.proposalChanges = perProposal;
@@ -579,7 +592,13 @@ export async function continueRevision(
   });
 }
 
-async function accept(ctx: Ctx, name: string, revision: Revision, assertCurrent?: () => void) {
+async function accept(
+  ctx: Ctx,
+  name: string,
+  revision: Revision,
+  assertCurrent?: () => void,
+  inspectedToken?: string,
+) {
   if (revision.serviceJob && !assertCurrent)
     throw new CliError(
       "Service job proposals require guarded job acceptance; manual --accept cannot bypass cancellation or supersession. Inspect the review and wait for the job acceptance flow, or start a separate manual revision selection.",
@@ -591,6 +610,8 @@ async function accept(ctx: Ctx, name: string, revision: Revision, assertCurrent?
     !["reviewed", "committing", "committed", "done"].includes(revision.state)
   )
     throw new CliError("review author decisions with --decisions before --accept");
+  if (revision.serviceJob && inspectedToken !== reviewToken(revision))
+    throw new CliError("The decisions changed in another view; review again.", 1, { status: 409 });
   if (revision.state === "done") return packet(ctx, revision, revision.next);
   const reviewedNext = revision.next;
   const reviewedIdentity = revision.nextIdentity;

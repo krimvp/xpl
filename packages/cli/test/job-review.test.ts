@@ -82,7 +82,9 @@ async function setup() {
   const job = await jobs.submit("demo", { id: randomUUID(), selectedRequestIds: [request.id] });
   await expect.poll(async () => (await jobs.get("demo", job.id)).state).toBe("completed");
   const finished = await jobs.get("demo", job.id);
-  const action = { attemptId: finished.owner!.attemptId };
+  const action: { attemptId: string; reviewToken?: string } = {
+    attemptId: finished.owner!.attemptId,
+  };
   const choices = [{ id: request.id, status: "addressed" as const, reason: "Checked source." }];
   return { root, ctx, instanceId, request, jobs, job: finished, action, choices };
 }
@@ -100,9 +102,9 @@ it("reviews selected proposals then accepts once, preserving feedback added duri
       "review author decisions",
     );
     await appendRequest(root, { ...request, id: "new-feedback", note: "Keep this for later." });
-    expect((await jobs.review("demo", job.id, { ...action, decisions: choices })).state).toBe(
-      "reviewed",
-    );
+    const inspected = await jobs.review("demo", job.id, { ...action, decisions: choices });
+    action.reviewToken = inspected.reviewToken;
+    expect(inspected.state).toBe("reviewed");
     expect(readFile(root, ".explainer/demo.explainer.json")).toBe(before);
     expect(readRequests(root).requests.map((r) => r.outcome.status)).toEqual([
       "pending",
@@ -129,12 +131,54 @@ it("reviews selected proposals then accepts once, preserving feedback added duri
   }
 });
 
+it.each(["candidate", "reason"])(
+  "refuses acceptance when another view changes the %s",
+  async (change) => {
+    const { root, request, jobs, job, action, choices } = await setup();
+    try {
+      const first = await jobs.review("demo", job.id, {
+        ...action,
+        decisions: change === "candidate" ? [{ ...choices[0]!, status: "rejected" }] : choices,
+      });
+      const second = await jobs.review("demo", job.id, {
+        ...action,
+        decisions: [{ ...choices[0]!, reason: "Reviewed in another view." }],
+      });
+      const before = readFile(root, ".explainer/demo.explainer.json");
+      const feedback = readFile(root, ".explainer/requests.json");
+      await expect(jobs.review("demo", job.id, { ...action, accept: true })).rejects.toMatchObject({
+        extra: { status: 409 },
+      });
+      const stale = {
+        ...action,
+        accept: true,
+        reviewToken: first.reviewToken,
+      };
+      await expect(jobs.review("demo", job.id, stale)).rejects.toMatchObject({
+        message: "The decisions changed in another view; review again.",
+        extra: { status: 409 },
+      });
+      expect(readFile(root, ".explainer/demo.explainer.json")).toBe(before);
+      expect(readFile(root, ".explainer/requests.json")).toBe(feedback);
+      const current = { ...action, accept: true, reviewToken: second.reviewToken };
+      expect((await jobs.review("demo", job.id, current)).state).toBe("done");
+      expect(
+        readRequests(root).requests.map((r) => [r.id, r.outcome.status, r.outcome.reason]),
+      ).toEqual([[request.id, "addressed", "Reviewed in another view."]]);
+    } finally {
+      await jobs.close();
+    }
+  },
+);
+
 it.each(["cancelled", "superseded", "old-attempt", "source", "content", "outcome"])(
   "refuses %s results without publishing or finalizing feedback",
   async (cause) => {
     const { root, request, jobs, job, action, choices } = await setup();
     try {
-      await jobs.review("demo", job.id, { ...action, decisions: choices });
+      action.reviewToken = (
+        await jobs.review("demo", job.id, { ...action, decisions: choices })
+      ).reviewToken;
       let expected: string;
       if (cause === "cancelled" || cause === "superseded") {
         await jobs.fence("demo", job.id, cause);
@@ -186,7 +230,9 @@ it.each(["artifact", "commit-receipt", "outcomes", "done-receipt"])(
   "recovers %s interruption and never republishes an already written candidate",
   async (boundary) => {
     const { root, ctx, instanceId, request, jobs, job, action, choices } = await setup();
-    await jobs.review("demo", job.id, { ...action, decisions: choices });
+    action.reviewToken = (
+      await jobs.review("demo", job.id, { ...action, decisions: choices })
+    ).reviewToken;
     const realRename = filesystem.rename;
     let stopped = false;
     let publications = 0;
@@ -258,7 +304,9 @@ it.each(["ledger", "revision", "artifact", "outcomes"])(
   "rechecks repository ownership after waiting for the %s lock",
   async (boundary) => {
     const { root, jobs, job, action, choices } = await setup();
-    await jobs.review("demo", job.id, { ...action, decisions: choices });
+    action.reviewToken = (
+      await jobs.review("demo", job.id, { ...action, decisions: choices })
+    ).reviewToken;
     const ledger = join(root, ".explainer/service/jobs.json");
     const revision = join(root, `.explainer/revisions/${job.input.revisionRunId}/run.json`);
     const artifact = join(root, ".explainer/demo.explainer.json");
@@ -419,11 +467,15 @@ it("generated changes preserve user fields while committing the accepted summary
   try {
     const job = await jobs.submit("demo", { id: randomUUID(), selectedRequestIds: [request.id] });
     await expect.poll(async () => (await jobs.get("demo", job.id)).state).toBe("completed");
-    const action = { attemptId: (await jobs.get("demo", job.id)).owner!.attemptId };
-    await jobs.review("demo", job.id, {
-      ...action,
-      decisions: [{ id: request.id, status: "addressed", reason: "Keep my label." }],
-    });
+    const action: { attemptId: string; reviewToken?: string } = {
+      attemptId: (await jobs.get("demo", job.id)).owner!.attemptId,
+    };
+    action.reviewToken = (
+      await jobs.review("demo", job.id, {
+        ...action,
+        decisions: [{ id: request.id, status: "addressed", reason: "Keep my label." }],
+      })
+    ).reviewToken;
     await jobs.review("demo", job.id, { ...action, accept: true });
     expect(
       readJson<Explainer>(root, ".explainer/demo.explainer.json").nodes.find(

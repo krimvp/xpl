@@ -17,6 +17,7 @@ export const reviseCommand: CommandSpec = {
     "Each patch is limited to its request's selected element and explicit --include IDs (including new IDs).",
     "Feedback's view is reading context; whole-view edits require selecting or explicitly including the view.",
     "Selected steps allow only their stepsUpdate through the enclosing view/tour.",
+    "Proposal previews follow batch order; choosing a dependent patch without its prerequisite is rejected.",
     "Qualify step IDs with their container: use --include view:flow/flow:1 or tour:reader/step-id.",
     "Raw flow/sequence feedback IDs resolve to their owning view; a matching tour-local ID grants no scope.",
     "Guide title/audience and user-owned fields stay protected. Reviews show before/after, source, warnings and readiness findings.",

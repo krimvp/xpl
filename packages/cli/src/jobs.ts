@@ -444,6 +444,7 @@ class RepositoryJobs {
         {
           ...(decisions ? { decisions } : {}),
           accept: action.accept,
+          reviewToken: action.reviewToken,
           serviceJob: { id: job.id, attemptId: job.owner.attemptId },
           assertCurrent: () => this.assertOwner(),
         },

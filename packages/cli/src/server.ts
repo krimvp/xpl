@@ -469,12 +469,18 @@ export async function startViewServer(options: ViewServerOptions): Promise<ViewS
             method === "POST"
               ? await readJsonBody(req)
               : { attemptId: url.searchParams.get("attemptId") };
-          const allowed = parts[1] === "accept" ? ["attemptId"] : ["attemptId", "decisions"];
+          const allowed =
+            parts[1] === "accept" ? ["attemptId", "reviewToken"] : ["attemptId", "decisions"];
           if (
             typeof body.attemptId !== "string" ||
             Object.keys(body).some((key) => !allowed.includes(key))
           )
             throw new HttpError(400, "Expected attemptId and optional review decisions.");
+          if (parts[1] === "accept" && typeof body.reviewToken !== "string")
+            throw new HttpError(
+              400,
+              "Acceptance requires the reviewToken from the inspected review.",
+            );
           const review = await serial(() =>
             jobs.review(name, parts[0]!, {
               attemptId: body.attemptId as string,
@@ -482,6 +488,7 @@ export async function startViewServer(options: ViewServerOptions): Promise<ViewS
                 ? { decisions: body.decisions as import("@xpl/core").RevisionDecision[] }
                 : {}),
               accept: parts[1] === "accept",
+              ...(parts[1] === "accept" ? { reviewToken: body.reviewToken as string } : {}),
             }),
           );
           sendJson(req, res, 200, { review });

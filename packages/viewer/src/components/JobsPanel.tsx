@@ -14,11 +14,17 @@ function Source({ before, after }: { before: RevisionSource[]; after: RevisionSo
             {source.file} ({source.side})
           </h4>
           <div className="job-comparison">
-            <pre aria-label="Source before">
-              {before.find((old) => old.file === source.file && old.side === source.side)?.text ??
-                "Not included"}
-            </pre>
-            <pre aria-label="Source after">{source.text ?? "Not included"}</pre>
+            <div>
+              <strong>Before</strong>
+              <pre aria-label="Source before">
+                {before.find((old) => old.file === source.file && old.side === source.side)?.text ??
+                  "Not included"}
+              </pre>
+            </div>
+            <div>
+              <strong>After</strong>
+              <pre aria-label="Source after">{source.text ?? "Not included"}</pre>
+            </div>
           </div>
         </section>
       ))}
@@ -34,6 +40,19 @@ function JobReview({ job, onClose }: { job: Job; onClose: () => void }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   const [inspected, setInspected] = useState(false);
+  const receive = (result: RevisionReview) => {
+    setReview(result);
+    setChoices(
+      result.requests.map(
+        (request) =>
+          result.decisions.find((d) => d.id === request.id) ?? {
+            id: request.id,
+            status: "unresolved",
+            reason: "",
+          },
+      ),
+    );
+  };
   useEffect(() => {
     dialog.current?.showModal();
     let active = true;
@@ -41,17 +60,7 @@ function JobReview({ job, onClose }: { job: Job; onClose: () => void }) {
       .reviewJob(job)
       .then((result) => {
         if (active) {
-          setReview(result);
-          setChoices(
-            result.requests.map(
-              (request) =>
-                result.decisions.find((d) => d.id === request.id) ?? {
-                  id: request.id,
-                  status: "unresolved",
-                  reason: "",
-                },
-            ),
-          );
+          receive(result);
           setInspected(["reviewed", "committing", "committed"].includes(result.state));
         }
       })
@@ -64,13 +73,23 @@ function JobReview({ job, onClose }: { job: Job; onClose: () => void }) {
     setBusy(true);
     setError(undefined);
     try {
-      const result = await store.reviewJob(job, accept ? { accept: true } : { decisions: choices });
-      setReview(result);
+      const result = await store.reviewJob(
+        job,
+        accept ? { accept: true, reviewToken: review?.reviewToken } : { decisions: choices },
+      );
+      receive(result);
       setInspected(true);
       if (result.state === "done") onClose();
     } catch (e) {
       setError(messageOf(e));
       setInspected(false);
+      if (accept && messageOf(e).startsWith("409")) {
+        try {
+          receive(await store.reviewJob(job));
+        } catch (reloadError) {
+          setError(`${messageOf(e)} ${messageOf(reloadError)}`);
+        }
+      }
     } finally {
       setBusy(false);
     }

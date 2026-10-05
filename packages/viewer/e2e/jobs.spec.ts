@@ -162,6 +162,11 @@ for (const width of [1440, 390])
       release();
       await panel.getByRole("button", { name: "Review proposal" }).click();
       const modal = page.getByRole("dialog", { name: "Review job proposal" });
+      await modal.getByText("Source before/after", { exact: true }).click();
+      const source = modal.locator(".job-source");
+      await expect(source.getByText("Before", { exact: true }).first()).toBeVisible();
+      await expect(source.getByText("After", { exact: true }).first()).toBeVisible();
+      await modal.getByText("Source before/after", { exact: true }).click();
       const item = modal.getByRole("group", { name: "Explain the queued job", exact: true });
       const summary = item.getByRole("region", { name: "Summary change" });
       await expect(summary.locator(".job-before")).toHaveText("Queue holds pending jobs.");
@@ -192,6 +197,26 @@ for (const width of [1440, 390])
       const reject = modal.getByRole("group", { name: "Use a different explanation", exact: true });
       await reject.getByLabel("Decision").selectOption("rejected");
       await reject.getByLabel("Reason (required)").fill("Keep the original meaning");
+      await expect(modal.getByRole("button", { name: "Accept reviewed revision" })).toBeDisabled();
+      await modal.getByRole("button", { name: "Review decisions" }).click();
+      await expect(modal.getByRole("button", { name: "Accept reviewed revision" })).toBeEnabled();
+      const completed = (await jobs.list("demo")).find((job) => job.state === "completed")!;
+      await jobs.review("demo", completed.id, {
+        attemptId: completed.owner!.attemptId,
+        decisions: [
+          { id: "original", status: "addressed", reason: "Checked source in another view" },
+          { id: "reject-me", status: "rejected", reason: "Keep the original meaning" },
+        ],
+      });
+      const staleResponse = page.waitForResponse((response) => response.url().endsWith("/accept"));
+      await modal.getByRole("button", { name: "Accept reviewed revision" }).click();
+      expect((await staleResponse).status()).toBe(409);
+      await expect(modal.getByRole("alert")).toContainText(
+        "The decisions changed in another view; review again.",
+      );
+      await expect(item.getByLabel("Reason (required)")).toHaveValue(
+        "Checked source in another view",
+      );
       await expect(modal.getByRole("button", { name: "Accept reviewed revision" })).toBeDisabled();
       await modal.getByRole("button", { name: "Review decisions" }).click();
       await expect(modal.getByRole("button", { name: "Accept reviewed revision" })).toBeEnabled();
@@ -240,7 +265,9 @@ for (const width of [1440, 390])
         "rejected",
         "pending",
       ]);
-      expect(problems).toEqual([]);
+      expect(problems).toEqual([
+        "console.error: Failed to load resource: the server responded with a status of 409 (Conflict)",
+      ]);
     } finally {
       release?.();
       await server?.close();

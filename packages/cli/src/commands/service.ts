@@ -302,6 +302,7 @@ export const serviceCommand: CommandSpec = {
     "cancelled/superseded proposals stay fenced. Claude reads source and writes only an owned proposal file.",
     "Open Jobs in the viewer to start/cancel/retry, review each request and explicitly accept the reviewed revision.",
     "Completed jobs do not apply patches. Acceptance rechecks source/readiness and records only selected outcomes.",
+    "Another view's changed decisions stop acceptance and reload the review for inspection.",
     "Interrupted acceptance recovers through the same journal; cancelled/superseded attempts cannot apply.",
     "Local serving requires no network or agent credentials. A later Claude job requires its own configured",
     "authentication and provider network access. Manual commands and offline HTML work with the service stopped.",

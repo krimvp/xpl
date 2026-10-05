@@ -1795,9 +1795,16 @@ remain usable. Controlled runners prove lifecycle behavior only. Answer scopes r
 and revision packet; no second proposal engine is introduced. `RepositoryJobs.review` holds the ledger's
 repository lock, requires a completed job and its exact `owner.attemptId`, and calls `continueRevision`.
 `GET /api/jobs/<id>/review?attemptId=<uuid>` reads the review; `POST .../review` takes
-`{attemptId, decisions?}` and `POST .../accept` takes `{attemptId}`. Both share the existing attachment,
-origin/body and repository guards. Decision inputs use #30's status/reason/reconciliation/missing format.
+`{attemptId, decisions?}` and `POST .../accept` takes `{attemptId, reviewToken}`. Both share the existing
+attachment, origin/body and repository guards. Decisions use #30's status/reason/reconciliation/missing
+format.
 Every selected request needs a decision. Reviewing changes no guide or outcomes.
+Service review packets with an inspected candidate return `reviewToken`, a SHA-256 hash of the run ID,
+job attempt, exact candidate and decisions. Acceptance compares it under the journal lock before any
+publication, including recovery. A stale token returns 409: "The decisions changed in another view;
+review again." The viewer reloads the decisions and requires another review before acceptance.
+Tokens are derived from the journal, so existing `revision@1` journals need no migration and restart
+retains the same token. Clients that omit the token receive 400; manual `xpl revise --accept` is unchanged.
 
 The service job journal fence `{id, attemptId}` is required for proposal/decision/accept writes.
 Independent manual writes cannot bypass it; read-only `xpl revise --run` remains available. Retries may
@@ -1811,12 +1818,15 @@ acceptance uses the same journal and never republishes the candidate or advances
 or an independent permission. Recovery does not compare the old job input with the already committed guide.
 
 Packets retain source before/after and per-request changes computed by the existing candidate function.
+Previews advance through proposals in order and compare each result with its preceding candidate;
+a later proposal can depend on a step added earlier. Acceptance validates the chosen combined candidate.
 The viewer's Jobs disclosure lists all seven lifecycle states, progress and actionable runner errors;
 start/cancel/retry/review flush pending writes and reject unsaved author drafts. Offline history stays
 readable. Responses are ignored when the API attachment changes. Submission retries reuse their delivery
 UUID. Job polling updates history even while author drafts prevent bundle adoption; bundle feedback merges
 by immutable ID and outcome revision. The review modal renders safe Markdown and marked changed phrases,
 including the spaces between adjacent changed words, with concise evidence and plain field values.
+Source comparison panes have visible Before and After labels at every width.
 Raw JSON is behind Show raw change. Each request owns its decision
 and reason. Review decisions must succeed before explicit acceptance; changing a choice invalidates the
 inspected candidate. Interrupted publication exposes Recover acceptance using the same journal.
