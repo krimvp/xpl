@@ -1,14 +1,19 @@
 /** Source and local configuration captured for a watched build. Recheck revision before publishing. */
 import { createHash } from "node:crypto";
-import { readFile, readdir, stat } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
+import { readFileSync, statSync } from "node:fs";
+import { workTreeStatus } from "./commit.js";
+import { buildIndex } from "./build.js";
 import { homedir } from "node:os";
-import { discoverFiles, detectGit, runGit, WALK_SKIP_DIRS } from "./files.js";
+import { discoverFiles, detectGit, runGit } from "./files.js";
 import type { GitOptions } from "./files.js";
 import type { ProviderSource } from "./providers.js";
 
 export interface IndexInputs {
   root: string;
+  /** Captured clean HEAD label; absent means derive the id from captured files, never live staging. */
+  cleanHead?: string;
   sources: ProviderSource[];
   /** Includes ignored local configuration; missing paths read as undefined. */
   texts: ReadonlyMap<string, string>;
@@ -29,23 +34,6 @@ export async function captureIndexInputs(options: {
   const discovery = await discoverFiles(root, { git, gitOptions: options.gitOptions });
   if (discovery.warnings.length) throw new Error(discovery.warnings.join("; "));
   const paths = new Map<string, string | undefined>(discovery.files.map((f) => [f.abs, f.path]));
-  // Ignored configuration can still affect resolution. Capture JSON too: tsconfig extends may use any name.
-  async function configPaths(dir: string, rel: string): Promise<void> {
-    for (const entry of await readdir(dir, { withFileTypes: true })) {
-      const path = rel ? `${rel}/${entry.name}` : entry.name;
-      if (entry.isDirectory()) {
-        if (!WALK_SKIP_DIRS.has(entry.name)) await configPaths(join(dir, entry.name), path);
-      } else if (
-        entry.isFile() &&
-        /(?:\.(?:json|ya?ml|toml|ini|cfg|lock)|(?:^|\/)(?:\.gitignore|\.gitattributes|\.npmrc|go\.(?:mod|sum|work)|requirements[^/]*\.txt))$/i.test(
-          path,
-        ) &&
-        !/\.(?:explainer|patch)\.json$/i.test(path)
-      )
-        paths.set(join(dir, entry.name), path);
-    }
-  }
-  await configPaths(root, "");
   // Parent ignore rules and git's local/global exclusions affect discovery without being indexed.
   if (git) {
     let dir = root;
@@ -76,11 +64,7 @@ export async function captureIndexInputs(options: {
     const abs = resolve(path);
     if (!paths.has(abs)) paths.set(abs, undefined);
   }
-  const content = createHash("sha256");
-  const revision = createHash("sha256");
-  const discovered = JSON.stringify(discovery.files.map((f) => [f.path, f.language]));
-  content.update(discovered);
-  revision.update(discovered);
+  const values = new Map<string, { digest: string; version: string }>();
   const texts = new Map<string, string>();
   for (const [abs, rel] of [...paths].sort(([a], [b]) => a.localeCompare(b))) {
     let bytes: Buffer | undefined;
@@ -102,25 +86,142 @@ export async function captureIndexInputs(options: {
     }
     if (bytes && rel !== undefined) texts.set(rel, bytes.toString("utf8"));
     const digest = bytes ? createHash("sha256").update(bytes).digest("hex") : "missing";
-    content.update(`${abs}\0${digest}\n`);
-    revision.update(`${abs}\0${digest}\0${version}\n`);
+    values.set(abs, { digest, version });
   }
-  const head = git ? await runGit(root, ["rev-parse", "HEAD"], options.gitOptions) : "no-git";
-  const config = git
-    ? await runGit(root, ["config", "--list", "--show-origin", "-z"], options.gitOptions)
-    : "";
-  content.update(`${head ?? "unborn"}\0${config ?? ""}`);
-  revision.update(`${head ?? "unborn"}\0${config ?? ""}`);
   const sources = discovery.files.map((f) => ({
     path: f.path,
     language: f.language,
     text: texts.get(f.path)!,
   }));
-  return {
+  // Run the real resolver with a recording reader. Capture successful and missing reads alike,
+  // so config chains of any filename and future pack readers have the same frozen view as a clean build.
+  const read = texts.get.bind(texts);
+  const attempted = new Set<string>();
+  let configurationError: unknown;
+  const getText = (path: string) => {
+    if (texts.has(path) || attempted.has(path)) return read(path);
+    attempted.add(path);
+    const abs = resolve(root, path);
+    let bytes: Buffer | undefined;
+    let version = "missing";
+    try {
+      const before = statSync(abs, { bigint: true });
+      if (!before.isFile()) return undefined;
+      bytes = readFileSync(abs);
+      const after = statSync(abs, { bigint: true });
+      const signature = (s: typeof before) =>
+        `${s.dev}:${s.ino}:${s.size}:${s.mtimeNs}:${s.ctimeNs}`;
+      if (signature(before) !== signature(after))
+        throw new Error(`configuration changed during capture: ${abs}`);
+      version = signature(after);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") configurationError = error;
+    }
+    paths.set(abs, path);
+    values.set(abs, {
+      digest: bytes ? createHash("sha256").update(bytes).digest("hex") : "missing",
+      version,
+    });
+    if (bytes) texts.set(path, bytes.toString("utf8"));
+    return read(path);
+  };
+  await buildIndex({
     root,
+    precise: "off",
+    cache: false,
+    gitOptions: options.gitOptions,
+    getText,
+    snapshot: { root, sources, texts, fingerprint: "", revision: "" },
+  });
+  if (configurationError) throw configurationError;
+  const content = createHash("sha256");
+  const revision = createHash("sha256");
+  const discovered = JSON.stringify(discovery.files.map((f) => [f.path, f.language]));
+  content.update(discovered);
+  revision.update(discovered);
+  for (const [abs, { digest, version }] of [...values].sort(([a], [b]) => a.localeCompare(b))) {
+    content.update(`${abs}\0${digest}\n`);
+    revision.update(`${abs}\0${digest}\0${version}\n`);
+  }
+  const observation = await observeInputs(root, [...values.keys()], options.gitOptions);
+  for (const [abs, value] of values)
+    if (observation.versions.get(abs) !== value.version)
+      throw new Error(`index input changed during capture: ${abs}`);
+  content.update(observation.gitState);
+  revision.update(observation.gitState);
+  const snapshot: IndexInputs = {
+    root,
+    ...(git?.atToplevel && observation.clean && observation.head
+      ? { cleanHead: observation.head.slice(0, 7).toLowerCase() }
+      : {}),
     sources,
     texts,
     fingerprint: content.digest("hex"),
     revision: revision.digest("hex"),
+  };
+  observations.set(snapshot, {
+    root,
+    paths: [...values.keys()],
+    gitOptions: options.gitOptions,
+    signature: observation.signature,
+  });
+  return snapshot;
+}
+
+const observations = new WeakMap<
+  IndexInputs,
+  { root: string; paths: string[]; gitOptions: GitOptions | undefined; signature: string }
+>();
+
+/** Metadata only: no source/configuration bytes are read on an unchanged idle poll. */
+export async function indexInputsChanged(snapshot: IndexInputs): Promise<boolean> {
+  const previous = observations.get(snapshot);
+  if (!previous) return true;
+  return (
+    (await observeInputs(previous.root, previous.paths, previous.gitOptions)).signature !==
+    previous.signature
+  );
+}
+
+async function observeInputs(
+  root: string,
+  dependencies: readonly string[],
+  gitOptions?: GitOptions,
+) {
+  const git = await detectGit(root, gitOptions);
+  const discovery = await discoverFiles(root, { git, gitOptions, content: false });
+  if (discovery.warnings.length) throw new Error(discovery.warnings.join("; "));
+  const paths = [...new Set([...discovery.files.map((f) => f.abs), ...dependencies])].sort();
+  const versions = new Map<string, string>();
+  for (const path of paths) {
+    let version = "missing";
+    try {
+      const s = statSync(path, { bigint: true });
+      version = `${s.dev}:${s.ino}:${s.size}:${s.mtimeNs}:${s.ctimeNs}`;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+    versions.set(path, version);
+  }
+  const [head, config, status] = git
+    ? await Promise.all([
+        runGit(root, ["rev-parse", "HEAD"], gitOptions),
+        runGit(root, ["config", "--list", "--show-origin", "-z"], gitOptions),
+        workTreeStatus(root, gitOptions),
+      ])
+    : ["no-git", "", ""];
+  const cleanliness =
+    status === undefined ? "unavailable" : status.trim() === "" ? "clean" : "dirty";
+  const gitState = `${head ?? "unborn"}\0${config ?? ""}\0${cleanliness}`;
+  const hash = createHash("sha256").update(gitState);
+  for (const path of paths) hash.update(`${path}\0${versions.get(path)}\n`);
+  const clean = status !== undefined && status.trim() === "";
+  const parsedHead = head?.trim();
+  return {
+    versions,
+    gitState,
+    signature: hash.digest("hex"),
+    clean,
+    head: parsedHead && /^[0-9a-f]{7,}$/i.test(parsedHead) ? parsedHead : undefined,
   };
 }

@@ -154,7 +154,7 @@ function readPathsConfig(repo: RepoView, path: string, depth = 0): PathsConfig |
 }
 
 /** The paths/baseUrl configuration that applies to `fromFile` (nearest tsconfig.json / jsconfig.json). */
-function pathsConfigFor(repo: RepoView, fromFile: string): PathsConfig | undefined {
+export function pathsConfigFor(repo: RepoView, fromFile: string): PathsConfig | undefined {
   let cache = configCache.get(repo);
   if (!cache) {
     cache = new Map();

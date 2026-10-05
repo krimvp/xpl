@@ -62,6 +62,50 @@ async function serve(root: string, ...extra: string[]) {
 }
 
 describe("repository service lifecycle", () => {
+  it("retires an interrupted watch before recovering without watching and returns to manual indexes", async () => {
+    const root = cloneDir(demo);
+    const initial = await serve(root, "demo", "--watch");
+    await expect
+      .poll(
+        () => {
+          try {
+            return readJson(root, ".explainer/service/watch.json").state;
+          } catch {
+            return "absent";
+          }
+        },
+        { timeout: 15000 },
+      )
+      .toBe("current");
+    await initial.close();
+    const instance = readJson(root, ".explainer/service/instance.json");
+    writeFile(
+      root,
+      ".explainer/service/instance.json",
+      JSON.stringify({ ...instance, state: "running", pid: 2147483647 }),
+    );
+    const watch = readJson(root, ".explainer/service/watch.json");
+    writeFile(
+      root,
+      ".explainer/service/watch.json",
+      JSON.stringify({ ...watch, state: "current" }),
+    );
+    const recovering = await serve(root, "demo", "--recover");
+    try {
+      writeFile(root, "README.md", "manual indexing after recovery\n");
+      const manual = (await xplJson(root, "index", "--precise", "off")).json;
+      expect((await xplJson(root, "status", "--all")).json.index.commit).toBe(manual.commit);
+      const bundle = (await (
+        await fetch(new URL("/api/bundle", recovering.server.url))
+      ).json()) as { index: { commit: string } };
+      expect(bundle.index.commit).toBe(manual.commit);
+      expect(readJson(root, ".explainer/service/watch.json").state).toBe("stopped");
+    } finally {
+      await recovering.close();
+    }
+    expect((await xplJson(root, "status", "--all")).json.watch.state).toBe("stopped");
+  });
+
   it("refuses an empty foreign service directory swapped while startup waits for ownership", async () => {
     const root = cloneDir(demo);
     const other = cloneDir(demo);

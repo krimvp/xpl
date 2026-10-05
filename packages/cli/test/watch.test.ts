@@ -1,5 +1,7 @@
-import { describe, expect, it } from "vitest";
-import { renameSync, unlinkSync } from "node:fs";
+import { describe, expect, it, vi } from "vitest";
+import { renameSync, unlinkSync, existsSync } from "node:fs";
+import { promises as filesystem } from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import {
@@ -23,6 +25,7 @@ import {
   xpl,
   xplJson,
 } from "./helpers.js";
+import { withRepositoryLock } from "../src/fsutil.js";
 import type { ViewServer } from "../src/server.js";
 
 async function start(root: string, ...options: string[]) {
@@ -82,6 +85,104 @@ async function current(root: string, after = 0) {
 }
 
 describe("opt-in coherent service watching", () => {
+  it("polls an unchanged repository without reading source contents", async () => {
+    const root = await setup();
+    const running = await start(root, "--watch", "--precise", "off");
+    const reads: string[] = [];
+    let readSpy: ReturnType<typeof vi.spyOn> | undefined;
+    let openSpy: ReturnType<typeof vi.spyOn> | undefined;
+    try {
+      const first = await current(root);
+      const originalRead = filesystem.readFile;
+      const originalOpen = filesystem.open;
+      const observe = (p: unknown) => {
+        const path = String(p);
+        if (path.startsWith(`${root}/`) && !path.includes("/.explainer/")) reads.push(path);
+      };
+      readSpy = vi.spyOn(filesystem, "readFile").mockImplementation(
+        new Proxy(originalRead, {
+          apply(target, context, args) {
+            observe(args[0]);
+            return Reflect.apply(target, context, args);
+          },
+        }),
+      );
+      openSpy = vi.spyOn(filesystem, "open").mockImplementation(
+        new Proxy(originalOpen, {
+          apply(target, context, args) {
+            observe(args[0]);
+            return Reflect.apply(target, context, args);
+          },
+        }),
+      );
+      syncBuiltinESMExports();
+      // Give idle polls a chance to violate the zero-content-read contract.
+      await delay(1600);
+      expect(readJson(root, watchPath).generation).toBe(first.generation);
+      expect(reads).toEqual([]);
+    } finally {
+      readSpy?.mockRestore();
+      openSpy?.mockRestore();
+      syncBuiltinESMExports();
+      await running.stop();
+    }
+  });
+
+  it.each(["superseded", "cancelled"])(
+    "fences a %s build after waiting for all publication locks",
+    async (change) => {
+      const root = await setup();
+      const running = await start(root, "--watch", "--precise", "off");
+      let release!: () => void;
+      const hold = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      let acquired!: () => void;
+      const locked = new Promise<void>((resolve) => {
+        acquired = resolve;
+      });
+      let lock: Promise<void> | undefined;
+      try {
+        const first = await current(root);
+        lock = withRepositoryLock(root, join(root, ".explainer/.gitignore"), async () => {
+          acquired();
+          await hold;
+        });
+        await locked;
+        writeFile(root, "README.md", "obsolete publication\n");
+        const obsolete = (await buildIndex({ root, precise: "off" })).index;
+        const target = join(root, ".explainer", `index-${obsolete.commit}.json`);
+        await expect.poll(() => existsSync(`${target}.lock`), { timeout: 15000 }).toBe(true);
+        if (change === "cancelled") {
+          const stopped = running.stop();
+          release();
+          await lock;
+          await stopped;
+          expect(readJson(root, watchPath)).toMatchObject({
+            state: "stopped",
+            stale: true,
+            generation: first.generation,
+            index: first.index,
+          });
+        } else {
+          writeFile(root, "README.md", "latest publication\n");
+          release();
+          await lock;
+          const latest = await current(root, first.generation);
+          expect(latest.generation).toBe(first.generation + 1);
+          expect(readJson(root, latest.index.path)).toEqual(
+            (await buildIndex({ root, precise: "off" })).index,
+          );
+        }
+        expect(existsSync(target)).toBe(false);
+      } finally {
+        release();
+        await lock;
+        await running.stop();
+      }
+    },
+  );
+
   it("coalesces edits and inventories every guide without changing prose or feedback; stops output loops", async () => {
     const root = await setup();
     expect((await xpl(root, "new", "empty")).code).toBe(0);

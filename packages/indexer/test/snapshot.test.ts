@@ -2,9 +2,72 @@ import { renameSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { buildIndex, captureIndexInputs } from "../src/index.js";
-import { makeRepo, writeFiles } from "./helpers.js";
+import { makeRepo, writeFiles, git } from "./helpers.js";
 
 describe("captured index inputs", () => {
+  it("observes staging cleanliness when source contents and HEAD stay unchanged", async () => {
+    const root = makeRepo({ "a.ts": "export const a = 1;\n" });
+    writeFiles(root, { "a.ts": "export const a = 2;\n" });
+    git(root, "add", "a.ts");
+    writeFiles(root, { "a.ts": "export const a = 1;\n" });
+    const staged = await captureIndexInputs({ root });
+    const stagedIndex = (await buildIndex({ root, precise: "off", snapshot: staged })).index;
+    expect(stagedIndex.commit).toMatch(/^wt-/);
+    git(root, "reset", "-q", "HEAD", "--", "a.ts");
+    const clean = await captureIndexInputs({ root });
+    expect(clean.fingerprint).not.toBe(staged.fingerprint);
+    expect((await buildIndex({ root, precise: "off", snapshot: staged })).index.commit).toBe(
+      stagedIndex.commit,
+    );
+    expect((await buildIndex({ root, precise: "off", snapshot: clean })).index).toEqual(
+      (await buildIndex({ root, precise: "off" })).index,
+    );
+    expect((await buildIndex({ root, precise: "off", snapshot: clean })).index.commit).toBe(
+      git(root, "rev-parse", "HEAD").slice(0, 7),
+    );
+  });
+
+  it.each(["base.jsonc", "base.resolver-settings"])(
+    "captures resolver reads of ignored extended config %s",
+    async (base) => {
+      const root = makeRepo({
+        ".gitignore": `tsconfig.json\n${base}\n`,
+        "run.ts": "import { value } from 'chosen'; export const run = value;\n",
+        "one.ts": "export const value = 1;\n",
+        "two.ts": "export const value = 2;\n",
+      });
+      writeFiles(root, {
+        "tsconfig.json": JSON.stringify({ extends: `./${base}` }),
+        [base]: '{"compilerOptions":{"baseUrl":".","paths":{"chosen":["one.ts"]}}}',
+      });
+      const first = await captureIndexInputs({ root });
+      const captured = await buildIndex({ root, precise: "off", snapshot: first });
+      expect(
+        (await buildIndex({ root, precise: "off" })).index.refs
+          .filter((r) => r.kind === "import")
+          .map((r) => r.to),
+      ).toEqual(["one.ts#value"]);
+      expect(captured.index.refs.filter((r) => r.kind === "import").map((r) => r.to)).toEqual([
+        "one.ts#value",
+      ]);
+      writeFiles(root, {
+        [base]: '{"compilerOptions":{"baseUrl":".","paths":{"chosen":["two.ts"]}}}',
+      });
+      const changed = await captureIndexInputs({ root });
+      expect(changed.fingerprint).not.toBe(first.fingerprint);
+      expect(
+        (await buildIndex({ root, precise: "off", snapshot: changed })).index.refs
+          .filter((r) => r.kind === "import")
+          .map((r) => r.to),
+      ).toEqual(["two.ts#value"]);
+      expect(
+        (await buildIndex({ root, precise: "off", snapshot: first })).index.refs
+          .filter((r) => r.kind === "import")
+          .map((r) => r.to),
+      ).toEqual(["one.ts#value"]);
+    },
+  );
+
   it("matches a clean build after additions, deletions, renames and ignored resolver config edits", async () => {
     const root = makeRepo({
       ".gitignore": "tsconfig.json\nextra.json\n",

@@ -288,6 +288,8 @@ export interface LanguagePack {
    * every file of a package directory shares one namespace).
    */
   readonly packageScope: "file" | "directory";
+  /** Read/cache local configuration, including configs used by semantic tools when there are no imports. */
+  readConfiguration?(file: FilePath, repo: RepoView): void;
   /**
    * Optional. A module's imports are names other modules can import from it (Python: `from .a import x` in
    * `__init__.py` makes `pkg.x`). Without it (TS, Go), only what the module exports is, `export { x } from`.

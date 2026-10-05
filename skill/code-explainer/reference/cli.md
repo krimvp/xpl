@@ -933,10 +933,13 @@ crashed writer lock must be inspected and removed explicitly; no lock is stolen 
 Viewer connection/backend controls and durable jobs are follow-ups. `view`, manual iteration and offline
 HTML export/reading work independently while this service is stopped.
 
-`service start --watch` opts this start into source/configuration polling and coherent full rebuilds.
+`service start --watch` opts this start into metadata polling and coherent full rebuilds. Unchanged polls
+read no source/configuration content. Changed inputs trigger full capture, including ignored configuration
+chains read by the resolver regardless of filename, and Git staging/cleanliness changes.
 It defaults to `--precise off`; `--precise auto|require` enables semantic tools, and `--scip` observes a
 supplied artifact or manifest/artifact pair. `--watch` rejects an explicit `--index` and clears a saved pin.
-Repeat watch options on restart. Failed/superseded/cancelled builds retain the last index marked out of
+Repeat watch options on restart. Recovery retires the previous watch pointer. Validation after all
+publication locks prevents superseded/cancelled results from publishing. Failed builds retain the last index marked out of
 date; source/configuration freshness and anchor drift still block ready export. Builds report every guide;
 `xpl status --all` reads the inventory without saving prose. No generated revision is accepted and no
 feedback is removed. Named `.patch.json`/`.explainer.json` files, `.explainer/` output and exported xpl HTML

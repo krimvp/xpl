@@ -2,7 +2,7 @@
 import { readFileSync, realpathSync } from "node:fs";
 import { join, sep } from "node:path";
 import { CliError } from "./errors.js";
-import { parseJson } from "./fsutil.js";
+import { parseJson, withRepositoryLock, atomicWrite, jsonFile } from "./fsutil.js";
 import { createHash } from "node:crypto";
 import type { SymbolIndex } from "@xpl/core";
 
@@ -59,4 +59,14 @@ export function readWatchState(root: string): WatchState | undefined {
   )
     throw new CliError(`invalid watch state ${abs}; inspect it before recovery`);
   return value as WatchState;
+}
+
+/** Once service ownership is retired, its old pointer cannot select indexes for the next owner. */
+export async function retireWatchState(root: string): Promise<void> {
+  const path = join(root, ".explainer/service/watch.json");
+  await withRepositoryLock(root, path, async () => {
+    const previous = readWatchState(root);
+    if (previous && previous.state !== "stopped")
+      await atomicWrite(path, jsonFile({ ...previous, state: "stopped", stale: true }));
+  });
 }

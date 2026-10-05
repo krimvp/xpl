@@ -317,7 +317,7 @@ interface ExplainerPatch {
 ```ts
 buildIndex(opts: { root: string; commit?: string; precise?: "auto" | "off" | "require";
                    languages?: string[]; providers?: readonly IndexProvider[]; cache?: boolean;
-                   gitOptions?: GitOptions; snapshot?: IndexInputs })
+                   gitOptions?: GitOptions; snapshot?: IndexInputs; getText?: GetText })
   : Promise<{ index: SymbolIndex; warnings: string[]; extraction: ExtractionReport;
               work: { heuristicResolutionMs: number; semanticMs: number; semanticRuns: number } }>
 writeIndex(root: string, index: SymbolIndex): Promise<string>
@@ -353,18 +353,27 @@ also excluded by its embedded bundle marker; ordinary HTML remains source. Paths
 repo-root-relative, sorted.
 
 **Watched input capture** (`src/snapshot.ts`): `captureIndexInputs({root, inputPaths?, gitOptions?})`
-returns sources, local configuration text, a content/discovery/HEAD fingerprint and a revision including
+returns sources, local configuration text, the captured clean HEAD label (when applicable), a
+content/discovery/HEAD fingerprint and a revision including
 ctime, mtime and inode. `buildIndex({snapshot})` uses that captured source and configuration instead of
 reading them again. Snapshot roots must match; language filtering still applies. Semantic tools may read
 disk, so the caller must recheck the revision before publishing. A changed-and-restored input supersedes a
 build even when its content fingerprint matches. Source reads are checked before and after capture.
 
-Configuration capture includes JSON (an ignored tsconfig may extend any JSON filename), YAML, TOML,
-INI/CFG, lockfiles, go.mod/sum/work, requirements files, .npmrc and local/ancestor .gitignore rules.
-It observes git configuration and local/global exclusions, plus explicitly supplied SCIP artifact/manifest
-paths. Build/dependency directories and symlinks are skipped by the auxiliary configuration walk; normal
-source discovery remains authoritative. External dependencies, tool installation and process-environment
-changes are outside the watch boundary. Restart or manually index after changing those inputs.
+Configuration capture runs a syntax-only, cache-free resolver pass with `getText` recording every local
+configuration read, including missing paths. The returned text map is frozen for the real build. There is
+no filename-extension allowlist: ignored extends chains, package manifests and any other pack reads are
+captured through the same `SourceRepoView` reader. `LanguagePack.readConfiguration` can preload inputs
+that also affect semantic tools; TypeScript reads nearest tsconfig/jsconfig chains for every source file.
+Capture also observes local/ancestor ignore rules, Git configuration/exclusions, explicitly supplied SCIP
+inputs and the staging/work-tree cleanliness used by `resolveCommitId`. A captured clean HEAD label wins
+for snapshot builds; dirty snapshots derive the id from captured files, without reading live staging.
+
+`indexInputsChanged(snapshot)` compares candidate paths and file size/mtime/ctime/inode plus Git state,
+without sniffing or reading source/configuration bytes. Unchanged idle polls reuse the captured inputs.
+A change triggers full content capture; building and publication still recheck full captured revisions.
+External dependencies, tool installation and process-environment changes are outside the watch boundary.
+Restart or manually index after changing those inputs.
 
 **Commit id.** `--commit` wins (letters, digits, `.`, `_`, `-` only: it becomes part of a file name). Else, if
 `root` is the git top-level and the work tree is clean (ignoring `.explainer/`): short HEAD (7 chars). Else
@@ -450,6 +459,7 @@ interface LanguagePack {
   capabilities: AnalysisCapabilities; // advertised abilities; a missing capability key means unsupported
   extensions?: string[];               // `text` files this pack parses too (a format with no FileLanguage of its own; none does now)
   packageScope: "file" | "directory";  // how far a top-level name is visible without an import (Go: the package dir)
+  readConfiguration?(file, repo): void; // preload local config through the shared reader
   importsReexport?: boolean;           // a module's imports are importable from it (Python `__init__.py`)
   offByDefault?(path, repo): boolean;  // a default build leaves the file out (Go build constraints): tried last
   refs: "heuristic" | "none";          // does the pack emit sites (references are derived from them)?
@@ -1511,7 +1521,7 @@ attachment/reconnect/backend availability belongs to 38B. Offline HTML and manua
 independent of the service. The installed-artifact check exercises detached processes, saved-context
 restart, a real crash and explicit recovery, then manual export and disconnected reading after stop.
 
-**Opt-in watching** (`watch.ts`, 29A): `service start --watch` polls captured inputs every 500 ms and
+**Opt-in watching** (`watch.ts`, 29A): `service start --watch` polls input metadata every 500 ms and
 requires a quiet observation for at least 300 ms before a full rebuild. Recursive filesystem events were
 not chosen: polling reuses the indexer's discovery rules, observes ignored configuration and works with
 Git worktrees and non-Git directories. Watching defaults to `--precise off`; `auto|require` explicitly
@@ -1520,13 +1530,14 @@ Watch options are per-start, never saved as an automatic opt-in. A pinned `--ind
 start clears a previously saved pin. Stop drains the running build and prevents cancelled publication.
 Pause/resume, attention UI and revision handoff belong to 29B.
 
-The watcher compares captured revisions after building and again after acquiring the index publication
-lock. Obsolete results are discarded and the latest inputs are retried after quiet. `writeIndex` publishes
+The watcher compares captured revisions after building and again after acquiring all three publication
+locks (index, .gitignore and watch pointer), checking cancellation there before promoting the result. Obsolete results are discarded and the latest inputs are retried after quiet. `writeIndex` publishes
 by rename under `withRepositoryLock`; its .gitignore is fenced too. The watcher then atomically replaces
 `.explainer/service/watch.json` (`xpl-watch@1`): canonical root, instance UUID, state
 (`pending|building|current|failed|stopped`), stale flag, publication generation, last index path/commit,
 fingerprint, index-content digest, nullable SCIP path and error. Source/configuration edits mark the old
-pointer stale before building. Failure retains that pointer and retries after another input revision or a new watched start.
+pointer stale before building. Failure retains that pointer and retries after another input revision or a
+new watched start.
 Cancellation keeps its stale mark. Repeated identical capture failures do not flood the log.
 
 While watching, default index selection follows the publication pointer before a guide's old binding.
@@ -1534,7 +1545,8 @@ Freshness checks compare the full observed input fingerprint, including ignored 
 ready export for pending/failed builds. The index digest also rejects an out-of-band replacement at the
 same path, even when the indexed file manifest is unchanged. Explicit `--index` still selects an index for
 manual commands.
-Stopping returns default selection and manual index/resolve behavior to the offline path. Each completed
+Every new service owner retires the prior watch record under the ownership lock before serving.
+Recovery without watching and stop return default selection and manual index/resolve to the offline path. Each completed
 build reports every guide's moved/drifted/missing counts; `status --all` recomputes the inventory on demand,
 including user-owned drift, broken references and unreadable guides. Moved anchors receive new locations
 in memory; guide files, prose, provenance, review records and pending feedback are untouched. Generated

@@ -52,6 +52,8 @@ export interface BuildIndexOptions {
   root: string;
   /** Frozen source/configuration for watching. Caller must recheck inputs before publication. */
   snapshot?: IndexInputs;
+  /** Auxiliary reader used to record resolver configuration dependencies during capture. */
+  getText?: (path: string) => string | undefined;
   /** Git subprocess context for an isolated owned checkout; omitted for ordinary workspace indexing. */
   gitOptions?: GitOptions;
   /** Reuse file-local extraction in .explainer/cache. false neither reads nor writes the cache. */
@@ -218,8 +220,10 @@ export async function buildIndex(opts: BuildIndexOptions): Promise<BuildIndexRes
   const repo = new SourceRepoView(
     root,
     files.map((f) => f.path),
-    opts.snapshot ? (path) => opts.snapshot!.texts.get(path) : undefined,
+    opts.getText ?? (opts.snapshot ? (path) => opts.snapshot!.texts.get(path) : undefined),
   );
+  for (const source of sources)
+    packForFile(source.path, source.language)?.readConfiguration?.(source.path, repo);
   const sourceText = new Map(sources.map((s) => [s.path, s.text]));
   const extractionCache = new ExtractionCache(root, opts.cache !== false);
   const work = { heuristicResolutionMs: 0, semanticMs: 0, semanticRuns: 0 };
@@ -447,8 +451,8 @@ export async function buildIndex(opts: BuildIndexOptions): Promise<BuildIndexRes
 
   // 5. Commit id, language summary, tool string.
   const commit = await resolveCommitId({
-    commit: opts.commit,
-    git,
+    commit: opts.commit || opts.snapshot?.cleanHead,
+    git: opts.snapshot ? undefined : git,
     files,
     root,
     gitOptions: opts.gitOptions,

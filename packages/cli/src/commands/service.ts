@@ -14,7 +14,7 @@ import type { ViewServer } from "../server.js";
 import { readViewerHtml } from "../viewer-html.js";
 import { listen, untilStopped } from "./view.js";
 import { watchRepository } from "../watch.js";
-import { readWatchState } from "../watch-state.js";
+import { readWatchState, retireWatchState } from "../watch-state.js";
 
 type Backend = "none" | "claude";
 interface ServiceContext {
@@ -260,11 +260,12 @@ export const serviceCommand: CommandSpec = {
     "xpl service <start|stop|status> [explainer] [--background] [--port p] [--backend none|claude] [--recover] [--watch]",
   summary: "Start, stop or inspect a repository's optional local viewer service",
   details: [
-    "--watch opts this start into source/configuration polling (500 ms, then a quiet interval). It builds a full",
-    "index from captured inputs, discards superseded builds and publishes by atomic rename. Failures keep the",
-    "last snapshot marked out of date. xpl status --all inventories affected guides; no prose or feedback is saved.",
+    "--watch opts this start into metadata polling (500 ms, then a quiet interval). It builds a full",
+    "index from source and resolver configuration reads, discards superseded builds and publishes by atomic rename.",
+    "Failures keep the last snapshot marked out of date. xpl status --all inventories guides; no prose or feedback is saved.",
     "Watching defaults to --precise off. --precise auto|require enables semantic tools; --scip watches a supplied",
     "artifact/manifest pair. --index cannot pin a watched service. These options must be selected on each start.",
+    "Unchanged polls read no source bytes. Git staging changes are observed; recovery retires the prior watch pointer.",
     "Pause/resume, attention UI and offered revisions follow later; stop cancels publication and drains work.",
     "Start runs in the foreground (Ctrl-C to stop); --background detaches the installed CLI and logs to",
     ".explainer/service/service.log. The listener is always 127.0.0.1; no external address is accepted.",
@@ -350,6 +351,7 @@ export const serviceCommand: CommandSpec = {
     if (action === "stop") {
       const instance = readInstance(p.instance, p.root);
       if (!instance || instance.state === "stopped") {
+        await retireWatchState(p.root);
         report(ctx, await status(ctx));
         return 0;
       }
@@ -444,6 +446,7 @@ export const serviceCommand: CommandSpec = {
           jsonFile(previous),
         );
       }
+      await retireWatchState(p.root);
       await atomicWrite(p.instance, jsonFile(instance));
     });
     const abort = new AbortController();
@@ -493,6 +496,7 @@ export const serviceCommand: CommandSpec = {
       await server?.close();
       await withRepositoryLock(p.root, p.instance, async () => {
         if (readInstance(p.instance, p.root)?.instanceId === instance.instanceId) {
+          await retireWatchState(p.root);
           instance.state = "stopped";
           await atomicWrite(p.instance, jsonFile(instance));
         }

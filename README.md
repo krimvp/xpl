@@ -128,13 +128,13 @@ xpl service start jobrunner --watch --background
 xpl status --all --json                         # every guide: moved, drifted or missing anchors
 ```
 
-The watcher polls source and local discovery/provider configuration, coalesces edits and rebuilds the
-full index. Superseded builds are discarded; readers see a complete snapshot. Failed or cancelled builds
+The watcher polls paths and file metadata, capturing source and resolver configuration when inputs
+change. It follows ignored config chains regardless of filename, coalesces edits and rebuilds the full index. Superseded builds are discarded; readers see a complete snapshot. Failed or cancelled builds
 keep the previous index marked out of date. Moved code keeps its prose; drifted and missing evidence still
 block ready export. Watching saves no guide text, accepts no generated revisions and leaves feedback intact.
 It defaults to heuristic references (`--precise off`); `--precise auto|require` enables semantic tools and
 `--scip <artifact|manifest.json>` observes supplied provider inputs. A watched service cannot pin `--index`.
-Watch options are selected again on restart. Pause/resume, viewer attention controls and offered revisions
+Watch options are selected again on restart. Recovery retires the previous watch pointer. Pause/resume, viewer attention controls and offered revisions
 follow in 29B. Stop the service to return to manual indexing and revision.
 
 ## Using the CLI directly

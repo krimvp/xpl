@@ -2,7 +2,7 @@
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { TextCache, asIndexModel } from "@xpl/core";
-import { buildIndex, captureIndexInputs, writeIndex } from "@xpl/indexer";
+import { buildIndex, captureIndexInputs, indexInputsChanged, writeIndex } from "@xpl/indexer";
 import type { Ctx } from "./context.js";
 import { errorMessage } from "./errors.js";
 import { atomicWrite, displayPath, jsonFile, withRepositoryLock } from "./fsutil.js";
@@ -40,6 +40,7 @@ export async function watchRepository(
   const save = () => withRepositoryLock(ctx.root, path, () => atomicWrite(path, jsonFile(state)));
   const capture = () =>
     captureIndexInputs({ root: ctx.root, inputPaths: scipInputPaths(options.scip) });
+  let polled: Awaited<ReturnType<typeof captureIndexInputs>> | undefined;
   let observed: string | undefined;
   let attempted: string | undefined;
   let quietAt = Date.now();
@@ -47,7 +48,8 @@ export async function watchRepository(
   try {
     while (!options.signal.aborted) {
       try {
-        const inputs = await capture();
+        if (!polled || (await indexInputsChanged(polled))) polled = await capture();
+        const inputs = polled;
         if (observed !== inputs.revision) {
           observed = inputs.revision;
           quietAt = Date.now();
@@ -80,23 +82,39 @@ export async function watchRepository(
           }
           // Readers get one complete index. The pointer becomes current only after it exists.
           const indexPath = join(ctx.root, ".explainer", `index-${result.index.commit}.json`);
-          await withRepositoryLock(ctx.root, indexPath, async () => {
-            const final = await capture();
-            if (final.revision !== inputs.revision || options.signal.aborted) return;
+          const published = await withRepositoryLock(ctx.root, indexPath, async () => {
             const published = await withRepositoryLock(
               ctx.root,
               join(ctx.root, ".explainer/.gitignore"),
-              () => writeIndex(ctx.root, result.index),
+              () =>
+                withRepositoryLock(ctx.root, path, async () => {
+                  if (options.signal.aborted) return undefined;
+                  const final = await capture();
+                  if (final.revision !== inputs.revision || options.signal.aborted)
+                    return undefined;
+                  const published = await writeIndex(ctx.root, result.index);
+                  state.index = {
+                    path: displayPath(ctx.root, published),
+                    commit: result.index.commit,
+                  };
+                  state.indexDigest = indexDigest(result.index);
+                  state.fingerprint = inputs.fingerprint;
+                  state.generation++;
+                  state.state = "current";
+                  state.stale = false;
+                  state.error = null;
+                  await atomicWrite(path, jsonFile(state));
+                  return published;
+                }),
             );
-            state.index = { path: displayPath(ctx.root, published), commit: result.index.commit };
-            state.indexDigest = indexDigest(result.index);
-            state.fingerprint = inputs.fingerprint;
-            state.generation++;
-            state.state = "current";
-            state.stale = false;
-            state.error = null;
-            await save();
+            return published;
           });
+          if (!published) {
+            state.state = "pending";
+            state.stale = true;
+            await save();
+            continue;
+          }
           for (const warning of result.warnings) ctx.warn(warning);
           const guides = guideInventory(
             ctx,
