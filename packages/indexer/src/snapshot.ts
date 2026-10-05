@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { readFile, stat } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { readFileSync, statSync } from "node:fs";
-import { workTreeStatus } from "./commit.js";
+import { workTreeStatus, type StatusFileCache } from "./commit.js";
 import { buildIndex } from "./build.js";
 import { homedir } from "node:os";
 import { discoverFiles, detectGit, runGit } from "./files.js";
@@ -183,13 +183,20 @@ export async function captureIndexInputs(options: {
     paths: [...values.keys()],
     gitOptions: options.gitOptions,
     signature: observation.signature,
+    statusFiles: observation.statusFiles,
   });
   return snapshot;
 }
 
 const observations = new WeakMap<
   IndexInputs,
-  { root: string; paths: string[]; gitOptions: GitOptions | undefined; signature: string }
+  {
+    root: string;
+    paths: string[];
+    gitOptions: GitOptions | undefined;
+    signature: string;
+    statusFiles: StatusFileCache;
+  }
 >();
 
 /** Metadata only: no source/configuration bytes are read on an unchanged idle poll. */
@@ -197,8 +204,8 @@ export async function indexInputsChanged(snapshot: IndexInputs): Promise<boolean
   const previous = observations.get(snapshot);
   if (!previous) return true;
   return (
-    (await observeInputs(previous.root, previous.paths, previous.gitOptions)).signature !==
-    previous.signature
+    (await observeInputs(previous.root, previous.paths, previous.gitOptions, previous.statusFiles))
+      .signature !== previous.signature
   );
 }
 
@@ -206,6 +213,7 @@ async function observeInputs(
   root: string,
   dependencies: readonly string[],
   gitOptions?: GitOptions,
+  statusFiles: StatusFileCache = new Map(),
 ) {
   const git = await detectGit(root, gitOptions);
   const discovery = await discoverFiles(root, { git, gitOptions, content: false });
@@ -226,7 +234,7 @@ async function observeInputs(
     ? await Promise.all([
         runGit(root, ["rev-parse", "HEAD"], gitOptions),
         runGit(root, ["config", "--list", "--show-origin", "-z"], gitOptions),
-        workTreeStatus(root, gitOptions),
+        workTreeStatus(root, gitOptions, statusFiles),
       ])
     : ["no-git", "", ""];
   const cleanliness =
@@ -238,6 +246,7 @@ async function observeInputs(
   const parsedHead = head?.trim();
   return {
     versions,
+    statusFiles,
     gitState,
     signature: hash.digest("hex"),
     clean,

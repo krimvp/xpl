@@ -14,7 +14,7 @@ import type { ViewServer } from "../server.js";
 import { readViewerHtml } from "../viewer-html.js";
 import { openJobs } from "../jobs.js";
 import { listen, untilStopped } from "./view.js";
-import { watchRepository } from "../watch.js";
+import { watchControl } from "../watch-control.js";
 import { readWatchState, retireWatchState } from "../watch-state.js";
 
 type Backend = "none" | "claude";
@@ -258,8 +258,8 @@ async function background(ctx: Ctx, argv: string[], dir: string): Promise<void> 
 export const serviceCommand: CommandSpec = {
   name: "service",
   usage:
-    "xpl service <start|stop|status> [explainer] [--background] [--port p] [--backend none|claude] [--recover] [--watch]",
-  summary: "Start, stop or inspect a repository's optional local viewer service",
+    "xpl service <start|pause|resume|stop|status> [explainer] [--background] [--port p] [--backend none|claude] [--recover] [--watch]",
+  summary: "Control a repository's optional local viewer service and source watch",
   details: [
     "--watch opts this start into metadata polling (500 ms, then a quiet interval). It builds a full",
     "index from source, resolver inputs and enabled provider configuration, discards superseded builds and publishes atomically.",
@@ -267,7 +267,9 @@ export const serviceCommand: CommandSpec = {
     "Watching defaults to --precise off. --precise auto|require enables semantic tools; --scip watches a supplied",
     "artifact/manifest pair. --index cannot pin a watched service. These options must be selected on each start.",
     "Unchanged polls read no source bytes. Git staging changes are observed; recovery retires the prior watch pointer.",
-    "Pause/resume, attention UI and offered revisions follow later; stop cancels publication and drains work.",
+    "Pause drains the watch and retains a stale snapshot; resume checks again. Jobs and the service stay running.",
+    "The managed viewer reports moved/drifted/missing evidence and offers an explicit xpl revise command.",
+    "Stop drains the service and jobs. No watch control accepts revisions or clears feedback.",
     "Start runs in the foreground (Ctrl-C to stop); --background detaches the installed CLI and logs to",
     ".explainer/service/service.log. The listener is always 127.0.0.1; no external address is accepted.",
     "The selected guide, port and backend label persist under the canonical repository root. A later start",
@@ -321,8 +323,8 @@ export const serviceCommand: CommandSpec = {
   positionals: [{ name: "action" }, { name: "explainer", required: false }],
   async run(ctx, args) {
     const action = args.positionals[0]!;
-    if (!["start", "stop", "status"].includes(action))
-      throw new UsageError("service action must be start, stop or status");
+    if (!["start", "pause", "resume", "stop", "status"].includes(action))
+      throw new UsageError("service action must be start, pause, resume, stop or status");
     if (
       action !== "start" &&
       (args.positionals[1] ||
@@ -351,6 +353,24 @@ export const serviceCommand: CommandSpec = {
     const p = paths(ctx);
     ctx = { ...ctx, root: p.root };
     if (action === "status") {
+      report(ctx, await status(ctx));
+      return 0;
+    }
+    if (action === "pause" || action === "resume") {
+      const instance = readInstance(p.instance, p.root);
+      if (!instance || !(await contact(instance)))
+        throw new CliError("cannot verify service ownership; inspect xpl service status");
+      const response = await fetch(new URL("/api/watch", instance.url!), {
+        method: "POST",
+        headers: { Authorization: `Bearer ${instance.token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ action }),
+        redirect: "error",
+        signal: AbortSignal.timeout(120000),
+      });
+      if (!response.ok) {
+        const body = (await response.json()) as { error: string };
+        throw new CliError(body.error);
+      }
       report(ctx, await status(ctx));
       return 0;
     }
@@ -460,7 +480,18 @@ export const serviceCommand: CommandSpec = {
       ctx.io.signal ? AbortSignal.any([ctx.io.signal, abort.signal]) : abort.signal,
     );
     let server: ViewServer | undefined;
-    let watching: Promise<void> | undefined;
+    const watching = watch
+      ? watchControl(
+          ctx,
+          {
+            instanceId: instance.instanceId,
+            precise,
+            scip,
+          },
+          abort.signal,
+          () => abort.abort(),
+        )
+      : undefined;
     let jobs: Awaited<ReturnType<typeof openJobs>> | undefined;
     try {
       jobs = await openJobs(ctx, instance.instanceId);
@@ -470,6 +501,7 @@ export const serviceCommand: CommandSpec = {
         root: p.root,
         backend,
         jobs,
+        watch: watching,
         stop: () => abort.abort(),
       });
       instance.state = "running";
@@ -488,21 +520,12 @@ export const serviceCommand: CommandSpec = {
       });
       report(ctx, await status(ctx));
       ctx.io.onServer?.(server);
-      if (watch) {
-        watching = watchRepository(ctx, {
-          instanceId: instance.instanceId,
-          precise,
-          scip,
-          signal: abort.signal,
-        });
-        // Wake shutdown on a record/publication failure; finally still drains the server and releases ownership.
-        void watching.catch(() => abort.abort());
-      }
+      await watching?.change("resume");
       if (process.send && process.connected) process.send({ type: "xpl-service-ready" });
       await stopped;
     } finally {
       abort.abort();
-      const watchResult = await Promise.allSettled(watching ? [watching] : []);
+      const watchResult = await Promise.allSettled(watching ? [watching.close()] : []);
       await server?.close();
       await jobs?.close();
       await withRepositoryLock(p.root, p.instance, async () => {

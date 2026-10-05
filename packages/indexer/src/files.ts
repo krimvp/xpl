@@ -216,6 +216,30 @@ function inExcludedDir(path: string): boolean {
     );
 }
 
+/** Shared discovery and cleanliness exclusions; generated output cannot dirty an index. */
+export function isIndexInputPath(path: string): boolean {
+  return (
+    !path.endsWith("/") &&
+    !inExcludedDir(path) &&
+    !isLockfile(path) &&
+    !/\.(?:explainer|patch)\.json$/i.test(path)
+  );
+}
+
+/** Content eligibility shared with Git cleanliness. Undefined retains unreadable/deleted changes. */
+export async function isIndexInputFile(abs: string): Promise<boolean | undefined> {
+  const accepted = await passesContentFilters(abs);
+  if (accepted !== true || !/\.html?$/i.test(abs)) return accepted;
+  try {
+    const text = await readFile(abs, "utf8");
+    return !text.includes(
+      '<script id="xpl-data" type="application/json">{"schema":"code-explainer/bundle@0"',
+    );
+  } catch {
+    return undefined;
+  }
+}
+
 /** Is `path` (relative to `root`) a text file within the limits? Cheap checks first, then a NUL sniff. */
 async function passesContentFilters(abs: string): Promise<boolean | undefined> {
   let info;
@@ -257,13 +281,7 @@ export async function discoverFiles(
   const wanted = options.languages ? new Set<FileLanguage>(options.languages) : undefined;
   const selected: DiscoveredFile[] = [];
   for (const path of candidates) {
-    if (
-      path.endsWith("/") ||
-      inExcludedDir(path) ||
-      isLockfile(path) ||
-      /\.(?:explainer|patch)\.json$/i.test(path)
-    )
-      continue;
+    if (!isIndexInputPath(path)) continue;
     const language = languageForPath(path);
     if (wanted && !wanted.has(language)) continue;
     selected.push({ path, abs: join(root, ...path.split("/")), language });
@@ -285,23 +303,7 @@ export async function discoverFiles(
     const batch = selected.slice(i, i + BATCH);
     const verdicts = await Promise.all(
       batch.map(async (f) => {
-        if (!(await passesContentFilters(f.abs))) return false;
-        // Exports are generated artifacts, including small custom-viewer bundles. Indexing them would
-        // make the next export stale and can recursively embed earlier exports. Keep ordinary HTML.
-        if (/\.html?$/i.test(f.path)) {
-          try {
-            const text = await readFile(f.abs, "utf8");
-            if (
-              text.includes(
-                '<script id="xpl-data" type="application/json">{"schema":"code-explainer/bundle@0"',
-              )
-            )
-              return false;
-          } catch {
-            return false;
-          }
-        }
-        return true;
+        return (await isIndexInputFile(f.abs)) === true;
       }),
     );
     batch.forEach((file, j) => {
