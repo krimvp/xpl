@@ -4,7 +4,7 @@
  *
  *   npx tsx scripts/pr-shots.ts shoot <outDir> [--viewer-dir <dir>] [--build] [--set ux]
  *                                     [--shot <name>=<bundle>[?query]]... [--scheme light|dark]
- *                                     [--size 1440x900] [--service connected|disconnected]
+ *                                     [--size 1440x900] [--service connected|disconnected|unmanaged]
  *   npx tsx scripts/pr-shots.ts compare <beforeDir> <afterDir> <outDir>
  *
  * shoot:
@@ -18,7 +18,7 @@
  *   query is passed on (`?perspective=map&view=view:overview`, `?mode=present&tour=tour:intro&step=2`,
  *   `?perspective=explore&focus=edge:job-completed`). Without `--set` or `--shot`, `--set ux` is assumed.
  *
- * - `--service` injects a managed attachment and intercepts a loopback API for reproducible connection shots.
+ * - `--service` intercepts a loopback API; unmanaged omits attachment metadata for plain-view shots.
  *
  * compare: pairs the files of both directories by name and writes `<name>.png`, Before left and After right,
  * for each pair whose bytes differ, plus `index.md` listing changed, added, removed and unchanged shots.
@@ -51,8 +51,8 @@ async function shoot(argv: string[]): Promise<void> {
       service: { type: "string" },
     },
   });
-  if (values.service && !["connected", "disconnected"].includes(values.service))
-    throw new Error("--service must be connected or disconnected");
+  if (values.service && !["connected", "disconnected", "unmanaged"].includes(values.service))
+    throw new Error("--service must be connected, disconnected or unmanaged");
   const out = resolve(positionals[0] ?? "pr-shots");
   const viewerDir = resolve(values["viewer-dir"]);
   mkdirSync(out, { recursive: true });
@@ -96,13 +96,17 @@ async function shoot(argv: string[]): Promise<void> {
         const data = JSON.parse(script.exec(html)![2]!);
         data.server = {
           api: "/api",
-          attachment: {
-            root: "/tmp/xpl-demo/jobrunner",
-            guide: ".explainer/jobrunner.explainer.json",
-            instanceId: "demo-instance",
-            backend: "claude",
-            backendAvailable: false,
-          },
+          ...(values.service === "unmanaged"
+            ? {}
+            : {
+                attachment: {
+                  root: "/tmp/xpl-demo/jobrunner",
+                  guide: ".explainer/jobrunner.explainer.json",
+                  instanceId: "demo-instance",
+                  backend: "claude",
+                  backendAvailable: false,
+                },
+              }),
         };
         const body = html.replace(
           script,

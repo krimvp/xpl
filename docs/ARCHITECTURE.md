@@ -1661,18 +1661,20 @@ mailto and in-page targets. Element and step summaries are rendered as inline ma
 spans, bold, emphasis); titles and labels are plain text. The page title is "<tour title> · xpl" while a tour
 is open (the Guide, Present), else "<explainer title> · xpl".
 
-**Connection** (`components/ConnectionStatus.tsx`): below the header, service-backed pages report offline, connecting,
+**Connection** (`components/ConnectionStatus.tsx`): below the header, managed service pages report offline, connecting,
 connected, disconnected (network failure) or service unavailable (HTTP refusal). Managed pages name their
 guide; a disclosure shows root, last instance and backend unavailability. Existing two-second explainer
 polling also checks availability with unsaved edits; requests have a five-second deadline. A stopped or
 unavailable managed service keeps retrying the same address, never searches ports or changes roots.
-An unmanaged old server without `/explainer` stops polling on 404 for compatibility.
+Unmanaged `xpl view` pages keep their existing layout without this strip. An unmanaged old server
+without `/explainer` stops polling on 404 for compatibility.
 
 **Use loaded snapshot offline** disables API reads/writes and polling, keeping loaded source, navigation,
 edits and browser feedback. Missing source says it is absent from the snapshot. Save as HTML uses embedded
 readiness and removes service metadata. **Retry connection** resumes the original scoped API; unsaved edits
-remain local until **Retry save**. Offline changes join the existing pending field queue; reconnect does
-not overwrite them with server state. Browser feedback is exported/imported explicitly, never auto-submitted.
+remain local until **Retry save**. View edits, tour edits and review additions/removals share one pending-write queue, including offline
+changes. Dirty state follows that queue. Writes stay pending while in flight; success removes only the
+write sent, preserving newer edits. Reconnect does not overwrite unsaved changes with server state. Browser feedback is exported/imported explicitly, never auto-submitted.
 
 **Three modes, one header.** **Read** is the default screen, for readers. **Explore** is the author's
 workbench. **Present** plays a tour as slides. The header is one row built the same way in each: the title,

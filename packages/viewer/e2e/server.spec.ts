@@ -150,6 +150,16 @@ async function serve(
   return recorded;
 }
 
+test("plain view keeps the reader layout without managed service controls", async ({ page }) => {
+  await serve(page);
+  await expect(page.getByRole("button", { name: "Edit", exact: true })).toBeVisible();
+  await expect(byId(page, "grp:scheduling")).toBeVisible();
+  await expect.poll(async () => (await stateOf(page)).serverMode).toBe(true);
+  await expect(page.getByTestId("connection-status")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Use loaded snapshot offline" })).toHaveCount(0);
+  expect(new URL(page.url()).searchParams.has("attachment")).toBe(false);
+});
+
 test("files missing from the bundle are fetched from GET /api/file when they are needed", async ({
   page,
 }) => {
