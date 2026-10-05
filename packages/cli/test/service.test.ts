@@ -26,7 +26,11 @@ import {
   readFile,
   writeFile,
 } from "./helpers.js";
-import { parseBundle } from "@xpl/core";
+import { artifactIdentity, parseBundle } from "@xpl/core";
+import { randomUUID } from "node:crypto";
+import { createCtx } from "../src/context.js";
+import { openJobs, type Job } from "../src/jobs.js";
+import { appendRequest } from "../src/requests.js";
 import type { ViewServer } from "../src/server.js";
 
 let demo: string;
@@ -64,6 +68,146 @@ async function serve(root: string, ...extra: string[]) {
 }
 
 describe("repository service lifecycle", () => {
+  it("retires an interrupted watch before recovering without watching and returns to manual indexes", async () => {
+    const root = cloneDir(demo);
+    const initial = await serve(root, "demo", "--watch");
+    await expect
+      .poll(
+        () => {
+          try {
+            return readJson(root, ".explainer/service/watch.json").state;
+          } catch {
+            return "absent";
+          }
+        },
+        { timeout: 15000 },
+      )
+      .toBe("current");
+    await initial.close();
+    const instance = readJson(root, ".explainer/service/instance.json");
+    writeFile(
+      root,
+      ".explainer/service/instance.json",
+      JSON.stringify({ ...instance, state: "running", pid: 2147483647 }),
+    );
+    const watch = readJson(root, ".explainer/service/watch.json");
+    writeFile(
+      root,
+      ".explainer/service/watch.json",
+      JSON.stringify({ ...watch, state: "current" }),
+    );
+    const recovering = await serve(root, "demo", "--recover");
+    try {
+      writeFile(root, "README.md", "manual indexing after recovery\n");
+      const manual = (await xplJson(root, "index", "--precise", "off")).json;
+      expect((await xplJson(root, "status", "--all")).json.index.commit).toBe(manual.commit);
+      const bundle = (await (
+        await fetch(new URL("/api/bundle", recovering.server.url))
+      ).json()) as { index: { commit: string } };
+      expect(bundle.index.commit).toBe(manual.commit);
+      expect(readJson(root, ".explainer/service/watch.json").state).toBe("stopped");
+    } finally {
+      await recovering.close();
+    }
+    expect((await xplJson(root, "status", "--all")).json.watch.state).toBe("stopped");
+  });
+
+  it("recovers a watched service with its attachment and interrupts the previous job attempt", async () => {
+    const root = cloneDir(demo);
+    const initial = await serve(root, "demo", "--watch", "--backend", "claude");
+    const currentWatch = () => readJson(root, ".explainer/service/watch.json");
+    await expect.poll(() => currentWatch().state, { timeout: 15000 }).toBe("current");
+    const watch = currentWatch();
+    const guide = readFile(root, ".explainer/demo.explainer.json");
+    const instance = readJson(root, ".explainer/service/instance.json");
+    const bundle = parseBundle(
+      await (await fetch(new URL("/api/bundle", initial.server.url))).text(),
+    );
+    const ctx = createCtx(
+      { out() {}, err() {} },
+      {
+        root,
+        cwd: root,
+        env: {},
+        json: true,
+        indexOption: undefined,
+      },
+    );
+    const request = (
+      await appendRequest(root, {
+        id: "request-interrupted",
+        elementId: "file:src/queue.ts",
+        kind: "correct",
+        note: "Explain the queued job.",
+        explainer: "demo",
+        context: artifactIdentity(bundle.explainer, bundle.index),
+      })
+    ).request;
+    // Save a genuine running ledger, then restore it with the dead owner as a crash fixture.
+    const jobs = await openJobs(
+      ctx,
+      instance.instanceId,
+      async (_job, signal) =>
+        new Promise((_resolve, reject) =>
+          signal.addEventListener("abort", () => reject(new Error("stopped")), { once: true }),
+        ),
+    );
+    let ledger: { jobs: Job[] };
+    try {
+      const job = await jobs.submit("demo", { id: randomUUID(), selectedRequestIds: [request.id] });
+      await expect.poll(async () => (await jobs.get("demo", job.id)).state).toBe("running");
+      ledger = readJson<{ jobs: Job[] }>(root, ".explainer/service/jobs.json");
+    } finally {
+      await jobs.close();
+      await initial.close();
+    }
+    writeFile(
+      root,
+      ".explainer/service/instance.json",
+      JSON.stringify({ ...instance, pid: 2147483647 }),
+    );
+    writeFile(root, ".explainer/service/watch.json", JSON.stringify(watch));
+    writeFile(root, ".explainer/service/jobs.json", JSON.stringify(ledger));
+    writeFile(root, "README.md", "changed after watched owner exited\n");
+    const recovered = await serve(root, "--recover", "--watch");
+    try {
+      const owner = readJson(root, ".explainer/service/instance.json");
+      expect(owner.instanceId).not.toBe(instance.instanceId);
+      await expect
+        .poll(() => [currentWatch().state, currentWatch().instanceId], { timeout: 15000 })
+        .toEqual(["current", owner.instanceId]);
+      const publication = currentWatch();
+      expect(publication.generation).toBe(watch.generation + 1);
+      expect(publication.index.commit).not.toBe(watch.index.commit);
+      const attached = parseBundle(
+        await (await fetch(new URL("/api/bundle", recovered.server.url))).text(),
+      );
+      expect(attached.server!.attachment!).toEqual({
+        root,
+        guide: ".explainer/demo.explainer.json",
+        instanceId: owner.instanceId,
+        backend: "claude",
+        backendAvailable: false,
+      });
+      expect(attached.index.commit).toBe(publication.index.commit);
+      const history = (await (await fetch(new URL("/api/jobs", recovered.server.url))).json()) as {
+        jobs: Job[];
+      };
+      expect(history.jobs).toEqual([
+        {
+          ...ledger.jobs[0],
+          state: "interrupted",
+          error: "Service interrupted this attempt. Inspect its progress and explicitly retry.",
+          updatedAt: expect.any(String),
+        },
+      ]);
+      expect(readFile(root, ".explainer/demo.explainer.json")).toBe(guide);
+      expect(readJson(root, ".explainer/requests.json")[0].outcome.status).toBe("pending");
+    } finally {
+      await recovered.close();
+    }
+  });
+
   it("exposes local job history but rejects submission without a runner before selecting feedback", async () => {
     const root = cloneDir(demo);
     const running = await serve(root, "demo");
@@ -155,6 +299,77 @@ describe("repository service lifecycle", () => {
       await restarted.close();
     }
   });
+
+  it.each(["restart", "recover"])(
+    "reattaches its saved guide to the new watched publication after %s",
+    async (action) => {
+      const root = cloneDir(demo);
+      const published = async (instanceId: string) => {
+        await expect
+          .poll(
+            () => {
+              try {
+                const watch = readJson(root, ".explainer/service/watch.json");
+                return { state: watch.state, instanceId: watch.instanceId };
+              } catch {
+                return null;
+              }
+            },
+            { timeout: 15000 },
+          )
+          .toEqual({ state: "current", instanceId });
+        return readJson(root, ".explainer/service/watch.json");
+      };
+      const first = await serve(root, "demo", "--watch", "--backend", "claude");
+      const firstId = readJson(root, ".explainer/service/instance.json").instanceId;
+      let previous;
+      try {
+        previous = await published(firstId);
+      } finally {
+        await first.close();
+      }
+      expect(readJson(root, ".explainer/service/watch.json").state).toBe("stopped");
+      if (action === "recover") {
+        const instance = readJson(root, ".explainer/service/instance.json");
+        writeFile(
+          root,
+          ".explainer/service/instance.json",
+          JSON.stringify({ ...instance, state: "running", pid: 2147483647 }),
+        );
+        writeFile(root, ".explainer/service/watch.json", JSON.stringify(previous));
+      }
+      writeFile(root, "README.md", "source changed while watch was stopped\n");
+      const restarted = await serve(
+        root,
+        "--watch",
+        ...(action === "recover" ? ["--recover"] : []),
+      );
+      try {
+        const instanceId = readJson(root, ".explainer/service/instance.json").instanceId;
+        expect(instanceId).not.toBe(firstId);
+        const current = await published(instanceId);
+        expect(current.index.commit).not.toBe(previous.index.commit);
+        const attachment = { root, guide: ".explainer/demo.explainer.json" };
+        const response = await fetch(new URL("/api/bundle", restarted.server.url), {
+          headers: { "X-Xpl-Attachment": encodeURIComponent(JSON.stringify(attachment)) },
+        });
+        expect(response.status).toBe(200);
+        const bundle = parseBundle(await response.text());
+        expect(bundle.server!.attachment).toEqual({
+          ...attachment,
+          instanceId,
+          backend: "claude",
+          backendAvailable: false,
+        });
+        expect(bundle.index.commit).toBe(current.index.commit);
+        expect((await xplJson(root, "status", "--all")).json.index.commit).toBe(
+          current.index.commit,
+        );
+      } finally {
+        await restarted.close();
+      }
+    },
+  );
 
   it.each(["root", "guide"])(
     "refuses an attached page's different %s before reads or writes",

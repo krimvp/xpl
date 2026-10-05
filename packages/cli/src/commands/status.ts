@@ -15,7 +15,9 @@ import {
   type View,
 } from "@xpl/core";
 import type { CommandSpec } from "../command.js";
-import { CliError } from "../errors.js";
+import { CliError, UsageError } from "../errors.js";
+import { guideInventory } from "../inventory.js";
+import { readWatchState } from "../watch-state.js";
 import { listText, plural, renderIssues } from "../format.js";
 import { artifactIdentity, feedbackContextReason } from "@xpl/core";
 import { readRequests, type QueuedRequest } from "../requests.js";
@@ -406,9 +408,12 @@ function viewEdgeLines(edges: ViewEdges): string[] {
 
 export const statusCommand: CommandSpec = {
   name: "status",
-  usage: "xpl status <explainer> [--view <id>]",
+  usage: "xpl status [explainer] [--view <id>] [--all]",
   summary: "To-do list: unexplained elements, drifted, missing, queued requests, ghosts, tours",
   details: [
+    "--all resolves every .explainer/*.explainer.json guide against the current index and reports moved,",
+    "drifted and missing anchors, including user-owned anchors and unreadable guides. No prose is written.",
+    "Moved code keeps its prose; drift and missing evidence need explicit repair. Watch status is included in --json.",
     "The skill's to-do list for an explainer, without changing anything:",
     "  - per view, the visible nodes, edges and steps that have no `summary` (static edges are optional),",
     "  - per graph view, where it stops: the ghost boxes and stubs it draws (counts, and the most referenced ghost",
@@ -430,14 +435,45 @@ export const statusCommand: CommandSpec = {
     "`edges: {drawn, hidden}` or `edges: {links}` to the view.",
   ],
   options: {
+    all: {
+      type: "boolean",
+      desc: "Inventory all repository guides against the current index without writing",
+    },
     view: {
       type: "string",
       arg: "<id>",
       desc: "Only this view, with the edges (or step links) it draws and what its hidden takes out",
     },
   },
-  positionals: [{ name: "explainer" }],
+  positionals: [{ name: "explainer", required: false }],
   async run(ctx, args) {
+    if (args.flag("all")) {
+      if (args.positionals.length || args.str("view"))
+        throw new UsageError("--all cannot be combined with an explainer or --view");
+      const ws = await openWorkspace(ctx);
+      const guides = guideInventory(ctx, ws.model, ws.texts);
+      const watch = readWatchState(ctx.root) ?? null;
+      if (ctx.json)
+        ctx.emit({
+          index: { path: ws.indexRel, commit: ws.index.commit },
+          stale: ws.stale?.message ?? null,
+          watch,
+          guides,
+        });
+      else
+        ctx.out(
+          [
+            `repository guides: index ${ws.index.commit}${ws.stale ? " (out of date)" : ""}`,
+            ...guides.map((g) =>
+              "error" in g
+                ? `${g.name}: needs attention (${g.error})`
+                : `${g.name}: ${g.attention ? "needs attention" : "unchanged prose"}; ${g.anchors.counts.moved} moved, ${g.anchors.counts.drifted} drifted, ${g.anchors.counts.missing} missing`,
+            ),
+          ].join("\n"),
+        );
+      return 0;
+    }
+    if (!args.positionals[0]) throw new UsageError("supply an explainer or --all");
     const loaded = loadExplainer(ctx, args.positionals[0]!);
     const ws = await openWorkspace(ctx, { explainer: loaded });
     const model = new ExplainerModel(loaded.explainer, ws.model);

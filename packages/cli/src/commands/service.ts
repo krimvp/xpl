@@ -3,7 +3,7 @@ import { spawn } from "node:child_process";
 import { randomBytes, randomUUID } from "node:crypto";
 import { existsSync, readFileSync, realpathSync, openSync, closeSync } from "node:fs";
 import { chmod, mkdir } from "node:fs/promises";
-import { dirname, isAbsolute, join, relative, sep } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { CommandSpec } from "../command.js";
 import type { Ctx } from "../context.js";
@@ -14,6 +14,8 @@ import type { ViewServer } from "../server.js";
 import { readViewerHtml } from "../viewer-html.js";
 import { openJobs } from "../jobs.js";
 import { listen, untilStopped } from "./view.js";
+import { watchRepository } from "../watch.js";
+import { readWatchState, retireWatchState } from "../watch-state.js";
 
 type Backend = "none" | "claude";
 interface ServiceContext {
@@ -163,6 +165,7 @@ async function status(ctx: Ctx) {
     pid: instance?.pid ?? null,
     url: instance?.url ?? null,
     ownershipLock: existsSync(`${p.instance}.lock`),
+    watch: readWatchState(p.root) ?? null,
     ...(state === "interrupted"
       ? {
           recovery:
@@ -185,6 +188,10 @@ function report(ctx: Ctx, result: Awaited<ReturnType<typeof status>>) {
       `service ${result.state}: ${result.instanceId ?? "no instance"}\nrepository: ${result.root}\nguide: ${result.guide ?? "none"}\nbackend: ${result.backend} (jobs unavailable)\naddress: ${result.url ?? "none"}\npid: ${result.pid ?? "none"}`,
     );
     if (result.recovery) ctx.out(result.recovery);
+    if (result.watch)
+      ctx.out(
+        `watch ${result.watch.state}: ${result.watch.stale ? "out of date" : "checked snapshot"}; index ${result.watch.index?.commit ?? "none"}${result.watch.error ? ` (${result.watch.error})` : ""}`,
+      );
     if (result.ownershipLock)
       ctx.out("Ownership transaction lock remains; inspect its writer before removing it.");
   }
@@ -251,9 +258,16 @@ async function background(ctx: Ctx, argv: string[], dir: string): Promise<void> 
 export const serviceCommand: CommandSpec = {
   name: "service",
   usage:
-    "xpl service <start|stop|status> [explainer] [--background] [--port p] [--backend none|claude] [--recover]",
+    "xpl service <start|stop|status> [explainer] [--background] [--port p] [--backend none|claude] [--recover] [--watch]",
   summary: "Start, stop or inspect a repository's optional local viewer service",
   details: [
+    "--watch opts this start into metadata polling (500 ms, then a quiet interval). It builds a full",
+    "index from source, resolver inputs and enabled provider configuration, discards superseded builds and publishes atomically.",
+    "Failures keep the last snapshot marked out of date. xpl status --all inventories guides; no prose or feedback is saved.",
+    "Watching defaults to --precise off. --precise auto|require enables semantic tools; --scip watches a supplied",
+    "artifact/manifest pair. --index cannot pin a watched service. These options must be selected on each start.",
+    "Unchanged polls read no source bytes. Git staging changes are observed; recovery retires the prior watch pointer.",
+    "Pause/resume, attention UI and offered revisions follow later; stop cancels publication and drains work.",
     "Start runs in the foreground (Ctrl-C to stop); --background detaches the installed CLI and logs to",
     ".explainer/service/service.log. The listener is always 127.0.0.1; no external address is accepted.",
     "The selected guide, port and backend label persist under the canonical repository root. A later start",
@@ -274,6 +288,20 @@ export const serviceCommand: CommandSpec = {
     "authentication and provider network access. Manual commands and offline HTML work with the service stopped.",
   ],
   options: {
+    watch: {
+      type: "boolean",
+      desc: "Opt into coherent full indexing of source/configuration edits",
+    },
+    precise: {
+      type: "string",
+      arg: "<off|auto|require>",
+      desc: "With --watch: reference resolution (default off)",
+    },
+    scip: {
+      type: "string",
+      arg: "<artifact|manifest.json>",
+      desc: "With --watch: observe a supplied SCIP input",
+    },
     background: { type: "boolean", desc: "Start a detached installed CLI process" },
     port: {
       type: "string",
@@ -307,6 +335,19 @@ export const serviceCommand: CommandSpec = {
       throw new UsageError(
         "guide, --background, --recover, --port, --backend and --index apply only to service start",
       );
+    const watch = args.flag("watch");
+    if ((watch || args.str("precise") || args.str("scip")) && action !== "start")
+      throw new UsageError("--watch, --precise and --scip apply only to service start");
+    if (!watch && (args.str("precise") || args.str("scip")))
+      throw new UsageError("--precise and --scip require --watch");
+    if (watch && ctx.indexOption)
+      throw new UsageError("--watch cannot be combined with a pinned --index");
+    const precise =
+      args.choice("precise", ["off", "auto", "require"] as const) ??
+      (args.str("scip") ? "auto" : "off");
+    if (args.str("scip") && precise === "off")
+      throw new UsageError("--scip requires --precise auto or require");
+    const scip = args.str("scip") ? resolve(ctx.cwd, args.str("scip")!) : null;
     const p = paths(ctx);
     ctx = { ...ctx, root: p.root };
     if (action === "status") {
@@ -316,6 +357,7 @@ export const serviceCommand: CommandSpec = {
     if (action === "stop") {
       const instance = readInstance(p.instance, p.root);
       if (!instance || instance.state === "stopped") {
+        await retireWatchState(p.root);
         report(ctx, await status(ctx));
         return 0;
       }
@@ -346,7 +388,9 @@ export const serviceCommand: CommandSpec = {
     loaded.abs = localPath(p.root, loaded.abs);
     const index = ctx.indexOption
       ? localPath(p.root, await chooseIndexFile(ctx, new WorkingTree(p.root)))
-      : (saved?.index ?? null);
+      : watch
+        ? null
+        : (saved?.index ?? null);
     if (index) localPath(p.root, index);
     ctx = { ...ctx, indexOption: index ?? undefined };
     const port = args.int("port", { max: 65535 }) ?? saved?.port;
@@ -370,6 +414,8 @@ export const serviceCommand: CommandSpec = {
           ...(port !== undefined ? ["--port", String(port)] : []),
           ...(index ? ["--index", index] : []),
           ...(args.flag("recover") ? ["--recover"] : []),
+          ...(watch ? ["--watch", "--precise", precise] : []),
+          ...(scip ? ["--scip", scip] : []),
         ],
         p.dir,
       );
@@ -406,6 +452,7 @@ export const serviceCommand: CommandSpec = {
           jsonFile(previous),
         );
       }
+      await retireWatchState(p.root);
       await atomicWrite(p.instance, jsonFile(instance));
     });
     const abort = new AbortController();
@@ -413,6 +460,7 @@ export const serviceCommand: CommandSpec = {
       ctx.io.signal ? AbortSignal.any([ctx.io.signal, abort.signal]) : abort.signal,
     );
     let server: ViewServer | undefined;
+    let watching: Promise<void> | undefined;
     let jobs: Awaited<ReturnType<typeof openJobs>> | undefined;
     try {
       jobs = await openJobs(ctx, instance.instanceId);
@@ -440,18 +488,32 @@ export const serviceCommand: CommandSpec = {
       });
       report(ctx, await status(ctx));
       ctx.io.onServer?.(server);
+      if (watch) {
+        watching = watchRepository(ctx, {
+          instanceId: instance.instanceId,
+          precise,
+          scip,
+          signal: abort.signal,
+        });
+        // Wake shutdown on a record/publication failure; finally still drains the server and releases ownership.
+        void watching.catch(() => abort.abort());
+      }
       if (process.send && process.connected) process.send({ type: "xpl-service-ready" });
       await stopped;
     } finally {
       abort.abort();
+      const watchResult = await Promise.allSettled(watching ? [watching] : []);
       await server?.close();
       await jobs?.close();
       await withRepositoryLock(p.root, p.instance, async () => {
         if (readInstance(p.instance, p.root)?.instanceId === instance.instanceId) {
+          await retireWatchState(p.root);
           instance.state = "stopped";
           await atomicWrite(p.instance, jsonFile(instance));
         }
       });
+      const failure = watchResult[0];
+      if (failure?.status === "rejected") throw failure.reason;
     }
     return 0;
   },
