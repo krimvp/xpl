@@ -152,6 +152,7 @@ The service also exposes headless snapshot-bound question jobs at `/api/answers`
 is selected. They validate exact head/base source quotes and retain answers in portable feedback history;
 source or guide changes mark the original context outdated. An answer never edits a guide or finalizes a
 revision outcome. The question/history UI follows in #40B; current feedback controls keep their offline workflow.
+History merges reject reused answer IDs and more than 1,000 answers per question, preserving the stored history.
 
 ```sh
 xpl service start jobrunner --background        # loopback only; logs in .explainer/service/service.log

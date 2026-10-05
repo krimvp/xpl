@@ -1821,8 +1821,14 @@ are refused, and exports without history never erase saved answers. Returning an
 pending and never changes the guide, user fields or author outcomes. Optional guide changes use the
 existing explicit `xpl revise` review/acceptance path; answer output cannot smuggle a patch into it.
 
-The completed job receipt is written before mirroring history under the request store's lock. Startup
-and answer-history reads replay missing mirrors, so interruption between writes cannot lose or duplicate
+Every request-store write globally merges all requests under the lock, then validates the result with the
+reader's parser. Answer IDs belong to one request across the store. A merge exceeding 1,000 answers for a
+request fails without changing the store; history is never truncated or ordered by timestamps.
+
+Answer completion validates this prospective store before publishing a result receipt. With the ledger
+and request locks held, the completed receipt is written before mirroring history. Overflow or ID ownership
+conflicts leave the stored history and result receipt unchanged and fail the job. Startup and answer-history
+reads replay missing mirrors, so interruption between writes cannot lose or duplicate
 an answer. Concurrent new feedback and newer author outcomes survive this merge. Cancellation or
 supersession before completion fences late output; completed answer history is immutable. Disconnected
 submission retains ordinary pending feedback for the next explicit offline iteration. The question UI,
@@ -1842,10 +1848,11 @@ a read/Glob/Grep/Write tool list, empty MCP configuration and disabled inherited
 xpl-owned temporary directory containing frozen revision or question input. Source and the installed skill are
 additional read directories with explicit Edit deny rules. Only an exact absolute Edit permission for
 `proposal.json` (or `answer.json`) permits the Write tool; Claude uses Edit rules for all file modifications. Shell, agents
-and MCP tools are unavailable. The prompt reads the installed skill and asks for ordinary per-request
-patches, never applies or accepts them. Output must be a bounded regular file with one entry per selected
-request. A per-attempt Node launcher holds a service pipe: closing the pipe, including service death,
-kills the whole group. The launcher starts Claude only after receiving the service's durable-ownership
+and MCP tools are unavailable. For revisions, the prompt reads the installed skill and asks for ordinary
+per-request patches with one output entry per selected request. For answers, it asks for `{text, references}`
+with exact excerpts from frozen head/base source. Neither invocation applies or accepts patches. Output
+must be a bounded regular file. A per-attempt Node launcher holds a service pipe: closing the pipe, including
+service death, kills the whole group. The launcher starts Claude only after receiving the service's durable-ownership
 acknowledgement. It remains alive after Claude exits, reporting the original exit code on that pipe.
 From launcher spawn, one `try/finally` owns teardown, including failed identity reads. Normal/error exit,
 timeout, cancellation and recovery kill the verified group and scan Linux /proc until no live member

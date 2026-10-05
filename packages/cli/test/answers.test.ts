@@ -7,6 +7,8 @@ import {
   FEEDBACK_SCHEMA,
   parseFeedbackFile,
   sliceLines,
+  validateFeedbackAnswer,
+  type FeedbackRequest,
   type ViewerBundle,
 } from "@xpl/core";
 import { createCtx } from "../src/context.js";
@@ -77,6 +79,83 @@ function evidence(job: Parameters<AnswerRunner>[0]) {
     ],
   };
 }
+
+function history(root: string, request: FeedbackRequest, count: number, prefix: string) {
+  const text = readFile(root, "src/queue.ts");
+  const answer = validateFeedbackAnswer(
+    {
+      text: "Queue holds jobs.",
+      references: [
+        {
+          file: "src/queue.ts",
+          side: "head",
+          fromLine: 1,
+          toLine: 1,
+          quote: "export interface Job {",
+        },
+      ],
+    },
+    request,
+    [{ file: "src/queue.ts", side: "head", text, hash: hashText(text) }],
+    prefix,
+    "2026-10-05T00:00:00.000Z",
+  );
+  return Array.from({ length: count }, (_, i) => ({ ...answer, id: `${prefix}-${i}` }));
+}
+
+it("rejects an overflowing history import without changing the readable store", async () => {
+  const { root, request } = await setup();
+  await importRequests(root, [{ ...request, answers: history(root, request, 600, "first") }]);
+  expect(readRequests(root).requests[0]?.answers).toHaveLength(600);
+  const before = readFile(root, ".explainer/requests.json");
+  await expect(
+    importRequests(root, [{ ...request, answers: history(root, request, 600, "second") }]),
+  ).rejects.toThrow("answers must be an array of at most 1000 entries");
+  expect(readFile(root, ".explainer/requests.json")).toBe(before);
+  expect(readRequests(root).error).toBeUndefined();
+  expect(readRequests(root).requests[0]?.answers).toHaveLength(600);
+});
+
+it.each(["overflow", "cross-request ID collision"] as const)(
+  "rejects answer completion on %s without publishing history or a result receipt",
+  async (conflict) => {
+    const { root, ctx, request, instanceId } = await setup();
+    const id = randomUUID();
+    let requestId = request.id;
+    if (conflict === "overflow") {
+      await importRequests(root, [{ ...request, answers: history(root, request, 1000, "saved") }]);
+    } else {
+      const answer = { ...history(root, request, 1, "saved")[0]!, id };
+      requestId = "question-second";
+      await importRequests(root, [
+        { ...request, answers: [answer] },
+        { ...request, id: requestId },
+      ]);
+    }
+    const before = readFile(root, ".explainer/requests.json");
+    const jobs = await openJobs(ctx, instanceId, undefined, async (job) => evidence(job));
+    try {
+      await jobs.submitAnswer("demo", { id, requestId });
+      // Read the durable lifecycle directly: history reconciliation must not mask a bad receipt.
+      await expect
+        .poll(() => readJson(root, ".explainer/service/jobs.json").jobs[0].state, {
+          timeout: 10_000,
+        })
+        .toBe("failed");
+      const failed = await jobs.getAnswer("demo", id);
+      expect(failed.error).toBe(
+        conflict === "overflow"
+          ? "answers must be an array of at most 1000 entries"
+          : `answer ID ${id} belongs to another request`,
+      );
+      expect(failed.result).toBeNull();
+      expect(readFile(root, ".explainer/requests.json")).toBe(before);
+      expect(readRequests(root).error).toBeUndefined();
+    } finally {
+      await jobs.close();
+    }
+  },
+);
 
 it.each(["source", "guide"] as const)(
   "answers frozen context after a mid-run %s change and ports history without editing guide/outcomes",

@@ -329,14 +329,19 @@ class RepositoryJobs {
     }
   }
 
-  private async mutate<T>(change: (ledger: Ledger) => Promise<T> | T): Promise<T> {
+  private async mutate<T>(
+    change: (ledger: Ledger, publish: () => Promise<void>) => Promise<T> | T,
+  ): Promise<T> {
     this.assertOwner();
     return withRepositoryLock(this.ctx.root, this.path, async () => {
       this.assertOwner();
       const ledger = this.read();
-      const result = await change(ledger);
-      this.assertOwner();
-      await atomicWrite(this.path, jsonFile(ledger));
+      const publish = async () => {
+        this.assertOwner();
+        await atomicWrite(this.path, jsonFile(ledger));
+      };
+      const result = await change(ledger, publish);
+      await publish();
       return structuredClone(result);
     });
   }
@@ -658,9 +663,11 @@ class RepositoryJobs {
       if (!job) return;
       const abort = new AbortController();
       this.active = { id: job.id, abort };
-      const update = async (change: (current: WorkerJob) => void | Promise<void>) => {
+      const update = async (
+        change: (current: WorkerJob, publish: () => Promise<void>) => void | Promise<void>,
+      ) => {
         if (this.closed) return false;
-        return this.mutate(async (ledger) => {
+        return this.mutate(async (ledger, publish) => {
           const current = ledger.jobs.find((j) => j.id === job.id)!;
           if (
             current.state !== "running" ||
@@ -668,7 +675,7 @@ class RepositoryJobs {
             current.owner.attemptId !== job.owner!.attemptId
           )
             return false;
-          await change(current);
+          await change(current, publish);
           current.updatedAt = new Date().toISOString();
           return true;
         });
@@ -706,21 +713,27 @@ class RepositoryJobs {
         );
         if (!isAnswer(job) && record(result).revisionRunId !== job.input.revisionRunId)
           throw new CliError("runner result does not match the selected revision");
-        await update(async (current) => {
+        await update(async (current, publish) => {
           if (isAnswer(current)) {
-            current.result = validateFeedbackAnswer(
+            const answer = validateFeedbackAnswer(
               result,
               current.input.request,
               current.input.sources,
               current.id,
               new Date().toISOString(),
             );
-            current.contextReason = await answerContextReason(
+            const contextReason = await answerContextReason(
               this.ctx,
               current.scope.guide,
               current.input,
             );
-            current.state = "completed";
+            await recordAnswer(this.ctx.root, current.input.request, answer, async () => {
+              current.result = answer;
+              current.contextReason = contextReason;
+              current.state = "completed";
+              current.updatedAt = new Date().toISOString();
+              await publish();
+            });
             return;
           }
           const revisionResult = record(result);

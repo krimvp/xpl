@@ -1104,7 +1104,9 @@ never edits the guide or records a revision outcome. Use ordinary `xpl revise` f
 Completed answer jobs retain the original source/explanation identity and report `contextReason` after
 source or guide changes. Reload replays the completed receipt into optional `FeedbackRequest.answers`;
 feedback export/import unions history by stable answer ID independently of outcome revisions. Conflicting
-answer content or invalid imported evidence is refused; an older export cannot erase history. Without an
+answer content or invalid imported evidence is refused; an older export cannot erase history. Each answer
+ID belongs to one question. Imports or completions exceeding 1,000 answers for a question fail without
+changing history or publishing a result receipt; saved answers are never truncated. Without an
 answer backend the request stays pending for `/code-explainer feedback`. Question/history UI is 40B;
 this contract is headless and does not change the existing viewer's feedback controls.
 
