@@ -82,6 +82,13 @@ Browser storage can be unavailable; the panel reports this and JSON export or Sa
 new indexes refresh in a live viewer; a saved HTML page stays at its exported version. Unsaved edits
 postpone live refresh. Reindex changed code to restore reliable source locations and references.
 
+The next pass uses `xpl revise`: select request IDs, inspect ordinary per-request patch proposals with
+explanation before/after and source, review the author's accepted/rejected subset, then explicitly accept.
+Acceptance rechecks live source, snapshot identity and readiness. It preserves user-owned content and the
+previous artifact, and records only selected outcomes. Interrupted acceptance resumes without applying or
+recording twice. Missing anchors need an explicit re-anchor or removal decision; location-only moves keep
+prose unchanged. See the installed skill's [revision workflow](skill/code-explainer/reference/revise.md).
+
 No Claude at hand? The source repository's fixtures ship example explainers (fixtures are not in the tarball):
 
 ```sh
@@ -173,6 +180,17 @@ index. Edit > Save as HTML uses the same rules, with separate ready and draft ac
 only included source, and say they cannot detect later repository changes. Source checks do not verify prose
 claims or every runtime path.
 Generated XPL HTML pages are excluded from indexing, so exporting inside a repo does not stale its index.
+
+Edit > Record author review records a self-reported name, inspected content/evidence scope and named
+omissions. About this explanation shows **unchecked**, **reviewed** or **out of date** separately from
+source checks. A narrow review covers named stored items and their own anchors; unrelated source edits do
+not invalidate it. Repository scope covers every indexed file. Broad review evidence travels with HTML;
+offline pages cannot detect later repository changes.
+
+Review is optional. `ready --require-review`, `bundle --require-review` and the Save as HTML team policy
+checkbox explicitly require a current review of all stored content. The checkbox choice stays in that
+exported page for re-saves. Omissions remain author judgment; a name or time does not verify prose truth,
+identity or complete runtime coverage.
 
 ### Explaining a change
 

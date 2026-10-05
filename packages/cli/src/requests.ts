@@ -57,11 +57,14 @@ export function readRequests(root: string): { requests: FeedbackRequest[]; error
   }
 }
 
-async function mutate<T>(root: string, merge: (requests: FeedbackRequest[]) => T): Promise<T> {
+async function mutate<T>(
+  root: string,
+  merge: (requests: FeedbackRequest[]) => T | Promise<T>,
+): Promise<T> {
   return withRepositoryLock(root, requestsPath(root), async () => {
     const { requests, error } = readRequests(root);
     if (error) throw new CliError(error);
-    const result = merge(requests);
+    const result = await merge(requests);
     await atomicWrite(requestsPath(root), jsonFile(requests));
     return result;
   });
@@ -115,14 +118,18 @@ export interface RequestOutcomeUpdate {
   context: ArtifactIdentity | null;
   status: FeedbackStatus;
   reason: string;
+  /** A journaled decision retries against this baseline without incrementing its result twice. */
+  expectedRevision?: number;
 }
 
 /** Only selected IDs change. A failed merge or write leaves every previous result retryable. */
 export async function recordOutcomes(
   root: string,
   updates: readonly RequestOutcomeUpdate[],
+  /** Called under the outcome lock, after validation, before outcomes become visible. */
+  commitDecision?: () => Promise<void>,
 ): Promise<void> {
-  await mutate(root, (requests) => {
+  await mutate(root, async (requests) => {
     if (new Set(updates.map((u) => u.id)).size !== updates.length)
       throw new CliError("duplicate selected request IDs");
     for (const update of updates) {
@@ -134,6 +141,20 @@ export async function recordOutcomes(
         !sameFeedbackContext(original.context, update.context)
       )
         throw new CliError(`original context does not match request ${update.id}`);
+      if (update.expectedRevision !== undefined) {
+        if (!Number.isSafeInteger(update.expectedRevision) || update.expectedRevision < 0)
+          throw new CliError("expectedRevision must be a non-negative safe integer");
+        if (
+          original.outcome.revision === update.expectedRevision + 1 &&
+          original.outcome.status === update.status &&
+          original.outcome.reason === update.reason
+        )
+          continue;
+        if (original.outcome.revision !== update.expectedRevision)
+          throw new CliError(
+            `outcome changed since selection for request ${update.id}; reconcile before retrying`,
+          );
+      }
       const recorded = parseFeedbackRequest({
         ...original,
         outcome: {
@@ -145,5 +166,6 @@ export async function recordOutcomes(
       });
       requests[i] = mergeFeedbackRequests([original, recorded])[0]!;
     }
+    await commitDecision?.();
   });
 }

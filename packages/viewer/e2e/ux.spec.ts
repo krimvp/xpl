@@ -143,6 +143,7 @@ test.describe("one header in every mode", () => {
       await expect(menu.getByRole("menuitem")).toHaveText([
         /Back to reading/,
         /Edit the guide's steps/,
+        /Record author review/,
         /Save as HTML/,
         /Download explainer JSON/,
       ]);

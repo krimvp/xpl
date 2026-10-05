@@ -1,3 +1,4 @@
+import { reviewSourceFiles } from "@xpl/core";
 /**
  * The viewer bundle (`ViewerBundle`, ARCHITECTURE.md §5) shared by `xpl bundle` (inlined into the HTML)
  * and `xpl view` (injected into `GET /`, served at `GET /api/bundle`): which source files go in
@@ -246,6 +247,11 @@ export function collectFiles(opts: {
     if (added.length > 0) paths = [...paths, ...added].sort();
     changed = { files: heads.length, added };
   }
+  // Preserve the evidence explicitly covered by an author's review when reopening offline.
+  if (opts.explainer.review)
+    paths = [
+      ...new Set([...paths, ...reviewSourceFiles(opts.explainer.review.scope, opts.index)]),
+    ].sort();
   const files: Record<string, string> = {};
   let embeddedBytes = 0;
   for (const path of paths) {

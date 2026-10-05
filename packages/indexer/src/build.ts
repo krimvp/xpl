@@ -518,7 +518,7 @@ function summarizeLanguages(
 }
 
 /** Contents `.explainer/.gitignore` must have: the generated indexes are never committed. */
-const GITIGNORE_LINES = ["index-*.json", "cache/"];
+const GITIGNORE_LINES = ["index-*.json", "cache/", "revisions/"];
 
 /**
  * Write `<root>/.explainer/index-<commit>.json` (pretty-printed) and make sure `.explainer/.gitignore`

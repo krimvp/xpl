@@ -1,7 +1,13 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
-import { BUNDLE_SCHEMA, collectAnchors } from "@xpl/core";
+import {
+  BUNDLE_SCHEMA,
+  collectAnchors,
+  reviewFingerprint,
+  parseBundle,
+  TextCache,
+} from "@xpl/core";
 import { buildIndex, writeIndex } from "@xpl/indexer";
 import { findViewerHtml, viewerHtmlCandidates } from "../src/viewer-html.js";
 import {
@@ -561,6 +567,47 @@ describe("xpl bundle: what the reader would see by mistake", () => {
 });
 
 describe("xpl ready", () => {
+  it("opts into review policy through ready and bundle without changing the default export", async () => {
+    const dir = cloneDir(demo);
+    expect((await xplJson<any>(dir, "ready", "demo")).json.review).toEqual({
+      status: "unchecked",
+      required: false,
+    });
+    const required = await xplJson<any>(dir, "ready", "demo", "--require-review");
+    expect(required.code).toBe(1);
+    expect(required.json.findings.filter((f: any) => f.code === "review-required")).toHaveLength(1);
+    const out = join(makeTempDir("xpl-review-policy-"), "reviewed.html");
+    const blocked = await bundle(dir, "-o", out, "--require-review");
+    expect(blocked.code).toBe(1);
+    expect(existsSync(out)).toBe(false);
+    expect((await bundle(dir, "-o", out)).code).toBe(0);
+    const snapshot = parseBundle(JSON.stringify(bundleOf(readFileSync(out, "utf8"))));
+    const scope = { content: "all" as const, source: "repository" as const };
+    const review = {
+      reviewer: "Ada",
+      reviewedAt: "2026-10-04T12:00:00Z",
+      scope,
+      omissions: [],
+      fingerprint: reviewFingerprint(
+        snapshot.explainer,
+        snapshot.index,
+        new TextCache((path) => readFile(dir, path)),
+        scope,
+      ),
+    };
+    const applied = await invoke(["apply", "demo", "-", "--actor", "user"], {
+      cwd: dir,
+      stdin: JSON.stringify({ review }),
+    });
+    expect(applied.code, applied.err).toBe(0);
+    expect((await xplJson<any>(dir, "ready", "demo", "--require-review")).code).toBe(0);
+    const exported = await bundle(dir, "-o", out, "--require-review");
+    expect(exported.code, exported.err).toBe(0);
+    const saved = bundleOf(readFileSync(out, "utf8"));
+    expect(saved.exportInfo?.report.review).toEqual({ status: "reviewed", required: true });
+    expect(saved.files["README.md"]).toBe(readFile(dir, "README.md"));
+  });
+
   it("checks a real untouched path draft without lint, refuses HTML, and records machine findings before output", async () => {
     const dir = cloneDir(await indexedFixture());
     const scratch = makeTempDir("xpl-ready-path-");

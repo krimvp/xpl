@@ -8,6 +8,7 @@
  *                                     (plain text; JSON `"..."` or `{ "text": "..." }` also works)
  *     GET  {api}/base-file?path=<file> the code before the change of a changed file missing from
  *                                     `bundle.baseFiles` (plain text, like `/file`)
+ *     PUT  {api}/review               persist/remove author review; rejects changed inspected fingerprint
  *     PUT  {api}/views/<view id>      persist a view edit: JSON `{ "type": <view type>, ...changed fields }`
  *     PUT  {api}/tours/<tour id>      persist a tour edit: JSON `{ "title": ..., "steps": [...] }` (the whole tour;
  *                                     a new tour is created the same way)
@@ -23,6 +24,7 @@ import {
   parseBundle,
   parseFeedbackRequest,
   type Explainer,
+  type ExplainerPatch,
   type ViewerBundle,
   type FeedbackRequest,
 } from "@xpl/core";
@@ -115,6 +117,17 @@ export class ServerApi {
       await fetch(this.url(`/base-file?path=${encodeURIComponent(path)}`)),
     );
     return response.text();
+  }
+
+  /** Author-only metadata; the server applies this bounded patch as actor user. */
+  async putReview(review: ExplainerPatch["review"]): Promise<void> {
+    await this.check(
+      await fetch(this.url("/review"), {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ review }),
+      }),
+    );
   }
 
   /** Persists changed view fields; `fields` always carries the view's `type`. */

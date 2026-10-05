@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { artifactIdentity, checkReadiness, type Explainer } from "../src/index.js";
+import {
+  artifactIdentity,
+  checkReadiness,
+  reviewFingerprint,
+  type Explainer,
+} from "../src/index.js";
 import { anchor, emptyExplainer, graphView, sequenceView, LLM, makeWorld } from "./helpers.js";
 
 function example() {
@@ -33,6 +38,58 @@ function example() {
 }
 
 describe("ready export rules", () => {
+  it("reports review state without changing ordinary readiness; explicit policy requires all current content", () => {
+    const { world, explainer } = example();
+    const check = (requireReview = false) =>
+      checkReadiness(explainer, world.index, world.getText, { scope: "workspace", requireReview });
+    expect(check()).toMatchObject({
+      ready: true,
+      errors: 0,
+      review: { status: "unchecked", required: false },
+    });
+    expect(check(true)).toMatchObject({
+      ready: false,
+      errors: 1,
+      review: { status: "unchecked", required: true },
+      findings: [{ code: "review-required" }],
+    });
+    const record = (content: "all" | string[]) => {
+      const scope = { content, source: "anchored" as const };
+      explainer.review = {
+        reviewer: "Ada",
+        reviewedAt: "2026-10-04T12:00:00Z",
+        scope,
+        omissions: ["Runtime behavior was not exercised."],
+        sourceCommit: world.index.commit,
+        fingerprint: reviewFingerprint(explainer, world.index, world.getText, scope),
+      };
+    };
+    record(["file:a.ts"]);
+    expect(check()).toMatchObject({ ready: true, review: { status: "reviewed", required: false } });
+    expect(check(true)).toMatchObject({
+      ready: false,
+      errors: 1,
+      findings: [{ code: "review-required" }],
+    });
+    record("all");
+    expect(check(true)).toMatchObject({
+      ready: true,
+      errors: 0,
+      review: { status: "reviewed", required: true },
+    });
+    explainer.nodes[0]!.summary = "Stores another starting value.";
+    expect(check()).toMatchObject({
+      ready: true,
+      errors: 0,
+      review: { status: "out-of-date", required: false },
+    });
+    expect(check(true)).toMatchObject({
+      ready: false,
+      errors: 1,
+      review: { status: "out-of-date", required: true },
+    });
+  });
+
   it("leaves repository identities, IDs and code references out of authored text checks", () => {
     const world = makeWorld({ files: [{ path: "TODO.ts", text: "export const TODO = 1;" }] });
     const explainer = emptyExplainer({

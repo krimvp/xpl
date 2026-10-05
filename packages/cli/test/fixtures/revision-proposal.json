@@ -1,0 +1,25 @@
+[
+  {
+    "id": "correct-runner",
+    "patch": {
+      "nodes": [
+        {
+          "id": "sym:src/runner.ts#Runner.dispatch",
+          "summary": "Dispatch leases a worker, runs the job and requeues failures.",
+          "label": "Agent label"
+        }
+      ]
+    }
+  },
+  {
+    "id": "expand-queue",
+    "patch": {
+      "nodes": [
+        {
+          "id": "file:src/queue.ts",
+          "summary": "Queue keeps jobs until a worker becomes available."
+        }
+      ]
+    }
+  }
+]

@@ -659,6 +659,31 @@ outcome. A changed explanation/source snapshot or stale source needs explicit re
 silently rebound to the newer guide. Legacy records lacking a snapshot are unbound and outdated.
 Keep feedback exports/outcome input files outside the source tree so they do not stale the index.
 
+## `xpl revise <explainer> --select <id,id> | --run <id>`
+
+See [revise.md](revise.md) for the installed feedback revision workflow. Selection retains original request
+IDs/context, checks actual source freshness and resolves in memory. `--include <id,id>` explicitly bounds
+extra/new explanation IDs; `-o /tmp/review.json` saves a source and explanation before/after packet.
+
+`--run <id> --proposal /tmp/proposal.json` reviews `[{id, patch}]` using ordinary apply patches as `llm`.
+`--decisions /tmp/decisions.json` reviews one `{id, status, reason, reconciliation?, missing?}` per selected
+request; only `addressed` patches enter the candidate. Accepted outdated context needs a reconciliation
+reason. Missing owners need `missing: [{id, action: "reanchor"|"remove"}]`. Location-only moves use `{}`.
+Neither review writes the guide or outcomes. Show the exact decision review before explicit `--accept`.
+
+Acceptance checks expected artifact/source identity, actual working-tree freshness, selected outcome
+baselines and shared readiness before publication. `.explainer/revisions/<id>/previous.json` preserves the
+old artifact; `run.json` retains the reviewed source and commit intent. Retry the same `--run <id> --accept`
+after interruption: changes and outcome increments occur once. New/unselected feedback survives. A wholly
+declined batch records reasons without changing the guide. Historical `--run <id>` inspection works after
+source changes. After a killed process, remove only reported locks whose writers have stopped.
+
+`--json` emits `{ok, runId, state, expected, index, previousArtifact, requests, include, resolve, decisions,
+changes, source, issues, readiness?}`. `changes` contains `{id, before, after}`; `source` contains
+`{file, side, text}` from the review snapshot. States: selected, proposed, reviewed, committing, committed,
+done. Readiness blockers remain visible in a review (exit 0), but `--accept` refuses them (exit 1). Rejected
+patches, scope/identity/freshness conflicts and malformed input also exit 1. No model is called.
+
 ## `xpl lint <explainer> [--patch <file|->] [--warn-only]`
 
 Checks the text a reader sees (the index, when there is one, only counts the boxes and arrows of maps): the explainer title, tour titles, tour `summary`, tour step notes, view titles, flow and sequence step labels and summaries, the `summary` and `detail` of nodes, edges and concepts, and the labels of groups and concepts. It also checks the order of each tour, and what the viewer will show (a step it must title itself, a crowded map). It applies the rules of `reference/writing.md`. Run it before `xpl bundle`, and fix what it finds with a patch.
@@ -869,7 +894,7 @@ $ xpl view jobrunner --no-open --port 0
 serving .explainer/jobrunner.explainer.json at http://127.0.0.1:34971/  (Ctrl-C to stop)
 ```
 
-API (for scripts): `GET /api/bundle`, `GET /api/export` (current complete export snapshot and shared readiness report), `GET /api/explainer` (the explainer with its anchors re-resolved, with an `ETag`; what the page polls), `GET /api/file?path=`, `GET /api/base-file?path=` (the code before the recorded change of a modified, renamed or deleted file), `PUT /api/views/<id>`, `PUT /api/tours/<id>`, `GET|POST /api/requests`.
+API (for scripts): `GET /api/bundle`, `GET /api/export` (current complete export snapshot and shared readiness report), `GET /api/explainer` (the explainer with its anchors re-resolved, with an `ETag`; what the page polls), `GET /api/file?path=`, `GET /api/base-file?path=` (the code before the recorded change of a modified, renamed or deleted file), `PUT /api/views/<id>`, `PUT /api/tours/<id>`, `PUT /api/review` (bounded author review user patch), `GET|POST /api/requests`.
 
 ## `xpl service <start|stop|status> [explainer] [--background] [--port p] [--backend none|claude] [--recover] [--watch]`
 
@@ -921,15 +946,16 @@ Pause/resume, viewer attention controls and offered revisions follow in 29B. Sto
 to manual indexing/revision. Local configuration and supplied SCIP files are watched; external dependency
 or tool/environment changes need a restart or manual indexing. See ARCHITECTURE §3 and §5 for the boundary.
 
-## `xpl ready <explainer> [--note reason]`
+## `xpl ready <explainer> [--note reason] [--require-review]`
 
 Checks strict structure/references, workspace/index freshness, required text (visible summaries and guide
 content), source availability and reader lint. Errors block ready export; warnings invite author judgment.
 `--note "reason"` records an intentional omission or warning decision, without overriding errors. Pass the
-same note to `bundle` to keep it in HTML. This check needs no service or reviewer record and writes nothing.
+same note to `bundle` to keep it in HTML. This check writes nothing and needs no service; ordinary checks
+require no reviewer record.
 
 `--json` emits `{ok, ready, scope: "workspace", identity: {explainerHash, sourceHash}, errors, warnings,
-findings: [{severity, code, elementId, field, message, hint}], decisionNote?}`. Exit 0 ready (warnings allowed),
+findings: [{severity, code, elementId, field, message, hint}], review: {status, required}, decisionNote?}`. Exit 0 ready (warnings allowed),
 1 blockers/failure, 2 usage. Bundle failures include this report as `readiness`. The identity function lives in
 core `readiness.ts`; explanation content/provenance/anchors/index metadata change `explainerHash`, while
 indexed file path/hash changes or change base/head SHAs change `sourceHash`. HTML, launch mode, server URL,
@@ -940,7 +966,18 @@ HTML uses the same check, fetching current source at the final click under `xpl 
 only embedded source; they cannot detect later repository changes. Findings and author decisions stay in the
 saved snapshot's `exportInfo: {status: "ready" | "draft", report}`.
 
-## `xpl bundle <explainer> -o out.html [--mode explore|present] [--tour id] [--files referenced|boundary|all] [--boundary-max n] [--embed-index full|pruned] [--draft] [--note reason] [--allow-drift]`
+Review state is `unchecked`, `reviewed` or `out-of-date`, independently of anchor status. Ordinary readiness
+has no reviewer requirement. `--require-review` explicitly requires a current author record with
+`scope.content: "all"` and its chosen evidence scope; a narrow or outdated record adds `review-required`.
+Use the same flag with `bundle`. Named omissions remain visible and do not override other errors.
+
+The author records through Edit > Record author review in live or offline pages. Names are self-reported,
+not authenticated. The inspected fingerprint is checked again as a user patch; LLM patches cannot record or
+remove reviews. Selected IDs cover those stored records and their own anchors, not dependencies. Repository
+scope and named whole files widen evidence and are included in exports. The Save as HTML team policy
+checkbox is off by default and retains its explicit choice for offline re-saves.
+
+## `xpl bundle <explainer> -o out.html [--mode explore|present] [--tour id] [--files referenced|boundary|all] [--boundary-max n] [--embed-index full|pruned] [--draft] [--note reason] [--require-review] [--allow-drift]`
 
 Ready output refuses a stale index, including with `--allow-drift` or `XPL_SKIP_STALE_CHECK=1`. Reindex and resolve
 first. `--allow-drift` only permits drift against a current index. Generated XPL HTML pages are excluded
