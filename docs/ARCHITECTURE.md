@@ -387,7 +387,10 @@ A supplied `SourceRepoView` reader owns its path namespace, so provider capture 
 configuration. The default filesystem view still confines reads to its root.
 TypeScript's pack also reads nearest tsconfig/jsconfig chains for every source file without semantic tools.
 Capture also observes local/ancestor ignore rules, Git configuration/exclusions, explicitly supplied SCIP
-inputs and the staging/work-tree cleanliness used by `resolveCommitId`. A captured clean HEAD label wins
+inputs and the staging/work-tree cleanliness used by `resolveCommitId`. Cleanliness shares discovery's
+path and content filters, so exports, patches, guides, dependencies, lockfiles and other excluded files
+cannot turn a clean watched snapshot dirty. File eligibility is reused until its metadata changes.
+A captured clean HEAD label wins
 for snapshot builds; dirty snapshots derive the id from captured files, without reading live staging.
 
 `indexInputsChanged(snapshot)` compares candidate paths and file size/mtime/ctime/inode plus Git state,
@@ -397,7 +400,8 @@ External dependencies, tool installation and process-environment changes are out
 Restart or manually index after changing those inputs.
 
 **Commit id.** `--commit` wins (letters, digits, `.`, `_`, `-` only: it becomes part of a file name). Else, if
-`root` is the git top-level and the work tree is clean (ignoring `.explainer/`): short HEAD (7 chars). Else
+`root` is the git top-level and the work tree is clean (ignoring discovery-excluded files): short HEAD
+(7 chars). Deleted or unreadable source changes still count as dirty. Else
 `wt-` + first 10 hex of sha256 over the sorted `path\0hash\n` list: deterministic, which is why fixtures
 living inside this monorepo get stable ids.
 
@@ -1318,7 +1322,7 @@ stdout (a rejection exits 1); fatal errors (`error: …`) and warnings (`warning
 | `xpl pr cleanup <directory> [--cache-dir dir]` | removes only a marked owned PR input directly under the selected cache; refuses symlinks and developer-tree paths |
 | `xpl draft change\|repo\|path <explainer> [<entry id> ...] [-o file]` | prints a patch skeleton built from the index (and the change record) with no LLM, `TODO:` in every text to write (below); the summary goes to stderr |
 | `xpl view <explainer> [--port p] [--host h] [--no-open]` | local server (below) |
-| `xpl service <start\|stop\|status> [explainer] [--background] [--port p] [--backend none\|claude] [--recover] [--watch]` | optional repository-scoped lifecycle around the same viewer server; loopback only; persisted context and explicit interrupted-owner recovery |
+| `xpl service <start\|pause\|resume\|stop\|status> [explainer] [--background] [--port p] [--backend none\|claude] [--recover] [--watch]` | optional repository-scoped lifecycle around the same viewer server; loopback only; persisted context and explicit interrupted-owner recovery |
 | `xpl bundle <explainer> -o out.html [--mode explore\|present] [--tour id] [--files referenced\|boundary\|all] [--boundary-max n] [--embed-index full\|pruned] [--draft] [--note reason] [--require-review] [--allow-drift]` | self-contained HTML after the shared readiness check (exit 1 before writing with errors); `--draft` writes a labelled preview with findings; `--allow-drift` is a legacy draft flag that still refuses stale indexes; warnings and optional author notes are retained; `--tour` (`tour:intro` or `intro`) implies present mode; embeds the files the explainer references by default and prints what went in (`8 of 12 files embedded (referenced: 18.4 KB of source; --files all adds 4 files, 6.7 KB)`), `--files boundary` adds the direct callers, callees and tests of anchored symbols (at most `--boundary-max`, default 40), `--files all` every indexed file; with a change recorded, every changed file at head and the base text of the changed files go in too; the symbol index in it is pruned to what the viewer can draw with `--files referenced` or `boundary` and whole with `--files all` (`--embed-index` overrides) and packed (the summary line says `index 0.3 MB (1.3 MB as plain JSON, pruned from 9.0 MB)`) |
 | `xpl doctor [--agent none\|claude] [--skill-dir path]` | local setup report: Node, artifact hashes, grammar loading, installed skill and optional git/npx/Go; selected Claude Code availability; no downloads or authentication probes; required failures exit 1 |
 | `xpl skill install [--dir path]` | copies the bundled skill and writes its CLI binding; repeat to update; defaults to `~/.claude/skills/code-explainer`; refuses unmanaged directories, symlinks and local edits |
@@ -1643,7 +1647,7 @@ Offline HTML and manual CLI commands remain independent of the service. The inst
 exercises detached processes, saved-context and same-page/bookmark restart, a real crash and explicit
 recovery, then manual export and blocked-network reading of an HTML snapshot saved from a stopped page.
 
-**Opt-in watching** (`watch.ts`, 29A): `service start --watch` polls input metadata every 500 ms and
+**Opt-in watching** (`watch.ts`): `service start --watch` polls input metadata every 500 ms and
 requires a quiet observation for at least 300 ms before a full rebuild. Recursive filesystem events were
 not chosen: polling reuses the indexer's discovery rules, observes ignored configuration and works with
 Git worktrees and non-Git directories. Watching defaults to `--precise off`; `auto|require` explicitly
@@ -1653,13 +1657,17 @@ start clears a previously saved pin. Stop drains the running build and prevents 
 Restart and `--recover` reuse the saved guide/backend attachment with a new instance UUID. Passing
 `--watch` again publishes for that instance; live bundles retain the guide attachment and follow its
 current checked index. Recovery without `--watch` retires the old pointer and returns to manual indexes.
-Pause/resume, attention UI and revision handoff belong to 29B.
+`watch-control.ts` serializes pause/resume independently of service/job ownership. Pause aborts and drains
+any build, retains the last checked pointer and marks it `paused` and stale. Resume starts a fresh input
+check and full rebuild; repeated pause/resume is idempotent. Jobs continue running while the watch is
+paused. Stop cancels/drains both subsystems and retires the pointer. Cancellation is rechecked after all
+publication locks, so a build waiting to publish cannot escape pause or stop.
 
 The watcher compares captured revisions after building and again after acquiring all three publication
 locks (index, .gitignore and watch pointer), checking cancellation there before promoting the result. Obsolete results are discarded and the latest inputs are retried after quiet. `writeIndex` publishes
 by rename under `withRepositoryLock`; its .gitignore is fenced too. The watcher then atomically replaces
 `.explainer/service/watch.json` (`xpl-watch@1`): canonical root, instance UUID, state
-(`pending|building|current|failed|stopped`), stale flag, publication generation, last index path/commit,
+(`pending|building|current|failed|paused|stopped`), stale flag, publication generation, last index path/commit,
 fingerprint, index-content digest, precise mode, nullable SCIP path and error. Source/configuration edits mark the old
 pointer stale before building. Failure retains that pointer and retries after another input revision or a
 new watched start.
@@ -1667,7 +1675,7 @@ Cancellation keeps its stale mark. Repeated identical capture failures do not fl
 
 While watching, default index selection follows the publication pointer before a guide's old binding.
 Freshness checks compare the full observed input fingerprint, including ignored configuration, and refuse
-ready export for pending/failed builds. The index digest also rejects an out-of-band replacement at the
+ready export for pending/failed builds and paused snapshots. The index digest also rejects an out-of-band replacement at the
 same path, even when the indexed file manifest is unchanged. Explicit `--index` still selects an index for
 manual commands.
 Freshness uses the watch record's precise mode and supplied artifact selection. Older records without
@@ -1678,6 +1686,20 @@ build reports every guide's moved/drifted/missing counts; `status --all` recompu
 including user-owned drift, broken references and unreadable guides. Moved anchors receive new locations
 in memory; guide files, prose, provenance, review records and pending feedback are untouched. Generated
 index/cache/service files, named guides/patches and exported xpl HTML cannot start an output loop.
+
+**Managed attention** (`attention.ts`, core's type-only `WatchAttention`): `GET /api/watch` reports the
+current instance's watch state and the read-only guide inventory: guide names/paths/titles, counts,
+affected element IDs/files/statuses and load errors. Index/inventory loading is independent of the attached
+guide; a missing attachment appears as an inventory error and cannot disable service controls. One CLI
+helper constructs each shell-quoted manual command: resolve with `--write`, revise with a feedback-ID placeholder. Offers use the absolute discovered guide path; unreadable guides retain
+their expected `.explainer/<name>.explainer.json` path. A name ending in `.json` cannot select an unrelated
+repository JSON file, and the calling directory cannot select another guide. This report is outside `ViewerBundle` and the explainer schema.
+`POST /api/watch` takes `{action: "pause"|"resume"|"stop", instanceId}`. Browser controls require the
+matching attachment header, exact inspected instance UUID, JSON and the existing same-origin/body limits.
+Verified CLI bearer control uses the service handshake instead. A start without `--watch` refuses pause
+and resume; stop still works if the attached guide disappears. Stop acknowledges before closing the server.
+Watch-record metadata participates in managed `/explainer` ETags, so pause/resume refresh stale export state.
+The attention report is informative; existing workspace/core readiness checks remain authoritative.
 
 **Durable jobs, lifecycle contract (39A).** `cli/jobs.ts` owns one atomic ledger at
 `.explainer/service/jobs.json`: `{schema: "xpl-jobs@1", root, jobs}`. Job metadata stays outside the
@@ -1921,9 +1943,11 @@ stable step IDs when reading; malformed or unavailable source ranges do not open
 
 Exported pickers enumerate only contained snapshots. A live picker reads the guarded catalog; other-guide
 previews have no API or write identity and author changes are prohibited. Switching requires no unsaved
-edits, dirty drafts or in-flight writes. Normal connection, attention and draft strips remain separate.
+edits, dirty drafts or in-flight writes. Search uses one header entry. Connection and attention share
+the compact status bar below it; the draft marker remains separate.
 
-**Connection** (`components/ConnectionStatus.tsx`): below the header, managed service pages report offline, connecting,
+**Connection** (`components/ConnectionStatus.tsx`): in the shared status bar below the header, managed
+service pages report offline, connecting,
 connected, disconnected (network failure) or service unavailable (HTTP refusal). Managed pages name their
 guide; a disclosure shows root, last instance and backend unavailability. Existing two-second explainer
 polling also checks availability with unsaved edits; requests have a five-second deadline. A stopped or
@@ -1941,6 +1965,25 @@ inverse once. Rejected author writes leave the draft and history available for i
 author actions apply locally and remain unsaved in this page; reconnectable actions retain captured
 versions and retry against the original service.
 Reconnect does not overwrite unsaved changes with server state. Browser feedback is exported/imported explicitly, never auto-submitted.
+
+**Watch and attention** (`components/AttentionStatus.tsx`) shares one compact bar below the header
+with connection status. Connection details, attention and watch controls have separate native disclosures;
+opening one closes the others. Content floats in a scrolling panel bounded to 40vh or 320px, so the diagram
+and code keep their height when a report lists many guides. Only managed pages with an instance UUID and attention endpoint show it;
+plain `xpl view`, old servers and saved HTML retain their layout. A collapsed disclosure shows watch state
+and the number of guides with drift, missing evidence or load errors. Expanded rows name each guide and
+element, distinguish moved/drifted/missing anchors, and give a repair action. Attached-guide elements can
+be selected for inspection. Moved evidence keeps its prose; drift/missing evidence requires explicit repair.
+Pause/resume and Stop service use the inspected instance, have a drain deadline, and leave loaded code
+readable after stop. Attention polling precedes the pending-write adoption guard, so local edits survive
+while reports refresh. A successful attention response for the inspected instance verifies service
+availability independently of guide reads; guide errors preserve loaded data and Pause/Stop access.
+Using the loaded snapshot offline hides controls and stops these requests.
+
+**Offer revision** shows a manual `xpl revise` command scoped to the guide/root with an explicit selected-
+feedback placeholder. The reader creates or chooses feedback, runs the command, inspects the proposal,
+and accepts separately. Opening the offer executes nothing: no feedback submission, job, patch acceptance
+or request deletion. Agent-backed job submission and proposal review remain the jobs feature's responsibility.
 
 **Three modes, one header.** **Read** is the default screen, for readers. **Explore** is the author's
 workbench. **Present** plays a tour as slides. The header is one row built the same way in each: the title,
@@ -2516,8 +2559,8 @@ identities to syntax ranges. This is a proposed contract revision, not a change 
   should stay coarse (whole-repo views start at packages) and are expanded by hand.
 - Live refresh is polling-based: updates appear on the next poll while the page is visible and has no
   unsaved edits; connection checks continue with unsaved edits. Source locations and reference edges
-  need reindexing after source changes; `service start --watch` supplies it automatically. Viewer
-  pause/resume, attention and revision controls remain follow-up work.
+  need reindexing after source changes; `service start --watch` supplies it automatically. Paused watches
+  retain a stale snapshot; resume to check again. Offered revisions require selected feedback and separate acceptance.
 - Heuristic references are hints, and the limits are in §3: no overloads, generics, unions or narrowing;
   Python instance attributes are not linked. A precise index needs the tools: `npx` for
   TypeScript and Python, Go ≥ 1.25 (or the network for the automatic toolchain) for Go, and the first run

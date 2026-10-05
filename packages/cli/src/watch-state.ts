@@ -14,7 +14,7 @@ export interface WatchState {
   schema: "xpl-watch@1";
   root: string;
   instanceId: string;
-  state: "pending" | "building" | "current" | "failed" | "stopped";
+  state: "pending" | "building" | "current" | "failed" | "paused" | "stopped";
   stale: boolean;
   generation: number;
   index: { path: string; commit: string } | null;
@@ -43,7 +43,9 @@ export function readWatchState(root: string): WatchState | undefined {
     value.schema !== "xpl-watch@1" ||
     value.root !== realpathSync(root) ||
     typeof value.instanceId !== "string" ||
-    !["pending", "building", "current", "failed", "stopped"].includes(value.state ?? "") ||
+    !["pending", "building", "current", "failed", "paused", "stopped"].includes(
+      value.state ?? "",
+    ) ||
     typeof value.stale !== "boolean" ||
     typeof value.indexDigest !== "string" ||
     !/^[a-f0-9]{64}$/.test(value.indexDigest) ||
