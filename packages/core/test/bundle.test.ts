@@ -39,6 +39,33 @@ describe("bundle", () => {
 describe("bundle: the packed index", () => {
   const { index } = jobrunner();
 
+  it("round-trips independently pruned guide snapshots in a packed offline library", () => {
+    const other = {
+      ...index,
+      commit: "other-snapshot",
+      symbols: index.symbols.slice(0, 1),
+      refs: [],
+    };
+    const library = {
+      ...bundle,
+      index,
+      guideId: "repository",
+      guides: [
+        {
+          guideId: "retry.json",
+          explainer: bundle.explainer,
+          index: other,
+          files: { "retry.ts": "retry()" },
+        },
+      ],
+    };
+    const html = injectBundle("<head></head>", library, { packIndex: true });
+    const text = html.match(/<script id="xpl-data"[^>]*>([\s\S]*?)<\/script>/)![1]!;
+    const encoded = JSON.parse(text);
+    expect(isPackedIndex(encoded.guides[0].index)).toBe(true);
+    expect(parseBundle(text)).toEqual(library);
+  });
+
   it.each(["legacy", "provider facts"])(
     "%s: packs to a fraction of the plain JSON and unpacks without losing provenance",
     (shape) => {
@@ -92,4 +119,14 @@ describe("bundle: the packed index", () => {
     const text = packed.match(/<script id="xpl-data"[^>]*>([\s\S]*?)<\/script>/)![1]!;
     expect(parseBundle(text)).toEqual(full);
   });
+});
+
+it("refuses nested or live-attached guide snapshots at the bundle boundary", () => {
+  const { index } = jobrunner();
+  const snapshot = { guideId: "other", explainer: bundle.explainer, index, files: {} };
+  for (const extra of [{ server: { api: "/api" } }, { guides: [] }, { explainer: undefined }]) {
+    expect(() =>
+      parseBundle(JSON.stringify({ ...bundle, index, guides: [{ ...snapshot, ...extra }] })),
+    ).toThrow("invalid embedded guide snapshot");
+  }
 });

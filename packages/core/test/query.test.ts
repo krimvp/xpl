@@ -78,6 +78,27 @@ describe("query", () => {
         text: "requeue(job); requeue(other);",
       },
     ]);
+    const page = query(w.index, w.getText, {
+      pattern: "requeue",
+      kinds: ["source"],
+      limit: 1,
+      offset: 1,
+    });
+    expect(page.total).toBe(3);
+    expect(page.hits).toEqual([
+      {
+        kind: "source",
+        file: "config.yaml",
+        line: 1,
+        range: { startLine: 1, endLine: 1, startCol: 1, endCol: 7 },
+        id: "file:config.yaml",
+        offset: 0,
+        text: "requeue: true",
+      },
+    ]);
+    expect(() => query(w.index, w.getText, { pattern: "requeue", offset: -1 })).toThrow(
+      "the search offset must be a non-negative integer",
+    );
     const all = query(w.index, w.getText, { pattern: "requeue", kinds: ["source"], limit: 0 });
     expect(all.hits.map((h) => (h.kind === "source" ? h.file : ""))).toEqual([
       "src/queue.ts",
@@ -159,6 +180,24 @@ describe("query", () => {
         file: "src/queue.ts",
         range: { startLine: 2, endLine: 2 },
         text: "requeue",
+      },
+    ]);
+    const page = query(w.index, w.getText, {
+      pattern: "requeue",
+      ignoreCase: true,
+      kinds: ["concept", "tour"],
+      guides,
+      limit: 1,
+      offset: 1,
+    });
+    expect(page.total).toBe(2);
+    expect(page.hits).toEqual([
+      {
+        kind: "tour",
+        guide: "retry-guide",
+        commit: "old",
+        tour: "tour:retry",
+        text: "Retry lifecycle\nFailures wait before requeue",
       },
     ]);
     const phrase = query(w.index, w.getText, {

@@ -95,6 +95,8 @@ export interface QueryOptions {
   kinds?: readonly QueryHit["kind"][];
   /** Default 50; 0 = all. Total counts every hit before this limit. */
   limit?: number;
+  /** Skip this many matches before retaining a bounded page. Totals still count every match. */
+  offset?: number;
   codeOnly?: boolean;
   /** Adapter-resolved source/symbol scope, e.g. CLI --under. Guide text is independent of it. */
   scope?: { hasFile(path: string): boolean; hasLine(path: string, line: number): boolean };
@@ -175,8 +177,11 @@ export function query(
 ): QueryResult {
   if (!options.pattern) throw new Error("the search pattern is empty");
   const limit = options.limit ?? 50;
+  const offset = options.offset ?? 0;
   if (!Number.isSafeInteger(limit) || limit < 0)
     throw new Error("the search limit must be a non-negative integer");
+  if (!Number.isSafeInteger(offset) || offset < 0)
+    throw new Error("the search offset must be a non-negative integer");
   const matchText = matcher(options);
   const model = asIndexModel(source);
   const texts = toTextCache(text);
@@ -197,7 +202,7 @@ export function query(
   const offer = (hit: QueryHit) => {
     total++;
     if (hit.kind === "source" || hit.kind === "symbol") matchedFiles.add(hit.file);
-    if (limit === 0 || hits.length < limit) hits.push(hit);
+    if (total > offset && (limit === 0 || hits.length < limit)) hits.push(hit);
   };
   if (wants("source"))
     for (const file of files) {
@@ -212,7 +217,7 @@ export function query(
         if (options.scope && !options.scope.hasLine(file.path, line)) continue;
         const match = matchText(lines[i]!);
         if (!match) continue;
-        if (limit > 0 && hits.length >= limit) {
+        if (total < offset || (limit > 0 && hits.length >= limit)) {
           total++;
           matchedFiles.add(file.path);
           continue;

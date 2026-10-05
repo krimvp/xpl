@@ -128,13 +128,27 @@ test.describe("one header in every mode", () => {
 
       // Read: the reading tabs, then Present and Edit
       await expect(header).toHaveAttribute("data-mode", "read");
-      expect(await headerControls(page)).toEqual(["title", "tabs", "Feedback", "Present", "edit"]);
+      expect(await headerControls(page)).toEqual([
+        "title",
+        "tabs",
+        "Search",
+        "Feedback",
+        "Present",
+        "edit",
+      ]);
       await fits();
 
       // Explore: the views, then Present and Edit; no Tours button, no mode switch, no download
       await (await openEditMenu(page)).getByTestId("edit-explore").click();
       await expect(header).toHaveAttribute("data-mode", "explore");
-      expect(await headerControls(page)).toEqual(["title", "views", "Feedback", "Present", "edit"]);
+      expect(await headerControls(page)).toEqual([
+        "title",
+        "views",
+        "Search",
+        "Feedback",
+        "Present",
+        "edit",
+      ]);
       for (const gone of ["Tours", "Read", "Explore", "Download explainer JSON"])
         await expect(header.getByRole("button", { name: gone, exact: true })).toHaveCount(0);
       await expect(page.locator(".diagram-caption .stubs-control")).toHaveCount(0);
@@ -159,6 +173,7 @@ test.describe("one header in every mode", () => {
         "title",
         "tour",
         "progress",
+        "Search",
         "Feedback",
         "Exit",
         "edit",
