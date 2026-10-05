@@ -2,6 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   applyPatch,
   applyUserEdits,
+  makeGraphEdits,
+  ExplainerModel,
+  deriveGraph,
+  type GraphView,
   createExplainer,
   makeUserEdit,
   reresolveExplainer,
@@ -166,4 +170,351 @@ it("saves checked evidence, builds conditional inverses and protects it from lat
     detail: "New generated detail.",
     anchors: [{ file: "a.ts", span: { from: 1, to: 1 } }],
   });
+});
+
+it("groups visible siblings, undoes their exact structure, and preserves references during regeneration", () => {
+  const w = makeWorld({ files: [{ path: "a.ts" }, { path: "b.ts" }, { path: "outside.ts" }] });
+  const initial = createExplainer({
+    title: "Demo",
+    repoName: "Demo",
+    indexPath: ".explainer/index-c1.json",
+    index: w.index,
+  });
+  const setup = applyPatch(
+    initial,
+    {
+      nodes: [{ id: "grp:outer", label: "Outer", members: ["file:a.ts", "file:b.ts"] }],
+      edges: [
+        {
+          id: "edge:work",
+          from: "file:a.ts",
+          to: "file:b.ts",
+          kind: "calls",
+          label: "Work",
+          anchors: [
+            { file: "a.ts", span: { from: 0, to: 0 }, role: "usage" },
+            { file: "b.ts", span: { from: 0, to: 0 }, role: "definition" },
+          ],
+        },
+      ],
+      views: [
+        {
+          id: "view:map",
+          type: "graph",
+          title: "Map",
+          include: ["grp:outer", "file:a.ts", "file:b.ts"],
+        },
+      ],
+      tours: [
+        {
+          id: "tour:walk",
+          title: "Walk",
+          steps: [{ id: "walk:1", view: "view:map", focus: ["file:a.ts", "edge:work"] }],
+        },
+      ],
+    },
+    w.model,
+    w.getText,
+    { actor: "llm" },
+  );
+  if (!setup.ok) throw new Error(JSON.stringify(setup.issues));
+  const edits = makeGraphEdits(setup.explainer, w.model, "view:map", {
+    type: "group",
+    id: "grp:work",
+    label: "Work",
+    members: ["file:a.ts", "file:b.ts"],
+  });
+  const saved = applyUserEdits(setup.explainer, edits, w.model, w.getText);
+  const model = new ExplainerModel(saved.explainer, w.model);
+  expect(
+    deriveGraph(model.view("view:map") as GraphView, model).nodes.map((n) => [n.id, n.parent]),
+  ).toEqual([
+    ["file:a.ts", "grp:work"],
+    ["file:b.ts", "grp:work"],
+    ["grp:outer", undefined],
+    ["grp:work", "grp:outer"],
+  ]);
+  expect(saved.explainer.edges).toEqual(setup.explainer.edges);
+  expect(saved.explainer.tours).toEqual(setup.explainer.tours);
+  const refreshed = applyPatch(
+    saved.explainer,
+    {
+      nodes: [{ id: "grp:outer", members: [] }],
+      views: [{ id: "view:map", type: "graph", include: [] }],
+      remove: ["grp:work"],
+    },
+    w.model,
+    w.getText,
+    { actor: "llm" },
+  );
+  if (!refreshed.ok) throw new Error(JSON.stringify(refreshed.issues));
+  expect(refreshed.explainer.nodes).toEqual(saved.explainer.nodes);
+  expect(refreshed.explainer.views).toEqual(saved.explainer.views);
+  const undone = applyUserEdits(refreshed.explainer, saved.inverse, w.model, w.getText);
+  expect(undone.explainer.nodes.map((n) => [n.id, n.members])).toEqual(
+    setup.explainer.nodes.map((n) => [n.id, n.members]),
+  );
+  expect((undone.explainer.views[0] as GraphView).include).toEqual([
+    "grp:outer",
+    "file:a.ts",
+    "file:b.ts",
+  ]);
+  const redone = applyUserEdits(undone.explainer, undone.inverse, w.model, w.getText);
+  expect(redone.explainer.nodes.map((n) => [n.id, n.members])).toEqual(
+    saved.explainer.nodes.map((n) => [n.id, n.members]),
+  );
+});
+
+it("hides and restores derived arrows and stubs without changing evidence, and undo restores absent hidden", () => {
+  const w = makeWorld({
+    files: [{ path: "a.ts" }, { path: "b.ts" }, { path: "outside.ts" }],
+    symbols: [
+      { id: "a.ts#run", start: 1, end: 3 },
+      { id: "b.ts#run", start: 1, end: 3 },
+      { id: "outside.ts#run", start: 1, end: 3 },
+    ],
+    refs: [
+      { from: "a.ts#run", to: "b.ts#run", line: 2 },
+      { from: "b.ts#run", to: "outside.ts#run", line: 2 },
+    ],
+  });
+  const initial = createExplainer({
+    title: "Demo",
+    repoName: "Demo",
+    indexPath: ".explainer/index-c1.json",
+    index: w.index,
+  });
+  const setup = applyPatch(
+    initial,
+    {
+      views: [{ id: "view:map", type: "graph", title: "Map", include: ["file:a.ts", "file:b.ts"] }],
+    },
+    w.model,
+    w.getText,
+    { actor: "llm" },
+  );
+  if (!setup.ok) throw new Error(JSON.stringify(setup.issues));
+  const graphOf = (e: typeof initial) => {
+    const model = new ExplainerModel(e, w.model);
+    return deriveGraph(model.view("view:map") as GraphView, model);
+  };
+  const graph = graphOf(setup.explainer);
+  expect(graph.edges.map((e) => e.id)).toEqual(["edge:calls:file:a.ts->file:b.ts"]);
+  expect(graph.stubs.map((s) => s.id)).toEqual(["stub:out:file:b.ts->ghost:file:outside.ts"]);
+  const ids = [graph.edges[0]!.id, graph.stubs[0]!.id];
+  const hidden = applyUserEdits(
+    setup.explainer,
+    makeGraphEdits(setup.explainer, w.model, "view:map", { type: "hide", ids }),
+    w.model,
+    w.getText,
+  );
+  expect(graphOf(hidden.explainer).edges).toEqual([]);
+  expect(graphOf(hidden.explainer).stubs).toEqual([]);
+  const refresh = applyPatch(
+    hidden.explainer,
+    { views: [{ id: "view:map", type: "graph", hidden: [] }] },
+    w.model,
+    w.getText,
+    { actor: "llm" },
+  );
+  if (!refresh.ok) throw new Error(JSON.stringify(refresh.issues));
+  expect((refresh.explainer.views[0] as GraphView).hidden).toEqual(ids);
+  const restored = applyUserEdits(
+    hidden.explainer,
+    makeGraphEdits(hidden.explainer, w.model, "view:map", { type: "restore", ids }),
+    w.model,
+    w.getText,
+  );
+  expect(graphOf(restored.explainer)).toEqual(graph);
+  const undone = applyUserEdits(hidden.explainer, hidden.inverse, w.model, w.getText);
+  expect((undone.explainer.views[0] as GraphView).hidden).toBeUndefined();
+  expect(graphOf(undone.explainer)).toEqual(graph);
+});
+
+it("ungroups only this map, retains links to the stored group, and restores the exact inclusion order", () => {
+  const w = makeWorld({ files: [{ path: "a.ts" }, { path: "b.ts" }, { path: "outside.ts" }] });
+  const initial = createExplainer({
+    title: "Demo",
+    repoName: "Demo",
+    indexPath: ".explainer/index-c1.json",
+    index: w.index,
+  });
+  const setup = applyPatch(
+    initial,
+    {
+      nodes: [{ id: "grp:work", label: "Work", members: ["file:a.ts", "file:b.ts"] }],
+      edges: [
+        { id: "edge:work", from: "grp:work", to: "file:outside.ts", kind: "calls", label: "Work" },
+      ],
+      views: [
+        {
+          id: "view:map",
+          type: "graph",
+          title: "Map",
+          include: ["file:outside.ts", "grp:work"],
+          layout: { "grp:work": { x: 1, y: 2 } },
+        },
+        { id: "view:other", type: "graph", title: "Other", include: ["grp:work"] },
+      ],
+      tours: [
+        {
+          id: "tour:walk",
+          title: "Walk",
+          steps: [{ id: "walk:1", view: "view:map", focus: ["grp:work"] }],
+        },
+      ],
+    },
+    w.model,
+    w.getText,
+    { actor: "user" },
+  );
+  if (!setup.ok) throw new Error(JSON.stringify(setup.issues));
+  const saved = applyUserEdits(
+    setup.explainer,
+    makeGraphEdits(setup.explainer, w.model, "view:map", { type: "ungroup", id: "grp:work" }),
+    w.model,
+    w.getText,
+  );
+  expect((saved.explainer.views[0] as GraphView).include).toEqual([
+    "file:outside.ts",
+    "file:a.ts",
+    "file:b.ts",
+  ]);
+  expect(saved.explainer.nodes).toEqual(setup.explainer.nodes);
+  expect(saved.explainer.edges).toEqual(setup.explainer.edges);
+  expect(saved.explainer.tours).toEqual(setup.explainer.tours);
+  expect(saved.explainer.views[1]).toEqual(setup.explainer.views[1]);
+  const undone = applyUserEdits(saved.explainer, saved.inverse, w.model, w.getText);
+  expect((undone.explainer.views[0] as GraphView).include).toEqual(["file:outside.ts", "grp:work"]);
+});
+
+it("refuses group creation undo after enrichment or new references, without removing anything", () => {
+  const w = makeWorld({ files: [{ path: "a.ts" }, { path: "b.ts" }] });
+  const initial = createExplainer({
+    title: "Demo",
+    repoName: "Demo",
+    indexPath: ".explainer/index-c1.json",
+    index: w.index,
+  });
+  const setup = applyPatch(
+    initial,
+    {
+      views: [{ id: "view:map", type: "graph", title: "Map", include: ["file:a.ts", "file:b.ts"] }],
+    },
+    w.model,
+    w.getText,
+    { actor: "llm" },
+  );
+  if (!setup.ok) throw new Error(JSON.stringify(setup.issues));
+  const saved = applyUserEdits(
+    setup.explainer,
+    makeGraphEdits(setup.explainer, w.model, "view:map", {
+      type: "group",
+      id: "grp:work",
+      label: "Work",
+      members: ["file:a.ts", "file:b.ts"],
+    }),
+    w.model,
+    w.getText,
+  );
+  const enrich = applyPatch(
+    saved.explainer,
+    { nodes: [{ id: "grp:work", summary: "Another author's summary." }] },
+    w.model,
+    w.getText,
+    { actor: "user" },
+  );
+  if (!enrich.ok) throw new Error(JSON.stringify(enrich.issues));
+  expect(() => applyUserEdits(enrich.explainer, saved.inverse, w.model, w.getText)).toThrow(
+    "node changed since this edit",
+  );
+  const linked = applyPatch(
+    saved.explainer,
+    {
+      tours: [
+        {
+          id: "tour:walk",
+          title: "Walk",
+          steps: [{ id: "walk:1", view: "view:map", focus: ["grp:work"] }],
+        },
+      ],
+    },
+    w.model,
+    w.getText,
+    { actor: "user" },
+  );
+  if (!linked.ok) throw new Error(JSON.stringify(linked.issues));
+  expect(() => applyUserEdits(linked.explainer, saved.inverse, w.model, w.getText)).toThrow(
+    /grp:work/,
+  );
+  expect(linked.explainer.nodes.find((n) => n.id === "grp:work")?.members).toEqual([
+    "file:a.ts",
+    "file:b.ts",
+  ]);
+});
+
+it("rejects forged graph fields, structural existence edits and invalid group references at the edit boundary", () => {
+  const w = makeWorld({ files: [{ path: "a.ts" }, { path: "b.ts" }] });
+  const initial = createExplainer({
+    title: "Demo",
+    repoName: "Demo",
+    indexPath: ".explainer/index-c1.json",
+    index: w.index,
+  });
+  const setup = applyPatch(
+    initial,
+    {
+      views: [{ id: "view:map", type: "graph", title: "Map", include: ["file:a.ts", "file:b.ts"] }],
+    },
+    w.model,
+    w.getText,
+    { actor: "llm" },
+  );
+  if (!setup.ok) throw new Error(JSON.stringify(setup.issues));
+  const node = { label: "Work", parent: "repo", members: ["file:a.ts", "file:b.ts"], anchors: [] };
+  const cases = [
+    {
+      edit: {
+        collection: "views",
+        id: "view:map",
+        before: { hidden: null },
+        after: { scope: { root: "repo" } },
+      },
+      error: "Invalid or unsupported graph edit field",
+    },
+    {
+      edit: {
+        collection: "nodes",
+        id: "file:a.ts",
+        before: { members: [] },
+        after: { members: [] },
+      },
+      error: "Structural graph fields can only edit groups",
+    },
+    {
+      edit: { collection: "groups", id: "file:a.ts", before: { node: null }, after: { node } },
+      error: "Only group nodes support existence edits",
+    },
+    {
+      edit: {
+        collection: "groups",
+        id: "grp:work",
+        before: { node: null },
+        after: { node: { ...node, provenance: { origin: "llm" } } },
+      },
+      error: "Invalid or unsupported edit field: provenance",
+    },
+    {
+      edit: {
+        collection: "groups",
+        id: "grp:work",
+        before: { node: null },
+        after: { node: { ...node, members: ["file:absent.ts"] } },
+      },
+      error: 'member: unknown file "absent.ts"',
+    },
+  ];
+  for (const { edit, error } of cases)
+    expect(() => applyUserEdits(setup.explainer, [edit], w.model, w.getText)).toThrow(error);
+  expect(setup.explainer.nodes).toEqual([]);
 });

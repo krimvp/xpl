@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { artifactIdentity, reviewFingerprint, type ReviewScope } from "@xpl/core";
 import { ServerApi } from "../src/data.js";
 import { ViewerStore } from "../src/store.js";
+import { getDerived } from "../src/derive.js";
 import { makeBundle, TEXTS } from "./world.js";
 
 const GHOST_TARGET = "file:src/b.ts";
@@ -854,4 +855,85 @@ describe("under xpl view (server mode)", () => {
     expect(store.adoptExplainer(changed)).toBe(true);
     expect(store.getState().selection).toEqual([]);
   });
+});
+
+it("graph author saves and undo clear invisible selections and stay unavailable during presentation", async () => {
+  const store = new ViewerStore(makeBundle());
+  store.setMode("explore");
+  store.select(["grp:core"]);
+  await store.editGraph("view:overview", { type: "ungroup", id: "grp:core" });
+  expect(store.getState().selection).toEqual([]);
+  store.select(["file:src/a.ts", "file:src/b.ts"]);
+  await store.editGraph("view:overview", {
+    type: "group",
+    id: "grp:work",
+    label: "Work",
+    members: ["file:src/a.ts", "file:src/b.ts"],
+  });
+  expect(store.getState().selection).toEqual(["file:src/a.ts", "file:src/b.ts"]);
+  expect(store.getState().undoCount).toBe(2);
+  store.select(["grp:work"]);
+  await store.undoEdit();
+  expect(store.getState().selection).toEqual([]);
+  expect(store.getState().model.hasNode("grp:work")).toBe(false);
+  await store.undoEdit(true);
+  store.select(["file:src/a.ts"]);
+  await store.editGraph("view:overview", { type: "hide", ids: ["file:src/a.ts"] });
+  expect(store.getState().selection).toEqual([]);
+  expect(store.getState().undoCount).toBe(3);
+  await store.undoEdit();
+  store.select(["file:src/a.ts"]);
+  expect(store.getState().model.node("file:src/a.ts")?.label).toBe("a.ts");
+  expect(store.getState().undoCount).toBe(2);
+  store.setPerspective("map");
+  await expect(
+    store.editGraph("view:overview", { type: "hide", ids: ["file:src/a.ts"] }),
+  ).rejects.toThrow("Open Explore");
+  store.setMode("present");
+  await expect(
+    store.editGraph("view:overview", { type: "hide", ids: ["file:src/a.ts"] }),
+  ).rejects.toThrow("Open Explore");
+});
+
+it("hides a box opened in place without persisting navigation, and undo keeps the open level", async () => {
+  const bundle = makeBundle();
+  bundle.explainer.nodes.find((n) => n.id === "grp:core")!.opens = "view:inside";
+  bundle.explainer.views.push({
+    id: "view:inside",
+    type: "graph",
+    title: "Inside",
+    provenance: { origin: "llm" },
+    scope: { root: "grp:core", depth: 1 },
+    include: ["file:src/a.ts", "file:src/b.ts"],
+  });
+  const store = new ViewerStore(bundle);
+  store.setMode("explore");
+  store.toggleExpanded("grp:core");
+  expect(getDerived(store.getState()).view.graph?.nodes.map((n) => n.id)).toEqual([
+    "file:config/c.yaml",
+    "file:src/a.ts",
+    "file:src/b.ts",
+    "grp:core",
+  ]);
+  store.select(["file:src/a.ts"]);
+  await store.editGraph("view:overview", { type: "hide", ids: ["file:src/a.ts"] });
+  expect(getDerived(store.getState()).view.graph?.nodes.map((n) => n.id)).toEqual([
+    "file:config/c.yaml",
+    "file:src/b.ts",
+    "grp:core",
+  ]);
+  expect(store.getState().selection).toEqual([]);
+  expect((store.getState().model.view("view:overview") as { include: string[] }).include).toEqual([
+    "grp:core",
+    "file:config/c.yaml",
+  ]);
+  expect(store.getState().undoCount).toBe(1);
+  await store.undoEdit();
+  expect(getDerived(store.getState()).view.graph?.nodes.map((n) => n.id)).toEqual([
+    "file:config/c.yaml",
+    "file:src/a.ts",
+    "file:src/b.ts",
+    "grp:core",
+  ]);
+  expect(store.getState().expanded.has("grp:core")).toBe(true);
 });

@@ -4321,3 +4321,63 @@ code {
   flex-wrap: wrap;
   gap: 6px;
 }
+
+.graph-author {
+  position: relative;
+  margin-left: auto;
+  flex-shrink: 0;
+  font-size: 13px;
+}
+.graph-author summary {
+  cursor: pointer;
+}
+.graph-author-controls {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  z-index: 10;
+  width: min(420px, calc(100vw - 32px));
+  max-height: min(560px, 65vh);
+  overflow: auto;
+  box-sizing: border-box;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--fg);
+  box-shadow: 0 4px 16px #0003;
+}
+.graph-author-controls p {
+  white-space: normal;
+  margin-block: 8px;
+}
+.graph-author-controls label {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+.graph-author-controls input {
+  font: inherit;
+  padding: 6px;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--border);
+}
+.graph-author-controls ul {
+  list-style: none;
+  padding: 0;
+}
+.graph-author-controls li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-block: 8px;
+}
+.graph-author-controls li span {
+  flex: 1;
+  overflow-wrap: anywhere;
+}
+.evidence-edit .actions p {
+  flex-basis: 100%;
+  margin: 0 0 4px;
+}

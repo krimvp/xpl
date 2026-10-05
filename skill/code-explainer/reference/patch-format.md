@@ -345,6 +345,12 @@ The box shows the `label` in large type, so a flow label names a stage (`writing
 
 **Recursion.** A `next` link may say how it changes the level of a recursive function. `{"step": "match:2", "kind": "recurse", "label": "the child"}` means: the function calls itself, and the steps from `match:2` run again, one level down; point it at an earlier step, the first one the call runs (a later one warns). It does not end the step: a step whose `next` has only recurse links still goes on to the next step in the list. `{"step": "match:17", "kind": "return", "label": "found"}` means: the call returns, back up one level, to `match:17`. In a recursive function the caller differs by level (the step that recursed, or at the top the code that first called the function), so a return that is not to one step leaves `step` out: `{"kind": "return", "label": "found"}` goes back to whoever made the call, drawn as an arrow out of the step and up. A `terminal` may have return links (and no others). Both kinds are drawn dashed, with "one level down" or "up one level" after their label. A link from a step to itself (the next item of a loop) is drawn as a loop on the box.
 
+**Viewer graph edits.** Explore's **Edit map** creates groups through `members` and `include`, and hides or
+restores individual IDs through `hidden`. These actions share text/evidence undo and user protection.
+Ungroup keeps the stored group for existing anchors, arrows, maps and tour references. Regeneration must
+keep user-owned groups and membership/visibility fields; additive `includeAdd` remains available.
+Coordinate pins in `GraphView.layout` are accepted but still not drawn.
+
 **Code first.** A flow or sequence whose steps' code is all in one file (the steps of one function) is read code first: the code is the main pane and the flow a narrow outline beside it that follows the caret. `"layout": "diagram"` keeps the diagram as the main pane; `"layout": "code-first"` asks for the code-first layout for any flow; `null` goes back to the default.
 
 ```json patch
