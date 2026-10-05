@@ -59,6 +59,47 @@ For the three creation scopes and safe retries, see [Create a guide](skill/code-
 Choose a new guide or name the existing guide to extend; an existing file is never replaced by creation.
 The agent writes and checks the JSON patch for you.
 
+GitHub PR input is opt-in: `xpl pr prepare https://github.com/owner/repo/pull/42 --cache-dir /outside/pr-cache`
+uses existing `gh` and git access to fetch the returned full base/head commits into a separate detached
+repository. It indexes head with `--precise off` by default and saves an immutable `input.json` with
+before/after source and analysis labels. The developer checkout stays untouched. This command prepares
+input only. `xpl pr create <url> --name pr-guide --audience reviewers --question "What changes?"` also
+runs the installed skill launcher to scaffold a guide and returns an explicit agent invocation. After
+authoring, `xpl pr finish <input-directory>` checks readiness, exports HTML and rechecks both API commits.
+Its immutable result manifest is ready only for matching commits; changed commits are superseded and
+remain historical. No model starts automatically and no current link is published. Network access
+to GitHub is required. Remove a retained input with `xpl pr cleanup <input-directory> --cache-dir /outside/pr-cache`.
+Inherited Git repository overrides cannot redirect PR reads into the developer checkout. Preparation
+refuses checkout filters or line-ending conversion that change the head's raw source bytes.
+
+The viewer's **Search** button finds symbols, supplied source, concepts and tour steps offline. Results
+open the exact source range or recorded step; copied links work when the page is reopened. The panel
+reports the snapshot, embedded files, pruned analysis and unavailable coverage separately from no matches.
+Its guide picker shows contained guides in exports and the repository catalog when a service is attached.
+Results have separate 16-row pages for symbols, concepts, steps, guides/tours and source, so source
+matches cannot hide explanation matches. Each group reports its own count.
+Other live guides open as read-only previews with a Back to library link. To edit one, the page shows
+how to stop the current repository service before starting the exact selected guide.
+
+`xpl bundle main-guide -o library.html --include-guides retry-guide,operations-guide` adds up to eight
+checked snapshots for offline switching, with a 20 MiB limit on additional guide data. Each keeps its own
+source and index scope. Unsaved drafts or pending edits must be saved or cancelled before switching.
+
+`xpl stage <guide> --dir /outside/versions --preview` lists the head/base source files that will be
+included and checks readiness without writing. Omit `--preview` to stage immutable HTML and a manifest,
+then atomically promote `/outside/versions/current/index.html` under a lock. Previous version folders
+remain available. The manifest records commits, artifact and input hashes, readiness, source scope and
+author review state. Source or guide changes during staging leave the previous current version intact.
+For PR guides, pass `--pr-result <result.json>` from `xpl pr finish` and `--root <prepared-repository>`;
+staging verifies the result and rechecks GitHub base/head before promotion. This is local storage only.
+Configured remote delivery, exact version links and the PR Action are later slices of #34.
+
+`xpl guides` lists locally saved guides by title, recorded questions, audience and source/index commits.
+It works without a service or index file. `xpl search <pattern>` searches available indexed working-tree
+text; unavailable files produce a warning, and `--json` records searchable paths and analysis scope.
+Loadable guides with invalid metadata stay listed by ID/path with a metadata error. Guide metadata is
+descriptive; use `xpl ready <name>` to check a guide before exporting it.
+
 Claude indexes the repo, writes `.explainer/<name>.explainer.json` (commit it; the indexes beside it are
 git-ignored) and gives you the result. Open it yourself with `xpl bundle <name> -o <name>.html` (one
 self-contained file that carries the source files the explainer shows: works offline, easy to share;
@@ -100,6 +141,77 @@ No Claude at hand? The source repository's fixtures ship example explainers (fix
 cp -r fixtures/ts-jobrunner /tmp/jobrunner && cd /tmp/jobrunner
 xpl index && xpl view jobrunner    # http://127.0.0.1:4747
 ```
+
+## Optional repository service
+
+`xpl service start <guide>` runs the local viewer in the foreground; Ctrl-C stops it. Add `--background`
+to detach the installed CLI. `xpl service status` reports its instance, address, canonical repository root,
+selected guide and backend label. `xpl service stop` verifies that instance before stopping it.
+
+```sh
+xpl service start jobrunner --background        # loopback only; logs in .explainer/service/service.log
+xpl service status --json
+xpl service stop
+xpl service start                               # reuse saved guide, port and backend selection
+xpl service status --root /path/to/other/repo    # another repository has its own service
+```
+
+One service owns each canonical root, including symlink aliases. Stop it before selecting another guide.
+An exited owner is reported as interrupted; inspect the artifacts, then use `xpl service start --recover`.
+Recovery archives the old instance record. A live PID whose identity cannot be verified is never signalled
+or replaced. Crashed artifact-writer locks need explicit inspection and removal; elapsed time is no proof.
+
+The git-ignored `.explainer/service/` directory keeps local context and ownership records. `--backend claude`
+enables the installed Claude Code proposal runner; `none` (default) disables execution. Use
+`--skill-dir <folder>` for a non-default managed skill installation and `--job-timeout <seconds>` for a
+run deadline (default 300). Both choices persist. Availability means configured, not authenticated;
+actual jobs report tooling, login and provider failures. The viewer reports connection and backend
+availability below the header, without claiming sign-in. Open **Connection details** for the root and last service instance.
+Bookmarks retain the repository and guide; an address serving another guide is refused. Restart with
+`xpl service start` and the open page reconnects to that saved guide, keeping your selection and unsaved edits.
+
+After stop, choose **Use loaded snapshot offline** to keep reading, edit manually, capture feedback and
+save HTML from the loaded source. The export checks the embedded snapshot; it cannot check later repository
+changes. Download edits before closing. **Retry connection** attaches the original address again; use
+**Edit → Retry save** to persist offline edits. Offline feedback stays in the browser until exported and
+imported with `xpl feedback`. Manual commands and portable HTML work with the service stopped. Local serving
+needs no provider network or credentials; Claude jobs use the CLI's existing login and provider access.
+
+Watching is opt-in on each start:
+
+```sh
+xpl service start jobrunner --watch --background
+xpl service pause             # keep the service and jobs running; retain a stale snapshot
+xpl service resume            # check inputs and rebuild
+xpl status --all --json                         # every guide: moved, drifted or missing anchors
+```
+
+The watcher polls paths and file metadata, capturing source and resolver configuration when inputs
+change. It follows ignored config chains regardless of filename, coalesces edits and rebuilds the full index. Superseded builds are discarded; readers see a complete snapshot. Failed or cancelled builds
+keep the previous index marked out of date. Moved code keeps its prose; drifted and missing evidence still
+block ready export. Watching saves no guide text, accepts no generated revisions and leaves feedback intact.
+It defaults to heuristic references (`--precise off`); `--precise auto|require` enables semantic tools and
+`--scip <artifact|manifest.json>` observes supplied provider inputs. A watched service cannot pin `--index`.
+Generated exports and other excluded outputs do not dirty the watched index, even from a clean Git tree.
+Watch options are selected again on restart. Recovery retires the previous watch pointer. The managed
+viewer has one compact status bar with separate connection, attention and watch-control disclosures.
+Inspect moved, drifted or missing evidence, pause/resume the watch, or stop the service. Attention scrolls
+without shrinking the diagram; controls stay available if the attached guide becomes unreadable. Paused snapshots cannot become ready. An offered
+revision names `xpl revise` with feedback IDs you choose; inspect and accept its proposal separately.
+Plain `xpl view` and saved HTML have no service controls. Stop the service to return to manual indexing.
+
+The service also keeps job history in `.explainer/service/jobs.json` and exposes it at `GET /api/jobs`.
+Running attempts become interrupted after restart; completed proposals stay recorded, and cancelled or
+superseded results stay fenced. Each Claude attempt records its group and start identity before launch.
+Every attempt drains its process group before final state or more work, including normal and error exits.
+Cleanup failure stops scheduling. Service death kills that group through the launcher's pipe; recovery verifies the recorded Linux start
+time before terminating any remaining group and allowing retry. Reused PIDs are left alone.
+Verified execution currently requires Linux /proc; manual revision works on other platforms. With `--backend claude`, submission generates an ordinary proposal,
+validates it through `xpl revise` and leaves it awaiting explicit author review. Source is read-only; the
+agent can write only its owned output. No job applies a patch or finalizes feedback. Creation proposals
+fill an explicitly initialized guide with selected requests and included IDs through the same journal.
+Service-owned runs refuse manual `revise --accept` to preserve cancellation fencing.
+The job review UI and guarded acceptance are later work; `xpl revise <guide> --run <id>` inspects the proposal.
 
 ## Using the CLI directly
 
@@ -144,6 +256,41 @@ index. Edit > Save as HTML uses the same rules, with separate ready and draft ac
 only included source, and say they cannot detect later repository changes. Source checks do not verify prose
 claims or every runtime path.
 Generated XPL HTML pages are excluded from indexing, so exporting inside a repo does not stale its index.
+
+In Explore, select a box, stored arrow or concept and choose **Edit text** in Details. Correct its label,
+summary or Markdown detail; concepts also have a related-elements selector. **Save text** retains user
+ownership, and **Cancel** drops the draft. Live saves survive reload and reject stale inspected versions.
+Drafts survive switching boxes and returning to reading until saved or cancelled. Save/Cancel stay visible.
+Edit > **Undo** / **Redo** names the fields and element and saves only changed fields, preserving another author's
+unrelated edits and refusing conflicts on the same field. Live history retains up to 50 edits in browser
+storage, bound to the canonical repository root and guide. Copied or renamed guides inherit no history;
+pages without a live identity keep only in-session undo. Offline edits remain **Unsaved** until exported as HTML or JSON.
+
+**Edit evidence** previews lines selected in the read-only source pane, checked against a symbol or file
+(and the base for change guides). Explicitly replace, remove or add anchors, then **Save evidence**.
+Repair or remove all invalid anchors on that element; rejected saves keep the draft. Source that differs
+from its index requires reindexing and reload. Undo refuses to restore evidence that no longer resolves.
+Later LLM revisions preserve your edited fields. Exported HTML includes the edits and source and opens offline.
+
+In Explore, **Edit map** beside the map title groups selected sibling boxes under a named container.
+Shift-click boxes to select them together. **Ungroup in this map** shows the members and keeps the stored
+group available to other maps, arrows and tour steps. **Hide selected items** hides individual boxes or
+arrows; the same menu lists hidden IDs with **Restore** and **Restore all hidden items**.
+These actions share text/evidence undo, persist live and travel in HTML/JSON exports. Opening another
+level remains navigation. Select a box and drag its move handle to pin it, or use arrow keys on the handle.
+**Reset selected placement** or **Reset all placement** returns boxes to automatic layout. Pins are finite
+coordinates relative to their container; nested frames and arrows follow them. Pan and zoom do not edit the map.
+
+Edit > Record author review records a self-reported name, inspected content/evidence scope and named
+omissions. About this explanation shows **unchecked**, **reviewed** or **out of date** separately from
+source checks. A narrow review covers named stored items and their own anchors; unrelated source edits do
+not invalidate it. Repository scope covers every indexed file. Broad review evidence travels with HTML;
+offline pages cannot detect later repository changes.
+
+Review is optional. `ready --require-review`, `bundle --require-review` and the Save as HTML team policy
+checkbox explicitly require a current review of all stored content. The checkbox choice stays in that
+exported page for re-saves. Omissions remain author judgment; a name or time does not verify prose truth,
+identity or complete runtime coverage.
 
 ### Explaining a change
 
@@ -287,6 +434,8 @@ not the workspace package. `integrity.json` records SHA-256 hashes for bundled f
 missing or changed files. These hashes detect damage, not the identity of an artifact's publisher.
 The install check copies fixture inputs to scratch, denies CLI checkout reads with Node permissions,
 and tests TS/Python/Go indexing, local viewing and disconnected HTML reading with pinned Chromium.
+It also checks installed service restart/recovery, watch pause/resume and durable job history with
+unavailable-runner submission, alongside the published package name, version, license and file inventory.
 
 - The tree-sitter grammars are the `.wasm` files shipped inside their npm packages (versions pinned exactly:
   the wasm ABI has to match `web-tree-sitter`). Use `initParser()` / `loadLanguage()` from

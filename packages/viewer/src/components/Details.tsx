@@ -16,6 +16,8 @@ import { useDerived, useStore, useViewerState } from "../hooks.js";
 import { renderInline, renderMarkdown } from "../markdown.js";
 import { readerBadge, roleWords } from "../readerWords.js";
 import { GhostTargetList } from "./GhostTargets.js";
+import { EvidenceEdit } from "./EvidenceEdit.js";
+import { TextEdit } from "./TextEdit.js";
 
 const MAX_ANCHOR_ROWS = 8;
 
@@ -98,6 +100,20 @@ export function Details({
           )}
         </div>
       )}
+
+      {!reader &&
+        state.mode !== "present" &&
+        (info.type === "node" ||
+          info.type === "concept" ||
+          (info.type === "edge" && state.explainer.edges.some((e) => e.id === info.id))) && (
+          <TextEdit
+            key={info.id}
+            id={info.id}
+            collection={
+              info.type === "node" ? "nodes" : info.type === "edge" ? "edges" : "concepts"
+            }
+          />
+        )}
 
       {!reader && (
         <textarea
@@ -207,7 +223,23 @@ export function Details({
         </div>
       )}
 
-      <Anchors rows={info.anchors} reader={reader} />
+      {!(state.textDrafts[info.id]?.edit.after.anchors && !reader) && (
+        <Anchors rows={info.anchors} reader={reader} />
+      )}
+      {!reader &&
+        state.mode !== "present" &&
+        (info.type === "node" ||
+          info.type === "concept" ||
+          (info.type === "edge" && state.explainer.edges.some((e) => e.id === info.id))) && (
+          <EvidenceEdit
+            key={`${info.id}:evidence`}
+            id={info.id}
+            collection={
+              info.type === "node" ? "nodes" : info.type === "edge" ? "edges" : "concepts"
+            }
+          />
+        )}
+
       {!factsAbove && <CallersList id={info.id} />}
     </section>
   );

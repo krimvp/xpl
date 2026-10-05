@@ -1604,7 +1604,8 @@ code {
   stroke-width: 1.2;
 }
 
-.node.is-container > .box {
+.node.is-container > .box,
+.node.is-container > .node-frame > .box {
   fill: var(--container-bg);
   stroke: var(--container-border, var(--node-border));
 }
@@ -1649,43 +1650,50 @@ code {
   fill: var(--warn);
 }
 
-.node:hover > .box {
+.node:hover > .box,
+.node:hover > .node-frame > .box {
   stroke: var(--accent);
 }
 
 /* a11y: keyboard focus is its own ring, outside the box with a gap (GraphView FocusRing), so it never looks
    like the selection outline (M13). */
-.node > .focus-ring {
+.node > .focus-ring,
+.node > .node-frame > .focus-ring {
   fill: none;
   stroke: none;
   pointer-events: none;
 }
 
-.node:focus-visible > .focus-ring {
+.node:focus-visible > .focus-ring,
+.node:focus-visible > .node-frame > .focus-ring {
   stroke: var(--accent);
   stroke-width: 2.5;
 }
 
-.node.is-selected > .box {
+.node.is-selected > .box,
+.node.is-selected > .node-frame > .box {
   fill: var(--accent-soft);
   stroke: var(--accent);
   stroke-width: 2.4;
 }
 
-.node.is-container.is-selected > .box {
+.node.is-container.is-selected > .box,
+.node.is-container.is-selected > .node-frame > .box {
   fill: var(--accent-soft);
   fill-opacity: 0.55;
 }
 
 /* Related, and not the one picked: the picked box keeps its own solid outline (the map marks it related too). */
-.node.is-related:not(.is-selected) > .box {
+.node.is-related:not(.is-selected) > .box,
+.node.is-related:not(.is-selected) > .node-frame > .box {
   fill: var(--related-soft);
   stroke: var(--related);
   stroke-width: 2.4;
   stroke-dasharray: 7 3;
 }
 
-.node.is-match > .box {
+.node.is-match > .box,
+.node.is-match > .node-frame > .box {
   stroke: var(--match);
   stroke-width: 3.4;
   stroke-dasharray: none;
@@ -1897,7 +1905,8 @@ code {
   pointer-events: stroke;
 }
 
-.node > circle.hit {
+.node > circle.hit,
+.node > .node-frame > circle.hit {
   fill: transparent;
   pointer-events: all;
 }
@@ -4002,7 +4011,9 @@ code {
 
 /* Architecture boxes (`Node.role`, GraphView `RoleBox`): shapes say what a box is before its label does. */
 .node.role-service > .box,
-.node.role-system > .box {
+.node.role-service > .node-frame > .box,
+.node.role-system > .box,
+.node.role-system > .node-frame > .box {
   stroke-width: 2;
 }
 
@@ -4023,20 +4034,27 @@ code {
 }
 
 .node.role-database > .box,
+.node.role-database > .node-frame > .box,
 .node.role-cache > .box,
+.node.role-cache > .node-frame > .box,
 .node.role-storage > .box,
-.node.role-queue > .box {
+.node.role-storage > .node-frame > .box,
+.node.role-queue > .box,
+.node.role-queue > .node-frame > .box {
   fill: var(--store-bg);
 }
 
-.node > .lid {
+.node > .lid,
+.node > .node-frame > .lid {
   fill: none;
   stroke: var(--node-border);
   stroke-width: 1.2;
 }
 
 .node.role-external > .box,
-.node.role-person > .box {
+.node.role-external > .node-frame > .box,
+.node.role-person > .box,
+.node.role-person > .node-frame > .box {
   fill: var(--panel-2);
   stroke-dasharray: 6 4;
 }
@@ -4185,4 +4203,285 @@ code {
   gap: 10px;
   margin-top: 20px;
   flex-wrap: wrap;
+}
+
+/* One compact managed-service bar; disclosures float so reading keeps its space. */
+.service-status:has(.connection-status) {
+  position: relative;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  padding: 7px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel-2);
+  color: var(--muted);
+  font-size: 12px;
+}
+.connection-status,
+.attention-status {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  min-width: 0;
+}
+.connection-status[data-status="connected"] strong {
+  color: var(--ok);
+}
+.connection-status[data-status="disconnected"] strong,
+.connection-status[data-status="unavailable"] strong {
+  color: var(--warn);
+}
+.service-status summary {
+  cursor: pointer;
+}
+.service-disclosure {
+  position: absolute;
+  z-index: 50;
+  top: 100%;
+  right: 8px;
+  box-sizing: border-box;
+  width: min(760px, calc(100vw - 16px));
+  max-height: min(40vh, 320px);
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 12px 16px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--fg);
+  box-shadow: 0 6px 18px rgb(0 0 0 / 15%);
+}
+.connection-status p {
+  margin: 6px 0;
+  overflow-wrap: anywhere;
+}
+.connection-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.guide-about summary [data-testid="review-status"] {
+  margin-left: 12px;
+  font-weight: normal;
+}
+.review-dialog input,
+.review-dialog select {
+  display: block;
+  width: 100%;
+  margin-block: 8px;
+  color: inherit;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  padding: 6px;
+}
+.review-dialog select[multiple] {
+  min-height: 100px;
+}
+.review-dialog [data-testid="review-inspection"] {
+  overflow-wrap: anywhere;
+}
+
+.review-dialog pre {
+  max-height: 280px;
+  overflow: auto;
+  font-size: 12px;
+  padding: 8px;
+  background: var(--bg);
+}
+.review-dialog details {
+  margin-block: 10px;
+}
+
+.attention-status p {
+  margin: 8px 0;
+}
+.attention-status article {
+  border-top: 1px solid var(--border);
+  padding: 8px 0;
+}
+.attention-status h3 {
+  margin: 0;
+  font-size: 13px;
+}
+.attention-status ul {
+  padding-left: 20px;
+}
+.attention-status li {
+  margin-block: 10px;
+}
+.attention-status code,
+.attention-status pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.attention-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.attention-status > p {
+  flex-basis: 100%;
+  color: var(--warn);
+}
+
+.text-edit {
+  margin-block: 12px;
+}
+.text-edit fieldset {
+  border: 0;
+  padding: 0;
+  min-width: 0;
+}
+.text-edit label {
+  display: grid;
+  gap: 4px;
+  margin-block: 10px;
+}
+.text-edit input,
+.text-edit textarea,
+.text-edit select {
+  width: 100%;
+  box-sizing: border-box;
+  font: inherit;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 6px;
+}
+.edit-item:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.text-edit .actions {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  padding-block: 8px;
+  background: var(--panel);
+  border-top: 1px solid var(--border);
+}
+
+.evidence-preview {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 8px;
+}
+.evidence-preview pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 160px;
+  overflow: auto;
+  font-size: 12px;
+}
+.evidence-list {
+  list-style: none;
+  padding: 0;
+}
+.evidence-list li {
+  padding-block: 8px;
+  border-bottom: 1px solid var(--border);
+}
+.evidence-list code {
+  overflow-wrap: anywhere;
+}
+.evidence-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.graph-author {
+  position: relative;
+  margin-left: auto;
+  flex-shrink: 0;
+  font-size: 13px;
+}
+.graph-author summary {
+  cursor: pointer;
+}
+.graph-author-controls {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  z-index: 10;
+  width: min(420px, calc(100vw - 32px));
+  max-height: min(560px, 65vh);
+  overflow: auto;
+  box-sizing: border-box;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--fg);
+  box-shadow: 0 4px 16px #0003;
+}
+.graph-author-controls p {
+  white-space: normal;
+  margin-block: 8px;
+}
+.graph-author-controls label {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+.graph-author-controls input {
+  font: inherit;
+  padding: 6px;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--border);
+}
+.graph-author-controls ul {
+  list-style: none;
+  padding: 0;
+}
+.graph-author-controls li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-block: 8px;
+}
+.graph-author-controls li span {
+  flex: 1;
+  overflow-wrap: anywhere;
+}
+.evidence-edit .actions p {
+  flex-basis: 100%;
+  margin: 0 0 4px;
+}
+
+/* Placement handles leave box selection and canvas panning available. */
+.move-handle {
+  cursor: move;
+  touch-action: none;
+}
+.move-handle rect {
+  fill: var(--bg);
+  stroke: var(--accent);
+  stroke-width: 1.5;
+}
+.move-handle path {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1.5;
+  pointer-events: none;
+}
+.move-handle:focus-visible rect {
+  stroke-width: 3;
+}
+.placement-error {
+  position: absolute;
+  top: 0;
+  left: 12px;
+  right: 12px;
+  z-index: 8;
+  padding: 8px;
+  background: var(--panel);
+  color: var(--danger);
 }

@@ -24,7 +24,8 @@ export {
   FILE_LANGUAGES,
   MAX_FILE_BYTES,
 } from "./files.js";
-export type { DiscoveredFile, DiscoverOptions, Discovery, GitInfo } from "./files.js";
+export type { DiscoveredFile, DiscoverOptions, Discovery, GitInfo, GitOptions } from "./files.js";
+export { createScipProviders } from "./scip/resolvers.js";
 export {
   isWorkTreeClean,
   resolveCommitId,
@@ -83,3 +84,6 @@ export { scipArtifactProvider } from "./scip/artifact.js";
 export type { ScipArtifactManifest, ScipArtifactOptions } from "./scip/artifact.js";
 export { resolveHeuristic } from "./resolve/heuristic.js";
 export type { ResolverFile, ResolverInput } from "./resolve/heuristic.js";
+
+export { captureIndexInputs, indexInputsChanged } from "./snapshot.js";
+export type { IndexInputs } from "./snapshot.js";

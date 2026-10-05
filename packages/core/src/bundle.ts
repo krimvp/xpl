@@ -13,12 +13,24 @@ export const BUNDLE_SCHEMA = "code-explainer/bundle@0";
 /** `<script id="xpl-data" type="application/json">` holds the serialized bundle. */
 export const BUNDLE_SCRIPT_ID = "xpl-data";
 
+/** One contained guide, with its own source boundary; no live API or nested library. */
+export type GuideSnapshot = Pick<
+  ViewerBundle,
+  "explainer" | "index" | "files" | "baseFiles" | "feedback" | "exportInfo" | "sourceWarning"
+> & { guideId: string };
+
 export interface ViewerBundle {
   schema: typeof BUNDLE_SCHEMA;
   explainer: Explainer;
   index: SymbolIndex;
   /** Source text by repo-relative path. May be partial in server mode. */
   files: Record<FilePath, string>;
+  /** Stable local key. Legacy single-guide pages use the viewer's `current` key. */
+  guideId?: string;
+  /** Opt-in additional offline snapshots. Search never treats these as access to the repository. */
+  guides?: GuideSnapshot[];
+  /** A different guide inspected through a service, without changing its write attachment. */
+  readOnlyGuide?: { command: string; stopCommand?: string };
   /**
    * The code before the change, when the explainer has a change record (`explainer.change`): the base text of
    * every changed file that is modified, renamed or deleted, keyed by `ChangedFile.path` (the new path of a
@@ -31,7 +43,17 @@ export interface ViewerBundle {
   /** Initial tour id for present mode. */
   tour?: string;
   /** Set by `xpl view`: base URL of the local API (e.g. "/api"). Absent in a static bundle. */
-  server?: { api: string };
+  server?: {
+    api: string;
+    /** Canonical repository and guide identity for every live page; managed fields describe its service. */
+    attachment?: {
+      root: string;
+      guide: string;
+      instanceId?: string;
+      backend?: "none" | "claude";
+      backendAvailable?: boolean;
+    };
+  };
   /** Live workspace warning when source and index differ. Never implies prose was verified. */
   sourceWarning?: string;
   /** Feedback carried by a saved page; every request retains its original snapshot identity. */
@@ -52,10 +74,20 @@ export interface SerializeOptions {
 export function serializeBundle(bundle: ViewerBundle, options: SerializeOptions = {}): string {
   const LS = String.fromCharCode(0x2028);
   const PS = String.fromCharCode(0x2029);
-  const data =
-    options.packIndex && !isPackedIndex(bundle.index)
-      ? { ...bundle, index: packIndex(bundle.index) }
-      : bundle;
+  const data = options.packIndex
+    ? {
+        ...bundle,
+        index: isPackedIndex(bundle.index) ? bundle.index : packIndex(bundle.index),
+        ...(bundle.guides
+          ? {
+              guides: bundle.guides.map((guide) => ({
+                ...guide,
+                index: isPackedIndex(guide.index) ? guide.index : packIndex(guide.index),
+              })),
+            }
+          : {}),
+      }
+    : bundle;
   return JSON.stringify(data)
     .replace(/</g, "\\u003c")
     .split(LS)
@@ -88,5 +120,26 @@ export function parseBundle(text: string): ViewerBundle {
   }
   if (bundle.feedback !== undefined) bundle.feedback = parseFeedbackFile(bundle.feedback);
   if (isPackedIndex(bundle.index)) bundle.index = unpackIndex(bundle.index);
+  if (bundle.guides !== undefined) {
+    if (!Array.isArray(bundle.guides)) throw new Error("invalid embedded guide library");
+    const ids = new Set([bundle.guideId ?? "current"]);
+    for (const guide of bundle.guides) {
+      if (!guide || typeof guide.guideId !== "string" || !guide.guideId || ids.has(guide.guideId))
+        throw new Error("invalid or duplicate embedded guide key");
+      if (
+        "server" in guide ||
+        "guides" in guide ||
+        !guide.explainer ||
+        !guide.index ||
+        !guide.files ||
+        typeof guide.files !== "object" ||
+        Array.isArray(guide.files)
+      )
+        throw new Error("invalid embedded guide snapshot");
+      ids.add(guide.guideId);
+      if (isPackedIndex(guide.index)) guide.index = unpackIndex(guide.index);
+      if (guide.feedback !== undefined) guide.feedback = parseFeedbackFile(guide.feedback);
+    }
+  }
   return bundle;
 }

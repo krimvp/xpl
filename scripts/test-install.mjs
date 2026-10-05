@@ -275,6 +275,228 @@ try {
     );
     assert.equal(exported.exportStatus, "ready");
     assert.equal(exported.readiness.ready, true);
+    if (language === "ts") {
+      const artifactPath = join(fixture, ".explainer/ready-demo.explainer.json");
+      const beforeArtifact = readFileSync(artifactPath, "utf8");
+      let service = JSON.parse(
+        run(
+          [
+            "service",
+            "start",
+            "ready-demo",
+            "--background",
+            "--port",
+            "0",
+            "--backend",
+            "none",
+            "--watch",
+            "--json",
+          ],
+          fixture,
+        ),
+      );
+      const attached = await browser.newPage();
+      try {
+        await expect
+          .poll(() => JSON.parse(run(["service", "status", "--json"], fixture)).watch?.state, {
+            timeout: 15000,
+          })
+          .toBe("current");
+        const history = await fetch(new URL("/api/jobs", service.url));
+        assert.equal(history.status, 200);
+        const jobs = await history.json();
+        assert.deepEqual(jobs.jobs, []);
+        assert.equal(jobs.available, false);
+        const unavailable = await fetch(new URL("/api/jobs", service.url), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            id: "d92c958c-9c0c-4f30-a5df-d2bde4f790fa",
+            selectedRequestIds: ["install-feedback"],
+          }),
+        });
+        assert.equal(unavailable.status, 503);
+        assert.match((await unavailable.json()).error, /unavailable|configured/i);
+        const paused = JSON.parse(run(["service", "pause", "--json"], fixture));
+        assert.equal(paused.state, "running");
+        assert.equal(paused.watch.state, "paused");
+        assert.equal(paused.watch.stale, true);
+        run(["service", "resume", "--json"], fixture);
+        await expect
+          .poll(() => JSON.parse(run(["service", "status", "--json"], fixture)).watch?.state, {
+            timeout: 15000,
+          })
+          .toBe("current");
+        assert.equal(readFileSync(artifactPath, "utf8"), beforeArtifact);
+        await attached.goto(service.url + "?perspective=code");
+        const connection = attached.getByTestId("connection-status");
+        await expect(connection).toHaveAttribute("data-status", "connected");
+        await connection.getByText("Connection details").click();
+        await expect(connection).toContainText(
+          "No agent is configured. Use xpl revise for a manual revision.",
+        );
+        run(["service", "stop", "--json"], fixture);
+        service = JSON.parse(
+          run(
+            ["service", "start", "--background", "--backend", "claude", "--watch", "--json"],
+            fixture,
+          ),
+        );
+        await expect
+          .poll(() => JSON.parse(run(["service", "status", "--json"], fixture)).watch?.state, {
+            timeout: 15000,
+          })
+          .toBe("current");
+        const configuredHistory = await fetch(new URL("/api/jobs", service.url));
+        assert.equal(configuredHistory.status, 200);
+        const configuredJobs = await configuredHistory.json();
+        assert.deepEqual(configuredJobs.jobs, []);
+        assert.equal(configuredJobs.available, true);
+        await attached.goto(service.url + "?perspective=code");
+        await expect(connection).toHaveAttribute("data-status", "connected");
+        assert.deepEqual(JSON.parse(new URL(attached.url()).searchParams.get("attachment")), {
+          root: fixture,
+          guide: service.guide,
+        });
+        await connection.getByText("Connection details").click();
+        await expect(connection).toContainText(service.instanceId);
+        await expect(connection).toContainText(
+          "Agent: Claude Code (configured; sign-in is checked when a job runs)",
+        );
+        await attached.locator(`.tree-row[data-path="${file}"]`).click();
+        await expect(attached.locator(`[data-file="${file}"] .cm-content`)).toContainText("Runner");
+        await attached.evaluate((id) => window.__xpl.select([id]), `file:${file}`);
+        const bookmarked = attached.url();
+        assert.equal(service.state, "running");
+        assert.equal(service.root, fixture);
+        assert.equal(service.guide, ".explainer/ready-demo.explainer.json");
+        assert.equal(service.backend, "claude");
+        assert.match(service.url, /^http:\/\/127\.0\.0\.1:\d+\/$/);
+        assert.equal((await fetch(service.url)).status, 200);
+        assert.match(
+          rejected(["service", "start", "ready-demo", "--json"], fixture).error,
+          /already running/,
+        );
+        assert.equal(JSON.parse(run(["service", "stop", "--json"], fixture)).state, "stopped");
+        await expect(connection).toHaveAttribute("data-status", "disconnected");
+        // Export from the stopped page: no workspace claims or live dependency remain.
+        await connection.getByRole("button", { name: "Use loaded snapshot offline" }).click();
+        await expect(connection).toHaveAttribute("data-status", "offline");
+        await attached.getByRole("button", { name: "Edit", exact: true }).click();
+        await attached.getByRole("menuitem", { name: "Save as HTML" }).click();
+        await expect(attached.getByTestId("save-html-ready")).toBeEnabled();
+        const downloadPromise = attached.waitForEvent("download");
+        await attached.getByTestId("save-html-ready").click();
+        const download = await downloadPromise;
+        const stoppedOutput = join(scratch, "ts.stopped-snapshot.html");
+        await download.saveAs(stoppedOutput);
+        const stoppedData = JSON.parse(
+          /<script id="xpl-data" type="application\/json">([\s\S]*?)<\/script>/.exec(
+            readFileSync(stoppedOutput, "utf8"),
+          )[1],
+        );
+        assert.equal(stoppedData.server, undefined);
+        assert.equal(stoppedData.exportInfo.report.scope, "embedded-snapshot");
+        const saved = await browser.newPage();
+        try {
+          await saved.route(/^https?:/, (route) => route.abort());
+          await saved.goto(pathToFileURL(stoppedOutput).href + "?perspective=code");
+          await expect
+            .poll(() => saved.evaluate(() => window.__xpl?.state().serverMode))
+            .toBe(false);
+          await saved.locator(`.tree-row[data-path="${file}"]`).click();
+          await expect(saved.locator(`[data-file="${file}"] .cm-content`)).toContainText("Runner");
+        } finally {
+          await saved.close();
+        }
+        const restarted = JSON.parse(run(["service", "start", "--background", "--json"], fixture));
+        assert.equal(restarted.url, service.url);
+        assert.equal(restarted.guide, service.guide);
+        assert.equal(restarted.backend, "claude");
+        assert.notEqual(restarted.instanceId, service.instanceId);
+        await connection.getByRole("button", { name: "Retry connection" }).click();
+        await expect(connection).toHaveAttribute("data-status", "connected");
+        await expect(connection).toContainText(restarted.instanceId);
+        await expect
+          .poll(() => attached.evaluate(() => window.__xpl.selection()))
+          .toEqual([`file:${file}`]);
+        await attached.goto(bookmarked);
+        await expect(connection).toHaveAttribute("data-status", "connected");
+        await expect(connection).toContainText(restarted.instanceId);
+      } finally {
+        await attached.close();
+        run(["service", "stop", "--json"], fixture);
+      }
+
+      // Own this child directly so its exit is reaped before testing explicit crash recovery.
+      const crashed = spawn(cli, ["service", "start", "--port", "0", "--json"], {
+        cwd: fixture,
+        env,
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      let startup = "";
+      let crashErrors = "";
+      crashed.stderr.on("data", (chunk) => {
+        crashErrors += chunk;
+      });
+      try {
+        await new Promise((resolveReady, reject) => {
+          const timer = setTimeout(
+            () => reject(new Error(`service did not start: ${crashErrors}`)),
+            15000,
+          );
+          crashed.once("exit", () => {
+            clearTimeout(timer);
+            reject(new Error(`service exited: ${crashErrors}`));
+          });
+          crashed.stdout.on("data", (chunk) => {
+            startup += chunk;
+            try {
+              JSON.parse(startup);
+              clearTimeout(timer);
+              resolveReady();
+            } catch {
+              /* wait for complete JSON */
+            }
+          });
+        });
+      } finally {
+        const exited = once(crashed, "exit");
+        crashed.kill("SIGKILL");
+        await exited;
+      }
+      const interrupted = JSON.parse(run(["service", "status", "--json"], fixture));
+      assert.equal(interrupted.state, "interrupted");
+      assert.match(
+        rejected(["service", "start", "--json"], fixture).error,
+        /interrupted.*--recover/,
+      );
+      const recovered = JSON.parse(
+        run(["service", "start", "--recover", "--background", "--json"], fixture),
+      );
+      try {
+        assert.equal(recovered.state, "running");
+        assert.equal(recovered.guide, service.guide);
+        assert(
+          existsSync(
+            join(fixture, `.explainer/service/interrupted-${interrupted.instanceId}.json`),
+          ),
+        );
+        assert.equal(readFileSync(artifactPath, "utf8"), beforeArtifact);
+      } finally {
+        run(["service", "stop", "--json"], fixture);
+      }
+      // Manual export and the offline reader below run after stopping the optional service.
+      assert.equal(
+        JSON.parse(run(["bundle", "ready-demo", "-o", readyOutput, "--json"], fixture))
+          .exportStatus,
+        "ready",
+      );
+      run(["validate", "ready-demo"], fixture);
+      results.push(
+        "ts: packed start/stop/restart, watched index and pause/resume, durable job history and unavailable submission, same-page and bookmarked guide reconnect, configured backend label, stopped-page snapshot save with blocked-network reading, saved context, duplicate refusal, crash/recovery and manual export after stop passed",
+      );
+    }
     const offline = await browser.newPage();
     await offline.route(/^https?:/, (route) => route.abort());
     await offline.goto(pathToFileURL(readyOutput).href + "?perspective=code");

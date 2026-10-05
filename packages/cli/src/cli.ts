@@ -9,7 +9,9 @@ import { anchorsCommand } from "./commands/anchors.js";
 import { applyCommand } from "./commands/apply.js";
 import { indexCommand } from "./commands/build-index.js";
 import { bundleCommand } from "./commands/bundle.js";
+import { stageCommand } from "./commands/stage.js";
 import { changeCommand } from "./commands/change.js";
+import { prCommand } from "./commands/pr.js";
 import { draftCommand } from "./commands/draft.js";
 import { feedbackCommand } from "./commands/feedback.js";
 import { doctorCommand } from "./commands/doctor.js";
@@ -22,10 +24,12 @@ import { reviseCommand } from "./commands/revise.js";
 import { refsCommand } from "./commands/refs.js";
 import { resolveCommand } from "./commands/resolve.js";
 import { searchCommand } from "./commands/search.js";
+import { guidesCommand } from "./commands/guides.js";
 import { showCommand } from "./commands/show.js";
 import { statusCommand } from "./commands/status.js";
 import { validateCommand } from "./commands/validate.js";
 import { viewCommand } from "./commands/view.js";
+import { serviceCommand } from "./commands/service.js";
 import { createCtx, type Io } from "./context.js";
 import { CliError, UsageError, errorMessage } from "./errors.js";
 
@@ -39,6 +43,7 @@ export const COMMANDS: readonly CommandSpec[] = [
   showCommand,
   refsCommand,
   searchCommand,
+  guidesCommand,
   newCommand,
   applyCommand,
   validateCommand,
@@ -50,9 +55,12 @@ export const COMMANDS: readonly CommandSpec[] = [
   lintCommand,
   readyCommand,
   changeCommand,
+  prCommand,
   draftCommand,
   viewCommand,
+  serviceCommand,
   bundleCommand,
+  stageCommand,
   doctorCommand,
   skillCommand,
 ];

@@ -21,12 +21,20 @@ import {
   type Ghost,
   type GhostTarget,
   type GraphNode,
+  type GraphView,
   type NodeRole,
   type Stub,
 } from "@xpl/core";
 import type { ChangeStatus } from "../diff.js";
 import { textWidth } from "../measure.js";
-import { distanceToSegment, nearRoute, routeAnchor, type Box, type Point } from "../svg.js";
+import {
+  distanceToSegment,
+  nearRoute,
+  routeAnchor,
+  routeBox,
+  type Box,
+  type Point,
+} from "../svg.js";
 import { unionBox, type Focus } from "../viewport.js";
 import {
   layered,
@@ -80,6 +88,8 @@ export interface LayoutNode {
   y: number;
   width: number;
   height: number;
+  /** Frame offset from the stable container origin; negative children expand its top/left. */
+  frame?: Point;
   children: LayoutNode[];
   /** Edges held by this container (both ends inside it), relative to its top-left corner. */
   edges: LayoutEdge[];
@@ -500,6 +510,49 @@ function makeNode(
 export interface LayoutOptions {
   /** Default `RIGHT`. */
   direction?: Direction;
+  pins?: GraphView["layout"];
+}
+
+/** The physical frame; children and routes stay relative to the node's logical origin. */
+export function nodeBox(node: LayoutNode, origin: Point = { x: 0, y: 0 }): Box {
+  return {
+    x: origin.x + node.x + (node.frame?.x ?? 0),
+    y: origin.y + node.y + (node.frame?.y ?? 0),
+    width: node.width,
+    height: node.height,
+  };
+}
+
+/** Bounds of the visible frames, routes and labels, including pins above/left of the origin. */
+export function graphBounds(layout: GraphLayout): Box {
+  const boxes = [...absoluteBoxes(layout.nodes).values()];
+  const edges = (list: LayoutEdge[], origin: Point) => {
+    for (const edge of list) {
+      const box = routeBox(edge.points, edge.label);
+      boxes.push({ ...box, x: box.x + origin.x, y: box.y + origin.y });
+    }
+  };
+  const visit = (nodes: LayoutNode[], origin: Point) => {
+    for (const node of nodes) {
+      const at = { x: origin.x + node.x, y: origin.y + node.y };
+      edges(node.edges, at);
+      visit(node.children, at);
+    }
+  };
+  edges(layout.edges, { x: 0, y: 0 });
+  visit(layout.nodes, { x: 0, y: 0 });
+  const box = unionBox(boxes) ?? { x: 0, y: 0, width: layout.width, height: layout.height };
+  return { x: box.x - 12, y: box.y - 12, width: box.width + 24, height: box.height + 24 };
+}
+
+function enclose(node: LayoutNode): void {
+  if (!node.children.length) return;
+  const bounds = unionBox(node.children.map((child) => nodeBox(child)))!;
+  const x = Math.min(0, bounds.x - CONTAINER_PAD);
+  const y = Math.min(0, bounds.y - HEADER_HEIGHT - 8);
+  node.frame = { x, y };
+  node.width = Math.max(node.width, bounds.x + bounds.width + CONTAINER_PAD) - x;
+  node.height = Math.max(node.height, bounds.y + bounds.height + CONTAINER_PAD) - y;
 }
 
 /** Spacing. Tight on purpose: a layout is fitted into its pane, so every pixel of air between boxes shrinks the text. */
@@ -548,13 +601,76 @@ interface Level {
   routes: LayeredResult["routes"];
 }
 
+/** Detour orthogonal segments around other boxes after their pinned positions replace dagre's. */
+function aroundBoxes(points: Point[], boxes: Box[]): Point[] {
+  let route = points;
+  for (let pass = 0; pass < 32; pass++) {
+    let changed = false;
+    for (let i = 1; i < route.length; i++) {
+      const a = route[i - 1]!,
+        b = route[i]!;
+      const horizontal = a.y === b.y;
+      const obstacle = boxes.find((box) =>
+        horizontal
+          ? a.y > box.y &&
+            a.y < box.y + box.height &&
+            Math.max(a.x, b.x) > box.x &&
+            Math.min(a.x, b.x) < box.x + box.width
+          : a.x === b.x &&
+            a.x > box.x &&
+            a.x < box.x + box.width &&
+            Math.max(a.y, b.y) > box.y &&
+            Math.min(a.y, b.y) < box.y + box.height,
+      );
+      if (!obstacle || inside(obstacle, a, 0) || inside(obstacle, b, 0)) continue;
+      const cross = horizontal ? "y" : "x",
+        along = horizontal ? "x" : "y";
+      const size = horizontal ? "height" : "width",
+        length = horizontal ? "width" : "height";
+      const low = obstacle[cross] - 10,
+        high = obstacle[cross] + obstacle[size] + 10;
+      const offset = Math.abs(a[cross] - low) <= Math.abs(a[cross] - high) ? low : high;
+      const forward = a[along] < b[along];
+      const entry = forward ? obstacle[along] - 10 : obstacle[along] + obstacle[length] + 10;
+      const exit = forward ? obstacle[along] + obstacle[length] + 10 : obstacle[along] - 10;
+      route = [
+        ...route.slice(0, i),
+        { ...a, [along]: entry },
+        { ...a, [along]: entry, [cross]: offset },
+        { ...b, [along]: exit, [cross]: offset },
+        { ...b, [along]: exit },
+        ...route.slice(i),
+      ];
+      changed = true;
+      break;
+    }
+    if (!changed) break;
+  }
+  return route;
+}
+
+function labelCentre(points: Point[]): Point | undefined {
+  let centre: Point | undefined,
+    longest = -1;
+  for (let i = 1; i < points.length; i++) {
+    const a = points[i - 1]!,
+      b = points[i]!;
+    const length = Math.hypot(b.x - a.x, b.y - a.y);
+    if (length > longest) {
+      longest = length;
+      centre = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+    }
+  }
+  return centre;
+}
+
 /**
  * Lays out the graph: every container's inside first (its children as one layered level, with room for its
  * header), then the container as one box of the level above, up to the canvas. Then every edge is routed in
  * the container that holds it: dagre's points between the two boxes of that level its ends are drawn in, and
  * right-angled ends on the boxes it actually joins, which may sit deeper inside them.
  */
-function layeredLayout(model: Model, direction: Direction): GraphLayout {
+function layeredLayout(model: Model, direction: Direction, pins: GraphView["layout"]): GraphLayout {
   const cross = direction === "RIGHT" ? "y" : "x";
   const ancestors = (id: string, holder: string): string[] => {
     const out: string[] = [];
@@ -641,8 +757,42 @@ function layeredLayout(model: Model, direction: Direction): GraphLayout {
     }
     for (const node of nodes) {
       const box = result.boxes.get(node.id)!;
-      node.x = box.x;
-      node.y = box.y;
+      const pin = pins?.[node.id];
+      node.x = pin?.x ?? box.x - (node.frame?.x ?? 0);
+      node.y = pin?.y ?? box.y - (node.frame?.y ?? 0);
+    }
+    // Unpinned siblings keep dagre's order, but yield space when a pin occupies their old position.
+    const occupied = nodes.filter((node) => pins?.[node.id]).map((node) => nodeBox(node));
+    for (const node of nodes.filter((node) => !pins?.[node.id])) {
+      for (let tries = 0; tries < occupied.length; tries++) {
+        const box = nodeBox(node);
+        const obstacle = occupied.find(
+          (other) =>
+            box.x < other.x + other.width + 12 &&
+            box.x + box.width + 12 > other.x &&
+            box.y < other.y + other.height + 12 &&
+            box.y + box.height + 12 > other.y,
+        );
+        if (!obstacle) break;
+        if (direction === "RIGHT")
+          node.y = obstacle.y + obstacle.height + 12 - (node.frame?.y ?? 0);
+        else node.x = obstacle.x + obstacle.width + 12 - (node.frame?.x ?? 0);
+      }
+      occupied.push(nodeBox(node));
+    }
+    for (const node of nodes)
+      result.boxes.set(node.id, { ...result.boxes.get(node.id)!, ...nodeBox(node) });
+    if (nodes.some((node) => pins?.[node.id] || node.frame?.x || node.frame?.y)) {
+      // Dagre's tracks and label centres describe the automatic positions, not these boxes.
+      for (const route of result.routes.values()) {
+        route.via = [];
+        route.label = undefined;
+      }
+      const bounds = unionBox(nodes.map((node) => nodeBox(node)));
+      if (bounds) {
+        result.width = Math.max(result.width, bounds.x + bounds.width + (pad?.right ?? 0));
+        result.height = Math.max(result.height, bounds.y + bounds.height + (pad?.bottom ?? 0));
+      }
     }
     return { nodes, result };
   };
@@ -662,6 +812,7 @@ function layeredLayout(model: Model, direction: Direction): GraphLayout {
       },
       inner.nodes,
     );
+    enclose(node);
     levels.push({ id, node, routes: inner.result.routes });
     return node;
   }
@@ -680,7 +831,7 @@ function layeredLayout(model: Model, direction: Direction): GraphLayout {
     }
   };
   index(top.nodes, undefined);
-  const boxIn = (id: string, holder: LayoutNode | undefined): Box => {
+  const originIn = (id: string, holder: LayoutNode | undefined): Point => {
     const node = nodeOf.get(id)!;
     let x = node.x;
     let y = node.y;
@@ -688,7 +839,14 @@ function layeredLayout(model: Model, direction: Direction): GraphLayout {
       x += up.x;
       y += up.y;
     }
-    return { x, y, width: node.width, height: node.height };
+    return { x, y };
+  };
+  const boxIn = (id: string, holder: LayoutNode | undefined): Box => {
+    const node = nodeOf.get(id)!;
+    return nodeBox(node, {
+      x: originIn(id, holder).x - node.x,
+      y: originIn(id, holder).y - node.y,
+    });
   };
 
   // Route every level: the edges it holds (from border to border where an end lies deeper) and, in a
@@ -712,7 +870,7 @@ function layeredLayout(model: Model, direction: Direction): GraphLayout {
         box,
         key: id,
         ...(entry
-          ? { fixed: { side: entry.side, cross: entry.cross + (cross === "y" ? box.y : box.x) } }
+          ? { fixed: { side: entry.side, cross: entry.cross + originIn(id, holder)[cross] } }
           : {}),
       };
     };
@@ -728,7 +886,8 @@ function layeredLayout(model: Model, direction: Direction): GraphLayout {
     for (const { edge, end } of lvl.id === "" ? [] : (crossing.get(lvl.id) ?? [])) {
       const entry = entries.get(lvl.id)!.get(edge.id)!;
       const size = holder!;
-      const at = entry.side === "start" ? 0 : cross === "y" ? size.width : size.height;
+      const start = cross === "y" ? (size.frame?.x ?? 0) : (size.frame?.y ?? 0);
+      const at = start + (entry.side === "start" ? 0 : cross === "y" ? size.width : size.height);
       const border: End = {
         box:
           cross === "y"
@@ -786,7 +945,20 @@ function layeredLayout(model: Model, direction: Direction): GraphLayout {
       ),
     );
     separateTracks(routed, direction);
-    items.forEach((item, n) => item.store(routed[n]!));
+    const siblings = holder?.children ?? top.nodes;
+    const pinned = siblings.some((node) => pins?.[node.id]);
+    items.forEach((item, n) =>
+      item.store(
+        pinned
+          ? aroundBoxes(
+              routed[n]!,
+              siblings
+                .filter((node) => node.id !== item.from.key && node.id !== item.to.key)
+                .map((node) => nodeBox(node)),
+            )
+          : routed[n]!,
+      ),
+    );
   }
 
   // Each edge, whole: the inner parts on its way out of the containers around its start, the part its holder
@@ -803,7 +975,7 @@ function layeredLayout(model: Model, direction: Direction): GraphLayout {
     const holder = route.level.node;
     const chain = chains.get(edge.id)!;
     const moved = (container: string): Point[] => {
-      const box = boxIn(container, holder);
+      const box = originIn(container, holder);
       return (inner.get(`${container}\0${edge.id}`) ?? []).map((p) => ({
         x: p.x + box.x,
         y: p.y + box.y,
@@ -827,7 +999,7 @@ function layeredLayout(model: Model, direction: Direction): GraphLayout {
       points,
       anchor: points[0] ?? { x: 0, y: 0 },
     };
-    const centre = route.level.routes.get(edge.id)?.label;
+    const centre = route.level.routes.get(edge.id)?.label ?? labelCentre(points);
     if (!edge.stub && centre) {
       const box = labelBox(edge.label);
       laidOut.label = { ...box, x: centre.x - box.width / 2, y: centre.y - box.height / 2 };
@@ -845,7 +1017,20 @@ function layeredLayout(model: Model, direction: Direction): GraphLayout {
   };
   spreadInside(top.nodes);
   placeAnchors(top.nodes, canvasEdges, { width, height });
-  return { width, height, nodes: top.nodes, edges: canvasEdges, fallback: false, direction };
+  const layout = {
+    width,
+    height,
+    nodes: top.nodes,
+    edges: canvasEdges,
+    fallback: false,
+    direction,
+  };
+  if (pins && [...nodeOf.keys()].some((id) => pins[id])) {
+    const bounds = graphBounds(layout);
+    layout.width = bounds.width;
+    layout.height = bounds.height;
+  }
+  return layout;
 }
 
 /** How far a loop reaches out of its box, px. */
@@ -977,7 +1162,7 @@ const inside = (box: Box, p: Point, margin: number) =>
 function boxesBelow(node: LayoutNode, origin: Point, out: Box[] = []): Box[] {
   for (const child of node.children) {
     const at = { x: origin.x + child.x, y: origin.y + child.y };
-    out.push({ ...at, width: child.width, height: child.height });
+    out.push(nodeBox(child, origin));
     boxesBelow(child, at, out);
   }
   return out;
@@ -993,7 +1178,19 @@ function placeAnchors(
   rootEdges: LayoutEdge[],
   canvas: { width: number; height: number },
 ): void {
-  const limits = { x: 0, y: 0, width: canvas.width, height: canvas.height };
+  const extent = unionBox([...absoluteBoxes(nodes).values()]);
+  const limits = {
+    x: Math.min(0, extent?.x ?? 0) - EDGE_BOUNDS_PAD,
+    y: Math.min(0, extent?.y ?? 0) - EDGE_BOUNDS_PAD,
+    width:
+      Math.max(canvas.width, extent ? extent.x + extent.width : 0) -
+      Math.min(0, extent?.x ?? 0) +
+      2 * EDGE_BOUNDS_PAD,
+    height:
+      Math.max(canvas.height, extent ? extent.y + extent.height : 0) -
+      Math.min(0, extent?.y ?? 0) +
+      2 * EDGE_BOUNDS_PAD,
+  };
   const place = (edges: LayoutEdge[], origin: Point, obstacles: Box[]) => {
     const routes = edges.map((edge) =>
       edge.points.map((p) => ({ x: p.x + origin.x, y: p.y + origin.y })),
@@ -1030,7 +1227,7 @@ function placeAnchors(
   const collect = (list: LayoutNode[], origin: Point) => {
     for (const node of list) {
       const at = { x: origin.x + node.x, y: origin.y + node.y };
-      all.push({ ...at, width: node.width, height: node.height });
+      all.push(nodeBox(node, origin));
       collect(node.children, at);
     }
   };
@@ -1056,10 +1253,10 @@ export async function layoutGraph(
 ): Promise<GraphLayout> {
   const model = buildModel(graph, changes);
   try {
-    return layeredLayout(model, options.direction ?? "RIGHT");
+    return layeredLayout(model, options.direction ?? "RIGHT", options.pins);
   } catch (error) {
     console.warn("xpl: layout failed, using a grid", error);
-    return fallbackLayout(model);
+    return fallbackLayout(model, options.pins);
   }
 }
 
@@ -1076,7 +1273,7 @@ export function absoluteBoxes(nodes: readonly LayoutNode[]): Map<string, Box> {
   const walk = (list: readonly LayoutNode[], origin: Point) => {
     for (const node of list) {
       const at = { x: origin.x + node.x, y: origin.y + node.y };
-      out.set(node.id, { ...at, width: node.width, height: node.height });
+      out.set(node.id, nodeBox(node, origin));
       walk(node.children, at);
     }
   };
@@ -1236,12 +1433,13 @@ export async function layoutGraphFitting(
   maxZoom = 1.25,
   padding = 24,
   changes?: ChangeMarks,
+  pins?: GraphView["layout"],
 ): Promise<GraphLayout> {
   if (!viewport || viewport.width <= 0 || viewport.height <= 0)
-    return layoutGraph(graph, {}, changes);
+    return layoutGraph(graph, { pins }, changes);
   const suggested: Direction = viewport.width / viewport.height < 1 ? "DOWN" : "RIGHT";
   const other: Direction = suggested === "RIGHT" ? "DOWN" : "RIGHT";
-  const first = await layoutGraph(graph, { direction: suggested }, changes);
+  const first = await layoutGraph(graph, { direction: suggested, pins }, changes);
   if (
     first.fallback ||
     // shown at its natural size or larger: turning it would not make the text read better
@@ -1250,7 +1448,7 @@ export async function layoutGraphFitting(
   ) {
     return first;
   }
-  const second = await layoutGraph(graph, { direction: other }, changes);
+  const second = await layoutGraph(graph, { direction: other, pins }, changes);
   if (second.fallback) return first;
   return fitScale(second, viewport, maxZoom, padding) >
     fitScale(first, viewport, maxZoom, padding) * OTHER_DIRECTION_MARGIN
@@ -1301,18 +1499,26 @@ function gridLayout(
   return { nodes: placed, width, height: y + rowHeight };
 }
 
-function fallbackLayout(model: Model): GraphLayout {
+function fallbackLayout(model: Model, pins?: GraphView["layout"]): GraphLayout {
   const grid = gridLayout(
     model,
     model.roots,
     Math.max(2, Math.ceil(Math.sqrt(model.roots.length))),
   );
   const nodes = grid.nodes.map((n) => ({ ...n, x: n.x + 24, y: n.y + 24 }));
+  const pinNodes = (list: LayoutNode[]) => {
+    for (const node of list) {
+      pinNodes(node.children);
+      enclose(node);
+      Object.assign(node, pins?.[node.id]);
+    }
+  };
+  pinNodes(nodes);
   // Absolute boxes, to draw straight edges between centres clipped at the borders.
   const boxes = new Map<string, { x: number; y: number; width: number; height: number }>();
   const walk = (list: LayoutNode[], ox: number, oy: number) => {
     for (const n of list) {
-      boxes.set(n.id, { x: ox + n.x, y: oy + n.y, width: n.width, height: n.height });
+      boxes.set(n.id, nodeBox(n, { x: ox, y: oy }));
       walk(n.children, ox + n.x, oy + n.y);
     }
   };
@@ -1365,5 +1571,8 @@ function fallbackLayout(model: Model): GraphLayout {
   }
   const canvas = { width: grid.width + 48, height: grid.height + 48 };
   placeAnchors(nodes, edges, canvas);
-  return { ...canvas, nodes, edges, fallback: true, direction: "RIGHT" };
+  const layout: GraphLayout = { ...canvas, nodes, edges, fallback: true, direction: "RIGHT" };
+  if (pins)
+    Object.assign(layout, { width: graphBounds(layout).width, height: graphBounds(layout).height });
+  return layout;
 }

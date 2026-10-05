@@ -30,6 +30,9 @@
  *   tour's steps, protected like `steps`, only for an existing tour. `changed` names such a step `<tour id>/<step id>`.
  * - Anchors may point at the code before the change (`at: "base"`, with `find` or a `span` from line 1 of the base
  *   file; no `symbol`) when the explainer has a change record. The record itself (`change`) is not part of a patch.
+ * - `review` is user-only: a complete record input including the fingerprint of the inspected scope.
+ *   The fingerprint must match the merged content and current evidence. `sourceCommit` is filled by apply.
+ *   `review: null` removes it. Any LLM patch carrying `review` is rejected; omitting it preserves the record.
  * - User ownership (`provenance.userFields`, see `applyPatch`): an `llm` patch never replaces or shrinks a
  *   field the user edited, so `include` (sent whole) and `includeRemove` are skipped with a `protected` warning
  *   when the user edited the view's `include`. `includeAdd` is the exception: it only adds, so an `llm` patch
@@ -62,6 +65,7 @@ import type {
   Hash,
   Node,
   Provenance,
+  ReviewRecord,
   SequenceStep,
   SequenceView,
   SymbolPath,
@@ -209,6 +213,8 @@ export type PatchTour = {
  * `AnchorInput` and provenance optional. See the header of this file for the merge rules.
  */
 export interface ExplainerPatch {
+  /** User inspection of this exact scope; null explicitly removes the record. */
+  review?: Omit<ReviewRecord, "sourceCommit"> | null;
   title?: string;
   /** Merged into the explainer's `scope`; `null` clears it, and so does `audience: null`. */
   scope?: { audience?: string | null } | null;

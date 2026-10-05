@@ -17,7 +17,17 @@ A draft (`xpl draft`) is a patch in this format: start from it, and use these te
 }
 ```
 
-Every key is optional; any other top-level key is rejected. The authoritative merge rules are in the header of `packages/core/src/patch.ts`; this file is the practical version of them, and every JSON block below marked `patch` is real: applied in order to a fresh explainer on the TypeScript fixture it passes `xpl validate` (a test of the repository does exactly that). `xpl apply --help` prints a compact summary of the format. What to write in the text fields (titles, summaries, notes) is in `writing.md`.
+Every key is optional; any other top-level key is rejected. User patches also accept `review` (below); LLM patches must omit it. The authoritative merge rules are in the header of `packages/core/src/patch.ts`; this file is the practical version of them, and every JSON block below marked `patch` is real: applied in order to a fresh explainer on the TypeScript fixture it passes `xpl validate` (a test of the repository does exactly that). `xpl apply --help` prints a compact summary of the format. What to write in the text fields (titles, summaries, notes) is in `writing.md`.
+
+### Author review (user patches only)
+
+`xpl apply --actor user` accepts `review: { reviewer, reviewedAt, scope, omissions, fingerprint }`, or `review: null` to remove the record. The reviewer name is self-reported; `reviewedAt` is a UTC ISO timestamp such as `2026-10-04T12:00:00Z`. `omissions` names behavior outside the inspection (`[]` means none named). Apply fills `sourceCommit` from the index. LLM patches must never carry `review`, including null: they are rejected atomically. Ordinary generated patches preserve the record.
+
+Scope is `{ content: "all" | [stored IDs], source: "anchored" | "repository", files?: [paths] }`. IDs select exactly stored nodes, edges, concepts, views or tours, without their dependencies. A view includes its own steps and a tour its own notes/code overrides; included nodes and focused elements need their own IDs to cover their prose and anchors. `all` also covers title, audience, repository name/URL and change metadata. Derived graph content and runtime paths outside those records are outside the review.
+
+`anchored` checks attached evidence from the selected records; `files` adds named whole indexed files. `repository` also checks every indexed file, so unrelated indexed edits invalidate that broader scope. Narrow anchored scopes survive unrelated file edits, edits outside the selected spans and exact code moves. Prose/evidence edits or unavailable source make the review out of date. This state is independent of anchor validity.
+
+Core `reviewFingerprint(explainer, index, texts, scope)` computes `{ version: "xpl-review@1", contentHash, evidenceHash }` from the inspected snapshot. Supply that exact fingerprint; do not invent hashes. Apply compares it after merging the patch and refuses if content or evidence changed. Fingerprints exclude review metadata, provenance, index commits and moved anchor offsets/caches. Before-source needs a `TextCache` with a base-text reader. Legacy explainers are unchecked. Review remains optional; this contract does not require approval for ordinary export.
 
 ## 1. Anchors (`AnchorInput`)
 
@@ -334,6 +344,17 @@ The box shows the `label` in large type, so a flow label names a stage (`writing
 **Who does the step.** The box names the step's `from` under its label. Draw a step from the participant whose code it is: when the step's first anchor (in the current code) is not inside `from`, validation warns and names the participant that holds it. (A `return` step whose code is in `to`, the caller getting the answer, is fine.)
 
 **Recursion.** A `next` link may say how it changes the level of a recursive function. `{"step": "match:2", "kind": "recurse", "label": "the child"}` means: the function calls itself, and the steps from `match:2` run again, one level down; point it at an earlier step, the first one the call runs (a later one warns). It does not end the step: a step whose `next` has only recurse links still goes on to the next step in the list. `{"step": "match:17", "kind": "return", "label": "found"}` means: the call returns, back up one level, to `match:17`. In a recursive function the caller differs by level (the step that recursed, or at the top the code that first called the function), so a return that is not to one step leaves `step` out: `{"kind": "return", "label": "found"}` goes back to whoever made the call, drawn as an arrow out of the step and up. A `terminal` may have return links (and no others). Both kinds are drawn dashed, with "one level down" or "up one level" after their label. A link from a step to itself (the next item of a loop) is drawn as a loop on the box.
+
+**Viewer graph edits.** Explore's **Edit map** creates groups through `members` and `include`, and hides or
+restores individual IDs through `hidden`. These actions share text/evidence undo and user protection.
+Ungroup keeps the stored group for existing anchors, arrows, maps and tour references. Regeneration must
+keep user-owned groups and membership/visibility fields; additive `includeAdd` remains available.
+`GraphView.layout` pins drawn boxes at finite `{x, y}` coordinates relative to their rendered container
+(or the canvas for root boxes). A container keeps that origin while its frame expands around negative
+child positions. Explore offers a move handle and placement reset, both through the same author history.
+Pins travel in live saves and offline exports. Leave user-owned `layout` unchanged during regeneration;
+`layout: null` resets placement only when the user explicitly asks for it. Opening another level, pan and
+zoom remain navigation. Each map uses its own pins, including when another map is opened inside it.
 
 **Code first.** A flow or sequence whose steps' code is all in one file (the steps of one function) is read code first: the code is the main pane and the flow a narrow outline beside it that follows the caret. `"layout": "diagram"` keeps the diagram as the main pane; `"layout": "code-first"` asks for the code-first layout for any flow; `null` goes back to the default.
 
@@ -948,7 +969,7 @@ A rejection lists **every** error of the patch at once (anchors, ids and referen
 | `entry point "sym:src/…" is not a symbol id in the index (form: "src/a.ts#Class.method")`                                                             | `sym:` prefix in `scope.entryPoints`                     | drop `sym:`                                                                                             |
 | `an llm patch cannot create user-authored elements (origin "user")`                                                                                   | `provenance.origin: "user"`                              | omit `provenance`                                                                                       |
 | `id "concept:x" appears twice in the patch (also at concepts[0]); merge the two entries`                                                              | duplicate id                                             | merge                                                                                                   |
-| `unknown patch field "node" (allowed: title, scope, nodes, edges, concepts, views, tours, remove)`                                                    | typo in a top-level key                                  | fix                                                                                                     |
+| `unknown patch field "node" (allowed: title, scope, nodes, edges, concepts, views, tours, remove, review)`                                            | typo in a top-level key                                  | fix                                                                                                     |
 | warning `nothing to remove: no element, view, tour or step has the id concept:retry-polcy. Did you mean: concept:retry-policy?`                       | `remove` of an id that does not exist                    | fix the id: it is only a warning, and `changed:` will not list it                                       |
 | warning `tours[0].steps [tour:retries]: steps of tour:retries was edited by the user and is kept as it is`                                            | the user edited the tour                                 | not an error: make a new tour (new slug) or ask; a `remove` of it is skipped too                        |
 | `error: patch … is not valid JSON: Expected ',' or '}' after property value in JSON at position 49 (line 2 column 1)`                                 | broken JSON (fatal, on stderr)                           | fix the syntax at that position                                                                         |

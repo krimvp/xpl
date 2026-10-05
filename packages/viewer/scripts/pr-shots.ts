@@ -4,7 +4,7 @@
  *
  *   npx tsx scripts/pr-shots.ts shoot <outDir> [--viewer-dir <dir>] [--build] [--set ux]
  *                                     [--shot <name>=<bundle>[?query]]... [--scheme light|dark]
- *                                     [--size 1440x900]
+ *                                     [--size 1440x900] [--service connected|configured|disconnected|unmanaged]
  *   npx tsx scripts/pr-shots.ts compare <beforeDir> <afterDir> <outDir>
  *
  * shoot:
@@ -17,6 +17,14 @@
  *   `py-architecture`, `ts-change`, `self` when the shell script made one) or a path to an .html file; the
  *   query is passed on (`?perspective=map&view=view:overview`, `?mode=present&tour=tour:intro&step=2`,
  *   `?perspective=explore&focus=edge:job-completed`). Without `--set` or `--shot`, `--set ux` is assumed.
+ *
+ * - `--evidence-editor` opens the retry concept evidence editor, where available, with runner line 75.
+ * - `--graph-authoring` groups worker/metrics and hides their stored arrow, where available.
+ * - `--graph-pins` photographs identical stored system/service/nested code pins in the Python overview,
+ *   with source shown. It proves rendering in base and head, including negative container coordinates.
+ * - `--service` intercepts a loopback API; unmanaged omits attachment metadata for plain-view shots.
+ * - `--attention affected|paused` adds watch/guide evidence; `--attention-open` opens its repair offer.
+ * - `--text-draft` opens and edits the TS fixture retry concept without saving.
  *
  * compare: pairs the files of both directories by name and writes `<name>.png`, Before left and After right,
  * for each pair whose bytes differ, plus `index.md` listing changed, added, removed and unchanged shots.
@@ -46,8 +54,22 @@ async function shoot(argv: string[]): Promise<void> {
       shot: { type: "string", multiple: true, default: [] },
       scheme: { type: "string", default: "light" },
       size: { type: "string", default: "1440x900" },
+      service: { type: "string" },
+      attention: { type: "string" },
+      "attention-open": { type: "boolean", default: false },
+      "text-draft": { type: "boolean", default: false },
+      "evidence-editor": { type: "boolean", default: false },
+      "graph-authoring": { type: "boolean", default: false },
+      "graph-pins": { type: "boolean", default: false },
     },
   });
+  if (
+    values.service &&
+    !["connected", "configured", "disconnected", "unmanaged"].includes(values.service)
+  )
+    throw new Error("--service must be connected, configured, disconnected or unmanaged");
+  if (values.attention && !["affected", "paused"].includes(values.attention))
+    throw new Error("--attention must be affected or paused");
   const out = resolve(positionals[0] ?? "pr-shots");
   const viewerDir = resolve(values["viewer-dir"]);
   mkdirSync(out, { recursive: true });
@@ -74,7 +96,7 @@ async function shoot(argv: string[]): Promise<void> {
       if (eq < 1) throw new Error(`--shot ${spec}: expected <name>=<bundle>[?query]`);
       const name = spec.slice(0, eq);
       const [bundle = "", query = ""] = spec.slice(eq + 1).split(/(?=\?)/);
-      const file = bundle.endsWith(".html")
+      let file = bundle.endsWith(".html")
         ? isAbsolute(bundle)
           ? bundle
           : resolve(bundle)
@@ -84,10 +106,190 @@ async function shoot(argv: string[]): Promise<void> {
         console.warn(`skip ${name}: ${file} does not exist`);
         continue;
       }
+      if (values["graph-pins"]) {
+        // Identical stored positions in the base/head viewers prove that the renderer honors them.
+        const html = readFileSync(file, "utf8");
+        const script = /(<script id="xpl-data" type="application\/json">)([\s\S]*?)(<\/script>)/;
+        const data = JSON.parse(script.exec(html)![2]!);
+        const layouts: Record<string, Record<string, { x: number; y: number }>> = {
+          "view:system": {
+            "grp:job-runner": { x: 80, y: 60 },
+            "grp:operator": { x: 0, y: 240 },
+            "grp:settings-file": { x: 580, y: 180 },
+          },
+          "view:overview": {
+            "grp:scheduling": { x: 40, y: 70 },
+            "grp:configuration": { x: 420, y: 70 },
+            "file:jobrunner/worker.py": { x: 40, y: 270 },
+            "grp:events": { x: 420, y: 270 },
+          },
+          "view:code": {
+            "file:jobrunner/worker.py": { x: 50, y: 60 },
+            "sym:jobrunner/worker.py#Worker": { x: -30, y: 100 },
+            "sym:jobrunner/worker.py#Worker.run": { x: 140, y: -10 },
+            "sym:jobrunner/worker.py#WorkerPool": { x: 460, y: 200 },
+            "sym:jobrunner/worker.py#WorkerPool.lease": { x: 20, y: 100 },
+          },
+        };
+        data.explainer.views.push({
+          id: "view:code",
+          type: "graph",
+          title: "Worker code",
+          include: Object.keys(layouts["view:code"]!),
+          stubs: { mode: "none" },
+          provenance: { origin: "user" },
+        });
+        for (const view of data.explainer.views)
+          if (layouts[view.id]) view.layout = layouts[view.id];
+        file = resolve(out, `${name}.html`);
+        writeFileSync(
+          file,
+          html.replace(
+            script,
+            (_all, start, _data, end) =>
+              start + JSON.stringify(data).replace(/</g, "\\u003c") + end,
+          ),
+        );
+      }
       const page = await browser.newPage({ viewport: { width, height }, colorScheme });
-      await page.goto(pathToFileURL(file).href + query);
+      if (values.service) {
+        const html = readFileSync(file, "utf8");
+        const script = /(<script id="xpl-data" type="application\/json">)([\s\S]*?)(<\/script>)/;
+        const data = JSON.parse(script.exec(html)![2]!);
+        data.server = {
+          api: "/api",
+          ...(values.service === "unmanaged"
+            ? {}
+            : {
+                attachment: {
+                  root: "/tmp/xpl-demo/jobrunner",
+                  guide: ".explainer/jobrunner.explainer.json",
+                  instanceId: "demo-instance",
+                  backend: "claude",
+                  backendAvailable: values.service === "configured",
+                },
+              }),
+        };
+        const body = html.replace(
+          script,
+          (_all, start, _data, end) => start + JSON.stringify(data).replace(/</g, "\\u003c") + end,
+        );
+        await page.route("http://127.0.0.1:4747/**", (route) => {
+          const path = new URL(route.request().url()).pathname;
+          if (path === "/") return route.fulfill({ contentType: "text/html", body });
+          if (path === "/favicon.ico") return route.fulfill({ status: 204 });
+          if (values.service === "disconnected") return route.abort("connectionrefused");
+          if (path === "/api/watch" && values.attention)
+            return route.fulfill({
+              json: {
+                enabled: true,
+                instanceId: "demo-instance",
+                watch: {
+                  state: values.attention === "paused" ? "paused" : "current",
+                  stale: values.attention === "paused",
+                  generation: 2,
+                  index: { path: ".explainer/index-demo.json", commit: "demo" },
+                  error: null,
+                },
+                guides: [
+                  {
+                    name: "jobrunner",
+                    path: ".explainer/jobrunner.explainer.json",
+                    title: "Job runner",
+                    counts: { moved: 1, drifted: 1, missing: 1 },
+                    errors: [],
+                    elements: [
+                      { id: "file:src/queue.ts", file: "src/queue.ts", status: "moved" },
+                      {
+                        id: "sym:src/runner.ts#Runner.dispatch",
+                        file: "src/runner.ts",
+                        status: "drifted",
+                      },
+                      { id: "file:src/worker.ts", file: "src/worker.ts", status: "missing" },
+                    ],
+                    resolveCommand:
+                      "xpl resolve --root '/repos/jobrunner' '/repos/jobrunner/.explainer/jobrunner.explainer.json' --write",
+                    revisionCommand:
+                      "xpl revise --root '/tmp/xpl-demo/jobrunner' '/tmp/xpl-demo/jobrunner/.explainer/jobrunner.explainer.json' --select '<request-id>'",
+                  },
+                ],
+              },
+            });
+          if (path === "/api/explainer") return route.fulfill({ status: 304 });
+          if (path === "/api/requests") return route.fulfill({ json: { requests: [] } });
+          return route.fulfill({ status: 404 });
+        });
+        await page.goto("http://127.0.0.1:4747/" + query);
+        await page.waitForFunction(() => !!window.__xpl);
+        // The base viewer has no status strip; allow its first normal poll too.
+        await page.waitForTimeout(2200);
+        if (values["attention-open"]) {
+          const attention = page.locator(".attention-status > details").first();
+          if (await attention.count()) {
+            await attention.locator(":scope > summary").click();
+            await page.locator(".revision-offer > summary").click();
+            // Keep the top of a bounded attention disclosure in the photograph.
+            await page.locator(".attention-list > .service-disclosure").evaluateAll((elements) => {
+              for (const element of elements) element.scrollTop = 0;
+            });
+          }
+        } else if (!values.attention) {
+          const details = page.locator(".connection-status details");
+          if (await details.count()) await details.locator("summary").click();
+        }
+      } else await page.goto(pathToFileURL(file).href + query);
       await page.waitForFunction(() => !!window.__xpl);
+      if (values["text-draft"]) {
+        await page.evaluate(() => window.__xpl!.select(["concept:retry-policy"]));
+        await page.getByTestId("text-edit").click();
+        await page
+          .getByLabel("Summary", { exact: true })
+          .fill("Inspect changed evidence before revising.");
+        await page.locator(".save-status").filter({ hasText: "Unsaved draft" }).waitFor();
+        await page.evaluate(() => window.scrollTo(0, 0));
+      }
+      if (values["graph-pins"]) {
+        await page.getByRole("button", { name: "Show source", exact: true }).click();
+        await page.locator(".cm-editor").first().waitFor();
+      }
       await page.waitForTimeout(400);
+      if (values["graph-authoring"]) {
+        await page.evaluate(() =>
+          window.__xpl!.select(["file:src/worker.ts", "file:src/metrics.ts"]),
+        );
+        const author = page.getByTestId("graph-author");
+        if (await author.count()) {
+          await author.locator("summary").click();
+          await author.getByLabel("Group name").fill("Execution");
+          await author.getByRole("button", { name: "Group selected boxes" }).click();
+          await page.waitForFunction(() =>
+            window.__xpl!.state().graph?.nodes.includes("grp:execution"),
+          );
+          await page.evaluate(() => window.__xpl!.select(["edge:job-completed"]));
+          await author.getByRole("button", { name: "Hide selected items" }).click();
+          await page.waitForFunction(
+            () => !window.__xpl!.state().graph?.edges.includes("edge:job-completed"),
+          );
+          await author.locator("summary").click();
+          await page.evaluate(() => window.__xpl!.select(["grp:execution"]));
+          await page.getByRole("button", { name: "Fit to view" }).click();
+        }
+      }
+      if (values["evidence-editor"]) {
+        const divider = page.getByRole("separator", {
+          name: "Resize the diagram and the panels below it",
+        });
+        await divider.focus();
+        for (let i = 0; i < 4; i++) await divider.press("Shift+ArrowUp");
+        const edit = page.getByTestId("evidence-edit");
+        const available = (await edit.count()) > 0;
+        if (available) await edit.click();
+        await page.evaluate(() => window.__xpl!.setCursor("src/runner.ts", 75));
+        if (available)
+          await page
+            .locator(".evidence-edit")
+            .evaluate((form) => form.scrollIntoView({ block: "start" }));
+      }
       await page.screenshot({ path: `${out}/${name}.png` });
       console.log(name);
       await page.close();

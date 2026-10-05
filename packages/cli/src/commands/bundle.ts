@@ -17,8 +17,9 @@ import type { CommandSpec } from "../command.js";
 import { CliError, UsageError } from "../errors.js";
 import { formatBytes, listText, plural } from "../format.js";
 import { atomicWrite } from "../fsutil.js";
-import { loadExplainer } from "../repo.js";
+import { loadExplainer, loadRepositoryGuides } from "../repo.js";
 import { describeReadiness, workspaceReadiness } from "../readiness.js";
+import { guideSnapshot, LIBRARY_MAX_GUIDES, LIBRARY_MAX_BYTES } from "../guide-library.js";
 import { readViewerHtml } from "../viewer-html.js";
 
 /** A page larger than this gets a warning: it opens slowly, and mail and chat refuse it. */
@@ -106,9 +107,12 @@ function describeIndex(e: EmbeddedIndex): string {
 export const bundleCommand: CommandSpec = {
   name: "bundle",
   usage:
-    "xpl bundle <explainer> -o out.html [--mode explore|present] [--tour id] [--files referenced|boundary|all] [--boundary-max n] [--embed-index full|pruned] [--draft] [--note reason] [--allow-drift]",
+    "xpl bundle <explainer> -o out.html [--mode explore|present] [--tour id] [--files referenced|boundary|all] [--boundary-max n] [--embed-index full|pruned] [--include-guides id,id] [--draft] [--note reason] [--require-review] [--allow-drift]",
   summary: "Check readiness, then write one self-contained HTML file",
   details: [
+    "Review state is reported separately. --require-review opts into a team policy requiring a current",
+    "author review of all stored content and its scoped evidence; the default has no review requirement.",
+    "Source files explicitly covered by a review are embedded too, so its evidence remains available offline.",
     "Runs the shared xpl ready check before writing: unfinished required text, structural errors, stale indexes",
     "and broken source links block ready output (exit 1; no output written). Reader warnings are reported.",
     "--draft explicitly writes a draft preview with its findings. --note records justified omissions or warning",
@@ -146,14 +150,25 @@ export const bundleCommand: CommandSpec = {
     "missing (their code is gone), the command refuses: the page would point at the wrong code. Run",
     "`xpl resolve <explainer> --write` and re-explain what it lists. --allow-drift is a legacy draft preview flag; it warns,",
     "and the page tells the reader which parts may be out of date.",
+    "--include-guides id,id embeds up to eight additional local guides, limited to 20 MiB of additional JSON.",
+    "Each has its own index and source scope, follows the same readiness gates and accepts --draft explicitly.",
     "--mode present opens in present mode; --tour <id> starts that tour (and implies --mode present).",
     "The output path is printed as given (absolute when you gave it absolute); -o is relative to the working",
     "directory.",
   ],
   options: {
+    "include-guides": {
+      type: "string",
+      arg: "id,id",
+      desc: "Embed up to 8 additional checked guides (20 MiB limit) for offline switching",
+    },
     draft: {
       type: "boolean",
       desc: "Write an explicitly labelled draft preview, even with readiness errors",
+    },
+    "require-review": {
+      type: "boolean",
+      desc: "Team policy: require a current author review of all stored content",
     },
     note: {
       type: "string",
@@ -198,6 +213,18 @@ export const bundleCommand: CommandSpec = {
       throw new UsageError("--boundary-max needs --files boundary");
     }
     const indexOption = args.choice("embed-index", ["full", "pruned"] as const);
+    const included = [
+      ...new Set(
+        (args.str("include-guides") ?? "")
+          .split(",")
+          .map((id) => id.trim())
+          .filter(Boolean),
+      ),
+    ];
+    if (included.length > LIBRARY_MAX_GUIDES)
+      throw new UsageError(
+        `--include-guides accepts at most ${LIBRARY_MAX_GUIDES} additional guides`,
+      );
     const loaded = loadExplainer(ctx, args.positionals[0]!);
 
     let tour: string | undefined;
@@ -223,6 +250,7 @@ export const bundleCommand: CommandSpec = {
       ctx,
       loaded,
       args.str("note"),
+      args.flag("require-review"),
     );
     const draft = args.flag("draft") || args.flag("allow-drift");
     if (ws.stale && !args.flag("draft")) {
@@ -286,6 +314,32 @@ Repair these findings, or use --draft for a labelled preview.`,
     });
     if (ws.stale) bundle.sourceWarning = ws.stale.message;
     bundle.exportInfo = { status: draft ? "draft" : "ready", report };
+    bundle.guideId = loaded.name;
+    if (included.length) {
+      const entries = loadRepositoryGuides(ctx);
+      bundle.guides = [];
+      let bytes = 0;
+      for (const id of included) {
+        if (id === loaded.name) continue;
+        const entry = entries.find((entry) => entry.name === id);
+        if (!entry) throw new CliError(`no local guide "${id}"; list keys with xpl guides`);
+        if ("error" in entry) throw new CliError(`${id}: ${entry.error}`);
+        const snapshot = await guideSnapshot(ctx, entry.loaded, {
+          draft,
+          choice,
+          indexChoice: indexOption,
+          boundaryMax,
+          note: args.str("note"),
+          requireReview: args.flag("require-review"),
+        });
+        bytes += Buffer.byteLength(JSON.stringify(snapshot));
+        if (bytes > LIBRARY_MAX_BYTES)
+          throw new CliError(
+            "Included guides exceed the 20 MiB library limit. Include fewer guides or fewer source files.",
+          );
+        bundle.guides.push(snapshot);
+      }
+    }
     // the index packed: a fifth of its size as plain JSON (the viewer unpacks it, `parseBundle`)
     const page = injectBundle(html, bundle, { packIndex: true });
     const target = resolve(ctx.cwd, out);

@@ -277,6 +277,7 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
                         viewId={map.view.id}
                         resetKey={`${map.view.id}:${state.stepSeq}`}
                         graph={map.graph}
+                        pins={map.view.layout}
                         selection={[...state.selection, ...map.related]}
                         matches={mapMatches}
                         related={map.related}

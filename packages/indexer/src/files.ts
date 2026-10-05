@@ -99,18 +99,29 @@ export interface GitInfo {
   atToplevel: boolean;
 }
 
+/** Optional process context for git reads in a caller-owned repository. Defaults retain normal git discovery. */
+export interface GitOptions {
+  env?: NodeJS.ProcessEnv;
+  /** Global git arguments, before the subcommand (for example --git-dir and --work-tree). */
+  args?: readonly string[];
+}
+
 /** Run git in `cwd`; resolves to stdout, or undefined when git fails or is not installed. */
-export function runGit(cwd: string, args: readonly string[]): Promise<string | undefined> {
+export function runGit(
+  cwd: string,
+  args: readonly string[],
+  options: GitOptions = {},
+): Promise<string | undefined> {
   return new Promise((resolve) => {
     execFile(
       "git",
-      [...args],
+      [...(options.args ?? []), ...args],
       {
         cwd,
         maxBuffer: 512 * 1024 * 1024,
         encoding: "utf8",
         // Never write the index lock just to answer a read-only question.
-        env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" },
+        env: { ...(options.env ?? process.env), GIT_OPTIONAL_LOCKS: "0" },
       },
       (error, stdout) => resolve(error ? undefined : stdout),
     );
@@ -118,8 +129,12 @@ export function runGit(cwd: string, args: readonly string[]): Promise<string | u
 }
 
 /** Detect whether `root` is inside a git work tree. */
-export async function detectGit(root: string): Promise<GitInfo | undefined> {
-  const out = await runGit(root, ["rev-parse", "--is-inside-work-tree", "--show-toplevel"]);
+export async function detectGit(root: string, options?: GitOptions): Promise<GitInfo | undefined> {
+  const out = await runGit(
+    root,
+    ["rev-parse", "--is-inside-work-tree", "--show-toplevel"],
+    options,
+  );
   if (out === undefined) return undefined;
   const [inside, toplevel] = out.split("\n");
   if (inside?.trim() !== "true" || !toplevel) return undefined;
@@ -140,10 +155,13 @@ export interface DiscoveredFile {
 }
 
 export interface DiscoverOptions {
+  /** False returns path candidates without reading/filtering content, for metadata polling. */
+  content?: boolean;
   /** Only files of these languages are returned. */
   languages?: readonly FileLanguage[];
   /** Result of `detectGit(root)`; detected when omitted. */
   git?: GitInfo | undefined;
+  gitOptions?: GitOptions;
 }
 
 export interface Discovery {
@@ -154,8 +172,12 @@ export interface Discovery {
 }
 
 /** Paths git lists for `root` (tracked + untracked, minus ignored), relative to `root`. */
-async function gitPaths(root: string): Promise<string[] | undefined> {
-  const out = await runGit(root, ["ls-files", "--cached", "--others", "--exclude-standard", "-z"]);
+async function gitPaths(root: string, options?: GitOptions): Promise<string[] | undefined> {
+  const out = await runGit(
+    root,
+    ["ls-files", "--cached", "--others", "--exclude-standard", "-z"],
+    options,
+  );
   if (out === undefined) return undefined;
   return out.split("\0").filter((p) => p !== "");
 }
@@ -194,6 +216,30 @@ function inExcludedDir(path: string): boolean {
     );
 }
 
+/** Shared discovery and cleanliness exclusions; generated output cannot dirty an index. */
+export function isIndexInputPath(path: string): boolean {
+  return (
+    !path.endsWith("/") &&
+    !inExcludedDir(path) &&
+    !isLockfile(path) &&
+    !/\.(?:explainer|patch)\.json$/i.test(path)
+  );
+}
+
+/** Content eligibility shared with Git cleanliness. Undefined retains unreadable/deleted changes. */
+export async function isIndexInputFile(abs: string): Promise<boolean | undefined> {
+  const accepted = await passesContentFilters(abs);
+  if (accepted !== true || !/\.html?$/i.test(abs)) return accepted;
+  try {
+    const text = await readFile(abs, "utf8");
+    return !text.includes(
+      '<script id="xpl-data" type="application/json">{"schema":"code-explainer/bundle@0"',
+    );
+  } catch {
+    return undefined;
+  }
+}
+
 /** Is `path` (relative to `root`) a text file within the limits? Cheap checks first, then a NUL sniff. */
 async function passesContentFilters(abs: string): Promise<boolean | undefined> {
   let info;
@@ -226,19 +272,28 @@ export async function discoverFiles(
   options: DiscoverOptions = {},
 ): Promise<Discovery> {
   const warnings: string[] = [];
-  const git = "git" in options ? options.git : await detectGit(root);
+  const git = "git" in options ? options.git : await detectGit(root, options.gitOptions);
   let candidates: string[] | undefined;
-  if (git) candidates = await gitPaths(root);
+  if (git) candidates = await gitPaths(root, options.gitOptions);
   const usedGit = candidates !== undefined;
   candidates ??= await walkPaths(root, warnings);
 
   const wanted = options.languages ? new Set<FileLanguage>(options.languages) : undefined;
   const selected: DiscoveredFile[] = [];
   for (const path of candidates) {
-    if (path.endsWith("/") || inExcludedDir(path) || isLockfile(path)) continue;
+    if (!isIndexInputPath(path)) continue;
     const language = languageForPath(path);
     if (wanted && !wanted.has(language)) continue;
     selected.push({ path, abs: join(root, ...path.split("/")), language });
+  }
+
+  if (options.content === false) {
+    selected.sort((a, b) => a.path.localeCompare(b.path));
+    return {
+      files: selected.filter((f, i) => i === 0 || f.path !== selected[i - 1]!.path),
+      usedGit,
+      warnings,
+    };
   }
 
   // Content filters (stat + NUL sniff), a bounded number of files at a time.
@@ -248,23 +303,7 @@ export async function discoverFiles(
     const batch = selected.slice(i, i + BATCH);
     const verdicts = await Promise.all(
       batch.map(async (f) => {
-        if (!(await passesContentFilters(f.abs))) return false;
-        // Exports are generated artifacts, including small custom-viewer bundles. Indexing them would
-        // make the next export stale and can recursively embed earlier exports. Keep ordinary HTML.
-        if (/\.html?$/i.test(f.path)) {
-          try {
-            const text = await readFile(f.abs, "utf8");
-            if (
-              text.includes(
-                '<script id="xpl-data" type="application/json">{"schema":"code-explainer/bundle@0"',
-              )
-            )
-              return false;
-          } catch {
-            return false;
-          }
-        }
-        return true;
+        return (await isIndexInputFile(f.abs)) === true;
       }),
     );
     batch.forEach((file, j) => {

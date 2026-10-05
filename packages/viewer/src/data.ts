@@ -1,3 +1,4 @@
+import type { WatchAttention } from "@xpl/core";
 /**
  * Where the viewer's data comes from (ARCHITECTURE.md section 5, "Bundle payload"):
  *
@@ -8,6 +9,8 @@
  *                                     (plain text; JSON `"..."` or `{ "text": "..." }` also works)
  *     GET  {api}/base-file?path=<file> the code before the change of a changed file missing from
  *                                     `bundle.baseFiles` (plain text, like `/file`)
+ *     PUT  {api}/edits                bounded user edits with inspected artifact version and field preconditions
+ *     PUT  {api}/review               persist/remove author review; rejects changed inspected fingerprint
  *     PUT  {api}/views/<view id>      persist a view edit: JSON `{ "type": <view type>, ...changed fields }`
  *     PUT  {api}/tours/<tour id>      persist a tour edit: JSON `{ "title": ..., "steps": [...] }` (the whole tour;
  *                                     a new tour is created the same way)
@@ -22,10 +25,17 @@ import {
   BUNDLE_SCRIPT_ID,
   parseBundle,
   parseFeedbackRequest,
+  type GuideDescriptor,
+  type Range,
   type Explainer,
+  type ExplainerPatch,
+  type ArtifactIdentity,
+  type UserEdit,
   type ViewerBundle,
   type FeedbackRequest,
 } from "@xpl/core";
+
+import { selectGuide } from "./library.js";
 
 export type LoadedBundle = { ok: true; bundle: ViewerBundle } | { ok: false; error: string };
 
@@ -39,7 +49,10 @@ export function loadBundle(doc: Document = document): LoadedBundle {
     };
   }
   try {
-    const bundle = parseBundle(element.textContent ?? "");
+    const bundle = selectGuide(
+      parseBundle(element.textContent ?? ""),
+      new URLSearchParams(doc.location?.search ?? "").get("guide"),
+    );
     if (!bundle.explainer || !bundle.index) throw new Error("the bundle has no explainer or index");
     bundle.files = bundle.files ?? {};
     return { ok: true, bundle };
@@ -58,16 +71,75 @@ export type ExplainRequest = FeedbackRequest;
 export class ServerApi {
   /** Current workspace export snapshot: complete referenced source and a forced freshness check. */
   async exportBundle(): Promise<ViewerBundle> {
-    const response = await this.check(await fetch(this.url("/export"), { cache: "no-store" }));
-    return parseBundle(await response.text());
+    const response = await this.check(await this.request("/export", { cache: "no-store" }));
+    return this.attachedBundle(await response.text());
   }
 
   /** Current index and referenced source, refreshed after the workspace ETag changes. */
   async bundle(): Promise<ViewerBundle> {
-    const response = await this.check(await fetch(this.url("/bundle"), { cache: "no-store" }));
-    return parseBundle(await response.text());
+    const response = await this.check(await this.request("/bundle", { cache: "no-store" }));
+    return this.attachedBundle(await response.text());
   }
-  constructor(readonly base: string) {}
+  async guides(): Promise<{
+    guides: (GuideDescriptor | { id: string; metadataError: string })[];
+    errors: { id: string; error: string }[];
+  }> {
+    const response = await this.check(await this.request("/guides", { cache: "no-store" }));
+    return response.json();
+  }
+
+  async attention(): Promise<WatchAttention | undefined> {
+    const response = await this.request("/watch", { cache: "no-store" });
+    // Older managed services have no attention endpoint; keep their reader unchanged.
+    if (response.status === 404) return undefined;
+    await this.check(response);
+    return (await response.json()) as WatchAttention;
+  }
+
+  async controlWatch(
+    action: "pause" | "resume" | "stop",
+    instanceId: string,
+  ): Promise<WatchAttention | undefined> {
+    const response = await this.check(
+      await this.request("/watch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, instanceId }),
+        signal: AbortSignal.timeout(120000),
+      }),
+    );
+    if (action === "stop") return undefined;
+    return (await response.json()) as WatchAttention;
+  }
+
+  constructor(
+    readonly base: string,
+    readonly attachment?: NonNullable<ViewerBundle["server"]>["attachment"],
+  ) {}
+
+  private request(path: string, init: RequestInit = {}): Promise<Response> {
+    const headers = new Headers(init.headers);
+    if (this.attachment) {
+      const { root, guide } = this.attachment;
+      headers.set("X-Xpl-Attachment", encodeURIComponent(JSON.stringify({ root, guide })));
+    }
+    return fetch(this.url(path), {
+      ...init,
+      headers,
+      signal: init.signal ?? AbortSignal.timeout(5000),
+    });
+  }
+
+  private attachedBundle(text: string): ViewerBundle {
+    const bundle = parseBundle(text);
+    const actual = bundle.server?.attachment;
+    if (
+      this.attachment &&
+      (actual?.root !== this.attachment.root || actual?.guide !== this.attachment.guide)
+    )
+      throw new Error("409: This address serves a different repository or guide.");
+    return bundle;
+  }
 
   private url(path: string): string {
     return `${this.base.replace(/\/+$/, "")}${path}`;
@@ -95,7 +167,7 @@ export class ServerApi {
   /** Source text of a file. Accepts plain text, or JSON: a string, or an object with `text` / `content`. */
   async file(path: string): Promise<string> {
     const response = await this.check(
-      await fetch(this.url(`/file?path=${encodeURIComponent(path)}`), { cache: "no-store" }),
+      await this.request(`/file?path=${encodeURIComponent(path)}`, { cache: "no-store" }),
     );
     const type = response.headers.get("content-type") ?? "";
     if (!type.includes("application/json")) return response.text();
@@ -112,9 +184,39 @@ export class ServerApi {
   /** The code before the change of a changed file (`ChangedFile.path`), like `file`. */
   async baseFile(path: string): Promise<string> {
     const response = await this.check(
-      await fetch(this.url(`/base-file?path=${encodeURIComponent(path)}`)),
+      await this.request(`/base-file?path=${encodeURIComponent(path)}`),
     );
     return response.text();
+  }
+
+  /** Bounded author fields with an inspected version; the response includes the conditional inverse. */
+  async putEdits(
+    version: ArtifactIdentity,
+    edits: UserEdit[],
+  ): Promise<{ explainer: Explainer; inverse: UserEdit[] }> {
+    if (!this.attachment)
+      throw new Error(
+        "This page has no live repository or guide identity. Reopen it before saving.",
+      );
+    const response = await this.check(
+      await this.request("/edits", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ version, edits }),
+      }),
+    );
+    return response.json();
+  }
+
+  /** Author-only metadata; the server applies this bounded patch as actor user. */
+  async putReview(review: ExplainerPatch["review"]): Promise<void> {
+    await this.check(
+      await this.request("/review", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ review }),
+      }),
+    );
   }
 
   /** Persists changed view fields; `fields` always carries the view's `type`. */
@@ -122,7 +224,7 @@ export class ServerApi {
     // View ids are slugs plus a "view:" prefix; keep the colon readable in the URL.
     const id = encodeURIComponent(viewId).replace(/%3A/gi, ":");
     await this.check(
-      await fetch(this.url(`/views/${id}`), {
+      await this.request(`/views/${id}`, {
         method: "PUT",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(fields),
@@ -134,7 +236,7 @@ export class ServerApi {
   async putTour(tourId: string, tour: { title: string; steps: readonly unknown[] }): Promise<void> {
     const id = encodeURIComponent(tourId).replace(/%3A/gi, ":");
     await this.check(
-      await fetch(this.url(`/tours/${id}`), {
+      await this.request(`/tours/${id}`, {
         method: "PUT",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ title: tour.title, steps: tour.steps }),
@@ -149,7 +251,7 @@ export class ServerApi {
   async getExplainer(
     etag: string | undefined,
   ): Promise<{ explainer: Explainer; etag: string | undefined } | undefined> {
-    const response = await fetch(this.url("/explainer"), {
+    const response = await this.request("/explainer", {
       headers: etag !== undefined ? { "if-none-match": etag } : {},
       cache: "no-store",
     });
@@ -162,14 +264,14 @@ export class ServerApi {
   }
 
   async requests(): Promise<FeedbackRequest[]> {
-    const response = await this.check(await fetch(this.url("/requests"), { cache: "no-store" }));
+    const response = await this.check(await this.request("/requests", { cache: "no-store" }));
     const data = (await response.json()) as { requests: unknown[] };
     return data.requests.map(parseFeedbackRequest);
   }
 
   async postRequest(request: ExplainRequest): Promise<void> {
     await this.check(
-      await fetch(this.url("/requests"), {
+      await this.request("/requests", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(request),
@@ -190,6 +292,9 @@ export interface LaunchParams {
   view?: string;
   perspective?: "guide" | "map" | "flow" | "code" | "explore";
   focus?: string[];
+  file?: string;
+  range?: Range;
+  stepId?: string;
 }
 
 export function readLaunchParams(search: string = location.search): LaunchParams {
@@ -213,5 +318,25 @@ export function readLaunchParams(search: string = location.search): LaunchParams
   )
     out.perspective = perspective;
   if (params.has("focus")) out.focus = params.getAll("focus");
+  const stepId = params.get("step-id");
+  if (stepId) out.stepId = stepId;
+  const file = params.get("file");
+  const range = /^(\d+)(?::(\d+))?-(\d+)(?::(\d+))?$/.exec(params.get("range") ?? "");
+  if (file && range) {
+    const [startLine, startCol, endLine, endCol] = [range[1], range[2], range[3], range[4]].map(
+      (n) => (n === undefined ? undefined : Number(n)),
+    );
+    if (
+      startLine &&
+      endLine &&
+      endLine >= startLine &&
+      !!startCol === !!endCol &&
+      (startCol === undefined ||
+        (startCol > 0 && endCol! > 0 && (endLine > startLine || endCol! >= startCol)))
+    ) {
+      out.file = file;
+      out.range = { startLine, endLine, ...(startCol !== undefined ? { startCol, endCol } : {}) };
+    }
+  }
   return out;
 }

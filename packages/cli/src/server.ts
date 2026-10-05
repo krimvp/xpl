@@ -3,6 +3,7 @@
  *
  *   GET  /                    the viewer HTML with the bundle injected (`server: { api: "/api" }`,
  *                             `files` = the files the explainer references; others are fetched lazily)
+ *   GET  /api/guides          shared local catalog; ?id=<key> returns a bounded read-only snapshot
  *   GET  /api/bundle          the same bundle as JSON
  *   GET  /api/export          current complete export snapshot with its readiness report
  *   GET  /api/explainer       the explainer alone, with an ETag; 304 when If-None-Match still matches (the
@@ -13,6 +14,8 @@
  *   GET  /api/base-file?path= the code before the change of one changed file (text/plain): only for the
  *                             modified, renamed and deleted files of the explainer's change record (`path` is
  *                             `ChangedFile.path`); 400 for a malformed path, 404 for anything else
+ *   PUT  /api/edits          { version, edits }, bounded user text/evidence/graph and conditional inverses; 409 on conflicts.
+ *   PUT  /api/review         { review: record | null }, applied as actor "user"; fingerprint checked at write.
  *   PUT  /api/views/<id>      a view patch, applied as actor "user", written to disk; 200 with the
  *                             updated view, 400 with { error, issues } when rejected
  *   PUT  /api/tours/<id>      the same for a tour: { title?, steps? } (both for a new tour), applied as
@@ -20,6 +23,9 @@
  *   GET  /api/requests        durable feedback, outcomes and context warnings for this explainer
  *   POST /api/requests        a snapshot-bound FeedbackRequest, merged by its stable request ID;
  *                             legacy element-only input is stored as outdated, without invented context
+ *   GET/POST /api/jobs        managed-service history / snapshot-bound selection (runner required)
+ *   GET /api/jobs/<UUID>      one job for this guide; results remain proposals
+ *   POST /api/jobs/<UUID>/<cancel|supersede|retry>   durable fenced lifecycle actions; no acceptance
  *
  * Both the bundle and /api/explainer carry the explainer with its anchors re-resolved against the index and the
  * working tree (`freshAnchors`, as `xpl bundle` does), never the stale `resolved` cache of the file.
@@ -29,10 +35,17 @@
  * It binds to 127.0.0.1 by default. Against DNS rebinding and cross-site writes it checks the Host
  * header (loopback binds), and requires an application/json body and a same-origin Origin for PUT/POST.
  */
-import { artifactIdentity, feedbackContextReason, parseFeedbackRequest } from "@xpl/core";
+import {
+  BUNDLE_SCHEMA,
+  artifactIdentity,
+  applyUserEdits,
+  UserEditError,
+  feedbackContextReason,
+  parseFeedbackRequest,
+} from "@xpl/core";
 import { createHash } from "node:crypto";
-import { statSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, realpathSync, statSync } from "node:fs";
+import { join, sep } from "node:path";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import {
@@ -48,9 +61,13 @@ import {
 import { collectBaseFiles, collectFiles, freshAnchors, makeBundle } from "./bundle-data.js";
 import type { RepoEnv } from "./context.js";
 import { CliError, errorMessage } from "./errors.js";
-import { atomicWrite, withFileLock, displayPath, jsonFile } from "./fsutil.js";
+import { atomicWrite, withRepositoryLock, displayPath, jsonFile } from "./fsutil.js";
 import { importRequests, appendRequest, readRequests } from "./requests.js";
+import { watchAttention } from "./attention.js";
+import type { watchControl } from "./watch-control.js";
+import type { openJobs, JobSubmission } from "./jobs.js";
 import {
+  loadRepositoryGuides,
   WorkingTree,
   chooseIndexFile,
   explainerName,
@@ -59,6 +76,8 @@ import {
   stalenessOf,
   type LoadedExplainer,
 } from "./repo.js";
+
+import { guideSnapshot, localGuideCatalog, LIBRARY_MAX_BYTES } from "./guide-library.js";
 
 export interface ViewServerOptions {
   env: RepoEnv;
@@ -69,6 +88,16 @@ export interface ViewServerOptions {
   port: number;
   /** Viewer HTML, read per request so a rebuilt viewer shows up on reload. */
   viewerHtml: () => string;
+  /** Managed lifecycle control. The token and stop callback never enter a viewer bundle. */
+  control?: {
+    token: string;
+    instanceId: string;
+    root: string;
+    backend: "none" | "claude";
+    jobs?: Awaited<ReturnType<typeof openJobs>>;
+    watch?: ReturnType<typeof watchControl>;
+    stop(): void;
+  };
 }
 
 export interface ViewServer {
@@ -169,9 +198,38 @@ function wellFormedPath(path: string): boolean {
 export async function startViewServer(options: ViewServerOptions): Promise<ViewServer> {
   const { env, explainerPath, host } = options;
   let allowedHosts: Set<string> | undefined;
+  const root = realpathSync(env.root);
+  const attachment: NonNullable<NonNullable<ViewerBundle["server"]>["attachment"]> = {
+    root,
+    guide: displayPath(root, realpathSync(explainerPath)),
+    ...(options.control
+      ? {
+          instanceId: options.control.instanceId,
+          backend: options.control.backend,
+          backendAvailable: options.control.jobs?.availability.available ?? false,
+        }
+      : {}),
+  };
+
+  function checkServicePaths(...paths: string[]) {
+    if (!options.control) return;
+    for (const path of paths) {
+      if (!realpathSync(path).startsWith(options.control.root + sep)) {
+        throw new HttpError(403, "service artifact path leaves its repository");
+      }
+    }
+  }
+
+  function checkRequestStore() {
+    checkServicePaths(join(env.root, ".explainer"));
+
+    const path = join(env.root, ".explainer", "requests.json");
+    if (existsSync(path)) checkServicePaths(path);
+  }
 
   /** Everything a request needs, read fresh: the explainer, its index, the working tree. */
   async function loadState() {
+    checkServicePaths(explainerPath);
     const explainer = readExplainerFile(explainerPath);
     const loaded: LoadedExplainer = {
       abs: explainerPath,
@@ -179,11 +237,17 @@ export async function startViewServer(options: ViewServerOptions): Promise<ViewS
       name: explainerName(explainerPath),
       explainer,
     };
+    return { loaded, ...(await loadRepositoryIndex()) };
+  }
+
+  /** Watch inventory and controls survive a missing or unreadable attached guide. */
+  async function loadRepositoryIndex() {
     const tree = new WorkingTree(env.root);
     // A live workspace follows a newly generated index; an explicit --index still wins.
     const indexFile = await chooseIndexFile(env, tree, { skipExplainerIndex: true });
+    checkServicePaths(indexFile);
     const { index, model } = loadIndexFile(indexFile);
-    return { loaded, tree, indexFile, index, model };
+    return { tree, indexFile, index, model };
   }
 
   /** The explainer with its anchors re-resolved against the index and the working tree, as `xpl bundle` does. */
@@ -197,6 +261,7 @@ export async function startViewServer(options: ViewServerOptions): Promise<ViewS
     for (const path of [
       state.indexFile,
       env.root,
+      ...(options.control ? [join(env.root, ".explainer/service/watch.json")] : []),
       ...state.model.directories.map((dir) => join(env.root, dir)),
       ...state.index.files.map((file) => join(env.root, file.path)),
     ]) {
@@ -229,13 +294,14 @@ export async function startViewServer(options: ViewServerOptions): Promise<ViewS
     const base = collectBaseFiles(explainer, state.tree.texts);
     const stale = await stalenessOf(env, state.tree, state.index, state.indexFile, state.loaded);
     const bundle: ViewerBundle = {
+      guideId: state.loaded.name,
       ...makeBundle({
         explainer,
         index: state.index,
         files: collected.files,
         ...(base !== undefined ? { baseFiles: base.files } : {}),
         mode: "explore",
-        server: { api: API },
+        server: { api: API, attachment },
       }),
       ...(stale ? { sourceWarning: stale.message } : {}),
     };
@@ -247,6 +313,27 @@ export async function startViewServer(options: ViewServerOptions): Promise<ViewS
       bundle.exportInfo = { status: report.ready ? "ready" : "draft", report };
     }
     return bundle;
+  }
+
+  async function previewOf(id: string): Promise<ViewerBundle> {
+    const entry = loadRepositoryGuides(env).find((entry) => entry.name === id);
+    if (!entry) throw new HttpError(404, "Guide not found in this repository.");
+    if ("error" in entry) throw new HttpError(422, entry.error);
+    const snapshot = await guideSnapshot(env, entry.loaded, { draft: true });
+    if (Buffer.byteLength(JSON.stringify(snapshot)) > LIBRARY_MAX_BYTES)
+      throw new HttpError(
+        413,
+        "Guide exceeds the 20 MiB preview limit. Export it locally with xpl bundle.",
+      );
+    const quote = (value: string) => "'" + value.replace(/'/g, "'\\''") + "'";
+    return {
+      schema: BUNDLE_SCHEMA,
+      ...snapshot,
+      readOnlyGuide: {
+        stopCommand: `xpl service stop --root ${quote(root)}`,
+        command: `xpl service start ${quote(entry.loaded.rel)} --root ${quote(root)}`,
+      },
+    };
   }
 
   // View edits and request appends run one at a time: each is a read-modify-write of a file.
@@ -269,6 +356,22 @@ export async function startViewServer(options: ViewServerOptions): Promise<ViewS
       throw new HttpError(400, "malformed request URL");
     }
     const { pathname } = url;
+    const expected = req.headers["x-xpl-attachment"] ?? url.searchParams.get("attachment");
+    let context: { root?: unknown; guide?: unknown } | undefined;
+    if (expected !== undefined && expected !== null) {
+      try {
+        context = JSON.parse(
+          req.headers["x-xpl-attachment"] ? decodeURIComponent(String(expected)) : String(expected),
+        );
+      } catch {
+        throw new HttpError(400, "Invalid service attachment.");
+      }
+      if (!attachment || context?.root !== attachment.root || context?.guide !== attachment.guide)
+        throw new HttpError(
+          409,
+          "This address serves a different repository or guide. Open that service's own URL.",
+        );
+    }
     const allow = (...methods: string[]) => {
       if (!methods.includes(method)) {
         throw new HttpError(405, `${method} is not allowed here (use ${methods.join(", ")})`, {
@@ -277,15 +380,127 @@ export async function startViewServer(options: ViewServerOptions): Promise<ViewS
       }
     };
 
+    if (options.control && (pathname === `${API}/service` || pathname === `${API}/service/stop`)) {
+      const control = options.control;
+      if (req.headers.authorization !== `Bearer ${control.token}`)
+        throw new HttpError(403, "service ownership token required");
+      allow(pathname.endsWith("/stop") ? "POST" : "GET");
+      if (method === "POST") {
+        await readJsonBody(req);
+        res.once("finish", control.stop);
+      }
+      sendJson(req, res, 200, { instanceId: control.instanceId, root: control.root });
+      return;
+    }
+
+    checkServicePaths(join(env.root, ".explainer"));
+
+    if (pathname === `${API}/watch`) {
+      const control = options.control;
+      if (!control) throw new HttpError(404, "watch controls require a managed repository service");
+      allow("GET", "POST");
+      if (method === "POST") {
+        const body = await readJsonBody(req);
+        if (
+          Object.keys(body).some((key) => !["action", "instanceId"].includes(key)) ||
+          !["pause", "resume", "stop"].includes(String(body.action))
+        )
+          throw new HttpError(400, "watch action must be pause, resume or stop");
+        if (req.headers.authorization !== `Bearer ${control.token}`) {
+          if (expected === undefined || expected === null)
+            throw new HttpError(403, "managed attachment required for watch controls");
+          if (body.instanceId !== control.instanceId)
+            throw new HttpError(
+              409,
+              "Service instance changed. Refresh attention before controlling it.",
+            );
+        }
+        if (body.action === "stop") {
+          res.once("finish", control.stop);
+          sendJson(req, res, 200, { stopping: true, instanceId: control.instanceId });
+          return;
+        } else {
+          if (!control.watch)
+            throw new HttpError(409, "watching is not enabled; restart with --watch");
+          await serial(() => control.watch!.change(body.action as "pause" | "resume"));
+        }
+      }
+      const state = await loadRepositoryIndex();
+      sendJson(
+        req,
+        res,
+        200,
+        watchAttention(
+          env,
+          state.model,
+          state.tree.texts,
+          !!control.watch,
+          control.instanceId,
+          attachment.guide,
+        ),
+      );
+      return;
+    }
+
+    if (pathname === `${API}/jobs` || pathname.startsWith(`${API}/jobs/`)) {
+      const jobs = options.control?.jobs;
+      if (!jobs) throw new HttpError(404, "jobs require a managed repository service");
+      const name = attachment.guide;
+      const parts = pathname.slice(`${API}/jobs`.length).split("/").filter(Boolean);
+      try {
+        if (parts.length === 0) {
+          allow("GET", "HEAD", "POST");
+          if (method === "POST") {
+            const body = await readJsonBody(req);
+            if (Object.keys(body).some((k) => !["id", "selectedRequestIds", "include"].includes(k)))
+              throw new HttpError(400, "Expected id, selectedRequestIds and optional include.");
+            const job = await serial(() => jobs.submit(name, body as unknown as JobSubmission));
+            sendJson(req, res, 200, { job });
+          } else sendJson(req, res, 200, { ...jobs.availability, jobs: await jobs.list(name) });
+        } else if (parts.length === 1) {
+          allow("GET", "HEAD");
+          sendJson(req, res, 200, { job: await jobs.get(name, parts[0]!) });
+        } else if (parts.length === 2 && ["cancel", "supersede", "retry"].includes(parts[1]!)) {
+          allow("POST");
+          const body = await readJsonBody(req);
+          if (Object.keys(body).some((k) => parts[1] !== "retry" || k !== "expectedAttempt"))
+            throw new HttpError(
+              400,
+              "Retry expects only expectedAttempt; cancel/supersede expect an empty object.",
+            );
+          const job = await serial(() =>
+            parts[1] === "retry"
+              ? jobs.retry(name, parts[0]!, body.expectedAttempt)
+              : jobs.fence(name, parts[0]!, parts[1] === "cancel" ? "cancelled" : "superseded"),
+          );
+          sendJson(req, res, 200, { job });
+        } else throw new HttpError(404, "unknown job route");
+      } catch (error) {
+        if (error instanceof CliError)
+          throw new HttpError(Number(error.extra.status ?? 400), error.message);
+        throw error;
+      }
+      return;
+    }
     if (pathname === "/" || pathname === "/index.html") {
       allow("GET", "HEAD");
-      const html = injectBundle(options.viewerHtml(), await bundleOf());
+      const guide = url.searchParams.get("guide");
+      const html = injectBundle(
+        options.viewerHtml(),
+        guide && guide !== explainerName(explainerPath) ? await previewOf(guide) : await bundleOf(),
+      );
       send(req, res, 200, html, "text/html; charset=utf-8");
       return;
     }
     if (pathname === `${API}/export`) {
       allow("GET", "HEAD");
       sendJson(req, res, 200, await bundleOf(true));
+      return;
+    }
+    if (pathname === `${API}/guides`) {
+      allow("GET", "HEAD");
+      const id = url.searchParams.get("id");
+      sendJson(req, res, 200, id === null ? localGuideCatalog(env) : await previewOf(id));
       return;
     }
     if (pathname === `${API}/bundle`) {
@@ -298,7 +513,11 @@ export async function startViewServer(options: ViewServerOptions): Promise<ViewS
       const state = await loadState();
       const fresh = freshExplainer(state);
       const text = JSON.stringify(fresh, null, 2);
-      const etag = `"${createHash("sha1").update(text).update(sourceFingerprint(state)).digest("hex")}"`;
+      const etag = `"${createHash("sha1")
+        .update(text)
+        .update(sourceFingerprint(state))
+        .update(attachment?.instanceId ?? "")
+        .digest("hex")}"`;
       if (req.headers["if-none-match"] === etag) {
         res.writeHead(304, { ETag: etag, "Cache-Control": "no-store" });
         res.end();
@@ -358,6 +577,75 @@ export async function startViewServer(options: ViewServerOptions): Promise<ViewS
       send(req, res, 200, text, "text/plain; charset=utf-8");
       return;
     }
+    if (pathname === `${API}/edits`) {
+      allow("PUT");
+      if (typeof req.headers["x-xpl-attachment"] !== "string")
+        throw new HttpError(400, "Expected a live repository and guide attachment.");
+      if (!context || typeof context.root !== "string" || typeof context.guide !== "string")
+        throw new HttpError(400, "Invalid service attachment.");
+      const body = await readJsonBody(req);
+      if (Object.keys(body).sort().join(",") !== "edits,version" || !isRecord(body.version))
+        throw new HttpError(400, "Expected only version and bounded edits.");
+      const expectedVersion = body.version;
+      const saved = await serial(() =>
+        withRepositoryLock(env.root, explainerPath, async () => {
+          const state = await loadState();
+          const current = freshExplainer(state);
+          const version = artifactIdentity(current, state.index);
+          if (
+            expectedVersion.explainerHash !== version.explainerHash ||
+            expectedVersion.sourceHash !== version.sourceHash
+          )
+            throw new HttpError(
+              409,
+              "This explanation changed since you inspected it. Reload and inspect it before saving.",
+            );
+          try {
+            const result = applyUserEdits(current, body.edits, state.model, state.tree.texts);
+            await atomicWrite(state.loaded.abs, jsonFile(result.explainer));
+            return { ...result, version: artifactIdentity(result.explainer, state.index) };
+          } catch (error) {
+            if (error instanceof UserEditError)
+              throw new HttpError(error.conflict ? 409 : 400, error.message);
+            throw error;
+          }
+        }),
+      );
+      sendJson(req, res, 200, saved);
+      return;
+    }
+
+    // Only review metadata enters this route; core checks the inspected fingerprint as a user patch.
+    if (pathname === `${API}/review`) {
+      allow("PUT");
+      const body = await readJsonBody(req);
+      if (!Object.hasOwn(body, "review") || Object.keys(body).length !== 1)
+        throw new HttpError(400, "Expected only a review field (record or null).");
+      const saved = await serial(() =>
+        withRepositoryLock(env.root, explainerPath, async () => {
+          const state = await loadState();
+          const result = applyPatch(
+            state.loaded.explainer,
+            body as unknown as ExplainerPatch,
+            state.model,
+            state.tree.texts,
+            { actor: "user" },
+          );
+          if (!result.ok)
+            throw new HttpError(
+              400,
+              `Review patch rejected: ${result.issues.find((i) => i.severity === "error")?.message ?? "invalid"}`,
+              { issues: result.issues },
+            );
+          if (result.changed.length > 0)
+            await atomicWrite(state.loaded.abs, jsonFile(result.explainer));
+          return result.explainer;
+        }),
+      );
+      sendJson(req, res, 200, saved);
+      return;
+    }
+
     // PUT /api/views/<id> and PUT /api/tours/<id>: a patch of one view / tour, applied as the user.
     const record = pathname.startsWith(`${API}/views/`)
       ? ({ kind: "view", collection: "views" } as const)
@@ -380,7 +668,7 @@ export async function startViewServer(options: ViewServerOptions): Promise<ViewS
         throw new HttpError(400, `the id in the body (${String(body.id)}) does not match ${id}`);
       }
       const saved = await serial(() =>
-        withFileLock(explainerPath, async () => {
+        withRepositoryLock(env.root, explainerPath, async () => {
           const state = await loadState();
           const patch = { [record.collection]: [{ ...body, id }] } as unknown as ExplainerPatch;
           const result = applyPatch(state.loaded.explainer, patch, state.model, state.tree.texts, {
@@ -417,12 +705,13 @@ export async function startViewServer(options: ViewServerOptions): Promise<ViewS
           }
           if (request.explainer !== undefined && request.explainer !== name)
             throw new HttpError(400, "feedback names a different explainer");
-          await importRequests(env.root, [request]);
+          await serial(() => importRequests(env.root, [request]));
           const state = await loadState();
           const contextReason =
             feedbackContextReason(request, artifactIdentity(freshExplainer(state), state.index)) ??
             (await stalenessOf(env, state.tree, state.index, state.indexFile, state.loaded))
               ?.message;
+          checkRequestStore();
           sendJson(req, res, 201, {
             ok: true,
             request: readRequests(env.root).requests.find((r) => r.id === request.id),
@@ -455,18 +744,25 @@ export async function startViewServer(options: ViewServerOptions): Promise<ViewS
           throw new HttpError(400, "unknown feedback kind");
         const view = text("view", 200);
         const label = text("label", 500);
-        const saved = await appendRequest(env.root, {
-          elementId,
-          ...(note !== undefined ? { note } : {}),
-          kind,
-          ...(view !== undefined ? { view } : {}),
-          ...(label !== undefined ? { label } : {}),
-          explainer: name,
-          context: null,
-        });
+        const saved = await serial(() =>
+          appendRequest(
+            env.root,
+            {
+              elementId,
+              ...(note !== undefined ? { note } : {}),
+              kind,
+              ...(view !== undefined ? { view } : {}),
+              ...(label !== undefined ? { label } : {}),
+              explainer: name,
+              context: null,
+            },
+            checkRequestStore,
+          ),
+        );
         sendJson(req, res, 201, { ok: true, ...saved });
         return;
       }
+      checkRequestStore();
       const { requests, error } = readRequests(env.root);
       if (error) throw new HttpError(500, error);
       const mine = requests.filter((r) => r.explainer === undefined || r.explainer === name);
@@ -496,6 +792,8 @@ export async function startViewServer(options: ViewServerOptions): Promise<ViewS
 
   const server: Server = createServer((req, res) => {
     handle(req, res).catch((error: unknown) => {
+      if (error instanceof CliError && error.extra.code === "REPOSITORY_ESCAPE")
+        error = new HttpError(403, error.message);
       if (res.headersSent) {
         res.destroy();
         return;
@@ -549,10 +847,12 @@ export async function startViewServer(options: ViewServerOptions): Promise<ViewS
     host,
     port,
     explainerPath,
-    close: () =>
-      new Promise<void>((resolve) => {
+    close: async () => {
+      await new Promise<void>((resolve) => {
         server.closeAllConnections();
         server.close(() => resolve());
-      }),
+      });
+      await queue;
+    },
   };
 }

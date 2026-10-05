@@ -1,9 +1,15 @@
 import { request } from "node:http";
+import { realpathSync, copyFileSync } from "node:fs";
 import { createServer as createNetServer } from "node:net";
 import { join } from "node:path";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import {
   BUNDLE_SCHEMA,
+  artifactIdentity,
+  makeUserEdit,
+  asIndexModel,
+  reviewFingerprint,
+  TextCache,
   collectAnchors,
   parseBundle,
   type Explainer,
@@ -87,6 +93,201 @@ async function json(res: Response): Promise<any> {
 }
 
 describe("xpl view", () => {
+  it("serves the shared catalog and exact-path read-only previews without changing the attachment", async () => {
+    const dir = cloneDir(demo);
+    expect((await xpl(dir, "new", "retry.json", "--title", "Retry guide")).code).toBe(0);
+    copyFileSync(join(dir, ".explainer/demo.explainer.json"), join(dir, "retry.json"));
+    const view = await serve(dir);
+    const current = parseBundle(await (await fetch(`${view.url}/api/bundle`)).text());
+    const headers = {
+      "X-Xpl-Attachment": encodeURIComponent(JSON.stringify(current.server!.attachment)),
+    };
+    const response = await fetch(`${view.url}/api/guides`, { headers });
+    expect(response.status).toBe(200);
+    const cli = await xplJson(dir, "guides");
+    expect(await json(response)).toEqual({ guides: cli.json.guides, errors: cli.json.errors });
+    const previewResponse = await fetch(`${view.url}/api/guides?id=retry.json`, { headers });
+    expect(previewResponse.status).toBe(200);
+    const preview = parseBundle(await previewResponse.text());
+    expect(preview.explainer.title).toBe("Retry guide");
+    expect(preview.server).toBeUndefined();
+    expect(preview.readOnlyGuide?.stopCommand).toBe(`xpl service stop --root '${dir}'`);
+    expect(preview.readOnlyGuide?.command).toContain(".explainer/retry.json.explainer.json");
+    const page = bundleOf(await (await fetch(`${view.url}/?guide=retry.json`)).text());
+    expect(page.explainer.title).toBe("Retry guide");
+    expect(page.server).toBeUndefined();
+    const after = parseBundle(await (await fetch(`${view.url}/api/bundle`)).text());
+    expect(after.server).toEqual(current.server);
+    expect(after.explainer.title).toEqual(current.explainer.title);
+    expect((await fetch(`${view.url}/api/guides?id=../retry.json`)).status).toBe(404);
+    expect(
+      (
+        await fetch(`${view.url}/api/guides`, {
+          headers: {
+            "X-Xpl-Attachment": encodeURIComponent(
+              JSON.stringify({ ...current.server!.attachment, guide: "different" }),
+            ),
+          },
+        })
+      ).status,
+    ).toBe(409);
+    expect(
+      (
+        await fetch(`${view.url}/api/guides`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: "{}",
+        })
+      ).status,
+    ).toBe(405);
+  });
+
+  it("version-checks bounded edits and persists undo without replacing concurrent fields", async () => {
+    const dir = cloneDir(demo);
+    const view = await serve(dir);
+    const snapshot = async () => parseBundle(await (await fetch(`${view.url}/api/bundle`)).text());
+    const initial = await snapshot();
+    const edit = makeUserEdit(
+      initial.explainer,
+      asIndexModel(initial.index),
+      "nodes",
+      "file:src/runner.ts",
+      { summary: "Corrected runner summary." },
+    );
+    const attachment = { root: realpathSync(dir), guide: ".explainer/demo.explainer.json" };
+    const put = (version: unknown, edits: unknown, expected: unknown = attachment) =>
+      fetch(`${view.url}/api/edits`, {
+        method: "PUT",
+        headers: {
+          ...JSON_HEADERS,
+          ...(expected ? { "X-Xpl-Attachment": encodeURIComponent(JSON.stringify(expected)) } : {}),
+        },
+        body: JSON.stringify({ version, edits }),
+      });
+    const version = artifactIdentity(initial.explainer, initial.index);
+    const saved = await put(version, [edit]);
+    expect(saved.status).toBe(200);
+    const { inverse } = await json(saved);
+    expect(
+      readJson(dir, ".explainer/demo.explainer.json").nodes.find((n: any) => n.id === edit.id)
+        .summary,
+    ).toBe("Corrected runner summary.");
+    const savedSnapshot = await snapshot();
+    const savedVersion = artifactIdentity(savedSnapshot.explainer, savedSnapshot.index);
+    for (const wrong of [
+      { ...attachment, root: attachment.root + "-copy" },
+      { ...attachment, guide: "other" },
+    ]) {
+      const refused = await put(savedVersion, inverse, wrong);
+      expect(refused.status).toBe(409);
+      expect(await json(refused)).toMatchObject({
+        error: "This address serves a different repository or guide. Open that service's own URL.",
+      });
+    }
+    expect((await put(savedVersion, inverse, null)).status).toBe(400);
+    expect(
+      readJson(dir, ".explainer/demo.explainer.json").nodes.find((n: any) => n.id === edit.id)
+        .summary,
+    ).toBe("Corrected runner summary.");
+    expect((await put(version, [edit])).status).toBe(409);
+    expect(
+      (
+        await invoke(["apply", "demo", "-", "--actor", "user"], {
+          cwd: dir,
+          stdin: JSON.stringify({ nodes: [{ id: edit.id, detail: "Concurrent detail." }] }),
+        })
+      ).code,
+    ).toBe(0);
+    const current = await snapshot();
+    const undo = await put(artifactIdentity(current.explainer, current.index), inverse);
+    expect(undo.status).toBe(200);
+    const disk = readJson(dir, ".explainer/demo.explainer.json");
+    expect(disk.nodes.find((n: any) => n.id === edit.id).detail).toBe("Concurrent detail.");
+    expect(disk.nodes.find((n: any) => n.id === edit.id).summary).toBe(
+      initial.explainer.nodes.find((n) => n.id === edit.id)?.summary,
+    );
+    const restored = await snapshot();
+    expect(
+      (
+        await put(artifactIdentity(restored.explainer, restored.index), [
+          { ...edit, after: { provenance: { origin: "llm" } } },
+        ])
+      ).status,
+    ).toBe(400);
+  });
+
+  it("records and removes author reviews on disk, rejects stale inspected content, and embeds broad evidence", async () => {
+    const dir = cloneDir(demo);
+    const view = await serve(dir);
+    const initial = parseBundle(await (await fetch(`${view.url}/api/export`)).text());
+    const scope = { content: "all" as const, source: "repository" as const };
+    // Repository review reads every indexed file, including source not referenced by a diagram.
+    const texts = new TextCache((path) => readFile(dir, path));
+    const review = {
+      reviewer: "Ada",
+      reviewedAt: "2026-10-04T12:00:00Z",
+      scope,
+      omissions: ["No runtime tests were run."],
+      fingerprint: reviewFingerprint(initial.explainer, initial.index, texts, scope),
+    };
+    const put = (body: unknown) =>
+      fetch(`${view.url}/api/review`, {
+        method: "PUT",
+        headers: JSON_HEADERS,
+        body: JSON.stringify(body),
+      });
+    const saved = await put({ review });
+    expect(saved.status).toBe(200);
+    expect(readJson(dir, ".explainer/demo.explainer.json").review).toEqual({
+      ...review,
+      sourceCommit: initial.index.commit,
+    });
+    const exported = parseBundle(await (await fetch(`${view.url}/api/export`)).text());
+    expect(exported.exportInfo?.report.review).toEqual({ status: "reviewed", required: false });
+    expect(exported.files["README.md"]).toBe(readFile(dir, "README.md"));
+    const edited = await fetch(`${view.url}/api/views/view:overview`, {
+      method: "PUT",
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ title: "Edited after inspection" }),
+    });
+    expect(edited.status).toBe(200);
+    const stale = await put({ review });
+    expect(stale.status).toBe(400);
+    expect(await json(stale)).toMatchObject({
+      issues: [{ code: "review", path: "review.fingerprint" }],
+    });
+    expect(readJson(dir, ".explainer/demo.explainer.json").review).toEqual({
+      ...review,
+      sourceCommit: initial.index.commit,
+    });
+    expect((await put({ review: null, title: "Bypass user patch" })).status).toBe(400);
+    expect((await put({ review: null })).status).toBe(200);
+    expect(readJson(dir, ".explainer/demo.explainer.json").review).toBeUndefined();
+  });
+
+  it("refuses review writes when a live guide is replaced by an external symlink", async () => {
+    const { symlinkSync, unlinkSync } = await import("node:fs");
+    const dir = cloneDir(demo);
+    const outside = cloneDir(demo);
+    const view = await serve(dir);
+    const guide = ".explainer/demo.explainer.json";
+    const before = readFile(outside, guide);
+    // A valid clear would normally write this guide; the repository fence must run first.
+    unlinkSync(join(dir, guide));
+    symlinkSync(join(outside, guide), join(dir, guide));
+    const response = await fetch(`${view.url}/api/review`, {
+      method: "PUT",
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ review: null }),
+    });
+    expect(response.status).toBe(403);
+    expect(await json(response)).toMatchObject({
+      error: "service artifact path leaves its repository",
+    });
+    expect(readFile(outside, guide)).toBe(before);
+    expect(readFile(dir, guide)).toBe(before);
+  });
+
   it("export snapshots include source behind stubs and check current workspace hashes", async () => {
     const dir = cloneDir(demo);
     const view = await serve(dir);
@@ -211,7 +412,10 @@ describe("xpl view", () => {
     expect(html).toContain("<title>stub viewer</title>");
     const data = bundleOf(html);
     expect(data.schema).toBe(BUNDLE_SCHEMA);
-    expect(data.server).toEqual({ api: "/api" });
+    expect(data.server).toEqual({
+      api: "/api",
+      attachment: { root: realpathSync(demo), guide: ".explainer/demo.explainer.json" },
+    });
     expect(data.mode).toBe("explore");
     expect(data.explainer.title).toBe("Job runner");
     // the files referenced by anchors and views; the viewer fetches the rest lazily (what lies behind a stub too)
@@ -234,7 +438,10 @@ describe("xpl view", () => {
     expect(res.headers.get("content-type")).toContain("application/json");
     const bundle = (await json(res)) as ViewerBundle;
     expect(bundle.schema).toBe(BUNDLE_SCHEMA);
-    expect(bundle.server).toEqual({ api: "/api" });
+    expect(bundle.server).toEqual({
+      api: "/api",
+      attachment: { root: realpathSync(demo), guide: ".explainer/demo.explainer.json" },
+    });
     expect(bundle.explainer.views).toHaveLength(2);
     expect(Object.keys(bundle.files)).toContain("src/runner.ts");
     const html = await (await fetch(`${view.url}/`)).text();

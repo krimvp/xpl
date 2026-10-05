@@ -49,7 +49,7 @@ import { STRUCTURE_SUPPORT, HEURISTIC_SUPPORT } from "../analysis.js";
 import { posix } from "node:path";
 import type { Node } from "web-tree-sitter";
 import { SpanIndex, nodeSpan, spanBetween, spanLineCount } from "../ast.js";
-import { probeModule, repoPath, resolveBareSpecifier } from "./ts-modules.js";
+import { probeModule, repoPath, resolveBareSpecifier, pathsConfigFor } from "./ts-modules.js";
 import { LocalScopes, patternNames } from "./ts-scope.js";
 import type {
   ClassifiedSite,
@@ -2210,6 +2210,9 @@ export const typescriptPack: LanguagePack = {
     return language === "typescript" ? "typescript" : "tsx";
   },
   packageScope: "file",
+  readConfiguration: (file, repo) => {
+    pathsConfigFor(repo, file);
+  },
   refs: "heuristic",
 
   extract(ctx: FileContext): FileFacts {

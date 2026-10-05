@@ -28,7 +28,7 @@ export function openBrowser(url: string): void {
 }
 
 /** Resolves when the abort signal fires or the process gets SIGINT / SIGTERM. */
-function untilStopped(signal: AbortSignal | undefined): Promise<void> {
+export function untilStopped(signal: AbortSignal | undefined): Promise<void> {
   return new Promise((resolve) => {
     const stop = () => {
       process.off("SIGINT", stop);
@@ -43,7 +43,13 @@ function untilStopped(signal: AbortSignal | undefined): Promise<void> {
   });
 }
 
-async function listen(ctx: Ctx, explainerPath: string, host: string, port: number | undefined) {
+export async function listen(
+  ctx: Ctx,
+  explainerPath: string,
+  host: string,
+  port: number | undefined,
+  control?: Parameters<typeof startViewServer>[0]["control"],
+) {
   const start = (p: number): Promise<ViewServer> =>
     startViewServer({
       env: ctx,
@@ -51,6 +57,7 @@ async function listen(ctx: Ctx, explainerPath: string, host: string, port: numbe
       host,
       port: p,
       viewerHtml: () => readViewerHtml(ctx.env),
+      ...(control ? { control } : {}),
     });
   if (port !== undefined) return start(port);
   try {

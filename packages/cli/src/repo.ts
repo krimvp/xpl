@@ -12,8 +12,8 @@
  * A single candidate is used as it is. Whatever was chosen is compared with the working tree, and a
  * warning names the files that changed since it was built.
  */
-import { readdirSync, statSync } from "node:fs";
-import { basename, join, resolve } from "node:path";
+import { lstatSync, readdirSync, realpathSync, statSync } from "node:fs";
+import { basename, join, resolve, sep } from "node:path";
 import {
   INDEX_SCHEMA,
   TextCache,
@@ -31,6 +31,7 @@ import {
   readSource,
   resolveCommitId,
   shortHead,
+  captureIndexInputs,
   type GitInfo,
 } from "@xpl/indexer";
 import type { RepoEnv } from "./context.js";
@@ -38,6 +39,8 @@ import { CliError, errorMessage } from "./errors.js";
 import { listText } from "./format.js";
 import { displayPath, parseJson, readTextFile, workingTreeReader } from "./fsutil.js";
 import { gitShowReader } from "./git.js";
+import { readWatchState, indexDigest } from "./watch-state.js";
+import { scipInputPaths, scipProviders } from "./index-options.js";
 
 export const EXPLAINER_DIR = ".explainer";
 export const EXPLAINER_SUFFIX = ".explainer.json";
@@ -218,6 +221,8 @@ export async function chooseIndexFile(
   opts: { explainer?: LoadedExplainer; skipExplainerIndex?: boolean } = {},
 ): Promise<string> {
   if (env.indexOption !== undefined) return resolveOption(env, env.indexOption);
+  const watched = readWatchState(env.root);
+  if (watched?.state !== "stopped" && watched?.index) return resolveOption(env, watched.index.path);
   if (opts.explainer && !opts.skipExplainerIndex) {
     const path = opts.explainer.explainer.index?.path;
     if (typeof path === "string" && path !== "") {
@@ -252,6 +257,41 @@ export async function stalenessOf(
   indexFile: string,
   explainer?: LoadedExplainer,
 ): Promise<Staleness | undefined> {
+  const watched = readWatchState(env.root);
+  if (
+    watched &&
+    watched.state !== "stopped" &&
+    watched.index?.path === displayPath(env.root, indexFile)
+  ) {
+    let reason = watched.stale
+      ? `watch ${watched.state}${watched.error ? `: ${watched.error}` : ""}`
+      : watched.precise === undefined
+        ? "watch record lacks provider selection; restart the watched service"
+        : undefined;
+    if (!reason && watched.indexDigest !== indexDigest(index))
+      reason = "watched index was replaced outside its checked publication";
+    if (!reason) {
+      try {
+        const inputs = await captureIndexInputs({
+          root: env.root,
+          precise: watched.precise,
+          inputPaths: scipInputPaths(watched.scip),
+          ...(watched.scip ? { providers: scipProviders(watched.scip) } : {}),
+        });
+        if (inputs.fingerprint !== watched.fingerprint)
+          reason = "source or discovery/provider configuration changed since the watched snapshot";
+      } catch (error) {
+        reason = errorMessage(error);
+      }
+    }
+    if (reason) {
+      const head = `index ${index.commit} (${displayPath(env.root, indexFile)}) is out of date: ${reason}`;
+      return {
+        head,
+        message: `${head}. Waiting for a checked watch build; stop the service to use manual indexing.`,
+      };
+    }
+  }
   const current = await tree.commit();
   // A commit label is not evidence of identical source or line positions (including legacy indexes).
   const hashes = await tree.fileHashes();
@@ -331,15 +371,28 @@ export function explainerName(path: string): string {
     : base.replace(/\.json$/, "");
 }
 
-export function listExplainerNames(root: string): string[] {
+function listExplainerPaths(root: string): string[] {
+  let present = false;
   try {
-    return readdirSync(join(root, EXPLAINER_DIR))
+    const dir = join(root, EXPLAINER_DIR);
+    lstatSync(dir);
+    present = true;
+    const canonicalRoot = realpathSync(root);
+    const canonicalDir = realpathSync(dir);
+    if (canonicalDir !== canonicalRoot && !canonicalDir.startsWith(canonicalRoot + sep))
+      throw new CliError("guide directory leaves its repository");
+    return readdirSync(dir)
       .filter((name) => name.endsWith(EXPLAINER_SUFFIX))
-      .map((name) => name.slice(0, -EXPLAINER_SUFFIX.length))
-      .sort();
-  } catch {
-    return [];
+      .sort()
+      .map((name) => join(dir, name));
+  } catch (error) {
+    if (!present && (error as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw new CliError(`cannot list repository guides: ${errorMessage(error)}`);
   }
+}
+
+export function listExplainerNames(root: string): string[] {
+  return listExplainerPaths(root).map(explainerName);
 }
 
 /** `demo`, `demo.explainer.json`, `.explainer/demo.explainer.json` or any path to the file. */
@@ -377,4 +430,29 @@ export function loadExplainer(env: RepoEnv, arg: string): LoadedExplainer {
     name: explainerName(abs),
     explainer: readExplainerFile(abs),
   };
+}
+
+/** Load the discovered files for catalog and evidence readers; neither metadata nor an index gates loading. */
+export function loadRepositoryGuides(
+  env: RepoEnv,
+): ({ name: string; loaded: LoadedExplainer } | { name: string; error: string })[] {
+  return listExplainerPaths(env.root).map((abs) => {
+    const name = explainerName(abs);
+    try {
+      const canonical = realpathSync(abs);
+      if (!canonical.startsWith(realpathSync(env.root) + sep))
+        throw new CliError("guide path leaves its repository");
+      return {
+        name,
+        loaded: {
+          abs,
+          rel: displayPath(env.root, abs),
+          name,
+          explainer: readExplainerFile(canonical),
+        },
+      };
+    } catch (error) {
+      return { name, error: errorMessage(error) };
+    }
+  });
 }

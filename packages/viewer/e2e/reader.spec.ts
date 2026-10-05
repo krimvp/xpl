@@ -509,6 +509,7 @@ test.describe("the reader's screen", () => {
     await expect(menu.getByRole("menuitem")).toHaveText([
       /Explore the diagrams/,
       /Edit the guide's steps/,
+      /Record author review/,
       /Save as HTML/,
       /Download explainer JSON/,
     ]);

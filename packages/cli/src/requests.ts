@@ -12,7 +12,7 @@ import {
   type FeedbackStatus,
 } from "@xpl/core";
 import { CliError, errorMessage } from "./errors.js";
-import { atomicWrite, withFileLock, jsonFile } from "./fsutil.js";
+import { atomicWrite, withRepositoryLock, jsonFile } from "./fsutil.js";
 import { EXPLAINER_DIR } from "./repo.js";
 
 export const REQUESTS_FILE = "requests.json";
@@ -61,7 +61,7 @@ async function mutate<T>(
   root: string,
   merge: (requests: FeedbackRequest[]) => T | Promise<T>,
 ): Promise<T> {
-  return withFileLock(requestsPath(root), async () => {
+  return withRepositoryLock(root, requestsPath(root), async () => {
     const { requests, error } = readRequests(root);
     if (error) throw new CliError(error);
     const result = await merge(requests);
@@ -87,6 +87,7 @@ export async function importRequests(
 export async function appendRequest(
   root: string,
   request: Omit<FeedbackRequest, "id" | "at" | "outcome"> & { id?: string; at?: string },
+  checkStore?: () => void,
 ): Promise<{ request: FeedbackRequest; pending: number }> {
   const at = request.at ?? new Date().toISOString();
   const entry = parseFeedbackRequest({
@@ -104,6 +105,7 @@ export async function appendRequest(
         : { revision: 0, status: "pending", reason: "Awaiting an explicit revision pass.", at },
   });
   await importRequests(root, [entry]);
+  checkStore?.();
   const saved = readRequests(root).requests;
   return {
     request: saved.find((r) => r.id === entry.id)!,

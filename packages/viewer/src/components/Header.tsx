@@ -20,12 +20,14 @@ import { explainerFileName } from "../edits.js";
 import { useStore, useViewerState } from "../hooks.js";
 import { stepNumber } from "../modes.js";
 import { canSaveHtml } from "../saveHtml.js";
+import { Review } from "./Review.js";
 import { SaveHtml } from "./SaveHtml.js";
 import { FeedbackPanel } from "./FeedbackPanel.js";
 import { EdgeKindToggles } from "./EdgeKinds.js";
 import { StubsControl } from "./StubsControl.js";
 import { TourPanel } from "./TourPanel.js";
 import { ViewTabs } from "./ViewTabs.js";
+import { SearchLibrary } from "./SearchLibrary.js";
 import { WorkspaceTabs } from "./WorkspaceTabs.js";
 
 /** The tooltip of the disabled Present button. */
@@ -34,6 +36,8 @@ export const NO_TOURS_HINT =
 
 export function Header() {
   const state = useViewerState();
+  const [searchOpen, setSearchOpen] = useState(false);
+  const searchButton = useRef<HTMLButtonElement>(null);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [toursOpen, setToursOpen] = useState(false);
   const present = state.mode === "present";
@@ -71,11 +75,35 @@ export function Header() {
       <div className="spacer" />
       <SaveStatus />
       <button
+        ref={searchButton}
+        className="btn"
+        type="button"
+        aria-label="Search and guides"
+        aria-haspopup="dialog"
+        aria-expanded={searchOpen}
+        onClick={() => {
+          setSearchOpen(!searchOpen);
+          setFeedbackOpen(false);
+          setToursOpen(false);
+        }}
+      >
+        Search
+      </button>
+      {searchOpen && (
+        <SearchLibrary
+          onClose={() => {
+            setSearchOpen(false);
+            searchButton.current?.focus();
+          }}
+        />
+      )}
+      <button
         className="btn"
         type="button"
         aria-expanded={feedbackOpen}
         onClick={() => {
           setFeedbackOpen(!feedbackOpen);
+          setSearchOpen(false);
           setToursOpen(false);
         }}
       >
@@ -184,6 +212,14 @@ function StepProgress() {
 /** What the save state is, in words (none when there is nothing to say). */
 function saveStatus(state: ReturnType<typeof useViewerState>) {
   const { save, dirty, serverMode } = state;
+  if (state.editError)
+    return { text: `Not saved: ${state.editError}`, tone: "error", title: state.editError };
+  if (state.editDraft && !state.editBusy)
+    return {
+      text: "Unsaved draft",
+      tone: "warn",
+      title: "Save or cancel the draft in Details.",
+    };
   if (serverMode) {
     if (save.status === "saving")
       return { text: "Saving…", tone: "busy", title: "Saving your edits" };
@@ -236,6 +272,7 @@ function EditMenu({ toursOpen, onTours }: { toursOpen: boolean; onTours: () => v
   const store = useStore();
   const state = useViewerState();
   const [open, setOpen] = useState(false);
+  const [reviewOpen, setReviewOpen] = useState(false);
   const [htmlOpen, setHtmlOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);
   const button = useRef<HTMLButtonElement>(null);
@@ -286,6 +323,14 @@ function EditMenu({ toursOpen, onTours }: { toursOpen: boolean; onTours: () => v
 
   return (
     <div ref={root} className="edit-menu">
+      {reviewOpen && (
+        <Review
+          onClose={() => {
+            setReviewOpen(false);
+            button.current?.focus();
+          }}
+        />
+      )}
       {htmlOpen && (
         <SaveHtml
           onClose={() => {
@@ -338,9 +383,31 @@ function EditMenu({ toursOpen, onTours }: { toursOpen: boolean; onTours: () => v
             testId="edit-tours"
             title="Edit the guide's steps"
             hint="Add, order and write the steps of a tour"
+            disabled={!!state.readOnlyGuide}
             expanded={toursOpen}
             onClick={run(onTours)}
           />
+          {!present && (state.undoCount > 0 || state.redoCount > 0) && (
+            <>
+              <MenuItem
+                testId="edit-undo"
+                title={`Undo ${store.editHistoryDescription()}`}
+                disabled={!state.undoCount || state.editBusy || state.editDraft}
+                onClick={run(() => void store.undoEdit().catch(() => undefined))}
+              />
+              <MenuItem
+                testId="edit-redo"
+                title={`Redo ${store.editHistoryDescription(true)}`}
+                disabled={!state.redoCount || state.editBusy || state.editDraft}
+                onClick={run(() => void store.undoEdit(true).catch(() => undefined))}
+              />
+            </>
+          )}
+          {state.editHistoryError && (
+            <p role="alert" className="edit-note is-error">
+              {state.editHistoryError}
+            </p>
+          )}
           {graph && (
             <div className="edit-group" role="group" aria-label="This view">
               <p className="edit-group-title">This view</p>
@@ -348,6 +415,13 @@ function EditMenu({ toursOpen, onTours }: { toursOpen: boolean; onTours: () => v
               <EdgeKindToggles kinds={graph.edgeKinds ?? DEFAULT_EDGE_KINDS} />
             </div>
           )}
+          <MenuItem
+            testId="edit-review"
+            disabled={!!state.readOnlyGuide}
+            title="Record author review"
+            hint="Inspect a scoped snapshot and name important omissions"
+            onClick={run(() => setReviewOpen(true))}
+          />
           {canSaveHtml() && (
             <MenuItem
               testId="edit-save-html"
@@ -362,6 +436,7 @@ function EditMenu({ toursOpen, onTours }: { toursOpen: boolean; onTours: () => v
           )}
           <MenuItem
             testId="edit-download"
+            disabled={state.editBusy || state.editDraft}
             title="Download explainer JSON"
             hint="The file with the edits made here"
             onClick={run(() => download(fileName, store.explainerJson(), "application/json"))}
@@ -373,13 +448,15 @@ function EditMenu({ toursOpen, onTours }: { toursOpen: boolean; onTours: () => v
                 : status.text}
             </p>
           )}
-          {state.serverMode && state.save.status === "error" && (
-            <MenuItem
-              testId="edit-retry"
-              title="Retry save"
-              onClick={run(() => void store.flush())}
-            />
-          )}
+          {state.serverMode &&
+            state.save.status === "error" &&
+            (!state.editError || state.dirty) && (
+              <MenuItem
+                testId="edit-retry"
+                title="Retry save"
+                onClick={run(() => void store.flush())}
+              />
+            )}
         </div>
       )}
     </div>
@@ -391,12 +468,14 @@ function MenuItem({
   title,
   hint,
   expanded,
+  disabled,
   onClick,
 }: {
   testId: string;
   title: string;
   hint?: string;
   expanded?: boolean;
+  disabled?: boolean;
   onClick: () => void;
 }) {
   return (
@@ -406,6 +485,7 @@ function MenuItem({
       className="edit-item"
       data-testid={testId}
       aria-expanded={expanded}
+      disabled={disabled}
       aria-controls={expanded !== undefined ? "tour-panel" : undefined}
       onClick={onClick}
     >
