@@ -219,12 +219,15 @@ Conventions (all packages):
 17. `SequenceView.type` may be `"flow"`: the same fields as a sequence, drawn as stages and decisions. A step
     adds `shape?: "stage" | "decision" | "terminal"` and `next?: { step, label? }[]` (labelled branches to
     steps of the same view; without `next` a step goes on to the next one, a `terminal` ends a path). A
-    sequence view can be drawn as a flow too, in reading order (`processFlow`, `projected: true`). A `next`
-    link may add `kind: "recurse"` (the steps from an earlier step run again, one level down; a step with only
+    sequence view can be projected into stages by `processFlow` (`projected: true`); the viewer keeps its
+    sequence diagram in Read and Explore. A `next` link may add `kind: "recurse"` (the steps from an earlier
+    step run again, one level down; a step with only
     recurse links still goes on to the next one) or `kind: "return"` (back up one level, to `step`, or with no `step` to the caller; a
     terminal may have these). `SequenceView.layout?: "code-first" | "diagram"` overrides `codeFirstView`
-    (viewer `workspace.ts`: code first when every step's code is in one file). A flow step whose first anchor
-    is not inside its `from` gets a warning (a `return` step whose code is in `to` excepted).
+    (viewer `workspace.ts`: at least three steps, each with current-code anchors all in one file). Read
+    applies this layout only to flow views; Explore also accepts explicit `code-first` on sequences (§6).
+    A flow step whose first anchor is not inside its `from` gets a warning (a `return` step whose code is
+    in `to` excepted).
     `Edge.via?: ElementId[]`: what an edge passes through without a box; an llm edge's evidence is per hop,
     and a hop the index shows (`hopRefs`) needs no anchors.
 18. `SymbolIndex` adds `resources?: ResourceReference[]`: files that code loads or discovers by a literal path
@@ -2318,18 +2321,21 @@ status stays in the sticky Save/Cancel bar, including the disabled Save reason.
 - **Sequence view:** lifelines, one row per step (`call` solid, `return` dashed, `async` open head), self-calls
   as loops, frames (`loop`/`alt`/`opt`/`par`) as labelled rectangles around their steps, nested by
   `resolveFrames`. A step's hit area covers its label and arrow. When the view has moved down, a copy of the
-  participant names stays at the top of the pane (`sticky-heads`).
+  participant names stays at the top of the pane (`sticky-heads`). The Read-mode Flow tab uses this same
+  renderer for sequence views, matching the Guide picture and Explore.
 - **Flow view:** `processFlow` (§4.8) laid out by the same layered layout, top to bottom: stages as boxes, decisions as diamonds,
   terminals, and the labelled `next` branches. A box shows the step's label large and, under it, the actor:
   the step's `from`, plus "→ B" when a stage hands work to another part and that fits (`stageActor`); a
   decision or a terminal shows the actor alone, and so does a step inside one part (the Guide and the details
-  say "inside X", never "X → X"). A sequence view in the Flow tab is drawn the same way, in reading order,
-  with a note that says so. A flow never zooms below 11 px text (`FLOW_READABLE_ZOOM`, Read's start and the
+  say "inside X", never "X → X"). A flow never zooms below 11 px text (`FLOW_READABLE_ZOOM`, Read's start and the
   floor of "Fit"). Recurse and return links are dashed and purple, with "one level down" / "up one level"
   after their label; a link of a stage to itself is a loop on its right side; labels are drawn after all
-  lines. A code-first view (`codeFirstView`) puts the code in the main pane (Read: the flow is a narrow
+  lines. A code-first view (`codeFirstView`) puts the code in the main pane (Read: a flow view gets a narrow
   outline column; Explore: the diagram column is narrow) and the outline keeps the caret's step (else the
-  selection) near its middle (`PanZoom.revealMargin`).
+  selection) near its middle (`PanZoom.revealMargin`). Read keeps sequence views in the diagram pane,
+  regardless of `layout`; "Show source" opens their linked code. Explore narrows a sequence's diagram column
+  only for explicit `layout: "code-first"`, keeping its lifelines, arrows and frames without a
+  caret-following process outline. One-file sequences otherwise keep Explore's usual diagram layout.
 - **Selection and code focus:** clicking any element (node, edge, stub, step, concept) selects it; the editors
   show the code focus (§4.5), one pane per focused file (a file opened from the tree or an anchor row first,
   then the step's `primary`, then focus order; at most 10 panes, the rest are listed): lines carry `xpl-hl`
