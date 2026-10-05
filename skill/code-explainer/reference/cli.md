@@ -727,6 +727,39 @@ nothing linted: fix the patch, then run `xpl lint --patch` again
 
 A flow step is named with its view (`host-check:1 (step in view:host-check)`). `--json`: `{ok, path, patch?, changed?, protectedIds?, strict, checked, total, counts: {<rule>: n}, findings: [{rule, severity?, elementId, kind: explainer|tour|tour-step|view|step|node|edge|concept, view?, field, quote, message, hint, ids?}]}` (`ok` is false when the exit code is 1: a finding (with `--warn-only`, a `todo-left` error), or a rejected patch, which gives `{ok: false, path, patch, changed: [], issues, error}` as `apply` does; `field` is `title`, `summary`, `note`, `note heading`, `label`, `detail`, `steps` for the order checks, `code` for `far-ranges`, `change` for `change-not-shown`, `include` or `hidden` for the map checks; `strict` is false with `--warn-only`; `view` names the map of a `tour-covers-map` finding; `ids` lists the boxes, files or edges a finding is about).
 
+## `xpl pr prepare <url|owner/repo#number|owner/repo> [number]`
+
+Prepare GitHub.com PR input with existing `gh` and git access:
+
+```sh
+xpl pr prepare https://github.com/owner/repo/pull/42 --cache-dir /absolute/pr-cache --json
+xpl pr prepare owner/repo 42 --cache-dir /absolute/pr-cache --precise off
+xpl pr cleanup /absolute/pr-cache/input-XXXXXX --cache-dir /absolute/pr-cache
+```
+
+Storage defaults to `$XDG_CACHE_HOME/xpl/pr` or `~/.cache/xpl/pr`, outside the developer checkout.
+Each run resolves the API base/head full SHAs and fetches a separate detached head. The base repository's
+PR ref can supply an inaccessible/deleted fork, but the resolved exact head must exist after fetch;
+a ref that moved to another commit is not substituted. Only head is indexed. `--precise off` is the default;
+`auto`/`require` explicitly opt into optional analysis tools. No developer branch, index, refs or files change.
+Inherited Git directory/work-tree/index overrides are removed from the owned Git context, which is passed
+through indexing, diff computation and source reads. Checkout bytes must match the raw head blobs before
+indexing. A configured smudge, encoding or line-ending conversion that changes content fails preparation
+and removes staging; disable that conversion for the PR run before retrying.
+
+JSON output gives `directory`, `repository`, `manifestPath` and `pr` identity. The immutable `input.json`
+records `schemaVersion: 1`, `kind: "github-pr-input"`, preparation time, PR identity, the rename-aware
+API base..head change, changed-file before/after source, head analysis and warnings. Text is read from
+the exact git commits; added-before and deleted-after sides are absent, and binary/unreadable sides have
+an explicit unavailable reason. Index metadata carries the full head, relative index path, SHA-256,
+file hashes and trust labels. Callers and tests describe head analysis only.
+
+This prepares input, not an explanation or ready result. No agent is invoked, and no freshness/supersession
+recheck or current-version promotion occurs. Keep old inputs as historical snapshots. Failures remove
+the failed staging directory; a killed process can leave a marked input for explicit cleanup. Cleanup
+refuses unowned paths and symlinks; stop consumers first. GitHub access/fetch/index failures exit 1;
+bad arguments exit 2. No credentials are created and nothing is written to GitHub.
+
 ## `xpl change <explainer> [<base>..<head>]`
 
 Records the change an explainer is about, from git, and prints what it touches. Run it once, at the start of explaining a PR or MR, on a checkout of the head with the index built (`xpl index`). Nothing is written to the repository.
