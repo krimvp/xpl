@@ -26,7 +26,8 @@
  *   GET/POST /api/jobs        managed-service history / snapshot-bound selection (runner required)
  *   GET/POST /api/answers     frozen question jobs; history also lives in portable feedback
  *   GET /api/jobs/<UUID>      one job for this guide; results remain proposals
- *   POST /api/jobs/<UUID>/<cancel|supersede|retry>   durable fenced lifecycle actions; no acceptance
+ *   GET/POST /api/jobs/<UUID>/review; POST .../accept   guarded #30 decisions and outcome recovery
+ *   POST /api/jobs/<UUID>/<cancel|supersede|retry>   durable fenced lifecycle actions
  *
  * Both the bundle and /api/explainer carry the explainer with its anchors re-resolved against the index and the
  * working tree (`freshAnchors`, as `xpl bundle` does), never the stale `resolved` cache of the file.
@@ -489,6 +490,37 @@ export async function startViewServer(options: ViewServerOptions): Promise<ViewS
               ? await jobs.getAnswer(name, parts[0]!)
               : await jobs.get(name, parts[0]!),
           });
+        } else if (!answering && parts.length === 2 && ["review", "accept"].includes(parts[1]!)) {
+          allow("GET", "HEAD", "POST");
+          if (parts[1] === "accept" && method !== "POST")
+            throw new HttpError(405, "Acceptance requires POST.");
+          const body =
+            method === "POST"
+              ? await readJsonBody(req)
+              : { attemptId: url.searchParams.get("attemptId") };
+          const allowed =
+            parts[1] === "accept" ? ["attemptId", "reviewToken"] : ["attemptId", "decisions"];
+          if (
+            typeof body.attemptId !== "string" ||
+            Object.keys(body).some((key) => !allowed.includes(key))
+          )
+            throw new HttpError(400, "Expected attemptId and optional review decisions.");
+          if (parts[1] === "accept" && typeof body.reviewToken !== "string")
+            throw new HttpError(
+              400,
+              "Acceptance requires the reviewToken from the inspected review.",
+            );
+          const review = await serial(() =>
+            jobs.review(name, parts[0]!, {
+              attemptId: body.attemptId as string,
+              ...(body.decisions !== undefined
+                ? { decisions: body.decisions as import("@xpl/core").RevisionDecision[] }
+                : {}),
+              accept: parts[1] === "accept",
+              ...(parts[1] === "accept" ? { reviewToken: body.reviewToken as string } : {}),
+            }),
+          );
+          sendJson(req, res, 200, { review });
         } else if (parts.length === 2 && ["cancel", "supersede", "retry"].includes(parts[1]!)) {
           allow("POST");
           const body = await readJsonBody(req);
