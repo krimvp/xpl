@@ -9,12 +9,19 @@ The examples use an invented change to `fixtures/ts-jobrunner` in the xpl repo: 
 ## 1. Rules
 
 - **Read-only** (SKILL.md, hard rule 3). For a change this means no `git push`, `gh pr comment`, `gh pr review`, `glab mr note` or other API call that writes, and no `checkout`, `switch`, `stash` (push or pop), `reset` or `gh pr checkout` in the user's working tree.
-- **Fetch only when asked.** Fetch a PR or MR ref only when the user asked you to explain that PR or MR and it is not in the checkout (`git fetch origin pull/<n>/head:pr-<n>` on GitHub, `git fetch origin merge-requests/<n>/head:mr-<n>` on GitLab). Otherwise ask for the base and the head.
+- **Fetch only when asked.** For a requested GitHub PR, use `xpl pr prepare <url>` (or `owner/repo <number>`) with an outside `--cache-dir`. It uses existing `gh`/git access, resolves full base/head commits and prepares a separate detached repository; never fetch into the developer's tree. For a GitLab MR, fetch `merge-requests/<n>/head` only in a separate scratch clone. Otherwise ask for a local base and head.
 - **Reading the base is always fine:** `xpl show --at base`, `git show <base>:<path>`, `git diff`, `git log`, `git grep <pattern> <base>`.
 - **A quick run on the base is fine without asking**, in a copy outside the repo: `git archive <base> <paths> | tar -x -C <scratch dir>`, then run a script or one test there. Do the same for the head when you need both. Test dependencies may come from a throwaway environment outside the repo (`uv run --no-project --with pytest ...`, or `npx` in the scratch dir). Never install into the repo or write inside it (`.explainer/` aside).
 - **Ask first** for anything that changes git state or the user's files: a worktree, a checkout, a branch.
 
 ## 2. Record the change
+
+For a prepared GitHub input, use the returned `repository` as the root and `input.json`'s full
+`pr.base.sha..pr.head.sha` range. Its head index already exists. Preparation does not invoke an agent,
+recheck the PR or produce a ready artifact; installed creation/current-head promotion is future work.
+Any manually authored guide is a walkthrough of those recorded commits. Do not claim it reflects the
+current PR without a fresh API check. Cleanup removes the owned input; keep it while the guide needs git
+for its base anchors. See `cli.md` for manifest fields and failure recovery.
 
 `xpl change <name> <base>..<head>` needs an index built from the head commit. Find the base and the head:
 
