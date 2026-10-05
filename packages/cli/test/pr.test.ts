@@ -2,6 +2,8 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
   chmodSync,
+  existsSync,
+  cpSync,
   mkdirSync,
   readFileSync,
   readdirSync,
@@ -10,9 +12,18 @@ import {
   statSync,
   symlinkSync,
 } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { git, invoke, makeTempDir, readJson, writeFile, xplJson } from "./helpers.js";
+import {
+  git,
+  invoke,
+  makeTempDir,
+  readJson,
+  writeFile,
+  writeViewerStub,
+  bundleOf,
+  xplJson,
+} from "./helpers.js";
 
 function fixture() {
   const root = makeTempDir();
@@ -64,7 +75,421 @@ function fixture() {
   return { root, base, head, tools, response, cache, env };
 }
 
+// A managed installed launcher imports the real source CLI, so this contract runs without build artifacts.
+function installedSkill() {
+  const dir = makeTempDir();
+  const skill = join(dir, "skill");
+  cpSync(resolve("skill/code-explainer"), skill, { recursive: true });
+  const cli = writeFile(
+    dir,
+    "xpl.mjs",
+    `import { tsImport } from ${JSON.stringify(resolve("node_modules/tsx/dist/esm/api/index.mjs"))};\nawait tsImport(${JSON.stringify(resolve("packages/cli/src/main.ts"))}, import.meta.url);\n`,
+  );
+  const files = Object.fromEntries(
+    ["SKILL.md", "bin/xpl", "reference/create.md"].map((file) => [
+      file,
+      createHash("sha256")
+        .update(readFileSync(join(skill, file)))
+        .digest("hex"),
+    ]),
+  );
+  writeFile(skill, "xpl-install.json", JSON.stringify({ version: "0.0.0", cli, files }));
+  return { skill, cli, viewer: writeViewerStub() };
+}
+
+async function creation() {
+  const f = fixture();
+  const installed = installedSkill();
+  const env = { ...f.env, XPL_VIEWER_HTML: installed.viewer };
+  const created = await invoke(
+    [
+      "pr",
+      "create",
+      "team/project#7",
+      "--name",
+      "review-change",
+      "--audience",
+      "reviewers",
+      "--question",
+      "What changes for app callers?",
+      "--skill-dir",
+      installed.skill,
+      "--cache-dir",
+      f.cache,
+      "--json",
+    ],
+    { cwd: f.root, env },
+  );
+  expect(created.code, created.out).toBe(0);
+  const output = JSON.parse(created.out);
+  const handoff = readJson(output.directory, "handoff.json");
+  const runInstalled = (...args: string[]) => {
+    try {
+      return execFileSync(handoff.command[0], [...handoff.command.slice(1), ...args, "--json"], {
+        cwd: f.root,
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          ...env,
+          GIT_DIR: join(f.root, ".git"),
+          GIT_WORK_TREE: f.root,
+          GIT_INDEX_FILE: join(f.root, ".git/index"),
+          XPL_CLI: "/invalid-inherited-cli",
+        },
+      });
+    } catch (error) {
+      throw new Error(String((error as { stdout?: unknown }).stdout ?? error));
+    }
+  };
+  // Recorded authoring response, independent of draft prose; the installed skill supplies the workflow.
+  const recorded = JSON.stringify({
+    scope: { audience: "reviewers" },
+    nodes: [
+      {
+        id: "file:app.ts",
+        summary: "Changed: app returns two for every call.",
+        anchors: [{ file: "app.ts", symbol: "app", role: "definition" }],
+      },
+      {
+        id: "file:new.ts",
+        summary: "New: fresh exports the value three.",
+        anchors: [{ file: "new.ts", symbol: "fresh", role: "definition" }],
+      },
+      {
+        id: "file:renamed.ts",
+        summary: "Unchanged: renamed returns the same string from its new path.",
+        anchors: [{ file: "renamed.ts", symbol: "renamed", role: "definition" }],
+      },
+    ],
+    concepts: [
+      {
+        id: "concept:removed-source",
+        label: "Removed export",
+        summary: "The gone export is deleted from head.",
+        anchors: [
+          { file: "gone.ts", at: "base", find: "export const gone = 1;", role: "definition" },
+        ],
+      },
+    ],
+    views: [
+      {
+        id: "view:recorded-change",
+        type: "graph",
+        title: "Changed exports",
+        include: ["file:app.ts", "file:new.ts", "file:renamed.ts"],
+        stubs: { mode: "none" },
+      },
+    ],
+    tours: [
+      {
+        id: "tour:recorded-change",
+        title: "Review the changed exports",
+        summary:
+          "The return value changes, one export is added, one is removed and a function moves to a new file. External importers may fail after the deletion; this fixture contains no tests.",
+        steps: [
+          {
+            id: "app",
+            view: "view:recorded-change",
+            focus: ["file:app.ts"],
+            note: "### Callers receive a different value\nThe caller still invokes app without arguments. Before: the result was one. Now: the result is two.",
+            code: [
+              {
+                file: "app.ts",
+                at: "base",
+                find: "export function app() { return 1; }",
+                role: "definition",
+              },
+              { file: "app.ts", symbol: "app", role: "definition" },
+            ],
+          },
+          {
+            id: "new",
+            view: "view:recorded-change",
+            focus: ["file:new.ts"],
+            note: "### A new exported constant\nConsumers can import fresh. No caller of this constant appears in the head snapshot.",
+            code: [{ file: "new.ts", symbol: "fresh", role: "definition" }],
+          },
+          {
+            id: "renamed",
+            view: "view:recorded-change",
+            focus: ["file:renamed.ts"],
+            note: "### The function moves without changing its body\nThe rename preserves the returned string. Compare old.ts with renamed.ts.",
+            code: [
+              {
+                file: "old.ts",
+                at: "base",
+                find: "export function renamed() { return 'same'; }",
+                role: "definition",
+              },
+              { file: "renamed.ts", symbol: "renamed", role: "definition" },
+            ],
+          },
+          {
+            id: "removed",
+            focus: ["concept:removed-source"],
+            view: "view:recorded-change",
+            note: "### The removed export may break external consumers\nHead has no gone.ts. This fixture has no tests and cannot establish behavior for external importers.",
+            code: [
+              { file: "gone.ts", at: "base", find: "export const gone = 1;", role: "definition" },
+            ],
+          },
+        ],
+      },
+    ],
+  });
+  writeFile(output.directory, "recorded-patch.json", recorded);
+  runInstalled("lint", "review-change", "--patch", join(output.directory, "recorded-patch.json"));
+  runInstalled("apply", "review-change", join(output.directory, "recorded-patch.json"));
+  return { ...f, ...installed, env, ...output, runInstalled };
+}
+
 describe("PR input", () => {
+  it("hands exact PR input to the installed creation skill without starting a model", async () => {
+    const f = fixture();
+    const installed = installedSkill();
+    const result = await invoke(
+      [
+        "pr",
+        "create",
+        "team/project#7",
+        "--name",
+        "review-change",
+        "--audience",
+        "reviewers",
+        "--question",
+        "What changes for app callers?",
+        "--skill-dir",
+        installed.skill,
+        "--cache-dir",
+        f.cache,
+        "--json",
+      ],
+      { cwd: f.root, env: f.env },
+    );
+    expect(result.code, result.out).toBe(0);
+    const output = JSON.parse(result.out);
+    const handoff = readJson(output.directory, "handoff.json");
+    expect(handoff.kind).toBe("github-pr-creation");
+    expect(handoff.skill.cli).toBe(installed.cli);
+    expect(handoff.skill.launcher).toBe(join(installed.skill, "bin/xpl"));
+    expect(handoff.invocation).toContain(`/code-explainer explain change ${f.base}..${f.head}`);
+    expect(handoff.invocation).toContain(output.repository);
+    expect(handoff.invocation).toContain("Existing guide: review-change");
+    expect(handoff.invocation).toContain("What changes for app callers?");
+    expect(readJson(output.repository, ".explainer/review-change.explainer.json").change).toEqual(
+      readJson(output.directory, "input.json").change,
+    );
+    expect(readFileSync(join(output.directory, "draft.json"), "utf8")).toContain("TODO");
+    expect(readdirSync(output.directory).filter((path) => path.startsWith("result-"))).toEqual([]);
+  });
+
+  it("finishes an installed recorded creation with exact source and immutable ready result identities", async () => {
+    const f = await creation();
+    writeFile(f.root, "app.ts", "staged developer work\n");
+    git(f.root, "add", "app.ts");
+    writeFile(f.root, "app.ts", "unstaged developer work\n");
+    writeFile(f.root, "notes.txt", "untracked developer notes\n");
+    const developerIndex = readFileSync(join(f.root, ".git/index"));
+    const developerBranch = git(f.root, "symbolic-ref", "HEAD");
+    const developerRefs = git(f.root, "show-ref");
+
+    const result = await invoke(["pr", "finish", f.directory, "--cache-dir", f.cache, "--json"], {
+      cwd: f.root,
+      env: {
+        ...f.env,
+        GIT_DIR: join(f.root, ".git"),
+        GIT_WORK_TREE: f.root,
+        GIT_INDEX_FILE: join(f.root, ".git/index"),
+        XPL_CLI: "/invalid-inherited-cli",
+      },
+    });
+    expect(result.code, result.out).toBe(0);
+    const output = JSON.parse(result.out);
+    const manifest = readJson(output.directory, "result.json");
+    expect(manifest).toMatchObject({
+      kind: "github-pr-result",
+      schemaVersion: 1,
+      status: "ready",
+      pr: { base: { sha: f.base }, head: { sha: f.head } },
+      observed: { base: { sha: f.base }, head: { sha: f.head } },
+      readiness: { ready: true, errors: 0 },
+    });
+    expect(manifest.includedSource).toEqual({
+      head: ["app.ts", "caller.ts", "new.ts", "renamed.ts"],
+      base: ["app.ts", "gone.ts", "renamed.ts"],
+    });
+    for (const file of [manifest.input, ...Object.values(manifest.artifacts)] as {
+      path: string;
+      sha256: string;
+    }[]) {
+      expect(
+        createHash("sha256")
+          .update(readFileSync(join(output.directory, file.path)))
+          .digest("hex"),
+      ).toBe(file.sha256);
+    }
+    const html = bundleOf(
+      readFileSync(join(output.directory, manifest.artifacts.html.path), "utf8"),
+    );
+    expect(html.files["app.ts"]).toBe("export function app() { return 2; }\n");
+    expect(html.baseFiles?.["app.ts"]).toBe("export function app() { return 1; }\n");
+    expect(html.baseFiles?.["gone.ts"]).toBe("export const gone = 1;\n");
+    expect(html.exportInfo?.report.identity).toEqual(manifest.readiness.identity);
+    expect(statSync(output.manifestPath).mode & 0o222).toBe(0);
+
+    expect(readFileSync(join(f.root, ".git/index"))).toEqual(developerIndex);
+    expect(git(f.root, "symbolic-ref", "HEAD")).toBe(developerBranch);
+    expect(git(f.root, "show-ref")).toBe(developerRefs);
+    expect(readFileSync(join(f.root, "app.ts"), "utf8")).toBe("unstaged developer work\n");
+    expect(readFileSync(join(f.root, "notes.txt"), "utf8")).toBe("untracked developer notes\n");
+    const saved = readFileSync(output.manifestPath);
+    const repeat = await invoke(["pr", "finish", f.directory, "--cache-dir", f.cache, "--json"], {
+      cwd: f.root,
+      env: f.env,
+    });
+    expect(repeat.code, repeat.out).toBe(0);
+    expect(JSON.parse(repeat.out).directory).not.toBe(output.directory);
+    expect(readFileSync(output.manifestPath)).toEqual(saved);
+  });
+
+  it.each(["head", "base"] as const)(
+    "rechecks an updated %s after export, retains historical output and binds the next creation",
+    async (side) => {
+      const f = await creation();
+      const previousResponse = JSON.stringify(f.response);
+      // The API returns updated commits only after local export exists. A pre-export-only check is stale.
+      writeFile(
+        f.tools,
+        "gh",
+        `#!${process.execPath}\nconst fs=require('node:fs');const path=require('node:path');const exported=fs.readdirSync(process.env.PR_INPUT).filter(name=>name.startsWith('result-')).some(name=>fs.existsSync(path.join(process.env.PR_INPUT,name,'guide.html')));process.stdout.write(exported?fs.readFileSync(process.env.GH_DATA):process.env.PR_OLD_RESPONSE);\n`,
+      );
+      Object.assign(f.env, { PR_INPUT: f.directory, PR_OLD_RESPONSE: previousResponse });
+
+      writeFile(f.root, "app.ts", "export function app() { return 4; }\n");
+      git(f.root, "add", ".");
+      git(f.root, "commit", "-qm", "updated PR");
+      const updated = git(f.root, "rev-parse", "HEAD");
+      f.response[side].sha = updated;
+      writeFile(f.tools, "response.json", JSON.stringify(f.response));
+      const result = await invoke(["pr", "finish", f.directory, "--cache-dir", f.cache, "--json"], {
+        cwd: f.root,
+        env: f.env,
+      });
+      expect(result.code, result.out).toBe(1);
+      const output = JSON.parse(result.out);
+      expect(output.ok).toBe(false);
+      expect(output.status).toBe("superseded");
+      expect(readJson(output.directory, "result.json").observed[side].sha).toBe(updated);
+      expect(readJson(output.directory, "result.json").pr[side].sha).toBe(
+        side === "head" ? f.head : f.base,
+      );
+      expect(existsSync(join(f.directory, "current.json"))).toBe(false);
+      const next = await invoke(
+        [
+          "pr",
+          "create",
+          "team/project#7",
+          "--name",
+          "updated-change",
+          "--audience",
+          "reviewers",
+          "--question",
+          "What changed?",
+          "--skill-dir",
+          f.skill,
+          "--cache-dir",
+          f.cache,
+          "--json",
+        ],
+        { cwd: f.root, env: f.env },
+      );
+      expect(next.code, next.out).toBe(0);
+      const current = JSON.parse(next.out);
+      expect(current.directory).not.toBe(f.directory);
+      expect(readJson(current.directory, "input.json").pr[side].sha).toBe(updated);
+      expect(
+        readJson(current.repository, ".explainer/updated-change.explainer.json").change[side],
+      ).toBe(updated);
+    },
+  );
+
+  it("fails closed on unavailable API access and readiness errors while retaining input and authored work", async () => {
+    const f = await creation();
+    writeFile(f.tools, "response.json", "not JSON");
+    const inaccessible = await invoke(
+      ["pr", "finish", f.directory, "--cache-dir", f.cache, "--json"],
+      { cwd: f.root, env: f.env },
+    );
+    expect(inaccessible.code, inaccessible.out).toBe(1);
+    expect(inaccessible.out).toContain("cannot resolve");
+    expect(readdirSync(f.directory).filter((path) => path.startsWith("result-"))).toEqual([]);
+    writeFile(f.tools, "response.json", JSON.stringify(f.response));
+    const patch = writeFile(
+      f.directory,
+      "unfinished.json",
+      JSON.stringify({
+        views: [{ id: "view:unfinished", type: "graph", title: "TODO", include: ["file:app.ts"] }],
+      }),
+    );
+    f.runInstalled("apply", "review-change", patch);
+    const unfinished = await invoke(
+      ["pr", "finish", f.directory, "--cache-dir", f.cache, "--json"],
+      { cwd: f.root, env: f.env },
+    );
+    expect(unfinished.code, unfinished.out).toBe(1);
+    expect(unfinished.out).toContain("TODO");
+    expect(readdirSync(f.directory).filter((path) => path.startsWith("result-"))).toEqual([]);
+    expect(existsSync(join(f.directory, "input.json"))).toBe(true);
+    expect(
+      readJson(f.repository, ".explainer/review-change.explainer.json").views.find(
+        (v: { id: string }) => v.id === "view:unfinished",
+      ).title,
+    ).toBe("TODO");
+  });
+
+  it("refuses source bytes changed after creation even when normalized index hashes still match", async () => {
+    const f = await creation();
+    writeFile(f.repository, "app.ts", "export function app() { return 2; }\r\n");
+    const result = await invoke(["pr", "finish", f.directory, "--cache-dir", f.cache, "--json"], {
+      cwd: f.root,
+      env: f.env,
+    });
+    expect(result.code, result.out).toBe(1);
+    expect(result.out).toContain("app.ts differs from the raw head blob");
+    expect(readdirSync(f.directory).filter((path) => path.startsWith("result-"))).toEqual([]);
+  });
+
+  it("refuses changed installation bindings and tampered input indexes without publishing results", async () => {
+    const f = await creation();
+    const binding = readJson(f.skill, "xpl-install.json");
+    writeFile(
+      f.skill,
+      "xpl-install.json",
+      JSON.stringify({ ...binding, cli: "/missing-installed-cli" }),
+    );
+    const changed = await invoke(["pr", "finish", f.directory, "--cache-dir", f.cache, "--json"], {
+      cwd: f.root,
+      env: f.env,
+    });
+    expect(changed.code, changed.out).toBe(1);
+    expect(changed.out).toContain("installed PR creation skill is unavailable");
+    expect(readdirSync(f.directory).filter((path) => path.startsWith("result-"))).toEqual([]);
+    writeFile(f.skill, "xpl-install.json", JSON.stringify(binding));
+    const input = readJson(f.directory, "input.json");
+    writeFile(
+      f.directory,
+      input.index.path,
+      readFileSync(join(f.directory, input.index.path), "utf8") + " ",
+    );
+    const tampered = await invoke(["pr", "finish", f.directory, "--cache-dir", f.cache, "--json"], {
+      cwd: f.root,
+      env: f.env,
+    });
+    expect(tampered.code, tampered.out).toBe(1);
+    expect(tampered.out).toContain("PR input index changed");
+    expect(readdirSync(f.directory).filter((path) => path.startsWith("result-"))).toEqual([]);
+  });
+
   it("ignores inherited developer git overrides for indexing, changes and source reads", async () => {
     const f = fixture();
     const developer = makeTempDir();

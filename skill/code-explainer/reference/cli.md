@@ -786,11 +786,50 @@ the exact git commits; added-before and deleted-after sides are absent, and bina
 an explicit unavailable reason. Index metadata carries the full head, relative index path, SHA-256,
 file hashes and trust labels. Callers and tests describe head analysis only.
 
-This prepares input, not an explanation or ready result. No agent is invoked, and no freshness/supersession
-recheck or current-version promotion occurs. Keep old inputs as historical snapshots. Failures remove
+The `prepare` action writes input only. Use `create` and `finish` below for installed authoring and the
+local result check. Preparation invokes no agent and makes no freshness or ready claim. Keep old inputs as historical snapshots. Failures remove
 the failed staging directory; a killed process can leave a marked input for explicit cleanup. Cleanup
 refuses unowned paths and symlinks; stop consumers first. GitHub access/fetch/index failures exit 1;
 bad arguments exit 2. No credentials are created and nothing is written to GitHub.
+
+## `xpl pr create <PR>` and `xpl pr finish <input-directory>`
+
+```sh
+xpl pr create owner/repo 42 --name pr-42 --audience reviewers --question "What changes for callers?" --skill-dir /absolute/installed-skill --cache-dir /absolute/pr-cache --json
+# Explicitly invoke the returned /code-explainer prompt in the installed agent.
+# Author through handoff.json's command prefix, which calls the installed skill launcher safely.
+xpl pr finish /absolute/pr-cache/input-XXXXXX --cache-dir /absolute/pr-cache --json
+```
+
+`create` uses the same preparation, then verifies the installed skill and bound CLI. Its launcher runs
+`new`, `change` with the full API base..head and `draft change`. The immutable `handoff.json` records the
+input digest, name, installed paths/CLI hash, commands and explicit skill invocation. The output adds
+`handoffPath` and `invocation`. It starts no model: invoke the prompt yourself in the installed agent.
+Use the supplied `command` prefix for every authoring command; it excludes inherited Git overrides and
+pins owned root/index/Git paths and the installed CLI. Patch files belong outside the repository.
+
+`finish` requires that handoff, unchanged input/index identity, exact guide change record and raw head
+source bytes outside generated `.explainer/` outputs. It uses the installed `bundle --files boundary`
+with the common readiness check. `--note` records warning/omission decisions; `--require-review` opts
+into all-content author review policy. Neither option permits unfinished or stale content. Creation
+and local export need installed assets, not a live model or hosted xpl service.
+
+The final API check compares both full commits. Matching results exit 0 with `status: ready`; a changed
+head or base exits 1 with `ok: false`, `status: superseded` and observed commits. Historical output is
+retained; explicitly create the updated PR to obtain a new input/guide. API/export failures exit 1,
+remove only result staging and preserve the input and guide. If authoring failed, read the existing
+stored guide and draft before resuming the same explicit skill prompt; never recreate it with `new`.
+
+Each finish returns a separate `result-*` directory and `manifestPath`. Its read-only `result.json` is
+`schemaVersion: 1`, `kind: github-pr-result`, with original `pr`, `observed`, `checkedAt`, `status`, input
+path/SHA-256, installed skill paths/CLI hash, common readiness report/portable identity, artifact paths
+and SHA-256 digests, and included head/base source keys. It carries checked explainer, full head index
+and offline HTML snapshots. Rename before-text is keyed by the head path; consult `input.json` for
+`oldPath` and unavailable source. Previous results are never overwritten.
+
+Ready is an observation at the check timestamp. A version-sharing consumer must check artifact hashes
+and re-resolve both commits before publishing current. This command creates no current pointer and
+publishes nothing. Keep inputs while finishing or while a consumer needs the referenced input evidence.
 
 ## `xpl change <explainer> [<base>..<head>]`
 

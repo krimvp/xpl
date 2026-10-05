@@ -49,7 +49,11 @@ GitHub PR input is opt-in: `xpl pr prepare https://github.com/owner/repo/pull/42
 uses existing `gh` and git access to fetch the returned full base/head commits into a separate detached
 repository. It indexes head with `--precise off` by default and saves an immutable `input.json` with
 before/after source and analysis labels. The developer checkout stays untouched. This command prepares
-input only; agent handoff, PR freshness checks and ready result export are future work. Network access
+input only. `xpl pr create <url> --name pr-guide --audience reviewers --question "What changes?"` also
+runs the installed skill launcher to scaffold a guide and returns an explicit agent invocation. After
+authoring, `xpl pr finish <input-directory>` checks readiness, exports HTML and rechecks both API commits.
+Its immutable result manifest is ready only for matching commits; changed commits are superseded and
+remain historical. No model starts automatically and no current link is published. Network access
 to GitHub is required. Remove a retained input with `xpl pr cleanup <input-directory> --cache-dir /outside/pr-cache`.
 Inherited Git repository overrides cannot redirect PR reads into the developer checkout. Preparation
 refuses checkout filters or line-ending conversion that change the head's raw source bytes.
