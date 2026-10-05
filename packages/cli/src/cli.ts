@@ -26,6 +26,7 @@ import { showCommand } from "./commands/show.js";
 import { statusCommand } from "./commands/status.js";
 import { validateCommand } from "./commands/validate.js";
 import { viewCommand } from "./commands/view.js";
+import { serviceCommand } from "./commands/service.js";
 import { createCtx, type Io } from "./context.js";
 import { CliError, UsageError, errorMessage } from "./errors.js";
 
@@ -52,6 +53,7 @@ export const COMMANDS: readonly CommandSpec[] = [
   prCommand,
   draftCommand,
   viewCommand,
+  serviceCommand,
   bundleCommand,
   doctorCommand,
   skillCommand,
