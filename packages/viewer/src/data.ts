@@ -1,4 +1,4 @@
-import type { WatchAttention } from "@xpl/core";
+import type { WatchAttention, Job, JobReviewAction, RevisionReview } from "@xpl/core";
 /**
  * Where the viewer's data comes from (ARCHITECTURE.md section 5, "Bundle payload"):
  *
@@ -115,6 +115,50 @@ export class ServerApi {
     );
     if (action === "stop") return undefined;
     return (await response.json()) as WatchAttention;
+  }
+
+  async jobs(): Promise<{ available: boolean; reason: string | null; jobs: Job[] } | undefined> {
+    const response = await this.request("/jobs", { cache: "no-store" });
+    if (response.status === 404) return undefined;
+    await this.check(response);
+    return response.json();
+  }
+  async submitJob(id: string, selectedRequestIds: string[]): Promise<Job> {
+    const response = await this.check(
+      await this.request("/jobs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, selectedRequestIds }),
+        signal: AbortSignal.timeout(120000),
+      }),
+    );
+    return (await response.json()).job;
+  }
+  async controlJob(job: Job, action: "cancel" | "retry"): Promise<Job> {
+    const response = await this.check(
+      await this.request(`/jobs/${encodeURIComponent(job.id)}/${action}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(action === "retry" ? { expectedAttempt: job.attempt } : {}),
+        signal: AbortSignal.timeout(120000),
+      }),
+    );
+    return (await response.json()).job;
+  }
+  async reviewJob(id: string, action: JobReviewAction): Promise<RevisionReview> {
+    const response = await this.check(
+      await this.request(`/jobs/${encodeURIComponent(id)}/${action.accept ? "accept" : "review"}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          attemptId: action.attemptId,
+          ...(action.accept ? { reviewToken: action.reviewToken } : {}),
+          ...(action.decisions ? { decisions: action.decisions } : {}),
+        }),
+        signal: AbortSignal.timeout(120000),
+      }),
+    );
+    return (await response.json()).review;
   }
 
   constructor(

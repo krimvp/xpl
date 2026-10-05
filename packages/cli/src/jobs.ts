@@ -1,4 +1,4 @@
-/** Durable revision proposals and question answers share attempt fences; neither accepts guide changes. */
+/** Durable revisions and answers share attempt fences; only inspected revisions accept guide changes. */
 import { randomUUID } from "node:crypto";
 import { existsSync, lstatSync, readFileSync, realpathSync } from "node:fs";
 import { dirname, join, resolve, sep } from "node:path";
@@ -11,7 +11,8 @@ import {
   sameFeedbackContent,
   sameFeedbackContext,
   type ArtifactIdentity,
-  type FeedbackRequest,
+  type Job,
+  type JobReviewAction,
 } from "@xpl/core";
 import type { Ctx } from "./context.js";
 import { CliError, errorMessage } from "./errors.js";
@@ -19,31 +20,11 @@ import { atomicWrite, jsonFile, parseJson, withRepositoryLock } from "./fsutil.j
 import { loadExplainer, openWorkspace } from "./repo.js";
 import { answerContextReason, selectAnswer, type AnswerInput } from "./answers.js";
 import { readRequests, recordAnswer } from "./requests.js";
-import { terminateJobProcess, type JobProcess, type JobCleanup } from "./job-process.js";
-import { continueRevision, selectRevision } from "./revision.js";
+import { terminateJobProcess, type JobProcess } from "./job-process.js";
+import { continueRevision, selectRevision, revisionStatus } from "./revision.js";
 
-type JobState =
-  "queued" | "running" | "completed" | "failed" | "cancelled" | "superseded" | "interrupted";
-export interface Job {
-  id: string;
-  scope: { kind: "revision"; guide: string; include: string[] };
-  selectedRequestIds: string[];
-  input: {
-    revisionRunId: string;
-    expected: ArtifactIdentity;
-    index: string;
-    requests: FeedbackRequest[];
-  };
-  state: JobState;
-  createdAt: string;
-  updatedAt: string;
-  attempt: number;
-  owner: { instanceId: string; attemptId: string; process?: JobProcess } | null;
-  progress: { at: string; message: string }[];
-  error: string | null;
-  result: { revisionRunId: string } | null;
-  cleanup?: JobCleanup;
-}
+type JobState = Job["state"];
+export type { Job } from "@xpl/core";
 export interface JobSubmission {
   id: string;
   selectedRequestIds: string[];
@@ -377,7 +358,21 @@ class RepositoryJobs {
 
   async list(name: string) {
     const guide = this.guide(name);
-    return this.read().jobs.filter((j): j is Job => j.scope.guide === guide && !isAnswer(j));
+    return this.read()
+      .jobs.filter((j): j is Job => j.scope.guide === guide && !isAnswer(j))
+      .map((job) => {
+        if (job.result && job.owner) {
+          const status = revisionStatus(this.ctx, job.input.revisionRunId);
+          if (
+            status?.state === "done" &&
+            status.serviceJob?.id === job.id &&
+            status.serviceJob.attemptId === job.owner.attemptId
+          )
+            job.result.accepted = true;
+          else delete job.result.accepted;
+        }
+        return job;
+      });
   }
 
   async get(name: string, id: string): Promise<Job> {
@@ -494,7 +489,10 @@ class RepositoryJobs {
         return existing;
       }
       this.requireRunner();
-      const selected = await selectRevision(this.ctx, resolve(this.ctx.root, guide), ids, include);
+      const selected = await selectRevision(this.ctx, resolve(this.ctx.root, guide), ids, include, {
+        id: submission.id,
+        assertCurrent: () => this.assertOwner(),
+      });
       const at = new Date().toISOString();
       const job: Job = {
         id: submission.id,
@@ -584,6 +582,36 @@ class RepositoryJobs {
     return result;
   }
 
+  /** Ledger ownership and attempt fence enclose #30's journal, guide and selected-outcome locks. */
+  async review(name: string, id: string, action: JobReviewAction) {
+    const selected = await this.get(name, id);
+    uuid(action.attemptId);
+    return this.mutate(async (ledger) => {
+      const job = ledger.jobs.find((j): j is Job => j.id === selected.id && !isAnswer(j))!;
+      if (job.state !== "completed" || !job.result || !job.owner)
+        throw new CliError(`cannot review ${job.state} job`, 1, { status: 409 });
+      if (job.owner.attemptId !== action.attemptId)
+        throw new CliError("job attempt changed; reload its review", 1, { status: 409 });
+      const decisions =
+        action.decisions === undefined
+          ? undefined
+          : join(dirname(this.path), `decisions-${job.owner.attemptId}.json`);
+      if (decisions) await atomicWrite(decisions, jsonFile(action.decisions));
+      return continueRevision(
+        this.ctx,
+        resolve(this.ctx.root, job.scope.guide),
+        job.result.revisionRunId,
+        {
+          ...(decisions ? { decisions } : {}),
+          accept: action.accept,
+          reviewToken: action.reviewToken,
+          serviceJob: { id: job.id, attemptId: job.owner.attemptId },
+          assertCurrent: () => this.assertOwner(),
+        },
+      );
+    });
+  }
+
   async fence(name: string, id: string, state: "cancelled" | "superseded"): Promise<WorkerJob> {
     const selected = await this.lookup(name, id);
     const result = await this.mutate(async (ledger) => {
@@ -591,6 +619,15 @@ class RepositoryJobs {
       if (job.state === "cancelled" || job.state === "superseded") return job;
       if (isAnswer(job) && job.state === "completed")
         throw new CliError("completed answer history is immutable", 1, { status: 409 });
+      if (!isAnswer(job)) {
+        const revision = revisionStatus(this.ctx, job.input.revisionRunId);
+        if (revision && ["committing", "committed", "done"].includes(revision.state))
+          throw new CliError(
+            "acceptance has started; recover acceptance before submitting new work",
+            1,
+            { status: 409 },
+          );
+      }
       if (this.active?.id === id) this.active.abort.abort();
       if (job.cleanup) return job; // A terminal fence cannot erase an unresolved cleanup barrier.
       if (job.state === "running" && !(await this.drain(job))) return job;

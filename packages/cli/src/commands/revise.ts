@@ -17,6 +17,7 @@ export const reviseCommand: CommandSpec = {
     "Each patch is limited to its request's selected element and explicit --include IDs (including new IDs).",
     "Feedback's view is reading context; whole-view edits require selecting or explicitly including the view.",
     "Selected steps allow only their stepsUpdate through the enclosing view/tour.",
+    "Proposal previews follow batch order; choosing a dependent patch without its prerequisite is rejected.",
     "Qualify step IDs with their container: use --include view:flow/flow:1 or tour:reader/step-id.",
     "Raw flow/sequence feedback IDs resolve to their owning view; a matching tour-local ID grants no scope.",
     "Guide title/audience and user-owned fields stay protected. Reviews show before/after, source, warnings and readiness findings.",
@@ -30,6 +31,8 @@ export const reviseCommand: CommandSpec = {
     "Retry the same --run --accept after interruption: a published candidate is never applied twice and",
     "outcome revisions are never incremented twice. Failed reviews/acceptance leave requests retryable.",
     "Killed writers can leave locks; remove only the reported lock directories after verifying they stopped.",
+    "Service-owned runs are read-only here from selection onward, even without a proposal or after cancellation/supersession.",
+    "Use Jobs in the attached viewer for guarded review/acceptance.",
     "-o writes the review packet outside the source tree; --json prints it. No model, watcher or service runs.",
   ],
   options: {
@@ -90,7 +93,7 @@ export const reviseCommand: CommandSpec = {
         )
       : await continueRevision(ctx, args.positionals[0]!, run!, { proposal, decisions, accept });
     if (args.str("out")) await atomicWrite(resolve(ctx.cwd, args.str("out")!), jsonFile(packet));
-    if (ctx.json) ctx.emit(packet);
+    if (ctx.json) ctx.emit({ ...packet });
     else
       ctx.out(
         [

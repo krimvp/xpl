@@ -24,6 +24,8 @@ import {
   parseFeedbackRequest,
   mergeFeedbackRequests,
   hashText,
+  type Job,
+  type JobReviewAction,
   type FeedbackKind,
   type FeedbackRequest,
   type FeedbackFile,
@@ -220,6 +222,8 @@ export interface ViewerState {
   connection: ConnectionState;
   attention?: WatchAttention;
   attentionError?: string;
+  jobs?: { available: boolean; reason: string | null; jobs: Job[] };
+  jobError?: string;
   feedback: FeedbackRequest[];
   feedbackStorageError?: string;
   /** The live source no longer matches its index; reindex before trusting locations and edges. */
@@ -298,6 +302,7 @@ export class ViewerStore {
   private readonly loading = new Set<FilePath>();
   private readonly loadingBase = new Set<FilePath>();
   private readonly pending = new Map<string, PendingWrite>();
+  private jobSubmission: { key: string; id: string } | undefined;
   private authorSequence = 0;
   private saveTimer: ReturnType<typeof setTimeout> | undefined;
   private saving: Promise<void> | undefined;
@@ -1727,6 +1732,60 @@ export class ViewerStore {
     }
   }
 
+  async refreshJobs(): Promise<void> {
+    const api = this.api;
+    if (!api?.attachment?.instanceId) return;
+    try {
+      const jobs = await api.jobs();
+      if (this.api === api) this.set({ jobs, jobError: undefined });
+    } catch (error) {
+      if (this.api === api) this.set({ jobError: messageOf(error) });
+    }
+  }
+  private async jobApi(): Promise<ServerApi> {
+    await this.flush();
+    if (this.state.dirty || this.state.editDraft || this.state.editBusy)
+      throw new Error("Save or cancel pending edits before changing a job.");
+    if (!this.api?.attachment?.instanceId || this.state.connection.status !== "connected")
+      throw new Error("Jobs need a connected repository service. Retry the connection first.");
+    return this.api;
+  }
+  async startJob(ids: string[]): Promise<void> {
+    const api = await this.jobApi();
+    if (!ids.length) throw new Error("Select feedback for this job.");
+    const key = JSON.stringify([...ids].sort());
+    const submission =
+      this.jobSubmission?.key === key ? this.jobSubmission : { key, id: crypto.randomUUID() };
+    this.jobSubmission = submission;
+    await api.submitJob(submission.id, ids);
+    if (this.api !== api)
+      throw new Error("Connection changed; reload job history before retrying.");
+    this.jobSubmission = undefined;
+    await this.refreshJobs();
+  }
+  async controlJob(job: Job, action: "cancel" | "retry"): Promise<void> {
+    const api = await this.jobApi();
+    await api.controlJob(job, action);
+    if (this.api !== api) throw new Error("Connection changed; reload job history.");
+    await this.refreshJobs();
+  }
+  async reviewJob(job: Job, action: Omit<JobReviewAction, "attemptId"> = {}) {
+    const api = await this.jobApi();
+    if (!job.owner) throw new Error("No completed attempt to review.");
+    const review = await api.reviewJob(job.id, { ...action, attemptId: job.owner.attemptId });
+    if (this.api !== api)
+      throw new Error("Connection changed; reopen the review before accepting.");
+    if (action.accept) {
+      const bundle = await api.bundle();
+      if (this.api !== api) throw new Error("Connection changed after acceptance; reload history.");
+      this.loadFeedback(bundle.feedback);
+      this.adoptExplainer(bundle.explainer, bundle);
+      await this.refreshFeedback();
+      await this.refreshJobs();
+    }
+    return review;
+  }
+
   async refreshFeedback(): Promise<void> {
     this.loadFeedback(undefined);
     if (!this.api) return;
@@ -1867,6 +1926,7 @@ export class ViewerStore {
             this.set({ attentionError: messageOf(error) });
           }
         }
+        await this.refreshJobs();
         const fresh = await api.getExplainer(etag);
         if (this.api !== api) return;
         if (fresh) {
@@ -1963,6 +2023,7 @@ export class ViewerStore {
     if (!workspace && serializeExplainer(explainer) === serializeExplainer(this.state.explainer))
       return false;
     if (workspace) {
+      this.loadFeedback(workspace.feedback);
       this.workspaceRevision++;
       this.indexModel = asIndexModel(workspace.index);
     }

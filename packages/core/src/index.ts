@@ -31,3 +31,12 @@ export * from "./review.js";
 export * from "./source-files.js";
 export type { WatchAttention } from "./attention.js";
 export * from "./query.js";
+
+export type {
+  Job,
+  RevisionDecision,
+  RevisionChange,
+  RevisionReview,
+  RevisionSource,
+  JobReviewAction,
+} from "./jobs.js";
