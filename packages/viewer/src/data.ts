@@ -1,3 +1,4 @@
+import type { WatchAttention } from "@xpl/core";
 /**
  * Where the viewer's data comes from (ARCHITECTURE.md section 5, "Bundle payload"):
  *
@@ -69,6 +70,30 @@ export class ServerApi {
     const response = await this.check(await this.request("/bundle", { cache: "no-store" }));
     return this.attachedBundle(await response.text());
   }
+  async attention(): Promise<WatchAttention | undefined> {
+    const response = await this.request("/watch", { cache: "no-store" });
+    // Older managed services have no attention endpoint; keep their reader unchanged.
+    if (response.status === 404) return undefined;
+    await this.check(response);
+    return (await response.json()) as WatchAttention;
+  }
+
+  async controlWatch(
+    action: "pause" | "resume" | "stop",
+    instanceId: string,
+  ): Promise<WatchAttention | undefined> {
+    const response = await this.check(
+      await this.request("/watch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, instanceId }),
+        signal: AbortSignal.timeout(120000),
+      }),
+    );
+    if (action === "stop") return undefined;
+    return (await response.json()) as WatchAttention;
+  }
+
   constructor(
     readonly base: string,
     readonly attachment?: NonNullable<ViewerBundle["server"]>["attachment"],
@@ -80,7 +105,11 @@ export class ServerApi {
       const { root, guide } = this.attachment;
       headers.set("X-Xpl-Attachment", encodeURIComponent(JSON.stringify({ root, guide })));
     }
-    return fetch(this.url(path), { ...init, headers, signal: AbortSignal.timeout(5000) });
+    return fetch(this.url(path), {
+      ...init,
+      headers,
+      signal: init.signal ?? AbortSignal.timeout(5000),
+    });
   }
 
   private attachedBundle(text: string): ViewerBundle {

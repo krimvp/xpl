@@ -28,3 +28,4 @@ export * from "./lint.js";
 export * from "./readiness.js";
 export * from "./review.js";
 export * from "./source-files.js";
+export type { WatchAttention } from "./attention.js";

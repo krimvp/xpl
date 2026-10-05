@@ -49,6 +49,7 @@ import {
   type SequenceView,
   type View,
   type ViewerBundle,
+  type WatchAttention,
 } from "@xpl/core";
 import { snapshotTexts } from "./snapshot.js";
 import { messageOf, ServerApi, type LaunchParams } from "./data.js";
@@ -191,6 +192,8 @@ export interface ViewerState {
   /** Running under `xpl view`. */
   serverMode: boolean;
   connection: ConnectionState;
+  attention?: WatchAttention;
+  attentionError?: string;
   feedback: FeedbackRequest[];
   feedbackStorageError?: string;
   /** The live source no longer matches its index; reindex before trusting locations and edges. */
@@ -1336,6 +1339,14 @@ export class ViewerStore {
     await this.pollConnection?.();
   }
 
+  async controlWatch(action: "pause" | "resume" | "stop"): Promise<void> {
+    if (!this.api || !this.state.attention || !this.state.serverMode)
+      throw new Error("Watch controls need a connected managed service.");
+    const api = this.api;
+    const attention = await api.controlWatch(action, this.state.attention.instanceId);
+    if (this.api === api && attention) this.set({ attention, attentionError: undefined });
+  }
+
   /**
    * Under `xpl view`, polls `GET {api}/explainer` and shows what changed on disk without a reload, so
    * source edits, new indexes and applied feedback arrive together. Fetches a fresh bundle after the
@@ -1353,6 +1364,16 @@ export class ViewerStore {
       if (!api || stopped || busy || (typeof document !== "undefined" && document.hidden)) return;
       busy = true;
       try {
+        if (api.attachment?.instanceId) {
+          try {
+            const attention = await api.attention();
+            if (this.api !== api || stopped) return;
+            this.set({ attention, attentionError: undefined });
+          } catch (error) {
+            if (this.api !== api || stopped) return;
+            this.set({ attentionError: messageOf(error) });
+          }
+        }
         const fresh = await api.getExplainer(etag);
         if (this.api !== api) return;
         if (fresh) {

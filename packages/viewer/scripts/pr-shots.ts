@@ -19,6 +19,7 @@
  *   `?perspective=explore&focus=edge:job-completed`). Without `--set` or `--shot`, `--set ux` is assumed.
  *
  * - `--service` intercepts a loopback API; unmanaged omits attachment metadata for plain-view shots.
+ * - `--attention affected|paused` adds watch/guide evidence; `--attention-open` opens its repair offer.
  *
  * compare: pairs the files of both directories by name and writes `<name>.png`, Before left and After right,
  * for each pair whose bytes differ, plus `index.md` listing changed, added, removed and unchanged shots.
@@ -49,10 +50,14 @@ async function shoot(argv: string[]): Promise<void> {
       scheme: { type: "string", default: "light" },
       size: { type: "string", default: "1440x900" },
       service: { type: "string" },
+      attention: { type: "string" },
+      "attention-open": { type: "boolean", default: false },
     },
   });
   if (values.service && !["connected", "disconnected", "unmanaged"].includes(values.service))
     throw new Error("--service must be connected, disconnected or unmanaged");
+  if (values.attention && !["affected", "paused"].includes(values.attention))
+    throw new Error("--attention must be affected or paused");
   const out = resolve(positionals[0] ?? "pr-shots");
   const viewerDir = resolve(values["viewer-dir"]);
   mkdirSync(out, { recursive: true });
@@ -117,6 +122,40 @@ async function shoot(argv: string[]): Promise<void> {
           if (path === "/") return route.fulfill({ contentType: "text/html", body });
           if (path === "/favicon.ico") return route.fulfill({ status: 204 });
           if (values.service === "disconnected") return route.abort("connectionrefused");
+          if (path === "/api/watch" && values.attention)
+            return route.fulfill({
+              json: {
+                enabled: true,
+                instanceId: "demo-instance",
+                watch: {
+                  state: values.attention === "paused" ? "paused" : "current",
+                  stale: values.attention === "paused",
+                  generation: 2,
+                  index: { path: ".explainer/index-demo.json", commit: "demo" },
+                  error: null,
+                },
+                guides: [
+                  {
+                    name: "jobrunner",
+                    path: ".explainer/jobrunner.explainer.json",
+                    title: "Job runner",
+                    counts: { moved: 1, drifted: 1, missing: 1 },
+                    errors: [],
+                    elements: [
+                      { id: "file:src/queue.ts", file: "src/queue.ts", status: "moved" },
+                      {
+                        id: "sym:src/runner.ts#Runner.dispatch",
+                        file: "src/runner.ts",
+                        status: "drifted",
+                      },
+                      { id: "file:src/worker.ts", file: "src/worker.ts", status: "missing" },
+                    ],
+                    revisionCommand:
+                      "xpl revise --root '/tmp/xpl-demo/jobrunner' 'jobrunner' --select '<request-id>'",
+                  },
+                ],
+              },
+            });
           if (path === "/api/explainer") return route.fulfill({ status: 304 });
           if (path === "/api/requests") return route.fulfill({ json: { requests: [] } });
           return route.fulfill({ status: 404 });
@@ -125,8 +164,16 @@ async function shoot(argv: string[]): Promise<void> {
         await page.waitForFunction(() => !!window.__xpl);
         // The base viewer has no status strip; allow its first normal poll too.
         await page.waitForTimeout(2200);
-        const details = page.locator(".connection-status details");
-        if (await details.count()) await details.locator("summary").click();
+        if (values["attention-open"]) {
+          const attention = page.locator(".attention-status > details");
+          if (await attention.count()) {
+            await attention.locator(":scope > summary").click();
+            await page.locator(".revision-offer > summary").click();
+          }
+        } else if (!values.attention) {
+          const details = page.locator(".connection-status details");
+          if (await details.count()) await details.locator("summary").click();
+        }
       } else await page.goto(pathToFileURL(file).href + query);
       await page.waitForFunction(() => !!window.__xpl);
       await page.waitForTimeout(400);

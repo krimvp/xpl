@@ -935,7 +935,7 @@ serving .explainer/jobrunner.explainer.json at http://127.0.0.1:34971/  (Ctrl-C 
 
 API (for scripts): `GET /api/bundle`, `GET /api/export` (current complete export snapshot and shared readiness report), `GET /api/explainer` (the explainer with its anchors re-resolved, with an `ETag`; what the page polls), `GET /api/file?path=`, `GET /api/base-file?path=` (the code before the recorded change of a modified, renamed or deleted file), `PUT /api/views/<id>`, `PUT /api/tours/<id>`, `PUT /api/review` (bounded author review user patch), `GET|POST /api/requests`.
 
-## `xpl service <start|stop|status> [explainer] [--background] [--port p] [--backend none|claude] [--recover] [--watch]`
+## `xpl service <start|pause|resume|stop|status> [explainer] [--background] [--port p] [--backend none|claude] [--recover] [--watch]`
 
 Starts the existing viewer server on loopback (`127.0.0.1`) with one owner per canonical repository root.
 Foreground is the default; stop it with Ctrl-C or `xpl service stop`. `--background` starts the installed
@@ -1006,9 +1006,23 @@ date; source/configuration freshness and anchor drift still block ready export. 
 feedback is removed. Named `.patch.json`/`.explainer.json` files, `.explainer/` output and exported xpl HTML
 are excluded from source discovery. Keep other scratch output outside the source root.
 
-Pause/resume, viewer attention controls and offered revisions follow in 29B. Stop drains work and returns
-to manual indexing/revision. Local configuration and supplied SCIP files are watched; external dependency
-or tool/environment changes need a restart or manual indexing. See ARCHITECTURE §3 and §5 for the boundary.
+`xpl service pause` aborts and drains the watch without stopping jobs or releasing service ownership.
+It retains the last checked index marked stale; even unchanged paused evidence refuses ready export.
+`xpl service resume` starts a fresh input check and full rebuild. Repeated controls are safe. Stop drains
+the watch, server and jobs, then returns to manual indexing/revision.
+
+Managed viewer pages show a separate compact attention disclosure beside the connection strip. It lists
+all guides, moved/drifted/missing elements and repair instructions. Moved locations keep their prose;
+drift needs inspection and revision, and missing evidence must be restored or explicitly replaced/removed.
+Attention refresh continues with unsaved edits without replacing them. Pause/resume and Stop service
+require the inspected service instance and repository/guide attachment. Plain `xpl view`, older servers
+without this report and saved HTML keep their existing layout.
+
+**Offer revision** gives `xpl revise --root '<root>' '<guide>' --select '<request-id>'`. Create or select
+feedback, replace the placeholder with chosen IDs, and inspect the proposal's diff and decisions before
+explicit acceptance. No control submits feedback, runs an agent, accepts a proposal or erases requests.
+Local configuration and supplied SCIP files are watched; external dependency or tool/environment changes
+need a restart or manual indexing. See ARCHITECTURE §3 and §5 for the boundary.
 
 ## `xpl ready <explainer> [--note reason] [--require-review]`
 

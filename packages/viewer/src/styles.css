@@ -4253,3 +4253,53 @@ code {
 .review-dialog details {
   margin-block: 10px;
 }
+
+/* A compact second row keeps evidence maintenance separate from connection state. */
+.attention-status {
+  display: flex;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  padding: 7px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel-2);
+  font-size: 12px;
+}
+.attention-status > details {
+  flex: 1;
+  min-width: 220px;
+}
+.attention-status summary {
+  cursor: pointer;
+}
+.attention-status p {
+  margin: 8px 0;
+}
+.attention-status article {
+  border-top: 1px solid var(--border);
+  padding: 8px 0;
+}
+.attention-status h3 {
+  margin: 0;
+  font-size: 13px;
+}
+.attention-status ul {
+  padding-left: 20px;
+}
+.attention-status li {
+  margin-block: 10px;
+}
+.attention-status code,
+.attention-status pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.attention-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.attention-status > p {
+  flex-basis: 100%;
+  color: var(--warn);
+}

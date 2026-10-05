@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { reviewFingerprint, type ReviewScope } from "@xpl/core";
+import { reviewFingerprint, type ReviewScope, type WatchAttention } from "@xpl/core";
 import { ServerApi } from "../src/data.js";
 import { ViewerStore } from "../src/store.js";
 import { makeBundle, TEXTS } from "./world.js";
@@ -255,6 +255,89 @@ describe("under xpl view (server mode)", () => {
       root: "/repos/jobrunner",
       guide: ".explainer/demo.explainer.json",
     });
+  });
+
+  it("refreshes attention with pending edits and sends controls for the inspected instance without saving prose", async () => {
+    const bundle = makeBundle({ server: { api: "/api" } });
+    bundle.server!.attachment = {
+      root: "/repos/jobrunner",
+      guide: ".explainer/demo.explainer.json",
+      instanceId: "first",
+      backend: "none",
+      backendAvailable: false,
+    };
+    const store = new ViewerStore(bundle);
+    let attention: WatchAttention = {
+      enabled: true,
+      instanceId: "first",
+      watch: {
+        state: "current",
+        stale: false,
+        generation: 1,
+        index: { path: ".explainer/index-test.json", commit: "test" },
+        error: null,
+      },
+      guides: [],
+    };
+    respond = (url, init) => {
+      if (url === "/api/watch") {
+        if (init?.method === "POST")
+          attention = {
+            ...attention,
+            watch: { ...attention.watch!, state: "paused", stale: true },
+          };
+        return new Response(JSON.stringify(attention));
+      }
+      if (url === "/api/explainer") return new Response(null, { status: 304 });
+      return new Response("{}", { status: 403 });
+    };
+    store.toggleEdgeKind("reads");
+    store.select(["concept:retry"]);
+    const pendingGuide = store.getState().explainer;
+    const stop = store.watchExplainer(1000);
+    try {
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(store.getState().attention).toEqual(attention);
+      expect(store.getState().dirty).toBe(true);
+      attention = {
+        ...attention,
+        guides: [
+          {
+            name: "demo",
+            path: ".explainer/demo.explainer.json",
+            title: "Demo",
+            counts: { moved: 0, drifted: 1, missing: 0 },
+            errors: [],
+            elements: [{ id: "concept:retry", file: "src/a.ts", status: "drifted" }],
+            revisionCommand: "xpl revise demo --select '<request-id>'",
+          },
+        ],
+      };
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(store.getState().attention).toEqual(attention);
+      expect(store.getState().explainer).toBe(pendingGuide);
+      expect(store.getState().selection).toEqual(["concept:retry"]);
+      calls.length = 0;
+      await store.controlWatch("pause");
+      expect(
+        calls.map((c) => ({
+          url: c.url,
+          method: c.init?.method,
+          body: JSON.parse(String(c.init?.body)),
+        })),
+      ).toEqual([
+        { url: "/api/watch", method: "POST", body: { action: "pause", instanceId: "first" } },
+      ]);
+      expect(store.getState().attention!.watch!.state).toBe("paused");
+      expect(store.getState().dirty).toBe(true);
+      store.useOfflineSnapshot();
+      calls.length = 0;
+      await vi.advanceTimersByTimeAsync(2000);
+      expect(calls).toEqual([]);
+      await expect(store.controlWatch("resume")).rejects.toThrow("connected managed service");
+    } finally {
+      stop();
+    }
   });
 
   it("detects a stopped attachment with unsaved edits, supports offline feedback, and retries the same guide", async () => {

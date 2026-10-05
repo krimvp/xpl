@@ -68,6 +68,70 @@ async function serve(root: string, ...extra: string[]) {
 }
 
 describe("repository service lifecycle", () => {
+  it.each([false, true])(
+    "guards managed watch controls and stops safely (watch enabled: %s)",
+    async (enabled) => {
+      const root = cloneDir(demo);
+      const running = await serve(root, "demo", ...(enabled ? ["--watch"] : []));
+      const instance = readJson(root, ".explainer/service/instance.json");
+      const attachment = encodeURIComponent(
+        JSON.stringify({ root, guide: ".explainer/demo.explainer.json" }),
+      );
+      const post = (body: unknown, headers: Record<string, string> = {}) =>
+        fetch(new URL("/api/watch", running.server.url), {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...headers },
+          body: JSON.stringify(body),
+        });
+      try {
+        const report = await fetch(new URL("/api/watch", running.server.url));
+        expect(report.status).toBe(200);
+        const initial = (await report.json()) as { enabled: boolean; instanceId: string };
+        expect(initial.enabled).toBe(enabled);
+        expect(initial.instanceId).toBe(instance.instanceId);
+        const body = { action: "pause", instanceId: instance.instanceId };
+        const headers = { "X-Xpl-Attachment": attachment };
+        expect((await post(body)).status).toBe(403);
+        expect((await post(body, { ...headers, Origin: "https://foreign.example" })).status).toBe(
+          403,
+        );
+        expect((await post(body, { ...headers, "Content-Type": "text/plain" })).status).toBe(415);
+        expect(
+          (
+            await post(body, {
+              "X-Xpl-Attachment": encodeURIComponent(
+                JSON.stringify({ root, guide: ".explainer/other.explainer.json" }),
+              ),
+            })
+          ).status,
+        ).toBe(409);
+        expect((await post({ ...body, instanceId: "old-instance" }, headers)).status).toBe(409);
+        expect((await post({ ...body, patch: {} }, headers)).status).toBe(400);
+        const pause = await post(body, headers);
+        expect(pause.status).toBe(enabled ? 200 : 409);
+        if (enabled) {
+          expect(
+            ((await pause.json()) as { watch: { state: string; stale: boolean } }).watch,
+          ).toMatchObject({ state: "paused", stale: true });
+          expect(readJson(root, ".explainer/service/instance.json").state).toBe("running");
+          expect((await post({ ...body, action: "resume" }, headers)).status).toBe(200);
+        }
+        // Stopping must still work if the attached guide disappeared.
+        renameSync(
+          join(root, ".explainer/demo.explainer.json"),
+          join(root, ".explainer/moved.explainer.json"),
+        );
+        const stopped = await post({ ...body, action: "stop" }, headers);
+        expect(stopped.status).toBe(200);
+        expect((await running.done).code).toBe(0);
+        expect((await xplJson(root, "service", "status")).json.state).toBe("stopped");
+        expect(readJson(root, ".explainer/service/jobs.json").jobs).toEqual([]);
+      } finally {
+        await running.close();
+      }
+    },
+  );
+
   it("retires an interrupted watch before recovering without watching and returns to manual indexes", async () => {
     const root = cloneDir(demo);
     const initial = await serve(root, "demo", "--watch");
@@ -112,7 +176,7 @@ describe("repository service lifecycle", () => {
     expect((await xplJson(root, "status", "--all")).json.watch.state).toBe("stopped");
   });
 
-  it("recovers a watched service with its attachment and interrupts the previous job attempt", async () => {
+  it("pauses without interrupting jobs, then recovers the watched attachment and interrupts the old attempt", async () => {
     const root = cloneDir(demo);
     const initial = await serve(root, "demo", "--watch", "--backend", "claude");
     const currentWatch = () => readJson(root, ".explainer/service/watch.json");
@@ -156,6 +220,14 @@ describe("repository service lifecycle", () => {
     try {
       const job = await jobs.submit("demo", { id: randomUUID(), selectedRequestIds: [request.id] });
       await expect.poll(async () => (await jobs.get("demo", job.id)).state).toBe("running");
+      const paused = await xplJson(root, "service", "pause");
+      expect(paused.code, paused.err).toBe(0);
+      expect(paused.json.state).toBe("running");
+      expect(paused.json.watch.state).toBe("paused");
+      expect(await jobs.get("demo", job.id)).toMatchObject({
+        state: "running",
+        owner: { instanceId: instance.instanceId },
+      });
       ledger = readJson<{ jobs: Job[] }>(root, ".explainer/service/jobs.json");
     } finally {
       await jobs.close();

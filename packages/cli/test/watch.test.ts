@@ -85,6 +85,164 @@ async function current(root: string, after = 0) {
 }
 
 describe("opt-in coherent service watching", () => {
+  it("pauses without releasing its checked pointer, resumes edits and keeps drift or missing evidence unready", async () => {
+    const root = await setup();
+    expect((await xpl(root, "new", "ready")).code).toBe(0);
+    const patch = await invoke(["apply", "ready", "-", "--actor", "user"], {
+      cwd: root,
+      stdin: JSON.stringify({
+        nodes: [
+          {
+            id: "sym:src/runner.ts#Runner.dispatch",
+            summary: "Dispatch runs a queued job on a leased worker.",
+            anchors: [{ file: "src/runner.ts", symbol: "Runner.dispatch", role: "definition" }],
+          },
+        ],
+        views: [
+          {
+            id: "view:dispatch",
+            type: "graph",
+            title: "Dispatching a job",
+            include: ["sym:src/runner.ts#Runner.dispatch"],
+            stubs: { mode: "none" },
+          },
+        ],
+      }),
+    });
+    expect(patch.code, patch.err).toBe(0);
+    const guide = readFile(root, ".explainer/ready.explainer.json");
+    const running = await start(root, "--watch");
+    try {
+      const first = await current(root);
+      expect((await xplJson(root, "ready", "ready")).json.ready).toBe(true);
+      const paused = await xplJson(root, "service", "pause");
+      expect(paused.code, paused.err).toBe(0);
+      expect(paused.json.watch).toMatchObject({
+        state: "paused",
+        stale: true,
+        generation: first.generation,
+        index: first.index,
+      });
+      expect(paused.json.state).toBe("running");
+      const pausedReady = (await xplJson(root, "ready", "ready")).json;
+      expect(pausedReady.ready).toBe(false);
+      expect(
+        pausedReady.findings.filter((f: { code: string }) => f.code === "stale-index"),
+      ).toMatchObject([{ severity: "error", message: expect.stringContaining("watch paused") }]);
+      const pausedExport = (await (
+        await fetch(new URL("/api/export", running.server.url))
+      ).json()) as { exportInfo: { report: { ready: boolean } } };
+      expect(pausedExport.exportInfo.report.ready).toBe(false);
+      writeFile(root, "tsconfig.json", '{"compilerOptions":{"target":"ES2022"}}');
+      writeFile(
+        root,
+        "src/runner.ts",
+        readFile(root, "src/runner.ts").replace("this.queue.pop()", "this.queue.pop(123)"),
+      );
+      unlinkSync(join(root, "src/queue.ts"));
+      await delay(1600);
+      expect(readJson(root, watchPath).generation).toBe(first.generation);
+      expect((await xplJson(root, "ready", "ready")).json.ready).toBe(false);
+      const resumed = await xplJson(root, "service", "resume");
+      expect(resumed.code, resumed.err).toBe(0);
+      const next = await current(root, first.generation);
+      expect(readJson(root, next.index.path)).toEqual(
+        (await buildIndex({ root, precise: "off" })).index,
+      );
+      const response = await fetch(new URL("/api/watch", running.server.url));
+      expect(response.status).toBe(200);
+      const attention = (await response.json()) as {
+        guides: { name: string; counts: { drifted: number; missing: number } }[];
+      };
+      expect(attention.guides.find((g) => g.name === "demo")!.counts).toMatchObject({
+        drifted: 2,
+        missing: 2,
+      });
+      expect((await xplJson(root, "ready", "ready")).json.ready).toBe(false);
+      const exported = (await (await fetch(new URL("/api/export", running.server.url))).json()) as {
+        exportInfo: { report: { ready: boolean; findings: { code: string }[] } };
+      };
+      expect(exported.exportInfo.report.ready).toBe(false);
+      expect(exported.exportInfo.report.findings.map((f) => f.code)).toEqual(
+        expect.arrayContaining(["anchor-drifted", "anchor-missing"]),
+      );
+      writeFile(root, ".explainer/held.patch.json", '{"nodes":[]}');
+      writeFile(root, ".explainer/requests.json", "[]");
+      writeFile(
+        root,
+        "export.html",
+        '<script id="xpl-data" type="application/json">{"schema":"code-explainer/bundle@0"}</script>',
+      );
+      // Allow enough polls for an output-triggered generation to violate the contract.
+      await delay(1800);
+      expect(readJson(root, watchPath).generation).toBe(next.generation);
+      expect(readFile(root, ".explainer/ready.explainer.json")).toBe(guide);
+      // Isolate missing evidence: readiness must fail even with no surviving drifted anchor.
+      unlinkSync(join(root, "src/runner.ts"));
+      await current(root, next.generation);
+      const missingReady = (await xplJson(root, "ready", "ready")).json;
+      expect(missingReady.ready).toBe(false);
+      expect(
+        missingReady.findings.filter((f: { code: string }) => f.code === "anchor-missing"),
+      ).toMatchObject([{ elementId: "sym:src/runner.ts#Runner.dispatch", severity: "error" }]);
+      expect(
+        missingReady.findings.filter((f: { code: string }) => f.code === "anchor-drifted"),
+      ).toEqual([]);
+    } finally {
+      await running.stop();
+    }
+  });
+
+  it("drains a publication blocked on locks before pausing and cannot publish its cancelled result", async () => {
+    const root = await setup();
+    const running = await start(root, "--watch");
+    let release!: () => void;
+    const hold = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let acquired!: () => void;
+    const locked = new Promise<void>((resolve) => {
+      acquired = resolve;
+    });
+    let lock: Promise<void> | undefined;
+    try {
+      const first = await current(root);
+      lock = withRepositoryLock(root, join(root, ".explainer/.gitignore"), async () => {
+        acquired();
+        await hold;
+      });
+      await locked;
+      writeFile(root, "README.md", "held publication\n");
+      const obsolete = (await buildIndex({ root, precise: "off" })).index;
+      const target = join(root, ".explainer", `index-${obsolete.commit}.json`);
+      await expect.poll(() => existsSync(`${target}.lock`), { timeout: 15000 }).toBe(true);
+      const pausing = xplJson(root, "service", "pause");
+      await expect.poll(() => readJson(root, watchPath).state).toBe("paused");
+      release();
+      await lock;
+      const paused = await pausing;
+      expect(paused.code, paused.err).toBe(0);
+      expect(readJson(root, watchPath)).toMatchObject({
+        state: "paused",
+        stale: true,
+        generation: first.generation,
+        index: first.index,
+      });
+      expect(existsSync(target)).toBe(false);
+      expect((await xpl(root, "service", "pause")).code).toBe(0);
+      const resumes = await Promise.all([
+        xpl(root, "service", "resume"),
+        xpl(root, "service", "resume"),
+      ]);
+      expect(resumes.map((r) => r.code)).toEqual([0, 0]);
+      expect((await current(root, first.generation)).generation).toBe(first.generation + 1);
+    } finally {
+      release();
+      await lock;
+      await running.stop();
+    }
+  });
+
   it("polls an unchanged repository without reading source contents", async () => {
     const root = await setup();
     const running = await start(root, "--watch", "--precise", "off");
