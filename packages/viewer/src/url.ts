@@ -23,7 +23,7 @@ import type { ViewerState, ViewerStore } from "./store.js";
 /** The query string (with the leading `?`, or empty) for a state, on top of the current `search`. */
 export function searchFor(
   state: Pick<ViewerState, "mode" | "tour"> &
-    Partial<Pick<ViewerState, "perspective" | "viewId" | "selection">>,
+    Partial<Pick<ViewerState, "perspective" | "viewId" | "selection" | "cursor" | "applied">>,
   search: string,
   bundleMode: "explore" | "present" | undefined,
 ): string {
@@ -57,6 +57,24 @@ export function searchFor(
     params.delete("perspective");
     params.delete("focus");
   }
+  if (state.cursor && !state.cursor.side) {
+    params.set("file", state.cursor.file);
+    const c = state.cursor;
+    params.set(
+      "range",
+      `${c.fromLine}${c.fromCol === undefined ? "" : `:${c.fromCol}`}-${c.toLine}${c.toCol === undefined ? "" : `:${c.toCol}`}`,
+    );
+  } else if ("cursor" in state) {
+    params.delete("file");
+    params.delete("range");
+  }
+  if (
+    state.applied &&
+    params.has("tour") &&
+    (params.has("step-id") || (state.mode !== "present" && state.perspective !== "explore"))
+  )
+    params.set("step-id", state.applied.stepId);
+  else if ("applied" in state) params.delete("step-id");
   // Ids are `tour:intro`: a colon is fine in a query string, and much easier to read than `%3A`.
   const text = params.toString().replace(/%3A/gi, ":");
   return text === "" ? "" : `?${text}`;
@@ -97,11 +115,13 @@ export function watchUrl(
     }
   };
   const key = (state: ViewerState) =>
-    state.mode === "present"
+    JSON.stringify(state.cursor) +
+    "|" +
+    (state.mode === "present"
       ? `present|${state.tour?.tourId}|${state.tour?.step}`
       : state.perspective === "explore"
         ? "explore"
-        : `${state.perspective}|${state.viewId}|${state.tour?.tourId}|${state.tour?.step}|${JSON.stringify(state.selection)}`;
+        : `${state.perspective}|${state.viewId}|${state.tour?.tourId}|${state.tour?.step}|${JSON.stringify(state.selection)}`);
   let last = key(store.getState());
   let mode = store.getState().mode;
   /** The talk on screen was started on this page, with an entry of its own. */
@@ -121,7 +141,15 @@ export function watchUrl(
         // Back out of a talk: leave Present, where the reader was. Back (or Forward) into one: resume it.
         if (state.mode === "present" && asked.mode !== "present") store.exitPresent();
         else if (state.mode !== "present" && asked.mode === "present")
-          store.present(asked.tour, asked.step !== undefined ? asked.step - 1 : undefined);
+          store.present(
+            asked.tour,
+            asked.stepId
+              ? state.model.tour(asked.tour ?? "")?.steps.findIndex((s) => s.id === asked.stepId)
+              : asked.step !== undefined
+                ? asked.step - 1
+                : undefined,
+          );
+        if (asked.file && asked.range) store.openRange(asked.file, asked.range);
       } finally {
         popping = false;
       }

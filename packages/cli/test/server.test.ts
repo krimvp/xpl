@@ -1,5 +1,5 @@
 import { request } from "node:http";
-import { realpathSync } from "node:fs";
+import { realpathSync, copyFileSync } from "node:fs";
 import { createServer as createNetServer } from "node:net";
 import { join } from "node:path";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
@@ -93,6 +93,54 @@ async function json(res: Response): Promise<any> {
 }
 
 describe("xpl view", () => {
+  it("serves the shared catalog and exact-path read-only previews without changing the attachment", async () => {
+    const dir = cloneDir(demo);
+    expect((await xpl(dir, "new", "retry.json", "--title", "Retry guide")).code).toBe(0);
+    copyFileSync(join(dir, ".explainer/demo.explainer.json"), join(dir, "retry.json"));
+    const view = await serve(dir);
+    const current = parseBundle(await (await fetch(`${view.url}/api/bundle`)).text());
+    const headers = {
+      "X-Xpl-Attachment": encodeURIComponent(JSON.stringify(current.server!.attachment)),
+    };
+    const response = await fetch(`${view.url}/api/guides`, { headers });
+    expect(response.status).toBe(200);
+    const cli = await xplJson(dir, "guides");
+    expect(await json(response)).toEqual({ guides: cli.json.guides, errors: cli.json.errors });
+    const previewResponse = await fetch(`${view.url}/api/guides?id=retry.json`, { headers });
+    expect(previewResponse.status).toBe(200);
+    const preview = parseBundle(await previewResponse.text());
+    expect(preview.explainer.title).toBe("Retry guide");
+    expect(preview.server).toBeUndefined();
+    expect(preview.readOnlyGuide?.command).toContain(".explainer/retry.json.explainer.json");
+    const page = bundleOf(await (await fetch(`${view.url}/?guide=retry.json`)).text());
+    expect(page.explainer.title).toBe("Retry guide");
+    expect(page.server).toBeUndefined();
+    const after = parseBundle(await (await fetch(`${view.url}/api/bundle`)).text());
+    expect(after.server).toEqual(current.server);
+    expect(after.explainer.title).toEqual(current.explainer.title);
+    expect((await fetch(`${view.url}/api/guides?id=../retry.json`)).status).toBe(404);
+    expect(
+      (
+        await fetch(`${view.url}/api/guides`, {
+          headers: {
+            "X-Xpl-Attachment": encodeURIComponent(
+              JSON.stringify({ ...current.server!.attachment, guide: "different" }),
+            ),
+          },
+        })
+      ).status,
+    ).toBe(409);
+    expect(
+      (
+        await fetch(`${view.url}/api/guides`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: "{}",
+        })
+      ).status,
+    ).toBe(405);
+  });
+
   it("version-checks bounded edits and persists undo without replacing concurrent fields", async () => {
     const dir = cloneDir(demo);
     const view = await serve(dir);

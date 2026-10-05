@@ -27,6 +27,7 @@ import { EdgeKindToggles } from "./EdgeKinds.js";
 import { StubsControl } from "./StubsControl.js";
 import { TourPanel } from "./TourPanel.js";
 import { ViewTabs } from "./ViewTabs.js";
+import { SearchLibrary } from "./SearchLibrary.js";
 import { WorkspaceTabs } from "./WorkspaceTabs.js";
 
 /** The tooltip of the disabled Present button. */
@@ -35,6 +36,8 @@ export const NO_TOURS_HINT =
 
 export function Header() {
   const state = useViewerState();
+  const [searchOpen, setSearchOpen] = useState(false);
+  const searchButton = useRef<HTMLButtonElement>(null);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [toursOpen, setToursOpen] = useState(false);
   const present = state.mode === "present";
@@ -72,11 +75,35 @@ export function Header() {
       <div className="spacer" />
       <SaveStatus />
       <button
+        ref={searchButton}
+        className="btn"
+        type="button"
+        aria-label="Search and guides"
+        aria-haspopup="dialog"
+        aria-expanded={searchOpen}
+        onClick={() => {
+          setSearchOpen(!searchOpen);
+          setFeedbackOpen(false);
+          setToursOpen(false);
+        }}
+      >
+        Search
+      </button>
+      {searchOpen && (
+        <SearchLibrary
+          onClose={() => {
+            setSearchOpen(false);
+            searchButton.current?.focus();
+          }}
+        />
+      )}
+      <button
         className="btn"
         type="button"
         aria-expanded={feedbackOpen}
         onClick={() => {
           setFeedbackOpen(!feedbackOpen);
+          setSearchOpen(false);
           setToursOpen(false);
         }}
       >
@@ -356,6 +383,7 @@ function EditMenu({ toursOpen, onTours }: { toursOpen: boolean; onTours: () => v
             testId="edit-tours"
             title="Edit the guide's steps"
             hint="Add, order and write the steps of a tour"
+            disabled={!!state.readOnlyGuide}
             expanded={toursOpen}
             onClick={run(onTours)}
           />
@@ -389,6 +417,7 @@ function EditMenu({ toursOpen, onTours }: { toursOpen: boolean; onTours: () => v
           )}
           <MenuItem
             testId="edit-review"
+            disabled={!!state.readOnlyGuide}
             title="Record author review"
             hint="Inspect a scoped snapshot and name important omissions"
             onClick={run(() => setReviewOpen(true))}

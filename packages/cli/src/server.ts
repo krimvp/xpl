@@ -3,6 +3,7 @@
  *
  *   GET  /                    the viewer HTML with the bundle injected (`server: { api: "/api" }`,
  *                             `files` = the files the explainer references; others are fetched lazily)
+ *   GET  /api/guides          shared local catalog; ?id=<key> returns a bounded read-only snapshot
  *   GET  /api/bundle          the same bundle as JSON
  *   GET  /api/export          current complete export snapshot with its readiness report
  *   GET  /api/explainer       the explainer alone, with an ETag; 304 when If-None-Match still matches (the
@@ -35,6 +36,7 @@
  * header (loopback binds), and requires an application/json body and a same-origin Origin for PUT/POST.
  */
 import {
+  BUNDLE_SCHEMA,
   artifactIdentity,
   applyUserEdits,
   UserEditError,
@@ -63,6 +65,7 @@ import { atomicWrite, withRepositoryLock, displayPath, jsonFile } from "./fsutil
 import { importRequests, appendRequest, readRequests } from "./requests.js";
 import type { openJobs, JobSubmission } from "./jobs.js";
 import {
+  loadRepositoryGuides,
   WorkingTree,
   chooseIndexFile,
   explainerName,
@@ -71,6 +74,8 @@ import {
   stalenessOf,
   type LoadedExplainer,
 } from "./repo.js";
+
+import { guideSnapshot, localGuideCatalog, LIBRARY_MAX_BYTES } from "./guide-library.js";
 
 export interface ViewServerOptions {
   env: RepoEnv;
@@ -280,6 +285,7 @@ export async function startViewServer(options: ViewServerOptions): Promise<ViewS
     const base = collectBaseFiles(explainer, state.tree.texts);
     const stale = await stalenessOf(env, state.tree, state.index, state.indexFile, state.loaded);
     const bundle: ViewerBundle = {
+      guideId: state.loaded.name,
       ...makeBundle({
         explainer,
         index: state.index,
@@ -298,6 +304,26 @@ export async function startViewServer(options: ViewServerOptions): Promise<ViewS
       bundle.exportInfo = { status: report.ready ? "ready" : "draft", report };
     }
     return bundle;
+  }
+
+  async function previewOf(id: string): Promise<ViewerBundle> {
+    const entry = loadRepositoryGuides(env).find((entry) => entry.name === id);
+    if (!entry) throw new HttpError(404, "Guide not found in this repository.");
+    if ("error" in entry) throw new HttpError(422, entry.error);
+    const snapshot = await guideSnapshot(env, entry.loaded, { draft: true });
+    if (Buffer.byteLength(JSON.stringify(snapshot)) > LIBRARY_MAX_BYTES)
+      throw new HttpError(
+        413,
+        "Guide exceeds the 20 MiB preview limit. Export it locally with xpl bundle.",
+      );
+    const quote = (value: string) => "'" + value.replace(/'/g, "'\\''") + "'";
+    return {
+      schema: BUNDLE_SCHEMA,
+      ...snapshot,
+      readOnlyGuide: {
+        command: `xpl service start ${quote(entry.loaded.rel)} --root ${quote(root)}`,
+      },
+    };
   }
 
   // View edits and request appends run one at a time: each is a read-modify-write of a file.
@@ -401,13 +427,23 @@ export async function startViewServer(options: ViewServerOptions): Promise<ViewS
     }
     if (pathname === "/" || pathname === "/index.html") {
       allow("GET", "HEAD");
-      const html = injectBundle(options.viewerHtml(), await bundleOf());
+      const guide = url.searchParams.get("guide");
+      const html = injectBundle(
+        options.viewerHtml(),
+        guide && guide !== explainerName(explainerPath) ? await previewOf(guide) : await bundleOf(),
+      );
       send(req, res, 200, html, "text/html; charset=utf-8");
       return;
     }
     if (pathname === `${API}/export`) {
       allow("GET", "HEAD");
       sendJson(req, res, 200, await bundleOf(true));
+      return;
+    }
+    if (pathname === `${API}/guides`) {
+      allow("GET", "HEAD");
+      const id = url.searchParams.get("id");
+      sendJson(req, res, 200, id === null ? localGuideCatalog(env) : await previewOf(id));
       return;
     }
     if (pathname === `${API}/bundle`) {

@@ -956,7 +956,7 @@ $ xpl view jobrunner --no-open --port 0
 serving .explainer/jobrunner.explainer.json at http://127.0.0.1:34971/  (Ctrl-C to stop)
 ```
 
-API (for scripts): `GET /api/bundle`, `GET /api/export` (current complete export snapshot and shared readiness report), `GET /api/explainer` (the explainer with its anchors re-resolved, with an `ETag`; what the page polls), `GET /api/file?path=`, `GET /api/base-file?path=` (the code before the recorded change of a modified, renamed or deleted file), `PUT /api/views/<id>`, `PUT /api/tours/<id>`, `PUT /api/review` (bounded author review user patch), `GET|POST /api/requests`.
+API (for scripts): `GET /api/guides` (shared local catalog; `?id=<key>` returns a read-only source snapshot), `GET /api/bundle`, `GET /api/export` (current complete export snapshot and shared readiness report), `GET /api/explainer` (the explainer with its anchors re-resolved, with an `ETag`; what the page polls), `GET /api/file?path=`, `GET /api/base-file?path=` (the code before the recorded change of a modified, renamed or deleted file), `PUT /api/views/<id>`, `PUT /api/tours/<id>`, `PUT /api/review` (bounded author review user patch), `GET|POST /api/requests`.
 
 ## `xpl service <start|stop|status> [explainer] [--background] [--port p] [--backend none|claude] [--recover] [--watch]`
 
@@ -1064,11 +1064,21 @@ remove reviews. Selected IDs cover those stored records and their own anchors, n
 scope and named whole files widen evidence and are included in exports. The Save as HTML team policy
 checkbox is off by default and retains its explicit choice for offline re-saves.
 
-## `xpl bundle <explainer> -o out.html [--mode explore|present] [--tour id] [--files referenced|boundary|all] [--boundary-max n] [--embed-index full|pruned] [--draft] [--note reason] [--require-review] [--allow-drift]`
+## `xpl bundle <explainer> -o out.html [--mode explore|present] [--tour id] [--files referenced|boundary|all] [--boundary-max n] [--embed-index full|pruned] [--include-guides id,id] [--draft] [--note reason] [--require-review] [--allow-drift]`
 
 Ready output refuses a stale index, including with `--allow-drift` or `XPL_SKIP_STALE_CHECK=1`. Reindex and resolve
 first. `--allow-drift` only permits drift against a current index. Generated XPL HTML pages are excluded
 from discovery so exports do not feed back into subsequent indexes.
+
+`--include-guides id,id` includes up to eight additional locally discovered guides for offline switching.
+Each is loaded from its exact catalog path, checked with the same readiness policy and keeps its own index,
+source and export report. Additional unpacked guide JSON is limited to 20 MiB; exceeding the limit or
+failing readiness writes no page. Use `--draft` explicitly for unfinished included guides.
+
+The viewer's Search panel works on supplied bundle text offline. Typed source/symbol results open exact
+inclusive ranges, and guide phrases open recorded tour steps. The panel lists only contained guides in
+exported HTML; a live page reads `GET /api/guides` and opens other guides as read-only previews, without
+changing its service attachment. Missing source, pruning and unavailable analysis are distinct from no matches.
 
 Writes one self-contained HTML file: the viewer, the explainer, the index and source files inline. Works offline and can be shared. `--tour <id>` (`tour:intro` or `intro`) starts that tour and implies `--mode present`.
 

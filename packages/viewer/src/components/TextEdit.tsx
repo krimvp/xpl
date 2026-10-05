@@ -13,7 +13,7 @@ export function TextEdit({ collection, id }: { collection: UserEdit["collection"
         type="button"
         className="btn"
         data-testid="text-edit"
-        disabled={state.editBusy}
+        disabled={state.editBusy || !!state.readOnlyGuide}
         onClick={() => {
           const item =
             collection === "nodes"

@@ -125,6 +125,12 @@ function Shell() {
     <div className="app" data-mode={state.mode}>
       <Header />
       <div className="workspace-warnings">
+        {state.readOnlyGuide && (
+          <p className="read-only-guide">
+            Read-only guide preview. To edit this guide, open its own service:{" "}
+            <code>{state.readOnlyGuide.command}</code>
+          </p>
+        )}
         <ConnectionStatus />
         <AnalysisCoverage />
         {state.exportInfo?.status === "draft" && (

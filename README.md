@@ -58,6 +58,16 @@ to GitHub is required. Remove a retained input with `xpl pr cleanup <input-direc
 Inherited Git repository overrides cannot redirect PR reads into the developer checkout. Preparation
 refuses checkout filters or line-ending conversion that change the head's raw source bytes.
 
+The viewer's **Search** button finds symbols, supplied source, concepts and tour steps offline. Results
+open the exact source range or recorded step; copied links work when the page is reopened. The panel
+reports the snapshot, embedded files, pruned analysis and unavailable coverage separately from no matches.
+Its guide picker shows contained guides in exports and the repository catalog when a service is attached.
+Other live guides open as read-only previews; the page shows the command to open their own service.
+
+`xpl bundle main-guide -o library.html --include-guides retry-guide,operations-guide` adds up to eight
+checked snapshots for offline switching, with a 20 MiB limit on additional guide data. Each keeps its own
+source and index scope. Unsaved drafts or pending edits must be saved or cancelled before switching.
+
 `xpl guides` lists locally saved guides by title, recorded questions, audience and source/index commits.
 It works without a service or index file. `xpl search <pattern>` searches available indexed working-tree
 text; unavailable files produce a warning, and `--json` records searchable paths and analysis scope.

@@ -517,7 +517,7 @@ export function selectionLines(state: EditorState): { from: number; to: number }
 
 export interface EditorHandlers {
   /** The caret or selection moved (also when the editor is focused again). */
-  onCursor(fromLine: number, toLine: number): void;
+  onCursor(fromLine: number, toLine: number, fromCol?: number, toCol?: number): void;
   /** Names in the code the index knows: who calls them, where they are defined. */
   symbols?: SymbolHandlers;
 }
@@ -848,7 +848,15 @@ export function createReadOnlyEditor(
       EditorView.updateListener.of((update) => {
         if (update.selectionSet || (update.focusChanged && update.view.hasFocus)) {
           const { from, to } = selectionLines(update.state);
-          handlers.onCursor(from, to);
+          const main = update.state.selection.main;
+          const a = update.state.doc.line(from),
+            b = update.state.doc.line(to);
+          handlers.onCursor(
+            from,
+            to,
+            main.empty ? undefined : main.from - a.from + 1,
+            main.empty ? undefined : Math.min(b.length, main.to - b.from),
+          );
         }
       }),
     );
@@ -945,15 +953,30 @@ export function placeCaret(
   fromLine: number,
   toLine: number,
   scroll: boolean | "center",
+  fromCol?: number,
+  toCol?: number,
 ): void {
   const doc = view.state.doc;
   const a = doc.line(Math.min(Math.max(1, fromLine), doc.lines));
   const b = doc.line(Math.min(Math.max(a.number, toLine), doc.lines));
-  const now = selectionLines(view.state);
-  if (now.from === a.number && now.to === b.number && scroll !== "center") return;
+  const from = a.from + (fromCol === undefined ? 0 : Math.min(a.length, fromCol - 1));
+  const to =
+    toCol === undefined
+      ? a.number === b.number
+        ? from
+        : b.to
+      : b.from + Math.min(b.length, toCol);
+  const now = view.state.selection.main;
+  const lines = selectionLines(view.state);
+  if (
+    scroll !== "center" &&
+    (fromCol === undefined && toCol === undefined
+      ? lines.from === a.number && lines.to === b.number
+      : now.from === from && now.to === to)
+  )
+    return;
   view.dispatch({
-    selection:
-      a.number === b.number ? EditorSelection.cursor(a.from) : EditorSelection.range(a.from, b.to),
+    selection: EditorSelection.range(from, to),
     ...(scroll === "center"
       ? { effects: EditorView.scrollIntoView(a.from, { y: "center" }) }
       : { scrollIntoView: scroll }),

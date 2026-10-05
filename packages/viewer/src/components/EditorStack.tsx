@@ -377,7 +377,8 @@ const EditorPane = memo(function EditorPane({
       language,
       // Before-source selections feed feedback; they never look up head symbols.
       {
-        onCursor: (from, to) => store.setCursor(pane.file, from, to, base ? "base" : "head"),
+        onCursor: (from, to, fromCol, toCol) =>
+          store.setCursor(pane.file, from, to, base ? "base" : "head", fromCol, toCol),
         ...(base ? {} : { symbols: codeSymbols(store, pane.file) }),
       },
       wrapRef.current,
@@ -449,7 +450,14 @@ const EditorPane = memo(function EditorPane({
     // A jump (the file opened at a line: a caller, a definition) puts the line in the middle, once.
     const jump = openToken > 0 && openToken !== centered.current;
     centered.current = openToken;
-    placeCaret(editor, cursor.fromLine, cursor.toLine, jump ? "center" : !fresh);
+    placeCaret(
+      editor,
+      cursor.fromLine,
+      cursor.toLine,
+      jump ? "center" : !fresh,
+      cursor.fromCol,
+      cursor.toCol,
+    );
     // A file opened at a change ("Files in this change", the tree): the whole change in view, not its edge.
     if (openToken > 0) {
       const hunk = hunks.find((h) => h.to >= cursor.fromLine);
