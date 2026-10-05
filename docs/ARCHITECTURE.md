@@ -1252,7 +1252,8 @@ User ownership survives every inverse; LLM refreshes preserve groups and edited 
   A zero-width regex match names the whole line. Symbols carry their indexed declaration range. Guide
   results carry a catalog key and the guide's index commit, with stable element/tour/step/view IDs;
   tour steps also carry their zero-based position and focus IDs. These are navigation targets, not URLs
-  or newly verified anchors. `limit` defaults to 50; 0 returns all. Totals count before limiting.
+  or newly verified anchors. `limit` defaults to 50; 0 returns all. Optional `offset` skips matches
+  before retaining a page; totals count every match before offset and limit. Both must be non-negative integers.
   Code source comes first, then config, then other text; retained symbols follow, then supplied guide
   context in catalog order. Literal search keeps lower-case substring semantics; regex uses JavaScript.
 
@@ -1898,7 +1899,7 @@ establish private team access or close those acceptance criteria.
 
 **Bundle payload** (`ViewerBundle`, also `/api/bundle`): `{ schema: "code-explainer/bundle@0", explainer,
 index, files: Record<FilePath, string>, baseFiles?, mode?, tour?, server?, sourceWarning?, exportInfo?,
-feedback? }`, embedded as `<script
+feedback?, guideId?, guides?, readOnlyGuide? }`, embedded as `<script
 id="xpl-data" type="application/json">` with `<` escaped as `\u003c` (and U+2028/2029 escaped). Under `xpl
 view` `files` may be partial and the viewer fetches the rest from `/api/file`. `xpl bundle` embeds the files
 the explainer needs (`--files referenced`, the default; `--files all` embeds every indexed file): those of
@@ -1913,6 +1914,21 @@ left out (`change 85c3b74..2284ff0: 2 changed files in (1 added to the selection
 2 files (64.6 KB)`). The viewer's file tree lists only the embedded files of a static bundle, with an "N of M
 files included" footer. The viewer HTML comes from `XPL_VIEWER_HTML`, else `dist/viewer.html` next to the
 running bundle, else `packages/viewer/dist/index.html`.
+
+**Guide library.** `guideId` is an adapter-supplied stable key, not a path resolver. Optional `guides`
+contains additional `GuideSnapshot`s: each has its own explainer, index, files, optional base text, feedback,
+freshness warning and export report. No nested libraries or server attachment are carried into a snapshot.
+`bundle --include-guides id,id` uses exact discovered paths, checks each guide through workspace readiness,
+and applies the same explicit `--draft` policy. At most eight additional guides and 20 MiB of additional
+unpacked JSON are allowed; failure writes no output. Every index is independently packed and unpacked.
+Legacy bundles use the viewer key `current`. Save as HTML preserves the contained library after switching.
+
+`GET /api/guides` reads the same catalog adapter as `xpl guides`. `?id=<key>` returns a bounded checked
+snapshot; `/?guide=<key>` renders it without live server metadata. Existing repository/guide attachment
+guards still apply. A different guide is explicitly read-only (`readOnlyGuide.command` gives its own
+`xpl service start` command and optional `stopCommand` stops that exact repository's service first).
+The live preview picker offers a Back to library link to the attached guide's root page, without
+fetching a catalog or polling from the preview. The running service's attachment and writes never change guides.
 
 **Export information.** `exportInfo: { status: "ready" | "draft", report: ReadinessReport }` records
 identity, checked source scope, findings and the author's optional decision note. CLI ready output checks the
@@ -2030,6 +2046,27 @@ notes, `detail`) is sanitised: raw HTML shows as text, images become their alt t
 mailto and in-page targets. Element and step summaries are rendered as inline markdown (`renderInline`: code
 spans, bold, emphasis); titles and labels are plain text. The page title is "<tour title> · xpl" while a tour
 is open (the Guide, Present), else "<explainer title> · xpl".
+
+**Search and guides** (`components/SearchLibrary.tsx`): one header entry opens an accessible dialog. A
+150 ms debounce sends literal, case-insensitive queries to an inline Web Worker; both index construction
+and scanning run off the UI thread. The worker calls core's pure `query` using supplied text only. Results
+have independent 16-row pages for symbols, concepts, steps, guides/tours and source (80 rows maximum).
+Each group reports its visible range and total, with Previous/Next controls; source lines cannot crowd out
+explanations or symbol results. Snippets retain at most 400 characters around matches. Stale request IDs
+are ignored, and changing the query or supplied snapshot resets all pages. Source and
+symbols refer to the active snapshot; prose can refer to any contained guide. Missing source, retained/
+total symbols and references, and unavailable analysis remain visible independently of no matches.
+
+Results carry real links: `guide=<key>`, `file=<path>&range=<line>:<col>-<line>:<col>` (1-based inclusive
+UTF-16 columns; omitted columns mean a line range), or `tour=<id>&step-id=<stable-id>`. Numeric `step`
+links remain compatible. Opening a range validates it against supplied text, selects exact columns in
+CodeMirror and enters Code. Tour phrases open the recorded step in Guide. Links survive reloads and use
+stable step IDs when reading; malformed or unavailable source ranges do not open another range.
+
+Exported pickers enumerate only contained snapshots. A live picker reads the guarded catalog; other-guide
+previews have no API or write identity and author changes are prohibited. Switching requires no unsaved
+edits, dirty drafts or in-flight writes. Search uses one header entry. Connection and attention share
+the compact status bar below it; the draft marker remains separate.
 
 **Connection** (`components/ConnectionStatus.tsx`): in the shared status bar below the header, managed
 service pages report offline, connecting,

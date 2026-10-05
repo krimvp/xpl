@@ -393,6 +393,50 @@ as `{id, path, metadataError}`, also reported in `errors`. Empty string titles s
 Each guide is read from its discovered path, even when its name matches another repository JSON file.
 Read or metadata errors exit 1; no local guides is a valid empty library and exits 0. No files are written.
 
+## `xpl stage <explainer> --dir <outside-folder> [--preview] [--files referenced|boundary|all] [--note reason] [--require-review] [--pr-result result.json]`
+
+Stages a ready guide locally, keeping earlier versions. First inspect the included source:
+
+```sh
+xpl stage guide --dir /absolute/outside/versions --preview --json
+xpl stage guide --dir /absolute/outside/versions
+```
+
+`--preview` emits readiness and sorted `includedSource: {head, base}` without creating storage or HTML.
+Ordinary staging prints these paths before writing. `--files` reuses bundle selection: referenced by
+default, boundary for direct callers/callees/tests, or all. Review evidence and change before/after files
+are included as with bundle. There is no draft override; unfinished content, drift and stale source block
+staging even with `XPL_SKIP_STALE_CHECK=1`. Ordinary staging needs no review; `--require-review` explicitly
+requires a current all-content author record. Names are self-reported.
+
+The directory must be outside the source root and its Git checkout, including symlink ancestors.
+Each read-only `version-*` folder contains `index.html` and `manifest.json`. The manifest records commits,
+artifactIdentity, input/HTML SHA-256 hashes, readiness, included source and review state. Staging rechecks
+the guide/index/source immediately before replacing a relative `current` symlink atomically under a lock.
+Open `<dir>/current/index.html` or `<dir>/<version>/index.html`. Failures retain the previous current page
+and remove the attempted version; previous successful versions are never overwritten.
+
+For a PR guide, retain its prepared checkout and use the ready result from `xpl pr finish`:
+
+```sh
+xpl stage pr-guide --root /absolute/pr-cache/input-XXXX/repository \
+  --pr-result /absolute/pr-cache/input-XXXX/result-YYYY/result.json --dir /absolute/outside/pr-versions
+```
+
+Staging verifies every recorded input/artifact hash and recomputes readiness against the prepared source.
+It copies the exact ready HTML and includes the ready result manifest. It rechecks GitHub base/head after
+writing and local freshness after that API call, before promotion. Superseded results, changed artifacts
+or API failures cannot replace current. PR results keep their recorded file selection and decision note;
+do not pass `--files` or `--note` with `--pr-result`.
+
+`--json` returns `{ok, directory, current, version, manifest, includedSource}` for staging, or
+`{ok, preview: true, destination, readiness, includedSource}` for preview. Exit 0 succeeds, 1 refuses or
+fails, 2 reports usage. A crashed writer's `current.lock` needs explicit removal after verifying it stopped.
+If lock cleanup fails after successful promotion, the command succeeds with a cleanup warning; the
+new current version remains usable.
+This command configures no server, remote destination, credentials, upload or PR Action. Exact version
+links and configured team delivery are later slices of #34.
+
 ## `xpl new <name> [--title t] [--repo r] [--url u]`
 
 Creates an empty `.explainer/<name>.explainer.json` bound to the selected index. Refuses to overwrite (`error: … already exists; not overwriting it`). The repository name it records (`repo.name`, the label of the repo box) is `--repo`, else the first of: `package.json` `name`, the last element of the `go.mod` module (`example.com/acme/jobrunner/v2` gives `jobrunner`), `[project] name` in `pyproject.toml`, the base name of the git remote (`origin`, else the first), the directory name. `--url` records where the repository lives; it is never taken from the git remote (which may carry credentials).
@@ -972,7 +1016,7 @@ $ xpl view jobrunner --no-open --port 0
 serving .explainer/jobrunner.explainer.json at http://127.0.0.1:34971/  (Ctrl-C to stop)
 ```
 
-API (for scripts): `GET /api/bundle`, `GET /api/export` (current complete export snapshot and shared readiness report), `GET /api/explainer` (the explainer with its anchors re-resolved, with an `ETag`; what the page polls), `GET /api/file?path=`, `GET /api/base-file?path=` (the code before the recorded change of a modified, renamed or deleted file), `PUT /api/views/<id>`, `PUT /api/tours/<id>`, `PUT /api/review` (bounded author review user patch), `GET|POST /api/requests`.
+API (for scripts): `GET /api/guides` (shared local catalog; `?id=<key>` returns a read-only source snapshot), `GET /api/bundle`, `GET /api/export` (current complete export snapshot and shared readiness report), `GET /api/explainer` (the explainer with its anchors re-resolved, with an `ETag`; what the page polls), `GET /api/file?path=`, `GET /api/base-file?path=` (the code before the recorded change of a modified, renamed or deleted file), `PUT /api/views/<id>`, `PUT /api/tours/<id>`, `PUT /api/review` (bounded author review user patch), `GET|POST /api/requests`.
 
 ## `xpl service <start|pause|resume|stop|status> [explainer] [--background] [--port p] [--backend none|claude] [--skill-dir folder] [--job-timeout seconds] [--recover] [--watch]`
 
@@ -1123,55 +1167,24 @@ remove reviews. Selected IDs cover those stored records and their own anchors, n
 scope and named whole files widen evidence and are included in exports. The Save as HTML team policy
 checkbox is off by default and retains its explicit choice for offline re-saves.
 
-## `xpl stage <explainer> --dir <outside-folder> [--preview] [--files referenced|boundary|all] [--note reason] [--require-review] [--pr-result result.json]`
-
-Stages a ready guide locally, keeping earlier versions. First inspect the included source:
-
-```sh
-xpl stage guide --dir /absolute/outside/versions --preview --json
-xpl stage guide --dir /absolute/outside/versions
-```
-
-`--preview` emits readiness and sorted `includedSource: {head, base}` without creating storage or HTML.
-Ordinary staging prints these paths before writing. `--files` reuses bundle selection: referenced by
-default, boundary for direct callers/callees/tests, or all. Review evidence and change before/after files
-are included as with bundle. There is no draft override; unfinished content, drift and stale source block
-staging even with `XPL_SKIP_STALE_CHECK=1`. Ordinary staging needs no review; `--require-review` explicitly
-requires a current all-content author record. Names are self-reported.
-
-The directory must be outside the source root and its Git checkout, including symlink ancestors.
-Each read-only `version-*` folder contains `index.html` and `manifest.json`. The manifest records commits,
-artifactIdentity, input/HTML SHA-256 hashes, readiness, included source and review state. Staging rechecks
-the guide/index/source immediately before replacing a relative `current` symlink atomically under a lock.
-Open `<dir>/current/index.html` or `<dir>/<version>/index.html`. Failures retain the previous current page
-and remove the attempted version; previous successful versions are never overwritten.
-
-For a PR guide, retain its prepared checkout and use the ready result from `xpl pr finish`:
-
-```sh
-xpl stage pr-guide --root /absolute/pr-cache/input-XXXX/repository \
-  --pr-result /absolute/pr-cache/input-XXXX/result-YYYY/result.json --dir /absolute/outside/pr-versions
-```
-
-Staging verifies every recorded input/artifact hash and recomputes readiness against the prepared source.
-It copies the exact ready HTML and includes the ready result manifest. It rechecks GitHub base/head after
-writing and local freshness after that API call, before promotion. Superseded results, changed artifacts
-or API failures cannot replace current. PR results keep their recorded file selection and decision note;
-do not pass `--files` or `--note` with `--pr-result`.
-
-`--json` returns `{ok, directory, current, version, manifest, includedSource}` for staging, or
-`{ok, preview: true, destination, readiness, includedSource}` for preview. Exit 0 succeeds, 1 refuses or
-fails, 2 reports usage. A crashed writer's `current.lock` needs explicit removal after verifying it stopped.
-If lock cleanup fails after successful promotion, the command succeeds with a cleanup warning; the
-new current version remains usable.
-This command configures no server, remote destination, credentials, upload or PR Action. Exact version
-links and configured team delivery are later slices of #34.
-
-## `xpl bundle <explainer> -o out.html [--mode explore|present] [--tour id] [--files referenced|boundary|all] [--boundary-max n] [--embed-index full|pruned] [--draft] [--note reason] [--require-review] [--allow-drift]`
+## `xpl bundle <explainer> -o out.html [--mode explore|present] [--tour id] [--files referenced|boundary|all] [--boundary-max n] [--embed-index full|pruned] [--include-guides id,id] [--draft] [--note reason] [--require-review] [--allow-drift]`
 
 Ready output refuses a stale index, including with `--allow-drift` or `XPL_SKIP_STALE_CHECK=1`. Reindex and resolve
 first. `--allow-drift` only permits drift against a current index. Generated XPL HTML pages are excluded
 from discovery so exports do not feed back into subsequent indexes.
+
+`--include-guides id,id` includes up to eight additional locally discovered guides for offline switching.
+Each is loaded from its exact catalog path, checked with the same readiness policy and keeps its own index,
+source and export report. Additional unpacked guide JSON is limited to 20 MiB; exceeding the limit or
+failing readiness writes no page. Use `--draft` explicitly for unfinished included guides.
+
+The viewer's Search panel works on supplied bundle text offline. Typed source/symbol results open exact
+inclusive ranges, and guide phrases open recorded tour steps. The panel lists only contained guides in
+exported HTML; a live page reads `GET /api/guides` and opens other guides as read-only previews, without
+changing its service attachment. Results have separate 16-row pages and counts for symbols, concepts,
+steps, guides/tours and source; source matches cannot hide explanations. Preview pages offer Back to library.
+To edit another live guide, stop the current repository service, then run the exact start command shown.
+Missing source, pruning and unavailable analysis are distinct from no matches.
 
 Writes one self-contained HTML file: the viewer, the explainer, the index and source files inline. Works offline and can be shared. `--tour <id>` (`tour:intro` or `intro`) starts that tour and implies `--mode present`.
 
