@@ -98,13 +98,13 @@ export async function prepareHtmlSave(
   }
   const state = store.getState();
   return {
-    ...original,
+    ...store.library,
     explainer: state.explainer,
     files: state.files,
     baseFiles: state.baseFiles,
     index: state.model.index.index,
     sourceWarning: state.sourceWarning,
-    feedback: store.feedbackFile(original.feedback),
+    feedback: store.feedbackFile(store.library.feedback),
   };
 }
 

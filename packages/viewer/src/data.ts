@@ -25,6 +25,8 @@ import {
   BUNDLE_SCRIPT_ID,
   parseBundle,
   parseFeedbackRequest,
+  type GuideDescriptor,
+  type Range,
   type Explainer,
   type ExplainerPatch,
   type ArtifactIdentity,
@@ -32,6 +34,8 @@ import {
   type ViewerBundle,
   type FeedbackRequest,
 } from "@xpl/core";
+
+import { selectGuide } from "./library.js";
 
 export type LoadedBundle = { ok: true; bundle: ViewerBundle } | { ok: false; error: string };
 
@@ -45,7 +49,10 @@ export function loadBundle(doc: Document = document): LoadedBundle {
     };
   }
   try {
-    const bundle = parseBundle(element.textContent ?? "");
+    const bundle = selectGuide(
+      parseBundle(element.textContent ?? ""),
+      new URLSearchParams(doc.location?.search ?? "").get("guide"),
+    );
     if (!bundle.explainer || !bundle.index) throw new Error("the bundle has no explainer or index");
     bundle.files = bundle.files ?? {};
     return { ok: true, bundle };
@@ -73,6 +80,14 @@ export class ServerApi {
     const response = await this.check(await this.request("/bundle", { cache: "no-store" }));
     return this.attachedBundle(await response.text());
   }
+  async guides(): Promise<{
+    guides: (GuideDescriptor | { id: string; metadataError: string })[];
+    errors: { id: string; error: string }[];
+  }> {
+    const response = await this.check(await this.request("/guides", { cache: "no-store" }));
+    return response.json();
+  }
+
   async attention(): Promise<WatchAttention | undefined> {
     const response = await this.request("/watch", { cache: "no-store" });
     // Older managed services have no attention endpoint; keep their reader unchanged.
@@ -277,6 +292,9 @@ export interface LaunchParams {
   view?: string;
   perspective?: "guide" | "map" | "flow" | "code" | "explore";
   focus?: string[];
+  file?: string;
+  range?: Range;
+  stepId?: string;
 }
 
 export function readLaunchParams(search: string = location.search): LaunchParams {
@@ -300,5 +318,25 @@ export function readLaunchParams(search: string = location.search): LaunchParams
   )
     out.perspective = perspective;
   if (params.has("focus")) out.focus = params.getAll("focus");
+  const stepId = params.get("step-id");
+  if (stepId) out.stepId = stepId;
+  const file = params.get("file");
+  const range = /^(\d+)(?::(\d+))?-(\d+)(?::(\d+))?$/.exec(params.get("range") ?? "");
+  if (file && range) {
+    const [startLine, startCol, endLine, endCol] = [range[1], range[2], range[3], range[4]].map(
+      (n) => (n === undefined ? undefined : Number(n)),
+    );
+    if (
+      startLine &&
+      endLine &&
+      endLine >= startLine &&
+      !!startCol === !!endCol &&
+      (startCol === undefined ||
+        (startCol > 0 && endCol! > 0 && (endLine > startLine || endCol! >= startCol)))
+    ) {
+      out.file = file;
+      out.range = { startLine, endLine, ...(startCol !== undefined ? { startCol, endCol } : {}) };
+    }
+  }
   return out;
 }

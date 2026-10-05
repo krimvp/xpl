@@ -27,7 +27,7 @@ export function EvidenceEdit({
         className="btn"
         type="button"
         data-testid="evidence-edit"
-        disabled={!!captured || state.editBusy}
+        disabled={!!captured || state.editBusy || !!state.readOnlyGuide}
         onClick={() => {
           const draft = store.captureEdit(collection, id, { anchors: item.anchors });
           // Resolver metadata is a cache. Opening an editor alone is not a changed claim.

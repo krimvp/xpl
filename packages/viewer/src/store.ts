@@ -44,6 +44,7 @@ import {
   ExplainerModel,
   parseId,
   resolveStubPolicy,
+  type Range,
   type Anchor,
   type Edge,
   type ElementId,
@@ -85,6 +86,8 @@ export interface Cursor {
   fromLine: number;
   toLine: number;
   side?: "base";
+  fromCol?: number;
+  toCol?: number;
 }
 
 export interface ConnectionState {
@@ -140,6 +143,7 @@ export interface AuthorDraft {
 }
 
 export interface ViewerState {
+  readOnlyGuide?: ViewerBundle["readOnlyGuide"];
   perspective: Perspective;
   canGoBack: boolean;
   canGoForward: boolean;
@@ -276,7 +280,11 @@ export class ViewerStore {
   /** Namespace of the page as loaded; edits change request context, never where requests are saved. */
   private readonly feedbackStorageKey: string;
 
-  constructor(bundle: ViewerBundle, launch: LaunchParams = {}) {
+  constructor(
+    readonly library: ViewerBundle,
+    launch: LaunchParams = {},
+  ) {
+    const bundle = library;
     this.editAttachment = bundle.server?.attachment;
     this.editStorageKey = this.editAttachment
       ? `xpl-edits:${JSON.stringify([this.editAttachment.root, this.editAttachment.guide])}`
@@ -297,9 +305,14 @@ export class ViewerStore {
     // one when the page is to open in Present, and to none in Explore.
     const tours = model.tours;
     const asked = findTour(tours, launch.tour) ?? findTour(tours, bundle.tour);
+    if (asked && launch.stepId) {
+      const index = asked.steps.findIndex((step) => step.id === launch.stepId);
+      if (index >= 0) launch = { ...launch, step: index + 1 };
+    }
     const present = (launch.mode ?? bundle.mode ?? "explore") === "present" && tours.length > 0;
     const tour = asked ?? (present ? tours[0] : undefined);
     this.state = {
+      readOnlyGuide: bundle.readOnlyGuide,
       perspective:
         launch.perspective ??
         (launch.mode || launch.view || bundle.mode === "present" ? "explore" : "guide"),
@@ -385,6 +398,7 @@ export class ViewerStore {
     const perspective = this.state.perspective;
     if (!present && (perspective === "map" || perspective === "flow"))
       this.set({ viewId: workspaceView(this.state, perspective)?.id ?? this.state.viewId });
+    if (launch.file && launch.range) this.openRange(launch.file, launch.range);
   }
 
   /** The model of an explainer, over tours that are sound (hand-edited files may not be). */
@@ -620,6 +634,8 @@ export class ViewerStore {
     fromLine: number,
     toLine: number = fromLine,
     side: "head" | "base" = "head",
+    fromCol?: number,
+    toCol?: number,
   ): void {
     const from = Math.max(1, Math.floor(fromLine));
     const to = Math.max(from, Math.floor(toLine));
@@ -629,11 +645,19 @@ export class ViewerStore {
       cur.file === file &&
       cur.fromLine === from &&
       cur.toLine === to &&
-      (cur.side ?? "head") === side
+      (cur.side ?? "head") === side &&
+      cur.fromCol === fromCol &&
+      cur.toCol === toCol
     )
       return;
     this.set({
-      cursor: { file, fromLine: from, toLine: to, ...(side === "base" ? { side } : {}) },
+      cursor: {
+        file,
+        fromLine: from,
+        toLine: to,
+        ...(side === "base" ? { side } : {}),
+        ...(fromCol !== undefined ? { fromCol, toCol } : {}),
+      },
     });
   }
 
@@ -663,6 +687,45 @@ export class ViewerStore {
     // The caret is in the code as it is now (its lines look up diagram elements): not in a "Before" pane.
     if (at !== undefined && !base) patch.cursor = { file, fromLine: at, toLine: at };
     this.navigate(patch);
+  }
+
+  /** Search and shared links use inclusive source columns, only within supplied snapshot text. */
+  openRange(file: FilePath, range: Range): void {
+    const text = this.state.files[file];
+    if (text === undefined || !this.indexModel.hasFile(file)) return;
+    const lines = text.split("\n");
+    const { startLine, endLine, startCol, endCol } = range;
+    if (
+      ![startLine, endLine].every(Number.isInteger) ||
+      startLine < 1 ||
+      endLine < startLine ||
+      endLine > lines.length ||
+      (startCol !== undefined &&
+        (!Number.isInteger(startCol) ||
+          !Number.isInteger(endCol) ||
+          startCol < 1 ||
+          endCol! < 1 ||
+          startCol > lines[startLine - 1]!.replace(/\r$/, "").length ||
+          endCol! > lines[endLine - 1]!.replace(/\r$/, "").length ||
+          (startLine === endLine && endCol! < startCol)))
+    )
+      return;
+    this.navigate({
+      mode: "explore",
+      perspective: "code",
+      selection: [],
+      applied: undefined,
+      openedFile: file,
+      openedBase: false,
+      openedLine: undefined,
+      openSeq: this.state.openSeq + 1,
+      cursor: {
+        file,
+        fromLine: startLine,
+        toLine: endLine,
+        ...(startCol !== undefined ? { fromCol: startCol, toCol: endCol } : {}),
+      },
+    });
   }
 
   /** Closes the pane of a file that was opened but is not part of the focus. */
@@ -1002,7 +1065,7 @@ export class ViewerStore {
   }
 
   private editView(viewId: string, fields: Record<string, unknown>): void {
-    if (this.state.editBusy) return;
+    if (this.state.editBusy || this.state.readOnlyGuide) return;
     const explainer = withViewFields(this.state.explainer, viewId, fields);
     if (explainer === this.state.explainer) return;
     const model = this.modelOf(explainer);
@@ -1207,6 +1270,8 @@ export class ViewerStore {
     id: string,
     fields: Record<string, unknown>,
   ): { edit: UserEdit; version: ArtifactIdentity } {
+    if (this.state.readOnlyGuide)
+      throw new Error("This guide preview is read-only. Open its own service to edit it.");
     const draft = this.state.textDrafts[id] ?? {
       edit: makeUserEdit(this.state.explainer, this.indexModel, collection, id, fields),
       version: artifactIdentity(this.state.explainer, this.indexModel.index),
@@ -1277,6 +1342,7 @@ export class ViewerStore {
   }
 
   async saveEdits(edits: UserEdit[], version: ArtifactIdentity): Promise<void> {
+    if (this.state.readOnlyGuide) throw new Error("This guide preview is read-only.");
     await this.writeEdits(edits, "save", version);
   }
 
@@ -1423,6 +1489,7 @@ export class ViewerStore {
 
   /** Bind the author action to the inspected snapshot, never regenerate its fingerprint at save time. */
   async recordReview(snapshot: ViewerBundle, review: ExplainerPatch["review"]): Promise<void> {
+    if (this.state.readOnlyGuide) throw new Error("This guide preview is read-only.");
     if (this.state.editBusy || this.state.editDraft)
       throw new Error("Save or cancel the author edit before recording a review.");
     await this.flush();
@@ -1532,7 +1599,7 @@ export class ViewerStore {
   }
 
   private editTour(tour: Tour, choose = false): void {
-    if (this.state.editBusy) return;
+    if (this.state.editBusy || this.state.readOnlyGuide) return;
     const before = this.state.model.tour(tour.id);
     if (before === tour) return;
     const explainer = withTour(this.state.explainer, tour);

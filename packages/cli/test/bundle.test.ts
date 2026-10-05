@@ -29,6 +29,64 @@ import {
 let demo: string;
 let viewerEnv: { XPL_VIEWER_HTML: string };
 
+it("exports explicitly included guides as separate bounded snapshots and checks their readiness", async () => {
+  const dir = cloneDir(demo);
+  expect((await xpl(dir, "new", "retry.json", "--title", "When do jobs retry?")).code).toBe(0);
+  const result = await invoke(
+    ["bundle", "demo", "--out", "library.html", "--include-guides", "retry.json", "--draft"],
+    { cwd: dir, env: viewerEnv },
+  );
+  expect(result.code, result.err).toBe(0);
+  const library = bundleOf(readFile(dir, "library.html"));
+  expect(library.guideId).toBe("demo");
+  expect(
+    library.guides?.map((g) => ({
+      id: g.guideId,
+      title: g.explainer.title,
+      status: g.exportInfo?.status,
+    })),
+  ).toEqual([{ id: "retry.json", title: "When do jobs retry?", status: "draft" }]);
+  expect(library.guides![0]!.index.symbols).toEqual([]);
+  const ready = await invoke(
+    ["bundle", "demo", "--out", "blocked.html", "--include-guides", "retry.json"],
+    { cwd: dir, env: viewerEnv },
+  );
+  expect(ready.code).toBe(1);
+  expect(existsSync(join(dir, "blocked.html"))).toBe(false);
+  const limit = await invoke(
+    [
+      "bundle",
+      "demo",
+      "--out",
+      "too-many.html",
+      "--include-guides",
+      "a,b,c,d,e,f,g,h,i",
+      "--draft",
+    ],
+    { cwd: dir, env: viewerEnv },
+  );
+  expect(limit.code).toBe(2);
+  expect(limit.err).toContain("at most 8");
+  editFile(dir, "src/metrics.ts", (text) => text + "\n//" + "x".repeat(21 * 1024 * 1024));
+  const oversized = await invoke(
+    [
+      "bundle",
+      "demo",
+      "--out",
+      "too-large.html",
+      "--include-guides",
+      "retry.json",
+      "--files",
+      "all",
+      "--draft",
+    ],
+    { cwd: dir, env: viewerEnv },
+  );
+  expect(oversized.code).toBe(1);
+  expect(oversized.err).toContain("20 MiB library limit");
+  expect(existsSync(join(dir, "too-large.html"))).toBe(false);
+});
+
 beforeAll(async () => {
   const indexed = await indexedFixture();
   demo = cloneDir(indexed);
