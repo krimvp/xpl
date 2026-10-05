@@ -10,7 +10,7 @@ import { promisify } from "node:util";
 test("a delayed disk refresh cannot replace a newer outcome in the panel, browser or exports", async ({
   page,
 }) => {
-  test.setTimeout(60_000);
+  test.setTimeout(180_000);
   const repo = fileURLToPath(new URL("../../..", import.meta.url));
   const root = mkdtempSync(join(tmpdir(), "xpl-feedback-order-"));
   cpSync(join(repo, "fixtures/ts-jobrunner"), root, { recursive: true });

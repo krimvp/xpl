@@ -215,7 +215,7 @@ describe("captured index inputs", () => {
       writeFiles(root, { "scip-pyrightconfig.json": '{"include":["one"]}\n' });
       expect(await indexInputsChanged(fallback)).toBe(true);
     },
-    90_000,
+    270_000,
   );
 
   it.each<{

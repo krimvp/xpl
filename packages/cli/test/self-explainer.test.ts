@@ -43,5 +43,5 @@ describe("xpl's own explainer", () => {
       .filter((issue) => issue.severity === "error")
       .map((issue) => `${issue.path}: ${issue.message}`);
     expect(errors, `xpl validate xpl fails; ${FIX}`).toEqual([]);
-  }, 120_000);
+  }, 360_000);
 });

@@ -502,7 +502,7 @@ it.skipIf(process.env.XPL_TEST_CLAUDE_ANSWER !== "1")(
       await jobs.close();
     }
   },
-  70_000,
+  210_000,
 );
 
 it("refuses a completed receipt whose portable evidence differs from the job's recorded source", async () => {

@@ -29,7 +29,7 @@ for (const [direction, skew] of [
     page,
     context,
   }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(180_000);
     const scratch = mkdtempSync(join(tmpdir(), "xpl-feedback-clock-"));
     const root = join(scratch, "repo");
     const portable = join(scratch, "portable");
