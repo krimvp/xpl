@@ -127,7 +127,7 @@ or replaced. Crashed artifact-writer locks need explicit inspection and removal;
 
 The git-ignored `.explainer/service/` directory keeps local context and ownership records. `--backend claude`
 only saves a future backend selection; no jobs or agent run. The viewer reports connection and backend
-availability below the header. Open **Repository and backend** for the root and last service instance.
+availability below the header. Open **Connection details** for the root and last service instance.
 Bookmarks retain the repository and guide; an address serving another guide is refused. Restart with
 `xpl service start` and the open page reconnects to that saved guide, keeping your selection and unsaved edits.
 

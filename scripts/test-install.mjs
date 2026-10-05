@@ -289,7 +289,7 @@ try {
           root: fixture,
           guide: service.guide,
         });
-        await connection.getByText("Repository and backend").click();
+        await connection.getByText("Connection details").click();
         await expect(connection).toContainText(service.instanceId);
         await expect(connection).toContainText(
           "Agent backend unavailable (Claude selected). No agent is configured.",
