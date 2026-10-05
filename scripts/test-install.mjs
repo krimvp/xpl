@@ -40,6 +40,13 @@ const packed = JSON.parse(
     { cwd: scratch, encoding: "utf8" },
   ),
 );
+for (const file of packed[0].files) {
+  assert.match(
+    file.path,
+    /^(?:xpl\.mjs|viewer\.html|package\.json|integrity\.json|README\.md|LICENSE|wasm\/[^/]+\.(?:wasm|scm)|skill\/code-explainer\/(?:SKILL\.md|README\.md|bin\/(?:xpl|package\.json)|reference\/.*\.(?:md|json)))$/,
+  );
+  assert(!/(?:^|\/)(?:tests?|\.env)(?:[/.]|$)|\.map$/.test(file.path), file.path);
+}
 const tarball = join(scratch, packed[0].filename);
 const prefix = join(scratch, "installed");
 function install(dir) {
@@ -62,9 +69,16 @@ function install(dir) {
   );
 }
 install(prefix);
-let pkg = join(prefix, "lib/node_modules/@xpl/cli");
+let pkg = join(prefix, "lib/node_modules/@krimvp/xpl");
 const metadata = JSON.parse(readFileSync(join(pkg, "package.json"), "utf8"));
-assert.match(metadata.version, /^\d+\.\d+\.\d+/);
+assert.equal(metadata.name, "@krimvp/xpl");
+assert.equal(metadata.version, "0.1.0");
+assert.equal(metadata.license, "MIT");
+assert.equal(
+  readFileSync(join(pkg, "LICENSE"), "utf8"),
+  readFileSync(join(repo, "LICENSE"), "utf8"),
+);
+assert.match(readFileSync(join(pkg, "README.md"), "utf8"), /npm install --global @krimvp\/xpl/);
 assert.equal(metadata.dependencies, undefined);
 const tools = join(scratch, "tools");
 mkdirSync(tools);
@@ -144,11 +158,11 @@ const updatedCli = join(updated, "bin/xpl");
 run(["skill", "install"], scratch, updatedCli);
 assert.equal(
   JSON.parse(readFileSync(join(skill, "xpl-install.json"), "utf8")).cli,
-  join(updated, "lib/node_modules/@xpl/cli/xpl.mjs"),
+  join(updated, "lib/node_modules/@krimvp/xpl/xpl.mjs"),
 );
 assert.equal(run(["--version"], scratch, join(skill, "bin/xpl")).trim(), metadata.version);
 cli = updatedCli;
-pkg = join(updated, "lib/node_modules/@xpl/cli");
+pkg = join(updated, "lib/node_modules/@krimvp/xpl");
 const originalSkill = readFileSync(join(skill, "SKILL.md"), "utf8");
 writeFileSync(join(skill, "SKILL.md"), originalSkill + "\nLocal edit\n");
 assert.match(rejected(["skill", "install", "--json"]).error, /Will not replace/);
@@ -264,7 +278,7 @@ try {
     if (language === "ts") {
       const artifactPath = join(fixture, ".explainer/ready-demo.explainer.json");
       const beforeArtifact = readFileSync(artifactPath, "utf8");
-      const service = JSON.parse(
+      let service = JSON.parse(
         run(
           [
             "service",
@@ -274,7 +288,8 @@ try {
             "--port",
             "0",
             "--backend",
-            "claude",
+            "none",
+            "--watch",
             "--json",
           ],
           fixture,
@@ -282,8 +297,62 @@ try {
       );
       const attached = await browser.newPage();
       try {
+        await expect
+          .poll(() => JSON.parse(run(["service", "status", "--json"], fixture)).watch?.state, {
+            timeout: 15000,
+          })
+          .toBe("current");
+        const history = await fetch(new URL("/api/jobs", service.url));
+        assert.equal(history.status, 200);
+        const jobs = await history.json();
+        assert.deepEqual(jobs.jobs, []);
+        assert.equal(jobs.available, false);
+        const unavailable = await fetch(new URL("/api/jobs", service.url), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            id: "d92c958c-9c0c-4f30-a5df-d2bde4f790fa",
+            selectedRequestIds: ["install-feedback"],
+          }),
+        });
+        assert.equal(unavailable.status, 503);
+        assert.match((await unavailable.json()).error, /unavailable|configured/i);
+        const paused = JSON.parse(run(["service", "pause", "--json"], fixture));
+        assert.equal(paused.state, "running");
+        assert.equal(paused.watch.state, "paused");
+        assert.equal(paused.watch.stale, true);
+        run(["service", "resume", "--json"], fixture);
+        await expect
+          .poll(() => JSON.parse(run(["service", "status", "--json"], fixture)).watch?.state, {
+            timeout: 15000,
+          })
+          .toBe("current");
+        assert.equal(readFileSync(artifactPath, "utf8"), beforeArtifact);
         await attached.goto(service.url + "?perspective=code");
         const connection = attached.getByTestId("connection-status");
+        await expect(connection).toHaveAttribute("data-status", "connected");
+        await connection.getByText("Connection details").click();
+        await expect(connection).toContainText(
+          "No agent is configured. Use xpl revise for a manual revision.",
+        );
+        run(["service", "stop", "--json"], fixture);
+        service = JSON.parse(
+          run(
+            ["service", "start", "--background", "--backend", "claude", "--watch", "--json"],
+            fixture,
+          ),
+        );
+        await expect
+          .poll(() => JSON.parse(run(["service", "status", "--json"], fixture)).watch?.state, {
+            timeout: 15000,
+          })
+          .toBe("current");
+        const configuredHistory = await fetch(new URL("/api/jobs", service.url));
+        assert.equal(configuredHistory.status, 200);
+        const configuredJobs = await configuredHistory.json();
+        assert.deepEqual(configuredJobs.jobs, []);
+        assert.equal(configuredJobs.available, true);
+        await attached.goto(service.url + "?perspective=code");
         await expect(connection).toHaveAttribute("data-status", "connected");
         assert.deepEqual(JSON.parse(new URL(attached.url()).searchParams.get("attachment")), {
           root: fixture,
@@ -425,7 +494,7 @@ try {
       );
       run(["validate", "ready-demo"], fixture);
       results.push(
-        "ts: packed start/stop/restart, same-page and bookmarked guide reconnect, configured backend label, stopped-page snapshot save with blocked-network reading, saved context, duplicate refusal, crash/recovery and manual export after stop passed",
+        "ts: packed start/stop/restart, watched index and pause/resume, durable job history and unavailable submission, same-page and bookmarked guide reconnect, configured backend label, stopped-page snapshot save with blocked-network reading, saved context, duplicate refusal, crash/recovery and manual export after stop passed",
       );
     }
     const offline = await browser.newPage();

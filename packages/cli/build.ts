@@ -68,18 +68,27 @@ console.log(`copied viewer to dist/viewer.html (${kb((await stat(viewerHtml)).si
 await cp(join(here, "../../skill/code-explainer"), join(dist, "skill/code-explainer"), {
   recursive: true,
 });
-await copyFile(join(here, "../../README.md"), join(dist, "README.md"));
+await copyFile(join(here, "README.md"), join(dist, "README.md"));
+await copyFile(join(here, "../../LICENSE"), join(dist, "LICENSE"));
 await writeFile(
   join(dist, "package.json"),
   JSON.stringify(
     {
-      name: pkg.name,
+      // npm rejected xpl; publishName selects the scoped fallback in one line.
+      name: pkg.publishName,
       version: pkg.version,
-      description: "Code explainer CLI, viewer, WASM grammars and authoring skill",
+      description:
+        "Code explainer: diagrams linked both ways to the code, every claim checked against the repository",
+      license: "MIT",
+      repository: { type: "git", url: "git+https://github.com/krimvp/xpl.git" },
+      homepage: "https://krimvp.github.io/xpl/",
+      bugs: { url: "https://github.com/krimvp/xpl/issues" },
+      keywords: ["code-explainer", "diagrams", "documentation", "claude", "cli"],
+      author: "krimvp",
       type: "module",
       bin: { xpl: "xpl.mjs" },
       engines: { node: ">=22.12" },
-      files: ["xpl.mjs", "viewer.html", "wasm", "skill", "integrity.json"],
+      files: ["xpl.mjs", "viewer.html", "wasm", "skill", "integrity.json", "LICENSE"],
     },
     null,
     2,

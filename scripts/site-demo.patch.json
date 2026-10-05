@@ -1,0 +1,41 @@
+{
+  "nodes": [
+    {
+      "id": "file:src/queue.ts",
+      "summary": "Keeps ready and running jobs in memory, delays retries and parks jobs that run out of attempts."
+    },
+    {
+      "id": "file:src/worker.ts",
+      "summary": "Runs the handler for one job with a timeout and reports success or failure."
+    },
+    {
+      "id": "file:src/metrics.ts",
+      "summary": "Counts completed jobs and their durations from events on the bus."
+    }
+  ],
+  "views": [
+    {
+      "id": "view:dispatch",
+      "stepsUpdate": [
+        {
+          "id": "dispatch:1",
+          "summary": "The runner takes the next due job from the queue, ordered by priority and enqueue time."
+        },
+        {
+          "id": "dispatch:2",
+          "summary": "A leased worker runs the job handler and returns the outcome of this attempt."
+        },
+        {
+          "id": "dispatch:3",
+          "summary": "After a failed attempt with retries left, the runner delays the job and puts it back on the queue."
+        }
+      ]
+    }
+  ],
+  "tours": [
+    {
+      "id": "tour:intro",
+      "summary": "Follow the scheduling code and a failed job as it returns to the queue. The worker and metrics are shown on the map; this tour leaves their internals out."
+    }
+  ]
+}
