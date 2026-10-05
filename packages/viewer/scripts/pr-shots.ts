@@ -18,6 +18,7 @@
  *   query is passed on (`?perspective=map&view=view:overview`, `?mode=present&tour=tour:intro&step=2`,
  *   `?perspective=explore&focus=edge:job-completed`). Without `--set` or `--shot`, `--set ux` is assumed.
  *
+ * - `--evidence-editor` opens the retry concept evidence editor, where available, with runner line 75.
  * - `--service` intercepts a loopback API; unmanaged omits attachment metadata for plain-view shots.
  *
  * compare: pairs the files of both directories by name and writes `<name>.png`, Before left and After right,
@@ -49,6 +50,7 @@ async function shoot(argv: string[]): Promise<void> {
       scheme: { type: "string", default: "light" },
       size: { type: "string", default: "1440x900" },
       service: { type: "string" },
+      "evidence-editor": { type: "boolean", default: false },
     },
   });
   if (values.service && !["connected", "disconnected", "unmanaged"].includes(values.service))
@@ -130,6 +132,21 @@ async function shoot(argv: string[]): Promise<void> {
       } else await page.goto(pathToFileURL(file).href + query);
       await page.waitForFunction(() => !!window.__xpl);
       await page.waitForTimeout(400);
+      if (values["evidence-editor"]) {
+        const divider = page.getByRole("separator", {
+          name: "Resize the diagram and the panels below it",
+        });
+        await divider.focus();
+        for (let i = 0; i < 4; i++) await divider.press("Shift+ArrowUp");
+        const edit = page.getByTestId("evidence-edit");
+        const available = (await edit.count()) > 0;
+        if (available) await edit.click();
+        await page.evaluate(() => window.__xpl!.setCursor("src/runner.ts", 75));
+        if (available)
+          await page
+            .locator(".evidence-edit")
+            .evaluate((form) => form.scrollIntoView({ block: "start" }));
+      }
       await page.screenshot({ path: `${out}/${name}.png` });
       console.log(name);
       await page.close();

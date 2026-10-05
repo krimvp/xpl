@@ -10,6 +10,9 @@ import {
   artifactIdentity,
   applyUserEdits,
   makeUserEdit,
+  makeAnchor,
+  type MakeAnchorResult,
+  type AnchorRole,
   type UserEdit,
   type ArtifactIdentity,
   applyPatch,
@@ -1217,6 +1220,43 @@ export class ViewerStore {
     await this.saving;
   }
 
+  /** Check selected head/base lines before staging a user evidence edit. */
+  previewEvidence(role: AnchorRole): MakeAnchorResult {
+    const cursor = this.state.cursor;
+    if (!cursor)
+      return { ok: false, error: "Select lines in the source pane to preview evidence." };
+    const { file, fromLine, toLine, side } = cursor;
+    if (side === "base")
+      return makeAnchor(
+        { file, at: "base", role, span: { from: fromLine - 1, to: toLine - 1 } },
+        this.indexModel,
+        snapshotTexts(this.state),
+        { change: this.state.explainer.change },
+      );
+    const text = this.state.files[file];
+    if (text === undefined)
+      return { ok: false, error: "Wait for the selected source file to load." };
+    if (this.indexModel.file(file)?.hash !== hashText(text))
+      return {
+        ok: false,
+        error: "This source differs from the index. Reindex and reload before selecting evidence.",
+      };
+    let symbol = this.indexModel.innermostSymbolAt(file, fromLine);
+    while (symbol && symbol.range.endLine < toLine)
+      symbol = this.indexModel.parentSymbol(symbol.id);
+    const start = symbol?.range.startLine ?? 1;
+    return makeAnchor(
+      {
+        file,
+        role,
+        ...(symbol ? { symbol: symbol.path } : {}),
+        span: { from: fromLine - start, to: toLine - start },
+      },
+      this.indexModel,
+      snapshotTexts(this.state),
+    );
+  }
+
   /** Capture fields and version when the author opens the editor, before typing begins. */
   captureEdit(
     collection: UserEdit["collection"],
@@ -1339,15 +1379,19 @@ export class ViewerStore {
       (redo ? this.redoEdits : this.undoEdits)
         .at(-1)
         ?.map(
-          (edit) => `${Object.keys(edit.after).join(", ")} of ${this.state.model.label(edit.id)}`,
+          (edit) =>
+            `${Object.keys(edit.after)
+              .map((field) => (field === "anchors" ? "evidence" : field))
+              .join(", ")} of ${this.state.model.label(edit.id)}`,
         )
-        .join("; ") ?? "text edit"
+        .join("; ") ?? "author edit"
     );
   }
 
   /** Refresh unrelated content first; touched-field preconditions still forbid overwriting another author. */
   async undoEdit(redo = false): Promise<void> {
-    if (this.state.editDraft) throw new Error("Save or cancel the text draft before undo or redo.");
+    if (this.state.editDraft)
+      throw new Error("Save or cancel the author draft before undo or redo.");
     const from = redo ? this.redoEdits : this.undoEdits;
     const edits = from.at(-1);
     if (!edits) return;
@@ -1362,7 +1406,9 @@ export class ViewerStore {
     if (this.state.editBusy) throw new Error("Wait for the current edit to finish saving.");
     try {
       if ([...this.pending.values()].some((write) => write.kind === "author" && !write.applied))
-        throw new Error("Retry or cancel the pending text save before submitting another edit.");
+        throw new Error("Retry or cancel the pending author save before submitting another edit.");
+      if (action === "save" && edits.some((edit) => "anchors" in edit.after))
+        applyUserEdits(this.state.explainer, edits, this.indexModel, snapshotTexts(this.state));
       await this.flush();
       if (this.api && this.state.dirty) throw new Error("Save or cancel the pending edits first.");
       const write: Extract<PendingWrite, { kind: "author" }> = {
@@ -1393,7 +1439,7 @@ export class ViewerStore {
         throw new Error(
           this.state.save.status === "error"
             ? this.state.save.message
-            : "Text edit remains unsaved. Use Retry save.",
+            : "Author edit remains unsaved. Use Retry save.",
         );
     } catch (error) {
       this.set({
@@ -1408,7 +1454,7 @@ export class ViewerStore {
   async recordReview(snapshot: ViewerBundle, review: ExplainerPatch["review"]): Promise<void> {
     if (this.state.readOnlyGuide) throw new Error("This guide preview is read-only.");
     if (this.state.editBusy || this.state.editDraft)
-      throw new Error("Save or cancel the text edit before recording a review.");
+      throw new Error("Save or cancel the author edit before recording a review.");
     await this.flush();
     if (this.api && (this.state.dirty || this.state.save.status === "error"))
       throw new Error("Save the pending edits before recording a review.");

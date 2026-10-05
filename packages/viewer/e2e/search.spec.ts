@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { injectBundle, parseBundle } from "@xpl/core";
-import { readEmbeddedBundle, stateOf, watchProblems, openEditMenu } from "./helpers.js";
+import { readEmbeddedBundle, stateOf, watchProblems, openEditMenu, toExplore } from "./helpers.js";
 
 // A real file:// page: no service can fill in omitted source or guide snapshots.
 test("offline library searches supplied source and prose, opens exact links and switches bounded guides", async ({
@@ -177,6 +177,10 @@ test("live catalog stays scoped to its attachment and switching refuses unsaved 
   await expect(page.getByText("Read-only guide preview.", { exact: false })).toContainText(
     "xpl service start",
   );
+  await toExplore(page);
+  await page.evaluate(() => window.__xpl!.select(["concept:retry-policy"]));
+  await expect(page.getByTestId("text-edit")).toBeDisabled();
+  await expect(page.getByTestId("evidence-edit")).toBeDisabled();
   const prior = requests.length;
   await page.getByRole("button", { name: "Search and guides" }).click();
   await expect(panel).toContainText("Contained guides");

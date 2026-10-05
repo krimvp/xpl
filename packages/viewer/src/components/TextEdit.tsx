@@ -2,18 +2,18 @@ import type { UserEdit } from "@xpl/core";
 import type { AuthorDraft } from "../store.js";
 import { useStore, useViewerState } from "../hooks.js";
 
-/** Author text stays a draft until Save; source and evidence are read-only here. */
+/** Author text stays a draft until Save; source stays read-only; evidence has its own explicit editor. */
 export function TextEdit({ collection, id }: { collection: UserEdit["collection"]; id: string }) {
   const store = useStore();
   const state = useViewerState();
   const captured = state.textDrafts[id];
-  if (!captured)
+  if (!captured || "anchors" in captured.edit.after)
     return (
       <button
         type="button"
         className="btn"
         data-testid="text-edit"
-        disabled={state.editBusy || !!state.readOnlyGuide}
+        disabled={!!captured || state.editBusy || !!state.readOnlyGuide}
         onClick={() => {
           const item =
             collection === "nodes"
