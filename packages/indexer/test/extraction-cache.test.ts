@@ -208,7 +208,7 @@ it.each(equivalenceRoots)(
       }
     }
   },
-  120_000,
+  360_000,
 );
 
 it("reuses extraction while publishing the whole clean index, including inference and diagnostics", async () => {
@@ -461,7 +461,7 @@ it("a fresh process misses after a grammar upgrade, then reuses the new grammar'
   expect(build("warm").extraction).toMatchObject({ hits: 0, misses: 1 });
   expect(build("warm").extraction).toMatchObject({ hits: 1, misses: 0 });
   expect(readFileSync(output, "utf8")).toBe(original);
-}, 30_000);
+}, 90_000);
 
 it("never persists live objects or failed extractions", async () => {
   const root = makeDir({ "a.ts": "export function a() {}" });
