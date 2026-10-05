@@ -126,7 +126,7 @@
       "id": "dir:packages/cli",
       "kind": "dir",
       "label": "cli",
-      "summary": "The CLI dispatches discovery, authoring, maintenance, setup and offline export commands. Revision reviews selected feedback patches against source before ready acceptance. Ready export checks workspace freshness and shared reader requirements before writing HTML. Installed setup checks packaged assets and binds the authoring skill to the local CLI. The optional repository service persists its guide and verifies ownership before stop or explicit crash recovery. Team review policy is explicit and optional.",
+      "summary": "The CLI dispatches discovery, authoring, maintenance, setup and offline export commands. Revision reviews selected feedback patches against source before ready acceptance. Ready export checks workspace freshness and shared reader requirements before writing HTML. Installed setup checks packaged assets and binds the authoring skill to the local CLI. The optional repository service persists its guide and verifies ownership before stop or explicit crash recovery. Team review policy is explicit and optional. PR creation prepares an owned head, hands authoring to the installed skill and checks both API commits before marking a local result ready.",
       "parent": "dir:packages",
       "anchors": [
         {
@@ -135,7 +135,7 @@
           "role": "definition",
           "hash": "sha256-v2:897ce13f626c",
           "resolved": {
-            "commit": "wt-b738ff79fe",
+            "commit": "wt-1a06ede864",
             "range": {
               "startLine": 38,
               "endLine": 62
@@ -153,7 +153,7 @@
           "role": "call-site",
           "hash": "sha256-v2:c3171a254e7f",
           "resolved": {
-            "commit": "wt-b738ff79fe",
+            "commit": "wt-1a06ede864",
             "range": {
               "startLine": 225,
               "endLine": 225
@@ -171,7 +171,7 @@
           "role": "call-site",
           "hash": "sha256-v2:13de86e3022f",
           "resolved": {
-            "commit": "wt-b738ff79fe",
+            "commit": "wt-1a06ede864",
             "range": {
               "startLine": 258,
               "endLine": 258
@@ -188,7 +188,7 @@
           "role": "usage",
           "hash": "sha256-v2:027fb6b4da7a",
           "resolved": {
-            "commit": "wt-b738ff79fe",
+            "commit": "wt-1a06ede864",
             "range": {
               "startLine": 20,
               "endLine": 20
@@ -205,7 +205,7 @@
           "role": "call-site",
           "hash": "sha256-v2:90a266fc51a6",
           "resolved": {
-            "commit": "wt-b738ff79fe",
+            "commit": "wt-1a06ede864",
             "range": {
               "startLine": 22,
               "endLine": 22
@@ -219,7 +219,7 @@
           "role": "definition",
           "hash": "sha256-v2:1ff42c2f9535",
           "resolved": {
-            "commit": "wt-b738ff79fe",
+            "commit": "wt-1a06ede864",
             "range": {
               "startLine": 7,
               "endLine": 26
@@ -230,7 +230,7 @@
       ],
       "provenance": {
         "origin": "llm",
-        "commit": "wt-f7d6f9db40"
+        "commit": "wt-1a06ede864"
       }
     },
     {
@@ -11770,6 +11770,77 @@
       "provenance": {
         "origin": "llm",
         "commit": "wt-2c5de3a52d"
+      }
+    },
+    {
+      "id": "concept:pr-creation",
+      "label": "PR creation and supersession",
+      "summary": "PR input records exact API base and head commits outside the developer checkout. The installed skill authors a change guide, and shared readiness checks its local export. A fresh API check marks changed commits as superseded; historical results cannot establish a current PR.",
+      "detail": "The handoff supplies an explicit skill prompt and a command prefix with owned Git paths. No model starts automatically. Result manifests retain artifact hashes, source inventory and readiness. A publisher must recheck both commits before promoting current.",
+      "anchors": [
+        {
+          "file": "packages/cli/src/pr-checkout.ts",
+          "symbol": "preparePr",
+          "role": "definition",
+          "hash": "sha256-v2:dcde2d76b0ad",
+          "resolved": {
+            "commit": "wt-1a06ede864",
+            "range": {
+              "startLine": 135,
+              "endLine": 283
+            },
+            "status": "ok"
+          }
+        },
+        {
+          "file": "packages/cli/src/pr-creation.ts",
+          "symbol": "createPrHandoff",
+          "role": "definition",
+          "hash": "sha256-v2:c6adf4b742a8",
+          "resolved": {
+            "commit": "wt-1a06ede864",
+            "range": {
+              "startLine": 146,
+              "endLine": 217
+            },
+            "status": "ok"
+          }
+        },
+        {
+          "file": "packages/cli/src/pr-creation.ts",
+          "symbol": "finishPr",
+          "role": "definition",
+          "hash": "sha256-v2:3e8e26ed3f27",
+          "resolved": {
+            "commit": "wt-1a06ede864",
+            "range": {
+              "startLine": 219,
+              "endLine": 338
+            },
+            "status": "ok"
+          }
+        },
+        {
+          "file": "packages/cli/src/pr-checkout.ts",
+          "symbol": "verifyPrCheckout",
+          "role": "definition",
+          "hash": "sha256-v2:0b3bca7da05b",
+          "resolved": {
+            "commit": "wt-1a06ede864",
+            "range": {
+              "startLine": 101,
+              "endLine": 133
+            },
+            "status": "ok"
+          }
+        }
+      ],
+      "related": [
+        "dir:packages/cli"
+      ],
+      "provenance": {
+        "origin": "llm",
+        "commit": "wt-1a06ede864"
       }
     }
   ],

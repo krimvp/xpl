@@ -26,11 +26,17 @@ To add another question to a known guide, say `Existing guide: orders-overview` 
 
 ## Author through the installed commands
 
-GitHub input can be prepared first with `xpl pr prepare <url> --cache-dir /absolute/outside-cache`.
-It returns an isolated head repository and immutable input manifest using existing `gh`/git access.
-Use that root and its recorded full base/head range for manual change authoring below. Preparation alone
-invokes no agent and produces no ready result. Installed PR creation and current-head/supersession checks
-are future work; a manual guide describes the recorded commits, not a promise that the PR is still current.
+For GitHub input, run `xpl pr create <url> --name <guide> --audience "<reader>" --question "<intent>"`
+with an outside `--cache-dir` and the installed `--skill-dir` when needed. It prepares exact commits,
+creates the guide/change/draft through that installed launcher and returns an explicit `/code-explainer`
+invocation. Run that prompt in the installed agent; no model starts automatically. Read `handoff.json`
+and use its `command` prefix for every authoring command: owned Git paths and the installed CLI are
+pinned, while inherited developer Git overrides are removed. Preserve the prepared head index and
+existing scaffold; skip `index`, `new` and `change` below unless repair requires them. Complete the
+outside draft through the installed skill, then use `xpl pr finish <input-directory> --cache-dir <cache>`.
+Finish runs shared readiness/local export and rechecks both API commits; a changed base/head yields a
+historical superseded result, never current. API failures promote no result. Explicitly create the new
+PR input when it changes. `pr prepare` remains available for input-only local change authoring.
 
 1. Run `xpl doctor` when setup is uncertain, then `xpl index` with the chosen mode. Report actual coverage, skipped analysis and `precise` or `heuristic` references. A valid anchor checks a location and freshness; it does not prove prose or runtime coverage.
 2. For a new guide, run `xpl new <name> --title "<title>"`. For an existing guide, read it and run `xpl status <name>` before patching. A change also needs `xpl change <name> <base>..<head>`; follow `explain-change.md`.

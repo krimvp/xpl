@@ -37,6 +37,18 @@ export function parsePr(input: string, number?: string): PrIdentity {
   return { repository, number: n, url: `https://github.com/${repository}/pull/${n}` };
 }
 
+/** Repository selection overrides excluded from every PR process context. */
+export const PR_GIT_OVERRIDES = [
+  "GIT_DIR",
+  "GIT_WORK_TREE",
+  "GIT_INDEX_FILE",
+  "GIT_COMMON_DIR",
+  "GIT_OBJECT_DIRECTORY",
+  "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+  "GIT_NAMESPACE",
+  "GIT_SHALLOW_FILE",
+] as const;
+
 /** One git context for owned fetches and the shared indexing/diff/source helpers. */
 export function prGitOptions(env: Env, repository?: string) {
   const childEnv: Env = {
@@ -47,17 +59,7 @@ export function prGitOptions(env: Env, repository?: string) {
     GCM_INTERACTIVE: "Never",
   };
   // A caller's repository overrides must never redirect owned reads or writes into their checkout.
-  for (const name of [
-    "GIT_DIR",
-    "GIT_WORK_TREE",
-    "GIT_INDEX_FILE",
-    "GIT_COMMON_DIR",
-    "GIT_OBJECT_DIRECTORY",
-    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
-    "GIT_NAMESPACE",
-    "GIT_SHALLOW_FILE",
-  ])
-    delete childEnv[name];
+  for (const name of PR_GIT_OVERRIDES) delete childEnv[name];
   return {
     env: childEnv,
     args: [
@@ -99,13 +101,22 @@ export function prProcess(
         if (error)
           reject(
             new CliError(
-              `${command} ${operation} failed: ${stderr.trim().split("\n")[0] || error.message}`,
+              `${command} ${operation} failed: ${stderr.trim().split("\n")[0] || childError(stdout) || error.message}`,
             ),
           );
         else resolve(stdout);
       },
     );
   });
+}
+
+function childError(stdout: string): string | undefined {
+  try {
+    const value = JSON.parse(stdout);
+    return typeof value.error === "string" ? value.error : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 export async function resolvePr(

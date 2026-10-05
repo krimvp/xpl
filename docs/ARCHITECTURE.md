@@ -1350,9 +1350,44 @@ last and made read-only. Each run gets a separate directory; earlier manifests a
 
 Failures remove only that run's owned directory and produce no input/ready result. A killed process can
 leave `.xpl-pr-owned.json`; explicit `cleanup` checks its canonical cache/directory ownership before removal.
-Stop any consumers before cleanup. Inputs are retained until cleanup; no timer removes them. This is
-preparation only: installed-agent handoff, base/head recheck, supersession and ready result/export remain
-future work. An input manifest alone must never be promoted as a ready or current version.
+Stop any consumers before cleanup. Inputs are retained until cleanup; no timer removes them. An input
+manifest alone must never be promoted as a ready or current version.
+
+`pr-creation.ts` owns the manual creation handoff and local result contract. `xpl pr create` prepares the
+input, verifies the installed skill inventory/absolute CLI binding and runs that skill's launcher for
+`new`, `change API-base..head` and `draft change`. `--name`, `--audience` and `--question` are required;
+`--skill-dir` selects a managed installation. `handoff.json` binds the input digest, guide name and CLI
+path/hash. Its explicit `/code-explainer` invocation tells the author to read the installed skill and
+create.md, inspect source and complete the draft. Its reusable `env` command prefix excludes inherited
+Git repository/config overrides, pins owned Git paths and the installed CLI, disables hooks/fsmonitor,
+and supplies the exact root/index. No generation backend, model subprocess or service is started.
+
+`xpl pr finish <input-directory>` serializes finish calls with the existing file lock, revalidates owned
+paths/input/index hashes after waiting, and requires the guide's complete change record and index to
+match the input. Raw tracked source outside `.explainer/` must still equal head blobs, including
+line endings, before and after export. `.explainer/` is excluded only during authoring because it holds
+generated outputs; preparation checks every blob. The installed launcher runs ordinary `bundle --files
+boundary` with the shared workspace readiness check and optional `--note`/`--require-review` policy.
+A source-backed exported snapshot is required; changed authored text/index during export refuses it.
+The checked explainer, full original head index and HTML are copied to a unique `result-*` directory.
+
+After export, `gh api` resolves the PR again. Both returned full base and head must match before a result
+is marked ready; a base-only target update also supersedes it. `result.json` is published atomically last
+and made read-only, as are snapshot files. `PrResultManifest` is CLI-owned, `schemaVersion: 1`,
+`kind: "github-pr-result"`, with `status: ready | superseded`, original `pr`, observed `pr`, `checkedAt`,
+input path/digest, installed skill/CLI identity, portable readiness report/identity, explainer/index/HTML
+relative paths and SHA-256 digests, and sorted included head/base file keys. Renamed base text uses the
+head path as its bundle key; input evidence retains `oldPath`. Unsupported source remains labeled in
+input evidence and is not falsely claimed as embedded. A superseded result is historical and exits 1;
+its common content readiness does not establish current PR eligibility. Access/export failures remove
+only the result staging directory, preserving the input/guide for retry; no result manifest is promoted.
+Each finish creates a new immutable snapshot, preserving previous results. CLI failures include recovery
+instructions, and interrupted locks require explicit removal only after their writer has stopped.
+
+Ready means the API matched at `checkedAt`; GitHub cannot lock an external PR during local export.
+#34 must verify artifact/input hashes and recheck both commits before its own current-pointer promotion
+or publication. This step starts no publishing workflow, writes no GitHub state and creates no current
+pointer. The offline HTML remains readable independently of GitHub or the retained checkout.
 
 **`xpl draft change|repo|path`** prints a patch that `xpl apply` accepts as it is: views, groups, overlays,
 participants, steps, anchors and a tour, with `TODO: <what to write>` in every text (tour notes as `### TODO:
