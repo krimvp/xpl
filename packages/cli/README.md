@@ -10,7 +10,7 @@ xpl checks their source locations against a static index of your repository.
 
 ## Install
 
-Requires Node 22.12 or newer and npm. The npm release is being prepared; once published, install with:
+Install from npm (Node 22.12 or newer):
 
 ```sh
 npm install --global @krimvp/xpl

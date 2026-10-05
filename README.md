@@ -19,8 +19,8 @@ Install target: [`@krimvp/xpl`](https://www.npmjs.com/package/@krimvp/xpl).
 ## Quick start
 
 Needs Node 22.12 or newer and npm for installation. The local artifact is exercised on Linux x64
-(WSL2, Node 22.23.1). Other platforms have not been verified. The npm release is being prepared as `@krimvp/xpl` 0.1.0
-under MIT. Once published, use the npm command below. You can also build from source
+(WSL2, Node 22.23.1). Other platforms have not been verified. `@krimvp/xpl` 0.1.0 is published on npm
+under MIT. Install with the command below. You can also build from source
 with access to the private [source repository](https://github.com/krimvp/xpl).
 
 XPL helps an author publish a focused explanation of code. Choose a reader and a question before

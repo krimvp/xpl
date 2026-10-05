@@ -4,7 +4,7 @@ Turns "how does X work?", "give me an overview of this repo", "explain this PR" 
 
 ## Install
 
-1. Install the CLI (Node >=22.12 and npm; verified on Linux x64/WSL2 only). The npm release is being prepared; once published:
+1. Install the CLI from npm (Node >=22.12; verified on Linux x64/WSL2 only):
 
    ```sh
    npm install --global @krimvp/xpl

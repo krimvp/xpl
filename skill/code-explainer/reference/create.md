@@ -2,7 +2,7 @@
 
 ## Install
 
-The npm release is being prepared. Once published, with Node >=22.12 and npm:
+Install from npm (Node 22.12 or newer):
 
 ```sh
 npm install --global @krimvp/xpl
