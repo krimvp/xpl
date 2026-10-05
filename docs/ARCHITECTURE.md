@@ -1218,7 +1218,7 @@ atomic: any error → `ok: false` and the input explainer, untouched.
 **Bounded user edits** (`user-edits.ts`) carry a collection (`nodes`, `edges`, `concepts`, `views`,
 `groups`), item ID,
 and before/after values of the same fields. Only `label`, `summary`, `detail`, `anchors` and a concept's `related`
-are accepted on elements. Group nodes also allow `members`; graph views allow only `include` and `hidden`.
+are accepted on elements. Group nodes also allow `members`; graph views allow only `include`, `hidden` and `layout`.
 `groups` is a bounded existence operation: `node` is either null (absent) or a complete group snapshot
 without id, kind or provenance. One side must be null. Creating/removing a group uses ordinary node
 upsert/removal, not a new stored collection. Snapshots require label, parent, members and anchors; optional
@@ -1243,6 +1243,9 @@ array order and the absent hidden state.
 Undoing creation checks the entire group for enrichment and atomically restores include/membership and
 removes it. A later reference to that group makes removal fail rather than leave a dangling reference.
 User ownership survives every inverse; LLM refreshes preserve groups and edited membership/visibility.
+Pin and reset replace the stored map's bounded `layout` object (finite x/y pairs, node IDs only), marking
+that field as user-owned. Their conditional inverses restore its exact previous value, including absence.
+Reset may clear selected pins or all pins; a later placement edit conflicts rather than lose another pin.
 
 ### 4.8 Also in core
 
@@ -1352,6 +1355,7 @@ stdout (a rejection exits 1); fatal errors (`error: …`) and warnings (`warning
 | `xpl service <start\|pause\|resume\|stop\|status> [explainer] [--background] [--port p] [--backend none\|claude] [--skill-dir folder] [--job-timeout seconds] [--recover] [--watch]` | optional repository-scoped lifecycle around the same viewer server; loopback only; persisted context and explicit interrupted-owner recovery |
 | `xpl bundle <explainer> -o out.html [--mode explore\|present] [--tour id] [--files referenced\|boundary\|all] [--boundary-max n] [--embed-index full\|pruned] [--draft] [--note reason] [--require-review] [--allow-drift]` | self-contained HTML after the shared readiness check (exit 1 before writing with errors); `--draft` writes a labelled preview with findings; `--allow-drift` is a legacy draft flag that still refuses stale indexes; warnings and optional author notes are retained; `--tour` (`tour:intro` or `intro`) implies present mode; embeds the files the explainer references by default and prints what went in (`8 of 12 files embedded (referenced: 18.4 KB of source; --files all adds 4 files, 6.7 KB)`), `--files boundary` adds the direct callers, callees and tests of anchored symbols (at most `--boundary-max`, default 40), `--files all` every indexed file; with a change recorded, every changed file at head and the base text of the changed files go in too; the symbol index in it is pruned to what the viewer can draw with `--files referenced` or `boundary` and whole with `--files all` (`--embed-index` overrides) and packed (the summary line says `index 0.3 MB (1.3 MB as plain JSON, pruned from 9.0 MB)`) |
 | `xpl doctor [--agent none\|claude] [--skill-dir path]` | local setup report: Node, artifact hashes, grammar loading, installed skill and optional git/npx/Go; selected Claude Code availability; no downloads or authentication probes; required failures exit 1 |
+| `xpl stage <explainer> --dir <outside-folder> [--preview] [--files referenced\|boundary\|all] [--note reason] [--require-review] [--pr-result result.json]` | previews included head/base files; stages only ready local HTML and an immutable manifest, rechecks inputs before promoting an atomic current symlink under a lock; retains prior versions; PR guides require a verified ready result and a final GitHub base/head check |
 | `xpl skill install [--dir path]` | copies the bundled skill and writes its CLI binding; repeat to update; defaults to `~/.claude/skills/code-explainer`; refuses unmanaged directories, symlinks and local edits |
 
 **Installed artifact.** Workspace packages remain private. `npm run build` writes standalone package
@@ -1811,8 +1815,9 @@ The viewer's Jobs disclosure lists all seven lifecycle states, progress and acti
 start/cancel/retry/review flush pending writes and reject unsaved author drafts. Offline history stays
 readable. Responses are ignored when the API attachment changes. Submission retries reuse their delivery
 UUID. Job polling updates history even while author drafts prevent bundle adoption; bundle feedback merges
-by immutable ID and outcome revision. The review modal renders safe Markdown and marked changed words,
-concise evidence and plain field values; raw JSON is behind Show raw change. Each request owns its decision
+by immutable ID and outcome revision. The review modal renders safe Markdown and marked changed phrases,
+including the spaces between adjacent changed words, with concise evidence and plain field values.
+Raw JSON is behind Show raw change. Each request owns its decision
 and reason. Review decisions must succeed before explicit acceptance; changing a choice invalidates the
 inspected candidate. Interrupted publication exposes Recover acceptance using the same journal.
 
@@ -1885,6 +1890,44 @@ never silently rebound. `--outcomes` reads an array of `{id, context, status, re
 context copied exactly. It updates those IDs and increments their revisions only. Failed writes leave
 the prior file and counters intact and retryable.
 The selected revision operation below commits reviewed decisions before recording their outcomes.
+
+**Local ready versions (34A).** `cli/stage.ts` reuses workspace readiness, artifactIdentity and bundle
+file selection. `xpl stage <guide> --dir <outside-folder> --preview` lists sorted head/base source paths
+and readiness without creating storage or reading the viewer HTML. Ordinary staging prints that list
+before writing; machine callers use `--preview --json` for a separate inspection step. `--files` selects
+referenced (default), boundary or all source through the existing bundle helpers. Review evidence and
+changed-file before/after source follow the ordinary export rules. There is no draft override.
+
+Storage resolves existing ancestors and rejects paths inside the source root or its Git checkout,
+including symlink aliases. PR preparation shares this guard. Each unique `version-*` directory holds
+read-only `index.html` and `manifest.json`; the directory becomes read-only too. Its schemaVersion 1
+`xpl-ready-version` manifest records a directory locator, creation time, index/change commits, the
+existing artifactIdentity, SHA-256 hashes of input explainer/index bytes and HTML, the readiness report,
+included head/base paths, and author review state. The directory locator does not define another content
+identity. The HTML has no live server API and retains the existing source scope and review display.
+
+The existing `withFileLock` holds `current.lock` for the complete staging/promotion transaction. After
+writing both files and preparing a relative symlink, staging reloads the guide/index/source and reruns
+readiness, comparing exact input bytes, identity and bundled content with the preview. The final rename
+replaces `current` atomically; readers open `current/index.html` or a retained `version-*/index.html`.
+Failures before promotion remove the attempted version and temporary pointer, retaining all previous
+version bytes and the old current link. A crashed writer's lock requires explicit removal after checking
+the writer stopped; no timer steals it. Storage has one current pointer per configured directory.
+If lock release fails after the atomic rename, the command reports successful promotion with a cleanup
+warning. It does not report a failed staging run after current has already changed.
+
+PR guides require `--pr-result` from `xpl pr finish` and the retained prepared checkout as `--root`.
+Staging verifies the ready result's input/explainer/index/HTML SHA-256 hashes, commits, source list and
+artifact identity; prepared or superseded results are refused. It recomputes embedded readiness and
+checks the prepared HEAD/raw source plus workspace readiness against that exact result. The version
+contains the original HTML bytes and the full ready result manifest with its SHA-256 hash. After writing,
+GitHub base/head are rechecked under the destination lock, then local readiness/freshness is checked
+again before promotion. API failures and superseded commits retain current. `--files` and `--note` cannot
+alter a PR result. `--require-review` checks the optional policy without rewriting its original HTML.
+
+This slice provides local staging only. Version/step/element/range restoration belongs to 34B; a chosen
+destination, audience, credentialed delivery and one PR link/Action belong to 34C. Local storage does not
+establish private team access or close those acceptance criteria.
 
 **Bundle payload** (`ViewerBundle`, also `/api/bundle`): `{ schema: "code-explainer/bundle@0", explainer,
 index, files: Record<FilePath, string>, baseFiles?, mode?, tour?, server?, sourceWarning?, exportInfo?,
@@ -2211,7 +2254,20 @@ status stays in the sticky Save/Cancel bar, including the disabled Save reason.
   for nested includes, laid out inside-out with room for their header; an edge that crosses a container's
   border gets a port there (a node of its own in the container's first or last layer), so the part inside
   is routed around the boxes; edges routed inside their lowest common container, right-angled, with the ends that share a side of a box spread along it and the turns in one gap
-  between layers on separate tracks. If the layout throws, a grid layout keeps the diagram usable (`data-fallback`). Edges are styled by resolution: precise,
+  between layers on separate tracks. `GraphView.layout` replaces automatic positions at each container
+  level before sizing its parent. Pins are finite logical coordinates relative to the rendered container,
+  or to the canvas for roots. Negative child coordinates expand the container frame to the left/top
+  without translating those children or changing saved pins. Routes reconnect to the moved frames;
+  unpinned siblings yield space when a pin occupies their old position. Changed levels discard stale
+  dagre tracks and detour around other boxes. Live maps, Reader and Guide
+  pictures share those positions and bounds, including offline HTML. Hidden pins stay stored until
+  restored; opening a map inside another uses the outer map's pins. Each stored level has its own layout.
+  A selected box in Explore has a move handle: drag previews locally, release writes one `editGraph`
+  pin through author history; Enter pins here and arrow keys move by 20 px. The focused handle stays
+  mounted while a save disables its actions. Escape, pointer cancellation and selection changes discard
+  the local preview without an edit.
+  **Edit map** resets selected/all placement to automatic layout with the same undo. Pan/zoom remain
+  transient navigation. If the layout throws, a grid layout keeps the diagram usable (`data-fallback`). Edges are styled by resolution: precise,
   heuristic (thinner and lighter), `llm`, `user`; stubs are dashed and lead to ghost boxes (at most 8 by
   default plus one "+N more" per direction, see §4.4; ghosts that stand for several elements have a dotted
   border and a list icon). Click selects (shift/ctrl/cmd adds, the background clears); clicking a ghost for
@@ -2232,11 +2288,12 @@ status stays in the sticky Save/Cancel bar, including the disabled Save reason.
   collapse button folds it back. Nothing is stored. Every box has an icon left of its label
   (`components/icons.tsx`): its role, else the kind of code (folder, file, group, a letter per symbol kind).
   Not while presenting. Pan by dragging, zoom with
-  the wheel, the buttons or `+`/`-`, "Fit" (or `0`) for all of it. The first view is the fit, unless the
-  diagram is too big to read fitted (a fit scale below 0.6, as for seventeen boxes with groups): then it
-  starts at zoom 0.75 on the selection, else on the first box of `view.include` that is drawn, and a badge
-  (`pz-badge`) says part of it is out of sight and offers "Fit all" (once all of it is in sight: "Readable
-  size" to come back). Sequence diagrams pan and zoom the same way, and each tour step starts its diagram over
+  the wheel, the buttons or `+`/`-`, and "Fit" (or `0`). Maps with saved pins keep at least zoom 0.9 on load and
+  Fit (14 px labels render at 12.6 px or more); larger pinned maps pan instead of shrinking further.
+  Their "Pan to explore" badge returns to the starting focus. Automatic maps offer "Fit all" and start
+  framed at zoom 0.75 when fitting below 0.6 would hide their labels. The first frame starts on the
+  selection, else on the first drawn box of `view.include`.
+  Sequence diagrams pan and zoom the same way, and each tour step starts its diagram over
   on the step's focus, even within one view. View edits (expand, drill in, collapse, edge-kind toggles, the
   Stubs control) are stored on the view. Selecting a stub focuses the reference sites that cross the boundary
   there plus the definitions on the far side (of every element a folded ghost stands for); its details list
@@ -2675,9 +2732,6 @@ identities to syntax ranges. This is a proposed contract revision, not a change 
   known. A read of a local or parameter, through a receiver of unknown type or by dynamic access is not
   recorded, and `reads` edges are off by default (`DEFAULT_EDGE_KINDS`; the viewer's toggle and `edgeKinds`
   switch them on; stored `reads` edges are always shown).
-- `GraphView.layout` (hand-pinned positions) is validated and accepted in patches but the viewer never reads
-  it. Explore offers grouping and individual visibility with undo; rendered pins and placement reset
-  remain follow-up work.
 - The layout runs on the main thread: laying out a very large graph blocks the page, so views
   should stay coarse (whole-repo views start at packages) and are expanded by hand.
 - Live refresh is polling-based: updates appear on the next poll while the page is visible and has no
@@ -2714,7 +2768,7 @@ identities to syntax ranges. This is a proposed contract revision, not a change 
 
 **Next steps, roughly by value** (the review in `docs/review-2026-10-01.md` has the roadmap): an independent
 accuracy pass for change explainers; a word-level diff in rewritten lines; editable step titles and code in
-the viewer; a UI for hiding and pinning, or dropping the unused `layout` field; the layout in a Web Worker; more
+the viewer; the layout in a Web Worker; more
 language packs (each needs `extract`, `classifySite`, `resolveModule`, and optionally a SCIP resolver);
 publishing the packaged CLI through a selected release channel; a regeneration mode in the skill that
 walks `xpl status` on its own.

@@ -1604,7 +1604,8 @@ code {
   stroke-width: 1.2;
 }
 
-.node.is-container > .box {
+.node.is-container > .box,
+.node.is-container > .node-frame > .box {
   fill: var(--container-bg);
   stroke: var(--container-border, var(--node-border));
 }
@@ -1649,43 +1650,50 @@ code {
   fill: var(--warn);
 }
 
-.node:hover > .box {
+.node:hover > .box,
+.node:hover > .node-frame > .box {
   stroke: var(--accent);
 }
 
 /* a11y: keyboard focus is its own ring, outside the box with a gap (GraphView FocusRing), so it never looks
    like the selection outline (M13). */
-.node > .focus-ring {
+.node > .focus-ring,
+.node > .node-frame > .focus-ring {
   fill: none;
   stroke: none;
   pointer-events: none;
 }
 
-.node:focus-visible > .focus-ring {
+.node:focus-visible > .focus-ring,
+.node:focus-visible > .node-frame > .focus-ring {
   stroke: var(--accent);
   stroke-width: 2.5;
 }
 
-.node.is-selected > .box {
+.node.is-selected > .box,
+.node.is-selected > .node-frame > .box {
   fill: var(--accent-soft);
   stroke: var(--accent);
   stroke-width: 2.4;
 }
 
-.node.is-container.is-selected > .box {
+.node.is-container.is-selected > .box,
+.node.is-container.is-selected > .node-frame > .box {
   fill: var(--accent-soft);
   fill-opacity: 0.55;
 }
 
 /* Related, and not the one picked: the picked box keeps its own solid outline (the map marks it related too). */
-.node.is-related:not(.is-selected) > .box {
+.node.is-related:not(.is-selected) > .box,
+.node.is-related:not(.is-selected) > .node-frame > .box {
   fill: var(--related-soft);
   stroke: var(--related);
   stroke-width: 2.4;
   stroke-dasharray: 7 3;
 }
 
-.node.is-match > .box {
+.node.is-match > .box,
+.node.is-match > .node-frame > .box {
   stroke: var(--match);
   stroke-width: 3.4;
   stroke-dasharray: none;
@@ -1897,7 +1905,8 @@ code {
   pointer-events: stroke;
 }
 
-.node > circle.hit {
+.node > circle.hit,
+.node > .node-frame > circle.hit {
   fill: transparent;
   pointer-events: all;
 }
@@ -4002,7 +4011,9 @@ code {
 
 /* Architecture boxes (`Node.role`, GraphView `RoleBox`): shapes say what a box is before its label does. */
 .node.role-service > .box,
-.node.role-system > .box {
+.node.role-service > .node-frame > .box,
+.node.role-system > .box,
+.node.role-system > .node-frame > .box {
   stroke-width: 2;
 }
 
@@ -4023,20 +4034,27 @@ code {
 }
 
 .node.role-database > .box,
+.node.role-database > .node-frame > .box,
 .node.role-cache > .box,
+.node.role-cache > .node-frame > .box,
 .node.role-storage > .box,
-.node.role-queue > .box {
+.node.role-storage > .node-frame > .box,
+.node.role-queue > .box,
+.node.role-queue > .node-frame > .box {
   fill: var(--store-bg);
 }
 
-.node > .lid {
+.node > .lid,
+.node > .node-frame > .lid {
   fill: none;
   stroke: var(--node-border);
   stroke-width: 1.2;
 }
 
 .node.role-external > .box,
-.node.role-person > .box {
+.node.role-external > .node-frame > .box,
+.node.role-person > .box,
+.node.role-person > .node-frame > .box {
   fill: var(--panel-2);
   stroke-dasharray: 6 4;
 }
@@ -4587,4 +4605,34 @@ code {
   .job-after::before {
     content: "After";
   }
+}
+
+/* Placement handles leave box selection and canvas panning available. */
+.move-handle {
+  cursor: move;
+  touch-action: none;
+}
+.move-handle rect {
+  fill: var(--bg);
+  stroke: var(--accent);
+  stroke-width: 1.5;
+}
+.move-handle path {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1.5;
+  pointer-events: none;
+}
+.move-handle:focus-visible rect {
+  stroke-width: 3;
+}
+.placement-error {
+  position: absolute;
+  top: 0;
+  left: 12px;
+  right: 12px;
+  z-index: 8;
+  padding: 8px;
+  background: var(--panel);
+  color: var(--danger);
 }

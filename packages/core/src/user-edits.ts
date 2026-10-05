@@ -56,6 +56,20 @@ function fields(
   for (const [name, field] of Object.entries(value)) {
     if (collection === "views") {
       if (
+        name === "layout" &&
+        (field === null ||
+          (record(field) &&
+            Object.keys(field).length <= 10000 &&
+            Object.values(field).every(
+              (pos) =>
+                record(pos) &&
+                Object.keys(pos).sort().join(",") === "x,y" &&
+                Number.isFinite(pos.x) &&
+                Number.isFinite(pos.y),
+            )))
+      )
+        continue;
+      if (
         (name === "include" || name === "hidden") &&
         ((name === "hidden" && field === null) || stringIds(field))
       )
@@ -226,9 +240,11 @@ export function applyUserEdits(
 export type GraphEdit =
   | { type: "group"; id: string; label: string; members: string[] }
   | { type: "ungroup"; id: string }
-  | { type: "hide" | "restore"; ids: string[] };
+  | { type: "hide" | "restore"; ids: string[] }
+  | { type: "pin"; id: string; position: { x: number; y: number } }
+  | { type: "reset"; ids?: string[] };
 
-/** Explicit author actions operate on stored inclusion, never on transiently opened levels. */
+/** Explicit author actions patch the stored map; opening another level stays navigation. */
 export function makeGraphEdits(
   explainer: Explainer,
   index: IndexModel,
@@ -284,6 +300,16 @@ export function makeGraphEdits(
         ],
       }),
     ];
+  }
+  if (action.type === "pin") {
+    if (!model.node(action.id)) throw new UserEditError("Choose a box to pin.");
+    return [edit({ layout: { ...view.layout, [action.id]: action.position } })];
+  }
+  if (action.type === "reset") {
+    const remaining = Object.fromEntries(
+      Object.entries(view.layout ?? {}).filter(([id]) => action.ids && !action.ids.includes(id)),
+    );
+    return [edit({ layout: Object.keys(remaining).length ? remaining : null })];
   }
   const hidden = view.hidden ?? [];
   if (action.type === "restore")

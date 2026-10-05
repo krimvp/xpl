@@ -85,6 +85,15 @@ how to stop the current repository service before starting the exact selected gu
 checked snapshots for offline switching, with a 20 MiB limit on additional guide data. Each keeps its own
 source and index scope. Unsaved drafts or pending edits must be saved or cancelled before switching.
 
+`xpl stage <guide> --dir /outside/versions --preview` lists the head/base source files that will be
+included and checks readiness without writing. Omit `--preview` to stage immutable HTML and a manifest,
+then atomically promote `/outside/versions/current/index.html` under a lock. Previous version folders
+remain available. The manifest records commits, artifact and input hashes, readiness, source scope and
+author review state. Source or guide changes during staging leave the previous current version intact.
+For PR guides, pass `--pr-result <result.json>` from `xpl pr finish` and `--root <prepared-repository>`;
+staging verifies the result and rechecks GitHub base/head before promotion. This is local storage only.
+Configured remote delivery, exact version links and the PR Action are later slices of #34.
+
 `xpl guides` lists locally saved guides by title, recorded questions, audience and source/index commits.
 It works without a service or index file. `xpl search <pattern>` searches available indexed working-tree
 text; unavailable files produce a warning, and `--json` records searchable paths and analysis scope.
@@ -275,7 +284,9 @@ Shift-click boxes to select them together. **Ungroup in this map** shows the mem
 group available to other maps, arrows and tour steps. **Hide selected items** hides individual boxes or
 arrows; the same menu lists hidden IDs with **Restore** and **Restore all hidden items**.
 These actions share text/evidence undo, persist live and travel in HTML/JSON exports. Opening another
-level remains navigation. Saved coordinate pins are still not rendered; placement is follow-up work.
+level remains navigation. Select a box and drag its move handle to pin it, or use arrow keys on the handle.
+**Reset selected placement** or **Reset all placement** returns boxes to automatic layout. Pins are finite
+coordinates relative to their container; nested frames and arrows follow them. Pan and zoom do not edit the map.
 
 Edit > Record author review records a self-reported name, inspected content/evidence scope and named
 omissions. About this explanation shows **unchecked**, **reviewed** or **out of date** separately from

@@ -19,6 +19,7 @@ import {
 import { useViewerState } from "../hooks.js";
 import {
   cutAt,
+  graphBounds,
   frameFocus,
   layoutGraphFitting,
   type ChangeMarks,
@@ -54,6 +55,7 @@ function graphLayoutOf(
       SNAPSHOT_WHOLE,
       10,
       changes,
+      view.layout,
     );
     graphLayouts.set(view, known);
   }
@@ -186,20 +188,32 @@ function GraphSnapshot({
   }, [view, focus, state.model]);
   if (failed) return <p className="snapshot-message">This diagram could not be drawn.</p>;
   if (!layout) return <div className="snapshot-placeholder" style={{ height: SNAPSHOT_HEIGHT }} />;
+  const bounds = graphBounds(layout);
+  const focused = frameFocus(layout, [...focus, ...marked]);
+  const shift = (b: Box) => ({ ...b, x: b.x - bounds.x, y: b.y - bounds.y });
   return (
     <SnapshotFrame
-      width={layout.width}
-      height={layout.height}
-      focus={frameFocus(layout, [...focus, ...marked])}
+      width={bounds.width}
+      height={bounds.height}
+      focus={
+        focused && {
+          ...focused,
+          boxes: focused.boxes.map(shift),
+          neighbours: focused.neighbours?.map(shift),
+          others: focused.others?.map(shift),
+        }
+      }
       where="Map"
     >
       {(window) => (
-        <GraphPicture
-          layout={layout}
-          selection={focus}
-          related={marked}
-          cut={cutAt(layout, window)}
-        />
+        <g transform={`translate(${-bounds.x} ${-bounds.y})`}>
+          <GraphPicture
+            layout={layout}
+            selection={focus}
+            related={marked}
+            cut={cutAt(layout, { ...window, x: window.x + bounds.x, y: window.y + bounds.y })}
+          />
+        </g>
       )}
     </SnapshotFrame>
   );

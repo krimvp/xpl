@@ -20,6 +20,13 @@ const OPTIONS = { padding: 24, maxZoom: 1.25 };
 const VISIBLE = { w: 692 / READABLE_ZOOM, h: 412 / READABLE_ZOOM };
 
 describe("fitTransform", () => {
+  it("keeps a caller's readable fit floor when the canvas must pan", () => {
+    const content = { width: 2000, height: 1200 };
+    const options = { ...OPTIONS, minZoom: 0.9, whole: 0.9, readable: 0.9, readableMin: 0.9 };
+    expect(fitTransform(PANE, content, options)!.k).toBe(0.9);
+    expect(frameView(PANE, content, undefined, options)!.transform.k).toBe(0.9);
+  });
+
   it("shows all of the diagram, centred, at most enlarged to maxZoom", () => {
     // 1384 x 412 units: width decides, 692 / 1384 = 0.5
     const wide = fitTransform(PANE, { width: 1384, height: 412 }, OPTIONS)!;

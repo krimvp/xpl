@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import type { RevisionChange } from "@xpl/core";
 import { escapeHtml, renderMarkdown } from "../markdown.js";
+import { wordChanges } from "../wordDiff.js";
 import { roleWords } from "../readerWords.js";
 import { useViewerState } from "../hooks.js";
 
@@ -25,7 +26,7 @@ const object = (value: unknown): Record<string, unknown> =>
     ? (value as Record<string, unknown>)
     : {};
 
-/** Mark changed words inside the same safe Markdown the text panes use. Bound the comparison cost. */
+/** Mark changed phrases inside the same safe Markdown the text panes use. */
 function markedText(before: string, after: string, markdown: boolean): [string, string] {
   const parse = (text: string) =>
     new DOMParser().parseFromString(
@@ -33,44 +34,9 @@ function markedText(before: string, after: string, markdown: boolean): [string, 
       "text/html",
     );
   const docs = [parse(before), parse(after)];
-  const words = docs.map((doc) => [...(doc.body.textContent ?? "").matchAll(/\S+/g)]);
-  const [a, b] = words as [RegExpMatchArray[], RegExpMatchArray[]];
-  const common = [new Set<number>(), new Set<number>()];
-  if (a.length * b.length <= 250000) {
-    const rows = Array.from({ length: a.length + 1 }, () => new Uint32Array(b.length + 1));
-    for (let i = a.length - 1; i >= 0; i--)
-      for (let j = b.length - 1; j >= 0; j--)
-        rows[i]![j] =
-          a[i]![0] === b[j]![0]
-            ? rows[i + 1]![j + 1]! + 1
-            : Math.max(rows[i + 1]![j]!, rows[i]![j + 1]!);
-    let i = 0,
-      j = 0;
-    while (i < a.length && j < b.length) {
-      if (a[i]![0] === b[j]![0]) {
-        common[0]!.add(i++);
-        common[1]!.add(j++);
-      } else if (rows[i + 1]![j]! >= rows[i]![j + 1]!) i++;
-      else j++;
-    }
-  } else {
-    // Long details retain common ends and mark the changed passage without a quadratic matrix.
-    let i = 0;
-    while (i < Math.min(a.length, b.length) && a[i]![0] === b[i]![0]) {
-      common[0]!.add(i);
-      common[1]!.add(i++);
-    }
-    let x = a.length - 1,
-      y = b.length - 1;
-    while (x >= i && y >= i && a[x]![0] === b[y]![0]) {
-      common[0]!.add(x--);
-      common[1]!.add(y--);
-    }
-  }
+  const changes = wordChanges(docs[0]!.body.textContent ?? "", docs[1]!.body.textContent ?? "");
   return docs.map((doc, side) => {
-    const changed = words[side]!.flatMap((word, i) =>
-      common[side]!.has(i) ? [] : [{ from: word.index!, to: word.index! + word[0].length }],
-    );
+    const changed = changes[side]!;
     const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT);
     const nodes: Text[] = [];
     while (walker.nextNode()) nodes.push(walker.currentNode as Text);

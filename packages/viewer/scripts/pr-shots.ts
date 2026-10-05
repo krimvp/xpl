@@ -21,6 +21,8 @@
  * - `--evidence-editor` opens the retry concept evidence editor, where available, with runner line 75.
  * - `--graph-authoring` groups worker/metrics and hides their stored arrow, where available.
  * - `--jobs history|review` adds controlled job history and an explicit review, where available.
+ * - `--graph-pins` photographs identical stored system/service/nested code pins in the Python overview,
+ *   with source shown. It proves rendering in base and head, including negative container coordinates.
  * - `--service` intercepts a loopback API; unmanaged omits attachment metadata for plain-view shots.
  * - `--attention affected|paused` adds watch/guide evidence; `--attention-open` opens its repair offer.
  * - `--text-draft` opens and edits the TS fixture retry concept without saving.
@@ -60,6 +62,7 @@ async function shoot(argv: string[]): Promise<void> {
       "text-draft": { type: "boolean", default: false },
       "evidence-editor": { type: "boolean", default: false },
       "graph-authoring": { type: "boolean", default: false },
+      "graph-pins": { type: "boolean", default: false },
     },
   });
   if (
@@ -97,7 +100,7 @@ async function shoot(argv: string[]): Promise<void> {
       if (eq < 1) throw new Error(`--shot ${spec}: expected <name>=<bundle>[?query]`);
       const name = spec.slice(0, eq);
       const [bundle = "", query = ""] = spec.slice(eq + 1).split(/(?=\?)/);
-      const file = bundle.endsWith(".html")
+      let file = bundle.endsWith(".html")
         ? isAbsolute(bundle)
           ? bundle
           : resolve(bundle)
@@ -106,6 +109,51 @@ async function shoot(argv: string[]): Promise<void> {
         // The base may not have this bundle (a new fixture, a new view): no Before shot, said so in compare.
         console.warn(`skip ${name}: ${file} does not exist`);
         continue;
+      }
+      if (values["graph-pins"]) {
+        // Identical stored positions in the base/head viewers prove that the renderer honors them.
+        const html = readFileSync(file, "utf8");
+        const script = /(<script id="xpl-data" type="application\/json">)([\s\S]*?)(<\/script>)/;
+        const data = JSON.parse(script.exec(html)![2]!);
+        const layouts: Record<string, Record<string, { x: number; y: number }>> = {
+          "view:system": {
+            "grp:job-runner": { x: 80, y: 60 },
+            "grp:operator": { x: 0, y: 240 },
+            "grp:settings-file": { x: 580, y: 180 },
+          },
+          "view:overview": {
+            "grp:scheduling": { x: 40, y: 70 },
+            "grp:configuration": { x: 420, y: 70 },
+            "file:jobrunner/worker.py": { x: 40, y: 270 },
+            "grp:events": { x: 420, y: 270 },
+          },
+          "view:code": {
+            "file:jobrunner/worker.py": { x: 50, y: 60 },
+            "sym:jobrunner/worker.py#Worker": { x: -30, y: 100 },
+            "sym:jobrunner/worker.py#Worker.run": { x: 140, y: -10 },
+            "sym:jobrunner/worker.py#WorkerPool": { x: 460, y: 200 },
+            "sym:jobrunner/worker.py#WorkerPool.lease": { x: 20, y: 100 },
+          },
+        };
+        data.explainer.views.push({
+          id: "view:code",
+          type: "graph",
+          title: "Worker code",
+          include: Object.keys(layouts["view:code"]!),
+          stubs: { mode: "none" },
+          provenance: { origin: "user" },
+        });
+        for (const view of data.explainer.views)
+          if (layouts[view.id]) view.layout = layouts[view.id];
+        file = resolve(out, `${name}.html`);
+        writeFileSync(
+          file,
+          html.replace(
+            script,
+            (_all, start, _data, end) =>
+              start + JSON.stringify(data).replace(/</g, "\\u003c") + end,
+          ),
+        );
       }
       const page = await browser.newPage({ viewport: { width, height }, colorScheme });
       if (values.service) {
@@ -327,6 +375,11 @@ async function shoot(argv: string[]): Promise<void> {
               .waitFor();
           }
         }
+      }
+
+      if (values["graph-pins"]) {
+        await page.getByRole("button", { name: "Show source", exact: true }).click();
+        await page.locator(".cm-editor").first().waitFor();
       }
       await page.waitForTimeout(400);
       if (values["graph-authoring"]) {

@@ -168,7 +168,10 @@ for (const width of [1440, 390])
       await expect(summary.locator(".job-after")).toHaveText(
         "The queue holds pending jobs until the runner takes them.",
       );
-      await expect(summary.locator(".job-after mark").filter({ hasText: /^until$/ })).toBeVisible();
+      await expect(summary.locator(".job-after mark")).toHaveText([
+        "The queue",
+        "jobs until the runner takes them.",
+      ]);
       await expect(
         item.getByRole("region", { name: "Detail change" }).locator("strong").first(),
       ).toHaveText("queue");
