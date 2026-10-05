@@ -69,6 +69,33 @@ async function serve(root: string, ...extra: string[]) {
 
 describe("repository service lifecycle", () => {
   it.each([false, true])(
+    "offers the discovered guide path when its name collides with repository JSON (unreadable: %s)",
+    async (unreadable) => {
+      const root = cloneDir(demo);
+      expect((await xplJson(root, "new", "retry.json", "--title", "Retry guide")).code).toBe(0);
+      expect((await xplJson(root, "apply", "retry.json", PATCH_PATH)).code).toBe(0);
+      writeFile(root, "retry.json", readFile(root, ".explainer/demo.explainer.json"));
+      if (unreadable) writeFile(root, ".explainer/retry.json.explainer.json", "{");
+      const running = await serve(root, "demo");
+      try {
+        const response = await fetch(new URL("/api/watch", running.server.url));
+        expect(response.status).toBe(200);
+        const report = (await response.json()) as {
+          guides: { name: string; path: string | null; title: string; revisionCommand: string }[];
+        };
+        const guide = report.guides.find((g) => g.name === "retry.json");
+        expect(guide).toMatchObject({
+          title: unreadable ? "retry.json" : "Job runner",
+          path: unreadable ? null : ".explainer/retry.json.explainer.json",
+          revisionCommand: `xpl revise --root '${root}' '${root}/.explainer/retry.json.explainer.json' --select '<request-id>'`,
+        });
+      } finally {
+        await running.close();
+      }
+    },
+  );
+
+  it.each([false, true])(
     "guards managed watch controls and stops safely (watch enabled: %s)",
     async (enabled) => {
       const root = cloneDir(demo);

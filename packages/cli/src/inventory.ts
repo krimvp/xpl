@@ -8,16 +8,14 @@ import {
 } from "@xpl/core";
 import { errorMessage } from "./errors.js";
 import type { RepoEnv } from "./context.js";
-import { listExplainerNames, loadExplainer, resolveExplainerPath } from "./repo.js";
-import { realpathSync } from "node:fs";
-import { sep } from "node:path";
+import { loadRepositoryGuides } from "./repo.js";
 
 export function guideInventory(env: RepoEnv, index: IndexModel, texts: TextCache) {
-  return listExplainerNames(env.root).map((name) => {
+  return loadRepositoryGuides(env).map((entry) => {
+    const { name } = entry;
+    if ("error" in entry) return { name, attention: true, error: entry.error };
     try {
-      if (!realpathSync(resolveExplainerPath(env, name)).startsWith(realpathSync(env.root) + sep))
-        throw new Error("guide path leaves its repository");
-      const loaded = loadExplainer(env, name);
+      const { loaded } = entry;
       const { explainer, report } = reresolveExplainer(loaded.explainer, index, texts);
       const issues = validateExplainer(explainer, index, texts, { mode: "lenient" });
       const broken = issues.filter((i) => i.code === "unknown-id");

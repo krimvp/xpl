@@ -254,6 +254,8 @@ incoming refs: 1 (call 1)
 A config key shows like any symbol: `xpl show config/default.yaml#retry` prints `13 0│ retry:` … `16 3│   maxDelayMs: 30000`.
 
 `--at base <path>` prints a changed file as it was **before** the change the explainer records (`xpl change`, below). The offsets count from line 1 of the old file: they are what a base anchor's `span` uses. `-` marks the lines the change removes or rewrites. Paths only (the old code is not indexed). A renamed file takes its old or new path. With several explainers that record a change, pick one with `--explainer <name>`.
+Automatic selection reads the discovered `.explainer/*.explainer.json` files directly, even when a
+guide name such as `retry.json` matches a different repository JSON file. Unreadable guides fail selection.
 
 ```
 $ xpl show --at base src/runner.ts --lines 80-82
@@ -355,6 +357,25 @@ src/config.ts:12  sym:src/config.ts#Config.retry +0  retry: RetryConfig;
 src/config.ts:20  sym:src/config.ts#RunnerConfig.retry +0  retry: RetryConfig;
 ... 14 more matches (showing 3 of 17 in 4 files); raise --limit or narrow the pattern
 ```
+
+Unavailable source produces a warning rather than silently disappearing from the search. `--json`
+adds `scope`: index commit, text origin (`working-tree`), indexed/selected/searched/unavailable paths,
+retained/original symbol and reference counts and original analysis reports. Absent analysis is unknown;
+failed or unsupported symbol analysis does not disable text search. No matches refers only to searched text.
+
+## `xpl guides`
+
+Lists `.explainer/*.explainer.json` by stored title, audience, distinct view questions/roots and source/index
+commits. No symbol index or service is required. The filename is a stable key and path, not the guide's
+reader-facing identity. Scope is recorded metadata: change, question, repository, subsystem, or unknown
+when there is no recorded view scope. This is not a readiness or freshness check. Use `ready <name>` for
+export checks; `status <name>` inspects evidence after indexing.
+
+`--json`: `{ok, guides: [{id, path, title, audience?, questions[], roots[], kind, commit, indexCommit,
+change?: {base, head}}], errors: [{id, error}]}`. Loadable guides with invalid metadata stay in `guides`
+as `{id, path, metadataError}`, also reported in `errors`. Empty string titles stay recorded as empty.
+Each guide is read from its discovered path, even when its name matches another repository JSON file.
+Read or metadata errors exit 1; no local guides is a valid empty library and exits 0. No files are written.
 
 ## `xpl new <name> [--title t] [--repo r] [--url u]`
 
@@ -542,7 +563,9 @@ drifted and missing anchors, user-owned drift, broken references and unreadable 
 current locations in memory; no guide is saved. `--json` adds `{index, stale, watch, guides}`; each guide has
 `name`, `path`, `title`, `attention`, anchor counts/affected locations, drift/missing reports and validation
 errors, or an unreadable-guide error. `attention` means evidence or structure needs repair; it does not
-claim that all required prose is finished. Do not combine `--all` with a guide or `--view`.
+claim that all required prose is finished. Catalog metadata checks do not gate these evidence reports;
+an empty title is a warning, so it does not replace the report or trigger attention.
+Do not combine `--all` with a guide or `--view`.
 
 The skill's to-do list, read-only: per view, the shown nodes, participants, stored edges and steps without a `summary` (and the ids of the static edges without one, which you need to overlay them); per graph view, where it stops (its ghosts and stubs); concepts without a summary; the tours; drifted llm elements; missing anchors; **broken references**; stale edge overlays; requests queued by the viewer. Static edges are optional. `status` reads the explainer through the index it is bound to: after manual `xpl index`, run `xpl resolve <name> --write` first so that it sees the new code. A running watcher supplies the current index without saving the guide.
 
@@ -1018,7 +1041,8 @@ Attention refresh continues with unsaved edits without replacing them. Pause/res
 require the inspected service instance and repository/guide attachment. Plain `xpl view`, older servers
 without this report and saved HTML keep their existing layout.
 
-**Offer revision** gives `xpl revise --root '<root>' '<guide>' --select '<request-id>'`. Create or select
+**Offer revision** gives `xpl revise --root '<root>' '<guide-path>' --select '<request-id>'`.
+The absolute guide path avoids repository JSON collisions and dependence on the calling directory. Create or select
 feedback, replace the placeholder with chosen IDs, and inspect the proposal's diff and decisions before
 explicit acceptance. No control submits feedback, runs an agent, accepts a proposal or erases requests.
 Local configuration and supplied SCIP files are watched; external dependency or tool/environment changes

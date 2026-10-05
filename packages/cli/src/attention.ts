@@ -1,5 +1,7 @@
 /** Project affected-guide inventory into the managed viewer's read-only attention report. */
+import { join } from "node:path";
 import type { IndexModel, TextCache, WatchAttention } from "@xpl/core";
+import { EXPLAINER_DIR, EXPLAINER_SUFFIX } from "./repo.js";
 import type { RepoEnv } from "./context.js";
 import { guideInventory } from "./inventory.js";
 import { readWatchState } from "./watch-state.js";
@@ -45,7 +47,7 @@ export function watchAttention(
           : [];
       }),
       errors: g.error ? [g.error] : (g.errors ?? []).map((e) => e.message),
-      revisionCommand: `xpl revise --root ${quote(env.root)} ${quote(g.name)} --select '<request-id>'`,
+      revisionCommand: `xpl revise --root ${quote(env.root)} ${quote(join(env.root, g.path ?? `${EXPLAINER_DIR}/${g.name}${EXPLAINER_SUFFIX}`))} --select '<request-id>'`,
     })),
   };
 }

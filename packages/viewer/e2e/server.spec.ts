@@ -201,7 +201,7 @@ test("managed attention distinguishes moved, drifted and missing evidence and of
           { id: "sym:src/runner.ts#Runner.dispatch", file: "src/runner.ts", status: "drifted" },
           { id: "file:src/gone.ts", file: "src/gone.ts", status: "missing" },
         ],
-        revisionCommand: "xpl revise 'jobrunner' --select '<request-id>'",
+        revisionCommand: "xpl revise '.explainer/jobrunner.explainer.json' --select '<request-id>'",
       },
     ],
   };
@@ -214,7 +214,9 @@ test("managed attention distinguishes moved, drifted and missing evidence and of
     "Missing: restore the code or explicitly replace/remove its evidence",
   );
   await panel.getByText("Offer revision", { exact: true }).click();
-  await expect(panel).toContainText("xpl revise 'jobrunner' --select '<request-id>'");
+  await expect(panel).toContainText(
+    "xpl revise '.explainer/jobrunner.explainer.json' --select '<request-id>'",
+  );
   await expect(panel).toContainText("Accept a proposal separately");
   expect(recorded.posts).toEqual([]);
   expect(recorded.puts).toEqual([]);

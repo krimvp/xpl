@@ -153,7 +153,7 @@ async function shoot(argv: string[]): Promise<void> {
                       { id: "file:src/worker.ts", file: "src/worker.ts", status: "missing" },
                     ],
                     revisionCommand:
-                      "xpl revise --root '/tmp/xpl-demo/jobrunner' 'jobrunner' --select '<request-id>'",
+                      "xpl revise --root '/tmp/xpl-demo/jobrunner' '/tmp/xpl-demo/jobrunner/.explainer/jobrunner.explainer.json' --select '<request-id>'",
                   },
                 ],
               },
