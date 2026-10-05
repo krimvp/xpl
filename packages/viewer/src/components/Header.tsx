@@ -20,6 +20,7 @@ import { explainerFileName } from "../edits.js";
 import { useStore, useViewerState } from "../hooks.js";
 import { stepNumber } from "../modes.js";
 import { canSaveHtml } from "../saveHtml.js";
+import { Review } from "./Review.js";
 import { SaveHtml } from "./SaveHtml.js";
 import { FeedbackPanel } from "./FeedbackPanel.js";
 import { EdgeKindToggles } from "./EdgeKinds.js";
@@ -236,6 +237,7 @@ function EditMenu({ toursOpen, onTours }: { toursOpen: boolean; onTours: () => v
   const store = useStore();
   const state = useViewerState();
   const [open, setOpen] = useState(false);
+  const [reviewOpen, setReviewOpen] = useState(false);
   const [htmlOpen, setHtmlOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);
   const button = useRef<HTMLButtonElement>(null);
@@ -286,6 +288,14 @@ function EditMenu({ toursOpen, onTours }: { toursOpen: boolean; onTours: () => v
 
   return (
     <div ref={root} className="edit-menu">
+      {reviewOpen && (
+        <Review
+          onClose={() => {
+            setReviewOpen(false);
+            button.current?.focus();
+          }}
+        />
+      )}
       {htmlOpen && (
         <SaveHtml
           onClose={() => {
@@ -348,6 +358,12 @@ function EditMenu({ toursOpen, onTours }: { toursOpen: boolean; onTours: () => v
               <EdgeKindToggles kinds={graph.edgeKinds ?? DEFAULT_EDGE_KINDS} />
             </div>
           )}
+          <MenuItem
+            testId="edit-review"
+            title="Record author review"
+            hint="Inspect a scoped snapshot and name important omissions"
+            onClick={run(() => setReviewOpen(true))}
+          />
           {canSaveHtml() && (
             <MenuItem
               testId="edit-save-html"

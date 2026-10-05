@@ -158,6 +158,17 @@ only included source, and say they cannot detect later repository changes. Sourc
 claims or every runtime path.
 Generated XPL HTML pages are excluded from indexing, so exporting inside a repo does not stale its index.
 
+Edit > Record author review records a self-reported name, inspected content/evidence scope and named
+omissions. About this explanation shows **unchecked**, **reviewed** or **out of date** separately from
+source checks. A narrow review covers named stored items and their own anchors; unrelated source edits do
+not invalidate it. Repository scope covers every indexed file. Broad review evidence travels with HTML;
+offline pages cannot detect later repository changes.
+
+Review is optional. `ready --require-review`, `bundle --require-review` and the Save as HTML team policy
+checkbox explicitly require a current review of all stored content. The checkbox choice stays in that
+exported page for re-saves. Omissions remain author judgment; a name or time does not verify prose truth,
+identity or complete runtime coverage.
+
 ### Explaining a change
 
 A change explainer describes the head of a PR or a branch, and records the diff from git. Check out the

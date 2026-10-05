@@ -4186,3 +4186,35 @@ code {
   margin-top: 20px;
   flex-wrap: wrap;
 }
+
+.guide-about summary [data-testid="review-status"] {
+  margin-left: 12px;
+  font-weight: normal;
+}
+.review-dialog input,
+.review-dialog select {
+  display: block;
+  width: 100%;
+  margin-block: 8px;
+  color: inherit;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  padding: 6px;
+}
+.review-dialog select[multiple] {
+  min-height: 100px;
+}
+.review-dialog [data-testid="review-inspection"] {
+  overflow-wrap: anywhere;
+}
+
+.review-dialog pre {
+  max-height: 280px;
+  overflow: auto;
+  font-size: 12px;
+  padding: 8px;
+  background: var(--bg);
+}
+.review-dialog details {
+  margin-block: 10px;
+}

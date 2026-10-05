@@ -121,6 +121,16 @@ function project(value: unknown): unknown {
   );
 }
 
+/** Whole indexed files explicitly added to scoped anchor evidence. */
+export function reviewSourceFiles(scope: ReviewScope, index: SymbolIndex | IndexModel): string[] {
+  return [
+    ...new Set([
+      ...(scope.source === "repository" ? asIndexModel(index).files.map((f) => f.path) : []),
+      ...(scope.files ?? []),
+    ]),
+  ].sort();
+}
+
 /**
  * Fingerprint exactly the selected stored records and their attached evidence. No dependency closure:
  * a view includes its own steps, a tour includes its code overrides, but neither includes other records'
@@ -178,9 +188,7 @@ export function reviewFingerprint(
       hash: resolved.hash,
     };
   });
-  const files =
-    scope.source === "repository" ? model.files.map((f) => f.path) : (scope.files ?? []);
-  const manifest = [...new Set([...files, ...(scope.files ?? [])])].sort().map((path) => {
+  const manifest = reviewSourceFiles(scope, model).map((path) => {
     if (!model.hasFile(path)) throw new Error(`Reviewed file ${path} is not indexed.`);
     const text = texts.text(path);
     if (text === undefined) throw new Error(`Reviewed file ${path} is unavailable.`);

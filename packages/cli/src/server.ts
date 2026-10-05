@@ -13,6 +13,7 @@
  *   GET  /api/base-file?path= the code before the change of one changed file (text/plain): only for the
  *                             modified, renamed and deleted files of the explainer's change record (`path` is
  *                             `ChangedFile.path`); 400 for a malformed path, 404 for anything else
+ *   PUT  /api/review         { review: record | null }, applied as actor "user"; fingerprint checked at write.
  *   PUT  /api/views/<id>      a view patch, applied as actor "user", written to disk; 200 with the
  *                             updated view, 400 with { error, issues } when rejected
  *   PUT  /api/tours/<id>      the same for a tour: { title?, steps? } (both for a new tour), applied as
@@ -48,7 +49,7 @@ import {
 import { collectBaseFiles, collectFiles, freshAnchors, makeBundle } from "./bundle-data.js";
 import type { RepoEnv } from "./context.js";
 import { CliError, errorMessage } from "./errors.js";
-import { atomicWrite, withFileLock, displayPath, jsonFile } from "./fsutil.js";
+import { atomicWrite, withFileLock, withRepositoryLock, displayPath, jsonFile } from "./fsutil.js";
 import { importRequests, appendRequest, readRequests } from "./requests.js";
 import {
   WorkingTree,
@@ -392,6 +393,37 @@ export async function startViewServer(options: ViewServerOptions): Promise<ViewS
       send(req, res, 200, text, "text/plain; charset=utf-8");
       return;
     }
+    // Only review metadata enters this route; core checks the inspected fingerprint as a user patch.
+    if (pathname === `${API}/review`) {
+      allow("PUT");
+      const body = await readJsonBody(req);
+      if (!Object.hasOwn(body, "review") || Object.keys(body).length !== 1)
+        throw new HttpError(400, "Expected only a review field (record or null).");
+      const saved = await serial(() =>
+        withRepositoryLock(env.root, explainerPath, async () => {
+          const state = await loadState();
+          const result = applyPatch(
+            state.loaded.explainer,
+            body as unknown as ExplainerPatch,
+            state.model,
+            state.tree.texts,
+            { actor: "user" },
+          );
+          if (!result.ok)
+            throw new HttpError(
+              400,
+              `Review patch rejected: ${result.issues.find((i) => i.severity === "error")?.message ?? "invalid"}`,
+              { issues: result.issues },
+            );
+          if (result.changed.length > 0)
+            await atomicWrite(state.loaded.abs, jsonFile(result.explainer));
+          return result.explainer;
+        }),
+      );
+      sendJson(req, res, 200, saved);
+      return;
+    }
+
     // PUT /api/views/<id> and PUT /api/tours/<id>: a patch of one view / tour, applied as the user.
     const record = pathname.startsWith(`${API}/views/`)
       ? ({ kind: "view", collection: "views" } as const)

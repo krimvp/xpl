@@ -862,7 +862,7 @@ $ xpl view jobrunner --no-open --port 0
 serving .explainer/jobrunner.explainer.json at http://127.0.0.1:34971/  (Ctrl-C to stop)
 ```
 
-API (for scripts): `GET /api/bundle`, `GET /api/export` (current complete export snapshot and shared readiness report), `GET /api/explainer` (the explainer with its anchors re-resolved, with an `ETag`; what the page polls), `GET /api/file?path=`, `GET /api/base-file?path=` (the code before the recorded change of a modified, renamed or deleted file), `PUT /api/views/<id>`, `PUT /api/tours/<id>`, `GET|POST /api/requests`.
+API (for scripts): `GET /api/bundle`, `GET /api/export` (current complete export snapshot and shared readiness report), `GET /api/explainer` (the explainer with its anchors re-resolved, with an `ETag`; what the page polls), `GET /api/file?path=`, `GET /api/base-file?path=` (the code before the recorded change of a modified, renamed or deleted file), `PUT /api/views/<id>`, `PUT /api/tours/<id>`, `PUT /api/review` (bounded author review user patch), `GET|POST /api/requests`.
 
 ## `xpl service <start|stop|status> [explainer] [--background] [--port p] [--backend none|claude] [--recover]`
 
@@ -901,15 +901,16 @@ crashed writer lock must be inspected and removed explicitly; no lock is stolen 
 Viewer connection/backend controls and durable jobs are follow-ups. `view`, manual iteration and offline
 HTML export/reading work independently while this service is stopped.
 
-## `xpl ready <explainer> [--note reason]`
+## `xpl ready <explainer> [--note reason] [--require-review]`
 
 Checks strict structure/references, workspace/index freshness, required text (visible summaries and guide
 content), source availability and reader lint. Errors block ready export; warnings invite author judgment.
 `--note "reason"` records an intentional omission or warning decision, without overriding errors. Pass the
-same note to `bundle` to keep it in HTML. This check needs no service or reviewer record and writes nothing.
+same note to `bundle` to keep it in HTML. This check writes nothing and needs no service; ordinary checks
+require no reviewer record.
 
 `--json` emits `{ok, ready, scope: "workspace", identity: {explainerHash, sourceHash}, errors, warnings,
-findings: [{severity, code, elementId, field, message, hint}], decisionNote?}`. Exit 0 ready (warnings allowed),
+findings: [{severity, code, elementId, field, message, hint}], review: {status, required}, decisionNote?}`. Exit 0 ready (warnings allowed),
 1 blockers/failure, 2 usage. Bundle failures include this report as `readiness`. The identity function lives in
 core `readiness.ts`; explanation content/provenance/anchors/index metadata change `explainerHash`, while
 indexed file path/hash changes or change base/head SHAs change `sourceHash`. HTML, launch mode, server URL,
@@ -920,7 +921,18 @@ HTML uses the same check, fetching current source at the final click under `xpl 
 only embedded source; they cannot detect later repository changes. Findings and author decisions stay in the
 saved snapshot's `exportInfo: {status: "ready" | "draft", report}`.
 
-## `xpl bundle <explainer> -o out.html [--mode explore|present] [--tour id] [--files referenced|boundary|all] [--boundary-max n] [--embed-index full|pruned] [--draft] [--note reason] [--allow-drift]`
+Review state is `unchecked`, `reviewed` or `out-of-date`, independently of anchor status. Ordinary readiness
+has no reviewer requirement. `--require-review` explicitly requires a current author record with
+`scope.content: "all"` and its chosen evidence scope; a narrow or outdated record adds `review-required`.
+Use the same flag with `bundle`. Named omissions remain visible and do not override other errors.
+
+The author records through Edit > Record author review in live or offline pages. Names are self-reported,
+not authenticated. The inspected fingerprint is checked again as a user patch; LLM patches cannot record or
+remove reviews. Selected IDs cover those stored records and their own anchors, not dependencies. Repository
+scope and named whole files widen evidence and are included in exports. The Save as HTML team policy
+checkbox is off by default and retains its explicit choice for offline re-saves.
+
+## `xpl bundle <explainer> -o out.html [--mode explore|present] [--tour id] [--files referenced|boundary|all] [--boundary-max n] [--embed-index full|pruned] [--draft] [--note reason] [--require-review] [--allow-drift]`
 
 Ready output refuses a stale index, including with `--allow-drift` or `XPL_SKIP_STALE_CHECK=1`. Reindex and resolve
 first. `--allow-drift` only permits drift against a current index. Generated XPL HTML pages are excluded
