@@ -40,6 +40,13 @@ const packed = JSON.parse(
     { cwd: scratch, encoding: "utf8" },
   ),
 );
+for (const file of packed[0].files) {
+  assert.match(
+    file.path,
+    /^(?:xpl\.mjs|viewer\.html|package\.json|integrity\.json|README\.md|LICENSE|wasm\/[^/]+\.(?:wasm|scm)|skill\/code-explainer\/(?:SKILL\.md|README\.md|bin\/(?:xpl|package\.json)|reference\/.*\.(?:md|json)))$/,
+  );
+  assert(!/(?:^|\/)(?:tests?|\.env)(?:[/.]|$)|\.map$/.test(file.path), file.path);
+}
 const tarball = join(scratch, packed[0].filename);
 const prefix = join(scratch, "installed");
 function install(dir) {
@@ -62,9 +69,16 @@ function install(dir) {
   );
 }
 install(prefix);
-let pkg = join(prefix, "lib/node_modules/@xpl/cli");
+let pkg = join(prefix, "lib/node_modules/@krimvp/xpl");
 const metadata = JSON.parse(readFileSync(join(pkg, "package.json"), "utf8"));
-assert.match(metadata.version, /^\d+\.\d+\.\d+/);
+assert.equal(metadata.name, "@krimvp/xpl");
+assert.equal(metadata.version, "0.1.0");
+assert.equal(metadata.license, "MIT");
+assert.equal(
+  readFileSync(join(pkg, "LICENSE"), "utf8"),
+  readFileSync(join(repo, "LICENSE"), "utf8"),
+);
+assert.match(readFileSync(join(pkg, "README.md"), "utf8"), /npm install --global @krimvp\/xpl/);
 assert.equal(metadata.dependencies, undefined);
 const tools = join(scratch, "tools");
 mkdirSync(tools);
@@ -144,11 +158,11 @@ const updatedCli = join(updated, "bin/xpl");
 run(["skill", "install"], scratch, updatedCli);
 assert.equal(
   JSON.parse(readFileSync(join(skill, "xpl-install.json"), "utf8")).cli,
-  join(updated, "lib/node_modules/@xpl/cli/xpl.mjs"),
+  join(updated, "lib/node_modules/@krimvp/xpl/xpl.mjs"),
 );
 assert.equal(run(["--version"], scratch, join(skill, "bin/xpl")).trim(), metadata.version);
 cli = updatedCli;
-pkg = join(updated, "lib/node_modules/@xpl/cli");
+pkg = join(updated, "lib/node_modules/@krimvp/xpl");
 const originalSkill = readFileSync(join(skill, "SKILL.md"), "utf8");
 writeFileSync(join(skill, "SKILL.md"), originalSkill + "\nLocal edit\n");
 assert.match(rejected(["skill", "install", "--json"]).error, /Will not replace/);

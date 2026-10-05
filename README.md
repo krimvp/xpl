@@ -14,25 +14,37 @@ The page opens on a guide: a short summary, then the steps, each with a picture 
 
 ![Present mode: step 2 of a tour, with the retry policy's code, config and test on the right](docs/images/tour-step-2-light.png)
 
+Install target: [`@krimvp/xpl`](https://www.npmjs.com/package/@krimvp/xpl).
+
 ## Quick start
 
 Needs Node 22.12 or newer and npm for installation. The local artifact is exercised on Linux x64
-(WSL2, Node 22.23.1). Other platforms have not been verified. This workflow uses a local
-`xpl-cli-0.0.0.tgz` from a maintainer; the publication target and release channel are undecided.
+(WSL2, Node 22.23.1). Other platforms have not been verified. The npm release is being prepared as `@krimvp/xpl` 0.1.0
+under MIT. Once published, use the npm command below. You can also build from source
+with access to the private [source repository](https://github.com/krimvp/xpl).
 
 XPL helps an author publish a focused explanation of code. Choose a reader and a question before
 drafting. Readers can check the linked source and tests; a valid anchor checks a location and
 freshness, while the author remains responsible for the explanation's claims and omitted behavior.
 
 ```sh
-npm install --global --prefix "$HOME/.local" --offline --ignore-scripts /absolute/path/xpl-cli-0.0.0.tgz
-export PATH="$HOME/.local/bin:$PATH"
-xpl doctor                                    # runtime, artifact hashes, grammars and optional tools
+npm install --global @krimvp/xpl
 xpl skill install                             # copies the bundled skill and binds its launcher
 xpl doctor --agent claude                      # also checks the skill and Claude Code availability
 ```
 
-No source checkout or build is needed to install. After installing a newer tarball, rerun `xpl skill install`
+Or build from a source checkout:
+
+```sh
+npm install && npm run build
+npm pack ./packages/cli/dist
+npm install -g --ignore-scripts ./krimvp-xpl-0.1.0.tgz
+xpl skill install
+```
+
+A maintainer's tarball can also be installed offline with
+`npm install -g --offline --ignore-scripts /absolute/path/krimvp-xpl-0.1.0.tgz`.
+No source checkout or build is needed to install an npm package or tarball. After updating the CLI, rerun `xpl skill install`
 to update the skill and its launcher. The launcher records the installed CLI's absolute path; rerun the
 installer after moving the CLI. For one project, use `xpl skill install --dir .claude/skills/code-explainer`.
 The installer refuses to overwrite a symlink, an unmanaged skill or local edits: move the old directory
@@ -270,7 +282,7 @@ build step between packages in development. After `npm run build`, `node package
 (hidden) loads every tree-sitter grammar from `dist/wasm`.
 
 The workspace packages stay private. The build writes standalone npm metadata in `packages/cli/dist`
-with the CLI package's version and no install dependencies or scripts. `npm run pack` packs that directory,
+as `@krimvp/xpl` 0.1.0 under MIT, with a short README and LICENSE and no install dependencies or scripts. `npm run pack` packs that directory,
 not the workspace package. `integrity.json` records SHA-256 hashes for bundled files; `doctor` detects
 missing or changed files. These hashes detect damage, not the identity of an artifact's publisher.
 The install check copies fixture inputs to scratch, denies CLI checkout reads with Node permissions,

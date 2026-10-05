@@ -1198,11 +1198,14 @@ stdout (a rejection exits 1); fatal errors (`error: …`) and warnings (`warning
 **Installed artifact.** Workspace packages remain private. `npm run build` writes standalone package
 metadata in `packages/cli/dist`, with `@xpl/cli`'s version, a `bin` entry, Node >=22.12 and no dependencies
 or install scripts. The viewer is required at build time. The directory carries the bundled CLI, viewer,
-WASM runtime and grammars, Rust tags query, the skill and `integrity.json`. `npm run pack --
---pack-destination <outside-repo-dir>` builds and packs that directory. Install its local tarball with
+WASM runtime and grammars, Rust tags query, the skill, a short README, MIT LICENSE and `integrity.json`.
+The published name is `publishName` (`@krimvp/xpl`) in the private `@xpl/cli` workspace manifest; its version is
+0.1.0. npm rejected `xpl` as too similar to an existing name; `@krimvp/xpl` is the selected fallback.
+`npm run pack -- --pack-destination <outside-repo-dir>` builds and packs that directory. Install its local tarball with
 `npm install --global --prefix "$HOME/.local" --offline --ignore-scripts <absolute-tarball-path>`; put
-`$HOME/.local/bin` on PATH. No source build is needed at installation. Registry/channel publication remains
-a separate decision; nothing is published by build, pack, diagnosis or skill installation.
+`$HOME/.local/bin` on PATH. No source build is needed at installation. The npm release is being prepared
+from main only; `npm install --global @krimvp/xpl` is the registry install command once published. Publication is a
+separate step; nothing is published by build, pack, diagnosis or skill installation.
 
 `doctor` checks SHA-256 hashes from the artifact inventory and loads every grammar. Hashes detect damage,
 not publisher identity. Skill availability is optional for reading, required with `--agent claude`.
@@ -2082,7 +2085,7 @@ identities to syntax ranges. This is a proposed contract revision, not a change 
   problems, not wrong claims. `repeats-summary` finds near-verbatim repeats only.
 - Not published: workspace packages are private; build/pack produce a standalone local npm tarball with
   its viewer, grammars and skill. Install/update and reader/export checks cover Linux x64/WSL2 only.
-  Node ≥22.12 is required. Registry name, release version and channel still need a publication decision.
+  Node ≥22.12 is required. The selected release is `@krimvp/xpl` 0.1.0 under MIT, from main only; publication is pending.
 
 **Next steps, roughly by value** (the review in `docs/review-2026-10-01.md` has the roadmap): an independent
 accuracy pass for change explainers; a word-level diff in rewritten lines; editable step titles and code in

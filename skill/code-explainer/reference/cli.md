@@ -1,5 +1,21 @@
 # CLI reference
 
+## Install
+
+The npm release is being prepared. Once published, with Node >=22.12 and npm:
+
+```sh
+npm install --global @krimvp/xpl
+xpl skill install
+xpl doctor --agent claude
+```
+
+Alternatively, with access to the private [source repository](https://github.com/krimvp/xpl),
+run `npm install && npm run build`, then `npm pack ./packages/cli/dist` and
+`npm install -g --ignore-scripts ./krimvp-xpl-0.1.0.tgz`. Install a maintainer's tarball offline with
+`npm install -g --offline --ignore-scripts <tarball>`, then run `xpl skill install`.
+Claude Code needs separate installation, authentication and provider access.
+
 `<skill dir>/bin/xpl <command> [options]` (below: `xpl`). Run it from the root of the repo you are explaining, or pass `--root <dir>`. Samples come from `fixtures/ts-jobrunner` (a tiny job runner, indexed as `wt-0db7e190f5`) and are trimmed, not edited.
 
 **Global options** (every command)
