@@ -216,7 +216,7 @@ A talk built from existing views, by the rules of "The tour". Default: the newes
 3. **Read-only on the user's repo and remotes.** Never post, comment, push or change their checkout (`.explainer/` aside).
 4. **`llm` edges only for what the index cannot see**, anchored at both ends (with `via`: each hop the index does not show).
 5. **Stable ids.** Slugs are chosen once, in kebab-case. Step ids are never renumbered or reused. A change draft numbers its tour steps `t10`, `t20`, ...: a step you insert takes a free number between its neighbours (`t15`).
-6. **The user's edits win.** Never overwrite `origin: "user"` elements or `userFields`; for a view or tour they edited, make a new one or ask. `--actor user` only for text the user dictates.
+6. **The user's edits win.** Never overwrite `origin: "user"` elements or `userFields`; for a view or tour they edited, make a new one or ask. `--actor user` only for text the user dictates. The viewer's Explore Details can save labels, summaries, detail and concept relations as user patches; Drafts survive navigation until save/cancel; Undo/Redo names the fields and target and keeps user ownership. Live history and undo requests are scoped to the canonical repository root and guide; offline pages keep only in-session undo. Source repair still uses checked explicit patches.
 7. **Few things at the same level.** One primary tour; views only when a tour step uses them or a box `opens` them; 0-3 concepts; groups only as map boxes.
 8. **Lazy.** Explain what a view shows; leave the rest for `expand`.
 9. **Ask, do not guess** when the scope is ambiguous or an anchor cannot be found.

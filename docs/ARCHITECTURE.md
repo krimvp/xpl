@@ -1201,6 +1201,15 @@ atomic: any error → `ok: false` and the input explainer, untouched.
   that change nothing are not listed), plus `"title"`, `"scope"` and `"review"` when they change; a `stepsUpdate` lists
   the view and each step it changed (a tour's steps as `<tour id>/<step id>`).
 
+**Bounded user edits** (`user-edits.ts`) carry a collection (`nodes`, `edges`, `concepts`), item ID,
+and before/after values of the same fields. Only `label`, `summary`, `detail` and a concept's `related`
+are accepted, with at most 32 items per transaction. The HTTP body limit also applies.
+`applyUserEdits` checks touched fields against the current model, creates an ordinary `user` patch and
+returns a conditional inverse. Missing optional fields become `null`. The inverse never contains
+provenance or review records; undo keeps user ownership and lets scoped fingerprints follow content.
+For a new structural overlay, undo restores the effective default fields rather than deleting a record
+that another author may have enriched. Existing broken anchors on the edited item still reject the patch.
+
 ### 4.8 Also in core
 
 - `implementations.ts`: `implementationsOf(index, id)` / `implementedBy(index, id)`: who implements an
@@ -1513,17 +1522,20 @@ opened source files while preserving navigation. Unsaved viewer edits postpone a
 acknowledging the new ETag. A newly generated index is followed unless `--index` pins a specific one.
 Source edits are shown with a stale-index warning until reindexing; viewer edits never overwrite them.
 Drifted or missing anchors do not stop it (unlike `xpl bundle`): it warns, and the page says which
-parts may be out of date.
+parts may be out of date. Every live bundle carries `server.attachment` with the canonical repository root
+and repo-relative canonical guide path. Plain `xpl view` and managed services share that identity; only managed
+services add process/backend metadata. Offline exports strip `server` and retain in-session undo only.
 
 | Route | |
 |---|---|
-| `GET /` | the viewer HTML with the bundle injected (`server: { api: "/api" }`, `mode: "explore"`, `files` = the files the explainer references; others are fetched lazily; `baseFiles` whole, when the explainer has a change: only the changed files, so it is small) |
+| `GET /` | the viewer HTML with the bundle injected (`server: { api: "/api", attachment: { root, guide } }`, `mode: "explore"`, `files` = the files the explainer references; others are fetched lazily; `baseFiles` whole, when the explainer has a change: only the changed files, so it is small) |
 | `GET /api/bundle` | the same bundle as JSON |
 | `GET /api/export` | current export snapshot with all referenced source (including stubs), base source and a forced workspace freshness check; `exportInfo.report` has shared readiness findings; no HTML is written |
 | `GET /api/explainer` | the explainer with its anchors re-resolved (as in the bundle), with an `ETag` of the file; 304 on a matching `If-None-Match` |
 | `GET /api/file?path=` | text of one indexed file (`text/plain`); 400 for a malformed path (absolute, `..`, backslash, NUL), 404 for anything not in the index (with `suggestions`) or unreadable |
 | `GET /api/base-file?path=` | the code before the change of one changed file (`text/plain`, read with `git show`); `path` is `ChangedFile.path`; 400 for a malformed path; 404 when the explainer has no change, the file is not a modified, renamed or deleted file of it (with the list of those; the old path of a renamed file is not a key), or git cannot read it |
 | `PUT /api/views/<id>` | a view patch (`{ type, …changed fields }`) applied as actor `user` and written; 200 with the updated view; 400 `{ error, issues }` when rejected |
+| `PUT /api/edits` | `{ version: ArtifactIdentity, edits: UserEdit[] }` with required URI-encoded JSON `{ root, guide }` in `X-Xpl-Attachment`; wrong identities reject before any patch/write; under the repository lock; compares the re-resolved artifact identity and touched before values, applies a bounded user patch and atomically saves; 200 `{ explainer, inverse, version }`, 409 for wrong root/guide or stale versions/field conflicts, 400 for missing identity or invalid edits; no artifact replacement |
 | `PUT /api/review` | bounded `{ review: record \| null }` applied as actor `user` under the explainer lock; checks the captured fingerprint against current disk/source; 200 current explainer or 400 `{ error, issues }`; no content replacement fields |
 | `PUT /api/tours/<id>` | the same for a tour (`{ title?, steps? }`, both for a new tour) |
 | `GET /api/requests` | `{ requests, pending }` for this explainer |
@@ -1840,9 +1852,13 @@ without `/explainer` stops polling on 404 for compatibility.
 **Use loaded snapshot offline** disables API reads/writes and polling, keeping loaded source, navigation,
 edits and browser feedback. Missing source says it is absent from the snapshot. Save as HTML uses embedded
 readiness and removes service metadata. **Retry connection** resumes the original scoped API; unsaved edits
-remain local until **Retry save**. View edits, tour edits and review additions/removals share one pending-write queue, including offline
+remain local until **Retry save**. View edits, tour edits, review additions/removals and bounded author edits share one pending-write queue, including offline
 changes. Dirty state follows that queue. Writes stay pending while in flight; success removes only the
-write sent, preserving newer edits. Reconnect does not overwrite unsaved changes with server state. Browser feedback is exported/imported explicitly, never auto-submitted.
+write sent, preserving newer edits. Author saves retain drafts on transport failure; Retry save records their
+inverse once. Rejected author writes leave the draft and history available for inspection. Static/offline
+author actions apply locally and remain unsaved in this page; reconnectable actions retain captured
+versions and retry against the original service.
+Reconnect does not overwrite unsaved changes with server state. Browser feedback is exported/imported explicitly, never auto-submitted.
 
 **Three modes, one header.** **Read** is the default screen, for readers. **Explore** is the author's
 workbench. **Present** plays a tour as slides. The header is one row built the same way in each: the title,
@@ -2043,6 +2059,29 @@ them (`DriftBanner.tsx`), drifted lines are striped (`xpl-hl-drifted`) and the p
 scope's `audience` line shows under the Guide's title. Under `xpl view` the page polls `GET /api/explainer`
 every 2 s (ETag, 304 while unchanged) and shows what `xpl apply` wrote without a reload, keeping the view,
 step and selection as far as they still exist; workspace adoption waits while edits made on the page are unsaved, but connection status still updates.
+
+**Text and concepts.** In Explore, select a node, stored arrow or concept and use **Edit text** in Details.
+Label, summary and Markdown detail stay in a form draft until **Save text**; concepts can also select related
+elements. Drafts live in the store, keyed by element, until saved or explicitly cancelled; switching boxes or
+returning to reading keeps them. Save/Cancel stay visible at the bottom of the editor. Summary-only corrections
+do not require fixing an existing empty label. The header names unsaved drafts, saving, saved and rejected edits.
+Live saves check the version captured when the editor opened; a stale form must be reopened and inspected.
+Source remains read-only. Missing/drifted evidence is not repaired implicitly; selection and repair controls
+belong to the next authoring step. A review record is optional and stays present when content changes.
+
+Edit → **Undo** / **Redo** names the changed fields and element and writes the inverse through the same patch
+route. Before a live
+undo, the viewer fetches the current bundle, then checks only the touched field values and submits its current
+artifact version. Unrelated concurrent edits survive; edits to the same field reject without moving history.
+History holds at most 50 operations. Persisted records carry a checked identity as well as a storage key:
+all live attachments use canonical repository root and guide path, excluding the process instance. Without
+a live attachment there is no history across reloads; only in-session undo remains. Content-derived, legacy or
+mismatched records are ignored. Undo requests carry the original root/guide identity, checked by the server
+independently of browser storage; touched-field preconditions still protect every save. Storage refusal is visible and does not
+undo a successful disk save. Static edits/history live in memory until JSON or HTML is
+exported; original-page reload discards them. An open form draft or save blocks HTML export. Undo never
+replaces an artifact or restores old provenance/review records. Existing tour/view edits keep their prior
+save paths and tour-step deletion undo.
 
 **Tours.** Edit → "Edit the guide's steps" opens the tour panel: add the current view and selection as a step
 to a tour, or to a new one (`tour:<slug of the title>`); edit each step's note (markdown), reorder, delete with

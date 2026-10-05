@@ -5,7 +5,7 @@ export function ConnectionStatus() {
   const store = useStore();
   const { connection, dirty } = useViewerState();
   const { status, attachment, message } = connection;
-  if (!attachment) return null;
+  if (!attachment?.instanceId) return null;
   const live = status !== "offline";
   const failed = status === "disconnected" || status === "unavailable";
   return (
