@@ -3,6 +3,7 @@
  * edits and queues explain requests over HTTP. The "server" is Playwright's request interception on a
  * fake origin; the requests recorded here are the contract `xpl view` has to serve.
  */
+import type { WatchAttention } from "@xpl/core";
 import { readFileSync } from "node:fs";
 import { expect, test, type Page } from "@playwright/test";
 import {
@@ -26,6 +27,8 @@ interface Recorded {
   /** Status PUT answers with; a test may change it while the page is open. */
   putStatus: number;
   serviceStatus: number;
+  attention?: WatchAttention;
+  watchActions: string[];
   tourStatus: number;
   /** What GET /api/explainer serves; until a test sets it, the explainer is unchanged (304). */
   explainer?: unknown;
@@ -68,6 +71,7 @@ async function serve(
     files: [],
     puts: [],
     serviceStatus: 200,
+    watchActions: [],
     tourPuts: [],
     posts: [],
     putStatus: opts.putStatus ?? 200,
@@ -85,6 +89,16 @@ async function serve(
         status: recorded.serviceStatus,
         body: "This address serves a different repository or guide.",
       });
+    }
+    if (url.pathname === "/api/watch") {
+      if (!recorded.attention) return route.fulfill({ status: 404 });
+      if (request.method() === "POST") {
+        const { action } = JSON.parse(request.postData()!);
+        recorded.watchActions.push(action);
+        if (action === "stop") recorded.serviceStatus = 0;
+        else recorded.attention.watch!.state = action === "pause" ? "paused" : "pending";
+      }
+      return route.fulfill({ json: recorded.attention });
     }
     if (url.pathname === "/api/file" && request.method() === "GET") {
       const path = url.searchParams.get("path")!;
@@ -156,9 +170,195 @@ test("plain view keeps the reader layout without managed service controls", asyn
   await expect(byId(page, "grp:scheduling")).toBeVisible();
   await expect.poll(async () => (await stateOf(page)).serverMode).toBe(true);
   await expect(page.getByTestId("connection-status")).toHaveCount(0);
+  await expect(page.getByTestId("attention-status")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Use loaded snapshot offline" })).toHaveCount(0);
   expect(new URL(page.url()).searchParams.has("attachment")).toBe(false);
 });
+
+test("managed attention distinguishes moved, drifted and missing evidence and offers an explicit revision", async ({
+  page,
+}) => {
+  const recorded = await serve(page, { managed: true });
+  recorded.attention = {
+    enabled: true,
+    instanceId: "first",
+    watch: {
+      state: "current",
+      stale: false,
+      generation: 2,
+      index: { path: ".explainer/index-test.json", commit: "test" },
+      error: null,
+    },
+    guides: [
+      {
+        name: "jobrunner",
+        path: ".explainer/jobrunner.explainer.json",
+        title: "Job runner",
+        counts: { moved: 1, drifted: 1, missing: 1 },
+        errors: [],
+        elements: [
+          { id: "file:src/queue.ts", file: "src/queue.ts", status: "moved" },
+          { id: "concept:retry-policy", file: "src/runner.ts", status: "drifted" },
+          { id: "file:src/gone.ts", file: "src/gone.ts", status: "missing" },
+        ],
+        resolveCommand:
+          "xpl resolve --root '/repos/jobrunner' '/repos/jobrunner/.explainer/jobrunner.explainer.json' --write",
+        revisionCommand: "xpl revise '.explainer/jobrunner.explainer.json' --select '<request-id>'",
+      },
+    ],
+  };
+  recorded.attention.guides.push({
+    name: "retry.json",
+    path: ".explainer/retry.json.explainer.json",
+    title: "Retry",
+    counts: { moved: 1, drifted: 0, missing: 0 },
+    errors: [],
+    elements: [{ id: "file:src/queue.ts", file: "src/queue.ts", status: "moved" }],
+    resolveCommand:
+      "xpl resolve --root '/repos/jobrunner' '/repos/jobrunner/.explainer/retry.json.explainer.json' --write",
+    revisionCommand:
+      "xpl revise --root '/repos/jobrunner' '/repos/jobrunner/.explainer/retry.json.explainer.json' --select '<request-id>'",
+  });
+  const panel = page.getByTestId("attention-status");
+  await expect(panel).toContainText("1 guide needs attention");
+  await panel.getByText("Watching", { exact: false }).first().click();
+  await expect(panel).toContainText("Moved: locations followed unchanged code");
+  await expect(panel).toContainText("Drifted: inspect the changed code and revise its explanation");
+  await expect(panel).toContainText(
+    "Missing: restore the code or explicitly replace/remove its evidence",
+  );
+  await expect(panel).toContainText(
+    "xpl resolve --root '/repos/jobrunner' '/repos/jobrunner/.explainer/retry.json.explainer.json' --write",
+  );
+  await panel.getByText("Offer revision", { exact: true }).click();
+  await expect(panel).toContainText(
+    "xpl revise '.explainer/jobrunner.explainer.json' --select '<request-id>'",
+  );
+  await expect(panel).toContainText("Accept a proposal separately");
+  expect(recorded.posts).toEqual([]);
+  expect(recorded.puts).toEqual([]);
+  expect(recorded.watchActions).toEqual([]);
+  // The inventory ID reaches the same Details target that owns evidence repair.
+  await panel.getByRole("button", { name: "Inspect element" }).nth(1).click();
+  await expect(page.locator('.details[data-details-id="concept:retry-policy"]')).toBeVisible();
+  await panel.locator(".attention-list > summary").click();
+  await page.getByTestId("evidence-edit").click();
+  await expect(page.getByRole("form", { name: "Edit source evidence" })).toBeVisible();
+  await expect(page.locator(".evidence-list")).toContainText("src/runner.ts");
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  expect(recorded.posts).toEqual([]);
+  expect(recorded.puts).toEqual([]);
+  await panel.getByText("Watch controls", { exact: true }).click();
+  await panel.getByRole("button", { name: "Pause watch" }).click();
+  await expect(panel).toContainText("Paused");
+  await panel.getByRole("button", { name: "Resume watch" }).click();
+  await expect.poll(() => recorded.watchActions).toEqual(["pause", "resume"]);
+  await panel.getByRole("button", { name: "Stop service" }).click();
+  await expect.poll(() => recorded.watchActions).toEqual(["pause", "resume", "stop"]);
+  await expect(page.getByTestId("connection-status")).toContainText("Disconnected");
+  await expect(byId(page, "grp:scheduling")).toBeVisible();
+});
+
+for (const [width, height] of [
+  [1440, 900],
+  [1280, 720],
+] as const) {
+  test(`expanded attention preserves diagram and source space at ${width}x${height}`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height });
+    const recorded = await serve(page, { managed: true });
+    recorded.attention = layoutAttention();
+    await page.evaluate(() => window.__xpl!.select(["file:src/queue.ts"]));
+    await expect(page.locator(".cm-editor").first()).toBeVisible();
+    const panel = page.getByTestId("attention-status");
+    await expect(panel).toContainText("3 guides need attention");
+    await panel.locator(":scope > details > summary").first().click();
+    await expect(panel).toContainText("sym:src/runner.ts#Runner.dispatch");
+    await expect
+      .poll(() =>
+        page
+          .locator(".diagram-body")
+          .first()
+          .evaluate((el) => el.getBoundingClientRect().height),
+      )
+      .toBeGreaterThan(180);
+    await expect
+      .poll(() =>
+        page
+          .locator(".cm-editor")
+          .first()
+          .evaluate((el) => el.getBoundingClientRect().height),
+      )
+      .toBeGreaterThan(180);
+    await expect(byId(page, "grp:scheduling")).toBeVisible();
+    await panel.getByRole("heading", { name: "workers (workers)" }).scrollIntoViewIfNeeded();
+    await expect(panel.getByRole("heading", { name: "workers (workers)" })).toBeVisible();
+  });
+}
+
+test("collapsed service connection, attention and controls fit a compact narrow bar", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const recorded = await serve(page, { managed: true });
+  recorded.attention = layoutAttention();
+  const panel = page.getByTestId("attention-status");
+  await expect(panel).toContainText("3 guides need attention");
+  await expect(page.getByTestId("connection-status")).toContainText("Connected");
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const connection = document
+          .querySelector('[data-testid="connection-status"]')!
+          .getBoundingClientRect();
+        const attention = document
+          .querySelector('[data-testid="attention-status"]')!
+          .getBoundingClientRect();
+        return (
+          Math.max(connection.bottom, attention.bottom) - Math.min(connection.top, attention.top)
+        );
+      }),
+    )
+    .toBeLessThan(90);
+  await expect(page.getByRole("button", { name: "Pause watch" })).toBeHidden();
+  await page.getByText("Watch controls", { exact: true }).click();
+  await expect(page.getByRole("button", { name: "Pause watch" })).toBeVisible();
+  await page.getByText("Connection details", { exact: true }).click();
+  await expect(page.getByRole("button", { name: "Pause watch" })).toBeHidden();
+  await expect(page.getByTestId("connection-status")).toContainText("/repos/jobrunner");
+});
+
+function layoutAttention(): WatchAttention {
+  return {
+    enabled: true,
+    instanceId: "first",
+    watch: {
+      state: "current",
+      stale: false,
+      generation: 2,
+      index: { path: ".explainer/index-test.json", commit: "test" },
+      error: null,
+    },
+    guides: ["jobrunner", "retry", "workers"].map((name) => ({
+      name,
+      path: `.explainer/${name}.explainer.json`,
+      title: name,
+      counts: { moved: 0, drifted: 2, missing: 2 },
+      errors: [],
+      elements: [
+        { id: "sym:src/runner.ts#Runner.dispatch", file: "src/runner.ts", status: "drifted" },
+        { id: "file:src/queue.ts", file: "src/queue.ts", status: "drifted" },
+        { id: "file:src/gone.ts", file: "src/gone.ts", status: "missing" },
+        { id: "file:src/gone-worker.ts", file: "src/gone-worker.ts", status: "missing" },
+      ],
+      resolveCommand:
+        "xpl resolve --root '/repos/jobrunner' '/repos/jobrunner/.explainer/jobrunner.explainer.json' --write",
+      revisionCommand:
+        "xpl revise --root '/repos/jobrunner' '/repos/jobrunner/.explainer/jobrunner.explainer.json' --select '<request-id>'",
+    })),
+  };
+}
 
 test("files missing from the bundle are fetched from GET /api/file when they are needed", async ({
   page,
@@ -459,7 +659,7 @@ test("a managed page shows backend unavailability, refuses another service, and 
     root: "/repos/jobrunner",
     guide: ".explainer/jobrunner.explainer.json",
   });
-  await connection.getByText("Repository and backend").click();
+  await connection.getByText("Connection details").click();
   await expect(connection).toContainText(
     "Agent backend unavailable (Claude selected). No agent is configured.",
   );

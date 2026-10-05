@@ -4187,8 +4187,10 @@ code {
   flex-wrap: wrap;
 }
 
-/* The local service is optional; status never blocks reading the loaded snapshot. */
-.connection-status {
+/* One compact managed-service bar; disclosures float so reading keeps its space. */
+.service-status:has(.connection-status) {
+  position: relative;
+  z-index: 4;
   display: flex;
   align-items: center;
   flex-wrap: wrap;
@@ -4199,6 +4201,14 @@ code {
   color: var(--muted);
   font-size: 12px;
 }
+.connection-status,
+.attention-status {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  min-width: 0;
+}
 .connection-status[data-status="connected"] strong {
   color: var(--ok);
 }
@@ -4206,11 +4216,25 @@ code {
 .connection-status[data-status="unavailable"] strong {
   color: var(--warn);
 }
-.connection-status details {
-  max-width: 100%;
-}
-.connection-status summary {
+.service-status summary {
   cursor: pointer;
+}
+.service-disclosure {
+  position: absolute;
+  z-index: 50;
+  top: 100%;
+  right: 8px;
+  box-sizing: border-box;
+  width: min(760px, calc(100vw - 16px));
+  max-height: min(40vh, 320px);
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 12px 16px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--fg);
+  box-shadow: 0 6px 18px rgb(0 0 0 / 15%);
 }
 .connection-status p {
   margin: 6px 0;
@@ -4219,7 +4243,7 @@ code {
 .connection-actions {
   display: flex;
   gap: 8px;
-  margin-left: auto;
+  flex-wrap: wrap;
 }
 
 .guide-about summary [data-testid="review-status"] {
@@ -4252,6 +4276,38 @@ code {
 }
 .review-dialog details {
   margin-block: 10px;
+}
+
+.attention-status p {
+  margin: 8px 0;
+}
+.attention-status article {
+  border-top: 1px solid var(--border);
+  padding: 8px 0;
+}
+.attention-status h3 {
+  margin: 0;
+  font-size: 13px;
+}
+.attention-status ul {
+  padding-left: 20px;
+}
+.attention-status li {
+  margin-block: 10px;
+}
+.attention-status code,
+.attention-status pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.attention-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.attention-status > p {
+  flex-basis: 100%;
+  color: var(--warn);
 }
 
 .text-edit {

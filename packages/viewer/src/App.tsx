@@ -10,6 +10,7 @@ import { ConceptList } from "./components/ConceptList.js";
 import { Details } from "./components/Details.js";
 import { DiagramPane } from "./components/DiagramPane.js";
 import { DriftBanner } from "./components/DriftBanner.js";
+import { AttentionStatus } from "./components/AttentionStatus.js";
 import { ConnectionStatus } from "./components/ConnectionStatus.js";
 import { AnalysisCoverage } from "./components/AnalysisCoverage.js";
 import { ErrorBoundary } from "./components/ErrorBoundary.js";
@@ -125,7 +126,10 @@ function Shell() {
     <div className="app" data-mode={state.mode}>
       <Header />
       <div className="workspace-warnings">
-        <ConnectionStatus />
+        <div className="service-status">
+          <ConnectionStatus />
+          <AttentionStatus />
+        </div>
         <AnalysisCoverage />
         {state.exportInfo?.status === "draft" && (
           <div className="drift-banner" role="status" data-testid="draft-banner">

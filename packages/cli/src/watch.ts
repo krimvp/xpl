@@ -19,6 +19,7 @@ export async function watchRepository(
     precise: "auto" | "off" | "require";
     scip: string | null;
     signal: AbortSignal;
+    terminalState?: () => "paused" | "stopped";
   },
 ): Promise<void> {
   const path = join(ctx.root, ".explainer/service/watch.json");
@@ -162,7 +163,8 @@ export async function watchRepository(
         state.error = errorMessage(error);
       }
     }
-    state.state = "stopped";
+    state.state = options.terminalState?.() ?? "stopped";
+    if (state.state === "paused") state.stale = true;
     // Stopping during a pending/failed build retains its stale mark and last pointer.
     await save();
   }
