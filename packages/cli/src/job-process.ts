@@ -1,11 +1,18 @@
 /** Linux group identity: boot plus kernel start ticks, never PID alone. */
 import { readFile, readdir } from "node:fs/promises";
+import type { ChildProcess } from "node:child_process";
 import { setTimeout as delay } from "node:timers/promises";
 import { CliError } from "./errors.js";
 
 export interface JobProcess {
   groupId: number;
   startTime: string;
+}
+
+/** A failed teardown may know the group without having verified its start time. */
+export interface JobCleanup {
+  groupId?: number;
+  startTime?: string;
 }
 
 async function processFields(pid: number): Promise<string[] | undefined> {
@@ -39,38 +46,68 @@ export async function readJobProcess(groupId: number): Promise<JobProcess | unde
   return { groupId, startTime: boot + ":" + fields[19] };
 }
 
-export async function terminateJobProcess(identity: JobProcess): Promise<void> {
+export async function terminateJobProcess(
+  identity: JobCleanup,
+  child?: ChildProcess,
+): Promise<void> {
+  const groupId = identity.groupId ?? child?.pid;
+  const verified = !!identity.startTime;
+  let stage = "identity check";
+  let members: number[] | undefined;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const expired = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error("two-second cleanup deadline expired")), 2000);
+  });
+  const wait = <T>(work: Promise<T>) => Promise.race([work, expired]);
+  const exited =
+    child && child.pid && child.exitCode === null && child.signalCode === null
+      ? new Promise<void>((resolve) => child.once("exit", () => resolve()))
+      : Promise.resolve();
   try {
-    const current = await readJobProcess(identity.groupId);
+    if (!groupId) {
+      if (!child) throw new Error("group identity unknown; inspect before recovery");
+      return; // Failed spawn: no process exists.
+    }
+    const current = verified ? await wait(readJobProcess(groupId)) : undefined;
     if (current && current.startTime !== identity.startTime) return;
     if (current) {
       try {
-        process.kill(-identity.groupId, "SIGKILL");
+        process.kill(-groupId, "SIGKILL");
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
       }
+    } else if (!verified && child && child.exitCode === null && child.signalCode === null) {
+      // Claude cannot start before identity registration. This handle still owns the unstarted launcher.
+      child.kill("SIGKILL");
     }
     // The leader can exit first. Zombies cannot execute; only the OS can reap them.
-    const deadline = Date.now() + 2000;
+    stage = "group drain";
     while (true) {
-      const processes = await readdir("/proc");
-      const fields = await Promise.all(
-        processes.filter((pid) => /^\d+$/.test(pid)).map((pid) => processFields(Number(pid))),
-      );
-      if (
-        !fields.some((f) => f && !["Z", "X"].includes(f[0]!) && Number(f[2]) === identity.groupId)
-      )
-        return;
-      if (Date.now() >= deadline)
-        throw new Error("Claude group still has live members; inspect it before recovery.");
-      await delay(20);
+      const processes = (await wait(readdir("/proc"))).filter((pid) => /^\d+$/.test(pid));
+      const fields = await wait(Promise.all(processes.map((pid) => processFields(Number(pid)))));
+      members = processes
+        .filter((_, i) => {
+          const f = fields[i];
+          return f && !["Z", "X"].includes(f[0]!) && Number(f[2]) === groupId;
+        })
+        .map(Number);
+      if (!members.length) break;
+      await wait(delay(20));
     }
+    stage = "launcher exit";
+    await wait(exited); // Stream close is unrelated: a process outside the group can hold the pipes.
   } catch (error) {
     throw new CliError(
-      "Claude process-group cleanup failed: " +
+      `JOB_PROCESS_CLEANUP: group ${groupId ?? "unknown"} (verified: ${verified}); ${stage}; ` +
+        `live members: ${members?.join(",") || (members ? "none" : "unknown")}. ` +
         (error instanceof Error ? error.message : String(error)),
       1,
-      { code: "JOB_PROCESS_CLEANUP" },
+      { code: "JOB_PROCESS_CLEANUP", groupId, startTime: identity.startTime, verified },
     );
+  } finally {
+    clearTimeout(timer);
+    // Destroy inherited pipes on success or deadline; they must never retain the service.
+    for (const stream of child?.stdio ?? []) stream?.destroy();
+    child?.unref(); // A failed cleanup stays fenced in the ledger, not in the service's event loop.
   }
 }

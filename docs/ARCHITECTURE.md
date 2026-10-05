@@ -1752,11 +1752,18 @@ patches, never applies or accepts them. Output must be a bounded regular file wi
 request. A per-attempt Node launcher holds a service pipe: closing the pipe, including service death,
 kills the whole group. The launcher starts Claude only after receiving the service's durable-ownership
 acknowledgement. It remains alive after Claude exits, reporting the original exit code on that pipe.
-Every attempt ends through verified group teardown: normal/error exit, timeout, cancellation and
-recovery kill the group and scan Linux /proc until no live member remains, bounded to two seconds.
-Exited zombies cannot execute; the OS reaps them. Terminal job state is written after that drain,
-including cancellation and shutdown. Cleanup failure retains interrupted/running history and stops
-scheduling instead of allowing an overlapping retry. Recovery verifies the recorded start time as
+From launcher spawn, one `try/finally` owns teardown, including failed identity reads. Normal/error exit,
+timeout, cancellation and recovery kill the verified group and scan Linux /proc until no live member
+remains. One two-second deadline bounds every identity read, scan, drain delay and launcher-exit wait.
+Stream `close` is never a completion signal: inherited pipes can outlive their group. Teardown destroys
+streams and releases the child handle after drain or deadline, so shutdown can exit. An unstarted launcher
+is killed through its live child handle if identity registration failed; Claude never starts in that case.
+Exited zombies cannot execute; the OS reaps them. Terminal state follows drain, including cancellation
+and shutdown. On cleanup failure, `JOB_PROCESS_CLEANUP` names the group, whether its recorded identity was
+verified and the unfinished stage. The locked ledger writes `failed`, no result, and an optional `cleanup`
+barrier containing `{groupId?, startTime?}`. Restart/recovery must verify that group gone before clearing
+the barrier. An unverified group is inspected without signalling its PID; unknown ownership blocks recovery.
+Recovery verifies the recorded start time as
 a second guard if the launcher was paused. No supervisor daemon is installed. Verified process
 ownership currently requires Linux /proc; other platforms fail before starting Claude and can use
 manual revision. Temporary output is removed after reading or failure.

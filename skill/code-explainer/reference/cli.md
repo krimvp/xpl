@@ -1015,9 +1015,13 @@ reports 503. With `claude`, `POST /api/jobs` takes `{id: UUID, selectedRequestId
 non-interactive process at a time. Source and the installed skill are read-only; only the attempt-owned
 proposal file is writable. Commands, subagents, MCP and inherited hooks are disabled. Cancellation,
 supersession and timeout kill the child process group and discard unpublished output. Normal and error
-exits use the same verified teardown; the launcher reports the original CLI exit code without exiting
-first. Final job state and more work wait for all live group members to stop (at most two seconds).
-Cleanup failure stops scheduling and requires inspection/recovery. Service death
+exits use the same teardown in one post-spawn finally, including failed identity reads; the launcher reports
+the original CLI exit code without exiting first. One two-second deadline bounds identity checks, group
+drain and launcher exit. Inherited stream close cannot delay completion; teardown destroys pipes and
+releases the child handle after drain or deadline, so shutdown can exit. Cleanup failure writes a failed
+job with `JOB_PROCESS_CLEANUP`, its group/verification details and a durable scheduling barrier.
+Restart/recovery clears that barrier only after verifying the old group gone; an unverified group is never
+signalled by PID. Service death
 closes the attempt launcher's pipe and kills the group too. Before running Claude, the job records the
 group ID and Linux boot/start ticks under its attempt lock. Recovery verifies that identity, terminates
 the old group and waits before allowing retry; a reused PID is never signalled. Verified execution

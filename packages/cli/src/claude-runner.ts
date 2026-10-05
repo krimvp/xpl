@@ -90,129 +90,117 @@ export function claudeRunner(
         "Starting configured Claude Code; source is read-only and output awaits review.",
       );
       signal.throwIfAborted();
-      const text = await new Promise<string>((yes, no) => {
-        const child = spawn(
-          process.execPath,
-          [
-            "-e",
-            launcher,
-            "--",
-            "--print",
-            "--output-format",
-            "json",
-            "--no-session-persistence",
-            "--restricted",
-            "--permission-mode",
-            "dontAsk",
-            "--permission-prompts",
-            "none",
-            "--tools",
-            "Read,Glob,Grep,Write",
-            "--settings",
-            JSON.stringify(settings),
-            "--strict-mcp-config",
-            "--mcp-config",
-            '{"mcpServers":{}}',
-            "--disallowedTools",
-            "mcp__*",
-            "--add-dir",
-            root,
-            skillDir,
-          ],
-          {
-            cwd: directory,
-            env: ctx.env,
-            detached: process.platform !== "win32",
-            stdio: ["pipe", "pipe", "pipe", "pipe"],
-          },
-        );
-        let stdout = "",
-          stderr = "";
-        const life = child.stdio[3] as Duplex;
-        const closed = new Promise<void>((resolve) => child.once("close", () => resolve()));
-        const identityReady = new Promise<JobProcess | undefined>((resolve, reject) => {
-          child.once("spawn", () => {
-            void readJobProcess(child.pid!).then(resolve, reject);
-          });
-          child.once("error", () => resolve(undefined));
+      const child = spawn(
+        process.execPath,
+        [
+          "-e",
+          launcher,
+          "--",
+          "--print",
+          "--output-format",
+          "json",
+          "--no-session-persistence",
+          "--restricted",
+          "--permission-mode",
+          "dontAsk",
+          "--permission-prompts",
+          "none",
+          "--tools",
+          "Read,Glob,Grep,Write",
+          "--settings",
+          JSON.stringify(settings),
+          "--strict-mcp-config",
+          "--mcp-config",
+          '{"mcpServers":{}}',
+          "--disallowedTools",
+          "mcp__*",
+          "--add-dir",
+          root,
+          skillDir,
+        ],
+        {
+          cwd: directory,
+          env: ctx.env,
+          detached: process.platform !== "win32",
+          stdio: ["pipe", "pipe", "pipe", "pipe"],
+        },
+      );
+      let identity: JobProcess | undefined;
+      let tearingDown = false;
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      let abort = () => {};
+      let stdout = "",
+        stderr = "";
+      const life = child.stdio[3] as Duplex;
+      // All post-spawn setup and failures share this finally, including identity reads.
+      try {
+        const spawned = new Promise<void>((resolve, reject) => {
+          child.once("spawn", resolve);
+          child.once("error", reject);
         });
-        let finishing = false;
-        const finish = (code?: number | null, error?: Error) => {
-          if (finishing) return;
-          finishing = true;
-          void (async () => {
-            try {
-              const identity = await identityReady;
-              if (identity) await terminateJobProcess(identity);
-              else if (child.pid) child.kill("SIGKILL"); // No Claude starts without a recorded identity.
-              await closed;
-              if (error) no(error);
-              else if (code !== 0)
-                no(
-                  new CliError(
-                    failure(stderr + "\n" + stdout) +
-                      ` (Claude exit code ${code ?? "unavailable"}.)`,
-                  ),
-                );
-              else yes(stdout);
-            } catch (error) {
-              no(error);
-            } finally {
-              clearTimeout(timer);
-              signal.removeEventListener("abort", abort);
-            }
-          })();
-        };
-        const abort = () =>
-          finish(undefined, new CliError("Claude attempt cancelled; output discarded."));
-        const timer = setTimeout(
-          () =>
-            finish(
-              undefined,
-              new CliError(
-                `Claude timed out after ${timeoutMs} ms. Inspect provider/tool availability or increase service --job-timeout, then explicitly retry.`,
+        const ended = new Promise<number | null>((resolve, reject) => {
+          abort = () => reject(new CliError("Claude attempt cancelled; output discarded."));
+          signal.addEventListener("abort", abort, { once: true });
+          timer = setTimeout(
+            () =>
+              reject(
+                new CliError(
+                  `Claude timed out after ${timeoutMs} ms. Inspect provider/tool availability or increase service --job-timeout, then explicitly retry.`,
+                ),
               ),
-            ),
-          timeoutMs,
-        );
-        signal.addEventListener("abort", abort, { once: true });
-        child.stdout.on("data", (data: Buffer) => {
-          stdout += data.toString();
-          if (stdout.length > 1_000_000)
-            finish(
-              undefined,
-              new CliError("Claude diagnostic output exceeded 1 MB; output discarded."),
-            );
+            timeoutMs,
+          );
+          child.stdout!.on("data", (data: Buffer) => {
+            stdout += data.toString();
+            if (stdout.length > 1_000_000)
+              reject(new CliError("Claude diagnostic output exceeded 1 MB; output discarded."));
+          });
+          child.stderr!.on("data", (data: Buffer) => {
+            stderr = (stderr + data.toString()).slice(-8000);
+          });
+          child.stdin!.on("error", () => {});
+          child.on("error", (error: Error) => reject(new CliError(failure(error.message))));
+          child.on("exit", resolve);
+          let status = "";
+          life.on("data", (data: Buffer) => {
+            status += data.toString();
+            if (status.includes("\n")) {
+              try {
+                resolve((JSON.parse(status) as { code: number }).code);
+              } catch {
+                reject(new CliError("Claude launcher returned invalid exit status."));
+              }
+            }
+          });
+          life.on("error", () => {});
+          if (signal.aborted) abort();
         });
-        child.stderr.on("data", (data: Buffer) => {
-          stderr = (stderr + data.toString()).slice(-8000);
-        });
-        child.stdin.on("error", () => {}); // A failed spawn or early provider exit can close stdin first.
-        child.on("error", (error: NodeJS.ErrnoException) => {
-          finish(undefined, new CliError(failure(error.message)));
-        });
-        child.on("exit", (code) => finish(code));
-        let status = "";
-        life.on("data", (data: Buffer) => {
-          status += data.toString();
-          if (status.includes("\n")) finish((JSON.parse(status) as { code: number }).code);
-        });
-        life.on("error", () => {});
-        child.once("spawn", () => {
-          void (async () => {
-            const identity = await identityReady;
-            if (!identity)
-              throw new CliError("Claude launcher exited before ownership was recorded.");
-            if (finishing) return;
-            await started(identity);
-            signal.throwIfAborted();
-            if (finishing) return;
-            life.write("start");
-            child.stdin.end(prompt);
-          })().catch((error) => finish(undefined, new CliError(errorMessage(error))));
-        });
-        if (signal.aborted) abort();
-      });
+        // Race setup too: a stopped service never waits on a stalled identity read or lock.
+        const setup = (async () => {
+          await spawned;
+          identity = await readJobProcess(child.pid!);
+          if (tearingDown) throw new CliError("Claude startup ended; output discarded.");
+          if (!identity)
+            throw new CliError("Claude launcher exited before ownership was recorded.");
+          await started(identity);
+          signal.throwIfAborted();
+          if (tearingDown) throw new CliError("Claude startup ended; output discarded.");
+          life.write("start");
+          child.stdin!.end(prompt);
+          return ended;
+        })();
+        const code = await Promise.race([setup, ended]);
+        if (code !== 0)
+          throw new CliError(
+            failure(stderr + "\n" + stdout) + ` (Claude exit code ${code ?? "unavailable"}.)`,
+          );
+      } finally {
+        tearingDown = true;
+        clearTimeout(timer);
+        signal.removeEventListener("abort", abort);
+        await terminateJobProcess(identity ?? {}, child);
+      }
+      const text = stdout;
       signal.throwIfAborted();
       let data: unknown;
       try {

@@ -174,7 +174,7 @@ describe("durable job lifecycle (controlled runner only)", () => {
     },
   );
 
-  it("retains running history and stops scheduling when group cleanup fails", async () => {
+  it("records failed cleanup and stops scheduling until recovery verifies the group gone", async () => {
     const { ctx, request, instanceId } = await setup();
     const entered = deferred<void>();
     const finish = deferred<void>();
@@ -198,13 +198,20 @@ describe("durable job lifecycle (controlled runner only)", () => {
       finish.resolve();
       await expect.poll(() => jobs.availability.available).toBe(false);
       expect(jobs.availability.reason).toContain("Claude group still has live members");
-      expect((await jobs.list("demo")).map(({ state }) => state)).toEqual(["running", "queued"]);
+      expect((await jobs.list("demo")).map(({ state }) => state)).toEqual(["failed", "queued"]);
+      expect((await jobs.get("demo", first.id)).cleanup).toEqual({});
       expect(invocations).toBe(1);
-      expect((await jobs.retry("demo", first.id, 1)).state).toBe("running");
+      await expect(jobs.retry("demo", first.id, 1)).rejects.toThrow("Job scheduler stopped");
+      expect((await jobs.fence("demo", first.id, "cancelled")).cleanup).toEqual({});
       expect((await jobs.get("demo", second.id)).attempt).toBe(0);
       await expect(
         jobs.submit("demo", { id: randomUUID(), selectedRequestIds: [request.id] }),
       ).rejects.toThrow("Job scheduler stopped");
+      const ledger = readFile(ctx.root, ".explainer/service/jobs.json");
+      await expect(
+        openJobs(ctx, instanceId, async (job) => ({ revisionRunId: job.input.revisionRunId })),
+      ).rejects.toThrow("group identity unknown");
+      expect(readFile(ctx.root, ".explainer/service/jobs.json")).toBe(ledger);
     } finally {
       finish.resolve();
       await jobs.close();

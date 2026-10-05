@@ -119,223 +119,318 @@ describe("configured Claude adapter (stub executable, no provider)", () => {
     "service stop",
     "parent death",
     "recovery",
-  ])(
-    "drains the entire attempt group after %s before finalizing or starting more work",
-    async (guard) => {
-      const body = [
-        "const {spawn}=await import('node:child_process');",
-        "const active=(pid)=>{try{return !/\\) Z /.test(fs.readFileSync('/proc/'+pid+'/stat','utf8'));}catch{return false;}};",
-        "if(fs.existsSync(process.env.STUB_RETRY)){",
-        "const prior=JSON.parse(fs.readFileSync(process.env.STUB_PRIOR,'utf8'));",
-        "const capture=JSON.parse(fs.readFileSync(process.env.STUB_CAPTURE,'utf8'));",
-        "fs.writeFileSync(process.env.STUB_CAPTURE,JSON.stringify({...capture,overlap:[prior.pid,prior.grandchild].some(active)}));",
-        valid,
-        "}else{",
-        "const grandchild=spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{stdio:'ignore'});",
-        "const capture=JSON.parse(fs.readFileSync(process.env.STUB_CAPTURE,'utf8'));",
-        "fs.writeFileSync(process.env.STUB_CAPTURE,JSON.stringify({...capture,grandchild:grandchild.pid}));",
-        "grandchild.unref();",
-        ...(guard === "normal exit"
-          ? [valid, "process.exit(0);}"]
-          : guard === "rate-limit exit"
-            ? ["console.error('Rate limit 429');process.exit(2);}"]
-            : ["setInterval(()=>{},1000);}"]),
-      ].join("\n");
-      const { root, tooling, skillDir, ctx, request } = await setup(body);
-      unlinkSync(join(root, ".explainer/service/instance.json"));
-      const env = {
-        ...ctx.env,
-        PATH: tooling + ":" + process.env.PATH,
-        XPL_VIEWER_HTML: writeViewerStub(),
-        STUB_RETRY: join(tooling, "retry"),
-        STUB_PRIOR: join(tooling, "prior.json"),
-      };
-      const start = (recover = false) =>
-        spawn(
-          process.execPath,
-          [
-            "--import",
-            "tsx",
-            fileURLToPath(new URL("../src/main.ts", import.meta.url)),
-            "service",
-            "start",
-            "demo",
-            "--root",
-            root,
-            "--port",
-            "0",
-            "--backend",
-            "claude",
-            "--skill-dir",
-            skillDir,
-            "--job-timeout",
-            guard === "timeout" ? "1" : "30",
-            ...(recover ? ["--recover"] : []),
-          ],
-          { env, stdio: "ignore" },
-        );
-      const active = (pid: number) => {
-        try {
-          return !/\) Z /.test(readFile("/proc", String(pid) + "/stat"));
-        } catch {
-          return false;
-        }
-      };
-      const ready = async (pid: number) => {
-        await expect
-          .poll(
-            () => {
-              try {
-                const instance = readJson(root, ".explainer/service/instance.json");
-                return instance.pid === pid && instance.state === "running" ? instance.url : null;
-              } catch {
-                return null;
-              }
-            },
-            { timeout: 10000 },
-          )
-          .toMatch(/^http:\/\/127\.0\.0\.1:/);
-        return readJson(root, ".explainer/service/instance.json").url as string;
-      };
-      const service = start();
-      let recovered: ReturnType<typeof start> | undefined;
-      let capture: { pid: number; grandchild: number } | undefined;
-      let groupId: number | undefined;
+    "detached inherited pipe",
+    "identity read failure",
+    "cleanup deadline",
+    "shutdown cleanup deadline",
+  ])("bounds attempt cleanup after %s and fences any unsafe retry", async (guard) => {
+    const body = [
+      "const {spawn}=await import('node:child_process');",
+      "const active=(pid)=>{try{return !/\\) Z /.test(fs.readFileSync('/proc/'+pid+'/stat','utf8'));}catch{return false;}};",
+      "if(fs.existsSync(process.env.STUB_RETRY)){",
+      "const prior=JSON.parse(fs.readFileSync(process.env.STUB_PRIOR,'utf8'));",
+      "const capture=JSON.parse(fs.readFileSync(process.env.STUB_CAPTURE,'utf8'));",
+      "fs.writeFileSync(process.env.STUB_CAPTURE,JSON.stringify({...capture,overlap:[prior.pid,prior.grandchild].some(active)}));",
+      valid,
+      "}else{",
+      `const grandchild=spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{stdio:${guard === "detached inherited pipe" ? "'inherit',detached:true" : "'ignore'"}});`,
+      "const capture=JSON.parse(fs.readFileSync(process.env.STUB_CAPTURE,'utf8'));",
+      "fs.writeFileSync(process.env.STUB_CAPTURE,JSON.stringify({...capture,grandchild:grandchild.pid}));",
+      "grandchild.unref();",
+      ...(guard === "normal exit"
+        ? [valid, "process.exit(0);}"]
+        : guard === "rate-limit exit"
+          ? ["console.error('Rate limit 429');process.exit(2);}"]
+          : ["setInterval(()=>{},1000);}"]),
+    ].join("\n");
+    const { root, tooling, skillDir, ctx, request } = await setup(body);
+    unlinkSync(join(root, ".explainer/service/instance.json"));
+    // Inject the external filesystem failure in the actual service process, not our own modules.
+    const preload = writeFile(
+      tooling,
+      "process-failure.mjs",
+      [
+        "import fs from 'node:fs/promises';import {writeFileSync,existsSync} from 'node:fs';",
+        "import {syncBuiltinESMExports} from 'node:module';",
+        "const original=fs.readFile;let launcher;",
+        "fs.readFile=async function(path,...args){",
+        "const match=String(path).match(/^\\/proc\\/(\\d+)\\/stat$/);",
+        "if(process.env.STUB_IDENTITY_FAILURE && match && Number(match[1])!==process.pid && !launcher){launcher=Number(match[1]);writeFileSync(process.env.STUB_LAUNCHER,JSON.stringify({pid:launcher,grandchild:0}));}",
+        "if(path==='/proc/sys/kernel/random/boot_id' && launcher && !existsSync(process.env.STUB_RETRY)){const error=new Error('EACCES: injected boot identity read failure');error.code='EACCES';throw error;}",
+        "if(path==='/proc/sys/kernel/random/boot_id' && existsSync(process.env.STUB_CLEANUP_HANG))return new Promise(()=>{});",
+        "return original.call(this,path,...args);};syncBuiltinESMExports();",
+      ].join("\n"),
+    );
+    const env = {
+      ...ctx.env,
+      PATH: tooling + ":" + process.env.PATH,
+      XPL_VIEWER_HTML: writeViewerStub(),
+      STUB_RETRY: join(tooling, "retry"),
+      STUB_PRIOR: join(tooling, "prior.json"),
+      STUB_LAUNCHER: join(tooling, "launcher.json"),
+      STUB_CLEANUP_HANG: join(tooling, "cleanup-hang"),
+      ...(guard === "identity read failure" ? { STUB_IDENTITY_FAILURE: "1" } : {}),
+    };
+    const start = (recover = false) =>
+      spawn(
+        process.execPath,
+        [
+          "--import",
+          preload,
+          "--import",
+          "tsx",
+          fileURLToPath(new URL("../src/main.ts", import.meta.url)),
+          "service",
+          "start",
+          "demo",
+          "--root",
+          root,
+          "--port",
+          "0",
+          "--backend",
+          "claude",
+          "--skill-dir",
+          skillDir,
+          "--job-timeout",
+          ["timeout", "detached inherited pipe", "cleanup deadline"].includes(guard) ? "1" : "30",
+          ...(recover ? ["--recover"] : []),
+        ],
+        { env, stdio: "ignore" },
+      );
+    const active = (pid: number) => {
       try {
-        const url = await ready(service.pid!);
-        const id = randomUUID();
-        const response = await fetch(new URL("/api/jobs", url), {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ id, selectedRequestIds: [request.id] }),
-        });
-        expect(response.status).toBe(200);
-        await expect
-          .poll(
-            () => {
-              try {
-                return readJson(tooling, "capture.json").grandchild;
-              } catch {
-                return null;
-              }
-            },
-            { timeout: 10000 },
-          )
-          .toBeTypeOf("number");
-        capture = readJson(tooling, "capture.json");
-        writeFile(tooling, "prior.json", JSON.stringify(capture));
-        const attempt = readJson(root, ".explainer/service/jobs.json").jobs[0];
-        groupId = attempt.owner.process?.groupId ?? capture!.pid;
-        let currentUrl = url;
-        const crashed = guard === "parent death" || guard === "recovery";
-        if (crashed) {
-          if (guard === "recovery") process.kill(groupId!, "SIGSTOP");
-          const exited = once(service, "exit");
-          service.kill("SIGKILL");
-          await exited;
-          if (guard === "parent death") {
-            await expect
-              .poll(() => [active(capture!.pid), active(capture!.grandchild)])
-              .toEqual([false, false]);
-          }
-          recovered = start(true);
-          currentUrl = await ready(recovered.pid!);
-        } else if (guard === "cancelled" || guard === "superseded") {
-          const fenced = await fetch(
-            new URL(
-              "/api/jobs/" + id + "/" + (guard === "cancelled" ? "cancel" : "supersede"),
-              url,
-            ),
-            {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: "{}",
-            },
-          );
-          expect(fenced.status).toBe(200);
+        return !/\) Z /.test(readFile("/proc", String(pid) + "/stat"));
+      } catch {
+        return false;
+      }
+    };
+    const ready = async (pid: number) => {
+      await expect
+        .poll(
+          () => {
+            try {
+              const instance = readJson(root, ".explainer/service/instance.json");
+              return instance.pid === pid && instance.state === "running" ? instance.url : null;
+            } catch {
+              return null;
+            }
+          },
+          { timeout: 10000 },
+        )
+        .toMatch(/^http:\/\/127\.0\.0\.1:/);
+      return readJson(root, ".explainer/service/instance.json").url as string;
+    };
+    const service = start();
+    let recovered: ReturnType<typeof start> | undefined;
+    let capture: { pid: number; grandchild: number } | undefined;
+    let groupId: number | undefined;
+    try {
+      const url = await ready(service.pid!);
+      const id = randomUUID();
+      const response = await fetch(new URL("/api/jobs", url), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, selectedRequestIds: [request.id] }),
+      });
+      expect(response.status).toBe(200);
+      const captureFile = guard === "identity read failure" ? "launcher.json" : "capture.json";
+      await expect
+        .poll(
+          () => {
+            try {
+              return readJson(tooling, captureFile).grandchild;
+            } catch {
+              return null;
+            }
+          },
+          { timeout: 10000 },
+        )
+        .toBeTypeOf("number");
+      capture = readJson(tooling, captureFile);
+      writeFile(tooling, "prior.json", JSON.stringify(capture));
+      const attempt = readJson(root, ".explainer/service/jobs.json").jobs[0];
+      groupId = attempt.owner.process?.groupId ?? capture!.pid;
+      let currentUrl = url;
+      const crashed = guard === "parent death" || guard === "recovery";
+      if (guard.includes("cleanup deadline")) {
+        writeFile(tooling, "cleanup-hang", "hold the process identity read during cleanup");
+        process.kill(groupId!, "SIGSTOP");
+      }
+      if (crashed) {
+        if (guard === "recovery") process.kill(groupId!, "SIGSTOP");
+        const exited = once(service, "exit");
+        service.kill("SIGKILL");
+        await exited;
+        if (guard === "parent death") {
+          await expect
+            .poll(() => [active(capture!.pid), active(capture!.grandchild)])
+            .toEqual([false, false]);
         }
-        if (guard === "service stop") {
-          const exited = once(service, "exit");
-          const stopped = await fetch(new URL("/api/service/stop", url), {
+        recovered = start(true);
+        currentUrl = await ready(recovered.pid!);
+      } else if (guard === "cancelled" || guard === "superseded") {
+        const fenced = await fetch(
+          new URL("/api/jobs/" + id + "/" + (guard === "cancelled" ? "cancel" : "supersede"), url),
+          {
             method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: "Bearer " + readJson(root, ".explainer/service/instance.json").token,
-            },
+            headers: { "Content-Type": "application/json" },
             body: "{}",
-          });
-          expect(stopped.status).toBe(200);
-          await exited;
-          recovered = start();
-          currentUrl = await ready(recovered.pid!);
-        }
-        const terminal =
-          crashed || guard === "service stop"
-            ? "interrupted"
-            : guard === "normal exit"
-              ? "completed"
-              : guard === "cancelled" || guard === "superseded"
-                ? guard
-                : "failed";
+          },
+        );
+        expect(fenced.status).toBe(200);
+      }
+      if (guard === "service stop" || guard === "shutdown cleanup deadline") {
+        const stopped = await fetch(new URL("/api/service/stop", url), {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: "Bearer " + readJson(root, ".explainer/service/instance.json").token,
+          },
+          body: "{}",
+        });
+        expect(stopped.status).toBe(200);
         await expect
-          .poll(() => readJson(root, ".explainer/service/jobs.json").jobs[0].state, {
-            timeout: 10000,
-          })
-          .toBe(terminal);
-        // A terminal receipt must already be drained; polling for death here hides early finalization.
+          .poll(() => service.exitCode ?? service.signalCode, { timeout: 5000 })
+          .not.toBeNull();
+        if (guard === "shutdown cleanup deadline") {
+          const failed = readJson(root, ".explainer/service/jobs.json").jobs[0];
+          expect(failed.state).toBe("failed");
+          expect(failed.cleanup).toEqual(failed.owner.process);
+          expect(active(groupId!)).toBe(true);
+          unlinkSync(join(tooling, "cleanup-hang"));
+        }
+        recovered = start();
+        currentUrl = await ready(recovered.pid!);
+      }
+      const terminal =
+        crashed || guard === "service stop"
+          ? "interrupted"
+          : guard === "normal exit"
+            ? "completed"
+            : guard === "cancelled" || guard === "superseded"
+              ? guard
+              : "failed";
+      await expect
+        .poll(() => readJson(root, ".explainer/service/jobs.json").jobs[0].state, {
+          timeout: 10000,
+        })
+        .toBe(terminal);
+      // A terminal receipt must already be drained; polling for death here hides early finalization.
+      if (guard === "cleanup deadline") {
+        expect(active(groupId!)).toBe(true);
+      } else if (guard === "detached inherited pipe") {
+        expect(active(capture!.pid)).toBe(false);
+        expect(active(capture!.grandchild)).toBe(true); // It escaped the group; held pipes cannot delay teardown.
+        process.kill(capture!.grandchild, "SIGKILL");
+        await expect.poll(() => active(capture!.grandchild)).toBe(false);
+      } else {
         expect([active(capture!.pid), active(capture!.grandchild)]).toEqual([false, false]);
-        const finished = readJson(root, ".explainer/service/jobs.json").jobs[0];
+      }
+      const finished = readJson(root, ".explainer/service/jobs.json").jobs[0];
+      if (guard === "identity read failure") {
+        expect(finished.owner.process).toBeUndefined();
+        expect(finished.error).toContain("EACCES");
+        expect(existsSync(join(tooling, "capture.json"))).toBe(false); // Claude never started.
+      } else {
         expect(finished.owner.process).toEqual({
           groupId,
           startTime: expect.stringMatching(/^[a-f0-9-]{36}:\d+$/),
         });
-        if (guard === "rate-limit exit") {
-          expect(finished.error).toContain("Claude is rate limited");
-          expect(finished.error).toContain("Claude exit code 2");
-        }
-        if (guard === "timeout") expect(finished.error).toContain("timed out after 1000 ms");
-        writeFile(tooling, "retry", "retry");
-        const retryable = terminal === "failed" || terminal === "interrupted";
-        const nextId = retryable ? id : randomUUID();
-        const retry = await fetch(
-          new URL(retryable ? "/api/jobs/" + id + "/retry" : "/api/jobs", currentUrl),
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(
-              retryable ? { expectedAttempt: 1 } : { id: nextId, selectedRequestIds: [request.id] },
-            ),
-          },
-        );
-        expect(retry.status).toBe(200);
-        const next = () =>
-          readJson(root, ".explainer/service/jobs.json").jobs.find(
-            (j: { id: string }) => j.id === nextId,
-          );
-        await expect.poll(() => next().state, { timeout: 10000 }).toBe("completed");
-        expect(readJson(tooling, "capture.json").overlap).toBe(false);
-        expect(next().attempt).toBe(retryable ? 2 : 1);
-        expect(readJson(root, ".explainer/requests.json")[0].outcome.status).toBe("pending");
-      } finally {
-        for (const child of [service, recovered])
-          if (child && child.exitCode === null && child.signalCode === null) {
-            const exited = once(child, "exit");
-            child.kill("SIGKILL");
-            await exited;
-          }
-        // Also clean up the orphan on the red run, including a stopped process.
-        for (const pid of [groupId, capture?.pid, capture?.grandchild])
-          if (pid) {
-            try {
-              process.kill(-pid, "SIGKILL");
-            } catch {}
-            try {
-              process.kill(pid, "SIGKILL");
-            } catch {}
-          }
       }
-    },
-  );
+      if (guard === "cleanup deadline") {
+        expect(finished.error).toContain("JOB_PROCESS_CLEANUP");
+        expect(finished.error).toContain(String(groupId));
+        expect(finished.error).toContain("verified");
+        expect(finished.cleanup).toEqual(finished.owner.process);
+        const blocked = await fetch(new URL("/api/jobs/" + id + "/retry", currentUrl), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ expectedAttempt: 1 }),
+        });
+        expect(blocked.status).toBe(503);
+        expect(readJson(root, ".explainer/service/jobs.json").jobs[0].attempt).toBe(1);
+        const stopped = await fetch(new URL("/api/service/stop", currentUrl), {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: "Bearer " + readJson(root, ".explainer/service/instance.json").token,
+          },
+          body: "{}",
+        });
+        expect(stopped.status).toBe(200);
+        await expect
+          .poll(() => service.exitCode ?? service.signalCode, { timeout: 5000 })
+          .not.toBeNull();
+        unlinkSync(join(tooling, "cleanup-hang"));
+        recovered = start(true);
+        currentUrl = await ready(recovered.pid!);
+        expect([active(groupId!), active(capture!.pid), active(capture!.grandchild)]).toEqual([
+          false,
+          false,
+          false,
+        ]);
+        expect(readJson(root, ".explainer/service/jobs.json").jobs[0].cleanup).toBeUndefined();
+      }
+      if (guard === "rate-limit exit") {
+        expect(finished.error).toContain("Claude is rate limited");
+        expect(finished.error).toContain("Claude exit code 2");
+      }
+      if (guard === "timeout") expect(finished.error).toContain("timed out after 1000 ms");
+      writeFile(tooling, "retry", "retry");
+      const retryable = terminal === "failed" || terminal === "interrupted";
+      const nextId = retryable ? id : randomUUID();
+      const retry = await fetch(
+        new URL(retryable ? "/api/jobs/" + id + "/retry" : "/api/jobs", currentUrl),
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(
+            retryable ? { expectedAttempt: 1 } : { id: nextId, selectedRequestIds: [request.id] },
+          ),
+        },
+      );
+      expect(retry.status).toBe(200);
+      const next = () =>
+        readJson(root, ".explainer/service/jobs.json").jobs.find(
+          (j: { id: string }) => j.id === nextId,
+        );
+      await expect.poll(() => next().state, { timeout: 10000 }).toBe("completed");
+      expect(readJson(tooling, "capture.json").overlap).toBe(false);
+      expect(next().attempt).toBe(retryable ? 2 : 1);
+      expect(readJson(root, ".explainer/requests.json")[0].outcome.status).toBe("pending");
+      // In particular, a failed identity read must not leave an unstarted launcher holding stop open.
+      const runningService = recovered ?? service;
+      const stopped = await fetch(new URL("/api/service/stop", currentUrl), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: "Bearer " + readJson(root, ".explainer/service/instance.json").token,
+        },
+        body: "{}",
+      });
+      expect(stopped.status).toBe(200);
+      await expect
+        .poll(() => runningService.exitCode ?? runningService.signalCode, { timeout: 5000 })
+        .not.toBeNull();
+    } finally {
+      for (const child of [service, recovered])
+        if (child && child.exitCode === null && child.signalCode === null) {
+          const exited = once(child, "exit");
+          child.kill("SIGKILL");
+          await exited;
+        }
+      // Also clean up the orphan on the red run, including a stopped process.
+      for (const pid of [groupId, capture?.pid, capture?.grandchild])
+        if (pid) {
+          try {
+            process.kill(-pid, "SIGKILL");
+          } catch {}
+          try {
+            process.kill(pid, "SIGKILL");
+          } catch {}
+        }
+    }
+  });
 
   it("writes a validated reviewable revision without changing the guide or outcomes", async () => {
     const { root, ctx, skillDir, tooling, instanceId, request } = await setup(valid);
