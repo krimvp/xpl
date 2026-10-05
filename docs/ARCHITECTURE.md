@@ -219,12 +219,15 @@ Conventions (all packages):
 17. `SequenceView.type` may be `"flow"`: the same fields as a sequence, drawn as stages and decisions. A step
     adds `shape?: "stage" | "decision" | "terminal"` and `next?: { step, label? }[]` (labelled branches to
     steps of the same view; without `next` a step goes on to the next one, a `terminal` ends a path). A
-    sequence view can be drawn as a flow too, in reading order (`processFlow`, `projected: true`). A `next`
-    link may add `kind: "recurse"` (the steps from an earlier step run again, one level down; a step with only
+    sequence view can be projected into stages by `processFlow` (`projected: true`); the viewer keeps its
+    sequence diagram in Read and Explore. A `next` link may add `kind: "recurse"` (the steps from an earlier
+    step run again, one level down; a step with only
     recurse links still goes on to the next one) or `kind: "return"` (back up one level, to `step`, or with no `step` to the caller; a
     terminal may have these). `SequenceView.layout?: "code-first" | "diagram"` overrides `codeFirstView`
-    (viewer `workspace.ts`: code first when every step's code is in one file). A flow step whose first anchor
-    is not inside its `from` gets a warning (a `return` step whose code is in `to` excepted).
+    (viewer `workspace.ts`: at least three steps, each with current-code anchors all in one file). Read
+    applies this layout only to flow views; Explore also accepts explicit `code-first` on sequences (§6).
+    A flow step whose first anchor is not inside its `from` gets a warning (a `return` step whose code is
+    in `to` excepted).
     `Edge.via?: ElementId[]`: what an edge passes through without a box; an llm edge's evidence is per hop,
     and a hop the index shows (`hopRefs`) needs no anchors.
 18. `SymbolIndex` adds `resources?: ResourceReference[]`: files that code loads or discovers by a literal path
@@ -1790,7 +1793,52 @@ Managed services expose `GET /api/jobs`, `GET /api/jobs/<UUID>` and `POST /api/j
 Routes use the existing Host, attachment, JSON, origin and size guards and filter to the attached guide.
 No acceptance route exists. Backend `none` reports 503 for submission/retry; history and cancellation
 remain usable. Controlled runners prove lifecycle behavior only. 39C adds progress/review UI and fenced
-acceptance through the existing revision commit/outcome recovery. Answer scopes remain later work.
+acceptance through the existing revision commit/outcome recovery. Headless answer jobs are described below;
+question/history UI remains 40B.
+
+**Snapshot-bound answers (40A).** `cli/answers.ts` captures a saved `explain` feedback request with a
+non-empty question in `note`. The request keeps its stable feedback ID, element/range and original
+`ArtifactIdentity`. Selection follows the live server's current index and re-resolved guide. It also accepts
+the stored guide identity for current offline feedback; it never rebinds an older request. Selection refuses
+stale or changed context and invalid selected ranges. Under the guide lock it records the guide, current index
+path, text/hashes for guide-referenced and question-focused head files, and base files named by change records, base anchors or the selected range. Head text must match the index; base text comes from
+its recorded git commit, with rename mapping. A final freshness check rejects capture across a source edit.
+Inputs are limited to 5 MB; source arrays to 10,000 files. Selection reuses `referencedFiles` and `codeFocus`.
+No revision journal is opened for an answer.
+
+An `AnswerJob` shares the durable job ledger, scheduler, process ownership and attempt fences. Its scope
+kind is `answer`; input is `{expected, index, request, guide, sources}`. Revision history APIs keep revision
+jobs separate. `POST /api/answers` takes `{id: UUID, requestId}`; GET collection/item and POST
+`/<UUID>/<retry|cancel|supersede>` use the same attachment/loopback guards and retry baseline as jobs.
+Only a configured answer runner accepts new work. Frozen questions can finish or retry after source or
+explanation changes; `contextReason` reports the current difference without changing the original input.
+
+Untrusted answer output is exactly `{text, references}`. Each reference is `{file, side, fromLine,
+toLine, quote}`: positive inclusive lines and an exact complete-line excerpt from recorded head/base text.
+Missing files, out-of-bounds ranges and invented or wrong-side quotes fail the job. Extra output fields,
+including patches, are refused. These are source excerpts, not precise/heuristic call-graph facts.
+A completed receipt includes the job ID, request ID, original identity, timestamp, text, references and
+only the cited source files/text/hashes. Reload revalidates evidence against the job's frozen source too.
+
+`FeedbackRequest.answers` is optional in `code-explainer/feedback@1`. Existing exports remain readable.
+Parsing/import rechecks source hashes, exact excerpts, original request identity and duplicate answer IDs.
+Merging unions immutable answers by ID independently of outcome revisions; conflicting same-ID answers
+are refused, and exports without history never erase saved answers. Returning an answer leaves feedback
+pending and never changes the guide, user fields or author outcomes. Optional guide changes use the
+existing explicit `xpl revise` review/acceptance path; answer output cannot smuggle a patch into it.
+
+Every request-store write globally merges all requests under the lock, then validates the result with the
+reader's parser. Answer IDs belong to one request across the store. A merge exceeding 1,000 answers for a
+request fails without changing the store; history is never truncated or ordered by timestamps.
+
+Answer completion validates this prospective store before publishing a result receipt. With the ledger
+and request locks held, the completed receipt is written before mirroring history. Overflow or ID ownership
+conflicts leave the stored history and result receipt unchanged and fail the job. Startup and answer-history
+reads replay missing mirrors, so interruption between writes cannot lose or duplicate
+an answer. Concurrent new feedback and newer author outcomes survive this merge. Cancellation or
+supersession before completion fences late output; completed answer history is immutable. Disconnected
+submission retains ordinary pending feedback for the next explicit offline iteration. The question UI,
+progress controls, context warnings and browser interaction proof remain 40B.
 
 **Configured Claude runner (39B).** `cli/claude-runner.ts` is the single process adapter behind `JobRunner`.
 Explicit `service --backend claude` selects it. The saved `--skill-dir` identifies a verified managed
@@ -1803,13 +1851,14 @@ recovery message. No keys, accounts, provider setup or hosted xpl backend are cr
 
 Each invocation uses Claude Code print/JSON mode, `--restricted`, `dontAsk`, no session persistence,
 a read/Glob/Grep/Write tool list, empty MCP configuration and disabled inherited hooks. It starts in an
-xpl-owned temporary directory containing the frozen revision input. Source and the installed skill are
+xpl-owned temporary directory containing frozen revision or question input. Source and the installed skill are
 additional read directories with explicit Edit deny rules. Only an exact absolute Edit permission for
-`proposal.json` permits the Write tool; Claude uses Edit rules for all file modifications. Shell, agents
-and MCP tools are unavailable. The prompt reads the installed skill and asks for ordinary per-request
-patches, never applies or accepts them. Output must be a bounded regular file with one entry per selected
-request. A per-attempt Node launcher holds a service pipe: closing the pipe, including service death,
-kills the whole group. The launcher starts Claude only after receiving the service's durable-ownership
+`proposal.json` (or `answer.json`) permits the Write tool; Claude uses Edit rules for all file modifications. Shell, agents
+and MCP tools are unavailable. For revisions, the prompt reads the installed skill and asks for ordinary
+per-request patches with one output entry per selected request. For answers, it asks for `{text, references}`
+with exact excerpts from frozen head/base source. Neither invocation applies or accepts patches. Output
+must be a bounded regular file. A per-attempt Node launcher holds a service pipe: closing the pipe, including
+service death, kills the whole group. The launcher starts Claude only after receiving the service's durable-ownership
 acknowledgement. It remains alive after Claude exits, reporting the original exit code on that pipe.
 From launcher spawn, one `try/finally` owns teardown, including failed identity reads. Normal/error exit,
 timeout, cancellation and recovery kill the verified group and scan Linux /proc until no live member
@@ -2304,18 +2353,21 @@ status stays in the sticky Save/Cancel bar, including the disabled Save reason.
 - **Sequence view:** lifelines, one row per step (`call` solid, `return` dashed, `async` open head), self-calls
   as loops, frames (`loop`/`alt`/`opt`/`par`) as labelled rectangles around their steps, nested by
   `resolveFrames`. A step's hit area covers its label and arrow. When the view has moved down, a copy of the
-  participant names stays at the top of the pane (`sticky-heads`).
+  participant names stays at the top of the pane (`sticky-heads`). The Read-mode Flow tab uses this same
+  renderer for sequence views, matching the Guide picture and Explore.
 - **Flow view:** `processFlow` (§4.8) laid out by the same layered layout, top to bottom: stages as boxes, decisions as diamonds,
   terminals, and the labelled `next` branches. A box shows the step's label large and, under it, the actor:
   the step's `from`, plus "→ B" when a stage hands work to another part and that fits (`stageActor`); a
   decision or a terminal shows the actor alone, and so does a step inside one part (the Guide and the details
-  say "inside X", never "X → X"). A sequence view in the Flow tab is drawn the same way, in reading order,
-  with a note that says so. A flow never zooms below 11 px text (`FLOW_READABLE_ZOOM`, Read's start and the
+  say "inside X", never "X → X"). A flow never zooms below 11 px text (`FLOW_READABLE_ZOOM`, Read's start and the
   floor of "Fit"). Recurse and return links are dashed and purple, with "one level down" / "up one level"
   after their label; a link of a stage to itself is a loop on its right side; labels are drawn after all
-  lines. A code-first view (`codeFirstView`) puts the code in the main pane (Read: the flow is a narrow
+  lines. A code-first view (`codeFirstView`) puts the code in the main pane (Read: a flow view gets a narrow
   outline column; Explore: the diagram column is narrow) and the outline keeps the caret's step (else the
-  selection) near its middle (`PanZoom.revealMargin`).
+  selection) near its middle (`PanZoom.revealMargin`). Read keeps sequence views in the diagram pane,
+  regardless of `layout`; "Show source" opens their linked code. Explore narrows a sequence's diagram column
+  only for explicit `layout: "code-first"`, keeping its lifelines, arrows and frames without a
+  caret-following process outline. One-file sequences otherwise keep Explore's usual diagram layout.
 - **Selection and code focus:** clicking any element (node, edge, stub, step, concept) selects it; the editors
   show the code focus (§4.5), one pane per focused file (a file opened from the tree or an anchor row first,
   then the step's `primary`, then focus order; at most 10 panes, the rest are listed): lines carry `xpl-hl`

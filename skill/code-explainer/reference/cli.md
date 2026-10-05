@@ -1111,6 +1111,22 @@ not create a second proposal format or overwrite a name. Service-owned journals 
 Controlled executables prove adapter/lifecycle failures only; a real installed Claude job proves the
 provider integration. `claude --version` does not establish authentication.
 
+Headless answers use `POST /api/answers` with `{id: UUID, requestId}` for a saved `explain` request with
+its question in `note`. GET collection/item and POST `/<UUID>/<retry|cancel|supersede>` reuse job guards and
+`expectedAttempt`. The worker freezes the guide, identity and guide/question head/base source (5 MB maximum).
+Claude writes only `{text, references:[{file, side, fromLine, toLine, quote}]}`; every complete-line quote
+must match recorded source exactly. Invalid evidence or a patch field fails the job. Returning an answer
+never edits the guide or records a revision outcome. Use ordinary `xpl revise` for optional guide changes.
+
+Completed answer jobs retain the original source/explanation identity and report `contextReason` after
+source or guide changes. Reload replays the completed receipt into optional `FeedbackRequest.answers`;
+feedback export/import unions history by stable answer ID independently of outcome revisions. Conflicting
+answer content or invalid imported evidence is refused; an older export cannot erase history. Each answer
+ID belongs to one question. Imports or completions exceeding 1,000 answers for a question fail without
+changing history or publishing a result receipt; saved answers are never truncated. Without an
+answer backend the request stays pending for `/code-explainer feedback`. Question/history UI is 40B;
+this contract is headless and does not change the existing viewer's feedback controls.
+
 `service start --watch` opts this start into metadata polling and coherent full rebuilds. Unchanged polls
 read no source/configuration content. Changed inputs trigger full capture, including ignored configuration
 chains read by the resolver regardless of filename, local configuration declared by enabled semantic
