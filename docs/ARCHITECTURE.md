@@ -1212,6 +1212,31 @@ that another author may have enriched. Existing broken anchors on the edited ite
 
 ### 4.8 Also in core
 
+- `query.ts`: `query(index, getTextOrCache, options)` searches retained symbol names, supplied source
+  text, guide metadata, concepts, tours and tour/flow/sequence steps. Source results carry the first match
+  on each line as a 1-based inclusive UTF-16 range, enclosing element ID and symbol-relative offset.
+  A zero-width regex match names the whole line. Symbols carry their indexed declaration range. Guide
+  results carry a catalog key and the guide's index commit, with stable element/tour/step/view IDs;
+  tour steps also carry their zero-based position and focus IDs. These are navigation targets, not URLs
+  or newly verified anchors. `limit` defaults to 50; 0 returns all. Totals count before limiting.
+  Code source comes first, then config, then other text; retained symbols follow, then supplied guide
+  context in catalog order. Literal search keeps lower-case substring semantics; regex uses JavaScript.
+
+  Query scope separates the index commit and text origin (`working-tree` or `supplied`), all indexed
+  paths, selected paths, searched paths and unavailable text. It records retained/original symbol and
+  reference counts plus the original `analysis` reports (absent means unknown). Reports still describe
+  the original run after pruning; they do not establish completeness of retained symbols. A failed or
+  unsupported symbol provider does not prevent source search. An empty result cannot establish absence
+  in unavailable text, missing analysis or pruned symbols. Only indexed paths are read through `GetText`;
+  core performs no filesystem, service or network access. Head/supplied text is searched; base text is not.
+
+  `guideCatalog(guides)` projects title, audience, distinct view questions/roots, source/index commits
+  and optional change base/head from supplied explainers. A change record marks a change guide; a
+  question marks a question guide; otherwise a repo root marks a repository guide, another recorded
+  root a subsystem guide, and no recorded view scope is unknown. Filenames never determine scope.
+  Local and exported callers supply their own stable keys and available explainers. This contract does
+  not change `ViewerBundle`; the viewer search, guide picker and exported navigation follow in #35B.
+
 - `implementations.ts`: `implementationsOf(index, id)` / `implementedBy(index, id)`: who implements an
   interface (or one of its methods) and which interface member a method implements, from type-level
   `implements` references (TS clauses, Go's inferred satisfaction) matched to members by name (a Go method
@@ -1273,6 +1298,7 @@ stdout (a rejection exits 1); fatal errors (`error: …`) and warnings (`warning
 | `xpl show <id> [--refs] [--context n] [--lines a-b] [--max-lines n]` | code with 0-based offsets relative to the symbol (the numbers spans use); dirs and the repo list children; `--refs` appends outgoing and incoming references with `+offset`. `xpl show --at base <path> [--lines a-b] [--explainer name]`: a changed file as it was before the change the explainer records, with the offsets a base anchor's span uses (from line 1) and `-` on the lines the change removes or rewrites; paths only (a symbol id is a usage error); `--explainer` picks the explainer when several record a change |
 | `xpl refs <id> [--in\|--out] [--kind k] [--depth n] [--max-children n] [--limit n] [--tests]` | call/reference hierarchy with sites; hops through interfaces as `impl` lines and through base classes (TS, JS, Python) as `override` lines; test doubles and test subclasses hidden unless `--tests`; a subtree is printed once (later occurrences: `(expanded above)`), at most `--max-children` (default 15) references under a line of a hierarchy (`... +8 more`); `--kind read` finds the readers of a variable or field |
 | `xpl search <pattern> [--regex] [-i] [--limit n] [--under <dir\|glob>] [--code]` | text hits over the working tree with enclosing symbol id and offset; code files first, then config, then docs (`--code`: code only); `--under` keeps the search in a dir, file, symbol or glob |
+| `xpl guides` | local guide metadata by title, recorded view questions, audience and source/index snapshot; no index or service required; unreadable/invalid/escaping guides are separate errors, exit 1; no guides is exit 0 |
 | `xpl new <name> [--title t] [--repo r] [--url u]` | create `.explainer/<name>.explainer.json` bound to the index; never overwrites; repo name from `--repo`, else `package.json`, `go.mod`, `pyproject.toml`, git remote, directory name |
 | `xpl apply <explainer> <patch.json\|-> [--actor llm\|user] [--dry-run]` | §4.7; prints every issue of a rejected patch at once; atomic; `--help` summarises the patch format |
 | `xpl validate <explainer> [--lenient]` | §4.6 |
@@ -1366,6 +1392,23 @@ outside tests with its lines, callers (at most 8 listed, `--json` has all), call
 and tests, the changed lines outside any symbol, the test files the change touches with their new and changed
 tests, and the symbols with no test. Without a range it re-prints the analysis of the stored record. `--json`:
 `{ ok, path, written, change, analysis }`.
+
+`xpl search` delegates matching, source ordering, line counts and symbol attribution to core `query`.
+CLI `--under` still resolves targets and globs with suggestions; CLI text comes from the working tree.
+Its existing hit JSON fields remain unchanged. `--json` adds `scope` from the pure query; unavailable
+source paths also produce a warning. Text search does not require successful symbol analysis.
+
+`repo.ts` discovers concrete `.explainer/*.explainer.json` paths. `listExplainerNames` derives keys
+from those paths; `loadRepositoryGuides` checks each canonical boundary and reads that exact file,
+without resolving keys through the command's name-or-path resolver. Loading requires no index and
+does not gate evidence on catalog metadata. `xpl guides` checks metadata and reports descriptors;
+loadable files with invalid metadata stay listed by ID/path with `metadataError`, also in `errors`.
+Empty string titles stay recorded as empty. Directory read failures remain failures, and per-guide
+read/metadata errors are separate from a valid empty library. No readiness/freshness check or write occurs.
+`inventory.ts` uses the same loader for `status --all` and watch attention reports, then re-resolves
+and validates copies. Its moved, drifted and missing classifications and report fields stay unchanged.
+Implicit `show --at base` selection uses this loader too, so a guide name ending in `.json` cannot
+select a different repository JSON file. Unreadable guides still fail selection.
 
 `core/src/languages.ts` classifies every `FileLanguage` with a code display name or `undefined` for config
 and other text. Its derived `CODE_LANGUAGES` set is shared by code search and repo drafts; Rust participates

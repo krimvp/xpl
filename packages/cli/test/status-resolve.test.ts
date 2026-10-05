@@ -32,6 +32,38 @@ async function regenerate(dir: string) {
 const REQUEUE_EDIT = (text: string) =>
   text.replace("await this.queue.requeue(", "await this.queue.requeueLater(");
 
+it("keeps the pre-catalog status --all report for a guide with an empty title", async () => {
+  const dir = await indexedFixture();
+  expect((await xpl(dir, "new", "untitled", "--title", "")).code).toBe(0);
+  const result = await xplJson<{ index: { commit: string }; guides: unknown[] }>(
+    dir,
+    "status",
+    "--all",
+  );
+  expect(result.code).toBe(0);
+  expect(result.json.guides).toEqual([
+    {
+      name: "untitled",
+      path: ".explainer/untitled.explainer.json",
+      title: "",
+      attention: false,
+      anchors: {
+        total: 0,
+        counts: { ok: 0, moved: 0, drifted: 0, missing: 0 },
+        affected: [],
+      },
+      drifted: [],
+      driftedOther: [],
+      missing: [],
+      broken: [],
+      errors: [],
+    },
+  ]);
+  expect((await xpl(dir, "status", "--all")).out).toBe(
+    `repository guides: index ${result.json.index.commit}\nuntitled: unchanged prose; 0 moved, 0 drifted, 0 missing`,
+  );
+});
+
 beforeAll(async () => {
   indexed = await indexedFixture();
   demo = cloneDir(indexed);

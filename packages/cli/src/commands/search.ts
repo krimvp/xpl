@@ -1,4 +1,4 @@
-import { CODE_LANGUAGES, matchesGlob } from "@xpl/core";
+import { matchesGlob, query, type SourceHit } from "@xpl/core";
 import type { CommandSpec } from "../command.js";
 import { UsageError } from "../errors.js";
 import { plural, truncate } from "../format.js";
@@ -7,24 +7,6 @@ import { resolveTarget } from "../target.js";
 
 const DEFAULT_LIMIT = 50;
 const MAX_TEXT = 160;
-
-/** Config files (their symbols are keys): after code, before docs. */
-const CONFIG_LANGUAGES: ReadonlySet<string> = new Set(["yaml", "json", "toml"]);
-
-/** Search order of a file: code (0), config (1), docs and other text (2). */
-function rank(language: string): number {
-  return CODE_LANGUAGES.has(language) ? 0 : CONFIG_LANGUAGES.has(language) ? 1 : 2;
-}
-
-interface Hit {
-  file: string;
-  line: number;
-  /** Element id of the innermost enclosing symbol, else `file:<path>`. */
-  id: string;
-  /** Lines from the start of that symbol (from line 1 for a file). */
-  offset: number;
-  text: string;
-}
 
 /** Where hits may lie: which files are searched, and for a symbol scope which lines of them. */
 interface Scope {
@@ -98,6 +80,8 @@ export const searchCommand: CommandSpec = {
     "--under <dir|file|glob> keeps the search inside a directory, file or symbol id (dir:src/flask, src/flask/,",
     "file:src/app.py, sym:src/app.py#Flask) or a glob on repo paths (tests/**, src/*.py); repeat it or use",
     "commas for several. The total is counted inside the scope.",
+    "Unavailable file text produces a warning. --json also records the index snapshot, searchable paths,",
+    "retained/original symbol counts and original analysis coverage in scope; absent coverage is unknown.",
   ],
   options: {
     regex: { type: "boolean", desc: "Treat the pattern as a JavaScript regular expression" },
@@ -128,58 +112,44 @@ export const searchCommand: CommandSpec = {
     const limit = args.int("limit") ?? DEFAULT_LIMIT;
     const under = args.list("under");
 
-    let matches: (line: string) => boolean;
+    // Syntax errors take precedence over a missing workspace, as in the other query commands.
     if (regex) {
-      let re: RegExp;
       try {
-        re = new RegExp(pattern, ignoreCase ? "i" : "");
+        new RegExp(pattern, ignoreCase ? "i" : "");
       } catch (error) {
         throw new UsageError(
           `invalid regular expression: ${error instanceof Error ? error.message : String(error)}`,
         );
       }
-      matches = (line) => re.test(line);
-    } else {
-      const needle = ignoreCase ? pattern.toLowerCase() : pattern;
-      matches = ignoreCase
-        ? (line) => line.toLowerCase().includes(needle)
-        : (line) => line.includes(needle);
     }
 
     const ws = await openWorkspace(ctx);
     const scope = parseScope(ws, under);
-    // code first, then config, then docs; by path inside each (the index lists files by path)
-    const files = ws.model.files
-      .filter((file) => !codeOnly || CODE_LANGUAGES.has(file.language))
-      .map((file, order) => ({ file, order }))
-      .sort((a, b) => rank(a.file.language) - rank(b.file.language) || a.order - b.order)
-      .map((entry) => entry.file);
-    const hits: Hit[] = [];
-    let total = 0;
-    let searched = 0;
-    const fileCount = new Set<string>();
-    for (const file of files) {
-      const lines = ws.texts.lines(file.path);
-      if (!lines) continue;
-      if (scope && !scope.hasFile(file.path)) continue;
-      searched++;
-      for (let i = 0; i < lines.length; i++) {
-        const text = lines[i]!;
-        if (!matches(text)) continue;
-        if (scope && !scope.hasLine(file.path, i + 1)) continue;
-        total++;
-        fileCount.add(file.path);
-        if (limit > 0 && hits.length >= limit) continue;
-        const line = i + 1;
-        const symbol = ws.model.innermostSymbolAt(file.path, line);
-        hits.push({
-          file: file.path,
-          line,
-          id: symbol ? `sym:${symbol.id}` : `file:${file.path}`,
-          offset: symbol ? line - symbol.range.startLine : line - 1,
-          text: text.trim(),
-        });
-      }
+    let result;
+    try {
+      result = query(ws.model, ws.texts, {
+        pattern,
+        regex,
+        ignoreCase,
+        codeOnly,
+        limit,
+        scope,
+        kinds: ["source"],
+        textOrigin: "working-tree",
+      });
+    } catch (error) {
+      throw new UsageError(error instanceof Error ? error.message : String(error));
+    }
+    const hits = result.hits
+      .filter((hit): hit is SourceHit => hit.kind === "source")
+      .map(({ file, line, id, offset, text }) => ({ file, line, id, offset, text }));
+    const total = result.total;
+    const searched = result.scope.searchedFiles.length;
+    const fileCount = result.matchedFiles;
+    if (result.scope.unavailableFiles.length > 0) {
+      ctx.warn(
+        `source unavailable for ${plural(result.scope.unavailableFiles.length, "indexed file")}: ${result.scope.unavailableFiles.join(", ")}`,
+      );
     }
 
     if (ctx.json) {
@@ -191,8 +161,9 @@ export const searchCommand: CommandSpec = {
         ...(codeOnly ? { code: true } : {}),
         searched,
         total,
-        files: fileCount.size,
+        files: fileCount,
         hits,
+        scope: result.scope,
       });
       return 0;
     }
@@ -212,7 +183,7 @@ export const searchCommand: CommandSpec = {
     );
     if (total > hits.length) {
       lines.push(
-        `... ${total - hits.length} more matches (showing ${hits.length} of ${total} in ${plural(fileCount.size, "file")}); raise --limit or narrow the pattern${under.length === 0 ? " (--under <dir>, --code)" : ""}`,
+        `... ${total - hits.length} more matches (showing ${hits.length} of ${total} in ${plural(fileCount, "file")}); raise --limit or narrow the pattern${under.length === 0 ? " (--under <dir>, --code)" : ""}`,
       );
     }
     ctx.out(lines.join("\n"));

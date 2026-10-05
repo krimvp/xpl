@@ -12,8 +12,8 @@
  * A single candidate is used as it is. Whatever was chosen is compared with the working tree, and a
  * warning names the files that changed since it was built.
  */
-import { readdirSync, statSync } from "node:fs";
-import { basename, join, resolve } from "node:path";
+import { lstatSync, readdirSync, realpathSync, statSync } from "node:fs";
+import { basename, join, resolve, sep } from "node:path";
 import {
   INDEX_SCHEMA,
   TextCache,
@@ -371,15 +371,28 @@ export function explainerName(path: string): string {
     : base.replace(/\.json$/, "");
 }
 
-export function listExplainerNames(root: string): string[] {
+function listExplainerPaths(root: string): string[] {
+  let present = false;
   try {
-    return readdirSync(join(root, EXPLAINER_DIR))
+    const dir = join(root, EXPLAINER_DIR);
+    lstatSync(dir);
+    present = true;
+    const canonicalRoot = realpathSync(root);
+    const canonicalDir = realpathSync(dir);
+    if (canonicalDir !== canonicalRoot && !canonicalDir.startsWith(canonicalRoot + sep))
+      throw new CliError("guide directory leaves its repository");
+    return readdirSync(dir)
       .filter((name) => name.endsWith(EXPLAINER_SUFFIX))
-      .map((name) => name.slice(0, -EXPLAINER_SUFFIX.length))
-      .sort();
-  } catch {
-    return [];
+      .sort()
+      .map((name) => join(dir, name));
+  } catch (error) {
+    if (!present && (error as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw new CliError(`cannot list repository guides: ${errorMessage(error)}`);
   }
+}
+
+export function listExplainerNames(root: string): string[] {
+  return listExplainerPaths(root).map(explainerName);
 }
 
 /** `demo`, `demo.explainer.json`, `.explainer/demo.explainer.json` or any path to the file. */
@@ -417,4 +430,29 @@ export function loadExplainer(env: RepoEnv, arg: string): LoadedExplainer {
     name: explainerName(abs),
     explainer: readExplainerFile(abs),
   };
+}
+
+/** Load the discovered files for catalog and evidence readers; neither metadata nor an index gates loading. */
+export function loadRepositoryGuides(
+  env: RepoEnv,
+): ({ name: string; loaded: LoadedExplainer } | { name: string; error: string })[] {
+  return listExplainerPaths(env.root).map((abs) => {
+    const name = explainerName(abs);
+    try {
+      const canonical = realpathSync(abs);
+      if (!canonical.startsWith(realpathSync(env.root) + sep))
+        throw new CliError("guide path leaves its repository");
+      return {
+        name,
+        loaded: {
+          abs,
+          rel: displayPath(env.root, abs),
+          name,
+          explainer: readExplainerFile(canonical),
+        },
+      };
+    } catch (error) {
+      return { name, error: errorMessage(error) };
+    }
+  });
 }

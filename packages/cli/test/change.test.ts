@@ -3,7 +3,7 @@
  * `xpl change`, base anchors through the CLI (`apply`, `anchors`, `validate`, `show --at base`), `baseFiles` in
  * `xpl bundle`, and `GET /api/base-file`: against a small git repository with two commits.
  */
-import { renameSync, rmSync } from "node:fs";
+import { copyFileSync, renameSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
 import { parseBundle, type ChangeRecord, type Explainer } from "@xpl/core";
@@ -348,6 +348,24 @@ describe("base anchors through the CLI", () => {
     const added = await xpl(dir, "show", "--at", "base", "new.py");
     expect(added.code).toBe(1);
     expect(added.err).toContain("was added by the change");
+  });
+
+  it("xpl show --at base selects the discovered change guide despite a colliding root JSON file", async () => {
+    const copy = cloneDir(repo);
+    expect((await xpl(copy, "new", "retry.json", "--title", "Retry change")).code).toBe(0);
+    expect((await xpl(copy, "change", "retry.json", "HEAD~1..HEAD")).code).toBe(0);
+    expect((await xpl(copy, "new", "decoy", "--title", "Root JSON decoy")).code).toBe(0);
+    copyFileSync(join(copy, ".explainer/decoy.explainer.json"), join(copy, "retry.json"));
+    rmSync(join(copy, ".explainer/decoy.explainer.json"));
+
+    const shown = await xpl(copy, "show", "--at", "base", "app.py", "--lines", "8-9");
+    expect(shown.code, shown.err).toBe(0);
+    expect(shown.out.split("\n")).toEqual([
+      `app.py before the change ${base.slice(0, 7)}..${head.slice(0, 7)} (modified, base ${base.slice(0, 7)}): lines 1-13; spans count from line 1`,
+      "8 7│     def handle(self, scope):",
+      '9 8│-        return "old"',
+      "(- marks lines the change removes or rewrites)",
+    ]);
   });
 
   it("apply builds a base anchor; anchors prints the base code; validate checks it", async () => {
