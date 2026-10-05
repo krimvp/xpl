@@ -442,10 +442,14 @@ author review state. The existing query contract uses `version=<version-folder>`
 Ranges use 1-based lines and inclusive UTF-16 columns; omitted columns select whole lines. Base paths are
 change head keys, including renamed files and deleted files. Links resolve only supplied source.
 Mismatched version queries refuse to show another snapshot. About this explanation offers a link to the
-current reading state; browser bookmarks also retain it. Earlier pages capture only history that existed
+current reading state and an Open latest version link through the sibling current page. Staging times
+use the reader’s local format; earlier versions and technical identifiers sit behind disclosures.
+Browser bookmarks retain the reading state. Earlier pages capture only history that existed
 at staging. Keep the staged directory tree for sibling links; detached copies remain self-contained but
 cannot navigate missing sibling versions. Save as HTML preserves navigation with the same query keys,
 without live service attachment. An explicit navigation target overrides saved navigation as a whole.
+Restoration combines tour defaults with explicit view, focus and source cursor fields; setting a saved
+cursor does not switch perspective or clear the applied step.
 Edited re-saves lose the staged version claim when their artifactIdentity changes.
 This command configures no server, remote destination, credentials, upload or PR Action. Configured team
 delivery remains a later slice of #34.

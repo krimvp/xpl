@@ -1911,6 +1911,9 @@ links use sibling immutable paths; a version query that disagrees with the embed
 Standalone HTML copies preserve the snapshot and saved navigation but do not advertise sibling links.
 Old pages retain only history that existed when staged. About this explanation lists prior versions,
 exact included source and author review; a state link uses the existing query serializer.
+Earlier history is collapsed; local staging times are readable and technical identifiers stay in source
+details. Every staged page offers Open latest version through sibling `current/index.html` with no
+immutable version query, so old snapshots can lead to newer content without a catalog fetch.
 
 The existing launch query gains `side=head|base` and `version`, retaining `view`, repeated `focus`,
 `perspective`, `tour`, numeric `step`, stable `step-id`, `file` and inclusive `range`. Explore selections
@@ -1924,7 +1927,9 @@ and unavailable/invalid ranges never silently select head source.
 attachment. The store restores it only when no explicit navigation was supplied; a new linked target
 replaces saved navigation as a whole, avoiding conflicting saved focus/range targets. Re-saves retain
 publication metadata only while artifactIdentity matches the staged record; author changes drop it.
-No saved state changes explanation provenance, source text, readiness or identity. Destination adapters,
+Launch restoration derives one state from tour defaults, then explicit mode/perspective, view, focus and
+validated head/base cursor fields win. It does not replay navigation actions: cursor restoration keeps
+the selection, applied step and reading perspective. No saved state changes explanation provenance, source text, readiness or identity. Destination adapters,
 access control and PR Actions are reserved for 34C.
 
 **Bundle payload** (`ViewerBundle`, also `/api/bundle`): `{ schema: "code-explainer/bundle@0", explainer,

@@ -212,3 +212,67 @@ it.each(["present", "explore"] as const)(
     });
   },
 );
+
+it.each(["explore", "code"] as const)(
+  "restores saved Present t2 with code focus in %s without losing the step",
+  (perspective) => {
+    const bundle = makeBundle();
+    const store = new ViewerStore(bundle, {
+      mode: "present",
+      tour: "tour:demo",
+      stepId: "t2",
+      perspective,
+    });
+    store.setCursor("src/b.ts", 4, 4, "head", 2, 5);
+    const reopened = new ViewerStore({
+      ...bundle,
+      launch: searchFor(store.getState(), "", undefined),
+    });
+    expect(reopened.getState()).toMatchObject({
+      mode: "present",
+      perspective,
+      viewId: "view:flow",
+      selection: ["flow:1", "concept:retry"],
+      applied: { stepId: "t2" },
+      tour: { tourId: "tour:demo", step: 1 },
+      cursor: { file: "src/b.ts", fromLine: 4, toLine: 4, fromCol: 2, toCol: 5 },
+    });
+  },
+);
+
+it("restores a different-view tour detour after leaving Present", () => {
+  const store = new ViewerStore(makeBundle(), { mode: "present", tour: "tour:demo", stepId: "t2" });
+  store.exitPresent();
+  store.setView("view:overview");
+  store.select(["concept:retry"]);
+  const reopened = new ViewerStore(
+    makeBundle(),
+    readLaunchParams(searchFor(store.getState(), "", undefined)),
+  );
+  expect(reopened.getState()).toMatchObject({
+    mode: "explore",
+    perspective: "explore",
+    viewId: "view:overview",
+    selection: ["concept:retry"],
+    applied: undefined,
+    tour: { tourId: "tour:demo", step: 1 },
+  });
+});
+
+it("restores a step, explicit view, selection and range together", () => {
+  const store = new ViewerStore(
+    makeBundle(),
+    readLaunchParams(
+      "?perspective=map&tour=tour:demo&step-id=t2&view=view:overview&focus=concept:retry&file=src/a.ts&range=12:6-12:9&side=head",
+    ),
+  );
+  expect(store.getState()).toMatchObject({
+    mode: "explore",
+    perspective: "map",
+    viewId: "view:overview",
+    selection: ["concept:retry"],
+    tour: { tourId: "tour:demo", step: 1 },
+    applied: undefined,
+    cursor: { file: "src/a.ts", fromLine: 12, toLine: 12, fromCol: 6, toCol: 9 },
+  });
+});

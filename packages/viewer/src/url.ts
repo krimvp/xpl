@@ -75,6 +75,8 @@ export function searchFor(
       if (state.selection?.length === 0) params.set("focus", "");
     }
   }
+  if (state.mode === "present" && state.perspective && state.perspective !== "explore")
+    params.set("perspective", state.perspective);
   if (state.cursor) {
     params.set("file", state.cursor.file);
     params.set("side", state.cursor.side ?? "head");

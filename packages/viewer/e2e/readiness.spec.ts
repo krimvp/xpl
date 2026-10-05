@@ -292,7 +292,7 @@ test("offline all-content review survives HTML reopening and explicitly gates te
   await dialog.getByRole("button", { name: "Record inspected review", exact: true }).click();
   await expect(dialog).not.toBeVisible();
   await expect(page.getByTestId("review-status")).toHaveText("Author review: reviewed");
-  await page.getByTestId("explanation-info").locator("summary").click();
+  await page.getByTestId("explanation-info").locator(":scope > summary").click();
   await expect(page.getByTestId("explanation-info")).toContainText("Ada (self-reported)");
   await expect(page.getByTestId("explanation-info")).toContainText(
     "Runtime initialization was not exercised.",

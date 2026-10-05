@@ -117,9 +117,13 @@ test("old staged links and downloaded navigation restore the exact version after
     await expect(page.locator(".header .title")).toHaveText("Second version");
     await page.getByTestId("explanation-info").locator("summary").first().click();
     const versions = page.getByRole("region", { name: "Staged versions" });
-    await expect(versions).toContainText("head: " + head);
-    await expect(versions).toContainText("author review: unchecked");
-    await expect(versions.getByRole("link", { name: first.version, exact: true })).toHaveAttribute(
+    const history = versions
+      .locator("details")
+      .filter({ has: page.getByText("Earlier versions (1)", { exact: true }) });
+    await expect(history).not.toHaveAttribute("open", "");
+    await history.locator("summary").first().click();
+    await expect(history).toContainText("author review: unchecked");
+    await expect(history.getByRole("link", { name: /^Open version staged/ })).toHaveAttribute(
       "href",
       pathToFileURL(join(first.directory, "index.html")).href + `?version=${first.version}`,
     );
@@ -133,6 +137,11 @@ test("old staged links and downloaded navigation restore the exact version after
     await page.goto(stepLink);
     await expect(page.locator(".header .title")).toHaveText("First version");
     await expect.poll(() => stateOf(page).then((s) => s.stepId)).toBe("read-app");
+    await page.getByTestId("explanation-info").locator("summary").first().click();
+    const latest = page.getByRole("link", { name: "Open latest version" });
+    await expect(latest).toHaveAttribute("href", current);
+    await latest.click();
+    await expect(page.locator(".header .title")).toHaveText("Second version");
     const immutable =
       pathToFileURL(join(first.directory, "index.html")).href + `?version=${first.version}`;
     await page.goto(immutable + "&perspective=explore&view=view:app&focus=file:app.ts");
@@ -153,33 +162,36 @@ test("old staged links and downloaded navigation restore the exact version after
       await expect
         .poll(() => page.evaluate(() => window.getSelection()?.toString()))
         .toBe(selected);
-      await (await openEditMenu(page)).getByTestId("edit-save-html").click();
-      await expect(page.getByTestId("readiness-summary")).toContainText("Ready: 0 errors");
-      const [download] = await Promise.all([
-        page.waitForEvent("download"),
-        page.getByTestId("save-html-ready").click(),
-      ]);
-      const savedPath = join(scratch, `${side}.html`);
-      await download.saveAs(savedPath);
-      const saved = parseBundle(
-        /<script id="xpl-data"[^>]*>([\s\S]*?)<\/script>/.exec(
-          readFileSync(savedPath, "utf8"),
-        )![1]!,
-      );
-      expect(saved.server).toBeUndefined();
-      expect(saved.publication?.current.identity).toEqual(first.manifest.identity);
-      await page.goto(pathToFileURL(savedPath).href);
-      await pane.locator(".cm-content").focus();
-      await expect
-        .poll(() => page.evaluate(() => window.getSelection()?.toString()))
-        .toBe(selected);
-      await expect.poll(() => stateOf(page).then((s) => s.cursor?.side ?? "head")).toBe(side);
-      await expect(page.locator(".header .title")).toHaveText("First version");
-      await page.goto(
-        pathToFileURL(savedPath).href + "?perspective=explore&view=view:app&focus=file:app.ts",
-      );
-      await expect(byId(page, "file:app.ts")).toHaveAttribute("transform", "translate(120 80)");
     }
+    // One browser save/reopen proof combines a tour step, diagram focus and source cursor.
+    await page.goto(immutable + "&mode=present&tour=tour:app&step-id=read-app");
+    await expect(page.getByTestId("present")).toBeVisible();
+    await page.evaluate(() => window.__xpl!.setCursor("app.ts", 2));
+    await (await openEditMenu(page)).getByTestId("edit-save-html").click();
+    await expect(page.getByTestId("readiness-summary")).toContainText("Ready: 0 errors");
+    const [download] = await Promise.all([
+      page.waitForEvent("download"),
+      page.getByTestId("save-html-ready").click(),
+    ]);
+    const savedPath = join(scratch, "present.html");
+    await download.saveAs(savedPath);
+    const saved = parseBundle(
+      /<script id="xpl-data"[^>]*>([\s\S]*?)<\/script>/.exec(readFileSync(savedPath, "utf8"))![1]!,
+    );
+    expect(saved.server).toBeUndefined();
+    expect(saved.publication?.current.identity).toEqual(first.manifest.identity);
+    await page.goto(pathToFileURL(savedPath).href);
+    await expect(page.getByTestId("present")).toBeVisible();
+    await expect
+      .poll(() => stateOf(page))
+      .toMatchObject({
+        mode: "present",
+        stepId: "read-app",
+        selection: ["file:app.ts"],
+        cursor: { file: "app.ts", fromLine: 2, toLine: 2 },
+      });
+    await expect(page.locator(".header .title")).toHaveText("First version");
+    await expect(byId(page, "file:app.ts")).toHaveAttribute("transform", "translate(120 80)");
     await page.goto(
       pathToFileURL(join(second.directory, "index.html")).href + `?version=${first.version}`,
     );
