@@ -535,9 +535,16 @@ error: refusing to write .explainer/jobrunner.explainer.json: index wt-3fa2f32c4
 
 `--json` gives `counts`, `drifted[]` (`elementId`, `owner`, `view?` for a step, `userFields`, `anchors[]` with `reason`), `driftedOther[]` (user-owned), `missing[]` (`view?` too).
 
-## `xpl status <explainer> [--view <id>]`
+## `xpl status [explainer] [--view <id>] [--all]`
 
-The skill's to-do list, read-only: per view, the shown nodes, participants, stored edges and steps without a `summary` (and the ids of the static edges without one, which you need to overlay them); per graph view, where it stops (its ghosts and stubs); concepts without a summary; the tours; drifted llm elements; missing anchors; **broken references**; stale edge overlays; requests queued by the viewer. Static edges are optional. `status` reads the explainer through the index it is bound to: after `xpl index`, run `xpl resolve <name> --write` first so that it sees the new code.
+`--all` lists every `.explainer/*.explainer.json` guide against the current index. It reports moved,
+drifted and missing anchors, user-owned drift, broken references and unreadable guides. Moved anchors get
+current locations in memory; no guide is saved. `--json` adds `{index, stale, watch, guides}`; each guide has
+`name`, `path`, `title`, `attention`, anchor counts/affected locations, drift/missing reports and validation
+errors, or an unreadable-guide error. `attention` means evidence or structure needs repair; it does not
+claim that all required prose is finished. Do not combine `--all` with a guide or `--view`.
+
+The skill's to-do list, read-only: per view, the shown nodes, participants, stored edges and steps without a `summary` (and the ids of the static edges without one, which you need to overlay them); per graph view, where it stops (its ghosts and stubs); concepts without a summary; the tours; drifted llm elements; missing anchors; **broken references**; stale edge overlays; requests queued by the viewer. Static edges are optional. `status` reads the explainer through the index it is bound to: after manual `xpl index`, run `xpl resolve <name> --write` first so that it sees the new code. A running watcher supplies the current index without saving the guide.
 
 - The `to do:` line counts drift the user owns apart: `4 drifted (1 user-owned: ask the user)`. User-owned = an element that is not llm-authored, or an llm element whose anchors (or, for a step, whose view's `steps`) the user edited: an llm patch cannot repair those.
 - `ghosts: 2 (7 stubs; stubs: top 6), most referenced: ghost:file:src/main.ts ×23, ...`: the graph view draws 2 ghost boxes, with 7 stubs (dashed edges) leading to them; `stubs: top 6` is the view's stub policy (the default is `top 8`); `×23` is how many references lead to that ghost. A folded ghost stands for several elements and is named by what it folds: `ghost:more:out ×8` ("+8 more", the ghosts beyond the cap), `ghost:rest:file:src/main.ts ×1` ("rest of main.ts", the outside symbols of a file the view shows in part). Folded ghosts are not elements (they cannot be `include`d), but their ids and the stub ids go in `hidden`. Each folded ghost also gets a line under `ghosts:` with the elements it stands for (`ghost:rest:file:src/runner.ts ×6 → sym:src/runner.ts#Runner.log ×3, ...`): up to 3 ids with their reference counts, most referenced first, then `... +N more`. `includeAdd` one of them; a ghost that is one element (`ghost:file:x`) gets no such line. `--json` lists every ghost (`views[].ghosts.list[]`: `{id, kind: target|rest|more, label, count, direction, targets: [{id, count}]}`, most referenced first) with all the elements it stands for in `targets` (most referenced first; a `target` ghost has just itself), and every stub id (`views[].ghosts.stubIds`), with `mode`, `max`, `total`, `stubs` and `crowded`. Above 12 ghosts a warning follows the line.
@@ -864,7 +871,7 @@ serving .explainer/jobrunner.explainer.json at http://127.0.0.1:34971/  (Ctrl-C 
 
 API (for scripts): `GET /api/bundle`, `GET /api/export` (current complete export snapshot and shared readiness report), `GET /api/explainer` (the explainer with its anchors re-resolved, with an `ETag`; what the page polls), `GET /api/file?path=`, `GET /api/base-file?path=` (the code before the recorded change of a modified, renamed or deleted file), `PUT /api/views/<id>`, `PUT /api/tours/<id>`, `GET|POST /api/requests`.
 
-## `xpl service <start|stop|status> [explainer] [--background] [--port p] [--backend none|claude] [--recover]`
+## `xpl service <start|stop|status> [explainer] [--background] [--port p] [--backend none|claude] [--recover] [--watch]`
 
 Starts the existing viewer server on loopback (`127.0.0.1`) with one owner per canonical repository root.
 Foreground is the default; stop it with Ctrl-C or `xpl service stop`. `--background` starts the installed
@@ -881,7 +888,7 @@ xpl service stop
 xpl service start
 ```
 
-`status --json` reports `{ok, state, root, guide, backend, instanceId, pid, url, ownershipLock, recovery?}`.
+`status --json` reports `{ok, state, root, guide, backend, instanceId, pid, url, ownershipLock, watch, recovery?}`.
 States are `stopped`, `starting`, `running`, `unavailable` (live owner whose identity cannot be verified)
 and `interrupted` (recorded owner exited unexpectedly). Status reports these states with exit 0;
 failed start/stop exits 1 and usage errors exit 2. Ownership tokens stay in private local records and are
@@ -900,6 +907,19 @@ record and preserves the last valid index/explanation. A live unverified PID is 
 crashed writer lock must be inspected and removed explicitly; no lock is stolen because it is old.
 Viewer connection/backend controls and durable jobs are follow-ups. `view`, manual iteration and offline
 HTML export/reading work independently while this service is stopped.
+
+`service start --watch` opts this start into source/configuration polling and coherent full rebuilds.
+It defaults to `--precise off`; `--precise auto|require` enables semantic tools, and `--scip` observes a
+supplied artifact or manifest/artifact pair. `--watch` rejects an explicit `--index` and clears a saved pin.
+Repeat watch options on restart. Failed/superseded/cancelled builds retain the last index marked out of
+date; source/configuration freshness and anchor drift still block ready export. Builds report every guide;
+`xpl status --all` reads the inventory without saving prose. No generated revision is accepted and no
+feedback is removed. Named `.patch.json`/`.explainer.json` files, `.explainer/` output and exported xpl HTML
+are excluded from source discovery. Keep other scratch output outside the source root.
+
+Pause/resume, viewer attention controls and offered revisions follow in 29B. Stop drains work and returns
+to manual indexing/revision. Local configuration and supplied SCIP files are watched; external dependency
+or tool/environment changes need a restart or manual indexing. See ARCHITECTURE §3 and §5 for the boundary.
 
 ## `xpl ready <explainer> [--note reason]`
 

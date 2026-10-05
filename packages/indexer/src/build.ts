@@ -22,6 +22,7 @@ import type {
   Reference,
   SymbolIndex,
 } from "@xpl/core";
+import type { IndexInputs } from "./snapshot.js";
 import pkg from "../package.json" with { type: "json" };
 import { resolveCommitId, validateCommitId } from "./commit.js";
 import { FILE_LANGUAGES, detectGit, discoverFiles, readSource } from "./files.js";
@@ -49,6 +50,8 @@ import type { ProviderInput, ProviderSource } from "./providers.js";
 export interface BuildIndexOptions {
   /** Directory to index; paths in the index are relative to it. */
   root: string;
+  /** Frozen source/configuration for watching. Caller must recheck inputs before publication. */
+  snapshot?: IndexInputs;
   /** Git subprocess context for an isolated owned checkout; omitted for ordinary workspace indexing. */
   gitOptions?: GitOptions;
   /** Reuse file-local extraction in .explainer/cache. false neither reads nor writes the cache. */
@@ -185,15 +188,21 @@ export async function buildIndex(opts: BuildIndexOptions): Promise<BuildIndexRes
 
   // 1. Discover files.
   const git = await detectGit(root, opts.gitOptions);
-  const discovery = await discoverFiles(root, {
-    git,
-    languages: languageFilter,
-    gitOptions: opts.gitOptions,
-  });
+  const discovery = opts.snapshot
+    ? { files: [], warnings: [] }
+    : await discoverFiles(root, {
+        git,
+        languages: languageFilter,
+        gitOptions: opts.gitOptions,
+      });
   warnings.push(...discovery.warnings);
 
-  const sources: ProviderSource[] = [];
-  for (const file of discovery.files) {
+  if (opts.snapshot && opts.snapshot.root !== root)
+    throw new Error("snapshot belongs to another root");
+  const sources: ProviderSource[] = opts.snapshot
+    ? opts.snapshot.sources.filter((s) => !languageFilter || languageFilter.includes(s.language))
+    : [];
+  for (const file of opts.snapshot ? [] : discovery.files) {
     try {
       sources.push({ path: file.path, language: file.language, text: await readSource(file) });
     } catch {
@@ -209,6 +218,7 @@ export async function buildIndex(opts: BuildIndexOptions): Promise<BuildIndexRes
   const repo = new SourceRepoView(
     root,
     files.map((f) => f.path),
+    opts.snapshot ? (path) => opts.snapshot!.texts.get(path) : undefined,
   );
   const sourceText = new Map(sources.map((s) => [s.path, s.text]));
   const extractionCache = new ExtractionCache(root, opts.cache !== false);

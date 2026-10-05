@@ -255,7 +255,13 @@ export async function discoverFiles(
   const wanted = options.languages ? new Set<FileLanguage>(options.languages) : undefined;
   const selected: DiscoveredFile[] = [];
   for (const path of candidates) {
-    if (path.endsWith("/") || inExcludedDir(path) || isLockfile(path)) continue;
+    if (
+      path.endsWith("/") ||
+      inExcludedDir(path) ||
+      isLockfile(path) ||
+      /\.(?:explainer|patch)\.json$/i.test(path)
+    )
+      continue;
     const language = languageForPath(path);
     if (wanted && !wanted.has(language)) continue;
     selected.push({ path, abs: join(root, ...path.split("/")), language });

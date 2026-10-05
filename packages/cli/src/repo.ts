@@ -31,6 +31,7 @@ import {
   readSource,
   resolveCommitId,
   shortHead,
+  captureIndexInputs,
   type GitInfo,
 } from "@xpl/indexer";
 import type { RepoEnv } from "./context.js";
@@ -38,6 +39,8 @@ import { CliError, errorMessage } from "./errors.js";
 import { listText } from "./format.js";
 import { displayPath, parseJson, readTextFile, workingTreeReader } from "./fsutil.js";
 import { gitShowReader } from "./git.js";
+import { readWatchState, indexDigest } from "./watch-state.js";
+import { scipInputPaths } from "./index-options.js";
 
 export const EXPLAINER_DIR = ".explainer";
 export const EXPLAINER_SUFFIX = ".explainer.json";
@@ -218,6 +221,8 @@ export async function chooseIndexFile(
   opts: { explainer?: LoadedExplainer; skipExplainerIndex?: boolean } = {},
 ): Promise<string> {
   if (env.indexOption !== undefined) return resolveOption(env, env.indexOption);
+  const watched = readWatchState(env.root);
+  if (watched?.state !== "stopped" && watched?.index) return resolveOption(env, watched.index.path);
   if (opts.explainer && !opts.skipExplainerIndex) {
     const path = opts.explainer.explainer.index?.path;
     if (typeof path === "string" && path !== "") {
@@ -252,6 +257,37 @@ export async function stalenessOf(
   indexFile: string,
   explainer?: LoadedExplainer,
 ): Promise<Staleness | undefined> {
+  const watched = readWatchState(env.root);
+  if (
+    watched &&
+    watched.state !== "stopped" &&
+    watched.index?.path === displayPath(env.root, indexFile)
+  ) {
+    let reason = watched.stale
+      ? `watch ${watched.state}${watched.error ? `: ${watched.error}` : ""}`
+      : undefined;
+    if (!reason && watched.indexDigest !== indexDigest(index))
+      reason = "watched index was replaced outside its checked publication";
+    if (!reason) {
+      try {
+        const inputs = await captureIndexInputs({
+          root: env.root,
+          inputPaths: scipInputPaths(watched.scip),
+        });
+        if (inputs.fingerprint !== watched.fingerprint)
+          reason = "source or discovery/provider configuration changed since the watched snapshot";
+      } catch (error) {
+        reason = errorMessage(error);
+      }
+    }
+    if (reason) {
+      const head = `index ${index.commit} (${displayPath(env.root, indexFile)}) is out of date: ${reason}`;
+      return {
+        head,
+        message: `${head}. Waiting for a checked watch build; stop the service to use manual indexing.`,
+      };
+    }
+  }
   const current = await tree.commit();
   // A commit label is not evidence of identical source or line positions (including legacy indexes).
   const hashes = await tree.fileHashes();

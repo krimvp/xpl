@@ -114,6 +114,22 @@ network access or credentials. Claude jobs will require separate configured auth
 access. Viewer connection/backend controls are follow-up work. Manual commands and portable HTML work with
 the service stopped.
 
+Watching is opt-in on each start:
+
+```sh
+xpl service start jobrunner --watch --background
+xpl status --all --json                         # every guide: moved, drifted or missing anchors
+```
+
+The watcher polls source and local discovery/provider configuration, coalesces edits and rebuilds the
+full index. Superseded builds are discarded; readers see a complete snapshot. Failed or cancelled builds
+keep the previous index marked out of date. Moved code keeps its prose; drifted and missing evidence still
+block ready export. Watching saves no guide text, accepts no generated revisions and leaves feedback intact.
+It defaults to heuristic references (`--precise off`); `--precise auto|require` enables semantic tools and
+`--scip <artifact|manifest.json>` observes supplied provider inputs. A watched service cannot pin `--index`.
+Watch options are selected again on restart. Pause/resume, viewer attention controls and offered revisions
+follow in 29B. Stop the service to return to manual indexing and revision.
+
 ## Using the CLI directly
 
 Run these inside the repository you want to explain (or pass `--root <dir>`); every command takes `--json`.

@@ -83,3 +83,6 @@ export { scipArtifactProvider } from "./scip/artifact.js";
 export type { ScipArtifactManifest, ScipArtifactOptions } from "./scip/artifact.js";
 export { resolveHeuristic } from "./resolve/heuristic.js";
 export type { ResolverFile, ResolverInput } from "./resolve/heuristic.js";
+
+export { captureIndexInputs } from "./snapshot.js";
+export type { IndexInputs } from "./snapshot.js";
