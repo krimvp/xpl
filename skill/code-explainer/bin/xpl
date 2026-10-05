@@ -23,7 +23,7 @@ if (!existsSync(cli)) {
     console.error("XPL_CLI is set; point it at a built xpl.mjs or unset it.");
   } else if (installedCli) {
     console.error(
-      "Reinstall the local xpl tarball, then run `xpl skill install` to update this launcher.",
+      "Reinstall xpl from npm or a local tarball, then run `xpl skill install` to update this launcher.",
     );
   } else {
     console.error(

@@ -15,7 +15,8 @@ import { CliError, errorMessage } from "./errors.js";
 import { atomicWrite, jsonFile, parseJson, withRepositoryLock } from "./fsutil.js";
 import { loadExplainer, openWorkspace } from "./repo.js";
 import { readRequests } from "./requests.js";
-import { selectRevision } from "./revision.js";
+import { terminateJobProcess, type JobProcess, type JobCleanup } from "./job-process.js";
+import { continueRevision, selectRevision } from "./revision.js";
 
 type JobState =
   "queued" | "running" | "completed" | "failed" | "cancelled" | "superseded" | "interrupted";
@@ -33,22 +34,24 @@ export interface Job {
   createdAt: string;
   updatedAt: string;
   attempt: number;
-  owner: { instanceId: string; attemptId: string } | null;
+  owner: { instanceId: string; attemptId: string; process?: JobProcess } | null;
   progress: { at: string; message: string }[];
   error: string | null;
   result: { revisionRunId: string } | null;
+  cleanup?: JobCleanup;
 }
 export interface JobSubmission {
   id: string;
   selectedRequestIds: string[];
   include?: string[];
 }
-/** A controlled runner tests lifecycle only. 39B must validate real output through the revision flow. */
+/** Real adapters return untrusted proposals; controlled runners may return only a lifecycle receipt. */
 export type JobRunner = (
   job: Job,
   signal: AbortSignal,
   progress: (message: string) => Promise<void>,
-) => Promise<{ revisionRunId: string }>;
+  started: (process: JobProcess) => Promise<void>,
+) => Promise<{ revisionRunId: string; proposals?: unknown }>;
 interface Ledger {
   schema: "xpl-jobs@1";
   root: string;
@@ -66,7 +69,7 @@ const STATES: JobState[] = [
   "interrupted",
 ];
 const UNAVAILABLE =
-  "Job runner unavailable. This service supports lifecycle storage only; use the manual xpl revise workflow until a real runner is configured.";
+  "Job runner unavailable. Start the service with --backend claude to use the installed, authenticated Claude Code CLI, or use manual xpl revise.";
 function record(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value))
     throw new CliError("expected a job object");
@@ -211,6 +214,16 @@ class RepositoryJobs {
           const owner = record(j.owner);
           uuid(owner.instanceId);
           uuid(owner.attemptId);
+          if (owner.process !== undefined) {
+            const child = record(owner.process);
+            if (
+              !Number.isSafeInteger(child.groupId) ||
+              Number(child.groupId) <= 1 ||
+              typeof child.startTime !== "string" ||
+              !/^[a-f0-9-]{36}:\d+$/.test(child.startTime)
+            )
+              throw new Error("invalid process identity");
+          }
         }
         if (j.state === "running" && (j.owner === null || j.attempt === 0))
           throw new Error("running job has no owner");
@@ -221,6 +234,19 @@ class RepositoryJobs {
           throw new Error("invalid proposal reference");
         if (j.state === "completed" && j.result === null)
           throw new Error("completed job has no result");
+        if (j.cleanup !== undefined) {
+          const cleanup = record(j.cleanup);
+          if (
+            j.state !== "failed" ||
+            (cleanup.groupId !== undefined &&
+              (!Number.isSafeInteger(cleanup.groupId) || Number(cleanup.groupId) <= 1)) ||
+            (cleanup.startTime !== undefined &&
+              (cleanup.groupId === undefined ||
+                typeof cleanup.startTime !== "string" ||
+                !/^[a-f0-9-]{36}:\d+$/.test(cleanup.startTime)))
+          )
+            throw new Error("invalid cleanup barrier");
+        }
         return j as unknown as Job;
       });
       if (
@@ -249,8 +275,13 @@ class RepositoryJobs {
   }
 
   async start() {
-    await this.mutate((ledger) => {
-      for (const job of ledger.jobs)
+    await this.mutate(async (ledger) => {
+      for (const job of ledger.jobs) {
+        if (job.cleanup) {
+          await terminateJobProcess(job.cleanup);
+          delete job.cleanup;
+        } else if (job.owner?.process && job.owner.instanceId !== this.instanceId)
+          await terminateJobProcess(job.owner.process);
         if (job.state === "running") {
           if (job.owner?.instanceId === this.instanceId)
             throw new CliError("this service instance already owns a running job");
@@ -259,6 +290,7 @@ class RepositoryJobs {
             "Service interrupted this attempt. Inspect its progress and explicitly retry.";
           job.updatedAt = new Date().toISOString();
         }
+      }
     });
     this.kick();
   }
@@ -398,9 +430,12 @@ class RepositoryJobs {
 
   async fence(name: string, id: string, state: "cancelled" | "superseded"): Promise<Job> {
     const selected = await this.get(name, id);
-    const result = await this.mutate((ledger) => {
+    const result = await this.mutate(async (ledger) => {
       const job = ledger.jobs.find((j) => j.id === selected.id)!;
       if (job.state === "cancelled" || job.state === "superseded") return job;
+      if (this.active?.id === id) this.active.abort.abort();
+      if (job.cleanup) return job; // A terminal fence cannot erase an unresolved cleanup barrier.
+      if (job.state === "running" && !(await this.drain(job))) return job;
       job.state = state;
       job.result = null;
       job.error = null;
@@ -425,11 +460,37 @@ class RepositoryJobs {
       });
   }
 
+  private async drain(job: Job): Promise<boolean> {
+    if (!job.owner?.process) return true;
+    try {
+      await terminateJobProcess(job.owner.process);
+      return true;
+    } catch (error) {
+      this.cleanupFailed(job, error);
+      return false;
+    }
+  }
+
+  private cleanupFailed(job: Job, error: unknown) {
+    if (!(error instanceof CliError) || error.extra.code !== "JOB_PROCESS_CLEANUP") throw error;
+    const groupId = error.extra.groupId ?? job.owner?.process?.groupId;
+    const startTime = error.extra.startTime ?? job.owner?.process?.startTime;
+    job.cleanup = {
+      ...(typeof groupId === "number" ? { groupId } : {}),
+      ...(typeof startTime === "string" ? { startTime } : {}),
+    };
+    job.state = "failed";
+    job.result = null;
+    job.error = errorMessage(error).slice(0, 5000);
+    job.updatedAt = new Date().toISOString();
+    this.fatal = `Job scheduler stopped: ${job.error} Inspect service state and restart after recovery.`;
+  }
+
   private async pump() {
     while (this.availability.available) {
       this.wake = false;
       const job = await this.mutate((ledger) => {
-        if (this.closed) return undefined;
+        if (!this.availability.available) return undefined;
         if (ledger.jobs.some((j) => j.state === "running")) return undefined;
         const next = ledger.jobs.find((j) => j.state === "queued");
         if (!next) return undefined;
@@ -442,40 +503,79 @@ class RepositoryJobs {
       if (!job) return;
       const abort = new AbortController();
       this.active = { id: job.id, abort };
-      const update = async (change: (current: Job) => void) => {
-        if (this.closed) return;
-        await this.mutate((ledger) => {
+      const update = async (change: (current: Job) => void | Promise<void>) => {
+        if (this.closed) return false;
+        return this.mutate(async (ledger) => {
           const current = ledger.jobs.find((j) => j.id === job.id)!;
           if (
             current.state !== "running" ||
             current.owner?.instanceId !== this.instanceId ||
             current.owner.attemptId !== job.owner!.attemptId
           )
-            return;
-          change(current);
+            return false;
+          await change(current);
           current.updatedAt = new Date().toISOString();
+          return true;
         });
       };
       try {
         await this.fresh(job);
         // Cancellation can win the claim before the invocation's abort controller exists.
         if (this.closed || (await this.get(job.scope.guide, job.id)).state !== "running") continue;
-        const result = await this.runner!(structuredClone(job), abort.signal, async (message) => {
-          if (typeof message !== "string" || !message.trim() || message.length > 2000)
-            throw new CliError("progress must be non-empty text of at most 2000 characters");
-          await update((current) => {
-            current.progress.push({ at: new Date().toISOString(), message });
-            current.progress = current.progress.slice(-100);
-          });
-        });
+        const result = await this.runner!(
+          structuredClone(job),
+          abort.signal,
+          async (message) => {
+            if (typeof message !== "string" || !message.trim() || message.length > 2000)
+              throw new CliError("progress must be non-empty text of at most 2000 characters");
+            await update((current) => {
+              current.progress.push({ at: new Date().toISOString(), message });
+              current.progress = current.progress.slice(-100);
+            });
+          },
+          async (process) => {
+            abort.signal.throwIfAborted();
+            if (
+              !(await update((current) => {
+                current.owner!.process = process;
+              }))
+            )
+              throw new CliError("Claude attempt no longer owns this job; process discarded.");
+          },
+        );
         if (record(result).revisionRunId !== job.input.revisionRunId)
           throw new CliError("runner result does not match the selected revision");
-        await update((current) => {
+        await update(async (current) => {
+          if (result.proposals !== undefined) {
+            const proposal = join(dirname(this.path), `proposal-${job.owner!.attemptId}.json`);
+            await atomicWrite(proposal, jsonFile(result.proposals));
+            const review = await continueRevision(
+              this.ctx,
+              resolve(this.ctx.root, job.scope.guide),
+              job.input.revisionRunId,
+              {
+                proposal,
+                serviceJob: { id: job.id, attemptId: job.owner!.attemptId },
+                assertCurrent: () => {
+                  this.assertOwner();
+                  abort.signal.throwIfAborted();
+                },
+              },
+            );
+            if (!review.readiness?.ready)
+              throw new CliError(
+                "Claude proposal is not ready for review; inspect xpl revise --run and repair the reported readiness blockers.",
+              );
+          }
           current.state = "completed";
           current.result = { revisionRunId: job.input.revisionRunId };
         });
       } catch (error) {
         await update((current) => {
+          if (error instanceof CliError && error.extra.code === "JOB_PROCESS_CLEANUP") {
+            this.cleanupFailed(current, error);
+            return;
+          }
           current.state = "failed";
           current.error = errorMessage(error).slice(0, 5000);
         });
@@ -486,10 +586,12 @@ class RepositoryJobs {
   }
 
   async close() {
-    await this.mutate((ledger) => {
+    await this.mutate(async (ledger) => {
       this.closed = true;
+      this.active?.abort.abort();
       for (const job of ledger.jobs)
         if (job.state === "running" && job.owner?.instanceId === this.instanceId) {
+          if (!(await this.drain(job))) continue;
           job.state = "interrupted";
           job.error = "Service stopped during this attempt. Explicitly retry after restart.";
           job.updatedAt = new Date().toISOString();

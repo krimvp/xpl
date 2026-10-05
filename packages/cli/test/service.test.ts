@@ -225,7 +225,17 @@ describe("repository service lifecycle", () => {
 
   it("pauses without interrupting jobs, then recovers the watched attachment and interrupts the old attempt", async () => {
     const root = cloneDir(demo);
-    const initial = await serve(root, "demo", "--watch", "--backend", "claude");
+    const initial = await serve(
+      root,
+      "demo",
+      "--watch",
+      "--backend",
+      "claude",
+      "--skill-dir",
+      `${root}/chosen-skill`,
+      "--job-timeout",
+      "17",
+    );
     const currentWatch = () => readJson(root, ".explainer/service/watch.json");
     await expect.poll(() => currentWatch().state, { timeout: 15000 }).toBe("current");
     const watch = currentWatch();
@@ -306,9 +316,14 @@ describe("repository service lifecycle", () => {
         guide: ".explainer/demo.explainer.json",
         instanceId: owner.instanceId,
         backend: "claude",
-        backendAvailable: false,
+        backendAvailable: true,
       });
       expect(attached.index.commit).toBe(publication.index.commit);
+      expect(readJson(root, ".explainer/service/context.json")).toMatchObject({
+        backend: "claude",
+        skillDir: `${root}/chosen-skill`,
+        jobTimeout: 17,
+      });
       const history = (await (await fetch(new URL("/api/jobs", recovered.server.url))).json()) as {
         jobs: Job[];
       };
@@ -336,7 +351,7 @@ describe("repository service lifecycle", () => {
       expect(await history.json()).toEqual({
         available: false,
         reason:
-          "Job runner unavailable. This service supports lifecycle storage only; use the manual xpl revise workflow until a real runner is configured.",
+          "Job runner unavailable. Start the service with --backend claude to use the installed, authenticated Claude Code CLI, or use manual xpl revise.",
         jobs: [],
       });
       const submission = {
@@ -385,10 +400,26 @@ describe("repository service lifecycle", () => {
 
   it("publishes a stable guide attachment and refreshes its instance after restart", async () => {
     const root = cloneDir(demo);
-    const first = await serve(root, "demo", "--backend", "claude");
+    const first = await serve(
+      root,
+      "demo",
+      "--backend",
+      "claude",
+      "--skill-dir",
+      `${root}/chosen-skill`,
+      "--job-timeout",
+      "17",
+    );
     let etag: string | null;
     let instanceId: string;
     try {
+      expect(readJson(root, ".explainer/service/context.json")).toMatchObject({
+        skillDir: `${root}/chosen-skill`,
+        jobTimeout: 17,
+      });
+      const reported = await xpl(root, "service", "status");
+      expect(reported.code).toBe(0);
+      expect(reported.out).toContain("backend: claude (runner configured)");
       const response = await fetch(new URL("/api/bundle", first.server.url));
       const bundle = parseBundle(await response.text());
       instanceId = readJson(root, ".explainer/service/instance.json").instanceId;
@@ -397,7 +428,7 @@ describe("repository service lifecycle", () => {
         guide: ".explainer/demo.explainer.json",
         instanceId,
         backend: "claude",
-        backendAvailable: false,
+        backendAvailable: true,
       });
       etag = (await fetch(new URL("/api/explainer", first.server.url))).headers.get("etag");
     } finally {
@@ -405,6 +436,10 @@ describe("repository service lifecycle", () => {
     }
     const restarted = await serve(root);
     try {
+      expect(readJson(root, ".explainer/service/context.json")).toMatchObject({
+        skillDir: `${root}/chosen-skill`,
+        jobTimeout: 17,
+      });
       const bundle = parseBundle(
         await (await fetch(new URL("/api/bundle", restarted.server.url))).text(),
       );
@@ -478,7 +513,7 @@ describe("repository service lifecycle", () => {
           ...attachment,
           instanceId,
           backend: "claude",
-          backendAvailable: false,
+          backendAvailable: true,
         });
         expect(bundle.index.commit).toBe(current.index.commit);
         expect((await xplJson(root, "status", "--all")).json.index.commit).toBe(

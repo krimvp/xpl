@@ -1,5 +1,7 @@
 # xpl — code explainer
 
+[Try the live example](https://krimvp.github.io/xpl/) on the xpl site.
+
 Interactive diagrams linked to code in both directions. Click a box, an arrow, a sequence step or a concept
 and the editor highlights exactly the code it is about, across as many files as it touches, everything else
 dimmed. Put the cursor in the code and the diagram elements and concepts that cover that line light up.
@@ -12,25 +14,37 @@ The page opens on a guide: a short summary, then the steps, each with a picture 
 
 ![Present mode: step 2 of a tour, with the retry policy's code, config and test on the right](docs/images/tour-step-2-light.png)
 
+Install target: [`@krimvp/xpl`](https://www.npmjs.com/package/@krimvp/xpl).
+
 ## Quick start
 
 Needs Node 22.12 or newer and npm for installation. The local artifact is exercised on Linux x64
-(WSL2, Node 22.23.1). Other platforms have not been verified. This workflow uses a local
-`xpl-cli-0.0.0.tgz` from a maintainer; the publication target and release channel are undecided.
+(WSL2, Node 22.23.1). Other platforms have not been verified. `@krimvp/xpl` 0.1.0 is published on npm
+under MIT. Install with the command below. You can also build from source
+with access to the private [source repository](https://github.com/krimvp/xpl).
 
 XPL helps an author publish a focused explanation of code. Choose a reader and a question before
 drafting. Readers can check the linked source and tests; a valid anchor checks a location and
 freshness, while the author remains responsible for the explanation's claims and omitted behavior.
 
 ```sh
-npm install --global --prefix "$HOME/.local" --offline --ignore-scripts /absolute/path/xpl-cli-0.0.0.tgz
-export PATH="$HOME/.local/bin:$PATH"
-xpl doctor                                    # runtime, artifact hashes, grammars and optional tools
+npm install --global @krimvp/xpl
 xpl skill install                             # copies the bundled skill and binds its launcher
 xpl doctor --agent claude                      # also checks the skill and Claude Code availability
 ```
 
-No source checkout or build is needed to install. After installing a newer tarball, rerun `xpl skill install`
+Or build from a source checkout:
+
+```sh
+npm install && npm run build
+npm pack ./packages/cli/dist
+npm install -g --ignore-scripts ./krimvp-xpl-0.1.0.tgz
+xpl skill install
+```
+
+A maintainer's tarball can also be installed offline with
+`npm install -g --offline --ignore-scripts /absolute/path/krimvp-xpl-0.1.0.tgz`.
+No source checkout or build is needed to install an npm package or tarball. After updating the CLI, rerun `xpl skill install`
 to update the skill and its launcher. The launcher records the installed CLI's absolute path; rerun the
 installer after moving the CLI. For one project, use `xpl skill install --dir .claude/skills/code-explainer`.
 The installer refuses to overwrite a symlink, an unmanaged skill or local edits: move the old directory
@@ -139,8 +153,11 @@ Recovery archives the old instance record. A live PID whose identity cannot be v
 or replaced. Crashed artifact-writer locks need explicit inspection and removal; elapsed time is no proof.
 
 The git-ignored `.explainer/service/` directory keeps local context and ownership records. `--backend claude`
-only saves a future backend selection; no jobs or agent run. The viewer reports connection and backend
-availability below the header. Open **Connection details** for the root and last service instance.
+enables the installed Claude Code proposal runner; `none` (default) disables execution. Use
+`--skill-dir <folder>` for a non-default managed skill installation and `--job-timeout <seconds>` for a
+run deadline (default 300). Both choices persist. Availability means configured, not authenticated;
+actual jobs report tooling, login and provider failures. The viewer reports connection and backend
+availability below the header, without claiming sign-in. Open **Connection details** for the root and last service instance.
 Bookmarks retain the repository and guide; an address serving another guide is refused. Restart with
 `xpl service start` and the open page reconnects to that saved guide, keeping your selection and unsaved edits.
 
@@ -149,7 +166,7 @@ save HTML from the loaded source. The export checks the embedded snapshot; it ca
 changes. Download edits before closing. **Retry connection** attaches the original address again; use
 **Edit → Retry save** to persist offline edits. Offline feedback stays in the browser until exported and
 imported with `xpl feedback`. Manual commands and portable HTML work with the service stopped. Local serving
-needs no provider network or credentials; a future Claude runner needs separate configured access.
+needs no provider network or credentials; Claude jobs use the CLI's existing login and provider access.
 
 Watching is opt-in on each start:
 
@@ -176,9 +193,16 @@ Plain `xpl view` and saved HTML have no service controls. Stop the service to re
 
 The service also keeps job history in `.explainer/service/jobs.json` and exposes it at `GET /api/jobs`.
 Running attempts become interrupted after restart; completed proposals stay recorded, and cancelled or
-superseded results stay fenced. Submission and retry report unavailable until a real runner is supplied.
-This lifecycle storage has been tested with a controlled runner only. Real execution and a job review UI
-are follow-up work; manual `xpl revise` remains the revision workflow.
+superseded results stay fenced. Each Claude attempt records its group and start identity before launch.
+Every attempt drains its process group before final state or more work, including normal and error exits.
+Cleanup failure stops scheduling. Service death kills that group through the launcher's pipe; recovery verifies the recorded Linux start
+time before terminating any remaining group and allowing retry. Reused PIDs are left alone.
+Verified execution currently requires Linux /proc; manual revision works on other platforms. With `--backend claude`, submission generates an ordinary proposal,
+validates it through `xpl revise` and leaves it awaiting explicit author review. Source is read-only; the
+agent can write only its owned output. No job applies a patch or finalizes feedback. Creation proposals
+fill an explicitly initialized guide with selected requests and included IDs through the same journal.
+Service-owned runs refuse manual `revise --accept` to preserve cancellation fencing.
+The job review UI and guarded acceptance are later work; `xpl revise <guide> --run <id>` inspects the proposal.
 
 ## Using the CLI directly
 
@@ -394,11 +418,13 @@ build step between packages in development. After `npm run build`, `node package
 (hidden) loads every tree-sitter grammar from `dist/wasm`.
 
 The workspace packages stay private. The build writes standalone npm metadata in `packages/cli/dist`
-with the CLI package's version and no install dependencies or scripts. `npm run pack` packs that directory,
+as `@krimvp/xpl` 0.1.0 under MIT, with a short README and LICENSE and no install dependencies or scripts. `npm run pack` packs that directory,
 not the workspace package. `integrity.json` records SHA-256 hashes for bundled files; `doctor` detects
 missing or changed files. These hashes detect damage, not the identity of an artifact's publisher.
 The install check copies fixture inputs to scratch, denies CLI checkout reads with Node permissions,
 and tests TS/Python/Go indexing, local viewing and disconnected HTML reading with pinned Chromium.
+It also checks installed service restart/recovery, watch pause/resume and durable job history with
+unavailable-runner submission, alongside the published package name, version, license and file inventory.
 
 - The tree-sitter grammars are the `.wasm` files shipped inside their npm packages (versions pinned exactly:
   the wasm ABI has to match `web-tree-sitter`). Use `initParser()` / `loadLanguage()` from
