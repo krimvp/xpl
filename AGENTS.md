@@ -53,6 +53,7 @@ npx vitest run packages/core/test/apply.test.ts -t "name"     # one file or one 
 npm run build                  # viewer first, then the CLI (copies the viewer and wasm next to itself)
 npm run test:e2e               # builds the viewer, builds fixture bundles, runs Playwright
 npm run format:check           # prettier; `npm run format` to fix
+npm run site                   # landing page (site/) and user docs (docs-site/) into _site/; needs uv
 XPL_TEST_SCIP=1 npx vitest run packages/indexer/test/scip-integration.test.ts   # real SCIP tools, needs network
 ```
 
@@ -90,6 +91,9 @@ so a push is green.
   same commit. That includes `--help` text, the product skill references, and the self-explainer:
   `packages/cli/test/self-explainer.test.ts` fails when code under one of its anchors changes (docs and the
   skill included). Re-anchor it in the same change (`docs-sync` skill).
+- **The user docs include README sections.** `docs-site/pages` pulls sections of `README.md` by heading and
+  whole files of `skill/code-explainer`; renaming such a heading or a new `xpl` command without a `cli.md`
+  section fails `npm run site`, which the Pages workflow runs on every pull request.
 - **Dated records are history.** Do not edit `docs/review-*.md`, `docs/handoff.md` or `docs/analysis-*.txt`.
 
 ## Design principles

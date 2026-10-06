@@ -92,13 +92,14 @@ docs/                   handoff.md, ARCHITECTURE.md, analysis-2026-09-30.txt, re
                         assessment-2026-10-04-graph-formats.md (+ its reproducible scripts)
 .explainer/             xpl's own explainer (xpl.explainer.json), checked by packages/cli/test/self-explainer.test.ts
 site/                   public landing page: hand-written HTML/CSS and jobrunner screenshots
+docs-site/              user docs: zensical.toml, pinned requirements.txt, hand-written pages/ with include lines
 AGENTS.md, CLAUDE.md    guidance for coding agents working on this repo (CLAUDE.md imports AGENTS.md)
 .claude/skills/         skills for working on this repo (.agents/skills links here; code-explainer links to skill/)
 .claude/hooks/          Claude Code hooks (registered in .claude/settings.json): session-start.sh, format-on-edit.sh,
                         stop-check.sh (AGENTS.md, Automation)
 scripts/                pr-screenshots.sh (before/after viewer screenshots; packages/viewer/scripts/pr-shots.ts),
                         needs-screenshots.sh (does a change need them), publish-pr-shots.sh (push to pr-assets),
-                        build-site.mjs (build xpl, bundle a fixture copy, check local site links/assets)
+                        build-site.mjs (build xpl, bundle a fixture copy, build the docs, check site links)
 .github/                pull_request_template.md, workflows/ci.yml (checks, e2e, PR screenshots),
                         workflows/pages.yml (build on PRs; publish the site on main pushes or manual dispatch)
 ```
@@ -110,7 +111,16 @@ Conventions (all packages):
   then `bundle jobrunner`). The patch fills required summaries missing from the committed fixture. Local page
   and CSS references and the embedded demo payload are checked before success. Pages deploys this output
   at `https://krimvp.github.io/xpl/`; pull requests build without deploying. The public artifact contains
-  the landing page and fixture example, not internal docs or the repository's own explainer.
+  the landing page, the fixture example and the user docs, not internal docs or the repository's own explainer.
+- The user docs (`docs-site/`) are built with Zensical into `_site/docs/`, under `uv run` with every Python
+  package pinned in `docs-site/requirements.txt`. A page line `<!-- include path -->` takes a whole file and
+  `<!-- include path "## Heading" -->` the text under one heading, so `README.md` and the product skill's
+  `README.md`, `create.md`, `revise.md`, `patch-format.md` and `cli.md` are the single source. Relative links in
+  that text point to the page that includes the target, to a copied image, or to the file on GitHub;
+  a link to a file that does not exist fails the build. `reference/commands.md` is generated from
+  `xpl --help` and each command's `--help`, and the build fails when `cli.md` has no section for a listed
+  command. `zensical build --strict` fails on a missing page or anchor. The colours and fonts repeat
+  `site/style.css` in `docs-site/pages/stylesheets/xpl.css`.
 
 - ESM, TypeScript `strict`. Relative imports use `.js` suffixes (NodeNext style; bundlers accept it).
 - Workspace packages export their TS sources (`"exports": { ".": "./src/index.ts" }`; the indexer also

@@ -1,0 +1,104 @@
+/* The landing page's tokens (site/style.css), mapped onto the theme's variables. Keep the two in step. */
+:root {
+  --xpl-sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --xpl-mono: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  --md-text-font-family: var(--xpl-sans);
+  --md-code-font-family: var(--xpl-mono);
+}
+[data-md-color-scheme="default"] {
+  --xpl-paper: #f8f7f3;
+  --xpl-ink: #202321;
+  --xpl-muted: #595e59;
+  --xpl-line: #d6d9d1;
+  --xpl-accent: #ae3d21;
+  --xpl-panel: #eeefe9;
+}
+[data-md-color-scheme="slate"] {
+  --xpl-paper: #181b19;
+  --xpl-ink: #f1f2eb;
+  --xpl-muted: #b1b7ad;
+  --xpl-line: #3c423b;
+  --xpl-accent: #ff9c7e;
+  --xpl-panel: #232823;
+  --md-hue: 100;
+}
+[data-md-color-scheme] {
+  --md-default-bg-color: var(--xpl-paper);
+  --md-default-fg-color: var(--xpl-ink);
+  --md-default-fg-color--light: var(--xpl-muted);
+  --md-default-fg-color--lighter: var(--xpl-line);
+  --md-default-fg-color--lightest: var(--xpl-panel);
+  --md-primary-fg-color: var(--xpl-paper);
+  --md-primary-fg-color--light: var(--xpl-panel);
+  --md-primary-fg-color--dark: var(--xpl-ink);
+  --md-primary-bg-color: var(--xpl-ink);
+  --md-primary-bg-color--light: var(--xpl-muted);
+  --md-accent-fg-color: var(--xpl-accent);
+  --md-accent-fg-color--transparent: color-mix(in srgb, var(--xpl-accent) 12%, transparent);
+  --md-typeset-a-color: var(--xpl-ink);
+  --md-code-bg-color: var(--xpl-panel);
+  --md-code-fg-color: var(--xpl-ink);
+  --md-footer-bg-color: var(--xpl-paper);
+  --md-footer-bg-color--dark: var(--xpl-paper);
+  --md-footer-fg-color: var(--xpl-ink);
+  --md-footer-fg-color--light: var(--xpl-muted);
+  --md-footer-fg-color--lighter: var(--xpl-muted);
+}
+body {
+  background: var(--xpl-paper);
+}
+.md-header {
+  border-bottom: 1px solid var(--xpl-line);
+  box-shadow: none;
+}
+.md-header__topic:first-child {
+  font-weight: 750;
+  letter-spacing: -0.04em;
+}
+.md-footer {
+  border-top: 1px solid var(--xpl-line);
+}
+.md-typeset h1 {
+  color: var(--xpl-ink);
+  font-weight: 600;
+  letter-spacing: -0.04em;
+}
+.md-typeset h2,
+.md-typeset h3 {
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+.md-typeset pre > code,
+.md-typeset .highlight {
+  border-radius: 4px;
+}
+.md-typeset pre > code {
+  border: 1px solid var(--xpl-line);
+}
+.md-typeset img {
+  border: 1px solid var(--xpl-line);
+  border-radius: 6px;
+}
+/* The landing page's small uppercase line above a heading. */
+.md-typeset .eyebrow {
+  margin: 0 0 0.5em;
+  font-size: 0.7rem;
+  font-weight: 650;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--xpl-accent);
+}
+/* Links as on the landing page: ink, underlined, accent on hover. */
+.md-typeset a:not(.headerlink) {
+  text-decoration: underline;
+  text-underline-offset: 0.22em;
+}
+.md-typeset a:hover {
+  color: var(--xpl-accent);
+}
+/* Command headings are code spans; in the page contents they read as plain text. */
+.md-nav code {
+  padding: 0;
+  background: none;
+  font-size: inherit;
+}
