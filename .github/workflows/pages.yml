@@ -22,6 +22,10 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      # The docs generator runs under uv with the pins in docs-site/requirements.txt.
+      - uses: astral-sh/setup-uv@v10.2.0
+        with:
+          version: "0.11.32"
       - run: npm ci
       - run: npm run site
       - if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'

@@ -287,7 +287,7 @@ footer p {
   font-size: 13px;
   color: var(--muted);
 }
-footer > a:last-child {
+footer > a:not(.wordmark) {
   font-size: 14px;
 }
 @media (max-width: 700px) {
