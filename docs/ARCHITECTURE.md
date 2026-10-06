@@ -2003,7 +2003,8 @@ visibility and, once outdated, the newer head/base. `xpl pr link <dir> --url --v
 `<dir>/current/manifest.json` (a ready version with a PR result), resolves the PR again and refuses when
 GitHub base/head differ from the staged commits. It reads `repos/<repo>.private` and refuses
 `--visibility public` for a private repository. It then posts the comment or edits it in place (no edit
-when the body is unchanged), linking `<url>/current/index.html` and `<url>/<version>/index.html`.
+when its marker already records the same link; text appended below is kept), linking
+`<url>/current/index.html` and `<url>/<version>/index.html`.
 A failed GitHub write exits 1 and leaves the earlier comment and every staged version as they were.
 `xpl pr check-link <PR>`, run by a PR workflow on new commits, rewrites that comment as outdated when
 base/head moved, keeping only the last version link. It needs no checkout or staged folder. Writes use

@@ -5,6 +5,7 @@
  */
 import { readFile, realpath } from "node:fs/promises";
 import { basename, join, resolve } from "node:path";
+import { isDeepStrictEqual } from "node:util";
 import type { Ctx } from "./context.js";
 import { CliError, UsageError, errorMessage } from "./errors.js";
 import { FULL_SHA } from "./git.js";
@@ -82,7 +83,7 @@ async function findLink(ctx: Ctx, pr: PrIdentity) {
     const record = TRUSTED.has(comment.author_association ?? "")
       ? parseRecord(comment.body ?? "")
       : undefined;
-    if (record) return { id: comment.id, body: comment.body!, record };
+    if (record) return { id: comment.id, record };
   }
   return undefined;
 }
@@ -94,7 +95,7 @@ async function write(
   existing: Awaited<ReturnType<typeof findLink>>,
 ) {
   const body = render(record);
-  if (existing?.body === body) return "unchanged" as const;
+  if (existing && isDeepStrictEqual(existing.record, record)) return "unchanged" as const;
   await gh(
     ctx,
     existing

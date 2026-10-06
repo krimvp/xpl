@@ -1111,13 +1111,20 @@ describe("PR preview link", () => {
         "Readers: team. Updated in place by `xpl pr link`.",
       ].join("\n"),
     );
-    expect((await link()).code).toBe(0);
-    expect(github.comments()).toEqual([spoofed, comment]);
+    // GitHub or another tool may append to the body; the marker alone decides whether the link changed.
+    const state = JSON.parse(readFileSync(github.state, "utf8")) as {
+      comments: { id: number; body: string }[];
+    };
+    state.comments[1]!.body += "\n\n---\nappended signature";
+    writeFile(f.tools, "github.json", JSON.stringify(state));
+    const unchanged = await link("--json");
+    expect(JSON.parse(unchanged.out).action).toBe("unchanged");
+    expect(github.comments()).toEqual(state.comments);
 
     const second = await f.stage();
     const relinked = await link("--json");
     expect(JSON.parse(relinked.out).action).toBe("updated");
-    expect(github.comments().map((item) => item.id)).toEqual([1, 2]);
+    expect(github.comments().map(({ id }: { id: number }) => id)).toEqual([1, 2]);
     expect(github.comments()[1]!.body).toContain(`/pr-7/${second}/index.html`);
 
     f.response.head.sha = "b".repeat(40);
