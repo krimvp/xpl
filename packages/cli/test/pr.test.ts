@@ -1020,19 +1020,31 @@ const state = JSON.parse(fs.readFileSync(process.env.GH_STATE, 'utf8'));
 const path = args.find((arg) => arg.startsWith('repos/'));
 const method = args.includes('--method') ? args[args.indexOf('--method') + 1] : 'GET';
 const body = args.find((arg) => arg.startsWith('body='))?.slice(5);
-const save = (value) => { fs.writeFileSync(process.env.GH_STATE, JSON.stringify(state)); process.stdout.write(JSON.stringify(value)); };
+const save = (value) => {
+  fs.writeFileSync(process.env.GH_STATE, JSON.stringify(state));
+  // A push that lands right after a write: the next PR read sees a new head.
+  if (method !== 'GET' && process.env.GH_MOVE_AFTER_WRITE) {
+    const pr = JSON.parse(fs.readFileSync(process.env.GH_DATA, 'utf8'));
+    pr.head.sha = process.env.GH_MOVE_AFTER_WRITE;
+    fs.writeFileSync(process.env.GH_DATA, JSON.stringify(pr));
+  }
+  process.stdout.write(JSON.stringify(value));
+};
 if (method !== 'GET' && process.env.GH_FAIL_WRITES) { process.stderr.write('HTTP 403: Resource not accessible'); process.exit(1); }
 if (path === 'repos/team/project/pulls/7') process.stdout.write(fs.readFileSync(process.env.GH_DATA));
 else if (path === 'repos/team/project') save(state.repository);
 else if (path === 'repos/team/project/issues/7/comments?per_page=100' && args.includes('--slurp')) save([state.comments]);
 else if (path === 'repos/team/project/issues/7/comments' && method === 'POST') {
-  const comment = { id: state.comments.length + 1, author_association: 'OWNER', body };
+  const comment = { id: state.comments.length + 1, author_association: process.env.GH_ASSOCIATION ?? 'OWNER', body };
   state.comments.push(comment);
   save(comment);
 } else if (path?.startsWith('repos/team/project/issues/comments/') && method === 'PATCH') {
   const comment = state.comments.find((item) => item.id === Number(path.split('/').pop()));
   comment.body = body;
   save(comment);
+} else if (path?.startsWith('repos/team/project/issues/comments/') && method === 'DELETE') {
+  state.comments = state.comments.filter((item) => item.id !== Number(path.split('/').pop()));
+  save({});
 } else { process.stderr.write('unexpected gh ' + args.join(' ')); process.exit(1); }
 `,
   );
@@ -1156,25 +1168,46 @@ describe("PR preview link", () => {
     expect(JSON.parse(repeat.out).action).toBe("unchanged");
   });
 
-  it("refuses public delivery of a private repository and reports a failed link update", async () => {
+  it("refuses untrusted, exposed or stale links and keeps the previous link when a write fails", async () => {
     const { github, env, ...f } = await staged();
-    const before = github.comments();
-    await f.stage();
+    const first = await f.stage();
     const args = ["pr", "link", f.destination, "--url", "https://previews.example/7", "--json"];
+    const team = [...args, "--visibility", "team"];
 
-    const missing = await invoke(args, { cwd: f.root, env });
-    expect(missing.code).toBe(2);
+    expect((await invoke(args, { cwd: f.root, env })).code).toBe(2);
+    const secret = ["pr", "link", f.destination, "--url", "https://user:token@previews.example/7"];
+    expect((await invoke([...secret, "--visibility", "team"], { cwd: f.root, env })).code).toBe(2);
     const exposed = await invoke([...args, "--visibility", "public"], { cwd: f.root, env });
     expect(exposed.code).toBe(1);
     expect(JSON.parse(exposed.out).error).toContain("private repository");
-    const failed = await invoke([...args, "--visibility", "team"], {
+    const before = github.comments();
+    const outsider = await invoke(team, {
       cwd: f.root,
-      env: { ...env, GH_FAIL_WRITES: "1" },
+      env: { ...env, GH_ASSOCIATION: "CONTRIBUTOR" },
     });
+    expect(outsider.code).toBe(1);
+    expect(JSON.parse(outsider.out).error).toContain("owner, member or collaborator");
+    expect(github.comments()).toEqual(before);
+
+    expect((await invoke(team, { cwd: f.root, env })).code).toBe(0);
+    const linked = github.comments();
+    expect(linked[1]!.body).toContain(`/7/${first}/index.html`);
+    await f.stage();
+    const failed = await invoke(team, { cwd: f.root, env: { ...env, GH_FAIL_WRITES: "1" } });
     expect(failed.code).toBe(1);
     expect(JSON.parse(failed.out).error).toContain("Resource not accessible");
     expect(JSON.parse(failed.out).error).toContain("previous PR link is unchanged");
-    expect(github.comments()).toEqual(before);
+    expect(github.comments()).toEqual(linked);
     expect(readJson(f.destination, "current/manifest.json").readiness.ready).toBe(true);
+
+    const raced = await invoke(team, {
+      cwd: f.root,
+      env: { ...env, GH_MOVE_AFTER_WRITE: "c".repeat(40) },
+    });
+    expect(raced.code).toBe(1);
+    expect(JSON.parse(raced.out).error).toContain("the PR moved while linking");
+    expect(github.comments()[1]!.body).toContain(
+      "**Outdated code explainer preview.** It describes head",
+    );
   });
 });

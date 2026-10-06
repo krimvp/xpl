@@ -96,7 +96,7 @@ async function write(
 ) {
   const body = render(record);
   if (existing && isDeepStrictEqual(existing.record, record)) return "unchanged" as const;
-  await gh(
+  const written = await gh(
     ctx,
     existing
       ? [
@@ -114,7 +114,16 @@ async function write(
           `body=${body}`,
         ],
   );
-  return existing ? ("updated" as const) : ("created" as const);
+  if (existing) return "updated" as const;
+  // A comment from someone without write access would not count as the link next time; remove it.
+  const created = JSON.parse(written) as { id: number; author_association?: string };
+  if (!TRUSTED.has(created.author_association ?? "")) {
+    await gh(ctx, ["--method", "DELETE", `repos/${pr.repository}/issues/comments/${created.id}`]);
+    throw new CliError(
+      `only an owner, member or collaborator of ${pr.repository} can keep the PR link; the comment was removed`,
+    );
+  }
+  return "created" as const;
 }
 
 /** Points the PR's one link at `<url>/current` and the staged current version. */
@@ -125,8 +134,16 @@ export async function linkPr(ctx: Ctx, directory: string, url: string, visibilit
   } catch {
     throw new UsageError(`--url must be an http(s) URL: ${url}`);
   }
-  if (base.protocol !== "https:" && base.protocol !== "http:")
-    throw new UsageError(`--url must be an http(s) URL: ${url}`);
+  if (
+    (base.protocol !== "https:" && base.protocol !== "http:") ||
+    base.username ||
+    base.password ||
+    base.search ||
+    base.hash
+  )
+    throw new UsageError(
+      `--url must be an http(s) base URL without credentials, query or fragment: ${url}`,
+    );
   const current = resolve(ctx.cwd, directory, "current");
   let manifest: VersionManifest;
   let version: string;
@@ -176,6 +193,11 @@ export async function linkPr(ctx: Ctx, directory: string, url: string, visibilit
       `${errorMessage(error)}. Staged versions are kept and the previous PR link is unchanged; fix access and rerun xpl pr link.`,
     );
   }
+  // A push between the check above and the write must not leave the old head shown as current.
+  if ((await checkPrLink(ctx, pr)).action === "outdated")
+    throw new CliError(
+      "the PR moved while linking; the comment now marks this version outdated. Create, finish and stage the new head.",
+    );
   return {
     action,
     pr: pr.url,

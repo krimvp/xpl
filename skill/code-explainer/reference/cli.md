@@ -949,8 +949,10 @@ xpl pr link /srv/previews/pr-42 --url https://previews.example/pr-42 --visibilit
 resolves the PR again and refuses, with no GitHub write, when base or head moved since staging. It
 refuses `--visibility public` for a private repository; `team` means the host limits who can read it,
 which xpl does not check. It then posts one comment, or edits its earlier one in place, linking
-`<base-url>/current/index.html` and `<base-url>/<version>/index.html`. Only a marked comment from an
-owner, member or collaborator counts as the link. `--json` returns `{ok, action, pr, current, version}`
+`<base-url>/current/index.html` and `<base-url>/<version>/index.html`. The base URL takes no credentials,
+query or fragment. Only a marked comment from an owner, member or collaborator counts as the link; anyone
+else's new comment is removed again and the run fails. After writing, `link` checks the PR once more and
+marks the comment outdated, exiting 1, if a push landed meanwhile. `--json` returns `{ok, action, pr, current, version}`
 with `action` `created`, `updated` or `unchanged`. A failed write exits 1; the earlier comment and all
 staged versions stay as they were. The caller's `gh` token needs permission to comment.
 
@@ -974,6 +976,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      # Pin the xpl release you use: this job holds a token that can write PR comments.
       - run: npx --yes @krimvp/xpl pr check-link "$REPOSITORY#$NUMBER"
         env:
           GH_TOKEN: ${{ github.token }}
@@ -981,7 +984,8 @@ jobs:
           NUMBER: ${{ github.event.pull_request.number }}
 ```
 
-The workflow needs an xpl release that has `pr check-link`. It does not create the new guide: an author
+The workflow needs an xpl release that has `pr check-link`. It runs when the PR's head changes or its
+base branch is switched; new commits on the base branch alone do not trigger it. It does not create the new guide: an author
 runs `xpl pr create`, `xpl pr finish`, `xpl stage` and `xpl pr link` for the new head, which edits the
 same comment back to current.
 

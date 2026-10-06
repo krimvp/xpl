@@ -105,7 +105,7 @@ then point the PR at it: `xpl pr link /srv/previews/pr-42 --url https://previews
 It rechecks the PR's base and head, then posts one comment, or edits the same comment, with links to
 `current/index.html` and to this version. A private repository's preview needs `--visibility team`; who
 can open the host is up to the host. A PR workflow running `xpl pr check-link owner/repo#42` on new
-commits marks that comment outdated, so a stale preview is never shown as current. The workflow file is
+commits marks that comment outdated, so it stops calling an old head's preview current. The workflow file is
 in [the CLI reference](skill/code-explainer/reference/cli.md), under `xpl pr link`.
 
 `xpl guides` lists locally saved guides by title, recorded questions, audience and source/index commits.
