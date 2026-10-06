@@ -424,8 +424,9 @@ xpl stage pr-guide --root /absolute/pr-cache/input-XXXX/repository \
 ```
 
 Staging verifies every recorded input/artifact hash and recomputes readiness against the prepared source.
-It copies the exact ready HTML and includes the ready result manifest. It rechecks GitHub base/head after
-writing and local freshness after that API call, before promotion. Superseded results, changed artifacts
+It adds version metadata to the validated ready HTML and includes the original ready result manifest.
+The original HTML hash stays in that result; the staged manifest hashes the delivered page. It rechecks
+GitHub base/head after writing and local freshness after that API call, before promotion. Superseded results, changed artifacts
 or API failures cannot replace current. PR results keep their recorded file selection and decision note;
 do not pass `--files` or `--note` with `--pr-result`.
 
@@ -434,8 +435,27 @@ do not pass `--files` or `--note` with `--pr-result`.
 fails, 2 reports usage. A crashed writer's `current.lock` needs explicit removal after verifying it stopped.
 If lock cleanup fails after successful promotion, the command succeeds with a cleanup warning; the
 new current version remains usable.
-This command configures no server, remote destination, credentials, upload or PR Action. Exact version
-links and configured team delivery are later slices of #34.
+Opening current resolves to its immutable version folder before navigation. The page's About this
+explanation panel shows its version, included source and captured prior versions with their scope and
+author review state. The existing query contract uses `version=<version-folder>`, `tour=<id>&step-id=<id>`,
+`view=<id>&focus=<element>` (repeatable), or `file=<path>&range=1:1-1:6&side=head|base`.
+Ranges use 1-based lines and inclusive UTF-16 columns; omitted columns select whole lines.
+Column positions allow line length + 1, including column 1 on an empty line. Base paths are change head
+keys, including renamed files and deleted files. Links resolve only supplied source.
+Mismatched version queries refuse to show another snapshot. About this explanation offers a link to the
+current reading state and an Open latest version link through the sibling current page. Staging times
+use the reader’s local format; earlier versions and technical identifiers sit behind disclosures.
+Browser bookmarks retain the reading state. Earlier pages capture only history that existed
+at staging. Keep the staged directory tree for sibling links; detached copies remain self-contained but
+cannot navigate missing sibling versions. Save as HTML preserves navigation with the same query keys,
+without live service attachment. An explicit navigation target overrides saved navigation as a whole.
+Launch, saved HTML and browser Back/Forward share one restoration function. Applied step, view,
+perspective, focus and source cursor are independent; restoring one does not clear another.
+An empty `step-id=` records no applied step, including a tour detour. Older compact tour links without
+view/focus still apply the requested step. A perspective switch keeps the applied step's source override.
+Edited re-saves lose the staged version claim when their artifactIdentity changes.
+This command configures no server, remote destination, credentials, upload or PR Action. Configured team
+delivery remains a later slice of #34.
 
 ## `xpl new <name> [--title t] [--repo r] [--url u]`
 

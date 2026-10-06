@@ -6,6 +6,7 @@ import {
   mkdtemp,
   readFile,
   realpath,
+  readdir,
   rename,
   rm,
   symlink,
@@ -24,6 +25,7 @@ import {
   basePathOf,
   type ReadinessReport,
   type ViewerBundle,
+  type PublishedVersion,
 } from "@xpl/core";
 import {
   collectBaseFiles,
@@ -50,19 +52,13 @@ interface StageOptions {
   prResult?: string;
 }
 
-export interface VersionManifest {
+export interface VersionManifest extends PublishedVersion {
   schemaVersion: 1;
   kind: "xpl-ready-version";
   /** A directory locator, not a replacement for artifactIdentity. */
-  version: string;
-  createdAt: string;
-  commits: { index: string; base?: string; head?: string };
-  identity: ReadinessReport["identity"];
   inputs: { explainerSha256: string; indexSha256: string };
   artifacts: { html: { path: "index.html"; sha256: string } };
   readiness: ReadinessReport;
-  includedSource: { head: string[]; base: string[] };
-  review: ReadinessReport["review"];
   prResult?: { sha256: string; manifest: PrResultManifest };
 }
 
@@ -269,12 +265,7 @@ export async function stageVersion(
     const directory = await mkdtemp(join(destination, "version-"));
     const pointer = join(destination, `.current-${randomUUID()}`);
     try {
-      const html =
-        preview.pr?.html ??
-        injectBundle(readViewerHtml(ctx.env), preview.bundle, { packIndex: true });
-      const manifest: VersionManifest = {
-        schemaVersion: 1,
-        kind: "xpl-ready-version",
+      const currentVersion: PublishedVersion = {
         version: basename(directory),
         createdAt: new Date().toISOString(),
         commits: {
@@ -287,15 +278,48 @@ export async function stageVersion(
             : {}),
         },
         identity: preview.report.identity,
+        includedSource: preview.includedSource,
+        review: preview.report.review,
+      };
+      const previous: PublishedVersion[] = [];
+      for (const entry of (await readdir(destination)).sort()) {
+        if (!/^version-[A-Za-z0-9_-]+$/.test(entry) || entry === currentVersion.version) continue;
+        const old = JSON.parse(
+          (await regularBytes(join(destination, entry, "manifest.json"), destination)).toString(),
+        ) as VersionManifest;
+        if (old.kind !== "xpl-ready-version" || old.version !== entry || !old.readiness.ready)
+          throw new CliError(`invalid retained version manifest: ${entry}`);
+        const { version, createdAt, commits, identity, includedSource, review } = old;
+        previous.push({ version, createdAt, commits, identity, includedSource, review });
+      }
+      previous.sort(
+        (a, b) => b.createdAt.localeCompare(a.createdAt) || a.version.localeCompare(b.version),
+      );
+      const html = injectBundle(
+        preview.pr?.html ?? readViewerHtml(ctx.env),
+        {
+          ...preview.bundle,
+          publication: { current: currentVersion, previous },
+        },
+        { packIndex: true },
+      );
+      const manifest: VersionManifest = {
+        ...currentVersion,
+        schemaVersion: 1,
+        kind: "xpl-ready-version",
         inputs: preview.inputs,
         artifacts: { html: { path: "index.html", sha256: sha256(html) } },
         readiness: preview.report,
-        includedSource: preview.includedSource,
-        review: preview.report.review,
         ...(preview.pr
           ? { prResult: { sha256: preview.pr.sha256, manifest: preview.pr.manifest } }
           : {}),
       };
+      // Check retained metadata with the same reader contract before it can become current.
+      parseBundle(
+        new RegExp(
+          `<script id="${BUNDLE_SCRIPT_ID}" type="application/json">([\\s\\S]*?)</script>`,
+        ).exec(html)![1]!,
+      );
       await writeFile(join(directory, "index.html"), html, { flag: "wx", mode: 0o444 });
       await writeFile(join(directory, "manifest.json"), jsonFile(manifest), {
         flag: "wx",

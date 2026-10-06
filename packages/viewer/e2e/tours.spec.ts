@@ -15,6 +15,7 @@ import {
   focusOf,
   linesWith,
   openTourEditor,
+  openEditMenu,
   readEmbeddedBundle,
   screenshotPath,
   stateOf,
@@ -57,9 +58,101 @@ const withThirdStep = (bundle: Loose) => {
 };
 
 const searchOf = (page: Page) => new URL(page.url()).search;
+const navigationOf = (page: Page) => {
+  const params = new URLSearchParams(searchOf(page));
+  const values: Record<string, string | string[]> = Object.fromEntries(params);
+  if (params.has("focus")) values.focus = params.getAll("focus");
+  return values;
+};
+
 const present = (page: Page) => page.getByTestId("present");
 const counter = (page: Page) => page.getByTestId("tour-counter");
 const note = (page: Page) => page.getByTestId("tour-note");
+
+test("a keyboard selection starting at a line end survives reload and saved HTML", async ({
+  page,
+}) => {
+  await open(page);
+  await page.evaluate(() => window.__xpl!.select(["concept:retry-policy"]));
+  const source = page.locator('.pane[data-file="src/runner.ts"] .cm-content').first();
+  await source.click();
+  await source.press("Control+Home");
+  await source.press("End");
+  await source.press("Shift+ArrowDown");
+  const cursor = { file: "src/runner.ts", fromLine: 1, toLine: 2, fromCol: 60, toCol: 59 };
+  await expect.poll(() => stateOf(page).then((s) => s.cursor)).toEqual(cursor);
+  await expect.poll(() => new URL(page.url()).searchParams.get("range")).toBe("1:60-2:59");
+  await page.reload();
+  await expect.poll(() => stateOf(page).then((s) => s.cursor)).toEqual(cursor);
+  await (await openEditMenu(page)).getByTestId("edit-save-html").click();
+  const [download] = await Promise.all([
+    page.waitForEvent("download"),
+    page.getByTestId("save-html-draft").click(),
+  ]);
+  const html = await readFile((await download.path())!, "utf8");
+  await page.route("http://xpl-saved.test/**", (route) =>
+    route.fulfill({ contentType: "text/html", body: html }),
+  );
+  await page.goto("http://xpl-saved.test/");
+  await expect.poll(() => stateOf(page).then((s) => s.cursor)).toEqual(cursor);
+});
+
+test("reload keeps an applied step's code override after switching to Map", async ({ page }) => {
+  await openVariant(
+    page,
+    (bundle) => {
+      const config = bundle.explainer.concepts
+        .find((c: Loose) => c.id === "concept:retry-policy")
+        .anchors.find((a: Loose) => a.file === "config/default.yaml");
+      bundle.explainer.tours[0].steps[1].code = [config];
+    },
+    "?perspective=guide&tour=tour:intro&step-id=t2",
+  );
+  await page.getByRole("button", { name: "Map", exact: true }).click();
+  await page.getByRole("button", { name: "Show source", exact: true }).click();
+  await expect(page.locator('[data-file="config/default.yaml"]')).toBeVisible();
+  await expect
+    .poll(() => stateOf(page))
+    .toMatchObject({
+      perspective: "map",
+      viewId: "view:overview",
+      stepId: "t2",
+      focusFiles: ["config/default.yaml"],
+    });
+  await page.reload();
+  await expect
+    .poll(() => stateOf(page))
+    .toMatchObject({
+      perspective: "map",
+      viewId: "view:overview",
+      stepId: "t2",
+      focusFiles: ["config/default.yaml"],
+    });
+  await page.getByRole("button", { name: "Show source", exact: true }).click();
+  await expect(page.locator('[data-file="config/default.yaml"]')).toBeVisible();
+});
+
+test("browser Back restores Present, its applied step and source cursor together", async ({
+  page,
+}) => {
+  await open(
+    page,
+    "?mode=present&tour=tour:intro&step-id=t2&file=src/runner.ts&range=10-10&side=head",
+  );
+  const expected = {
+    mode: "present",
+    stepId: "t2",
+    selection: ["dispatch:3", "concept:retry-policy"],
+    cursor: { file: "src/runner.ts", fromLine: 10, toLine: 10 },
+  };
+  await expect(present(page)).toBeVisible();
+  await expect.poll(() => stateOf(page)).toMatchObject(expected);
+  await page.getByRole("button", { name: "Exit", exact: true }).click();
+  await expect(present(page)).toHaveCount(0);
+  await page.goBack();
+  await expect(present(page)).toBeVisible();
+  await expect.poll(() => stateOf(page)).toMatchObject(expected);
+});
 /**
  * The caption's words: the step title, then the rest of the note. A short note is all title (its first
  * sentence is the title, and nothing is said twice), so the specs compare the caption as a whole.
@@ -127,7 +220,16 @@ test.describe("tour:intro of the TS fixture", () => {
     await expect(page.getByTestId("mode-present")).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Download explainer JSON" })).toHaveCount(0);
     // and the address bar names the slide (this is a file:// page)
-    expect(searchOf(page)).toBe("?mode=present&tour=tour:intro&step=1");
+    await expect
+      .poll(() => navigationOf(page))
+      .toEqual({
+        mode: "present",
+        tour: "tour:intro",
+        step: "1",
+        "step-id": "t1",
+        view: "view:overview",
+        focus: ["grp:scheduling"],
+      });
     expect(problems).toEqual([]);
   });
 
@@ -183,7 +285,16 @@ test.describe("tour:intro of the TS fixture", () => {
     await expect(runner.locator(".cm-line.xpl-dim").first()).toBeVisible();
 
     await expect(page.locator(".tree-panel")).toHaveCount(0);
-    expect(searchOf(page)).toBe("?mode=present&tour=tour:intro&step=2");
+    await expect
+      .poll(() => navigationOf(page))
+      .toEqual({
+        mode: "present",
+        tour: "tour:intro",
+        step: "2",
+        "step-id": "t2",
+        view: "view:dispatch",
+        focus: ["dispatch:3", "concept:retry-policy"],
+      });
     expect((await focusOf(page)).some((f) => f.file === "config/default.yaml")).toBe(true);
     expect(problems).toEqual([]);
   });
@@ -213,8 +324,17 @@ test.describe("tour:intro of the TS fixture", () => {
     expect((await stateOf(page)).selection).toHaveLength(2);
     await page.keyboard.press("Escape");
     expect((await stateOf(page)).selection).toEqual([]);
-    // the address bar no longer names a slide
-    expect(searchOf(page)).toBe("");
+    // The address retains the exploration and resumed tour, without an applied step or focus.
+    await expect
+      .poll(() => navigationOf(page))
+      .toEqual({
+        perspective: "explore",
+        view: "view:dispatch",
+        tour: "tour:intro",
+        step: "2",
+        focus: [""],
+        "step-id": "",
+      });
   });
 
   test("Present, Exit and the tour picker switch between the modes and the tours", async ({
@@ -326,14 +446,41 @@ test.describe("the address bar", () => {
     await expect(counter(page)).toHaveText("2 / 3");
     expect(await stateOf(page)).toMatchObject({ mode: "present", tour: "tour:intro", step: 2 });
     expect((await stateOf(page)).viewId).toBe("view:dispatch");
-    expect(searchOf(page)).toBe("?mode=present&tour=tour:intro&step=2");
+    await expect
+      .poll(() => navigationOf(page))
+      .toEqual({
+        mode: "present",
+        tour: "tour:intro",
+        step: "2",
+        "step-id": "t2",
+        view: "view:dispatch",
+        focus: ["dispatch:3", "concept:retry-policy"],
+      });
 
     await page.keyboard.press("ArrowRight");
     await expect(counter(page)).toHaveText("3 / 3");
-    expect(searchOf(page)).toBe("?mode=present&tour=tour:intro&step=3");
+    await expect
+      .poll(() => navigationOf(page))
+      .toEqual({
+        mode: "present",
+        tour: "tour:intro",
+        step: "3",
+        "step-id": "t3",
+        view: "view:dispatch",
+        focus: ["dispatch:1"],
+      });
     await page.keyboard.press("Home");
     await expect(counter(page)).toHaveText("1 / 3");
-    expect(searchOf(page)).toBe("?mode=present&tour=tour:intro&step=1");
+    await expect
+      .poll(() => navigationOf(page))
+      .toEqual({
+        mode: "present",
+        tour: "tour:intro",
+        step: "1",
+        "step-id": "t1",
+        view: "view:overview",
+        focus: ["grp:scheduling"],
+      });
     // stepping does not add history entries: there is nothing to go back to
     expect(await page.evaluate(() => history.length)).toBeLessThanOrEqual(2);
 
@@ -347,9 +494,27 @@ test.describe("the address bar", () => {
 
     await page.keyboard.press("Escape");
     await expect(present(page)).toHaveCount(0);
-    expect(searchOf(page)).toBe("");
+    await expect
+      .poll(() => navigationOf(page))
+      .toEqual({
+        perspective: "explore",
+        view: "view:dispatch",
+        tour: "tour:intro",
+        step: "2",
+        "step-id": "t2",
+        focus: ["dispatch:3", "concept:retry-policy"],
+      });
     await page.getByTestId("mode-present").click();
-    expect(searchOf(page)).toBe("?mode=present&tour=tour:intro&step=2");
+    await expect
+      .poll(() => navigationOf(page))
+      .toEqual({
+        mode: "present",
+        tour: "tour:intro",
+        step: "2",
+        "step-id": "t2",
+        view: "view:dispatch",
+        focus: ["dispatch:3", "concept:retry-policy"],
+      });
   });
 
   test("odd addresses land somewhere sensible: a step past the end, an unknown tour, a short id", async ({
@@ -357,7 +522,16 @@ test.describe("the address bar", () => {
   }) => {
     await open(page, "?mode=present&tour=tour:intro&step=99");
     await expect(counter(page)).toHaveText("2 / 2");
-    expect(searchOf(page)).toBe("?mode=present&tour=tour:intro&step=2");
+    await expect
+      .poll(() => navigationOf(page))
+      .toEqual({
+        mode: "present",
+        tour: "tour:intro",
+        step: "2",
+        "step-id": "t2",
+        view: "view:dispatch",
+        focus: ["dispatch:3", "concept:retry-policy"],
+      });
     await open(page, "?mode=present&tour=tour:nope");
     await expect(counter(page)).toHaveText("1 / 2");
     expect((await stateOf(page)).tour).toBe("tour:intro");
@@ -381,16 +555,44 @@ test.describe("the address bar", () => {
       bundle.tour = "tour:intro";
     });
     await expect(counter(page)).toHaveText("1 / 2");
-    expect(searchOf(page)).toBe("?mode=present&tour=tour:intro&step=1");
+    await expect
+      .poll(() => navigationOf(page))
+      .toEqual({
+        mode: "present",
+        tour: "tour:intro",
+        step: "1",
+        "step-id": "t1",
+        view: "view:overview",
+        focus: ["grp:scheduling"],
+      });
     await page.keyboard.press("ArrowRight");
     await page.keyboard.press("Escape");
     await expect(present(page)).toHaveCount(0);
     // the tour and the step stay in the address: Present resumes there
-    expect(searchOf(page)).toBe("?mode=explore&tour=tour:intro&step=2");
+    await expect
+      .poll(() => navigationOf(page))
+      .toEqual({
+        mode: "explore",
+        perspective: "explore",
+        view: "view:dispatch",
+        tour: "tour:intro",
+        step: "2",
+        "step-id": "t2",
+        focus: ["dispatch:3", "concept:retry-policy"],
+      });
     // Back returns to the talk, at that step (not to the page before this file)
     await page.goBack();
     await expect(counter(page)).toHaveText("2 / 2");
-    expect(searchOf(page)).toBe("?mode=present&tour=tour:intro&step=2");
+    await expect
+      .poll(() => navigationOf(page))
+      .toEqual({
+        mode: "present",
+        tour: "tour:intro",
+        step: "2",
+        "step-id": "t2",
+        view: "view:dispatch",
+        focus: ["dispatch:3", "concept:retry-policy"],
+      });
     await page.keyboard.press("Escape");
     await page.reload();
     await page.waitForFunction(() => window.__xpl !== undefined);
@@ -423,7 +625,19 @@ test.describe("during a talk", () => {
       selection: ["dispatch:1"],
     });
     await expect(counter(page)).toHaveText("2 / 2");
-    expect(searchOf(page)).toBe("?mode=present&tour=tour:intro&step=2");
+    await expect
+      .poll(() => navigationOf(page))
+      .toEqual({
+        mode: "present",
+        tour: "tour:intro",
+        step: "2",
+        view: "view:dispatch",
+        focus: ["dispatch:1"],
+        "step-id": "",
+      });
+    await page.reload();
+    await expect(page.getByTestId("tour-detour")).toBeVisible();
+    await expect.poll(() => stateOf(page).then((s) => s.selection)).toEqual(["dispatch:1"]);
     // the code follows the click (the step's own code is not shown any more)
     await expect.poll(() => paneFiles(page)).toEqual(["src/runner.ts", "src/queue.ts"]);
     // the note stays: it belongs to the step
@@ -772,7 +986,16 @@ test.describe("adding to a tour (in memory: this page has no server)", () => {
     await page.keyboard.press("ArrowRight");
     await expect.poll(() => captionText(page)).toBe("Start by popping a job");
     expect((await stateOf(page)).selection).toEqual(["dispatch:1"]);
-    expect(searchOf(page)).toBe("?mode=present&tour=tour:my-walk&step=2");
+    await expect
+      .poll(() => navigationOf(page))
+      .toEqual({
+        mode: "present",
+        tour: "tour:my-walk",
+        step: "2",
+        "step-id": "t1",
+        view: "view:dispatch",
+        focus: ["dispatch:1"],
+      });
     // choosing the other tour starts it
     await page.getByTestId("tour-picker").selectOption("tour:intro");
     await expect(counter(page)).toHaveText("1 / 2");

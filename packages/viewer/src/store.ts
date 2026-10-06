@@ -65,7 +65,7 @@ import {
   type WatchAttention,
 } from "@xpl/core";
 import { snapshotTexts } from "./snapshot.js";
-import { messageOf, ServerApi, type LaunchParams } from "./data.js";
+import { messageOf, readLaunchParams, ServerApi, type LaunchParams } from "./data.js";
 import { changeAt, changeOf, hasBase } from "./diff.js";
 import { workspaceView } from "./workspace.js";
 import { serializeExplainer, withViewFields } from "./edits.js";
@@ -259,6 +259,38 @@ type PendingWrite =
       applied: boolean;
     };
 
+/** Step defaults are shared by launch restoration and interactive navigation. */
+function stepState(
+  model: ExplainerModel,
+  tour: Tour,
+  index: number,
+  viewId: string | undefined,
+): Partial<ViewerState> {
+  const step = tour.steps[index];
+  if (!step) return {};
+  const view = model.view(step.view);
+  const editor = step.editor ?? {};
+  const focus = (Array.isArray(step.focus) ? step.focus : []).filter(
+    (id): id is string => typeof id === "string" && model.hasElement(id),
+  );
+  return {
+    viewId: view ? view.id : viewId,
+    selection: [...new Set(focus)],
+    cursor: undefined,
+    openedFile: undefined,
+    openedBase: false,
+    applied: {
+      tourId: tour.id,
+      stepId: step.id,
+      // An empty override is "not given": it would leave the code side blank.
+      code: Array.isArray(step.code) && step.code.length > 0 ? step.code : undefined,
+      dimOthers: editor.dimOthers !== false,
+      hideFileTree: editor.hideFileTree !== false,
+      primary: typeof editor.primary === "string" ? editor.primary : undefined,
+    },
+  };
+}
+
 export class ViewerStore {
   private state: ViewerState;
   private readonly listeners = new Set<() => void>();
@@ -303,30 +335,15 @@ export class ViewerStore {
     this.liveApi = this.api;
     const explainer = bundle.explainer;
     const model = this.modelOf(explainer);
-    const views = model.views;
-    const viewId = views.find((v) => v.id === launch.view)?.id ?? views[0]?.id;
-
-    // Where to start: the URL wins over the bundle. A tour that does not exist falls back to the first
-    // one when the page is to open in Present, and to none in Explore.
-    const tours = model.tours;
-    const asked = findTour(tours, launch.tour) ?? findTour(tours, bundle.tour);
-    if (asked && launch.stepId) {
-      const index = asked.steps.findIndex((step) => step.id === launch.stepId);
-      if (index >= 0) launch = { ...launch, step: index + 1 };
-    }
-    const present = (launch.mode ?? bundle.mode ?? "explore") === "present" && tours.length > 0;
-    const tour = asked ?? (present ? tours[0] : undefined);
     this.state = {
       readOnlyGuide: bundle.readOnlyGuide,
-      perspective:
-        launch.perspective ??
-        (launch.mode || launch.view || bundle.mode === "present" ? "explore" : "guide"),
+      perspective: "guide",
       canGoBack: false,
       canGoForward: false,
       explainer,
       model,
-      viewId,
-      selection: (launch.focus ?? []).filter((id) => model.hasElement(id)),
+      viewId: model.views[0]?.id,
+      selection: [],
       cursor: undefined,
       openedFile: undefined,
       openedBase: false,
@@ -335,7 +352,7 @@ export class ViewerStore {
       callersSeq: 0,
       expanded: new Set(),
       mode: "explore",
-      tour: tour ? { tourId: tour.id, step: stepIndex(launch.step, tour.steps.length) } : undefined,
+      tour: undefined,
       applied: undefined,
       stepSeq: 0,
       files: bundle.files,
@@ -359,6 +376,14 @@ export class ViewerStore {
       feedback: [],
       exportInfo: bundle.exportInfo,
     };
+    const restored = this.restoreState(launch);
+    this.state = {
+      ...this.state,
+      ...restored,
+      openSeq: restored.cursor ? 1 : 0,
+      stepSeq: restored.applied ? 1 : 0,
+    };
+    if (restored.perspective !== "explore") this.reading = restored.perspective;
     this.loadFeedback(bundle.feedback);
     // Offline reload opens the original embedded artifact. Its in-memory edits must first be exported.
     if (this.api && this.editStorageKey && typeof localStorage !== "undefined") {
@@ -382,28 +407,72 @@ export class ViewerStore {
         this.set({ editHistoryError: `Undo history could not be loaded: ${messageOf(error)}` });
       }
     }
-    if (this.state.perspective !== "explore") this.reading = this.state.perspective;
-    if (present) this.present();
-    else if (launch.perspective && asked && launch.step) {
-      this.applyStep(asked, stepIndex(launch.step, asked.steps.length));
-      const same = (ids: readonly string[] | undefined) =>
-        JSON.stringify(ids) === JSON.stringify(launch.focus);
-      // The section's focus as entering its flow left it (`flowEntry`): still the section, applied.
-      const flow = launch.perspective === "flow" ? workspaceView(this.state, "flow") : undefined;
-      const entry = flow && flow.type !== "graph" ? this.flowEntry(flow) : undefined;
-      if (launch.focus && !same(this.state.selection)) {
-        if (entry?.selection && same(entry.selection)) this.set(entry);
-        else
-          this.set({
-            selection: launch.focus.filter((id) => model.hasElement(id)),
-            applied: undefined,
-          });
-      }
-    }
-    const perspective = this.state.perspective;
-    if (!present && (perspective === "map" || perspective === "flow"))
-      this.set({ viewId: workspaceView(this.state, perspective)?.id ?? this.state.viewId });
-    if (launch.file && launch.range) this.openRange(launch.file, launch.range);
+  }
+
+  /** Build navigation without notifying listeners, recording history or replaying actions. */
+  restoreState(params: LaunchParams): Navigation {
+    if (Object.keys(params).length === 0 && this.library.launch)
+      params = readLaunchParams(this.library.launch);
+    const { model } = this.state;
+    const present =
+      (params.mode ?? (params.perspective ? "explore" : this.library.mode) ?? "explore") ===
+        "present" && model.tours.length > 0;
+    const tour =
+      findTour(model.tours, params.tour ?? this.library.tour) ??
+      (present ? model.tours[0] : undefined);
+    const stable = tour?.steps.findIndex((step) => step.id === params.stepId) ?? -1;
+    const index = stable >= 0 ? stable : stepIndex(params.step, tour?.steps.length ?? 0);
+    // Old compact tour URLs imply an applied step. New URLs state its presence or absence explicitly.
+    const applied =
+      stable >= 0 ||
+      (params.stepId === undefined &&
+        params.view === undefined &&
+        params.focus === undefined &&
+        (present || (params.step !== undefined && params.perspective !== undefined)));
+    const defaults = tour && applied ? stepState(model, tour, index, model.views[0]?.id) : {};
+    const cursor =
+      params.file && params.range
+        ? this.rangeCursor(params.file, params.range, params.side)
+        : undefined;
+    const explicitView = model.views.find((view) => view.id === params.view)?.id;
+    const restored: Navigation = {
+      mode: present ? "present" : "explore",
+      perspective:
+        params.perspective ??
+        (cursor && !present && !params.mode
+          ? "code"
+          : params.mode || params.view || this.library.mode === "present"
+            ? "explore"
+            : "guide"),
+      viewId: explicitView ?? defaults.viewId ?? model.views[0]?.id,
+      selection:
+        params.focus !== undefined
+          ? params.focus.filter((id) => model.hasElement(id))
+          : (defaults.selection ?? []),
+      applied: defaults.applied,
+      tour: tour ? { tourId: tour.id, step: index } : undefined,
+      cursor,
+      openedFile: cursor?.file,
+      openedBase: cursor?.side === "base",
+      openedLine: cursor?.side === "base" ? cursor.fromLine : undefined,
+    };
+    if (
+      !explicitView &&
+      !present &&
+      (restored.perspective === "map" || restored.perspective === "flow")
+    )
+      restored.viewId =
+        workspaceView({ ...this.state, ...restored }, restored.perspective)?.id ?? restored.viewId;
+    return restored;
+  }
+
+  /** Browser history applies the same snapshot as launch, without interactive navigation actions. */
+  restoreNavigation(params: LaunchParams): void {
+    this.set({
+      ...this.restoreState(params),
+      openSeq: this.state.openSeq + 1,
+      stepSeq: this.state.stepSeq + 1,
+    });
   }
 
   /** The model of an explainer, over tours that are sound (hand-edited files may not be). */
@@ -695,9 +764,18 @@ export class ViewerStore {
   }
 
   /** Search and shared links use inclusive source columns, only within supplied snapshot text. */
-  openRange(file: FilePath, range: Range): void {
-    const text = this.state.files[file];
-    if (text === undefined || !this.indexModel.hasFile(file)) return;
+  private rangeCursor(
+    file: FilePath,
+    range: Range,
+    side: "head" | "base" = "head",
+  ): Cursor | undefined {
+    const base = side === "base";
+    const text = (base ? this.state.baseFiles : this.state.files)[file];
+    if (
+      text === undefined ||
+      (base ? !hasBase(changeOf(this.state.explainer), file) : !this.indexModel.hasFile(file))
+    )
+      return;
     const lines = text.split("\n");
     const { startLine, endLine, startCol, endCol } = range;
     if (
@@ -710,26 +788,33 @@ export class ViewerStore {
           !Number.isInteger(endCol) ||
           startCol < 1 ||
           endCol! < 1 ||
-          startCol > lines[startLine - 1]!.replace(/\r$/, "").length ||
-          endCol! > lines[endLine - 1]!.replace(/\r$/, "").length ||
+          startCol > lines[startLine - 1]!.replace(/\r$/, "").length + 1 ||
+          endCol! > lines[endLine - 1]!.replace(/\r$/, "").length + 1 ||
           (startLine === endLine && endCol! < startCol)))
     )
       return;
+    return {
+      file,
+      fromLine: startLine,
+      toLine: endLine,
+      ...(base ? { side: "base" as const } : {}),
+      ...(startCol !== undefined ? { fromCol: startCol, toCol: endCol } : {}),
+    };
+  }
+
+  openRange(file: FilePath, range: Range, side: "head" | "base" = "head"): void {
+    const cursor = this.rangeCursor(file, range, side);
+    if (!cursor) return;
     this.navigate({
       mode: "explore",
       perspective: "code",
       selection: [],
       applied: undefined,
       openedFile: file,
-      openedBase: false,
-      openedLine: undefined,
+      openedBase: side === "base",
+      openedLine: side === "base" ? cursor.fromLine : undefined,
       openSeq: this.state.openSeq + 1,
-      cursor: {
-        file,
-        fromLine: startLine,
-        toLine: endLine,
-        ...(startCol !== undefined ? { fromCol: startCol, toCol: endCol } : {}),
-      },
+      cursor,
     });
   }
 
@@ -901,30 +986,9 @@ export class ViewerStore {
    * are skipped. Reading files is left to the editor stack.
    */
   private applyStep(tour: Tour, index: number): void {
-    const step = tour.steps[index];
-    if (!step) return;
-    const { model } = this.state;
-    const view = model.view(step.view);
-    const editor = step.editor ?? {};
-    const focus = (Array.isArray(step.focus) ? step.focus : []).filter(
-      (id): id is string => typeof id === "string" && model.hasElement(id),
-    );
     this.set({
-      viewId: view ? view.id : this.state.viewId,
-      selection: [...new Set(focus)],
-      cursor: undefined,
-      openedFile: undefined,
-      openedBase: false,
+      ...stepState(this.state.model, tour, index, this.state.viewId),
       stepSeq: this.state.stepSeq + 1,
-      applied: {
-        tourId: tour.id,
-        stepId: step.id,
-        // An empty override is "not given": it would leave the code side blank.
-        code: Array.isArray(step.code) && step.code.length > 0 ? step.code : undefined,
-        dimOthers: editor.dimOthers !== false,
-        hideFileTree: editor.hideFileTree !== false,
-        primary: typeof editor.primary === "string" ? editor.primary : undefined,
-      },
     });
   }
 
