@@ -424,8 +424,9 @@ xpl stage pr-guide --root /absolute/pr-cache/input-XXXX/repository \
 ```
 
 Staging verifies every recorded input/artifact hash and recomputes readiness against the prepared source.
-It copies the exact ready HTML and includes the ready result manifest. It rechecks GitHub base/head after
-writing and local freshness after that API call, before promotion. Superseded results, changed artifacts
+It adds version metadata to the validated ready HTML and includes the original ready result manifest.
+The original HTML hash stays in that result; the staged manifest hashes the delivered page. It rechecks
+GitHub base/head after writing and local freshness after that API call, before promotion. Superseded results, changed artifacts
 or API failures cannot replace current. PR results keep their recorded file selection and decision note;
 do not pass `--files` or `--note` with `--pr-result`.
 
@@ -434,8 +435,27 @@ do not pass `--files` or `--note` with `--pr-result`.
 fails, 2 reports usage. A crashed writer's `current.lock` needs explicit removal after verifying it stopped.
 If lock cleanup fails after successful promotion, the command succeeds with a cleanup warning; the
 new current version remains usable.
-This command configures no server, remote destination, credentials, upload or PR Action. Exact version
-links and configured team delivery are later slices of #34.
+Opening current resolves to its immutable version folder before navigation. The page's About this
+explanation panel shows its version, included source and captured prior versions with their scope and
+author review state. The existing query contract uses `version=<version-folder>`, `tour=<id>&step-id=<id>`,
+`view=<id>&focus=<element>` (repeatable), or `file=<path>&range=1:1-1:6&side=head|base`.
+Ranges use 1-based lines and inclusive UTF-16 columns; omitted columns select whole lines.
+Column positions allow line length + 1, including column 1 on an empty line. Base paths are change head
+keys, including renamed files and deleted files. Links resolve only supplied source.
+Mismatched version queries refuse to show another snapshot. About this explanation offers a link to the
+current reading state and an Open latest version link through the sibling current page. Staging times
+use the reader’s local format; earlier versions and technical identifiers sit behind disclosures.
+Browser bookmarks retain the reading state. Earlier pages capture only history that existed
+at staging. Keep the staged directory tree for sibling links; detached copies remain self-contained but
+cannot navigate missing sibling versions. Save as HTML preserves navigation with the same query keys,
+without live service attachment. An explicit navigation target overrides saved navigation as a whole.
+Launch, saved HTML and browser Back/Forward share one restoration function. Applied step, view,
+perspective, focus and source cursor are independent; restoring one does not clear another.
+An empty `step-id=` records no applied step, including a tour detour. Older compact tour links without
+view/focus still apply the requested step. A perspective switch keeps the applied step's source override.
+Edited re-saves lose the staged version claim when their artifactIdentity changes.
+This command configures no server, remote destination, credentials, upload or PR Action. Configured team
+delivery remains a later slice of #34.
 
 ## `xpl new <name> [--title t] [--repo r] [--url u]`
 
@@ -1090,7 +1110,25 @@ ownership rechecks, valid ready proposals enter the existing revision journal as
 `xpl revise <guide> --run <revisionRunId>` before deciding anything. Creation fills a guide explicitly
 initialized by `xpl new`/draft authoring, with selected creation requests and included new IDs; it does
 not create a second proposal format or overwrite a name. Service-owned journals refuse manual
-`revise --accept`; review stays available, but job review UI and guarded acceptance are 39C.
+proposal/decision/accept writes from selection onward, including cancellation or supersession before
+a proposal arrives. Selection records the job ID; the guarded proposal records its attempt ID. Older
+unbound service journals recover ownership from the matching revision job in the repository ledger.
+Read-only `revise --run` stays available. In the viewer, **Jobs** lets the
+author select feedback, start/cancel/retry and inspect progress or failures. **Review proposal** shows
+readable changed text with marks, concise evidence and source before/after. Each selected request needs
+a decision and reason. **Review decisions** validates the exact candidate; **Accept reviewed revision**
+then uses #30's freshness/readiness, user fields and outcome journal. New feedback is preserved.
+Interrupted acceptance exposes **Recover acceptance** without publishing the patch twice.
+The guarded API is `GET /api/jobs/<id>/review?attemptId=<uuid>`, `POST .../review` with
+`{attemptId, decisions?}`, and `POST .../accept` with `{attemptId, reviewToken}`. The token comes from
+the inspected review and binds its exact candidate and decisions to the job attempt. Acceptance compares
+it under the journal lock, including recovery. Another view's changed decisions return 409 and reload
+the review; inspect it again before accepting. Tokens are derived from the saved journal without a
+migration. Older clients that omit the token receive 400; manual `revise --accept` is unchanged.
+Per-request previews advance through proposals in order; each shows its own changes relative to the
+preceding candidate. The chosen combined candidate must still pass readiness. Decisions use the same
+statuses, reconciliation and missing-anchor permissions as `xpl revise`. Cancelled/superseded/old attempts
+and stale candidates cannot apply. Once journaled acceptance begins, recover it before cancelling or superseding.
 Controlled executables prove adapter/lifecycle failures only; a real installed Claude job proves the
 provider integration. `claude --version` does not establish authentication.
 

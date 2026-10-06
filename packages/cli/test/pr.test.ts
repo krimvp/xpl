@@ -411,8 +411,15 @@ describe("PR input", () => {
     );
     expect(version.commits).toEqual({ index: f.head, base: f.base, head: f.head });
     expect(version.includedSource).toEqual(manifest.includedSource);
-    expect(readFileSync(join(destination, "current/index.html"))).toEqual(
-      readFileSync(join(output.directory, "guide.html")),
+    const stagedBundle = bundleOf(readFileSync(join(destination, "current/index.html"), "utf8"));
+    const readyBundle = bundleOf(readFileSync(join(output.directory, "guide.html"), "utf8"));
+    expect(stagedBundle.publication?.current.identity).toEqual(manifest.readiness.identity);
+    const { publication: _publication, ...content } = stagedBundle;
+    expect(content).toEqual(readyBundle);
+    expect(version.artifacts.html.sha256).toBe(
+      createHash("sha256")
+        .update(readFileSync(join(destination, "current/index.html")))
+        .digest("hex"),
     );
 
     expect(readFileSync(join(f.root, ".git/index"))).toEqual(developerIndex);

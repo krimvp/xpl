@@ -162,3 +162,46 @@ describe("related stages of a flow", () => {
     expect(related([RUN], false)).toEqual([]);
   });
 });
+
+it("restores saved query state, while an explicit target replaces the saved target", () => {
+  const bundle = { ...makeBundle(), launch: "?file=src/a.ts&range=12:6-12:9" };
+  expect(new ViewerStore(bundle).getState().cursor).toEqual({
+    file: "src/a.ts",
+    fromLine: 12,
+    toLine: 12,
+    fromCol: 6,
+    toCol: 9,
+  });
+  const saved = new ViewerStore(bundle);
+  saved.setPerspective("map");
+  expect(saved.getState().perspective).toBe("map");
+  saved.restoreNavigation({});
+  expect(saved.getState()).toMatchObject({
+    perspective: "code",
+    cursor: { file: "src/a.ts", fromLine: 12, toLine: 12, fromCol: 6, toCol: 9 },
+  });
+  const linked = new ViewerStore(bundle, readLaunchParams("?perspective=map&focus=concept:retry"));
+  expect(linked.getState()).toMatchObject({
+    perspective: "map",
+    selection: ["concept:retry"],
+    cursor: undefined,
+  });
+});
+
+it("restores a step, explicit view, selection and range together", () => {
+  const store = new ViewerStore(
+    makeBundle(),
+    readLaunchParams(
+      "?perspective=map&tour=tour:demo&step-id=t2&view=view:overview&focus=concept:retry&file=src/a.ts&range=12:6-12:9&side=head",
+    ),
+  );
+  expect(store.getState()).toMatchObject({
+    mode: "explore",
+    perspective: "map",
+    viewId: "view:overview",
+    selection: ["concept:retry"],
+    tour: { tourId: "tour:demo", step: 1 },
+    applied: { stepId: "t2" },
+    cursor: { file: "src/a.ts", fromLine: 12, toLine: 12, fromCol: 6, toCol: 9 },
+  });
+});

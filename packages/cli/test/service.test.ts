@@ -381,10 +381,25 @@ describe("repository service lifecycle", () => {
           await fetch(new URL(`/api/jobs/${submission.id}/accept`, running.server.url), {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: "{}",
+            body: JSON.stringify({
+              attemptId: "00000000-0000-4000-8000-000000000001",
+              reviewToken: "unknown",
+            }),
           })
         ).status,
       ).toBe(404);
+      const noToken = await fetch(
+        new URL(`/api/jobs/${submission.id}/accept`, running.server.url),
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ attemptId: "00000000-0000-4000-8000-000000000001" }),
+        },
+      );
+      expect(noToken.status).toBe(400);
+      expect(await noToken.json()).toMatchObject({
+        error: "Acceptance requires the reviewToken from the inspected review.",
+      });
     } finally {
       await running.close();
     }

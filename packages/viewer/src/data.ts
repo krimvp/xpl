@@ -1,4 +1,4 @@
-import type { WatchAttention } from "@xpl/core";
+import type { WatchAttention, Job, JobReviewAction, RevisionReview } from "@xpl/core";
 /**
  * Where the viewer's data comes from (ARCHITECTURE.md section 5, "Bundle payload"):
  *
@@ -53,6 +53,11 @@ export function loadBundle(doc: Document = document): LoadedBundle {
       parseBundle(element.textContent ?? ""),
       new URLSearchParams(doc.location?.search ?? "").get("guide"),
     );
+    const version = new URLSearchParams(doc.location?.search ?? "").get("version");
+    if (version && version !== bundle.publication?.current.version)
+      throw new Error(
+        `This page does not contain version "${version}". Open its immutable version link.`,
+      );
     if (!bundle.explainer || !bundle.index) throw new Error("the bundle has no explainer or index");
     bundle.files = bundle.files ?? {};
     return { ok: true, bundle };
@@ -150,6 +155,50 @@ export class ServerApi {
     );
     if (action === "stop") return undefined;
     return (await response.json()) as WatchAttention;
+  }
+
+  async jobs(): Promise<{ available: boolean; reason: string | null; jobs: Job[] } | undefined> {
+    const response = await this.request("/jobs", { cache: "no-store" });
+    if (response.status === 404) return undefined;
+    await this.check(response);
+    return response.json();
+  }
+  async submitJob(id: string, selectedRequestIds: string[]): Promise<Job> {
+    const response = await this.check(
+      await this.request("/jobs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, selectedRequestIds }),
+        signal: AbortSignal.timeout(120000),
+      }),
+    );
+    return (await response.json()).job;
+  }
+  async controlJob(job: Job, action: "cancel" | "retry"): Promise<Job> {
+    const response = await this.check(
+      await this.request(`/jobs/${encodeURIComponent(job.id)}/${action}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(action === "retry" ? { expectedAttempt: job.attempt } : {}),
+        signal: AbortSignal.timeout(120000),
+      }),
+    );
+    return (await response.json()).job;
+  }
+  async reviewJob(id: string, action: JobReviewAction): Promise<RevisionReview> {
+    const response = await this.check(
+      await this.request(`/jobs/${encodeURIComponent(id)}/${action.accept ? "accept" : "review"}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          attemptId: action.attemptId,
+          ...(action.accept ? { reviewToken: action.reviewToken } : {}),
+          ...(action.decisions ? { decisions: action.decisions } : {}),
+        }),
+        signal: AbortSignal.timeout(120000),
+      }),
+    );
+    return (await response.json()).review;
   }
 
   constructor(
@@ -335,6 +384,7 @@ export interface LaunchParams {
   file?: string;
   range?: Range;
   stepId?: string;
+  side?: "head" | "base";
 }
 
 export function readLaunchParams(search: string = location.search): LaunchParams {
@@ -358,11 +408,12 @@ export function readLaunchParams(search: string = location.search): LaunchParams
   )
     out.perspective = perspective;
   if (params.has("focus")) out.focus = params.getAll("focus");
-  const stepId = params.get("step-id");
-  if (stepId) out.stepId = stepId;
+  if (params.has("step-id")) out.stepId = params.get("step-id")!;
   const file = params.get("file");
+  if (file) out.file = file;
+  const side = params.get("side");
   const range = /^(\d+)(?::(\d+))?-(\d+)(?::(\d+))?$/.exec(params.get("range") ?? "");
-  if (file && range) {
+  if (file && range && (side === null || side === "head" || side === "base")) {
     const [startLine, startCol, endLine, endCol] = [range[1], range[2], range[3], range[4]].map(
       (n) => (n === undefined ? undefined : Number(n)),
     );
@@ -376,6 +427,7 @@ export function readLaunchParams(search: string = location.search): LaunchParams
     ) {
       out.file = file;
       out.range = { startLine, endLine, ...(startCol !== undefined ? { startCol, endCol } : {}) };
+      if (side) out.side = side;
     }
   }
   return out;

@@ -4487,6 +4487,157 @@ code {
   margin: 0 0 4px;
 }
 
+.jobs-status {
+  position: static;
+}
+.jobs-panel {
+  right: 0;
+  width: min(520px, calc(100vw - 24px));
+}
+.jobs-panel label {
+  display: flex;
+  gap: 8px;
+  align-items: start;
+  margin: 8px 0;
+}
+.jobs-panel ol {
+  padding-left: 20px;
+}
+.jobs-panel li {
+  margin: 16px 0;
+  overflow-wrap: anywhere;
+}
+.job-actions,
+.job-review-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.job-review-dialog {
+  width: min(1100px, calc(100vw - 24px));
+  max-height: calc(100dvh - 24px);
+  padding: 20px;
+  background: var(--panel);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: auto;
+}
+.job-review-dialog::backdrop {
+  background: #0008;
+}
+.job-review-dialog header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+.job-review-dialog h2 {
+  margin-top: 0;
+}
+.job-review-dialog fieldset {
+  min-width: 0;
+  margin: 20px 0;
+  padding: 12px;
+  border: 1px solid var(--border);
+}
+.job-review-dialog label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 8px 0;
+}
+.job-review-dialog select,
+.job-review-dialog textarea {
+  width: 100%;
+  box-sizing: border-box;
+  color: var(--fg);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  padding: 6px;
+}
+.job-review-dialog textarea {
+  min-height: 65px;
+}
+.job-comparison {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 16px;
+}
+.job-comparison pre,
+.job-raw-change pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 220px;
+  overflow: auto;
+}
+.job-comparison-heading {
+  color: var(--muted);
+  font-size: 12px;
+}
+.job-field {
+  margin: 12px 0;
+}
+.job-field h5 {
+  margin: 0 0 6px;
+}
+.job-field .markdown {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.job-field p {
+  margin: 0;
+  white-space: pre-wrap;
+}
+.job-field mark {
+  color: inherit;
+  background: #ffcf6666;
+}
+.job-before mark {
+  text-decoration: line-through;
+}
+.job-after mark {
+  text-decoration: underline;
+}
+.job-decision {
+  background: var(--panel-2);
+  padding: 12px;
+  border: 1px solid var(--border);
+  margin-top: 12px;
+}
+.job-decision h4 {
+  margin-top: 0;
+}
+.job-raw-change {
+  color: var(--muted);
+  font-size: 12px;
+  margin: 12px 0;
+}
+@media (max-width: 600px) {
+  .job-review-dialog {
+    padding: 12px;
+  }
+  .job-comparison {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+  .job-comparison-heading {
+    display: none;
+  }
+  .job-before::before,
+  .job-after::before {
+    display: block;
+    color: var(--muted);
+    font-size: 12px;
+    margin-bottom: 4px;
+  }
+  .job-before::before {
+    content: "Before";
+  }
+  .job-after::before {
+    content: "After";
+  }
+}
+
 /* Placement handles leave box selection and canvas panning available. */
 .move-handle {
   cursor: move;

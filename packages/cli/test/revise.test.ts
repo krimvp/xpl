@@ -388,6 +388,105 @@ it("refuses a raw step removal when an earlier proposal moved that ID to another
   ]);
 });
 
+it("previews dependent proposals in order and accepts only a valid chosen batch", async () => {
+  const root = await flowGuide();
+  const before = readJson<Explainer>(root, ".explainer/demo.explainer.json");
+  const flow = before.views.find((v) => v.id === "view:flow")!;
+  if (flow.type !== "flow") throw new Error("Expected a flow view");
+  await feedback(root, "add-step", flow.id);
+  await feedback(root, "explain-step", flow.id);
+  const selection = await xplJson(root, "revise", "demo", "--select", "add-step,explain-step");
+  expect(selection.code, selection.out).toBe(0);
+  const revise = (...args: string[]) =>
+    xplJson(root, "revise", "demo", "--run", selection.json.runId, ...args);
+  const batch = writeFile(
+    makeTempDir(),
+    "proposal.json",
+    JSON.stringify([
+      {
+        id: "add-step",
+        patch: {
+          views: [
+            {
+              id: flow.id,
+              type: "flow",
+              steps: [
+                ...flow.steps,
+                { ...flow.steps[0], id: "flow:3", summary: "Take a queued job." },
+              ],
+            },
+          ],
+        },
+      },
+      {
+        id: "explain-step",
+        patch: {
+          views: [
+            {
+              id: flow.id,
+              type: "flow",
+              stepsUpdate: [{ id: "flow:3", summary: "The queue supplies the next pending job." }],
+            },
+          ],
+        },
+      },
+    ]),
+  );
+  const proposed = await revise("--proposal", batch);
+  expect(proposed.code, proposed.out).toBe(0);
+  expect(proposed.json.readiness.ready).toBe(true);
+  expect(proposed.json.proposals.map((p: any) => [p.id, p.changes.map((c: any) => c.id)])).toEqual([
+    ["add-step", ["view:flow"]],
+    ["explain-step", ["view:flow"]],
+  ]);
+  expect(proposed.json.proposals[0].changes[0].before.steps.map((s: any) => s.id)).toEqual([
+    "flow:1",
+    "flow:2",
+  ]);
+  expect(proposed.json.proposals[0].changes[0].after.steps.map((s: any) => s.id)).toEqual([
+    "flow:1",
+    "flow:2",
+    "flow:3",
+  ]);
+  expect(proposed.json.proposals[1].changes[0].before.steps[2].summary).toBe("Take a queued job.");
+  expect(proposed.json.proposals[1].changes[0].after.steps[2].summary).toBe(
+    "The queue supplies the next pending job.",
+  );
+  const choices = writeFile(
+    makeTempDir(),
+    "decisions.json",
+    JSON.stringify([
+      { id: "add-step", status: "rejected", reason: "Do not add this step." },
+      { id: "explain-step", status: "addressed", reason: "Explain it." },
+    ]),
+  );
+  const invalid = await revise("--decisions", choices);
+  expect(invalid.code).toBe(1);
+  expect(invalid.json.issues.map((i: any) => [i.code, i.message])).toEqual([
+    ["unknown-id", "step flow:3 is not a step of view:flow (its steps: flow:1, flow:2)"],
+  ]);
+  writeFile(
+    root,
+    ".explainer/choices.json",
+    JSON.stringify([
+      { id: "add-step", status: "addressed", reason: "Add the step." },
+      { id: "explain-step", status: "addressed", reason: "Explain it." },
+    ]),
+  );
+  const reviewed = await revise("--decisions", ".explainer/choices.json");
+  expect(reviewed.code, reviewed.out).toBe(0);
+  expect((await revise("--accept")).code).toBe(0);
+  const after = readJson<Explainer>(root, ".explainer/demo.explainer.json").views.find(
+    (v) => v.id === flow.id,
+  )!;
+  if (after.type !== "flow") throw new Error("Expected a flow view");
+  expect(after.steps.map((s) => [s.id, s.summary])).toEqual([
+    ["flow:1", "The runner takes a queued job."],
+    ["flow:2", "The runner takes a queued job."],
+    ["flow:3", "The queue supplies the next pending job."],
+  ]);
+});
+
 it("retains the exact reviewed source and diff after acceptance and later source edits", async () => {
   const root = cloneDir(demo);
   const run = await reviewed(root);

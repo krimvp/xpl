@@ -5,7 +5,7 @@ import { loadBundle, readLaunchParams } from "./data.js";
 import { rememberPage } from "./saveHtml.js";
 import { ViewerStore } from "./store.js";
 import { installTestHooks } from "./testHooks.js";
-import { watchUrl } from "./url.js";
+import { versionUrl, watchUrl } from "./url.js";
 import "./styles.css";
 
 // A copy of the page as loaded, for "Save as HTML", before anything renders into it.
@@ -14,15 +14,22 @@ const root = createRoot(document.getElementById("root")!);
 const loaded = loadBundle();
 
 if (loaded.ok) {
-  const store = new ViewerStore(loaded.bundle, readLaunchParams());
-  installTestHooks(store);
-  watchUrl(store, loaded.bundle.mode);
-  store.watchExplainer();
-  root.render(
-    <StrictMode>
-      <App store={store} />
-    </StrictMode>,
-  );
+  const immutable =
+    loaded.bundle.publication &&
+    versionUrl(location.href, loaded.bundle.publication.current.version);
+  if (immutable && immutable.pathname !== location.pathname) {
+    location.replace(immutable.href);
+  } else {
+    const store = new ViewerStore(loaded.bundle, readLaunchParams());
+    installTestHooks(store);
+    watchUrl(store, loaded.bundle.mode);
+    store.watchExplainer();
+    root.render(
+      <StrictMode>
+        <App store={store} />
+      </StrictMode>,
+    );
+  }
 } else {
   root.render(
     <main className="no-data">
