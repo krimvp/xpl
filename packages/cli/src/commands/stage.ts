@@ -15,7 +15,7 @@ export const stageCommand: CommandSpec = {
     "with commits, artifactIdentity, input/HTML hashes, readiness, source scope and author review state.",
     "Rechecks readiness and source freshness before atomically replacing the relative current symlink under",
     "a lock. Prior immutable version folders remain available. Failures retain the previous current version.",
-    "Open <dir>/current/index.html or <dir>/<version>/index.html locally; no server, upload or destination is configured.",
+    "Open <dir>/current/index.html or <dir>/<version>/index.html. Nothing is uploaded; xpl pr link points a PR at a served folder.",
     "PR guides require --pr-result from xpl pr finish and --root pointing to the prepared checkout. Stages the",
     "validated ready HTML with version metadata and its original result manifest; rechecks GitHub base/head before promotion.",
     "--files and --note cannot change a PR result: select files and record decisions when creating that result.",

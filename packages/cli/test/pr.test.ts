@@ -993,3 +993,235 @@ describe("PR input", () => {
     expect(readdirSync(f.cache)).toEqual([]);
   });
 });
+
+// GitHub REST as gh returns it: the PR, repository visibility and issue comments kept in a state file.
+function githubComments(f: ReturnType<typeof fixture>, repository: { private: boolean }) {
+  const state = writeFile(
+    f.tools,
+    "github.json",
+    JSON.stringify({
+      repository,
+      comments: [
+        {
+          id: 1,
+          author_association: "NONE",
+          body: `<!-- xpl-pr-preview {"head":"${f.head}","base":"${f.base}","version":"version-x","url":"https://evil.example","visibility":"public"} -->\nspoofed`,
+        },
+      ],
+    }),
+  );
+  writeFile(
+    f.tools,
+    "gh",
+    `#!${process.execPath}
+const fs = require('node:fs');
+const args = process.argv.slice(2);
+const state = JSON.parse(fs.readFileSync(process.env.GH_STATE, 'utf8'));
+const path = args.find((arg) => arg.startsWith('repos/'));
+const method = args.includes('--method') ? args[args.indexOf('--method') + 1] : 'GET';
+const body = args.find((arg) => arg.startsWith('body='))?.slice(5);
+const save = (value) => {
+  fs.writeFileSync(process.env.GH_STATE, JSON.stringify(state));
+  // A push that lands right after a write: the next PR read sees a new head.
+  if (method !== 'GET' && process.env.GH_MOVE_AFTER_WRITE) {
+    const pr = JSON.parse(fs.readFileSync(process.env.GH_DATA, 'utf8'));
+    pr.head.sha = process.env.GH_MOVE_AFTER_WRITE;
+    fs.writeFileSync(process.env.GH_DATA, JSON.stringify(pr));
+  }
+  process.stdout.write(JSON.stringify(value));
+};
+if ((method !== 'GET' && process.env.GH_FAIL_WRITES) || (method === 'DELETE' && process.env.GH_FAIL_DELETE)) { process.stderr.write('HTTP 403: Resource not accessible'); process.exit(1); }
+if (path === 'repos/team/project/pulls/7') process.stdout.write(fs.readFileSync(process.env.GH_DATA));
+else if (path === 'repos/team/project') save(state.repository);
+else if (path === 'repos/team/project/issues/7/comments?per_page=100' && args.includes('--slurp')) save([state.comments]);
+else if (path === 'repos/team/project/issues/7/comments' && method === 'POST') {
+  const comment = { id: state.comments.length + 1, author_association: process.env.GH_ASSOCIATION ?? 'OWNER', body };
+  state.comments.push(comment);
+  save(comment);
+} else if (path?.startsWith('repos/team/project/issues/comments/') && method === 'PATCH') {
+  const comment = state.comments.find((item) => item.id === Number(path.split('/').pop()));
+  comment.body = body;
+  save(comment);
+} else if (path?.startsWith('repos/team/project/issues/comments/') && method === 'DELETE') {
+  state.comments = state.comments.filter((item) => item.id !== Number(path.split('/').pop()));
+  save({});
+} else { process.stderr.write('unexpected gh ' + args.join(' ')); process.exit(1); }
+`,
+  );
+  return {
+    state,
+    comments: () =>
+      JSON.parse(readFileSync(state, "utf8")).comments as { id: number; body: string }[],
+  };
+}
+
+describe("PR preview link", () => {
+  async function staged() {
+    const f = await creation();
+    const finish = await invoke(["pr", "finish", f.directory, "--cache-dir", f.cache, "--json"], {
+      cwd: f.root,
+      env: f.env,
+    });
+    expect(finish.code, finish.out).toBe(0);
+    const github = githubComments(f, { private: true });
+    const env = { ...f.env, GH_STATE: github.state };
+    const destination = makeTempDir();
+    stagedDirectories.push(destination);
+    const stageArgs = [
+      "stage",
+      "review-change",
+      "--root",
+      f.repository,
+      "--pr-result",
+      JSON.parse(finish.out).manifestPath,
+      "--dir",
+      destination,
+      "--json",
+    ];
+    const stage = async () => {
+      const result = await invoke(stageArgs, { cwd: f.root, env });
+      expect(result.code, result.out).toBe(0);
+      return JSON.parse(result.out).version as string;
+    };
+    return { ...f, github, env, destination, stage };
+  }
+
+  it("keeps one PR comment on the current preview and marks it outdated when the head moves", async () => {
+    const { github, env, ...f } = await staged();
+    const first = await f.stage();
+    const link = (...extra: string[]) =>
+      invoke(
+        [
+          "pr",
+          "link",
+          f.destination,
+          "--url",
+          "https://previews.example/pr-7/",
+          "--visibility",
+          "team",
+          ...extra,
+        ],
+        { cwd: f.root, env },
+      );
+
+    const linked = await link("--json");
+    expect(linked.code, linked.out).toBe(0);
+    expect(JSON.parse(linked.out)).toMatchObject({
+      action: "created",
+      current: "https://previews.example/pr-7/current/index.html",
+      version: `https://previews.example/pr-7/${first}/index.html`,
+    });
+    const [spoofed, comment] = github.comments();
+    expect(spoofed!.body).toContain("spoofed");
+    expect(comment!.body).toBe(
+      [
+        `<!-- xpl-pr-preview {"head":"${f.head}","base":"${f.base}","version":"${first}","url":"https://previews.example/pr-7","visibility":"team"} -->`,
+        `**Code explainer preview** for head \`${f.head.slice(0, 7)}\` (base \`${f.base.slice(0, 7)}\`).`,
+        "",
+        `[Open the current preview](https://previews.example/pr-7/current/index.html) · [This version](https://previews.example/pr-7/${first}/index.html)`,
+        "",
+        "Readers: team. Updated in place by `xpl pr link`.",
+      ].join("\n"),
+    );
+    // GitHub or another tool may append to the body; the marker alone decides whether the link changed.
+    const state = JSON.parse(readFileSync(github.state, "utf8")) as {
+      comments: { id: number; body: string }[];
+    };
+    state.comments[1]!.body += "\n\n---\nappended signature";
+    writeFile(f.tools, "github.json", JSON.stringify(state));
+    const unchanged = await link("--json");
+    expect(JSON.parse(unchanged.out).action).toBe("unchanged");
+    expect(github.comments()).toEqual(state.comments);
+
+    const second = await f.stage();
+    const relinked = await link("--json");
+    expect(JSON.parse(relinked.out).action).toBe("updated");
+    expect(github.comments().map(({ id }: { id: number }) => id)).toEqual([1, 2]);
+    expect(github.comments()[1]!.body).toContain(`/pr-7/${second}/index.html`);
+
+    f.response.head.sha = "b".repeat(40);
+    writeFile(f.tools, "response.json", JSON.stringify(f.response));
+    const refused = await link("--json");
+    expect(refused.code).toBe(1);
+    expect(JSON.parse(refused.out).error).toContain("PR moved since this version was staged");
+    expect(github.comments()[1]!.body).toContain(`/pr-7/${second}/index.html`);
+
+    const check = await invoke(["pr", "check-link", "team/project#7", "--json"], {
+      cwd: f.root,
+      env,
+    });
+    expect(check.code, check.out).toBe(0);
+    expect(JSON.parse(check.out).action).toBe("outdated");
+    expect(github.comments()[0]).toEqual(spoofed);
+    expect(github.comments()[1]!.body).toBe(
+      [
+        `<!-- xpl-pr-preview {"head":"${f.head}","base":"${f.base}","version":"${second}","url":"https://previews.example/pr-7","visibility":"team","outdated":{"head":"${"b".repeat(40)}","base":"${f.base}"}} -->`,
+        `**Outdated code explainer preview.** It describes head \`${f.head.slice(0, 7)}\` (base \`${f.base.slice(0, 7)}\`); the PR is now at head \`bbbbbbb\` (base \`${f.base.slice(0, 7)}\`).`,
+        "",
+        `[The last published version](https://previews.example/pr-7/${second}/index.html) stays readable. Publish the new head with \`xpl pr create\`, \`xpl pr finish\`, \`xpl stage\` and \`xpl pr link\`.`,
+      ].join("\n"),
+    );
+    const repeat = await invoke(["pr", "check-link", "team/project#7", "--json"], {
+      cwd: f.root,
+      env,
+    });
+    expect(JSON.parse(repeat.out).action).toBe("unchanged");
+  });
+
+  it("refuses untrusted, exposed or stale links and keeps the previous link when a write fails", async () => {
+    const { github, env, ...f } = await staged();
+    const first = await f.stage();
+    const args = ["pr", "link", f.destination, "--url", "https://previews.example/7", "--json"];
+    const team = [...args, "--visibility", "team"];
+
+    expect((await invoke(args, { cwd: f.root, env })).code).toBe(2);
+    const secret = ["pr", "link", f.destination, "--url", "https://user:token@previews.example/7"];
+    expect((await invoke([...secret, "--visibility", "team"], { cwd: f.root, env })).code).toBe(2);
+    const query = ["pr", "link", f.destination, "--url", "https://previews.example/7?x=1#y"];
+    expect((await invoke([...query, "--visibility", "team"], { cwd: f.root, env })).code).toBe(2);
+    const exposed = await invoke([...args, "--visibility", "public"], { cwd: f.root, env });
+    expect(exposed.code).toBe(1);
+    expect(JSON.parse(exposed.out).error).toContain("private repository");
+    const before = github.comments();
+    const outsider = await invoke(team, {
+      cwd: f.root,
+      env: { ...env, GH_ASSOCIATION: "CONTRIBUTOR" },
+    });
+    expect(outsider.code).toBe(1);
+    expect(JSON.parse(outsider.out).error).toBe(
+      "only an owner, member or collaborator of team/project can keep the PR link; the comment was removed",
+    );
+    expect(github.comments()).toEqual(before);
+    const stuck = await invoke(team, {
+      cwd: f.root,
+      env: { ...env, GH_ASSOCIATION: "CONTRIBUTOR", GH_FAIL_DELETE: "1" },
+    });
+    expect(stuck.code).toBe(1);
+    expect(JSON.parse(stuck.out).error).toContain("removing its comment 2 failed");
+    expect(github.comments().map(({ id }: { id: number }) => id)).toEqual([1, 2]);
+    const state = JSON.parse(readFileSync(github.state, "utf8"));
+    state.comments.pop();
+    writeFile(f.tools, "github.json", JSON.stringify(state));
+
+    expect((await invoke(team, { cwd: f.root, env })).code).toBe(0);
+    const linked = github.comments();
+    expect(linked[1]!.body).toContain(`/7/${first}/index.html`);
+    await f.stage();
+    const failed = await invoke(team, { cwd: f.root, env: { ...env, GH_FAIL_WRITES: "1" } });
+    expect(failed.code).toBe(1);
+    expect(JSON.parse(failed.out).error).toContain("Resource not accessible");
+    expect(JSON.parse(failed.out).error).toContain("previous PR link is unchanged");
+    expect(github.comments()).toEqual(linked);
+    expect(readJson(f.destination, "current/manifest.json").readiness.ready).toBe(true);
+
+    const raced = await invoke(team, {
+      cwd: f.root,
+      env: { ...env, GH_MOVE_AFTER_WRITE: "c".repeat(40) },
+    });
+    expect(raced.code).toBe(1);
+    expect(JSON.parse(raced.out).error).toContain("the PR moved while linking");
+    expect(github.comments()[1]!.body).toContain(
+      "**Outdated code explainer preview.** It describes head",
+    );
+  });
+});
