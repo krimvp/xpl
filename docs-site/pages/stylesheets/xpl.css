@@ -102,3 +102,9 @@ body {
   background: none;
   font-size: inherit;
 }
+/* Links into the source repository need access, as the landing page says. */
+.md-typeset a[href^="https://github.com/krimvp/xpl/"]::after {
+  content: " (private repository)";
+  font-size: 0.85em;
+  color: var(--xpl-muted);
+}

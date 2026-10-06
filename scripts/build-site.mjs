@@ -47,8 +47,12 @@ try {
 
 await buildDocs();
 
-// The hand-written page uses quoted URLs and one URL per srcset. Check CSS assets too.
-for (const name of ["index.html", "style.css"]) {
+// The pages use quoted URLs and one URL per srcset. Check CSS assets too. The docs' 404 page uses
+// absolute /xpl/docs/ URLs that only resolve on Pages.
+const docsPages = (await readdir(join(output, "docs"), { recursive: true }))
+  .filter((name) => name.endsWith(".html") && name !== "404.html")
+  .map((name) => `docs/${name}`);
+for (const name of ["index.html", "style.css", ...docsPages]) {
   const path = join(output, name);
   const source = await readFile(path, "utf8");
   const references = source.matchAll(
@@ -118,6 +122,8 @@ async function buildDocs() {
       [
         "run",
         "--no-project",
+        "--python",
+        "3.13",
         "--with-requirements",
         "requirements.txt",
         "--",
@@ -137,11 +143,10 @@ async function buildDocs() {
 function section(text, heading, source) {
   const level = heading.indexOf(" ");
   const lines = text.split("\n");
+  const fenced = fencedLines(lines);
   let start = -1;
-  let fenced = false;
   for (const [i, line] of lines.entries()) {
-    if (/^(```|~~~)/.test(line)) fenced = !fenced;
-    if (fenced) continue;
+    if (fenced[i]) continue;
     if (start < 0 && line === heading) start = i + 1;
     else if (start >= 0 && /^#+ /.test(line) && line.indexOf(" ") <= level) {
       return lines.slice(start, i).join("\n").trim() + "\n";
@@ -151,29 +156,53 @@ function section(text, heading, source) {
   return lines.slice(start).join("\n").trim() + "\n";
 }
 
+/** Which lines belong to a code fence; a fence closes on a run of its own character at least as long. */
+function fencedLines(lines) {
+  let open;
+  return lines.map((line) => {
+    const fence = /^\s*(`{3,}|~{3,})/.exec(line)?.[1];
+    if (!open) {
+      if (fence) open = fence;
+      return Boolean(fence);
+    }
+    if (fence && fence[0] === open[0] && fence.length >= open.length && line.trim() === fence)
+      open = undefined;
+    return true;
+  });
+}
+
 /** Rewrites relative Markdown links of `text` (from repository file `from`) for the docs page `page`. */
 async function rewriteLinks(text, from, page, { published, pagesDir }) {
+  const lines = text.split("\n");
+  const fenced = fencedLines(lines);
   const out = [];
-  for (const block of text.split(/^((?:```|~~~)[^\n]*\n[\s\S]*?^(?:```|~~~)[ \t]*$)/m)) {
-    if (/^(```|~~~)/.test(block)) {
-      out.push(block);
+  for (const [i, line] of lines.entries()) {
+    if (fenced[i]) {
+      out.push(line);
       continue;
     }
-    for (const span of block.split(/(`+[^`]*?`+)/)) {
+    // Only inline links are rewritten; other forms would keep a repository path, so they fail here.
+    if (/^\s*\[[^\]]+\]:\s|<(?:a|img)\s|\]\([^)\s]+\s+"/.test(line.replace(/`+[^`]*?`+/g, ""))) {
+      throw new Error(
+        `docs: ${from} has a link form the docs build does not rewrite: ${line.trim()}`,
+      );
+    }
+    const spans = [];
+    for (const span of line.split(/(`+[^`]*?`+)/)) {
       if (span.startsWith("`")) {
-        out.push(span);
+        spans.push(span);
         continue;
       }
-      const targets = [...span.matchAll(/(!?\[[^\]]*\]\()([^)\s]+)\)/g)];
       let rewritten = span;
-      for (const [whole, opening, target] of targets) {
+      for (const [whole, opening, target] of span.matchAll(/(!?\[[^\]]*\]\()([^)\s]+)\)/g)) {
         const next = await rewriteTarget(target, from, page, published, pagesDir);
-        if (next !== target) rewritten = rewritten.replace(whole, `${opening}${next})`);
+        if (next !== target) rewritten = rewritten.replace(whole, () => `${opening}${next})`);
       }
-      out.push(rewritten);
+      spans.push(rewritten);
     }
+    out.push(spans.join(""));
   }
-  return out.join("");
+  return out.join("\n");
 }
 
 async function rewriteTarget(target, from, page, published, pagesDir) {
