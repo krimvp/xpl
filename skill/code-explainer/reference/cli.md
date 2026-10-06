@@ -424,8 +424,9 @@ xpl stage pr-guide --root /absolute/pr-cache/input-XXXX/repository \
 ```
 
 Staging verifies every recorded input/artifact hash and recomputes readiness against the prepared source.
-It copies the exact ready HTML and includes the ready result manifest. It rechecks GitHub base/head after
-writing and local freshness after that API call, before promotion. Superseded results, changed artifacts
+It adds version metadata to the validated ready HTML and includes the original ready result manifest.
+The original HTML hash stays in that result; the staged manifest hashes the delivered page. It rechecks
+GitHub base/head after writing and local freshness after that API call, before promotion. Superseded results, changed artifacts
 or API failures cannot replace current. PR results keep their recorded file selection and decision note;
 do not pass `--files` or `--note` with `--pr-result`.
 
@@ -434,8 +435,27 @@ do not pass `--files` or `--note` with `--pr-result`.
 fails, 2 reports usage. A crashed writer's `current.lock` needs explicit removal after verifying it stopped.
 If lock cleanup fails after successful promotion, the command succeeds with a cleanup warning; the
 new current version remains usable.
-This command configures no server, remote destination, credentials, upload or PR Action. Exact version
-links and configured team delivery are later slices of #34.
+Opening current resolves to its immutable version folder before navigation. The page's About this
+explanation panel shows its version, included source and captured prior versions with their scope and
+author review state. The existing query contract uses `version=<version-folder>`, `tour=<id>&step-id=<id>`,
+`view=<id>&focus=<element>` (repeatable), or `file=<path>&range=1:1-1:6&side=head|base`.
+Ranges use 1-based lines and inclusive UTF-16 columns; omitted columns select whole lines.
+Column positions allow line length + 1, including column 1 on an empty line. Base paths are change head
+keys, including renamed files and deleted files. Links resolve only supplied source.
+Mismatched version queries refuse to show another snapshot. About this explanation offers a link to the
+current reading state and an Open latest version link through the sibling current page. Staging times
+use the reader’s local format; earlier versions and technical identifiers sit behind disclosures.
+Browser bookmarks retain the reading state. Earlier pages capture only history that existed
+at staging. Keep the staged directory tree for sibling links; detached copies remain self-contained but
+cannot navigate missing sibling versions. Save as HTML preserves navigation with the same query keys,
+without live service attachment. An explicit navigation target overrides saved navigation as a whole.
+Launch, saved HTML and browser Back/Forward share one restoration function. Applied step, view,
+perspective, focus and source cursor are independent; restoring one does not clear another.
+An empty `step-id=` records no applied step, including a tour detour. Older compact tour links without
+view/focus still apply the requested step. A perspective switch keeps the applied step's source override.
+Edited re-saves lose the staged version claim when their artifactIdentity changes.
+This command configures no server, remote destination, credentials or upload. To point a PR at a staged
+PR folder, use `xpl pr link` below.
 
 ## `xpl new <name> [--title t] [--repo r] [--url u]`
 
@@ -914,6 +934,61 @@ Ready is an observation at the check timestamp. A version-sharing consumer must 
 and re-resolve both commits before publishing current. This command creates no current pointer and
 publishes nothing. Keep inputs while finishing or while a consumer needs the referenced input evidence.
 
+## `xpl pr link <staged-dir> --url <base-url> --visibility team|public` and `xpl pr check-link <PR>`
+
+Shares a staged PR preview through a static host the team already runs. Stage the ready result into the
+folder that host serves (or copy it there, for example with `rsync -a`), then link it:
+
+```sh
+xpl stage pr-42 --root /absolute/pr-cache/input-XXXX/repository \
+  --pr-result /absolute/pr-cache/input-XXXX/result-YYYY/result.json --dir /srv/previews/pr-42
+xpl pr link /srv/previews/pr-42 --url https://previews.example/pr-42 --visibility team --json
+```
+
+`link` reads `<dir>/current/manifest.json`, which must be a ready version staged with `--pr-result`. It
+resolves the PR again and refuses, with no GitHub write, when base or head moved since staging. It
+refuses `--visibility public` for a private repository; `team` means the host limits who can read it,
+which xpl does not check. It then posts one comment, or edits its earlier one in place, linking
+`<base-url>/current/index.html` and `<base-url>/<version>/index.html`. The base URL takes no credentials,
+query or fragment. Only a marked comment from an owner, member or collaborator counts as the link; anyone
+else's new comment is removed again and the run fails. After writing, `link` checks the PR once more and
+marks the comment outdated, exiting 1, if a push landed meanwhile. `--json` returns `{ok, action, pr, current, version}`
+with `action` `created`, `updated` or `unchanged`. A failed write exits 1; the earlier comment and all
+staged versions stay as they were. The caller's `gh` token needs permission to comment.
+
+`check-link` keeps that comment honest when the PR moves. When the PR's base or head differs from the
+linked version, it rewrites the comment as outdated with only the last version's link; otherwise it
+leaves it alone. `--json` returns `{ok, action, pr}` with `action` `none`, `current`, `outdated` or
+`unchanged`. Run it from a workflow in the repository, for example `.github/workflows/xpl-preview.yml`:
+
+```yaml
+name: xpl preview link
+on:
+  pull_request_target: # runs no PR code; the token can comment on PRs from forks too
+    types: [synchronize, reopened, edited]
+permissions:
+  pull-requests: write
+concurrency: xpl-preview-${{ github.event.pull_request.number }}
+jobs:
+  check-link:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # Pin the xpl release you use: this job holds a token that can write PR comments.
+      - run: npx --yes @krimvp/xpl pr check-link "$REPOSITORY#$NUMBER"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          NUMBER: ${{ github.event.pull_request.number }}
+```
+
+The workflow needs an xpl release that has `pr check-link`. It runs when the PR's head changes or its
+base branch is switched; new commits on the base branch alone do not trigger it. It does not create the new guide: an author
+runs `xpl pr create`, `xpl pr finish`, `xpl stage` and `xpl pr link` for the new head, which edits the
+same comment back to current.
+
 ## `xpl change <explainer> [<base>..<head>]`
 
 Records the change an explainer is about, from git, and prints what it touches. Run it once, at the start of explaining a PR or MR, on a checkout of the head with the index built (`xpl index`). Nothing is written to the repository.
@@ -1090,9 +1165,51 @@ ownership rechecks, valid ready proposals enter the existing revision journal as
 `xpl revise <guide> --run <revisionRunId>` before deciding anything. Creation fills a guide explicitly
 initialized by `xpl new`/draft authoring, with selected creation requests and included new IDs; it does
 not create a second proposal format or overwrite a name. Service-owned journals refuse manual
-`revise --accept`; review stays available, but job review UI and guarded acceptance are 39C.
+proposal/decision/accept writes from selection onward, including cancellation or supersession before
+a proposal arrives. Selection records the job ID; the guarded proposal records its attempt ID. Older
+unbound service journals recover ownership from the matching revision job in the repository ledger.
+Read-only `revise --run` stays available. In the viewer, **Jobs** lets the
+author select feedback, start/cancel/retry and inspect progress or failures. **Review proposal** shows
+readable changed text with marks, concise evidence and source before/after. Each selected request needs
+a decision and reason. **Review decisions** validates the exact candidate; **Accept reviewed revision**
+then uses #30's freshness/readiness, user fields and outcome journal. New feedback is preserved.
+Interrupted acceptance exposes **Recover acceptance** without publishing the patch twice.
+The guarded API is `GET /api/jobs/<id>/review?attemptId=<uuid>`, `POST .../review` with
+`{attemptId, decisions?}`, and `POST .../accept` with `{attemptId, reviewToken}`. The token comes from
+the inspected review and binds its exact candidate and decisions to the job attempt. Acceptance compares
+it under the journal lock, including recovery. Another view's changed decisions return 409 and reload
+the review; inspect it again before accepting. Tokens are derived from the saved journal without a
+migration. Older clients that omit the token receive 400; manual `revise --accept` is unchanged.
+Per-request previews advance through proposals in order; each shows its own changes relative to the
+preceding candidate. The chosen combined candidate must still pass readiness. Decisions use the same
+statuses, reconciliation and missing-anchor permissions as `xpl revise`. Cancelled/superseded/old attempts
+and stale candidates cannot apply. Once journaled acceptance begins, recover it before cancelling or superseding.
 Controlled executables prove adapter/lifecycle failures only; a real installed Claude job proves the
 provider integration. `claude --version` does not establish authentication.
+
+Headless answers use `POST /api/answers` with `{id: UUID, requestId}` for a saved `explain` request with
+its question in `note`. GET collection/item and POST `/<UUID>/<retry|cancel|supersede>` reuse job guards and
+`expectedAttempt`. The worker freezes the guide, identity and guide/question head/base source (5 MB maximum).
+Claude writes only `{text, references:[{file, side, fromLine, toLine, quote}]}`; every complete-line quote
+must match recorded source exactly. Invalid evidence or a patch field fails the job. Returning an answer
+never edits the guide or records a revision outcome. Use ordinary `xpl revise` for optional guide changes.
+
+Completed answer jobs retain the original source/explanation identity and report `contextReason` after
+source or guide changes. Reload replays the completed receipt into optional `FeedbackRequest.answers`;
+feedback export/import unions history by stable answer ID independently of outcome revisions. Conflicting
+answer content or invalid imported evidence is refused; an older export cannot erase history. Each answer
+ID belongs to one question. Imports or completions exceeding 1,000 answers for a question fail without
+changing history or publishing a result receipt; saved answers are never truncated. Without an
+answer backend the request stays pending for `/code-explainer feedback`. Submission deduplicates by request
+ID under the job ledger lock, even with different supplied job UUIDs or after restart. Existing terminal jobs
+are returned; failed/interrupted jobs use explicit retry and cancelled questions need a new request.
+The viewer derives its job UUID from the request ID without browser storage. The viewer's Feedback panel
+uses these routes for **Ask a question**, progress, retry/cancel and answer history. Details and selected
+head/base code lines open that panel. JSON import/export preserves answers independently of outcomes.
+Questions with saved answers show **Answered**, separately from the revision outcome. **Save for the next
+revision pass** saves feedback without starting generation; **Ask a question** starts answering explicitly.
+Reference clicks select matching source; changed or unavailable source shows the highlighted recorded
+excerpt. An answer never accepts a guide change; optional revisions still require explicit review.
 
 `service start --watch` opts this start into metadata polling and coherent full rebuilds. Unchanged polls
 read no source/configuration content. Changed inputs trigger full capture, including ignored configuration

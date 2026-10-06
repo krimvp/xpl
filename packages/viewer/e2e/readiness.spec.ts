@@ -79,7 +79,9 @@ test("a complete snapshot saves ready HTML with source, provenance, identity and
   await page.getByRole("button", { name: /^Feedback/ }).click();
   const feedback = page.getByRole("dialog", { name: "Reader feedback" });
   await feedback.getByLabel("Feedback note").fill("Explain the queue wait.");
-  await feedback.getByRole("button", { name: "Save feedback", exact: true }).click();
+  await feedback
+    .getByRole("button", { name: "Save for the next revision pass", exact: true })
+    .click();
   await expect(feedback.getByRole("status")).toContainText("Saved in this browser");
   await feedback.getByRole("button", { name: "Close feedback" }).click();
   await (await openEditMenu(page)).getByTestId("edit-save-html").click();
@@ -127,7 +129,9 @@ test("a complete snapshot saves ready HTML with source, provenance, identity and
   await page.evaluate(() => window.__xpl!.select(["sym:src/runner.ts#Runner.dispatch"]));
   await page.getByRole("button", { name: /^Feedback \(1\)/ }).click();
   await feedback.getByLabel("Feedback note").fill("Explain the ready snapshot too.");
-  await feedback.getByRole("button", { name: "Save feedback", exact: true }).click();
+  await feedback
+    .getByRole("button", { name: "Save for the next revision pass", exact: true })
+    .click();
   await expect(feedback.getByRole("status")).toContainText("Saved in this browser");
   await feedback.getByRole("button", { name: "Close feedback" }).click();
   await (await openEditMenu(page)).getByTestId("edit-save-html").click();
@@ -292,7 +296,7 @@ test("offline all-content review survives HTML reopening and explicitly gates te
   await dialog.getByRole("button", { name: "Record inspected review", exact: true }).click();
   await expect(dialog).not.toBeVisible();
   await expect(page.getByTestId("review-status")).toHaveText("Author review: reviewed");
-  await page.getByTestId("explanation-info").locator("summary").click();
+  await page.getByTestId("explanation-info").locator(":scope > summary").click();
   await expect(page.getByTestId("explanation-info")).toContainText("Ada (self-reported)");
   await expect(page.getByTestId("explanation-info")).toContainText(
     "Runtime initialization was not exercised.",

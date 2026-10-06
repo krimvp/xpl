@@ -20,11 +20,13 @@
  *
  * - `--evidence-editor` opens the retry concept evidence editor, where available, with runner line 75.
  * - `--graph-authoring` groups worker/metrics and hides their stored arrow, where available.
+ * - `--jobs history|review` adds controlled job history and an explicit review, where available.
  * - `--graph-pins` photographs identical stored system/service/nested code pins in the Python overview,
  *   with source shown. It proves rendering in base and head, including negative container coordinates.
  * - `--service` intercepts a loopback API; unmanaged omits attachment metadata for plain-view shots.
  * - `--attention affected|paused` adds watch/guide evidence; `--attention-open` opens its repair offer.
  * - `--text-draft` opens and edits the TS fixture retry concept without saving.
+ * - `--questions` opens a question from Details; `--question-history` also shows saved answers and attempts.
  *
  * compare: pairs the files of both directories by name and writes `<name>.png`, Before left and After right,
  * for each pair whose bytes differ, plus `index.md` listing changed, added, removed and unchanged shots.
@@ -35,6 +37,8 @@ import { dirname, isAbsolute, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 import { chromium } from "@playwright/test";
+import { artifactIdentity, hashText, type FeedbackAnswer } from "@xpl/core";
+import type { AnswerAttempt } from "../src/data.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -55,12 +59,15 @@ async function shoot(argv: string[]): Promise<void> {
       scheme: { type: "string", default: "light" },
       size: { type: "string", default: "1440x900" },
       service: { type: "string" },
+      jobs: { type: "string" },
       attention: { type: "string" },
       "attention-open": { type: "boolean", default: false },
       "text-draft": { type: "boolean", default: false },
       "evidence-editor": { type: "boolean", default: false },
       "graph-authoring": { type: "boolean", default: false },
       "graph-pins": { type: "boolean", default: false },
+      questions: { type: "boolean", default: false },
+      "question-history": { type: "boolean", default: false },
     },
   });
   if (
@@ -68,6 +75,8 @@ async function shoot(argv: string[]): Promise<void> {
     !["connected", "configured", "disconnected", "unmanaged"].includes(values.service)
   )
     throw new Error("--service must be connected, configured, disconnected or unmanaged");
+  if (values.jobs && !["history", "review"].includes(values.jobs))
+    throw new Error("--jobs must be history or review");
   if (values.attention && !["affected", "paused"].includes(values.attention))
     throw new Error("--attention must be affected or paused");
   const out = resolve(positionals[0] ?? "pr-shots");
@@ -170,6 +179,178 @@ async function shoot(argv: string[]): Promise<void> {
                 },
               }),
         };
+        const owner = data.explainer.nodes.find(
+          (node: any) => node.id === "sym:src/runner.ts#Runner.dispatch",
+        );
+        const request = {
+          id: "shot-request",
+          elementId: owner.id,
+          kind: "correct",
+          explainer: "jobrunner",
+          note: "Explain dispatch before the worker runs",
+          context: { explainerHash: "shot", sourceHash: "shot" },
+          at: "2026-10-05T12:00:00Z",
+          outcome: {
+            revision: 0,
+            status: "pending",
+            reason: "Awaiting review",
+            at: "2026-10-05T12:00:00Z",
+          },
+        };
+        const jobStates = [
+          "queued",
+          "running",
+          "completed",
+          "failed",
+          "cancelled",
+          "superseded",
+          "interrupted",
+        ];
+        const jobs = jobStates.map((state, i) => ({
+          id: `00000000-0000-4000-8000-00000000000${i}`,
+          scope: { kind: "revision", guide: ".explainer/jobrunner.explainer.json", include: [] },
+          selectedRequestIds: [request.id],
+          input: {
+            revisionRunId: "shot-run",
+            expected: request.context,
+            index: data.explainer.index,
+            requests: [request],
+          },
+          state,
+          createdAt: request.at,
+          updatedAt: request.at,
+          attempt: state === "queued" ? 0 : 1,
+          owner: { instanceId: "demo-instance", attemptId: "00000000-0000-4000-8000-000000000009" },
+          progress: [
+            {
+              at: request.at,
+              message:
+                state === "running"
+                  ? "Reading selected source and feedback"
+                  : "Proposal checked against the recorded source",
+            },
+          ],
+          error:
+            state === "failed"
+              ? "Claude is rate limited. Wait and retry."
+              : state === "interrupted"
+                ? "Service stopped during this attempt. Explicitly retry after restart."
+                : null,
+          result: state === "completed" ? { revisionRunId: "shot-run" } : null,
+        }));
+        const changes = [
+          {
+            id: owner.id,
+            before: owner,
+            after: {
+              ...owner,
+              summary: "The runner takes one queued job and hands it to the worker.",
+              detail: "Dispatch **claims** the next job before calling the worker.",
+            },
+          },
+        ];
+        const source = [
+          { file: "src/runner.ts", side: "head", text: data.files["src/runner.ts"] ?? null },
+        ];
+        const review = {
+          ok: true,
+          runId: "shot-run",
+          state: "proposed",
+          expected: request.context,
+          index: data.explainer.index,
+          previousArtifact: "previous.json",
+          requests: [{ ...request, contextReason: null }],
+          include: [],
+          resolve: {
+            commit: data.index.commit,
+            total: 0,
+            counts: {},
+            moved: 0,
+            drifted: [],
+            driftedOther: [],
+            missing: [],
+          },
+          decisions: [],
+          changes,
+          proposals: [{ id: request.id, changes }],
+          sourceBefore: source,
+          source,
+          issues: [],
+          readiness: {
+            ready: true,
+            scope: "workspace",
+            identity: request.context,
+            errors: 0,
+            warnings: 0,
+            findings: [],
+          },
+        };
+        const questionJobs: AnswerAttempt[] = [];
+        if (values.questions) {
+          const at = "2026-10-05T12:00:00.000Z";
+          const context = artifactIdentity(data.explainer, data.index);
+          const text = data.files["src/queue.ts"];
+          const answer: FeedbackAnswer = {
+            id: "00000000-0000-4000-8000-000000000001",
+            requestId: "question-queue",
+            context,
+            at,
+            text: "The queue holds pending jobs until the runner takes them. Each job keeps its identity while it waits.",
+            references: [
+              {
+                file: "src/queue.ts",
+                side: "head",
+                fromLine: 1,
+                toLine: 2,
+                quote: text.split("\n").slice(0, 2).join("\n"),
+              },
+            ],
+            sources: [{ file: "src/queue.ts", side: "head", text, hash: hashText(text) }],
+          };
+          const request = {
+            id: "question-queue",
+            elementId: "file:src/queue.ts",
+            label: "Pending queue",
+            kind: "explain",
+            note: "How does the queue hold jobs?",
+            context,
+            at,
+            outcome: {
+              revision: 0,
+              status: "pending",
+              reason: "Awaiting an explicit revision pass.",
+              at,
+            },
+            answers: [answer],
+          };
+          const pending = {
+            ...request,
+            id: "question-retry",
+            note: "When does a job retry?",
+            answers: [],
+          };
+          data.feedback = { schema: "code-explainer/feedback@1", requests: [request, pending] };
+          questionJobs.push(
+            {
+              id: answer.id,
+              selectedRequestIds: [request.id],
+              state: "completed",
+              attempt: 1,
+              progress: [],
+              error: null,
+              contextReason: null,
+            },
+            {
+              id: "00000000-0000-4000-8000-000000000002",
+              selectedRequestIds: [pending.id],
+              state: "running",
+              attempt: 1,
+              progress: [{ at, message: "Reading the recorded retry source" }],
+              error: null,
+              contextReason: null,
+            },
+          );
+        }
         const body = html.replace(
           script,
           (_all, start, _data, end) => start + JSON.stringify(data).replace(/</g, "\\u003c") + end,
@@ -215,8 +396,16 @@ async function shoot(argv: string[]): Promise<void> {
                 ],
               },
             });
+          if (path === "/api/jobs" && values.jobs)
+            return route.fulfill({ json: { available: true, reason: null, jobs } });
+          if (path.endsWith("/review") && values.jobs) return route.fulfill({ json: { review } });
           if (path === "/api/explainer") return route.fulfill({ status: 304 });
-          if (path === "/api/requests") return route.fulfill({ json: { requests: [] } });
+          if (path === "/api/requests")
+            return route.fulfill({
+              json: { requests: values.jobs ? [request] : (data.feedback?.requests ?? []) },
+            });
+          if (path === "/api/answers" && values.questions)
+            return route.fulfill({ json: { available: true, reason: null, jobs: questionJobs } });
           return route.fulfill({ status: 404 });
         });
         await page.goto("http://127.0.0.1:4747/" + query);
@@ -239,6 +428,17 @@ async function shoot(argv: string[]): Promise<void> {
         }
       } else await page.goto(pathToFileURL(file).href + query);
       await page.waitForFunction(() => !!window.__xpl);
+      if (values.questions) {
+        await page.evaluate(() => window.__xpl!.select(["file:src/queue.ts"]));
+        await page.getByRole("button", { name: /^Feedback/ }).click();
+        const panel = page.getByRole("dialog", { name: "Reader feedback" });
+        await panel.getByLabel("Feedback note").fill("Why does this job wait in the queue?");
+        if (values["question-history"])
+          await panel
+            .locator(".feedback-list > li")
+            .first()
+            .evaluate((el) => el.scrollIntoView({ block: "start" }));
+      }
       if (values["text-draft"]) {
         await page.evaluate(() => window.__xpl!.select(["concept:retry-policy"]));
         await page.getByTestId("text-edit").click();
@@ -248,6 +448,21 @@ async function shoot(argv: string[]): Promise<void> {
         await page.locator(".save-status").filter({ hasText: "Unsaved draft" }).waitFor();
         await page.evaluate(() => window.scrollTo(0, 0));
       }
+      if (values.jobs) {
+        const jobsButton = page.getByRole("button", { name: "Jobs", exact: true });
+        if (await jobsButton.count()) {
+          await jobsButton.click();
+          await page.getByTestId("jobs-panel").locator('[data-job-state="completed"]').waitFor();
+          if (values.jobs === "review") {
+            await page.getByRole("button", { name: "Review proposal" }).click();
+            await page
+              .getByRole("dialog", { name: "Review job proposal" })
+              .getByRole("region", { name: "Summary change" })
+              .waitFor();
+          }
+        }
+      }
+
       if (values["graph-pins"]) {
         await page.getByRole("button", { name: "Show source", exact: true }).click();
         await page.locator(".cm-editor").first().waitFor();

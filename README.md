@@ -97,7 +97,21 @@ remain available. The manifest records commits, artifact and input hashes, readi
 author review state. Source or guide changes during staging leave the previous current version intact.
 For PR guides, pass `--pr-result <result.json>` from `xpl pr finish` and `--root <prepared-repository>`;
 staging verifies the result and rechecks GitHub base/head before promotion. This is local storage only.
-Configured remote delivery, exact version links and the PR Action are later slices of #34.
+Opening current moves to its immutable version URL. About this explanation lists captured earlier
+versions, included head/base files and author review state, with a link to the current reading state.
+Step, element and head/base range links reopen that same version after a newer version is promoted.
+Save as HTML restores the saved navigation; an explicit URL target overrides it. Keep the staged tree
+for sibling history and latest-version links. Restored focus, view and source cursor can be combined
+with a tour step. Reload and browser Back/Forward restore those fields independently; switching to Map
+keeps a step's source override.
+
+To share a PR preview with your team, stage it into a folder that a static host you run already serves,
+then point the PR at it: `xpl pr link /srv/previews/pr-42 --url https://previews.example/pr-42 --visibility team`.
+It rechecks the PR's base and head, then posts one comment, or edits the same comment, with links to
+`current/index.html` and to this version. A private repository's preview needs `--visibility team`; who
+can open the host is up to the host. A PR workflow running `xpl pr check-link owner/repo#42` on new
+commits marks that comment outdated, so it stops calling an old head's preview current. The workflow file is
+in [the CLI reference](skill/code-explainer/reference/cli.md), under `xpl pr link`.
 
 `xpl guides` lists locally saved guides by title, recorded questions, audience and source/index commits.
 It works without a service or index file. `xpl search <pattern>` searches available indexed working-tree
@@ -159,6 +173,17 @@ xpl index && xpl view jobrunner    # http://127.0.0.1:4747
 to detach the installed CLI. `xpl service status` reports its instance, address, canonical repository root,
 selected guide and backend label. `xpl service stop` verifies that instance before stopping it.
 
+Use **Ask a question** in Details, **Ask about selected lines** in the code, or the Feedback panel
+for a source-linked answer when the service uses `--backend claude`. Questions retain their exact head/base
+range and snapshot. Feedback shows progress, retry/cancel controls, answers and context-change warnings.
+Reference clicks select matching code; changed source shows the recorded excerpt instead. Answers never edit
+a guide or finalize revision outcomes. **Answered** marks questions with answers; revision status appears
+separately. **Save for the next revision pass** saves feedback without asking the worker. Each question has
+one answer job, even across concurrent submissions; refused browser storage does not prevent live answers.
+History survives reload and feedback JSON import/export. Without a
+connected answer backend, the question stays pending for the next explicit offline feedback pass.
+History merges reject reused answer IDs and more than 1,000 answers per question, preserving the stored history.
+
 ```sh
 xpl service start jobrunner --background        # loopback only; logs in .explainer/service/service.log
 xpl service status --json
@@ -219,10 +244,19 @@ Cleanup failure stops scheduling. Service death kills that group through the lau
 time before terminating any remaining group and allowing retry. Reused PIDs are left alone.
 Verified execution currently requires Linux /proc; manual revision works on other platforms. With `--backend claude`, submission generates an ordinary proposal,
 validates it through `xpl revise` and leaves it awaiting explicit author review. Source is read-only; the
-agent can write only its owned output. No job applies a patch or finalizes feedback. Creation proposals
+agent can write only its owned output. Job completion does not apply a patch or finalize feedback. Creation proposals
 fill an explicitly initialized guide with selected requests and included IDs through the same journal.
-Service-owned runs refuse manual `revise --accept` to preserve cancellation fencing.
-The job review UI and guarded acceptance are later work; `xpl revise <guide> --run <id>` inspects the proposal.
+Open **Jobs** in the connection bar to select feedback, start a job, inspect progress, cancel or retry.
+**Review proposal** shows readable field changes with marked text, evidence as file/lines/role/status,
+and source before/after. Raw changes sit behind **Show raw change**. Choose accept, reject or leave
+unresolved for each request and give a reason. **Review decisions** checks the exact combined candidate;
+only then can **Accept reviewed revision** commit it and finalize those selected outcomes.
+If another view changes the decisions, acceptance stops and reloads the review for inspection.
+New feedback stays pending. Cancelled, superseded, stale and old-attempt results cannot apply.
+After an interrupted acceptance, reopen the review and **Recover acceptance**; it does not apply twice.
+Service-owned runs refuse manual proposal/decision/accept writes from selection onward, even before a
+proposal arrives or after cancellation/supersession, to preserve these fences;
+`xpl revise <guide> --run <id>` still inspects the journal. Offline feedback and manual revisions remain available.
 
 ## Using the CLI directly
 

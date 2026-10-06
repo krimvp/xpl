@@ -24,6 +24,8 @@ import {
   parseFeedbackRequest,
   mergeFeedbackRequests,
   hashText,
+  type Job,
+  type JobReviewAction,
   type FeedbackKind,
   type FeedbackRequest,
   type FeedbackFile,
@@ -63,7 +65,14 @@ import {
   type WatchAttention,
 } from "@xpl/core";
 import { snapshotTexts } from "./snapshot.js";
-import { messageOf, ServerApi, type LaunchParams } from "./data.js";
+import {
+  messageOf,
+  readLaunchParams,
+  ServerApi,
+  type LaunchParams,
+  type AnswerAttempt,
+  type AnswerHistory,
+} from "./data.js";
 import { changeAt, changeOf, hasBase } from "./diff.js";
 import { workspaceView } from "./workspace.js";
 import { serializeExplainer, withViewFields } from "./edits.js";
@@ -220,8 +229,13 @@ export interface ViewerState {
   connection: ConnectionState;
   attention?: WatchAttention;
   attentionError?: string;
+  jobs?: { available: boolean; reason: string | null; jobs: Job[] };
+  jobError?: string;
   feedback: FeedbackRequest[];
   feedbackStorageError?: string;
+  feedbackOpen: boolean;
+  answers?: AnswerHistory;
+  answerError?: string;
   /** The live source no longer matches its index; reindex before trusting locations and edges. */
   sourceWarning: string | undefined;
   exportInfo: ViewerBundle["exportInfo"];
@@ -255,17 +269,51 @@ type PendingWrite =
       applied: boolean;
     };
 
+/** Step defaults are shared by launch restoration and interactive navigation. */
+function stepState(
+  model: ExplainerModel,
+  tour: Tour,
+  index: number,
+  viewId: string | undefined,
+): Partial<ViewerState> {
+  const step = tour.steps[index];
+  if (!step) return {};
+  const view = model.view(step.view);
+  const editor = step.editor ?? {};
+  const focus = (Array.isArray(step.focus) ? step.focus : []).filter(
+    (id): id is string => typeof id === "string" && model.hasElement(id),
+  );
+  return {
+    viewId: view ? view.id : viewId,
+    selection: [...new Set(focus)],
+    cursor: undefined,
+    openedFile: undefined,
+    openedBase: false,
+    applied: {
+      tourId: tour.id,
+      stepId: step.id,
+      // An empty override is "not given": it would leave the code side blank.
+      code: Array.isArray(step.code) && step.code.length > 0 ? step.code : undefined,
+      dimOthers: editor.dimOthers !== false,
+      hideFileTree: editor.hideFileTree !== false,
+      primary: typeof editor.primary === "string" ? editor.primary : undefined,
+    },
+  };
+}
+
 export class ViewerStore {
   private state: ViewerState;
   private readonly listeners = new Set<() => void>();
   private api: ServerApi | undefined;
   private readonly liveApi: ServerApi | undefined;
   private pollConnection: (() => Promise<void>) | undefined;
+  private refreshingAnswers = false;
   private indexModel: IndexModel;
   private workspaceRevision = 0;
   private readonly loading = new Set<FilePath>();
   private readonly loadingBase = new Set<FilePath>();
   private readonly pending = new Map<string, PendingWrite>();
+  private jobSubmission: { key: string; id: string } | undefined;
   private authorSequence = 0;
   private saveTimer: ReturnType<typeof setTimeout> | undefined;
   private saving: Promise<void> | undefined;
@@ -298,30 +346,15 @@ export class ViewerStore {
     this.liveApi = this.api;
     const explainer = bundle.explainer;
     const model = this.modelOf(explainer);
-    const views = model.views;
-    const viewId = views.find((v) => v.id === launch.view)?.id ?? views[0]?.id;
-
-    // Where to start: the URL wins over the bundle. A tour that does not exist falls back to the first
-    // one when the page is to open in Present, and to none in Explore.
-    const tours = model.tours;
-    const asked = findTour(tours, launch.tour) ?? findTour(tours, bundle.tour);
-    if (asked && launch.stepId) {
-      const index = asked.steps.findIndex((step) => step.id === launch.stepId);
-      if (index >= 0) launch = { ...launch, step: index + 1 };
-    }
-    const present = (launch.mode ?? bundle.mode ?? "explore") === "present" && tours.length > 0;
-    const tour = asked ?? (present ? tours[0] : undefined);
     this.state = {
       readOnlyGuide: bundle.readOnlyGuide,
-      perspective:
-        launch.perspective ??
-        (launch.mode || launch.view || bundle.mode === "present" ? "explore" : "guide"),
+      perspective: "guide",
       canGoBack: false,
       canGoForward: false,
       explainer,
       model,
-      viewId,
-      selection: (launch.focus ?? []).filter((id) => model.hasElement(id)),
+      viewId: model.views[0]?.id,
+      selection: [],
       cursor: undefined,
       openedFile: undefined,
       openedBase: false,
@@ -330,7 +363,7 @@ export class ViewerStore {
       callersSeq: 0,
       expanded: new Set(),
       mode: "explore",
-      tour: tour ? { tourId: tour.id, step: stepIndex(launch.step, tour.steps.length) } : undefined,
+      tour: undefined,
       applied: undefined,
       stepSeq: 0,
       files: bundle.files,
@@ -352,8 +385,17 @@ export class ViewerStore {
       },
       sourceWarning: bundle.sourceWarning,
       feedback: [],
+      feedbackOpen: false,
       exportInfo: bundle.exportInfo,
     };
+    const restored = this.restoreState(launch);
+    this.state = {
+      ...this.state,
+      ...restored,
+      openSeq: restored.cursor ? 1 : 0,
+      stepSeq: restored.applied ? 1 : 0,
+    };
+    if (restored.perspective !== "explore") this.reading = restored.perspective;
     this.loadFeedback(bundle.feedback);
     // Offline reload opens the original embedded artifact. Its in-memory edits must first be exported.
     if (this.api && this.editStorageKey && typeof localStorage !== "undefined") {
@@ -377,28 +419,72 @@ export class ViewerStore {
         this.set({ editHistoryError: `Undo history could not be loaded: ${messageOf(error)}` });
       }
     }
-    if (this.state.perspective !== "explore") this.reading = this.state.perspective;
-    if (present) this.present();
-    else if (launch.perspective && asked && launch.step) {
-      this.applyStep(asked, stepIndex(launch.step, asked.steps.length));
-      const same = (ids: readonly string[] | undefined) =>
-        JSON.stringify(ids) === JSON.stringify(launch.focus);
-      // The section's focus as entering its flow left it (`flowEntry`): still the section, applied.
-      const flow = launch.perspective === "flow" ? workspaceView(this.state, "flow") : undefined;
-      const entry = flow && flow.type !== "graph" ? this.flowEntry(flow) : undefined;
-      if (launch.focus && !same(this.state.selection)) {
-        if (entry?.selection && same(entry.selection)) this.set(entry);
-        else
-          this.set({
-            selection: launch.focus.filter((id) => model.hasElement(id)),
-            applied: undefined,
-          });
-      }
-    }
-    const perspective = this.state.perspective;
-    if (!present && (perspective === "map" || perspective === "flow"))
-      this.set({ viewId: workspaceView(this.state, perspective)?.id ?? this.state.viewId });
-    if (launch.file && launch.range) this.openRange(launch.file, launch.range);
+  }
+
+  /** Build navigation without notifying listeners, recording history or replaying actions. */
+  restoreState(params: LaunchParams): Navigation {
+    if (Object.keys(params).length === 0 && this.library.launch)
+      params = readLaunchParams(this.library.launch);
+    const { model } = this.state;
+    const present =
+      (params.mode ?? (params.perspective ? "explore" : this.library.mode) ?? "explore") ===
+        "present" && model.tours.length > 0;
+    const tour =
+      findTour(model.tours, params.tour ?? this.library.tour) ??
+      (present ? model.tours[0] : undefined);
+    const stable = tour?.steps.findIndex((step) => step.id === params.stepId) ?? -1;
+    const index = stable >= 0 ? stable : stepIndex(params.step, tour?.steps.length ?? 0);
+    // Old compact tour URLs imply an applied step. New URLs state its presence or absence explicitly.
+    const applied =
+      stable >= 0 ||
+      (params.stepId === undefined &&
+        params.view === undefined &&
+        params.focus === undefined &&
+        (present || (params.step !== undefined && params.perspective !== undefined)));
+    const defaults = tour && applied ? stepState(model, tour, index, model.views[0]?.id) : {};
+    const cursor =
+      params.file && params.range
+        ? this.rangeCursor(params.file, params.range, params.side)
+        : undefined;
+    const explicitView = model.views.find((view) => view.id === params.view)?.id;
+    const restored: Navigation = {
+      mode: present ? "present" : "explore",
+      perspective:
+        params.perspective ??
+        (cursor && !present && !params.mode
+          ? "code"
+          : params.mode || params.view || this.library.mode === "present"
+            ? "explore"
+            : "guide"),
+      viewId: explicitView ?? defaults.viewId ?? model.views[0]?.id,
+      selection:
+        params.focus !== undefined
+          ? params.focus.filter((id) => model.hasElement(id))
+          : (defaults.selection ?? []),
+      applied: defaults.applied,
+      tour: tour ? { tourId: tour.id, step: index } : undefined,
+      cursor,
+      openedFile: cursor?.file,
+      openedBase: cursor?.side === "base",
+      openedLine: cursor?.side === "base" ? cursor.fromLine : undefined,
+    };
+    if (
+      !explicitView &&
+      !present &&
+      (restored.perspective === "map" || restored.perspective === "flow")
+    )
+      restored.viewId =
+        workspaceView({ ...this.state, ...restored }, restored.perspective)?.id ?? restored.viewId;
+    return restored;
+  }
+
+  /** Browser history applies the same snapshot as launch, without interactive navigation actions. */
+  restoreNavigation(params: LaunchParams): void {
+    this.set({
+      ...this.restoreState(params),
+      openSeq: this.state.openSeq + 1,
+      stepSeq: this.state.stepSeq + 1,
+    });
   }
 
   /** The model of an explainer, over tours that are sound (hand-edited files may not be). */
@@ -690,9 +776,18 @@ export class ViewerStore {
   }
 
   /** Search and shared links use inclusive source columns, only within supplied snapshot text. */
-  openRange(file: FilePath, range: Range): void {
-    const text = this.state.files[file];
-    if (text === undefined || !this.indexModel.hasFile(file)) return;
+  private rangeCursor(
+    file: FilePath,
+    range: Range,
+    side: "head" | "base" = "head",
+  ): Cursor | undefined {
+    const base = side === "base";
+    const text = (base ? this.state.baseFiles : this.state.files)[file];
+    if (
+      text === undefined ||
+      (base ? !hasBase(changeOf(this.state.explainer), file) : !this.indexModel.hasFile(file))
+    )
+      return;
     const lines = text.split("\n");
     const { startLine, endLine, startCol, endCol } = range;
     if (
@@ -705,26 +800,33 @@ export class ViewerStore {
           !Number.isInteger(endCol) ||
           startCol < 1 ||
           endCol! < 1 ||
-          startCol > lines[startLine - 1]!.replace(/\r$/, "").length ||
-          endCol! > lines[endLine - 1]!.replace(/\r$/, "").length ||
+          startCol > lines[startLine - 1]!.replace(/\r$/, "").length + 1 ||
+          endCol! > lines[endLine - 1]!.replace(/\r$/, "").length + 1 ||
           (startLine === endLine && endCol! < startCol)))
     )
       return;
+    return {
+      file,
+      fromLine: startLine,
+      toLine: endLine,
+      ...(base ? { side: "base" as const } : {}),
+      ...(startCol !== undefined ? { fromCol: startCol, toCol: endCol } : {}),
+    };
+  }
+
+  openRange(file: FilePath, range: Range, side: "head" | "base" = "head"): void {
+    const cursor = this.rangeCursor(file, range, side);
+    if (!cursor) return;
     this.navigate({
       mode: "explore",
       perspective: "code",
       selection: [],
       applied: undefined,
       openedFile: file,
-      openedBase: false,
-      openedLine: undefined,
+      openedBase: side === "base",
+      openedLine: side === "base" ? cursor.fromLine : undefined,
       openSeq: this.state.openSeq + 1,
-      cursor: {
-        file,
-        fromLine: startLine,
-        toLine: endLine,
-        ...(startCol !== undefined ? { fromCol: startCol, toCol: endCol } : {}),
-      },
+      cursor,
     });
   }
 
@@ -896,30 +998,9 @@ export class ViewerStore {
    * are skipped. Reading files is left to the editor stack.
    */
   private applyStep(tour: Tour, index: number): void {
-    const step = tour.steps[index];
-    if (!step) return;
-    const { model } = this.state;
-    const view = model.view(step.view);
-    const editor = step.editor ?? {};
-    const focus = (Array.isArray(step.focus) ? step.focus : []).filter(
-      (id): id is string => typeof id === "string" && model.hasElement(id),
-    );
     this.set({
-      viewId: view ? view.id : this.state.viewId,
-      selection: [...new Set(focus)],
-      cursor: undefined,
-      openedFile: undefined,
-      openedBase: false,
+      ...stepState(this.state.model, tour, index, this.state.viewId),
       stepSeq: this.state.stepSeq + 1,
-      applied: {
-        tourId: tour.id,
-        stepId: step.id,
-        // An empty override is "not given": it would leave the code side blank.
-        code: Array.isArray(step.code) && step.code.length > 0 ? step.code : undefined,
-        dimOthers: editor.dimOthers !== false,
-        hideFileTree: editor.hideFileTree !== false,
-        primary: typeof editor.primary === "string" ? editor.primary : undefined,
-      },
     });
   }
 
@@ -1626,11 +1707,12 @@ export class ViewerStore {
   /** Persist before returning. Storage refusal stays visible and exports remain available. */
   private keepFeedback(requests: readonly FeedbackRequest[]): void {
     const held = mergeFeedbackRequests([...this.state.feedback, ...requests]);
-    this.set({ feedback: held });
+    held.forEach(parseFeedbackRequest);
+    let stored: FeedbackRequest[] = [];
     try {
       // Read both legacy arrays and per-ID records. New writes never replace either format.
       const saved = localStorage.getItem(this.feedbackStorageKey);
-      const stored = saved ? parseFeedbackFile(JSON.parse(saved)).requests : [];
+      stored = saved ? parseFeedbackFile(JSON.parse(saved)).requests : [];
       const prefix = `${this.feedbackStorageKey}:request:`;
       for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);
@@ -1638,8 +1720,19 @@ export class ViewerStore {
         const json = localStorage.getItem(key);
         if (json !== null) stored.push(parseFeedbackRequest(JSON.parse(json)));
       }
-      const feedback = mergeFeedbackRequests([...held, ...stored]);
-      this.set({ feedback, feedbackStorageError: undefined });
+    } catch (error) {
+      this.set({
+        feedback: held,
+        feedbackStorageError: `Browser storage unavailable: ${String(error)}. Export feedback JSON to keep it.`,
+      });
+      return;
+    }
+    // Other tabs can add history after this page loaded. Validate their union before publishing.
+    const feedback = mergeFeedbackRequests([...held, ...stored]);
+    feedback.forEach(parseFeedbackRequest);
+    this.set({ feedback, feedbackStorageError: undefined });
+    try {
+      const prefix = `${this.feedbackStorageKey}:request:`;
       for (const request of feedback) {
         // Immutable versions prevent a stale read in another tab from overwriting a newer outcome.
         const json = JSON.stringify(request);
@@ -1663,11 +1756,139 @@ export class ViewerStore {
     }
   }
 
+  async refreshJobs(): Promise<void> {
+    const api = this.api;
+    if (!api?.attachment?.instanceId) return;
+    try {
+      const jobs = await api.jobs();
+      if (this.api === api) this.set({ jobs, jobError: undefined });
+    } catch (error) {
+      if (this.api === api) this.set({ jobError: messageOf(error) });
+    }
+  }
+  private async jobApi(): Promise<ServerApi> {
+    await this.flush();
+    if (this.state.dirty || this.state.editDraft || this.state.editBusy)
+      throw new Error("Save or cancel pending edits before changing a job.");
+    if (!this.api?.attachment?.instanceId || this.state.connection.status !== "connected")
+      throw new Error("Jobs need a connected repository service. Retry the connection first.");
+    return this.api;
+  }
+  async startJob(ids: string[]): Promise<void> {
+    const api = await this.jobApi();
+    if (!ids.length) throw new Error("Select feedback for this job.");
+    const key = JSON.stringify([...ids].sort());
+    const submission =
+      this.jobSubmission?.key === key ? this.jobSubmission : { key, id: crypto.randomUUID() };
+    this.jobSubmission = submission;
+    await api.submitJob(submission.id, ids);
+    if (this.api !== api)
+      throw new Error("Connection changed; reload job history before retrying.");
+    this.jobSubmission = undefined;
+    await this.refreshJobs();
+  }
+  async controlJob(job: Job, action: "cancel" | "retry"): Promise<void> {
+    const api = await this.jobApi();
+    await api.controlJob(job, action);
+    if (this.api !== api) throw new Error("Connection changed; reload job history.");
+    await this.refreshJobs();
+  }
+  async reviewJob(job: Job, action: Omit<JobReviewAction, "attemptId"> = {}) {
+    const api = await this.jobApi();
+    if (!job.owner) throw new Error("No completed attempt to review.");
+    const review = await api.reviewJob(job.id, { ...action, attemptId: job.owner.attemptId });
+    if (this.api !== api)
+      throw new Error("Connection changed; reopen the review before accepting.");
+    if (action.accept) {
+      const bundle = await api.bundle();
+      if (this.api !== api) throw new Error("Connection changed after acceptance; reload history.");
+      this.loadFeedback(bundle.feedback);
+      this.adoptExplainer(bundle.explainer, bundle);
+      await this.refreshFeedback();
+      await this.refreshJobs();
+    }
+    return review;
+  }
+
   async refreshFeedback(): Promise<void> {
     this.loadFeedback(undefined);
     if (!this.api) return;
     // Every response uses the same revision rule, including delayed or overlapping refreshes.
     this.keepFeedback(await this.api.requests());
+  }
+
+  openFeedback(id?: ElementId): void {
+    if (id) this.select([id]);
+    this.set({ feedbackOpen: true });
+  }
+
+  closeFeedback(): void {
+    this.set({ feedbackOpen: false });
+  }
+
+  async importFeedback(value: unknown): Promise<void> {
+    const incoming = parseFeedbackFile(value);
+    this.keepFeedback(incoming.requests);
+    if (this.api) {
+      for (const request of incoming.requests) await this.api.postRequest(request);
+      await this.refreshFeedback();
+    }
+  }
+
+  async refreshAnswers(): Promise<void> {
+    const api = this.api;
+    if (!api?.attachment?.instanceId || this.refreshingAnswers) return;
+    this.refreshingAnswers = true;
+    try {
+      const answers = await api.answers();
+      if (this.api !== api) return;
+      await this.refreshFeedback();
+      if (this.api === api) this.set({ answers, answerError: undefined });
+    } catch (error) {
+      if (this.api === api) this.set({ answerError: messageOf(error) });
+    } finally {
+      this.refreshingAnswers = false;
+    }
+  }
+
+  async answerRequest(request: FeedbackRequest): Promise<void> {
+    if (this.api) await this.api.postRequest(request);
+    if (!this.api?.attachment?.instanceId || this.state.connection.status !== "connected")
+      throw new Error("Live answering needs a connected local service.");
+    const known = (await this.api.answers()).jobs.find((job) =>
+      job.selectedRequestIds.includes(request.id),
+    );
+    if (known) {
+      await this.refreshAnswers();
+      return;
+    }
+    // A name-based UUID needs no browser storage; the service also deduplicates by request ID.
+    const bytes = new Uint8Array(
+      await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`xpl-answer:${request.id}`)),
+    ).slice(0, 16);
+    bytes[6] = (bytes[6]! & 0x0f) | 0x80;
+    bytes[8] = (bytes[8]! & 0x3f) | 0x80;
+    const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+    const id = `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+    await this.api.startAnswer(id, request.id);
+    await this.refreshAnswers();
+  }
+
+  async askQuestion(id: ElementId, note: string): Promise<string | undefined> {
+    const request = this.captureFeedback(id, note, "explain");
+    try {
+      await this.answerRequest(request);
+      return undefined;
+    } catch (error) {
+      return messageOf(error);
+    }
+  }
+
+  async controlAnswer(job: AnswerAttempt, action: "retry" | "cancel"): Promise<void> {
+    if (!this.api || this.state.connection.status !== "connected")
+      throw new Error("Reconnect to control the question job.");
+    await this.api.controlAnswer(job, action);
+    await this.refreshAnswers();
   }
 
   /** Export only after reconciling every observed version, including a refreshed bundle. */
@@ -1686,6 +1907,17 @@ export class ViewerStore {
     note?: string,
     kind: FeedbackKind = "expand",
   ): Promise<"queued" | "command"> {
+    const request = this.captureFeedback(id, note, kind);
+    if (!this.api) return "command";
+    await this.api.postRequest(request);
+    return "queued";
+  }
+
+  private captureFeedback(
+    id: ElementId,
+    note: string | undefined,
+    kind: FeedbackKind,
+  ): FeedbackRequest {
     const at = new Date().toISOString();
     const cursor = this.state.cursor;
     const focus = codeFocus([id], this.state.model)[0];
@@ -1724,9 +1956,7 @@ export class ViewerStore {
     // Include other tabs' requests in this page without rewriting their stored records.
     this.loadFeedback({ schema: FEEDBACK_SCHEMA, requests: this.state.feedback });
     this.keepFeedback([request]);
-    if (!this.api) return "command";
-    await this.api.postRequest(request);
-    return "queued";
+    return request;
   }
 
   // ─── Changes made on disk (Claude's `xpl apply`) ──────────────────────────────────────────────
@@ -1804,6 +2034,7 @@ export class ViewerStore {
             this.set({ attentionError: messageOf(error) });
           }
         }
+        await this.refreshJobs();
         const fresh = await api.getExplainer(etag);
         if (this.api !== api) return;
         if (fresh) {
@@ -1902,6 +2133,7 @@ export class ViewerStore {
     if (!workspace && serializeExplainer(explainer) === serializeExplainer(this.state.explainer))
       return false;
     if (workspace) {
+      this.loadFeedback(workspace.feedback);
       this.workspaceRevision++;
       this.indexModel = asIndexModel(workspace.index);
     }

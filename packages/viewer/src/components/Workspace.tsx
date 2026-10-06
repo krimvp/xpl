@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { derivedEdgeMap, processFlow, type SequenceView } from "@xpl/core";
+import { derivedEdgeMap, processFlow, type SequenceView as SequenceViewData } from "@xpl/core";
 import { viewReverseIndex } from "../derive.js";
 import { sharedActor } from "../layout/flowLayout.js";
 import { describeElement } from "../details.js";
@@ -22,6 +22,7 @@ import { FlowDiagram } from "./FlowDiagram.js";
 import { GraphView } from "./GraphView.js";
 import { Guide } from "./Guide.js";
 import { RelatedFiles } from "./RelatedFiles.js";
+import { SequenceView } from "./SequenceView.js";
 import { Splitter } from "./Splitter.js";
 import { ZoomTrail } from "./ZoomTrail.js";
 
@@ -38,7 +39,7 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
     () => workspaceMap(state),
     [state.model, state.selection, state.viewId, state.expanded],
   );
-  const flow = workspaceView(state, "flow") as SequenceView | undefined;
+  const flow = workspaceView(state, "flow") as SequenceViewData | undefined;
   const mapMatches = useMemo(
     () =>
       state.cursor
@@ -101,7 +102,7 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
       : [];
   const code = state.perspective === "code";
   // The steps of one function: the code is the main pane, the flow a narrow outline beside it.
-  const codeFirst = state.perspective === "flow" && codeFirstView(flow);
+  const codeFirst = state.perspective === "flow" && flow?.type === "flow" && codeFirstView(flow);
   // Its width: the reader drags the bar between them (or uses the arrow keys); kept per flow.
   const [outlineWidth, setOutlineWidth] = useOutlineWidth(codeFirst ? flow?.id : undefined);
   // The topic column names the picked element (not in the guide while its section is the topic).
@@ -284,6 +285,17 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
                         order={map.view.include}
                         present={map.generated}
                         reader
+                      />
+                    </div>
+                  ) : flow?.type === "sequence" ? (
+                    <div className="workspace-diagram">
+                      <SequenceView
+                        view={flow}
+                        resetKey={`${flow.id}:${state.stepSeq}`}
+                        model={state.model}
+                        selection={state.selection}
+                        matches={derived.matches}
+                        related={derived.selection.related}
                       />
                     </div>
                   ) : flow ? (

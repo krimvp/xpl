@@ -219,101 +219,148 @@ test("regrouping visible children of a hidden container nests both boxes and kee
   await expect(newGroup.locator('[data-element-id="file:src/metrics.ts"]')).toBeVisible();
 });
 
-test("live pins reload, reset with exact undo and export linked system, service and nested code maps", async ({
-  page,
-}) => {
-  const dir = mkdtempSync(join(tmpdir(), "xpl-pins-e2e-"));
-  cpSync(new URL("../../../fixtures/py-jobrunner", import.meta.url), dir, { recursive: true });
-  const command = (args: string[]) =>
-    run([...args, "--root", dir], { cwd: dir, out() {}, err() {} });
-  expect(await command(["index", "--precise", "off"])).toBe(0);
-  expect(await command(["new", "demo"])).toBe(0);
-  expect(
-    await command([
-      "apply",
-      "demo",
-      new URL(
-        "../../../skill/code-explainer/reference/examples/py-overview.patch.json",
-        import.meta.url,
-      ).pathname,
-    ]),
-  ).toBe(0);
-  const patchPath = join(dir, "code.patch.json");
+const levels = [
+  ["view:system", "grp:job-runner", "Job runner"],
+  ["view:overview", "file:jobrunner/worker.py", "Workers"],
+  ["view:code", "sym:jobrunner/worker.py#Worker.run", "Worker.run"],
+];
+
+const placements: Record<string, { x: number; y: number }> = {
+  "view:system": { x: 100, y: 100 },
+  "view:overview": { x: 240, y: 160 },
+  "view:code": { x: 140, y: -10 },
+};
+async function seedPins({ command, patchPath }: PinsFixture) {
   writeFileSync(
     patchPath,
     JSON.stringify({
-      views: [
-        {
-          id: "view:code",
-          type: "graph",
-          title: "Worker code",
-          include: [
-            "file:jobrunner/worker.py",
-            "sym:jobrunner/worker.py#Worker",
-            "sym:jobrunner/worker.py#Worker.run",
-            "sym:jobrunner/worker.py#WorkerPool",
-            "sym:jobrunner/worker.py#WorkerPool.lease",
-          ],
-          layout: {
-            "sym:jobrunner/worker.py#Worker": { x: -30, y: 100 },
-            "sym:jobrunner/worker.py#Worker.run": { x: 140, y: -10 },
-          },
-          stubs: { mode: "none" },
-        },
-      ],
+      views: levels.map(([view, id]) => ({ id: view, layout: { [id!]: placements[view!] } })),
     }),
   );
-  expect(await command(["apply", "demo", patchPath])).toBe(0);
-  const path = join(dir, ".explainer/demo.explainer.json");
-  const saved = () => JSON.parse(readFileSync(path, "utf8"));
-  const server = await startViewServer({
-    env: { root: dir, cwd: dir, env: process.env, indexOption: undefined, warn() {} },
-    explainerPath: path,
-    host: "127.0.0.1",
-    port: 0,
-    viewerHtml: () => readFileSync(new URL("../dist/index.html", import.meta.url), "utf8"),
-  });
-  const levels = [
-    ["view:system", "grp:job-runner", "Job runner"],
-    ["view:overview", "file:jobrunner/worker.py", "Workers"],
-    ["view:code", "sym:jobrunner/worker.py#Worker.run", "Worker.run"],
-  ];
-  const placements: Record<string, { x: number; y: number }> = {};
-  try {
-    for (const [view, id, label] of levels) {
-      await page.goto(server.url + `?mode=explore&view=${view}`);
-      await page.waitForFunction(() => !!window.__xpl);
-      await page.evaluate((id) => window.__xpl!.select([id]), id!);
-      const node = byId(page, id!);
-      await expect(node).toBeVisible();
-      const before = await node.evaluate((el) => {
-        const t = (el as SVGGraphicsElement).transform.baseVal.getItem(0).matrix;
-        return { x: t.e, y: t.f };
+  expect(await command(["apply", "demo", patchPath, "--actor", "user"])).toBe(0);
+}
+interface PinsFixture {
+  dir: string;
+  path: string;
+  patchPath: string;
+  saved: () => any;
+  command: (args: string[]) => Promise<number>;
+  server: Awaited<ReturnType<typeof startViewServer>>;
+}
+const pinsTest = test.extend<{ pins: PinsFixture }>({
+  pins: async ({}, use) => {
+    let server: Awaited<ReturnType<typeof startViewServer>> | undefined;
+    const dir = mkdtempSync(join(tmpdir(), "xpl-pins-e2e-"));
+    try {
+      cpSync(new URL("../../../fixtures/py-jobrunner", import.meta.url), dir, { recursive: true });
+      const command = (args: string[]) =>
+        run([...args, "--root", dir], { cwd: dir, out() {}, err() {} });
+      expect(await command(["index", "--precise", "off"])).toBe(0);
+      expect(await command(["new", "demo"])).toBe(0);
+      expect(
+        await command([
+          "apply",
+          "demo",
+          new URL(
+            "../../../skill/code-explainer/reference/examples/py-overview.patch.json",
+            import.meta.url,
+          ).pathname,
+        ]),
+      ).toBe(0);
+      const patchPath = join(dir, "code.patch.json");
+      writeFileSync(
+        patchPath,
+        JSON.stringify({
+          views: [
+            {
+              id: "view:code",
+              type: "graph",
+              title: "Worker code",
+              include: [
+                "file:jobrunner/worker.py",
+                "sym:jobrunner/worker.py#Worker",
+                "sym:jobrunner/worker.py#Worker.run",
+                "sym:jobrunner/worker.py#WorkerPool",
+                "sym:jobrunner/worker.py#WorkerPool.lease",
+              ],
+              layout: {
+                "sym:jobrunner/worker.py#Worker": { x: -30, y: 100 },
+                "sym:jobrunner/worker.py#Worker.run": { x: 140, y: -10 },
+              },
+              stubs: { mode: "none" },
+            },
+          ],
+        }),
+      );
+      expect(await command(["apply", "demo", patchPath])).toBe(0);
+      const path = join(dir, ".explainer/demo.explainer.json");
+      const saved = () => JSON.parse(readFileSync(path, "utf8"));
+      server = await startViewServer({
+        env: { root: dir, cwd: dir, env: process.env, indexOption: undefined, warn() {} },
+        explainerPath: path,
+        host: "127.0.0.1",
+        port: 0,
+        viewerHtml: () => readFileSync(new URL("../dist/index.html", import.meta.url), "utf8"),
       });
-      const handle = page.getByRole("button", { name: `Move ${label}`, exact: true });
-      await handle.focus();
-      for (const step of [1, 2, 3]) {
-        await page.keyboard.press("ArrowRight");
-        await expect
-          .poll(() => saved().views.find((v: { id: string }) => v.id === view).layout?.[id!])
-          .toEqual({ x: before.x + step * 20, y: before.y });
-        await expect(handle).toBeFocused();
-        await expect(handle).toHaveAttribute("aria-disabled", "false");
-      }
-      const position = { x: before.x + 60, y: before.y };
-      placements[view!] = position;
+      await use({ dir, path, patchPath, saved, command, server });
+    } finally {
+      await server?.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  },
+});
+
+for (const [view, id, label] of levels)
+  pinsTest(`live ${view} pins reload with linked source`, async ({ page, pins }) => {
+    const { server, saved } = pins;
+    await page.goto(server.url + `?mode=explore&view=${view}`);
+    await page.waitForFunction(() => !!window.__xpl);
+    await page.evaluate((id) => window.__xpl!.select([id]), id!);
+    const node = byId(page, id!);
+    await expect(node).toBeVisible();
+    const before = await node.evaluate((el) => {
+      const t = (el as SVGGraphicsElement).transform.baseVal.getItem(0).matrix;
+      return { x: t.e, y: t.f };
+    });
+    const handle = page.getByRole("button", { name: `Move ${label}`, exact: true });
+    await handle.focus();
+    for (const step of [1, 2, 3]) {
+      await page.keyboard.press("ArrowRight");
       await expect
         .poll(() => saved().views.find((v: { id: string }) => v.id === view).layout?.[id!])
-        .toEqual(position);
-      await expect(node).toHaveAttribute("transform", `translate(${position.x} ${position.y})`);
-      await page.reload();
-      await page.waitForFunction(() => !!window.__xpl);
-      await expect(node).toHaveAttribute("transform", `translate(${position.x} ${position.y})`);
-      await page.evaluate((id) => window.__xpl!.select([id]), id!);
-      await expect
-        .poll(async () => (await focusOf(page)).map((f) => f.file))
-        .toContain("jobrunner/worker.py");
+        .toEqual({ x: before.x + step * 20, y: before.y });
+      await expect(node).toHaveAttribute(
+        "transform",
+        `translate(${before.x + step * 20} ${before.y})`,
+      );
+      await expect(handle).toBeFocused();
+      await expect(handle).toHaveAttribute("aria-disabled", "false");
     }
+    const position = { x: before.x + 60, y: before.y };
+    await expect
+      .poll(() => saved().views.find((v: { id: string }) => v.id === view).layout?.[id!])
+      .toEqual(position);
+    await expect(node).toHaveAttribute("transform", `translate(${position.x} ${position.y})`);
+    await page.reload();
+    await page.waitForFunction(() => !!window.__xpl);
+    await expect(node).toHaveAttribute("transform", `translate(${position.x} ${position.y})`);
+    await page.evaluate((id) => window.__xpl!.select([id]), id!);
+    await expect
+      .poll(async () => (await focusOf(page)).map((f) => f.file))
+      .toContain("jobrunner/worker.py");
+  });
+pinsTest(
+  "nested pins cancel drags, commit on release and reset with exact undo",
+  async ({ page, pins }) => {
+    const { path, server, saved } = pins;
+    await seedPins(pins);
+    await page.goto(server.url + "?mode=explore&view=view:code");
+    await page.waitForFunction(() => !!window.__xpl);
+    await page.evaluate((id) => window.__xpl!.select([id]), levels[2]![1]!);
+    await expect(byId(page, levels[2]![1]!)).toHaveAttribute(
+      "transform",
+      `translate(${placements["view:code"]!.x} ${placements["view:code"]!.y})`,
+    );
     // A real drag in a nested container follows SVG coordinates and writes only on release.
     await expect(byId(page, "file:jobrunner/worker.py").locator(".focus-ring").first()).toHaveCSS(
       "fill",
@@ -393,7 +440,7 @@ test("live pins reload, reset with exact undo and export linked system, service 
     await expect
       .poll(
         () =>
-          saved().views.find((v: { id: string }) => v.id === "view:code").layout[levels[2]![1]!],
+          saved().views.find((v: { id: string }) => v.id === "view:code").layout?.[levels[2]![1]!],
       )
       .toBeUndefined();
     await history(page);
@@ -406,6 +453,14 @@ test("live pins reload, reset with exact undo and export linked system, service 
     const beforeZoom = readFileSync(path, "utf8");
     await page.getByRole("button", { name: "Zoom in", exact: true }).click();
     expect(readFileSync(path, "utf8")).toBe(beforeZoom);
+  },
+);
+for (const width of [1440, 390])
+  pinsTest(`protected pins export linked maps offline at ${width}px`, async ({ page, pins }) => {
+    const { dir, patchPath, command, server, saved } = pins;
+    await seedPins(pins);
+    await page.goto(server.url + "?mode=explore&view=view:overview");
+    await page.waitForFunction(() => !!window.__xpl);
     // A generated refresh respects existing user ownership, including 32A's group and hidden IDs.
     await page.evaluate(() => window.__xpl!.setView("view:overview"));
     await page.evaluate(() => window.__xpl!.select(["file:jobrunner/worker.py", "grp:events"]));
@@ -456,33 +511,26 @@ test("live pins reload, reset with exact undo and export linked system, service 
     const exportPath = join(dir, "pinned.html");
     await download.saveAs(exportPath);
     await page.context().setOffline(true);
-    for (const width of [1440, 390]) {
-      await page.setViewportSize({ width, height: 900 });
-      for (const [view, id] of levels) {
-        await page.goto(pathToFileURL(exportPath).href + `?perspective=map&view=${view}`);
-        await page.waitForFunction(() => !!window.__xpl);
-        const pos = placements[view!]!;
-        const scale = () =>
-          byId(page, id!).evaluate((el) =>
-            Number((el as SVGGraphicsElement).getScreenCTM()!.a.toFixed(3)),
-          );
-        await expect.poll(scale).toBeGreaterThanOrEqual(0.9);
-        await page.getByRole("button", { name: "Fit to view" }).click();
-        await expect.poll(scale).toBeGreaterThanOrEqual(0.9);
-        await expect(byId(page, id!)).toHaveAttribute("transform", `translate(${pos.x} ${pos.y})`);
-        await page.evaluate((id) => window.__xpl!.select([id]), id!);
-        await expect
-          .poll(async () => (await focusOf(page)).map((f) => f.file))
-          .toContain("jobrunner/worker.py");
-        await expect(page.locator(".move-handle")).toHaveCount(0);
-        await page.getByRole("button", { name: "Show source", exact: true }).click();
-        await expect(page.locator(".cm-editor").first()).toBeVisible();
-        if (view === "view:code")
-          await expect(page.locator(".cm-line.xpl-hl").first()).toBeVisible();
-      }
+    await page.setViewportSize({ width, height: 900 });
+    for (const [view, id] of levels) {
+      await page.goto(pathToFileURL(exportPath).href + `?perspective=map&view=${view}`);
+      await page.waitForFunction(() => !!window.__xpl);
+      const pos = placements[view!]!;
+      const scale = () =>
+        byId(page, id!).evaluate((el) =>
+          Number((el as SVGGraphicsElement).getScreenCTM()!.a.toFixed(3)),
+        );
+      await expect.poll(scale).toBeGreaterThanOrEqual(0.9);
+      await page.getByRole("button", { name: "Fit to view" }).click();
+      await expect.poll(scale).toBeGreaterThanOrEqual(0.9);
+      await expect(byId(page, id!)).toHaveAttribute("transform", `translate(${pos.x} ${pos.y})`);
+      await page.evaluate((id) => window.__xpl!.select([id]), id!);
+      await expect
+        .poll(async () => (await focusOf(page)).map((f) => f.file))
+        .toContain("jobrunner/worker.py");
+      await expect(page.locator(".move-handle")).toHaveCount(0);
+      await page.getByRole("button", { name: "Show source", exact: true }).click();
+      await expect(page.locator(".cm-editor").first()).toBeVisible();
+      if (view === "view:code") await expect(page.locator(".cm-line.xpl-hl").first()).toBeVisible();
     }
-  } finally {
-    await server.close();
-    rmSync(dir, { recursive: true, force: true });
-  }
-});
+  });

@@ -231,12 +231,15 @@ Conventions (all packages):
 17. `SequenceView.type` may be `"flow"`: the same fields as a sequence, drawn as stages and decisions. A step
     adds `shape?: "stage" | "decision" | "terminal"` and `next?: { step, label? }[]` (labelled branches to
     steps of the same view; without `next` a step goes on to the next one, a `terminal` ends a path). A
-    sequence view can be drawn as a flow too, in reading order (`processFlow`, `projected: true`). A `next`
-    link may add `kind: "recurse"` (the steps from an earlier step run again, one level down; a step with only
+    sequence view can be projected into stages by `processFlow` (`projected: true`); the viewer keeps its
+    sequence diagram in Read and Explore. A `next` link may add `kind: "recurse"` (the steps from an earlier
+    step run again, one level down; a step with only
     recurse links still goes on to the next one) or `kind: "return"` (back up one level, to `step`, or with no `step` to the caller; a
     terminal may have these). `SequenceView.layout?: "code-first" | "diagram"` overrides `codeFirstView`
-    (viewer `workspace.ts`: code first when every step's code is in one file). A flow step whose first anchor
-    is not inside its `from` gets a warning (a `return` step whose code is in `to` excepted).
+    (viewer `workspace.ts`: at least three steps, each with current-code anchors all in one file). Read
+    applies this layout only to flow views; Explore also accepts explicit `code-first` on sequences (§6).
+    A flow step whose first anchor is not inside its `from` gets a warning (a `return` step whose code is
+    in `to` excepted).
     `Edge.via?: ElementId[]`: what an edge passes through without a box; an llm edge's evidence is per hop,
     and a hop the index shows (`hopRefs`) needs no anchors.
 18. `SymbolIndex` adds `resources?: ResourceReference[]`: files that code loads or discovers by a literal path
@@ -1362,6 +1365,7 @@ stdout (a rejection exits 1); fatal errors (`error: …`) and warnings (`warning
 | `xpl change <explainer> [<base>..<head>]` | records the change from git in the explainer and prints its analysis (§4.8; below); without a range, prints the analysis of the change already recorded |
 | `xpl pr prepare <url\|owner/repo#number\|owner/repo> [number] [--cache-dir dir] [--precise off\|auto\|require]` | resolves GitHub base/head through existing `gh`, fetches an isolated detached head, indexes head only and publishes an immutable input manifest; no agent or ready result |
 | `xpl pr cleanup <directory> [--cache-dir dir]` | removes only a marked owned PR input directly under the selected cache; refuses symlinks and developer-tree paths |
+| `xpl pr link <staged-dir> --url <base-url> --visibility team\|public` / `xpl pr check-link <PR>` | points one PR comment at the staged current version after a GitHub base/head check; a PR workflow marks it outdated when base/head move (below) |
 | `xpl draft change\|repo\|path <explainer> [<entry id> ...] [-o file]` | prints a patch skeleton built from the index (and the change record) with no LLM, `TODO:` in every text to write (below); the summary goes to stderr |
 | `xpl view <explainer> [--port p] [--host h] [--no-open]` | local server (below) |
 | `xpl service <start\|pause\|resume\|stop\|status> [explainer] [--background] [--port p] [--backend none\|claude] [--skill-dir folder] [--job-timeout seconds] [--recover] [--watch]` | optional repository-scoped lifecycle around the same viewer server; loopback only; persisted context and explicit interrupted-owner recovery |
@@ -1541,9 +1545,9 @@ Each finish creates a new immutable snapshot, preserving previous results. CLI f
 instructions, and interrupted locks require explicit removal only after their writer has stopped.
 
 Ready means the API matched at `checkedAt`; GitHub cannot lock an external PR during local export.
-#34 must verify artifact/input hashes and recheck both commits before its own current-pointer promotion
-or publication. This step starts no publishing workflow, writes no GitHub state and creates no current
-pointer. The offline HTML remains readable independently of GitHub or the retained checkout.
+`xpl stage` verifies artifact/input hashes and rechecks both commits before its current-pointer promotion;
+`xpl pr link` rechecks them again before pointing the PR at it. `finish` starts no publishing workflow,
+writes no GitHub state and creates no current pointer. The offline HTML remains readable independently of GitHub or the retained checkout.
 
 **`xpl draft change|repo|path`** prints a patch that `xpl apply` accepts as it is: views, groups, overlays,
 participants, steps, anchors and a tour, with `TODO: <what to write>` in every text (tour notes as `### TODO:
@@ -1800,9 +1804,100 @@ Managed services expose `GET /api/jobs`, `GET /api/jobs/<UUID>` and `POST /api/j
 `{id, selectedRequestIds, include?}`, plus `POST /api/jobs/<UUID>/<cancel|supersede>` with `{}` and
 `POST /api/jobs/<UUID>/retry` with `{expectedAttempt}`.
 Routes use the existing Host, attachment, JSON, origin and size guards and filter to the attached guide.
-No acceptance route exists. Backend `none` reports 503 for submission/retry; history and cancellation
-remain usable. Controlled runners prove lifecycle behavior only. 39C adds progress/review UI and fenced
-acceptance through the existing revision commit/outcome recovery. Answer scopes remain later work.
+Backend `none` reports 503 for submission/retry; history, cancellation and review of completed work
+remain usable. Controlled runners prove lifecycle behavior only. Headless answer jobs are described below;
+question/history UI uses the Feedback panel (§6).
+
+**Job review and acceptance (39C).** The browser-safe `core/jobs.ts` types describe the existing ledger
+and revision packet; no second proposal engine is introduced. `RepositoryJobs.review` holds the ledger's
+repository lock, requires a completed job and its exact `owner.attemptId`, and calls `continueRevision`.
+`GET /api/jobs/<id>/review?attemptId=<uuid>` reads the review; `POST .../review` takes
+`{attemptId, decisions?}` and `POST .../accept` takes `{attemptId, reviewToken}`. Both share the existing
+attachment, origin/body and repository guards. Decisions use #30's status/reason/reconciliation/missing
+format.
+Every selected request needs a decision. Reviewing changes no guide or outcomes.
+Service review packets with an inspected candidate return `reviewToken`, a SHA-256 hash of the run ID,
+job attempt, exact candidate and decisions. Acceptance compares it under the journal lock before any
+publication, including recovery. A stale token returns 409: "The decisions changed in another view;
+review again." The viewer reloads the decisions and requires another review before acceptance.
+Tokens are derived from the journal, so existing `revision@1` journals need no migration and restart
+retains the same token. Clients that omit the token receive 400; manual `xpl revise --accept` is unchanged.
+
+Selection records `serviceJob: {id}` in the journal before returning a service job. Its first guarded
+proposal adds `attemptId`; later attempts may replace it through the same guard. The job owns the journal
+while queued, running or terminal, even if no proposal arrives. Legacy journals without this field recover
+ownership from the matching revision job in the repository ledger when read. Manual proposal, decision and
+acceptance writes are refused at every stage; read-only `xpl revise --run` remains available.
+The service job journal fence `{id, attemptId}` is required for guarded proposal/decision/accept writes. Retries may
+replace a failed attempt's uncommitted proposal only through its new guarded attempt. Ownership is
+rechecked after the journal, artifact and selected-outcome lock waits, and before publication. Acceptance
+reuses #30's freshness, exact candidate identity, readiness and user-field protection checks. The guide
+commits before selected outcomes; later feedback is merged untouched. Committing/committed/done journals
+cannot be cancelled or superseded: their remaining outcome publication must recover first. Repeating
+acceptance uses the same journal and never republishes the candidate or advances outcomes twice.
+`result.accepted` is a display receipt derived only from the matching done journal, not a lifecycle state
+or an independent permission. Recovery does not compare the old job input with the already committed guide.
+
+Packets retain source before/after and per-request changes computed by the existing candidate function.
+Previews advance through proposals in order and compare each result with its preceding candidate;
+a later proposal can depend on a step added earlier. Acceptance validates the chosen combined candidate.
+The viewer's Jobs disclosure lists all seven lifecycle states, progress and actionable runner errors;
+start/cancel/retry/review flush pending writes and reject unsaved author drafts. Offline history stays
+readable. Responses are ignored when the API attachment changes. Submission retries reuse their delivery
+UUID. Job polling updates history even while author drafts prevent bundle adoption; bundle feedback merges
+by immutable ID and outcome revision. The review modal renders safe Markdown and marked changed phrases,
+including the spaces between adjacent changed words, with concise evidence and plain field values.
+Source comparison panes have visible Before and After labels at every width.
+Raw JSON is behind Show raw change. Each request owns its decision
+and reason. Review decisions must succeed before explicit acceptance; changing a choice invalidates the
+inspected candidate. Interrupted publication exposes Recover acceptance using the same journal.
+
+**Snapshot-bound answers (40A).** `cli/answers.ts` captures a saved `explain` feedback request with a
+non-empty question in `note`. The request keeps its stable feedback ID, element/range and original
+`ArtifactIdentity`. Selection follows the live server's current index and re-resolved guide. It also accepts
+the stored guide identity for current offline feedback; it never rebinds an older request. Selection refuses
+stale or changed context and invalid selected ranges. Under the guide lock it records the guide, current index
+path, text/hashes for guide-referenced and question-focused head files, and base files named by change records, base anchors or the selected range. Head text must match the index; base text comes from
+its recorded git commit, with rename mapping. A final freshness check rejects capture across a source edit.
+Inputs are limited to 5 MB; source arrays to 10,000 files. Selection reuses `referencedFiles` and `codeFocus`.
+No revision journal is opened for an answer.
+
+An `AnswerJob` shares the durable job ledger, scheduler, process ownership and attempt fences. Its scope
+kind is `answer`; input is `{expected, index, request, guide, sources}`. Revision history APIs keep revision
+jobs separate. `POST /api/answers` takes `{id: UUID, requestId}`; GET collection/item and POST
+`/<UUID>/<retry|cancel|supersede>` use the same attachment/loopback guards and retry baseline as jobs.
+Submission checks the request ID under the ledger lock. A request has at most one answer job;
+concurrent submissions with different job UUIDs return the existing job, including terminal jobs and
+after restart. Failed/interrupted jobs use explicit retry; cancelled questions need a new request.
+Only a configured answer runner accepts new work. Frozen questions can finish or retry after source or
+explanation changes; `contextReason` reports the current difference without changing the original input.
+
+Untrusted answer output is exactly `{text, references}`. Each reference is `{file, side, fromLine,
+toLine, quote}`: positive inclusive lines and an exact complete-line excerpt from recorded head/base text.
+Missing files, out-of-bounds ranges and invented or wrong-side quotes fail the job. Extra output fields,
+including patches, are refused. These are source excerpts, not precise/heuristic call-graph facts.
+A completed receipt includes the job ID, request ID, original identity, timestamp, text, references and
+only the cited source files/text/hashes. Reload revalidates evidence against the job's frozen source too.
+
+`FeedbackRequest.answers` is optional in `code-explainer/feedback@1`. Existing exports remain readable.
+Parsing/import rechecks source hashes, exact excerpts, original request identity and duplicate answer IDs.
+Merging unions immutable answers by ID independently of outcome revisions; conflicting same-ID answers
+are refused, and exports without history never erase saved answers. Returning an answer leaves feedback
+pending and never changes the guide, user fields or author outcomes. Optional guide changes use the
+existing explicit `xpl revise` review/acceptance path; answer output cannot smuggle a patch into it.
+
+Every request-store write globally merges all requests under the lock, then validates the result with the
+reader's parser. Answer IDs belong to one request across the store. A merge exceeding 1,000 answers for a
+request fails without changing the store; history is never truncated or ordered by timestamps.
+
+Answer completion validates this prospective store before publishing a result receipt. With the ledger
+and request locks held, the completed receipt is written before mirroring history. Overflow or ID ownership
+conflicts leave the stored history and result receipt unchanged and fail the job. Startup and answer-history
+reads replay missing mirrors, so interruption between writes cannot lose or duplicate
+an answer. Concurrent new feedback and newer author outcomes survive this merge. Cancellation or
+supersession before completion fences late output; completed answer history is immutable. Disconnected
+submission retains ordinary pending feedback for the next explicit offline iteration. The question UI,
+progress controls and context warnings use the Feedback panel (§6).
 
 **Configured Claude runner (39B).** `cli/claude-runner.ts` is the single process adapter behind `JobRunner`.
 Explicit `service --backend claude` selects it. The saved `--skill-dir` identifies a verified managed
@@ -1815,13 +1910,14 @@ recovery message. No keys, accounts, provider setup or hosted xpl backend are cr
 
 Each invocation uses Claude Code print/JSON mode, `--restricted`, `dontAsk`, no session persistence,
 a read/Glob/Grep/Write tool list, empty MCP configuration and disabled inherited hooks. It starts in an
-xpl-owned temporary directory containing the frozen revision input. Source and the installed skill are
+xpl-owned temporary directory containing frozen revision or question input. Source and the installed skill are
 additional read directories with explicit Edit deny rules. Only an exact absolute Edit permission for
-`proposal.json` permits the Write tool; Claude uses Edit rules for all file modifications. Shell, agents
-and MCP tools are unavailable. The prompt reads the installed skill and asks for ordinary per-request
-patches, never applies or accepts them. Output must be a bounded regular file with one entry per selected
-request. A per-attempt Node launcher holds a service pipe: closing the pipe, including service death,
-kills the whole group. The launcher starts Claude only after receiving the service's durable-ownership
+`proposal.json` (or `answer.json`) permits the Write tool; Claude uses Edit rules for all file modifications. Shell, agents
+and MCP tools are unavailable. For revisions, the prompt reads the installed skill and asks for ordinary
+per-request patches with one output entry per selected request. For answers, it asks for `{text, references}`
+with exact excerpts from frozen head/base source. Neither invocation applies or accepts patches. Output
+must be a bounded regular file. A per-attempt Node launcher holds a service pipe: closing the pipe, including
+service death, kills the whole group. The launcher starts Claude only after receiving the service's durable-ownership
 acknowledgement. It remains alive after Claude exits, reporting the original exit code on that pipe.
 From launcher spawn, one `try/finally` owns teardown, including failed identity reads. Normal/error exit,
 timeout, cancellation and recovery kill the verified group and scan Linux /proc until no live member
@@ -1874,7 +1970,7 @@ context copied exactly. It updates those IDs and increments their revisions only
 the prior file and counters intact and retryable.
 The selected revision operation below commits reviewed decisions before recording their outcomes.
 
-**Local ready versions (34A).** `cli/stage.ts` reuses workspace readiness, artifactIdentity and bundle
+**Local ready versions (34A/34B).** `cli/stage.ts` reuses workspace readiness, artifactIdentity and bundle
 file selection. `xpl stage <guide> --dir <outside-folder> --preview` lists sorted head/base source paths
 and readiness without creating storage or reading the viewer HTML. Ordinary staging prints that list
 before writing; machine callers use `--preview --json` for a separate inspection step. `--files` selects
@@ -1903,18 +1999,76 @@ PR guides require `--pr-result` from `xpl pr finish` and the retained prepared c
 Staging verifies the ready result's input/explainer/index/HTML SHA-256 hashes, commits, source list and
 artifact identity; prepared or superseded results are refused. It recomputes embedded readiness and
 checks the prepared HEAD/raw source plus workspace readiness against that exact result. The version
-contains the original HTML bytes and the full ready result manifest with its SHA-256 hash. After writing,
-GitHub base/head are rechecked under the destination lock, then local readiness/freshness is checked
+contains the validated HTML with publication metadata and the full original ready result manifest with
+its SHA-256 hash. The original ready HTML hash remains in that result; the staged artifact hash covers
+the delivered page. Source, explanation, index, readiness and artifactIdentity remain unchanged.
+After writing, GitHub base/head are rechecked under the destination lock, then local readiness/freshness is checked
 again before promotion. API failures and superseded commits retain current. `--files` and `--note` cannot
 alter a PR result. `--require-review` checks the optional policy without rewriting its original HTML.
 
-This slice provides local staging only. Version/step/element/range restoration belongs to 34B; a chosen
-destination, audience, credentialed delivery and one PR link/Action belong to 34C. Local storage does not
-establish private team access or close those acceptance criteria.
+**PR preview link (34C).** The destination is a static host the team already runs and controls access
+to: it serves a folder staged with `--pr-result` at a base URL, as plain files (or a copy such as
+`rsync -a`). xpl uploads nothing and adds no hosting. `cli/pr-link.ts` keeps one PR comment, found by its
+first-line marker `<!-- xpl-pr-preview {json} -->` on a comment whose `author_association` is OWNER,
+MEMBER or COLLABORATOR; others' markers are ignored. The JSON records head, base, version folder, base URL,
+visibility and, once outdated, the newer head/base. `xpl pr link <dir> --url --visibility` reads
+`<dir>/current/manifest.json` (a ready version with a PR result), resolves the PR again and refuses when
+GitHub base/head differ from the staged commits. It reads `repos/<repo>.private` and refuses
+`--visibility public` for a private repository. It then posts the comment or edits it in place (no edit
+when its marker already records the same link; text appended below is kept), linking
+`<url>/current/index.html` and `<url>/<version>/index.html`.
+The base URL must be http(s) without credentials, query or fragment. A new comment whose
+`author_association` is not trusted is deleted and the run fails, since it would never count as the link;
+if that delete fails, the error names the comment to delete by hand.
+After writing, `link` runs the `check-link` comparison once more: a push that landed meanwhile turns the
+comment outdated and the run exits 1. A failed GitHub write exits 1 and leaves the earlier comment and
+every staged version as they were.
+`xpl pr check-link <PR>`, run by a PR workflow on new commits, rewrites that comment as outdated when
+base/head moved, keeping only the last version link. It needs no checkout or staged folder. Writes use
+`gh api` with the caller's token; two concurrent writers could still post two comments, so the workflow
+template serializes runs per PR.
+
+**Version navigation (34B).** `ViewerBundle.publication` carries a current `PublishedVersion` and prior
+summaries captured under the staging lock from retained immutable manifests. Each summary reuses locator,
+time, index/change commits, artifactIdentity, included head/base files and review state. The viewer never
+fetches a manifest/catalog or repository API to read it. Bundle parsing rejects unsafe/duplicate locators,
+malformed metadata and a publication combined with a live server. Opening `current/index.html` replaces
+the location with the captured `version-*/index.html?version=...` before installing navigation. Generated
+links use sibling immutable paths; a version query that disagrees with the embedded page is refused.
+Standalone HTML copies preserve the snapshot and saved navigation but do not advertise sibling links.
+Old pages retain only history that existed when staged. About this explanation lists prior versions,
+exact included source and author review; a state link uses the existing query serializer.
+Earlier history is collapsed; local staging times are readable and technical identifiers stay in source
+details. Every staged page offers Open latest version through sibling `current/index.html` with no
+immutable version query, so old snapshots can lead to newer content without a catalog fetch.
+
+The existing launch query gains `side=head|base` and `version`, retaining `view`, repeated `focus`,
+`perspective`, `tour`, numeric `step`, stable `step-id`, `file` and inclusive `range`. Explore selections
+and stable Present step IDs are preserved. Present detours retain their view and focus; an explicit
+empty `focus=` preserves a cleared selection instead of reapplying the tour step. URL writes track
+applied step changes as well as the tour counter, so a step's stable ID cannot lag behind its position.
+An empty `step-id=` records that no step is applied. View, focus, perspective and cursor remain
+independent of the applied step; a perspective switch does not imply a detour. Older compact tour URLs
+without view/focus still apply the requested step. Base ranges validate against embedded
+base text using changed-file head keys, including deleted files, without a base index. Column positions
+run from 1 through line length + 1, including empty lines and the position after the last character.
+Unknown sides and unavailable/invalid ranges never silently select head source.
+
+`ViewerBundle.launch` stores a query string when Save as HTML captures navigation, with no service
+attachment. The store restores it only when no explicit navigation was supplied; a new linked target
+replaces saved navigation as a whole, avoiding conflicting saved focus/range targets. Re-saves retain
+publication metadata only while artifactIdentity matches the staged record; author changes drop it.
+`ViewerStore.restoreState(params)` derives navigation without changing the store. Launch, saved HTML
+and browser Back/Forward use it. Tour defaults fill absent fields; explicit mode/perspective, view,
+focus, applied step and validated head/base cursor fields are restored independently. The history
+adapter applies the result once, without replaying Present, selection or range actions. Cursor
+restoration keeps the selection, applied step and reading perspective. No saved state changes
+explanation provenance, source text, readiness or identity. Access control belongs to the team's
+destination; the PR link is above.
 
 **Bundle payload** (`ViewerBundle`, also `/api/bundle`): `{ schema: "code-explainer/bundle@0", explainer,
 index, files: Record<FilePath, string>, baseFiles?, mode?, tour?, server?, sourceWarning?, exportInfo?,
-feedback?, guideId?, guides?, readOnlyGuide? }`, embedded as `<script
+feedback?, guideId?, guides?, readOnlyGuide?, publication?, launch? }`, embedded as `<script
 id="xpl-data" type="application/json">` with `<` escaped as `\u003c` (and U+2028/2029 escaped). Under `xpl
 view` `files` may be partial and the viewer fetches the rest from `/api/file`. `xpl bundle` embeds the files
 the explainer needs (`--files referenced`, the default; `--files all` embeds every indexed file): those of
@@ -2284,18 +2438,21 @@ status stays in the sticky Save/Cancel bar, including the disabled Save reason.
 - **Sequence view:** lifelines, one row per step (`call` solid, `return` dashed, `async` open head), self-calls
   as loops, frames (`loop`/`alt`/`opt`/`par`) as labelled rectangles around their steps, nested by
   `resolveFrames`. A step's hit area covers its label and arrow. When the view has moved down, a copy of the
-  participant names stays at the top of the pane (`sticky-heads`).
+  participant names stays at the top of the pane (`sticky-heads`). The Read-mode Flow tab uses this same
+  renderer for sequence views, matching the Guide picture and Explore.
 - **Flow view:** `processFlow` (§4.8) laid out by the same layered layout, top to bottom: stages as boxes, decisions as diamonds,
   terminals, and the labelled `next` branches. A box shows the step's label large and, under it, the actor:
   the step's `from`, plus "→ B" when a stage hands work to another part and that fits (`stageActor`); a
   decision or a terminal shows the actor alone, and so does a step inside one part (the Guide and the details
-  say "inside X", never "X → X"). A sequence view in the Flow tab is drawn the same way, in reading order,
-  with a note that says so. A flow never zooms below 11 px text (`FLOW_READABLE_ZOOM`, Read's start and the
+  say "inside X", never "X → X"). A flow never zooms below 11 px text (`FLOW_READABLE_ZOOM`, Read's start and the
   floor of "Fit"). Recurse and return links are dashed and purple, with "one level down" / "up one level"
   after their label; a link of a stage to itself is a loop on its right side; labels are drawn after all
-  lines. A code-first view (`codeFirstView`) puts the code in the main pane (Read: the flow is a narrow
+  lines. A code-first view (`codeFirstView`) puts the code in the main pane (Read: a flow view gets a narrow
   outline column; Explore: the diagram column is narrow) and the outline keeps the caret's step (else the
-  selection) near its middle (`PanZoom.revealMargin`).
+  selection) near its middle (`PanZoom.revealMargin`). Read keeps sequence views in the diagram pane,
+  regardless of `layout`; "Show source" opens their linked code. Explore narrows a sequence's diagram column
+  only for explicit `layout: "code-first"`, keeping its lifelines, arrows and frames without a
+  caret-following process outline. One-file sequences otherwise keep Explore's usual diagram layout.
 - **Selection and code focus:** clicking any element (node, edge, stub, step, concept) selects it; the editors
   show the code focus (§4.5), one pane per focused file (a file opened from the tree or an anchor row first,
   then the step's `primary`, then focus order; at most 10 panes, the rest are listed): lines carry `xpl-hl`
@@ -2331,6 +2488,35 @@ the same validated contract, including outcomes and reasons. Storage refusal is 
 export JSON or save the page before closing it in that case. Live requests use `POST /api/requests`;
 opening the panel reads saved disk outcomes. Current and original source warnings and changed hashes
 are shown as outdated context. Instructions say to import feedback and invoke the next pass explicitly.
+
+**Live questions (40B).** Details exposes **Ask a question** to readers and authors. A code pane exposes
+**Ask about selected lines**, enabled with a cursor selection; this preserves inclusive head/base lines.
+Range-only questions use the file element ID even without a diagram selection. Both actions open Feedback,
+whose **Ask a question** requires a non-empty note and captures an `explain` request before contacting the
+worker. **Ask a question** is the primary action; **Save for the next revision pass** saves feedback
+without starting generation. Revision proposals remain separate.
+
+The panel uses 40A's `/api/answers` API directly. While open, it polls answer history once per second,
+with one refresh in flight. Queued/running jobs offer cancellation;
+failed/interrupted jobs offer retry with the inspected attempt counter. Completed answers remain immutable.
+A name-based UUID is derived from the request ID before POST, without reading or writing browser storage.
+Uncertain delivery, reload and separate browser sessions reuse the question's job; the service also
+enforces one job per request under its ledger lock. Browser storage refusal cannot prevent live answering.
+Existing jobs for a request are inspected instead of starting another answer. Backend/network refusal
+retains pending feedback and names export, CLI import and `/code-explainer feedback` as the next steps.
+
+Completed answers are read through the existing validated feedback store and merge independently of
+outcome revisions. JSON import validates the prospective union before mutation, including answer ownership
+and the 1,000-answer limit. Live import also sends the original requests/results to the existing request
+endpoint. Reload, JSON export and Save as HTML use that same history; no separate answer cache is stored.
+Source/explanation hashes and freshness warnings mark outdated context, including changes during a run.
+Questions with an answer show **Answered**, including imported history without a live job. Revision status
+is separate: pending outcomes show **Revision: not yet reviewed**, without changing the stored outcome.
+Answers show text, their original identity, exact references and recorded excerpts. Reference clicks compare
+recorded source hashes with loaded source before using existing file/cursor linking, including base panes.
+If text changed or is unavailable, the highlighted recorded excerpt stays in Feedback; current lines are
+never presented as the old evidence. Answers cannot alter guide content or author outcomes. Optional changes
+still need explicit revision review and acceptance through #30/#39C.
 
 **Reading aids.** A "Key" button beside the zoom buttons says what the diagram's marks mean (`Legend.tsx`:
 `Legend`, `FlowKey`, `SequenceKey`; rows for marks not on screen are left out). "Called from" (`callers.ts`;

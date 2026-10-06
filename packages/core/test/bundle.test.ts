@@ -6,6 +6,7 @@ import {
   isPackedIndex,
   packIndex,
   parseBundle,
+  serializeBundle,
   unpackIndex,
   type PackedIndex,
   type SymbolIndex,
@@ -129,4 +130,49 @@ it("refuses nested or live-attached guide snapshots at the bundle boundary", () 
       parseBundle(JSON.stringify({ ...bundle, index, guides: [{ ...snapshot, ...extra }] })),
     ).toThrow("invalid embedded guide snapshot");
   }
+});
+
+it.each(["../escape", "version-a/b", "https://other/version-a", "version-", "api"])(
+  "refuses unsafe published locator %s",
+  (version) => {
+    const current = {
+      version: "version-a",
+      createdAt: "2026-10-05T00:00:00.000Z",
+      commits: { index: "commit" },
+      identity: { explainerHash: "hash", sourceHash: "source" },
+      includedSource: { head: ["a.ts"], base: [] },
+      review: undefined,
+    };
+    const published = { ...bundle, publication: { current, previous: [] } };
+    expect(parseBundle(serializeBundle(published)).publication?.current.version).toBe("version-a");
+    expect(() =>
+      parseBundle(
+        serializeBundle({
+          ...published,
+          publication: { current: { ...current, version }, previous: [] },
+        }),
+      ),
+    ).toThrow("invalid or duplicate published version");
+  },
+);
+
+it("refuses live APIs in a published snapshot", () => {
+  const published = {
+    ...bundle,
+    publication: {
+      current: {
+        version: "version-a",
+        createdAt: "2026-10-05T00:00:00.000Z",
+        commits: { index: "commit" },
+        identity: { explainerHash: "hash", sourceHash: "source" },
+        includedSource: { head: ["a.ts"], base: [] },
+        review: undefined,
+      },
+      previous: [],
+    },
+  };
+  expect(parseBundle(serializeBundle(published)).publication?.current.version).toBe("version-a");
+  expect(() => parseBundle(serializeBundle({ ...published, server: { api: "/api" } }))).toThrow(
+    "invalid published snapshot",
+  );
 });

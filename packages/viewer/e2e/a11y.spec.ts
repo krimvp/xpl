@@ -7,6 +7,7 @@ import { expect, test } from "@playwright/test";
 import {
   ARCHITECTURE_BUNDLE,
   openBundle,
+  openVariant,
   readEmbeddedBundle,
   stateOf,
   TS_BUNDLE,
@@ -53,13 +54,19 @@ test.describe("the Key covers what is on screen", () => {
   });
 
   test("the flow has a Key too", async ({ page }) => {
-    await page.goto(TS_BUNDLE.href);
-    await page.getByTestId("perspective-flow").click();
+    await openVariant(
+      page,
+      (bundle) => {
+        bundle.explainer.views.find((view: { id: string }) => view.id === "view:dispatch").type =
+          "flow";
+      },
+      "?perspective=flow",
+    );
     await expect(page.getByTestId("process-flow")).toBeVisible();
     await page.getByTestId("process-flow").getByTestId("legend-button").click();
     const key = page.getByTestId("legend");
     await expect(key).toContainText("One step");
-    await expect(key).toContainText("the order the steps run in");
+    await expect(key).toContainText("Then: what runs next");
     await page.keyboard.press("Escape");
     await expect(key).toHaveCount(0);
   });

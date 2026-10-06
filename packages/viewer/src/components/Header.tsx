@@ -35,11 +35,18 @@ export const NO_TOURS_HINT =
   "This explainer has no tour yet. Run /code-explainer make tour in Claude Code, or add steps with Edit > Edit the guide's steps.";
 
 export function Header() {
+  const store = useStore();
   const state = useViewerState();
   const [searchOpen, setSearchOpen] = useState(false);
   const searchButton = useRef<HTMLButtonElement>(null);
-  const [feedbackOpen, setFeedbackOpen] = useState(false);
+  const feedbackOpen = state.feedbackOpen;
   const [toursOpen, setToursOpen] = useState(false);
+  useEffect(() => {
+    if (feedbackOpen) {
+      setSearchOpen(false);
+      setToursOpen(false);
+    }
+  }, [feedbackOpen]);
   const present = state.mode === "present";
   const reading = !present && state.perspective !== "explore";
   const mode = present ? "present" : reading ? "read" : "explore";
@@ -83,7 +90,7 @@ export function Header() {
         aria-expanded={searchOpen}
         onClick={() => {
           setSearchOpen(!searchOpen);
-          setFeedbackOpen(false);
+          store.closeFeedback();
           setToursOpen(false);
         }}
       >
@@ -102,7 +109,8 @@ export function Header() {
         type="button"
         aria-expanded={feedbackOpen}
         onClick={() => {
-          setFeedbackOpen(!feedbackOpen);
+          if (feedbackOpen) store.closeFeedback();
+          else store.openFeedback();
           setSearchOpen(false);
           setToursOpen(false);
         }}
@@ -112,7 +120,7 @@ export function Header() {
       {present ? <ExitButton /> : <PresentButton />}
       <EditMenu toursOpen={toursOpen} onTours={() => setToursOpen((open) => !open)} />
 
-      {feedbackOpen && <FeedbackPanel onClose={() => setFeedbackOpen(false)} />}
+      {feedbackOpen && <FeedbackPanel onClose={() => store.closeFeedback()} />}
       {toursOpen && <TourPanel onClose={() => setToursOpen(false)} />}
     </header>
   );
