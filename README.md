@@ -1,6 +1,7 @@
 # xpl — code explainer
 
-[Try the live example](https://krimvp.github.io/xpl/) on the xpl site.
+[Try the live example](https://krimvp.github.io/xpl/) on the xpl site, and read the
+[documentation](https://krimvp.github.io/xpl/docs/) to install it and make your first guide.
 
 Interactive diagrams linked to code in both directions. Click a box, an arrow, a sequence step or a concept
 and the editor highlights exactly the code it is about, across as many files as it touches, everything else
@@ -59,6 +60,8 @@ For the three creation scopes and safe retries, see [Create a guide](skill/code-
 Choose a new guide or name the existing guide to extend; an existing file is never replaced by creation.
 The agent writes and checks the JSON patch for you.
 
+### GitHub pull requests
+
 GitHub PR input is opt-in: `xpl pr prepare https://github.com/owner/repo/pull/42 --cache-dir /outside/pr-cache`
 uses existing `gh` and git access to fetch the returned full base/head commits into a separate detached
 repository. It indexes head with `--precise off` by default and saves an immutable `input.json` with
@@ -71,6 +74,8 @@ remain historical. No model starts automatically and no current link is publishe
 to GitHub is required. Remove a retained input with `xpl pr cleanup <input-directory> --cache-dir /outside/pr-cache`.
 Inherited Git repository overrides cannot redirect PR reads into the developer checkout. Preparation
 refuses checkout filters or line-ending conversion that change the head's raw source bytes.
+
+### Search, libraries and saved versions
 
 The viewer's **Search** button finds symbols, supplied source, concepts and tour steps offline. Results
 open the exact source range or recorded step; copied links work when the page is reopened. The panel
@@ -114,6 +119,8 @@ text; unavailable files produce a warning, and `--json` records searchable paths
 Loadable guides with invalid metadata stay listed by ID/path with a metadata error. Guide metadata is
 descriptive; use `xpl ready <name>` to check a guide before exporting it.
 
+### View and export a guide
+
 Claude indexes the repo, writes `.explainer/<name>.explainer.json` (commit it; the indexes beside it are
 git-ignored) and gives you the result. Open it yourself with `xpl bundle <name> -o <name>.html` (one
 self-contained file that carries the source files the explainer shows: works offline, easy to share;
@@ -129,6 +136,8 @@ toolchains and repository dependencies can need network access. Use `--precise o
 references stay labeled as hints. `--precise require` fails if precise analysis cannot run. Authoring
 through Claude Code has separate provider network requirements. `doctor` runs local version checks;
 it does not download precise tools or verify agent authentication. No resident generation worker is needed.
+
+### Feedback and revision
 
 In the viewer, Guide tells the story, Map shows relationships, Flow follows steps, and Code opens
 source. Present plays a tour with arrow-key navigation. Feedback saves corrections, explanation requests
@@ -148,6 +157,8 @@ Acceptance rechecks live source, snapshot identity and readiness. It preserves u
 previous artifact, and records only selected outcomes. Interrupted acceptance resumes without applying or
 recording twice. Missing anchors need an explicit re-anchor or removal decision; location-only moves keep
 prose unchanged. See the installed skill's [revision workflow](skill/code-explainer/reference/revise.md).
+
+### Try it without Claude
 
 No Claude at hand? The source repository's fixtures ship example explainers (fixtures are not in the tarball):
 
@@ -291,6 +302,8 @@ only included source, and say they cannot detect later repository changes. Sourc
 claims or every runtime path.
 Generated XPL HTML pages are excluded from indexing, so exporting inside a repo does not stale its index.
 
+### Editing in the viewer
+
 In Explore, select a box, stored arrow or concept and choose **Edit text** in Details. Correct its label,
 summary or Markdown detail; concepts also have a related-elements selector. **Save text** retains user
 ownership, and **Cancel** drops the draft. Live saves survive reload and reject stale inspected versions.
@@ -314,6 +327,8 @@ These actions share text/evidence undo, persist live and travel in HTML/JSON exp
 level remains navigation. Select a box and drag its move handle to pin it, or use arrow keys on the handle.
 **Reset selected placement** or **Reset all placement** returns boxes to automatic layout. Pins are finite
 coordinates relative to their container; nested frames and arrows follow them. Pan and zoom do not edit the map.
+
+### Author review
 
 Edit > Record author review records a self-reported name, inspected content/evidence scope and named
 omissions. About this explanation shows **unchecked**, **reviewed** or **out of date** separately from
@@ -454,6 +469,7 @@ npm run build        # viewer (Vite single file) first, then the CLI bundle
 npm run pack -- --pack-destination /tmp         # build and pack the standalone CLI, viewer, grammars and skill
 npm run test:install -- /tmp/xpl-install        # install the tarball offline and exercise its CLI and reader
 npm run test:e2e     # builds the viewer, then Playwright on fixture bundles made from dist/index.html
+npm run site         # landing page, live example and docs into _site/ (the docs need uv on the PATH)
 XPL_TEST_SCIP=1 npx vitest run packages/indexer/test/scip-integration.test.ts   # real SCIP indexers
 npm run format       # prettier --write . (format:check to verify)
 ```
@@ -484,6 +500,8 @@ unavailable-runner submission, alongside the published package name, version, li
 
 ## Docs
 
+- [The documentation site](https://krimvp.github.io/xpl/docs/): for users of xpl. Built from `docs-site/`,
+  sections of this README and the product skill's references by `npm run site`.
 - [AGENTS.md](AGENTS.md): the guide for coding agents working on this repo (commands, invariants, PR rules),
   with project skills in `.claude/skills/`.
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): how it is built: schema (change records and base anchors
