@@ -2520,7 +2520,9 @@ anchors drifted or went missing (`xpl bundle --allow-drift`, or `xpl view`), a b
 them (`DriftBanner.tsx`), drifted lines are striped (`xpl-hl-drifted`) and the pane says "changed since". The
 scope's `audience` line shows under the Guide's title. Under `xpl view` the page polls `GET /api/explainer`
 every 2 s (ETag, 304 while unchanged) and shows what `xpl apply` wrote without a reload, keeping the view,
-step and selection as far as they still exist; workspace adoption waits while edits made on the page are unsaved, but connection status still updates.
+step and selection as far as they still exist; workspace adoption waits while edits made on the page are
+unsaved, but connection status still updates. A poll started before a completed page edit is discarded,
+including delayed source-file reads; the next poll retries the workspace.
 
 **Text and concepts.** In Explore, select a node, stored arrow or concept and use **Edit text** in Details.
 Label, summary and Markdown detail stay in a form draft until **Save text**; concepts can also select related
