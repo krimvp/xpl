@@ -70,10 +70,18 @@ input only. `xpl pr create <url> --name pr-guide --audience reviewers --question
 runs the installed skill launcher to scaffold a guide and returns an explicit agent invocation. After
 authoring, `xpl pr finish <input-directory>` checks readiness, exports HTML and rechecks both API commits.
 Its immutable result manifest is ready only for matching commits; changed commits are superseded and
-remain historical. No model starts automatically and no current link is published. Network access
+remain historical. No model starts automatically and `finish` publishes nothing. Network access
 to GitHub is required. Remove a retained input with `xpl pr cleanup <input-directory> --cache-dir /outside/pr-cache`.
 Inherited Git repository overrides cannot redirect PR reads into the developer checkout. Preparation
 refuses checkout filters or line-ending conversion that change the head's raw source bytes.
+
+To share a PR preview with your team, stage it into a folder that a static host you run already serves,
+then point the PR at it: `xpl pr link /srv/previews/pr-42 --url https://previews.example/pr-42 --visibility team`.
+It rechecks the PR's base and head, then posts one comment, or edits the same comment, with links to
+`current/index.html` and to this version. A private repository's preview needs `--visibility team`; who
+can open the host is up to the host. A PR workflow running `xpl pr check-link owner/repo#42` on new
+commits marks that comment outdated, so it stops calling an old head's preview current. The workflow file is
+in [the CLI reference](skill/code-explainer/reference/cli.md), under `xpl pr link`.
 
 ### Search, libraries and saved versions
 
@@ -104,14 +112,6 @@ Save as HTML restores the saved navigation; an explicit URL target overrides it.
 for sibling history and latest-version links. Restored focus, view and source cursor can be combined
 with a tour step. Reload and browser Back/Forward restore those fields independently; switching to Map
 keeps a step's source override.
-
-To share a PR preview with your team, stage it into a folder that a static host you run already serves,
-then point the PR at it: `xpl pr link /srv/previews/pr-42 --url https://previews.example/pr-42 --visibility team`.
-It rechecks the PR's base and head, then posts one comment, or edits the same comment, with links to
-`current/index.html` and to this version. A private repository's preview needs `--visibility team`; who
-can open the host is up to the host. A PR workflow running `xpl pr check-link owner/repo#42` on new
-commits marks that comment outdated, so it stops calling an old head's preview current. The workflow file is
-in [the CLI reference](skill/code-explainer/reference/cli.md), under `xpl pr link`.
 
 `xpl guides` lists locally saved guides by title, recorded questions, audience and source/index commits.
 It works without a service or index file. `xpl search <pattern>` searches available indexed working-tree
@@ -157,6 +157,9 @@ Acceptance rechecks live source, snapshot identity and readiness. It preserves u
 previous artifact, and records only selected outcomes. Interrupted acceptance resumes without applying or
 recording twice. Missing anchors need an explicit re-anchor or removal decision; location-only moves keep
 prose unchanged. See the installed skill's [revision workflow](skill/code-explainer/reference/revise.md).
+
+With the optional repository service (`xpl service`), readers can also ask questions about
+an element or selected lines and get answers linked to the source.
 
 ### Try it without Claude
 
