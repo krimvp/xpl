@@ -454,8 +454,8 @@ perspective, focus and source cursor are independent; restoring one does not cle
 An empty `step-id=` records no applied step, including a tour detour. Older compact tour links without
 view/focus still apply the requested step. A perspective switch keeps the applied step's source override.
 Edited re-saves lose the staged version claim when their artifactIdentity changes.
-This command configures no server, remote destination, credentials, upload or PR Action. Configured team
-delivery remains a later slice of #34.
+This command configures no server, remote destination, credentials or upload. To point a PR at a staged
+PR folder, use `xpl pr link` below.
 
 ## `xpl new <name> [--title t] [--repo r] [--url u]`
 
@@ -933,6 +933,57 @@ and offline HTML snapshots. Rename before-text is keyed by the head path; consul
 Ready is an observation at the check timestamp. A version-sharing consumer must check artifact hashes
 and re-resolve both commits before publishing current. This command creates no current pointer and
 publishes nothing. Keep inputs while finishing or while a consumer needs the referenced input evidence.
+
+## `xpl pr link <staged-dir> --url <base-url> --visibility team|public` and `xpl pr check-link <PR>`
+
+Shares a staged PR preview through a static host the team already runs. Stage the ready result into the
+folder that host serves (or copy it there, for example with `rsync -a`), then link it:
+
+```sh
+xpl stage pr-42 --root /absolute/pr-cache/input-XXXX/repository \
+  --pr-result /absolute/pr-cache/input-XXXX/result-YYYY/result.json --dir /srv/previews/pr-42
+xpl pr link /srv/previews/pr-42 --url https://previews.example/pr-42 --visibility team --json
+```
+
+`link` reads `<dir>/current/manifest.json`, which must be a ready version staged with `--pr-result`. It
+resolves the PR again and refuses, with no GitHub write, when base or head moved since staging. It
+refuses `--visibility public` for a private repository; `team` means the host limits who can read it,
+which xpl does not check. It then posts one comment, or edits its earlier one in place, linking
+`<base-url>/current/index.html` and `<base-url>/<version>/index.html`. Only a marked comment from an
+owner, member or collaborator counts as the link. `--json` returns `{ok, action, pr, current, version}`
+with `action` `created`, `updated` or `unchanged`. A failed write exits 1; the earlier comment and all
+staged versions stay as they were. The caller's `gh` token needs permission to comment.
+
+`check-link` keeps that comment honest when the PR moves. When the PR's base or head differs from the
+linked version, it rewrites the comment as outdated with only the last version's link; otherwise it
+leaves it alone. `--json` returns `{ok, action, pr}` with `action` `none`, `current`, `outdated` or
+`unchanged`. Run it from a workflow in the repository, for example `.github/workflows/xpl-preview.yml`:
+
+```yaml
+name: xpl preview link
+on:
+  pull_request_target: # runs no PR code; the token can comment on PRs from forks too
+    types: [synchronize, reopened, edited]
+permissions:
+  pull-requests: write
+concurrency: xpl-preview-${{ github.event.pull_request.number }}
+jobs:
+  check-link:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npx --yes @krimvp/xpl pr check-link "$REPOSITORY#$NUMBER"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          NUMBER: ${{ github.event.pull_request.number }}
+```
+
+The workflow needs an xpl release that has `pr check-link`. It does not create the new guide: an author
+runs `xpl pr create`, `xpl pr finish`, `xpl stage` and `xpl pr link` for the new head, which edits the
+same comment back to current.
 
 ## `xpl change <explainer> [<base>..<head>]`
 

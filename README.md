@@ -98,7 +98,15 @@ Step, element and head/base range links reopen that same version after a newer v
 Save as HTML restores the saved navigation; an explicit URL target overrides it. Keep the staged tree
 for sibling history and latest-version links. Restored focus, view and source cursor can be combined
 with a tour step. Reload and browser Back/Forward restore those fields independently; switching to Map
-keeps a step's source override. Configured remote delivery and the PR Action remain later work in #34.
+keeps a step's source override.
+
+To share a PR preview with your team, stage it into a folder that a static host you run already serves,
+then point the PR at it: `xpl pr link /srv/previews/pr-42 --url https://previews.example/pr-42 --visibility team`.
+It rechecks the PR's base and head, then posts one comment, or edits the same comment, with links to
+`current/index.html` and to this version. A private repository's preview needs `--visibility team`; who
+can open the host is up to the host. A PR workflow running `xpl pr check-link owner/repo#42` on new
+commits marks that comment outdated, so a stale preview is never shown as current. The workflow file is
+in [the CLI reference](skill/code-explainer/reference/cli.md), under `xpl pr link`.
 
 `xpl guides` lists locally saved guides by title, recorded questions, audience and source/index commits.
 It works without a service or index file. `xpl search <pattern>` searches available indexed working-tree

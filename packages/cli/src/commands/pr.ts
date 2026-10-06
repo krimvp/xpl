@@ -3,14 +3,15 @@ import { UsageError } from "../errors.js";
 import { parsePr, resolvePr } from "../pr.js";
 import { cleanupPr, prCacheDirectory, preparePr } from "../pr-checkout.js";
 import { createPrHandoff, finishPr } from "../pr-creation.js";
+import { checkPrLink, linkPr } from "../pr-link.js";
 
 export const prCommand: CommandSpec = {
   name: "pr",
   usage:
-    "xpl pr prepare|create <url|owner/repo#number|owner/repo> [number] [--cache-dir dir] [--precise off|auto|require] | xpl pr finish|cleanup <directory> [--cache-dir dir]",
+    "xpl pr prepare|create|check-link <url|owner/repo#number|owner/repo> [number] [--cache-dir dir] [--precise off|auto|require] | xpl pr finish|cleanup <directory> [--cache-dir dir] | xpl pr link <staged-dir> --url <base-url> --visibility team|public",
   summary: "Create a source-backed PR guide through the installed skill and check its result",
   details: [
-    "Uses existing gh and git access to GitHub. Never prompts for credentials or writes to GitHub.",
+    "Uses existing gh and git access to GitHub. Never prompts for credentials. Only link and check-link write: one PR comment.",
     "Resolves full API base/head commits and fetches them into a new detached repository outside the developer tree.",
     "Inherited git-directory/work-tree/index overrides are excluded from all owned source reads and indexing.",
     "Checks checkout bytes against raw head blobs before indexing; filter or line-ending changes refuse input.",
@@ -26,7 +27,11 @@ export const prCommand: CommandSpec = {
     "Default cache: $XDG_CACHE_HOME/xpl/pr or ~/.cache/xpl/pr. Custom cache must be outside the developer tree.",
     "Failed preparation removes its owned input. Interrupted processes may leave a marked directory; cleanup",
     "removes only a marked input directly under the selected cache. Stop consumers before explicit cleanup.",
-    "Exit codes: 0 prepared/handed off/ready/cleaned, 1 superseded or failure, 2 invalid input or options.",
+    "link points one PR comment at <base-url>/current and the current version of a folder staged with --pr-result.",
+    "The team serves that folder at --url; --visibility records who can read it (team is required for a private repository).",
+    "link rechecks GitHub base/head first and edits its existing comment in place. It needs gh access that can comment.",
+    "check-link, for a PR workflow on new commits, marks that comment outdated when base/head moved; old versions stay linked.",
+    "Exit codes: 0 prepared/handed off/ready/cleaned/linked, 1 superseded or failure, 2 invalid input or options.",
   ],
   options: {
     name: { type: "string", arg: "<guide>", desc: "New guide name for create" },
@@ -52,6 +57,16 @@ export const prCommand: CommandSpec = {
       arg: "off|auto|require",
       desc: "Head reference analysis (default off)",
     },
+    url: {
+      type: "string",
+      arg: "<base-url>",
+      desc: "Link: where the team serves the staged folder",
+    },
+    visibility: {
+      type: "string",
+      arg: "team|public",
+      desc: "Link: who can read that destination (required)",
+    },
   },
   positionals: [{ name: "action" }, { name: "input" }, { name: "number", required: false }],
   async run(ctx, args) {
@@ -66,6 +81,27 @@ export const prCommand: CommandSpec = {
       await cleanupPr(ctx, args.positionals[1]!, cache);
       if (ctx.json) ctx.emit({ cleaned: args.positionals[1] });
       else ctx.out(`removed owned PR input: ${args.positionals[1]}`);
+      return 0;
+    }
+    if (action === "link") {
+      const url = args.str("url");
+      const visibility = args.choice("visibility", ["team", "public"] as const);
+      if (!url || !visibility || args.positionals[2])
+        throw new UsageError(
+          "link takes one staged folder, --url <base-url> and --visibility team|public",
+        );
+      const result = await linkPr(ctx, args.positionals[1]!, url, visibility);
+      if (ctx.json) ctx.emit(result);
+      else
+        ctx.out(
+          `PR link ${result.action}: ${result.pr}\ncurrent: ${result.current}\nversion: ${result.version}`,
+        );
+      return 0;
+    }
+    if (action === "check-link") {
+      const result = await checkPrLink(ctx, parsePr(args.positionals[1]!, args.positionals[2]));
+      if (ctx.json) ctx.emit(result);
+      else ctx.out(`PR link ${result.action}: ${result.pr}`);
       return 0;
     }
     if (action === "finish") {
@@ -97,7 +133,7 @@ export const prCommand: CommandSpec = {
     }
     if (action !== "prepare" && action !== "create")
       throw new UsageError(
-        "use xpl pr prepare/create for a GitHub PR, finish for an authored input, or cleanup for an owned input",
+        "use xpl pr prepare/create for a GitHub PR, finish for an authored input, cleanup for an owned input, or link/check-link for its preview comment",
       );
     if (
       action === "create" &&

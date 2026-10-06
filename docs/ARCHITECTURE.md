@@ -1353,6 +1353,7 @@ stdout (a rejection exits 1); fatal errors (`error: …`) and warnings (`warning
 | `xpl change <explainer> [<base>..<head>]` | records the change from git in the explainer and prints its analysis (§4.8; below); without a range, prints the analysis of the change already recorded |
 | `xpl pr prepare <url\|owner/repo#number\|owner/repo> [number] [--cache-dir dir] [--precise off\|auto\|require]` | resolves GitHub base/head through existing `gh`, fetches an isolated detached head, indexes head only and publishes an immutable input manifest; no agent or ready result |
 | `xpl pr cleanup <directory> [--cache-dir dir]` | removes only a marked owned PR input directly under the selected cache; refuses symlinks and developer-tree paths |
+| `xpl pr link <staged-dir> --url <base-url> --visibility team\|public` / `xpl pr check-link <PR>` | points one PR comment at the staged current version after a GitHub base/head check; a PR workflow marks it outdated when base/head move (below) |
 | `xpl draft change\|repo\|path <explainer> [<entry id> ...] [-o file]` | prints a patch skeleton built from the index (and the change record) with no LLM, `TODO:` in every text to write (below); the summary goes to stderr |
 | `xpl view <explainer> [--port p] [--host h] [--no-open]` | local server (below) |
 | `xpl service <start\|pause\|resume\|stop\|status> [explainer] [--background] [--port p] [--backend none\|claude] [--skill-dir folder] [--job-timeout seconds] [--recover] [--watch]` | optional repository-scoped lifecycle around the same viewer server; loopback only; persisted context and explicit interrupted-owner recovery |
@@ -1532,9 +1533,9 @@ Each finish creates a new immutable snapshot, preserving previous results. CLI f
 instructions, and interrupted locks require explicit removal only after their writer has stopped.
 
 Ready means the API matched at `checkedAt`; GitHub cannot lock an external PR during local export.
-#34 must verify artifact/input hashes and recheck both commits before its own current-pointer promotion
-or publication. This step starts no publishing workflow, writes no GitHub state and creates no current
-pointer. The offline HTML remains readable independently of GitHub or the retained checkout.
+`xpl stage` verifies artifact/input hashes and rechecks both commits before its current-pointer promotion;
+`xpl pr link` rechecks them again before pointing the PR at it. `finish` starts no publishing workflow,
+writes no GitHub state and creates no current pointer. The offline HTML remains readable independently of GitHub or the retained checkout.
 
 **`xpl draft change|repo|path`** prints a patch that `xpl apply` accepts as it is: views, groups, overlays,
 participants, steps, anchors and a tour, with `TODO: <what to write>` in every text (tour notes as `### TODO:
@@ -1993,8 +1994,21 @@ After writing, GitHub base/head are rechecked under the destination lock, then l
 again before promotion. API failures and superseded commits retain current. `--files` and `--note` cannot
 alter a PR result. `--require-review` checks the optional policy without rewriting its original HTML.
 
-This slice provides local staging and version-bound navigation. A chosen destination, audience,
-credentialed delivery and one PR link/Action belong to 34C. Local storage does not establish private team access or close those acceptance criteria.
+**PR preview link (34C).** The destination is a static host the team already runs and controls access
+to: it serves a folder staged with `--pr-result` at a base URL, as plain files (or a copy such as
+`rsync -a`). xpl uploads nothing and adds no hosting. `cli/pr-link.ts` keeps one PR comment, found by its
+first-line marker `<!-- xpl-pr-preview {json} -->` on a comment whose `author_association` is OWNER,
+MEMBER or COLLABORATOR; others' markers are ignored. The JSON records head, base, version folder, base URL,
+visibility and, once outdated, the newer head/base. `xpl pr link <dir> --url --visibility` reads
+`<dir>/current/manifest.json` (a ready version with a PR result), resolves the PR again and refuses when
+GitHub base/head differ from the staged commits. It reads `repos/<repo>.private` and refuses
+`--visibility public` for a private repository. It then posts the comment or edits it in place (no edit
+when the body is unchanged), linking `<url>/current/index.html` and `<url>/<version>/index.html`.
+A failed GitHub write exits 1 and leaves the earlier comment and every staged version as they were.
+`xpl pr check-link <PR>`, run by a PR workflow on new commits, rewrites that comment as outdated when
+base/head moved, keeping only the last version link. It needs no checkout or staged folder. Writes use
+`gh api` with the caller's token; two concurrent writers could still post two comments, so the workflow
+template serializes runs per PR.
 
 **Version navigation (34B).** `ViewerBundle.publication` carries a current `PublishedVersion` and prior
 summaries captured under the staging lock from retained immutable manifests. Each summary reuses locator,
@@ -2031,8 +2045,8 @@ and browser Back/Forward use it. Tour defaults fill absent fields; explicit mode
 focus, applied step and validated head/base cursor fields are restored independently. The history
 adapter applies the result once, without replaying Present, selection or range actions. Cursor
 restoration keeps the selection, applied step and reading perspective. No saved state changes
-explanation provenance, source text, readiness or identity. Destination adapters,
-access control and PR Actions are reserved for 34C.
+explanation provenance, source text, readiness or identity. Access control belongs to the team's
+destination; the PR link is above.
 
 **Bundle payload** (`ViewerBundle`, also `/api/bundle`): `{ schema: "code-explainer/bundle@0", explainer,
 index, files: Record<FilePath, string>, baseFiles?, mode?, tour?, server?, sourceWarning?, exportInfo?,
