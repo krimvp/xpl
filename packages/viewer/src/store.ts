@@ -65,7 +65,14 @@ import {
   type WatchAttention,
 } from "@xpl/core";
 import { snapshotTexts } from "./snapshot.js";
-import { messageOf, readLaunchParams, ServerApi, type LaunchParams } from "./data.js";
+import {
+  messageOf,
+  readLaunchParams,
+  ServerApi,
+  type LaunchParams,
+  type AnswerAttempt,
+  type AnswerHistory,
+} from "./data.js";
 import { changeAt, changeOf, hasBase } from "./diff.js";
 import { workspaceView } from "./workspace.js";
 import { serializeExplainer, withViewFields } from "./edits.js";
@@ -226,6 +233,9 @@ export interface ViewerState {
   jobError?: string;
   feedback: FeedbackRequest[];
   feedbackStorageError?: string;
+  feedbackOpen: boolean;
+  answers?: AnswerHistory;
+  answerError?: string;
   /** The live source no longer matches its index; reindex before trusting locations and edges. */
   sourceWarning: string | undefined;
   exportInfo: ViewerBundle["exportInfo"];
@@ -297,6 +307,7 @@ export class ViewerStore {
   private api: ServerApi | undefined;
   private readonly liveApi: ServerApi | undefined;
   private pollConnection: (() => Promise<void>) | undefined;
+  private refreshingAnswers = false;
   private indexModel: IndexModel;
   private workspaceRevision = 0;
   private readonly loading = new Set<FilePath>();
@@ -374,6 +385,7 @@ export class ViewerStore {
       },
       sourceWarning: bundle.sourceWarning,
       feedback: [],
+      feedbackOpen: false,
       exportInfo: bundle.exportInfo,
     };
     const restored = this.restoreState(launch);
@@ -1695,11 +1707,12 @@ export class ViewerStore {
   /** Persist before returning. Storage refusal stays visible and exports remain available. */
   private keepFeedback(requests: readonly FeedbackRequest[]): void {
     const held = mergeFeedbackRequests([...this.state.feedback, ...requests]);
-    this.set({ feedback: held });
+    held.forEach(parseFeedbackRequest);
+    let stored: FeedbackRequest[] = [];
     try {
       // Read both legacy arrays and per-ID records. New writes never replace either format.
       const saved = localStorage.getItem(this.feedbackStorageKey);
-      const stored = saved ? parseFeedbackFile(JSON.parse(saved)).requests : [];
+      stored = saved ? parseFeedbackFile(JSON.parse(saved)).requests : [];
       const prefix = `${this.feedbackStorageKey}:request:`;
       for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);
@@ -1707,8 +1720,19 @@ export class ViewerStore {
         const json = localStorage.getItem(key);
         if (json !== null) stored.push(parseFeedbackRequest(JSON.parse(json)));
       }
-      const feedback = mergeFeedbackRequests([...held, ...stored]);
-      this.set({ feedback, feedbackStorageError: undefined });
+    } catch (error) {
+      this.set({
+        feedback: held,
+        feedbackStorageError: `Browser storage unavailable: ${String(error)}. Export feedback JSON to keep it.`,
+      });
+      return;
+    }
+    // Other tabs can add history after this page loaded. Validate their union before publishing.
+    const feedback = mergeFeedbackRequests([...held, ...stored]);
+    feedback.forEach(parseFeedbackRequest);
+    this.set({ feedback, feedbackStorageError: undefined });
+    try {
+      const prefix = `${this.feedbackStorageKey}:request:`;
       for (const request of feedback) {
         // Immutable versions prevent a stale read in another tab from overwriting a newer outcome.
         const json = JSON.stringify(request);
@@ -1793,6 +1817,80 @@ export class ViewerStore {
     this.keepFeedback(await this.api.requests());
   }
 
+  openFeedback(id?: ElementId): void {
+    if (id) this.select([id]);
+    this.set({ feedbackOpen: true });
+  }
+
+  closeFeedback(): void {
+    this.set({ feedbackOpen: false });
+  }
+
+  async importFeedback(value: unknown): Promise<void> {
+    const incoming = parseFeedbackFile(value);
+    this.keepFeedback(incoming.requests);
+    if (this.api) {
+      for (const request of incoming.requests) await this.api.postRequest(request);
+      await this.refreshFeedback();
+    }
+  }
+
+  async refreshAnswers(): Promise<void> {
+    const api = this.api;
+    if (!api?.attachment?.instanceId || this.refreshingAnswers) return;
+    this.refreshingAnswers = true;
+    try {
+      const answers = await api.answers();
+      if (this.api !== api) return;
+      await this.refreshFeedback();
+      if (this.api === api) this.set({ answers, answerError: undefined });
+    } catch (error) {
+      if (this.api === api) this.set({ answerError: messageOf(error) });
+    } finally {
+      this.refreshingAnswers = false;
+    }
+  }
+
+  async answerRequest(request: FeedbackRequest): Promise<void> {
+    if (this.api) await this.api.postRequest(request);
+    if (!this.api?.attachment?.instanceId || this.state.connection.status !== "connected")
+      throw new Error("Live answering needs a connected local service.");
+    const known = (await this.api.answers()).jobs.find((job) =>
+      job.selectedRequestIds.includes(request.id),
+    );
+    if (known) {
+      await this.refreshAnswers();
+      return;
+    }
+    // A name-based UUID needs no browser storage; the service also deduplicates by request ID.
+    const bytes = new Uint8Array(
+      await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`xpl-answer:${request.id}`)),
+    ).slice(0, 16);
+    bytes[6] = (bytes[6]! & 0x0f) | 0x80;
+    bytes[8] = (bytes[8]! & 0x3f) | 0x80;
+    const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+    const id = `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+    await this.api.startAnswer(id, request.id);
+    await this.refreshAnswers();
+  }
+
+  async askQuestion(id: ElementId, note: string): Promise<string | undefined> {
+    const request = this.captureFeedback(id, note, "explain");
+    try {
+      await this.answerRequest(request);
+      return undefined;
+    } catch (error) {
+      return messageOf(error);
+    }
+  }
+
+  async controlAnswer(job: AnswerAttempt, action: "retry" | "cancel"): Promise<void> {
+    if (!this.api || this.state.connection.status !== "connected")
+      throw new Error("Reconnect to control the question job.");
+    await this.api.controlAnswer(job, action);
+    await this.refreshAnswers();
+  }
+
   /** Export only after reconciling every observed version, including a refreshed bundle. */
   feedbackFile(embedded?: FeedbackFile): FeedbackFile {
     this.loadFeedback(embedded);
@@ -1809,6 +1907,17 @@ export class ViewerStore {
     note?: string,
     kind: FeedbackKind = "expand",
   ): Promise<"queued" | "command"> {
+    const request = this.captureFeedback(id, note, kind);
+    if (!this.api) return "command";
+    await this.api.postRequest(request);
+    return "queued";
+  }
+
+  private captureFeedback(
+    id: ElementId,
+    note: string | undefined,
+    kind: FeedbackKind,
+  ): FeedbackRequest {
     const at = new Date().toISOString();
     const cursor = this.state.cursor;
     const focus = codeFocus([id], this.state.model)[0];
@@ -1847,9 +1956,7 @@ export class ViewerStore {
     // Include other tabs' requests in this page without rewriting their stored records.
     this.loadFeedback({ schema: FEEDBACK_SCHEMA, requests: this.state.feedback });
     this.keepFeedback([request]);
-    if (!this.api) return "command";
-    await this.api.postRequest(request);
-    return "queued";
+    return request;
   }
 
   // ─── Changes made on disk (Claude's `xpl apply`) ──────────────────────────────────────────────

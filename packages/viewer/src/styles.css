@@ -4158,6 +4158,37 @@ code {
   overflow-wrap: anywhere;
 }
 
+.feedback-import {
+  margin-block: 12px;
+}
+.feedback-import input {
+  max-width: 100%;
+}
+.feedback-answer,
+.answer-attempt {
+  margin-top: 12px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+.answer-text,
+.answer-evidence pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.answer-evidence .btn {
+  white-space: normal;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+.answer-evidence pre {
+  padding: 8px;
+  background: var(--bg);
+}
+.answer-evidence mark {
+  color: inherit;
+  background: var(--hl-definition);
+}
+
 .save-html-dialog {
   width: min(720px, calc(100vw - 40px));
   max-height: calc(100vh - 60px);

@@ -435,6 +435,16 @@ class RepositoryJobs {
           throw new CliError("job ID already used for a different question", 1, { status: 409 });
         return existing;
       }
+      const previous = ledger.jobs.find(
+        (job): job is AnswerJob => isAnswer(job) && job.input.request.id === submission.requestId,
+      );
+      if (previous) {
+        if (previous.scope.guide !== guide)
+          throw new CliError("question already has an answer job for a different guide", 1, {
+            status: 409,
+          });
+        return previous;
+      }
       this.requireRunner("answer");
       const input = await selectAnswer(
         this.ctx,

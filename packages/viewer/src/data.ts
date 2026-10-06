@@ -72,8 +72,48 @@ export function messageOf(error: unknown): string {
 
 export type ExplainRequest = FeedbackRequest;
 
+/** The fields the reader needs from the existing answer-job API. Frozen input stays server-owned. */
+export interface AnswerAttempt {
+  id: string;
+  selectedRequestIds: string[];
+  state: "queued" | "running" | "completed" | "failed" | "cancelled" | "superseded" | "interrupted";
+  attempt: number;
+  progress: { at: string; message: string }[];
+  error: string | null;
+  contextReason: string | null;
+}
+export interface AnswerHistory {
+  available: boolean;
+  reason: string | null;
+  jobs: AnswerAttempt[];
+}
+
 /** The local `xpl view` API. Every method rejects with an Error whose message is fit to show. */
 export class ServerApi {
+  async answers(): Promise<AnswerHistory> {
+    const response = await this.check(await this.request("/answers", { cache: "no-store" }));
+    return response.json();
+  }
+
+  async startAnswer(id: string, requestId: string): Promise<void> {
+    await this.check(
+      await this.request("/answers", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id, requestId }),
+      }),
+    );
+  }
+
+  async controlAnswer(job: AnswerAttempt, action: "retry" | "cancel"): Promise<void> {
+    await this.check(
+      await this.request(`/answers/${encodeURIComponent(job.id)}/${action}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(action === "retry" ? { expectedAttempt: job.attempt } : {}),
+      }),
+    );
+  }
   /** Current workspace export snapshot: complete referenced source and a forced freshness check. */
   async exportBundle(): Promise<ViewerBundle> {
     const response = await this.check(await this.request("/export", { cache: "no-store" }));

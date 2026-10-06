@@ -26,6 +26,7 @@
  * - `--service` intercepts a loopback API; unmanaged omits attachment metadata for plain-view shots.
  * - `--attention affected|paused` adds watch/guide evidence; `--attention-open` opens its repair offer.
  * - `--text-draft` opens and edits the TS fixture retry concept without saving.
+ * - `--questions` opens a question from Details; `--question-history` also shows saved answers and attempts.
  *
  * compare: pairs the files of both directories by name and writes `<name>.png`, Before left and After right,
  * for each pair whose bytes differ, plus `index.md` listing changed, added, removed and unchanged shots.
@@ -36,6 +37,8 @@ import { dirname, isAbsolute, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 import { chromium } from "@playwright/test";
+import { artifactIdentity, hashText, type FeedbackAnswer } from "@xpl/core";
+import type { AnswerAttempt } from "../src/data.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -63,6 +66,8 @@ async function shoot(argv: string[]): Promise<void> {
       "evidence-editor": { type: "boolean", default: false },
       "graph-authoring": { type: "boolean", default: false },
       "graph-pins": { type: "boolean", default: false },
+      questions: { type: "boolean", default: false },
+      "question-history": { type: "boolean", default: false },
     },
   });
   if (
@@ -280,6 +285,72 @@ async function shoot(argv: string[]): Promise<void> {
             findings: [],
           },
         };
+        const questionJobs: AnswerAttempt[] = [];
+        if (values.questions) {
+          const at = "2026-10-05T12:00:00.000Z";
+          const context = artifactIdentity(data.explainer, data.index);
+          const text = data.files["src/queue.ts"];
+          const answer: FeedbackAnswer = {
+            id: "00000000-0000-4000-8000-000000000001",
+            requestId: "question-queue",
+            context,
+            at,
+            text: "The queue holds pending jobs until the runner takes them. Each job keeps its identity while it waits.",
+            references: [
+              {
+                file: "src/queue.ts",
+                side: "head",
+                fromLine: 1,
+                toLine: 2,
+                quote: text.split("\n").slice(0, 2).join("\n"),
+              },
+            ],
+            sources: [{ file: "src/queue.ts", side: "head", text, hash: hashText(text) }],
+          };
+          const request = {
+            id: "question-queue",
+            elementId: "file:src/queue.ts",
+            label: "Pending queue",
+            kind: "explain",
+            note: "How does the queue hold jobs?",
+            context,
+            at,
+            outcome: {
+              revision: 0,
+              status: "pending",
+              reason: "Awaiting an explicit revision pass.",
+              at,
+            },
+            answers: [answer],
+          };
+          const pending = {
+            ...request,
+            id: "question-retry",
+            note: "When does a job retry?",
+            answers: [],
+          };
+          data.feedback = { schema: "code-explainer/feedback@1", requests: [request, pending] };
+          questionJobs.push(
+            {
+              id: answer.id,
+              selectedRequestIds: [request.id],
+              state: "completed",
+              attempt: 1,
+              progress: [],
+              error: null,
+              contextReason: null,
+            },
+            {
+              id: "00000000-0000-4000-8000-000000000002",
+              selectedRequestIds: [pending.id],
+              state: "running",
+              attempt: 1,
+              progress: [{ at, message: "Reading the recorded retry source" }],
+              error: null,
+              contextReason: null,
+            },
+          );
+        }
         const body = html.replace(
           script,
           (_all, start, _data, end) => start + JSON.stringify(data).replace(/</g, "\\u003c") + end,
@@ -330,7 +401,11 @@ async function shoot(argv: string[]): Promise<void> {
           if (path.endsWith("/review") && values.jobs) return route.fulfill({ json: { review } });
           if (path === "/api/explainer") return route.fulfill({ status: 304 });
           if (path === "/api/requests")
-            return route.fulfill({ json: { requests: values.jobs ? [request] : [] } });
+            return route.fulfill({
+              json: { requests: values.jobs ? [request] : (data.feedback?.requests ?? []) },
+            });
+          if (path === "/api/answers" && values.questions)
+            return route.fulfill({ json: { available: true, reason: null, jobs: questionJobs } });
           return route.fulfill({ status: 404 });
         });
         await page.goto("http://127.0.0.1:4747/" + query);
@@ -353,6 +428,17 @@ async function shoot(argv: string[]): Promise<void> {
         }
       } else await page.goto(pathToFileURL(file).href + query);
       await page.waitForFunction(() => !!window.__xpl);
+      if (values.questions) {
+        await page.evaluate(() => window.__xpl!.select(["file:src/queue.ts"]));
+        await page.getByRole("button", { name: /^Feedback/ }).click();
+        const panel = page.getByRole("dialog", { name: "Reader feedback" });
+        await panel.getByLabel("Feedback note").fill("Why does this job wait in the queue?");
+        if (values["question-history"])
+          await panel
+            .locator(".feedback-list > li")
+            .first()
+            .evaluate((el) => el.scrollIntoView({ block: "start" }));
+      }
       if (values["text-draft"]) {
         await page.evaluate(() => window.__xpl!.select(["concept:retry-policy"]));
         await page.getByTestId("text-edit").click();
