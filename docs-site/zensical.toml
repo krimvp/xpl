@@ -1,0 +1,80 @@
+# The user documentation, published under /docs/ next to the landing page (site/).
+# scripts/build-site.mjs copies pages/ to a scratch folder, fills the include lines from README.md and
+# skill/code-explainer, generates reference/commands.md from `xpl --help`, then builds with --strict.
+[project]
+site_name = "xpl docs"
+site_url = "https://krimvp.github.io/xpl/docs/"
+site_description = "How to install xpl, make a checked code explainer, and read, revise and share it."
+repo_url = "https://github.com/krimvp/xpl"
+repo_name = "krimvp/xpl"
+docs_dir = "pages"
+site_dir = "site"
+extra_css = ["stylesheets/xpl.css"]
+nav = [
+  { "Overview" = "index.md" },
+  { "Getting started" = "getting-started.md" },
+  { "Concepts" = [
+    "concepts/index.md",
+    "concepts/languages.md",
+  ] },
+  { "Workflows" = [
+    "workflows/explain.md",
+    "workflows/change.md",
+    "workflows/feedback.md",
+    "workflows/edit-and-review.md",
+    "workflows/service.md",
+    "workflows/pull-requests.md",
+    "workflows/find-and-share.md",
+  ] },
+  { "CLI reference" = [
+    "reference/index.md",
+    "reference/commands.md",
+  ] },
+  { "The skill" = [
+    "skill/index.md",
+    "skill/create.md",
+    "skill/revise.md",
+    "skill/patch-format.md",
+  ] },
+]
+
+[project.extra]
+homepage = "https://krimvp.github.io/xpl/"
+
+[project.theme]
+language = "en"
+font = false
+features = [
+  "content.code.copy",
+  "navigation.footer",
+  "navigation.indexes",
+  "navigation.sections",
+  "navigation.top",
+  "search.highlight",
+]
+
+[[project.theme.palette]]
+media = "(prefers-color-scheme: light)"
+scheme = "default"
+primary = "custom"
+accent = "custom"
+toggle.icon = "lucide/sun"
+toggle.name = "Switch to dark mode"
+
+[[project.theme.palette]]
+media = "(prefers-color-scheme: dark)"
+scheme = "slate"
+primary = "custom"
+accent = "custom"
+toggle.icon = "lucide/moon"
+toggle.name = "Switch to light mode"
+
+[project.markdown_extensions]
+admonition = {}
+attr_list = {}
+md_in_html = {}
+tables = {}
+toc.permalink = true
+pymdownx.highlight.anchor_linenums = true
+pymdownx.inlinehilite = {}
+pymdownx.superfences = {}
