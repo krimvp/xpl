@@ -1790,6 +1790,7 @@ export class ViewerStore {
       const api = this.api;
       if (!api || stopped || busy || (typeof document !== "undefined" && document.hidden)) return;
       busy = true;
+      const explainer = this.state.explainer;
       let serviceAvailable = false;
       try {
         if (api.attachment?.instanceId) {
@@ -1838,6 +1839,8 @@ export class ViewerStore {
           );
           if (
             this.api === api &&
+            // A save may finish while this older bundle or its source files are in flight.
+            this.state.explainer === explainer &&
             this.adoptExplainer(bundle.explainer, { ...bundle, files, fileErrors })
           )
             etag = fresh.etag;

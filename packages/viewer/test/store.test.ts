@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  IndexModel,
+  applyUserEdits,
   artifactIdentity,
   reviewFingerprint,
   type ReviewScope,
@@ -620,7 +622,7 @@ describe("under xpl view (server mode)", () => {
         omissions: [],
         fingerprint: reviewFingerprint(
           bundle.explainer,
-          bundle.index,
+          new IndexModel(bundle.index),
           (file) => bundle.files[file],
           scope,
         ),
@@ -893,6 +895,95 @@ describe("under xpl view (server mode)", () => {
     expect(calls).toHaveLength(5);
     stop();
   });
+
+  it.each(["bundle", "file"])(
+    "keeps a completed author save when an older %s poll finishes, then accepts the next workspace",
+    async (delayed) => {
+      const bundle = makeBundle({
+        server: {
+          api: "/api",
+          attachment: {
+            root: "/repo",
+            guide: "demo",
+            instanceId: "author",
+            backend: "none",
+            backendAvailable: false,
+          },
+        },
+      });
+      bundle.explainer.nodes = bundle.explainer.nodes.filter((node) => node.id !== "grp:core");
+      bundle.explainer.views[0] = {
+        provenance: bundle.explainer.views[0]!.provenance,
+        id: "view:overview",
+        type: "graph",
+        title: "Overview",
+        scope: { root: "repo", depth: 1 },
+        include: ["file:src/a.ts", "file:src/b.ts"],
+      };
+      const store = new ViewerStore(structuredClone(bundle));
+      store.setMode("explore");
+      let finish!: (response: Response) => void;
+      const stale = new Promise<Response>((resolve) => {
+        finish = resolve;
+      });
+      const original = structuredClone(bundle);
+      if (delayed === "file") delete original.files["src/a.ts"];
+      let polling = 0;
+      respond = (url, init) => {
+        if (url === "/api/attention") return new Response("{}");
+        if (url === "/api/explainer")
+          return new Response(JSON.stringify(bundle.explainer), {
+            headers: { etag: '"workspace"' },
+          });
+        if (url === "/api/bundle")
+          return ++polling === 1
+            ? delayed === "bundle"
+              ? stale
+              : new Response(JSON.stringify(original))
+            : new Response(JSON.stringify(bundle));
+        if (url.startsWith("/api/file?")) return stale;
+        const request = JSON.parse(String(init!.body));
+        expect(request.version).toEqual(artifactIdentity(bundle.explainer, bundle.index));
+        const result = applyUserEdits(
+          bundle.explainer,
+          request.edits,
+          new IndexModel(bundle.index),
+          (file) => bundle.files[file],
+        );
+        bundle.explainer = result.explainer;
+        return new Response(JSON.stringify(result));
+      };
+      const stop = store.watchExplainer(1000);
+      try {
+        await vi.advanceTimersByTimeAsync(1000);
+        expect(polling).toBe(1);
+        await store.editGraph("view:overview", {
+          type: "group",
+          id: "grp:work",
+          label: "Work",
+          members: ["file:src/a.ts", "file:src/b.ts"],
+        });
+        expect(store.getState().model.hasNode("grp:work")).toBe(true);
+        finish(
+          new Response(
+            delayed === "bundle" ? JSON.stringify(original) : "Old source from before the edit",
+          ),
+        );
+        await vi.advanceTimersByTimeAsync(0);
+        expect(store.getState().model.hasNode("grp:work")).toBe(true);
+        await store.editGraph("view:overview", { type: "hide", ids: ["grp:work"] });
+        expect(store.getState().undoCount).toBe(2);
+        bundle.explainer.title = "External update after author save";
+        await vi.advanceTimersByTimeAsync(1000);
+        expect(store.getState().explainer.title).toBe("External update after author save");
+        expect(store.getState().undoCount).toBe(2);
+        const polls = calls.filter(({ url }) => url === "/api/explainer");
+        expect(new Headers(polls[1]!.init!.headers).get("if-none-match")).toBeNull();
+      } finally {
+        stop();
+      }
+    },
+  );
 
   it("refreshes loaded source, the index and warnings even when the explanation is unchanged", async () => {
     const store = graphStore(true);
