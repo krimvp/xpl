@@ -118,10 +118,17 @@ async function write(
   // A comment from someone without write access would not count as the link next time; remove it.
   const created = JSON.parse(written) as { id: number; author_association?: string };
   if (!TRUSTED.has(created.author_association ?? "")) {
-    await gh(ctx, ["--method", "DELETE", `repos/${pr.repository}/issues/comments/${created.id}`]);
-    throw new CliError(
-      `only an owner, member or collaborator of ${pr.repository} can keep the PR link; the comment was removed`,
-    );
+    const untrusted = `only an owner, member or collaborator of ${pr.repository} can keep the PR link`;
+    try {
+      await gh(ctx, ["--method", "DELETE", `repos/${pr.repository}/issues/comments/${created.id}`]);
+    } catch (error) {
+      throw new CliError(
+        `${untrusted}, and removing its comment ${created.id} failed (${errorMessage(error)}); delete it by hand`,
+        1,
+        { posted: true },
+      );
+    }
+    throw new CliError(`${untrusted}; the comment was removed`, 1, { posted: true });
   }
   return "created" as const;
 }
@@ -189,6 +196,7 @@ export async function linkPr(ctx: Ctx, directory: string, url: string, visibilit
   try {
     action = await write(ctx, pr, record, await findLink(ctx, pr));
   } catch (error) {
+    if (error instanceof CliError && error.extra.posted) throw error;
     throw new CliError(
       `${errorMessage(error)}. Staged versions are kept and the previous PR link is unchanged; fix access and rerun xpl pr link.`,
     );

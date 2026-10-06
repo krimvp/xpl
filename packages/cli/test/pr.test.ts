@@ -1030,7 +1030,7 @@ const save = (value) => {
   }
   process.stdout.write(JSON.stringify(value));
 };
-if (method !== 'GET' && process.env.GH_FAIL_WRITES) { process.stderr.write('HTTP 403: Resource not accessible'); process.exit(1); }
+if ((method !== 'GET' && process.env.GH_FAIL_WRITES) || (method === 'DELETE' && process.env.GH_FAIL_DELETE)) { process.stderr.write('HTTP 403: Resource not accessible'); process.exit(1); }
 if (path === 'repos/team/project/pulls/7') process.stdout.write(fs.readFileSync(process.env.GH_DATA));
 else if (path === 'repos/team/project') save(state.repository);
 else if (path === 'repos/team/project/issues/7/comments?per_page=100' && args.includes('--slurp')) save([state.comments]);
@@ -1177,6 +1177,8 @@ describe("PR preview link", () => {
     expect((await invoke(args, { cwd: f.root, env })).code).toBe(2);
     const secret = ["pr", "link", f.destination, "--url", "https://user:token@previews.example/7"];
     expect((await invoke([...secret, "--visibility", "team"], { cwd: f.root, env })).code).toBe(2);
+    const query = ["pr", "link", f.destination, "--url", "https://previews.example/7?x=1#y"];
+    expect((await invoke([...query, "--visibility", "team"], { cwd: f.root, env })).code).toBe(2);
     const exposed = await invoke([...args, "--visibility", "public"], { cwd: f.root, env });
     expect(exposed.code).toBe(1);
     expect(JSON.parse(exposed.out).error).toContain("private repository");
@@ -1186,8 +1188,20 @@ describe("PR preview link", () => {
       env: { ...env, GH_ASSOCIATION: "CONTRIBUTOR" },
     });
     expect(outsider.code).toBe(1);
-    expect(JSON.parse(outsider.out).error).toContain("owner, member or collaborator");
+    expect(JSON.parse(outsider.out).error).toBe(
+      "only an owner, member or collaborator of team/project can keep the PR link; the comment was removed",
+    );
     expect(github.comments()).toEqual(before);
+    const stuck = await invoke(team, {
+      cwd: f.root,
+      env: { ...env, GH_ASSOCIATION: "CONTRIBUTOR", GH_FAIL_DELETE: "1" },
+    });
+    expect(stuck.code).toBe(1);
+    expect(JSON.parse(stuck.out).error).toContain("removing its comment 2 failed");
+    expect(github.comments().map(({ id }: { id: number }) => id)).toEqual([1, 2]);
+    const state = JSON.parse(readFileSync(github.state, "utf8"));
+    state.comments.pop();
+    writeFile(f.tools, "github.json", JSON.stringify(state));
 
     expect((await invoke(team, { cwd: f.root, env })).code).toBe(0);
     const linked = github.comments();

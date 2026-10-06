@@ -2006,7 +2006,8 @@ GitHub base/head differ from the staged commits. It reads `repos/<repo>.private`
 when its marker already records the same link; text appended below is kept), linking
 `<url>/current/index.html` and `<url>/<version>/index.html`.
 The base URL must be http(s) without credentials, query or fragment. A new comment whose
-`author_association` is not trusted is deleted and the run fails, since it would never count as the link.
+`author_association` is not trusted is deleted and the run fails, since it would never count as the link;
+if that delete fails, the error names the comment to delete by hand.
 After writing, `link` runs the `check-link` comparison once more: a push that landed meanwhile turns the
 comment outdated and the run exits 1. A failed GitHub write exits 1 and leaves the earlier comment and
 every staged version as they were.
