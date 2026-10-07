@@ -38,6 +38,9 @@ Use a conventional commit subject scoped to the package, such as `fix(indexer): 
 labeled`. Open a branch from `main`, and follow the required checks and reviews shown by GitHub. Release tags
 use the `v*` format and are created by maintainers as part of a release.
 
+For a pull request from a fork, a maintainer must approve the workflow run before CI uses the self-hosted
+runner. Maintainers review workflow changes before approving it.
+
 ## More detail
 
 - [AGENTS.md](AGENTS.md) has the full commands, invariants and review process.
