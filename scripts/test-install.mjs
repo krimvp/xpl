@@ -71,8 +71,9 @@ function install(dir) {
 install(prefix);
 let pkg = join(prefix, "lib/node_modules/@krimvp/xpl");
 const metadata = JSON.parse(readFileSync(join(pkg, "package.json"), "utf8"));
+const sourceMetadata = JSON.parse(readFileSync(join(repo, "packages/cli/package.json"), "utf8"));
 assert.equal(metadata.name, "@krimvp/xpl");
-assert.equal(metadata.version, "0.1.0");
+assert.equal(metadata.version, sourceMetadata.version);
 assert.equal(metadata.license, "MIT");
 assert.equal(
   readFileSync(join(pkg, "LICENSE"), "utf8"),

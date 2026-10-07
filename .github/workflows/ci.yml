@@ -27,6 +27,7 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
+      - run: node --test scripts/check-release.test.mjs
       - run: npm run format:check
 
   e2e:
@@ -44,6 +45,8 @@ jobs:
         working-directory: packages/viewer
       - run: npm run test:e2e
       - run: npm run test:install -- "$RUNNER_TEMP/xpl-install"
+      - run: npm pack --dry-run ./packages/cli/dist
+      - run: npm publish --dry-run ./packages/cli/dist --access public
       - if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:

@@ -2,10 +2,9 @@
 
 User-facing changes are listed here. Versions link to their GitHub releases.
 
-## [Unreleased]
+## [0.2.0] - Unreleased
 
-This section tracks changes on `main` since 0.1.0. Move it to a versioned section when that version is
-released.
+Prepared for release from the `v0.2.0` tag. The package has not been published yet.
 
 - Authors can keep a local xpl service connected to a repository, watch source changes, and find guides that
   need attention.
@@ -28,5 +27,5 @@ First npm release of the xpl CLI, viewer, tree-sitter grammars, and code-explain
 - Node 22.12 or newer is required. The packaged artifact was exercised on Linux x64 under WSL2 with Node
   22.23.1; other platforms were not verified.
 
-[Unreleased]: https://github.com/krimvp/xpl/compare/v0.1.0...HEAD
+[0.2.0]: https://github.com/krimvp/xpl/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/krimvp/xpl/releases/tag/v0.1.0

@@ -10,9 +10,9 @@ xpl skill install
 xpl doctor --agent claude
 ```
 
-Alternatively, with access to the private [source repository](https://github.com/krimvp/xpl),
+Alternatively, from the public [source repository](https://github.com/krimvp/xpl),
 run `npm install && npm run build`, then `npm pack ./packages/cli/dist` and
-`npm install -g --ignore-scripts ./krimvp-xpl-0.1.0.tgz`. Install a maintainer's tarball offline with
+`npm install -g --ignore-scripts ./krimvp-xpl-0.2.0.tgz`. Install a maintainer's tarball offline with
 `npm install -g --offline --ignore-scripts <tarball>`, then run `xpl skill install`.
 Claude Code needs separate installation, authentication and provider access.
 

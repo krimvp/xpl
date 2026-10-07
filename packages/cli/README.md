@@ -36,9 +36,9 @@ use bundled assets; `xpl index --precise off` works without downloading precise 
 After updating or moving the CLI, rerun `xpl skill install` to update its launcher.
 The workflow has been checked on Linux x64; other platforms have not been verified.
 
-The [source repository](https://github.com/krimvp/xpl) is private and requires access.
-With access, `npm install && npm run build` builds the CLI; `npm pack ./packages/cli/dist`
-creates a local tarball that you can install with `npm install -g --ignore-scripts ./krimvp-xpl-0.1.0.tgz`.
+The [source repository](https://github.com/krimvp/xpl) is public. `npm install && npm run build` builds the
+CLI; `npm pack ./packages/cli/dist` creates a local tarball that you can install with
+`npm install -g --ignore-scripts ./krimvp-xpl-0.2.0.tgz`.
 See the bundled `skill/code-explainer/README.md` for authoring and recovery instructions.
 
 MIT license. Copyright 2026 krimvp.

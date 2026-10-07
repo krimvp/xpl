@@ -8,7 +8,7 @@ body:
     attributes:
       label: xpl version
       description: Run `xpl --version`.
-      placeholder: 0.1.0
+      placeholder: Paste the output of xpl --version
     validations:
       required: true
   - type: textarea
