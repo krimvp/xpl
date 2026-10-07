@@ -26,6 +26,7 @@ import type { IndexInputs } from "./snapshot.js";
 import pkg from "../package.json" with { type: "json" };
 import { resolveCommitId, validateCommitId } from "./commit.js";
 import { FILE_LANGUAGES, detectGit, discoverFiles, readSource } from "./files.js";
+import type { ExclusionReport } from "./files.js";
 import type { GitOptions } from "./files.js";
 import { FileHasher } from "./hash.js";
 import { packForFile } from "./languages/index.js";
@@ -73,6 +74,7 @@ export interface BuildIndexOptions {
 export interface BuildIndexResult {
   index: SymbolIndex;
   warnings: string[];
+  exclusions: ExclusionReport;
   extraction: ExtractionReport;
   work: { heuristicResolutionMs: number; semanticMs: number; semanticRuns: number };
 }
@@ -191,7 +193,11 @@ export async function buildIndex(opts: BuildIndexOptions): Promise<BuildIndexRes
   // 1. Discover files.
   const git = await detectGit(root, opts.gitOptions);
   const discovery = opts.snapshot
-    ? { files: [], warnings: [] }
+    ? {
+        files: [],
+        warnings: [],
+        exclusions: { scope: "snapshot unavailable" as const, reasons: [] },
+      }
     : await discoverFiles(root, {
         git,
         languages: languageFilter,
@@ -479,7 +485,13 @@ export async function buildIndex(opts: BuildIndexOptions): Promise<BuildIndexRes
     analysis,
     ...(resources.length > 0 ? { resources } : {}),
   };
-  return { index, warnings, extraction: extractionCache.report, work };
+  return {
+    index,
+    warnings,
+    exclusions: discovery.exclusions,
+    extraction: extractionCache.report,
+    work,
+  };
 }
 
 function summarizeLanguages(
