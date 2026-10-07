@@ -1,6 +1,6 @@
-import { existsSync, readdirSync } from "node:fs";
+import { chmodSync, existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { run } from "../src/cli.js";
 import { INDEX_SCHEMA } from "@xpl/core";
 import {
@@ -197,6 +197,47 @@ describe("index progress and cancellation", () => {
       }
     }
   });
+
+  it.skipIf(process.platform === "win32")(
+    "cancels a running semantic tool without publishing an index",
+    async () => {
+      const dir = copyFixture();
+      const marker = join(dir, "provider-started");
+      writeFile(
+        dir,
+        "npx",
+        `#!${process.execPath}
+import('node:fs').then(fs => fs.writeFileSync(${JSON.stringify(marker)}, 'started'));
+setInterval(() => {}, 1000);
+`,
+      );
+      chmodSync(join(dir, "npx"), 0o755);
+      const abort = new AbortController();
+      const err: string[] = [];
+      vi.stubEnv("PATH", dir);
+      vi.stubEnv("XPL_SCIP_TIMEOUT_MS", "3000");
+      const running = run(["index", "--precise", "require", "--commit", "cancelled"], {
+        cwd: dir,
+        isTTY: false,
+        signal: abort.signal,
+        out: () => {},
+        err: (text) => err.push(text),
+      });
+      let cancelledAt = 0;
+      try {
+        await expect.poll(() => existsSync(marker)).toBe(true);
+      } finally {
+        cancelledAt = Date.now();
+        abort.abort();
+        vi.unstubAllEnvs();
+      }
+      expect(await running).toBe(130);
+      expect(Date.now() - cancelledAt).toBeLessThan(1500);
+      expect(err.join("\n")).toContain("Indexing cancelled");
+      expect(err.some((text) => text.startsWith("index: "))).toBe(false);
+      expect(existsSync(join(dir, ".explainer/index-cancelled.json"))).toBe(false);
+    },
+  );
 
   it.each([
     [false, "Extracting"],
