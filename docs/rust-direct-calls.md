@@ -9,15 +9,16 @@ declaration identities and source snapshots before the relationship enters the i
 
 The pass does not resolve unknown names, qualified paths or explicit generic calls (`f::<T>()`), calls
 inside nested functions or closures, methods, trait dispatch, or calls across modules/files. Local
-parameters, patterns (including shorthand struct bindings) and declarations that might shadow a target suppress that name throughout the
-caller; this deliberately misses some calls outside the binding's actual scope. A body containing a
-macro invocation or local import is skipped. No macro expansion or cfg evaluation runs. Ambiguous
+parameters, patterns (including shorthand struct bindings) and declarations that might shadow a target
+suppress that name throughout the caller, deliberately missing some calls outside the binding's actual
+scope. Raw identifiers such as `r#target` and `target` use the same lookup spelling; source IDs and ranges
+retain the original text. A body containing a macro invocation or local import is skipped. No macro expansion or cfg evaluation runs. Ambiguous
 root declarations are not targets. A file with syntax errors keeps its available declarations but its
 call analysis is marked failed and produces no calls.
 
 Reports label calls partial and heuristic, including files with no retained calls. Other relationship
 kinds remain unsupported. Missing edges do not mean a function has no callers. `--precise require`
-still needs a usable precise provider and is not satisfied by this pass. Extraction cache query-v3
+still needs a usable precise provider and is not satisfied by this pass. Extraction cache query-v4
 stores these file-local relationships; reference evidence and trust survive a warm build.
 
 ## Fixture and real repository checks

@@ -36,7 +36,7 @@ it("indexes Rust tags with precise off and keeps lexical trait, impl and module 
     files: 1,
     symbols: 18,
     refs: "heuristic",
-    tool: "tree-sitter-rust@0.24.0/query-v3",
+    tool: "tree-sitter-rust@0.24.0/query-v4",
   });
   expect(
     index.symbols.map((s) => [s.path, s.kind, s.range.startLine, s.range.endLine, s.parent]),
@@ -76,7 +76,7 @@ it("keeps fixture macro definitions and physical impls without inventing expande
     files: 9,
     symbols: 82,
     refs: "heuristic",
-    tool: "tree-sitter-rust@0.24.0/query-v3",
+    tool: "tree-sitter-rust@0.24.0/query-v4",
   });
   const expected = [
     ["src/queue.rs#JobQueue", 21, 27, undefined],
@@ -288,4 +288,25 @@ it("keeps UTF-16 multiline call ranges through the extraction cache", async () =
   const warm = await buildIndex({ root: dir, precise: "off" });
   expect(fields(warm.index.refs)).toEqual(expected);
   expect(warm.extraction.hits).toBe(1);
+});
+
+it("uses one Rust identifier spelling for raw declarations, calls and shadowing", async () => {
+  const { index } = await indexFiles({
+    "raw.rs": [
+      "fn target() {}",
+      "fn r#plain() {}",
+      "fn parameter(r#target: fn()) { target(); }",
+      "fn binding() { let r#target = || {}; target(); }",
+      "fn opposite(target: fn()) { r#target(); }",
+      "fn nested() { fn r#target() {} target(); }",
+      "struct Callbacks { target: fn() }",
+      "fn shorthand(value: Callbacks) { let Callbacks { r#target } = value; target(); }",
+      "fn yes() { target(); plain(); r#plain(); }",
+    ].join("\n"),
+  });
+  expect(index.refs.map((ref) => [ref.from, ref.to, ref.resolution])).toEqual([
+    ["raw.rs#yes", "raw.rs#target", "heuristic"],
+    ["raw.rs#yes", "raw.rs#r#plain", "heuristic"],
+    ["raw.rs#yes", "raw.rs#r#plain", "heuristic"],
+  ]);
 });

@@ -12,7 +12,7 @@ registerProvider(
     id: "rust-tags",
     language: "rust",
     grammar: "rust",
-    version: "tree-sitter-rust@0.24.0/query-v3",
+    version: "tree-sitter-rust@0.24.0/query-v4",
     query: () =>
       readFileSync(
         getWasmDir()
@@ -53,9 +53,11 @@ function directCalls(
     declarations.map((declaration) => [declaration.identity, declaration]),
   );
   const identity = (node: Node) => `${file}:${node.startIndex}:${node.endIndex}`;
+  const spelling = (name: string) => name.replace(/^r#/, "");
   const byName = new Map<string, Node[]>();
   for (const fn of functions) {
-    const name = fn.childForFieldName("name")?.text;
+    const text = fn.childForFieldName("name")?.text;
+    const name = text === undefined ? undefined : spelling(text);
     if (name) byName.set(name, [...(byName.get(name) ?? []), fn]);
   }
   const refs: ProviderRelationship[] = [];
@@ -66,7 +68,7 @@ function directCalls(
     const calls: Node[] = [];
     const names = (node: Node) => {
       if (node.type === "identifier" || node.type === "shorthand_field_identifier")
-        shadowed.add(node.text);
+        shadowed.add(spelling(node.text));
       for (const child of node.namedChildren) names(child);
     };
     const visit = (node: Node) => {
@@ -84,7 +86,7 @@ function directCalls(
         ].includes(node.type)
       ) {
         const name = node.childForFieldName("name");
-        if (name) shadowed.add(name.text);
+        if (name) shadowed.add(spelling(name.text));
         return;
       }
       if (node.type === "closure_expression") return;
@@ -98,8 +100,8 @@ function directCalls(
     if (unsafe) continue;
     for (const call of calls) {
       const callee = call.childForFieldName("function");
-      if (callee?.type !== "identifier" || shadowed.has(callee.text)) continue;
-      const targets = byName.get(callee.text);
+      if (callee?.type !== "identifier" || shadowed.has(spelling(callee.text))) continue;
+      const targets = byName.get(spelling(callee.text));
       if (targets?.length !== 1 || !identities.has(identity(targets[0]!))) continue;
       refs.push({
         from: identity(fn),

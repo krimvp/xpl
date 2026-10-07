@@ -738,7 +738,7 @@ or external `mod` links, expand macros, evaluate cfg, or index fields, variants 
 ranges exclude leading attributes and doc comments. Syntax recovery adds a limit and a warning. Matching
 tags outcomes share one report with combined file counts; syntax-error files keep a separate report.
 [The tags experiment](rust-tags.md) records declaration coverage; [bounded direct calls](rust-direct-calls.md)
-records the supported slice and a bat smoke test. Tags cache version query-v3 includes call extraction.
+records the supported slice and a bat smoke test. Tags cache version query-v4 includes call extraction.
 
 **Analysis coverage** (`core/src/analysis.ts`, `indexer/src/analysis.ts`). An `AnalysisReport` contains a
 stable `provider` id, advertised `capabilities`, scoped `files`, and observed `results`. Capabilities are
