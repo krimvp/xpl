@@ -3,7 +3,7 @@
 [Try the live example](https://krimvp.github.io/xpl/) or open the
 [documentation](https://krimvp.github.io/xpl/docs/).
 
-xpl links diagrams to source code and source code back to diagrams. Claude writes an explanation as
+xpl links diagrams to source code and source code back to diagrams. An authoring agent writes an explanation as
 data; xpl checks each source anchor against a static index before the guide can be exported. Share
 it as a live view or one self-contained HTML file.
 
@@ -16,14 +16,20 @@ npm install --global @krimvp/xpl
 xpl skill install
 ```
 
-In Claude Code, name a reader and question:
+Claude Code is the default target. For Codex, Pi, Factory Droid or Devin, select the harness with
+`xpl skill install --agent <name>`. Codex, Pi and Droid install to `~/.agents/skills/code-explainer`;
+Devin installs to the project `.agents/skills/code-explainer`. Use `--dir <path>` to choose a destination
+for any harness. The npm package bundles the CLI and skill; harness setup and provider access are separate.
+
+In the selected harness, invoke `code-explainer` with a reader and question. For example, in the
+default Claude Code target:
 
 ```text
 /code-explainer explain How does X work? Root: /path/to/repo. Audience: maintainers.
 ```
 
 xpl checks that source locations exist and are current; it cannot verify the explanation's factual
-claims or coverage. Claude Code needs its own installation, authentication and provider access.
+claims or coverage. Install and configure the selected harness and its provider separately.
 
 See [Getting started](https://krimvp.github.io/xpl/docs/getting-started/) for the first guide and
 the [CLI reference](skill/code-explainer/reference/cli.md) for command options.
@@ -44,7 +50,8 @@ See [Find and share](https://krimvp.github.io/xpl/docs/workflows/find-and-share/
 ### View and export a guide
 
 Use `xpl view <guide>` for a local interactive view or `xpl bundle <guide> -o guide.html` for a
-self-contained export.
+self-contained export. In Read mode, each step shows a short source excerpt beside its explanation;
+"Open full code" opens the complete source range.
 
 ### Feedback and revision
 

@@ -18,7 +18,7 @@ export const prCommand: CommandSpec = {
     "Defaults to --precise off; auto/require opt into optional analysis tools and their network/toolchain needs.",
     "Writes immutable input.json last, with PR identity, change, before/after source and head index hashes/labels.",
     "prepare writes input only. create also needs --name, --audience and --question; --skill-dir selects the installed skill.",
-    "create runs its bound launcher new/change/draft, then prints an explicit /code-explainer invocation. No model is started.",
+    "create runs its bound launcher new/change/draft, then prints a harness-neutral code-explainer task prompt. No model is started.",
     "Use the handoff command prefix for authoring: it pins installed CLI and owned Git paths and excludes inherited overrides.",
     "finish reuses the installed bundle readiness check and compares both current GitHub base/head before writing result.json.",
     "Matching results are ready; changed commits retain a superseded historical result and exit 1. API/export failures",

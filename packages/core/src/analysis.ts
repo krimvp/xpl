@@ -1,4 +1,4 @@
-import type { AnalysisCapability, SymbolIndex } from "./schema.js";
+import type { AnalysisCapability, ChangeRecord, SymbolIndex } from "./schema.js";
 
 export const RELATIONSHIP_CAPABILITIES = [
   "call",
@@ -23,6 +23,49 @@ const labels: Record<AnalysisCapability, string> = {
   read: "reads",
   write: "writes",
 };
+
+/** Known omissions for this change, based only on the loaded index's recorded coverage. */
+export function changeOmissions(change: ChangeRecord, index: SymbolIndex): string[] {
+  const limit = 5;
+  const headPaths = new Set(change.files.filter((f) => f.status !== "deleted").map((f) => f.path));
+  const indexed = new Set(index.files.map((f) => f.path));
+  const omissions =
+    /^[0-9a-f]{7,}$/i.test(index.commit) && !change.head.startsWith(index.commit)
+      ? [
+          `Loaded index ${index.commit.slice(0, 7)} differs from change head ${change.head.slice(0, 7)}; head analysis coverage is unknown here.`,
+        ]
+      : [];
+  omissions.push(
+    ...change.files.flatMap((file) => {
+      if (file.status === "deleted")
+        return [
+          `${file.path}: removed from the head; the loaded index cannot inspect its old code.`,
+        ];
+      return indexed.has(file.path)
+        ? []
+        : [`${file.path}: absent from the loaded index; source analysis is not recorded there.`];
+    }),
+  );
+  for (const report of index.analysis ?? []) {
+    const changed = report.files.filter((path) => headPaths.has(path));
+    if (changed.length === 0) continue;
+    for (const result of report.results) {
+      if (result.status === "supported") continue;
+      const analyzed = changed.filter((path) => result.analyzedFiles.includes(path)).length;
+      const names = result.capabilities.map((capability) => labels[capability]).join(", ");
+      const detail = result.limitations[0] ? ` Reported limit: ${result.limitations[0]}` : "";
+      omissions.push(
+        `${report.provider} report: ${names} ${result.status}; ${analyzed} of ${changed.length} changed paths in its scope analyzed.${detail}`,
+      );
+    }
+  }
+  return omissions.length > limit
+    ? [
+        ...omissions.slice(0, limit),
+        `${omissions.length - limit} more recorded ${omissions.length - limit === 1 ? "limit" : "limits"}.`,
+      ]
+    : omissions;
+}
 
 /** Describes the original analysis run, even when a bundle has pruned symbols and references. */
 export function describeAnalysis(index: SymbolIndex): { summary: string; details: string[] } {

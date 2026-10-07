@@ -8,7 +8,13 @@
  * read, not only the one last clicked.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
-import { codeFocus, isTestFile, type ExplainerModel, type TourStep } from "@xpl/core";
+import {
+  changeOmissions,
+  codeFocus,
+  isTestFile,
+  type ExplainerModel,
+  type TourStep,
+} from "@xpl/core";
 import { ExplanationInfo } from "./ExplanationInfo.js";
 import { callersOf, changeSummary, type Caller } from "../callers.js";
 import { overrideFocus } from "../derive.js";
@@ -19,6 +25,7 @@ import { stepTests } from "../stepTests.js";
 import { stepText, stepTitle } from "../stepTitle.js";
 import { TourPicker } from "./Header.js";
 import { Snapshot } from "./Snapshot.js";
+import { GuideSource } from "./GuideSource.js";
 
 export function Guide({ onReading }: { onReading?: (stepId: string | undefined) => void } = {}) {
   const store = useStore();
@@ -198,6 +205,7 @@ export function Guide({ onReading }: { onReading?: (stepId: string | undefined) 
             dangerouslySetInnerHTML={{ __html: renderMarkdown(summary) }}
           />
         )}
+        <ChangeOmissions />
         <ExplanationInfo />
         <ChangeFiles />
         {tour.steps.map((step, index) => (
@@ -211,6 +219,24 @@ export function Guide({ onReading }: { onReading?: (stepId: string | undefined) 
         ))}
       </div>
     </div>
+  );
+}
+
+function ChangeOmissions() {
+  const state = useViewerState();
+  const change = changeOf(state.explainer);
+  if (!change) return null;
+  const omissions = changeOmissions(change, state.model.index.index);
+  if (omissions.length === 0) return null;
+  return (
+    <section className="change-omissions" data-testid="change-omissions" aria-label="Not checked">
+      <h3>Not checked</h3>
+      <ul>
+        {omissions.map((item) => (
+          <li key={item}>{item}</li>
+        ))}
+      </ul>
+    </section>
   );
 }
 
@@ -302,23 +328,28 @@ function GuideSection({
       ) : (
         <h3>{title}</h3>
       )}
-      {body && (
-        <div
-          className="markdown"
-          data-testid="section-note"
-          dangerouslySetInnerHTML={{ __html: renderMarkdown(body) }}
-        />
-      )}
-      {!hasNote &&
-        step.focus.map((id) => {
-          const summary = summaryOf(id, state.model);
-          return summary ? (
-            <p key={id} data-testid="focus-summary">
-              <strong>{state.model.label(id)}</strong> —{" "}
-              <span dangerouslySetInnerHTML={{ __html: renderInline(summary) }} />
-            </p>
-          ) : null;
-        })}
+      <div className="guide-explanation">
+        <div className="guide-prose">
+          {body && (
+            <div
+              className="markdown"
+              data-testid="section-note"
+              dangerouslySetInnerHTML={{ __html: renderMarkdown(body) }}
+            />
+          )}
+          {!hasNote &&
+            step.focus.map((id) => {
+              const summary = summaryOf(id, state.model);
+              return summary ? (
+                <p key={id} data-testid="focus-summary">
+                  <strong>{state.model.label(id)}</strong> —{" "}
+                  <span dangerouslySetInnerHTML={{ __html: renderInline(summary) }} />
+                </p>
+              ) : null;
+            })}
+        </div>
+        <GuideSource step={step} tourId={tourId} index={index} />
+      </div>
       {view && (
         <Snapshot
           view={view}

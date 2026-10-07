@@ -1,7 +1,7 @@
 # xpl — code explainer
 
 Interactive diagrams linked to code in both directions. Click a box or step to see its code;
-select code to see the matching diagram elements. Claude writes explanations as data, and
+select code to see the matching diagram elements. An authoring agent writes explanations as data, and
 xpl checks their source locations against a static index of your repository.
 
 [Try the live example](https://krimvp.github.io/xpl/).
@@ -18,7 +18,13 @@ xpl skill install
 xpl doctor --agent claude
 ```
 
-Claude Code needs its own installation, authentication and provider access. In your project, ask:
+Claude Code is the default skill target. Install for another supported harness with
+`xpl skill install --agent codex`, `--agent pi`, `--agent droid` or `--agent devin`. Use `--dir <path>`
+for a project install, such as `xpl skill install --agent pi --dir .agents/skills/code-explainer`.
+The npm package bundles the CLI, viewer, grammars and skill. Authoring still requires the selected harness and its
+provider access to be installed and configured separately.
+
+Install and configure the selected harness and its provider separately. In Claude Code, ask:
 
 ```text
 /code-explainer explain How does a failed job get retried?
