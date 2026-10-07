@@ -35,7 +35,7 @@ installer. Each harness needs separate installation, authentication and provider
 
 **Exit codes:** 0 ok · 1 rejected or failed (bad id, rejected patch, a patch that changed nothing because the user owns everything it touches, `resolve --write` on a stale index, validation errors, `lint` findings, `bundle` with drifted or missing anchors) · 2 usage error.
 **Streams:** results, issue lists and rejections print on stdout (a rejection also exits 1); fatal errors (`error: ...`: unknown id, no index, bad JSON, unreadable file) and `warning:` lines go to stderr, so use `2>&1` to capture both. With `--json` there is one object on stdout, errors included (`{"ok": false, "error": ...}`).
-**Environment:** `XPL_CLI` (launcher: path of an `xpl.mjs` overriding the installed CLI binding or development build), `XPL_VIEWER_HTML` (viewer page for `view`/`bundle`), `XPL_SKIP_STALE_CHECK=1` (skip advisory freshness checks; strict validation and export still check), `XPL_SCIP_TIMEOUT_MS` (time limit of each SCIP indexer, default 10 minutes), `XPL_WASM_DIR` (where the tree-sitter `.wasm` files are), `XPL_DEBUG=1` (stack traces).
+**Environment:** `XPL_CLI` (launcher: path of an `xpl.mjs` overriding the installed CLI binding or development build), `XPL_NO_UPDATE_CHECK=1` (skip doctor's npm registry request), `XPL_VIEWER_HTML` (viewer page for `view`/`bundle`), `XPL_SKIP_STALE_CHECK=1` (skip advisory freshness checks; strict validation and export still check), `XPL_SCIP_TIMEOUT_MS` (time limit of each SCIP indexer, default 10 minutes), `XPL_WASM_DIR` (where the tree-sitter `.wasm` files are), `XPL_DEBUG=1` (stack traces).
 
 **Ids** are accepted loosely: `sym:src/a.ts#A.b`, `src/a.ts#A.b`, `file:src/a.ts`, `src/a.ts`, `dir:src`. The outputs always print the exact `sym:`/`file:`/`dir:` form: paste those into patches.
 
@@ -62,11 +62,15 @@ updating xpl so its command and option lists stay current. `--json` returns the 
 
 Diagnoses installed setup without downloading tools or starting authoring. Node >=22.12, artifact hashes
 and grammar loading are mandatory. Skill availability is optional by default; selecting an agent requires
-its managed skill. For Claude, Codex, Pi and Droid, diagnosis also checks the local agent command. Devin
+its managed skill. An older installed skill is marked `outdated` and names `xpl skill install` as recovery.
+A skill newer than the CLI is marked `mismatch`; update the CLI to the skill's version or newer.
+For Claude, Codex, Pi and Droid, diagnosis also checks the local agent command. Devin
 checks project skill files; its cloud discovery and authentication cannot be checked locally. Optional
 git/npx/Go checks run local version commands. Go uses the installed toolchain, ignores user Go
 configuration and disables telemetry without writing settings; Git tracing is disabled. No Python or SCIP
-tool launcher runs during diagnosis.
+tool launcher runs during diagnosis. Doctor requests the latest `@krimvp/xpl` version from npm with a
+1.5-second timeout. It reports a newer version and the update command; failed requests are silent.
+`XPL_NO_UPDATE_CHECK=1` skips the request. Other commands do not query npm.
 Missing precise prerequisites suggest `xpl index --precise off`; automatic precise mode may
 bootstrap tools and dependencies over the network. Presence is not a test of precise analysis,
 agent authentication or provider access. Required failures exit 1; JSON includes `ok`, `platform`,
@@ -80,6 +84,8 @@ directory, and binds `bin/xpl` to this installed CLI. `claude` is the default an
 `devin` installs to the current project's `.agents/skills/code-explainer`.
 Rerun after updating or moving the CLI. Refuses symlinks,
 unmanaged directories, added files and locally edited skill files; move them aside first to preserve them.
+The launcher prints one warning when its recorded skill version differs from the CLI package it runs.
+It recommends skill reinstall for an older skill and a CLI update for a newer skill.
 The CLI package bundles the skill and launcher. Install and configure the selected harness separately;
 the installer does not verify provider access or live invocation behavior. Invoke the skill as
 `$code-explainer` in Codex, `/skill:code-explainer` in Pi, `/code-explainer` in Factory Droid, or

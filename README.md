@@ -24,6 +24,7 @@ Claude Code is the default target. For Codex, Pi, Factory Droid or Devin, select
 `xpl skill install --agent <name>`. Codex, Pi and Droid install to `~/.agents/skills/code-explainer`;
 Devin installs to the project `.agents/skills/code-explainer`. Use `--dir <path>` to choose a destination
 for any harness. The npm package bundles the CLI and skill; harness setup and provider access are separate.
+After a CLI update, run `xpl doctor` to check the installed skill, then rerun `xpl skill install`.
 
 In the selected harness, invoke `code-explainer` with a reader and question. For example, in the
 default Claude Code target:
