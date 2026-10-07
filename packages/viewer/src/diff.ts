@@ -141,7 +141,7 @@ function alignedLines(before: readonly string[], after: readonly string[]): [num
       const similarity = (prefix + suffix) / Math.max(old.length, next.length, 1);
       const drop = cost[i - 1]![j]! + 0.5;
       const add = cost[i]![j - 1]! + 0.5;
-      const pair = similarity >= 0.4 ? cost[i - 1]![j - 1]! + 1 - similarity : Infinity;
+      const pair = similarity >= 0.25 ? cost[i - 1]![j - 1]! + 1 - similarity : Infinity;
       if (pair < drop && pair < add) {
         cost[i]![j] = pair;
         step[i]![j] = "pair";

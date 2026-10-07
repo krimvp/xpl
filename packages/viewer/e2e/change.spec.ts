@@ -63,6 +63,8 @@ test.describe("the code of a change", () => {
     await expect(runner.locator('.cm-line[data-line="75"]')).toHaveClass(/xpl-chg/);
     await runner.locator('.cm-line[data-line="75"] .xpl-word-add').click();
     await expect.poll(async () => (await stateOf(page)).cursor?.fromLine).toBe(75);
+    await runner.getByTestId("show-changes").click();
+    await expect(runner.locator(".xpl-word-add, .xpl-word-del")).toHaveCount(0);
   });
 
   test("added and rewritten lines are marked, removed lines sit between them, read-only, with + and −", async ({
@@ -112,11 +114,9 @@ test.describe("the code of a change", () => {
     const toggle = runner.getByTestId("show-changes");
     await expect(toggle).toHaveAttribute("aria-pressed", "true");
     await expect(runner.locator(".xpl-removed")).toHaveCount(2);
-    await expect(runner.locator(".xpl-word-add").first()).toBeVisible();
     await toggle.click();
     await expect(toggle).toHaveAttribute("aria-pressed", "false");
     await expect(runner.locator(".xpl-removed")).toHaveCount(0);
-    await expect(runner.locator(".xpl-word-add")).toHaveCount(0);
     await expect.poll(() => marked(page, "src/runner.ts", "xpl-chg")).toEqual([]);
     await expect(runner.locator(".xpl-diff-gutter")).toHaveCount(0);
     await toggle.click();
