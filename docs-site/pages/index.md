@@ -33,5 +33,4 @@ small job runner, built into one HTML file.
 Report bugs and request features in [GitHub Issues](https://github.com/krimvp/xpl/issues). Report security
 issues through [private vulnerability reporting](https://github.com/krimvp/xpl/security/advisories/new).
 
-To contribute code, read [CONTRIBUTING.md](https://github.com/krimvp/xpl/blob/main/CONTRIBUTING.md) and the
-[architecture guide](https://github.com/krimvp/xpl/blob/main/docs/ARCHITECTURE.md).
+To contribute code, read [CONTRIBUTING.md](https://github.com/krimvp/xpl/blob/main/CONTRIBUTING.md).
