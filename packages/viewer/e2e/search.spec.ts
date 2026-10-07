@@ -381,48 +381,72 @@ test("source and symbol search keeps each contained guide's commit and missing-s
   }
 });
 
-test("live source results keep their snapshot when the server advances", async ({ page }) => {
-  const { html, bundle: raw } = readEmbeddedBundle();
-  const original = parseBundle(JSON.stringify(raw));
-  original.guideId = "repository";
-  original.index.commit =
-    original.explainer.index.commit =
-    original.explainer.repo.commit =
-      "snapshot-A";
-  original.files["src/metrics.ts"] = "// needle A\n";
-  original.server = {
-    api: "/api",
-    attachment: { root: "/repo", guide: ".explainer/repository.explainer.json" },
-  };
-  const newer = structuredClone(original);
-  newer.index.commit = newer.explainer.index.commit = newer.explainer.repo.commit = "snapshot-B";
-  newer.files["src/metrics.ts"] = "// wrong! B\n";
-  let update = false;
-  await page.route("http://xpl.test/**", async (route) => {
-    const path = new URL(route.request().url()).pathname;
-    if (path === "/")
-      return route.fulfill({ contentType: "text/html", body: injectBundle(html, original) });
-    if (path === "/api/explainer")
-      return update
-        ? route.fulfill({ json: newer.explainer, headers: { etag: "B" } })
-        : route.fulfill({ status: 304 });
-    if (path === "/api/bundle") return route.fulfill({ json: newer });
-    if (path === "/api/guides") return route.fulfill({ json: { guides: [], errors: [] } });
-    if (path === "/api/requests") return route.fulfill({ json: { requests: [] } });
-    return route.fulfill({ status: 404 });
+for (const lazy of [false, true]) {
+  test(`live ${lazy ? "lazy" : "embedded"} source results keep their snapshot when the server advances`, async ({
+    page,
+  }) => {
+    const { html, bundle: raw } = readEmbeddedBundle();
+    const original = parseBundle(JSON.stringify(raw));
+    original.guideId = "repository";
+    original.index.commit =
+      original.explainer.index.commit =
+      original.explainer.repo.commit =
+        "snapshot-A";
+    original.files["src/metrics.ts"] = "// needle A\n";
+    if (lazy) delete original.files["src/metrics.ts"];
+    original.server = {
+      api: "/api",
+      attachment: { root: "/repo", guide: ".explainer/repository.explainer.json" },
+    };
+    const newer = structuredClone(original);
+    newer.index.commit = newer.explainer.index.commit = newer.explainer.repo.commit = "snapshot-B";
+    newer.files["src/metrics.ts"] = "// wrong! B\n";
+    let update = false;
+    await page.route("http://xpl.test/**", async (route) => {
+      const path = new URL(route.request().url()).pathname;
+      if (path === "/")
+        return route.fulfill({ contentType: "text/html", body: injectBundle(html, original) });
+      if (path === "/api/explainer")
+        return update
+          ? route.fulfill({ json: newer.explainer, headers: { etag: "B" } })
+          : route.fulfill({ status: 304 });
+      if (path === "/api/file")
+        return route.fulfill({ contentType: "text/plain", body: "// needle A\n" });
+      if (path === "/api/bundle") return route.fulfill({ json: newer });
+      if (path === "/api/guides") return route.fulfill({ json: { guides: [], errors: [] } });
+      if (path === "/api/requests") return route.fulfill({ json: { requests: [] } });
+      return route.fulfill({ status: 404 });
+    });
+    await page.goto("http://xpl.test/");
+    if (lazy) {
+      await page.waitForFunction(() => !!window.__xpl);
+      await page.evaluate(() => window.__xpl!.setCursor("src/metrics.ts", 1));
+      await expect(page.locator('[data-file="src/metrics.ts"] .cm-content').first()).toContainText(
+        "needle A",
+      );
+    }
+    await page.getByRole("button", { name: "Search and guides" }).click();
+    await page.getByRole("searchbox", { name: "Search guide snapshots" }).fill("needle A");
+    await page.locator('a[data-kind="source"]').click();
+    const editor = page.locator('[data-file="src/metrics.ts"] .cm-content').first();
+    await expect(editor).toContainText("needle A");
+    await expect(page).toHaveURL(/snapshot=snapshot-A/);
+    update = true;
+    // Advance beyond several polling intervals: a live server must not replace pinned source.
+    await page.waitForTimeout(6500);
+    await expect(editor).toContainText("needle A");
+    await expect(editor).not.toContainText("wrong! B");
+    await editor.focus();
+    await expect
+      .poll(() => page.evaluate(() => window.getSelection()?.toString()))
+      .toBe("needle A");
+    await expect.poll(() => stateOf(page).then((s) => s.serverMode)).toBe(false);
+    await page.reload();
+    if (lazy) {
+      await expect(page.locator("body")).toContainText(
+        'Source file "src/metrics.ts" is not included in snapshot "snapshot-A"',
+      );
+      await expect(page.locator(".cm-content")).toHaveCount(0);
+    } else await expect(editor).toContainText("needle A");
   });
-  await page.goto("http://xpl.test/");
-  await page.getByRole("button", { name: "Search and guides" }).click();
-  await page.getByRole("searchbox").fill("needle A");
-  await page.locator('a[data-kind="source"]').click();
-  const editor = page.locator('[data-file="src/metrics.ts"] .cm-content').first();
-  await expect(editor).toContainText("needle A");
-  await expect(page).toHaveURL(/snapshot=snapshot-A/);
-  update = true;
-  // Advance beyond several polling intervals: a live server must not replace pinned source.
-  await page.waitForTimeout(6500);
-  await expect(editor).toContainText("needle A");
-  await expect(editor).not.toContainText("wrong! B");
-  await page.reload();
-  await expect(editor).toContainText("needle A");
-});
+}

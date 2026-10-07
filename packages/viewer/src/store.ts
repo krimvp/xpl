@@ -305,7 +305,7 @@ export class ViewerStore {
   private state: ViewerState;
   private readonly listeners = new Set<() => void>();
   private api: ServerApi | undefined;
-  private readonly liveApi: ServerApi | undefined;
+  private liveApi: ServerApi | undefined;
   private pollConnection: (() => Promise<void>) | undefined;
   private refreshingAnswers = false;
   private indexModel: IndexModel;
@@ -828,6 +828,17 @@ export class ViewerStore {
       openSeq: this.state.openSeq + 1,
       cursor,
     });
+  }
+
+  /** Keep the searched text, including lazy files, without adopting another live workspace. */
+  openSnapshotRange(file: FilePath, range: Range, commit: string): boolean {
+    if (commit !== this.indexModel.index.commit || !this.rangeCursor(file, range, "head"))
+      return false;
+    this.liveApi = undefined;
+    this.workspaceRevision++;
+    this.useOfflineSnapshot();
+    this.openRange(file, range);
+    return true;
   }
 
   /** Closes the pane of a file that was opened but is not part of the focus. */

@@ -190,26 +190,25 @@ export function SearchLibrary({ onClose }: { onClose: () => void }) {
   const open = (event: MouseEvent<HTMLAnchorElement>, guide: string, hit?: SearchHit) => {
     const switching = guide !== current;
     const sourceLink = hit?.kind === "source" || hit?.kind === "symbol";
-    const leavesPage = switching || (sourceLink && state.serverMode);
-    if (leavesPage && blocked) {
+    const freezesLive = sourceLink && state.serverMode;
+    if ((switching || freezesLive) && blocked) {
       event.preventDefault();
       setError("Save or cancel drafts and pending edits before opening another snapshot.");
       return;
     }
-    if (leavesPage || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+    if (switching || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
     event.preventDefault();
     if (!hit) {
       onClose();
       return;
     }
     if (hit.kind === "source" || hit.kind === "symbol") {
-      if (hit.commit !== index.commit) {
+      if (!store.openSnapshotRange(hit.file, hit.range, hit.commit)) {
         setError(
           "This search result belongs to an earlier snapshot. Search again in the current guide.",
         );
         return;
       }
-      store.openRange(hit.file, hit.range);
     } else if ("tour" in hit) {
       store.setPerspective("guide");
       const tour = state.model.tour(hit.tour);

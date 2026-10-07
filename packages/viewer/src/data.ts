@@ -59,7 +59,14 @@ export function loadBundle(doc: Document = document): LoadedBundle {
         `Source snapshot "${snapshot}" is unavailable; this guide supplies "${bundle.index.commit}". Reopen search in the available guide.`,
       );
     // A source link is a fixed snapshot: polling and lazy API reads could replace its text.
-    if (snapshot) delete bundle.server;
+    if (snapshot) {
+      const file = new URLSearchParams(doc.location?.search ?? "").get("file");
+      if (file && !(file in bundle.files))
+        throw new Error(
+          `Source file "${file}" is not included in snapshot "${snapshot}". It may have been loaded only in the previous page. Reopen the live guide to load and search it again.`,
+        );
+      delete bundle.server;
+    }
     const version = new URLSearchParams(doc.location?.search ?? "").get("version");
     if (version && version !== bundle.publication?.current.version)
       throw new Error(
