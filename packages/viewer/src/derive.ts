@@ -35,6 +35,7 @@ import {
   type FocusRange,
   type ReverseIndex,
   type Stub,
+  type TourStep,
   type View,
 } from "@xpl/core";
 import type { Cursor, ViewerState } from "./store.js";
@@ -355,6 +356,20 @@ function sideOrder(
   for (; h < head.length; h++) order.push({ file: head[h]!.file, base: false });
   for (; b < base.length; b++) order.push({ file: base[b]!.file, base: true });
   return order;
+}
+
+/** Read mode uses the same checked focus and before/head ordering as opening the tour step. */
+export function stepSelection(
+  step: TourStep,
+  tourId: string,
+  model: ExplainerModel,
+): SelectionDerived {
+  return deriveSelection(
+    deriveView(model, step.view),
+    model,
+    step.focus,
+    step.code?.length ? { anchors: step.code, owner: `${tourId}/${step.id}` } : undefined,
+  );
 }
 
 function deriveSelection(

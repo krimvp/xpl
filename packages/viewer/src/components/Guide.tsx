@@ -19,6 +19,7 @@ import { stepTests } from "../stepTests.js";
 import { stepText, stepTitle } from "../stepTitle.js";
 import { TourPicker } from "./Header.js";
 import { Snapshot } from "./Snapshot.js";
+import { GuideSource } from "./GuideSource.js";
 
 export function Guide({ onReading }: { onReading?: (stepId: string | undefined) => void } = {}) {
   const store = useStore();
@@ -302,23 +303,28 @@ function GuideSection({
       ) : (
         <h3>{title}</h3>
       )}
-      {body && (
-        <div
-          className="markdown"
-          data-testid="section-note"
-          dangerouslySetInnerHTML={{ __html: renderMarkdown(body) }}
-        />
-      )}
-      {!hasNote &&
-        step.focus.map((id) => {
-          const summary = summaryOf(id, state.model);
-          return summary ? (
-            <p key={id} data-testid="focus-summary">
-              <strong>{state.model.label(id)}</strong> —{" "}
-              <span dangerouslySetInnerHTML={{ __html: renderInline(summary) }} />
-            </p>
-          ) : null;
-        })}
+      <div className="guide-explanation">
+        <div className="guide-prose">
+          {body && (
+            <div
+              className="markdown"
+              data-testid="section-note"
+              dangerouslySetInnerHTML={{ __html: renderMarkdown(body) }}
+            />
+          )}
+          {!hasNote &&
+            step.focus.map((id) => {
+              const summary = summaryOf(id, state.model);
+              return summary ? (
+                <p key={id} data-testid="focus-summary">
+                  <strong>{state.model.label(id)}</strong> —{" "}
+                  <span dangerouslySetInnerHTML={{ __html: renderInline(summary) }} />
+                </p>
+              ) : null;
+            })}
+        </div>
+        <GuideSource step={step} tourId={tourId} index={index} />
+      </div>
       {view && (
         <Snapshot
           view={view}
