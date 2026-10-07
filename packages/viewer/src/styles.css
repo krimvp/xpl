@@ -4669,3 +4669,38 @@ code {
   background: var(--panel);
   color: var(--danger);
 }
+
+.diagram-text-view {
+  height: 100%;
+  overflow: auto;
+  padding: 44px 16px 16px;
+  background: var(--panel);
+  cursor: auto;
+  user-select: text;
+}
+.diagram-text-view h3 {
+  font-size: 14px;
+  margin: 12px 0 6px;
+}
+.diagram-text-view ul {
+  padding-left: 20px;
+}
+.diagram-text-view li {
+  margin: 6px 0;
+}
+.diagram-text-view button {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  text-align: left;
+  white-space: normal;
+}
+.diagram-text-view button[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.diagram-text-trust {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: 3px;
+}

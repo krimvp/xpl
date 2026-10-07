@@ -1,3 +1,4 @@
+import { DiagramText } from "./DiagramText.js";
 /**
  * Sequence view: lifelines for the participants (labels from the model), one arrow per step top to
  * bottom (`call` solid, `return` dashed, `async` open arrowhead), self-calls as loops, frames
@@ -111,6 +112,7 @@ export function SequenceView({
 
   return (
     <PanZoom
+      textView={<DiagramText sequence={layout} />}
       width={layout.width}
       height={layout.height}
       resetKey={resetKey}

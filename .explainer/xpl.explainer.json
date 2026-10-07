@@ -4873,7 +4873,7 @@
           "role": "call-site",
           "hash": "sha256-v2:84f57970916e",
           "resolved": {
-            "commit": "wt-c88c429a6d",
+            "commit": "wt-9fbb3638c8",
             "range": {
               "startLine": 53,
               "endLine": 53
@@ -4885,12 +4885,12 @@
           "file": "packages/viewer/src/components/GraphView.tsx",
           "symbol": "GraphView",
           "role": "definition",
-          "hash": "sha256-v2:7c91438a2cef",
+          "hash": "sha256-v2:7cf27dc174ef",
           "resolved": {
-            "commit": "wt-c88c429a6d",
+            "commit": "wt-9fbb3638c8",
             "range": {
-              "startLine": 261,
-              "endLine": 522
+              "startLine": 262,
+              "endLine": 524
             },
             "status": "ok"
           }
@@ -4898,7 +4898,7 @@
       ],
       "provenance": {
         "origin": "llm",
-        "commit": "wt-937a9c5209"
+        "commit": "wt-9fbb3638c8"
       }
     },
     {
@@ -4919,7 +4919,7 @@
           "role": "call-site",
           "hash": "sha256-v2:d8f4735312ce",
           "resolved": {
-            "commit": "wt-c88c429a6d",
+            "commit": "wt-9fbb3638c8",
             "range": {
               "startLine": 63,
               "endLine": 71
@@ -4931,12 +4931,12 @@
           "file": "packages/viewer/src/components/SequenceView.tsx",
           "symbol": "SequenceView",
           "role": "definition",
-          "hash": "sha256-v2:c22232a5ee5f",
+          "hash": "sha256-v2:1c19ad9897a2",
           "resolved": {
-            "commit": "wt-c88c429a6d",
+            "commit": "wt-9fbb3638c8",
             "range": {
-              "startLine": 44,
-              "endLine": 154
+              "startLine": 45,
+              "endLine": 156
             },
             "status": "ok"
           }
@@ -4944,7 +4944,7 @@
       ],
       "provenance": {
         "origin": "llm",
-        "commit": "95aec52"
+        "commit": "wt-9fbb3638c8"
       }
     },
     {
@@ -17800,7 +17800,7 @@
               "role": "call-site",
               "hash": "sha256-v2:d8f4735312ce",
               "resolved": {
-                "commit": "wt-c88c429a6d",
+                "commit": "wt-9fbb3638c8",
                 "range": {
                   "startLine": 63,
                   "endLine": 71
@@ -17818,10 +17818,10 @@
               "role": "usage",
               "hash": "sha256-v2:63e33a54520d",
               "resolved": {
-                "commit": "wt-c88c429a6d",
+                "commit": "wt-9fbb3638c8",
                 "range": {
-                  "startLine": 54,
-                  "endLine": 54
+                  "startLine": 55,
+                  "endLine": 55
                 },
                 "status": "ok"
               }
@@ -17830,12 +17830,12 @@
               "file": "packages/viewer/src/components/SequenceView.tsx",
               "symbol": "SequenceView",
               "role": "definition",
-              "hash": "sha256-v2:c22232a5ee5f",
+              "hash": "sha256-v2:1c19ad9897a2",
               "resolved": {
-                "commit": "wt-c88c429a6d",
+                "commit": "wt-9fbb3638c8",
                 "range": {
-                  "startLine": 44,
-                  "endLine": 154
+                  "startLine": 45,
+                  "endLine": 156
                 },
                 "status": "ok"
               }
@@ -17850,10 +17850,10 @@
               "role": "usage",
               "hash": "sha256-v2:645a35adc964",
               "resolved": {
-                "commit": "wt-c88c429a6d",
+                "commit": "wt-9fbb3638c8",
                 "range": {
-                  "startLine": 356,
-                  "endLine": 356
+                  "startLine": 358,
+                  "endLine": 358
                 },
                 "status": "ok"
               }
@@ -17868,10 +17868,10 @@
               "role": "usage",
               "hash": "sha256-v2:651763ee13f4",
               "resolved": {
-                "commit": "wt-c88c429a6d",
+                "commit": "wt-9fbb3638c8",
                 "range": {
-                  "startLine": 225,
-                  "endLine": 225
+                  "startLine": 227,
+                  "endLine": 227
                 },
                 "status": "ok"
               }
@@ -17879,16 +17879,16 @@
             {
               "file": "packages/viewer/src/components/SequenceView.tsx",
               "span": {
-                "from": 16,
-                "to": 16
+                "from": 17,
+                "to": 17
               },
               "role": "usage",
               "hash": "sha256-v2:cb6f5dd0063f",
               "resolved": {
-                "commit": "wt-c88c429a6d",
+                "commit": "wt-9fbb3638c8",
                 "range": {
-                  "startLine": 17,
-                  "endLine": 17
+                  "startLine": 18,
+                  "endLine": 18
                 },
                 "status": "ok"
               }
@@ -17915,7 +17915,7 @@
       ],
       "provenance": {
         "origin": "llm",
-        "commit": "wt-822d05d315"
+        "commit": "wt-9fbb3638c8"
       }
     },
     {

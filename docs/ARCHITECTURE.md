@@ -2398,6 +2398,16 @@ static bundle lists only the files it embeds, with a footer "N of M files includ
 CodeMirror editors (language modes for TS/TSX/JS, Python, Go, YAML and JSON; Rust, TOML and other text are plain).
 Both splits (diagram / panels, diagram / code) are resizable. Below 900 px the halves stack.
 
+**Diagram text alternative** (`components/DiagramText.tsx`, `PanZoom.textView`): every live map,
+sequence and flow has a **Text view** toggle beside its Key. It replaces the picture with native lists and
+buttons, leaving linked code visible. Maps list their current nodes, displayed aggregate relationships and
+outside-map boundaries, with direction and existing precise/heuristic/mixed or author provenance labels.
+Outside targets can be added through the same expansion action as a ghost. Sequences list participants
+and messages; flows list stages and directed transitions. Choosing a flow transition selects its source
+stage, as the text explains. Selection uses the same store action as the diagram, including exact source
+anchors. The list updates with the current level, nodes and edge-kind filters. Scrolling it never zooms
+the hidden SVG. Turning the toggle off restores the diagram and its selection.
+
 **Graph authoring** (`components/GraphAuthor.tsx`): Explore's stored graph views offer **Edit map** beside
 the caption. Shift-click sibling boxes, name the group and explicitly group them. Ungroup removes the
 container from this map while retaining the stored group and its references. Hide selected boxes/arrows

@@ -1,3 +1,4 @@
+import { DiagramText } from "./DiagramText.js";
 import { useEffect, useId, useMemo, useState } from "react";
 import { processFlow, type ElementId, type ProcessFlow, type SequenceView } from "@xpl/core";
 import { viewReverseIndex } from "../derive.js";
@@ -340,6 +341,7 @@ export function FlowDiagram({ view, snapshot, outline = false }: FlowDiagramProp
         </p>
       )}
       <PanZoom
+        textView={<DiagramText flow={flow} />}
         width={layout.width ?? 400}
         height={layout.height ?? 300}
         resetKey={`${view.id}:${state.stepSeq}`}
