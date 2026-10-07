@@ -257,7 +257,7 @@ it("a stale range-less artifact cannot attach references to current syntax symbo
   });
   expect(index.symbols.map((s) => s.id)).toEqual(["a.rs#A", "a.rs#read"]);
   expect(index.refs).toEqual([]);
-  expect(index.languages.rust).toMatchObject({ symbols: 2, refs: "none" });
+  expect(index.languages.rust).toMatchObject({ symbols: 2, refs: "heuristic" });
   expect(index.analysis!.find((r) => r.provider === "scip-artifact")!.diagnostics).toEqual([
     "a.rs: source snapshot missing or stale; regenerate artifact and manifest together",
     "a.rs: provider source snapshot is missing or stale",
