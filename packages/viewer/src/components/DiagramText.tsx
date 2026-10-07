@@ -53,7 +53,7 @@ export function DiagramText(props: Props) {
     const names = new Map(nodes.map((node) => [node.id, node.label]));
     relationships = props.flow.transitions.map((edge) => ({
       id: edge.id,
-      select: edge.from,
+      select: edge.id,
       label: `${names.get(edge.from)} to ${edge.to === undefined ? "caller" : names.get(edge.to)}${edge.label ? `: ${edge.label}` : ""}${edge.kind ? ` (${edge.kind})` : ""}`,
       trust: props.flow.projected ? "sequence order" : "authored flow",
     }));
@@ -75,7 +75,7 @@ export function DiagramText(props: Props) {
         ))}
       </ul>
       <h3>Relationships</h3>
-      {"flow" in props && <p>Choose a relationship to show its source stage's code.</p>}
+      {"flow" in props && <p>Choose a relationship to show its endpoints' code.</p>}
       {relationships.length === 0 && <p>No relationships are shown in this view.</p>}
       <ul aria-label="Relationships">
         {relationships.map((edge, index) => (

@@ -4704,3 +4704,8 @@ code {
   font-size: 12px;
   margin-top: 3px;
 }
+
+.flow-transition.is-selected polyline {
+  stroke: var(--accent);
+  stroke-width: 4;
+}

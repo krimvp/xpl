@@ -2414,9 +2414,10 @@ sequence and flow has a **Text view** toggle beside its Key. It replaces the pic
 buttons, leaving linked code visible. Maps list their current nodes, displayed aggregate relationships and
 outside-map boundaries, with direction and existing precise/heuristic/mixed or author provenance labels.
 Outside targets can be added through the same expansion action as a ghost. Sequences list participants
-and messages; flows list stages and directed transitions. Choosing a flow transition selects its source
-stage, as the text explains. Selection uses the same store action as the diagram, including exact source
-anchors. The list updates with the current level, nodes and edge-kind filters. Scrolling it never zooms
+and messages; flows list stages and directed transitions. Choosing a flow transition selects that link in both text and SVG. Viewer derivation keeps a map of
+transition IDs and shows the checked source anchors of both endpoints (only the source for a return to
+the caller). Details names its direction and explains that links have no separate source anchor. The
+toggle precedes the list in keyboard order. Selection uses the same store action as the diagram. The list updates with the current level, nodes and edge-kind filters. Scrolling it never zooms
 the hidden SVG. Turning the toggle off restores the diagram and its selection.
 
 **Graph authoring** (`components/GraphAuthor.tsx`): Explore's stored graph views offer **Edit map** beside

@@ -36,7 +36,7 @@ export interface AnchorRow {
 
 export interface ElementInfo {
   id: ElementId;
-  type: "node" | "edge" | "derived-edge" | "concept" | "step" | "stub" | "unknown";
+  type: "node" | "edge" | "derived-edge" | "concept" | "step" | "stub" | "transition" | "unknown";
   title: string;
   /** Badge text: the node or symbol kind, the edge kind, `concept`, `step`, `stub`. */
   kind: string;
@@ -114,6 +114,27 @@ export function describeElement(
 }
 
 function buildInfo(id: ElementId, model: ExplainerModel, vd: ViewDerived): ElementInfo {
+  const transition = vd.transitionMap.get(id);
+  if (transition) {
+    const endpoints = [transition.from, ...(transition.to ? [transition.to] : [])];
+    return {
+      id,
+      type: "transition",
+      title: transition.label ?? "Flow relationship",
+      kind: transition.kind ?? "flow relationship",
+      where: `${model.label(transition.from)} → ${transition.to ? model.label(transition.to) : "caller"}`,
+      summary: `${vd.view?.type === "sequence" ? "Sequence order" : "Authored relationship"}. The source shows checked endpoint code; this link has no separate source anchor.`,
+      facts: [
+        { label: "From", value: model.label(transition.from) },
+        { label: "To", value: transition.to ? model.label(transition.to) : "caller" },
+      ],
+      anchors: endpoints.flatMap((endpoint) => {
+        const ref = model.element(endpoint);
+        return ref?.type === "step" ? rowsFor(ref.step.anchors, endpoint, model, vd) : [];
+      }),
+      related: endpoints,
+    };
+  }
   const stub = vd.stubMap.get(id);
   if (stub) {
     const folded = isFoldedGhostKey(stub.ghost);

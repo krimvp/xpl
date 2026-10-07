@@ -471,18 +471,6 @@ export function PanZoom({
         <g transform={`translate(${t.x} ${t.y}) scale(${t.k})`}>{children}</g>
         {overlay?.(t, size)}
       </svg>
-      {textView && (
-        <div
-          id={textId}
-          hidden={!textMode}
-          className="diagram-text-view"
-          role="region"
-          aria-label="Diagram as text"
-          onPointerDown={(event) => event.stopPropagation()}
-        >
-          {textView}
-        </div>
-      )}
       {!textMode && !short && cues}
       <div className="pz-toolbar" onPointerDown={(event) => event.stopPropagation()}>
         {!textMode && (
@@ -526,6 +514,18 @@ export function PanZoom({
           </button>
         )}
       </div>
+      {textView && (
+        <div
+          id={textId}
+          hidden={!textMode}
+          className="diagram-text-view"
+          role="region"
+          aria-label="Diagram as text"
+          onPointerDown={(event) => event.stopPropagation()}
+        >
+          {textView}
+        </div>
+      )}
     </div>
   );
 }
