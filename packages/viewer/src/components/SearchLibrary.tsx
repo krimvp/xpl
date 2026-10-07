@@ -200,8 +200,15 @@ export function SearchLibrary({ onClose }: { onClose: () => void }) {
       onClose();
       return;
     }
-    if (hit.kind === "source" || hit.kind === "symbol") store.openRange(hit.file, hit.range);
-    else if ("tour" in hit) {
+    if (hit.kind === "source" || hit.kind === "symbol") {
+      if (hit.commit !== index.commit) {
+        setError(
+          "This search result belongs to an earlier snapshot. Search again in the current guide.",
+        );
+        return;
+      }
+      store.openRange(hit.file, hit.range);
+    } else if ("tour" in hit) {
       store.setPerspective("guide");
       const tour = state.model.tour(hit.tour);
       const at = "step" in hit ? tour?.steps.findIndex((s) => s.id === hit.step) : 0;
