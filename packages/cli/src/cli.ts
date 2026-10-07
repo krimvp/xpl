@@ -122,10 +122,8 @@ function commandHelp(command: CommandSpec): string {
       ? ["", "Options:", ...optionRows(command.options)]
       : []),
     "",
-    "Global options:",
+    `Global options (${DOCS_REFERENCE})`,
     ...optionRows(GLOBAL_OPTIONS),
-    "",
-    DOCS_REFERENCE,
   ].join("\n");
 }
 
