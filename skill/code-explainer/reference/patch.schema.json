@@ -103,10 +103,12 @@
           "type": "object",
           "properties": {
             "from": {
-              "type": "integer"
+              "type": "integer",
+              "minimum": 0
             },
             "to": {
-              "type": "integer"
+              "type": "integer",
+              "minimum": 0
             }
           },
           "required": ["from", "to"],
@@ -151,7 +153,8 @@
             }
           },
           "required": ["commit", "range", "status"],
-          "additionalProperties": false
+          "additionalProperties": false,
+          "description": "Accepted when replaying a stored anchor; xpl apply recomputes this cache from source."
         }
       },
       "required": ["file", "role"],
@@ -178,6 +181,11 @@
                 "required": ["find"]
               }
             ]
+          }
+        },
+        {
+          "not": {
+            "required": ["span", "find"]
           }
         }
       ]

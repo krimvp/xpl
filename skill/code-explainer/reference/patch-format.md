@@ -31,6 +31,8 @@ Every key is optional; any other top-level key is rejected. User patches also ac
 
 For an installed skill, replace `url` with the absolute path to its `reference/patch.schema.json`. The default location is `~/.claude/skills/code-explainer` for Claude, `~/.agents/skills/code-explainer` for Codex, Pi and Droid, or the project's `.agents/skills/code-explainer` for Devin. Do not add a `$schema` key to a patch: `xpl apply` rejects unknown top-level fields. The schema catches JSON shape errors; `xpl apply` still checks source anchors, IDs, review fingerprints and user-owned fields against the repository.
 
+An anchor may use `span` or `find`, never both. Span offsets start at 0. A copied stored anchor may carry `hash` and `resolved`; `xpl apply` checks the hash and recomputes `resolved`. The schema cannot compare `span.to` with `span.from`, so `xpl apply` checks their order and whether the range exists in the source.
+
 ### Author review (user patches only)
 
 `xpl apply --actor user` accepts `review: { reviewer, reviewedAt, scope, omissions, fingerprint }`, or `review: null` to remove the record. The reviewer name is self-reported; `reviewedAt` is a UTC ISO timestamp such as `2026-10-04T12:00:00Z`. `omissions` names behavior outside the inspection (`[]` means none named). Apply fills `sourceCommit` from the index. LLM patches must never carry `review`, including null: they are rejected atomically. Ordinary generated patches preserve the record.

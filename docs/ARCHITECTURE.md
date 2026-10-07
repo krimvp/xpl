@@ -1237,7 +1237,8 @@ atomic: any error → `ok: false` and the input explainer, untouched.
   It follows the patch-side fields and graph/sequence/flow view discriminators. It cannot check whether
   source text, IDs, review fingerprints or user-owned fields are valid for this repository; `applyPatch`
   remains the authority for those checks. Editors associate the schema externally: `$schema` is not a
-  patch key.
+  patch key. It rejects simultaneous `span`/`find` and negative offsets; `applyPatch` checks offset order
+  and source bounds. Copied stored anchors may carry `resolved`, which apply recomputes.
 - **Errors come all at once.** Anchors, references and ids are checked in one pass, so a rejection lists every
   problem of the patch: an element whose anchor failed is still merged (without that anchor) and checked for
   its other problems, an element that cannot be built is assumed to exist so that later references to it stay

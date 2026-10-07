@@ -57,7 +57,20 @@ it("accepts the published authoring patches and distinct view shapes", () => {
       nodes: [
         {
           id: "grp:old",
-          anchors: [{ file: "old.ts", at: "base", find: "run()", role: "usage" }],
+          anchors: [
+            {
+              file: "old.ts",
+              at: "base",
+              find: "run()",
+              role: "usage",
+              hash: "sha256-v2:012345abcdef",
+              resolved: {
+                commit: "old-commit",
+                range: { startLine: 1, endLine: 1 },
+                status: "drifted",
+              },
+            },
+          ],
           summary: null,
         },
       ],
@@ -72,6 +85,24 @@ it("rejects malformed patch fields before apply checks source evidence", () => {
     { change: { base: "a", head: "b" } },
     { nodes: [{ id: "grp:a", unknown: true }] },
     { nodes: [{ id: "grp:a", anchors: [{ file: "a.ts", role: "invented" }] }] },
+    {
+      nodes: [
+        {
+          id: "grp:a",
+          anchors: [{ file: "a.ts", role: "usage", span: { from: 0, to: 0 }, find: "run()" }],
+        },
+      ],
+    },
+    {
+      nodes: [
+        { id: "grp:a", anchors: [{ file: "a.ts", role: "usage", span: { from: -1, to: 0 } }] },
+      ],
+    },
+    {
+      nodes: [
+        { id: "grp:a", anchors: [{ file: "a.ts", role: "usage", span: { from: 0, to: -1 } }] },
+      ],
+    },
     {
       nodes: [
         { id: "grp:a", anchors: [{ file: "a.ts", role: "usage", at: "base", symbol: "run" }] },
