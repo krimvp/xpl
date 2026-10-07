@@ -1380,12 +1380,12 @@ metadata in `packages/cli/dist`, with `@xpl/cli`'s version, a `bin` entry, Node 
 or install scripts. The viewer is required at build time. The directory carries the bundled CLI, viewer,
 WASM runtime and grammars, Rust tags query, the skill, a short README, MIT LICENSE and `integrity.json`.
 The published name is `publishName` (`@krimvp/xpl`) in the private `@xpl/cli` workspace manifest; its version is
-0.2.0. The installed-artifact check retains service restart/recovery and checks watch pause/resume,
+0.2.1. The installed-artifact check retains service restart/recovery and checks watch pause/resume,
 durable job history and unavailable-runner submission. It also checks the published name/version, license
 and packed file inventory. npm rejected `xpl` as too similar to an existing name; `@krimvp/xpl` is the selected fallback.
 `npm run pack -- --pack-destination <outside-repo-dir>` builds and packs that directory. Install its local tarball with
 `npm install --global --prefix "$HOME/.local" --offline --ignore-scripts <absolute-tarball-path>`; put
-`$HOME/.local/bin` on PATH. No source build is needed at installation. This source tree builds version 0.2.0;
+`$HOME/.local/bin` on PATH. No source build is needed at installation. This source tree builds version 0.2.1;
 a `v*` tag starts publication. Install the latest published version with
 `npm install --global @krimvp/xpl`. Nothing is published by build, pack, diagnosis or skill installation.
 
@@ -2942,7 +2942,7 @@ identities to syntax ranges. This is a proposed contract revision, not a change 
   problems, not wrong claims. `repeats-summary` finds near-verbatim repeats only.
 - Workspace packages are private; build/pack produce a standalone local npm tarball with
   its viewer, grammars and skill. Install/update and reader/export checks cover Linux x64/WSL2 only.
-  Node ≥22.12 is required. This source tree builds `@krimvp/xpl` 0.2.0 under MIT; a `v*` tag starts publication.
+  Node ≥22.12 is required. This source tree builds `@krimvp/xpl` 0.2.1 under MIT; a `v*` tag starts publication.
 
 **Next steps, roughly by value** (the review in `docs/review-2026-10-01.md` has the roadmap): an independent
 accuracy pass for change explainers; a word-level diff in rewritten lines; editable step titles and code in
