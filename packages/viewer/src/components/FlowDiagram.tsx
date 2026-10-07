@@ -186,7 +186,15 @@ export function FlowDiagram({ view, snapshot, outline = false }: FlowDiagramProp
         </marker>
       </defs>
       {(layout.edges ?? []).map((edge) => (
-        <g key={edge.id} className={transitionClass(edge)} data-transition-kind={edge.kind}>
+        <g
+          key={edge.id}
+          className={transitionClass(edge)}
+          data-transition-kind={edge.kind}
+          data-navigation-from={snapshot ? undefined : edge.from}
+          data-navigation-to={
+            snapshot || edge.to === undefined ? undefined : (nodes.get(edge.to)?.copyOf ?? edge.to)
+          }
+        >
           {edge.kind && (
             <title>
               {levelTitle(

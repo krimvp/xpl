@@ -1296,6 +1296,8 @@ function EdgeKey({ edge }: { edge: LayoutEdge }) {
     <g
       className="edge-key"
       data-key-for={edge.id}
+      data-navigation-from={edge.from}
+      data-navigation-to={edge.to}
       role="button"
       tabIndex={0}
       aria-label={
@@ -1354,6 +1356,8 @@ const EdgeShape = memo(function EdgeShape({
       onPointerEnter={edge.label ? () => hover(edge.id) : undefined}
       onPointerLeave={edge.label ? () => hover(undefined) : undefined}
       data-element-id={still ? undefined : edge.id}
+      data-navigation-from={still ? undefined : edge.from}
+      data-navigation-to={still ? undefined : edge.to}
       data-stub-id={edge.stub && !still ? edge.id : undefined}
       role={still || !focusable ? undefined : "button"}
       tabIndex={still || !focusable ? undefined : 0}
