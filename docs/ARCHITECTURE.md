@@ -2657,7 +2657,9 @@ from `GET /api/base-file` (each file once; an error shows in its pane).
 
 - **Code.** A changed file's pane marks the head lines the change added (`xpl-add`) or rewrote (`xpl-chg`)
   with a green tint and bar, and `+` in a narrow gutter (`xpl-diff-gutter`), so the marks do not rely on colour
-  alone. Removed base lines are shown inline, read-only (`xpl-removed`, `−` in the gutter): above the lines
+  alone. Paired rewritten lines also mark the changed words or spaces on each side (`xpl-word-add`,
+  `xpl-word-del`); the line marks and source line numbers stay the same. Removed base lines are shown inline,
+  read-only (`xpl-removed`, `−` in the gutter): above the lines
   that replaced them, or below the line they followed for a pure deletion (git's `newStart` rule). A changed
   line inside the focus keeps its focus colour, its gutter cell is tinted instead, and changed lines are
   never dimmed. Without the base text the block says "N lines removed (the code before the change is not
@@ -2961,8 +2963,9 @@ identities to syntax ranges. This is a proposed contract revision, not a change 
 - The base of a change is not indexed. Base anchors have no symbols (`find` or a file span only), base code
   has no references, and the analysis of `xpl change` sees callers and tests at head only. A base anchor
   needs git to be checked (`git show`); without it the cached resolution is kept.
-- The diff marks whole lines: a rewritten line shows as removed, then added, with no word-level diff inside
-  it. The details panel tags a base anchor's row but does not show the base lines next to it.
+- The diff marks whole lines and the changed token run within paired rewritten lines. Hunks with unequal line
+  counts pair lines by position; they do not align moved lines. The details panel tags a base anchor's row but
+  does not show the base lines next to it.
 - `xpl change` needs the head checked out and indexed (the head must be the index commit); the change of an
   uncommitted working tree cannot be recorded, since it has no head commit.
 - The change analysis is depth 1 and as good as the index: callers through a variable, a callback or a
@@ -2980,7 +2983,7 @@ identities to syntax ranges. This is a proposed contract revision, not a change 
   Node ≥22.12 is required. This source tree builds `@krimvp/xpl` 0.2.2 under MIT; a `v*` tag starts publication.
 
 **Next steps, roughly by value** (the review in `docs/review-2026-10-01.md` has the roadmap): an independent
-accuracy pass for change explainers; a word-level diff in rewritten lines; editable step titles and code in
+accuracy pass for change explainers; editable step titles and code in
 the viewer; the layout in a Web Worker; more
 language packs (each needs `extract`, `classifySite`, `resolveModule`, and optionally a SCIP resolver);
 publishing the packaged CLI through a selected release channel; a regeneration mode in the skill that

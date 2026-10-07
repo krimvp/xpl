@@ -98,6 +98,21 @@ describe("the diff of a changed file", () => {
     // an unchanged file has nothing to mark
     expect(paneDiff(undefined, undefined, undefined, undefined)).toBeNull();
   });
+
+  it("locates changed words and whitespace in paired rewritten lines, even on long lines", () => {
+    const file = modified([{ oldStart: 1, oldLines: 2, newStart: 1, newLines: 2 }]);
+    const prefix = "x".repeat(4000);
+    const before = [`${prefix} oldValue();`, "await   work();"];
+    const after = [`${prefix} newValue();`, "await work();"];
+    const head = paneDiff(undefined, file, before, undefined, after)!;
+    const base = paneDiff("base", file, before, undefined, after)!;
+    expect(after[0]!.slice(head.words!.get(1)!.from, head.words!.get(1)!.to)).toBe("newValue");
+    expect(before[0]!.slice(base.words!.get(1)!.from, base.words!.get(1)!.to)).toBe("oldValue");
+    expect(after[1]!.slice(head.words!.get(2)!.from, head.words!.get(2)!.to)).toBe(" ");
+    expect(before[1]!.slice(base.words!.get(2)!.from, base.words!.get(2)!.to)).toBe("   ");
+    expect([...head.lines!.keys()]).toEqual([1, 2]);
+    expect(head.removed![0]).toMatchObject({ at: 1, from: 1, count: 2 });
+  });
 });
 
 describe("the change on the map", () => {

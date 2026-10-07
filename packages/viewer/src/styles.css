@@ -3162,6 +3162,19 @@ code {
   box-shadow: inset 3px 0 0 var(--diff-del-bar);
 }
 
+/* The line tint still shows the whole rewrite; these spans locate the changed words (including spaces). */
+.xpl-word-add {
+  background: var(--diff-add-bg);
+  box-shadow: inset 0 -2px 0 var(--diff-add-bar);
+  border-radius: 2px;
+}
+
+.xpl-word-del {
+  background: var(--diff-del-bg);
+  box-shadow: inset 0 -2px 0 var(--diff-del-bar);
+  border-radius: 2px;
+}
+
 /* A changed line inside the focus keeps the focus colour, and a green bar along its right edge says that the
    change added or rewrote it (with the + cell: never colour alone). */
 .cm-line.xpl-hl.xpl-add,

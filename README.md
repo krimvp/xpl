@@ -91,7 +91,8 @@ review](https://krimvp.github.io/xpl/docs/workflows/edit-and-review/).
 ### Explaining a change
 
 Use `xpl change` to explain a diff between commits. Before-code claims are checked against the base
-commit. See the [change workflow](https://krimvp.github.io/xpl/docs/workflows/change/).
+commit. The viewer marks changed lines and the changed words within paired rewrites. See the
+[change workflow](https://krimvp.github.io/xpl/docs/workflows/change/).
 
 ### Architecture maps
 
