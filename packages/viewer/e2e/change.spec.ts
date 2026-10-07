@@ -31,6 +31,42 @@ const marked = (page: Page, file: string, cls: string, side: "head" | "base" = "
   linesWith(pane(page, file, side), `.${cls}`);
 
 test.describe("the code of a change", () => {
+  test("a one-word rewrite marks the words on both sides without moving source lines", async ({
+    page,
+  }) => {
+    const { html, bundle } = readEmbeddedBundle(CHANGE_BUNDLE);
+    const data = bundle as any;
+    const path = "src/runner.ts";
+    const head = (data.files[path] as string).split("\n");
+    const base = (data.baseFiles[path] as string).split("\n");
+    base[75] = head[74]!.replace("backoffDelay", "linearDelay");
+    base[76] = head[75]!.replace("await", "await  ");
+    data.baseFiles[path] = base.join("\n");
+    data.explainer.change.files.find((file: any) => file.path === path).hunks = [
+      { oldStart: 76, oldLines: 2, newStart: 75, newLines: 2 },
+    ];
+    await page.route("http://xpl.test/**", (route) =>
+      route.fulfill({ contentType: "text/html", body: withBundle(html, data) }),
+    );
+    await page.goto("http://xpl.test/?perspective=code");
+    await page.waitForFunction(() => window.__xpl !== undefined);
+    await page.evaluate(() => window.__xpl!.setCursor("src/runner.ts", 75));
+    const runner = pane(page, path);
+    await expect(runner.locator('.cm-line[data-line="75"] .xpl-word-add')).toHaveText(
+      "backoffDelay",
+    );
+    await expect(runner.locator('.xpl-removed[data-removed-from="76"] .xpl-word-del')).toHaveText([
+      "linearDelay",
+      "   ",
+    ]);
+    await expect(runner.locator('.cm-line[data-line="76"] .xpl-word-add')).toHaveText(" ");
+    await expect(runner.locator('.cm-line[data-line="75"]')).toHaveClass(/xpl-chg/);
+    await runner.locator('.cm-line[data-line="75"] .xpl-word-add').click();
+    await expect.poll(async () => (await stateOf(page)).cursor?.fromLine).toBe(75);
+    await runner.getByTestId("show-changes").click();
+    await expect(runner.locator(".xpl-word-add, .xpl-word-del")).toHaveCount(0);
+  });
+
   test("added and rewritten lines are marked, removed lines sit between them, read-only, with + and −", async ({
     page,
   }) => {

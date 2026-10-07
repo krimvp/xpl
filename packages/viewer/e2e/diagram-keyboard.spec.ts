@@ -61,7 +61,13 @@ for (const type of ["sequence", "flow"] as const) {
     await expect(byId(page, "dispatch:1")).toBeFocused();
     if (type === "flow") {
       await page.keyboard.press("ArrowRight");
+      await expect(byId(page, "dispatch:1->dispatch:2:0")).toBeFocused();
+      await page.keyboard.press("Enter");
+      await expect.poll(() => selectionOf(page)).toEqual(["dispatch:1->dispatch:2:0"]);
+      await page.keyboard.press("ArrowRight");
       await expect(byId(page, "dispatch:2")).toBeFocused();
+      await page.keyboard.press("ArrowLeft");
+      await expect(byId(page, "dispatch:1->dispatch:2:0")).toBeFocused();
       await page.keyboard.press("ArrowLeft");
       await expect(byId(page, "dispatch:1")).toBeFocused();
     }

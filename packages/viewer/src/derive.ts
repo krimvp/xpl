@@ -21,6 +21,8 @@ import {
   isBaseAnchor,
   mergeFocusByFile,
   parseId,
+  processFlow,
+  type ProcessFlow,
   REF_TO_EDGE_KIND,
   repr,
   viewCandidates,
@@ -51,6 +53,7 @@ export interface ViewDerived {
   graph: DerivedGraph | undefined;
   edgeMap: ReadonlyMap<string, DerivedEdge>;
   stubMap: ReadonlyMap<string, Stub>;
+  transitionMap: ReadonlyMap<string, ProcessFlow["transitions"][number]>;
   /** Ids the graph view includes (for `repr`). */
   include: ReadonlySet<ElementId>;
   /** The reverse index of the view's candidates; built on first use. */
@@ -141,6 +144,11 @@ function deriveView(
     graph,
     edgeMap,
     stubMap,
+    transitionMap: new Map(
+      view?.type === "flow" || view?.type === "sequence"
+        ? processFlow(view).transitions.map((edge) => [edge.id, edge])
+        : [],
+    ),
     include,
     reverse() {
       reverse ??= view
@@ -392,8 +400,18 @@ function deriveSelection(
     order.push(...sideOrder(override.anchors, head, before));
   } else {
     for (const id of selection) {
+      const transition = vd.transitionMap.get(id);
       const type = parseId(id).type;
-      if (type === "stub") {
+      if (transition) {
+        for (const endpoint of [transition.from, ...(transition.to ? [transition.to] : [])]) {
+          const head = codeFocus([endpoint], model).map((range) => ({ ...range, elementId: id }));
+          const anchors = ownAnchors(endpoint, model);
+          const before = baseAnchorFocus(anchors, id);
+          focus.push(...head);
+          base.push(...before);
+          order.push(...sideOrder(anchors, head, before));
+        }
+      } else if (type === "stub") {
         const stub = vd.stubMap.get(id);
         const head = stub ? stubFocus(stub, vd, model) : [];
         focus.push(...head);

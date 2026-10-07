@@ -68,6 +68,7 @@ export const COMMANDS: readonly CommandSpec[] = [
 ];
 
 const defaultIo: Io = {
+  isTTY: process.stderr.isTTY === true,
   out: (text) => process.stdout.write(text + "\n"),
   err: (text) => process.stderr.write(text + "\n"),
 };

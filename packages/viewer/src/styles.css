@@ -3162,6 +3162,19 @@ code {
   box-shadow: inset 3px 0 0 var(--diff-del-bar);
 }
 
+/* The line tint still shows the whole rewrite; these spans locate the changed words (including spaces). */
+.xpl-word-add {
+  background: var(--diff-add-bg);
+  box-shadow: inset 0 -2px 0 var(--diff-add-bar);
+  border-radius: 2px;
+}
+
+.xpl-word-del {
+  background: var(--diff-del-bg);
+  box-shadow: inset 0 -2px 0 var(--diff-del-bar);
+  border-radius: 2px;
+}
+
 /* A changed line inside the focus keeps the focus colour, and a green bar along its right edge says that the
    change added or rewrote it (with the + cell: never colour alone). */
 .cm-line.xpl-hl.xpl-add,
@@ -4668,6 +4681,46 @@ code {
   padding: 8px;
   background: var(--panel);
   color: var(--danger);
+}
+
+.diagram-text-view {
+  height: 100%;
+  overflow: auto;
+  padding: 44px 16px 16px;
+  background: var(--panel);
+  cursor: auto;
+  user-select: text;
+}
+.diagram-text-view h3 {
+  font-size: 14px;
+  margin: 12px 0 6px;
+}
+.diagram-text-view ul {
+  padding-left: 20px;
+}
+.diagram-text-view li {
+  margin: 6px 0;
+}
+.diagram-text-view button {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  text-align: left;
+  white-space: normal;
+}
+.diagram-text-view button[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.diagram-text-trust {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: 3px;
+}
+
+.flow-transition.is-selected polyline {
+  stroke: var(--accent);
+  stroke-width: 4;
 }
 
 .pz-keyboard-hint {

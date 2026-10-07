@@ -94,3 +94,5 @@ export type { ResolverFile, ResolverInput } from "./resolve/heuristic.js";
 
 export { captureIndexInputs, indexInputsChanged } from "./snapshot.js";
 export type { IndexInputs } from "./snapshot.js";
+
+export type { IndexProgress } from "./progress.js";
