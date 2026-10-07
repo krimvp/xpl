@@ -53,6 +53,9 @@ export const indexCommand: CommandSpec = {
   summary: "Build and write the symbol index; print languages and excluded source candidates",
   details: [
     "Indexes every text file under --root (git-aware) and writes .explainer/index-<commit>.json.",
+    "Interactive stderr shows phases and file counts; redirected stderr and --json omit progress.",
+    "Ctrl+C cancels between files/phases and stops SCIP tools. Before publication, the previous complete",
+    "index is retained (or no index is created); extraction cache entries may remain. Exit code: 130.",
     "Reuses file-local tree-sitter and Rust tags facts from .explainer/cache by default.",
     "Directory aliases into the repository (including symlinks and bind mounts) bypass cache reads and writes.",
     "--no-cache neither reads nor writes that cache. Source discovery, hashes, heuristic resolution and semantic tools",
@@ -98,21 +101,52 @@ export const indexCommand: CommandSpec = {
     const commit = args.str("commit");
     const scip = args.str("scip");
     if (scip && precise === "off") throw new CliError("--scip requires --precise auto or require");
+    const abort = new AbortController();
+    const stop = () => abort.abort();
+    const signal = ctx.io.signal ? AbortSignal.any([ctx.io.signal, abort.signal]) : abort.signal;
+    process.once("SIGINT", stop);
+    process.once("SIGTERM", stop);
+    let lastPhase = "";
+    let lastUpdate = 0;
+    const progress = (event: import("@xpl/indexer").IndexProgress) => {
+      if (ctx.json || !ctx.io.isTTY) return;
+      const phase = event.provider ? `${event.phase} ${event.provider}` : event.phase;
+      const now = Date.now();
+      if (phase === lastPhase && now - lastUpdate < 1000 && event.completed !== event.total) return;
+      lastPhase = phase;
+      lastUpdate = now;
+      ctx.io.err(
+        `index: ${phase}${event.total === undefined ? "" : ` ${event.completed}/${event.total} files`}`,
+      );
+    };
     let result;
+    let path: string;
     try {
       const providers = scip ? scipProviders(resolve(ctx.cwd, scip)) : undefined;
       result = await buildIndex({
         root: ctx.root,
+        signal,
+        onProgress: progress,
         precise,
         cache: !args.flag("no-cache"),
         ...(providers ? { providers } : {}),
         ...(commit !== undefined ? { commit } : {}),
       });
+      signal.throwIfAborted();
+      if (!ctx.json && ctx.io.isTTY) ctx.io.err("index: Writing index");
+      path = await writeIndex(ctx.root, result.index, signal);
     } catch (error) {
+      if (signal.aborted)
+        throw new CliError(
+          "Indexing cancelled; no partial index was published. Any previous complete index is retained.",
+          130,
+        );
       throw new CliError(errorMessage(error));
+    } finally {
+      process.off("SIGINT", stop);
+      process.off("SIGTERM", stop);
     }
     const { index, warnings } = result;
-    const path = await writeIndex(ctx.root, index);
     const rel = toPosix(displayPath(ctx.root, path));
     for (const warning of warnings) ctx.warn(warning);
     const stale = explainersNeedingResolve(ctx.root, index.commit);

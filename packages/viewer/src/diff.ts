@@ -83,6 +83,93 @@ export interface FileDiff {
   deleted: number;
 }
 
+/** Character offsets within a line, end exclusive. Only a visual hint; source ranges stay line based. */
+export interface WordSpan {
+  from: number;
+  to: number;
+}
+
+/** The smallest changed run of words, punctuation or whitespace on two rewritten lines. */
+function changedWords(before: string, after: string): { before: WordSpan; after: WordSpan } | null {
+  if (before === after) return null;
+  const tokens = (text: string) =>
+    [...text.matchAll(/\s+|[\p{L}\p{N}_$]+|[^\s\p{L}\p{N}_$]+/gu)].map((m) => m[0]);
+  const old = tokens(before);
+  const next = tokens(after);
+  let start = 0;
+  while (start < old.length && start < next.length && old[start] === next[start]) start++;
+  let oldEnd = old.length;
+  let nextEnd = next.length;
+  while (oldEnd > start && nextEnd > start && old[oldEnd - 1] === next[nextEnd - 1]) {
+    oldEnd--;
+    nextEnd--;
+  }
+  const offset = (parts: string[], end: number) => parts.slice(0, end).join("").length;
+  return {
+    before: { from: offset(old, start), to: offset(old, oldEnd) },
+    after: { from: offset(next, start), to: offset(next, nextEnd) },
+  };
+}
+
+/** Pair nearby rewrites within a hunk; unpaired lines keep only their existing line-level marks. */
+function alignedLines(before: readonly string[], after: readonly string[]): [number, number][] {
+  const oldCount = before.length;
+  const newCount = after.length;
+  if (oldCount === 1 && newCount === 1) return [[0, 0]];
+  // Large replacement hunks remain readable as whole-line diffs without quadratic alignment work.
+  if (oldCount === 0 || newCount === 0 || oldCount > 80 || newCount > 80) return [];
+  const cost = Array.from({ length: oldCount + 1 }, () => new Array<number>(newCount + 1).fill(0));
+  const step = Array.from(
+    { length: oldCount + 1 },
+    () => new Array<"pair" | "old" | "new">(newCount + 1),
+  );
+  for (let i = 1; i <= oldCount; i++) cost[i]![0] = i * 0.5;
+  for (let j = 1; j <= newCount; j++) cost[0]![j] = j * 0.5;
+  for (let i = 1; i <= oldCount; i++) {
+    for (let j = 1; j <= newCount; j++) {
+      const old = before[i - 1]!.trimStart();
+      const next = after[j - 1]!.trimStart();
+      let prefix = 0;
+      while (prefix < old.length && prefix < next.length && old[prefix] === next[prefix]) prefix++;
+      let suffix = 0;
+      while (
+        suffix < old.length - prefix &&
+        suffix < next.length - prefix &&
+        old[old.length - 1 - suffix] === next[next.length - 1 - suffix]
+      )
+        suffix++;
+      const similarity = (prefix + suffix) / Math.max(old.length, next.length, 1);
+      const drop = cost[i - 1]![j]! + 0.5;
+      const add = cost[i]![j - 1]! + 0.5;
+      const pair = similarity >= 0.25 ? cost[i - 1]![j - 1]! + 1 - similarity : Infinity;
+      if (pair < drop && pair < add) {
+        cost[i]![j] = pair;
+        step[i]![j] = "pair";
+      } else if (drop <= add) {
+        cost[i]![j] = drop;
+        step[i]![j] = "old";
+      } else {
+        cost[i]![j] = add;
+        step[i]![j] = "new";
+      }
+    }
+  }
+  const pairs: [number, number][] = [];
+  for (let i = oldCount, j = newCount; i > 0 && j > 0;) {
+    switch (step[i]![j]) {
+      case "pair":
+        pairs.push([--i, --j]);
+        break;
+      case "old":
+        i--;
+        break;
+      default:
+        j--;
+    }
+  }
+  return pairs.reverse();
+}
+
 const diffs = new WeakMap<ChangedFile, FileDiff>();
 
 /** The diff of one changed file, from its hunks. */
@@ -232,13 +319,34 @@ export function paneDiff(
   changed: ChangedFile | undefined,
   baseLines: readonly string[] | undefined,
   missing: string | undefined,
+  headLines?: readonly string[],
 ): PaneDiff | null {
   if (!changed) return null;
   const diff = fileDiff(changed);
-  if (side === "base") return diff.gone.size > 0 ? { gone: diff.gone } : null;
+  const headWords = new Map<number, WordSpan>();
+  const baseWords = new Map<number, WordSpan>();
+  if (baseLines && headLines) {
+    for (const hunk of changed.hunks) {
+      const oldText = baseLines.slice(hunk.oldStart - 1, hunk.oldStart + hunk.oldLines - 1);
+      const newText = headLines.slice(hunk.newStart - 1, hunk.newStart + hunk.newLines - 1);
+      for (const [oldIndex, newIndex] of alignedLines(oldText, newText)) {
+        const oldLine = hunk.oldStart + oldIndex;
+        const newLine = hunk.newStart + newIndex;
+        const before = baseLines[oldLine - 1];
+        const after = headLines[newLine - 1];
+        if (before === undefined || after === undefined) continue;
+        const spans = changedWords(before, after);
+        if (!spans) continue;
+        if (spans.before.to > spans.before.from) baseWords.set(oldLine, spans.before);
+        if (spans.after.to > spans.after.from) headWords.set(newLine, spans.after);
+      }
+    }
+  }
+  if (side === "base") return diff.gone.size > 0 ? { gone: diff.gone, words: baseWords } : null;
   if (changed.status === "deleted") return null;
   return {
     lines: diff.lines,
+    words: headWords,
     removed: diff.removed.map((block) => {
       const count = block.to - block.from + 1;
       return {
@@ -247,6 +355,7 @@ export function paneDiff(
         from: block.from,
         count,
         text: baseLines?.slice(block.from - 1, block.to),
+        ...(baseWords.size ? { words: baseWords } : {}),
         ...(baseLines === undefined ? { missing: missing ?? "loading" } : {}),
       };
     }),

@@ -33,6 +33,8 @@ export interface ProviderSource {
 }
 
 export interface ProviderInput {
+  signal?: AbortSignal;
+  onProgress?: (progress: import("./progress.js").IndexProgress) => void;
   /** Built-in syntax adapters reuse file-local facts only; semantic adapters still run in full. */
   extractionCache?: ExtractionCache;
   root: string;

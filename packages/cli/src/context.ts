@@ -15,8 +15,10 @@ export interface Io {
   cwd?: string;
   /** Environment (default `process.env`). Read: `XPL_VIEWER_HTML`. */
   env?: Env;
-  /** `xpl view` stops serving when this aborts (default: on SIGINT / SIGTERM). */
+  /** `xpl view` stops serving and `xpl index` cancels when this aborts (default: on SIGINT / SIGTERM). */
   signal?: AbortSignal;
+  /** Whether stderr is an interactive terminal (progress stays off otherwise). */
+  isTTY?: boolean;
   /** Source of `xpl apply <explainer> -` (default: process.stdin). */
   readStdin?(): Promise<string>;
   /** Called by `xpl view` once the server is listening (tests use it to reach the server). */

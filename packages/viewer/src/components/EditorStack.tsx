@@ -187,6 +187,7 @@ export function EditorStack() {
             changed={changed}
             baseSha={change ? shortSha(change.base) : undefined}
             baseText={changed && !base ? state.baseFiles[pane.file] : undefined}
+            headText={changed ? state.files[pane.file] : undefined}
             baseError={changed && !base ? state.baseErrors[pane.file] : undefined}
             showChanges={state.showChanges}
             steps={steps}
@@ -309,6 +310,7 @@ interface PaneProps {
   baseSha: string | undefined;
   /** A head pane of a changed file: the code before the change (for the removed lines), when loaded. */
   baseText: string | undefined;
+  headText: string | undefined;
   baseError: string | undefined;
   /** The "Show changes" toggle. */
   showChanges: boolean;
@@ -339,6 +341,7 @@ const EditorPane = memo(function EditorPane({
   changed,
   baseSha,
   baseText,
+  headText,
   baseError,
   showChanges,
   steps,
@@ -346,12 +349,23 @@ const EditorPane = memo(function EditorPane({
   const store = useStore();
   const base = pane.side === "base";
   const baseLines = useMemo(
-    () => (baseText !== undefined ? splitLines(baseText) : undefined),
-    [baseText],
+    () =>
+      base
+        ? text !== undefined
+          ? splitLines(text)
+          : undefined
+        : baseText !== undefined
+          ? splitLines(baseText)
+          : undefined,
+    [base, text, baseText],
+  );
+  const headLines = useMemo(
+    () => (headText !== undefined ? splitLines(headText) : undefined),
+    [headText],
   );
   const diff = useMemo(
-    () => (showChanges ? paneDiff(pane.side, changed, baseLines, baseError) : null),
-    [showChanges, pane.side, changed, baseLines, baseError],
+    () => (showChanges ? paneDiff(pane.side, changed, baseLines, baseError, headLines) : null),
+    [showChanges, pane.side, changed, baseLines, baseError, headLines],
   );
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
