@@ -132,6 +132,22 @@ assert.match(run(["__smoke"]), /ok\s+toml/);
 const skill = join(scratch, ".claude/skills/code-explainer");
 run(["skill", "install"]);
 assert.equal(run(["--version"], scratch, join(skill, "bin/xpl")).trim(), metadata.version);
+const codexSkill = join(scratch, ".agents/skills/code-explainer");
+run(["skill", "install", "--agent", "codex"]);
+assert.equal(run(["--version"], scratch, join(codexSkill, "bin/xpl")).trim(), metadata.version);
+const codexDoctor = rejected(["doctor", "--agent", "codex", "--skill-dir", codexSkill, "--json"]);
+assert.equal(codexDoctor.checks.find((check) => check.id === "skill").status, "ok");
+const devinRoot = join(scratch, "devin-project");
+mkdirSync(devinRoot);
+const devinSkill = join(devinRoot, ".agents/skills/code-explainer");
+run(["--root", devinRoot, "skill", "install", "--agent", "devin"]);
+assert.equal(run(["--version"], scratch, join(devinSkill, "bin/xpl")).trim(), metadata.version);
+const devinDoctor = JSON.parse(run(["--root", devinRoot, "doctor", "--agent", "devin", "--json"]));
+assert.equal(devinDoctor.checks.find((check) => check.id === "skill").status, "ok");
+assert.match(
+  devinDoctor.checks.find((check) => check.id === "agent").detail,
+  /not locally verifiable/,
+);
 const doctor = JSON.parse(run(["doctor", "--json"]));
 assert.equal(doctor.ok, true);
 assert.equal(doctor.checks.find((check) => check.id === "npx").status, "missing");
