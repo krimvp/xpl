@@ -3,7 +3,7 @@ import { byId, linesWith, openBundle, watchProblems } from "./helpers.js";
 
 const RUST_BUNDLE = new URL("../dist/bundles/rs-jobrunner.html", import.meta.url);
 
-test("Rust symbol selection highlights source and reports structural support without call edges", async ({
+test("Rust symbol selection highlights source and reports bounded heuristic call coverage", async ({
   page,
 }) => {
   const problems = watchProblems(page);
@@ -25,8 +25,12 @@ test("Rust symbol selection highlights source and reports structural support wit
   await expect(notice).toContainText(
     "rust (rust-tags): named symbols, full declaration ranges, nesting partial (9/9 files analyzed)",
   );
+  await expect(notice).toContainText("rust (rust-tags): calls partial (9/9 files analyzed)");
   await expect(notice).toContainText(
-    "rust (rust-tags): calls, imports, inheritance, implementations, type references, reads, writes unsupported (0/9 files analyzed)",
+    "Heuristic calls cover only bare names between unambiguous root-level functions in the same file.",
+  );
+  await expect(notice).toContainText(
+    "rust (rust-tags): imports, inheritance, implementations, type references, reads, writes unsupported (0/9 files analyzed)",
   );
   await expect(notice).toContainText("Syntax tags omit macro-generated declarations");
   await expect(notice).not.toContainText("rust-analyzer");
