@@ -1,0 +1,25 @@
+name: Feature request
+description: Describe something you want to do with xpl
+title: "[Feature]: "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: need
+    attributes:
+      label: What are you trying to do?
+      description: Describe the reader or author and the task they need to complete.
+    validations:
+      required: true
+  - type: textarea
+    id: current
+    attributes:
+      label: What happens today?
+      description: Explain the current workflow and where it falls short.
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: What would a successful outcome look like?
+    validations:
+      required: true

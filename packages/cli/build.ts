@@ -80,7 +80,7 @@ await writeFile(
       description:
         "Code explainer: diagrams linked both ways to the code, every claim checked against the repository",
       license: "MIT",
-      repository: { type: "git", url: "git+https://github.com/krimvp/xpl.git" },
+      repository: { type: "git", url: "https://github.com/krimvp/xpl" },
       homepage: "https://krimvp.github.io/xpl/",
       bugs: { url: "https://github.com/krimvp/xpl/issues" },
       keywords: ["code-explainer", "diagrams", "documentation", "claude", "cli"],

@@ -15,14 +15,15 @@ The page opens on a guide: a short summary, then the steps, each with a picture 
 
 ![Present mode: step 2 of a tour, with the retry policy's code, config and test on the right](docs/images/tour-step-2-light.png)
 
-Install target: [`@krimvp/xpl`](https://www.npmjs.com/package/@krimvp/xpl).
+Install target: [`@krimvp/xpl`](https://www.npmjs.com/package/@krimvp/xpl). Source, issue tracking and
+contribution guidance are in the [public GitHub repository](https://github.com/krimvp/xpl).
 
 ## Quick start
 
 Needs Node 22.12 or newer and npm for installation. The local artifact is exercised on Linux x64
 (WSL2, Node 22.23.1). Other platforms have not been verified. `@krimvp/xpl` 0.1.0 is published on npm
-under MIT. Install with the command below. You can also build from source
-with access to the private [source repository](https://github.com/krimvp/xpl).
+under MIT. Install with the command below. You can also build from the
+[source repository](https://github.com/krimvp/xpl).
 
 XPL helps an author publish a focused explanation of code. Choose a reader and a question before
 drafting. Readers can check the linked source and tests; a valid anchor checks a location and
@@ -529,3 +530,11 @@ unavailable-runner submission, alongside the published package name, version, li
 - [skill/code-explainer/](skill/code-explainer/): what Claude reads: `SKILL.md`, `reference/` (the one-page
   quick reference, the CLI, the patch format, the writing rules, the guide for changes, and two worked example
   patches in `examples/`).
+
+## Feedback and security
+
+Report bugs and request features in [GitHub Issues](https://github.com/krimvp/xpl/issues). Include the xpl
+version, operating system, Node version, command and output. For a security issue, use GitHub's private
+[vulnerability reporting](https://github.com/krimvp/xpl/security/advisories/new) instead of a public issue.
+See [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request and [SECURITY.md](SECURITY.md) for the
+supported version and security details.

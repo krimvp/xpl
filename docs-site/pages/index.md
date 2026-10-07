@@ -30,6 +30,8 @@ small job runner, built into one HTML file.
 
 ## Contributing
 
-xpl's source repository is private. With access, start with
-[AGENTS.md](https://github.com/krimvp/xpl/blob/main/AGENTS.md) and
-[docs/ARCHITECTURE.md](https://github.com/krimvp/xpl/blob/main/docs/ARCHITECTURE.md).
+Report bugs and request features in [GitHub Issues](https://github.com/krimvp/xpl/issues). Report security
+issues through [private vulnerability reporting](https://github.com/krimvp/xpl/security/advisories/new).
+
+To contribute code, read [CONTRIBUTING.md](https://github.com/krimvp/xpl/blob/main/CONTRIBUTING.md) and the
+[architecture guide](https://github.com/krimvp/xpl/blob/main/docs/ARCHITECTURE.md).
