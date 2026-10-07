@@ -1,5 +1,6 @@
 import {
   analyzeChange,
+  changeOmissions,
   collectAnchors,
   describeChange,
   isBaseAnchor,
@@ -130,7 +131,7 @@ function symbolBlock(sym: ChangedSymbol): string[] {
 }
 
 /** The text report of an analysis (what `xpl change` prints after the header). */
-export function renderAnalysis(analysis: ChangeAnalysis): string[] {
+export function renderAnalysis(analysis: ChangeAnalysis, omissions: string[] = []): string[] {
   const out: string[] = [];
   const width = Math.max(
     0,
@@ -191,6 +192,7 @@ export function renderAnalysis(analysis: ChangeAnalysis): string[] {
   out.push(
     "Callers are direct (depth 1) and come from the index: calls through a variable, a callback or a framework are not seen. Tests count when they reference the symbol (or build its class); check what they assert.",
   );
+  if (omissions.length > 0) out.push("", "Not checked:", ...omissions.map((item) => `  ${item}`));
   return out;
 }
 
@@ -254,6 +256,8 @@ export const changeCommand: CommandSpec = {
     "    a test file for an import); `no test found` when there is none,",
     "  - for a method that runs when an instance is called (`__call__`, `handle`), the code that builds the class,",
     "    marked as a guess (`callers via instance`); for a constructor, the calls of its class.",
+    "A bounded Not checked section lists the loaded index's report-level limits and changed paths absent from",
+    "it. A stale index is named; no section does not establish complete semantic coverage. --json includes omissions.",
     "<base>..<head> takes any git revisions (main..HEAD, 2284ff0^..2284ff0); <base>...<head> starts from their",
     "merge base; <base> alone (or <base>..) ends at the commit of the index. The head must be the commit the index",
     "was built from: check it out and run `xpl index` first. Without a range, prints the analysis of the change",
@@ -285,8 +289,9 @@ export const changeCommand: CommandSpec = {
         );
       }
       const analysis = analyzeChange(change, ws.model, (file) => ws.texts.text(file));
+      const omissions = changeOmissions(change, ws.index);
       if (ctx.json) {
-        ctx.emit({ path: loaded.rel, written: false, change, analysis });
+        ctx.emit({ path: loaded.rel, written: false, change, analysis, omissions });
         return 0;
       }
       ctx.out(
@@ -294,7 +299,7 @@ export const changeCommand: CommandSpec = {
           header(loaded, change, analysis, ws),
           `recorded in ${loaded.rel}`,
           "",
-          ...renderAnalysis(analysis),
+          ...renderAnalysis(analysis, omissions),
         ].join("\n"),
       );
       return 0;
@@ -362,8 +367,9 @@ export const changeCommand: CommandSpec = {
         );
       }
       const analysis = analyzeChange(change, ws.model, (file) => ws.texts.text(file));
+      const omissions = changeOmissions(change, ws.index);
       if (ctx.json) {
-        ctx.emit({ path: loaded.rel, written: !same, change, analysis });
+        ctx.emit({ path: loaded.rel, written: !same, change, analysis, omissions });
         return 0;
       }
       ctx.out(
@@ -373,7 +379,7 @@ export const changeCommand: CommandSpec = {
             ? `unchanged: ${loaded.rel} already records this change`
             : `written to ${loaded.rel}`,
           "",
-          ...renderAnalysis(analysis),
+          ...renderAnalysis(analysis, omissions),
         ].join("\n"),
       );
       return 0;
