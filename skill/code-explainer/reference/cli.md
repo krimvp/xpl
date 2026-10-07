@@ -47,7 +47,8 @@ installer. Each harness needs separate installation, authentication and provider
 
 Prints shell completion for command names, command and global options, and local guide names at
 `<explainer>` arguments. The command and option lists come from the same CLI tables as `--help`.
-Guide names are read from `.explainer/*.explainer.json` in the current directory when completing.
+Guide names are read from `.explainer/*.explainer.json` under `--root`, or the current directory
+when `--root` is omitted. Global options may appear before the command.
 
 Add `source <(xpl completion bash)` to `~/.bashrc`, or `source <(xpl completion zsh)` to
 `~/.zshrc` after `compinit`. For fish, run

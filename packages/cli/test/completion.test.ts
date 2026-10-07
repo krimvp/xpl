@@ -1,4 +1,5 @@
 import { execFileSync, spawnSync } from "node:child_process";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { COMMANDS } from "../src/cli.js";
 import { GLOBAL_OPTIONS } from "../src/args.js";
@@ -90,6 +91,23 @@ describe("xpl completion", () => {
     expect(zshComplete(out, dir, "xpl", "apply", "alpha", "")).toEqual([]);
   });
 
+  it("bash and zsh find commands and guides after global options", async () => {
+    const cwd = makeTempDir();
+    const root = join(makeTempDir(), "repo with space");
+    writeFile(root, ".explainer/my guide.explainer.json", "{}");
+    for (const shell of ["bash", "zsh"] as const) {
+      const { out } = await invoke(["completion", shell]);
+      const complete = shell === "bash" ? bashComplete : zshComplete;
+      expect(complete(out, cwd, "xpl", "--root", root, "")).toEqual(COMMANDS.map((c) => c.name));
+      expect(complete(out, cwd, "xpl", "--root", root, "view", "")).toEqual(["my guide"]);
+      expect(complete(out, cwd, "xpl", "view", "--root", root, "")).toEqual(["my guide"]);
+      expect(
+        complete(out, cwd, "xpl", "--index", "/tmp/index.json", `--root=${root}`, "view", ""),
+      ).toEqual(["my guide"]);
+      expect(complete(out, cwd, "xpl", "--root", root, "view", "--")).toContain("--port");
+    }
+  });
+
   const fishIt = spawnSync("fish", ["--version"]).status === 0 ? it : it.skip;
   fishIt("fish offers guide names only at guide positions", async () => {
     const { out } = await invoke(["completion", "fish"]);
@@ -99,5 +117,21 @@ describe("xpl completion", () => {
     expect(fishComplete(out, dir, "xpl view --port 4747 ")).toEqual(["alpha", "my guide"]);
     expect(fishComplete(out, dir, "xpl service start ")).toEqual(["alpha", "my guide"]);
     expect(fishComplete(out, dir, "xpl apply alpha ")).toEqual([]);
+  });
+
+  fishIt("fish finds commands and guides after global options", async () => {
+    const { out } = await invoke(["completion", "fish"]);
+    const cwd = makeTempDir();
+    const root = join(makeTempDir(), "repo with space");
+    writeFile(root, ".explainer/my guide.explainer.json", "{}");
+    expect(fishComplete(out, cwd, `xpl --root "${root}" `).sort()).toEqual(
+      COMMANDS.map((c) => c.name).sort(),
+    );
+    expect(fishComplete(out, cwd, `xpl --root "${root}" view `)).toEqual(["my guide"]);
+    expect(fishComplete(out, cwd, `xpl view --root "${root}" `)).toEqual(["my guide"]);
+    expect(fishComplete(out, cwd, `xpl --index /tmp/index.json --root="${root}" view `)).toEqual([
+      "my guide",
+    ]);
+    expect(fishComplete(out, cwd, `xpl --root "${root}" view --`)).toContain("--port");
   });
 });
