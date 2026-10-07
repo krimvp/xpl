@@ -14,8 +14,16 @@ const here = dirname(fileURLToPath(import.meta.url));
 export const artifactDir =
   basename(fileURLToPath(import.meta.url)) === "xpl.mjs" ? here : resolve(here, "../dist");
 
-export function defaultSkillDir(env: Env): string {
-  return join(env.HOME ?? homedir(), ".claude/skills/code-explainer");
+export type SkillAgent = "claude" | "codex" | "pi" | "droid" | "devin";
+
+export function defaultSkillDir(
+  env: Env,
+  agent: SkillAgent = "claude",
+  root = process.cwd(),
+): string {
+  if (agent === "devin") return join(root, ".agents/skills/code-explainer");
+  if (agent === "claude") return join(env.HOME ?? homedir(), ".claude/skills/code-explainer");
+  return join(env.HOME ?? homedir(), ".agents/skills/code-explainer");
 }
 
 interface Inventory {

@@ -13,9 +13,8 @@ const binding = resolve(dirname(self), "../xpl-install.json");
 const installedCli = existsSync(binding)
   ? JSON.parse(readFileSync(binding, "utf8")).cli
   : undefined;
-const cli = process.env.XPL_CLI
-  ? resolve(process.env.XPL_CLI)
-  : (installedCli ?? resolve(repo, "packages/cli/dist/xpl.mjs"));
+const sourceCli = resolve(repo, "packages/cli/dist/xpl.mjs");
+const cli = process.env.XPL_CLI ? resolve(process.env.XPL_CLI) : (installedCli ?? sourceCli);
 
 if (!existsSync(cli)) {
   console.error(`xpl: the CLI is unavailable: ${cli} does not exist.`);
@@ -23,7 +22,7 @@ if (!existsSync(cli)) {
     console.error("XPL_CLI is set; point it at a built xpl.mjs or unset it.");
   } else if (installedCli) {
     console.error(
-      "Reinstall xpl from npm or a local tarball, then run `xpl skill install` to update this launcher.",
+      "Reinstall xpl from npm or a local tarball in this environment, then run `xpl skill install` to update this launcher.",
     );
   } else {
     console.error(

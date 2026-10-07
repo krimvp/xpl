@@ -1,11 +1,13 @@
 # Getting started
 
 xpl needs Node 22.12 or newer. The npm package is tested on Linux x64; other platforms have not been
-verified. To write explanations you also need Claude Code, installed and signed in on its own.
+verified. To write explanations, install and configure a supported authoring harness and its provider.
 
 ## Install
 
 Install the CLI from npm, then install the bundled code-explainer skill and check the setup:
+
+Example for the default Claude Code target:
 
 ```sh
 npm install --global @krimvp/xpl
@@ -13,9 +15,17 @@ xpl skill install
 xpl doctor --agent claude
 ```
 
-`xpl skill install` copies the skill to `~/.claude/skills/code-explainer` and binds its launcher to the
-installed CLI. Rerun it after you update or move the CLI. [The skill](skill/index.md) page has the other
-install options.
+Claude Code is the default target. For Codex, Pi, Factory Droid or Devin, use
+`xpl skill install --agent <codex|pi|droid|devin>`. Use `--dir <path>` to install into a project skill directory.
+
+`xpl skill install` copies the skill and binds its launcher to the installed CLI. Rerun it after you
+update or move the CLI. The npm package includes the CLI and skill; harness installation, authentication
+and provider access are separate. Codex, Pi and Factory Droid install to `~/.agents/skills/code-explainer`;
+Devin installs to the project's `.agents/skills/code-explainer`. In Devin, run
+`xpl skill install --agent devin` inside the connected remote environment and target repo before using
+the launcher. Install Node >=22.12 and xpl there first; the launcher has no PATH fallback. A local
+project install does not provision xpl in Devin's remote environment. [The skill](skill/index.md) page
+has the install options.
 
 ## Make your first guide
 
@@ -32,12 +42,15 @@ omitted parts of the draft. Add `--entry src/runner.ts#Runner.dispatch` when the
 at a known function or method; that makes a call sequence instead of a repository map. Complete the TODO
 text, check each claim against its linked source, then run `xpl lint job-retries` and `xpl ready job-retries`.
 
-For an agent-written explanation, open Claude Code in a TypeScript, Python or Go repository and ask a
-question with the skill:
+For an agent-written explanation, use the selected harness in a TypeScript, Python or Go repository.
+For example, in Claude Code, ask:
 
 ```text
 /code-explainer explain How does a failed job get retried? Root: /absolute/path/to/repo. Audience: maintainers. New guide: job-retries.
 ```
+
+That slash command is the Claude Code example; use the matching [harness invocation](skill/index.md)
+for Codex, Pi, Factory Droid or Devin.
 
 Name the reader and the question. The agent indexes the repository, writes the explanation as a patch, and
 `xpl` checks every anchor before it saves `.explainer/job-retries.explainer.json`. Commit that file; the
