@@ -6,6 +6,8 @@ describe("xpl cli", () => {
     const { code, out } = await invoke(["--help"]);
     expect(code).toBe(0);
     expect(out).toContain("Usage: xpl <command> [options]");
+    expect(out).toContain("Docs: https://krimvp.github.io/xpl/docs/reference/");
+    expect(out).not.toContain("docs/ARCHITECTURE.md");
     expect(out).toMatch(/feedback\s+Import, inspect or export durable reader feedback/);
     expect(out).toContain("--root");
     expect(out).toContain("--json");
@@ -33,6 +35,8 @@ describe("xpl cli", () => {
     expect(viaFlag.out).toContain("Usage: xpl show <id> [--refs] [--context n]");
     expect(viaFlag.out).toContain("--context <n>");
     expect(viaFlag.out).toContain("--root <dir>");
+    expect(viaFlag.out).toContain("Docs: https://krimvp.github.io/xpl/docs/reference/");
+    expect(viaFlag.out).not.toContain("docs/ARCHITECTURE.md");
     const viaHelp = await invoke(["help", "apply"]);
     expect(viaHelp.out).toContain("--dry-run");
     expect(viaHelp.out).toContain("--actor llm|user");

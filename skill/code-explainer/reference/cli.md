@@ -35,7 +35,7 @@ installer. Each harness needs separate installation, authentication and provider
 
 **Exit codes:** 0 ok · 1 rejected or failed (bad id, rejected patch, a patch that changed nothing because the user owns everything it touches, `resolve --write` on a stale index, validation errors, `lint` findings, `bundle` with drifted or missing anchors) · 2 usage error.
 **Streams:** results, issue lists and rejections print on stdout (a rejection also exits 1); fatal errors (`error: ...`: unknown id, no index, bad JSON, unreadable file) and `warning:` lines go to stderr, so use `2>&1` to capture both. With `--json` there is one object on stdout, errors included (`{"ok": false, "error": ...}`).
-**Environment:** `XPL_CLI` (launcher: path of an `xpl.mjs` overriding the installed CLI binding or development build), `XPL_VIEWER_HTML` (viewer page for `view`/`bundle`), `XPL_SKIP_STALE_CHECK=1` (skip advisory freshness checks; strict validation and export still check), `XPL_SCIP_TIMEOUT_MS` (time limit of each SCIP indexer, default 10 minutes), `XPL_WASM_DIR` (where the tree-sitter `.wasm` files are), `XPL_DEBUG=1` (stack traces).
+**Environment:** `XPL_CLI` (launcher: path of an `xpl.mjs` overriding the installed CLI binding or development build), `XPL_NO_UPDATE_CHECK=1` (skip doctor's npm registry request), `XPL_VIEWER_HTML` (viewer page for `view`/`bundle`), `XPL_SKIP_STALE_CHECK=1` (skip advisory freshness checks; strict validation and export still check), `XPL_SCIP_TIMEOUT_MS` (time limit of each SCIP indexer, default 10 minutes), `XPL_WASM_DIR` (where the tree-sitter `.wasm` files are), `XPL_DEBUG=1` (stack traces).
 
 **Ids** are accepted loosely: `sym:src/a.ts#A.b`, `src/a.ts#A.b`, `file:src/a.ts`, `src/a.ts`, `dir:src`. The outputs always print the exact `sym:`/`file:`/`dir:` form: paste those into patches.
 
@@ -47,11 +47,15 @@ installer. Each harness needs separate installation, authentication and provider
 
 Diagnoses installed setup without downloading tools or starting authoring. Node >=22.12, artifact hashes
 and grammar loading are mandatory. Skill availability is optional by default; selecting an agent requires
-its managed skill. For Claude, Codex, Pi and Droid, diagnosis also checks the local agent command. Devin
+its managed skill. An older installed skill is marked `outdated` and names `xpl skill install` as recovery.
+A skill newer than the CLI is marked `mismatch`; update the CLI to the skill's version or newer.
+For Claude, Codex, Pi and Droid, diagnosis also checks the local agent command. Devin
 checks project skill files; its cloud discovery and authentication cannot be checked locally. Optional
 git/npx/Go checks run local version commands. Go uses the installed toolchain, ignores user Go
 configuration and disables telemetry without writing settings; Git tracing is disabled. No Python or SCIP
-tool launcher runs during diagnosis.
+tool launcher runs during diagnosis. Doctor requests the latest `@krimvp/xpl` version from npm with a
+1.5-second timeout. It reports a newer version and the update command; failed requests are silent.
+`XPL_NO_UPDATE_CHECK=1` skips the request. Other commands do not query npm.
 Missing precise prerequisites suggest `xpl index --precise off`; automatic precise mode may
 bootstrap tools and dependencies over the network. Presence is not a test of precise analysis,
 agent authentication or provider access. Required failures exit 1; JSON includes `ok`, `platform`,
@@ -65,6 +69,8 @@ directory, and binds `bin/xpl` to this installed CLI. `claude` is the default an
 `devin` installs to the current project's `.agents/skills/code-explainer`.
 Rerun after updating or moving the CLI. Refuses symlinks,
 unmanaged directories, added files and locally edited skill files; move them aside first to preserve them.
+The launcher prints one warning when its recorded skill version differs from the CLI package it runs.
+It recommends skill reinstall for an older skill and a CLI update for a newer skill.
 The CLI package bundles the skill and launcher. Install and configure the selected harness separately;
 the installer does not verify provider access or live invocation behavior. Invoke the skill as
 `$code-explainer` in Codex, `/skill:code-explainer` in Pi, `/code-explainer` in Factory Droid, or
@@ -128,7 +134,7 @@ available, but symbol and relationship completeness cannot be inferred.
 Provider labels separate a file-only fallback's limits from an artifact provider's usable symbols.
 Tool commands and diagnostic details are omitted from these summaries.
 
-- The last column is how far a language's references can be trusted. `refs: precise (tool)`: SCIP resolved them (TypeScript, Python, Go). `refs: heuristic`: tree-sitter scope-aware guesses, drawn lighter in the viewer; confirm calls with `show`. `refs: none`: usually rust, yaml, json, toml and text without an artifact provider. Rust tags provide partial named declarations and lexical nesting, without resolved relationships or macro expansion.
+- The last column is how far a language's references can be trusted. `refs: precise (tool)`: SCIP resolved them (TypeScript, Python, Go). `refs: heuristic`: tree-sitter scope-aware guesses, drawn lighter in the viewer; confirm calls with `show`. `refs: none`: usually yaml, json, toml and text without an artifact provider. Rust tags provide partial named declarations, lexical nesting and heuristic bare calls between unambiguous root-level functions in the same file. Unknown/shadowed names, qualified/generic calls, nested functions, closures, methods, trait and cross-module dispatch remain unresolved. Bodies with macros or local imports and files with syntax errors produce no calls; no macro expansion or cfg evaluation runs.
 - `refs: precise 10/11 (scip-go@0.2.7), 1 heuristic`: the tool described only 10 of the 11 files (build-tagged Go files, files a project's own configuration excludes). Those files keep heuristic references, so **their references are hints**; a warning above the summary names them: `warning: scip-go@0.2.7 did not describe 1 file(s) (excluded by build constraints or by the tool's own configuration, or unreadable?); their references stay heuristic: internal/queue/windows_only.go`.
 - `--precise auto` (default) falls back to heuristic with a warning, e.g. ``warning: precise resolver "scip-go" failed (scip-go@v0.2.7 could not be started (is `go` installed and on PATH?): spawn go ENOENT); using heuristic references for go``. `off` never runs SCIP (faster); syntax-only providers such as Rust tags still run. `require` exits 1 instead of falling back.
 - A file with syntax errors is indexed anyway. One warning covers all such files, with the first lines to look at: `warning: 1 file(s) have syntax errors; symbols near these lines may be incomplete: src/broken.ts:2` (at most 5 files and 3 lines each). Errors that cannot have cost a symbol (a TS labelled tuple element such as `[symbol: string]`) are not reported.

@@ -1,6 +1,6 @@
 # Languages and precision
 
-xpl indexes TypeScript, JavaScript, Python and Go with maintained language packs. YAML, JSON and TOML keys are symbols, so configuration entries can be anchored just like functions. Other text files receive file anchors. Rust has experimental declaration tags, with no resolved relationships; Java remains text unless you provide a generated SCIP artifact.
+xpl indexes TypeScript, JavaScript, Python and Go with maintained language packs. YAML, JSON and TOML keys are symbols, so configuration entries can be anchored just like functions. Other text files receive file anchors. Rust has experimental declaration tags and bounded heuristic calls between root-level functions in one file; Java remains text unless you provide a generated SCIP artifact.
 
 Tree-sitter WASM extracts symbols without installing language toolchains. References (calls, imports, inheritance, type uses and reads) come from xpl's scope-aware heuristic resolver or, when available, a compiler-grade SCIP indexer. References always keep their source label. The viewer draws heuristic edges lighter; the authoring skill treats them as hints to confirm.
 
@@ -8,13 +8,13 @@ Tree-sitter WASM extracts symbols without installing language toolchains. Refere
 
 ## Precise reference tools
 
-| Language                | Tool and requirements                                                |
-| ----------------------- | -------------------------------------------------------------------- |
-| TypeScript / JavaScript | `scip-typescript` 0.4.0 via `npx`; first use may need network access |
-| Python                  | `scip-python` 0.6.6 via `npx`; first use may need network access     |
-| Go                      | `scip-go` 0.2.7; Go 1.25 or a `go` that can download the toolchain   |
-| Rust                    | Experimental syntax declarations only; no reference relationships    |
-| YAML, JSON, TOML        | Keys are symbols; no reference relationships                         |
+| Language                | Tool and requirements                                                        |
+| ----------------------- | ---------------------------------------------------------------------------- |
+| TypeScript / JavaScript | `scip-typescript` 0.4.0 via `npx`; first use may need network access         |
+| Python                  | `scip-python` 0.6.6 via `npx`; first use may need network access             |
+| Go                      | `scip-go` 0.2.7; Go 1.25 or a `go` that can download the toolchain           |
+| Rust                    | Experimental declarations and bare same-file root-function calls (heuristic) |
+| YAML, JSON, TOML        | Keys are symbols; no reference relationships                                 |
 
 `xpl index` tries precise tools by default. Use `--precise off` for heuristic results or `--precise require` to fail when a precise tool cannot run. `XPL_SCIP_TIMEOUT_MS` sets the per-tool timeout (default 10 minutes). If a tool omits files, their heuristic references remain and the summary names the gap.
 
@@ -23,6 +23,8 @@ Precise indexing can be expensive on large repositories. In measured runs, Djang
 ## Supplied SCIP artifacts and experimental languages
 
 Import generated SCIP data with `xpl index --scip <artifact|manifest.json>`. Documents need embedded source or a manifest tied to pre-generation source hashes. Missing ranges, parents and call classification remain explicit limits. Partial artifacts preserve syntax symbols; range-less artifacts cannot add declarations. Without checked targets, a standalone import reports `refs: none` and fails under `--precise require`. See the [CLI reference](../reference/commands.md) for artifact requirements.
+
+Rust call analysis omits unknown or shadowed names, qualified/generic calls, nested functions, closures, methods, trait dispatch and cross-module targets. Bodies with macros or local imports, and files with syntax errors, do not produce calls. Call coverage stays partial; no macro expansion or cfg evaluation runs.
 
 Rust tags and Java SCIP have bounded experimental coverage, not production support across build ecosystems. Rust's pinned rust-analyzer producer can omit full ranges, which may prevent imported relationships from attaching to Rust tags; use `--precise off` for Rust today. Java needs an explicitly generated artifact and working JDK/Maven build. Its importer keeps checked declarations and type references; calls and inheritance remain unsupported. Java remains plain text for built-in indexing, so use explicit views and search without `--code`.
 

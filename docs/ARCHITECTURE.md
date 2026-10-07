@@ -742,11 +742,16 @@ labels collapse whitespace; those compound names have full declaration evidence 
 
 Rust uses `tree-sitter-rust@0.24.0` (WASM ABI 14). The CLI copies the corrected query beside its grammar in
 `dist/wasm`; source runs read it from the adapter directory. Rust reports partial symbols, declaration ranges
-and nesting, and unsupported relationship kinds. It does not resolve calls, imports, receiver ownership or
-external `mod` links, expand macros, evaluate cfg, or index fields, variants and local bindings. Declaration
+and nesting. Its bounded call pass resolves bare calls between unambiguous root-level functions in the
+same file, with exact call-expression ranges and `heuristic` confidence. Shadowed names, nested functions,
+closures, qualified/generic calls, methods, trait dispatch and cross-module targets are omitted. Bodies
+containing macros or local imports are skipped. Syntax errors suppress calls for that file. Call coverage
+is partial; other relationship kinds remain unsupported. It does not resolve imports, receiver ownership
+or external `mod` links, expand macros, evaluate cfg, or index fields, variants and local bindings. Declaration
 ranges exclude leading attributes and doc comments. Syntax recovery adds a limit and a warning. Matching
 tags outcomes share one report with combined file counts; syntax-error files keep a separate report.
-[The experiment record](rust-tags.md) gives literal cases, measurements, query coverage and repeatable commands.
+[The tags experiment](rust-tags.md) records declaration coverage; [bounded direct calls](rust-direct-calls.md)
+records the supported slice and a bat smoke test. Tags cache version query-v4 includes call extraction.
 
 **Analysis coverage** (`core/src/analysis.ts`, `indexer/src/analysis.ts`). An `AnalysisReport` contains a
 stable `provider` id, advertised `capabilities`, scoped `files`, and observed `results`. Capabilities are
@@ -1422,7 +1427,7 @@ stdout (a rejection exits 1); fatal errors (`error: …`) and warnings (`warning
 | `xpl view <explainer> [--port p] [--host h] [--no-open]` | local server (below) |
 | `xpl service <start\|pause\|resume\|stop\|status> [explainer] [--background] [--port p] [--backend none\|claude] [--skill-dir folder] [--job-timeout seconds] [--recover] [--watch]` | optional repository-scoped lifecycle around the same viewer server; loopback only; persisted context and explicit interrupted-owner recovery |
 | `xpl bundle <explainer> -o out.html [--mode explore\|present] [--tour id] [--files referenced\|boundary\|all] [--boundary-max n] [--embed-index full\|pruned] [--draft] [--note reason] [--require-review] [--allow-drift]` | self-contained HTML after the shared readiness check (exit 1 before writing with errors); `--draft` writes a labelled preview with findings; `--allow-drift` is a legacy draft flag that still refuses stale indexes; warnings and optional author notes are retained; `--tour` (`tour:intro` or `intro`) implies present mode; embeds the files the explainer references by default and prints what went in (`8 of 12 files embedded (referenced: 18.4 KB of source; --files all adds 4 files, 6.7 KB)`), `--files boundary` adds the direct callers, callees and tests of anchored symbols (at most `--boundary-max`, default 40), `--files all` every indexed file; with a change recorded, every changed file at head and the base text of the changed files go in too; the symbol index in it is pruned to what the viewer can draw with `--files referenced` or `boundary` and whole with `--files all` (`--embed-index` overrides) and packed (the summary line says `index 0.3 MB (1.3 MB as plain JSON, pruned from 9.0 MB)`) |
-| `xpl doctor [--agent none\|claude\|codex\|pi\|droid\|devin] [--skill-dir path]` | local setup report: Node, artifact hashes, grammar loading, installed skill and optional git/npx/Go; selected harness availability; no downloads or authentication probes; required failures exit 1 |
+| `xpl doctor [--agent none\|claude\|codex\|pi\|droid\|devin] [--skill-dir path]` | local setup report: Node, artifact hashes, grammar loading, installed skill version, optional git/npx/Go and selected harness; requests the latest npm version with a 1.5-second timeout unless `XPL_NO_UPDATE_CHECK=1`; no tool downloads or authentication probes; required failures exit 1 |
 | `xpl stage <explainer> --dir <outside-folder> [--preview] [--files referenced\|boundary\|all] [--note reason] [--require-review] [--pr-result result.json]` | previews included head/base files; stages only ready local HTML and an immutable manifest, rechecks inputs before promoting an atomic current symlink under a lock; retains prior versions; PR guides require a verified ready result and a final GitHub base/head check |
 | `xpl skill install [--agent claude\|codex\|pi\|droid\|devin] [--dir path]` | copies the bundled skill and writes its CLI binding; repeat to update; Claude is default; defaults to `~/.claude/skills/code-explainer` for Claude, `~/.agents/skills/code-explainer` for Codex/Pi/Droid, and the current project's `.agents/skills/code-explainer` for Devin; refuses unmanaged directories, symlinks and local edits |
 
@@ -1448,7 +1453,11 @@ be available before a tag is created. Pages builds the public site from that sam
 
 `doctor` checks SHA-256 hashes from the artifact inventory and loads every grammar. Hashes detect damage,
 not publisher identity. Skill availability is optional for reading, required with `--agent claude`.
-It checks the managed copy's hashes and executes its launcher with `--version`. Optional tools are checked
+It checks the managed copy's hashes and executes its launcher with `--version`. An older skill is reported
+as outdated with `xpl skill install` as recovery; a newer skill is a mismatch that needs a newer CLI.
+The launcher warns once per invocation and gives the same direction. Doctor alone checks npm for a newer
+CLI version;
+`XPL_NO_UPDATE_CHECK=1` skips it, and offline failures stay silent. Optional tools are checked
 only with local version commands; their presence does not prove precise analysis or agent authentication.
 The Go probe forces `GOTOOLCHAIN=local`, ignores user Go configuration and disables telemetry without
 writing settings. Git tracing is disabled for its probe. No Python or SCIP tool launcher is invoked.
@@ -1470,7 +1479,8 @@ stale index, an explicit `--port` in use, `xpl ready` or ready `xpl bundle` with
 `xpl change` without git or with a head that is not the index commit, `xpl draft change` without a change
 record, `xpl lint` with findings; 2 usage error. **Environment:**
 `XPL_VIEWER_HTML` (viewer page for `view` and `bundle`), `XPL_SKIP_STALE_CHECK=1`, `XPL_WASM_DIR`,
-`XPL_SCIP_TIMEOUT_MS`, `XPL_DEBUG=1` (stack traces), `XPL_CLI` (the skill launcher: an `xpl.mjs` to run).
+`XPL_SCIP_TIMEOUT_MS`, `XPL_DEBUG=1` (stack traces), `XPL_CLI` (the skill launcher: an `xpl.mjs` to run),
+`XPL_NO_UPDATE_CHECK=1` (skip doctor's npm request).
 
 **Files in `.explainer/`:** `index-<commit>.json` (generated, git-ignored by `.explainer/.gitignore`),
 `cache/extraction-v1/` (generated file-local facts, git-ignored), `<name>.explainer.json` (committed),
@@ -2445,10 +2455,21 @@ static bundle lists only the files it embeds, with a footer "N of M files includ
 CodeMirror editors (language modes for TS/TSX/JS, Python, Go, YAML and JSON; Rust, TOML and other text are plain).
 Both splits (diagram / panels, diagram / code) are resizable. Below 900 px the halves stack.
 
+**Diagram text alternative** (`components/DiagramText.tsx`, `PanZoom.textView`): every live map,
+sequence and flow has a **Text view** toggle beside its Key. It replaces the picture with native lists and
+buttons, leaving linked code visible. Maps list their current nodes, displayed aggregate relationships and
+outside-map boundaries, with direction and existing precise/heuristic/mixed or author provenance labels.
+Outside targets can be added through the same expansion action as a ghost. Sequences list participants
+and messages; flows list stages and directed transitions. Choosing a flow transition selects that link in both text and SVG. Viewer derivation keeps a map of
+transition IDs and shows the checked source anchors of both endpoints (only the source for a return to
+the caller). Details names its direction and explains that links have no separate source anchor. The
+toggle precedes the list in keyboard order. Selection uses the same store action as the diagram. The list updates with the current level, nodes and edge-kind filters. Scrolling it never zooms
+the hidden SVG. Turning the toggle off restores the diagram and its selection.
 **Diagram keyboard navigation** (`components/PanZoom.tsx`): focus the canvas and press Enter to
 focus its first element. Up/Down cycle through the drawn elements in reading order; Home/End go to the
 first/last. Left/Right follow incoming/outgoing relationships: maps and sequences move through an arrow
-and its source or target; flows move between connected stages. When there is more than one link, the first
+and its source or target; flows move through a link between connected stages. Flow stages come before
+links in keyboard reading order, while the SVG paints links behind them. When there is more than one link, the first
 in drawing order is followed; Up/Down reach the other links. Enter/Space select the focused element and
 show its checked code through the same path as a click. Focused elements are panned into view. Escape
 returns to the canvas without changing selection; Tab and Shift+Tab retain their normal page order.

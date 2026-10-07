@@ -145,6 +145,8 @@ export interface PanZoomProps {
    */
   revealMargin?: number;
   children: ReactNode;
+  /** Source-linked text alternative for this diagram. */
+  textView?: ReactNode;
 }
 
 export function PanZoom({
@@ -165,8 +167,11 @@ export function PanZoom({
   keepInView,
   revealMargin,
   children,
+  textView,
 }: PanZoomProps) {
   const wrap = useRef<HTMLDivElement>(null);
+  const [textMode, setTextMode] = useState(false);
+  const textId = useId();
   const [size, setSize] = useState({ w: 0, h: 0 });
   const [t, setT] = useState<Transform>({ k: 1, x: 0, y: 0 });
   /** Focused elements the first view leaves out ("+N more"); 0 once the user moves the view. */
@@ -259,6 +264,7 @@ export function PanZoom({
     const el = wrap.current;
     if (!el) return;
     const onWheel = (event: WheelEvent) => {
+      if (event.target instanceof Element && event.target.closest(".diagram-text-view")) return;
       event.preventDefault();
       const rect = el.getBoundingClientRect();
       const delta = event.deltaMode === 1 ? event.deltaY * 16 : event.deltaY;
@@ -351,12 +357,18 @@ export function PanZoom({
 
   const keyboardHelp = useId();
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (textMode) return;
     const host = event.currentTarget;
     const items = [
       ...host.querySelectorAll<SVGElement>(
         '.pz-svg [role="button"][data-element-id], .pz-svg [role="button"][data-key-for]',
       ),
     ];
+    // Flow lines are painted behind stages; keyboard reading starts with the stages.
+    items.sort(
+      (a, b) =>
+        Number(b.classList.contains("flow-stage")) - Number(a.classList.contains("flow-stage")),
+    );
     const idOf = (el: SVGElement) => el.dataset.keyFor ?? el.dataset.elementId;
     const current = items.indexOf(event.target as SVGElement);
     const focusItem = (item: SVGElement | undefined) => {
@@ -536,34 +548,71 @@ export function PanZoom({
         Enter to navigate. Up/Down: next element. Left/Right: follow links. Enter: select code.
         Escape: canvas.
       </span>
-      <svg className="pz-svg" width="100%" height="100%" role="presentation">
+      <svg
+        className="pz-svg"
+        width="100%"
+        height="100%"
+        role="presentation"
+        style={textMode ? { display: "none" } : undefined}
+      >
         <g transform={`translate(${t.x} ${t.y}) scale(${t.k})`}>{children}</g>
         {overlay?.(t, size)}
       </svg>
-      {!short && cues}
+      {!textMode && !short && cues}
       <div className="pz-toolbar" onPointerDown={(event) => event.stopPropagation()}>
-        {short && cues}
-        <button type="button" aria-label="Zoom in" title="Zoom in (+)" onClick={() => zoomBy(1.25)}>
-          +
-        </button>
-        <button
-          type="button"
-          aria-label="Zoom out"
-          title="Zoom out (-)"
-          onClick={() => zoomBy(1 / 1.25)}
-        >
-          &minus;
-        </button>
-        <button
-          type="button"
-          aria-label="Fit to view"
-          title="Fit to view (0)"
-          onClick={fitEverything}
-        >
-          Fit
-        </button>
-        {tools}
+        {!textMode && (
+          <>
+            {short && cues}
+            <button
+              type="button"
+              aria-label="Zoom in"
+              title="Zoom in (+)"
+              onClick={() => zoomBy(1.25)}
+            >
+              +
+            </button>
+            <button
+              type="button"
+              aria-label="Zoom out"
+              title="Zoom out (-)"
+              onClick={() => zoomBy(1 / 1.25)}
+            >
+              &minus;
+            </button>
+            <button
+              type="button"
+              aria-label="Fit to view"
+              title="Fit to view (0)"
+              onClick={fitEverything}
+            >
+              Fit
+            </button>
+            {tools}
+          </>
+        )}
+        {textView && (
+          <button
+            type="button"
+            aria-pressed={textMode}
+            aria-controls={textId}
+            onClick={() => setTextMode((shown) => !shown)}
+          >
+            Text view
+          </button>
+        )}
       </div>
+      {textView && (
+        <div
+          id={textId}
+          hidden={!textMode}
+          className="diagram-text-view"
+          role="region"
+          aria-label="Diagram as text"
+          onPointerDown={(event) => event.stopPropagation()}
+        >
+          {textView}
+        </div>
+      )}
     </div>
   );
 }
