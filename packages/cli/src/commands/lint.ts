@@ -9,7 +9,7 @@ import {
   type LintFinding,
   type LintRule,
 } from "../lint.js";
-import { loadExplainer, openWorkspace, type Workspace } from "../repo.js";
+import { loadReadExplainer, openWorkspace, type Workspace } from "../repo.js";
 import { readPatch } from "./apply.js";
 
 /** `(tour step)`, `(flow step in view:x)`: what an element is, after its id in the text output. */
@@ -42,7 +42,7 @@ function countLine(findings: readonly LintFinding[]): string {
 
 export const lintCommand: CommandSpec = {
   name: "lint",
-  usage: "xpl lint <explainer> [--patch <file|->] [--warn-only]",
+  usage: "xpl lint [explainer] [--patch <file|->] [--warn-only]",
   summary:
     "Check the reader-facing text and the tour order; --patch checks a patch before you apply it",
   details: [
@@ -105,6 +105,7 @@ export const lintCommand: CommandSpec = {
     "--patch <file|->: lint the explainer as it would be after `xpl apply <explainer> <file>`: the patch is merged",
     "in memory the way apply merges it (same checks, --actor llm), and nothing is written. A patch that apply would",
     "reject prints the rejection, as apply prints it, and exits 1. Fix the findings in the patch, then apply it.",
+    "Omit the explainer when the repository has exactly one; otherwise supply its name.",
     "Exit codes: 0 no findings; 1 any finding (so `xpl lint --patch p.json && xpl apply x p.json` stops on one;",
     "with --warn-only only a todo-left error), or a rejected patch; 2 usage error.",
   ],
@@ -123,13 +124,13 @@ export const lintCommand: CommandSpec = {
       desc: "Exit 1 when there is any finding (the default; kept for older scripts)",
     },
   },
-  positionals: [{ name: "explainer" }],
+  positionals: [{ name: "explainer", required: false }],
   async run(ctx, args) {
     const strict = !args.flag("warn-only");
     const patchSource = args.str("patch");
     const read =
       patchSource === undefined ? undefined : await readPatch(ctx, patchSource, "--patch -");
-    const loaded = loadExplainer(ctx, args.positionals[0]!);
+    const loaded = loadReadExplainer(ctx, args.positionals[0], "lint");
 
     let explainer: Explainer = loaded.explainer;
     let ws: Workspace | undefined;

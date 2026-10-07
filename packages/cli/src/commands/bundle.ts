@@ -17,7 +17,7 @@ import type { CommandSpec } from "../command.js";
 import { CliError, UsageError } from "../errors.js";
 import { formatBytes, listText, plural } from "../format.js";
 import { atomicWrite } from "../fsutil.js";
-import { loadExplainer, loadRepositoryGuides } from "../repo.js";
+import { loadReadExplainer, loadRepositoryGuides } from "../repo.js";
 import { describeReadiness, workspaceReadiness } from "../readiness.js";
 import { guideSnapshot, LIBRARY_MAX_GUIDES, LIBRARY_MAX_BYTES } from "../guide-library.js";
 import { readViewerHtml } from "../viewer-html.js";
@@ -107,7 +107,7 @@ function describeIndex(e: EmbeddedIndex): string {
 export const bundleCommand: CommandSpec = {
   name: "bundle",
   usage:
-    "xpl bundle <explainer> -o out.html [--mode explore|present] [--tour id] [--files referenced|boundary|all] [--boundary-max n] [--embed-index full|pruned] [--include-guides id,id] [--draft] [--note reason] [--require-review] [--allow-drift]",
+    "xpl bundle [explainer] -o out.html [--mode explore|present] [--tour id] [--files referenced|boundary|all] [--boundary-max n] [--embed-index full|pruned] [--include-guides id,id] [--draft] [--note reason] [--require-review] [--allow-drift]",
   summary: "Check readiness, then write one self-contained HTML file",
   details: [
     "Review state is reported separately. --require-review opts into a team policy requiring a current",
@@ -155,6 +155,7 @@ export const bundleCommand: CommandSpec = {
     "--mode present opens in present mode; --tour <id> starts that tour (and implies --mode present).",
     "The output path is printed as given (absolute when you gave it absolute); -o is relative to the working",
     "directory.",
+    "Omit the explainer when the repository has exactly one; otherwise supply its name.",
   ],
   options: {
     "include-guides": {
@@ -202,7 +203,7 @@ export const bundleCommand: CommandSpec = {
       desc: "Index to embed: pruned (default; what the embedded files and the views can show) or full",
     },
   },
-  positionals: [{ name: "explainer" }],
+  positionals: [{ name: "explainer", required: false }],
   async run(ctx, args) {
     const out = args.str("out");
     if (out === undefined || out === "") throw new UsageError("missing -o <out.html>");
@@ -225,7 +226,7 @@ export const bundleCommand: CommandSpec = {
       throw new UsageError(
         `--include-guides accepts at most ${LIBRARY_MAX_GUIDES} additional guides`,
       );
-    const loaded = loadExplainer(ctx, args.positionals[0]!);
+    const loaded = loadReadExplainer(ctx, args.positionals[0], "bundle");
 
     let tour: string | undefined;
     const tourOption = args.str("tour");
