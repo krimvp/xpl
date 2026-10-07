@@ -1911,11 +1911,13 @@ code {
   pointer-events: all;
 }
 
+.edge.res-mixed .line,
 .edge.res-heuristic .line {
   stroke: var(--edge-heuristic);
   stroke-width: 1;
 }
 
+.edge.res-mixed .head,
 .edge.res-heuristic .head {
   fill: var(--edge-heuristic);
 }

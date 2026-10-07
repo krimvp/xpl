@@ -228,11 +228,11 @@ function buildInfo(id: ElementId, model: ExplainerModel, vd: ViewDerived): Eleme
       const info: ElementInfo = {
         id,
         type: "derived-edge",
-        title: derived ? `${derived.kind} ×${derived.count}` : ref.kind,
+        title: derived ? (derived.label ?? `${derived.kind} ×${derived.count}`) : ref.kind,
         kind: ref.kind,
         where: `${model.label(ref.from)} → ${model.label(ref.to)}`,
         summary: derived
-          ? `${plural(derived.count, "reference")} from ${model.label(ref.from)} to ${model.label(ref.to)}, found by static analysis${derived.resolution === "heuristic" ? " (heuristic resolution: treat as a hint)" : ""}.`
+          ? `${plural(derived.count, "reference")} from ${model.label(ref.from)} to ${model.label(ref.to)}, found by static analysis${derived.resolution === "heuristic" ? " (heuristic resolution: treat as a hint)" : derived.resolution === "mixed" ? " (mixed precise and heuristic resolution: some references are hints)" : ""}.`
           : `Static ${ref.kind} edge.`,
         facts: [
           { label: "From", value: model.label(ref.from) },

@@ -348,7 +348,8 @@ interface ExplainerPatch {
 buildIndex(opts: { root: string; commit?: string; precise?: "auto" | "off" | "require";
                    languages?: string[]; providers?: readonly IndexProvider[]; cache?: boolean;
                    gitOptions?: GitOptions; snapshot?: IndexInputs; getText?: GetText })
-  : Promise<{ index: SymbolIndex; warnings: string[]; extraction: ExtractionReport;
+  : Promise<{ index: SymbolIndex; warnings: string[]; exclusions: ExclusionReport;
+              extraction: ExtractionReport;
               work: { heuristicResolutionMs: number; semanticMs: number; semanticRuns: number } }>
 writeIndex(root: string, index: SymbolIndex): Promise<string>
 // atomic write of <root>/.explainer/index-<commit>.json; ignores indexes and cache/ in .explainer/.gitignore
@@ -373,7 +374,7 @@ imports of `.json`/`.yaml`/`.toml`), resolved against the indexed files into `Sy
 to the root's subtree), otherwise a walk that skips `.git node_modules dist build out vendor target
 __pycache__ .venv venv .explainer` and dot-directories. In both modes `.explainer/`, `node_modules/` and
 `.git/` are never indexed (`.explainer/` would feed our own index back into the working-tree commit id).
-Dropped silently: binaries (NUL in the first 8 KB), files over 1 MB, symlinks and submodule directories, files
+Excluded from candidate files: binaries (NUL in the first 8 KB), files over 1 MB, symlinks and submodule directories, files
 deleted but still tracked, and lockfiles (`*-lock.json`, `*.lock`, `go.sum`, `pnpm-lock.yaml`,
 `npm-shrinkwrap.json`). Every remaining text file is an `IndexedFile` (unknown extensions → `text`), so
 file-relative anchors work anywhere. Language by extension: `.ts .mts .cts` typescript, `.tsx` tsx, `.js .mjs
@@ -381,6 +382,13 @@ file-relative anchors work anywhere. Language by extension: `.ts .mts .cts` type
 Named `*.explainer.json` and `*.patch.json` outputs are excluded in both modes. Exported xpl HTML is
 also excluded by its embedded bundle marker; ordinary HTML remains source. Paths are POSIX,
 repo-root-relative, sorted.
+
+`buildIndex` also returns a run-local `exclusions` report: counts by reason and up to three sorted,
+root-relative example paths. `xpl index` prints it, and `--json` includes it. The report counts only
+enumerated candidates. Git-ignored files never enter git's list; a non-git walk does not enumerate
+files inside skipped directories or symlinks. A supplied snapshot has no discovery report. Exclusions
+are not saved in `SymbolIndex`. A `buildIndex({ languages })` report counts candidates of those languages
+only.
 
 **Watched input capture** (`src/snapshot.ts`): `captureIndexInputs({root, inputPaths?, gitOptions?, precise?, providers?})`
 returns sources, local configuration text, the captured clean HEAD label (when applicable), a
@@ -1005,7 +1013,7 @@ id wins (validation reports the duplicates).
   arrow from a box to its own container says nothing). Kind map: call→calls, import→imports, extends,
   implements, type-ref→references, read→reads, write→writes; only kinds in `edgeKinds` (default
   `DEFAULT_EDGE_KINDS`). Module scopes lift to their file. Aggregate per `(kind, a, b)` into
-  `edge:<kind>:<a>-><b>` with `count`, `resolution` (`precise` if any aggregated reference is) and derived
+  `edge:<kind>:<a>-><b>` with `count`, `resolution` (`precise` or `heuristic` when all references agree, otherwise `mixed`) and derived
   anchors: each site as `call-site` (calls) or `usage`, plus each target's definition, at most 50 of each,
   never stored.
 - **Stored edges** are shown whatever their `kind`, when both ends are represented in the view. One whose id
@@ -1049,10 +1057,14 @@ id wins (validation reports the duplicates).
 - `deriveGraph(view, model, { edgeKinds? }) → { nodes, edges, stubs, ghosts }`, sorted by id (the option
   overrides `view.edgeKinds`). `nodes[i] = { id, label, kind, symbolKind?, container, parent?, role?, tech?,
   opens?, expandable? }` (`expandable`: it opens a graph view, see `levels.ts`); `edges[i] = { id, from, to,
-  kind, label?, summary?, count, stored, anchors, via?, resolution: "precise" | "heuristic" | "llm" | "user" |
+  kind, label?, summary?, count, stored, anchors, via?, resolution: "precise" | "heuristic" | "mixed" | "llm" | "user" |
   "static" }`; `ghosts[i] = { id, key, kind: "target" | "rest" | "more", label,
   target?, kinds, count, direction: "in" | "out" | "both", targets }`; `stubs[i] = { id, direction, inside,
   ghost (the key), ghostLabel, targets, kinds, count }`.
+- The viewer also preserves mixed confidence when it combines edge kinds between the same boxes.
+  Mixed arrows are subdued like heuristic arrows and labelled "mixed confidence"; their details say
+  that some references are hints. Selection details and code focus use the drawn aggregate
+  (all kinds, total reference count and their anchors). Individual index references remain `precise` or `heuristic`.
 - Pure view edits: `expandStub(view, stub)`: `include += ghost target` (nothing for a folded ghost).
   `drillIn(view, id, model)`: `include +=` the node (when missing) and its children (a group opens into its
   members), so it becomes a container. `collapse(view, id, model)`: remove its included descendants (for a
@@ -1357,7 +1369,7 @@ stdout (a rejection exits 1); fatal errors (`error: …`) and warnings (`warning
 
 | Command | Does |
 |---|---|
-| `xpl index [--precise auto\|off\|require] [--commit c] [--no-cache] [--scip artifact\|manifest.json]` | build + write the index; caches file-local extraction by default, `--no-cache` bypasses reads/writes, resolution and semantic tooling stay fresh; `--scip` selects source-verified artifact import instead of automatic tools; writes `.explainer/.gitignore` (`index-*.json`); prints per-language trust, independent coverage and names explainers bound to another index |
+| `xpl index [--precise auto\|off\|require] [--commit c] [--no-cache] [--scip artifact\|manifest.json]` | build + write the index; caches file-local extraction by default, `--no-cache` bypasses reads/writes, resolution and semantic tooling stay fresh; `--scip` selects source-verified artifact import instead of automatic tools; writes `.explainer/.gitignore` (`index-*.json`); prints per-language trust, independent coverage, enumerated exclusions and names explainers bound to another index |
 | `xpl outline [--under <id>] [--depth n] [--kind k,...] [--keys] [--limit n]` | dir/file/symbol tree with kind, lines, fan-in/fan-out (references into/out of the subtree); default depth 2; config keys only with `--keys`; `--kind method,function` keeps only those symbol kinds, with the dirs, files and parents that hold a match; the repo line carries the name `xpl new` records |
 | `xpl show <id> [--refs] [--context n] [--lines a-b] [--max-lines n]` | code with 0-based offsets relative to the symbol (the numbers spans use); dirs and the repo list children; `--refs` appends outgoing and incoming references with `+offset`. `xpl show --at base <path> [--lines a-b] [--explainer name]`: a changed file as it was before the change the explainer records, with the offsets a base anchor's span uses (from line 1) and `-` on the lines the change removes or rewrites; paths only (a symbol id is a usage error); `--explainer` picks the explainer when several record a change |
 | `xpl refs <id> [--in\|--out] [--kind k] [--depth n] [--max-children n] [--limit n] [--tests]` | call/reference hierarchy with sites; hops through interfaces as `impl` lines and through base classes (TS, JS, Python) as `override` lines; test doubles and test subclasses hidden unless `--tests`; a subtree is printed once (later occurrences: `(expanded above)`), at most `--max-children` (default 15) references under a line of a hierarchy (`... +8 more`); `--kind read` finds the readers of a variable or field |
