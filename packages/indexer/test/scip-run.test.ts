@@ -95,25 +95,30 @@ describe("runCommand", () => {
     timeoutMs,
   });
 
-  it("aborts a running provider and waits for its process to stop", async () => {
-    const dir = makeDir({});
-    const marker = join(dir, "alive");
-    const abort = new AbortController();
-    const running = runCommand(
-      process.execPath,
-      [
-        "-e",
-        `const fs = require('node:fs'); setInterval(() => fs.appendFileSync(${JSON.stringify(marker)}, 'x'), 20);`,
-      ],
-      { ...options(), signal: abort.signal },
-    );
-    await expect.poll(() => existsSync(marker)).toBe(true);
-    abort.abort(new Error("cancel provider"));
-    await expect(running).rejects.toThrow("cancel provider");
-    const stopped = readFileSync(marker, "utf8");
-    await new Promise((resolve) => setTimeout(resolve, 100));
-    expect(readFileSync(marker, "utf8")).toBe(stopped);
-  });
+  it.each([false, true])(
+    "aborts a provider (ignores SIGTERM: %s) and waits for it to stop",
+    async (ignoresTerm) => {
+      const dir = makeDir({});
+      const marker = join(dir, "alive");
+      const abort = new AbortController();
+      const running = runCommand(
+        process.execPath,
+        [
+          "-e",
+          `const fs = require('node:fs'); ${ignoresTerm ? "process.on('SIGTERM', () => {});" : ""} setInterval(() => fs.appendFileSync(${JSON.stringify(marker)}, 'x'), 20);`,
+        ],
+        { ...options(), signal: abort.signal },
+      );
+      await expect.poll(() => existsSync(marker)).toBe(true);
+      const started = Date.now();
+      abort.abort(new Error("cancel provider"));
+      await expect(running).rejects.toThrow("cancel provider");
+      if (!ignoresTerm) expect(Date.now() - started).toBeLessThan(1500);
+      const stopped = readFileSync(marker, "utf8");
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      expect(readFileSync(marker, "utf8")).toBe(stopped);
+    },
+  );
 
   it("captures stdout, stderr and the exit code", async () => {
     const result = await runCommand(

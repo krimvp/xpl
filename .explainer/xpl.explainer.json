@@ -15381,10 +15381,10 @@
               "role": "call-site",
               "hash": "sha256-v2:1478da2e9745",
               "resolved": {
-                "commit": "wt-430cef6877",
+                "commit": "wt-8d8c15badf",
                 "range": {
-                  "startLine": 407,
-                  "endLine": 409
+                  "startLine": 418,
+                  "endLine": 420
                 },
                 "status": "ok"
               }
@@ -15395,10 +15395,10 @@
               "role": "definition",
               "hash": "sha256-v2:d51ff1c45058",
               "resolved": {
-                "commit": "wt-430cef6877",
+                "commit": "wt-8d8c15badf",
                 "range": {
-                  "startLine": 258,
-                  "endLine": 297
+                  "startLine": 269,
+                  "endLine": 308
                 },
                 "status": "ok"
               }
@@ -15407,12 +15407,12 @@
               "file": "packages/indexer/src/scip/run.ts",
               "symbol": "runCommand",
               "role": "definition",
-              "hash": "sha256-v2:3ab23d72d254",
+              "hash": "sha256-v2:4869b5aa3d18",
               "resolved": {
-                "commit": "wt-430cef6877",
+                "commit": "wt-8d8c15badf",
                 "range": {
                   "startLine": 104,
-                  "endLine": 166
+                  "endLine": 177
                 },
                 "status": "ok"
               }
@@ -15423,10 +15423,10 @@
               "role": "definition",
               "hash": "sha256-v2:5feaf1c1fd64",
               "resolved": {
-                "commit": "wt-430cef6877",
+                "commit": "wt-8d8c15badf",
                 "range": {
-                  "startLine": 299,
-                  "endLine": 312
+                  "startLine": 310,
+                  "endLine": 323
                 },
                 "status": "ok"
               }
@@ -15437,10 +15437,10 @@
               "role": "usage",
               "hash": "sha256-v2:45f63e31c5e1",
               "resolved": {
-                "commit": "wt-430cef6877",
+                "commit": "wt-8d8c15badf",
                 "range": {
-                  "startLine": 227,
-                  "endLine": 230
+                  "startLine": 238,
+                  "endLine": 241
                 },
                 "status": "ok"
               }
@@ -15451,7 +15451,7 @@
               "role": "usage",
               "hash": "sha256-v2:4991e7775929",
               "resolved": {
-                "commit": "wt-430cef6877",
+                "commit": "wt-8d8c15badf",
                 "range": {
                   "startLine": 58,
                   "endLine": 58
@@ -15837,7 +15837,7 @@
       ],
       "provenance": {
         "origin": "llm",
-        "commit": "wt-430cef6877"
+        "commit": "wt-8d8c15badf"
       }
     },
     {

@@ -161,6 +161,17 @@ export const runCommand: CommandRunner = (command, args, options) =>
       clearTimeout(timer);
       closed = true;
       exitCode = code;
+      if (killTimer) {
+        try {
+          // A closed leader can leave descendants alive; keep escalation only while its group exists.
+          process.kill(process.platform === "win32" ? child.pid! : -child.pid!, 0);
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code === "ESRCH") {
+            clearTimeout(killTimer);
+            killTimer = undefined;
+          }
+        }
+      }
       if (!killTimer) finish();
     });
   });
