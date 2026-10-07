@@ -1,5 +1,5 @@
+/** Standard @name/@definition.* captures become source-backed declarations, with optional bounded call analysis. */
 import { setImmediate } from "node:timers/promises";
-/** Standard @name/@definition.* captures become source-backed declarations, never resolved call edges. */
 import { Query, type Node } from "web-tree-sitter";
 import { RELATIONSHIP_CAPABILITIES, splitLines } from "@xpl/core";
 import type { IndexedSymbol, FileLanguage, AnalysisReport } from "@xpl/core";
@@ -12,6 +12,7 @@ import type {
   ProviderOutput,
   ProviderRange,
   ProviderDeclaration,
+  ProviderRelationship,
 } from "./providers.js";
 
 interface TagsProfile {
@@ -24,6 +25,14 @@ interface TagsProfile {
   methodParents: readonly string[];
   label(tag: string, name: string, context?: string): string;
   limitations: string[];
+  calls?: {
+    extract(
+      root: Node,
+      file: string,
+      declarations: readonly ProviderDeclaration[],
+    ): ProviderRelationship[];
+    limitations: string[];
+  };
 }
 const KINDS: Readonly<Record<string, IndexedSymbol["kind"]>> = {
   class: "class",
@@ -42,14 +51,17 @@ function range(node: Node): ProviderRange {
   };
 }
 
-/** Reusable tagging adapter: profiles supply a query and labels, not a language resolver. */
+/** Reusable tagging adapter: profiles supply tags, labels and optional bounded file-local calls. */
 export class TagsProvider implements IndexProvider {
   readonly mode = "syntax";
-  readonly capabilities = {
-    symbols: "partial",
-    declarationRanges: "partial",
-    nesting: "partial",
-  } as const;
+  get capabilities() {
+    return {
+      symbols: "partial",
+      declarationRanges: "partial",
+      nesting: "partial",
+      ...(this.profile.calls ? { call: "partial" as const } : {}),
+    } as const;
+  }
   readonly id: string;
   readonly languages: readonly FileLanguage[];
   constructor(private readonly profile: TagsProfile) {
@@ -59,6 +71,7 @@ export class TagsProvider implements IndexProvider {
   async analyze(input: ProviderInput): Promise<ProviderOutput> {
     let parser: Awaited<ReturnType<typeof createParser>> | undefined;
     const declarations: ProviderDeclaration[] = [];
+    const relationships: ProviderRelationship[] = [];
     const analysis = new Map<boolean, AnalysisReport>();
     const sourceHashes: Record<string, string> = {};
     let query: Query | undefined;
@@ -131,6 +144,9 @@ export class TagsProvider implements IndexProvider {
             const errors = significantSyntaxErrors(source.path, findSyntaxErrors(tree.rootNode));
             return {
               declarations,
+              relationships: errors
+                ? []
+                : (this.profile.calls?.extract(tree.rootNode, source.path, declarations) ?? []),
               recovered: Boolean(errors),
               warning: errors ? syntaxErrorWarning([errors]) : undefined,
             };
@@ -150,19 +166,23 @@ export class TagsProvider implements IndexProvider {
                   kinds: this.profile.kinds,
                   methodParents: this.profile.methodParents,
                   limitations: this.profile.limitations,
+                  callLimitations: this.profile.calls?.limitations,
                 }),
               },
               extract,
             )
           : await extract();
         declarations.push(...result.declarations);
+        relationships.push(...result.relationships);
         if (result.warning) input.warn(result.warning);
         // All other outcomes are fixed by this profile; syntax recovery changes the limitations.
         const recovered = result.recovered;
         const report = analysis.get(recovered);
         if (report) {
           report.files.push(source.path);
-          report.results[0]!.analyzedFiles.push(source.path);
+          for (const result of report.results) {
+            if (result.status === "partial") result.analyzedFiles.push(source.path);
+          }
           continue;
         }
         analysis.set(recovered, {
@@ -179,13 +199,29 @@ export class TagsProvider implements IndexProvider {
                 ...(recovered ? ["Syntax errors may leave declarations incomplete."] : []),
               ],
             },
+            ...(this.profile.calls
+              ? [
+                  {
+                    capabilities: ["call" as const],
+                    status: recovered ? ("failed" as const) : ("partial" as const),
+                    resolution: "heuristic" as const,
+                    analyzedFiles: recovered ? [] : [source.path],
+                    limitations: [
+                      ...this.profile.calls.limitations,
+                      ...(recovered
+                        ? ["Syntax errors suppress direct call analysis in this file."]
+                        : []),
+                    ],
+                  },
+                ]
+              : []),
             {
-              capabilities: [...RELATIONSHIP_CAPABILITIES],
+              capabilities: RELATIONSHIP_CAPABILITIES.filter(
+                (kind) => !this.profile.calls || kind !== "call",
+              ),
               status: "unsupported",
               analyzedFiles: [],
-              limitations: [
-                "Relationship analysis is unavailable; syntax call sites are not resolved edges.",
-              ],
+              limitations: ["These relationship kinds are unavailable in this syntax provider."],
             },
           ],
         });
@@ -201,7 +237,7 @@ export class TagsProvider implements IndexProvider {
       tool: this.profile.version,
       sourceHashes,
       declarations,
-      relationships: [],
+      relationships,
       analysis: [...analysis.values()],
     };
   }

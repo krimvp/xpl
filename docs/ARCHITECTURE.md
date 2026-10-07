@@ -742,11 +742,16 @@ labels collapse whitespace; those compound names have full declaration evidence 
 
 Rust uses `tree-sitter-rust@0.24.0` (WASM ABI 14). The CLI copies the corrected query beside its grammar in
 `dist/wasm`; source runs read it from the adapter directory. Rust reports partial symbols, declaration ranges
-and nesting, and unsupported relationship kinds. It does not resolve calls, imports, receiver ownership or
-external `mod` links, expand macros, evaluate cfg, or index fields, variants and local bindings. Declaration
+and nesting. Its bounded call pass resolves bare calls between unambiguous root-level functions in the
+same file, with exact call-expression ranges and `heuristic` confidence. Shadowed names, nested functions,
+closures, qualified/generic calls, methods, trait dispatch and cross-module targets are omitted. Bodies
+containing macros or local imports are skipped. Syntax errors suppress calls for that file. Call coverage
+is partial; other relationship kinds remain unsupported. It does not resolve imports, receiver ownership
+or external `mod` links, expand macros, evaluate cfg, or index fields, variants and local bindings. Declaration
 ranges exclude leading attributes and doc comments. Syntax recovery adds a limit and a warning. Matching
 tags outcomes share one report with combined file counts; syntax-error files keep a separate report.
-[The experiment record](rust-tags.md) gives literal cases, measurements, query coverage and repeatable commands.
+[The tags experiment](rust-tags.md) records declaration coverage; [bounded direct calls](rust-direct-calls.md)
+records the supported slice and a bat smoke test. Tags cache version query-v4 includes call extraction.
 
 **Analysis coverage** (`core/src/analysis.ts`, `indexer/src/analysis.ts`). An `AnalysisReport` contains a
 stable `provider` id, advertised `capabilities`, scoped `files`, and observed `results`. Capabilities are
@@ -2446,10 +2451,21 @@ static bundle lists only the files it embeds, with a footer "N of M files includ
 CodeMirror editors (language modes for TS/TSX/JS, Python, Go, YAML and JSON; Rust, TOML and other text are plain).
 Both splits (diagram / panels, diagram / code) are resizable. Below 900 px the halves stack.
 
+**Diagram text alternative** (`components/DiagramText.tsx`, `PanZoom.textView`): every live map,
+sequence and flow has a **Text view** toggle beside its Key. It replaces the picture with native lists and
+buttons, leaving linked code visible. Maps list their current nodes, displayed aggregate relationships and
+outside-map boundaries, with direction and existing precise/heuristic/mixed or author provenance labels.
+Outside targets can be added through the same expansion action as a ghost. Sequences list participants
+and messages; flows list stages and directed transitions. Choosing a flow transition selects that link in both text and SVG. Viewer derivation keeps a map of
+transition IDs and shows the checked source anchors of both endpoints (only the source for a return to
+the caller). Details names its direction and explains that links have no separate source anchor. The
+toggle precedes the list in keyboard order. Selection uses the same store action as the diagram. The list updates with the current level, nodes and edge-kind filters. Scrolling it never zooms
+the hidden SVG. Turning the toggle off restores the diagram and its selection.
 **Diagram keyboard navigation** (`components/PanZoom.tsx`): focus the canvas and press Enter to
 focus its first element. Up/Down cycle through the drawn elements in reading order; Home/End go to the
 first/last. Left/Right follow incoming/outgoing relationships: maps and sequences move through an arrow
-and its source or target; flows move between connected stages. When there is more than one link, the first
+and its source or target; flows move through a link between connected stages. Flow stages come before
+links in keyboard reading order, while the SVG paints links behind them. When there is more than one link, the first
 in drawing order is followed; Up/Down reach the other links. Enter/Space select the focused element and
 show its checked code through the same path as a click. Focused elements are panned into view. Escape
 returns to the canvas without changing selection; Tab and Shift+Tab retain their normal page order.
