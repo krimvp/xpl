@@ -28,6 +28,9 @@ claims or coverage. Claude Code needs its own installation, authentication and p
 See [Getting started](https://krimvp.github.io/xpl/docs/getting-started/) for the first guide and
 the [CLI reference](skill/code-explainer/reference/cli.md) for command options.
 
+To create a checked draft directly from the CLI, run `xpl start <name> --question "..." --audience "..."`
+in your repository, then `xpl view <name>` and complete the TODO text.
+
 ### GitHub pull requests
 
 Prepare a PR's base and head as an isolated input with `xpl pr prepare`; author a guide and run `xpl
