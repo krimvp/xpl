@@ -16,7 +16,8 @@ git ───── xpl change ───────────────↗ 
 
 An explainer answers one of three scopes: a question about part of a project, a whole repo, or a change
 between two commits. For a change, `xpl change` records the diff in the explainer and the viewer shows it.
-`xpl draft` prints a patch skeleton built from the index (and the change), so Claude writes only the text;
+`xpl draft` prints a patch skeleton built from the index (and the change), so the authoring agent writes
+only the text;
 `xpl lint` checks that text before and after it is applied.
 
 ---
@@ -84,8 +85,8 @@ packages/
   cli/      @xpl/cli      `xpl` command; esbuild bundle → packages/cli/dist/xpl.mjs, with dist/wasm/ (the
                           tree-sitter .wasm files) and dist/viewer.html (a copy of the built viewer) beside it
   viewer/   @xpl/viewer   React 19 + CodeMirror 6 + dagre; vite single-file build → packages/viewer/dist/index.html
-skill/code-explainer/   Claude skill: SKILL.md, README.md, reference/ (quick.md, cli.md, patch-format.md, writing.md,
-                        create.md, explain-change.md, examples/), bin/xpl (an installed CLI launcher with a source fallback)
+skill/code-explainer/   shared skill: SKILL.md, README.md, reference/ (quick.md, cli.md, patch-format.md,
+                        writing.md, create.md, explain-change.md, examples/), bin/xpl (CLI launcher)
 fixtures/{ts,py,go}-jobrunner/   tiny real repos + committed explainers in .explainer/
 docs/                   handoff.md, ARCHITECTURE.md, analysis-2026-09-30.txt, review-*.md (review notes),
                         review-2026-10-03-real-runs/ (the per-run reports of that review), images/,
@@ -277,7 +278,8 @@ Conventions (all packages):
     the fingerprint is `{ version: "xpl-review@1", contentHash, evidenceHash }` (§4.6).
 
 Patch-side types (never stored) live in `packages/core/src/patch.ts`; its header holds the authoritative
-merge rules and `skill/code-explainer/reference/patch-format.md` is the practical guide. What Claude writes:
+merge rules and `skill/code-explainer/reference/patch-format.md` is the practical guide. The authoring
+agent writes:
 
 ```ts
 /** `applyPatch` turns it into a stored Anchor (hash + resolved filled in). */
@@ -1392,9 +1394,9 @@ stdout (a rejection exits 1); fatal errors (`error: …`) and warnings (`warning
 | `xpl view <explainer> [--port p] [--host h] [--no-open]` | local server (below) |
 | `xpl service <start\|pause\|resume\|stop\|status> [explainer] [--background] [--port p] [--backend none\|claude] [--skill-dir folder] [--job-timeout seconds] [--recover] [--watch]` | optional repository-scoped lifecycle around the same viewer server; loopback only; persisted context and explicit interrupted-owner recovery |
 | `xpl bundle <explainer> -o out.html [--mode explore\|present] [--tour id] [--files referenced\|boundary\|all] [--boundary-max n] [--embed-index full\|pruned] [--draft] [--note reason] [--require-review] [--allow-drift]` | self-contained HTML after the shared readiness check (exit 1 before writing with errors); `--draft` writes a labelled preview with findings; `--allow-drift` is a legacy draft flag that still refuses stale indexes; warnings and optional author notes are retained; `--tour` (`tour:intro` or `intro`) implies present mode; embeds the files the explainer references by default and prints what went in (`8 of 12 files embedded (referenced: 18.4 KB of source; --files all adds 4 files, 6.7 KB)`), `--files boundary` adds the direct callers, callees and tests of anchored symbols (at most `--boundary-max`, default 40), `--files all` every indexed file; with a change recorded, every changed file at head and the base text of the changed files go in too; the symbol index in it is pruned to what the viewer can draw with `--files referenced` or `boundary` and whole with `--files all` (`--embed-index` overrides) and packed (the summary line says `index 0.3 MB (1.3 MB as plain JSON, pruned from 9.0 MB)`) |
-| `xpl doctor [--agent none\|claude] [--skill-dir path]` | local setup report: Node, artifact hashes, grammar loading, installed skill and optional git/npx/Go; selected Claude Code availability; no downloads or authentication probes; required failures exit 1 |
+| `xpl doctor [--agent none\|claude\|codex\|pi\|droid\|devin] [--skill-dir path]` | local setup report: Node, artifact hashes, grammar loading, installed skill and optional git/npx/Go; selected harness availability; no downloads or authentication probes; required failures exit 1 |
 | `xpl stage <explainer> --dir <outside-folder> [--preview] [--files referenced\|boundary\|all] [--note reason] [--require-review] [--pr-result result.json]` | previews included head/base files; stages only ready local HTML and an immutable manifest, rechecks inputs before promoting an atomic current symlink under a lock; retains prior versions; PR guides require a verified ready result and a final GitHub base/head check |
-| `xpl skill install [--dir path]` | copies the bundled skill and writes its CLI binding; repeat to update; defaults to `~/.claude/skills/code-explainer`; refuses unmanaged directories, symlinks and local edits |
+| `xpl skill install [--agent claude\|codex\|pi\|droid\|devin] [--dir path]` | copies the bundled skill and writes its CLI binding; repeat to update; Claude is default; defaults to `~/.claude/skills/code-explainer` for Claude, `~/.agents/skills/code-explainer` for Codex/Pi/Droid, and the current project's `.agents/skills/code-explainer` for Devin; refuses unmanaged directories, symlinks and local edits |
 
 **Installed artifact.** Workspace packages remain private. `npm run build` writes standalone package
 metadata in `packages/cli/dist`, with `@xpl/cli`'s version, a `bin` entry, Node >=22.12 and no dependencies
@@ -1545,10 +1547,10 @@ manifest alone must never be promoted as a ready or current version.
 input, verifies the installed skill inventory/absolute CLI binding and runs that skill's launcher for
 `new`, `change API-base..head` and `draft change`. `--name`, `--audience` and `--question` are required;
 `--skill-dir` selects a managed installation. `handoff.json` binds the input digest, guide name and CLI
-path/hash. Its explicit `/code-explainer` invocation tells the author to read the installed skill and
-create.md, inspect source and complete the draft. Its reusable `env` command prefix excludes inherited
-Git repository/config overrides, pins owned Git paths and the installed CLI, disables hooks/fsmonitor,
-and supplies the exact root/index. No generation backend, model subprocess or service is started.
+path/hash. Its prompt tells the author to invoke the installed skill with the selected harness token,
+read `create.md`, inspect source and complete the draft. Its reusable `env` prefix strips inherited Git
+overrides, pins owned Git paths and the installed CLI, disables hooks/fsmonitor, and passes the exact
+root/index. No generation backend, model subprocess or service is started.
 
 `xpl pr finish <input-directory>` serializes finish calls with the existing file lock, revalidates owned
 paths/input/index hashes after waiting, and requires the guide's complete change record and index to
@@ -2531,7 +2533,7 @@ A name-based UUID is derived from the request ID before POST, without reading or
 Uncertain delivery, reload and separate browser sessions reuse the question's job; the service also
 enforces one job per request under its ledger lock. Browser storage refusal cannot prevent live answering.
 Existing jobs for a request are inspected instead of starting another answer. Backend/network refusal
-retains pending feedback and names export, CLI import and `/code-explainer feedback` as the next steps.
+retains pending feedback and names export, CLI import and the harness-specific skill invocation for feedback as the next steps.
 
 Completed answers are read through the existing validated feedback store and merge independently of
 outcome revisions. JSON import validates the prospective union before mutation, including answer ownership
@@ -2726,20 +2728,27 @@ from `GET /api/base-file` (each file once; an error shows in its pane).
 ## 7. Skill (`skill/code-explainer`)
 
 `SKILL.md` drives the operations below, plus regeneration, through the CLI (`<skill-dir>/bin/xpl`).
-`xpl skill install` copies the artifact's bundled skill, with `xpl-install.json` recording the installed
-CLI's absolute path, skill version and owned file hashes. Repeating installation updates the copy and
+`xpl skill install` copies the artifact's bundled skill for Claude Code, Codex, Pi, Factory Droid or
+Devin; Claude Code is the default. Codex, Pi and Factory Droid install to `~/.agents/skills/code-explainer`;
+Devin installs to the current project's `.agents/skills/code-explainer`. The installer accepts `--dir`
+for a project destination. The npm package
+bundles the CLI and skill; harness installation, authentication and provider access are separate.
+`xpl-install.json` records the installed CLI's absolute path, skill version and owned file hashes.
+Repeating installation updates the copy and
 launcher under a directory lock. It stages a replacement beside the destination and rolls back if the
 replacement fails. It refuses symlinks, unmanaged directories, changed owned files and extra files;
 move them aside to preserve edits before reinstalling. A moved CLI is repaired by rerunning installation.
 `XPL_CLI=<xpl.mjs>` overrides the binding; a source-development skill still finds
-`packages/cli/dist/xpl.mjs` relative to its real path. Everything Claude writes is a patch; it never edits
-an explainer by hand. SKILL.md and its `reference/` files are the source of truth for the rules; this section
-only says how they use the CLI. Claude Code installation, authentication and provider access are separate;
-the skill never starts a resident generation worker.
+`packages/cli/dist/xpl.mjs` relative to its real path. Everything the authoring harness writes is a
+patch; it never edits an explainer by hand. SKILL.md and its `reference/` files are the source of truth
+for the rules; this section
+only says how they use the CLI. Harness installation, authentication and provider access are separate;
+the skill never starts a resident generation worker. Live harness invocation has not been verified.
 
-Before indexing, Claude gathers the repository root, audience, question and guide name. It lists existing
-guides and uses one only when selected by the user; `new` refuses a collision. The installed entry and
-recovery instructions are in `reference/create.md`. Drafts receive `--audience` and `--question`; scratch
+Before indexing, the authoring agent gathers the repository root, audience, question and guide name. It
+lists existing guides and uses one only when selected by the user; `new` refuses a collision. The
+installed entry and recovery instructions are in `reference/create.md`. Drafts receive `--audience` and
+`--question`; scratch
 patches and snapshots stay outside the indexed tree. An interrupted authoring run resumes from the stored
 guide and outside patch, without deleting the guide or using `--actor user` to bypass protected fields.
 Creation finishes with `xpl ready <name>` and a gated offline bundle outside the source root. The author
@@ -2747,8 +2756,8 @@ records justified warning/omission decisions with the same `--note` on both comm
 locally or inspects the snapshot, and reports what was checked. A requested `--draft` preview is labelled
 as unfinished; it is not the creation workflow's finished result.
 
-Claude first chooses one of three scopes: `explain <question>` (part of a project), `explain repo` (the whole
-project) or `explain change <base>..<head>` (a diff). The reader sees the tour title and its `summary` first,
+The authoring agent chooses among three scopes: `explain <question>` (part of a project), `explain repo`
+(the whole project) or `explain change <base>..<head>` (a diff). The reader sees the tour title and its `summary` first,
 then the steps, then the maps and the code on demand, so the tour is written top-down: the big picture, the
 main path, the details, edge cases last. Fast mode ("quickly", "the gist"): the draft's one picture and
 about 5 steps, no other views, concepts or `llm` edges; the checks still apply. `reference/quick.md` puts the
@@ -2779,7 +2788,7 @@ newcomer's re-read → `xpl ready` → `xpl bundle --files boundary` (the defaul
   sentences.
 - **`explain change <base>..<head>`** (`reference/explain-change.md`): read-only on the user's repo and
   remotes. `xpl change` records the diff and prints the changed symbols, their direct callers and the tests
-  that reference them; Claude checks each "before" claim in the base code and anchors it there
+  that reference them; the authoring agent checks each "before" claim in the base code and anchors it there
   (`at: "base"`), follows the callers and consumers of a changed result, names the tests and the gaps, and writes
   the tour in review order: what changes for users, where it enters, each changed piece, who else is
   affected, tests, risks. Every changed file is anchored, tests included.
@@ -2956,8 +2965,9 @@ identities to syntax ranges. This is a proposed contract revision, not a change 
   framework are not seen, `callers via instance` is a guess, and "no test found" means no test names the
   symbol, not that no test runs it.
 - Drafts give structure, not understanding: a map, a sequence, anchors and a tour in the right order. The
-  concepts, flows, `llm` edges, base anchors and every sentence are Claude's (a draft covers about one view
-  and most of the tour steps of a hand-written explainer, and roughly half its anchors). `xpl draft path` is
+  concepts, flows, `llm` edges, base anchors and every sentence are written by the selected authoring agent.
+  A draft covers about one view and most of the tour steps of a hand-written explainer, with roughly half
+  its anchors. `xpl draft path` is
   depth 1, so a path whose layers call each other through a variable (`self.app`) is not rebuilt.
 - `xpl lint` is mechanical: it catches slogans, absolute words, long sentences, code titles and order
   problems, not wrong claims. `repeats-summary` finds near-verbatim repeats only.

@@ -6,6 +6,7 @@ import {
   cpSync,
   mkdirSync,
   readFileSync,
+  realpathSync,
   readdirSync,
   renameSync,
   rmSync,
@@ -279,8 +280,8 @@ describe("PR input", () => {
     const handoff = readJson(output.directory, "handoff.json");
     expect(handoff.kind).toBe("github-pr-creation");
     expect(handoff.skill.cli).toBe(installed.cli);
-    expect(handoff.skill.launcher).toBe(join(installed.skill, "bin/xpl"));
-    expect(handoff.invocation).toContain(`/code-explainer explain change ${f.base}..${f.head}`);
+    expect(handoff.skill.launcher).toBe(join(realpathSync(installed.skill), "bin/xpl"));
+    expect(handoff.invocation).toMatch(new RegExp(`^explain change ${f.base}\\.\\.${f.head}\\.`));
     expect(handoff.invocation).toContain(output.repository);
     expect(handoff.invocation).toContain("Existing guide: review-change");
     expect(handoff.invocation).toContain("What changes for app callers?");

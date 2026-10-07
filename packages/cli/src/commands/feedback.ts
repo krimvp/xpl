@@ -32,8 +32,8 @@ export const feedbackCommand: CommandSpec = {
     "request's original {explainerHash, sourceHash}. Status: pending, addressed, unresolved, rejected,",
     "outdated. Only those IDs change and increment their outcome revision. Failed writes leave the",
     "prior store intact; new feedback survives. Missing revisions in older exports read as zero.",
-    "Saving/importing never starts generation. Run /code-explainer feedback in your chosen agent",
-    "for the next explicit pass. Never delete the feedback store after processing a batch.",
+    "Saving/importing never starts generation. Invoke code-explainer in your harness for the next",
+    "feedback pass. Never delete the feedback store after processing a batch.",
   ],
   options: {
     import: {
@@ -135,7 +135,7 @@ export const feedbackCommand: CommandSpec = {
             (r) =>
               `${r.id}  ${r.outcome.status}${r.contextStatus === "outdated" ? " (outdated context)" : ""}  ${r.kind} ${r.elementId}\n  ${r.outcome.reason}${r.contextReason ? `\n  ${r.contextReason}` : ""}`,
           ),
-          "Run /code-explainer feedback in your chosen agent for the next explicit pass. Saving feedback does not start generation.",
+          "Invoke code-explainer in your harness for the next explicit feedback pass. Saving feedback does not start generation.",
         ].join("\n"),
       );
     return 0;
