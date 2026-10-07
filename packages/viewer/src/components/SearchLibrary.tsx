@@ -189,12 +189,14 @@ export function SearchLibrary({ onClose }: { onClose: () => void }) {
   };
   const open = (event: MouseEvent<HTMLAnchorElement>, guide: string, hit?: SearchHit) => {
     const switching = guide !== current;
-    if (switching && blocked) {
+    const sourceLink = hit?.kind === "source" || hit?.kind === "symbol";
+    const leavesPage = switching || (sourceLink && state.serverMode);
+    if (leavesPage && blocked) {
       event.preventDefault();
-      setError("Save or cancel drafts and pending edits before switching guides.");
+      setError("Save or cancel drafts and pending edits before opening another snapshot.");
       return;
     }
-    if (switching || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+    if (leavesPage || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
     event.preventDefault();
     if (!hit) {
       onClose();

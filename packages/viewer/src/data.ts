@@ -58,6 +58,8 @@ export function loadBundle(doc: Document = document): LoadedBundle {
       throw new Error(
         `Source snapshot "${snapshot}" is unavailable; this guide supplies "${bundle.index.commit}". Reopen search in the available guide.`,
       );
+    // A source link is a fixed snapshot: polling and lazy API reads could replace its text.
+    if (snapshot) delete bundle.server;
     const version = new URLSearchParams(doc.location?.search ?? "").get("version");
     if (version && version !== bundle.publication?.current.version)
       throw new Error(

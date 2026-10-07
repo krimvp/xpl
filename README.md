@@ -47,7 +47,7 @@ reference](skill/code-explainer/reference/cli.md) for the full command options.
 ### Search, libraries and saved versions
 
 Use the viewer's Search panel to find symbols, source, concepts and tour steps across its contained
-guides. Source results name the guide and commit and open that snapshot. `xpl bundle` can
+guides. Source results name the guide and commit and open that snapshot offline. `xpl bundle` can
 include several checked guides for offline browsing; `xpl stage` stores immutable versions locally.
 See [Find and share](https://krimvp.github.io/xpl/docs/workflows/find-and-share/).
 

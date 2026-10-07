@@ -2273,6 +2273,9 @@ links remain compatible. Opening a range validates it against supplied text, sel
 CodeMirror and enters Code. Tour phrases open the recorded step in Guide. Links survive reloads and use
 stable step IDs when reading; malformed or unavailable source ranges do not open another range. A source
 link whose snapshot commit differs from the selected bundle is rejected before rendering source.
+Source links from a live guide navigate to an offline snapshot: the loader removes its server attachment,
+so polling, lazy source reads and API writes cannot substitute a later workspace. Pending edits block
+this navigation. Reloading checks the commit again; it does not silently follow the live guide.
 
 Exported pickers enumerate only contained snapshots. A live picker reads the guarded catalog; other-guide
 previews have no API or write identity and author changes are prohibited. Switching requires no unsaved

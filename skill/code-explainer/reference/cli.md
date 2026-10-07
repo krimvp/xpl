@@ -457,7 +457,7 @@ Opening current resolves to its immutable version folder before navigation. The 
 explanation panel shows its version, included source and captured prior versions with their scope and
 author review state. The existing query contract uses `version=<version-folder>`, `tour=<id>&step-id=<id>`,
 `view=<id>&focus=<element>` (repeatable), or `file=<path>&range=1:1-1:6&side=head|base`.
-The viewer searches source and symbols across contained guide snapshots. Results name the guide and index commit; source links add `guide=<key>&snapshot=<index-commit>`. A commit mismatch refuses to show another snapshot. Missing files and pruned symbols stay labelled; catalog-only guides are not searched until opened.
+The viewer searches source and symbols across contained guide snapshots. Results name the guide and index commit; source links add `guide=<key>&snapshot=<index-commit>`. A commit mismatch refuses to show another snapshot. Source links from live guides open offline, so later server updates cannot replace their source. Save or cancel pending edits first. Missing files and pruned symbols stay labelled; catalog-only guides are not searched until opened.
 Ranges use 1-based lines and inclusive UTF-16 columns; omitted columns select whole lines.
 Column positions allow line length + 1, including column 1 on an empty line. Base paths are change head
 keys, including renamed files and deleted files. Links resolve only supplied source.
