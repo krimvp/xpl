@@ -25,6 +25,7 @@ import {
   type NodeRole,
   type Stub,
 } from "@xpl/core";
+import { drawnEdges } from "../drawnEdges.js";
 import type { ChangeStatus } from "../diff.js";
 import { textWidth } from "../measure.js";
 import {
@@ -99,7 +100,7 @@ export interface LayoutEdge {
   id: string;
   /** A stub (dashed, to a ghost) rather than a derived or stored edge. */
   stub: boolean;
-  /** How much to trust the edge: `precise` / `heuristic` (derived), `llm` / `user` / `static` (stored), `stub`. */
+  /** How much to trust the edge: `precise` / `heuristic` / `mixed` (derived), `llm` / `user` / `static` (stored), `stub`. */
   resolution: string;
   /** Edge kind (`calls`, `emits`, ...), for styling. */
   kind: string;
@@ -261,44 +262,13 @@ function ghostWidth(label: string, detail: string): number {
 }
 
 function edgeLabelText(edge: DerivedEdge): string {
-  const text = edge.label ? edge.label : `${edge.kind} ×${edge.count}`;
+  const text =
+    (edge.label ? edge.label : `${edge.kind} ×${edge.count}`) +
+    (edge.resolution === "mixed" ? " (mixed confidence)" : "");
   // "A reaches C through B": one arrow, which names what it passes through
   const via = edge.via?.map((item) => item.label) ?? [];
   if (via.length === 0) return text;
   return edge.label ? `${text} (via ${via.join(", ")})` : `via ${via.join(", ")}`;
-}
-
-/**
- * The edges a map draws, fewer than it derives: a derived edge between two boxes that an authored edge already
- * joins (the same way) is left out, the authored one says it in words; and derived edges of several kinds
- * between the same two boxes become one arrow ("calls ×5 · references ×2"), under the id of the first. A
- * small map no longer gets an arrow per kind of reference.
- */
-export function drawnEdges(edges: readonly DerivedEdge[]): DerivedEdge[] {
-  const pair = (edge: DerivedEdge) => `${edge.from}\0${edge.to}`;
-  const authored = new Set(edges.filter((edge) => edge.stored).map(pair));
-  const merged = new Map<string, DerivedEdge>();
-  const out: DerivedEdge[] = [];
-  for (const edge of edges) {
-    if (edge.stored) {
-      out.push(edge);
-      continue;
-    }
-    if (authored.has(pair(edge))) continue;
-    const first = merged.get(pair(edge));
-    if (!first) {
-      const copy = { ...edge };
-      merged.set(pair(edge), copy);
-      out.push(copy);
-      continue;
-    }
-    first.label = `${first.label ?? `${first.kind} ×${first.count}`} · ${edge.kind} ×${edge.count}`;
-    if (edge.resolution === "precise") first.resolution = "precise";
-  }
-  // a merged arrow's label is still a count made up by the viewer, not words someone wrote
-  return out.map((edge) =>
-    !edge.stored && edge.label !== undefined ? { ...edge, label: edge.label } : edge,
-  );
 }
 
 function stubLabelText(stub: Stub): string {
