@@ -568,7 +568,11 @@ what to do: the user's edits win over Claude's.
 
 `--json` then has `ok: false`, `applied: false`, `protectedIds: [...]` and an `error` string (and `protectedIds` is also present on a partial success).
 
-## `xpl validate <explainer> [--lenient]`
+## `xpl validate [explainer] [--lenient]`
+
+For `validate`, `lint`, `ready`, `bundle` and `status`, omit the name when the repository has exactly one
+guide. xpl prints `using <name>` on stderr. If there are several, choose a listed name; if there are none,
+create one with `xpl new <name>`. Commands that write an explainer still require an explicit name.
 
 Strict validation requires an index matching the working tree. A stale index is an error even with
 `XPL_SKIP_STALE_CHECK=1`; `--lenient` makes it a repair warning. Run `xpl index`, resolve against the
@@ -832,7 +836,7 @@ changes, source, issues, readiness?}`. `changes` contains `{id, before, after}`;
 done. Readiness blockers remain visible in a review (exit 0), but `--accept` refuses them (exit 1). Rejected
 patches, scope/identity/freshness conflicts and malformed input also exit 1. No model is called.
 
-## `xpl lint <explainer> [--patch <file|->] [--warn-only]`
+## `xpl lint [explainer] [--patch <file|->] [--warn-only]`
 
 Checks the text a reader sees (the index, when there is one, only counts the boxes and arrows of maps): the explainer title, tour titles, tour `summary`, tour step notes, view titles, flow and sequence step labels and summaries, the `summary` and `detail` of nodes, edges and concepts, and the labels of groups and concepts. It also checks the order of each tour, and what the viewer will show (a step it must title itself, a crowded map). It applies the rules of `reference/writing.md`. Run it before `xpl bundle`, and fix what it finds with a patch.
 
@@ -1302,7 +1306,7 @@ explicit acceptance. No control submits feedback, runs an agent, accepts a propo
 Local configuration and supplied SCIP files are watched; external dependency or tool/environment changes
 need a restart or manual indexing. See ARCHITECTURE §3 and §5 for the boundary.
 
-## `xpl ready <explainer> [--note reason] [--require-review]`
+## `xpl ready [explainer] [--note reason] [--require-review]`
 
 Checks strict structure/references, workspace/index freshness, required text (visible summaries and guide
 content), source availability and reader lint. Errors block ready export; warnings invite author judgment.
@@ -1333,7 +1337,7 @@ remove reviews. Selected IDs cover those stored records and their own anchors, n
 scope and named whole files widen evidence and are included in exports. The Save as HTML team policy
 checkbox is off by default and retains its explicit choice for offline re-saves.
 
-## `xpl bundle <explainer> -o out.html [--mode explore|present] [--tour id] [--files referenced|boundary|all] [--boundary-max n] [--embed-index full|pruned] [--include-guides id,id] [--draft] [--note reason] [--require-review] [--allow-drift]`
+## `xpl bundle [explainer] -o out.html [--mode explore|present] [--tour id] [--files referenced|boundary|all] [--boundary-max n] [--embed-index full|pruned] [--include-guides id,id] [--draft] [--note reason] [--require-review] [--allow-drift]`
 
 Ready output refuses a stale index, including with `--allow-drift` or `XPL_SKIP_STALE_CHECK=1`. Reindex and resolve
 first. `--allow-drift` only permits drift against a current index. Generated XPL HTML pages are excluded
