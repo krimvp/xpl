@@ -6,7 +6,7 @@ Readers can leave corrections, explanation requests and expansions on a selected
 xpl feedback retry-guide --import /path/to/feedback.json
 ```
 
-Then ask the installed skill to process it with `/code-explainer feedback`. Stable request IDs deduplicate repeated imports. The record retains the original source snapshot, range, outcome and reason. Requests tied to changed snapshots are marked outdated and need explicit reconciliation. Export browser feedback before clearing browser data. If browser storage is unavailable, export JSON or save the page as HTML.
+Then ask the installed skill to process it with the selected harness token: `/code-explainer feedback` in Claude Code or Factory Droid, `$code-explainer feedback` in Codex, `/skill:code-explainer feedback` in Pi, or `@skills:code-explainer feedback` in Devin. Stable request IDs deduplicate repeated imports. The record retains the original source snapshot, range, outcome and reason. Requests tied to changed snapshots are marked outdated and need explicit reconciliation. Export browser feedback before clearing browser data. If browser storage is unavailable, export JSON or save the page as HTML.
 
 The next pass uses `xpl revise`: select request IDs, inspect proposed text and source changes, choose which outcomes to accept or reject, then explicitly accept the reviewed subset. Acceptance rechecks the live source, snapshot and readiness; it preserves user-owned content and the previous guide. Interrupted acceptance can resume without applying changes or recording outcomes twice. Missing anchors need an explicit re-anchor or removal decision; a moved location keeps its existing prose.
 
