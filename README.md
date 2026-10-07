@@ -40,8 +40,10 @@ in your repository, then `xpl view <name>` and complete the TODO text.
 ### GitHub pull requests
 
 Prepare a PR's base and head as an isolated input with `xpl pr prepare`; author a guide and run `xpl
-pr finish` to check it and export HTML. These commands do not publish. A private target repository
-requires a team-visible preview, with access controlled by the host. See the [CLI
+pr finish` to check it and export HTML. These commands do not publish. Optional
+[CI preview publishing](docs-site/pages/workflows/pull-requests.md#optional-ci-authoring-and-publishing)
+runs an explicitly configured author and updates the PR preview. A private target repository requires a
+team-visible preview, with access controlled by the host. See the [CLI
 reference](skill/code-explainer/reference/cli.md) for the full command options.
 
 ### Search, libraries and saved versions
