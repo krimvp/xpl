@@ -1,3 +1,4 @@
+import { drawnEdges } from "../src/drawnEdges.js";
 import {
   deriveGraph,
   ExplainerModel,
@@ -9,7 +10,6 @@ import { describe, expect, it } from "vitest";
 import {
   absoluteBoxes,
   cutAt,
-  drawnEdges,
   fitScale,
   gridLayoutOf,
   layoutGraph,

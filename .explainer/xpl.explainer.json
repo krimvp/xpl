@@ -17354,7 +17354,7 @@
               "role": "call-site",
               "hash": "sha256-v2:fd78a24620a2",
               "resolved": {
-                "commit": "wt-d5e8eb8796",
+                "commit": "wt-e66133c92b",
                 "range": {
                   "startLine": 16,
                   "endLine": 16
@@ -17372,10 +17372,10 @@
               "role": "definition",
               "hash": "sha256-v2:f2cd028bdc61",
               "resolved": {
-                "commit": "wt-d5e8eb8796",
+                "commit": "wt-e66133c92b",
                 "range": {
-                  "startLine": 545,
-                  "endLine": 558
+                  "startLine": 548,
+                  "endLine": 561
                 },
                 "status": "ok"
               }
@@ -17384,12 +17384,12 @@
               "file": "packages/viewer/src/derive.ts",
               "symbol": "deriveView",
               "role": "definition",
-              "hash": "sha256-v2:48fd0594cbef",
+              "hash": "sha256-v2:ea7b5477f172",
               "resolved": {
-                "commit": "wt-d5e8eb8796",
+                "commit": "wt-e66133c92b",
                 "range": {
                   "startLine": 116,
-                  "endLine": 151
+                  "endLine": 154
                 },
                 "status": "ok"
               }
@@ -17915,7 +17915,7 @@
       ],
       "provenance": {
         "origin": "llm",
-        "commit": "wt-d8a08856f1"
+        "commit": "wt-e66133c92b"
       }
     },
     {

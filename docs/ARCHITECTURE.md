@@ -1049,7 +1049,8 @@ id wins (validation reports the duplicates).
   ghost (the key), ghostLabel, targets, kinds, count }`.
 - The viewer also preserves mixed confidence when it combines edge kinds between the same boxes.
   Mixed arrows are subdued like heuristic arrows and labelled "mixed confidence"; their details say
-  that some references are hints. Individual index references remain `precise` or `heuristic`.
+  that some references are hints. Selection details and code focus use the drawn aggregate
+  (all kinds, total reference count and their anchors). Individual index references remain `precise` or `heuristic`.
 - Pure view edits: `expandStub(view, stub)`: `include += ghost target` (nothing for a folded ghost).
   `drillIn(view, id, model)`: `include +=` the node (when missing) and its children (a group opens into its
   members), so it becomes a container. `collapse(view, id, model)`: remove its included descendants (for a

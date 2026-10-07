@@ -228,7 +228,7 @@ function buildInfo(id: ElementId, model: ExplainerModel, vd: ViewDerived): Eleme
       const info: ElementInfo = {
         id,
         type: "derived-edge",
-        title: derived ? `${derived.kind} ×${derived.count}` : ref.kind,
+        title: derived ? (derived.label ?? `${derived.kind} ×${derived.count}`) : ref.kind,
         kind: ref.kind,
         where: `${model.label(ref.from)} → ${model.label(ref.to)}`,
         summary: derived
