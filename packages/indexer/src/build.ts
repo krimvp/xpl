@@ -5,7 +5,7 @@
  * normalize and merge -> optional semantic providers feed the same normalization and coverage merge ->
  * commit id and language summary. xpl owns IDs, hashes, source evidence and canonical positions.
  */
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { performance } from "node:perf_hooks";
 import { randomUUID } from "node:crypto";
 import { ExtractionCache, type ExtractionReport } from "./extraction-cache.js";
@@ -49,6 +49,9 @@ import type { ProviderInput, ProviderSource } from "./providers.js";
 
 /** Options of `buildIndex` (ARCHITECTURE.md §3). */
 export interface BuildIndexOptions {
+  /** Stop between files/phases and cancel supported external providers. */
+  signal?: AbortSignal;
+  onProgress?: (progress: import("./progress.js").IndexProgress) => void;
   /** Directory to index; paths in the index are relative to it. */
   root: string;
   /** Frozen source/configuration for watching. Caller must recheck inputs before publication. */
@@ -182,7 +185,15 @@ function compareRefs(a: Reference, b: Reference): number {
 
 /** Build the symbol index of `opts.root`. */
 export async function buildIndex(opts: BuildIndexOptions): Promise<BuildIndexResult> {
+  opts.signal?.throwIfAborted();
+  const progress = (event: import("./progress.js").IndexProgress) => {
+    opts.signal?.throwIfAborted();
+    opts.onProgress?.(event);
+    opts.signal?.throwIfAborted();
+  };
+  progress({ phase: "Discovering" });
   const root = await resolveRoot(opts.root);
+  const gitOptions = { ...opts.gitOptions, signal: opts.signal };
   const precise = opts.precise ?? "auto";
   if (precise !== "auto" && precise !== "off" && precise !== "require") {
     throw new Error(`invalid precise mode "${String(precise)}" (expected auto, off or require)`);
@@ -191,7 +202,7 @@ export async function buildIndex(opts: BuildIndexOptions): Promise<BuildIndexRes
   const warnings: string[] = [];
 
   // 1. Discover files.
-  const git = await detectGit(root, opts.gitOptions);
+  const git = await detectGit(root, gitOptions);
   const discovery = opts.snapshot
     ? {
         files: [],
@@ -200,8 +211,9 @@ export async function buildIndex(opts: BuildIndexOptions): Promise<BuildIndexRes
       }
     : await discoverFiles(root, {
         git,
+        signal: opts.signal,
         languages: languageFilter,
-        gitOptions: opts.gitOptions,
+        gitOptions,
       });
   warnings.push(...discovery.warnings);
 
@@ -210,12 +222,20 @@ export async function buildIndex(opts: BuildIndexOptions): Promise<BuildIndexRes
   const sources: ProviderSource[] = opts.snapshot
     ? opts.snapshot.sources.filter((s) => !languageFilter || languageFilter.includes(s.language))
     : [];
+  progress({
+    phase: "Reading",
+    completed: 0,
+    total: opts.snapshot ? sources.length : discovery.files.length,
+  });
+  let read = 0;
   for (const file of opts.snapshot ? [] : discovery.files) {
+    opts.signal?.throwIfAborted();
     try {
       sources.push({ path: file.path, language: file.language, text: await readSource(file) });
     } catch {
       /* Deleted or unreadable since discovery. */
     }
+    progress({ phase: "Reading", completed: ++read, total: discovery.files.length });
   }
   const files: IndexedFile[] = sources.map((s) => ({
     path: s.path,
@@ -234,6 +254,8 @@ export async function buildIndex(opts: BuildIndexOptions): Promise<BuildIndexRes
   const extractionCache = new ExtractionCache(root, opts.cache !== false);
   const work = { heuristicResolutionMs: 0, semanticMs: 0, semanticRuns: 0 };
   const providerInput: ProviderInput = {
+    signal: opts.signal,
+    onProgress: progress,
     extractionCache,
     root,
     sources,
@@ -321,8 +343,10 @@ export async function buildIndex(opts: BuildIndexOptions): Promise<BuildIndexRes
     providerInput.classify = syntaxClassifier(sourcePool, providerInput);
     try {
       for (const provider of available) {
+        opts.signal?.throwIfAborted();
         const languages = provider.languages.filter((l) => files.some((f) => f.language === l));
         if (languages.length === 0) continue;
+        progress({ phase: "Provider", provider: provider.id });
         const reportFiles = files.filter((f) => languages.includes(f.language)).map((f) => f.path);
         const diagnostics: string[] = [];
         let observed: AnalysisReport[] | undefined;
@@ -342,6 +366,7 @@ export async function buildIndex(opts: BuildIndexOptions): Promise<BuildIndexRes
           let output;
           try {
             output = await provider.analyze(input);
+            opts.signal?.throwIfAborted();
           } finally {
             if (provider.mode !== "syntax") work.semanticMs += performance.now() - started;
           }
@@ -411,6 +436,7 @@ export async function buildIndex(opts: BuildIndexOptions): Promise<BuildIndexRes
             }
           }
         } catch (error) {
+          opts.signal?.throwIfAborted();
           const message = error instanceof Error ? error.message : String(error);
           analysis.push(
             ...(observed?.map((report) => ({
@@ -457,13 +483,14 @@ export async function buildIndex(opts: BuildIndexOptions): Promise<BuildIndexRes
   }
   refs.sort(compareRefs);
 
+  progress({ phase: "Finishing" });
   // 5. Commit id, language summary, tool string.
   const commit = await resolveCommitId({
     commit: opts.commit || opts.snapshot?.cleanHead,
     git: opts.snapshot ? undefined : git,
     files,
     root,
-    gitOptions: opts.gitOptions,
+    gitOptions,
   });
   const languages = summarizeLanguages(
     files,
@@ -494,6 +521,7 @@ export async function buildIndex(opts: BuildIndexOptions): Promise<BuildIndexRes
     analysis,
     ...(resources.length > 0 ? { resources } : {}),
   };
+  opts.signal?.throwIfAborted();
   return {
     index,
     warnings,
@@ -553,7 +581,12 @@ const GITIGNORE_LINES = ["index-*.json", "cache/", "revisions/"];
  * Write `<root>/.explainer/index-<commit>.json` (pretty-printed) and make sure `.explainer/.gitignore`
  * ignores `index-*.json`. Returns the absolute path of the index file.
  */
-export async function writeIndex(root: string, index: SymbolIndex): Promise<string> {
+export async function writeIndex(
+  root: string,
+  index: SymbolIndex,
+  signal?: AbortSignal,
+): Promise<string> {
+  signal?.throwIfAborted();
   const dir = join(resolve(root), ".explainer");
   const commit = validateCommitId(index.commit);
   await mkdir(dir, { recursive: true });
@@ -577,7 +610,13 @@ export async function writeIndex(root: string, index: SymbolIndex): Promise<stri
 
   const target = join(dir, `index-${commit}.json`);
   const temp = join(dir, `.index-${commit}.json.${randomUUID()}.tmp`);
-  await writeFile(temp, `${JSON.stringify(index, null, 2)}\n`);
-  await rename(temp, target);
+  try {
+    signal?.throwIfAborted();
+    await writeFile(temp, `${JSON.stringify(index, null, 2)}\n`, { signal });
+    signal?.throwIfAborted();
+    await rename(temp, target);
+  } finally {
+    await rm(temp, { force: true });
+  }
   return normalize(target);
 }

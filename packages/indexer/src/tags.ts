@@ -1,4 +1,5 @@
 /** Standard @name/@definition.* captures become source-backed declarations, with optional bounded call analysis. */
+import { setImmediate } from "node:timers/promises";
 import { Query, type Node } from "web-tree-sitter";
 import { RELATIONSHIP_CAPABILITIES, splitLines } from "@xpl/core";
 import type { IndexedSymbol, FileLanguage, AnalysisReport } from "@xpl/core";
@@ -79,6 +80,8 @@ export class TagsProvider implements IndexProvider {
       for (const source of input.sources.filter(
         (s) => input.languages.includes(s.language) && this.languages.includes(s.language),
       )) {
+        if (input.signal) await setImmediate(undefined, { signal: input.signal });
+        input.signal?.throwIfAborted();
         sourceHashes[source.path] = new FileHasher(splitLines(source.text)).hashFile();
         const extract = async () => {
           parser ??= await createParser(this.profile.grammar);

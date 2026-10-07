@@ -77,6 +77,12 @@ Precise tools/dependencies and agent authoring can have separate network require
 
 ## `xpl index [--precise auto|off|require] [--commit c] [--no-cache] [--scip artifact|manifest.json]`
 
+An interactive terminal shows phases and file counts on stderr. Progress is omitted for redirected stderr
+and `--json`. Ctrl+C stops between files or phases and stops SCIP subprocesses, then exits with code 130.
+Before publication, cancellation preserves the previous complete index (or leaves no index if none existed).
+An atomic rename already underway may finish; indexes are never partially replaced. Completed extraction
+cache entries may remain.
+
 Builds `.explainer/index-<commit>.json` (and `.explainer/.gitignore` with `index-*.json` and `cache/`). The commit id is the short HEAD when the repo root is a clean git top-level, else `wt-<hash>` of the files. Files: `git ls-files` (or a walk that skips `node_modules`, `dist`, dot-dirs…), text only, ≤ 1 MB.
 The output reports excluded candidates by reason, with up to three root-relative paths per reason.
 `--json` returns the same counts in `exclusions`. Git-ignored files are not listed by git; without git,
@@ -474,6 +480,21 @@ view/focus still apply the requested step. A perspective switch keeps the applie
 Edited re-saves lose the staged version claim when their artifactIdentity changes.
 This command configures no server, remote destination, credentials or upload. To point a PR at a staged
 PR folder, use `xpl pr link` below.
+
+## `xpl start <name> --question q --audience a [--entry symbol] [--precise auto|off|require]`
+
+Creates a first guide in one command. It runs `index`, `new`, `draft` and `apply`, using the same source anchor checks as manual authoring. Without `--entry`, the draft is a repository map. With an indexed function or method such as `src/runner.ts#Runner.dispatch`, it is a call sequence from that entry. The applied guide contains TODO text and can be opened with `xpl view <name>`; complete and check the text before sharing. The patch and all draft notes are saved in a temporary directory outside the repository. The text output shows up to three notes and apply warnings; `--json` includes their full lists. Existing guides are never overwritten.
+
+```
+$ xpl start job-retries --question "How does a failed job get retried?" --audience maintainers --precise off
+created .explainer/job-retries.explainer.json for maintainers
+draft patch: /tmp/xpl-first-guide-…/draft.patch.json
+draft notes: /tmp/xpl-first-guide-…/draft-notes.json
+note: Provisional architecture: confirm project kind, primary users and entry points in the README and code; import lines identify dependencies.
+next: complete the TODOs in `xpl view job-retries` or edit the draft patch, then run `xpl lint job-retries`
+```
+
+`--precise off` uses heuristic references; confirm calls against source before completing the explanation. `--json` returns the guide and draft paths, notes file, notes and apply warnings.
 
 ## `xpl new <name> [--title t] [--repo r] [--url u]`
 
@@ -1014,6 +1035,7 @@ Records the change an explainer is about, from git, and prints what it touches. 
 - `<base>..<head>` takes any git revisions (`main..HEAD`, `2284ff0^..2284ff0`); `<base>...<head>` starts from their merge base; `<base>` alone ends at the commit of the index. The head must be the commit the index was built from, else it stops: `the head HEAD~1 (85c3b74) is not the commit the index was built from (2284ff0). Check out 85c3b74, run xpl index, then run this again`.
 - It stores `change: {base, head, files: [{path, status: added|modified|deleted|renamed, oldPath?, hunks: [{oldStart, oldLines, newStart, newLines}]}]}` in the explainer (full SHAs; hunks as `git diff -U0` prints them). Patches cannot change it.
 - It prints the changed files with `+added -removed`; the **changed symbols** (index symbols that hold an added or edited line; `new` when every line is new; a function nested in a function counts as part of it); for each, its **direct callers** outside test files and the **tests** that reference it (a test function, or a test file for an import), or `no test found`. A method that runs when an instance is called (`__call__`, `handle`) gets `callers via instance`: the code that builds its class. That is a guess, and the output says so. Lines outside any symbol (imports, module-level code) are listed apart, and so are the test files the change touches with their new and changed tests.
+- For changed functions and methods, **call paths through one intermediate function** show two indexed call sites with each hop labelled precise or heuristic. They show possible reachability, not guaranteed execution. No runtime callback or middleware wiring is inferred. Tests, cycles and instance guesses are not expanded. Each changed symbol has at most 100 paths and 1000 inspected references; a truncation note means the result is incomplete, including in JSON. Draft maps keep their direct callers.
 - A bounded **Not checked** section lists report-level partial, unavailable or failed analysis with the number of changed paths that report actually analyzed. It also lists changed paths absent from the loaded index and removed files the index cannot inspect. A commit mismatch is called out, so a stale index's limits are not presented as head coverage. No section means no omission was recorded; it does not prove complete semantic coverage. The exported change guide puts the same section below its summary, and `--json` includes `omissions: string[]`.
 - `xpl change <explainer>` without a range prints the analysis of the recorded change again.
 
@@ -1025,6 +1047,8 @@ written to .explainer/jobrunner.explainer.json
 files (1):
   M  src/runner.ts  +1 -1
 
+Impact limit: two indexed call edges; dynamic callbacks, runtime middleware wiring and instance guesses are not followed. Paths show possible reachability, not guaranteed execution.
+
 changed symbols outside tests (1):
   sym:src/runner.ts#Runner.dispatch  (method, lines 42-88)  changed at 80
     callers outside tests (1):
@@ -1032,12 +1056,12 @@ changed symbols outside tests (1):
     tests: no test found (no test references it by name; tests of other code may still run it)
 
 no test found for 1 changed symbol: sym:src/runner.ts#Runner.dispatch
-Callers are direct (depth 1) and come from the index: ...
+Direct callers and two-edge call paths come from the index; unindexed dynamic wiring is not inferred. ...
 ```
 
 The callers and tests come from the index: a call through a variable, a callback or a framework is not seen, and "a test references it" does not mean the test checks the change. Read the tests before you say what they cover. With the change recorded, anchors may point at the code before it (`"at": "base"`, `patch-format.md` section 1), `xpl show --at base` prints that code, `xpl validate` checks it, and `xpl bundle` embeds it.
 
-`--json`: `{ok, path, written, change, omissions: [reader-facing limits], analysis: {base, head, files: [{path, status, oldPath?, added, removed, hunks, test, indexed, outside: [lines]}], totals: {files, added, removed}, symbols: [{id, symbolId, file, kind, range, status: new|changed, lines, callers: [{id, file, lines, kinds, resolution, changed?, via?}], viaInstance: [same], tests: [{id, file, refs, kinds, changed?, via?}]}], testSymbols: [{id, symbolId, file, kind, range, status, lines}], untested: [ids]}}`.
+`--json`: `{ok, path, written, change, omissions: [reader-facing limits], analysis: {base, head, files: [{path, status, oldPath?, added, removed, hunks, test, indexed, outside: [lines]}], totals: {files, added, removed}, symbols: [{id, symbolId, file, kind, range, status: new|changed, lines, callers: [{id, file, lines, kinds, resolution, changed?, via?}], viaInstance: [same], indirectCalls: {paths: [[upstream reference, downstream reference]], truncated: boolean}, tests: [{id, file, refs, kinds, changed?, via?}]}], testSymbols: [{id, symbolId, file, kind, range, status, lines}], untested: [ids]}}`.
 
 ## `xpl draft change|repo|path <explainer> [<entry id> ...] [-o <file>]`
 
