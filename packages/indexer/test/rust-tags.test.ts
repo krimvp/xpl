@@ -36,7 +36,7 @@ it("indexes Rust tags with precise off and keeps lexical trait, impl and module 
     files: 1,
     symbols: 18,
     refs: "heuristic",
-    tool: "tree-sitter-rust@0.24.0/query-v2",
+    tool: "tree-sitter-rust@0.24.0/query-v3",
   });
   expect(
     index.symbols.map((s) => [s.path, s.kind, s.range.startLine, s.range.endLine, s.parent]),
@@ -76,7 +76,7 @@ it("keeps fixture macro definitions and physical impls without inventing expande
     files: 9,
     symbols: 82,
     refs: "heuristic",
-    tool: "tree-sitter-rust@0.24.0/query-v2",
+    tool: "tree-sitter-rust@0.24.0/query-v3",
   });
   const expected = [
     ["src/queue.rs#JobQueue", 21, 27, undefined],
@@ -243,6 +243,10 @@ it("leaves shadowing, macro bodies and non-root dispatch outside the Rust call s
       "fn target() {}",
       "fn yes() { target(); }",
       "fn parameter(target: fn()) { target(); }",
+      "struct Callbacks { target: fn() }",
+      "fn shorthand(value: Callbacks) { let Callbacks { target } = value; target(); }",
+      "fn matched(value: Callbacks) { match value { Callbacks { target } => target() } }",
+      "fn destructured_parameter(Callbacks { target }: Callbacks) { target(); }",
       "fn binding() { let target = || {}; target(); }",
       "fn pattern() { if let Some(target) = None::<fn()> { target(); } }",
       "fn nested() { fn target() {} target(); }",

@@ -12,7 +12,7 @@ registerProvider(
     id: "rust-tags",
     language: "rust",
     grammar: "rust",
-    version: "tree-sitter-rust@0.24.0/query-v2",
+    version: "tree-sitter-rust@0.24.0/query-v3",
     query: () =>
       readFileSync(
         getWasmDir()
@@ -65,7 +65,8 @@ function directCalls(
     let unsafe = false;
     const calls: Node[] = [];
     const names = (node: Node) => {
-      if (node.type === "identifier") shadowed.add(node.text);
+      if (node.type === "identifier" || node.type === "shorthand_field_identifier")
+        shadowed.add(node.text);
       for (const child of node.namedChildren) names(child);
     };
     const visit = (node: Node) => {

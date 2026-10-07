@@ -187,7 +187,7 @@ it("Rust symbols can be outlined, shown, anchored and exported with their suppor
     files: 9,
     symbols: 82,
     refs: "heuristic",
-    tool: "tree-sitter-rust@0.24.0/query-v2",
+    tool: "tree-sitter-rust@0.24.0/query-v3",
   });
   expect(
     data.index.analysis?.find(
