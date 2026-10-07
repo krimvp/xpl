@@ -24,20 +24,28 @@ const labels: Record<AnalysisCapability, string> = {
   write: "writes",
 };
 
-/** Known omissions for this change, based only on the head index's recorded coverage. */
+/** Known omissions for this change, based only on the loaded index's recorded coverage. */
 export function changeOmissions(change: ChangeRecord, index: SymbolIndex): string[] {
   const limit = 5;
   const headPaths = new Set(change.files.filter((f) => f.status !== "deleted").map((f) => f.path));
   const indexed = new Set(index.files.map((f) => f.path));
-  const omissions = change.files.flatMap((file) => {
-    if (file.status === "deleted")
-      return [
-        `${file.path}: removed from the head; head-index analysis cannot inspect its old code.`,
-      ];
-    return indexed.has(file.path)
-      ? []
-      : [`${file.path}: absent from the head index; source analysis was not checked.`];
-  });
+  const omissions =
+    /^[0-9a-f]{7,}$/i.test(index.commit) && !change.head.startsWith(index.commit)
+      ? [
+          `Loaded index ${index.commit.slice(0, 7)} differs from change head ${change.head.slice(0, 7)}; head analysis coverage is unknown here.`,
+        ]
+      : [];
+  omissions.push(
+    ...change.files.flatMap((file) => {
+      if (file.status === "deleted")
+        return [
+          `${file.path}: removed from the head; the loaded index cannot inspect its old code.`,
+        ];
+      return indexed.has(file.path)
+        ? []
+        : [`${file.path}: absent from the loaded index; source analysis is not recorded there.`];
+    }),
+  );
   for (const report of index.analysis ?? []) {
     const changed = report.files.filter((path) => headPaths.has(path));
     if (changed.length === 0) continue;
@@ -45,10 +53,9 @@ export function changeOmissions(change: ChangeRecord, index: SymbolIndex): strin
       if (result.status === "supported") continue;
       const analyzed = changed.filter((path) => result.analyzedFiles.includes(path)).length;
       const names = result.capabilities.map((capability) => labels[capability]).join(", ");
-      const scope = `${changed.length} changed ${changed.length === 1 ? "file" : "files"}`;
-      const detail = result.limitations[0] ? ` ${result.limitations[0]}` : "";
+      const detail = result.limitations[0] ? ` Reported limit: ${result.limitations[0]}` : "";
       omissions.push(
-        `${report.provider}: ${names} ${result.status} for ${scope} (${analyzed} analyzed).${detail}`,
+        `${report.provider} report: ${names} ${result.status}; ${analyzed} of ${changed.length} changed paths in its scope analyzed.${detail}`,
       );
     }
   }

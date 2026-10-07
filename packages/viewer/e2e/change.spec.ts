@@ -248,10 +248,10 @@ test.describe("the change in the reading screens", () => {
     const omissions = page.getByTestId("change-omissions");
     await expect(omissions).toBeVisible();
     await expect(omissions).toContainText(
-      "source: named symbols partial for 1 changed file (1 analyzed). Some declarations were omitted.",
+      "source report: named symbols partial; 1 of 1 changed paths in its scope analyzed. Reported limit: Some declarations were omitted.",
     );
     await expect(omissions).toContainText(
-      "precise: calls failed for 1 changed file (0 analyzed). Precise calls unavailable.",
+      "precise report: calls failed; 0 of 1 changed paths in its scope analyzed. Reported limit: Precise calls unavailable.",
     );
     await expect(omissions).not.toContainText("/private/tool");
     const summary = (await page.getByTestId("tour-summary").boundingBox())!;

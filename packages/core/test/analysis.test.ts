@@ -81,14 +81,14 @@ it("lists only observed limits for changed head files and bounds a long report",
     ],
   };
   expect(changeOmissions(change, index)).toEqual([
-    "missing.ts: absent from the head index; source analysis was not checked.",
-    "old.ts: removed from the head; head-index analysis cannot inspect its old code.",
-    "scip: calls partial for 1 changed file (1 analyzed). Indirect calls are not resolved.",
+    "missing.ts: absent from the loaded index; source analysis is not recorded there.",
+    "old.ts: removed from the head; the loaded index cannot inspect its old code.",
+    "scip report: calls partial; 1 of 1 changed paths in its scope analyzed. Reported limit: Indirect calls are not resolved.",
   ]);
   expect(
     changeOmissions({ ...change, files: [{ path: "b.ts", status: "modified", hunks: [] }] }, index),
   ).toEqual([
-    "scip: calls partial for 1 changed file (0 analyzed). Indirect calls are not resolved.",
+    "scip report: calls partial; 0 of 1 changed paths in its scope analyzed. Reported limit: Indirect calls are not resolved.",
   ]);
   const many = {
     ...change,
@@ -101,9 +101,23 @@ it("lists only observed limits for changed head files and bounds a long report",
   expect(changeOmissions(many, index)).toEqual([
     ...Array.from(
       { length: 5 },
-      (_, n) => `missing-${n}.ts: absent from the head index; source analysis was not checked.`,
+      (_, n) =>
+        `missing-${n}.ts: absent from the loaded index; source analysis is not recorded there.`,
     ),
     "2 more recorded limits.",
+  ]);
+});
+
+it("identifies a reused index before reporting its coverage", () => {
+  const { index } = makeWorld({ files: [{ path: "a.ts", language: "typescript", text: "a\n" }] });
+  index.commit = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+  const change = {
+    base: "c".repeat(40),
+    head: "b".repeat(40),
+    files: [{ path: "a.ts", status: "modified" as const, hunks: [] }],
+  };
+  expect(changeOmissions(change, index)).toEqual([
+    "Loaded index aaaaaaa differs from change head bbbbbbb; head analysis coverage is unknown here.",
   ]);
 });
 

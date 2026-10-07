@@ -243,10 +243,12 @@ describe("xpl change", () => {
     const { json, code } = await xplJson<{
       written: boolean;
       change: ChangeRecord;
+      omissions: string[];
       analysis: { symbols: any[]; untested: string[]; testSymbols: any[] };
     }>(dir, "change", "demo", `${base}..${head}`);
     expect(code).toBe(0);
     expect(json.written).toBe(true);
+    expect(json.omissions).toContainEqual(expect.stringContaining("old.py: removed from the head"));
     const helper = json.analysis.symbols.find((s) => s.id === "sym:app.py#helper");
     expect(helper.callers.map((c: any) => c.id)).toEqual(["sym:app.py#App.handle"]);
     expect(helper.callers[0].changed).toBe("changed");
@@ -281,6 +283,23 @@ describe("xpl change", () => {
     expect(shown.code).toBe(0);
     expect(shown.out).toContain("recorded in .explainer/demo.explainer.json");
     expect(shown.out).toContain("sym:app.py#helper");
+    const shownJson = await xplJson<{ omissions: string[] }>(dir, "change", "demo");
+    expect(shownJson.json.omissions).toContainEqual(
+      expect.stringContaining("old.py: removed from the head"),
+    );
+  });
+
+  it("marks omissions from a reused index as observations about that index", async () => {
+    const dir = cloneDir(repo);
+    expect((await xpl(dir, "change", "demo", "HEAD~1..HEAD")).code).toBe(0);
+    const file = ".explainer/demo.explainer.json";
+    const ex = readJson<Explainer>(dir, file);
+    ex.change!.head = base;
+    writeFile(dir, file, JSON.stringify(ex));
+    const shown = await xplJson<{ omissions: string[] }>(dir, "change", "demo");
+    expect(shown.code).toBe(0);
+    expect(shown.json.omissions[0]).toContain("Loaded index");
+    expect(shown.json.omissions[0]).toContain("differs from change head");
   });
 
   it("refuses a head that is not the index commit, unknown revisions, and empty ranges", async () => {
