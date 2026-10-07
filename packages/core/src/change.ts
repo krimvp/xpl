@@ -1,8 +1,8 @@
 /**
  * The change an explainer is about (`Explainer.change`, written by `xpl change <name> <base>..<head>`): lookups
  * on the record, its shape check, and the change analysis that `xpl change` prints (`analyzeChange`): the changed
- * files, the index symbols the change touches, their direct callers outside tests and the tests that reference
- * them. Pure: the CLI runs git and hands the record in.
+ * files, the index symbols the change touches, their direct callers and two-edge call paths outside tests,
+ * and the tests that reference them. Pure: the CLI runs git and hands the record in.
  */
 import { elementIdForSymbolId } from "./ids.js";
 import { isTestFile, type IndexModel } from "./index-model.js";
@@ -225,6 +225,8 @@ export interface ChangedSymbol {
   callers: CallerEntry[];
   /** Methods reached through an instance (`__call__`, `handle`): the code that builds one. A heuristic. */
   viaInstance: CallerEntry[];
+  /** Two indexed call sites, upstream caller first. No instance guesses or dynamic dispatch expansion. */
+  indirectCalls: { paths: [Reference, Reference][]; truncated: boolean };
   /** Test functions and test files that reference it (directly, through its class, or through an instance). */
   tests: TestEntry[];
 }
@@ -240,7 +242,7 @@ export interface ChangeAnalysis {
    * Changed symbols in test files (tests the change adds or edits: top-level functions and methods of classes, not
    * the helpers nested in them), in file and line order, without callers.
    */
-  testSymbols: Omit<ChangedSymbol, "callers" | "viaInstance" | "tests">[];
+  testSymbols: Omit<ChangedSymbol, "callers" | "viaInstance" | "indirectCalls" | "tests">[];
   /** Ids of the changed symbols (outside tests) that no test references. */
   untested: ElementId[];
 }
@@ -346,6 +348,8 @@ export function changeStatusOfRange(
  *   variable or key the reads and writes; for a type its uses), the code inside it excluded; for a constructor
  *   (`__init__`, `constructor`) the calls of its class too (`via: "class"`); for a method reached through an
  *   instance (`__call__`, `handle`) the code that builds the class, as a heuristic (`viaInstance`);
+ * - one extra indexed call hop through a function or method, preserving both reference sites and labels,
+ *   capped at 100 paths and 1000 inspected references per changed symbol; no dynamic wiring is inferred;
  * - the tests that reference it: test functions (or test files, for an import) with a reference of any kind to it,
  *   or to its class for a constructor or an instance method;
  * - `untested`: the changed symbols that no test references.
@@ -471,7 +475,11 @@ export function analyzeChange(
       if (parent === undefined || parent.kind === "class") testSymbols.push(base(sym, lines));
       continue;
     }
-    symbols.push({ ...base(sym, lines), ...relations(sym, index, changeOf) });
+    symbols.push({
+      ...base(sym, lines),
+      ...relations(sym, index, changeOf),
+      indirectCalls: indirectCalls(sym, index),
+    });
   }
 
   return {
@@ -594,4 +602,37 @@ function relations(
     viaInstance: order([...instance.values()].filter((entry) => !callers.has(entry.id))),
     tests: order(testList.filter((t) => t.id.startsWith("sym:") || !withSymbols.has(t.file))),
   };
+}
+
+/** Follow one extra call edge, with bounded work and the original evidence for each hop. */
+function indirectCalls(sym: IndexedSymbol, index: IndexModel): ChangedSymbol["indirectCalls"] {
+  const paths: [Reference, Reference][] = [];
+  if (sym.kind !== "function" && sym.kind !== "method") return { paths, truncated: false };
+  let inspected = 0;
+  for (const downstream of index.refsTo(sym.id)) {
+    if (++inspected > 1000) return { paths, truncated: true };
+    if (downstream.kind !== "call" || index.symbolWithin(downstream.from, sym.id)) continue;
+    const wrapper = index.symbol(downstream.from);
+    if (
+      !wrapper ||
+      isTestFile(wrapper.file) ||
+      (wrapper.kind !== "function" && wrapper.kind !== "method")
+    )
+      continue;
+    for (const upstream of index.refsTo(wrapper.id)) {
+      if (++inspected > 1000) return { paths, truncated: true };
+      const file = index.fileOfSymbolId(upstream.from);
+      if (
+        upstream.kind !== "call" ||
+        file === undefined ||
+        isTestFile(file) ||
+        index.symbolWithin(upstream.from, sym.id) ||
+        index.symbolWithin(upstream.from, wrapper.id)
+      )
+        continue;
+      if (paths.length === 100) return { paths, truncated: true };
+      paths.push([upstream, downstream]);
+    }
+  }
+  return { paths, truncated: false };
 }
