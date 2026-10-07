@@ -74,6 +74,8 @@ const defaultIo: Io = {
 
 // ─── Help ───────────────────────────────────────────────────────────────────────────────────────
 
+const DOCS_REFERENCE = "Docs: https://krimvp.github.io/xpl/docs/reference/";
+
 function optionRows(options: OptionDefs): string[] {
   const rows = Object.entries(options).map(([name, def]) => {
     const flag = `${def.short ? `-${def.short}, ` : ""}--${name}${def.arg ? ` ${def.arg}` : ""}`;
@@ -104,7 +106,7 @@ function helpText(): string {
     "First guide: xpl start <name> --question <question> --audience <reader>; then xpl view <name>.",
     "Repeat use: xpl index; xpl outline; xpl show <id> --refs; xpl new <name>; xpl apply <name> patch.json;",
     "xpl lint <name>; xpl view <name>. Exit codes: 0 ok, 1 rejected or failed, 2 usage error.",
-    "See docs/ARCHITECTURE.md section 5.",
+    DOCS_REFERENCE,
     'Run "xpl <command> --help" for a command\'s options.',
   ].join("\n");
 }
@@ -121,6 +123,8 @@ function commandHelp(command: CommandSpec): string {
     "",
     "Global options:",
     ...optionRows(GLOBAL_OPTIONS),
+    "",
+    DOCS_REFERENCE,
   ].join("\n");
 }
 
