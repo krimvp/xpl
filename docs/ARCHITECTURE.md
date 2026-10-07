@@ -387,7 +387,8 @@ repo-root-relative, sorted.
 root-relative example paths. `xpl index` prints it, and `--json` includes it. The report counts only
 enumerated candidates. Git-ignored files never enter git's list; a non-git walk does not enumerate
 files inside skipped directories or symlinks. A supplied snapshot has no discovery report. Exclusions
-are not saved in `SymbolIndex`.
+are not saved in `SymbolIndex`. A `buildIndex({ languages })` report counts candidates of those languages
+only.
 
 **Watched input capture** (`src/snapshot.ts`): `captureIndexInputs({root, inputPaths?, gitOptions?, precise?, providers?})`
 returns sources, local configuration text, the captured clean HEAD label (when applicable), a

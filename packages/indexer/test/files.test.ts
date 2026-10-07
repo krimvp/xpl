@@ -198,9 +198,17 @@ describe("discoverFiles in a git work tree", () => {
       "b.py": "x = 1\n",
       "c.json": "{}\n",
       "d.md": "x\n",
+      "binary.ts": Buffer.from([0, 1]),
+      "binary.py": Buffer.from([0, 1]),
+      "draft.patch.json": "{}\n",
     });
     const files = await discoverFiles(dir, { languages: ["python", "text"] });
     expect(files.files.map((f) => f.path)).toEqual(["b.py", "d.md"]);
+    const python = await discoverFiles(dir, { languages: ["python"] });
+    expect(python.files.map((f) => f.path)).toEqual(["b.py"]);
+    expect(python.exclusions.reasons).toEqual([
+      { reason: "binary", count: 1, examples: ["binary.py"] },
+    ]);
   });
 
   it("finds TOML files as their own language", async () => {

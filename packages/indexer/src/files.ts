@@ -319,13 +319,13 @@ export async function discoverFiles(
   const wanted = options.languages ? new Set<FileLanguage>(options.languages) : undefined;
   const selected: DiscoveredFile[] = [];
   for (const path of [...new Set(candidates)].sort()) {
+    const language = languageForPath(path);
+    if (wanted && !wanted.has(language)) continue;
     const reason = pathExclusion(path);
     if (reason) {
       record(reason, path);
       continue;
     }
-    const language = languageForPath(path);
-    if (wanted && !wanted.has(language)) continue;
     selected.push({ path, abs: join(root, ...path.split("/")), language });
   }
 
