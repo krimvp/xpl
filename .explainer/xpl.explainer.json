@@ -13627,12 +13627,12 @@
               "file": "packages/cli/src/commands/bundle.ts",
               "symbol": "bundleCommand.run",
               "role": "call-site",
-              "hash": "sha256-v2:89733581bcce",
+              "hash": "sha256-v2:a7a8a26e2116",
               "resolved": {
-                "commit": "b13ada6",
+                "commit": "wt-d1a0384205",
                 "range": {
-                  "startLine": 206,
-                  "endLine": 419
+                  "startLine": 207,
+                  "endLine": 420
                 },
                 "status": "ok"
               }
@@ -13647,10 +13647,10 @@
               "role": "call-site",
               "hash": "sha256-v2:b7af4d1611ff",
               "resolved": {
-                "commit": "b13ada6",
+                "commit": "wt-d1a0384205",
                 "range": {
-                  "startLine": 343,
-                  "endLine": 345
+                  "startLine": 344,
+                  "endLine": 346
                 },
                 "status": "ok"
               }
@@ -13661,7 +13661,7 @@
               "role": "definition",
               "hash": "sha256-v2:67293aec283b",
               "resolved": {
-                "commit": "b13ada6",
+                "commit": "wt-d1a0384205",
                 "range": {
                   "startLine": 114,
                   "endLine": 127
@@ -13675,7 +13675,7 @@
               "role": "usage",
               "hash": "sha256-v2:f8decd6a6c3e",
               "resolved": {
-                "commit": "b13ada6",
+                "commit": "wt-d1a0384205",
                 "range": {
                   "startLine": 88,
                   "endLine": 111
@@ -13689,7 +13689,7 @@
               "role": "usage",
               "hash": "sha256-v2:84ebf0e0053a",
               "resolved": {
-                "commit": "b13ada6",
+                "commit": "wt-d1a0384205",
                 "range": {
                   "startLine": 14,
                   "endLine": 14
@@ -13706,7 +13706,7 @@
               "role": "usage",
               "hash": "sha256-v2:0e3fb30c9392",
               "resolved": {
-                "commit": "b13ada6",
+                "commit": "wt-d1a0384205",
                 "range": {
                   "startLine": 550,
                   "endLine": 550
@@ -13720,7 +13720,7 @@
               "role": "definition",
               "hash": "sha256-v2:1ff42c2f9535",
               "resolved": {
-                "commit": "b13ada6",
+                "commit": "wt-d1a0384205",
                 "range": {
                   "startLine": 7,
                   "endLine": 26
@@ -13891,7 +13891,7 @@
       ],
       "provenance": {
         "origin": "llm",
-        "commit": "wt-15bb824646"
+        "commit": "wt-d1a0384205"
       }
     },
     {
