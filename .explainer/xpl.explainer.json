@@ -1741,21 +1741,21 @@
       "to": "dir:packages/cli",
       "kind": "calls",
       "label": "bin/xpl runs dist/xpl.mjs",
-      "summary": "The skill launcher reads the installed CLI path from its binding, or uses the development build. The launcher imports that file to run the command in the same process.",
+      "summary": "The skill launcher reads its installed CLI binding or the development build. The launcher warns about a version mismatch, then imports the CLI in the same process.",
       "anchors": [
         {
           "file": "skill/code-explainer/bin/xpl",
           "span": {
-            "from": 11,
-            "to": 16
+            "from": 12,
+            "to": 15
           },
           "role": "usage",
-          "hash": "sha256-v2:3dec6a2204e6",
+          "hash": "sha256-v2:a1722c6d515e",
           "resolved": {
-            "commit": "b13ada6",
+            "commit": "wt-c7996a1c5f",
             "range": {
-              "startLine": 12,
-              "endLine": 17
+              "startLine": 13,
+              "endLine": 16
             },
             "status": "ok"
           }
@@ -1763,16 +1763,16 @@
         {
           "file": "skill/code-explainer/bin/xpl",
           "span": {
-            "from": 37,
-            "to": 37
+            "from": 51,
+            "to": 51
           },
           "role": "call-site",
           "hash": "sha256-v2:19daad2cc63d",
           "resolved": {
-            "commit": "b13ada6",
+            "commit": "wt-c7996a1c5f",
             "range": {
-              "startLine": 38,
-              "endLine": 38
+              "startLine": 52,
+              "endLine": 52
             },
             "status": "ok"
           }
@@ -1786,7 +1786,7 @@
           "role": "definition",
           "hash": "sha256-v2:726c906c4ebd",
           "resolved": {
-            "commit": "b13ada6",
+            "commit": "wt-c7996a1c5f",
             "range": {
               "startLine": 42,
               "endLine": 43
@@ -1803,7 +1803,7 @@
           "role": "definition",
           "hash": "sha256-v2:829726d62d00",
           "resolved": {
-            "commit": "b13ada6",
+            "commit": "wt-c7996a1c5f",
             "range": {
               "startLine": 20,
               "endLine": 20
@@ -1814,7 +1814,7 @@
       ],
       "provenance": {
         "origin": "llm",
-        "commit": "wt-0027fe1d12"
+        "commit": "wt-c7996a1c5f"
       }
     },
     {
