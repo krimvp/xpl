@@ -5,24 +5,34 @@ import { GRAMMAR_IDS, loadLanguage } from "@xpl/indexer";
 import pkg from "../../package.json" with { type: "json" };
 import type { CommandSpec } from "../command.js";
 import { UsageError, errorMessage } from "../errors.js";
-import { artifactDir, defaultSkillDir, verifyArtifact, verifySkill } from "../setup.js";
+import {
+  artifactDir,
+  defaultSkillDir,
+  verifyArtifact,
+  verifySkill,
+  type SkillAgent,
+} from "../setup.js";
 
 const execute = promisify(execFile);
 
 export const doctorCommand: CommandSpec = {
   name: "doctor",
-  usage: "xpl doctor [--agent none|claude] [--skill-dir <path>]",
+  usage: "xpl doctor [--agent none|claude|codex|pi|droid|devin] [--skill-dir <path>]",
   summary: "Diagnose local setup without downloading tools or starting authoring",
   details: [
     "Checks Node >=22.12, bundled file hashes and grammar loading. Required failures exit 1.",
-    "Skill and Claude Code are required only with --agent claude; the default none checks reader/index/export setup.",
+    "A selected skill and local agent command are checked for Claude, Codex, Pi and Droid. Devin checks the project skill files; its cloud session is not locally verifiable. The default none checks reader/index/export setup.",
     "Optional git, npx and Go checks report local versions. Availability does not prove a precise indexer can run.",
     "Go uses the installed toolchain with user configuration and telemetry disabled; Git tracing is disabled.",
     "Use xpl index --precise off offline. Auto precise mode may download tools/dependencies; require fails if unavailable.",
-    "Claude Code authoring needs its own installation, authentication and provider access. Generation is user-invoked.",
+    "Agent authentication and provider access are not checked. Devin cloud skill loading is not locally verifiable. Generation is user-invoked.",
   ],
   options: {
-    agent: { type: "string", arg: "none|claude", desc: "Chosen authoring agent (default: none)" },
+    agent: {
+      type: "string",
+      arg: "none|claude|codex|pi|droid|devin",
+      desc: "Chosen authoring agent (default: none)",
+    },
     "skill-dir": {
       type: "string",
       arg: "<path>",
@@ -32,8 +42,8 @@ export const doctorCommand: CommandSpec = {
   positionals: [],
   async run(ctx, args) {
     const agent = args.str("agent") ?? "none";
-    if (agent !== "none" && agent !== "claude")
-      throw new UsageError("--agent must be none or claude");
+    if (!["none", "claude", "codex", "pi", "droid", "devin"].includes(agent))
+      throw new UsageError("--agent must be none, claude, codex, pi, droid, or devin");
     const checks: {
       id: string;
       required: boolean;
@@ -82,16 +92,21 @@ export const doctorCommand: CommandSpec = {
         return `${GRAMMAR_IDS.length} grammars loaded`;
       },
     );
-    const skill = resolve(ctx.cwd, args.str("skill-dir") ?? defaultSkillDir(ctx.env));
+    const selectedAgent = agent === "none" ? "claude" : (agent as SkillAgent);
+    const skill = resolve(
+      ctx.cwd,
+      args.str("skill-dir") ?? defaultSkillDir(ctx.env, selectedAgent, ctx.root),
+    );
+    const installCommand = `xpl skill install --agent ${selectedAgent} --dir ${JSON.stringify(skill)}`;
     await check(
       "skill",
-      agent === "claude",
-      `Run xpl skill install --dir ${JSON.stringify(skill)}; rerun after CLI updates. Move local edits aside first.`,
+      agent !== "none",
+      `Run ${installCommand}; rerun after CLI updates. Move local edits aside first.`,
       async () => {
         const data = verifySkill(skill);
         if (data.version !== pkg.version)
           throw new Error(
-            `skill version ${data.version} differs from CLI ${pkg.version}; rerun xpl skill install`,
+            `skill version ${data.version} differs from CLI ${pkg.version}; rerun ${installCommand}`,
           );
         const result = await execute(process.execPath, [join(skill, "bin/xpl"), "--version"], {
           env: ctx.env,
@@ -149,20 +164,39 @@ export const doctorCommand: CommandSpec = {
         return result.stdout.trim();
       });
     }
-    if (agent === "claude") {
+    if (agent !== "none" && agent !== "devin") {
+      const agentName = agent;
+      const label =
+        agentName === "claude"
+          ? "Claude Code"
+          : agentName === "droid"
+            ? "Factory Droid"
+            : agentName === "codex"
+              ? "Codex"
+              : "Pi";
       await check(
         "agent",
         true,
-        "Install Claude Code, authenticate it and configure provider access separately. Invoke /code-explainer explicitly; xpl does not run a resident authoring worker.",
+        `Install ${label}; authenticate it and configure provider access separately. xpl does not start an authoring worker.`,
         async () => {
-          const result = await execute("claude", ["--version"], { env: ctx.env, timeout: 5000 });
+          const result = await execute(agentName, ["--version"], { env: ctx.env, timeout: 5000 });
           return `${result.stdout.trim()}; authentication/provider access not checked`;
         },
       );
     }
+    if (agent === "devin") {
+      checks.push({
+        id: "agent",
+        required: false,
+        status: "ok",
+        detail: "Devin cloud skill loading and provider access are not locally verifiable.",
+        recovery:
+          "Check the skill in Devin's project settings and confirm it is available in the session.",
+      });
+    }
     const ok = !checks.some((item) => item.required && item.status !== "ok");
     const network =
-      "Local reading, --precise off indexing and HTML export use bundled assets without hosted xpl infrastructure. Precise bootstrap/dependencies and Claude Code provider access can need network separately.";
+      "Local reading, --precise off indexing and HTML export use bundled assets without hosted xpl infrastructure. Precise bootstrap/dependencies and selected agent provider access can need network separately.";
     if (ctx.json)
       ctx.out(
         JSON.stringify(

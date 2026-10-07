@@ -7,6 +7,10 @@ Install from npm (Node 22.12 or newer):
 ```sh
 npm install --global @krimvp/xpl
 xpl skill install
+xpl skill install --agent codex
+xpl skill install --agent pi
+xpl skill install --agent droid
+xpl skill install --agent devin
 xpl doctor --agent claude
 ```
 
@@ -14,7 +18,8 @@ Alternatively, from the public [source repository](https://github.com/krimvp/xpl
 run `npm install && npm run build`, then `npm pack ./packages/cli/dist` and
 `npm install -g --ignore-scripts ./krimvp-xpl-0.2.2.tgz`. Install a maintainer's tarball offline with
 `npm install -g --offline --ignore-scripts <tarball>`, then run `xpl skill install`.
-Claude Code needs separate installation, authentication and provider access.
+Claude Code is the default install target. Codex, Pi, Factory Droid and Devin are also supported by the
+installer. Each harness needs separate installation, authentication and provider access.
 
 `<skill dir>/bin/xpl <command> [options]` (below: `xpl`). Run it from the root of the repo you are explaining, or pass `--root <dir>`. Samples come from `fixtures/ts-jobrunner` (a tiny job runner, indexed as `wt-0db7e190f5`) and are trimmed, not edited.
 
@@ -38,25 +43,35 @@ Claude Code needs separate installation, authentication and provider access.
 
 ---
 
-## `xpl doctor [--agent none|claude] [--skill-dir <path>]`
+## `xpl doctor [--agent none|claude|codex|pi|droid|devin] [--skill-dir <path>]`
 
 Diagnoses installed setup without downloading tools or starting authoring. Node >=22.12, artifact hashes
-and grammar loading are mandatory. Skill availability is optional by default; `--agent claude` makes
-the managed skill and Claude Code availability required. Optional git/npx/Go checks run local version
-commands. Go uses the installed toolchain, ignores user Go configuration and disables telemetry without
-writing settings; Git tracing is disabled. No Python or SCIP tool launcher runs during diagnosis.
+and grammar loading are mandatory. Skill availability is optional by default; selecting an agent requires
+its managed skill. For Claude, Codex, Pi and Droid, diagnosis also checks the local agent command. Devin
+checks project skill files; its cloud discovery and authentication cannot be checked locally. Optional
+git/npx/Go checks run local version commands. Go uses the installed toolchain, ignores user Go
+configuration and disables telemetry without writing settings; Git tracing is disabled. No Python or SCIP
+tool launcher runs during diagnosis.
 Missing precise prerequisites suggest `xpl index --precise off`; automatic precise mode may
 bootstrap tools and dependencies over the network. Presence is not a test of precise analysis,
 agent authentication or provider access. Required failures exit 1; JSON includes `ok`, `platform`,
 `agent`, `checks` (`id`, `required`, `status`, `detail`, `recovery`) and `network`.
 
-## `xpl skill install [--dir <path>]`
+## `xpl skill install [--agent claude|codex|pi|droid|devin] [--dir <path>]`
 
-Copies the bundled code-explainer skill to `~/.claude/skills/code-explainer`, or the chosen directory,
-and binds `bin/xpl` to this installed CLI. Rerun after updating or moving the CLI. Refuses symlinks,
+Copies the bundled code-explainer skill to the selected harness's default skill directory, or the chosen
+directory, and binds `bin/xpl` to this installed CLI. `claude` is the default and installs to
+`~/.claude/skills/code-explainer`; `codex`, `pi` and `droid` install to `~/.agents/skills/code-explainer`;
+`devin` installs to the current project's `.agents/skills/code-explainer`.
+Rerun after updating or moving the CLI. Refuses symlinks,
 unmanaged directories, added files and locally edited skill files; move them aside first to preserve them.
-The current agent integration is Claude Code. Install/authenticate it separately and invoke the skill
-explicitly. Other agents can read the instructions, but their integration is unverified.
+The CLI package bundles the skill and launcher. Install and configure the selected harness separately;
+the installer does not verify provider access or live invocation behavior. Invoke the skill as
+`$code-explainer` in Codex, `/skill:code-explainer` in Pi, `/code-explainer` in Factory Droid, or
+`@skills:code-explainer` in Devin. Devin cloud discovery and authentication are not verified by xpl.
+In Devin, run `xpl skill install --agent devin` inside the connected remote environment and target repo
+before using the launcher. Install Node >=22.12 and xpl there first. This writes the absolute CLI binding;
+there is no PATH fallback. A local install does not provision xpl in Devin's remote environment.
 Local reading, `index --precise off`, viewing and HTML export use bundled assets after setup.
 Precise tools/dependencies and agent authoring can have separate network requirements.
 
@@ -740,7 +755,7 @@ request or expansion, and export `feedback.json`. Saving starts no generation. I
 ```sh
 xpl feedback myguide --import /tmp/feedback.json
 xpl feedback myguide --json
-# Explicitly invoke /code-explainer feedback in your chosen agent.
+# Explicitly invoke the feedback operation with your harness token.
 xpl feedback myguide --outcomes /tmp/outcomes.json
 xpl feedback myguide --export /tmp/results.json
 ```
@@ -902,7 +917,7 @@ bad arguments exit 2. No credentials are created and nothing is written to GitHu
 
 ```sh
 xpl pr create owner/repo 42 --name pr-42 --audience reviewers --question "What changes for callers?" --skill-dir /absolute/installed-skill --cache-dir /absolute/pr-cache --json
-# Explicitly invoke the returned /code-explainer prompt in the installed agent.
+# Explicitly invoke the returned prompt with your harness token in the installed agent.
 # Author through handoff.json's command prefix, which calls the installed skill launcher safely.
 xpl pr finish /absolute/pr-cache/input-XXXXXX --cache-dir /absolute/pr-cache --json
 ```

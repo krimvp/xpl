@@ -6,15 +6,24 @@ Install from npm (Node 22.12 or newer):
 
 ```sh
 npm install --global @krimvp/xpl
-xpl skill install
-xpl doctor --agent claude
+xpl skill install --agent pi
+xpl doctor --agent pi
 ```
 
+Choose one agent: Claude is the default; pass `--agent codex`, `pi`, `droid` or `devin` for another
+harness. Codex, Pi and Factory Droid use `~/.agents/skills/code-explainer`; Devin uses the target
+project's `.agents/skills/code-explainer`. `--dir <path>` overrides the destination.
+Invoke with `/code-explainer` in Claude Code or Factory Droid, `$code-explainer` in Codex,
+`/skill:code-explainer` in Pi, or `@skills:code-explainer` in Devin. Harness invocation has not had live QA.
+For Devin, run `xpl skill install --agent devin` inside the connected remote environment and target repo
+before using the launcher. This writes its absolute CLI binding; there is no PATH fallback. Install Node
+22.12 or newer and the xpl npm package inside that environment first. A local install does not provision
+xpl remotely.
+
 Alternatively, from the public [source repository](https://github.com/krimvp/xpl),
-run `npm install && npm run build`, then `npm pack ./packages/cli/dist` and
-`npm install -g --ignore-scripts ./krimvp-xpl-0.2.2.tgz`. Install a maintainer's tarball offline with
-`npm install -g --offline --ignore-scripts <tarball>`, then run `xpl skill install`.
-Claude Code needs separate installation, authentication and provider access.
+run `npm install && npm run build`, then `npm pack ./packages/cli/dist` and install the tarball with
+`npm install -g --ignore-scripts ./krimvp-xpl-0.2.2.tgz`. For an offline tarball, use
+`npm install -g --offline --ignore-scripts <tarball>`.
 
 Use the installed skill's `bin/xpl` launcher for the commands below. Run from the repository root, or pass `--root /absolute/path/to/repo`. The authoring agent reads the code and writes the JSON patch; the user supplies the intent.
 
@@ -30,13 +39,19 @@ Gather these choices from the request, and state any inferred defaults before wo
 
 List `.explainer/*.explainer.json` before choosing the target. A name collision means choose another name or ask whether that existing guide is the intended target. Do not delete it, recreate it or silently extend it. Read existing views, tours and `userFields` before adding to a selected guide. Use fresh view and tour ids and the default `llm` actor; protected user text stays in place.
 
-After installing/authenticating Claude Code and running `xpl doctor --agent claude`, explicitly invoke one of these in that agent. If you installed the skill somewhere other than `~/.claude/skills/code-explainer` (for example a project's `.claude/skills/code-explainer` or a custom `--dir`), pass that folder: `xpl doctor --agent claude --skill-dir <folder>`.
+After installing the selected harness and running `xpl doctor --agent <name>`, explicitly invoke one of
+these in that harness. For Devin, diagnosis checks project skill files but cannot verify cloud discovery
+or authentication. If you installed the skill into a custom `--dir`, pass that folder to diagnosis with
+`--skill-dir <folder>`.
 
 ```text
-/code-explainer explain repo. Root: /work/orders. Audience: new maintainers. Question: how do requests reach storage? New guide: orders-overview. Use --precise off.
-/code-explainer explain how failed jobs are retried. Root: /work/jobs. Audience: backend engineers. New guide: job-retries. Use --precise off.
-/code-explainer explain change HEAD~1..HEAD. Root: /work/jobs. Audience: reviewers. Question: what changes for callers and what can fail? New guide: retry-change. Use --precise off.
+<harness-token> explain repo. Root: /work/orders. Audience: new maintainers. Question: how do requests reach storage? New guide: orders-overview. Use --precise off.
+<harness-token> explain how failed jobs are retried. Root: /work/jobs. Audience: backend engineers. New guide: job-retries. Use --precise off.
+<harness-token> explain change HEAD~1..HEAD. Root: /work/jobs. Audience: reviewers. Question: what changes for callers and what can fail? New guide: retry-change. Use --precise off.
 ```
+
+Replace `<harness-token>` with `/code-explainer` for Claude Code or Factory Droid, `$code-explainer`
+for Codex, `/skill:code-explainer` for Pi, or `@skills:code-explainer` for Devin.
 
 To add another question to a known guide, say `Existing guide: orders-overview` instead of `New guide`. The agent can infer the root from its current directory and propose the audience or name when the request makes them clear. Ask one short question when a missing choice would change the result.
 
@@ -44,8 +59,9 @@ To add another question to a known guide, say `Existing guide: orders-overview` 
 
 For GitHub input, run `xpl pr create <url> --name <guide> --audience "<reader>" --question "<intent>"`
 with an outside `--cache-dir` and the installed `--skill-dir` when needed. It prepares exact commits,
-creates the guide/change/draft through that installed launcher and returns an explicit `/code-explainer`
-invocation. Run that prompt in the installed agent; no model starts automatically. Read `handoff.json`
+creates the guide/change/draft through that installed launcher and returns a prompt for the installed
+skill. Prefix it with the selected harness token listed above. Run that prompt in the installed agent;
+no model starts automatically. Read `handoff.json`
 and use its `command` prefix for every authoring command: owned Git paths and the installed CLI are
 pinned, while inherited developer Git overrides are removed. Preserve the prepared head index and
 existing scaffold; skip `index`, `new` and `change` below unless repair requires them. Complete the
