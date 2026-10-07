@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { Args } from "../args.js";
 import type { CommandSpec } from "../command.js";
 import { CliError, UsageError } from "../errors.js";
-import { withFileLock } from "../fsutil.js";
+import { atomicWrite, jsonFile, withFileLock } from "../fsutil.js";
 import { applyCommand } from "./apply.js";
 import { indexCommand } from "./build-index.js";
 import { draftCommand } from "./draft.js";
@@ -20,7 +20,8 @@ export const startCommand: CommandSpec = {
   details: [
     "Indexes the repository, creates a new guide, drafts a repository map and applies the draft.",
     "--entry starts a call sequence at one indexed function or method instead of a repository map.",
-    "The draft patch is saved outside the repository. Its TODO text needs author review before sharing.",
+    "The draft patch and all draft notes are saved outside the repository. Up to three notes and apply",
+    "warnings print here; --json returns the full lists. Review the TODO text and notes before sharing.",
     "Use --precise off when optional reference tools are unavailable. Existing guides are never overwritten.",
     "Next: open the guide with `xpl view <name>`, complete the TODOs, then run `xpl lint <name>`.",
   ],
@@ -61,16 +62,28 @@ export const startCommand: CommandSpec = {
     const guidePath = join(ctx.root, ".explainer", `${name}.explainer.json`);
     const emptyGuide = await readFile(guidePath);
     let patchPath: string;
+    let notesFile: string;
+    let notes: string[] = [];
+    let applyWarnings: string[] = [];
     try {
       const dir = await mkdtemp(join(tmpdir(), "xpl-first-guide-"));
       patchPath = join(dir, "draft.patch.json");
+      notesFile = join(dir, "draft-notes.json");
       await draftCommand.run(
-        quiet,
+        {
+          ...quiet,
+          json: true,
+          emit: (data) => {
+            notes = Array.isArray(data.notes) ? data.notes : [];
+            applyWarnings = Array.isArray(data.applyWarnings) ? data.applyWarnings : [];
+          },
+        },
         new Args(
           { question, audience, out: patchPath },
           entry ? ["path", name, entry] : ["repo", name],
         ),
       );
+      await atomicWrite(notesFile, jsonFile({ notes, applyWarnings }));
       const applied = await applyCommand.run(quiet, new Args({}, [name, patchPath]));
       if (applied !== 0) throw new CliError(stepOutput.at(-1) ?? "the draft could not be applied");
     } catch (error) {
@@ -82,12 +95,26 @@ export const startCommand: CommandSpec = {
     }
 
     if (ctx.json) {
-      ctx.emit({ name, path: `.explainer/${name}.explainer.json`, draft: patchPath });
+      ctx.emit({
+        name,
+        path: `.explainer/${name}.explainer.json`,
+        draft: patchPath,
+        notesFile,
+        notes,
+        applyWarnings,
+      });
     } else {
       ctx.out(
         [
           `created .explainer/${name}.explainer.json for ${audience}`,
           `draft patch: ${patchPath}`,
+          `draft notes: ${notesFile}`,
+          ...notes.slice(0, 3).map((note) => `note: ${note}`),
+          ...(notes.length > 3 ? [`note: ${notes.length - 3} more in ${notesFile}`] : []),
+          ...applyWarnings.slice(0, 3).map((warning) => `apply warning: ${warning}`),
+          ...(applyWarnings.length > 3
+            ? [`apply warning: ${applyWarnings.length - 3} more in ${notesFile}`]
+            : []),
           `next: complete the TODOs in \`xpl view ${name}\` or edit the draft patch, then run \`xpl lint ${name}\``,
         ].join("\n"),
       );

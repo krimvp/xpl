@@ -47,7 +47,7 @@ and the base/head recheck. A superseded result stays historical; explicitly crea
 4. **Patch files** go outside the repo (the scratchpad or `$TMPDIR`).
 
 For a manual first guide, `xpl start <name> --question "..." --audience "..."` runs index, new, draft and
-apply, and prints the outside-repository patch path. Add `--entry <symbol>` for a call sequence. The result
+apply, and prints the outside-repository patch and notes paths. Add `--entry <symbol>` for a call sequence. The result
 still has TODO text and needs the code reading, accuracy, lint and readiness steps below.
 
 Local reading, `index --precise off`, viewing and HTML export use bundled assets without hosted xpl

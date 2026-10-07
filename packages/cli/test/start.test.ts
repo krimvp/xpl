@@ -19,6 +19,8 @@ describe("xpl start", () => {
     );
     expect(result.code, result.err).toBe(0);
     expect(result.out).toContain("next: complete the TODOs");
+    expect(result.out).toContain("note: Provisional architecture: confirm project kind");
+    expect(result.out).toContain("draft notes:");
     expect(result.out).toContain("xpl view job-retries");
     const draftPath = /draft patch: (.+)/.exec(result.out)?.[1];
     expect(draftPath).toBeDefined();
@@ -82,6 +84,10 @@ describe("xpl start", () => {
       path: ".explainer/first.explainer.json",
     });
     expect(existsSync(json.json.draft)).toBe(true);
+    expect(json.json.notes).toContain(
+      "Provisional architecture: confirm project kind, primary users and entry points in the README and code; import lines identify dependencies.",
+    );
+    expect(existsSync(json.json.notesFile)).toBe(true);
   });
 
   it("leaves no guide after an unknown entry so the author can retry", async () => {

@@ -27,7 +27,8 @@ xpl view job-retries
 ```
 
 `xpl start` indexes the current repository, creates a guide and applies a checked draft. It prints the
-outside-repository draft patch path. Add `--entry src/runner.ts#Runner.dispatch` when the question starts
+outside-repository draft patch and notes paths. Read the notes before editing: they name provisional or
+omitted parts of the draft. Add `--entry src/runner.ts#Runner.dispatch` when the question starts
 at a known function or method; that makes a call sequence instead of a repository map. Complete the TODO
 text, check each claim against its linked source, then run `xpl lint job-retries` and `xpl ready job-retries`.
 

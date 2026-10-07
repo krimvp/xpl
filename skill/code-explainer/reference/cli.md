@@ -462,16 +462,18 @@ PR folder, use `xpl pr link` below.
 
 ## `xpl start <name> --question q --audience a [--entry symbol] [--precise auto|off|require]`
 
-Creates a first guide in one command. It runs `index`, `new`, `draft` and `apply`, using the same source anchor checks as manual authoring. Without `--entry`, the draft is a repository map. With an indexed function or method such as `src/runner.ts#Runner.dispatch`, it is a call sequence from that entry. The applied guide contains TODO text and can be opened with `xpl view <name>`; complete and check the text before sharing. A copy of the patch is saved in a temporary directory outside the repository. Existing guides are never overwritten.
+Creates a first guide in one command. It runs `index`, `new`, `draft` and `apply`, using the same source anchor checks as manual authoring. Without `--entry`, the draft is a repository map. With an indexed function or method such as `src/runner.ts#Runner.dispatch`, it is a call sequence from that entry. The applied guide contains TODO text and can be opened with `xpl view <name>`; complete and check the text before sharing. The patch and all draft notes are saved in a temporary directory outside the repository. The text output shows up to three notes and apply warnings; `--json` includes their full lists. Existing guides are never overwritten.
 
 ```
-$ xpl start job-retries --question "How does a failed job get retried?" --audience maintainers --entry src/runner.ts#Runner.dispatch --precise off
+$ xpl start job-retries --question "How does a failed job get retried?" --audience maintainers --precise off
 created .explainer/job-retries.explainer.json for maintainers
 draft patch: /tmp/xpl-first-guide-…/draft.patch.json
+draft notes: /tmp/xpl-first-guide-…/draft-notes.json
+note: Provisional architecture: confirm project kind, primary users and entry points in the README and code; import lines identify dependencies.
 next: complete the TODOs in `xpl view job-retries` or edit the draft patch, then run `xpl lint job-retries`
 ```
 
-`--precise off` uses heuristic references; confirm calls against source before completing the explanation. `--json` returns the guide and draft paths.
+`--precise off` uses heuristic references; confirm calls against source before completing the explanation. `--json` returns the guide and draft paths, notes file, notes and apply warnings.
 
 ## `xpl new <name> [--title t] [--repo r] [--url u]`
 
