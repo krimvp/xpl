@@ -287,6 +287,7 @@ export async function buildIndex(opts: BuildIndexOptions): Promise<BuildIndexRes
       .map((s) => s.language),
   );
   const preciseTools = new Map<FileLanguage, string>();
+  const heuristicTools = new Map<FileLanguage, string>();
   // Last replacement of each file/kind owns its resolution, even when it emitted no references.
   const relationshipAnalysis = new Map<
     string,
@@ -435,6 +436,7 @@ export async function buildIndex(opts: BuildIndexOptions): Promise<BuildIndexRes
     }
     const preciseFiles = new Set<FilePath>();
     for (const { file, resolution, tool } of relationshipAnalysis.values()) {
+      if (resolution === "heuristic") heuristicTools.set(languageOfFile.get(file)!, tool);
       if (resolution !== "precise") continue;
       preciseFiles.add(file);
       preciseTools.set(languageOfFile.get(file)!, tool);
@@ -463,7 +465,14 @@ export async function buildIndex(opts: BuildIndexOptions): Promise<BuildIndexRes
     root,
     gitOptions: opts.gitOptions,
   });
-  const languages = summarizeLanguages(files, entries, usedPacks, preciseTools, keptHeuristicFiles);
+  const languages = summarizeLanguages(
+    files,
+    entries,
+    usedPacks,
+    preciseTools,
+    keptHeuristicFiles,
+    heuristicTools,
+  );
   const tool =
     `xpl-indexer@${pkg.version} web-tree-sitter@${pkg.dependencies["web-tree-sitter"]} ${grammarVersions(usedPacks).join(" ")}`.trim();
 
@@ -500,6 +509,7 @@ function summarizeLanguages(
   usedPacks: readonly { pack: LanguagePack; language: FileLanguage }[],
   preciseTools: ReadonlyMap<FileLanguage, string>,
   keptHeuristicFiles: ReadonlyMap<FileLanguage, number> = new Map(),
+  heuristicTools: ReadonlyMap<FileLanguage, string> = new Map(),
 ): Record<string, LanguageInfo> {
   const languageOf = new Map<FilePath, FileLanguage>(files.map((f) => [f.path, f.language]));
   const packOf = new Map<FileLanguage, LanguagePack>(usedPacks.map((u) => [u.language, u.pack]));
@@ -524,6 +534,9 @@ function summarizeLanguages(
       info.tool = tool;
       const kept = keptHeuristicFiles.get(language) ?? 0;
       if (kept > 0) info.heuristicFiles = kept;
+    } else if (heuristicTools.has(language)) {
+      info.refs = "heuristic";
+      info.tool = heuristicTools.get(language)!;
     } else if (pack && pack.refs === "heuristic") {
       info.refs = "heuristic";
       info.tool = `xpl-heuristic@${pkg.version} (${grammarVersion(GRAMMAR_WASM[pack.grammarFor(language)].pkg)})`;

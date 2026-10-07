@@ -183,12 +183,18 @@ it("Rust symbols can be outlined, shown, anchored and exported with their suppor
     range: { startLine: 65, endLine: 101 },
     parent: "src/runner.rs#impl Runner<Q>",
   });
-  expect(data.index.languages.rust).toEqual({ files: 9, symbols: 82, refs: "none" });
+  expect(data.index.languages.rust).toEqual({
+    files: 9,
+    symbols: 82,
+    refs: "heuristic",
+    tool: "tree-sitter-rust@0.24.0/query-v2",
+  });
   expect(
     data.index.analysis?.find(
       (r) => r.provider === "rust-tags" && r.files.includes("src/runner.rs"),
     )?.results,
   ).toMatchObject([
+    { status: "partial", analyzedFiles: expect.arrayContaining(["src/runner.rs"]) },
     { status: "partial", analyzedFiles: expect.arrayContaining(["src/runner.rs"]) },
     { status: "unsupported", analyzedFiles: [] },
   ]);
