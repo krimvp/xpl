@@ -48,6 +48,7 @@ installer. Each harness needs separate installation, authentication and provider
 Diagnoses installed setup without downloading tools or starting authoring. Node >=22.12, artifact hashes
 and grammar loading are mandatory. Skill availability is optional by default; selecting an agent requires
 its managed skill. An older installed skill is marked `outdated` and names `xpl skill install` as recovery.
+A skill newer than the CLI is marked `mismatch`; update the CLI to the skill's version or newer.
 For Claude, Codex, Pi and Droid, diagnosis also checks the local agent command. Devin
 checks project skill files; its cloud discovery and authentication cannot be checked locally. Optional
 git/npx/Go checks run local version commands. Go uses the installed toolchain, ignores user Go
@@ -69,6 +70,7 @@ directory, and binds `bin/xpl` to this installed CLI. `claude` is the default an
 Rerun after updating or moving the CLI. Refuses symlinks,
 unmanaged directories, added files and locally edited skill files; move them aside first to preserve them.
 The launcher prints one warning when its recorded skill version differs from the CLI package it runs.
+It recommends skill reinstall for an older skill and a CLI update for a newer skill.
 The CLI package bundles the skill and launcher. Install and configure the selected harness separately;
 the installer does not verify provider access or live invocation behavior. Invoke the skill as
 `$code-explainer` in Codex, `/skill:code-explainer` in Pi, `/code-explainer` in Factory Droid, or

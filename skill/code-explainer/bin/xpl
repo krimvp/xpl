@@ -15,6 +15,18 @@ const installedCli = installation?.cli;
 const sourceCli = resolve(repo, "packages/cli/dist/xpl.mjs");
 const cli = process.env.XPL_CLI ? resolve(process.env.XPL_CLI) : (installedCli ?? sourceCli);
 
+function compareVersions(left, right) {
+  const parse = (value) =>
+    /^\d+\.\d+\.\d+$/.test(value) ? value.split(".").map(Number) : undefined;
+  const a = parse(left);
+  const b = parse(right);
+  if (!a || !b) return undefined;
+  for (let i = 0; i < 3; i++) {
+    if (a[i] !== b[i]) return a[i] - b[i];
+  }
+  return 0;
+}
+
 if (!existsSync(cli)) {
   console.error(`xpl: the CLI is unavailable: ${cli} does not exist.`);
   if (process.env.XPL_CLI) {
@@ -40,8 +52,13 @@ if (typeof installation?.version === "string") {
       readFileSync(resolve(dirname(cli), "package.json"), "utf8"),
     ).version;
     if (typeof cliVersion === "string" && cliVersion !== installation.version) {
+      const order = compareVersions(installation.version, cliVersion);
       console.error(
-        `xpl: installed skill ${installation.version} differs from CLI ${cliVersion}; run \`xpl skill install\`.`,
+        order !== undefined && order > 0
+          ? `xpl: installed skill ${installation.version} is newer than CLI ${cliVersion}; update the CLI to ${installation.version} or newer.`
+          : order !== undefined && order < 0
+            ? `xpl: installed skill ${installation.version} differs from CLI ${cliVersion}; run \`xpl skill install\`.`
+            : `xpl: installed skill ${installation.version} differs from CLI ${cliVersion}; use matching versions.`,
       );
     }
   } catch {

@@ -16,7 +16,15 @@ import {
 const execute = promisify(execFile);
 const REGISTRY_LATEST = "https://registry.npmjs.org/@krimvp%2Fxpl/latest";
 
-class OutdatedSkillError extends Error {}
+class SkillVersionError extends Error {
+  constructor(
+    message: string,
+    readonly status: "outdated" | "mismatch",
+    readonly recovery: string,
+  ) {
+    super(message);
+  }
+}
 
 function compareVersions(left: string, right: string): number | undefined {
   const parse = (value: string) =>
@@ -38,7 +46,7 @@ export const doctorCommand: CommandSpec = {
     "Checks Node >=22.12, bundled file hashes and grammar loading. Required failures exit 1.",
     "A selected skill and local agent command are checked for Claude, Codex, Pi and Droid. Devin checks the project skill files; its cloud session is not locally verifiable. The default none checks reader/index/export setup.",
     "Optional git, npx and Go checks report local versions. Availability does not prove a precise indexer can run.",
-    "Checks npm for a newer xpl version when reachable. Set XPL_NO_UPDATE_CHECK=1 to skip this network check.",
+    "An older skill needs xpl skill install; a newer skill needs a matching CLI. Checks npm for a newer xpl version when reachable. Set XPL_NO_UPDATE_CHECK=1 to skip this network check.",
     "Go uses the installed toolchain with user configuration and telemetry disabled; Git tracing is disabled.",
     "Use xpl index --precise off offline. Auto precise mode may download tools/dependencies; require fails if unavailable.",
     "Agent authentication and provider access are not checked. Devin cloud skill loading is not locally verifiable. Generation is user-invoked.",
@@ -63,7 +71,7 @@ export const doctorCommand: CommandSpec = {
     const checks: {
       id: string;
       required: boolean;
-      status: "ok" | "missing" | "outdated";
+      status: "ok" | "missing" | "outdated" | "mismatch";
       detail: string;
       recovery: string;
     }[] = [];
@@ -79,9 +87,9 @@ export const doctorCommand: CommandSpec = {
         checks.push({
           id,
           required,
-          status: error instanceof OutdatedSkillError ? "outdated" : "missing",
+          status: error instanceof SkillVersionError ? error.status : "missing",
           detail: errorMessage(error),
-          recovery,
+          recovery: error instanceof SkillVersionError ? error.recovery : recovery,
         });
       }
     }
@@ -128,8 +136,12 @@ export const doctorCommand: CommandSpec = {
         const data = verifySkill(skill);
         if (data.version !== pkg.version) {
           const order = compareVersions(data.version, pkg.version);
-          throw new OutdatedSkillError(
+          throw new SkillVersionError(
             `skill version ${data.version} ${order === undefined ? "differs from" : order < 0 ? "<" : ">"} CLI ${pkg.version}`,
+            order !== undefined && order < 0 ? "outdated" : "mismatch",
+            order !== undefined && order < 0
+              ? `Run ${installCommand}; move local edits aside first.`
+              : `Install CLI version ${data.version} or newer; this older CLI cannot repair the installed skill.`,
           );
         }
         const result = await execute(process.execPath, [join(skill, "bin/xpl"), "--version"], {

@@ -51,7 +51,8 @@ and the base/head recheck. A superseded result stays historical; explicitly crea
    CLI path and has no PATH fallback. Rerun install after CLI updates or moves; it refuses local edits.
    `xpl doctor` checks Node, bundled assets, the skill, optional precise tools and available CLI updates.
    Set `XPL_NO_UPDATE_CHECK=1` to skip its registry request. The launcher warns when its recorded skill
-   version differs from the CLI it runs; rerun `xpl skill install` after a CLI update. The installed workflow
+   version differs from the CLI it runs. Rerun `xpl skill install` for an older skill; update the CLI for a
+   newer skill. The installed workflow
    is verified on Linux x64 only.
 2. **Index:** `xpl index`. Run it again when the code changed or a command warns that the index `does not match the working tree`. A language with `refs: heuristic` has hints, not facts: confirm each call with `show`. `--precise off` skips optional tools for fast or offline indexing. Report the chosen mode and the actual coverage and trust labels. `--precise require` is for a user who needs precise references; if it fails, offer the explicit heuristic path without calling it precise.
 3. **Name it:** `xpl new <name> --title "..."` for a new guide; it refuses an existing name. For an explicitly selected existing guide, read its views, tours and protected fields first, then add the new question with fresh ids. The repo name in kebab-case is a useful default for an overview; separate questions may have their own guide. A change gets its own explainer, titled after it: `xpl new <repo>-pr-42 --title "PR 42: <what it does>"`. Say who the page is for, fit to its level, in one short line: `"scope": {"audience": "Overview, for anyone new to ky"}` (a repo), `"Deep dive, for engineers working on the router"` (an algorithm), `"For reviewers of this change, and anyone who uses the option"` (a change); the viewer shows it under the title (patch-format.md 3.11).

@@ -22,35 +22,39 @@ const hasGo =
   process.env.PATH?.split(delimiter).some((dir) => existsSync(join(dir, "go"))) ?? false;
 
 describe("setup commands", () => {
-  it("reports an older managed skill and the reinstall command", async () => {
-    const root = makeTempDir();
-    const skill = join(root, "skill");
-    const files = Object.fromEntries(
-      [
-        ["SKILL.md", "# Skill\n"],
-        ["bin/xpl", "#!/usr/bin/env node\n"],
-      ].map(([path, body]) => {
-        writeFile(skill, path!, body!);
-        return [path, createHash("sha256").update(body!).digest("hex")];
-      }),
-    );
-    writeFile(
-      skill,
-      "xpl-install.json",
-      JSON.stringify({ version: "0.1.0", cli: "/tmp/xpl.mjs", files }),
-    );
-    const result = await invoke(["doctor", "--skill-dir", skill, "--json"], {
-      cwd: root,
-      env: { XPL_NO_UPDATE_CHECK: "1" },
-    });
-    const report = JSON.parse(result.out);
-    expect(report.checks.find((check: { id: string }) => check.id === "skill")).toMatchObject({
-      required: false,
-      status: "outdated",
-      detail: "skill version 0.1.0 < CLI 0.2.2",
-      recovery: expect.stringContaining("xpl skill install"),
-    });
-  });
+  it.each([
+    { version: "0.1.0", status: "outdated", order: "<", recovery: "xpl skill install" },
+    { version: "0.3.0", status: "mismatch", order: ">", recovery: "CLI version 0.3.0" },
+  ])(
+    "reports a $status managed skill with the right recovery",
+    async ({ version, status, order, recovery }) => {
+      const root = makeTempDir();
+      const skill = join(root, "skill");
+      const files = Object.fromEntries(
+        [
+          ["SKILL.md", "# Skill\n"],
+          ["bin/xpl", "#!/usr/bin/env node\n"],
+        ].map(([path, body]) => {
+          writeFile(skill, path!, body!);
+          return [path, createHash("sha256").update(body!).digest("hex")];
+        }),
+      );
+      writeFile(skill, "xpl-install.json", JSON.stringify({ version, cli: "/tmp/xpl.mjs", files }));
+      const result = await invoke(["doctor", "--skill-dir", skill, "--json"], {
+        cwd: root,
+        env: { XPL_NO_UPDATE_CHECK: "1" },
+      });
+      const report = JSON.parse(result.out);
+      const skillCheck = report.checks.find((check: { id: string }) => check.id === "skill");
+      expect(skillCheck).toMatchObject({
+        required: false,
+        status,
+        detail: `skill version ${version} ${order} CLI 0.2.2`,
+        recovery: expect.stringContaining(recovery),
+      });
+      if (status === "mismatch") expect(skillCheck.recovery).not.toContain("xpl skill install");
+    },
+  );
 
   it("reports a newer registry version only from doctor and honors the offline switch", async () => {
     const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => ({
@@ -79,24 +83,35 @@ describe("setup commands", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it("the installed launcher warns once when its recorded version differs from its CLI", async () => {
-    const root = makeTempDir();
-    const skill = join(root, "skill");
-    const cli = writeFile(root, "cli/xpl.mjs", 'console.log("0.2.2");\n');
-    writeFile(root, "cli/package.json", '{"type":"module","version":"0.2.2"}\n');
-    const launcher = join(skill, "bin/xpl");
-    writeFile(skill, "xpl-install.json", JSON.stringify({ version: "0.1.0", cli }));
-    writeFile(skill, "bin/xpl", "");
-    copyFileSync(
-      fileURLToPath(new URL("../../../skill/code-explainer/bin/xpl", import.meta.url)),
-      launcher,
-    );
-    const result = await promisify(execFile)(process.execPath, [launcher, "--version"]);
-    expect(result.stdout.trim()).toBe("0.2.2");
-    expect(result.stderr.trim().split("\n")).toEqual([
-      "xpl: installed skill 0.1.0 differs from CLI 0.2.2; run `xpl skill install`.",
-    ]);
-  });
+  it.each([
+    {
+      version: "0.1.0",
+      warning: "xpl: installed skill 0.1.0 differs from CLI 0.2.2; run `xpl skill install`.",
+    },
+    {
+      version: "0.3.0",
+      warning:
+        "xpl: installed skill 0.3.0 is newer than CLI 0.2.2; update the CLI to 0.3.0 or newer.",
+    },
+  ])(
+    "the installed launcher gives the right warning for skill $version",
+    async ({ version, warning }) => {
+      const root = makeTempDir();
+      const skill = join(root, "skill");
+      const cli = writeFile(root, "cli/xpl.mjs", 'console.log("0.2.2");\n');
+      writeFile(root, "cli/package.json", '{"type":"module","version":"0.2.2"}\n');
+      const launcher = join(skill, "bin/xpl");
+      writeFile(skill, "xpl-install.json", JSON.stringify({ version, cli }));
+      writeFile(skill, "bin/xpl", "");
+      copyFileSync(
+        fileURLToPath(new URL("../../../skill/code-explainer/bin/xpl", import.meta.url)),
+        launcher,
+      );
+      const result = await promisify(execFile)(process.execPath, [launcher, "--version"]);
+      expect(result.stdout.trim()).toBe("0.2.2");
+      expect(result.stderr.trim().split("\n")).toEqual([warning]);
+    },
+  );
   it.skipIf(!hasGo)(
     "doctor reports installed tools without downloading a newer Go toolchain or writing probe files",
     async () => {

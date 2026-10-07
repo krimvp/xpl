@@ -1449,8 +1449,9 @@ be available before a tag is created. Pages builds the public site from that sam
 `doctor` checks SHA-256 hashes from the artifact inventory and loads every grammar. Hashes detect damage,
 not publisher identity. Skill availability is optional for reading, required with `--agent claude`.
 It checks the managed copy's hashes and executes its launcher with `--version`. An older skill is reported
-as outdated with `xpl skill install` as recovery. The launcher warns once per invocation when its recorded
-skill version differs from the CLI package it runs. Doctor alone checks npm for a newer CLI version;
+as outdated with `xpl skill install` as recovery; a newer skill is a mismatch that needs a newer CLI.
+The launcher warns once per invocation and gives the same direction. Doctor alone checks npm for a newer
+CLI version;
 `XPL_NO_UPDATE_CHECK=1` skips it, and offline failures stay silent. Optional tools are checked
 only with local version commands; their presence does not prove precise analysis or agent authentication.
 The Go probe forces `GOTOOLCHAIN=local`, ignores user Go configuration and disables telemetry without
