@@ -21,9 +21,8 @@ contribution guidance are in the [public GitHub repository](https://github.com/k
 ## Quick start
 
 Needs Node 22.12 or newer and npm for installation. The local artifact is exercised on Linux x64
-(WSL2, Node 22.23.1). Other platforms have not been verified. The package is prepared for the 0.2.0 release;
-it will be available from npm after the `v0.2.0` release is published. Install the latest published version
-with the command below. You can also build from the
+(WSL2, Node 22.23.1). Other platforms have not been verified. This source checkout builds version 0.2.0;
+the command below installs the latest published `@krimvp/xpl` from npm. You can also build from the
 [source repository](https://github.com/krimvp/xpl).
 
 XPL helps an author publish a focused explanation of code. Choose a reader and a question before

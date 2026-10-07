@@ -1385,9 +1385,15 @@ durable job history and unavailable-runner submission. It also checks the publis
 and packed file inventory. npm rejected `xpl` as too similar to an existing name; `@krimvp/xpl` is the selected fallback.
 `npm run pack -- --pack-destination <outside-repo-dir>` builds and packs that directory. Install its local tarball with
 `npm install --global --prefix "$HOME/.local" --offline --ignore-scripts <absolute-tarball-path>`; put
-`$HOME/.local/bin` on PATH. No source build is needed at installation. Version 0.2.0 is prepared for the npm
-release; a `v*` tag starts publication. Install with `npm install --global @krimvp/xpl`. Nothing is published
-by build, pack, diagnosis or skill installation.
+`$HOME/.local/bin` on PATH. No source build is needed at installation. This source tree builds version 0.2.0;
+a `v*` tag starts publication. Install the latest published version with
+`npm install --global @krimvp/xpl`. Nothing is published by build, pack, diagnosis or skill installation.
+
+The release workflow accepts an owner-created, immutable `v*` tag only when it points to `main`, matches the
+package version and names a version absent from npm. On GitHub-hosted Ubuntu it builds, checks the installed
+tarball, runs package dry runs, then publishes through npm trusted publishing with provenance and creates a
+GitHub Release. npm must trust `.github/workflows/release.yml` for `@krimvp/xpl`; GitHub-hosted Actions must
+be available before a tag is created. Pages builds the public site from that same tag.
 
 `doctor` checks SHA-256 hashes from the artifact inventory and loads every grammar. Hashes detect damage,
 not publisher identity. Skill availability is optional for reading, required with `--agent claude`.
@@ -2936,7 +2942,7 @@ identities to syntax ranges. This is a proposed contract revision, not a change 
   problems, not wrong claims. `repeats-summary` finds near-verbatim repeats only.
 - Workspace packages are private; build/pack produce a standalone local npm tarball with
   its viewer, grammars and skill. Install/update and reader/export checks cover Linux x64/WSL2 only.
-  Node ≥22.12 is required. `@krimvp/xpl` 0.2.0 is prepared for release under MIT, triggered by a `v*` tag.
+  Node ≥22.12 is required. This source tree builds `@krimvp/xpl` 0.2.0 under MIT; a `v*` tag starts publication.
 
 **Next steps, roughly by value** (the review in `docs/review-2026-10-01.md` has the roadmap): an independent
 accuracy pass for change explainers; a word-level diff in rewritten lines; editable step titles and code in

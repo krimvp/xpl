@@ -2,9 +2,7 @@
 
 User-facing changes are listed here. Versions link to their GitHub releases.
 
-## [0.2.0] - Unreleased
-
-Prepared for release from the `v0.2.0` tag. The package has not been published yet.
+## [0.2.0]
 
 - Authors can keep a local xpl service connected to a repository, watch source changes, and find guides that
   need attention.
