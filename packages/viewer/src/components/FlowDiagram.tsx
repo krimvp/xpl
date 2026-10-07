@@ -1,3 +1,4 @@
+import { DiagramText } from "./DiagramText.js";
 import { useEffect, useId, useMemo, useState } from "react";
 import { processFlow, type ElementId, type ProcessFlow, type SequenceView } from "@xpl/core";
 import { viewReverseIndex } from "../derive.js";
@@ -155,7 +156,7 @@ export function FlowDiagram({ view, snapshot, outline = false }: FlowDiagramProp
     outline && followCaret ? originals.find(({ node }) => matches.has(node.id)) : undefined;
   const followed = caretStage ? boxOf(caretStage.node) : undefined;
   const transitionClass = (edge: FlowLayout["edges"][number]) =>
-    `flow-transition${flow.projected ? " is-projected" : ""}${edge.kind ? ` is-${edge.kind}` : ""}`;
+    `flow-transition${state.selection.includes(edge.id) ? " is-selected" : ""}${flow.projected ? " is-projected" : ""}${edge.kind ? ` is-${edge.kind}` : ""}`;
   const select = (id: string, additive: boolean) => {
     if (!snapshot) store.click(id, additive);
   };
@@ -190,6 +191,20 @@ export function FlowDiagram({ view, snapshot, outline = false }: FlowDiagramProp
           key={edge.id}
           className={transitionClass(edge)}
           data-transition-kind={edge.kind}
+          data-element-id={snapshot ? undefined : edge.id}
+          role={snapshot ? undefined : "button"}
+          tabIndex={snapshot ? undefined : 0}
+          aria-label={`${stageLabels.get(edge.from)} to ${edge.to ? stageLabels.get(edge.to) : "caller"}${edge.labels.length ? `: ${edge.labels.map((label) => label.text).join(" ")}` : ""}`}
+          onClick={(event) => {
+            event.stopPropagation();
+            select(edge.id, event.shiftKey);
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              select(edge.id, event.shiftKey);
+            }
+          }}
           data-navigation-from={snapshot ? undefined : edge.from}
           data-navigation-to={
             snapshot || edge.to === undefined ? undefined : (nodes.get(edge.to)?.copyOf ?? edge.to)
@@ -348,6 +363,7 @@ export function FlowDiagram({ view, snapshot, outline = false }: FlowDiagramProp
         </p>
       )}
       <PanZoom
+        textView={<DiagramText flow={flow} />}
         width={layout.width ?? 400}
         height={layout.height ?? 300}
         resetKey={`${view.id}:${state.stepSeq}`}
