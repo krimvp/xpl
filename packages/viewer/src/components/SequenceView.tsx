@@ -354,6 +354,8 @@ function StepShape({
     <g
       className={`step kind-${kind}${row.detached ? " is-detached" : ""}${classes}`}
       data-element-id={still ? undefined : step.id}
+      data-navigation-from={still ? undefined : step.from}
+      data-navigation-to={still ? undefined : step.to}
       role={still ? undefined : "button"}
       tabIndex={still ? undefined : 0}
       aria-label={`${kind} ${step.label ?? ""}`}
