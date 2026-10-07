@@ -768,6 +768,12 @@ outcomes are inferred from language names, symbols, ranges or reference counts; 
 Pruning and packing preserve reports unchanged, so missing bundle edges never alter run coverage.
 `describeAnalysis` produces the same reader-facing summary for the CLI and viewer. Each capability result
 names its provider id, so a file-only fallback's limits do not describe a separate artifact provider's symbols.
+`changeOmissions` intersects the change's paths with the loaded index's observed reports. It names report-level
+partial, unsupported or failed outcomes with the count of changed paths actually analyzed, without assigning a
+report-level limit to each file. It also names paths absent from the loaded index and removed files whose old
+code it cannot inspect. A commit mismatch is called out: those results describe the loaded index, not the
+change head. The list is capped at five items with a remaining count; no result or missing legacy report is
+treated as proof of complete analysis. Pruned and packed bundles retain the original reports.
 Tool commands and diagnostic details remain author-facing.
 
 | Language | Symbols (kind) | Path rules |
@@ -1476,7 +1482,7 @@ counted in a warning. Then it prints the analysis (§4.8): the files with `+/-` 
 outside tests with its lines, callers (at most 8 listed, `--json` has all), callers via an instance (a guess)
 and tests, the changed lines outside any symbol, the test files the change touches with their new and changed
 tests, and the symbols with no test. Without a range it re-prints the analysis of the stored record. `--json`:
-`{ ok, path, written, change, analysis }`.
+`{ ok, path, written, change, analysis, omissions }`.
 
 `xpl search` delegates matching, source ordering, line counts and symbol attribution to core `query`.
 CLI `--under` still resolves targets and globs with suggestions; CLI text comes from the working tree.
@@ -2313,6 +2319,9 @@ failed analysis and opens into capabilities, file counts and limits, labeled by 
 Tool commands and diagnostic details are omitted.
 It describes the original indexed repository, including when only some sources are embedded or the index
 is pruned. A legacy index shows coverage unknown. Live refresh and Save as HTML use the current index report.
+In a change guide, a bounded **Not checked** section below the author's summary names observed limits from
+the loaded index. It is separate from the authored impact text and also appears in `xpl change` text and JSON.
+If no omissions are recorded, the section is absent; that absence says nothing about unobserved runtime effects.
 
 | Mode    | Moves between                                                              | Action  |
 | ------- | -------------------------------------------------------------------------- | ------- |
