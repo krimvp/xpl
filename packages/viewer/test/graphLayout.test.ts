@@ -1,3 +1,4 @@
+import { drawnEdges } from "../src/drawnEdges.js";
 import {
   deriveGraph,
   ExplainerModel,
@@ -9,7 +10,6 @@ import { describe, expect, it } from "vitest";
 import {
   absoluteBoxes,
   cutAt,
-  drawnEdges,
   fitScale,
   gridLayoutOf,
   layoutGraph,
@@ -131,8 +131,8 @@ describe("layoutGraph", () => {
     const b = layout.nodes.find((n) => n.id === "file:src/b.ts")!;
     expect(a.x + a.width).toBeLessThanOrEqual(b.x);
     const [edge] = layout.edges;
-    expect(edge!.title).toBe("calls ×2");
-    expect(edge!.resolution).toBe("precise");
+    expect(edge!.title).toBe("calls ×2 (mixed confidence)");
+    expect(edge!.resolution).toBe("mixed");
     expect(edge!.kind).toBe("calls");
     expect(edge!.stub).toBe(false);
     expect(edge!.points[0]!.x).toBeCloseTo(a.x + a.width, 0);
@@ -509,6 +509,19 @@ describe("what a map draws", () => {
       ["edge:calls:b->a", undefined],
       ["edge:said", "asks c"],
     ]);
+  });
+
+  it.each([
+    ["precise", "heuristic"],
+    ["heuristic", "precise"],
+    ["mixed", "precise"],
+    ["precise", "mixed"],
+  ] as const)("keeps %s and %s evidence mixed when merging kinds", (first, second) => {
+    const edges = drawnEdges([
+      derived({ resolution: first }),
+      derived({ id: "edge:references", kind: "references", resolution: second }),
+    ]);
+    expect(edges.map((edge) => edge.resolution)).toEqual(["mixed"]);
   });
 
   it("draws an edge of a box to itself as a loop on its top-right corner, with its label", async () => {
