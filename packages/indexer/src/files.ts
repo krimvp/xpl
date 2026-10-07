@@ -101,6 +101,7 @@ export interface GitInfo {
 
 /** Optional process context for git reads in a caller-owned repository. Defaults retain normal git discovery. */
 export interface GitOptions {
+  signal?: AbortSignal;
   env?: NodeJS.ProcessEnv;
   /** Global git arguments, before the subcommand (for example --git-dir and --work-tree). */
   args?: readonly string[];
@@ -118,6 +119,7 @@ export function runGit(
       [...(options.args ?? []), ...args],
       {
         cwd,
+        signal: options.signal,
         maxBuffer: 512 * 1024 * 1024,
         encoding: "utf8",
         // Never write the index lock just to answer a read-only question.
@@ -155,6 +157,7 @@ export interface DiscoveredFile {
 }
 
 export interface DiscoverOptions {
+  signal?: AbortSignal;
   /** False returns path candidates without reading/filtering content, for metadata polling. */
   content?: boolean;
   /** Only files of these languages are returned. */
@@ -203,9 +206,14 @@ async function gitPaths(root: string, options?: GitOptions): Promise<string[] | 
 }
 
 /** Every file below `root`, root-relative, skipping `WALK_SKIP_DIRS` and dot-directories. */
-async function walkPaths(root: string, warnings: string[]): Promise<string[]> {
+async function walkPaths(
+  root: string,
+  warnings: string[],
+  signal?: AbortSignal,
+): Promise<string[]> {
   const out: string[] = [];
   async function visit(dirAbs: string, dirRel: string): Promise<void> {
+    signal?.throwIfAborted();
     let entries;
     try {
       entries = await readdir(dirAbs, { withFileTypes: true });
@@ -214,6 +222,7 @@ async function walkPaths(root: string, warnings: string[]): Promise<string[]> {
       return;
     }
     for (const entry of entries) {
+      signal?.throwIfAborted();
       const rel = dirRel === "" ? entry.name : `${dirRel}/${entry.name}`;
       if (entry.isDirectory()) {
         if (WALK_SKIP_DIRS.has(entry.name) || entry.name.startsWith(".")) continue;
@@ -295,12 +304,14 @@ export async function discoverFiles(
   root: string,
   options: DiscoverOptions = {},
 ): Promise<Discovery> {
+  options.signal?.throwIfAborted();
   const warnings: string[] = [];
   const git = "git" in options ? options.git : await detectGit(root, options.gitOptions);
   let candidates: string[] | undefined;
   if (git) candidates = await gitPaths(root, options.gitOptions);
   const usedGit = candidates !== undefined;
-  candidates ??= await walkPaths(root, warnings);
+  options.signal?.throwIfAborted();
+  candidates ??= await walkPaths(root, warnings, options.signal);
   const excluded = new Map<ExclusionReason, { count: number; examples: string[] }>();
   function record(reason: ExclusionReason, path: string): void {
     const entry = excluded.get(reason) ?? { count: 0, examples: [] };
@@ -343,6 +354,7 @@ export async function discoverFiles(
   const kept: DiscoveredFile[] = [];
   const BATCH = 64;
   for (let i = 0; i < selected.length; i += BATCH) {
+    options.signal?.throwIfAborted();
     const batch = selected.slice(i, i + BATCH);
     const verdicts = await Promise.all(
       batch.map(async (f) => {
