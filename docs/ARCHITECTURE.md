@@ -1009,7 +1009,7 @@ id wins (validation reports the duplicates).
   arrow from a box to its own container says nothing). Kind map: call→calls, import→imports, extends,
   implements, type-ref→references, read→reads, write→writes; only kinds in `edgeKinds` (default
   `DEFAULT_EDGE_KINDS`). Module scopes lift to their file. Aggregate per `(kind, a, b)` into
-  `edge:<kind>:<a>-><b>` with `count`, `resolution` (`precise` if any aggregated reference is) and derived
+  `edge:<kind>:<a>-><b>` with `count`, `resolution` (`precise` or `heuristic` when all references agree, otherwise `mixed`) and derived
   anchors: each site as `call-site` (calls) or `usage`, plus each target's definition, at most 50 of each,
   never stored.
 - **Stored edges** are shown whatever their `kind`, when both ends are represented in the view. One whose id
@@ -1053,10 +1053,14 @@ id wins (validation reports the duplicates).
 - `deriveGraph(view, model, { edgeKinds? }) → { nodes, edges, stubs, ghosts }`, sorted by id (the option
   overrides `view.edgeKinds`). `nodes[i] = { id, label, kind, symbolKind?, container, parent?, role?, tech?,
   opens?, expandable? }` (`expandable`: it opens a graph view, see `levels.ts`); `edges[i] = { id, from, to,
-  kind, label?, summary?, count, stored, anchors, via?, resolution: "precise" | "heuristic" | "llm" | "user" |
+  kind, label?, summary?, count, stored, anchors, via?, resolution: "precise" | "heuristic" | "mixed" | "llm" | "user" |
   "static" }`; `ghosts[i] = { id, key, kind: "target" | "rest" | "more", label,
   target?, kinds, count, direction: "in" | "out" | "both", targets }`; `stubs[i] = { id, direction, inside,
   ghost (the key), ghostLabel, targets, kinds, count }`.
+- The viewer also preserves mixed confidence when it combines edge kinds between the same boxes.
+  Mixed arrows are subdued like heuristic arrows and labelled "mixed confidence"; their details say
+  that some references are hints. Selection details and code focus use the drawn aggregate
+  (all kinds, total reference count and their anchors). Individual index references remain `precise` or `heuristic`.
 - Pure view edits: `expandStub(view, stub)`: `include += ghost target` (nothing for a folded ghost).
   `drillIn(view, id, model)`: `include +=` the node (when missing) and its children (a group opens into its
   members), so it becomes a container. `collapse(view, id, model)`: remove its included descendants (for a

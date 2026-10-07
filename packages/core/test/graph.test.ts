@@ -247,7 +247,7 @@ describe("deriveGraph: derived edges", () => {
     expect(e.anchors).toHaveLength(8);
   });
 
-  it("marks an edge heuristic unless a reference is precise", () => {
+  it("keeps uniform reference resolution", () => {
     const { graph } = derive(files);
     expect(graph.edges.find((x) => x.id === `edge:calls:${F.runner}->${F.sleep}`)!.resolution).toBe(
       "heuristic",
@@ -255,6 +255,29 @@ describe("deriveGraph: derived edges", () => {
     expect(graph.edges.find((x) => x.id === `edge:calls:${F.worker}->${F.sleep}`)!.resolution).toBe(
       "precise",
     );
+  });
+
+  it("marks grouped precise and heuristic references mixed regardless of order", () => {
+    const refs = [
+      {
+        from: "src/runner.ts#Runner.dispatch",
+        to: "src/queue.ts#Queue.pop",
+        line: 46,
+        resolution: "precise" as const,
+      },
+      {
+        from: "src/runner.ts#Runner.dispatch",
+        to: "src/queue.ts#Queue.ack",
+        line: 68,
+        resolution: "heuristic" as const,
+      },
+    ];
+    for (const ordered of [refs, [...refs].reverse()]) {
+      const { graph } = derive(files, {}, {}, jobrunner({ refs: ordered }));
+      expect(graph.edges.map(({ count, resolution }) => ({ count, resolution }))).toEqual([
+        { count: 2, resolution: "mixed" },
+      ]);
+    }
   });
 
   it("uses the default kinds and skips edges inside a single node", () => {
