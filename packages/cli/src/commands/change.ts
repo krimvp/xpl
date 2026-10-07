@@ -113,6 +113,22 @@ function symbolBlock(sym: ChangedSymbol): string[] {
       ),
     );
   }
+  if (sym.indirectCalls.paths.length > 0) {
+    out.push(
+      ...listBlock(
+        `call paths through one intermediate function (${sym.indirectCalls.paths.length})`,
+        sym.indirectCalls.paths.map(
+          ([first, second]) =>
+            `${first.from} --[${first.site.startLine}, ${first.resolution}]--> ${first.to} --[${second.site.startLine}, ${second.resolution}]--> ${second.to}`,
+        ),
+        "    ",
+      ),
+    );
+  }
+  if (sym.indirectCalls.truncated)
+    out.push(
+      "    indirect calls truncated: at most 100 paths and 1000 inspected references per changed symbol (also in --json)",
+    );
   if (sym.viaInstance.length > 0) {
     out.push(
       ...listBlock(
@@ -149,6 +165,9 @@ export function renderAnalysis(analysis: ChangeAnalysis, omissions: string[] = [
         (notes.length > 0 ? `  (${notes.join(", ")})` : ""),
     );
   }
+  out.push(
+    "Impact limit: two indexed call edges; dynamic callbacks, runtime middleware wiring and instance guesses are not followed. Paths show possible reachability, not guaranteed execution.",
+  );
   const outside = analysis.files.filter((f) => f.outside.length > 0 && !f.test);
   out.push("");
   out.push(
@@ -190,7 +209,7 @@ export function renderAnalysis(analysis: ChangeAnalysis, omissions: string[] = [
       : `no test found for ${plural(analysis.untested.length, "changed symbol")}: ${analysis.untested.join(", ")}`,
   );
   out.push(
-    "Callers are direct (depth 1) and come from the index: calls through a variable, a callback or a framework are not seen. Tests count when they reference the symbol (or build its class); check what they assert.",
+    "Direct callers and two-edge call paths come from the index; unindexed dynamic wiring is not inferred. Tests count when they reference the symbol (or build its class); check what they assert.",
   );
   if (omissions.length > 0) out.push("", "Not checked:", ...omissions.map((item) => `  ${item}`));
   return out;
@@ -252,6 +271,8 @@ export const changeCommand: CommandSpec = {
     "changed file with its status and hunks, from `git diff -M`), then prints what it touches:",
     "  - the changed files with their added and removed lines,",
     "  - the changed symbols: index symbols that hold an added or edited line (`new` when all of their lines are),",
+    "  - one extra call hop through a function/method, with both sites and confidence (max 100 paths/1000 refs).",
+    "    Dynamic callback or middleware wiring is not inferred; paths are possible reachability, not execution.",
     "  - for each one its direct callers outside test files, and the tests that reference it (a test function, or",
     "    a test file for an import); `no test found` when there is none,",
     "  - for a method that runs when an instance is called (`__call__`, `handle`), the code that builds the class,",

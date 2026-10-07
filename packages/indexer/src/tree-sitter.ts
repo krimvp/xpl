@@ -1,3 +1,4 @@
+import { setImmediate } from "node:timers/promises";
 import { performance } from "node:perf_hooks";
 import { hashText, splitLines } from "@xpl/core";
 import type { FileLanguage, FilePath, IndexedFile, Reference } from "@xpl/core";
@@ -56,8 +57,11 @@ export class TreeSitterProvider implements IndexProvider {
     const extractionOutcomes = new Map<FilePath, ExtractionOutcome>();
     const identities = new Map<string, string>();
     const pool = new ParserPool();
+    input.onProgress?.({ phase: "Extracting", completed: 0, total: input.sources.length });
     try {
       for (const discovered of input.sources) {
+        if (input.signal) await setImmediate(undefined, { signal: input.signal });
+        input.signal?.throwIfAborted();
         const indexed = await indexFile(
           discovered,
           pool,
@@ -70,6 +74,11 @@ export class TreeSitterProvider implements IndexProvider {
           this.experiment ? (path, identity) => identities.set(path, identity) : undefined,
         );
         files.push(indexed.file);
+        input.onProgress?.({
+          phase: "Extracting",
+          completed: files.length,
+          total: input.sources.length,
+        });
         extractionOutcomes.set(indexed.file.path, indexed.outcome);
         if (indexed.pack) {
           const key = `${indexed.pack.id}\0${indexed.file.language}`;
@@ -85,6 +94,9 @@ export class TreeSitterProvider implements IndexProvider {
     if (syntaxErrors.length > 0) warnings.push(syntaxErrorWarning(syntaxErrors));
     const analysis = extractionReports(files, usedPacks, extractionOutcomes);
 
+    input.signal?.throwIfAborted();
+    input.onProgress?.({ phase: "Resolving" });
+    if (input.signal) await setImmediate(undefined, { signal: input.signal });
     // 3. Heuristic references for every language whose pack derives them.
     const output: ProviderOutput = {
       provider: "tree-sitter",
