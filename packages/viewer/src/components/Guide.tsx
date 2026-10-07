@@ -28,7 +28,13 @@ import { TourPicker } from "./Header.js";
 import { Snapshot } from "./Snapshot.js";
 import { GuideSource } from "./GuideSource.js";
 
-export function Guide({ onReading }: { onReading?: (stepId: string | undefined) => void } = {}) {
+export function Guide({
+  onReading,
+  returningFromPresent = false,
+}: {
+  onReading?: (stepId: string | undefined) => void;
+  returningFromPresent?: boolean;
+} = {}) {
   const store = useStore();
   const state = useViewerState();
   const tour = store.currentTour() ?? state.model.tours[0];
@@ -44,6 +50,7 @@ export function Guide({ onReading }: { onReading?: (stepId: string | undefined) 
   });
   const initialStepSeq = useRef(state.stepSeq);
   const initialTourId = useRef(state.tour?.tourId);
+  const returnOpenSeq = useRef(returningFromPresent ? state.openSeq : undefined);
   useEffect(() => {
     if (state.stepSeq !== initialStepSeq.current || state.tour?.tourId !== initialTourId.current)
       setStaleLink(false);
@@ -133,8 +140,15 @@ export function Guide({ onReading }: { onReading?: (stepId: string | undefined) 
       viewport = scroller.getBoundingClientRect();
     if (at.top < viewport.top || at.bottom > viewport.bottom)
       scroller.scrollTop += at.top - viewport.top - 24;
+    // Leaving Present restores history after the slide returns focus to its button.
+    if (returnOpenSeq.current !== undefined) {
+      const restored = state.openSeq !== returnOpenSeq.current;
+      if (restored) returnOpenSeq.current = undefined;
+      if (restored || state.stepSeq === initialStepSeq.current) return;
+      returnOpenSeq.current = undefined;
+    }
     section.querySelector<HTMLElement>("h3")?.focus({ preventScroll: true });
-  }, [active, state.stepSeq]);
+  }, [active, state.stepSeq, state.openSeq]);
 
   useEffect(() => {
     if (staleLink) staleNotice.current?.focus({ preventScroll: true });
