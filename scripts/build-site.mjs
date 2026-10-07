@@ -77,10 +77,11 @@ console.log("Built _site: page, assets, self-contained demo and docs checked.");
 
 /**
  * The user docs (docs-site/) go to _site/docs. A line `<!-- include path -->` takes a whole file and
- * `<!-- include path "## Heading" -->` the text under one heading, so README.md and the product skill stay the
- * single source. Links in that text are rewritten for the page: to the page that includes the target file, to a
- * copied image, or to the file on GitHub. The CLI's help text becomes reference/commands.md, and the build fails
- * when cli.md has no section for a command. Zensical's --strict fails on a missing page or anchor.
+ * `<!-- include path "## Heading" -->` the text under one heading. README and skill sections used by includes
+ * stay single-sourced; standalone workflow pages own their text. Links in included text are rewritten for the
+ * page: to the page that includes the target file, to a copied image, or to the file on GitHub. The CLI help
+ * becomes reference/commands.md; the build fails if cli.md has no section for a command. Zensical's --strict
+ * fails on a missing page or anchor.
  */
 async function buildDocs() {
   const work = await mkdtemp(join(tmpdir(), "xpl-docs-"));

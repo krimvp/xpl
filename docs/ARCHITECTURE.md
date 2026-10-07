@@ -115,11 +115,11 @@ Conventions (all packages):
   the repository's own explainer.
 - The user docs (`docs-site/`) are built with Zensical into `_site/docs/`, under `uv run` with every Python
   package pinned in `docs-site/requirements.txt`. A page line `<!-- include path -->` takes a whole file and
-  `<!-- include path "## Heading" -->` the text under one heading, so `README.md` and the product skill's
-  `README.md`, `create.md`, `revise.md`, `patch-format.md` and `cli.md` are the single source. Relative links in
-  that text point to the page that includes the target, to a copied image, or to the file on GitHub;
-  a link to a file that does not exist, or a link form other than `[text](target)`, fails the build. Links
-  into the repository are marked "(private repository)" by CSS. `reference/commands.md` is generated from
+  `<!-- include path "## Heading" -->` the text under one heading. README and skill sections used by includes
+  stay single-sourced; standalone workflow pages own their text. Relative links in included text point to the
+  page that includes the target, to a copied image, or to the file on GitHub. A link to a file that does not
+  exist, or a link form other than `[text](target)`, fails the build. Links into the repository point to GitHub.
+  `reference/commands.md` is generated from
   `xpl --help` and each command's `--help`, and the build fails when `cli.md` has no section for a listed
   command. `zensical build --strict` fails on a missing page or anchor, and the local link check above also
   runs over every built docs page. The colours and fonts repeat
