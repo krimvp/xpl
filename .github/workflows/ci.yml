@@ -66,8 +66,11 @@ jobs:
       - id: need
         name: does the change need screenshots?
         run: |
-          if scripts/needs-screenshots.sh "origin/${{ github.base_ref }}" | tee reasons.txt; then
+          if scripts/needs-screenshots.sh "origin/${{ github.base_ref }}" > reasons.txt; then
+            cat reasons.txt
             echo "needed=true" >> "$GITHUB_OUTPUT"
+          else
+            cat reasons.txt
           fi
       - if: steps.need.outputs.needed == 'true'
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
