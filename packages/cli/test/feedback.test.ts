@@ -54,7 +54,11 @@ it("imports, inspects, exports and records outcomes by ID while reporting outdat
       { id: original.id, context, status: "unresolved", reason: "Run failed; retry available." },
     ]),
   );
-  expect((await xpl(root, "feedback", "demo", "--outcomes", outcomes)).code).toBe(0);
+  const recorded = await xpl(root, "feedback", "demo", "--outcomes", outcomes);
+  expect(recorded.code).toBe(0);
+  expect(recorded.out).toContain(
+    "Invoke code-explainer in your harness for the next explicit feedback pass.",
+  );
   expect((await xpl(root, "feedback", "demo", "--export", scratch + "/retry.json")).code).toBe(0);
   expect(readJson(scratch, "retry.json").requests[0]).toMatchObject({
     ...original,

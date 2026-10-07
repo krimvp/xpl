@@ -216,21 +216,26 @@
           >
         </div>
         <div class="instructions">
-          <p>Install the CLI and authoring skill:</p>
+          <p>Install xpl and its skill for Codex:</p>
           <pre><code>npm install --global @krimvp/xpl
-xpl skill install</code></pre>
+xpl skill install --agent codex</code></pre>
+          <p>Ask Codex to use the skill:</p>
+          <pre
+            class="prompt"
+          ><code>Use code-explainer to explain how a failed job gets retried.</code></pre>
+          <p>
+            For other harnesses, choose <code>--agent claude</code>, <code>--agent pi</code>,
+            <code>--agent droid</code>, or <code>--agent devin</code>. Run Devin's installer in the
+            target repo and install the CLI in its remote environment. See the
+            <a href="docs/getting-started/">getting started guide</a> for details.
+          </p>
           <p>Or build from a checkout of xpl:</p>
           <pre><code>npm install &amp;&amp; npm run build
 npm pack ./packages/cli/dist
 npm install -g --ignore-scripts ./krimvp-xpl-0.2.2.tgz
 xpl skill install</code></pre>
-          <p>In your project, ask Claude Code:</p>
-          <pre
-            class="prompt"
-          ><code>/code-explainer explain How does a failed job get retried?</code></pre>
           <p class="aside">
-            Claude Code needs its own installation and provider access. The skill indexes your
-            project, writes a patch and checks it before opening the guide.
+            The skill indexes your project, writes a patch and checks it before opening the guide.
           </p>
         </div>
       </section>
