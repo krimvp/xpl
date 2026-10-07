@@ -55,6 +55,10 @@ and the base/head recheck. A superseded result stays historical; explicitly crea
 3. **Name it:** `xpl new <name> --title "..."` for a new guide; it refuses an existing name. For an explicitly selected existing guide, read its views, tours and protected fields first, then add the new question with fresh ids. The repo name in kebab-case is a useful default for an overview; separate questions may have their own guide. A change gets its own explainer, titled after it: `xpl new <repo>-pr-42 --title "PR 42: <what it does>"`. Say who the page is for, fit to its level, in one short line: `"scope": {"audience": "Overview, for anyone new to ky"}` (a repo), `"Deep dive, for engineers working on the router"` (an algorithm), `"For reviewers of this change, and anyone who uses the option"` (a change); the viewer shows it under the title (patch-format.md 3.11).
 4. **Patch files** go outside the repo (the scratchpad or `$TMPDIR`).
 
+For a manual first guide, `xpl start <name> --question "..." --audience "..."` runs index, new, draft and
+apply, and prints the outside-repository patch and notes paths. Add `--entry <symbol>` for a call sequence. The result
+still has TODO text and needs the code reading, accuracy, lint and readiness steps below.
+
 Local reading, `index --precise off`, viewing and HTML export use bundled assets without hosted xpl
 infrastructure after setup. Precise tool bootstrap and dependencies can need network access; keep the
 heuristic path and its trust labels when tools cannot run. Authoring needs the selected harness and its
