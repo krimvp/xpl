@@ -29,7 +29,21 @@ has the install options.
 
 ## Make your first guide
 
-For example, in Claude Code, open a TypeScript, Python or Go repository and ask:
+From a repository, start a draft with a reader and question:
+
+```sh
+xpl start job-retries --question "How does a failed job get retried?" --audience maintainers --precise off
+xpl view job-retries
+```
+
+`xpl start` indexes the current repository, creates a guide and applies a checked draft. It prints the
+outside-repository draft patch and notes paths. Read the notes before editing: they name provisional or
+omitted parts of the draft. Add `--entry src/runner.ts#Runner.dispatch` when the question starts
+at a known function or method; that makes a call sequence instead of a repository map. Complete the TODO
+text, check each claim against its linked source, then run `xpl lint job-retries` and `xpl ready job-retries`.
+
+For an agent-written explanation, use the selected harness in a TypeScript, Python or Go repository.
+For example, in Claude Code, ask:
 
 ```text
 /code-explainer explain How does a failed job get retried? Root: /absolute/path/to/repo. Audience: maintainers. New guide: job-retries.
