@@ -113,6 +113,20 @@ describe("the diff of a changed file", () => {
     expect([...head.lines!.keys()]).toEqual([1, 2]);
     expect(head.removed![0]).toMatchObject({ at: 1, from: 1, count: 2 });
   });
+
+  it("aligns rewritten lines around an inserted line in one hunk", () => {
+    const file = modified([{ oldStart: 1, oldLines: 2, newStart: 1, newLines: 3 }]);
+    const before = ["const a = 1;", "const b = 2;"];
+    const after = ["const a = 10;", "const inserted = true;", "const b = 20;"];
+    const head = paneDiff(undefined, file, before, undefined, after)!;
+    const base = paneDiff("base", file, before, undefined, after)!;
+    expect([...head.words!.keys()]).toEqual([1, 3]);
+    expect(after[2]!.slice(head.words!.get(3)!.from, head.words!.get(3)!.to)).toBe("20");
+    expect([...base.words!.keys()]).toEqual([1, 2]);
+    expect(before[1]!.slice(base.words!.get(2)!.from, base.words!.get(2)!.to)).toBe("2");
+    expect([...head.lines!.keys()]).toEqual([1, 2, 3]);
+    expect(head.removed![0]).toMatchObject({ at: 1, from: 1, count: 2 });
+  });
 });
 
 describe("the change on the map", () => {

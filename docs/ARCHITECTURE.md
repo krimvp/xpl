@@ -2963,9 +2963,10 @@ identities to syntax ranges. This is a proposed contract revision, not a change 
 - The base of a change is not indexed. Base anchors have no symbols (`find` or a file span only), base code
   has no references, and the analysis of `xpl change` sees callers and tests at head only. A base anchor
   needs git to be checked (`git show`); without it the cached resolution is kept.
-- The diff marks whole lines and the changed token run within paired rewritten lines. Hunks with unequal line
-  counts pair lines by position; they do not align moved lines. The details panel tags a base anchor's row but
-  does not show the base lines next to it.
+- The diff marks whole lines and the changed token run within aligned rewritten lines. It aligns nearby lines
+  by shared text within a hunk, leaving unmatched insertions and deletions as whole-line marks. Large hunks
+  (over 80 lines on either side) keep only the whole-line marks. It does not align moved lines. The details
+  panel tags a base anchor's row but does not show the base lines next to it.
 - `xpl change` needs the head checked out and indexed (the head must be the index commit); the change of an
   uncommitted working tree cannot be recorded, since it has no head commit.
 - The change analysis is depth 1 and as good as the index: callers through a variable, a callback or a
