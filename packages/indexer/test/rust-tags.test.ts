@@ -32,7 +32,12 @@ it("indexes Rust tags with precise off and keeps lexical trait, impl and module 
   ].join("\n");
   const { index, warnings } = await indexFiles({ "a.rs": source });
   expect(warnings).toEqual([]);
-  expect(index.languages.rust).toEqual({ files: 1, symbols: 18, refs: "none" });
+  expect(index.languages.rust).toEqual({
+    files: 1,
+    symbols: 18,
+    refs: "heuristic",
+    tool: "tree-sitter-rust@0.24.0/query-v4",
+  });
   expect(
     index.symbols.map((s) => [s.path, s.kind, s.range.startLine, s.range.endLine, s.parent]),
   ).toEqual([
@@ -67,7 +72,12 @@ it("keeps fixture macro definitions and physical impls without inventing expande
     precise: "off",
   });
   expect(warnings).toEqual([]);
-  expect(index.languages.rust).toEqual({ files: 9, symbols: 82, refs: "none" });
+  expect(index.languages.rust).toEqual({
+    files: 9,
+    symbols: 82,
+    refs: "heuristic",
+    tool: "tree-sitter-rust@0.24.0/query-v4",
+  });
   const expected = [
     ["src/queue.rs#JobQueue", 21, 27, undefined],
     ["src/queue.rs#JobQueue.pop", 22, 22, "src/queue.rs#JobQueue"],
@@ -87,7 +97,22 @@ it("keeps fixture macro definitions and physical impls without inventing expande
     }),
   ).toEqual(expected);
   expect(index.symbols.filter((s) => s.path === "RunnerStats" || s.path === "$name")).toEqual([]);
-  expect(index.refs).toEqual([]);
+  expect(
+    index.refs.map(({ from, to, site, resolution }) => ({ from, to, site, resolution })),
+  ).toEqual([
+    {
+      from: "src/config.rs#load_config",
+      to: "src/config.rs#config_from_text",
+      site: { startLine: 64, startCol: 5, endLine: 64, endCol: 83 },
+      resolution: "heuristic",
+    },
+    {
+      from: "src/config.rs#config_from_text",
+      to: "src/config.rs#parse_yaml",
+      site: { startLine: 68, startCol: 20, endLine: 68, endCol: 35 },
+      resolution: "heuristic",
+    },
+  ]);
   expect(describeAnalysis(index).details.filter((s) => s.startsWith("rust ("))).not.toContainEqual(
     expect.stringContaining("Only file anchors are available"),
   );
@@ -109,8 +134,9 @@ it("reports syntax recovery and does not promise precise Rust relationships", as
     expect.stringContaining(
       "rust (rust-tags): named symbols, full declaration ranges, nesting partial (1/1 files analyzed)",
     ),
+    expect.stringContaining("rust (rust-tags): calls failed (0/1 files analyzed)"),
     expect.stringContaining(
-      "rust (rust-tags): calls, imports, inheritance, implementations, type references, reads, writes unsupported (0/1 files analyzed)",
+      "rust (rust-tags): imports, inheritance, implementations, type references, reads, writes unsupported (0/1 files analyzed)",
     ),
   ]);
   expect(describeAnalysis(index).details.join("\n")).toContain(
@@ -167,10 +193,12 @@ it("groups matching tags coverage while keeping syntax-error file scopes separat
   ).toEqual([
     [
       { status: "partial", analyzedFiles: ["a.rs", "c.rs"] },
+      { status: "partial", analyzedFiles: ["a.rs", "c.rs"] },
       { status: "unsupported", analyzedFiles: [] },
     ],
     [
       { status: "partial", analyzedFiles: ["b.rs", "d.rs"] },
+      { status: "failed", analyzedFiles: [] },
       { status: "unsupported", analyzedFiles: [] },
     ],
   ]);
@@ -180,4 +208,105 @@ it("groups matching tags coverage while keeping syntax-error file scopes separat
   expect(reports[1]!.results[0]!.limitations).toContain(
     "Syntax errors may leave declarations incomplete.",
   );
+});
+
+it("resolves unshadowed bare calls between same-file root functions as heuristic", async () => {
+  const { index } = await indexFiles({
+    "main.rs": "fn leaf() {}\nfn run() { leaf(); missing(); other::leaf(); }\n",
+    "other.rs": "fn missing() {}\n",
+    "broken.rs": "fn leaf() {}\nfn run() { leaf(); }\nfn broken(\n",
+  });
+  expect(
+    index.refs.map(({ from, to, kind, site, resolution }) => ({
+      from,
+      to,
+      kind,
+      site,
+      resolution,
+    })),
+  ).toEqual([
+    {
+      from: "main.rs#run",
+      to: "main.rs#leaf",
+      kind: "call",
+      site: { startLine: 2, endLine: 2, startCol: 12, endCol: 17 },
+      resolution: "heuristic",
+    },
+  ]);
+  expect(index.languages.rust?.refs).toBe("heuristic");
+  expect(describeAnalysis(index).details.join("\n")).toContain("calls partial");
+});
+
+it("leaves shadowing, macro bodies and non-root dispatch outside the Rust call slice", async () => {
+  const { index } = await indexFiles({
+    "a.rs": [
+      "fn target() {}",
+      "fn yes() { target(); }",
+      "fn parameter(target: fn()) { target(); }",
+      "struct Callbacks { target: fn() }",
+      "fn shorthand(value: Callbacks) { let Callbacks { target } = value; target(); }",
+      "fn matched(value: Callbacks) { match value { Callbacks { target } => target() } }",
+      "fn destructured_parameter(Callbacks { target }: Callbacks) { target(); }",
+      "fn binding() { let target = || {}; target(); }",
+      "fn pattern() { if let Some(target) = None::<fn()> { target(); } }",
+      "fn nested() { fn target() {} target(); }",
+      "fn constructor() { struct target(); target(); }",
+      "fn imported() { use elsewhere::target; target(); }",
+      "fn expanded() { build!(); target(); }",
+      "fn closure() { let f = || target(); }",
+      "fn qualified(value: Thing) { value.target(); Thing::target(); other::target(); unknown(); }",
+      "mod child { fn caller() { target(); } fn target() {} }",
+      "struct Thing; impl Thing { fn target() { target(); } }",
+      "trait Trait { fn target() { target(); } }",
+      "fn duplicate() {} fn duplicate() {} fn ambiguous() { duplicate(); }",
+    ].join("\n"),
+  });
+  expect(index.refs.map((ref) => [ref.from, ref.to, ref.resolution])).toEqual([
+    ["a.rs#yes", "a.rs#target", "heuristic"],
+  ]);
+  expect(describeAnalysis(index).details.join("\n")).toContain(
+    "Unknown, shadowed and qualified/generic calls",
+  );
+});
+
+it("keeps UTF-16 multiline call ranges through the extraction cache", async () => {
+  const { index, dir } = await indexFiles({
+    "a.rs": 'fn leaf() {}\nfn run() { "é😀"; leaf(\n); }\n',
+  });
+  const expected = [
+    {
+      from: "a.rs#run",
+      to: "a.rs#leaf",
+      kind: "call",
+      site: { startLine: 2, startCol: 19, endLine: 3, endCol: 1 },
+      resolution: "heuristic",
+    },
+  ];
+  const fields = (refs: typeof index.refs) =>
+    refs.map(({ from, to, kind, site, resolution }) => ({ from, to, kind, site, resolution }));
+  expect(fields(index.refs)).toEqual(expected);
+  const warm = await buildIndex({ root: dir, precise: "off" });
+  expect(fields(warm.index.refs)).toEqual(expected);
+  expect(warm.extraction.hits).toBe(1);
+});
+
+it("uses one Rust identifier spelling for raw declarations, calls and shadowing", async () => {
+  const { index } = await indexFiles({
+    "raw.rs": [
+      "fn target() {}",
+      "fn r#plain() {}",
+      "fn parameter(r#target: fn()) { target(); }",
+      "fn binding() { let r#target = || {}; target(); }",
+      "fn opposite(target: fn()) { r#target(); }",
+      "fn nested() { fn r#target() {} target(); }",
+      "struct Callbacks { target: fn() }",
+      "fn shorthand(value: Callbacks) { let Callbacks { r#target } = value; target(); }",
+      "fn yes() { target(); plain(); r#plain(); }",
+    ].join("\n"),
+  });
+  expect(index.refs.map((ref) => [ref.from, ref.to, ref.resolution])).toEqual([
+    ["raw.rs#yes", "raw.rs#target", "heuristic"],
+    ["raw.rs#yes", "raw.rs#r#plain", "heuristic"],
+    ["raw.rs#yes", "raw.rs#r#plain", "heuristic"],
+  ]);
 });
