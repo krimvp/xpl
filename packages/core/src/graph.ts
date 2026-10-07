@@ -70,10 +70,10 @@ export interface DerivedEdge {
   /** Number of index references aggregated (1 for a stored edge). */
   count: number;
   /**
-   * `precise` when any aggregated reference is precise, else `heuristic`. Stored edges: `llm`,
+   * `precise` or `heuristic` when all references agree, else `mixed`. Stored edges: `llm`,
    * `user` or `static` after their provenance. A stored overlay on a derived id keeps the derived value.
    */
-  resolution: "precise" | "heuristic" | "llm" | "user" | "static";
+  resolution: "precise" | "heuristic" | "mixed" | "llm" | "user" | "static";
   /** A stored edge exists for this id (a stored edge, or a stored overlay on a derived edge). */
   stored: boolean;
   /** Ref sites (`call-site` for calls, else `usage`) plus the targets' definitions. Never persisted. */
@@ -335,7 +335,7 @@ interface EdgeAgg {
   from: ElementId;
   to: ElementId;
   refs: Reference[];
-  precise: boolean;
+  resolution: "precise" | "heuristic" | "mixed";
 }
 
 interface StubAgg extends StubCandidate {
@@ -499,11 +499,11 @@ export function deriveGraph(
       const id = derivedEdgeId(kind, a, b);
       let agg = edgeAggs.get(id);
       if (!agg) {
-        agg = { kind, from: a, to: b, refs: [], precise: false };
+        agg = { kind, from: a, to: b, refs: [], resolution: ref.resolution };
         edgeAggs.set(id, agg);
       }
       agg.refs.push(ref);
-      if (ref.resolution === "precise") agg.precise = true;
+      if (ref.resolution !== agg.resolution) agg.resolution = "mixed";
     } else if (a !== undefined) {
       if (!throughVia(a, toEl)) addStub("out", a, toEl, kind);
     } else if (b !== undefined && !throughVia(b, fromEl)) addStub("in", b, fromEl, kind);
@@ -517,7 +517,7 @@ export function deriveGraph(
       to: agg.to,
       kind: agg.kind,
       count: agg.refs.length,
-      resolution: agg.precise ? "precise" : "heuristic",
+      resolution: agg.resolution,
       stored: false,
       anchors: derivedEdgeAnchors(agg.refs, index),
     });
