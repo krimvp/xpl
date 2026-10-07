@@ -1,0 +1,48 @@
+version: 2
+
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      viewer:
+        patterns:
+          - "@codemirror/*"
+          - "@dagrejs/dagre"
+          - "@types/react*"
+          - "@vitejs/plugin-react"
+          - marked
+          - react
+          - react-dom
+          - vite
+          - vite-plugin-singlefile
+      other-dependencies:
+        patterns:
+          - "*"
+        exclude-patterns:
+          - "@codemirror/*"
+          - "@dagrejs/dagre"
+          - "@types/react*"
+          - "@vitejs/plugin-react"
+          - marked
+          - react
+          - react-dom
+          - vite
+          - vite-plugin-singlefile
+    # These versions need a coordinated grammar/wasm or browser update.
+    ignore:
+      - dependency-name: "@tree-sitter-grammars/*"
+      - dependency-name: "tree-sitter-*"
+      - dependency-name: web-tree-sitter
+      - dependency-name: "@playwright/test"
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      actions:
+        patterns:
+          - "*"
