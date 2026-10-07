@@ -83,4 +83,24 @@ describe("xpl start", () => {
     });
     expect(existsSync(json.json.draft)).toBe(true);
   });
+
+  it("leaves no guide after an unknown entry so the author can retry", async () => {
+    const dir = copyFixture();
+    const result = await xpl(
+      dir,
+      "start",
+      "retry",
+      "--question",
+      "What runs?",
+      "--audience",
+      "Maintainers",
+      "--entry",
+      "src/runner.ts#NotThere",
+      "--precise",
+      "off",
+    );
+    expect(result.code).toBe(1);
+    expect(result.err).toContain("NotThere");
+    expect(existsSync(join(dir, ".explainer/retry.explainer.json"))).toBe(false);
+  });
 });

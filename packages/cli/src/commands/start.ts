@@ -1,9 +1,10 @@
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, readFile, unlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Args } from "../args.js";
 import type { CommandSpec } from "../command.js";
 import { CliError, UsageError } from "../errors.js";
+import { withFileLock } from "../fsutil.js";
 import { applyCommand } from "./apply.js";
 import { indexCommand } from "./build-index.js";
 import { draftCommand } from "./draft.js";
@@ -57,17 +58,28 @@ export const startCommand: CommandSpec = {
     };
     await indexCommand.run(quiet, new Args({ precise }, []));
     await newCommand.run(quiet, new Args({}, [name]));
-    const dir = await mkdtemp(join(tmpdir(), "xpl-first-guide-"));
-    const patchPath = join(dir, "draft.patch.json");
-    await draftCommand.run(
-      quiet,
-      new Args(
-        { question, audience, out: patchPath },
-        entry ? ["path", name, entry] : ["repo", name],
-      ),
-    );
-    const applied = await applyCommand.run(quiet, new Args({}, [name, patchPath]));
-    if (applied !== 0) throw new CliError(stepOutput.at(-1) ?? "the draft could not be applied");
+    const guidePath = join(ctx.root, ".explainer", `${name}.explainer.json`);
+    const emptyGuide = await readFile(guidePath);
+    let patchPath: string;
+    try {
+      const dir = await mkdtemp(join(tmpdir(), "xpl-first-guide-"));
+      patchPath = join(dir, "draft.patch.json");
+      await draftCommand.run(
+        quiet,
+        new Args(
+          { question, audience, out: patchPath },
+          entry ? ["path", name, entry] : ["repo", name],
+        ),
+      );
+      const applied = await applyCommand.run(quiet, new Args({}, [name, patchPath]));
+      if (applied !== 0) throw new CliError(stepOutput.at(-1) ?? "the draft could not be applied");
+    } catch (error) {
+      await withFileLock(guidePath, async () => {
+        const current = await readFile(guidePath).catch(() => undefined);
+        if (current?.equals(emptyGuide)) await unlink(guidePath);
+      });
+      throw error;
+    }
 
     if (ctx.json) {
       ctx.emit({ name, path: `.explainer/${name}.explainer.json`, draft: patchPath });
