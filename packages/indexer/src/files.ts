@@ -169,7 +169,27 @@ export interface Discovery {
   /** True when the file list came from git. */
   usedGit: boolean;
   warnings: string[];
+  exclusions: ExclusionReport;
 }
+
+export type ExclusionReason =
+  "generated" | "dependency" | "lockfile" | "oversized" | "binary" | "non-file" | "unreadable";
+
+/** Only enumerated candidates are counted; ignored files and skipped walk directories are unseen. */
+export interface ExclusionReport {
+  scope: "git candidates" | "walked files" | "snapshot unavailable";
+  reasons: { reason: ExclusionReason; count: number; examples: string[] }[];
+}
+
+const EXCLUSION_REASONS: readonly ExclusionReason[] = [
+  "generated",
+  "dependency",
+  "lockfile",
+  "oversized",
+  "binary",
+  "non-file",
+  "unreadable",
+];
 
 /** Paths git lists for `root` (tracked + untracked, minus ignored), relative to `root`. */
 async function gitPaths(root: string, options?: GitOptions): Promise<string[] | undefined> {
@@ -207,57 +227,61 @@ async function walkPaths(root: string, warnings: string[]): Promise<string[]> {
   return out;
 }
 
-/** Path segments that are never indexed, in either discovery mode. */
-function inExcludedDir(path: string): boolean {
-  return path
-    .split("/")
-    .some(
-      (segment) => segment === ".explainer" || segment === "node_modules" || segment === ".git",
-    );
-}
-
 /** Shared discovery and cleanliness exclusions; generated output cannot dirty an index. */
 export function isIndexInputPath(path: string): boolean {
-  return (
-    !path.endsWith("/") &&
-    !inExcludedDir(path) &&
-    !isLockfile(path) &&
-    !/\.(?:explainer|patch)\.json$/i.test(path)
-  );
+  return pathExclusion(path) === undefined;
+}
+
+function pathExclusion(path: string): ExclusionReason | undefined {
+  const segments = path.split("/");
+  if (segments.includes(".explainer")) return "generated";
+  if (path.endsWith("/") || segments.includes("node_modules") || segments.includes(".git"))
+    return "dependency";
+  if (isLockfile(path)) return "lockfile";
+  if (/\.(?:explainer|patch)\.json$/i.test(path)) return "generated";
+  return undefined;
 }
 
 /** Content eligibility shared with Git cleanliness. Undefined retains unreadable/deleted changes. */
 export async function isIndexInputFile(abs: string): Promise<boolean | undefined> {
-  const accepted = await passesContentFilters(abs);
-  if (accepted !== true || !/\.html?$/i.test(abs)) return accepted;
+  const reason = await contentExclusion(abs);
+  return reason === undefined ? true : reason === "unreadable" ? undefined : false;
+}
+
+async function contentExclusion(abs: string): Promise<ExclusionReason | undefined> {
+  const reason = await contentFilterExclusion(abs);
+  if (reason || !/\.html?$/i.test(abs)) return reason;
   try {
     const text = await readFile(abs, "utf8");
-    return !text.includes(
+    return text.includes(
       '<script id="xpl-data" type="application/json">{"schema":"code-explainer/bundle@0"',
-    );
+    )
+      ? "generated"
+      : undefined;
   } catch {
-    return undefined;
+    return "unreadable";
   }
 }
 
 /** Is `path` (relative to `root`) a text file within the limits? Cheap checks first, then a NUL sniff. */
-async function passesContentFilters(abs: string): Promise<boolean | undefined> {
+async function contentFilterExclusion(abs: string): Promise<ExclusionReason | undefined> {
   let info;
   try {
     info = await lstat(abs);
   } catch {
-    return undefined; // deleted since git listed it, or unreadable
+    return "unreadable"; // deleted since git listed it, or unreadable
   }
-  if (!info.isFile() || info.size > MAX_FILE_BYTES) return false;
-  if (info.size === 0) return true;
+  if (!info.isFile()) return "non-file";
+  if (info.size > MAX_FILE_BYTES) return "oversized";
+  if (info.size === 0) return undefined;
   let handle;
   try {
     handle = await open(abs, "r");
     const buffer = Buffer.alloc(Math.min(BINARY_SNIFF_BYTES, info.size));
     const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
-    return !buffer.subarray(0, bytesRead).includes(0);
+    return buffer.subarray(0, bytesRead).includes(0) ? "binary" : undefined;
   } catch {
-    return undefined;
+    return "unreadable";
   } finally {
     await handle?.close();
   }
@@ -265,7 +289,7 @@ async function passesContentFilters(abs: string): Promise<boolean | undefined> {
 
 /**
  * The files of the index for `root`, sorted by path. Deleted-but-still-tracked files, directories
- * (submodules), symlinks, binaries, oversize files and lockfiles are dropped silently.
+ * (submodules), symlinks, binaries, oversize files and lockfiles are excluded and reported.
  */
 export async function discoverFiles(
   root: string,
@@ -277,13 +301,31 @@ export async function discoverFiles(
   if (git) candidates = await gitPaths(root, options.gitOptions);
   const usedGit = candidates !== undefined;
   candidates ??= await walkPaths(root, warnings);
+  const excluded = new Map<ExclusionReason, { count: number; examples: string[] }>();
+  function record(reason: ExclusionReason, path: string): void {
+    const entry = excluded.get(reason) ?? { count: 0, examples: [] };
+    entry.count++;
+    if (entry.examples.length < 3) entry.examples.push(path);
+    excluded.set(reason, entry);
+  }
+  const exclusions = (): ExclusionReport => ({
+    scope: usedGit ? "git candidates" : "walked files",
+    reasons: EXCLUSION_REASONS.flatMap((reason) => {
+      const entry = excluded.get(reason);
+      return entry ? [{ reason, count: entry.count, examples: entry.examples }] : [];
+    }),
+  });
 
   const wanted = options.languages ? new Set<FileLanguage>(options.languages) : undefined;
   const selected: DiscoveredFile[] = [];
-  for (const path of candidates) {
-    if (!isIndexInputPath(path)) continue;
+  for (const path of [...new Set(candidates)].sort()) {
     const language = languageForPath(path);
     if (wanted && !wanted.has(language)) continue;
+    const reason = pathExclusion(path);
+    if (reason) {
+      record(reason, path);
+      continue;
+    }
     selected.push({ path, abs: join(root, ...path.split("/")), language });
   }
 
@@ -293,6 +335,7 @@ export async function discoverFiles(
       files: selected.filter((f, i) => i === 0 || f.path !== selected[i - 1]!.path),
       usedGit,
       warnings,
+      exclusions: exclusions(),
     };
   }
 
@@ -303,17 +346,19 @@ export async function discoverFiles(
     const batch = selected.slice(i, i + BATCH);
     const verdicts = await Promise.all(
       batch.map(async (f) => {
-        return (await isIndexInputFile(f.abs)) === true;
+        return await contentExclusion(f.abs);
       }),
     );
     batch.forEach((file, j) => {
-      if (verdicts[j] === true) kept.push(file);
+      const reason = verdicts[j];
+      if (reason) record(reason, file.path);
+      else kept.push(file);
     });
   }
   kept.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
   // git can list the same path twice (merge conflicts); keep one.
   const files = kept.filter((f, i) => i === 0 || f.path !== kept[i - 1]!.path);
-  return { files, usedGit, warnings };
+  return { files, usedGit, warnings, exclusions: exclusions() };
 }
 
 /** Read a discovered file as UTF-8 text (a leading BOM is kept: columns must match the file on disk). */
