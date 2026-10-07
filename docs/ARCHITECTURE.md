@@ -742,11 +742,16 @@ labels collapse whitespace; those compound names have full declaration evidence 
 
 Rust uses `tree-sitter-rust@0.24.0` (WASM ABI 14). The CLI copies the corrected query beside its grammar in
 `dist/wasm`; source runs read it from the adapter directory. Rust reports partial symbols, declaration ranges
-and nesting, and unsupported relationship kinds. It does not resolve calls, imports, receiver ownership or
-external `mod` links, expand macros, evaluate cfg, or index fields, variants and local bindings. Declaration
+and nesting. Its bounded call pass resolves bare calls between unambiguous root-level functions in the
+same file, with exact call-expression ranges and `heuristic` confidence. Shadowed names, nested functions,
+closures, qualified/generic calls, methods, trait dispatch and cross-module targets are omitted. Bodies
+containing macros or local imports are skipped. Syntax errors suppress calls for that file. Call coverage
+is partial; other relationship kinds remain unsupported. It does not resolve imports, receiver ownership
+or external `mod` links, expand macros, evaluate cfg, or index fields, variants and local bindings. Declaration
 ranges exclude leading attributes and doc comments. Syntax recovery adds a limit and a warning. Matching
 tags outcomes share one report with combined file counts; syntax-error files keep a separate report.
-[The experiment record](rust-tags.md) gives literal cases, measurements, query coverage and repeatable commands.
+[The tags experiment](rust-tags.md) records declaration coverage; [bounded direct calls](rust-direct-calls.md)
+records the supported slice and a bat smoke test. Tags cache version query-v4 includes call extraction.
 
 **Analysis coverage** (`core/src/analysis.ts`, `indexer/src/analysis.ts`). An `AnalysisReport` contains a
 stable `provider` id, advertised `capabilities`, scoped `files`, and observed `results`. Capabilities are
