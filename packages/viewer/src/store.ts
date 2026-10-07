@@ -433,7 +433,13 @@ export class ViewerStore {
       findTour(model.tours, params.tour ?? this.library.tour) ??
       (present ? model.tours[0] : undefined);
     const stable = tour?.steps.findIndex((step) => step.id === params.stepId) ?? -1;
-    const index = stable >= 0 ? stable : stepIndex(params.step, tour?.steps.length ?? 0);
+    // A removed stable step must not silently resolve to the old numeric position.
+    const index =
+      params.stepId && stable < 0
+        ? 0
+        : stable >= 0
+          ? stable
+          : stepIndex(params.step, tour?.steps.length ?? 0);
     // Old compact tour URLs imply an applied step. New URLs state its presence or absence explicitly.
     const applied =
       stable >= 0 ||

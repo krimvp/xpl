@@ -19,6 +19,7 @@ import { ExplanationInfo } from "./ExplanationInfo.js";
 import { callersOf, changeSummary, type Caller } from "../callers.js";
 import { overrideFocus } from "../derive.js";
 import { changeFiles, changeOf, STATUS_WORDS } from "../diff.js";
+import { readLaunchParams } from "../data.js";
 import { useStore, useViewerState } from "../hooks.js";
 import { renderInline, renderMarkdown } from "../markdown.js";
 import { stepTests } from "../stepTests.js";
@@ -31,7 +32,19 @@ export function Guide({ onReading }: { onReading?: (stepId: string | undefined) 
   const store = useStore();
   const state = useViewerState();
   const tour = store.currentTour() ?? state.model.tours[0];
+  const [linked] = useState(() => {
+    const params = readLaunchParams();
+    return params.perspective === "guide" ? params : undefined;
+  });
+  const linkedStep = linked?.stepId;
+  const staleLink =
+    !!linkedStep &&
+    ((linked?.tour !== undefined &&
+      linked.tour !== tour?.id &&
+      linked.tour !== tour?.id.slice(5)) ||
+      !tour?.steps.some((step) => step.id === linkedStep));
   const body = useRef<HTMLDivElement>(null);
+  const staleNotice = useRef<HTMLParagraphElement>(null);
   const initialized = useRef(false);
   /** The step the page opened on: the guide starts at its top (title, summary), not scrolled to it. */
   const opening = useRef<string | undefined>(undefined);
@@ -113,7 +126,13 @@ export function Guide({ onReading }: { onReading?: (stepId: string | undefined) 
       viewport = scroller.getBoundingClientRect();
     if (at.top < viewport.top || at.bottom > viewport.bottom)
       scroller.scrollTop += at.top - viewport.top - 24;
-  }, [active]);
+    if (active === linkedStep && !staleLink)
+      section.querySelector<HTMLElement>("h3")?.focus({ preventScroll: true });
+  }, [active, linkedStep, staleLink]);
+
+  useEffect(() => {
+    if (staleLink) staleNotice.current?.focus({ preventScroll: true });
+  }, [staleLink]);
 
   if (!tour)
     return (
@@ -170,6 +189,12 @@ export function Guide({ onReading }: { onReading?: (stepId: string | undefined) 
         ))}
       </nav>
       <div className="guide-body" ref={body}>
+        {staleLink && (
+          <p className="guide-link-notice" role="alert" tabIndex={-1} ref={staleNotice}>
+            This linked step is no longer in this guide. Start at the guide's beginning or choose a
+            step below.
+          </p>
+        )}
         {/* A phone: the steps as one picker that scrolls away with the text (the list above is hidden). */}
         <label className="guide-step-picker">
           <span className="sr-only">Go to a step</span>
@@ -215,6 +240,7 @@ export function Guide({ onReading }: { onReading?: (stepId: string | undefined) 
             index={index}
             tourId={tour.id}
             active={step.id === active}
+            linked={step.id === linkedStep && !staleLink}
           />
         ))}
       </div>
@@ -262,11 +288,13 @@ function GuideSection({
   index,
   tourId,
   active,
+  linked,
 }: {
   step: TourStep;
   index: number;
   tourId: string;
   active: boolean;
+  linked: boolean;
 }) {
   const store = useStore();
   const state = useViewerState();
@@ -320,14 +348,29 @@ function GuideSection({
   });
   // a11y: every step has the same buttons and lists; their names say which step they belong to
   const where = `step ${index + 1}: ${title}`;
+  const link = new URL(location.href);
+  for (const key of ["mode", "view", "focus", "file", "range", "side"])
+    link.searchParams.delete(key);
+  link.searchParams.set("perspective", "guide");
+  link.searchParams.set("tour", tourId);
+  link.searchParams.set("step", String(index + 1));
+  link.searchParams.set("step-id", step.id);
   return (
     <section className={`guide-section${active ? " is-active" : ""}`} data-section-id={step.id}>
       <span className="section-number">Step {index + 1}</span>
       {titleMarkdown !== undefined ? (
-        <h3 dangerouslySetInnerHTML={{ __html: renderInline(titleMarkdown) }} />
+        <h3 tabIndex={-1} dangerouslySetInnerHTML={{ __html: renderInline(titleMarkdown) }} />
       ) : (
-        <h3>{title}</h3>
+        <h3 tabIndex={-1}>{title}</h3>
       )}
+      <div className="guide-section-actions">
+        <a href={link.href}>Link to this step</a>
+        {linked && (
+          <button type="button" className="btn" onClick={() => store.present(tourId, index)}>
+            Continue from this step
+          </button>
+        )}
+      </div>
       <div className="guide-explanation">
         <div className="guide-prose">
           {body && (

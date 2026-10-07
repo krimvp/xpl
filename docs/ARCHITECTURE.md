@@ -2376,7 +2376,10 @@ ready pages and draft previews; an export decision never retargets a request to 
   (an IntersectionObserver), and once per view. Tests (`stepTests.ts`) are the test code the step's focus
   points at (`test` anchors, and focused code in test files), one entry per test function, gathered in one
   list. The summaries of the focused elements only stand in for a missing note. A tour picker sits above the
-  title when there are several tours. The Guide opens at its top, not scrolled to step 1.
+  title when there are several tours. The Guide opens at its top, except a link to a stable step ID scrolls
+  to that section and focuses its heading. Each section has a link that preserves the selected guide and a
+  linked section offers Continue from this step in Present. A missing step ID falls back to the guide start
+  with an explanation; its old numeric position does not substitute for the removed step.
   Each section shows a source excerpt beside its prose (stacked in narrow sections). `stepSelection`
   reuses the full code view's checked focus, including explicit `step.code` and before-change anchors.
   The first range in source order supplies at most 12 lines; a count explains when more ranges exist.
