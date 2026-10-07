@@ -758,6 +758,10 @@ outcomes are inferred from language names, symbols, ranges or reference counts; 
 Pruning and packing preserve reports unchanged, so missing bundle edges never alter run coverage.
 `describeAnalysis` produces the same reader-facing summary for the CLI and viewer. Each capability result
 names its provider id, so a file-only fallback's limits do not describe a separate artifact provider's symbols.
+`changeOmissions` intersects the change's head paths with those observed reports. It lists partial, unsupported
+or failed capabilities, files absent from the head index, and removed files whose old code the head index cannot
+inspect. The list is capped at five items with a remaining count; no result or missing legacy report is treated
+as proof of complete analysis. It reads the original report retained in a pruned or packed bundle.
 Tool commands and diagnostic details remain author-facing.
 
 | Language | Symbols (kind) | Path rules |
@@ -2299,6 +2303,9 @@ failed analysis and opens into capabilities, file counts and limits, labeled by 
 Tool commands and diagnostic details are omitted.
 It describes the original indexed repository, including when only some sources are embedded or the index
 is pruned. A legacy index shows coverage unknown. Live refresh and Save as HTML use the current index report.
+In a change guide, a bounded **Not checked** section below the author's summary names known omissions from
+that change's head index. It is separate from the authored impact text and also appears in `xpl change` output.
+If no omissions are recorded, the section is absent; that absence says nothing about unobserved runtime effects.
 
 | Mode    | Moves between                                                              | Action  |
 | ------- | -------------------------------------------------------------------------- | ------- |

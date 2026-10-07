@@ -207,6 +207,86 @@ test.describe("base anchors", () => {
 });
 
 test.describe("the change in the reading screens", () => {
+  test("the exported guide puts recorded partial and failed analysis beside the summary", async ({
+    page,
+  }) => {
+    const { html, bundle } = readEmbeddedBundle(CHANGE_BUNDLE);
+    const data = bundle as any;
+    data.index.analysis = [
+      {
+        provider: "source",
+        capabilities: { symbols: "partial" },
+        files: ["src/runner.ts"],
+        results: [
+          {
+            capabilities: ["symbols"],
+            status: "partial",
+            analyzedFiles: ["src/runner.ts"],
+            limitations: ["Some declarations were omitted."],
+          },
+        ],
+      },
+      {
+        provider: "precise",
+        capabilities: { call: "supported" },
+        files: ["src/runner.ts"],
+        diagnostics: ["/private/tool failed"],
+        results: [
+          {
+            capabilities: ["call"],
+            status: "failed",
+            analyzedFiles: [],
+            limitations: ["Precise calls unavailable."],
+          },
+        ],
+      },
+    ];
+    await page.route("http://xpl.test/**", (route) =>
+      route.fulfill({ contentType: "text/html", body: withBundle(html, data) }),
+    );
+    await page.goto("http://xpl.test/");
+    const omissions = page.getByTestId("change-omissions");
+    await expect(omissions).toBeVisible();
+    await expect(omissions).toContainText(
+      "source: named symbols partial for 1 changed file (1 analyzed). Some declarations were omitted.",
+    );
+    await expect(omissions).toContainText(
+      "precise: calls failed for 1 changed file (0 analyzed). Precise calls unavailable.",
+    );
+    await expect(omissions).not.toContainText("/private/tool");
+    const summary = (await page.getByTestId("tour-summary").boundingBox())!;
+    expect((await omissions.boundingBox())!.y).toBeGreaterThan(summary.y);
+  });
+
+  test("a change with no recorded omission has no Not checked section", async ({ page }) => {
+    const { html, bundle } = readEmbeddedBundle(CHANGE_BUNDLE);
+    const data = bundle as any;
+    data.explainer.change.files = data.explainer.change.files.filter(
+      (file: any) => file.path === "src/runner.ts",
+    );
+    data.index.analysis = [
+      {
+        provider: "source",
+        capabilities: { symbols: "supported" },
+        files: ["src/runner.ts"],
+        results: [
+          {
+            capabilities: ["symbols"],
+            status: "supported",
+            analyzedFiles: ["src/runner.ts"],
+            limitations: [],
+          },
+        ],
+      },
+    ];
+    await page.route("http://xpl.test/**", (route) =>
+      route.fulfill({ contentType: "text/html", body: withBundle(html, data) }),
+    );
+    await page.goto("http://xpl.test/");
+    await expect(page.getByTestId("tour-summary")).toBeVisible();
+    await expect(page.getByTestId("change-omissions")).toHaveCount(0);
+  });
+
   test("the map marks the boxes the change touches with plain words", async ({ page }) => {
     const problems = watchProblems(page);
     await open(page, "?perspective=map");

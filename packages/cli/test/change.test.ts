@@ -235,6 +235,7 @@ describe("xpl change", () => {
     expect(r.out).toContain(
       "changed lines outside any symbol (imports, module-level code):\n  app.py: 1",
     );
+    expect(r.out).toContain("Not checked:\n  old.py: removed from the head");
   });
 
   it("--json gives the record and the analysis: callers, tests, callers via instance", async () => {
