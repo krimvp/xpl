@@ -91,3 +91,28 @@ describe("details of a step", () => {
     expect(facts.map((f) => f.label)).not.toContain("Sequence");
   });
 });
+
+describe("details of a drawn aggregate", () => {
+  it("reports all references and mixed confidence when the arrow combines kinds", () => {
+    const bundle = makeBundle();
+    bundle.index.refs[1]!.kind = "type-ref";
+    const view = bundle.explainer.views.find((v) => v.id === "view:overview")!;
+    Object.assign(view, {
+      include: ["file:src/a.ts", "file:src/b.ts"],
+      edgeKinds: ["calls", "references"],
+    });
+    const store = new ViewerStore(bundle);
+    const state = store.getState();
+    const vd = getDerived(state).view;
+    const info = describeElement("edge:calls:file:src/a.ts->file:src/b.ts", state.model, vd);
+    expect(info.title).toBe("calls ×1 · references ×1");
+    expect(info.facts).toContainEqual({ label: "References", value: "2" });
+    expect(info.facts).toContainEqual({ label: "Resolution", value: "mixed" });
+    expect(info.summary).toContain("some references are hints");
+    expect(
+      info.anchors
+        .filter((a) => a.role === "call-site" || a.role === "usage")
+        .map((a) => a.startLine),
+    ).toEqual([12, 25]);
+  });
+});

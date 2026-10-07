@@ -94,7 +94,7 @@ export function mapKeyShows(
   for (const edge of allEdges) {
     if (edge.stub) shows.outside = true;
     else if (edge.resolution === "llm" || edge.resolution === "user") shows.authored = true;
-    if (edge.resolution === "heuristic") shows.heuristic = true;
+    if (edge.resolution === "heuristic" || edge.resolution === "mixed") shows.heuristic = true;
     if (edge.counted && edge.label) shows.counts = true;
   }
   shows.icons = [...icons.values()];

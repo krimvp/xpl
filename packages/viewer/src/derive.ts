@@ -15,7 +15,6 @@ import {
   codeFocus,
   deriveGraph,
   derivedEdgeAnchors,
-  derivedEdgeMap,
   elementIdForSymbolId,
   excludedRefs,
   expandInPlace,
@@ -38,6 +37,7 @@ import {
   type TourStep,
   type View,
 } from "@xpl/core";
+import { drawnEdges } from "./drawnEdges.js";
 import type { Cursor, ViewerState } from "./store.js";
 
 /** More editor panes than this are listed instead of shown. */
@@ -130,7 +130,10 @@ function deriveView(
       (Array.isArray(drawn.include) ? drawn.include : []).filter((id) => model.hasNode(id)),
     );
   }
-  const edgeMap = graph ? derivedEdgeMap(graph) : new Map<string, DerivedEdge>();
+  // Keep hidden kind ids addressable by tours, but select a drawn arrow with all its evidence.
+  const edgeMap = new Map(
+    (graph ? [...graph.edges, ...drawnEdges(graph.edges)] : []).map((edge) => [edge.id, edge]),
+  );
   const stubMap = new Map((graph?.stubs ?? []).map((stub) => [stub.id, stub] as const));
   let reverse: ReverseIndex | undefined;
   return {
