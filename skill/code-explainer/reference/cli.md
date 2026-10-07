@@ -1038,6 +1038,7 @@ Records the change an explainer is about, from git, and prints what it touches. 
 - `<base>..<head>` takes any git revisions (`main..HEAD`, `2284ff0^..2284ff0`); `<base>...<head>` starts from their merge base; `<base>` alone ends at the commit of the index. The head must be the commit the index was built from, else it stops: `the head HEAD~1 (85c3b74) is not the commit the index was built from (2284ff0). Check out 85c3b74, run xpl index, then run this again`.
 - It stores `change: {base, head, files: [{path, status: added|modified|deleted|renamed, oldPath?, hunks: [{oldStart, oldLines, newStart, newLines}]}]}` in the explainer (full SHAs; hunks as `git diff -U0` prints them). Patches cannot change it.
 - It prints the changed files with `+added -removed`; the **changed symbols** (index symbols that hold an added or edited line; `new` when every line is new; a function nested in a function counts as part of it); for each, its **direct callers** outside test files and the **tests** that reference it (a test function, or a test file for an import), or `no test found`. A method that runs when an instance is called (`__call__`, `handle`) gets `callers via instance`: the code that builds its class. That is a guess, and the output says so. Lines outside any symbol (imports, module-level code) are listed apart, and so are the test files the change touches with their new and changed tests.
+- For changed functions and methods, **call paths through one intermediate function** show two indexed call sites with each hop labelled precise or heuristic. They show possible reachability, not guaranteed execution. No runtime callback or middleware wiring is inferred. Tests, cycles and instance guesses are not expanded. Each changed symbol has at most 100 paths and 1000 inspected references; a truncation note means the result is incomplete, including in JSON. Draft maps keep their direct callers.
 - A bounded **Not checked** section lists report-level partial, unavailable or failed analysis with the number of changed paths that report actually analyzed. It also lists changed paths absent from the loaded index and removed files the index cannot inspect. A commit mismatch is called out, so a stale index's limits are not presented as head coverage. No section means no omission was recorded; it does not prove complete semantic coverage. The exported change guide puts the same section below its summary, and `--json` includes `omissions: string[]`.
 - `xpl change <explainer>` without a range prints the analysis of the recorded change again.
 
@@ -1049,6 +1050,8 @@ written to .explainer/jobrunner.explainer.json
 files (1):
   M  src/runner.ts  +1 -1
 
+Impact limit: two indexed call edges; dynamic callbacks, runtime middleware wiring and instance guesses are not followed. Paths show possible reachability, not guaranteed execution.
+
 changed symbols outside tests (1):
   sym:src/runner.ts#Runner.dispatch  (method, lines 42-88)  changed at 80
     callers outside tests (1):
@@ -1056,12 +1059,12 @@ changed symbols outside tests (1):
     tests: no test found (no test references it by name; tests of other code may still run it)
 
 no test found for 1 changed symbol: sym:src/runner.ts#Runner.dispatch
-Callers are direct (depth 1) and come from the index: ...
+Direct callers and two-edge call paths come from the index; unindexed dynamic wiring is not inferred. ...
 ```
 
 The callers and tests come from the index: a call through a variable, a callback or a framework is not seen, and "a test references it" does not mean the test checks the change. Read the tests before you say what they cover. With the change recorded, anchors may point at the code before it (`"at": "base"`, `patch-format.md` section 1), `xpl show --at base` prints that code, `xpl validate` checks it, and `xpl bundle` embeds it.
 
-`--json`: `{ok, path, written, change, omissions: [reader-facing limits], analysis: {base, head, files: [{path, status, oldPath?, added, removed, hunks, test, indexed, outside: [lines]}], totals: {files, added, removed}, symbols: [{id, symbolId, file, kind, range, status: new|changed, lines, callers: [{id, file, lines, kinds, resolution, changed?, via?}], viaInstance: [same], tests: [{id, file, refs, kinds, changed?, via?}]}], testSymbols: [{id, symbolId, file, kind, range, status, lines}], untested: [ids]}}`.
+`--json`: `{ok, path, written, change, omissions: [reader-facing limits], analysis: {base, head, files: [{path, status, oldPath?, added, removed, hunks, test, indexed, outside: [lines]}], totals: {files, added, removed}, symbols: [{id, symbolId, file, kind, range, status: new|changed, lines, callers: [{id, file, lines, kinds, resolution, changed?, via?}], viaInstance: [same], indirectCalls: {paths: [[upstream reference, downstream reference]], truncated: boolean}, tests: [{id, file, refs, kinds, changed?, via?}]}], testSymbols: [{id, symbolId, file, kind, range, status, lines}], untested: [ids]}}`.
 
 ## `xpl draft change|repo|path <explainer> [<entry id> ...] [-o <file>]`
 

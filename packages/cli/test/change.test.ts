@@ -235,6 +235,12 @@ describe("xpl change", () => {
     expect(r.out).toContain(
       "changed lines outside any symbol (imports, module-level code):\n  app.py: 1",
     );
+    expect(r.out).toContain(
+      "app.py#App.__call__ --[9, heuristic]--> app.py#App.handle --[13, heuristic]--> app.py#helper",
+    );
+    expect(r.out).toContain(
+      "dynamic callbacks, runtime middleware wiring and instance guesses are not followed",
+    );
     expect(r.out).toContain("Not checked:\n  old.py: removed from the head");
   });
 
