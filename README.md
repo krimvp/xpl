@@ -131,13 +131,11 @@ npm test
 npm run format:check
 ```
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for
-contributor guidance and design details.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for contributor guidance.
 
 ## Docs
 
 - [User documentation](https://krimvp.github.io/xpl/docs/)
-- [Architecture](docs/ARCHITECTURE.md)
 - [Product skill](skill/code-explainer/README.md)
 
 ## Feedback and security
