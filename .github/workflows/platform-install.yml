@@ -4,6 +4,15 @@ on:
   push:
     branches: [main]
     tags: ["v*"]
+  pull_request:
+    paths:
+      - .github/workflows/platform-install.yml
+      - package.json
+      - package-lock.json
+      - scripts/test-install-platform.mjs
+      - packages/**
+      - skill/code-explainer/**
+      - fixtures/ts-jobrunner/**
   workflow_dispatch:
 
 permissions:
@@ -17,6 +26,7 @@ jobs:
   install:
     name: packed CLI on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:

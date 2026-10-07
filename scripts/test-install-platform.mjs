@@ -69,10 +69,10 @@ const cli = join(pkg, "xpl.mjs");
 function xpl(args, cwd = scratch) {
   return command(process.execPath, [cli, ...args], cwd);
 }
-assert.equal(
-  execFileSync(launcher, ["--version"], { cwd: scratch, encoding: "utf8", shell: windows }).trim(),
-  metadata.version,
-);
+function installedXpl(args, cwd = scratch) {
+  return execFileSync(launcher, args, { cwd, encoding: "utf8", shell: windows });
+}
+assert.equal(installedXpl(["--version"]).trim(), metadata.version);
 assert.equal(xpl(["--version"]).trim(), metadata.version);
 assert.match(xpl(["__smoke"]), /ok\s+toml/);
 const skill = join(scratch, "code-explainer");
@@ -81,12 +81,12 @@ assert.equal(
   command(process.execPath, [join(skill, "bin/xpl"), "--version"]).trim(),
   metadata.version,
 );
-const fixture = join(scratch, "ts-jobrunner");
+const fixture = join(scratch, "ts jobrunner");
 cpSync(join(repo, "fixtures/ts-jobrunner"), fixture, {
   recursive: true,
   filter: (path) => !/[\\/](\.explainer|node_modules)([\\/]|$)/.test(path),
 });
-const index = JSON.parse(xpl(["index", "--precise", "off", "--json"], fixture));
+const index = JSON.parse(installedXpl(["index", "--precise", "off", "--json"], fixture));
 assert.equal(index.ok, true);
 const saved = JSON.parse(
   readFileSync(
