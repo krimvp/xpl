@@ -1370,6 +1370,13 @@ Reset may clear selected pins or all pins; a later placement edit conflicts rath
     constructor (`__init__`, `__new__`, `constructor`) also counts the calls of its class (`via: "class"`). For
     `__call__` and `handle`, which run when an instance is called, the code that builds the class goes to
     `viaInstance` (`via: "instance"`), marked as a guess.
+  - **One extra call hop**: `indirectCalls.paths` holds pairs of indexed `call` references, upstream
+    caller first: caller → intermediate function/method → changed function/method. Both sites retain their
+    own `precise` or `heuristic` label. Test files, cycles into the changed symbol or intermediate, and
+    constructor/instance guesses are excluded. This is possible reachability, not guaranteed execution;
+    callbacks and runtime middleware wiring are not inferred. At most 100 paths and 1000 inspected
+    references per changed symbol; `indirectCalls.truncated` reports when either cap stops the scan.
+    This analysis does not add nodes to draft maps or count indirect tests as direct coverage.
   - **Tests**: test functions (top level, or methods of a test class) with any reference to the symbol, or to
     its class for the two cases above; a test file only for a module-level reference (an import) when none of
     its tests has one. `testSymbols` lists the tests the change adds or edits. `untested` lists the changed
@@ -2999,7 +3006,7 @@ identities to syntax ranges. This is a proposed contract revision, not a change 
   it. The details panel tags a base anchor's row but does not show the base lines next to it.
 - `xpl change` needs the head checked out and indexed (the head must be the index commit); the change of an
   uncommitted working tree cannot be recorded, since it has no head commit.
-- The change analysis is depth 1 and as good as the index: callers through a variable, a callback or a
+- The change analysis adds at most one hop beyond direct callers and is as good as the index: callers through a variable, a callback or a
   framework are not seen, `callers via instance` is a guess, and "no test found" means no test names the
   symbol, not that no test runs it.
 - Drafts give structure, not understanding: a map, a sequence, anchors and a tour in the right order. The
