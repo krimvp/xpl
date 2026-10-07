@@ -116,7 +116,7 @@ export function Legend({ shows }: { shows: LegendShows }) {
         </Row>
       )}
       {shows.heuristic && (
-        <Row label="A likely link, found by name only">
+        <Row label="Includes likely links found by name; mixed confidence also includes precise references">
           <Arrow className="lg-edge is-heuristic" />
         </Row>
       )}
