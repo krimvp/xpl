@@ -349,11 +349,12 @@ interface ExplainerPatch {
 ```ts
 buildIndex(opts: { root: string; commit?: string; precise?: "auto" | "off" | "require";
                    languages?: string[]; providers?: readonly IndexProvider[]; cache?: boolean;
-                   gitOptions?: GitOptions; snapshot?: IndexInputs; getText?: GetText })
+                   gitOptions?: GitOptions; snapshot?: IndexInputs; getText?: GetText;
+                   signal?: AbortSignal; onProgress?: (event: IndexProgress) => void })
   : Promise<{ index: SymbolIndex; warnings: string[]; exclusions: ExclusionReport;
               extraction: ExtractionReport;
               work: { heuristicResolutionMs: number; semanticMs: number; semanticRuns: number } }>
-writeIndex(root: string, index: SymbolIndex): Promise<string>
+writeIndex(root: string, index: SymbolIndex, signal?: AbortSignal): Promise<string>
 // atomic write of <root>/.explainer/index-<commit>.json; ignores indexes and cache/ in .explainer/.gitignore
 ```
 
@@ -371,6 +372,18 @@ without symbols. References are sorted by file, position and kind. The same walk
 imports of `.json`/`.yaml`/`.toml`), resolved against the indexed files into `SymbolIndex.resources` (§2.18).
 `providers` replaces the additional provider registry (syntax and semantic; tests inject fakes).
 `languages` restricts the build to some `FileLanguage`s (the CLI does not expose it).
+
+**Progress and cancellation.** `IndexProgress` reports discovery, reading and extraction counts,
+heuristic resolution, additional providers and finishing. Events are transient; indexes do not store them.
+The CLI prints progress only on interactive stderr and outside JSON mode, at phase boundaries, completion,
+and at most once per second within a phase. SIGINT/SIGTERM and the injected `Io.signal` cancel the build
+with exit 130. Cancellation is checked between discovery batches, files and phases; a synchronous parse
+or heuristic resolution finishes before cancellation is observed. SCIP subprocess groups receive SIGTERM,
+then SIGKILL after the existing three-second grace period; cancellation cannot become heuristic fallback.
+`writeIndex` checks the signal before its atomic rename and removes its temporary file. Cancellation before
+publication retains the previous complete index, or creates no index when none existed. Cancellation once
+the atomic rename has started can leave the new complete index; it never leaves a partial replacement.
+Completed extraction cache entries and generated ignore metadata may remain after cancellation.
 
 **Files.** `git ls-files --cached --others --exclude-standard` when `root` is inside a git work tree (limited
 to the root's subtree), otherwise a walk that skips `.git node_modules dist build out vendor target
@@ -1239,6 +1252,12 @@ atomic: any error → `ok: false` and the input explainer, untouched.
   changed `llm` element gets `provenance.commit = index.commit`.
 - Anchors go through `makeAnchor`, steps and tour `code` overrides likewise, frames are checked. A patch
   with a `change` key is rejected: the change record comes from git, through `xpl change` (§5).
+- The bundled skill includes `reference/patch.schema.json` for editor completion and JSON shape checks.
+  It follows the patch-side fields and graph/sequence/flow view discriminators. It cannot check whether
+  source text, IDs, review fingerprints or user-owned fields are valid for this repository; `applyPatch`
+  remains the authority for those checks. Editors associate the schema externally: `$schema` is not a
+  patch key. It rejects simultaneous `span`/`find` and negative offsets; `applyPatch` checks offset order
+  and source bounds. Copied stored anchors may carry `resolved`, which apply recomputes.
 - **Errors come all at once.** Anchors, references and ids are checked in one pass, so a rejection lists every
   problem of the patch: an element whose anchor failed is still merged (without that anchor) and checked for
   its other problems, an element that cannot be built is assumed to exist so that later references to it stay

@@ -137,8 +137,9 @@ async function checkedRun(
   return result;
 }
 
-function runConfig(options: ScipOptions): ScipRunConfig {
+function runConfig(options: ScipOptions, signal?: AbortSignal): ScipRunConfig {
   return {
+    signal,
     timeoutMs: options.timeoutMs ?? defaultTimeoutMs(options.env ?? process.env),
     run: options.run ?? runCommand,
     tempRoot: options.tempRoot,
@@ -188,7 +189,7 @@ export function scipTypescriptProvider(options: ScipOptions = {}): IndexProvider
         await finish(
           input,
           await checkedRun(input, () =>
-            runScipTypescript(input.root, input.files, runConfig(options)),
+            runScipTypescript(input.root, input.files, runConfig(options, input.signal)),
           ),
           tool,
         ),
@@ -230,7 +231,12 @@ export function scipPythonProvider(options: ScipOptions = {}): IndexProvider {
         await finish(
           input,
           await checkedRun(input, () =>
-            runScipPython(input.root, input.files, input.readText, runConfig(options)),
+            runScipPython(
+              input.root,
+              input.files,
+              input.readText,
+              runConfig(options, input.signal),
+            ),
           ),
           tool,
         ),
@@ -381,7 +387,9 @@ export function scipGoProvider(options: ScipOptions = {}): IndexProvider {
         this,
         await finish(
           input,
-          await checkedRun(input, () => runScipGo(input.root, input.files, runConfig(options))),
+          await checkedRun(input, () =>
+            runScipGo(input.root, input.files, runConfig(options, input.signal)),
+          ),
           tool,
         ),
       );
