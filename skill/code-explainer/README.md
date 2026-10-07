@@ -23,7 +23,7 @@ Turns "how does X work?", "give me an overview of this repo", "explain this PR" 
 3. Check it: `~/.claude/skills/code-explainer/bin/xpl --version` prints the CLI version. Run `xpl doctor --agent claude` to check the chosen authoring setup. Install and authenticate Claude Code separately; diagnosis does not verify provider access.
 
 Alternatively, from the [source repository](https://github.com/krimvp/xpl), run `npm install && npm run build`,
-then `npm pack ./packages/cli/dist` and `npm install -g --ignore-scripts ./krimvp-xpl-0.2.1.tgz`.
+then `npm pack ./packages/cli/dist` and `npm install -g --ignore-scripts ./krimvp-xpl-0.2.2.tgz`.
 A maintainer's tarball can also be installed with `npm install -g --offline --ignore-scripts <tarball>`.
 
 After updating or moving the CLI, rerun `xpl skill install` with the same destination. No source checkout

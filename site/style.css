@@ -185,6 +185,51 @@ figcaption span {
   font-size: 14px;
   color: var(--muted);
 }
+.more-examples {
+  border-top: 1px solid var(--line);
+  margin-top: 100px;
+  padding-top: 64px;
+}
+.example-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+}
+.example-card {
+  display: flex;
+  flex-direction: column;
+  padding: 28px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+}
+.example-card h3 {
+  margin: 0;
+  font-size: 24px;
+  letter-spacing: -0.035em;
+}
+.example-card > p {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 14px;
+}
+.example-card ul {
+  list-style: none;
+  padding: 0;
+  margin: 24px 0;
+}
+.example-card li + li {
+  margin-top: 12px;
+}
+.example-card li a {
+  font-weight: 600;
+}
+.example-card .source-note {
+  margin-top: auto;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+  font-size: 12px;
+}
 .section {
   display: grid;
   grid-template-columns: 1fr 1.1fr;
@@ -291,6 +336,13 @@ footer > a:not(.wordmark) {
   font-size: 14px;
 }
 @media (max-width: 700px) {
+  .example-grid {
+    grid-template-columns: 1fr;
+  }
+  .more-examples {
+    margin-top: 64px;
+    padding-top: 48px;
+  }
   .masthead {
     min-height: 80px;
   }
