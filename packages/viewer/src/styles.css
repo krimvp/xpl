@@ -4709,3 +4709,21 @@ code {
   stroke: var(--accent);
   stroke-width: 4;
 }
+
+.pz-keyboard-hint {
+  position: absolute;
+  bottom: 8px;
+  left: 8px;
+  right: 8px;
+  z-index: 3;
+  padding: 6px 8px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 12px;
+  opacity: 0;
+  pointer-events: none;
+}
+.panzoom:focus-visible > .pz-keyboard-hint {
+  opacity: 1;
+}

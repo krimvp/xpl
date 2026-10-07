@@ -2424,6 +2424,15 @@ transition IDs and shows the checked source anchors of both endpoints (only the 
 the caller). Details names its direction and explains that links have no separate source anchor. The
 toggle precedes the list in keyboard order. Selection uses the same store action as the diagram. The list updates with the current level, nodes and edge-kind filters. Scrolling it never zooms
 the hidden SVG. Turning the toggle off restores the diagram and its selection.
+**Diagram keyboard navigation** (`components/PanZoom.tsx`): focus the canvas and press Enter to
+focus its first element. Up/Down cycle through the drawn elements in reading order; Home/End go to the
+first/last. Left/Right follow incoming/outgoing relationships: maps and sequences move through an arrow
+and its source or target; flows move through a link between connected stages. Flow stages come before
+links in keyboard reading order, while the SVG paints links behind them. When there is more than one link, the first
+in drawing order is followed; Up/Down reach the other links. Enter/Space select the focused element and
+show its checked code through the same path as a click. Focused elements are panned into view. Escape
+returns to the canvas without changing selection; Tab and Shift+Tab retain their normal page order.
+Canvas arrow keys still pan, and +/- and 0 still zoom and fit. A focus hint announces these keys.
 
 **Graph authoring** (`components/GraphAuthor.tsx`): Explore's stored graph views offer **Edit map** beside
 the caption. Shift-click sibling boxes, name the group and explicitly group them. Ungroup removes the

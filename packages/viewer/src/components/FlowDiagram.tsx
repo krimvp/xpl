@@ -205,6 +205,10 @@ export function FlowDiagram({ view, snapshot, outline = false }: FlowDiagramProp
               select(edge.id, event.shiftKey);
             }
           }}
+          data-navigation-from={snapshot ? undefined : edge.from}
+          data-navigation-to={
+            snapshot || edge.to === undefined ? undefined : (nodes.get(edge.to)?.copyOf ?? edge.to)
+          }
         >
           {edge.kind && (
             <title>

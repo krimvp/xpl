@@ -355,8 +355,90 @@ export function PanZoom({
     void event;
   };
 
+  const keyboardHelp = useId();
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (textMode) return;
+    const host = event.currentTarget;
+    const items = [
+      ...host.querySelectorAll<SVGElement>(
+        '.pz-svg [role="button"][data-element-id], .pz-svg [role="button"][data-key-for]',
+      ),
+    ];
+    // Flow lines are painted behind stages; keyboard reading starts with the stages.
+    items.sort(
+      (a, b) =>
+        Number(b.classList.contains("flow-stage")) - Number(a.classList.contains("flow-stage")),
+    );
+    const idOf = (el: SVGElement) => el.dataset.keyFor ?? el.dataset.elementId;
+    const current = items.indexOf(event.target as SVGElement);
+    const focusItem = (item: SVGElement | undefined) => {
+      if (!item) return;
+      item.focus({ preventScroll: true });
+      const box = item.getBoundingClientRect();
+      const room = host.getBoundingClientRect();
+      const dx =
+        box.left < room.left + 16
+          ? room.left + 16 - box.left
+          : box.right > room.right - 16
+            ? room.right - 16 - box.right
+            : 0;
+      const dy =
+        box.top < room.top + 16
+          ? room.top + 16 - box.top
+          : box.bottom > room.bottom - 16
+            ? room.bottom - 16 - box.bottom
+            : 0;
+      if (dx || dy) {
+        follow.current = "free";
+        setT((cur) => ({ ...cur, x: cur.x + dx, y: cur.y + dy }));
+      }
+    };
+    if (event.target === host && event.key === "Enter") {
+      event.preventDefault();
+      focusItem(items[0]);
+      return;
+    }
+    if (
+      current >= 0 &&
+      ["Escape", "ArrowDown", "ArrowUp", "Home", "End", "ArrowLeft", "ArrowRight"].includes(
+        event.key,
+      )
+    ) {
+      const item = items[current]!;
+      let target: SVGElement | undefined;
+      if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
+        host.focus({ preventScroll: true });
+        return;
+      }
+      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+        target =
+          items[(current + (event.key === "ArrowDown" ? 1 : -1) + items.length) % items.length];
+      } else if (event.key === "Home" || event.key === "End") {
+        target = items[event.key === "Home" ? 0 : items.length - 1];
+      } else if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+        const forward = event.key === "ArrowRight";
+        const end = forward ? "navigationTo" : "navigationFrom";
+        const start = forward ? "navigationFrom" : "navigationTo";
+        const ownEnd = item.dataset[end];
+        if (ownEnd) target = items.find((candidate) => idOf(candidate) === ownEnd);
+        else {
+          const link = [
+            ...host.querySelectorAll<SVGElement>("[data-navigation-from][data-navigation-to]"),
+          ].find((candidate) => candidate.dataset[start] === idOf(item));
+          if (link)
+            target =
+              items.find((candidate) => idOf(candidate) === idOf(link)) ??
+              items.find((candidate) => idOf(candidate) === link.dataset[end]);
+        }
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      focusItem(target);
+      return;
+    }
+
     if (event.target instanceof HTMLElement && event.target.closest("button")) return;
     switch (event.key) {
       case "+":
@@ -445,6 +527,7 @@ export function PanZoom({
       tabIndex={0}
       role="group"
       aria-label={label}
+      aria-describedby={keyboardHelp}
       data-zoom={t.k.toFixed(3)}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
@@ -461,6 +544,10 @@ export function PanZoom({
         }
       }}
     >
+      <span id={keyboardHelp} className="pz-keyboard-hint">
+        Enter to navigate. Up/Down: next element. Left/Right: follow links. Enter: select code.
+        Escape: canvas.
+      </span>
       <svg
         className="pz-svg"
         width="100%"
