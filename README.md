@@ -50,7 +50,8 @@ See [Find and share](https://krimvp.github.io/xpl/docs/workflows/find-and-share/
 ### View and export a guide
 
 Use `xpl view <guide>` for a local interactive view or `xpl bundle <guide> -o guide.html` for a
-self-contained export.
+self-contained export. In Read mode, each step shows a short source excerpt beside its explanation;
+"Open full code" opens the complete source range.
 
 ### Feedback and revision
 
