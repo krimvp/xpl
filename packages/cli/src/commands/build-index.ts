@@ -50,7 +50,7 @@ export const indexCommand: CommandSpec = {
   name: "index",
   usage:
     "xpl index [--precise auto|off|require] [--commit c] [--no-cache] [--scip artifact|manifest.json]",
-  summary: "Build and write the symbol index; print a per-language summary",
+  summary: "Build and write the symbol index; print languages and excluded source candidates",
   details: [
     "Indexes every text file under --root (git-aware) and writes .explainer/index-<commit>.json.",
     "Reuses file-local tree-sitter and Rust tags facts from .explainer/cache by default.",
@@ -66,6 +66,8 @@ export const indexCommand: CommandSpec = {
     "describe every file, `refs: precise 64/82 (scip-python@0.6.6), 18 heuristic`: the references of those 18 files",
     "are hints.",
     "Analysis coverage lists independent source and relationship abilities, analyzed files, limits and failures.",
+    "Excluded file counts and up to three paths per reason cover enumerated candidates only; git-ignored files",
+    "and directories skipped by the fallback walk are not counted.",
     "Empty relationships do not prove complete coverage. Saved indexes and exported viewers retain this report.",
     "--scip imports a generated artifact with embedded source text, or a JSON manifest naming its artifact.",
     "Textless artifacts require artifactSha256 and pre-generation sourceHashes in the manifest.",
@@ -126,6 +128,7 @@ export const indexCommand: CommandSpec = {
         refs: index.refs.length,
         languages: index.languages,
         analysis: index.analysis,
+        exclusions: result.exclusions,
         extraction: result.extraction,
         work: result.work,
         ...(stale.length > 0 ? { explainersToResolve: stale } : {}),
@@ -156,6 +159,20 @@ export const indexCommand: CommandSpec = {
     );
     const coverage = describeAnalysis(index);
     lines.push("", coverage.summary, ...coverage.details);
+    const { exclusions } = result;
+    const excluded = exclusions.reasons.map(
+      ({ reason, count, examples }) =>
+        `${count} ${reason} (${examples.join(", ")}${count > examples.length ? ", …" : ""})`,
+    );
+    lines.push(
+      "",
+      `Excluded from ${exclusions.scope}: ${excluded.length ? excluded.join("; ") : "none"}.`,
+      exclusions.scope === "git candidates"
+        ? "Git-ignored files are not counted."
+        : exclusions.scope === "walked files"
+          ? "Directories skipped by the walk are not counted."
+          : "Snapshot inputs do not include discovery exclusions.",
+    );
     if (stale.length > 0) {
       lines.push(
         "",

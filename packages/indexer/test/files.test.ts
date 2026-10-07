@@ -134,7 +134,17 @@ describe("discoverFiles in a git work tree", () => {
       "empty.txt": "",
     });
     symlinkSync("ok.ts", join(dir, "link.ts"));
-    expect(await paths(dir)).toEqual(["empty.txt", "just-fits.txt", "ok.ts"]);
+    const result = await discoverFiles(dir);
+    expect(result.files.map((f) => f.path)).toEqual(["empty.txt", "just-fits.txt", "ok.ts"]);
+    expect(result.exclusions).toEqual({
+      scope: "git candidates",
+      reasons: [
+        { reason: "lockfile", count: 3, examples: ["go.sum", "package-lock.json", "yarn.lock"] },
+        { reason: "oversized", count: 1, examples: ["big.txt"] },
+        { reason: "binary", count: 1, examples: ["image.bin"] },
+        { reason: "non-file", count: 1, examples: ["link.ts"] },
+      ],
+    });
   });
 
   it("only sniffs the first 8 KB for NUL bytes", async () => {
