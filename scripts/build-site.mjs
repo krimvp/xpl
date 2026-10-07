@@ -12,6 +12,10 @@ const publicExamples = [
   "vite/vite-hmr.html",
   "zod/zod-overview.html",
   "zod/zod-parse-errors.html",
+  "xpl/xpl-overview.html",
+  "xpl/xpl-checked-edits.html",
+  "cobra/cobra-overview.html",
+  "cobra/cobra-command-execution.html",
 ];
 
 execFileSync("npm", ["run", "build"], { cwd: root, stdio: "inherit" });
@@ -92,7 +96,7 @@ for (const name of publicExamples) {
     throw new Error(`Invalid public example: ${name}`);
   }
 }
-console.log("Built _site: page, assets, five self-contained demos and docs checked.");
+console.log("Built _site: page, assets, nine self-contained demos and docs checked.");
 
 /**
  * The user docs (docs-site/) go to _site/docs. A line `<!-- include path -->` takes a whole file and
