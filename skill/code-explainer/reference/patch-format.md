@@ -29,7 +29,7 @@ Every key is optional; any other top-level key is rejected. User patches also ac
 }
 ```
 
-For an installed skill, replace `url` with the absolute path to its `reference/patch.schema.json` (by default under `~/.claude/skills/code-explainer`). Do not add a `$schema` key to a patch: `xpl apply` rejects unknown top-level fields. The schema catches JSON shape errors; `xpl apply` still checks source anchors, IDs, review fingerprints and user-owned fields against the repository.
+For an installed skill, replace `url` with the absolute path to its `reference/patch.schema.json`. The default location is `~/.claude/skills/code-explainer` for Claude, `~/.agents/skills/code-explainer` for Codex, Pi and Droid, or the project's `.agents/skills/code-explainer` for Devin. Do not add a `$schema` key to a patch: `xpl apply` rejects unknown top-level fields. The schema catches JSON shape errors; `xpl apply` still checks source anchors, IDs, review fingerprints and user-owned fields against the repository.
 
 ### Author review (user patches only)
 
