@@ -66,6 +66,35 @@ describe("xpl index", () => {
     expect(readdirSync(join(dir, ".explainer"))).toContain(`index-${json.commit}.json`);
   });
 
+  it("reports bounded exclusions from enumerated source candidates", async () => {
+    const dir = copyFixture();
+    writeFile(dir, "large.txt", "x".repeat(1024 * 1024 + 1));
+    writeFile(dir, "binary.dat", "a\0b");
+    writeFile(dir, "binary2.dat", "a\0b");
+    writeFile(dir, "binary3.dat", "a\0b");
+    writeFile(dir, "binary4.dat", "a\0b");
+    writeFile(dir, "go.sum", "ignored dependency lock\n");
+    writeFile(dir, "draft.patch.json", "{}\n");
+    const human = await xpl(dir, "index", "--precise", "off");
+    expect(human.code).toBe(0);
+    expect(human.out).toContain("Excluded from walked files:");
+    expect(human.out).toContain("4 binary (binary.dat, binary2.dat, binary3.dat, …)");
+    expect(human.out).toContain("1 oversized (large.txt)");
+    expect(human.out).toContain("1 lockfile (go.sum)");
+    expect(human.out).toContain("1 generated (draft.patch.json)");
+    expect(human.out).toContain("Directories skipped by the walk are not counted.");
+    const result = await xplJson(dir, "index", "--precise", "off");
+    expect(result.json.exclusions).toEqual({
+      scope: "walked files",
+      reasons: [
+        { reason: "generated", count: 1, examples: ["draft.patch.json"] },
+        { reason: "lockfile", count: 1, examples: ["go.sum"] },
+        { reason: "oversized", count: 1, examples: ["large.txt"] },
+        { reason: "binary", count: 4, examples: ["binary.dat", "binary2.dat", "binary3.dat"] },
+      ],
+    });
+  });
+
   it("reports scoped cache work and --no-cache performs extraction without touching cached facts", async () => {
     const dir = copyFixture();
     const first = await xplJson(dir, "index", "--precise", "off");
