@@ -1390,6 +1390,7 @@ stdout (a rejection exits 1); fatal errors (`error: …`) and warnings (`warning
 | `xpl refs <id> [--in\|--out] [--kind k] [--depth n] [--max-children n] [--limit n] [--tests]` | call/reference hierarchy with sites; hops through interfaces as `impl` lines and through base classes (TS, JS, Python) as `override` lines; test doubles and test subclasses hidden unless `--tests`; a subtree is printed once (later occurrences: `(expanded above)`), at most `--max-children` (default 15) references under a line of a hierarchy (`... +8 more`); `--kind read` finds the readers of a variable or field |
 | `xpl search <pattern> [--regex] [-i] [--limit n] [--under <dir\|glob>] [--code]` | text hits over the working tree with enclosing symbol id and offset; code files first, then config, then docs (`--code`: code only); `--under` keeps the search in a dir, file, symbol or glob |
 | `xpl guides` | local guide metadata by title, recorded view questions, audience and source/index snapshot; no index or service required; unreadable/invalid/escaping guides are separate errors, exit 1; no guides is exit 0 |
+| `xpl start <name> --question q --audience a [--entry symbol] [--precise auto\|off\|require]` | first-guide path: runs `index`, `new`, `draft repo` (or `draft path` with `--entry`) and `apply`; saves the checked patch and all draft notes outside the repository, prints up to three notes and apply warnings (full lists in `--json` and the notes file), then names `view` and `lint` as next steps; refuses an existing guide |
 | `xpl new <name> [--title t] [--repo r] [--url u]` | create `.explainer/<name>.explainer.json` bound to the index; never overwrites; repo name from `--repo`, else `package.json`, `go.mod`, `pyproject.toml`, git remote, directory name |
 | `xpl apply <explainer> <patch.json\|-> [--actor llm\|user] [--dry-run]` | §4.7; prints every issue of a rejected patch at once; atomic; `--help` summarises the patch format |
 | `xpl validate <explainer> [--lenient]` | §4.6 |
@@ -2426,6 +2427,15 @@ static bundle lists only the files it embeds, with a footer "N of M files includ
 `tree-foot`; under `xpl view` every indexed file is listed and loaded when opened) beside the stack of
 CodeMirror editors (language modes for TS/TSX/JS, Python, Go, YAML and JSON; Rust, TOML and other text are plain).
 Both splits (diagram / panels, diagram / code) are resizable. Below 900 px the halves stack.
+
+**Diagram keyboard navigation** (`components/PanZoom.tsx`): focus the canvas and press Enter to
+focus its first element. Up/Down cycle through the drawn elements in reading order; Home/End go to the
+first/last. Left/Right follow incoming/outgoing relationships: maps and sequences move through an arrow
+and its source or target; flows move between connected stages. When there is more than one link, the first
+in drawing order is followed; Up/Down reach the other links. Enter/Space select the focused element and
+show its checked code through the same path as a click. Focused elements are panned into view. Escape
+returns to the canvas without changing selection; Tab and Shift+Tab retain their normal page order.
+Canvas arrow keys still pan, and +/- and 0 still zoom and fit. A focus hint announces these keys.
 
 **Graph authoring** (`components/GraphAuthor.tsx`): Explore's stored graph views offer **Edit map** beside
 the caption. Shift-click sibling boxes, name the group and explicitly group them. Ungroup removes the

@@ -481,6 +481,21 @@ Edited re-saves lose the staged version claim when their artifactIdentity change
 This command configures no server, remote destination, credentials or upload. To point a PR at a staged
 PR folder, use `xpl pr link` below.
 
+## `xpl start <name> --question q --audience a [--entry symbol] [--precise auto|off|require]`
+
+Creates a first guide in one command. It runs `index`, `new`, `draft` and `apply`, using the same source anchor checks as manual authoring. Without `--entry`, the draft is a repository map. With an indexed function or method such as `src/runner.ts#Runner.dispatch`, it is a call sequence from that entry. The applied guide contains TODO text and can be opened with `xpl view <name>`; complete and check the text before sharing. The patch and all draft notes are saved in a temporary directory outside the repository. The text output shows up to three notes and apply warnings; `--json` includes their full lists. Existing guides are never overwritten.
+
+```
+$ xpl start job-retries --question "How does a failed job get retried?" --audience maintainers --precise off
+created .explainer/job-retries.explainer.json for maintainers
+draft patch: /tmp/xpl-first-guide-…/draft.patch.json
+draft notes: /tmp/xpl-first-guide-…/draft-notes.json
+note: Provisional architecture: confirm project kind, primary users and entry points in the README and code; import lines identify dependencies.
+next: complete the TODOs in `xpl view job-retries` or edit the draft patch, then run `xpl lint job-retries`
+```
+
+`--precise off` uses heuristic references; confirm calls against source before completing the explanation. `--json` returns the guide and draft paths, notes file, notes and apply warnings.
+
 ## `xpl new <name> [--title t] [--repo r] [--url u]`
 
 Creates an empty `.explainer/<name>.explainer.json` bound to the selected index. Refuses to overwrite (`error: … already exists; not overwriting it`). The repository name it records (`repo.name`, the label of the repo box) is `--repo`, else the first of: `package.json` `name`, the last element of the `go.mod` module (`example.com/acme/jobrunner/v2` gives `jobrunner`), `[project] name` in `pyproject.toml`, the base name of the git remote (`origin`, else the first), the directory name. `--url` records where the repository lives; it is never taken from the git remote (which may carry credentials).

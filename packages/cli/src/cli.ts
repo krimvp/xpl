@@ -27,6 +27,7 @@ import { searchCommand } from "./commands/search.js";
 import { guidesCommand } from "./commands/guides.js";
 import { showCommand } from "./commands/show.js";
 import { statusCommand } from "./commands/status.js";
+import { startCommand } from "./commands/start.js";
 import { validateCommand } from "./commands/validate.js";
 import { viewCommand } from "./commands/view.js";
 import { serviceCommand } from "./commands/service.js";
@@ -44,6 +45,7 @@ export const COMMANDS: readonly CommandSpec[] = [
   refsCommand,
   searchCommand,
   guidesCommand,
+  startCommand,
   newCommand,
   applyCommand,
   validateCommand,
@@ -100,7 +102,8 @@ function helpText(): string {
     "Environment: XPL_VIEWER_HTML=<file> overrides the viewer page (view, bundle); XPL_SKIP_STALE_CHECK=1 skips",
     "the comparison of the index with the working tree (about a second per 5000 files); XPL_WASM_DIR, XPL_DEBUG.",
     "Setup: xpl doctor; xpl skill install; xpl doctor --agent claude. Offline indexing: xpl index --precise off.",
-    "Typical use: xpl index; xpl outline; xpl show <id> --refs; xpl new <name>; xpl apply <name> patch.json;",
+    "First guide: xpl start <name> --question <question> --audience <reader>; then xpl view <name>.",
+    "Repeat use: xpl index; xpl outline; xpl show <id> --refs; xpl new <name>; xpl apply <name> patch.json;",
     "xpl lint <name>; xpl view <name>. Exit codes: 0 ok, 1 rejected or failed, 2 usage error.",
     "See docs/ARCHITECTURE.md section 5.",
     'Run "xpl <command> --help" for a command\'s options.',
