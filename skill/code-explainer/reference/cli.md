@@ -63,6 +63,9 @@ Precise tools/dependencies and agent authoring can have separate network require
 ## `xpl index [--precise auto|off|require] [--commit c] [--no-cache] [--scip artifact|manifest.json]`
 
 Builds `.explainer/index-<commit>.json` (and `.explainer/.gitignore` with `index-*.json` and `cache/`). The commit id is the short HEAD when the repo root is a clean git top-level, else `wt-<hash>` of the files. Files: `git ls-files` (or a walk that skips `node_modules`, `dist`, dot-dirs…), text only, ≤ 1 MB.
+The output reports excluded candidates by reason, with up to three root-relative paths per reason.
+`--json` returns the same counts in `exclusions`. Git-ignored files are not listed by git; without git,
+files inside skipped directories and symlinks are not enumerated. Those files are not counted.
 
 ```
 $ xpl index

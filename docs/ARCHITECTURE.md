@@ -348,7 +348,8 @@ interface ExplainerPatch {
 buildIndex(opts: { root: string; commit?: string; precise?: "auto" | "off" | "require";
                    languages?: string[]; providers?: readonly IndexProvider[]; cache?: boolean;
                    gitOptions?: GitOptions; snapshot?: IndexInputs; getText?: GetText })
-  : Promise<{ index: SymbolIndex; warnings: string[]; extraction: ExtractionReport;
+  : Promise<{ index: SymbolIndex; warnings: string[]; exclusions: ExclusionReport;
+              extraction: ExtractionReport;
               work: { heuristicResolutionMs: number; semanticMs: number; semanticRuns: number } }>
 writeIndex(root: string, index: SymbolIndex): Promise<string>
 // atomic write of <root>/.explainer/index-<commit>.json; ignores indexes and cache/ in .explainer/.gitignore
@@ -373,7 +374,7 @@ imports of `.json`/`.yaml`/`.toml`), resolved against the indexed files into `Sy
 to the root's subtree), otherwise a walk that skips `.git node_modules dist build out vendor target
 __pycache__ .venv venv .explainer` and dot-directories. In both modes `.explainer/`, `node_modules/` and
 `.git/` are never indexed (`.explainer/` would feed our own index back into the working-tree commit id).
-Dropped silently: binaries (NUL in the first 8 KB), files over 1 MB, symlinks and submodule directories, files
+Excluded from candidate files: binaries (NUL in the first 8 KB), files over 1 MB, symlinks and submodule directories, files
 deleted but still tracked, and lockfiles (`*-lock.json`, `*.lock`, `go.sum`, `pnpm-lock.yaml`,
 `npm-shrinkwrap.json`). Every remaining text file is an `IndexedFile` (unknown extensions → `text`), so
 file-relative anchors work anywhere. Language by extension: `.ts .mts .cts` typescript, `.tsx` tsx, `.js .mjs
@@ -381,6 +382,13 @@ file-relative anchors work anywhere. Language by extension: `.ts .mts .cts` type
 Named `*.explainer.json` and `*.patch.json` outputs are excluded in both modes. Exported xpl HTML is
 also excluded by its embedded bundle marker; ordinary HTML remains source. Paths are POSIX,
 repo-root-relative, sorted.
+
+`buildIndex` also returns a run-local `exclusions` report: counts by reason and up to three sorted,
+root-relative example paths. `xpl index` prints it, and `--json` includes it. The report counts only
+enumerated candidates. Git-ignored files never enter git's list; a non-git walk does not enumerate
+files inside skipped directories or symlinks. A supplied snapshot has no discovery report. Exclusions
+are not saved in `SymbolIndex`. A `buildIndex({ languages })` report counts candidates of those languages
+only.
 
 **Watched input capture** (`src/snapshot.ts`): `captureIndexInputs({root, inputPaths?, gitOptions?, precise?, providers?})`
 returns sources, local configuration text, the captured clean HEAD label (when applicable), a
@@ -1355,7 +1363,7 @@ stdout (a rejection exits 1); fatal errors (`error: …`) and warnings (`warning
 
 | Command | Does |
 |---|---|
-| `xpl index [--precise auto\|off\|require] [--commit c] [--no-cache] [--scip artifact\|manifest.json]` | build + write the index; caches file-local extraction by default, `--no-cache` bypasses reads/writes, resolution and semantic tooling stay fresh; `--scip` selects source-verified artifact import instead of automatic tools; writes `.explainer/.gitignore` (`index-*.json`); prints per-language trust, independent coverage and names explainers bound to another index |
+| `xpl index [--precise auto\|off\|require] [--commit c] [--no-cache] [--scip artifact\|manifest.json]` | build + write the index; caches file-local extraction by default, `--no-cache` bypasses reads/writes, resolution and semantic tooling stay fresh; `--scip` selects source-verified artifact import instead of automatic tools; writes `.explainer/.gitignore` (`index-*.json`); prints per-language trust, independent coverage, enumerated exclusions and names explainers bound to another index |
 | `xpl outline [--under <id>] [--depth n] [--kind k,...] [--keys] [--limit n]` | dir/file/symbol tree with kind, lines, fan-in/fan-out (references into/out of the subtree); default depth 2; config keys only with `--keys`; `--kind method,function` keeps only those symbol kinds, with the dirs, files and parents that hold a match; the repo line carries the name `xpl new` records |
 | `xpl show <id> [--refs] [--context n] [--lines a-b] [--max-lines n]` | code with 0-based offsets relative to the symbol (the numbers spans use); dirs and the repo list children; `--refs` appends outgoing and incoming references with `+offset`. `xpl show --at base <path> [--lines a-b] [--explainer name]`: a changed file as it was before the change the explainer records, with the offsets a base anchor's span uses (from line 1) and `-` on the lines the change removes or rewrites; paths only (a symbol id is a usage error); `--explainer` picks the explainer when several record a change |
 | `xpl refs <id> [--in\|--out] [--kind k] [--depth n] [--max-children n] [--limit n] [--tests]` | call/reference hierarchy with sites; hops through interfaces as `impl` lines and through base classes (TS, JS, Python) as `override` lines; test doubles and test subclasses hidden unless `--tests`; a subtree is printed once (later occurrences: `(expanded above)`), at most `--max-children` (default 15) references under a line of a hierarchy (`... +8 more`); `--kind read` finds the readers of a variable or field |
