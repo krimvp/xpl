@@ -1,16 +1,102 @@
 import { execFile } from "node:child_process";
-import { existsSync, readdirSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { copyFileSync, existsSync, readdirSync } from "node:fs";
 import { createServer } from "node:http";
 import { delimiter, join } from "node:path";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { invoke, makeTempDir, writeFile } from "./helpers.js";
+
+beforeEach(() =>
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => {
+      throw new Error("offline test");
+    }),
+  ),
+);
+afterEach(() => vi.unstubAllGlobals());
 
 const hasGo =
   process.env.PATH?.split(delimiter).some((dir) => existsSync(join(dir, "go"))) ?? false;
 
 describe("setup commands", () => {
+  it("reports an older managed skill and the reinstall command", async () => {
+    const root = makeTempDir();
+    const skill = join(root, "skill");
+    const files = Object.fromEntries(
+      [
+        ["SKILL.md", "# Skill\n"],
+        ["bin/xpl", "#!/usr/bin/env node\n"],
+      ].map(([path, body]) => {
+        writeFile(skill, path!, body!);
+        return [path, createHash("sha256").update(body!).digest("hex")];
+      }),
+    );
+    writeFile(
+      skill,
+      "xpl-install.json",
+      JSON.stringify({ version: "0.1.0", cli: "/tmp/xpl.mjs", files }),
+    );
+    const result = await invoke(["doctor", "--skill-dir", skill, "--json"], {
+      cwd: root,
+      env: { XPL_NO_UPDATE_CHECK: "1" },
+    });
+    const report = JSON.parse(result.out);
+    expect(report.checks.find((check: { id: string }) => check.id === "skill")).toMatchObject({
+      required: false,
+      status: "outdated",
+      detail: "skill version 0.1.0 < CLI 0.2.2",
+      recovery: expect.stringContaining("xpl skill install"),
+    });
+  });
+
+  it("reports a newer registry version only from doctor and honors the offline switch", async () => {
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => ({
+      ok: true,
+      json: async () => ({ version: "0.2.3" }),
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    const root = makeTempDir();
+    const result = await invoke(["doctor", "--json", "--skill-dir", join(root, "missing")], {
+      cwd: root,
+    });
+    expect(
+      JSON.parse(result.out).checks.find((check: { id: string }) => check.id === "update"),
+    ).toMatchObject({ status: "outdated", required: false, detail: "CLI 0.2.2 < latest 0.2.3" });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0]![0]).toBe("https://registry.npmjs.org/@krimvp%2Fxpl/latest");
+    await invoke(["--version"], { cwd: root });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const skipped = await invoke(["doctor", "--json", "--skill-dir", join(root, "missing")], {
+      cwd: root,
+      env: { XPL_NO_UPDATE_CHECK: "1" },
+    });
+    expect(
+      JSON.parse(skipped.out).checks.find((check: { id: string }) => check.id === "update"),
+    ).toBeUndefined();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("the installed launcher warns once when its recorded version differs from its CLI", async () => {
+    const root = makeTempDir();
+    const skill = join(root, "skill");
+    const cli = writeFile(root, "cli/xpl.mjs", 'console.log("0.2.2");\n');
+    writeFile(root, "cli/package.json", '{"type":"module","version":"0.2.2"}\n');
+    const launcher = join(skill, "bin/xpl");
+    writeFile(skill, "xpl-install.json", JSON.stringify({ version: "0.1.0", cli }));
+    writeFile(skill, "bin/xpl", "");
+    copyFileSync(
+      fileURLToPath(new URL("../../../skill/code-explainer/bin/xpl", import.meta.url)),
+      launcher,
+    );
+    const result = await promisify(execFile)(process.execPath, [launcher, "--version"]);
+    expect(result.stdout.trim()).toBe("0.2.2");
+    expect(result.stderr.trim().split("\n")).toEqual([
+      "xpl: installed skill 0.1.0 differs from CLI 0.2.2; run `xpl skill install`.",
+    ]);
+  });
   it.skipIf(!hasGo)(
     "doctor reports installed tools without downloading a newer Go toolchain or writing probe files",
     async () => {
@@ -49,6 +135,7 @@ describe("setup commands", () => {
               GOPATH: join(root, "gopath"),
               GOCACHE: join(root, "gocache"),
               npm_config_cache: join(root, "npm-cache"),
+              XPL_NO_UPDATE_CHECK: "1",
             },
           },
         ).catch((error: { code: number; stdout: string }) => {

@@ -10,9 +10,8 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const self = realpathSync(fileURLToPath(import.meta.url)); // <repo>/skill/code-explainer/bin/xpl
 const repo = resolve(dirname(self), "../../..");
 const binding = resolve(dirname(self), "../xpl-install.json");
-const installedCli = existsSync(binding)
-  ? JSON.parse(readFileSync(binding, "utf8")).cli
-  : undefined;
+const installation = existsSync(binding) ? JSON.parse(readFileSync(binding, "utf8")) : undefined;
+const installedCli = installation?.cli;
 const sourceCli = resolve(repo, "packages/cli/dist/xpl.mjs");
 const cli = process.env.XPL_CLI ? resolve(process.env.XPL_CLI) : (installedCli ?? sourceCli);
 
@@ -33,6 +32,21 @@ if (!existsSync(cli)) {
     );
   }
   process.exit(1);
+}
+
+if (typeof installation?.version === "string") {
+  try {
+    const cliVersion = JSON.parse(
+      readFileSync(resolve(dirname(cli), "package.json"), "utf8"),
+    ).version;
+    if (typeof cliVersion === "string" && cliVersion !== installation.version) {
+      console.error(
+        `xpl: installed skill ${installation.version} differs from CLI ${cliVersion}; run \`xpl skill install\`.`,
+      );
+    }
+  } catch {
+    // A custom XPL_CLI may have no package metadata beside it.
+  }
 }
 
 await import(pathToFileURL(cli).href);

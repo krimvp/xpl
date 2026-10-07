@@ -14,6 +14,21 @@ import {
 } from "../setup.js";
 
 const execute = promisify(execFile);
+const REGISTRY_LATEST = "https://registry.npmjs.org/@krimvp%2Fxpl/latest";
+
+class OutdatedSkillError extends Error {}
+
+function compareVersions(left: string, right: string): number | undefined {
+  const parse = (value: string) =>
+    /^\d+\.\d+\.\d+$/.test(value) ? value.split(".").map(Number) : undefined;
+  const a = parse(left);
+  const b = parse(right);
+  if (!a || !b) return undefined;
+  for (let i = 0; i < 3; i++) {
+    if (a[i]! !== b[i]!) return a[i]! - b[i]!;
+  }
+  return 0;
+}
 
 export const doctorCommand: CommandSpec = {
   name: "doctor",
@@ -23,6 +38,7 @@ export const doctorCommand: CommandSpec = {
     "Checks Node >=22.12, bundled file hashes and grammar loading. Required failures exit 1.",
     "A selected skill and local agent command are checked for Claude, Codex, Pi and Droid. Devin checks the project skill files; its cloud session is not locally verifiable. The default none checks reader/index/export setup.",
     "Optional git, npx and Go checks report local versions. Availability does not prove a precise indexer can run.",
+    "Checks npm for a newer xpl version when reachable. Set XPL_NO_UPDATE_CHECK=1 to skip this network check.",
     "Go uses the installed toolchain with user configuration and telemetry disabled; Git tracing is disabled.",
     "Use xpl index --precise off offline. Auto precise mode may download tools/dependencies; require fails if unavailable.",
     "Agent authentication and provider access are not checked. Devin cloud skill loading is not locally verifiable. Generation is user-invoked.",
@@ -47,7 +63,7 @@ export const doctorCommand: CommandSpec = {
     const checks: {
       id: string;
       required: boolean;
-      status: "ok" | "missing";
+      status: "ok" | "missing" | "outdated";
       detail: string;
       recovery: string;
     }[] = [];
@@ -60,7 +76,13 @@ export const doctorCommand: CommandSpec = {
       try {
         checks.push({ id, required, status: "ok", detail: await probe(), recovery });
       } catch (error) {
-        checks.push({ id, required, status: "missing", detail: errorMessage(error), recovery });
+        checks.push({
+          id,
+          required,
+          status: error instanceof OutdatedSkillError ? "outdated" : "missing",
+          detail: errorMessage(error),
+          recovery,
+        });
       }
     }
     await check(
@@ -104,10 +126,12 @@ export const doctorCommand: CommandSpec = {
       `Run ${installCommand}; rerun after CLI updates. Move local edits aside first.`,
       async () => {
         const data = verifySkill(skill);
-        if (data.version !== pkg.version)
-          throw new Error(
-            `skill version ${data.version} differs from CLI ${pkg.version}; rerun ${installCommand}`,
+        if (data.version !== pkg.version) {
+          const order = compareVersions(data.version, pkg.version);
+          throw new OutdatedSkillError(
+            `skill version ${data.version} ${order === undefined ? "differs from" : order < 0 ? "<" : ">"} CLI ${pkg.version}`,
           );
+        }
         const result = await execute(process.execPath, [join(skill, "bin/xpl"), "--version"], {
           env: ctx.env,
           timeout: 5000,
@@ -194,9 +218,31 @@ export const doctorCommand: CommandSpec = {
           "Check the skill in Devin's project settings and confirm it is available in the session.",
       });
     }
+    if (ctx.env.XPL_NO_UPDATE_CHECK !== "1") {
+      try {
+        const response = await fetch(REGISTRY_LATEST, { signal: AbortSignal.timeout(1500) });
+        if (response.ok) {
+          const latest = (await response.json()) as { version?: unknown };
+          const order =
+            typeof latest.version === "string"
+              ? compareVersions(pkg.version, latest.version)
+              : undefined;
+          if (order !== undefined && order < 0)
+            checks.push({
+              id: "update",
+              required: false,
+              status: "outdated",
+              detail: `CLI ${pkg.version} < latest ${latest.version}`,
+              recovery: "Run npm update -g @krimvp/xpl, then xpl skill install for your agent.",
+            });
+        }
+      } catch {
+        // Offline diagnosis keeps working without a registry response.
+      }
+    }
     const ok = !checks.some((item) => item.required && item.status !== "ok");
     const network =
-      "Local reading, --precise off indexing and HTML export use bundled assets without hosted xpl infrastructure. Precise bootstrap/dependencies and selected agent provider access can need network separately.";
+      "Local reading, --precise off indexing and HTML export use bundled assets. Doctor alone checks the npm registry for updates unless XPL_NO_UPDATE_CHECK=1. Precise bootstrap/dependencies and selected agent provider access can need network separately.";
     if (ctx.json)
       ctx.out(
         JSON.stringify(
