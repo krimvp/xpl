@@ -216,6 +216,116 @@ describe("analyzeChange", () => {
       ["sym:a.ts#added", "new"],
     ]);
   });
+  it("follows exactly two evidenced calls, retaining each hop and excluding unrelated or dynamic uses", () => {
+    const w = makeWorld({
+      files: [
+        { path: "app.ts", lines: 12 },
+        { path: "app.test.ts", lines: 1 },
+      ],
+      symbols: ["changed", "wrapper", "caller", "unrelated", "outer", "dynamic"].map((name, i) => ({
+        id: `app.ts#${name}`,
+        kind: "function" as const,
+        start: i * 2 + 1,
+        end: i * 2 + 2,
+      })),
+      refs: [
+        { from: "app.ts#wrapper", to: "app.ts#changed", line: 4, resolution: "heuristic" },
+        { from: "app.ts#caller", to: "app.ts#wrapper", line: 6, resolution: "precise" },
+        { from: "app.ts#outer", to: "app.ts#caller", line: 10 },
+        { from: "app.ts#dynamic", to: "app.ts#wrapper", line: 12, kind: "read" },
+        { from: "app.ts#unrelated", to: "app.ts#dynamic", line: 8 },
+        { from: "app.ts#changed", to: "app.ts#wrapper", line: 2 },
+        { from: "app.ts#wrapper", to: "app.ts#wrapper", line: 4 },
+        { from: "app.test.ts#", to: "app.ts#wrapper", line: 1 },
+      ],
+    });
+    const change: ChangeRecord = {
+      base: BASE,
+      head: HEAD,
+      files: [
+        {
+          path: "app.ts",
+          status: "modified",
+          hunks: [{ oldStart: 2, oldLines: 1, newStart: 2, newLines: 1 }],
+        },
+      ],
+    };
+    const [changed] = analyzeChange(change, w.model).symbols;
+    expect(changed!.callers.map((c) => c.id)).toEqual(["sym:app.ts#wrapper"]);
+    expect(changed!.indirectCalls).toEqual({
+      paths: [
+        [
+          {
+            from: "app.ts#caller",
+            to: "app.ts#wrapper",
+            kind: "call",
+            site: { startLine: 6, endLine: 6, startCol: 5, endCol: 30 },
+            resolution: "precise",
+          },
+          {
+            from: "app.ts#wrapper",
+            to: "app.ts#changed",
+            kind: "call",
+            site: { startLine: 4, endLine: 4, startCol: 5, endCol: 30 },
+            resolution: "heuristic",
+          },
+        ],
+      ],
+      truncated: false,
+    });
+  });
+
+  it("bounds the extra-hop results and inspection work, reporting incomplete results", () => {
+    const change: ChangeRecord = {
+      base: BASE,
+      head: HEAD,
+      files: [
+        {
+          path: "app.ts",
+          status: "modified",
+          hunks: [{ oldStart: 1, oldLines: 1, newStart: 1, newLines: 1 }],
+        },
+      ],
+    };
+    const worldWith = (noise: number, count = 101) =>
+      makeWorld({
+        files: [{ path: "app.ts", lines: 1100 }],
+        symbols: [
+          { id: "app.ts#changed", start: 1, end: 1 },
+          { id: "app.ts#wrapper", start: 2, end: 2 },
+          ...Array.from({ length: count }, (_, i) => ({
+            id: `app.ts#caller${i}`,
+            start: i + 3,
+            end: i + 3,
+          })),
+        ],
+        refs: [
+          ...Array.from({ length: noise }, (_, i) => ({
+            from: "app.ts#wrapper",
+            to: "app.ts#changed",
+            kind: "read" as const,
+            line: i + 1,
+          })),
+          { from: "app.ts#wrapper", to: "app.ts#changed", line: 2 },
+          ...Array.from({ length: count }, (_, i) => ({
+            from: `app.ts#caller${i}`,
+            to: "app.ts#wrapper",
+            line: i + 3,
+          })),
+        ],
+      });
+    const result = analyzeChange(change, worldWith(0).model).symbols[0]!.indirectCalls;
+    expect(result.paths).toHaveLength(100);
+    expect(result.truncated).toBe(true);
+    expect(analyzeChange(change, worldWith(0, 100).model).symbols[0]!.indirectCalls.truncated).toBe(
+      false,
+    );
+    expect(analyzeChange(change, worldWith(1001).model).symbols[0]!.indirectCalls).toEqual({
+      paths: [],
+      truncated: true,
+    });
+  });
+
   const w = world();
   const analysis = analyzeChange(CHANGE, w.model, w.getText);
 

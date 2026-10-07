@@ -349,11 +349,12 @@ interface ExplainerPatch {
 ```ts
 buildIndex(opts: { root: string; commit?: string; precise?: "auto" | "off" | "require";
                    languages?: string[]; providers?: readonly IndexProvider[]; cache?: boolean;
-                   gitOptions?: GitOptions; snapshot?: IndexInputs; getText?: GetText })
+                   gitOptions?: GitOptions; snapshot?: IndexInputs; getText?: GetText;
+                   signal?: AbortSignal; onProgress?: (event: IndexProgress) => void })
   : Promise<{ index: SymbolIndex; warnings: string[]; exclusions: ExclusionReport;
               extraction: ExtractionReport;
               work: { heuristicResolutionMs: number; semanticMs: number; semanticRuns: number } }>
-writeIndex(root: string, index: SymbolIndex): Promise<string>
+writeIndex(root: string, index: SymbolIndex, signal?: AbortSignal): Promise<string>
 // atomic write of <root>/.explainer/index-<commit>.json; ignores indexes and cache/ in .explainer/.gitignore
 ```
 
@@ -371,6 +372,18 @@ without symbols. References are sorted by file, position and kind. The same walk
 imports of `.json`/`.yaml`/`.toml`), resolved against the indexed files into `SymbolIndex.resources` (§2.18).
 `providers` replaces the additional provider registry (syntax and semantic; tests inject fakes).
 `languages` restricts the build to some `FileLanguage`s (the CLI does not expose it).
+
+**Progress and cancellation.** `IndexProgress` reports discovery, reading and extraction counts,
+heuristic resolution, additional providers and finishing. Events are transient; indexes do not store them.
+The CLI prints progress only on interactive stderr and outside JSON mode, at phase boundaries, completion,
+and at most once per second within a phase. SIGINT/SIGTERM and the injected `Io.signal` cancel the build
+with exit 130. Cancellation is checked between discovery batches, files and phases; a synchronous parse
+or heuristic resolution finishes before cancellation is observed. SCIP subprocess groups receive SIGTERM,
+then SIGKILL after the existing three-second grace period; cancellation cannot become heuristic fallback.
+`writeIndex` checks the signal before its atomic rename and removes its temporary file. Cancellation before
+publication retains the previous complete index, or creates no index when none existed. Cancellation once
+the atomic rename has started can leave the new complete index; it never leaves a partial replacement.
+Completed extraction cache entries and generated ignore metadata may remain after cancellation.
 
 **Files.** `git ls-files --cached --others --exclude-standard` when `root` is inside a git work tree (limited
 to the root's subtree), otherwise a walk that skips `.git node_modules dist build out vendor target
@@ -1357,6 +1370,13 @@ Reset may clear selected pins or all pins; a later placement edit conflicts rath
     constructor (`__init__`, `__new__`, `constructor`) also counts the calls of its class (`via: "class"`). For
     `__call__` and `handle`, which run when an instance is called, the code that builds the class goes to
     `viaInstance` (`via: "instance"`), marked as a guess.
+  - **One extra call hop**: `indirectCalls.paths` holds pairs of indexed `call` references, upstream
+    caller first: caller → intermediate function/method → changed function/method. Both sites retain their
+    own `precise` or `heuristic` label. Test files, cycles into the changed symbol or intermediate, and
+    constructor/instance guesses are excluded. This is possible reachability, not guaranteed execution;
+    callbacks and runtime middleware wiring are not inferred. At most 100 paths and 1000 inspected
+    references per changed symbol; `indirectCalls.truncated` reports when either cap stops the scan.
+    This analysis does not add nodes to draft maps or count indirect tests as direct coverage.
   - **Tests**: test functions (top level, or methods of a test class) with any reference to the symbol, or to
     its class for the two cases above; a test file only for a module-level reference (an import) when none of
     its tests has one. `testSymbols` lists the tests the change adds or edits. `untested` lists the changed
@@ -2689,7 +2709,9 @@ from `GET /api/base-file` (each file once; an error shows in its pane).
 
 - **Code.** A changed file's pane marks the head lines the change added (`xpl-add`) or rewrote (`xpl-chg`)
   with a green tint and bar, and `+` in a narrow gutter (`xpl-diff-gutter`), so the marks do not rely on colour
-  alone. Removed base lines are shown inline, read-only (`xpl-removed`, `−` in the gutter): above the lines
+  alone. Paired rewritten lines also mark the changed words or spaces on each side (`xpl-word-add`,
+  `xpl-word-del`); the line marks and source line numbers stay the same. Removed base lines are shown inline,
+  read-only (`xpl-removed`, `−` in the gutter): above the lines
   that replaced them, or below the line they followed for a pure deletion (git's `newStart` rule). A changed
   line inside the focus keeps its focus colour, its gutter cell is tinted instead, and changed lines are
   never dimmed. Without the base text the block says "N lines removed (the code before the change is not
@@ -2993,11 +3015,13 @@ identities to syntax ranges. This is a proposed contract revision, not a change 
 - The base of a change is not indexed. Base anchors have no symbols (`find` or a file span only), base code
   has no references, and the analysis of `xpl change` sees callers and tests at head only. A base anchor
   needs git to be checked (`git show`); without it the cached resolution is kept.
-- The diff marks whole lines: a rewritten line shows as removed, then added, with no word-level diff inside
-  it. The details panel tags a base anchor's row but does not show the base lines next to it.
+- The diff marks whole lines and the changed token run within aligned rewritten lines. It aligns nearby lines
+  by shared text within a hunk, leaving unmatched insertions and deletions as whole-line marks. Large hunks
+  (over 80 lines on either side) keep only the whole-line marks. It does not align moved lines. The details
+  panel tags a base anchor's row but does not show the base lines next to it.
 - `xpl change` needs the head checked out and indexed (the head must be the index commit); the change of an
   uncommitted working tree cannot be recorded, since it has no head commit.
-- The change analysis is depth 1 and as good as the index: callers through a variable, a callback or a
+- The change analysis adds at most one hop beyond direct callers and is as good as the index: callers through a variable, a callback or a
   framework are not seen, `callers via instance` is a guess, and "no test found" means no test names the
   symbol, not that no test runs it.
 - Drafts give structure, not understanding: a map, a sequence, anchors and a tour in the right order. The
@@ -3012,7 +3036,7 @@ identities to syntax ranges. This is a proposed contract revision, not a change 
   Node ≥22.12 is required. This source tree builds `@krimvp/xpl` 0.2.2 under MIT; a `v*` tag starts publication.
 
 **Next steps, roughly by value** (the review in `docs/review-2026-10-01.md` has the roadmap): an independent
-accuracy pass for change explainers; a word-level diff in rewritten lines; editable step titles and code in
+accuracy pass for change explainers; editable step titles and code in
 the viewer; the layout in a Web Worker; more
 language packs (each needs `extract`, `classifySite`, `resolveModule`, and optionally a SCIP resolver);
 publishing the packaged CLI through a selected release channel; a regeneration mode in the skill that

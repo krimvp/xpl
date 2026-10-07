@@ -321,6 +321,8 @@ export interface PaneDiff {
   lines?: ReadonlyMap<number, "added" | "changed">;
   removed?: readonly RemovedLines[];
   gone?: ReadonlySet<number>;
+  /** Changed character spans, keyed by the pane's own source line numbers. */
+  words?: ReadonlyMap<number, { from: number; to: number }>;
 }
 
 /** Base lines the change removed, placed above (`before`) or below (`after`) head line `at`. */
@@ -331,6 +333,7 @@ export interface RemovedLines {
   from: number;
   /** Their text; undefined while the code before the change is not loaded (or not in the page). */
   text: readonly string[] | undefined;
+  words?: ReadonlyMap<number, { from: number; to: number }>;
   /** How many lines (also when `text` is missing). */
   count: number;
   /** Why the text is missing, when it is. */
@@ -354,6 +357,7 @@ class RemovedWidget extends WidgetType {
       a.from === b.from &&
       a.count === b.count &&
       a.missing === b.missing &&
+      a.words === b.words &&
       (a.text === b.text || (a.text?.join("\n") ?? "") === (b.text?.join("\n") ?? ""))
     );
   }
@@ -370,11 +374,21 @@ class RemovedWidget extends WidgetType {
         ? `Removed by this change (line ${block.from} before the change)`
         : `Removed by this change (lines ${block.from}–${to} before the change)`;
     if (block.text) {
-      for (const text of block.text) {
+      for (const [index, text] of block.text.entries()) {
         const line = document.createElement("div");
         line.className = "xpl-removed-line";
         if (text === "") line.textContent = "\u200b";
-        else appendBreakable(line, text);
+        else {
+          const span = block.words?.get(block.from + index);
+          if (span && span.to > span.from) {
+            appendBreakable(line, text.slice(0, span.from));
+            const marked = document.createElement("span");
+            marked.className = "xpl-word-del";
+            appendBreakable(marked, text.slice(span.from, span.to));
+            line.append(marked);
+            appendBreakable(line, text.slice(span.to));
+          } else appendBreakable(line, text);
+        }
         // the hanging indent of a wrapped code line (see `hangingIndent`); one row looks the same either way
         const columns = indentColumns(text) + 2;
         line.style.paddingLeft = `calc(8px + ${columns}ch)`;
@@ -452,6 +466,15 @@ function decorateDiff(doc: Text, diff: PaneDiff): Diffed {
         line.from,
       ),
     );
+    const word = diff.words?.get(n);
+    if (word && word.to > word.from && word.to <= line.text.length) {
+      items.push(
+        Decoration.mark({ class: gone ? "xpl-word-del" : "xpl-word-add" }).range(
+          line.from + word.from,
+          line.from + word.to,
+        ),
+      );
+    }
   }
   for (const block of diff.removed ?? []) {
     if (block.count <= 0) continue;
