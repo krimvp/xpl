@@ -2383,6 +2383,11 @@ ready pages and draft previews; an export decision never retargets a request to 
   points at (`test` anchors, and focused code in test files), one entry per test function, gathered in one
   list. The summaries of the focused elements only stand in for a missing note. A tour picker sits above the
   title when there are several tours. The Guide opens at its top, not scrolled to step 1.
+  Each section shows a source excerpt beside its prose (stacked in narrow sections). `stepSelection`
+  reuses the full code view's checked focus, including explicit `step.code` and before-change anchors.
+  The first range in source order supplies at most 12 lines; a count explains when more ranges exist.
+  "Open full code" opens that complete range and its before/head side. Missing, drifted or unavailable
+  source is stated instead of guessed. Source text comes from the bundle or the existing file loader.
 - **Map** and **Flow**: the authored graph view, or flow or sequence view, that best matches the selection
   (`workspace.ts`), with a picker of the others. Without a graph view the Map is generated from the flow's
   participants (else the top level of the repo); without a flow, Flow lists the guide's steps in order. Count
