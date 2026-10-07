@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: xpl documentation
+    url: https://krimvp.github.io/xpl/docs/
+    about: Read the documentation before opening an issue.

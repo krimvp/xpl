@@ -1,0 +1,59 @@
+name: Bug report
+description: Report a problem with xpl
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: xpl version
+      description: Run `xpl --version`.
+      placeholder: 0.1.0
+    validations:
+      required: true
+  - type: textarea
+    id: doctor
+    attributes:
+      label: "xpl doctor --json output"
+      description: Include the output, removing any sensitive local paths first.
+      render: json
+    validations:
+      required: false
+  - type: input
+    id: environment
+    attributes:
+      label: Operating system and Node version
+      placeholder: macOS 15, Node 22.12
+    validations:
+      required: true
+  - type: input
+    id: language
+    attributes:
+      label: Language of the repository being explained
+      placeholder: TypeScript
+    validations:
+      required: false
+  - type: textarea
+    id: command
+    attributes:
+      label: Command and output
+      description: Include the command you ran and the relevant output. Remove secrets and private source.
+      render: shell
+    validations:
+      required: true
+  - type: dropdown
+    id: precise-off
+    attributes:
+      label: Does `--precise off` change the result?
+      options:
+        - I have not tried
+        - Yes
+        - No
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect?
+    validations:
+      required: true
