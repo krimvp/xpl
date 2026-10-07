@@ -67,6 +67,7 @@ const MAX_WARNINGS = 5;
 // ─── Processes ────────────────────────────────────────────────────────────────────────────────────
 
 export interface CommandOptions {
+  signal?: AbortSignal;
   cwd: string;
   env: NodeJS.ProcessEnv;
   timeoutMs: number;
@@ -102,6 +103,7 @@ function killTree(pid: number | undefined, signal: NodeJS.Signals): void {
 
 export const runCommand: CommandRunner = (command, args, options) =>
   new Promise((resolve, reject) => {
+    if (options.signal?.aborted) return reject(options.signal.reason);
     const child = spawn(command, [...args], {
       cwd: options.cwd,
       env: options.env,
@@ -122,26 +124,44 @@ export const runCommand: CommandRunner = (command, args, options) =>
     let killTimer: NodeJS.Timeout | undefined;
     let closed = false;
     let exitCode: number | null = null;
-    const timer = setTimeout(() => {
-      timedOut = true;
+    const finish = () => {
+      options.signal?.removeEventListener("abort", abort);
+      if (options.signal?.aborted) reject(options.signal.reason);
+      else resolve({ code: exitCode, stdout, stderr, timedOut });
+    };
+    let stopping = false;
+    const stop = () => {
+      if (stopping) return;
+      stopping = true;
       killTree(child.pid, "SIGTERM");
       killTimer = setTimeout(() => {
         // The group may outlive its leader and close all pipes. Finish escalation before returning.
         killTree(child.pid, "SIGKILL");
         killTimer = undefined;
-        if (closed) resolve({ code: exitCode, stdout, stderr, timedOut });
+        if (closed) finish();
       }, KILL_GRACE_MS);
+    };
+    const abort = () => {
+      clearTimeout(timer);
+      stop();
+    };
+    const timer = setTimeout(() => {
+      timedOut = true;
+      stop();
     }, options.timeoutMs);
+    options.signal?.addEventListener("abort", abort, { once: true });
+    if (options.signal?.aborted) abort();
     child.on("error", (error) => {
       clearTimeout(timer);
       clearTimeout(killTimer);
+      options.signal?.removeEventListener("abort", abort);
       reject(error);
     });
     child.on("close", (code) => {
       clearTimeout(timer);
       closed = true;
       exitCode = code;
-      if (!killTimer) resolve({ code, stdout, stderr, timedOut });
+      if (!killTimer) finish();
     });
   });
 
@@ -193,6 +213,7 @@ export function extractWarnings(label: string, ...outputs: string[]): string[] {
 // ─── Configuration ────────────────────────────────────────────────────────────────────────────────
 
 export interface ScipRunConfig {
+  signal?: AbortSignal;
   /** Per-tool timeout in milliseconds. */
   timeoutMs: number;
   run: CommandRunner;
@@ -244,8 +265,16 @@ async function runTool(
 ): Promise<CommandResult> {
   let result: CommandResult;
   try {
-    result = await cfg.run(commandName(command), args, { cwd, env, timeoutMs: cfg.timeoutMs });
+    cfg.signal?.throwIfAborted();
+    result = await cfg.run(commandName(command), args, {
+      cwd,
+      env,
+      timeoutMs: cfg.timeoutMs,
+      signal: cfg.signal,
+    });
+    cfg.signal?.throwIfAborted();
   } catch (error) {
+    cfg.signal?.throwIfAborted();
     const reason = error instanceof Error ? error.message : String(error);
     throw new ScipRunError(
       `${label} could not be started (is \`${command}\` installed and on PATH?): ${reason}`,

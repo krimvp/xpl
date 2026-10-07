@@ -62,6 +62,12 @@ Precise tools/dependencies and agent authoring can have separate network require
 
 ## `xpl index [--precise auto|off|require] [--commit c] [--no-cache] [--scip artifact|manifest.json]`
 
+An interactive terminal shows phases and file counts on stderr. Progress is omitted for redirected stderr
+and `--json`. Ctrl+C stops between files or phases and stops SCIP subprocesses, then exits with code 130.
+Before publication, cancellation preserves the previous complete index (or leaves no index if none existed).
+An atomic rename already underway may finish; indexes are never partially replaced. Completed extraction
+cache entries may remain.
+
 Builds `.explainer/index-<commit>.json` (and `.explainer/.gitignore` with `index-*.json` and `cache/`). The commit id is the short HEAD when the repo root is a clean git top-level, else `wt-<hash>` of the files. Files: `git ls-files` (or a walk that skips `node_modules`, `dist`, dot-dirs…), text only, ≤ 1 MB.
 The output reports excluded candidates by reason, with up to three root-relative paths per reason.
 `--json` returns the same counts in `exclusions`. Git-ignored files are not listed by git; without git,

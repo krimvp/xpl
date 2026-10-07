@@ -1,6 +1,7 @@
 import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { run } from "../src/cli.js";
 import { INDEX_SCHEMA } from "@xpl/core";
 import {
   copyFixture,
@@ -171,4 +172,66 @@ describe("xpl index", () => {
     const json = (await xplJson(dir, "index", "--precise", "off")).json;
     expect(json.explainersToResolve).toEqual(["demo"]);
   });
+});
+
+describe("index progress and cancellation", () => {
+  it("reports bounded phase and file progress only for interactive human output", async () => {
+    const dir = copyFixture();
+    for (const json of [false, true]) {
+      const out: string[] = [],
+        err: string[] = [];
+      const code = await run(["index", "--precise", "off", ...(json ? ["--json"] : [])], {
+        cwd: dir,
+        isTTY: true,
+        out: (text) => out.push(text),
+        err: (text) => err.push(text),
+      });
+      expect(code).toBe(0);
+      if (json) {
+        expect(err).toEqual([]);
+        expect(JSON.parse(out.join("\n")).ok).toBe(true);
+      } else {
+        expect(err).toContain("index: Extracting 12/12 files");
+        expect(err).toContain("index: Writing index");
+        expect(err.length).toBeLessThanOrEqual(10);
+      }
+    }
+  });
+
+  it.each([
+    [false, "Extracting"],
+    [true, "Extracting"],
+    [false, "Writing index"],
+    [true, "Writing index"],
+  ] as const)(
+    "cancellation preserves the last complete index (previous=%s, phase=%s)",
+    async (previous, phase) => {
+      const dir = copyFixture();
+      const path = ".explainer/index-stable.json";
+      if (previous) await xpl(dir, "index", "--precise", "off", "--commit", "stable");
+      const before = previous ? readFile(dir, path) : undefined;
+      writeFile(dir, "new.ts", "export const newSymbol = 1;\n");
+      const abort = new AbortController();
+      const err: string[] = [];
+      const code = await run(["index", "--precise", "off", "--commit", "stable"], {
+        cwd: dir,
+        isTTY: true,
+        signal: abort.signal,
+        out: () => {},
+        err: (text) => {
+          err.push(text);
+          if (text.startsWith(`index: ${phase}`)) abort.abort();
+        },
+      });
+      expect(code).toBe(130);
+      expect(err.join("\n")).toContain("Indexing cancelled");
+      if (previous) expect(readFile(dir, path)).toBe(before);
+      else expect(existsSync(join(dir, path))).toBe(false);
+      expect(
+        (existsSync(join(dir, ".explainer")) ? readdirSync(join(dir, ".explainer")) : []).filter(
+          (name) => name.endsWith(".tmp"),
+        ),
+      ).toEqual([]);
+    },
+  );
 });
