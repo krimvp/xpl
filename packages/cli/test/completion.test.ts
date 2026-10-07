@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
 import { COMMANDS } from "../src/cli.js";
 import { GLOBAL_OPTIONS } from "../src/args.js";
@@ -18,6 +18,38 @@ function bashComplete(script: string, cwd: string, ...words: string[]): string[]
     .trim()
     .split("\n")
     .filter(Boolean);
+}
+
+function zshComplete(script: string, cwd: string, ...words: string[]): string[] {
+  const file = writeFile(cwd, "completion.zsh", script);
+  const code = [
+    "function compdef { :; }",
+    'function compadd { shift; print -rl -- "$@"; }',
+    'source "$1"',
+    "shift",
+    'words=( "$@" )',
+    "CURRENT=$#words",
+    "_xpl_completion",
+  ].join("\n");
+  return execFileSync("zsh", ["-f", "-c", code, "zsh", file, ...words], {
+    cwd,
+    encoding: "utf8",
+  })
+    .trim()
+    .split("\n")
+    .filter(Boolean);
+}
+
+function fishComplete(script: string, cwd: string, line: string): string[] {
+  const file = writeFile(cwd, "completion.fish", script);
+  return execFileSync("fish", ["-c", 'source $argv[1]; complete -C "$argv[2]"', "--", file, line], {
+    cwd,
+    encoding: "utf8",
+  })
+    .trim()
+    .split("\n")
+    .filter(Boolean)
+    .map((candidate) => candidate.split("\t")[0]!);
 }
 
 describe("xpl completion", () => {
@@ -43,5 +75,29 @@ describe("xpl completion", () => {
     expect(bashComplete(out, dir, "xpl", "view", "")).toEqual(["alpha", "beta"]);
     expect(bashComplete(out, dir, "xpl", "view", "a")).toEqual(["alpha"]);
     expect((await invoke(["completion", "powershell"])).code).toBe(2);
+  });
+
+  it("zsh offers guide names after value options and only at guide positions", async () => {
+    const { out } = await invoke(["completion", "zsh"]);
+    const dir = makeTempDir();
+    writeFile(dir, ".explainer/alpha.explainer.json", "{}");
+    writeFile(dir, ".explainer/my guide.explainer.json", "{}");
+    expect(zshComplete(out, dir, "xpl", "view", "--port", "4747", "")).toEqual([
+      "alpha",
+      "my guide",
+    ]);
+    expect(zshComplete(out, dir, "xpl", "service", "start", "")).toEqual(["alpha", "my guide"]);
+    expect(zshComplete(out, dir, "xpl", "apply", "alpha", "")).toEqual([]);
+  });
+
+  const fishIt = spawnSync("fish", ["--version"]).status === 0 ? it : it.skip;
+  fishIt("fish offers guide names only at guide positions", async () => {
+    const { out } = await invoke(["completion", "fish"]);
+    const dir = makeTempDir();
+    writeFile(dir, ".explainer/alpha.explainer.json", "{}");
+    writeFile(dir, ".explainer/my guide.explainer.json", "{}");
+    expect(fishComplete(out, dir, "xpl view --port 4747 ")).toEqual(["alpha", "my guide"]);
+    expect(fishComplete(out, dir, "xpl service start ")).toEqual(["alpha", "my guide"]);
+    expect(fishComplete(out, dir, "xpl apply alpha ")).toEqual([]);
   });
 });

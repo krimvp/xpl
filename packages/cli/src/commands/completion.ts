@@ -11,6 +11,12 @@ function flags(options: OptionDefs): string[] {
   ]);
 }
 
+function valueFlags(options: OptionDefs): string[] {
+  return Object.entries(options)
+    .filter(([, def]) => def.type === "string")
+    .flatMap(([name, def]) => [`--${name}`, ...(def.short ? [`-${def.short}`] : [])]);
+}
+
 function words(items: readonly string[]): string {
   for (const item of items) {
     if (!/^[a-z0-9][a-z0-9-]*$|^--?[a-z0-9][a-z0-9-]*$/.test(item))
@@ -28,11 +34,7 @@ function bash(commands: readonly CommandSpec[]): string {
   const cases = commands
     .map((c) => {
       const opts = words(flags({ ...GLOBAL_OPTIONS, ...c.options }));
-      const values = words(
-        Object.entries({ ...GLOBAL_OPTIONS, ...c.options })
-          .filter(([, def]) => def.type === "string")
-          .flatMap(([name, def]) => [`--${name}`, ...(def.short ? [`-${def.short}`] : [])]),
-      );
+      const values = words(valueFlags({ ...GLOBAL_OPTIONS, ...c.options }));
       return `    ${c.name}) opts='${opts}'; value_opts='${values}'; guide_at=${guidePosition(c)} ;;`;
     })
     .join("\n");
@@ -79,13 +81,14 @@ function zsh(commands: readonly CommandSpec[]): string {
   const cases = commands
     .map(
       (c) =>
-        `    ${c.name}) opts=(${words(flags({ ...GLOBAL_OPTIONS, ...c.options }))}); guide_at=${guidePosition(c)} ;;`,
+        `    ${c.name}) opts=(${words(flags({ ...GLOBAL_OPTIONS, ...c.options }))}); value_opts=(${words(valueFlags({ ...GLOBAL_OPTIONS, ...c.options }))}); guide_at=${guidePosition(c)} ;;`,
     )
     .join("\n");
   return `# Source after compinit: source <(xpl completion zsh)
 _xpl_completion() {
   local cur="$words[CURRENT]" cmd="$words[2]" guide_at=-1 file name
-  local -a opts
+  local i word value skip=0 position=0
+  local -a opts value_opts
   if (( CURRENT == 2 )); then
     compadd -- ${names}
     return
@@ -97,7 +100,19 @@ ${cases}
     compadd -- "\${opts[@]}"
     return
   fi
-  (( CURRENT != guide_at + 3 )) && return
+  for ((i=3; i<CURRENT; i++)); do
+    word="$words[i]"
+    if (( skip )); then skip=0; continue; fi
+    case "$word" in
+      --*=*) continue ;;
+    esac
+    for value in $value_opts; do
+      if [[ "$word" == "$value" ]]; then skip=1; break; fi
+    done
+    if (( skip )); then continue; fi
+    [[ "$word" == -* ]] || ((position+=1))
+  done
+  (( skip || position != guide_at )) && return
   for file in .explainer/*.explainer.json(N); do
     name="\${file:t}"
     name="\${name%.explainer.json}"
@@ -110,6 +125,27 @@ compdef _xpl_completion xpl`;
 function fish(commands: readonly CommandSpec[]): string {
   const lines = [
     "# Save with: xpl completion fish > ~/.config/fish/completions/xpl.fish",
+    "function __xpl_guide_at --argument-names command target",
+    "    set -l value_opts $argv[3..-1]",
+    "    set -l tokens (commandline -opc)",
+    "    test (count $tokens) -ge 2; or return 1",
+    '    test "$tokens[2]" = "$command"; or return 1',
+    "    set -l skip 0",
+    "    set -l position 0",
+    "    for token in $tokens[3..-1]",
+    "        if test $skip -eq 1",
+    "            set skip 0",
+    "            continue",
+    "        end",
+    "        string match -q -- '--*=*' \"$token\"; and continue",
+    '        if contains -- "$token" $value_opts',
+    "            set skip 1",
+    "            continue",
+    "        end",
+    "        string match -q -- '-*' \"$token\"; or set position (math $position + 1)",
+    "    end",
+    "    test $skip -eq 0; and test $position -eq $target",
+    "end",
     "function __xpl_guide_names",
     "    for file in .explainer/*.explainer.json",
     '        test -f "$file"; or continue',
@@ -132,7 +168,7 @@ function fish(commands: readonly CommandSpec[]): string {
     }
     if (guidePosition(command) >= 0)
       lines.push(
-        `complete -c xpl -n '__fish_seen_subcommand_from ${command.name}' -a '(__xpl_guide_names)'`,
+        `complete -c xpl -n '__xpl_guide_at ${command.name} ${guidePosition(command)} ${words(valueFlags({ ...GLOBAL_OPTIONS, ...command.options }))}' -a '(__xpl_guide_names)'`,
       );
   }
   return lines.join("\n");
