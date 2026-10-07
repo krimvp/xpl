@@ -489,6 +489,50 @@ test.describe("the address bar", () => {
     await expect(page.locator('[data-section-id="t2"]')).not.toBeInViewport();
   });
 
+  test("changing tours clears the old linked-step warning", async ({ page }) => {
+    await openVariant(
+      page,
+      (bundle) => {
+        bundle.explainer.tours.push({
+          ...bundle.explainer.tours[0],
+          id: "tour:other",
+          title: "Other tour",
+          steps: [{ ...bundle.explainer.tours[0].steps[0], id: "other-step" }],
+        });
+      },
+      "?perspective=guide&tour=tour:intro&step-id=t2",
+    );
+    await page.getByTestId("guide-tour-picker").selectOption("tour:other");
+    await expect(page.getByRole("heading", { name: "Other tour" })).toBeVisible();
+    await expect(page.getByRole("alert")).toHaveCount(0);
+  });
+
+  test("a removed linked tour still explains the fallback when no tours remain", async ({
+    page,
+  }) => {
+    await openVariant(
+      page,
+      (bundle) => {
+        bundle.explainer.tours = [];
+      },
+      "?perspective=guide&tour=tour:removed&step-id=t2",
+    );
+    await expect(page.getByRole("alert")).toContainText("linked guide is no longer available");
+    await expect(page.getByRole("alert")).toBeFocused();
+  });
+
+  test("a same-page Search step link focuses the heading and offers Continue", async ({ page }) => {
+    await open(page, "?perspective=guide");
+    await page.getByRole("button", { name: "Search and guides" }).click();
+    const panel = page.getByRole("dialog", { name: "Search and guides" });
+    await panel.getByRole("searchbox", { name: "Search this snapshot" }).fill("Where failures go");
+    await panel.locator('[data-kind="step"]').first().click();
+    await expect(page).toHaveURL(/step-id=t2/);
+    const target = page.locator('[data-section-id="t2"]');
+    await expect(target.locator("h3")).toBeFocused();
+    await expect(target.getByRole("button", { name: "Continue from this step" })).toBeVisible();
+  });
+
   test("?mode=present&tour=<id>&step=<n> opens that step; the URL follows the steps and Esc", async ({
     page,
   }) => {

@@ -2379,8 +2379,9 @@ ready pages and draft previews; an export decision never retargets a request to 
   list. The summaries of the focused elements only stand in for a missing note. A tour picker sits above the
   title when there are several tours. The Guide opens at its top, except a link to a stable step ID scrolls
   to that section and focuses its heading. Each section has a link that preserves the selected guide and a
-  linked section offers Continue from this step in Present. A missing step ID falls back to the guide start
-  with an explanation; its old numeric position does not substitute for the removed step.
+  selected section offers Continue from this step in Present, including after same-page Search navigation.
+  A missing step ID falls back to the guide start with an explanation; its old numeric position does not
+  substitute for the removed step. A missing tour still shows the explanation when no tours remain.
   Each section shows a source excerpt beside its prose (stacked in narrow sections). `stepSelection`
   reuses the full code view's checked focus, including explicit `step.code` and before-change anchors.
   The first range in source order supplies at most 12 lines; a count explains when more ranges exist.

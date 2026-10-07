@@ -32,17 +32,22 @@ export function Guide({ onReading }: { onReading?: (stepId: string | undefined) 
   const store = useStore();
   const state = useViewerState();
   const tour = store.currentTour() ?? state.model.tours[0];
-  const [linked] = useState(() => {
+  const [staleLink, setStaleLink] = useState(() => {
     const params = readLaunchParams();
-    return params.perspective === "guide" ? params : undefined;
+    if (params.perspective !== "guide" || !params.stepId) return false;
+    const linkedTour = params.tour
+      ? state.model.tours.find(
+          (item) => item.id === params.tour || item.id === `tour:${params.tour}`,
+        )
+      : tour;
+    return !linkedTour?.steps.some((step) => step.id === params.stepId);
   });
-  const linkedStep = linked?.stepId;
-  const staleLink =
-    !!linkedStep &&
-    ((linked?.tour !== undefined &&
-      linked.tour !== tour?.id &&
-      linked.tour !== tour?.id.slice(5)) ||
-      !tour?.steps.some((step) => step.id === linkedStep));
+  const initialStepSeq = useRef(state.stepSeq);
+  const initialTourId = useRef(state.tour?.tourId);
+  useEffect(() => {
+    if (state.stepSeq !== initialStepSeq.current || state.tour?.tourId !== initialTourId.current)
+      setStaleLink(false);
+  }, [state.stepSeq, state.tour?.tourId]);
   const body = useRef<HTMLDivElement>(null);
   const staleNotice = useRef<HTMLParagraphElement>(null);
   const initialized = useRef(false);
@@ -84,6 +89,7 @@ export function Guide({ onReading }: { onReading?: (stepId: string | undefined) 
   useEffect(() => {
     if (
       !initialized.current &&
+      !staleLink &&
       tour &&
       !state.applied &&
       state.selection.length === 0 &&
@@ -103,6 +109,7 @@ export function Guide({ onReading }: { onReading?: (stepId: string | undefined) 
     state.tour?.step,
     state.canGoBack,
     state.canGoForward,
+    staleLink,
   ]);
 
   useEffect(() => {
@@ -126,9 +133,8 @@ export function Guide({ onReading }: { onReading?: (stepId: string | undefined) 
       viewport = scroller.getBoundingClientRect();
     if (at.top < viewport.top || at.bottom > viewport.bottom)
       scroller.scrollTop += at.top - viewport.top - 24;
-    if (active === linkedStep && !staleLink)
-      section.querySelector<HTMLElement>("h3")?.focus({ preventScroll: true });
-  }, [active, linkedStep, staleLink]);
+    section.querySelector<HTMLElement>("h3")?.focus({ preventScroll: true });
+  }, [active, state.stepSeq]);
 
   useEffect(() => {
     if (staleLink) staleNotice.current?.focus({ preventScroll: true });
@@ -137,6 +143,11 @@ export function Guide({ onReading }: { onReading?: (stepId: string | undefined) 
   if (!tour)
     return (
       <div className="guide-fallback">
+        {staleLink && (
+          <p className="guide-link-notice" role="alert" tabIndex={-1} ref={staleNotice}>
+            This linked guide is no longer available. Choose a topic below.
+          </p>
+        )}
         <p className="eyebrow">Start here</p>
         <h2>{state.explainer.title}</h2>
         <Audience />
@@ -240,7 +251,7 @@ export function Guide({ onReading }: { onReading?: (stepId: string | undefined) 
             index={index}
             tourId={tour.id}
             active={step.id === active}
-            linked={step.id === linkedStep && !staleLink}
+            linked={step.id === active && !staleLink}
           />
         ))}
       </div>

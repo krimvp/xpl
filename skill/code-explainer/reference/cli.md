@@ -468,7 +468,8 @@ at staging. Keep the staged directory tree for sibling links; detached copies re
 cannot navigate missing sibling versions. Save as HTML preserves navigation with the same query keys,
 without live service attachment. An explicit navigation target overrides saved navigation as a whole.
 Each Guide section links to its stable `tour` and `step-id`; a direct link restores the guide and focuses
-that section, with an action to continue in Present. A removed step falls back to the Guide with an explanation.
+that section, with an action to continue in Present. Search can select a step on the open Guide the same way.
+A removed step falls back to the Guide with an explanation, even when its tour is gone.
 Launch, saved HTML and browser Back/Forward share one restoration function. Applied step, view,
 perspective, focus and source cursor are independent; restoring one does not clear another.
 An empty `step-id=` records no applied step, including a tour detour. Older compact tour links without
