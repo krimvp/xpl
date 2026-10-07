@@ -1,8 +1,11 @@
 name: Pages
 
+# The public site deploys only from a release tag (v*), so it documents the version users install from
+# npm. Pull requests build it without deploying. A manual run deploys only when started on a v* tag.
+# The github-pages environment must allow deployments from v* tags (Settings > Environments).
 on:
   push:
-    branches: [main]
+    tags: ["v*"]
   pull_request:
   workflow_dispatch:
 
@@ -28,13 +31,13 @@ jobs:
           version: "0.11.32"
       - run: npm ci
       - run: npm run site
-      - if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+      - if: github.event_name != 'pull_request' && startsWith(github.ref, 'refs/tags/v')
         uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3
         with:
           path: _site
 
   deploy:
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    if: github.event_name != 'pull_request' && startsWith(github.ref, 'refs/tags/v')
     needs: build
     runs-on: self-hosted
     permissions:

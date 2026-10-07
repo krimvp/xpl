@@ -368,6 +368,7 @@ pinsTest(
     );
     const code = byId(page, levels[2]![1]!);
     const handle = page.getByRole("button", { name: "Move Worker.run", exact: true });
+    await handle.hover();
     const rect = (await handle.boundingBox())!;
     const beforeDrag = readFileSync(path, "utf8");
     await page.mouse.move(rect.x + rect.width / 2, rect.y + rect.height / 2);
@@ -386,6 +387,7 @@ pinsTest(
     );
     expect(readFileSync(path, "utf8")).toBe(beforeDrag);
     for (const interruption of ["selection", "pointercancel"] as const) {
+      await handle.hover();
       const at = (await handle.boundingBox())!;
       await page.mouse.move(at.x + at.width / 2, at.y + at.height / 2);
       await page.mouse.down();
@@ -405,6 +407,7 @@ pinsTest(
       await page.evaluate((id) => window.__xpl!.select([id]), levels[2]![1]!);
     }
 
+    await handle.hover();
     const dragRect = (await handle.boundingBox())!;
     const scale = await code.evaluate((el) => (el as SVGGraphicsElement).getScreenCTM()!.a);
     const expectedDrag = {

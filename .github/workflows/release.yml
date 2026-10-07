@@ -1,0 +1,54 @@
+name: Release
+
+# @krimvp/xpl uses npm trusted publishing with provenance. Configure npm's trusted publisher for
+# krimvp/xpl and .github/workflows/release.yml before creating a tag. npm requires GitHub-hosted runners;
+# the owner-only v* tag rule is the release gate, so this workflow has no manual environment approval.
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+      - run: npm install --global npm@11.5.1
+      - name: Check tag and registry
+        run: |
+          git merge-base --is-ancestor HEAD origin/main || {
+            echo "::error::Release tag must point to a commit on main."
+            exit 1
+          }
+          node scripts/check-release.mjs "$GITHUB_REF_NAME"
+      - run: npm ci
+      - run: node --test scripts/check-release.test.mjs
+      - run: npm run build
+      - run: npx playwright install --with-deps chromium
+        working-directory: packages/viewer
+      - run: npm run test:install -- "$RUNNER_TEMP/xpl-install"
+      - run: npm pack --dry-run ./packages/cli/dist
+      - run: npm publish --dry-run ./packages/cli/dist --access public
+      - name: Publish to npm
+        run: npm publish ./packages/cli/dist --access public --provenance
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" --verify-tag --generate-notes

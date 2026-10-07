@@ -21,8 +21,8 @@ contribution guidance are in the [public GitHub repository](https://github.com/k
 ## Quick start
 
 Needs Node 22.12 or newer and npm for installation. The local artifact is exercised on Linux x64
-(WSL2, Node 22.23.1). Other platforms have not been verified. `@krimvp/xpl` 0.1.0 is published on npm
-under MIT. Install with the command below. You can also build from the
+(WSL2, Node 22.23.1). Other platforms have not been verified. This source checkout builds version 0.2.0;
+the command below installs the latest published `@krimvp/xpl` from npm. You can also build from the
 [source repository](https://github.com/krimvp/xpl).
 
 XPL helps an author publish a focused explanation of code. Choose a reader and a question before
@@ -40,12 +40,12 @@ Or build from a source checkout:
 ```sh
 npm install && npm run build
 npm pack ./packages/cli/dist
-npm install -g --ignore-scripts ./krimvp-xpl-0.1.0.tgz
+npm install -g --ignore-scripts ./krimvp-xpl-0.2.0.tgz
 xpl skill install
 ```
 
 A maintainer's tarball can also be installed offline with
-`npm install -g --offline --ignore-scripts /absolute/path/krimvp-xpl-0.1.0.tgz`.
+`npm install -g --offline --ignore-scripts /absolute/path/krimvp-xpl-0.2.0.tgz`.
 No source checkout or build is needed to install an npm package or tarball. After updating the CLI, rerun `xpl skill install`
 to update the skill and its launcher. The launcher records the installed CLI's absolute path; rerun the
 installer after moving the CLI. For one project, use `xpl skill install --dir .claude/skills/code-explainer`.
@@ -483,7 +483,7 @@ build step between packages in development. After `npm run build`, `node package
 (hidden) loads every tree-sitter grammar from `dist/wasm`.
 
 The workspace packages stay private. The build writes standalone npm metadata in `packages/cli/dist`
-as `@krimvp/xpl` 0.1.0 under MIT, with a short README and LICENSE and no install dependencies or scripts. `npm run pack` packs that directory,
+as `@krimvp/xpl` 0.2.0 under MIT, with a short README and LICENSE and no install dependencies or scripts. `npm run pack` packs that directory,
 not the workspace package. `integrity.json` records SHA-256 hashes for bundled files; `doctor` detects
 missing or changed files. These hashes detect damage, not the identity of an artifact's publisher.
 The install check copies fixture inputs to scratch, denies CLI checkout reads with Node permissions,

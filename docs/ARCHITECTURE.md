@@ -101,7 +101,7 @@ scripts/                pr-screenshots.sh (before/after viewer screenshots; pack
                         needs-screenshots.sh (does a change need them), publish-pr-shots.sh (push to pr-assets),
                         build-site.mjs (build xpl, bundle a fixture copy, build the docs, check site links)
 .github/                pull_request_template.md, workflows/ci.yml (checks, e2e, PR screenshots),
-                        workflows/pages.yml (build on PRs; publish the site on main pushes or manual dispatch)
+                        workflows/pages.yml (build on PRs; publish the site on v* release tags)
 ```
 
 Conventions (all packages):
@@ -110,8 +110,9 @@ Conventions (all packages):
   `fixtures/ts-jobrunner` with the built CLI (`index --precise off`, a text-only patch through `apply`,
   then `bundle jobrunner`). The patch fills required summaries missing from the committed fixture. Local page
   and CSS references and the embedded demo payload are checked before success. Pages deploys this output
-  at `https://krimvp.github.io/xpl/`; pull requests build without deploying. The public artifact contains
-  the landing page, the fixture example and the user docs, not internal docs or the repository's own explainer.
+  at `https://krimvp.github.io/xpl/` when a `v*` release tag is pushed; pull requests build without deploying.
+  The public artifact contains the landing page, the fixture example and the user docs, not internal docs or
+  the repository's own explainer.
 - The user docs (`docs-site/`) are built with Zensical into `_site/docs/`, under `uv run` with every Python
   package pinned in `docs-site/requirements.txt`. A page line `<!-- include path -->` takes a whole file and
   `<!-- include path "## Heading" -->` the text under one heading, so `README.md` and the product skill's
@@ -1379,14 +1380,20 @@ metadata in `packages/cli/dist`, with `@xpl/cli`'s version, a `bin` entry, Node 
 or install scripts. The viewer is required at build time. The directory carries the bundled CLI, viewer,
 WASM runtime and grammars, Rust tags query, the skill, a short README, MIT LICENSE and `integrity.json`.
 The published name is `publishName` (`@krimvp/xpl`) in the private `@xpl/cli` workspace manifest; its version is
-0.1.0. The installed-artifact check retains service restart/recovery and checks watch pause/resume,
+0.2.0. The installed-artifact check retains service restart/recovery and checks watch pause/resume,
 durable job history and unavailable-runner submission. It also checks the published name/version, license
 and packed file inventory. npm rejected `xpl` as too similar to an existing name; `@krimvp/xpl` is the selected fallback.
 `npm run pack -- --pack-destination <outside-repo-dir>` builds and packs that directory. Install its local tarball with
 `npm install --global --prefix "$HOME/.local" --offline --ignore-scripts <absolute-tarball-path>`; put
-`$HOME/.local/bin` on PATH. No source build is needed at installation. `@krimvp/xpl` 0.1.0 is published on npm
-under MIT; install with `npm install --global @krimvp/xpl`. Releases are published from main only. Publication is a
-separate step; nothing is published by build, pack, diagnosis or skill installation.
+`$HOME/.local/bin` on PATH. No source build is needed at installation. This source tree builds version 0.2.0;
+a `v*` tag starts publication. Install the latest published version with
+`npm install --global @krimvp/xpl`. Nothing is published by build, pack, diagnosis or skill installation.
+
+The release workflow accepts an owner-created, immutable `v*` tag only when it points to `main`, matches the
+package version and names a version absent from npm. On GitHub-hosted Ubuntu it builds, checks the installed
+tarball, runs package dry runs, then publishes through npm trusted publishing with provenance and creates a
+GitHub Release. npm must trust `.github/workflows/release.yml` for `@krimvp/xpl`; GitHub-hosted Actions must
+be available before a tag is created. Pages builds the public site from that same tag.
 
 `doctor` checks SHA-256 hashes from the artifact inventory and loads every grammar. Hashes detect damage,
 not publisher identity. Skill availability is optional for reading, required with `--agent claude`.
@@ -2935,7 +2942,7 @@ identities to syntax ranges. This is a proposed contract revision, not a change 
   problems, not wrong claims. `repeats-summary` finds near-verbatim repeats only.
 - Workspace packages are private; build/pack produce a standalone local npm tarball with
   its viewer, grammars and skill. Install/update and reader/export checks cover Linux x64/WSL2 only.
-  Node ≥22.12 is required. `@krimvp/xpl` 0.1.0 is published on npm under MIT. Releases are published from main only.
+  Node ≥22.12 is required. This source tree builds `@krimvp/xpl` 0.2.0 under MIT; a `v*` tag starts publication.
 
 **Next steps, roughly by value** (the review in `docs/review-2026-10-01.md` has the roadmap): an independent
 accuracy pass for change explainers; a word-level diff in rewritten lines; editable step titles and code in
