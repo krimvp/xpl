@@ -2377,6 +2377,11 @@ ready pages and draft previews; an export decision never retargets a request to 
   points at (`test` anchors, and focused code in test files), one entry per test function, gathered in one
   list. The summaries of the focused elements only stand in for a missing note. A tour picker sits above the
   title when there are several tours. The Guide opens at its top, not scrolled to step 1.
+  Each section shows a source excerpt beside its prose (stacked in narrow sections). `stepSelection`
+  reuses the full code view's checked focus, including explicit `step.code` and before-change anchors.
+  The first range in source order supplies at most 12 lines; a count explains when more ranges exist.
+  "Open full code" opens that complete range and its before/head side. Missing, drifted or unavailable
+  source is stated instead of guessed. Source text comes from the bundle or the existing file loader.
 - **Map** and **Flow**: the authored graph view, or flow or sequence view, that best matches the selection
   (`workspace.ts`), with a picker of the others. Without a graph view the Map is generated from the flow's
   participants (else the top level of the repo); without a flow, Flow lists the guide's steps in order. Count
@@ -2408,6 +2413,15 @@ static bundle lists only the files it embeds, with a footer "N of M files includ
 `tree-foot`; under `xpl view` every indexed file is listed and loaded when opened) beside the stack of
 CodeMirror editors (language modes for TS/TSX/JS, Python, Go, YAML and JSON; Rust, TOML and other text are plain).
 Both splits (diagram / panels, diagram / code) are resizable. Below 900 px the halves stack.
+
+**Diagram keyboard navigation** (`components/PanZoom.tsx`): focus the canvas and press Enter to
+focus its first element. Up/Down cycle through the drawn elements in reading order; Home/End go to the
+first/last. Left/Right follow incoming/outgoing relationships: maps and sequences move through an arrow
+and its source or target; flows move between connected stages. When there is more than one link, the first
+in drawing order is followed; Up/Down reach the other links. Enter/Space select the focused element and
+show its checked code through the same path as a click. Focused elements are panned into view. Escape
+returns to the canvas without changing selection; Tab and Shift+Tab retain their normal page order.
+Canvas arrow keys still pan, and +/- and 0 still zoom and fit. A focus hint announces these keys.
 
 **Graph authoring** (`components/GraphAuthor.tsx`): Explore's stored graph views offer **Edit map** beside
 the caption. Shift-click sibling boxes, name the group and explicitly group them. Ungroup removes the
