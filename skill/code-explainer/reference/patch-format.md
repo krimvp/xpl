@@ -19,6 +19,18 @@ A draft (`xpl draft`) is a patch in this format: start from it, and use these te
 
 Every key is optional; any other top-level key is rejected. User patches also accept `review` (below); LLM patches must omit it. The authoritative merge rules are in the header of `packages/core/src/patch.ts`; this file is the practical version of them, and every JSON block below marked `patch` is real: applied in order to a fresh explainer on the TypeScript fixture it passes `xpl validate` (a test of the repository does exactly that). `xpl apply --help` prints a compact summary of the format. What to write in the text fields (titles, summaries, notes) is in `writing.md`.
 
+`reference/patch.schema.json` ships with the skill (and in the npm package at `skill/code-explainer/reference/patch.schema.json`). Associate it with patch files in your editor for field and value completion. For VS Code, add this to workspace settings when using a source checkout:
+
+```text
+{
+  "json.schemas": [
+    { "fileMatch": ["**/*.patch.json"], "url": "./skill/code-explainer/reference/patch.schema.json" }
+  ]
+}
+```
+
+For an installed skill, replace `url` with the absolute path to its `reference/patch.schema.json` (by default under `~/.claude/skills/code-explainer`). Do not add a `$schema` key to a patch: `xpl apply` rejects unknown top-level fields. The schema catches JSON shape errors; `xpl apply` still checks source anchors, IDs, review fingerprints and user-owned fields against the repository.
+
 ### Author review (user patches only)
 
 `xpl apply --actor user` accepts `review: { reviewer, reviewedAt, scope, omissions, fingerprint }`, or `review: null` to remove the record. The reviewer name is self-reported; `reviewedAt` is a UTC ISO timestamp such as `2026-10-04T12:00:00Z`. `omissions` names behavior outside the inspection (`[]` means none named). Apply fills `sourceCommit` from the index. LLM patches must never carry `review`, including null: they are rejected atomically. Ordinary generated patches preserve the record.
