@@ -595,7 +595,7 @@
       "id": "dir:packages/viewer",
       "kind": "dir",
       "label": "viewer",
-      "summary": "The viewer renders linked diagrams and source from one embedded bundle. Managed pages retain their repository and guide and show connection and backend availability; plain view pages keep their layout. One pending-write queue keeps offline edits and author reviews until they save. A stopped page can use its loaded snapshot for manual edits and offline HTML export. Managed connection and attention share a compact bar with bounded disclosures. Verified service controls survive an unreadable attached guide. Connection details labels Claude as configured without implying authentication. Search runs on supplied source in a worker and opens exact ranges or recorded steps offline. The guide picker shows contained snapshots or a live catalog; other live guides stay read-only. Jobs shows durable progress and failures. Proposal review renders marked phrases within changed fields and concise evidence; explicit decisions precede acceptance and interrupted acceptance can recover. Another view's changed decisions stop acceptance and reload the review. Source comparisons label Before and After at every width. Staged pages offer immutable state links and a route to latest. Source details and earlier versions sit behind disclosures. Launch, saved HTML and browser history use one pure restoration function. Applied steps, views, perspectives, selections and head/base cursors remain independent.",
+      "summary": "The viewer renders linked diagrams and source from one embedded bundle. Managed pages retain their repository and guide and show connection and backend availability; plain view pages keep their layout. One pending-write queue keeps offline edits and author reviews until they save. A stopped page can use its loaded snapshot for manual edits and offline HTML export. Managed connection and attention share a compact bar with bounded disclosures. Verified service controls survive an unreadable attached guide. Connection details labels Claude as configured without implying authentication. Search scans every contained guide snapshot in a worker, labels source hits by guide and commit, and opens exact ranges or recorded steps offline. The guide picker shows contained snapshots or a live catalog; other live guides stay read-only. Jobs shows durable progress and failures. Proposal review renders marked phrases within changed fields and concise evidence; explicit decisions precede acceptance and interrupted acceptance can recover. Another view's changed decisions stop acceptance and reload the review. Source comparisons label Before and After at every width. Staged pages offer immutable state links and a route to latest. Source details and earlier versions sit behind disclosures. Launch, saved HTML and browser history use one pure restoration function. Applied steps, views, perspectives, selections and head/base cursors remain independent.",
       "parent": "dir:packages",
       "anchors": [
         {
@@ -604,7 +604,7 @@
           "role": "config",
           "hash": "sha256-v2:1ed67318bb8a",
           "resolved": {
-            "commit": "wt-0027fe1d12",
+            "commit": "wt-73d2cf9c0d",
             "range": {
               "startLine": 6,
               "endLine": 6
@@ -621,7 +621,7 @@
           "role": "config",
           "hash": "sha256-v2:eb9e2f0a2de2",
           "resolved": {
-            "commit": "wt-0027fe1d12",
+            "commit": "wt-73d2cf9c0d",
             "range": {
               "startLine": 43,
               "endLine": 43
@@ -638,7 +638,7 @@
           "role": "definition",
           "hash": "sha256-v2:315fabe29ce5",
           "resolved": {
-            "commit": "wt-0027fe1d12",
+            "commit": "wt-73d2cf9c0d",
             "range": {
               "startLine": 1,
               "endLine": 44
@@ -652,7 +652,7 @@
           "role": "definition",
           "hash": "sha256-v2:3cac31dabdda",
           "resolved": {
-            "commit": "wt-0027fe1d12",
+            "commit": "wt-73d2cf9c0d",
             "range": {
               "startLine": 4,
               "endLine": 73
@@ -666,7 +666,7 @@
           "role": "definition",
           "hash": "sha256-v2:21f0153398e2",
           "resolved": {
-            "commit": "wt-0027fe1d12",
+            "commit": "wt-73d2cf9c0d",
             "range": {
               "startLine": 2014,
               "endLine": 2114
@@ -680,7 +680,7 @@
           "role": "definition",
           "hash": "sha256-v2:ee3dae49f6ea",
           "resolved": {
-            "commit": "wt-0027fe1d12",
+            "commit": "wt-73d2cf9c0d",
             "range": {
               "startLine": 1969,
               "endLine": 1977
@@ -694,7 +694,7 @@
           "role": "definition",
           "hash": "sha256-v2:9bd28978858d",
           "resolved": {
-            "commit": "wt-0027fe1d12",
+            "commit": "wt-73d2cf9c0d",
             "range": {
               "startLine": 1980,
               "endLine": 1997
@@ -708,7 +708,7 @@
           "role": "definition",
           "hash": "sha256-v2:a0696345de96",
           "resolved": {
-            "commit": "wt-0027fe1d12",
+            "commit": "wt-73d2cf9c0d",
             "range": {
               "startLine": 102,
               "endLine": 198
@@ -722,7 +722,7 @@
           "role": "definition",
           "hash": "sha256-v2:2b6581de628b",
           "resolved": {
-            "commit": "wt-0027fe1d12",
+            "commit": "wt-73d2cf9c0d",
             "range": {
               "startLine": 1263,
               "endLine": 1309
@@ -734,12 +734,12 @@
           "file": "packages/viewer/src/components/SearchLibrary.tsx",
           "symbol": "SearchLibrary",
           "role": "definition",
-          "hash": "sha256-v2:3b047bd7af8a",
+          "hash": "sha256-v2:b0c6801e9d09",
           "resolved": {
-            "commit": "wt-0027fe1d12",
+            "commit": "wt-73d2cf9c0d",
             "range": {
-              "startLine": 57,
-              "endLine": 417
+              "startLine": 59,
+              "endLine": 444
             },
             "status": "ok"
           }
@@ -750,7 +750,7 @@
           "role": "definition",
           "hash": "sha256-v2:dd6c6e9b33d9",
           "resolved": {
-            "commit": "wt-0027fe1d12",
+            "commit": "wt-73d2cf9c0d",
             "range": {
               "startLine": 29,
               "endLine": 170
@@ -764,7 +764,7 @@
           "role": "definition",
           "hash": "sha256-v2:2f6c01f891af",
           "resolved": {
-            "commit": "wt-0027fe1d12",
+            "commit": "wt-73d2cf9c0d",
             "range": {
               "startLine": 425,
               "endLine": 479
@@ -778,7 +778,7 @@
           "role": "definition",
           "hash": "sha256-v2:61429e81f0b7",
           "resolved": {
-            "commit": "wt-0027fe1d12",
+            "commit": "wt-73d2cf9c0d",
             "range": {
               "startLine": 238,
               "endLine": 368
@@ -792,7 +792,7 @@
           "role": "definition",
           "hash": "sha256-v2:ba36bdd780b1",
           "resolved": {
-            "commit": "wt-0027fe1d12",
+            "commit": "wt-73d2cf9c0d",
             "range": {
               "startLine": 87,
               "endLine": 170
@@ -806,7 +806,7 @@
           "role": "definition",
           "hash": "sha256-v2:73e71ae87cf7",
           "resolved": {
-            "commit": "wt-0027fe1d12",
+            "commit": "wt-73d2cf9c0d",
             "range": {
               "startLine": 1796,
               "endLine": 1811
@@ -820,7 +820,7 @@
           "role": "definition",
           "hash": "sha256-v2:de50be5532df",
           "resolved": {
-            "commit": "wt-0027fe1d12",
+            "commit": "wt-73d2cf9c0d",
             "range": {
               "startLine": 4,
               "endLine": 49
@@ -831,7 +831,7 @@
       ],
       "provenance": {
         "origin": "llm",
-        "commit": "wt-fd552e968b"
+        "commit": "wt-73d2cf9c0d"
       }
     },
     {
@@ -13148,7 +13148,7 @@
     {
       "id": "concept:local-search",
       "label": "Local search and guides",
-      "summary": "The Search panel scans supplied source in a worker and links matches to exact ranges or tour steps. Symbols, concepts, steps, guides and source have separate bounded pages and counts, so source cannot hide explanations. Exported libraries contain explicitly included guides. Live previews stay read-only and link back to the repository library; editing requires stopping its service before starting the selected guide. The dialog renders into the document body above map author controls. Head and base range links validate against their own supplied source. Stable step links restore without a perspective parameter.",
+      "summary": "The Search panel scans source, symbols and prose from each contained guide snapshot in a worker. Source matches name the guide and index commit and open exact ranges in that snapshot. Missing source never comes from another guide; mismatched commit links are rejected. Symbols, concepts, steps, guides and source have separate bounded pages and counts, so source cannot hide explanations. Exported libraries contain explicitly included guides. Live previews stay read-only and link back to the repository library; editing requires stopping its service before starting the selected guide. The dialog renders into the document body above map author controls. Head and base range links validate against their own supplied source. Stable step links restore without a perspective parameter.",
       "anchors": [
         {
           "file": "packages/core/src/query.ts",
@@ -13156,7 +13156,7 @@
           "role": "definition",
           "hash": "sha256-v2:098c5ea726ff",
           "resolved": {
-            "commit": "wt-0027fe1d12",
+            "commit": "wt-73d2cf9c0d",
             "range": {
               "startLine": 173,
               "endLine": 322
@@ -13168,12 +13168,12 @@
           "file": "packages/viewer/src/components/SearchLibrary.tsx",
           "symbol": "SearchLibrary",
           "role": "definition",
-          "hash": "sha256-v2:3b047bd7af8a",
+          "hash": "sha256-v2:b0c6801e9d09",
           "resolved": {
-            "commit": "wt-0027fe1d12",
+            "commit": "wt-73d2cf9c0d",
             "range": {
-              "startLine": 57,
-              "endLine": 417
+              "startLine": 59,
+              "endLine": 444
             },
             "status": "ok"
           }
@@ -13181,16 +13181,16 @@
         {
           "file": "packages/viewer/src/search-worker.ts",
           "span": {
-            "from": 26,
-            "to": 26
+            "from": 44,
+            "to": 44
           },
           "role": "call-site",
-          "hash": "sha256-v2:68ba154c79bb",
+          "hash": "sha256-v2:01f33b96dd13",
           "resolved": {
-            "commit": "wt-0027fe1d12",
+            "commit": "wt-73d2cf9c0d",
             "range": {
-              "startLine": 27,
-              "endLine": 27
+              "startLine": 45,
+              "endLine": 45
             },
             "status": "ok"
           }
@@ -13201,7 +13201,7 @@
           "role": "definition",
           "hash": "sha256-v2:5c04dd41f0c2",
           "resolved": {
-            "commit": "wt-0027fe1d12",
+            "commit": "wt-73d2cf9c0d",
             "range": {
               "startLine": 817,
               "endLine": 831
@@ -13215,10 +13215,10 @@
           "role": "definition",
           "hash": "sha256-v2:715e5dd6b146",
           "resolved": {
-            "commit": "wt-0027fe1d12",
+            "commit": "wt-73d2cf9c0d",
             "range": {
-              "startLine": 390,
-              "endLine": 434
+              "startLine": 395,
+              "endLine": 439
             },
             "status": "ok"
           }
@@ -13229,7 +13229,7 @@
           "role": "definition",
           "hash": "sha256-v2:a0cedbe799df",
           "resolved": {
-            "commit": "wt-0027fe1d12",
+            "commit": "wt-73d2cf9c0d",
             "range": {
               "startLine": 60,
               "endLine": 109
@@ -13240,7 +13240,7 @@
       ],
       "provenance": {
         "origin": "llm",
-        "commit": "wt-af6244794f"
+        "commit": "wt-73d2cf9c0d"
       }
     }
   ],
@@ -13748,7 +13748,7 @@
               "role": "call-site",
               "hash": "sha256-v2:576cc427f85e",
               "resolved": {
-                "commit": "wt-0027fe1d12",
+                "commit": "wt-73d2cf9c0d",
                 "range": {
                   "startLine": 53,
                   "endLine": 53
@@ -13760,12 +13760,12 @@
               "file": "packages/viewer/src/data.ts",
               "symbol": "loadBundle",
               "role": "usage",
-              "hash": "sha256-v2:6d7552ac6093",
+              "hash": "sha256-v2:67a870f8315d",
               "resolved": {
-                "commit": "wt-0027fe1d12",
+                "commit": "wt-73d2cf9c0d",
                 "range": {
                   "startLine": 43,
-                  "endLine": 67
+                  "endLine": 72
                 },
                 "status": "ok"
               }
@@ -13776,7 +13776,7 @@
               "role": "definition",
               "hash": "sha256-v2:3d9179c2c46c",
               "resolved": {
-                "commit": "wt-0027fe1d12",
+                "commit": "wt-73d2cf9c0d",
                 "range": {
                   "startLine": 130,
                   "endLine": 187
@@ -13790,7 +13790,7 @@
               "role": "usage",
               "hash": "sha256-v2:84ebf0e0053a",
               "resolved": {
-                "commit": "wt-0027fe1d12",
+                "commit": "wt-73d2cf9c0d",
                 "range": {
                   "startLine": 14,
                   "endLine": 14
@@ -13807,7 +13807,7 @@
               "role": "call-site",
               "hash": "sha256-v2:983b8f7d66ee",
               "resolved": {
-                "commit": "wt-0027fe1d12",
+                "commit": "wt-73d2cf9c0d",
                 "range": {
                   "startLine": 14,
                   "endLine": 44
@@ -13891,7 +13891,7 @@
       ],
       "provenance": {
         "origin": "llm",
-        "commit": "wt-822d05d315"
+        "commit": "wt-73d2cf9c0d"
       }
     },
     {
@@ -17046,7 +17046,7 @@
               "role": "call-site",
               "hash": "sha256-v2:aae33ce5b62a",
               "resolved": {
-                "commit": "wt-0027fe1d12",
+                "commit": "wt-73d2cf9c0d",
                 "range": {
                   "startLine": 14,
                   "endLine": 14
@@ -17058,12 +17058,12 @@
               "file": "packages/viewer/src/data.ts",
               "symbol": "loadBundle",
               "role": "definition",
-              "hash": "sha256-v2:6d7552ac6093",
+              "hash": "sha256-v2:67a870f8315d",
               "resolved": {
-                "commit": "wt-0027fe1d12",
+                "commit": "wt-73d2cf9c0d",
                 "range": {
                   "startLine": 43,
-                  "endLine": 67
+                  "endLine": 72
                 },
                 "status": "ok"
               }
@@ -17313,7 +17313,7 @@
       ],
       "provenance": {
         "origin": "llm",
-        "commit": "wt-a40eaa4c91"
+        "commit": "wt-73d2cf9c0d"
       }
     },
     {
@@ -21592,7 +21592,7 @@
               "role": "definition",
               "hash": "sha256-v2:67293aec283b",
               "resolved": {
-                "commit": "wt-0027fe1d12",
+                "commit": "wt-73d2cf9c0d",
                 "range": {
                   "startLine": 114,
                   "endLine": 127
@@ -21604,12 +21604,12 @@
               "file": "packages/viewer/src/data.ts",
               "symbol": "loadBundle",
               "role": "usage",
-              "hash": "sha256-v2:6d7552ac6093",
+              "hash": "sha256-v2:67a870f8315d",
               "resolved": {
-                "commit": "wt-0027fe1d12",
+                "commit": "wt-73d2cf9c0d",
                 "range": {
                   "startLine": 43,
-                  "endLine": 67
+                  "endLine": 72
                 },
                 "status": "ok"
               }
@@ -21620,7 +21620,7 @@
               "role": "definition",
               "hash": "sha256-v2:3d9179c2c46c",
               "resolved": {
-                "commit": "wt-0027fe1d12",
+                "commit": "wt-73d2cf9c0d",
                 "range": {
                   "startLine": 130,
                   "endLine": 187
@@ -21824,7 +21824,7 @@
       ],
       "provenance": {
         "origin": "llm",
-        "commit": "wt-af6244794f"
+        "commit": "wt-73d2cf9c0d"
       },
       "summary": "xpl turns a question about code into an explainer: diagrams linked both ways to the code. This short tour shows how the pointers into the code are checked and how the page is built. The last steps show how a click and the caret connect the two sides."
     },
@@ -22045,7 +22045,7 @@
               "role": "definition",
               "hash": "sha256-v2:67293aec283b",
               "resolved": {
-                "commit": "wt-0027fe1d12",
+                "commit": "wt-73d2cf9c0d",
                 "range": {
                   "startLine": 114,
                   "endLine": 127
@@ -22057,12 +22057,12 @@
               "file": "packages/viewer/src/data.ts",
               "symbol": "loadBundle",
               "role": "usage",
-              "hash": "sha256-v2:6d7552ac6093",
+              "hash": "sha256-v2:67a870f8315d",
               "resolved": {
-                "commit": "wt-0027fe1d12",
+                "commit": "wt-73d2cf9c0d",
                 "range": {
                   "startLine": 43,
-                  "endLine": 67
+                  "endLine": 72
                 },
                 "status": "ok"
               }
@@ -22073,7 +22073,7 @@
               "role": "definition",
               "hash": "sha256-v2:3d9179c2c46c",
               "resolved": {
-                "commit": "wt-0027fe1d12",
+                "commit": "wt-73d2cf9c0d",
                 "range": {
                   "startLine": 130,
                   "endLine": 187
@@ -22316,7 +22316,7 @@
       ],
       "provenance": {
         "origin": "llm",
-        "commit": "wt-af6244794f"
+        "commit": "wt-73d2cf9c0d"
       },
       "summary": "The authoring pipeline builds an index and checks explanation patches against source. Language tools refine reference discovery while ownership rules preserve user edits."
     },

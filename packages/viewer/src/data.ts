@@ -53,6 +53,11 @@ export function loadBundle(doc: Document = document): LoadedBundle {
       parseBundle(element.textContent ?? ""),
       new URLSearchParams(doc.location?.search ?? "").get("guide"),
     );
+    const snapshot = new URLSearchParams(doc.location?.search ?? "").get("snapshot");
+    if (snapshot && snapshot !== bundle.index.commit)
+      throw new Error(
+        `Source snapshot "${snapshot}" is unavailable; this guide supplies "${bundle.index.commit}". Reopen search in the available guide.`,
+      );
     const version = new URLSearchParams(doc.location?.search ?? "").get("version");
     if (version && version !== bundle.publication?.current.version)
       throw new Error(

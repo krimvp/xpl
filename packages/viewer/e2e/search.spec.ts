@@ -41,7 +41,7 @@ test("offline library searches supplied source and prose, opens exact links and 
     await page.goto(url);
     await page.getByRole("button", { name: "Search and guides" }).click();
     const panel = page.getByRole("dialog", { name: "Search and guides" });
-    const input = panel.getByRole("searchbox", { name: "Search this snapshot" });
+    const input = panel.getByRole("searchbox", { name: "Search guide snapshots" });
     await input.fill("needle-search-literal");
     const longLine = panel.locator('[data-kind="source"]').first();
     await expect(longLine).toContainText("needle-search-literal");
@@ -79,7 +79,7 @@ test("offline library searches supplied source and prose, opens exact links and 
     await expect(panel).toContainText("pruned");
     await expect(panel).toContainText("not included in this export");
     await input.fill("no-such-phrase-12345");
-    await expect(panel.getByRole("status")).toContainText("No matches in the supplied snapshot");
+    await expect(panel.getByRole("status")).toContainText("No matches in the supplied snapshots");
     await expect(panel).toContainText("Analysis unavailable");
     await panel.getByRole("button", { name: "Close search" }).click();
     await (await openEditMenu(page)).getByTestId("edit-save-html").click();
@@ -275,3 +275,108 @@ for (const width of [1440, 390]) {
     await expect(page.getByRole("button", { name: "Move worker.ts", exact: true })).toBeFocused();
   });
 }
+
+test("source and symbol search keeps each contained guide's commit and missing-source boundary", async ({
+  page,
+}) => {
+  const dir = mkdtempSync(join(tmpdir(), "xpl-cross-guide-"));
+  try {
+    const { html, bundle: raw } = readEmbeddedBundle();
+    const bundle = parseBundle(JSON.stringify(raw));
+    bundle.guideId = "current-guide";
+    bundle.index.commit = "current-commit";
+    bundle.explainer.repo.commit = "current-commit";
+    bundle.explainer.index.commit = "current-commit";
+    bundle.files["src/metrics.ts"] = Array.from({ length: 20 }, () => "// shared phrase").join(
+      "\n",
+    );
+    const oldText =
+      'export function archivedOnly() {\n  return "buried phrase";\n}\n// shared phrase\n';
+    const index = structuredClone(bundle.index);
+    index.commit = "archived-commit";
+    index.symbols = [
+      {
+        id: "src/metrics.ts#archivedOnly",
+        file: "src/metrics.ts",
+        path: "archivedOnly",
+        kind: "function",
+        range: { startLine: 1, endLine: 3 },
+        hash: hashText(oldText),
+      },
+      {
+        id: "src/queue.ts#omittedOnly",
+        file: "src/queue.ts",
+        path: "omittedOnly",
+        kind: "function",
+        range: { startLine: 1, endLine: 1 },
+        hash: "missing",
+      },
+    ];
+    index.refs = [];
+    index.pruned = {
+      files: bundle.index.files.length,
+      symbols: bundle.index.symbols.length,
+      refs: bundle.index.refs.length,
+    };
+    bundle.guides = [
+      {
+        guideId: "archive",
+        explainer: {
+          ...bundle.explainer,
+          title: "Archived guide",
+          repo: { ...bundle.explainer.repo, commit: "archived-commit" },
+          index: { ...bundle.explainer.index, commit: "archived-commit" },
+        },
+        index,
+        files: { "src/metrics.ts": oldText },
+      },
+    ];
+    const url = pathToFileURL(join(dir, "library.html")).href;
+    writeFileSync(join(dir, "library.html"), injectBundle(html, bundle));
+    await page.goto(url);
+    await page.getByRole("button", { name: "Search and guides" }).click();
+    const panel = page.getByRole("dialog", { name: "Search and guides" });
+    await panel.getByRole("searchbox").fill("archivedOnly");
+    const symbol = panel.locator('a[data-kind="symbol"]').filter({ hasText: "archivedOnly" });
+    await expect(symbol).toContainText("Archived guide");
+    await expect(symbol).toContainText("archived-commit");
+    await symbol.focus();
+    await page.keyboard.press("Enter");
+    await expect(page.locator(".header .title")).toHaveText("Archived guide");
+    await expect(page.locator('[data-file="src/metrics.ts"] .cm-content').first()).toContainText(
+      "buried phrase",
+    );
+    await expect
+      .poll(() => stateOf(page).then((s) => s.cursor))
+      .toMatchObject({ file: "src/metrics.ts", fromLine: 1, toLine: 3 });
+    await page.goto(url);
+    await page.getByRole("button", { name: "Search and guides" }).click();
+    await panel.getByRole("searchbox").fill("shared phrase");
+    const sourceGroup = panel.getByRole("region", { name: "Source" });
+    await expect(sourceGroup).toContainText("1–16 of 21 matches");
+    await sourceGroup.getByRole("button", { name: "Next Source results" }).click();
+    await expect(sourceGroup).toContainText("17–21 of 21 matches");
+    await expect(sourceGroup.locator("a").filter({ hasText: "Archived guide" })).toHaveCount(1);
+    await panel.getByRole("searchbox").fill("buried phrase");
+    const source = panel.locator('a[data-kind="source"]').filter({ hasText: "buried phrase" });
+    await expect(source).toContainText("Archived guide");
+    await expect(source).toHaveAttribute("href", /guide=archive.*snapshot=archived-commit/);
+    await source.click();
+    await page.locator('[data-file="src/metrics.ts"] .cm-content').first().focus();
+    await expect
+      .poll(() => page.evaluate(() => window.getSelection()?.toString()))
+      .toBe("buried phrase");
+    await page.reload();
+    await expect(page.locator(".header .title")).toHaveText("Archived guide");
+    await page.getByRole("button", { name: "Search and guides" }).click();
+    await panel.getByRole("searchbox").fill("omittedOnly");
+    await expect(panel.locator('[data-kind="symbol"]')).toContainText("source not supplied");
+    await expect(panel.locator('a[data-kind="symbol"]')).toHaveCount(0);
+    await expect(panel).toContainText("pruned");
+    await page.goto(url + "?guide=archive&snapshot=current-commit&file=src/metrics.ts&range=2-2");
+    await expect(page.getByTestId("no-data")).toContainText("snapshot");
+    await expect(page.locator(".cm-content")).toHaveCount(0);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

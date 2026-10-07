@@ -15,45 +15,59 @@ export type SearchGroup = {
   id: SearchGroupId;
   title: string;
   offset: number;
-  hits: QueryHit[];
+  hits: SearchHit[];
   total: number;
 };
+export type SearchHit = QueryHit & { guide: string; commit: string };
+export type SearchSnapshot = QueryGuide & { index: SymbolIndex; files: Record<string, string> };
 export type SearchMessage =
-  | { kind: "snapshot"; index: SymbolIndex; files: Record<string, string>; guides: QueryGuide[] }
+  | { kind: "snapshot"; snapshots: SearchSnapshot[] }
   | { kind: "query"; id: number; pattern: string; pages: SearchPages };
 export type SearchResult = { groups: SearchGroup[]; total: number };
 export type SearchReply = { id: number } & ({ result: SearchResult } | { error: string });
 
 let snapshot: Extract<SearchMessage, { kind: "snapshot" }> | undefined;
-let index: ReturnType<typeof asIndexModel> | undefined;
+let indexes: ReturnType<typeof asIndexModel>[] = [];
 self.onmessage = (event: MessageEvent<SearchMessage>) => {
   const message = event.data;
   if (message.kind === "snapshot") {
     snapshot = message;
-    index = asIndexModel(message.index);
+    indexes = message.snapshots.map((g) => asIndexModel(g.index));
     return;
   }
-  if (!snapshot || !index) return;
+  if (!snapshot) return;
   try {
     const groups: SearchGroup[] = GROUPS.map((group) => {
       const offset = (message.pages[group.id] ?? 0) * SEARCH_PAGE_SIZE;
-      const result = query(index!, (file) => snapshot!.files[file], {
-        pattern: message.pattern,
-        ignoreCase: true,
-        limit: SEARCH_PAGE_SIZE,
-        offset,
-        kinds: group.kinds,
-        guides: snapshot!.guides,
-        textOrigin: "supplied",
-      });
+      const hits: SearchHit[] = [];
+      let total = 0;
+      for (const [i, guide] of snapshot!.snapshots.entries()) {
+        const result = query(indexes[i]!, (file) => guide.files[file], {
+          pattern: message.pattern,
+          ignoreCase: true,
+          limit: SEARCH_PAGE_SIZE,
+          offset: Math.max(0, offset - total),
+          kinds: group.kinds,
+          guides: [{ id: guide.id, explainer: guide.explainer }],
+          textOrigin: "supplied",
+        });
+        hits.push(
+          ...result.hits.slice(0, SEARCH_PAGE_SIZE - hits.length).map((hit) => ({
+            ...hit,
+            guide: guide.id,
+            commit: guide.index.commit,
+          })),
+        );
+        total += result.total;
+      }
       // Minified source and long prose never become megabytes of text on the UI thread.
-      for (const hit of result.hits) {
+      for (const hit of hits) {
         const at = hit.text.toLowerCase().indexOf(message.pattern.toLowerCase());
         const start = Math.max(0, at - 80);
         const end = Math.min(hit.text.length, start + 400);
         hit.text = `${start ? "…" : ""}${hit.text.slice(start, end)}${end < hit.text.length ? "…" : ""}`;
       }
-      return { id: group.id, title: group.title, offset, hits: result.hits, total: result.total };
+      return { id: group.id, title: group.title, offset, hits, total };
     });
     self.postMessage({
       id: message.id,
