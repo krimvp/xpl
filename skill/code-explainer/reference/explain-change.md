@@ -54,7 +54,8 @@ A "before" claim is any sentence about the old code: "used to", "no longer", "al
 - **Never infer old behaviour from the hunk alone.** Removed lines show what the old code said, not what it did for every input. A removed `split(":")[0]` cuts at the first `:`, not the last. An old lookup may have raised an exception that a caller turned into a 500. Run the base when the result depends on a library or on input values (section 1).
 - **Anchor it in the base.** A base anchor points at the old lines of a modified, renamed or deleted file: `{"file": "src/config.ts", "at": "base", "find": "<text from the old file>", "role": "usage"}`, or a `span` counted from line 1 of the old file (the offsets `xpl show --at base` prints). No `symbol`: the base is not indexed. Put it next to the head anchor of the same claim, in the order of SKILL.md, "The tour" (range order). Code that the change does not touch is anchored without `at`: its old code is its current code. Format: `patch-format.md` section 1.
 - **Write it "Before: ... Now: ..."**, with the input that shows the difference: "Before: `maxDelayMs: 100` with `baseDelayMs: 500` made each retry wait 100 ms. Now: `loadConfig` throws `config: retry.maxDelayMs must be at least retry.baseDelayMs`."
-- **The bundle shows the diff** (SKILL.md, "Show the result"), so the text explains what the change means, not which lines moved.
+- **The bundle shows the diff** (SKILL.md, "Show the result"): rewritten lines mark changed words on both
+  sides when the before text is available. The text explains what the change means, not which lines moved.
 
 ## 5. Who else is affected
 
