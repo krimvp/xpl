@@ -7,6 +7,12 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const root = resolve(import.meta.dirname, "..");
 const output = join(root, "_site");
 const cli = join(root, "packages/cli/dist/xpl.mjs");
+const publicExamples = [
+  "vite/vite-overview.html",
+  "vite/vite-hmr.html",
+  "zod/zod-overview.html",
+  "zod/zod-parse-errors.html",
+];
 
 execFileSync("npm", ["run", "build"], { cwd: root, stdio: "inherit" });
 await rm(output, { recursive: true, force: true });
@@ -73,7 +79,20 @@ for (const name of ["index.html", "style.css", ...docsPages]) {
 }
 const demo = await readFile(join(output, "demo/index.html"), "utf8");
 if (!demo.includes('id="xpl-data"')) throw new Error("Demo bundle has no embedded explainer");
-console.log("Built _site: page, assets, self-contained demo and docs checked.");
+for (const name of publicExamples) {
+  const html = await readFile(join(output, "examples", name), "utf8");
+  const repo = name.split("/")[0];
+  const license = (await readFile(join(output, "examples", repo, "LICENSE.txt"), "utf8")).trimEnd();
+  if (
+    !html.includes('id="xpl-data"') ||
+    !html.includes('"root":"."') ||
+    html.includes("/Users/") ||
+    !html.startsWith(`<!doctype html>\n<!--\n${license}\n-->`)
+  ) {
+    throw new Error(`Invalid public example: ${name}`);
+  }
+}
+console.log("Built _site: page, assets, five self-contained demos and docs checked.");
 
 /**
  * The user docs (docs-site/) go to _site/docs. A line `<!-- include path -->` takes a whole file and

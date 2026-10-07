@@ -3,6 +3,8 @@ dist
 test-results
 playwright-report
 _site
+# Self-contained viewer exports are generated and checked as site assets.
+site/examples
 package-lock.json
 coverage
 

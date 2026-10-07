@@ -91,7 +91,8 @@ docs/                   handoff.md, ARCHITECTURE.md, analysis-2026-09-30.txt, re
                         review-2026-10-03-real-runs/ (the per-run reports of that review), images/,
                         assessment-2026-10-04-graph-formats.md (+ its reproducible scripts)
 .explainer/             xpl's own explainer (xpl.explainer.json), checked by packages/cli/test/self-explainer.test.ts
-site/                   public landing page: hand-written HTML/CSS and jobrunner screenshots
+site/                   public landing page: hand-written HTML/CSS, jobrunner screenshots, and pinned
+                        Vite/Zod explainer bundles with their MIT licenses in examples/
 docs-site/              user docs: zensical.toml, pinned requirements.txt, hand-written pages/ with include lines
 AGENTS.md, CLAUDE.md    guidance for coding agents working on this repo (CLAUDE.md imports AGENTS.md)
 .claude/skills/         skills for working on this repo (.agents/skills links here; code-explainer links to skill/)
@@ -99,20 +100,23 @@ AGENTS.md, CLAUDE.md    guidance for coding agents working on this repo (CLAUDE.
                         stop-check.sh (AGENTS.md, Automation)
 scripts/                pr-screenshots.sh (before/after viewer screenshots; packages/viewer/scripts/pr-shots.ts),
                         needs-screenshots.sh (does a change need them), publish-pr-shots.sh (push to pr-assets),
-                        build-site.mjs (build xpl, bundle a fixture copy, build the docs, check site links)
+                        build-site.mjs (build xpl, bundle a fixture copy, build the docs, check site links
+                        and public example bundles)
 .github/                pull_request_template.md, workflows/ci.yml (checks, e2e, PR screenshots),
                         workflows/pages.yml (build on PRs; publish the site on v* release tags)
 ```
 
 Conventions (all packages):
 
-- `npm run site` writes `_site/` (git-ignored). It copies only `site/` and bundles a temporary copy of
+- `npm run site` writes `_site/` (git-ignored). It copies `site/`, including four pinned, self-contained
+  Vite/Zod example bundles and their upstream licenses, and bundles a temporary copy of
   `fixtures/ts-jobrunner` with the built CLI (`index --precise off`, a text-only patch through `apply`,
   then `bundle jobrunner`). The patch fills required summaries missing from the committed fixture. Local page
-  and CSS references and the embedded demo payload are checked before success. Pages deploys this output
+  and CSS references, the embedded demo payload, and each public bundle's payload, scrubbed source root and
+  upstream license notice are checked before success. Pages deploys this output
   at `https://krimvp.github.io/xpl/` when a `v*` release tag is pushed; pull requests build without deploying.
-  The public artifact contains the landing page, the fixture example and the user docs, not internal docs or
-  the repository's own explainer.
+  The public artifact contains the landing page, the fixture and public examples, and the user docs, not
+  internal docs or the repository's own explainer.
 - The user docs (`docs-site/`) are built with Zensical into `_site/docs/`, under `uv run` with every Python
   package pinned in `docs-site/requirements.txt`. A page line `<!-- include path -->` takes a whole file and
   `<!-- include path "## Heading" -->` the text under one heading. README and skill sections used by includes
@@ -1380,12 +1384,12 @@ metadata in `packages/cli/dist`, with `@xpl/cli`'s version, a `bin` entry, Node 
 or install scripts. The viewer is required at build time. The directory carries the bundled CLI, viewer,
 WASM runtime and grammars, Rust tags query, the skill, a short README, MIT LICENSE and `integrity.json`.
 The published name is `publishName` (`@krimvp/xpl`) in the private `@xpl/cli` workspace manifest; its version is
-0.2.1. The installed-artifact check retains service restart/recovery and checks watch pause/resume,
+0.2.2. The installed-artifact check retains service restart/recovery and checks watch pause/resume,
 durable job history and unavailable-runner submission. It also checks the published name/version, license
 and packed file inventory. npm rejected `xpl` as too similar to an existing name; `@krimvp/xpl` is the selected fallback.
 `npm run pack -- --pack-destination <outside-repo-dir>` builds and packs that directory. Install its local tarball with
 `npm install --global --prefix "$HOME/.local" --offline --ignore-scripts <absolute-tarball-path>`; put
-`$HOME/.local/bin` on PATH. No source build is needed at installation. This source tree builds version 0.2.1;
+`$HOME/.local/bin` on PATH. No source build is needed at installation. This source tree builds version 0.2.2;
 a `v*` tag starts publication. Install the latest published version with
 `npm install --global @krimvp/xpl`. Nothing is published by build, pack, diagnosis or skill installation.
 
@@ -2942,7 +2946,7 @@ identities to syntax ranges. This is a proposed contract revision, not a change 
   problems, not wrong claims. `repeats-summary` finds near-verbatim repeats only.
 - Workspace packages are private; build/pack produce a standalone local npm tarball with
   its viewer, grammars and skill. Install/update and reader/export checks cover Linux x64/WSL2 only.
-  Node ≥22.12 is required. This source tree builds `@krimvp/xpl` 0.2.1 under MIT; a `v*` tag starts publication.
+  Node ≥22.12 is required. This source tree builds `@krimvp/xpl` 0.2.2 under MIT; a `v*` tag starts publication.
 
 **Next steps, roughly by value** (the review in `docs/review-2026-10-01.md` has the roadmap): an independent
 accuracy pass for change explainers; a word-level diff in rewritten lines; editable step titles and code in

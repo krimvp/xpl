@@ -2,6 +2,11 @@
 
 User-facing changes are listed here. Versions link to their GitHub releases.
 
+## [0.2.2]
+
+- The website adds four self-contained examples from Vite and Zod. Readers can open them in a browser or
+  save them for offline reading, with links to each source revision and license.
+
 ## [0.2.1]
 
 - The landing page links to the public GitHub repository. The shorter README points to the docs for detailed workflows.
@@ -29,6 +34,7 @@ First npm release of the xpl CLI, viewer, tree-sitter grammars, and code-explain
 - Node 22.12 or newer is required. The packaged artifact was exercised on Linux x64 under WSL2 with Node
   22.23.1; other platforms were not verified.
 
+[0.2.2]: https://github.com/krimvp/xpl/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/krimvp/xpl/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/krimvp/xpl/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/krimvp/xpl/releases/tag/v0.1.0

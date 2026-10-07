@@ -1,6 +1,6 @@
 {
   "name": "@xpl/cli",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "private": true,
   "type": "module",
   "description": "The xpl command. Bundled with esbuild into dist/xpl.mjs (+ dist/wasm, dist/viewer.html).",
