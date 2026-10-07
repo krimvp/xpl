@@ -41,16 +41,28 @@ Preserve the already prepared head index and scaffold, and complete its outside 
 `reference/create.md` and `reference/explain-change.md`, then `xpl pr finish` for readiness, offline export
 and the base/head recheck. A superseded result stays historical; explicitly create the new PR input.
 
-1. **The CLI** is `bin/xpl` in this installed skill's directory (else `ls -d ~/.claude/skills/code-explainer .claude/skills/code-explainer`). Below, `xpl` means that path, written in full. Run it from the repo root, or pass `--root <dir>`. If its CLI is unavailable, reinstall xpl with `npm install --global @krimvp/xpl` or a local tarball and run `xpl skill install` (or `--dir <this skill directory>`). Rerun that installer after CLI updates or moves; it preserves local edits by refusing to replace them. `xpl doctor --agent claude` diagnoses Node, bundled assets, the skill, optional precise tools and Claude Code availability. Node >=22.12 is required; the installed workflow is verified on Linux x64 only.
+1. **The CLI** is `bin/xpl` in this installed skill's directory. Below, `xpl` means that path, written in
+   full. Run it from the repo root, or pass `--root <dir>`. If it is unavailable, install the xpl npm
+   package or local tarball, then run `xpl skill install --agent <claude|codex|pi|droid|devin>` (or
+   `--dir <this skill directory>`). Claude Code is the default. Codex, Pi and Factory Droid install to
+   `~/.agents/skills/code-explainer`; Devin installs to the project `.agents/skills/code-explainer`.
+   For Devin, install Node >=22.12 and xpl inside the connected remote environment, then run
+   `xpl skill install --agent devin` in the target repo before using the launcher. It binds an absolute
+   CLI path and has no PATH fallback. Rerun install after CLI updates or moves; it refuses local edits.
+   `xpl doctor` checks Node, bundled assets, the skill and optional precise tools. The installed workflow
+   is verified on Linux x64 only.
 2. **Index:** `xpl index`. Run it again when the code changed or a command warns that the index `does not match the working tree`. A language with `refs: heuristic` has hints, not facts: confirm each call with `show`. `--precise off` skips optional tools for fast or offline indexing. Report the chosen mode and the actual coverage and trust labels. `--precise require` is for a user who needs precise references; if it fails, offer the explicit heuristic path without calling it precise.
 3. **Name it:** `xpl new <name> --title "..."` for a new guide; it refuses an existing name. For an explicitly selected existing guide, read its views, tours and protected fields first, then add the new question with fresh ids. The repo name in kebab-case is a useful default for an overview; separate questions may have their own guide. A change gets its own explainer, titled after it: `xpl new <repo>-pr-42 --title "PR 42: <what it does>"`. Say who the page is for, fit to its level, in one short line: `"scope": {"audience": "Overview, for anyone new to ky"}` (a repo), `"Deep dive, for engineers working on the router"` (an algorithm), `"For reviewers of this change, and anyone who uses the option"` (a change); the viewer shows it under the title (patch-format.md 3.11).
 4. **Patch files** go outside the repo (the scratchpad or `$TMPDIR`).
 
 Local reading, `index --precise off`, viewing and HTML export use bundled assets without hosted xpl
 infrastructure after setup. Precise tool bootstrap and dependencies can need network access; keep the
-heuristic path and its trust labels when tools cannot run. Claude Code authoring needs separate
-authentication and provider access. Run generation only when the user invokes this skill; no resident
-agent worker is required. Other agents may read these instructions, but their integration is not verified.
+heuristic path and its trust labels when tools cannot run. Authoring needs the selected harness and its
+provider access, configured separately from xpl. Run generation only when the user invokes this skill;
+no resident agent worker is required. Harness-specific invocation has not had live QA. Invoke the
+installed skill as `$code-explainer` in Codex, `/skill:code-explainer` in Pi, `/code-explainer` in
+Factory Droid, or `@skills:code-explainer` in Devin. Devin cloud discovery and authentication are not
+verified by xpl.
 
 ## Choose the scope
 

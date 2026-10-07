@@ -98,9 +98,47 @@ describe("setup commands", () => {
   it("rejects an unsupported agent or skill operation with a usage error", async () => {
     const agent = await invoke(["doctor", "--agent", "unknown"]);
     expect(agent.code).toBe(2);
-    expect(agent.err).toContain("--agent must be none or claude");
+    expect(agent.err).toContain("--agent must be none, claude, codex, pi, droid, or devin");
     const operation = await invoke(["skill", "remove"]);
     expect(operation.code).toBe(2);
     expect(operation.err).toContain("skill operation must be install");
   });
+
+  it.each([
+    { agent: "claude", root: "home", suffix: ".claude/skills/code-explainer" },
+    { agent: "codex", root: "home", suffix: ".agents/skills/code-explainer" },
+    { agent: "pi", root: "home", suffix: ".agents/skills/code-explainer" },
+    { agent: "droid", root: "home", suffix: ".agents/skills/code-explainer" },
+    { agent: "devin", root: "project", suffix: ".agents/skills/code-explainer" },
+  ] as const)(
+    "doctor checks the $agent skill at its native path",
+    async ({ agent, root: scope, suffix }) => {
+      const root = makeTempDir();
+      const home = makeTempDir();
+      const result = await invoke(["--root", root, "doctor", "--agent", agent, "--json"], {
+        cwd: root,
+        env: { HOME: home, PATH: "" },
+      });
+      expect(result.code).toBe(1);
+      const report = JSON.parse(result.out);
+      expect(report.agent).toBe(agent);
+      if (agent === "devin") {
+        expect(report.checks.find((check: { id: string }) => check.id === "agent")).toMatchObject({
+          required: false,
+          detail: expect.stringContaining("not locally verifiable"),
+        });
+      } else {
+        expect(report.checks.find((check: { id: string }) => check.id === "agent")).toMatchObject({
+          required: true,
+          status: "missing",
+        });
+      }
+      const expectedSkill = join(scope === "project" ? root : home, suffix);
+      expect(report.checks.find((check: { id: string }) => check.id === "skill")).toMatchObject({
+        required: true,
+        status: "missing",
+        recovery: expect.stringContaining(JSON.stringify(expectedSkill)),
+      });
+    },
+  );
 });
