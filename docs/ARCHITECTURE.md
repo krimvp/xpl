@@ -2415,6 +2415,15 @@ static bundle lists only the files it embeds, with a footer "N of M files includ
 CodeMirror editors (language modes for TS/TSX/JS, Python, Go, YAML and JSON; Rust, TOML and other text are plain).
 Both splits (diagram / panels, diagram / code) are resizable. Below 900 px the halves stack.
 
+**Diagram keyboard navigation** (`components/PanZoom.tsx`): focus the canvas and press Enter to
+focus its first element. Up/Down cycle through the drawn elements in reading order; Home/End go to the
+first/last. Left/Right follow incoming/outgoing relationships: maps and sequences move through an arrow
+and its source or target; flows move between connected stages. When there is more than one link, the first
+in drawing order is followed; Up/Down reach the other links. Enter/Space select the focused element and
+show its checked code through the same path as a click. Focused elements are panned into view. Escape
+returns to the canvas without changing selection; Tab and Shift+Tab retain their normal page order.
+Canvas arrow keys still pan, and +/- and 0 still zoom and fit. A focus hint announces these keys.
+
 **Graph authoring** (`components/GraphAuthor.tsx`): Explore's stored graph views offer **Edit map** beside
 the caption. Shift-click sibling boxes, name the group and explicitly group them. Ungroup removes the
 container from this map while retaining the stored group and its references. Hide selected boxes/arrows
