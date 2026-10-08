@@ -649,6 +649,36 @@ function routesMeet(a: readonly Point[], b: readonly Point[]): boolean {
   return false;
 }
 
+function routeCrossings(routes: readonly Point[][]): number {
+  let count = 0;
+  for (let i = 0; i < routes.length; i++) {
+    const a = routes[i]!;
+    for (let j = i + 1; j < routes.length; j++) {
+      const b = routes[j]!;
+      for (let ai = 1; ai < a.length; ai++) {
+        const p = a[ai - 1]!,
+          q = a[ai]!;
+        for (let bi = 1; bi < b.length; bi++) {
+          const r = b[bi - 1]!,
+            s = b[bi]!;
+          const dx = q.x - p.x,
+            dy = q.y - p.y,
+            ex = s.x - r.x,
+            ey = s.y - r.y;
+          const det = dx * ey - dy * ex;
+          if (Math.abs(det) < 0.001) continue;
+          const x = r.x - p.x,
+            y = r.y - p.y;
+          const alongA = (x * ey - y * ex) / det,
+            alongB = (x * dy - y * dx) / det;
+          if (alongA > 0.001 && alongA < 0.999 && alongB > 0.001 && alongB < 0.999) count++;
+        }
+      }
+    }
+  }
+  return count;
+}
+
 function routeLength(points: readonly Point[]): number {
   return points
     .slice(1)
@@ -965,27 +995,48 @@ function layeredLayout(model: Model, direction: Direction, pins: GraphView["layo
     const pinned = siblings.some((node) => pins?.[node.id]);
     // Selection can lay this level out again; keep the added route search within the viewer's small-map limit.
     const simplifyRoutes = !pinned && siblings.length + items.length <= BOTH_DIRECTIONS_LIMIT;
-    const spread = spreadPorts(ports, boxes, direction, simplifyRoutes);
-    const routed = items.map((item) =>
-      orthogonalRoute(
-        item.from.box,
-        item.to.box,
-        item.via,
-        {
-          from: item.from.fixed?.cross ?? spread.get(`${item.id}\0from`)!,
-          to: item.to.fixed?.cross ?? spread.get(`${item.id}\0to`)!,
-        },
-        direction,
-        {
-          ...(item.from.fixed ? { from: item.from.fixed.side } : {}),
-          ...(item.to.fixed ? { to: item.to.fixed.side } : {}),
-        },
-      ),
-    );
-    separateTracks(routed, direction);
+    const obstacles = siblings.map((node) => [node.id, nodeBox(node)] as const);
+    const boxHits = (routes: readonly Point[][]) =>
+      routes.reduce(
+        (count, route, i) =>
+          count +
+          obstacles.filter(
+            ([id, box]) =>
+              id !== items[i]!.from.key && id !== items[i]!.to.key && crossesBox(route, box, 0),
+          ).length,
+        0,
+      );
+    const routeWith = (wide: boolean) => {
+      const spread = spreadPorts(ports, boxes, direction, wide);
+      const routes = items.map((item) =>
+        orthogonalRoute(
+          item.from.box,
+          item.to.box,
+          item.via,
+          {
+            from: item.from.fixed?.cross ?? spread.get(`${item.id}\0from`)!,
+            to: item.to.fixed?.cross ?? spread.get(`${item.id}\0to`)!,
+          },
+          direction,
+          {
+            ...(item.from.fixed ? { from: item.from.fixed.side } : {}),
+            ...(item.to.fixed ? { to: item.to.fixed.side } : {}),
+          },
+        ),
+      );
+      separateTracks(routes, direction);
+      return routes;
+    };
+    const original = routeWith(false);
+    const widened = simplifyRoutes ? routeWith(true) : undefined;
+    const routed =
+      widened &&
+      routeCrossings(widened) <= routeCrossings(original) &&
+      boxHits(widened) <= boxHits(original)
+        ? widened
+        : original;
     if (simplifyRoutes) {
       const main = direction === "RIGHT" ? "x" : "y";
-      const obstacles = siblings.map((node) => [node.id, nodeBox(node)] as const);
       for (let n = 0; n < items.length; n++) {
         const item = items[n]!;
         const old = routed[n]!;

@@ -2586,8 +2586,9 @@ status stays in the sticky Save/Cancel bar, including the disabled Save reason.
   border gets a port there (a node of its own in the container's first or last layer), so the part inside
   is routed around the boxes; edges routed inside their lowest common container, right-angled, with the ends
   that share a side of a box spread along it and the turns in one gap between layers on separate tracks.
-  Automatic levels of at most 150 boxes and edges spread ports over 15–85% of a box side, then shorten a
-  longer route only when the new path clears other boxes by at least 8 diagram units and avoids other arrows.
+  Automatic levels of at most 150 boxes and edges spread ports over 15–85% of a box side when this adds no
+  arrow crossings or box intersections. They shorten a longer route only when the new path clears other
+  boxes by at least 8 diagram units and avoids other arrows.
   Its label follows the chosen path. Larger and pinned levels keep the prior port spacing and routing rules.
   `GraphView.layout` replaces automatic positions at each
   container level before sizing its parent. Pins are finite logical coordinates relative to the rendered container,

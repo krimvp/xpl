@@ -125,6 +125,55 @@ describe("layoutGraph", () => {
     });
     expect(crosses).toEqual([]);
   });
+  it("keeps widened ports from crossing arrows that were separate", async () => {
+    const graph: DerivedGraph = {
+      nodes: Array.from({ length: 6 }, (_, i) => ({
+        id: `n${i}`,
+        label: `n${i}`,
+        kind: "group" as const,
+        role: "component" as const,
+        container: false,
+      })),
+      edges: ["0-3", "0-4", "1-2", "2-3", "2-5", "3-4"].map((pair) => ({
+        id: `e${pair}`,
+        from: `n${pair[0]}`,
+        to: `n${pair[2]}`,
+        kind: "calls" as const,
+        count: 1,
+        resolution: "static" as const,
+        stored: true,
+        anchors: [],
+      })),
+      stubs: [],
+      ghosts: [],
+    };
+    const { edges } = await layoutGraph(graph);
+    const crossing = edges.some((a, i) =>
+      edges.slice(i + 1).some((b) =>
+        a.points.slice(1).some((q, ai) => {
+          const p = a.points[ai]!;
+          return b.points.slice(1).some((s, bi) => {
+            const r = b.points[bi]!;
+            return (
+              (p.x === q.x &&
+                r.y === s.y &&
+                p.x > Math.min(r.x, s.x) &&
+                p.x < Math.max(r.x, s.x) &&
+                r.y > Math.min(p.y, q.y) &&
+                r.y < Math.max(p.y, q.y)) ||
+              (p.y === q.y &&
+                r.x === s.x &&
+                r.x > Math.min(p.x, q.x) &&
+                r.x < Math.max(p.x, q.x) &&
+                p.y > Math.min(r.y, s.y) &&
+                p.y < Math.max(r.y, s.y))
+            );
+          });
+        }),
+      ),
+    );
+    expect(crossing).toBe(false);
+  });
   it("keeps automatic boxes clear of a pinned sibling without moving the pin", async () => {
     const { graph } = graphOf(["file:src/a.ts", "file:src/b.ts"]);
     const automatic = await layoutGraph(graph);
