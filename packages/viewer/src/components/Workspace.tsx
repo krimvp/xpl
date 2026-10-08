@@ -18,6 +18,7 @@ import {
 import { CodeArea } from "./CodeArea.js";
 import { Details, TopicFacts } from "./Details.js";
 import { ErrorBoundary } from "./ErrorBoundary.js";
+import { ExpandInPlaceAction } from "./ExpandInPlaceAction.js";
 import { FlowDiagram } from "./FlowDiagram.js";
 import { FoldBackAction } from "./FoldBackAction.js";
 import { GraphView } from "./GraphView.js";
@@ -260,7 +261,10 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
                     </div>
                     <div className="caption-actions">
                       {state.perspective === "map" && (
-                        <FoldBackAction visibleIds={map.graph.nodes.map((node) => node.id)} />
+                        <>
+                          <ExpandInPlaceAction nodes={map.graph.nodes} />
+                          <FoldBackAction visibleIds={map.graph.nodes.map((node) => node.id)} />
+                        </>
                       )}
                       <select
                         aria-label="Choose a topic"
