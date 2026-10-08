@@ -166,7 +166,7 @@ Start with the role in the system ("The front door: it turns a web request into 
 
 ## 7. Checklist
 
-`xpl lint <name>` checks the mechanical rules (headings, markup, sentence length, bare "It", filler and absolute words, notes that repeat a summary; `cli.md`, `xpl lint`). SKILL.md, "Accuracy", covers the claims. Read every title, label, summary and note once more, in tour order, for what neither can check:
+`xpl lint <name>` checks the mechanical rules (headings, markup, sentence length, bare "It", filler and absolute words, notes that repeat a summary, and disconnected system maps; `cli.md`, `xpl lint`). SKILL.md, "Accuracy", covers the claims. Read every title, label, summary and note once more, in tour order, for what neither can check:
 
 - Does the tour `summary` say what this is and why it matters, before any detail?
 - Is every term defined the first time it appears (rule 5), with one word for one meaning (rule 4)?
