@@ -8518,7 +8518,7 @@
     {
       "id": "concept:indexing-tree-sitter",
       "label": "Tree-sitter parsing",
-      "summary": "Tree-sitter packs, including Java, and Rust, Ruby and PHP tags extract plain file-local facts and diagnostics. A versioned cache reuses unchanged extraction; the default build resolves the full repository again. Matching tags outcomes share coverage counts, while syntax-error files keep a separate report. Ruby and PHP tags anchor named declarations without relationships. PHP semicolon-style namespaces extend to the next namespace so later declarations retain their lexical owner. Rust tags anchor named fields and enum variants and resolve a bounded same-file root-function call slice as heuristic; unsupported dispatch remains explicit.",
+      "summary": "Tree-sitter packs and Rust, Ruby and PHP tags extract source-backed declarations and diagnostics. A versioned cache reuses unchanged file-local extraction; project resolution runs again on every build. Rust resolves bounded bare and receiver calls as heuristic, including explicit crate-root imports when the root is indexed and generic trait bounds. Ambiguous dispatch remains unresolved. Matching tags outcomes share coverage counts, while syntax-error files keep a separate report.",
       "detail": "The cache key binds exact source, path, language, extractor revision, profile configuration and actual runtime/grammar bytes. Source drift hashes are not cache keys. Successful syntax recovery is reusable; failed extraction is retried. Replacing disk WASM that disagrees with the running process bypasses reuse. Cache safety compares device/inode identities of .explainer, cache and extraction-v1 with repository directories. Any directory alias into that census bypasses reads and writes and reports the reason. The census includes empty directories and follows directory links; repeated identities stop recursion. Isolated external targets remain usable. Inspection failures also bypass reuse.\n\nThe runtime and grammars are bundled as WASM files. JavaScript uses the TSX grammar.\n\nFiles with syntax errors can still yield partial symbols and references. Inspect coverage rather than assuming successful parsing proves complete understanding.\n\nAn explicit TypeScriptResolutionExperiment retains heuristic references in one process. Imports, re-exports and same-directory candidates invalidate callers. Discovery or configuration changes resolve the project. The CLI does not enable this investigation.",
       "anchors": [
         {
@@ -8527,7 +8527,7 @@
           "role": "definition",
           "hash": "sha256-v2:f3887daed7ba",
           "resolved": {
-            "commit": "wt-27ab9089b3",
+            "commit": "wt-7f1700f0ee",
             "range": {
               "startLine": 29,
               "endLine": 41
@@ -8541,7 +8541,7 @@
           "role": "definition",
           "hash": "sha256-v2:e51041bb638a",
           "resolved": {
-            "commit": "wt-27ab9089b3",
+            "commit": "wt-7f1700f0ee",
             "range": {
               "startLine": 44,
               "endLine": 44
@@ -8555,7 +8555,7 @@
           "role": "definition",
           "hash": "sha256-v2:8fa9fc5bff05",
           "resolved": {
-            "commit": "wt-27ab9089b3",
+            "commit": "wt-7f1700f0ee",
             "range": {
               "startLine": 76,
               "endLine": 78
@@ -8569,7 +8569,7 @@
           "role": "definition",
           "hash": "sha256-v2:b08d3c4ee5c4",
           "resolved": {
-            "commit": "wt-27ab9089b3",
+            "commit": "wt-7f1700f0ee",
             "range": {
               "startLine": 81,
               "endLine": 84
@@ -8583,7 +8583,7 @@
           "role": "definition",
           "hash": "sha256-v2:c17069d975ff",
           "resolved": {
-            "commit": "wt-27ab9089b3",
+            "commit": "wt-7f1700f0ee",
             "range": {
               "startLine": 15,
               "endLine": 42
@@ -8597,7 +8597,7 @@
           "role": "definition",
           "hash": "sha256-v2:aa1432abce91",
           "resolved": {
-            "commit": "wt-27ab9089b3",
+            "commit": "wt-7f1700f0ee",
             "range": {
               "startLine": 2209,
               "endLine": 2211
@@ -8615,7 +8615,7 @@
           "role": "usage",
           "hash": "sha256-v2:5c6297310e7a",
           "resolved": {
-            "commit": "wt-27ab9089b3",
+            "commit": "wt-7f1700f0ee",
             "range": {
               "startLine": 290,
               "endLine": 290
@@ -8633,7 +8633,7 @@
           "role": "usage",
           "hash": "sha256-v2:441c82b0a153",
           "resolved": {
-            "commit": "wt-27ab9089b3",
+            "commit": "wt-7f1700f0ee",
             "range": {
               "startLine": 94,
               "endLine": 94
@@ -8647,7 +8647,7 @@
           "role": "definition",
           "hash": "sha256-v2:a2cccfe5dd4e",
           "resolved": {
-            "commit": "wt-27ab9089b3",
+            "commit": "wt-7f1700f0ee",
             "range": {
               "startLine": 36,
               "endLine": 56
@@ -8661,7 +8661,7 @@
           "role": "definition",
           "hash": "sha256-v2:62e3c2398ab0",
           "resolved": {
-            "commit": "wt-27ab9089b3",
+            "commit": "wt-7f1700f0ee",
             "range": {
               "startLine": 65,
               "endLine": 73
@@ -8675,7 +8675,7 @@
           "role": "definition",
           "hash": "sha256-v2:a6ef40af6c23",
           "resolved": {
-            "commit": "wt-27ab9089b3",
+            "commit": "wt-7f1700f0ee",
             "range": {
               "startLine": 79,
               "endLine": 86
@@ -8689,7 +8689,7 @@
           "role": "definition",
           "hash": "sha256-v2:520e75eea9ca",
           "resolved": {
-            "commit": "wt-27ab9089b3",
+            "commit": "wt-7f1700f0ee",
             "range": {
               "startLine": 2194,
               "endLine": 2201
@@ -8703,7 +8703,7 @@
           "role": "test",
           "hash": "sha256-v2:9a41b41887c6",
           "resolved": {
-            "commit": "wt-27ab9089b3",
+            "commit": "wt-7f1700f0ee",
             "range": {
               "startLine": 41,
               "endLine": 52
@@ -8715,12 +8715,12 @@
           "file": "packages/indexer/src/tags.ts",
           "symbol": "TagsProvider.analyze",
           "role": "definition",
-          "hash": "sha256-v2:4cf8e0566760",
+          "hash": "sha256-v2:ef4c85e1e2bd",
           "resolved": {
-            "commit": "wt-27ab9089b3",
+            "commit": "wt-7f1700f0ee",
             "range": {
-              "startLine": 76,
-              "endLine": 249
+              "startLine": 83,
+              "endLine": 267
             },
             "status": "ok"
           }
@@ -8728,12 +8728,12 @@
         {
           "file": "packages/indexer/src/tags/rust.ts",
           "role": "definition",
-          "hash": "sha256-v2:ca7840ef8039",
+          "hash": "sha256-v2:4cf74939fa4a",
           "resolved": {
-            "commit": "wt-27ab9089b3",
+            "commit": "wt-7f1700f0ee",
             "range": {
               "startLine": 1,
-              "endLine": 122
+              "endLine": 408
             },
             "status": "ok"
           }
@@ -8743,7 +8743,7 @@
           "role": "definition",
           "hash": "sha256-v2:d3ab8e8651bd",
           "resolved": {
-            "commit": "wt-27ab9089b3",
+            "commit": "wt-7f1700f0ee",
             "range": {
               "startLine": 1,
               "endLine": 25
@@ -8757,7 +8757,7 @@
           "role": "definition",
           "hash": "sha256-v2:dc5903d18e27",
           "resolved": {
-            "commit": "wt-27ab9089b3",
+            "commit": "wt-7f1700f0ee",
             "range": {
               "startLine": 166,
               "endLine": 243
@@ -8771,7 +8771,7 @@
           "role": "definition",
           "hash": "sha256-v2:5f72cfee0485",
           "resolved": {
-            "commit": "wt-27ab9089b3",
+            "commit": "wt-7f1700f0ee",
             "range": {
               "startLine": 111,
               "endLine": 139
@@ -8785,7 +8785,7 @@
           "role": "definition",
           "hash": "sha256-v2:459c65643260",
           "resolved": {
-            "commit": "wt-27ab9089b3",
+            "commit": "wt-7f1700f0ee",
             "range": {
               "startLine": 67,
               "endLine": 86
@@ -8799,7 +8799,7 @@
           "role": "definition",
           "hash": "sha256-v2:659a7407d5fa",
           "resolved": {
-            "commit": "wt-27ab9089b3",
+            "commit": "wt-7f1700f0ee",
             "range": {
               "startLine": 38,
               "endLine": 179
@@ -8815,7 +8815,7 @@
       ],
       "provenance": {
         "origin": "llm",
-        "commit": "wt-3c77fa52c1"
+        "commit": "wt-7f1700f0ee"
       }
     },
     {
