@@ -23,7 +23,8 @@ Ready export checks the current source and required content before writing. Pass
 Keep a finding on purpose: `xpl lint ... --warn-only` (a `todo-left` error still exits 1), and say why in the reply.
 
 Rust tags and Java artifact import are experimental. Rust uses `--precise off` for checked syntax
-declarations and bounded heuristic calls between root-level functions in the same file. Other Rust
+declarations and bounded heuristic bare and receiver calls. Generic receivers can point to a trait method,
+but do not identify a concrete implementation. Other Rust
 relationships remain unsupported; inspect the reported call limits before describing a path. Java needs a successful configured SCIP build; file anchors remain
 available with `--precise off` when generation fails. Use `search` without `--code` and explicit Java views.
 Do not treat a precise type mention as a call or inheritance edge. The measured rust-analyzer artifact

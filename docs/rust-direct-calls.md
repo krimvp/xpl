@@ -1,51 +1,59 @@
-# Bounded Rust direct calls
+# Bounded Rust calls
 
-Rust remains experimental. With `--precise off`, the tags provider now emits heuristic calls between
-unambiguous root-level functions in the same file. The call must use a bare identifier. Its evidence is
-the exact call expression, with inclusive UTF-16 columns and lines. Provider normalization checks both
-declaration identities and source snapshots before the relationship enters the index.
+Rust remains experimental. With `--precise off`, the tags provider emits two kinds of heuristic calls.
+The file-local pass resolves an unshadowed bare name to one root function in the same file. The project
+pass resolves a method call when source syntax gives its receiver a single type and the target method is
+unique. Both use the exact call expression as evidence. Provider normalization checks the source snapshot,
+caller, target declaration and range before the reference enters the index.
 
-## Limits
+## Receiver cases
 
-The pass does not resolve unknown names, qualified paths or explicit generic calls (`f::<T>()`), calls
-inside nested functions or closures, methods, trait dispatch, or calls across modules/files. Local
-parameters, patterns (including shorthand struct bindings) and declarations that might shadow a target
-suppress that name throughout the caller, deliberately missing some calls outside the binding's actual
-scope. Raw identifiers such as `r#target` and `target` use the same lookup spelling; source IDs and ranges
-retain the original text. A body containing a macro invocation or local import is skipped. No macro expansion or cfg evaluation runs. Ambiguous
-root declarations are not targets. A file with syntax errors keeps its available declarations but its
-call analysis is marked failed and produces no calls.
+- `self.method()` uses the enclosing impl's concrete type and one inherent method.
+- `self.field.method()` uses the field's declared type. A generic field such as `queue: Q` with one
+  `Q: JobQueue` bound points to the trait method, never to a guessed concrete implementation.
+- A local with an explicit type can be a receiver. A local assigned from `self.field.method()` can use that
+  method's declared return type when the method is unique. This covers `worker` returned by
+  `self.pool.lease()` in the fixture.
+- A root-level `use crate::module::Type` or `use crate::module::{Type, Other}` maps that type to
+  `<crate root>/module.rs`. The root must be identified by an indexed `src/lib.rs` or `src/main.rs`, and the
+  target must be an indexed declaration there. Without a known root, the imported receiver stays unresolved.
+  Standalone `src/bin` crates and custom crate-root paths are not resolved. No external module graph is inferred.
 
-Reports label calls partial and heuristic, including files with no retained calls. Other relationship
-kinds remain unsupported. Missing edges do not mean a function has no callers. `--precise require`
-still needs a usable precise provider and is not satisfied by this pass. Extraction cache query-v4
-stores these file-local relationships; reference evidence and trust survive a warm build.
+All references remain `heuristic`. A unique syntax match does not prove Rust method dispatch. Calls inside
+nested functions, closures or macro invocations are omitted. Unknown receivers, competing impl methods,
+multiple generic bounds, qualified receiver types, unrecognized imports, complex return types and syntax-error files produce no
+receiver edges. The bare pass also skips a body containing any macro invocation or local import. No macro
+expansion or cfg evaluation runs. Missing edges do not mean a method has no callers.
+
+Reports label Rust calls partial and heuristic. Other relationship kinds remain unsupported.
+`--precise require` still needs a usable precise provider. The extraction cache stores file-local tags and bare calls;
+the receiver pass reruns against current project declarations on both cold and warm builds.
 
 ## Fixture and real repository checks
 
-The existing `fixtures/rs-jobrunner` produces two Rust calls without changing fixture source lines:
+`fixtures/rs-jobrunner` has 140 Rust symbols and 14 Rust call references: 2 bare calls and 12 receiver calls.
+All 14 are heuristic. `Runner<Q>.dispatch` has 10 outgoing calls. In particular, `self.queue.pop()` at
+`src/runner.rs:67` targets `src/queue.rs#JobQueue.pop`, `worker.run(...)` at line 78 targets
+`src/worker.rs#impl Worker.run`, and `self.queue.requeue(...)` at line 87 targets
+`src/queue.rs#JobQueue.requeue`. The queue calls end at trait methods because `Q` is generic.
+`xpl refs` shows these targets and source lines; repository/path views derive arrows from the same index.
 
-| Caller | Target | Evidence |
-| --- | --- | --- |
-| `src/config.rs#load_config` | `config_from_text` | line 64, columns 5–83 |
-| `src/config.rs#config_from_text` | `parse_yaml` | line 68, columns 20–35 |
+A no-cache smoke check on [bat v0.25.0](https://github.com/sharkdp/bat/tree/25f4f96ea3afb6fe44552f3b38ed8b1540ffa1b3)
+at commit `25f4f96ea3afb6fe44552f3b38ed8b1540ffa1b3` found 133 Rust calls across 67 Rust files:
+49 bare calls and 84 receiver calls, including 4 cross-file calls. Every retained call range was compared
+with the checked-out source text and contained the named bare or receiver invocation. These checks establish
+range evidence, not target correctness by themselves. For the four cross-file bat calls,
+`src/printer.rs` imports `AnsiStyle` from `vscreen`, its `InteractivePrinter.ansi_style` field declares
+`AnsiStyle`, and `src/vscreen.rs` declares `impl AnsiStyle.update` at lines 17–25. The same file also
+declares `Attributes.update`; the field type rules it out for those four calls. This checks those targets
+against source, but not semantic precision or completeness. Bat was not compiled.
 
-Both are heuristic. The fixture's trait and method calls remain outside this slice. `xpl refs` displays
-the two-hop configuration path with the heuristic label. `cargo test --offline` passes on a copy.
-
-A smoke test on [bat v0.25.0](https://github.com/sharkdp/bat/tree/25f4f96ea3afb6fe44552f3b38ed8b1540ffa1b3)
-(pinned commit `25f4f96ea3afb6fe44552f3b38ed8b1540ffa1b3`) retains 968 declarations across 67 Rust files
-and produces 49 Rust calls. All 49 ranges were checked against the source: each begins with its target's
-bare name and `(`, ends with `)`, stays within the caller's file, and carries `heuristic` resolution.
-For example, `src/assets.rs#from_binary` calls `asset_from_contents` at line 322, columns 5–45.
-This checks usefulness and evidence, not completeness or semantic precision. No bat compilation was run.
-
-Repeat after `npm run build`, using a checkout or fixture copy outside this repository:
+Repeat after `npm run build` with a checkout or fixture copy outside this repository:
 
 ```sh
 node packages/cli/dist/xpl.mjs index --root /tmp/bat --precise off --no-cache
 node packages/cli/dist/xpl.mjs refs --root /tmp/bat 'sym:src/assets.rs#from_binary' --out
 ```
 
-The older [tags experiment](rust-tags.md) records the declaration-only baseline. Its zero-reference
-measurements describe that earlier version, not the bounded pass documented here.
+The older [tags experiment](rust-tags.md) records declaration-only coverage. Its zero-reference
+measurements describe that earlier version.

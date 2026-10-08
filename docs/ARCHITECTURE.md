@@ -762,16 +762,22 @@ labels collapse whitespace; those compound names have full declaration evidence 
 
 Rust uses `tree-sitter-rust@0.24.0` (WASM ABI 14). The CLI copies the corrected query beside its grammar in
 `dist/wasm`; source runs read it from the adapter directory. Rust reports partial symbols, declaration ranges
-and nesting. Its bounded call pass resolves bare calls between unambiguous root-level functions in the
-same file, with exact call-expression ranges and `heuristic` confidence. Shadowed names, nested functions,
-closures, qualified/generic calls, methods, trait dispatch and cross-module targets are omitted. Bodies
-containing macros or local imports are skipped. Syntax errors suppress calls for that file. Call coverage
-is partial; other relationship kinds remain unsupported. It does not resolve imports, receiver ownership
-or external `mod` links, expand macros, evaluate cfg, or index tuple positions and local bindings. Declaration
+and nesting. Its bounded call pass resolves unshadowed bare calls between root functions in one file, then
+resolves receiver calls from explicit fields, local types, and one-method return types. A generic receiver
+with one trait bound points to the trait method. A concrete receiver points to one inherent method. Explicit
+root-level `use crate::module::Type` imports connect those types to files under an indexed `src/lib.rs` or
+`src/main.rs` crate root. Without that root, imported receivers stay unresolved; standalone `src/bin` crates
+and custom crate-root paths are not resolved. Both passes emit
+exact call-expression ranges with `heuristic` confidence; provider normalization checks source snapshots and
+both declaration identities. A warm extraction cache reruns project receiver resolution against current files.
+Unknown or ambiguous receivers, nested functions, closures and calls inside macros are omitted. Bare-call
+analysis skips bodies with macros or local imports. Syntax errors suppress calls for that file. Call coverage
+is partial; other relationship kinds remain unsupported. It does not infer concrete implementations of
+generic trait receivers, resolve external `mod` links, expand macros, evaluate cfg, or index tuple positions and local bindings. Declaration
 ranges exclude leading attributes and doc comments. Syntax recovery adds a limit and a warning. Matching
 tags outcomes share one report with combined file counts; syntax-error files keep a separate report.
 [The tags experiment](rust-tags.md) records declaration coverage; [bounded direct calls](rust-direct-calls.md)
-records the supported slice and a bat smoke test. Tags cache version query-v5 includes named members and call
+records the supported slice and a bat smoke test. Tags cache version query-v6 includes named members and call
 extraction.
 
 Ruby's syntax-only `TagsProvider` (`src/tags/ruby.ts`, `ruby.scm`) uses `tree-sitter-ruby@0.23.1`. It
@@ -3097,7 +3103,7 @@ heuristic references, SCIP-precise references for TypeScript/JavaScript, Python 
 full CLI (with `change`, `draft` and `lint`), Read, Explore and Present with tours, feedback from the page
 under `xpl view` and its live update, architecture maps (`role`, `opens`), change explainers with
 base anchors and a diff view, and example explainers for the original three fixtures. Rust has an
-experimental syntax-tags provider and a browser-tested structural bundle; it has no relationship resolver or committed example explainer.
+experimental syntax-tags provider with bounded heuristic calls and a browser-tested structural bundle; it has no committed example explainer.
 Ruby has source-backed declaration tags and a runnable fixture, but no relationship resolver.
 
 PHP has source-backed declaration tags and a small source fixture, but no relationship resolver.
