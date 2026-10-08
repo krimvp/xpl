@@ -36,7 +36,7 @@ it("indexes Rust tags with precise off and keeps lexical trait, impl and module 
     files: 1,
     symbols: 20,
     refs: "heuristic",
-    tool: "tree-sitter-rust@0.24.0/query-v5",
+    tool: "tree-sitter-rust@0.24.0/query-v6",
   });
   expect(
     index.symbols.map((s) => [s.path, s.kind, s.range.startLine, s.range.endLine, s.parent]),
@@ -111,7 +111,7 @@ it("keeps fixture macro definitions and physical impls without inventing expande
     files: 9,
     symbols: 140,
     refs: "heuristic",
-    tool: "tree-sitter-rust@0.24.0/query-v5",
+    tool: "tree-sitter-rust@0.24.0/query-v6",
   });
   const expected = [
     ["src/queue.rs#JobQueue", 21, 27, undefined],
@@ -137,7 +137,9 @@ it("keeps fixture macro definitions and physical impls without inventing expande
   ).toEqual(expected);
   expect(index.symbols.filter((s) => s.path === "RunnerStats" || s.path === "$name")).toEqual([]);
   expect(
-    index.refs.map(({ from, to, site, resolution }) => ({ from, to, site, resolution })),
+    index.refs
+      .slice(0, 2)
+      .map(({ from, to, site, resolution }) => ({ from, to, site, resolution })),
   ).toEqual([
     {
       from: "src/config.rs#load_config",
@@ -151,6 +153,23 @@ it("keeps fixture macro definitions and physical impls without inventing expande
       site: { startLine: 68, startCol: 20, endLine: 68, endCol: 35 },
       resolution: "heuristic",
     },
+  ]);
+  expect(index.refs).toHaveLength(14);
+  expect(
+    index.refs
+      .filter((ref) => ref.from.endsWith(".dispatch"))
+      .map(({ to, site, resolution }) => [to, site.startLine, resolution]),
+  ).toEqual([
+    ["src/queue.rs#JobQueue.size", 66, "heuristic"],
+    ["src/queue.rs#JobQueue.pop", 67, "heuristic"],
+    ["src/worker.rs#impl WorkerPool.lease", 71, "heuristic"],
+    ["src/worker.rs#impl Worker.run", 78, "heuristic"],
+    ["src/worker.rs#impl WorkerPool.release", 79, "heuristic"],
+    ["src/runner.rs#impl RunnerStats.record", 80, "heuristic"],
+    ["src/queue.rs#JobQueue.ack", 82, "heuristic"],
+    ["src/queue.rs#JobQueue.requeue", 87, "heuristic"],
+    ["src/queue.rs#JobQueue.dead_letter", 93, "heuristic"],
+    ["src/runner.rs#impl Runner<Q>.stop", 99, "heuristic"],
   ]);
   expect(describeAnalysis(index).details.filter((s) => s.startsWith("rust ("))).not.toContainEqual(
     expect.stringContaining("Only file anchors are available"),
@@ -276,6 +295,71 @@ it("resolves unshadowed bare calls between same-file root functions as heuristic
   expect(describeAnalysis(index).details.join("\n")).toContain("calls partial");
 });
 
+it("resolves source-backed trait and concrete receiver calls across Rust modules", async () => {
+  const { index, dir } = await indexFiles({
+    "src/lib.rs": "mod queue; mod worker; mod runner;\n",
+    "src/queue.rs": "pub trait JobQueue { fn pop(&mut self); fn requeue(&mut self); }\n",
+    "src/worker.rs": "pub struct Worker; impl Worker { pub fn run(&mut self) {} }\n",
+    "src/runner.rs": [
+      "use crate::queue::JobQueue;",
+      "use crate::worker::Worker;",
+      "pub struct Runner<Q: JobQueue> { queue: Q, worker: Worker }",
+      "impl<Q: JobQueue> Runner<Q> {",
+      "  fn dispatch(&mut self) {",
+      "    self.queue.pop();",
+      "    self.queue.requeue();",
+      "    self.worker.run();",
+      "  }",
+      "}",
+      "",
+    ].join("\n"),
+  });
+  const calls = index.refs.filter((ref) => ref.from.endsWith(".dispatch"));
+  expect(calls.map(({ to, site, resolution }) => [to, site.startLine, resolution])).toEqual([
+    ["src/queue.rs#JobQueue.pop", 6, "heuristic"],
+    ["src/queue.rs#JobQueue.requeue", 7, "heuristic"],
+    ["src/worker.rs#impl Worker.run", 8, "heuristic"],
+  ]);
+  const warm = await buildIndex({ root: dir, precise: "off" });
+  expect(warm.extraction.hits).toBe(4);
+  expect(warm.index.refs).toEqual(index.refs);
+});
+
+it("omits ambiguous impl methods and imports that occur only in comments", async () => {
+  const { index } = await indexFiles({
+    "src/remote.rs": "pub struct Remote; impl Remote { pub fn run(&self) {} }\n",
+    "src/local.rs": [
+      "// use crate::remote::Remote;",
+      "struct Remote;",
+      "struct Worker;",
+      "impl Worker { fn run(&self) {} }",
+      "impl Worker { fn run(&self) {} }",
+      "struct Owner { worker: Worker, remote: Remote }",
+      "impl Owner { fn dispatch(&self) { self.worker.run(); self.remote.run(); } }",
+      "",
+    ].join("\n"),
+    "src/shadow.rs": [
+      "struct Worker; impl Worker { fn run(&self) {} }",
+      "struct Other; impl Other { fn run(&self) {} }",
+      "fn one() -> Worker { Worker }",
+      "fn two() -> Option<Other> { None }",
+      "struct Owner;",
+      "impl Owner { fn dispatch(&self) {",
+      "  let worker: Worker = one();",
+      "  if let Some(worker) = two() { worker.run(); }",
+      "} }",
+      "",
+    ].join("\n"),
+    "src/qualified.rs": [
+      "use crate::remote::Remote;",
+      "struct Owner { remote: external::Remote }",
+      "impl Owner { fn dispatch(&self) { self.remote.run(); } }",
+      "",
+    ].join("\n"),
+  });
+  expect(index.refs).toEqual([]);
+});
+
 it("leaves shadowing, macro bodies and non-root dispatch outside the Rust call slice", async () => {
   const { index } = await indexFiles({
     "a.rs": [
@@ -304,7 +388,7 @@ it("leaves shadowing, macro bodies and non-root dispatch outside the Rust call s
     ["a.rs#yes", "a.rs#target", "heuristic"],
   ]);
   expect(describeAnalysis(index).details.join("\n")).toContain(
-    "Unknown, shadowed and qualified/generic calls",
+    "Unknown, shadowed and ambiguous receivers",
   );
 });
 

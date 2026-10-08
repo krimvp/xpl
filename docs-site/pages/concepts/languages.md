@@ -1,6 +1,6 @@
 # Languages and precision
 
-xpl indexes TypeScript, JavaScript, Python, Go and Java with language packs. YAML, JSON and TOML keys are symbols, so configuration entries can be anchored just like functions. Other text files receive file anchors. Rust has experimental declaration tags and bounded heuristic calls between root-level functions in one file. Ruby and PHP have named declaration tags without relationship analysis.
+xpl indexes TypeScript, JavaScript, Python, Go and Java with language packs. YAML, JSON and TOML keys are symbols, so configuration entries can be anchored just like functions. Other text files receive file anchors. Rust has experimental declaration tags and bounded heuristic bare and receiver calls. Ruby and PHP have named declaration tags without relationship analysis.
 
 Tree-sitter WASM extracts symbols without installing language toolchains. References (calls, imports, inheritance, type uses and reads) come from xpl's scope-aware heuristic resolver or, when available, a compiler-grade SCIP indexer. References always keep their source label. The viewer draws heuristic edges lighter; the authoring skill treats them as hints to confirm.
 
@@ -8,16 +8,16 @@ Tree-sitter WASM extracts symbols without installing language toolchains. Refere
 
 ## Precise reference tools and artifacts
 
-| Language                | Tool and requirements                                                        |
-| ----------------------- | ---------------------------------------------------------------------------- |
-| TypeScript / JavaScript | `scip-typescript` 0.4.0 via `npx`; first use may need network access         |
-| Python                  | `scip-python` 0.6.6 via `npx`; first use may need network access             |
-| Go                      | `scip-go` 0.2.7; Go 1.25 or a `go` that can download the toolchain           |
-| Java                    | `--scip` with a separately generated, source-checked artifact                |
-| Rust                    | Experimental declarations and bare same-file root-function calls (heuristic) |
-| Ruby                    | Named classes, modules, methods and constants; no relationship analysis      |
-| PHP                     | Named declarations; no relationship analysis                                 |
-| YAML, JSON, TOML        | Keys are symbols; no reference relationships                                 |
+| Language                | Tool and requirements                                                     |
+| ----------------------- | ------------------------------------------------------------------------- |
+| TypeScript / JavaScript | `scip-typescript` 0.4.0 via `npx`; first use may need network access      |
+| Python                  | `scip-python` 0.6.6 via `npx`; first use may need network access          |
+| Go                      | `scip-go` 0.2.7; Go 1.25 or a `go` that can download the toolchain        |
+| Java                    | `--scip` with a separately generated, source-checked artifact             |
+| Rust                    | Experimental declarations and bounded bare and receiver calls (heuristic) |
+| Ruby                    | Named classes, modules, methods and constants; no relationship analysis   |
+| PHP                     | Named declarations; no relationship analysis                              |
+| YAML, JSON, TOML        | Keys are symbols; no reference relationships                              |
 
 `xpl index` tries precise tools by default. Use `--precise off` for heuristic results or `--precise require` to fail when a precise tool cannot run. `XPL_SCIP_TIMEOUT_MS` sets the per-tool timeout (default 10 minutes). If a tool omits files, their heuristic references remain and the summary names the gap.
 
@@ -31,7 +31,7 @@ Precise indexing can be expensive on large repositories. In measured runs, Djang
 
 Import generated SCIP data with `xpl index --scip <artifact|manifest.json>`. Documents need embedded source or a manifest tied to pre-generation source hashes. Missing ranges, parents and call classification remain explicit limits. Partial artifacts preserve syntax symbols; range-less artifacts cannot add declarations. Without checked targets, a standalone import reports `refs: none` and fails under `--precise require`. See the [CLI reference](../reference/commands.md) for artifact requirements.
 
-Rust call analysis omits unknown or shadowed names, qualified/generic calls, nested functions, closures, methods, trait dispatch and cross-module targets. Bodies with macros or local imports, and files with syntax errors, do not produce calls. Call coverage stays partial; no macro expansion or cfg evaluation runs.
+Rust resolves unshadowed bare root-function calls in one file. It also resolves receiver calls when a field, local type or one-method return type identifies a receiver and one target method. An explicit root-level `use crate::module::Type` can connect sibling module files. A generic bound points to its trait method, without guessing a concrete implementation. Unknown or ambiguous receivers, calls inside nested functions, closures or macros, and syntax-error files produce no receiver calls. The bare pass skips bodies with macros or local imports. Call coverage stays partial; no macro expansion or cfg evaluation runs.
 
 Ruby tags anchor named classes, modules, instance and singleton methods, and direct constant assignments. Scoped assignments such as `Other::CONST =` are omitted because lexical nesting does not establish their owner. They report `refs: none`: xpl does not infer Ruby calls, imports, inheritance or cross-file namespace ownership. Metaprogrammed declarations and local bindings are outside this syntax path. Ruby source appears in `search --code` and repository drafts; the viewer currently shows it as plain text.
 

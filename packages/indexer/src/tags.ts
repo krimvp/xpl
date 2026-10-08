@@ -13,6 +13,7 @@ import type {
   ProviderRange,
   ProviderDeclaration,
   ProviderRelationship,
+  ProviderSource,
 } from "./providers.js";
 
 interface TagsProfile {
@@ -37,6 +38,11 @@ interface TagsProfile {
       declarations: readonly ProviderDeclaration[],
     ): ProviderRelationship[];
     limitations: string[];
+    resolveProject?(
+      sources: readonly ProviderSource[],
+      declarations: readonly ProviderDeclaration[],
+      eligible: ReadonlySet<string>,
+    ): Promise<ProviderRelationship[]>;
   };
 }
 const KINDS: Readonly<Record<string, IndexedSymbol["kind"]>> = {
@@ -79,6 +85,7 @@ export class TagsProvider implements IndexProvider {
     const relationships: ProviderRelationship[] = [];
     const analysis = new Map<boolean, AnalysisReport>();
     const sourceHashes: Record<string, string> = {};
+    const eligible = new Set<string>();
     let query: Query | undefined;
     try {
       const queryText = this.profile.query();
@@ -180,6 +187,7 @@ export class TagsProvider implements IndexProvider {
           : await extract();
         declarations.push(...result.declarations);
         relationships.push(...result.relationships);
+        if (!result.recovered) eligible.add(source.path);
         if (result.warning) input.warn(result.warning);
         // All other outcomes are fixed by this profile; syntax recovery changes the limitations.
         const recovered = result.recovered;
@@ -232,6 +240,10 @@ export class TagsProvider implements IndexProvider {
           ],
         });
       }
+      if (this.profile.calls?.resolveProject)
+        relationships.push(
+          ...(await this.profile.calls.resolveProject(input.sources, declarations, eligible)),
+        );
     } finally {
       query?.delete();
       parser?.delete();
