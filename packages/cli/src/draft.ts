@@ -1531,6 +1531,25 @@ export function draftRepo(input: DraftInput): Draft {
     }
   }
   if (insides.length === 0) {
+    const javaFiles =
+      total === 0
+        ? model.files.filter(
+            (file) =>
+              file.language === "text" &&
+              file.path.toLowerCase().endsWith(".java") &&
+              !outside(file.path),
+          )
+        : [];
+    if (javaFiles.length > 0) {
+      const file = javaFiles[0]!.path;
+      const count = javaFiles.length;
+      throw new Error(
+        `the index has no supported code files outside tests, docs, examples and benchmarks; ` +
+          `it contains ${count} eligible Java source file${count === 1 ? "" : "s"} (.java), indexed as text, ` +
+          `so repository drafting cannot infer Java symbols or import structure. Inspect one with ` +
+          `\`xpl show file:${file}\`. Importing Java SCIP data alone does not enable Java repository levels.`,
+      );
+    }
     throw new Error(
       "the index has no code files outside tests, docs, examples and benchmarks: there is nothing to put on an overview",
     );

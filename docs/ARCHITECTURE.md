@@ -1547,7 +1547,10 @@ select a different repository JSON file. Unreadable guides still fail selection.
 
 `core/src/languages.ts` classifies every `FileLanguage` with a code display name or `undefined` for config
 and other text. Its derived `CODE_LANGUAGES` set is shared by code search and repo drafts; Rust participates
-in both, and its draft service boxes carry `tech: Rust`. Adding a language requires a classification.
+in both, and its draft service boxes carry `tech: Rust`. Adding a language requires a classification. When a
+repository has eligible `.java` files but no supported code files, `xpl draft repo` reports how many Java
+files were indexed as text and points to `xpl show file:<path>`. File anchors remain available; Java SCIP
+data alone does not enable automatic Java repository levels. Test-only Java files keep the empty-code error.
 
 **GitHub PR inputs.** `pr.ts` parses GitHub.com URLs, `owner/repo#number`, or `owner/repo` plus a number.
 It calls `gh api --hostname github.com repos/<owner>/<repo>/pulls/<number>` using existing access,
