@@ -128,6 +128,7 @@ test.describe("architecture maps", () => {
   });
 
   test("a box shows its inside in place, and folds back", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 720 });
     await openBundle(page, "view:system", ARCHITECTURE_BUNDLE);
     const service = box(page, "grp:job-runner");
     await expect(page.locator('.diagram [data-element-id="grp:scheduling"]')).toHaveCount(0);
@@ -141,6 +142,12 @@ test.describe("architecture maps", () => {
     const state = await stateOf(page);
     expect(state.graph!.nodes).toContain("grp:scheduling");
     expect(state.include).toEqual(["grp:operator", "grp:job-runner", "grp:settings-file"]);
+    // At a readable zoom this wide container extends past the pane. Fit shows its fold control.
+    const fit = page.getByRole("button", { name: "Fit to view" });
+    await expect(fit).toBeVisible();
+    await fit.focus();
+    await expect(fit).toBeFocused();
+    await page.keyboard.press("Enter");
     await page.locator('[data-collapse-id="grp:job-runner"]').click();
     await expect(page.locator('.diagram [data-element-id="grp:scheduling"]')).toHaveCount(0);
     await expect(service).not.toHaveClass(/is-container/);
