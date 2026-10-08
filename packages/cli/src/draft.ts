@@ -67,6 +67,7 @@ import {
   readmeUsage,
   workspaceParents,
 } from "./outside.js";
+import { plural } from "./format.js";
 
 export const DRAFT_LIMITS = {
   /** Boxes on a drafted map (the skill: 4-8). */
@@ -1223,9 +1224,9 @@ export function draftChange(input: DraftInput, change: ChangeRecord): Draft {
       [testGroup ?? mainFocus],
       note(
         todo("what the tests cover, as a plain statement"),
-        todo("which test checks which behaviour change, and which new branch no test covers."),
+        todo("which test checks each behavior change, and whether the new branches are tested."),
         untested.length > 0
-          ? `No test found for ${nameList(untested)}: ${todo("check whether tests of other code run them.")}`
+          ? `No indexed test matched ${nameList(untested)} by name: ${todo("check changed test files for coverage through other code.")}`
           : "",
       ),
       testAnchors.length > 0
@@ -1275,7 +1276,7 @@ export function draftChange(input: DraftInput, change: ChangeRecord): Draft {
           todo(
             `what the tests cover (${newTests} new test functions` +
               (untested.length > 0
-                ? `; no test found for ${untested.length} changed symbols).`
+                ? `; no indexed test matched ${plural(untested.length, "changed symbol")} by name).`
                 : ")."),
           ),
         ].join(" "),

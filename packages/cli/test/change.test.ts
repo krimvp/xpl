@@ -6,7 +6,7 @@
 import { copyFileSync, renameSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
-import { parseBundle, type ChangeRecord, type Explainer } from "@xpl/core";
+import { parseBundle, type ChangeRecord, type Explainer, type ExplainerPatch } from "@xpl/core";
 import { linesList, parseRange } from "../src/commands/change.js";
 import { parseNameStatus, parsePatch, unquotePath } from "../src/git.js";
 import { startViewServer } from "../src/server.js";
@@ -180,6 +180,68 @@ describe("git parsing", () => {
 });
 
 describe("xpl change", () => {
+  it("labels a changed integration test separately from symbol-name matches", async () => {
+    const dir = makeTempDir("xpl-change-integration-");
+    writeFile(dir, "src/engine.py", "def normalize(value):\n    return value\n");
+    writeFile(
+      dir,
+      "src/service.py",
+      "from engine import normalize\n\ndef handle(request):\n    return normalize(request['value'])\n",
+    );
+    writeFile(
+      dir,
+      "tests/test_service.py",
+      "from service import handle\n\ndef test_request():\n    assert handle({'value': 'old'}) == 'old'\n",
+    );
+    git(dir, "init", "-q", "-b", "main");
+    git(dir, "add", "-A");
+    git(dir, "commit", "-q", "-m", "base");
+    writeFile(dir, "src/engine.py", "def normalize(value):\n    return value.upper()\n");
+    writeFile(
+      dir,
+      "tests/test_service.py",
+      "from service import handle\n\ndef test_request():\n    assert handle({'value': 'new'}) == 'NEW'\n",
+    );
+    git(dir, "add", "-A");
+    git(dir, "commit", "-q", "-m", "head");
+    expect((await xpl(dir, "index", "--precise", "off")).code).toBe(0);
+    expect((await xpl(dir, "new", "demo")).code).toBe(0);
+
+    const change = await xpl(dir, "change", "demo", "HEAD~1..HEAD");
+    expect(change.code).toBe(0);
+    expect(change.out).toContain("tests: no indexed test matches this symbol by name");
+    expect(change.out).toContain(
+      "No indexed test matched 1 changed symbol by name: sym:src/engine.py#normalize",
+    );
+    expect(change.out).toContain("test files the change touches (1):\n  tests/test_service.py");
+    const structured = await xplJson<{
+      analysis: {
+        untested: string[];
+        files: { path: string; test: boolean }[];
+        testSymbols: { id: string }[];
+      };
+    }>(dir, "change", "demo");
+    expect(structured.json.analysis.untested).toEqual(["sym:src/engine.py#normalize"]);
+    expect(structured.json.analysis.files.find((file) => file.test)?.path).toBe(
+      "tests/test_service.py",
+    );
+    expect(structured.json.analysis.testSymbols.map((symbol) => symbol.id)).toEqual([
+      "sym:tests/test_service.py#test_request",
+    ]);
+
+    const help = await invoke(["change", "--help"]);
+    expect(help.out).toContain("a missing match does not mean the behavior has no test");
+    expect(help.out).toContain("changed test files are listed separately");
+
+    const drafted = await xplJson<{ patch: ExplainerPatch }>(dir, "draft", "change", "demo");
+    expect(drafted.code).toBe(0);
+    const patch = drafted.json.patch;
+    const testStep = patch.tours![0]!.steps!.find((step) => step.note?.includes("indexed test"));
+    expect(testStep?.note).toContain("No indexed test matched `normalize` by name");
+    expect(testStep?.note).toContain("whether the new branches are tested");
+    expect(patch.tours![0]!.summary).toContain("no indexed test matched 1 changed symbol by name");
+  });
+
   it("records the change with full SHAs, statuses and hunks, and prints the analysis", async () => {
     const dir = cloneDir(repo);
     const r = await xpl(dir, "change", "demo", "HEAD~1..HEAD");
@@ -231,7 +293,7 @@ describe("xpl change", () => {
     expect(r.out).toContain("sym:app.py#helper  (function, lines 17-18)  changed");
     expect(r.out).toContain("sym:app.py#App.handle  (method, lines 11-14)  changed at 12-14");
     expect(r.out).toContain("sym:tests/test_app.py#test_app  (changed, uses its class)");
-    expect(r.out).toContain("no test found for 1 changed symbol: sym:new.py#fresh");
+    expect(r.out).toContain("No indexed test matched 1 changed symbol by name: sym:new.py#fresh");
     expect(r.out).toContain(
       "changed lines outside any symbol (imports, module-level code):\n  app.py: 1",
     );

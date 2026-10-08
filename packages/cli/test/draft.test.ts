@@ -447,9 +447,9 @@ describe("xpl draft change", () => {
     expect(pieces.indexOf("sym:runner.py#backoff")).toBeLessThan(
       pieces.indexOf("sym:helpers.py#clamp"),
     );
-    // the tests step names the changed symbols no test references
+    // the tests step names changed symbols with no indexed test match by name
     const tests = steps.at(-2)!.note!;
-    expect(tests).toContain("No test found for");
+    expect(tests).toContain("No indexed test matched");
     expect(tests).toContain("`clamp`");
     // the steps cite changed lines: no step shows more than 2 ranges
     for (const step of steps) expect(step.code!.length).toBeLessThanOrEqual(2);
