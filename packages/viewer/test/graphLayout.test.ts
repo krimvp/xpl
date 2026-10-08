@@ -76,6 +76,45 @@ describe("layoutGraph", () => {
       "job.completed",
     );
   });
+  it("keeps a shortened arrow outside a sibling box", async () => {
+    const graph: DerivedGraph = {
+      nodes: Array.from({ length: 6 }, (_, i) => ({
+        id: `n${i}`,
+        label: `n${i}`,
+        kind: "group" as const,
+        role: "component" as const,
+        container: false,
+      })),
+      edges: ["0-2", "0-3", "1-2", "1-3", "1-4", "2-4"].map((pair) => ({
+        id: `e${pair}`,
+        from: `n${pair[0]}`,
+        to: `n${pair[2]}`,
+        kind: "calls" as const,
+        count: 1,
+        resolution: "static" as const,
+        stored: true,
+        anchors: [],
+      })),
+      stubs: [],
+      ghosts: [],
+    };
+    const layout = await layoutGraph(graph);
+    const obstruction = absoluteBoxes(layout.nodes).get("n3")!;
+    const points = layout.edges.find((edge) => edge.id === "e1-4")!.points;
+    const crosses = points.slice(1).filter((p, i) => {
+      const q = points[i]!;
+      return p.y === q.y
+        ? p.y > obstruction.y &&
+            p.y < obstruction.y + obstruction.height &&
+            Math.max(p.x, q.x) > obstruction.x &&
+            Math.min(p.x, q.x) < obstruction.x + obstruction.width
+        : p.x > obstruction.x &&
+            p.x < obstruction.x + obstruction.width &&
+            Math.max(p.y, q.y) > obstruction.y &&
+            Math.min(p.y, q.y) < obstruction.y + obstruction.height;
+    });
+    expect(crosses).toEqual([]);
+  });
   it("keeps automatic boxes clear of a pinned sibling without moving the pin", async () => {
     const { graph } = graphOf(["file:src/a.ts", "file:src/b.ts"]);
     const automatic = await layoutGraph(graph);

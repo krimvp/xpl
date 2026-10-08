@@ -654,6 +654,30 @@ function routeLength(points: readonly Point[]): number {
     .reduce((n, p, i) => n + Math.abs(p.x - points[i]!.x) + Math.abs(p.y - points[i]!.y), 0);
 }
 
+function crossesBox(points: readonly Point[], box: Box): boolean {
+  for (let i = 1; i < points.length; i++) {
+    const a = points[i - 1]!,
+      b = points[i]!;
+    if (
+      a.x === b.x &&
+      a.x > box.x &&
+      a.x < box.x + box.width &&
+      Math.max(a.y, b.y) > box.y &&
+      Math.min(a.y, b.y) < box.y + box.height
+    )
+      return true;
+    if (
+      a.y === b.y &&
+      a.y > box.y &&
+      a.y < box.y + box.height &&
+      Math.max(a.x, b.x) > box.x &&
+      Math.min(a.x, b.x) < box.x + box.width
+    )
+      return true;
+  }
+  return false;
+}
+
 function labelCentre(points: Point[]): Point | undefined {
   let centre: Point | undefined,
     longest = -1;
@@ -961,16 +985,23 @@ function layeredLayout(model: Model, direction: Direction, pins: GraphView["layo
         if (item.from.fixed || item.to.fixed || old.length <= 4) continue;
         const start = old[0]!,
           end = old.at(-1)!;
+        const fromEnd =
+          item.from.box[main] + (main === "x" ? item.from.box.width : item.from.box.height);
+        if (
+          Math.abs(start[main] - fromEnd) > 0.01 ||
+          Math.abs(end[main] - item.to.box[main]) > 0.01 ||
+          end[main] <= start[main]
+        )
+          continue;
         const middle = (start[main] + end[main]) / 2;
         const candidate = [start, { ...start, [main]: middle }, { ...end, [main]: middle }, end];
         if (routeLength(candidate) >= routeLength(old) - 5) continue;
-        const clear = aroundBoxes(
-          candidate,
-          obstacles
-            .filter(([id]) => id !== item.from.key && id !== item.to.key)
-            .map(([, box]) => box),
-        );
-        if (clear !== candidate) continue;
+        if (
+          obstacles.some(
+            ([id, box]) => id !== item.from.key && id !== item.to.key && crossesBox(candidate, box),
+          )
+        )
+          continue;
         if (routed.some((other, j) => j !== n && routesMeet(candidate, other))) continue;
         routed[n] = candidate;
         const route = lvl.routes.get(item.id);
