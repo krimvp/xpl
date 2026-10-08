@@ -779,6 +779,23 @@
   max-width: 260px;
   min-width: 0;
 }
+.caption-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: 0;
+}
+.caption-actions .btn {
+  flex: none;
+}
+.fold-back-action {
+  max-width: 22ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 /* a11y: the maps a box on this one opens, as plain links under the title (manager V4) */
 .caption-insides {
   display: flex;

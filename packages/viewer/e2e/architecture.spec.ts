@@ -132,7 +132,7 @@ test.describe("architecture maps", () => {
     await openBundle(page, "view:system", ARCHITECTURE_BUNDLE);
     const service = box(page, "grp:job-runner");
     await expect(page.locator('.diagram [data-element-id="grp:scheduling"]')).toHaveCount(0);
-    await buttonsOf(page, "grp:job-runner").locator(".expand-here").click();
+    await page.locator('[data-buttons-of="grp:job-runner"] .expand-here').click();
     // the same map, with the service drawn as a container around its components
     await expect(page.locator('.diagram[data-view-id="view:system"]')).toBeVisible();
     await expect(service).toHaveClass(/is-container/);
@@ -142,14 +142,43 @@ test.describe("architecture maps", () => {
     const state = await stateOf(page);
     expect(state.graph!.nodes).toContain("grp:scheduling");
     expect(state.include).toEqual(["grp:operator", "grp:job-runner", "grp:settings-file"]);
-    // At a readable zoom this wide container extends past the pane. Fit shows its fold control.
-    const fit = page.getByRole("button", { name: "Fit to view" });
-    await expect(fit).toBeVisible();
-    await fit.focus();
-    await expect(fit).toBeFocused();
-    await page.keyboard.press("Enter");
-    await page.locator('[data-collapse-id="grp:job-runner"]').click();
+    // The wide container extends past the pane at readable zoom. Folding stays on screen.
+    const fold = page.locator(".diagram-caption").getByRole("button", {
+      name: "Fold Job runner back",
+    });
+    await expect(fold).toBeVisible();
+    await fold.click();
     await expect(page.locator('.diagram [data-element-id="grp:scheduling"]')).toHaveCount(0);
     await expect(service).not.toHaveClass(/is-container/);
+    await buttonsOf(page, "grp:job-runner").locator(".expand-here").click();
+    await fold.focus();
+    await expect(fold).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(service).not.toHaveClass(/is-container/);
+    await expect.poll(async () => (await stateOf(page)).include).toEqual(state.include);
+    await page.setViewportSize({ width: 640, height: 900 });
+    await buttonsOf(page, "grp:job-runner").locator(".expand-here").click();
+    await expect(fold).toBeVisible();
+    const bounds = await fold.boundingBox();
+    expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(640);
+    await fold.click();
+    await expect(service).not.toHaveClass(/is-container/);
+  });
+
+  test("the Read map offers the same reachable fold action", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await page.goto(ARCHITECTURE_BUNDLE.href + "?perspective=map&view=view:system");
+    await page.waitForFunction(() => window.__xpl !== undefined);
+    const include = (await stateOf(page)).include;
+    await page.locator('[data-buttons-of="grp:job-runner"] .expand-here').click();
+    const fold = page.locator(".workspace-caption").getByRole("button", {
+      name: "Fold Job runner back",
+    });
+    await expect(fold).toBeVisible();
+    await fold.click();
+    await expect(page.locator('[data-element-id="grp:job-runner"]').first()).not.toHaveClass(
+      /is-container/,
+    );
+    await expect.poll(async () => (await stateOf(page)).include).toEqual(include);
   });
 });
