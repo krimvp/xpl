@@ -203,7 +203,7 @@ export function renderAnalysis(analysis: ChangeAnalysis, omissions: string[] = [
   out.push("");
   out.push(
     analysis.untested.length === 0
-      ? "every changed symbol matches an indexed test by name"
+      ? "every changed symbol has an indexed test reference"
       : `No indexed test matched ${plural(analysis.untested.length, "changed symbol")} by name: ${analysis.untested.join(", ")}`,
   );
   out.push(
