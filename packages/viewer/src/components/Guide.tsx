@@ -19,6 +19,7 @@ import { ExplanationInfo } from "./ExplanationInfo.js";
 import { callersOf, changeSummary, type Caller } from "../callers.js";
 import { overrideFocus } from "../derive.js";
 import { changeFiles, changeOf, STATUS_WORDS } from "../diff.js";
+import { readLaunchParams } from "../data.js";
 import { useStore, useViewerState } from "../hooks.js";
 import { renderInline, renderMarkdown } from "../markdown.js";
 import { stepTests } from "../stepTests.js";
@@ -27,11 +28,35 @@ import { TourPicker } from "./Header.js";
 import { Snapshot } from "./Snapshot.js";
 import { GuideSource } from "./GuideSource.js";
 
-export function Guide({ onReading }: { onReading?: (stepId: string | undefined) => void } = {}) {
+export function Guide({
+  onReading,
+  returningFromPresent = false,
+}: {
+  onReading?: (stepId: string | undefined) => void;
+  returningFromPresent?: boolean;
+} = {}) {
   const store = useStore();
   const state = useViewerState();
   const tour = store.currentTour() ?? state.model.tours[0];
+  const [staleLink, setStaleLink] = useState(() => {
+    const params = readLaunchParams();
+    if (params.perspective !== "guide" || !params.stepId) return false;
+    const linkedTour = params.tour
+      ? state.model.tours.find(
+          (item) => item.id === params.tour || item.id === `tour:${params.tour}`,
+        )
+      : tour;
+    return !linkedTour?.steps.some((step) => step.id === params.stepId);
+  });
+  const initialStepSeq = useRef(state.stepSeq);
+  const initialTourId = useRef(state.tour?.tourId);
+  const returnOpenSeq = useRef(returningFromPresent ? state.openSeq : undefined);
+  useEffect(() => {
+    if (state.stepSeq !== initialStepSeq.current || state.tour?.tourId !== initialTourId.current)
+      setStaleLink(false);
+  }, [state.stepSeq, state.tour?.tourId]);
   const body = useRef<HTMLDivElement>(null);
+  const staleNotice = useRef<HTMLParagraphElement>(null);
   const initialized = useRef(false);
   /** The step the page opened on: the guide starts at its top (title, summary), not scrolled to it. */
   const opening = useRef<string | undefined>(undefined);
@@ -71,6 +96,7 @@ export function Guide({ onReading }: { onReading?: (stepId: string | undefined) 
   useEffect(() => {
     if (
       !initialized.current &&
+      !staleLink &&
       tour &&
       !state.applied &&
       state.selection.length === 0 &&
@@ -90,6 +116,7 @@ export function Guide({ onReading }: { onReading?: (stepId: string | undefined) 
     state.tour?.step,
     state.canGoBack,
     state.canGoForward,
+    staleLink,
   ]);
 
   useEffect(() => {
@@ -113,11 +140,29 @@ export function Guide({ onReading }: { onReading?: (stepId: string | undefined) 
       viewport = scroller.getBoundingClientRect();
     if (at.top < viewport.top || at.bottom > viewport.bottom)
       scroller.scrollTop += at.top - viewport.top - 24;
-  }, [active]);
+    // Leaving Present restores history after the slide returns focus to its button.
+    if (returnOpenSeq.current !== undefined) {
+      const restored = state.openSeq !== returnOpenSeq.current;
+      if (restored) returnOpenSeq.current = undefined;
+      if (restored || state.stepSeq === initialStepSeq.current) return;
+      returnOpenSeq.current = undefined;
+    }
+    section.querySelector<HTMLElement>("h3")?.focus({ preventScroll: true });
+    // Opening a source file changes openSeq, but should leave focus in the source pane.
+  }, [active, state.stepSeq]);
+
+  useEffect(() => {
+    if (staleLink) staleNotice.current?.focus({ preventScroll: true });
+  }, [staleLink]);
 
   if (!tour)
     return (
       <div className="guide-fallback">
+        {staleLink && (
+          <p className="guide-link-notice" role="alert" tabIndex={-1} ref={staleNotice}>
+            This linked guide is no longer available. Choose a topic below.
+          </p>
+        )}
         <p className="eyebrow">Start here</p>
         <h2>{state.explainer.title}</h2>
         <Audience />
@@ -170,6 +215,12 @@ export function Guide({ onReading }: { onReading?: (stepId: string | undefined) 
         ))}
       </nav>
       <div className="guide-body" ref={body}>
+        {staleLink && (
+          <p className="guide-link-notice" role="alert" tabIndex={-1} ref={staleNotice}>
+            This linked step is no longer in this guide. Start at the guide's beginning or choose a
+            step below.
+          </p>
+        )}
         {/* A phone: the steps as one picker that scrolls away with the text (the list above is hidden). */}
         <label className="guide-step-picker">
           <span className="sr-only">Go to a step</span>
@@ -215,6 +266,7 @@ export function Guide({ onReading }: { onReading?: (stepId: string | undefined) 
             index={index}
             tourId={tour.id}
             active={step.id === active}
+            linked={step.id === active && !staleLink}
           />
         ))}
       </div>
@@ -262,11 +314,13 @@ function GuideSection({
   index,
   tourId,
   active,
+  linked,
 }: {
   step: TourStep;
   index: number;
   tourId: string;
   active: boolean;
+  linked: boolean;
 }) {
   const store = useStore();
   const state = useViewerState();
@@ -320,14 +374,31 @@ function GuideSection({
   });
   // a11y: every step has the same buttons and lists; their names say which step they belong to
   const where = `step ${index + 1}: ${title}`;
+  const link = new URL(location.href);
+  for (const key of ["mode", "view", "focus", "file", "range", "side"])
+    link.searchParams.delete(key);
+  link.searchParams.set("perspective", "guide");
+  link.searchParams.set("tour", tourId);
+  link.searchParams.set("step", String(index + 1));
+  link.searchParams.set("step-id", step.id);
   return (
     <section className={`guide-section${active ? " is-active" : ""}`} data-section-id={step.id}>
       <span className="section-number">Step {index + 1}</span>
       {titleMarkdown !== undefined ? (
-        <h3 dangerouslySetInnerHTML={{ __html: renderInline(titleMarkdown) }} />
+        <h3 tabIndex={-1} dangerouslySetInnerHTML={{ __html: renderInline(titleMarkdown) }} />
       ) : (
-        <h3>{title}</h3>
+        <h3 tabIndex={-1}>{title}</h3>
       )}
+      <div className="guide-section-actions">
+        <a href={link.href} aria-label={`Link to ${where}`}>
+          Link to this step
+        </a>
+        {linked && (
+          <button type="button" className="btn" onClick={() => store.present(tourId, index)}>
+            Continue from this step
+          </button>
+        )}
+      </div>
       <div className="guide-explanation">
         <div className="guide-prose">
           {body && (

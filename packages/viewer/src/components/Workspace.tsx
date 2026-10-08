@@ -214,7 +214,7 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
               )}
             >
               {state.perspective === "guide" ? (
-                <Guide onReading={setReading} />
+                <Guide onReading={setReading} returningFromPresent={startWithSource} />
               ) : (
                 <>
                   <div className="workspace-caption">
