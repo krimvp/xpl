@@ -414,7 +414,7 @@ reading them again. Snapshot roots must match; language filtering still applies.
 disk, so the caller must recheck the revision before publishing. A changed-and-restored input supersedes a
 build even when its content fingerprint matches. Source reads are checked before and after capture.
 
-Configuration capture runs a syntax-only, cache-free resolver pass with `getText` recording every local
+Configuration capture runs a syntax-only resolver pass with `getText` recording every local
 configuration read, including missing paths. The returned text map is frozen for the real build. There is
 no filename-extension allowlist: ignored extends chains, package manifests and any other pack reads are
 captured through the same `SourceRepoView` reader. Packs and providers share the pure
@@ -422,6 +422,11 @@ captured through the same `SourceRepoView` reader. Packs and providers share the
 callers match the real build's mode and provider selection. Enabled semantic providers preload local
 inputs through the same recording reader without running tools. Declarations name the pinned tool version
 and the source file whose lookup they mirror; recheck them when bumping a tool:
+
+The capture pass uses the file-local extraction cache. On an edit it reuses unchanged files and writes
+facts for changed files, so the subsequent snapshot build can reuse both. It still resolves every site and
+records configuration reads afresh. Cache failures or an unsafe cache location fall back to extraction;
+the cache never stores configuration or semantic results.
 
 - Python 0.6.6 searches `scip-pyrightconfig.json` before `pyrightconfig.json`, nearest directory first,
   through ancestors. Only without any JSON config does it search `pyproject.toml`; `[tool.scip]` wins
