@@ -105,6 +105,29 @@ it("uses established owners for qualified Ruby module declarations", async () =>
   expect(index.refs).toEqual([]);
 });
 
+it("omits children of a qualified Ruby namespace whose owner is unknown", async () => {
+  const { index } = await indexFiles({
+    "unknown.rb": [
+      "module Missing::Ghost",
+      "  VALUE = 1",
+      "  def run; end",
+      "end",
+      "module Known",
+      "  module Missing::Other",
+      "    INNER = 2",
+      "  end",
+      "  GOOD = 3",
+      "end",
+      "",
+    ].join("\n"),
+  });
+  expect(index.symbols.map(({ id, range, parent }) => [id, range, parent])).toEqual([
+    ["unknown.rb#Known", { startLine: 5, endLine: 10 }, undefined],
+    ["unknown.rb#Known.GOOD", { startLine: 9, endLine: 9 }, "unknown.rb#Known"],
+  ]);
+  expect(index.refs).toEqual([]);
+});
+
 it("keeps repeated namespaces separate and reports syntax recovery without relationship claims", async () => {
   const { index, warnings, dir } = await indexFiles({
     "broken.rb": "module Jobs; end\nmodule Jobs; end\nclass Broken\n  def run(\n",
