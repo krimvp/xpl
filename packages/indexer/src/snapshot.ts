@@ -136,7 +136,6 @@ export async function captureIndexInputs(options: {
   await buildIndex({
     root,
     precise: "off",
-    cache: false,
     gitOptions: options.gitOptions,
     getText,
     snapshot: { root, sources, texts, fingerprint: "", revision: "" },

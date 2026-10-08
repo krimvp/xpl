@@ -21,6 +21,9 @@ The first build includes cache writes. A hit skips parsing, extraction and resou
 it still regenerates checked declarations, IDs, hashes, parents and reports. Project configuration is
 consumed fresh during heuristic resolution and semantic work. For example, changing a `tsconfig` alias or
 re-export can change an unchanged caller's target even when its file-local facts hit the cache.
+Watched input capture also uses this cache while it records configuration reads. On a one-file edit, capture
+extracts the changed file and the following snapshot build reuses it. Both passes still resolve references;
+semantic tools run in the snapshot build according to the selected precise mode.
 The default pipeline retains full resolution. The [off-default #17 experiment](assessment-2026-10-04-semantic-invalidation.md)
 records the decision on dependency-aware semantic reuse; it does not change `xpl index`.
 
@@ -94,3 +97,34 @@ These are bounded measurements, not a universal speed claim. Cold writes add ove
 files cost filesystem operations. Files without a language-pack or tags extractor count as neither hits
 nor misses. A fully warm cache still performs repository-wide resolution. Semantic work is verified to
 run again by the provider-boundary test; real SCIP tool costs are outside this benchmark.
+
+## Watched one-file edit, 2026-10-08
+
+Measured on macOS arm64 with Node v22.22.3. The inputs were local `git archive HEAD` copies of xpl at
+`3db32ace` and Goaly at `9ac6918`, without `.git` or dependencies. Each copy had a fully warm extraction
+cache. One comment was appended to `packages/indexer/src/build.ts` (xpl) or `src/orchestrator/step.ts`
+(Goaly), then
+`captureIndexInputs({root})` and `buildIndex({root, snapshot, precise: "off"})` ran in a new process. Three
+paired trials used separate copies of the same pre-edit cache. Wall time covers those two calls, not startup;
+the table gives medians. The previous capture pass used `cache: false`; the new pass uses the default cache.
+
+Before the edit trials, the existing `scripts/extraction-cache-benchmark.ts` measured one separate-process
+round of ordinary `buildIndex` on each archive. The two repositories ran concurrently, so those wall times
+include possible CPU contention. Cold removes the extraction entries; clean sets `cache: false`; warm reuses
+every eligible entry. Each cold and warm index and warning list matched its clean build byte for byte.
+
+| Repository | Clean / cold / warm wall | Warm extraction | Warm heuristic / semantic |
+|---|---:|---:|---:|
+| xpl | 6.10 / 7.35 / 2.02 s | 558 hits, 0 misses; 0.42 s | 0.43 / 0 s |
+| Goaly | 2.79 / 3.21 / 0.97 s | 419 hits, 0 misses; 0.23 s | 0.21 / 0 s |
+
+| Repository | Files / symbols / refs | Capture before → after | Capture + build before → after | Snapshot-build extraction after |
+|---|---:|---:|---:|---:|
+| xpl | 661 / 12,706 / 53,331 | 6.05 → 2.21 s | 7.99 → 3.97 s | 558 hits, 0 misses |
+| Goaly | 464 / 7,020 / 22,312 | 2.74 → 1.15 s | 3.61 → 1.92 s | 419 hits, 0 misses |
+
+The previous snapshot build had one miss for the edited file (557/1 on xpl, 418/1 on Goaly). Commit IDs and
+warning lists matched across each before/after pair. The indexer regression also compares the entire edited
+index against a cache-free build, including references, trust labels and commit identity. A normal `xpl index`
+does not call watched input capture, so these measurements do not claim a faster manual command. Cold cache
+writes, semantic tools, process startup and OS filesystem cache effects are outside this comparison.
