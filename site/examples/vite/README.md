@@ -21,7 +21,7 @@ rebuild the published page from the xpl repository root:
 6. Run `xpl validate vite-hmr`, `xpl status vite-hmr`, `xpl lint vite-hmr`, and
    `xpl ready vite-hmr`. Export with `xpl bundle vite-hmr -o /tmp/vite-hmr.html`.
 7. From the xpl repository root, run
-   `python3 site/examples/vite/publish-hmr.py /tmp/vite-hmr.html`. This adds the
+   `python3 site/examples/vite/publish-vite.py /tmp/vite-hmr.html vite-hmr`. This adds the
    Vite license and normalizes the bundle's local index root before writing
    `site/examples/vite/vite-hmr.html`. Run `npm run site` to check the export.
 
