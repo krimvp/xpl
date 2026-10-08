@@ -2100,6 +2100,20 @@ base/head moved, keeping only the last version link. It needs no checkout or sta
 `gh api` with the caller's token; two concurrent writers could still post two comments, so the workflow
 template serializes runs per PR.
 
+**Optional CI preview authoring (88).** `.github/workflows/pr-preview.yml` is manual and disabled until
+`XPL_CI_PREVIEWS=true`. Only the default branch runs, through the protected `xpl-previews` environment
+on a dedicated self-hosted Linux runner. `scripts/pr-preview.mjs` composes existing CLI commands:
+create, configured author executable, finish, stage and link. No schema or CLI command is added.
+Environment configuration names the author executable/credential, separate GitHub read/comment tokens,
+and a repository-specific mounted destination folder/base URL; visibility is always team. The mount's
+credentials and access controls belong to the runner operator and host. The author receives a handoff
+path, an allowlisted environment with only its provider token, and a fresh HOME. This is not a sandbox;
+a trusted author and ephemeral runner are required. Existing readiness and base/head checks own
+publication eligibility. On pipeline failure the script attempts check-link, preserving historical
+versions; a failed API request can prevent the stale-comment update. Dispatches serialize per PR.
+The author has a 20-minute timeout and child output is suppressed to keep secrets/source out of CI logs.
+See `docs-site/pages/workflows/pull-requests.md` for the complete setup and author contract.
+
 **Version navigation (34B).** `ViewerBundle.publication` carries a current `PublishedVersion` and prior
 summaries captured under the staging lock from retained immutable manifests. Each summary reuses locator,
 time, index/change commits, artifactIdentity, included head/base files and review state. The viewer never
