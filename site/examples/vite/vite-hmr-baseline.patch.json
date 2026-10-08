@@ -1,0 +1,315 @@
+{
+  "nodes": [
+    {
+      "id": "sym:packages/vite/src/node/server/hmr.ts#updateModules",
+      "summary": "Walks changed modules, invalidates them, then chooses a reload, a targeted update or no message."
+    },
+    {
+      "id": "sym:packages/vite/src/node/server/hmr.ts#handleHMRUpdate",
+      "summary": "Processes a changed file for each development environment and calls `updateModules` for matched modules."
+    },
+    {
+      "id": "sym:packages/vite/src/node/server/hmr.ts#propagateUpdate",
+      "summary": "Walks importers until it finds an accepted hot update boundary or a dead end."
+    }
+  ],
+  "views": [
+    {
+      "id": "view:hmr",
+      "type": "flow",
+      "title": "A file change becomes an update or a reload",
+      "scope": {
+        "root": "repo",
+        "depth": 3,
+        "question": "How does Vite decide whether a file change can update the browser?",
+        "entryPoints": [
+          "packages/vite/src/node/server/hmr.ts#updateModules"
+        ]
+      },
+      "participants": [
+        "sym:packages/vite/src/node/server/hmr.ts#updateModules"
+      ],
+      "steps": [
+        {
+          "id": "hmr:1",
+          "from": "sym:packages/vite/src/node/server/hmr.ts#updateModules",
+          "to": "sym:packages/vite/src/node/server/hmr.ts#updateModules",
+          "label": "Trace affected modules",
+          "kind": "call",
+          "shape": "stage",
+          "summary": "For each changed module, `propagateUpdate` finds accepting boundaries and a possible dead end.",
+          "anchors": [
+            {
+              "file": "packages/vite/src/node/server/hmr.ts",
+              "symbol": "updateModules",
+              "find": "const hasDeadEnd = propagateUpdate(mod, traversedModules, boundaries)",
+              "role": "definition"
+            }
+          ]
+        },
+        {
+          "id": "hmr:2",
+          "from": "sym:packages/vite/src/node/server/hmr.ts#updateModules",
+          "to": "sym:packages/vite/src/node/server/hmr.ts#updateModules",
+          "label": "Dead end found?",
+          "kind": "call",
+          "shape": "decision",
+          "summary": "A dead end requires a browser reload rather than a targeted update.",
+          "anchors": [
+            {
+              "file": "packages/vite/src/node/server/hmr.ts",
+              "symbol": "updateModules",
+              "find": "if (hasDeadEnd) {",
+              "role": "definition"
+            }
+          ],
+          "next": [
+            {
+              "step": "hmr:4",
+              "label": "yes"
+            },
+            {
+              "step": "hmr:3",
+              "label": "no"
+            }
+          ]
+        },
+        {
+          "id": "hmr:3",
+          "from": "sym:packages/vite/src/node/server/hmr.ts#updateModules",
+          "to": "sym:packages/vite/src/node/server/hmr.ts#updateModules",
+          "label": "HTML template changed?",
+          "kind": "call",
+          "shape": "decision",
+          "summary": "A client HTML template change also requires a page reload.",
+          "anchors": [
+            {
+              "file": "packages/vite/src/node/server/hmr.ts",
+              "symbol": "updateModules",
+              "find": "file.endsWith('.html') &&",
+              "role": "definition"
+            }
+          ],
+          "next": [
+            {
+              "step": "hmr:4",
+              "label": "yes"
+            },
+            {
+              "step": "hmr:5",
+              "label": "no"
+            }
+          ]
+        },
+        {
+          "id": "hmr:4",
+          "from": "sym:packages/vite/src/node/server/hmr.ts#updateModules",
+          "to": "sym:packages/vite/src/node/server/hmr.ts#updateModules",
+          "label": "Reload the page",
+          "kind": "call",
+          "shape": "terminal",
+          "summary": "The hot channel sends `full-reload` when propagation fails or client HTML needs reloading.",
+          "anchors": [
+            {
+              "file": "packages/vite/src/node/server/hmr.ts",
+              "symbol": "updateModules",
+              "find": "type: 'full-reload',",
+              "role": "definition"
+            }
+          ]
+        },
+        {
+          "id": "hmr:5",
+          "from": "sym:packages/vite/src/node/server/hmr.ts#updateModules",
+          "to": "sym:packages/vite/src/node/server/hmr.ts#updateModules",
+          "label": "Any updates to send?",
+          "kind": "call",
+          "shape": "decision",
+          "summary": "If no accepting boundary produced an update, the function sends nothing.",
+          "anchors": [
+            {
+              "file": "packages/vite/src/node/server/hmr.ts",
+              "symbol": "updateModules",
+              "find": "if (updates.length === 0) {",
+              "role": "definition"
+            }
+          ],
+          "next": [
+            {
+              "step": "hmr:6",
+              "label": "no"
+            },
+            {
+              "step": "hmr:7",
+              "label": "yes"
+            }
+          ]
+        },
+        {
+          "id": "hmr:6",
+          "from": "sym:packages/vite/src/node/server/hmr.ts#updateModules",
+          "to": "sym:packages/vite/src/node/server/hmr.ts#updateModules",
+          "label": "Stop without an update",
+          "kind": "call",
+          "shape": "terminal",
+          "summary": "The function returns when there are no update payloads.",
+          "anchors": [
+            {
+              "file": "packages/vite/src/node/server/hmr.ts",
+              "symbol": "updateModules",
+              "find": "if (updates.length === 0) {",
+              "role": "definition"
+            }
+          ]
+        },
+        {
+          "id": "hmr:7",
+          "from": "sym:packages/vite/src/node/server/hmr.ts#updateModules",
+          "to": "sym:packages/vite/src/node/server/hmr.ts#updateModules",
+          "label": "Send targeted updates",
+          "kind": "call",
+          "shape": "terminal",
+          "summary": "The hot channel sends the collected update payloads to the environment.",
+          "anchors": [
+            {
+              "file": "packages/vite/src/node/server/hmr.ts",
+              "symbol": "updateModules",
+              "find": "type: 'update',",
+              "role": "definition"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "tours": [
+    {
+      "id": "tour:hmr",
+      "title": "How Vite chooses a hot update or reload",
+      "summary": "A Vite development server watches changed files and checks which loaded modules they affect. An accepting module can receive a targeted hot update. A dead end in the importer chain or a client HTML template change triggers a page reload. This guide follows that choice and the message sent to the browser.",
+      "steps": [
+        {
+          "id": "t1",
+          "view": "view:hmr",
+          "focus": [
+            "hmr:1"
+          ],
+          "note": "### A changed file starts a boundary search\n\nThe server forwards changed files to the update handler. For each affected environment, the handler passes matched modules to the update decision.",
+          "code": [
+            {
+              "file": "packages/vite/src/node/server/index.ts",
+              "find": "await handleHMRUpdate(type, file, server)",
+              "role": "call-site"
+            },
+            {
+              "file": "packages/vite/src/node/server/hmr.ts",
+              "symbol": "handleHMRUpdate",
+              "find": "updateModules(environment, shortFile, options.modules, timestamp)",
+              "role": "definition"
+            }
+          ],
+          "editor": {
+            "primary": "packages/vite/src/node/server/hmr.ts"
+          }
+        },
+        {
+          "id": "t2",
+          "view": "view:hmr",
+          "focus": [
+            "hmr:2"
+          ],
+          "note": "### The importer chain decides whether an update can stop\n\nA module that accepts its own change gives the walk a boundary. A chain with no accepting importer reaches a dead end.",
+          "code": [
+            {
+              "file": "packages/vite/src/node/server/hmr.ts",
+              "symbol": "propagateUpdate",
+              "find": "if (node.isSelfAccepting) {",
+              "role": "definition"
+            },
+            {
+              "file": "packages/vite/src/node/server/hmr.ts",
+              "symbol": "propagateUpdate",
+              "find": "if (!node.importers.size) {",
+              "role": "definition"
+            }
+          ],
+          "editor": {
+            "primary": "packages/vite/src/node/server/hmr.ts"
+          }
+        },
+        {
+          "id": "t3",
+          "view": "view:hmr",
+          "focus": [
+            "hmr:3"
+          ],
+          "note": "### Some HTML changes bypass targeted replacement\n\nA changed client HTML template can affect a top-level page response. Vite reloads that page instead of treating it as a module update.",
+          "code": [
+            {
+              "file": "packages/vite/src/node/server/hmr.ts",
+              "symbol": "updateModules",
+              "find": "file.endsWith('.html') &&",
+              "role": "definition"
+            }
+          ],
+          "editor": {
+            "primary": "packages/vite/src/node/server/hmr.ts"
+          }
+        },
+        {
+          "id": "t4",
+          "view": "view:hmr",
+          "focus": [
+            "hmr:4"
+          ],
+          "note": "### Reload is the fallback when a boundary fails\n\nThe channel sends a reload message when the walk has a dead end or the HTML condition applies.",
+          "code": [
+            {
+              "file": "packages/vite/src/node/server/hmr.ts",
+              "symbol": "updateModules",
+              "find": "if (needFullReload || isClientHtmlChange) {",
+              "role": "definition"
+            },
+            {
+              "file": "packages/vite/src/node/server/hmr.ts",
+              "symbol": "updateModules",
+              "find": "type: 'full-reload',",
+              "role": "definition"
+            }
+          ],
+          "editor": {
+            "primary": "packages/vite/src/node/server/hmr.ts"
+          }
+        },
+        {
+          "id": "t5",
+          "view": "view:hmr",
+          "focus": [
+            "hmr:7"
+          ],
+          "note": "### Accepted boundaries receive a targeted update\n\nWhen the walk collects updates, the channel sends their paths and timestamps. With no updates, the function returns without a message.",
+          "code": [
+            {
+              "file": "packages/vite/src/node/server/hmr.ts",
+              "symbol": "updateModules",
+              "find": "type: 'update',",
+              "role": "definition"
+            },
+            {
+              "file": "packages/vite/src/node/server/hmr.ts",
+              "symbol": "updateModules",
+              "find": "if (updates.length === 0) {",
+              "role": "definition"
+            }
+          ],
+          "editor": {
+            "primary": "packages/vite/src/node/server/hmr.ts"
+          }
+        }
+      ]
+    }
+  ],
+  "scope": {
+    "audience": "Engineers tracing Vite hot updates"
+  }
+}
