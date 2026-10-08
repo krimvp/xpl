@@ -1123,6 +1123,10 @@ Prints a patch skeleton for one of the three scopes, built from the index (and t
 
 Every tour step has at most 2 code ranges, and the note is `### TODO: ...` plus the body. Ids already in the explainer are not reused (`view:change-map-2`), and a box the explainer already explains gets no new summary. The draft is checked the way `apply` checks it before it is printed, and for ids that exist nowhere (named in a text or a note) and focus ids that are not on their step's view.
 
+For Ruby and PHP repository drafts, classes and methods inside modules or namespaces make their file eligible
+for the inside map. Imports, namespace wrappers and constants alone do not. Their index reports `refs: none`,
+so the draft adds no call arrows between those files.
+
 When import-derived outbound systems appear, the saved repo patch asks whether each is used on the default runtime path or is an optional integration. No such prompt appears when there are no imported outbound systems.
 
 Repository drafts need indexed symbols and import sites to map. Java source is supported by the built-in
