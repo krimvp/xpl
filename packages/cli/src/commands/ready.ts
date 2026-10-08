@@ -1,10 +1,10 @@
 import type { CommandSpec } from "../command.js";
-import { loadExplainer } from "../repo.js";
+import { loadReadExplainer } from "../repo.js";
 import { describeReadiness, workspaceReadiness } from "../readiness.js";
 
 export const readyCommand: CommandSpec = {
   name: "ready",
-  usage: "xpl ready <explainer> [--note <reason>] [--require-review]",
+  usage: "xpl ready [explainer] [--note <reason>] [--require-review]",
   summary: "Check source links, required content and reader findings before export",
   details: [
     "Review state is reported separately. --require-review opts into a team policy requiring a current",
@@ -16,6 +16,7 @@ export const readyCommand: CommandSpec = {
     "Source checks verify locations and freshness, not prose truth or every runtime path. Offline re-saves",
     "check only embedded source; this command checks the current workspace. Ordinary checks need no reviewer.",
     "Exit codes: 0 ready (warnings allowed), 1 blockers or failure, 2 usage error. Nothing is written.",
+    "Omit the explainer when the repository has exactly one; otherwise supply its name.",
   ],
   options: {
     "require-review": {
@@ -28,11 +29,11 @@ export const readyCommand: CommandSpec = {
       desc: "Record an author decision about warnings or omissions",
     },
   },
-  positionals: [{ name: "explainer" }],
+  positionals: [{ name: "explainer", required: false }],
   async run(ctx, args) {
     const { report } = await workspaceReadiness(
       ctx,
-      loadExplainer(ctx, args.positionals[0]!),
+      loadReadExplainer(ctx, args.positionals[0], "ready"),
       args.str("note"),
       args.flag("require-review"),
     );
