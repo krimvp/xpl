@@ -60,7 +60,7 @@ registerProvider(
     id: "ruby-tags",
     language: "ruby",
     grammar: "ruby",
-    version: "tree-sitter-ruby@0.23.1/query-v2",
+    version: "tree-sitter-ruby@0.23.1/query-v3",
     query: () =>
       readFileSync(
         getWasmDir()

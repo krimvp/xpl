@@ -14,7 +14,8 @@ search of the 95 `.rb` files found one live `::CONST =` assignment:
 | `lib/rack/builder.rb:6`, `Rack::BUILDER_TOPLEVEL_BINDING =` | `module Rack; end` at line 5 | `lib/rack/builder.rb#Rack.BUILDER_TOPLEVEL_BINDING`, parent `lib/rack/builder.rb#Rack`, range 6–6 |
 
 `lib/rack/mock_request.rb:85` has a commented `URI::Parser =` and produces no declaration. The fresh
-no-cache build took 680 ms and produced 1,172 Ruby symbols from 95 files. The first cached build took
-639 ms with 0 extraction hits; the warm build took 335 ms with 104 extraction hits across all file-local
-facts. Both builds produced the same selected declaration and no references. One syntax warning was
-reported elsewhere in the repository, so these counts do not establish complete Rack coverage.
+no-cache build produced 1,171 Ruby symbols from 95 files. The first build after the Ruby profile bump had
+9 extraction hits for other cached files; the warm build had 104 hits across all file-local facts. The
+no-cache, first cached and warm indexes have equal content,
+including the selected declaration and no references. Two JavaScript fixture files have syntax warnings,
+so these counts do not establish complete Rack coverage.

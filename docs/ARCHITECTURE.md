@@ -790,7 +790,7 @@ the symbol path (`Runner.self.build`). Reopened namespaces get source-ordered `~
 This does not resolve cross-file namespace ownership, inheritance, calls, imports or metaprogrammed definitions.
 All relationship kinds are unsupported and Ruby reports `refs: none`. Syntax errors can leave declarations
 incomplete and produce a warning. Ruby tags use the existing file-local extraction cache; profile version
-`tree-sitter-ruby@0.23.1/query-v2` binds the query and ownership rule to its cache entries.
+`tree-sitter-ruby@0.23.1/query-v3` binds the query and ownership rule to its cache entries.
 [The scoped constant check](ruby-scoped-constants.md) records the bounded rule and pinned Rack sample.
 
 PHP's syntax-only `TagsProvider` (`src/tags/php.ts`, `php.scm`) uses `tree-sitter-php@0.24.2` with the
