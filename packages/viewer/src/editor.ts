@@ -81,6 +81,7 @@ export function languageSupport(language: FileLanguage): Extension {
       // No CodeMirror mode is installed for TOML (a legacy mode would be a new dependency): plain text.
       return [];
     case "rust":
+    case "ruby":
     case "text":
       return [];
   }

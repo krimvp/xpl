@@ -29,6 +29,11 @@ const SAMPLES: Record<GrammarId, { source: string; root: string; contains: strin
     contains: ["class_definition", "function_definition"],
   },
   rust: { source: "fn main() {}\n", root: "source_file", contains: ["function_item"] },
+  ruby: {
+    source: "class Runner\n  def run; end\nend\n",
+    root: "program",
+    contains: ["class", "method"],
+  },
   go: {
     source: "package main\n\nfunc main() {}\n",
     root: "source_file",
