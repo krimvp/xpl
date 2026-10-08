@@ -36,6 +36,46 @@ function graphOf(include: string[], over: Partial<GraphView> = {}) {
 const all = (nodes: LayoutNode[]): LayoutNode[] => nodes.flatMap((n) => [n, ...all(n.children)]);
 
 describe("layoutGraph", () => {
+  it("straightens a clear long arrow while keeping an authored label", async () => {
+    const ids = ["startup", "settings", "scheduling", "workers", "events"];
+    const edge = (from: string, to: string, label?: string): DerivedEdge => ({
+      id: `edge:${from}-${to}`,
+      from,
+      to,
+      kind: label ? "emits" : "calls",
+      ...(label ? { label } : {}),
+      count: 1,
+      resolution: "static",
+      stored: true,
+      anchors: [],
+    });
+    const graph: DerivedGraph = {
+      nodes: ids.map((id) => ({
+        id,
+        label: id === "events" ? "Events and metrics" : id,
+        kind: "group" as const,
+        role: "component" as const,
+        container: false,
+      })),
+      edges: [
+        edge("startup", "settings"),
+        edge("startup", "scheduling"),
+        edge("startup", "workers"),
+        edge("startup", "events"),
+        edge("scheduling", "workers"),
+        edge("workers", "events", "job.completed"),
+      ],
+      stubs: [],
+      ghosts: [],
+    };
+    const layout = await layoutGraph(graph, { direction: "DOWN" });
+    expect(layout.fallback).toBe(false);
+    const route = layout.edges.find((item) => item.id === "edge:startup-workers")!;
+    expect(route.points).toHaveLength(4);
+    expect(layout.edges.find((item) => item.id === "edge:workers-events")!.label!.text).toBe(
+      "job.completed",
+    );
+  });
   it("keeps automatic boxes clear of a pinned sibling without moving the pin", async () => {
     const { graph } = graphOf(["file:src/a.ts", "file:src/b.ts"]);
     const automatic = await layoutGraph(graph);

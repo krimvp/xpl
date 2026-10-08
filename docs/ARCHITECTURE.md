@@ -2583,8 +2583,9 @@ status stays in the sticky Save/Cancel bar, including the disabled Save reason.
   for nested includes, laid out inside-out with room for their header; an edge that crosses a container's
   border gets a port there (a node of its own in the container's first or last layer), so the part inside
   is routed around the boxes; edges routed inside their lowest common container, right-angled, with the ends that share a side of a box spread along it and the turns in one gap
-  between layers on separate tracks. `GraphView.layout` replaces automatic positions at each container
-  level before sizing its parent. Pins are finite logical coordinates relative to the rendered container,
+  between layers on separate tracks. A longer route is straightened when the shorter path clears other
+  boxes and arrows; its label follows the new path. `GraphView.layout` replaces automatic positions at each
+  container level before sizing its parent. Pins are finite logical coordinates relative to the rendered container,
   or to the canvas for roots. Negative child coordinates expand the container frame to the left/top
   without translating those children or changing saved pins. Routes reconnect to the moved frames;
   unpinned siblings yield space when a pin occupies their old position. Changed levels discard stale
