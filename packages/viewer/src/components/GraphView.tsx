@@ -1,3 +1,4 @@
+import { DiagramText } from "./DiagramText.js";
 /**
  * Graph view: `DerivedGraph` -> layered layout (graphLayout.ts, async) -> our own SVG inside a pan/zoom canvas.
  *
@@ -437,6 +438,7 @@ export function GraphView({
   } else {
     body = (
       <PanZoom
+        textView={<DiagramText graph={graph} />}
         width={canvas!.width}
         height={canvas!.height}
         resetKey={resetKey}

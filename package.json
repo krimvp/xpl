@@ -19,7 +19,8 @@
     "test:install": "npm run build && node scripts/test-install.mjs",
     "test:e2e": "npm run test:e2e -w @xpl/viewer",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "test:install:platform": "npm run build && node scripts/test-install-platform.mjs"
   },
   "devDependencies": {
     "@types/node": "22.20.1",

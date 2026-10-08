@@ -140,10 +140,16 @@ describe.each(["auto", "require"])(
       expect(result.code, result.out + result.err).toBe(0);
       const index = readJson<SymbolIndex>(root, result.json.path);
       expect(index.symbols.map((s) => s.id)).toEqual(["a.demo#A", "a.rs#rust_entry"]);
-      expect(index.languages.rust).toEqual({ files: 1, symbols: 1, refs: "none" });
+      expect(index.languages.rust).toEqual({
+        files: 1,
+        symbols: 1,
+        refs: "heuristic",
+        tool: "tree-sitter-rust@0.24.0/query-v4",
+      });
       expect(index.analysis!.find((r) => r.provider === "rust-tags")).toMatchObject({
         files: ["a.rs"],
         results: [
+          { status: "partial", analyzedFiles: ["a.rs"] },
           { status: "partial", analyzedFiles: ["a.rs"] },
           { status: "unsupported", analyzedFiles: [] },
         ],

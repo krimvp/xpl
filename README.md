@@ -20,6 +20,9 @@ Claude Code is the default target. For Codex, Pi, Factory Droid or Devin, select
 `xpl skill install --agent <name>`. Codex, Pi and Droid install to `~/.agents/skills/code-explainer`;
 Devin installs to the project `.agents/skills/code-explainer`. Use `--dir <path>` to choose a destination
 for any harness. The npm package bundles the CLI and skill; harness setup and provider access are separate.
+Platform CI checks packed installation, a local service without an agent backend, and offline HTML reading
+on macOS and Windows. It does not check the `xpl view` browser opener or Claude-backed jobs.
+After a CLI update, run `xpl doctor` to check the installed skill, then rerun `xpl skill install`.
 
 In the selected harness, invoke `code-explainer` with a reader and question. For example, in the
 default Claude Code target:
@@ -131,13 +134,11 @@ npm test
 npm run format:check
 ```
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for
-contributor guidance and design details.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for contributor guidance.
 
 ## Docs
 
 - [User documentation](https://krimvp.github.io/xpl/docs/)
-- [Architecture](docs/ARCHITECTURE.md)
 - [Product skill](skill/code-explainer/README.md)
 
 ## Feedback and security
