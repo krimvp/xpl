@@ -13,6 +13,25 @@ import { encodeIndex } from "./scip-encode.js";
 import { makeDir, makeRepo, writeFiles, git } from "./helpers.js";
 
 describe("captured index inputs", () => {
+  it("reuses file-local extraction during capture and keeps the edited index identical to a clean build", async () => {
+    const root = makeRepo({
+      "a.ts": 'import { target } from "./b"; export function call() { target(); }\n',
+      "b.ts": "export function target() { return 1; }\n",
+    });
+    const first = await captureIndexInputs({ root });
+    const initial = await buildIndex({ root, snapshot: first, precise: "off" });
+    expect(initial.extraction).toMatchObject({ enabled: true, hits: 2, misses: 0 });
+
+    writeFiles(root, { "b.ts": "export function target() { return 2; }\n" });
+    const edited = await captureIndexInputs({ root });
+    const reused = await buildIndex({ root, snapshot: edited, precise: "off" });
+    const clean = await buildIndex({ root, precise: "off", cache: false });
+    expect(reused.extraction).toMatchObject({ enabled: true, hits: 2, misses: 0 });
+    expect(JSON.stringify(reused.index)).toBe(JSON.stringify(clean.index));
+    expect(reused.warnings).toEqual(clean.warnings);
+    expect(reused.index.commit).not.toBe(initial.index.commit);
+  });
+
   it("declares Python config priority and records a missing higher-priority choice", () => {
     const reads: string[] = [];
     const configuration = new Map([
