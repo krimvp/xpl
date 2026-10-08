@@ -1,8 +1,10 @@
 # Ruby scoped constant check
 
 The syntax-only Ruby provider accepts a qualified class, module or assignment target when each owner path
-has an earlier class or module declaration in the same file. It searches enclosing lexical paths first,
-then the file root. A leading `::` searches only the root. It does not join namespaces across files or
+has an earlier class or module declaration in the same file. It searches the actual enclosing class and
+module declarations first, then the file root. A leading `::` searches only the root. A dotted ancestor
+is not a lexical scope: inside `module A::B`, an unqualified `C` does not search `A::C`; inside
+`module A; module B`, it does. The provider does not join namespaces across files or
 infer an owner from a use of the constant. Children of an omitted qualified class or module are omitted
 with it, since their namespace path is unknown. Omitted targets are part of the reported partial coverage;
 Ruby still has `refs: none`.

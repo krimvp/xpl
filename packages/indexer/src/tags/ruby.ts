@@ -21,7 +21,7 @@ function ownerParts(node: Node): { parts: string[]; rooted: boolean } | undefine
 function rubyPath(
   tag: string,
   node: Node,
-  lexicalParent: ProviderDeclaration | undefined,
+  lexicalScopes: readonly ProviderDeclaration[],
   declarations: readonly ProviderDeclaration[],
 ): { path: string; parent?: string } | null | undefined {
   if (tag !== "variable" && tag !== "class" && tag !== "module") return undefined;
@@ -36,9 +36,10 @@ function rubyPath(
   const suffix = owner.parts.join(".");
   const prefixes: string[] = [];
   if (!owner.rooted) {
-    for (let path = lexicalParent?.path; path; path = path.slice(0, path.lastIndexOf("."))) {
-      prefixes.push(`${path}.${suffix}`);
-      if (!path.includes(".")) break;
+    for (let i = lexicalScopes.length - 1; i >= 0; i--) {
+      const scope = lexicalScopes[i]!;
+      if (scope.kind === "class" || scope.kind === "other")
+        prefixes.push(`${scope.path}.${suffix}`);
     }
   }
   prefixes.push(suffix);
@@ -60,7 +61,7 @@ registerProvider(
     id: "ruby-tags",
     language: "ruby",
     grammar: "ruby",
-    version: "tree-sitter-ruby@0.23.1/query-v4",
+    version: "tree-sitter-ruby@0.23.1/query-v5",
     query: () =>
       readFileSync(
         getWasmDir()

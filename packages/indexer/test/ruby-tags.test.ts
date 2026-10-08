@@ -128,6 +128,33 @@ it("omits children of a qualified Ruby namespace whose owner is unknown", async 
   expect(index.refs).toEqual([]);
 });
 
+it("does not invent lexical ancestors inside a qualified Ruby module", async () => {
+  const { index } = await indexFiles({
+    "nesting.rb": [
+      "module A",
+      "  module C; end",
+      "  module B",
+      "    C::DIRECT = 1",
+      "  end",
+      "end",
+      "module A::B",
+      "  ::A::C::ROOTED = 2",
+      "  C::WRONG = 3",
+      "end",
+      "",
+    ].join("\n"),
+  });
+  expect(index.symbols.map(({ id, range, parent }) => [id, range, parent])).toEqual([
+    ["nesting.rb#A", { startLine: 1, endLine: 6 }, undefined],
+    ["nesting.rb#A.C", { startLine: 2, endLine: 2 }, "nesting.rb#A"],
+    ["nesting.rb#A.B", { startLine: 3, endLine: 5 }, "nesting.rb#A"],
+    ["nesting.rb#A.C.DIRECT", { startLine: 4, endLine: 4 }, "nesting.rb#A.C"],
+    ["nesting.rb#A.B~2", { startLine: 7, endLine: 10 }, "nesting.rb#A"],
+    ["nesting.rb#A.C.ROOTED", { startLine: 8, endLine: 8 }, "nesting.rb#A.C"],
+  ]);
+  expect(index.refs).toEqual([]);
+});
+
 it("keeps repeated namespaces separate and reports syntax recovery without relationship claims", async () => {
   const { index, warnings, dir } = await indexFiles({
     "broken.rb": "module Jobs; end\nmodule Jobs; end\nclass Broken\n  def run(\n",

@@ -28,7 +28,7 @@ interface TagsProfile {
   resolve?(
     tag: string,
     node: Node,
-    lexicalParent: ProviderDeclaration | undefined,
+    lexicalScopes: readonly ProviderDeclaration[],
     declarations: readonly ProviderDeclaration[],
   ): { path: string; parent?: string } | null | undefined;
   scope?(
@@ -146,7 +146,7 @@ export class TagsProvider implements IndexProvider {
               const resolved = this.profile.resolve?.(
                 tag.tag,
                 tag.node,
-                parent?.declaration,
+                stack.map((entry) => entry.declaration),
                 declarations,
               );
               if (resolved === null) {
