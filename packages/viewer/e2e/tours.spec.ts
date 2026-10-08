@@ -536,7 +536,9 @@ test.describe("the address bar", () => {
     await open(page, "?perspective=guide");
     await page.getByRole("button", { name: "Search and guides" }).click();
     const panel = page.getByRole("dialog", { name: "Search and guides" });
-    await panel.getByRole("searchbox", { name: "Search this snapshot" }).fill("Where failures go");
+    await panel
+      .getByRole("searchbox", { name: "Search guide snapshots" })
+      .fill("Where failures go");
     await panel.locator('[data-kind="step"]').first().click();
     await expect(page).toHaveURL(/step-id=t2/);
     const target = page.locator('[data-section-id="t2"]');

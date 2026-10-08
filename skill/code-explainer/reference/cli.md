@@ -484,6 +484,7 @@ Opening current resolves to its immutable version folder before navigation. The 
 explanation panel shows its version, included source and captured prior versions with their scope and
 author review state. The existing query contract uses `version=<version-folder>`, `tour=<id>&step-id=<id>`,
 `view=<id>&focus=<element>` (repeatable), or `file=<path>&range=1:1-1:6&side=head|base`.
+The viewer searches source and symbols across contained guide snapshots. Results name the guide and index commit; source links add `guide=<key>&snapshot=<index-commit>&source-hash=<file-hash>`. The hash comes from the supplied file searched, so a changed file is rejected on open or reload even if the index commit stays the same. Navigation updates the hash from the head or Before file shown by the URL side. Current-guide links keep loaded files offline, including lazily fetched source. Save or cancel pending edits first. Reload reports missing source explicitly if the new bundle omits a file loaded only in the previous page. Missing files and pruned symbols stay labelled; catalog-only guides are not searched until opened.
 Ranges use 1-based lines and inclusive UTF-16 columns; omitted columns select whole lines.
 Column positions allow line length + 1, including column 1 on an empty line. Base paths are change head
 keys, including renamed files and deleted files. Links resolve only supplied source.

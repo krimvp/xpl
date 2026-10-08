@@ -16,6 +16,7 @@
  * reading perspective and tour position; a Present bundle also writes `mode=explore`, so reloading
  * keeps the reader out of the talk. Other parameters are left alone.
  */
+import { hashText } from "@xpl/core";
 import { readLaunchParams } from "./data.js";
 import { stepNumber } from "./modes.js";
 import type { ViewerState, ViewerStore } from "./store.js";
@@ -121,7 +122,23 @@ export function watchUrl(
   const write = (state: ViewerState, push = false) => {
     try {
       const { pathname, search, hash } = win.location;
-      const next = searchFor(state, search, bundleMode);
+      let next = searchFor(state, search, bundleMode);
+      const params = new URLSearchParams(next);
+      if (params.has("snapshot")) {
+        const file = params.get("file");
+        const previous = new URLSearchParams(search);
+        if (
+          file !== previous.get("file") ||
+          params.get("side") !== previous.get("side") ||
+          !params.has("source-hash")
+        ) {
+          const files = params.get("side") === "base" ? state.baseFiles : state.files;
+          const text = file ? files?.[file] : undefined;
+          if (text === undefined) params.delete("source-hash");
+          else params.set("source-hash", hashText(text));
+          next = `?${params.toString().replace(/%3A/gi, ":")}`;
+        }
+      }
       if (push) win.history.pushState({ xplPresent: true }, "", pathname + next + hash);
       else if (next !== search)
         win.history.replaceState(win.history.state, "", pathname + next + hash);

@@ -2311,15 +2311,29 @@ and scanning run off the UI thread. The worker calls core's pure `query` using s
 have independent 16-row pages for symbols, concepts, steps, guides/tours and source (80 rows maximum).
 Each group reports its visible range and total, with Previous/Next controls; source lines cannot crowd out
 explanations or symbol results. Snippets retain at most 400 characters around matches. Stale request IDs
-are ignored, and changing the query or supplied snapshot resets all pages. Source and
-symbols refer to the active snapshot; prose can refer to any contained guide. Missing source, retained/
-total symbols and references, and unavailable analysis remain visible independently of no matches.
+are ignored, and changing the query or supplied snapshots resets all pages. Source, symbols and prose
+are searched across every contained guide, current guide first, using each guide's own index and supplied
+files. Pages span guides without multiplying the 16-row limit. Source and symbol rows name their guide
+and index commit. Missing source is checked against that guide, never filled from another guide with the
+same path. Each snapshot's missing source, pruning and unavailable analysis remain visible independently
+of no matches. Catalog-only guides are listed but not searched until their snapshot is opened.
 
-Results carry real links: `guide=<key>`, `file=<path>&range=<line>:<col>-<line>:<col>` (1-based inclusive
-UTF-16 columns; omitted columns mean a line range), or `tour=<id>&step-id=<stable-id>`. Numeric `step`
+Results carry real links: `guide=<key>`, `snapshot=<index-commit>&source-hash=<file-hash>&file=<path>`
+with `range=<line>:<col>-<line>:<col>` (1-based inclusive UTF-16 columns; omitted columns mean a line
+range), or `tour=<id>&step-id=<stable-id>`. The worker hashes the exact supplied file it searched;
+the hash is separate from the index's file hash, which can lag behind a changed working tree. Numeric `step`
 links remain compatible. Opening a range validates it against supplied text, selects exact columns in
 CodeMirror and enters Code. Tour phrases open the recorded step in Guide. Links survive reloads and use
-stable step IDs when reading; malformed or unavailable source ranges do not open another range.
+stable step IDs when reading; malformed or unavailable source ranges do not open another range. A source
+link whose snapshot commit or supplied file hash differs from the selected bundle is rejected before
+rendering source. Same-page opening checks both values before freezing the store. As navigation changes
+the open file or its head/Before side in a frozen view, the URL updates the hash from that side's text.
+Current-guide source links freeze the loaded store offline, preserving lazily loaded files as well as
+embedded source. In-flight source fetches are invalidated and reconnection is disabled. Pending edits
+block freezing a live guide. On reload, the loader checks the commit, requested file and its source hash
+against the URL's head or Before side, then removes the server attachment. A file loaded only in the
+previous page is unavailable if omitted from the new bundle; changed text under the same commit is also
+rejected. Polling and API reads cannot substitute later workspace text.
 
 Exported pickers enumerate only contained snapshots. A live picker reads the guarded catalog; other-guide
 previews have no API or write identity and author changes are prohibited. Switching requires no unsaved
