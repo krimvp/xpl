@@ -16,6 +16,10 @@ npm install --global @krimvp/xpl
 xpl skill install
 ```
 
+For shell completion, add `source <(xpl completion bash)` to `~/.bashrc`, or
+`source <(xpl completion zsh)` to `~/.zshrc` after `compinit`. For fish, run
+`xpl completion fish > ~/.config/fish/completions/xpl.fish`.
+
 Claude Code is the default target. For Codex, Pi, Factory Droid or Devin, select the harness with
 `xpl skill install --agent <name>`. Codex, Pi and Droid install to `~/.agents/skills/code-explainer`;
 Devin installs to the project `.agents/skills/code-explainer`. Use `--dir <path>` to choose a destination
@@ -43,8 +47,10 @@ in your repository, then `xpl view <name>` and complete the TODO text.
 ### GitHub pull requests
 
 Prepare a PR's base and head as an isolated input with `xpl pr prepare`; author a guide and run `xpl
-pr finish` to check it and export HTML. These commands do not publish. A private target repository
-requires a team-visible preview, with access controlled by the host. See the [CLI
+pr finish` to check it and export HTML. These commands do not publish. Optional
+[CI preview publishing](docs-site/pages/workflows/pull-requests.md#optional-ci-authoring-and-publishing)
+runs an explicitly configured author and updates the PR preview. A private target repository requires a
+team-visible preview, with access controlled by the host. See the [CLI
 reference](skill/code-explainer/reference/cli.md) for the full command options.
 
 ### Search, libraries and saved versions

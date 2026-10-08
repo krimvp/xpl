@@ -1,11 +1,11 @@
 import { validateExplainer } from "@xpl/core";
 import type { CommandSpec } from "../command.js";
 import { issueSummary, renderIssues } from "../format.js";
-import { loadExplainer, openWorkspace } from "../repo.js";
+import { loadReadExplainer, openWorkspace } from "../repo.js";
 
 export const validateCommand: CommandSpec = {
   name: "validate",
-  usage: "xpl validate <explainer> [--lenient]",
+  usage: "xpl validate [explainer] [--lenient]",
   summary: "Check an explainer against the index",
   details: [
     "Checks ids, references, anchors (they must still resolve: ok or moved) and the evidence rule for",
@@ -13,6 +13,7 @@ export const validateCommand: CommandSpec = {
     "`xpl resolve --write`) turns drifted and missing anchors into warnings.",
     "Strict validation also requires an index that matches the working tree. Reindex and resolve before",
     "validating changed code. --lenient reports a stale index as a warning for repair workflows.",
+    "Omit the explainer when the repository has exactly one; otherwise supply its name.",
     "Exit codes: 0 no errors (warnings allowed), 1 errors.",
   ],
   options: {
@@ -21,9 +22,9 @@ export const validateCommand: CommandSpec = {
       desc: "Drifted and missing anchors, and vanished ids, are warnings instead of errors",
     },
   },
-  positionals: [{ name: "explainer" }],
+  positionals: [{ name: "explainer", required: false }],
   async run(ctx, args) {
-    const loaded = loadExplainer(ctx, args.positionals[0]!);
+    const loaded = loadReadExplainer(ctx, args.positionals[0], "validate");
     const mode = args.flag("lenient") ? "lenient" : "strict";
     const ws = await openWorkspace(ctx, {
       explainer: loaded,

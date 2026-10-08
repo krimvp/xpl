@@ -1711,15 +1711,17 @@ describe("xpl lint", () => {
     expect(out).toBe("ok: .explainer/clean.explainer.json: 1 text checked, no findings");
   });
 
-  it("usage errors exit 2; an unknown explainer exits 1", async () => {
-    expect((await xpl(demo, "lint")).code).toBe(2);
+  it("unknown options exit 2; an unknown explainer exits 1", async () => {
+    const omitted = await xpl(demo, "lint");
+    expect(omitted.err).toContain("using demo");
+    expect(omitted.code).toBe((await xpl(demo, "lint", "demo")).code);
     expect((await xpl(demo, "lint", "demo", "--loud")).code).toBe(2);
     const missing = await xpl(demo, "lint", "nope");
     expect(missing.code).toBe(1);
     expect(missing.err).toContain('no explainer "nope"');
     const help = await invoke(["lint", "--help"]);
     expect(help.code).toBe(0);
-    expect(help.out).toContain("Usage: xpl lint <explainer> [--patch <file|->] [--warn-only]");
+    expect(help.out).toContain("Usage: xpl lint [explainer] [--patch <file|->] [--warn-only]");
     for (const rule of ["repeats-summary", "markdown-in-plain", "markdown-in-summary"]) {
       expect(help.out).toContain(rule);
     }

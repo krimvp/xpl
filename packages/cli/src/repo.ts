@@ -35,7 +35,8 @@ import {
   type GitInfo,
 } from "@xpl/indexer";
 import type { RepoEnv } from "./context.js";
-import { CliError, errorMessage } from "./errors.js";
+import type { Ctx } from "./context.js";
+import { CliError, UsageError, errorMessage } from "./errors.js";
 import { listText } from "./format.js";
 import { displayPath, parseJson, readTextFile, workingTreeReader } from "./fsutil.js";
 import { gitShowReader } from "./git.js";
@@ -430,6 +431,24 @@ export function loadExplainer(env: RepoEnv, arg: string): LoadedExplainer {
     name: explainerName(abs),
     explainer: readExplainerFile(abs),
   };
+}
+
+/** Read commands may use the sole repository guide; writes still call loadExplainer with a name. */
+export function loadReadExplainer(
+  ctx: Ctx,
+  arg: string | undefined,
+  command: string,
+): LoadedExplainer {
+  if (arg !== undefined) return loadExplainer(ctx, arg);
+  const names = listExplainerNames(ctx.root);
+  if (names.length === 0)
+    throw new UsageError("no explainers found; create one with `xpl new <name>`");
+  if (names.length > 1)
+    throw new UsageError(
+      `supply an explainer for xpl ${command}; available explainers: ${names.join(", ")}`,
+    );
+  ctx.io.err(`using ${names[0]}`);
+  return loadExplainer(ctx, names[0]!);
 }
 
 /** Load the discovered files for catalog and evidence readers; neither metadata nor an index gates loading. */
