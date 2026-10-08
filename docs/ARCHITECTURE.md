@@ -1385,7 +1385,9 @@ Reset may clear selected pins or all pins; a later placement edit conflicts rath
   - **Tests**: test functions (top level, or methods of a test class) with any reference to the symbol, or to
     its class for the two cases above; a test file only for a module-level reference (an import) when none of
     its tests has one. `testSymbols` lists the tests the change adds or edits. `untested` lists the changed
-    symbols no test references ("no test found": tests of other code may still run them).
+    symbols with no indexed test reference. For constructors and instance-call methods, tests that reference
+    the class count too. Changed test files are listed separately; a missing reference does not prove the
+    behavior has no test.
 
 ---
 
@@ -1547,7 +1549,10 @@ select a different repository JSON file. Unreadable guides still fail selection.
 
 `core/src/languages.ts` classifies every `FileLanguage` with a code display name or `undefined` for config
 and other text. Its derived `CODE_LANGUAGES` set is shared by code search and repo drafts; Rust participates
-in both, and its draft service boxes carry `tech: Rust`. Adding a language requires a classification.
+in both, and its draft service boxes carry `tech: Rust`. Adding a language requires a classification. When a
+repository has eligible `.java` files but no supported code files, `xpl draft repo` reports how many Java
+files were indexed as text and points to `xpl show file:<path>`. File anchors remain available; Java SCIP
+data alone does not enable automatic Java repository levels. Test-only Java files keep the empty-code error.
 
 **GitHub PR inputs.** `pr.ts` parses GitHub.com URLs, `owner/repo#number`, or `owner/repo` plus a number.
 It calls `gh api --hostname github.com repos/<owner>/<repo>/pulls/<number>` using existing access,
@@ -3075,8 +3080,9 @@ identities to syntax ranges. This is a proposed contract revision, not a change 
 - `xpl change` needs the head checked out and indexed (the head must be the index commit); the change of an
   uncommitted working tree cannot be recorded, since it has no head commit.
 - The change analysis adds at most one hop beyond direct callers and is as good as the index: callers through a variable, a callback or a
-  framework are not seen, `callers via instance` is a guess, and "no test found" means no test names the
-  symbol, not that no test runs it.
+  framework are not seen, `callers via instance` is a guess, and a missing indexed test reference does not
+  prove the behavior has no test. Tests that reference the class count for constructors and instance-call
+  methods. Changed test files are listed separately.
 - Drafts give structure, not understanding: a map, a sequence, anchors and a tour in the right order. The
   concepts, flows, `llm` edges, base anchors and every sentence are written by the selected authoring agent.
   A draft covers about one view and most of the tour steps of a hand-written explainer, with roughly half

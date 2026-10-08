@@ -239,6 +239,40 @@ describe("xpl draft: refusals and reuse", () => {
   });
 });
 
+describe("xpl draft repo: unsupported source languages", () => {
+  async function emptyRepoWith(path: string, source: string): Promise<string> {
+    const dir = makeTempDir("xpl-draft-unsupported-");
+    writeFile(dir, path, source);
+    const indexed = await xpl(dir, "index", "--precise", "off");
+    expect(indexed.code, indexed.err + indexed.out).toBe(0);
+    const created = await xpl(dir, "new", "d");
+    expect(created.code, created.err + created.out).toBe(0);
+    return dir;
+  }
+
+  it("explains that eligible Java files were indexed as text and gives a file-level next step", async () => {
+    const dir = await emptyRepoWith("src/main/java/App.java", "class App {}\n");
+    const result = await xpl(dir, "draft", "repo", "d");
+    expect(result.code).toBe(1);
+    expect(result.err).toBe(
+      "error: nothing to draft: the index has no supported code files outside tests, docs, examples and benchmarks; " +
+        "it contains 1 eligible Java source file (.java), indexed as text, so repository drafting cannot infer " +
+        "Java symbols or import structure. Inspect one with `xpl show file:src/main/java/App.java`. " +
+        "Importing Java SCIP data alone does not enable Java repository levels.",
+    );
+  });
+
+  it("keeps the empty-code diagnostic for test-only Java files", async () => {
+    const dir = await emptyRepoWith("src/test/java/AppTest.java", "class AppTest {}\n");
+    const result = await xpl(dir, "draft", "repo", "d");
+    expect(result.code).toBe(1);
+    expect(result.err).toBe(
+      "error: nothing to draft: the index has no code files outside tests, docs, examples and benchmarks: " +
+        "there is nothing to put on an overview",
+    );
+  });
+});
+
 // ─── draft change on a git repository ────────────────────────────────────────────────────────────
 
 const RUNNER_V1 = `from helpers import fmt
@@ -447,9 +481,9 @@ describe("xpl draft change", () => {
     expect(pieces.indexOf("sym:runner.py#backoff")).toBeLessThan(
       pieces.indexOf("sym:helpers.py#clamp"),
     );
-    // the tests step names the changed symbols no test references
+    // the tests step names changed symbols with no indexed test reference
     const tests = steps.at(-2)!.note!;
-    expect(tests).toContain("No test found for");
+    expect(tests).toContain("No indexed test reference found");
     expect(tests).toContain("`clamp`");
     // the steps cite changed lines: no step shows more than 2 ranges
     for (const step of steps) expect(step.code!.length).toBeLessThanOrEqual(2);
