@@ -619,6 +619,41 @@ function aroundBoxes(points: Point[], boxes: Box[]): Point[] {
   return route;
 }
 
+/** True when two orthogonal routes cross or share a stretch away from their ends. */
+function routesMeet(a: readonly Point[], b: readonly Point[]): boolean {
+  const inside = (value: number, p: number, q: number) =>
+    value > Math.min(p, q) && value < Math.max(p, q);
+  const shared = (p: number, q: number, r: number, s: number) =>
+    Math.min(Math.max(p, q), Math.max(r, s)) - Math.max(Math.min(p, q), Math.min(r, s)) > 1;
+  for (let i = 1; i < a.length; i++) {
+    const p = a[i - 1]!,
+      q = a[i]!;
+    for (let j = 1; j < b.length; j++) {
+      const r = b[j - 1]!,
+        s = b[j]!;
+      const pVertical = p.x === q.x;
+      const rVertical = r.x === s.x;
+      if (pVertical !== rVertical) {
+        const [v, w, h, k] = pVertical ? [p, q, r, s] : [r, s, p, q];
+        if (inside(v!.x, h!.x, k!.x) && inside(h!.y, v!.y, w!.y)) return true;
+      } else if (
+        pVertical
+          ? p.x === r.x && shared(p.y, q.y, r.y, s.y)
+          : p.y === r.y && shared(p.x, q.x, r.x, s.x)
+      ) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+function routeLength(points: readonly Point[]): number {
+  return points
+    .slice(1)
+    .reduce((n, p, i) => n + Math.abs(p.x - points[i]!.x) + Math.abs(p.y - points[i]!.y), 0);
+}
+
 function labelCentre(points: Point[]): Point | undefined {
   let centre: Point | undefined,
     longest = -1;
@@ -917,6 +952,31 @@ function layeredLayout(model: Model, direction: Direction, pins: GraphView["layo
     separateTracks(routed, direction);
     const siblings = holder?.children ?? top.nodes;
     const pinned = siblings.some((node) => pins?.[node.id]);
+    if (!pinned) {
+      const main = direction === "RIGHT" ? "x" : "y";
+      const obstacles = siblings.map((node) => [node.id, nodeBox(node)] as const);
+      for (let n = 0; n < items.length; n++) {
+        const item = items[n]!;
+        const old = routed[n]!;
+        if (item.from.fixed || item.to.fixed || old.length <= 4) continue;
+        const start = old[0]!,
+          end = old.at(-1)!;
+        const middle = (start[main] + end[main]) / 2;
+        const candidate = [start, { ...start, [main]: middle }, { ...end, [main]: middle }, end];
+        if (routeLength(candidate) >= routeLength(old) - 5) continue;
+        const clear = aroundBoxes(
+          candidate,
+          obstacles
+            .filter(([id]) => id !== item.from.key && id !== item.to.key)
+            .map(([, box]) => box),
+        );
+        if (clear !== candidate) continue;
+        if (routed.some((other, j) => j !== n && routesMeet(candidate, other))) continue;
+        routed[n] = candidate;
+        const route = lvl.routes.get(item.id);
+        if (route) route.label = undefined;
+      }
+    }
     items.forEach((item, n) =>
       item.store(
         pinned
