@@ -1401,7 +1401,7 @@ export function draftRepo(input: DraftInput): Draft {
     for (const file of files) {
       // a file of imports and constants only (a package's `__init__.py`) is not a part of its own
       const body = model
-        .topLevelSymbols(file)
+        .symbolsInFile(file)
         .some((s) => s.kind !== "variable" && s.kind !== "key" && s.kind !== "other");
       if (isCode(file) && body) {
         out.push({ id: `file:${file}`, path: file, dir: false, files: [file] });

@@ -1,9 +1,78 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { copyFixture, readJson, xpl, xplJson } from "./helpers.js";
+import {
+  bundleOf,
+  copyFixture,
+  invoke,
+  makeTempDir,
+  readJson,
+  writeFile,
+  writeViewerStub,
+  xpl,
+  xplJson,
+} from "./helpers.js";
 
 describe("xpl start", () => {
+  it.each([
+    {
+      fixture: "rb-jobrunner",
+      constant: "lib/constants.rb",
+      source: "module Jobrunner\n  EMPTY = 1\nend\n",
+      parts: [
+        "file:lib/jobrunner/queue.rb",
+        "file:lib/jobrunner/runner.rb",
+        "file:lib/jobrunner.rb",
+      ],
+    },
+    {
+      fixture: "php-jobrunner",
+      constant: "src/Jobrunner/Constants.php",
+      source: "<?php\nnamespace Jobrunner;\nconst EMPTY = 1;\n",
+      parts: [
+        "file:src/Jobrunner/Job.php",
+        "file:src/Jobrunner/Queue.php",
+        "file:src/Jobrunner/Runner.php",
+      ],
+    },
+  ])(
+    "drafts $fixture from nested declarations without adding relationships",
+    async ({ fixture, constant, source, parts }) => {
+      const dir = copyFixture(fixture);
+      writeFile(dir, constant, source);
+      const started = await xpl(
+        dir,
+        "start",
+        "audit",
+        "--question",
+        "How does a job move through this repository?",
+        "--audience",
+        "A new maintainer",
+        "--precise",
+        "off",
+      );
+      expect(started.code, started.err).toBe(0);
+      const guide = readJson(dir, ".explainer/audit.explainer.json");
+      expect(guide.views.map((view: { id: string }) => view.id)).toEqual([
+        "view:system",
+        "view:overview",
+      ]);
+      expect(guide.views[1].include).toEqual(parts);
+      expect(guide.edges).toEqual([]);
+      expect((await xpl(dir, "validate", "audit")).code).toBe(0);
+
+      const out = join(makeTempDir("xpl-namespaced-draft-"), "draft.html");
+      const env = { XPL_VIEWER_HTML: writeViewerStub() };
+      const ready = await invoke(["bundle", "audit", "-o", out], { cwd: dir, env });
+      expect(ready.code).toBe(1);
+      expect(ready.err).toContain("todo-left");
+      expect(existsSync(out)).toBe(false);
+      const preview = await invoke(["bundle", "audit", "-o", out, "--draft"], { cwd: dir, env });
+      expect(preview.code, preview.err).toBe(0);
+      expect(bundleOf(readFileSync(out, "utf8")).exportInfo).toMatchObject({ status: "draft" });
+    },
+  );
+
   it("creates an index-backed first guide and an editable draft for its reader and question", async () => {
     const dir = copyFixture();
     const result = await xpl(
