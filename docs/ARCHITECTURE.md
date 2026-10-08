@@ -2584,9 +2584,12 @@ status stays in the sticky Save/Cancel bar, including the disabled Save reason.
   kept if it fits at least 8% larger. The direction is on the graph as `data-direction`. Containers
   for nested includes, laid out inside-out with room for their header; an edge that crosses a container's
   border gets a port there (a node of its own in the container's first or last layer), so the part inside
-  is routed around the boxes; edges routed inside their lowest common container, right-angled, with the ends that share a side of a box spread along it and the turns in one gap
-  between layers on separate tracks. A longer route is straightened when the shorter path clears other
-  boxes and arrows; its label follows the new path. `GraphView.layout` replaces automatic positions at each
+  is routed around the boxes; edges routed inside their lowest common container, right-angled, with the ends
+  that share a side of a box spread along it and the turns in one gap between layers on separate tracks.
+  Automatic levels of at most 150 boxes and edges spread ports over 15–85% of a box side, then shorten a
+  longer route only when the new path clears other boxes by at least 8 diagram units and avoids other arrows.
+  Its label follows the chosen path. Larger and pinned levels keep the prior port spacing and routing rules.
+  `GraphView.layout` replaces automatic positions at each
   container level before sizing its parent. Pins are finite logical coordinates relative to the rendered container,
   or to the canvas for roots. Negative child coordinates expand the container frame to the left/top
   without translating those children or changing saved pins. Routes reconnect to the moved frames;

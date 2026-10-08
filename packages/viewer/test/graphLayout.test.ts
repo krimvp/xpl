@@ -72,6 +72,16 @@ describe("layoutGraph", () => {
     expect(layout.fallback).toBe(false);
     const route = layout.edges.find((item) => item.id === "edge:startup-workers")!;
     expect(route.points).toHaveLength(4);
+    const scheduling = absoluteBoxes(layout.nodes).get("scheduling")!;
+    for (let i = 1; i < route.points.length; i++) {
+      const a = route.points[i - 1]!,
+        b = route.points[i]!;
+      if (a.x !== b.x || Math.max(a.y, b.y) <= scheduling.y) continue;
+      if (Math.min(a.y, b.y) >= scheduling.y + scheduling.height) continue;
+      expect(
+        Math.max(scheduling.x - a.x, a.x - scheduling.x - scheduling.width),
+      ).toBeGreaterThanOrEqual(8);
+    }
     expect(layout.edges.find((item) => item.id === "edge:workers-events")!.label!.text).toBe(
       "job.completed",
     );

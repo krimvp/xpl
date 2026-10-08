@@ -149,6 +149,7 @@ const GHOST_HEIGHT = 40;
 const HEADER_HEIGHT = 34;
 const CONTAINER_PAD = 14;
 const LABEL_HEIGHT = 18;
+const ROUTE_BOX_GAP = 8;
 
 // Font sizes of the diagram's text in its own units (styles.css draws with the same numbers). A diagram is
 // fitted into its pane, so this is what decides how small the text ends up: kept generous, and the boxes
@@ -654,24 +655,28 @@ function routeLength(points: readonly Point[]): number {
     .reduce((n, p, i) => n + Math.abs(p.x - points[i]!.x) + Math.abs(p.y - points[i]!.y), 0);
 }
 
-function crossesBox(points: readonly Point[], box: Box): boolean {
+function crossesBox(points: readonly Point[], box: Box, gap: number): boolean {
+  const left = box.x - gap,
+    right = box.x + box.width + gap,
+    top = box.y - gap,
+    bottom = box.y + box.height + gap;
   for (let i = 1; i < points.length; i++) {
     const a = points[i - 1]!,
       b = points[i]!;
     if (
       a.x === b.x &&
-      a.x > box.x &&
-      a.x < box.x + box.width &&
-      Math.max(a.y, b.y) > box.y &&
-      Math.min(a.y, b.y) < box.y + box.height
+      a.x > left &&
+      a.x < right &&
+      Math.max(a.y, b.y) > top &&
+      Math.min(a.y, b.y) < bottom
     )
       return true;
     if (
       a.y === b.y &&
-      a.y > box.y &&
-      a.y < box.y + box.height &&
-      Math.max(a.x, b.x) > box.x &&
-      Math.min(a.x, b.x) < box.x + box.width
+      a.y > top &&
+      a.y < bottom &&
+      Math.max(a.x, b.x) > left &&
+      Math.min(a.x, b.x) < right
     )
       return true;
   }
@@ -956,7 +961,11 @@ function layeredLayout(model: Model, direction: Direction, pins: GraphView["layo
           toward: previous[cross],
         });
     }
-    const spread = spreadPorts(ports, boxes, direction);
+    const siblings = holder?.children ?? top.nodes;
+    const pinned = siblings.some((node) => pins?.[node.id]);
+    // Selection can lay this level out again; keep the added route search within the viewer's small-map limit.
+    const simplifyRoutes = !pinned && siblings.length + items.length <= BOTH_DIRECTIONS_LIMIT;
+    const spread = spreadPorts(ports, boxes, direction, simplifyRoutes);
     const routed = items.map((item) =>
       orthogonalRoute(
         item.from.box,
@@ -974,9 +983,7 @@ function layeredLayout(model: Model, direction: Direction, pins: GraphView["layo
       ),
     );
     separateTracks(routed, direction);
-    const siblings = holder?.children ?? top.nodes;
-    const pinned = siblings.some((node) => pins?.[node.id]);
-    if (!pinned) {
+    if (simplifyRoutes) {
       const main = direction === "RIGHT" ? "x" : "y";
       const obstacles = siblings.map((node) => [node.id, nodeBox(node)] as const);
       for (let n = 0; n < items.length; n++) {
@@ -998,7 +1005,10 @@ function layeredLayout(model: Model, direction: Direction, pins: GraphView["layo
         if (routeLength(candidate) >= routeLength(old) - 5) continue;
         if (
           obstacles.some(
-            ([id, box]) => id !== item.from.key && id !== item.to.key && crossesBox(candidate, box),
+            ([id, box]) =>
+              id !== item.from.key &&
+              id !== item.to.key &&
+              crossesBox(candidate, box, ROUTE_BOX_GAP),
           )
         )
           continue;
