@@ -1,14 +1,14 @@
 import { createPortal } from "react-dom";
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
-import {
-  describeAnalysis,
-  guideCatalog,
-  type GuideDescriptor,
-  type QueryHit,
-  type Range,
-} from "@xpl/core";
+import { describeAnalysis, guideCatalog, type GuideDescriptor, type Range } from "@xpl/core";
 import SearchWorker from "../search-worker.ts?worker&inline";
-import type { SearchMessage, SearchReply, SearchResult, SearchPages } from "../search-worker.js";
+import type {
+  SearchMessage,
+  SearchReply,
+  SearchResult,
+  SearchPages,
+  SearchHit,
+} from "../search-worker.js";
 import { containedGuides } from "../library.js";
 import { ServerApi, messageOf } from "../data.js";
 import { useStore, useViewerState } from "../hooks.js";
@@ -25,16 +25,20 @@ const NAVIGATION = [
   "file",
   "range",
   "side",
+  "snapshot",
+  "source-hash",
 ];
 const rangeText = (range: Range) =>
   `${range.startLine}${range.startCol === undefined ? "" : `:${range.startCol}`}-${range.endLine}${range.endCol === undefined ? "" : `:${range.endCol}`}`;
 
 /** Real links remain useful when copied, reopened or used in a new tab. */
-function destination(guide: string, hit?: QueryHit): string {
+function destination(guide: string, hit?: SearchHit): string {
   const params = new URLSearchParams(location.search);
   for (const key of NAVIGATION) params.delete(key);
   params.set("guide", guide);
   if (hit?.kind === "source" || hit?.kind === "symbol") {
+    params.set("snapshot", hit.commit);
+    if (hit.sourceHash) params.set("source-hash", hit.sourceHash);
     params.set("perspective", "code");
     params.set("file", hit.file);
     params.set("range", rangeText(hit.range));
@@ -107,9 +111,12 @@ export function SearchLibrary({ onClose }: { onClose: () => void }) {
     };
     controller.postMessage({
       kind: "snapshot",
-      index,
-      files: state.files,
-      guides: embedded.map((g) => ({ id: g.guideId, explainer: g.explainer })),
+      snapshots: embedded.map((g) => ({
+        id: g.guideId,
+        explainer: g.explainer,
+        index: g.guideId === current ? index : g.index,
+        files: g.guideId === current ? state.files : g.files,
+      })),
     } satisfies SearchMessage);
     return () => {
       request.current++;
@@ -182,11 +189,13 @@ export function SearchLibrary({ onClose }: { onClose: () => void }) {
       }
     }
   };
-  const open = (event: MouseEvent<HTMLAnchorElement>, guide: string, hit?: QueryHit) => {
+  const open = (event: MouseEvent<HTMLAnchorElement>, guide: string, hit?: SearchHit) => {
     const switching = guide !== current;
-    if (switching && blocked) {
+    const sourceLink = hit?.kind === "source" || hit?.kind === "symbol";
+    const freezesLive = sourceLink && state.serverMode;
+    if ((switching || freezesLive) && blocked) {
       event.preventDefault();
-      setError("Save or cancel drafts and pending edits before switching guides.");
+      setError("Save or cancel drafts and pending edits before opening another snapshot.");
       return;
     }
     if (switching || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
@@ -195,8 +204,17 @@ export function SearchLibrary({ onClose }: { onClose: () => void }) {
       onClose();
       return;
     }
-    if (hit.kind === "source" || hit.kind === "symbol") store.openRange(hit.file, hit.range);
-    else if ("tour" in hit) {
+    if (hit.kind === "source" || hit.kind === "symbol") {
+      if (
+        !hit.sourceHash ||
+        !store.openSnapshotRange(hit.file, hit.range, hit.commit, hit.sourceHash)
+      ) {
+        setError(
+          "This search result's source or index changed. Search again in the current guide.",
+        );
+        return;
+      }
+    } else if ("tour" in hit) {
       store.setPerspective("guide");
       const tour = state.model.tour(hit.tour);
       const at = "step" in hit ? tour?.steps.findIndex((s) => s.id === hit.step) : 0;
@@ -234,7 +252,7 @@ export function SearchLibrary({ onClose }: { onClose: () => void }) {
         <div className="search-layout">
           <div className="search-main">
             <label className="search-label">
-              Search this snapshot
+              Search guide snapshots
               <input
                 ref={input}
                 type="search"
@@ -249,10 +267,31 @@ export function SearchLibrary({ onClose }: { onClose: () => void }) {
             </label>
             <p className="search-scope">
               Snapshot <code>{index.commit}</code> · {included} of {index.files.length} indexed
-              files supplied. Source search uses this snapshot; guide text covers {embedded.length}{" "}
-              contained {embedded.length === 1 ? "guide" : "guides"}.
+              files supplied in the current guide. Search covers source, symbols and text in{" "}
+              {embedded.length} contained {embedded.length === 1 ? "guide" : "guides"}.
             </p>
             <div className="search-limits">
+              {embedded
+                .filter((g) => g.guideId !== current)
+                .map((g) => (
+                  <p key={g.guideId}>
+                    {g.explainer.title || g.guideId} · snapshot <code>{g.index.commit}</code>:{" "}
+                    {g.index.files.filter((f) => f.path in g.files).length} of{" "}
+                    {g.index.files.length} indexed files supplied.
+                    {g.index.files.some((f) => !(f.path in g.files))
+                      ? " Missing source is not searched or opened from another guide."
+                      : ""}
+                    {g.index.pruned ? " Index pruned; omitted symbols cannot be searched." : ""}
+                    {!g.index.analysis?.length ? " Analysis unavailable." : ""}
+                    {g.sourceWarning ? ` ${g.sourceWarning}` : ""}
+                  </p>
+                ))}
+              {catalog && (
+                <p>
+                  Catalog-only guides have no source snapshot in this page; open a guide to search
+                  its available source.
+                </p>
+              )}
               {missing > 0 && (
                 <p>
                   {missing} indexed files{" "}
@@ -283,11 +322,11 @@ export function SearchLibrary({ onClose }: { onClose: () => void }) {
             </div>
             <p role="status" className="search-status">
               {busy
-                ? "Searching supplied snapshot…"
+                ? "Searching supplied snapshots…"
                 : result
                   ? result.total
                     ? `${result.total} matches across result groups`
-                    : "No matches in the supplied snapshot."
+                    : "No matches in the supplied snapshots."
                   : "Type to search source, symbols, concepts and tour steps."}
             </p>
             {error && <p role="alert">{error}</p>}
@@ -327,10 +366,12 @@ export function SearchLibrary({ onClose }: { onClose: () => void }) {
                   </div>
                   <ul className="search-results">
                     {group.hits.map((hit, i) => {
-                      const guide = "guide" in hit ? hit.guide : current;
+                      const guide = hit.guide;
+                      const snapshot = embedded.find((g) => g.guideId === guide);
+                      const files = guide === current ? state.files : (snapshot?.files ?? {});
                       const unavailable =
                         (hit.kind === "source" || hit.kind === "symbol") &&
-                        !(hit.file in state.files);
+                        (!hit.sourceHash || !(hit.file in files));
                       const label =
                         hit.kind === "step"
                           ? "tour" in hit
@@ -339,7 +380,7 @@ export function SearchLibrary({ onClose }: { onClose: () => void }) {
                           : hit.kind;
                       const context =
                         "file" in hit
-                          ? `${hit.file}:${rangeText(hit.range)}`
+                          ? `${snapshot?.explainer.title || guide} · ${hit.commit} · ${hit.file}:${rangeText(hit.range)}`
                           : `${embedded.find((g) => g.guideId === guide)?.explainer.title || guide}${"tour" in hit ? ` · ${hit.tour}` : ""}${"step" in hit ? ` · ${hit.step}` : ""}`;
                       const content = (
                         <>
