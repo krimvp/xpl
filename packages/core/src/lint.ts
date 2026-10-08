@@ -21,8 +21,9 @@
  *
  * Reader checks look at what the viewer will show: a step it has to title itself (`untitled-step`), changed files
  * no step shows the code of (`change-not-shown`), more far-apart places of a step in one file than a slide has panes for (`far-ranges`), a talk note set in
- * small type (`long-talk-note`) and maps too big or too crowded for a picture (`big-map`, `crowded-map`). The box
- * and arrow counts need the index: pass an `ExplainerModel` to get them (`xpl lint` does when there is an index).
+ * small type (`long-talk-note`), maps too big or too crowded for a picture (`big-map`, `crowded-map`), and a
+ * system map with no visible relationships (`system-map-no-edges`). Map counts need the index: pass an
+ * `ExplainerModel` to get them (`xpl lint` does when there is an index).
  *
  * The rules are meant not to fight: example values in code spans are not code names, an absolute word next to its
  * evidence (anchors) passes, box names match by word stems, and a hint names the limit a fix could trip.
@@ -67,7 +68,8 @@ export type LintRule =
   | "far-ranges"
   | "long-talk-note"
   | "big-map"
-  | "crowded-map";
+  | "crowded-map"
+  | "system-map-no-edges";
 
 /** The rules in the order the count line lists them, with a short name for people. */
 export const LINT_RULES: Record<LintRule, string> = {
@@ -96,6 +98,7 @@ export const LINT_RULES: Record<LintRule, string> = {
   "long-talk-note": "talk note set in small type",
   "big-map": "map with too many boxes for a tour",
   "crowded-map": "map with too many arrows",
+  "system-map-no-edges": "system map with no visible relationships",
 };
 
 export type LintElementKind =
@@ -1654,8 +1657,9 @@ function changeChecks(lint: Linter, explainer: Explainer, at: Lookup): void {
 
 /**
  * The map checks: `big-map` (a graph view a tour shows with more than `tourMapBoxes` boxes), `crowded-map` (more
- * arrows than `edgesPerBox` per box, with the ids of the least used drawn edges to hide). The box and arrow counts
- * come from the index when there is one (`model`), else from the view's `include` (and no `crowded-map`).
+ * arrows than `edgesPerBox` per box, with the ids of the least used drawn edges to hide), and `system-map-no-edges`
+ * (an architecture map with a non-component role, at least two boxes and no visible edges or stubs). The box and
+ * arrow counts come from the index when there is one (`model`), else from the view's `include` (and no edge checks).
  */
 function mapChecks(
   lint: Linter,
@@ -1708,6 +1712,23 @@ function mapChecks(
             : 'drop some stored edges, or narrow "edgeKinds"',
         ids: hide,
       });
+    }
+    if (
+      graph &&
+      record(view.scope).root === "repo" &&
+      record(view.scope).depth === 1 &&
+      graph.nodes.length >= 2 &&
+      graph.edges.length === 0 &&
+      graph.stubs.length === 0 &&
+      graph.nodes.some((node) => node.role !== undefined && node.role !== "component")
+    ) {
+      lint.add(
+        where,
+        "system-map-no-edges",
+        excerpt(str(view.title) ?? viewId),
+        `system map ${str(view.title) ?? viewId} has ${plural(graph.nodes.length, "box")} and no visible relationships`,
+        "check whether the map is missing source-backed relationships; add only relationships supported by the code",
+      );
     }
   }
 }

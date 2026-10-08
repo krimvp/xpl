@@ -3,7 +3,13 @@
  * output, `--json`, `--strict`, exit codes) on an explainer applied to the TS fixture.
  */
 import { beforeAll, describe, expect, it } from "vitest";
-import { ExplainerModel, INDEX_SCHEMA, type Explainer, type SymbolIndex } from "@xpl/core";
+import {
+  deriveGraph,
+  ExplainerModel,
+  INDEX_SCHEMA,
+  type Explainer,
+  type SymbolIndex,
+} from "@xpl/core";
 import {
   codeLike,
   isLiteral,
@@ -1567,6 +1573,45 @@ describe("lintExplainer: reader checks", () => {
     // the one edge to hide is a least used one (one reference)
     expect(crowded[0]!.ids).toHaveLength(1);
     expect(crowded[0]!.hint).toContain(crowded[0]!.ids![0]!);
+
+    const partial = explainer({
+      nodes: [
+        {
+          id: "grp:app",
+          kind: "group",
+          parent: "repo",
+          label: "App",
+          role: "system",
+          members: [`sym:${a}`],
+          provenance: { origin: "llm" },
+        },
+        {
+          id: "grp:other",
+          kind: "group",
+          parent: "repo",
+          label: "Other",
+          role: "service",
+          members: [],
+          provenance: { origin: "llm" },
+        },
+      ],
+      views: [
+        {
+          id: "view:system",
+          type: "graph",
+          title: "System map",
+          scope: { root: "repo", depth: 1 },
+          include: ["grp:app", "grp:other"],
+        },
+      ],
+    });
+    const partialModel = new ExplainerModel(partial, index);
+    const partialView = partial.views[0]!;
+    if (partialView.type !== "graph") throw new Error("expected a graph view");
+    const partialGraph = deriveGraph(partialView, partialModel);
+    expect(partialGraph.edges).toEqual([]);
+    expect(partialGraph.stubs.length).toBeGreaterThan(0);
+    expect(only(lintExplainer(partial, partialModel).findings, "system-map-no-edges")).toEqual([]);
   });
 
   it("change-not-shown: a code file needs a step that shows its code; docs, tests and lock files may be named", () => {
@@ -1645,6 +1690,121 @@ describe("xpl lint", () => {
     demo = cloneDir(indexed);
     expect((await xpl(demo, "new", "demo")).code).toBe(0);
     expect((await xpl(demo, "apply", "demo", PATCH_PATH)).code).toBe(0);
+  });
+
+  it("warns on a disconnected system map in lint and ready, but not a one-box map or a connected map", async () => {
+    const dir = cloneDir(await indexedFixture());
+    expect((await xpl(dir, "new", "map-check")).code).toBe(0);
+    const path = ".explainer/map-check.explainer.json";
+    const base = JSON.parse(readFile(dir, path));
+    const roleNode = (id: string, role = "system") => ({
+      id,
+      kind: "group",
+      parent: "repo",
+      label: id,
+      role,
+      members: [],
+      provenance: { origin: "user" },
+    });
+    const view = (include: string[], scope = { root: "repo", depth: 1 }) => ({
+      id: "view:system",
+      type: "graph",
+      title: "System map",
+      scope,
+      provenance: { origin: "user" },
+      include,
+    });
+    const setMap = (
+      include: string[],
+      edges: unknown[] = [],
+      role = "system",
+      scope = { root: "repo", depth: 1 },
+    ) => {
+      writeFile(
+        dir,
+        path,
+        JSON.stringify({
+          ...base,
+          nodes: [roleNode("grp:one", role), roleNode("grp:two", role)],
+          edges,
+          views: [view(include, scope)],
+        }),
+      );
+    };
+
+    setMap(["grp:one", "grp:two"]);
+    const lint = await xplJson<{ findings: LintFinding[] }>(
+      dir,
+      "lint",
+      "map-check",
+      "--warn-only",
+    );
+    expect(lint.json.findings.filter((f) => f.rule === "system-map-no-edges")).toMatchObject([
+      {
+        elementId: "view:system",
+        field: "include",
+        message: expect.stringContaining("System map"),
+        hint: expect.stringContaining("source-backed relationships"),
+      },
+    ]);
+    const ready = await xplJson<{
+      findings: { code: string; severity: string }[];
+    }>(dir, "ready", "map-check");
+    expect(ready.json.findings).toContainEqual({
+      code: "system-map-no-edges",
+      severity: "warning",
+      elementId: "view:system",
+      field: "include",
+      message: expect.stringContaining("System map"),
+      hint: expect.stringContaining("source-backed relationships"),
+    });
+
+    setMap(["grp:one", "grp:two"], [], "component");
+    const components = await xplJson<{ findings: LintFinding[] }>(
+      dir,
+      "lint",
+      "map-check",
+      "--warn-only",
+    );
+    expect(components.json.findings.filter((f) => f.rule === "system-map-no-edges")).toEqual([]);
+
+    setMap(["grp:one", "grp:two"], [], "database", { root: "grp:one", depth: 1 });
+    const insideService = await xplJson<{ findings: LintFinding[] }>(
+      dir,
+      "lint",
+      "map-check",
+      "--warn-only",
+    );
+    expect(insideService.json.findings.filter((f) => f.rule === "system-map-no-edges")).toEqual([]);
+
+    setMap(["grp:one"]);
+    const oneBox = await xplJson<{ findings: LintFinding[] }>(
+      dir,
+      "lint",
+      "map-check",
+      "--warn-only",
+    );
+    expect(oneBox.json.findings.filter((f) => f.rule === "system-map-no-edges")).toEqual([]);
+
+    setMap(
+      ["grp:one", "grp:two"],
+      [
+        {
+          id: "edge:uses",
+          kind: "emits",
+          from: "grp:one",
+          to: "grp:two",
+          provenance: { origin: "user" },
+        },
+      ],
+    );
+    const connected = await xplJson<{ findings: LintFinding[] }>(
+      dir,
+      "lint",
+      "map-check",
+      "--warn-only",
+    );
+    expect(connected.json.findings.filter((f) => f.rule === "system-map-no-edges")).toEqual([]);
   });
 
   it("prints the findings grouped by element and a count line, and exits 1 (0 with --warn-only)", async () => {
