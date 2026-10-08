@@ -17592,10 +17592,10 @@
               "role": "call-site",
               "hash": "sha256-v2:2259d93ba53d",
               "resolved": {
-                "commit": "wt-27ab9089b3",
+                "commit": "e114ae9",
                 "range": {
-                  "startLine": 1226,
-                  "endLine": 1226
+                  "startLine": 1327,
+                  "endLine": 1327
                 },
                 "status": "ok"
               }
@@ -17606,10 +17606,10 @@
               "role": "config",
               "hash": "sha256-v2:7c03ca4f89a3",
               "resolved": {
-                "commit": "wt-27ab9089b3",
+                "commit": "e114ae9",
                 "range": {
-                  "startLine": 480,
-                  "endLine": 484
+                  "startLine": 481,
+                  "endLine": 485
                 },
                 "status": "ok"
               }
@@ -17620,10 +17620,10 @@
               "role": "definition",
               "hash": "sha256-v2:5c4d4bce6537",
               "resolved": {
-                "commit": "wt-27ab9089b3",
+                "commit": "e114ae9",
                 "range": {
-                  "startLine": 1219,
-                  "endLine": 1231
+                  "startLine": 1320,
+                  "endLine": 1332
                 },
                 "status": "ok"
               }
@@ -17634,10 +17634,10 @@
               "role": "definition",
               "hash": "sha256-v2:d1f61ce6b8db",
               "resolved": {
-                "commit": "wt-27ab9089b3",
+                "commit": "e114ae9",
                 "range": {
-                  "startLine": 323,
-                  "endLine": 426
+                  "startLine": 324,
+                  "endLine": 427
                 },
                 "status": "ok"
               }
@@ -17646,12 +17646,12 @@
               "file": "packages/viewer/src/layout/graphLayout.ts",
               "symbol": "layeredLayout",
               "role": "definition",
-              "hash": "sha256-v2:94d6af4b1fe1",
+              "hash": "sha256-v2:2f78777064a2",
               "resolved": {
-                "commit": "wt-27ab9089b3",
+                "commit": "e114ae9",
                 "range": {
-                  "startLine": 643,
-                  "endLine": 1004
+                  "startLine": 707,
+                  "endLine": 1105
                 },
                 "status": "ok"
               }
@@ -17662,10 +17662,10 @@
               "role": "definition",
               "hash": "sha256-v2:2e23fde7739e",
               "resolved": {
-                "commit": "wt-27ab9089b3",
+                "commit": "e114ae9",
                 "range": {
-                  "startLine": 539,
-                  "endLine": 548
+                  "startLine": 540,
+                  "endLine": 549
                 },
                 "status": "ok"
               }
@@ -17676,7 +17676,7 @@
               "role": "definition",
               "hash": "sha256-v2:1baf9a27d77d",
               "resolved": {
-                "commit": "wt-27ab9089b3",
+                "commit": "e114ae9",
                 "range": {
                   "startLine": 75,
                   "endLine": 143
@@ -17690,10 +17690,10 @@
               "role": "definition",
               "hash": "sha256-v2:11c780cb0aa2",
               "resolved": {
-                "commit": "wt-27ab9089b3",
+                "commit": "e114ae9",
                 "range": {
-                  "startLine": 1014,
-                  "endLine": 1046
+                  "startLine": 1115,
+                  "endLine": 1147
                 },
                 "status": "ok"
               }
@@ -17704,10 +17704,10 @@
               "role": "definition",
               "hash": "sha256-v2:9dc605fca4f8",
               "resolved": {
-                "commit": "wt-27ab9089b3",
+                "commit": "e114ae9",
                 "range": {
-                  "startLine": 487,
-                  "endLine": 494
+                  "startLine": 488,
+                  "endLine": 495
                 },
                 "status": "ok"
               }
@@ -17718,16 +17718,30 @@
               "role": "definition",
               "hash": "sha256-v2:8177185f4600",
               "resolved": {
-                "commit": "wt-27ab9089b3",
+                "commit": "e114ae9",
                 "range": {
-                  "startLine": 575,
-                  "endLine": 620
+                  "startLine": 576,
+                  "endLine": 621
+                },
+                "status": "ok"
+              }
+            },
+            {
+              "file": "packages/viewer/src/layout/layered.ts",
+              "symbol": "spreadPorts",
+              "role": "definition",
+              "hash": "sha256-v2:c0a97c94d2f6",
+              "resolved": {
+                "commit": "e114ae9",
+                "range": {
+                  "startLine": 177,
+                  "endLine": 207
                 },
                 "status": "ok"
               }
             }
           ],
-          "summary": "Layered layout honors finite pins inside each container before sizing its parent. Negative child positions expand the frame around a stable origin. Automatic siblings yield space and arrows reroute to the moved boxes. A fallback grid also keeps stored pins."
+          "summary": "Layered layout sizes nested containers from the inside out and honors finite pins. Small automatic maps spread ports farther apart. A long arrow is shortened only when its new route clears boxes by eight diagram units and avoids other arrows. Pinned and large maps keep their prior routes. The fallback grid keeps stored pins."
         },
         {
           "id": "viewer-draw:6",
@@ -17953,7 +17967,7 @@
       ],
       "provenance": {
         "origin": "llm",
-        "commit": "8440d90"
+        "commit": "e114ae9"
       }
     },
     {
