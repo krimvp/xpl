@@ -13,8 +13,9 @@ safe-only flow with branches for both methods and updates the tour.
 From the xpl repository root:
 
 1. Use Node 22 or 24 and run `npm ci && npm run build`.
-2. Check out the pinned Zod commit in a separate directory. Keep that source
-   checkout unchanged. Run the commands below there, with `XPL` set to the
+2. Check out the pinned Zod commit in a separate directory. Keep its tracked
+   source files unchanged; xpl writes authoring files under `.explainer/`.
+   Run the commands below there, with `XPL` set to the
    absolute path of `packages/cli/dist/xpl.mjs` in this xpl repository and
    `GUIDE` set to this `parse-errors` directory.
 
