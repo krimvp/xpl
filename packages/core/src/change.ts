@@ -279,6 +279,7 @@ function blankOrComment(text: string, language: string | undefined): boolean {
   if (line === "") return true;
   switch (language) {
     case "python":
+    case "ruby":
     case "yaml":
     case "toml":
     case "text":
