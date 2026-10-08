@@ -4,7 +4,14 @@
  * worked overview (global-setup.ts).
  */
 import { expect, test } from "@playwright/test";
-import { ARCHITECTURE_BUNDLE, openBundle, stateOf, TS_BUNDLE } from "./helpers.js";
+import {
+  ARCHITECTURE_BUNDLE,
+  openBundle,
+  readEmbeddedBundle,
+  stateOf,
+  TS_BUNDLE,
+  withBundle,
+} from "./helpers.js";
 
 const box = (page: import("@playwright/test").Page, id: string) =>
   page.locator(`.diagram [data-element-id="${id}"]`).first();
@@ -213,4 +220,35 @@ test.describe("architecture maps", () => {
       await expect.poll(async () => (await stateOf(page)).include).toEqual(include);
     });
   }
+
+  test("a phone map offers its sole expandable box after another map was expanded", async ({
+    page,
+  }) => {
+    const { html, bundle } = readEmbeddedBundle(ARCHITECTURE_BUNDLE);
+    const explainer = bundle.explainer as {
+      nodes: { id: string; opens?: string }[];
+      views: { id: string; include: string[] }[];
+    };
+    explainer.nodes.find((node) => node.id === "grp:scheduling")!.opens = "view:scheduling-parts";
+    const overview = explainer.views.find((view) => view.id === "view:overview")!;
+    explainer.views.push({
+      ...overview,
+      id: "view:scheduling-parts",
+      include: ["file:jobrunner/runner.py", "file:jobrunner/queue.py"],
+    });
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.route("http://xpl.test/**", (route) =>
+      route.fulfill({ contentType: "text/html", body: withBundle(html, bundle) }),
+    );
+    await page.goto("http://xpl.test/?mode=explore&view=view:system");
+    await page.waitForFunction(() => window.__xpl !== undefined);
+    await page.getByRole("button", { name: "Show parts of Job runner here" }).click();
+    await expect(box(page, "grp:job-runner")).toHaveClass(/is-container/);
+    await page.evaluate(() => window.__xpl!.setView("view:overview"));
+    await expect(page.locator('.diagram[data-view-id="view:overview"]')).toBeVisible();
+    const expand = page.getByRole("button", { name: "Show parts of Scheduling here" });
+    await expect(expand).toBeVisible();
+    await expand.click();
+    await expect(box(page, "grp:scheduling")).toHaveClass(/is-container/);
+  });
 });

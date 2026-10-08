@@ -11,7 +11,7 @@ export function ExpandInPlaceAction({ nodes }: { nodes: readonly GraphNode[] }) 
   );
   const chosen =
     available.find((node) => node.id === state.selection.at(-1)) ??
-    (state.expanded.size === 0 && available.length === 1 ? available[0] : undefined);
+    (available.length === 1 ? available[0] : undefined);
   if (!chosen) return null;
   const label = `Show parts of ${chosen.label} here`;
   return (
