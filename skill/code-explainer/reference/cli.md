@@ -43,6 +43,21 @@ installer. Each harness needs separate installation, authentication and provider
 
 ---
 
+## `xpl completion <bash|zsh|fish>`
+
+Prints shell completion for command names, command and global options, and local guide names at
+`<explainer>` arguments. The command and option lists come from the same CLI tables as `--help`.
+Guide names are read from `.explainer/*.explainer.json` under `--root`, or the current directory
+when `--root` is omitted. Global options may appear before the command.
+
+Add `source <(xpl completion bash)` to `~/.bashrc`, or `source <(xpl completion zsh)` to
+`~/.zshrc` after `compinit`. For fish, run
+`xpl completion fish > ~/.config/fish/completions/xpl.fish`. Generate the script again after
+updating xpl so its command and option lists stay current. `--json` returns the script as
+`{ "ok": true, "shell": "...", "script": "..." }`.
+
+---
+
 ## `xpl doctor [--agent none|claude|codex|pi|droid|devin] [--skill-dir <path>]`
 
 Diagnoses installed setup without downloading tools or starting authoring. Node >=22.12, artifact hashes
