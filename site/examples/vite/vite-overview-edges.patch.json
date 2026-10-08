@@ -1,0 +1,98 @@
+{
+  "edges": [
+    {
+      "id": "edge:developer-starts-server",
+      "from": "grp:developer",
+      "to": "grp:dev-server",
+      "kind": "calls",
+      "label": "starts dev server",
+      "summary": "The default CLI command creates the development server and starts listening for requests.",
+      "anchors": [
+        {
+          "file": "packages/vite/src/node/cli.ts",
+          "find": ".command('[root]', 'start dev server')",
+          "role": "usage"
+        },
+        {
+          "file": "packages/vite/src/node/cli.ts",
+          "find": "const server = await createServer({",
+          "role": "call-site"
+        },
+        {
+          "file": "packages/vite/src/node/server/index.ts",
+          "symbol": "createServer",
+          "find": "export function createServer(",
+          "role": "definition"
+        }
+      ]
+    },
+    {
+      "id": "edge:developer-builds-app",
+      "from": "grp:developer",
+      "to": "grp:production-build",
+      "kind": "calls",
+      "label": "runs production build",
+      "summary": "The CLI build command creates a builder and runs its application build.",
+      "anchors": [
+        {
+          "file": "packages/vite/src/node/cli.ts",
+          "find": ".command('build [root]', 'build for production')",
+          "role": "usage"
+        },
+        {
+          "file": "packages/vite/src/node/cli.ts",
+          "find": "await builder.buildApp()",
+          "role": "call-site"
+        },
+        {
+          "file": "packages/vite/src/node/build.ts",
+          "symbol": "createBuilder",
+          "find": "export async function createBuilder(",
+          "role": "definition"
+        }
+      ]
+    },
+    {
+      "id": "edge:browser-requests-modules",
+      "from": "grp:browser",
+      "to": "grp:dev-server",
+      "kind": "custom",
+      "label": "requests modules",
+      "summary": "The development server receives browser script and import requests, transforms their modules, and sends the result.",
+      "anchors": [
+        {
+          "file": "packages/vite/src/node/server/middlewares/transform.ts",
+          "find": "req.headers['sec-fetch-dest'] === 'script' ||",
+          "role": "usage"
+        },
+        {
+          "file": "packages/vite/src/node/server/middlewares/transform.ts",
+          "find": "const result = await environment.transformRequest(url)",
+          "role": "call-site"
+        },
+        {
+          "file": "packages/vite/src/node/server/middlewares/transform.ts",
+          "find": "return send(req, res, result.code, type, {",
+          "role": "call-site"
+        }
+      ]
+    }
+  ],
+  "nodes": [
+    {
+      "id": "grp:developer",
+      "anchors": [
+        {
+          "file": "packages/vite/src/node/cli.ts",
+          "find": ".command('[root]', 'start dev server')",
+          "role": "usage"
+        },
+        {
+          "file": "packages/vite/src/node/cli.ts",
+          "find": ".command('build [root]', 'build for production')",
+          "role": "usage"
+        }
+      ]
+    }
+  ]
+}

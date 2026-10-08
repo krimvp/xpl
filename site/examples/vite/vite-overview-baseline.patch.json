@@ -1,0 +1,254 @@
+{
+  "nodes": [
+    {
+      "id": "grp:developer",
+      "label": "Developer",
+      "role": "person",
+      "tech": "command line",
+      "summary": "Starts the development server or asks Vite to build a web app.",
+      "anchors": [
+        {
+          "file": "packages/vite/src/node/cli.ts",
+          "find": ".command('[root]', 'start dev server')",
+          "role": "usage"
+        }
+      ]
+    },
+    {
+      "id": "grp:dev-server",
+      "label": "Development server",
+      "role": "service",
+      "tech": "TypeScript",
+      "opens": "view:inside",
+      "members": [
+        "file:packages/vite/src/node/server/index.ts",
+        "file:packages/vite/src/node/server/middlewares/transform.ts"
+      ],
+      "summary": "Serves and transforms project modules while a browser is developing the app."
+    },
+    {
+      "id": "grp:production-build",
+      "label": "Production build",
+      "role": "service",
+      "tech": "Rolldown",
+      "members": [
+        "file:packages/vite/src/node/build.ts"
+      ],
+      "summary": "Creates production output through the configured builder and build environments."
+    },
+    {
+      "id": "grp:browser",
+      "label": "Browser",
+      "role": "external",
+      "tech": "web browser",
+      "summary": "Requests modules from the development server and displays the app.",
+      "anchors": [
+        {
+          "file": "packages/vite/src/node/server/middlewares/transform.ts",
+          "role": "usage"
+        }
+      ]
+    },
+    {
+      "id": "file:packages/vite/src/node/cli.ts",
+      "label": "Commands",
+      "role": "component",
+      "summary": "Defines the development and build commands, then starts the matching server or builder."
+    },
+    {
+      "id": "file:packages/vite/src/node/config.ts",
+      "label": "Configuration",
+      "role": "component",
+      "summary": "Resolves project settings, plugins and environments for development or production."
+    },
+    {
+      "id": "file:packages/vite/src/node/server/index.ts",
+      "label": "Dev server",
+      "role": "component",
+      "summary": "Creates the HTTP server, file watcher, hot channel and development environments."
+    },
+    {
+      "id": "file:packages/vite/src/node/server/middlewares/transform.ts",
+      "label": "Module responses",
+      "role": "component",
+      "summary": "Handles module requests by using the server transform pipeline before sending responses."
+    },
+    {
+      "id": "file:packages/vite/src/node/build.ts",
+      "label": "Builder",
+      "role": "component",
+      "summary": "Creates build environments and runs the production build path."
+    }
+  ],
+  "views": [
+    {
+      "id": "view:system",
+      "type": "graph",
+      "title": "One tool serves development and builds production output",
+      "scope": {
+        "root": "repo",
+        "depth": 1,
+        "question": "How does Vite serve development and produce builds?"
+      },
+      "include": [
+        "grp:developer",
+        "grp:dev-server",
+        "grp:production-build",
+        "grp:browser"
+      ],
+      "stubs": {
+        "mode": "none"
+      }
+    },
+    {
+      "id": "view:inside",
+      "type": "graph",
+      "title": "Commands choose the server or builder path",
+      "scope": {
+        "root": "repo",
+        "depth": 2,
+        "question": "How do the Vite commands start work?"
+      },
+      "include": [
+        "file:packages/vite/src/node/cli.ts",
+        "file:packages/vite/src/node/config.ts",
+        "file:packages/vite/src/node/server/index.ts",
+        "file:packages/vite/src/node/server/middlewares/transform.ts",
+        "file:packages/vite/src/node/build.ts"
+      ],
+      "edgeKinds": [
+        "calls"
+      ],
+      "excludeFiles": [
+        "**/__tests__/**",
+        "**/*.spec.*",
+        "playground/**"
+      ],
+      "stubs": {
+        "mode": "none"
+      }
+    }
+  ],
+  "tours": [
+    {
+      "id": "tour:overview",
+      "title": "How Vite serves development and builds production output",
+      "summary": "Vite is a web build tool with a development server and a production build command. The server serves modules to a browser and watches files as developers work. The builder prepares deployable output through configured environments. This tour follows those two paths from the command line.",
+      "steps": [
+        {
+          "id": "t1",
+          "view": "view:system",
+          "focus": [
+            "grp:dev-server"
+          ],
+          "note": "### Vite gives development and production separate paths\n\nThe development server responds to browser requests and watches project files. The production builder prepares output for deployment.",
+          "code": [
+            {
+              "file": "README.md",
+              "find": "It consists of two major parts:",
+              "role": "usage"
+            }
+          ],
+          "editor": {
+            "primary": "README.md"
+          }
+        },
+        {
+          "id": "t2",
+          "view": "view:inside",
+          "focus": [
+            "file:packages/vite/src/node/cli.ts"
+          ],
+          "note": "### The command selects the work to start\n\nThe default command creates a development server. The build command creates a builder and runs its application build.",
+          "code": [
+            {
+              "file": "packages/vite/src/node/cli.ts",
+              "find": ".command('[root]', 'start dev server')",
+              "role": "usage"
+            },
+            {
+              "file": "packages/vite/src/node/cli.ts",
+              "find": ".command('build [root]', 'build for production')",
+              "role": "usage"
+            }
+          ],
+          "editor": {
+            "primary": "packages/vite/src/node/cli.ts"
+          }
+        },
+        {
+          "id": "t3",
+          "view": "view:inside",
+          "focus": [
+            "file:packages/vite/src/node/config.ts"
+          ],
+          "note": "### Both paths resolve project settings\n\nConfiguration supplies the settings shared by both paths. The selected command decides which settings and plugins apply.",
+          "code": [
+            {
+              "file": "packages/vite/src/node/server/index.ts",
+              "find": "await resolveConfig(inlineConfig, 'serve')",
+              "role": "usage"
+            },
+            {
+              "file": "packages/vite/src/node/build.ts",
+              "find": "const config = await resolveConfigToBuild(inlineConfig, patchConfig)",
+              "role": "usage"
+            }
+          ],
+          "editor": {
+            "primary": "packages/vite/src/node/server/index.ts"
+          }
+        },
+        {
+          "id": "t4",
+          "view": "view:inside",
+          "focus": [
+            "file:packages/vite/src/node/server/index.ts"
+          ],
+          "note": "### Development creates a listening server and watcher\n\nBrowser requests and file changes can arrive throughout the development session. The server keeps both channels active.",
+          "code": [
+            {
+              "file": "packages/vite/src/node/server/index.ts",
+              "find": "const middlewares = connect() as Connect.Server",
+              "role": "usage"
+            },
+            {
+              "file": "packages/vite/src/node/server/index.ts",
+              "find": "const ws = createWebSocketServer(httpServer, config, httpsOptions)",
+              "role": "usage"
+            }
+          ],
+          "editor": {
+            "primary": "packages/vite/src/node/server/index.ts"
+          }
+        },
+        {
+          "id": "t5",
+          "view": "view:inside",
+          "focus": [
+            "file:packages/vite/src/node/build.ts"
+          ],
+          "note": "### Production runs the configured builder\n\nThe build command calls `buildApp`. The builder chooses its configured application build and falls back to its environments when needed.",
+          "code": [
+            {
+              "file": "packages/vite/src/node/cli.ts",
+              "find": "await builder.buildApp()",
+              "role": "usage"
+            },
+            {
+              "file": "packages/vite/src/node/build.ts",
+              "find": "if (!configBuilderBuildAppCalled) {\n        await configBuilder.buildApp(builder)",
+              "role": "usage"
+            }
+          ],
+          "editor": {
+            "primary": "packages/vite/src/node/cli.ts"
+          }
+        }
+      ]
+    }
+  ],
+  "scope": {
+    "audience": "Leaders and engineers new to Vite"
+  }
+}

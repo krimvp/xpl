@@ -1112,6 +1112,12 @@ Prints a patch skeleton for one of the three scopes, built from the index (and t
 
 Every tour step has at most 2 code ranges, and the note is `### TODO: ...` plus the body. Ids already in the explainer are not reused (`view:change-map-2`), and a box the explainer already explains gets no new summary. The draft is checked the way `apply` checks it before it is printed, and for ids that exist nowhere (named in a text or a note) and focus ids that are not on their step's view.
 
+Repository drafts need files in a supported source language so the index has symbols and import sites to map.
+An eligible `.java` file is indexed as text, so file anchors still work but it cannot produce Java repository
+levels. If no supported code files remain, the error reports the Java file count and suggests
+`xpl show file:<path>`. Importing Java SCIP data alone does not enable automatic Java repository levels;
+test-only Java files keep the empty-code diagnostic.
+
 ```
 $ xpl draft path jobrunner sym:src/runner.ts#Runner.dispatch -o path.json
 wrote path.json
