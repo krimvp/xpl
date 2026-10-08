@@ -1471,7 +1471,10 @@ copies, local viewing and offline HTML in pinned Chromium. It checks refusal bef
 ready output, explicit draft labels and disconnected ready exports. CLI subprocesses have Node filesystem permissions
 for scratch only, with a negative checkout-read probe. The harness permits child processes for local git
 and version checks; it is a check of CLI file reads, not an OS sandbox for arbitrary child tools.
-Only Linux x64 (WSL2, Node 22.23.1) has been exercised against the installed artifact.
+The checkout-denied install test has run on Linux x64/WSL2 (Node 22.23.1). The separate
+`npm run test:install:platform` job checks packed installation, the npm and skill launchers, TS indexing,
+a backend-none service, ready export and offline Chromium reading on macOS and Windows. It does not invoke
+the `xpl view` OS browser opener or run Claude-backed jobs.
 
 **Exit codes.** 0 ok (warnings allowed); 1 rejected or failed: unknown id, no index, a rejected patch, a patch
 that changed nothing because the user owns everything it touched, validation errors, `resolve --write` on a
@@ -3042,7 +3045,9 @@ identities to syntax ranges. This is a proposed contract revision, not a change 
 - `xpl lint` is mechanical: it catches slogans, absolute words, long sentences, code titles and order
   problems, not wrong claims. `repeats-summary` finds near-verbatim repeats only.
 - Workspace packages are private; build/pack produce a standalone local npm tarball with
-  its viewer, grammars and skill. Install/update and reader/export checks cover Linux x64/WSL2 only.
+  its viewer, grammars and skill. The full checkout-denied install test covers Linux x64/WSL2;
+  platform CI checks packed install, local service and offline reading on macOS and Windows.
+  The OS browser opener and Claude-backed jobs are outside those platform checks.
   Node ≥22.12 is required. This source tree builds `@krimvp/xpl` 0.2.2 under MIT; a `v*` tag starts publication.
 
 **Next steps, roughly by value** (the review in `docs/review-2026-10-01.md` has the roadmap): an independent
