@@ -781,15 +781,19 @@ records the supported slice and a bat smoke test. Tags cache version query-v6 in
 extraction.
 
 Ruby's syntax-only `TagsProvider` (`src/tags/ruby.ts`, `ruby.scm`) uses `tree-sitter-ruby@0.23.1`. It
-indexes named classes, modules, instance and singleton methods, and direct constant assignments with full
-declaration ranges. Scoped assignments such as `Other::CONST =` are omitted until ownership can be
-resolved without duplicating or misplacing their path. Lexical containment supplies parents; a singleton
-method keeps its receiver in the symbol path (`Runner.self.build`). Reopened namespaces get source-ordered
-`~N` IDs within a file. This
-does not resolve cross-file namespace ownership, inheritance, calls, imports or metaprogrammed definitions.
+indexes named classes, modules, instance and singleton methods, and constant assignments with full
+declaration ranges. A qualified class, module or assignment target gets a dotted path and parent only when
+its owner has a preceding class or module declaration in the same file. Lookup checks actual enclosing
+class/module declarations before the file root, without treating dotted path ancestors as lexical scopes;
+`::` starts at the root. An unknown owner and the children of an ownerless
+class or module are omitted, including an owner declared
+only in another file. Direct declarations keep lexical parents; a singleton method keeps its receiver in
+the symbol path (`Runner.self.build`). Reopened namespaces get source-ordered `~N` IDs within a file.
+This does not resolve cross-file namespace ownership, inheritance, calls, imports or metaprogrammed definitions.
 All relationship kinds are unsupported and Ruby reports `refs: none`. Syntax errors can leave declarations
 incomplete and produce a warning. Ruby tags use the existing file-local extraction cache; profile version
-`tree-sitter-ruby@0.23.1/query-v1` binds the query and limitations to its cache entries.
+`tree-sitter-ruby@0.23.1/query-v5` binds the query and ownership rule to its cache entries.
+[The scoped constant check](ruby-scoped-constants.md) records the bounded rule and pinned Rack sample.
 
 PHP's syntax-only `TagsProvider` (`src/tags/php.ts`, `php.scm`) uses `tree-sitter-php@0.24.2` with the
 mixed PHP/HTML grammar. It indexes named namespaces, classes, interfaces, traits, functions, methods and
