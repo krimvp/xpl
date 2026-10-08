@@ -17592,10 +17592,10 @@
               "role": "call-site",
               "hash": "sha256-v2:2259d93ba53d",
               "resolved": {
-                "commit": "66a9b1d",
+                "commit": "wt-e7535b267c",
                 "range": {
-                  "startLine": 1378,
-                  "endLine": 1378
+                  "startLine": 1382,
+                  "endLine": 1382
                 },
                 "status": "ok"
               }
@@ -17606,7 +17606,7 @@
               "role": "config",
               "hash": "sha256-v2:7c03ca4f89a3",
               "resolved": {
-                "commit": "66a9b1d",
+                "commit": "wt-e7535b267c",
                 "range": {
                   "startLine": 481,
                   "endLine": 485
@@ -17620,10 +17620,10 @@
               "role": "definition",
               "hash": "sha256-v2:5c4d4bce6537",
               "resolved": {
-                "commit": "66a9b1d",
+                "commit": "wt-e7535b267c",
                 "range": {
-                  "startLine": 1371,
-                  "endLine": 1383
+                  "startLine": 1375,
+                  "endLine": 1387
                 },
                 "status": "ok"
               }
@@ -17634,7 +17634,7 @@
               "role": "definition",
               "hash": "sha256-v2:d1f61ce6b8db",
               "resolved": {
-                "commit": "66a9b1d",
+                "commit": "wt-e7535b267c",
                 "range": {
                   "startLine": 324,
                   "endLine": 427
@@ -17646,12 +17646,12 @@
               "file": "packages/viewer/src/layout/graphLayout.ts",
               "symbol": "layeredLayout",
               "role": "definition",
-              "hash": "sha256-v2:36a6942b1c43",
+              "hash": "sha256-v2:95e25b1edbb7",
               "resolved": {
-                "commit": "66a9b1d",
+                "commit": "wt-e7535b267c",
                 "range": {
-                  "startLine": 737,
-                  "endLine": 1156
+                  "startLine": 742,
+                  "endLine": 1160
                 },
                 "status": "ok"
               }
@@ -17662,7 +17662,7 @@
               "role": "definition",
               "hash": "sha256-v2:2e23fde7739e",
               "resolved": {
-                "commit": "66a9b1d",
+                "commit": "wt-e7535b267c",
                 "range": {
                   "startLine": 540,
                   "endLine": 549
@@ -17676,7 +17676,7 @@
               "role": "definition",
               "hash": "sha256-v2:1baf9a27d77d",
               "resolved": {
-                "commit": "66a9b1d",
+                "commit": "wt-e7535b267c",
                 "range": {
                   "startLine": 75,
                   "endLine": 143
@@ -17690,10 +17690,10 @@
               "role": "definition",
               "hash": "sha256-v2:11c780cb0aa2",
               "resolved": {
-                "commit": "66a9b1d",
+                "commit": "wt-e7535b267c",
                 "range": {
-                  "startLine": 1166,
-                  "endLine": 1198
+                  "startLine": 1170,
+                  "endLine": 1202
                 },
                 "status": "ok"
               }
@@ -17704,7 +17704,7 @@
               "role": "definition",
               "hash": "sha256-v2:9dc605fca4f8",
               "resolved": {
-                "commit": "66a9b1d",
+                "commit": "wt-e7535b267c",
                 "range": {
                   "startLine": 488,
                   "endLine": 495
@@ -17718,7 +17718,7 @@
               "role": "definition",
               "hash": "sha256-v2:8177185f4600",
               "resolved": {
-                "commit": "66a9b1d",
+                "commit": "wt-e7535b267c",
                 "range": {
                   "startLine": 576,
                   "endLine": 621
@@ -17732,7 +17732,7 @@
               "role": "definition",
               "hash": "sha256-v2:c0a97c94d2f6",
               "resolved": {
-                "commit": "66a9b1d",
+                "commit": "wt-e7535b267c",
                 "range": {
                   "startLine": 177,
                   "endLine": 207
@@ -17741,7 +17741,7 @@
               }
             }
           ],
-          "summary": "Layered layout sizes nested containers from the inside out and honors finite pins. Small automatic maps spread ports farther apart when this adds no crossings. A long arrow is shortened only when its new route clears boxes by eight diagram units and avoids other arrows. Pinned and large maps keep their prior routes. The fallback grid keeps stored pins."
+          "summary": "Layered layout sizes nested containers from the inside out and honors finite pins. Small automatic maps spread ports farther apart only when no new arrow pair crosses or arrow hits a sibling box. A long arrow is shortened only when its new route clears boxes by eight diagram units and avoids other arrows. Pinned and large maps keep their prior routes. The fallback grid keeps stored pins."
         },
         {
           "id": "viewer-draw:6",
@@ -17967,7 +17967,7 @@
       ],
       "provenance": {
         "origin": "llm",
-        "commit": "66a9b1d"
+        "commit": "wt-e7535b267c"
       }
     },
     {
