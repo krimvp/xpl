@@ -837,8 +837,14 @@ export class ViewerStore {
   }
 
   /** Keep the searched text, including lazy files, without adopting another live workspace. */
-  openSnapshotRange(file: FilePath, range: Range, commit: string): boolean {
-    if (commit !== this.indexModel.index.commit || !this.rangeCursor(file, range, "head"))
+  openSnapshotRange(file: FilePath, range: Range, commit: string, sourceHash: string): boolean {
+    const text = this.state.files[file];
+    if (
+      commit !== this.indexModel.index.commit ||
+      text === undefined ||
+      hashText(text) !== sourceHash ||
+      !this.rangeCursor(file, range, "head")
+    )
       return false;
     this.liveApi = undefined;
     this.workspaceRevision++;

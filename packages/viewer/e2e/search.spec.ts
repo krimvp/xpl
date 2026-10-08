@@ -450,3 +450,53 @@ for (const lazy of [false, true]) {
     } else await expect(editor).toContainText("needle A");
   });
 }
+
+test("a source link rejects changed text when the index commit stays the same", async ({
+  page,
+}) => {
+  const { html, bundle: raw } = readEmbeddedBundle();
+  const original = parseBundle(JSON.stringify(raw));
+  original.guideId = "repository";
+  original.index.commit =
+    original.explainer.index.commit =
+    original.explainer.repo.commit =
+      "snapshot-A";
+  original.files["src/metrics.ts"] = "// needle A\n";
+  const changed = structuredClone(original);
+  changed.files["src/metrics.ts"] = "// wrong! B\n";
+  let reload = false;
+  await page.route("http://xpl.test/**", (route) =>
+    route.fulfill({
+      contentType: "text/html",
+      body: injectBundle(html, reload ? changed : original),
+    }),
+  );
+  await page.goto("http://xpl.test/");
+  await page.getByRole("button", { name: "Search and guides" }).click();
+  await page.getByRole("searchbox", { name: "Search guide snapshots" }).fill("needle A");
+  await page.locator('a[data-kind="source"]').click();
+  await expect(page.locator('[data-file="src/metrics.ts"] .cm-content').first()).toContainText(
+    "needle A",
+  );
+  await page.evaluate(() => window.__xpl!.setCursor("src/queue.ts", 1));
+  await expect
+    .poll(() => new URL(page.url()).searchParams.get("source-hash"))
+    .toBe(hashText(original.files["src/queue.ts"]!));
+  await page.evaluate(() => window.__xpl!.setCursor("src/metrics.ts", 1));
+  await expect
+    .poll(() => new URL(page.url()).searchParams.get("source-hash"))
+    .toBe(hashText("// needle A\n"));
+  reload = true;
+  await page.reload();
+  await expect(page.getByTestId("no-data")).toContainText(
+    'Source file "src/metrics.ts" changed within snapshot "snapshot-A"',
+  );
+  await expect(page.locator(".cm-content")).toHaveCount(0);
+  expect(new URL(page.url()).searchParams.get("source-hash")).toBe(hashText("// needle A\n"));
+  const unbound = new URL(page.url());
+  unbound.searchParams.delete("source-hash");
+  await page.goto(unbound.href);
+  await expect(page.getByTestId("no-data")).toContainText(
+    'Source link for "src/metrics.ts" has no file hash',
+  );
+});

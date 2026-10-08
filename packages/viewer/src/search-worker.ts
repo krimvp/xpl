@@ -1,5 +1,12 @@
 /** Source scans run off the UI thread, including index construction and literal phrase matching. */
-import { asIndexModel, query, type QueryGuide, type QueryHit, type SymbolIndex } from "@xpl/core";
+import {
+  asIndexModel,
+  hashText,
+  query,
+  type QueryGuide,
+  type QueryHit,
+  type SymbolIndex,
+} from "@xpl/core";
 
 export const SEARCH_PAGE_SIZE = 16;
 const GROUPS = [
@@ -18,7 +25,7 @@ export type SearchGroup = {
   hits: SearchHit[];
   total: number;
 };
-export type SearchHit = QueryHit & { guide: string; commit: string };
+export type SearchHit = QueryHit & { guide: string; commit: string; sourceHash?: string };
 export type SearchSnapshot = QueryGuide & { index: SymbolIndex; files: Record<string, string> };
 export type SearchMessage =
   | { kind: "snapshot"; snapshots: SearchSnapshot[] }
@@ -28,11 +35,13 @@ export type SearchReply = { id: number } & ({ result: SearchResult } | { error: 
 
 let snapshot: Extract<SearchMessage, { kind: "snapshot" }> | undefined;
 let indexes: ReturnType<typeof asIndexModel>[] = [];
+let sourceHashes: Map<string, string>[] = [];
 self.onmessage = (event: MessageEvent<SearchMessage>) => {
   const message = event.data;
   if (message.kind === "snapshot") {
     snapshot = message;
     indexes = message.snapshots.map((g) => asIndexModel(g.index));
+    sourceHashes = message.snapshots.map(() => new Map());
     return;
   }
   if (!snapshot) return;
@@ -42,6 +51,16 @@ self.onmessage = (event: MessageEvent<SearchMessage>) => {
       const hits: SearchHit[] = [];
       let total = 0;
       for (const [i, guide] of snapshot!.snapshots.entries()) {
+        const sourceHash = (file: string): string | undefined => {
+          const text = guide.files[file];
+          if (text === undefined) return;
+          let hash = sourceHashes[i]!.get(file);
+          if (!hash) {
+            hash = hashText(text);
+            sourceHashes[i]!.set(file, hash);
+          }
+          return hash;
+        };
         const result = query(indexes[i]!, (file) => guide.files[file], {
           pattern: message.pattern,
           ignoreCase: true,
@@ -52,11 +71,16 @@ self.onmessage = (event: MessageEvent<SearchMessage>) => {
           textOrigin: "supplied",
         });
         hits.push(
-          ...result.hits.slice(0, SEARCH_PAGE_SIZE - hits.length).map((hit) => ({
-            ...hit,
-            guide: guide.id,
-            commit: guide.index.commit,
-          })),
+          ...result.hits.slice(0, SEARCH_PAGE_SIZE - hits.length).map((hit) => {
+            const hash =
+              hit.kind === "source" || hit.kind === "symbol" ? sourceHash(hit.file) : undefined;
+            return {
+              ...hit,
+              guide: guide.id,
+              commit: guide.index.commit,
+              ...(hash === undefined ? {} : { sourceHash: hash }),
+            };
+          }),
         );
         total += result.total;
       }

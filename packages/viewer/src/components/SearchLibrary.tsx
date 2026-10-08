@@ -26,6 +26,7 @@ const NAVIGATION = [
   "range",
   "side",
   "snapshot",
+  "source-hash",
 ];
 const rangeText = (range: Range) =>
   `${range.startLine}${range.startCol === undefined ? "" : `:${range.startCol}`}-${range.endLine}${range.endCol === undefined ? "" : `:${range.endCol}`}`;
@@ -37,6 +38,7 @@ function destination(guide: string, hit?: SearchHit): string {
   params.set("guide", guide);
   if (hit?.kind === "source" || hit?.kind === "symbol") {
     params.set("snapshot", hit.commit);
+    if (hit.sourceHash) params.set("source-hash", hit.sourceHash);
     params.set("perspective", "code");
     params.set("file", hit.file);
     params.set("range", rangeText(hit.range));
@@ -203,9 +205,12 @@ export function SearchLibrary({ onClose }: { onClose: () => void }) {
       return;
     }
     if (hit.kind === "source" || hit.kind === "symbol") {
-      if (!store.openSnapshotRange(hit.file, hit.range, hit.commit)) {
+      if (
+        !hit.sourceHash ||
+        !store.openSnapshotRange(hit.file, hit.range, hit.commit, hit.sourceHash)
+      ) {
         setError(
-          "This search result belongs to an earlier snapshot. Search again in the current guide.",
+          "This search result's source or index changed. Search again in the current guide.",
         );
         return;
       }
@@ -365,7 +370,8 @@ export function SearchLibrary({ onClose }: { onClose: () => void }) {
                       const snapshot = embedded.find((g) => g.guideId === guide);
                       const files = guide === current ? state.files : (snapshot?.files ?? {});
                       const unavailable =
-                        (hit.kind === "source" || hit.kind === "symbol") && !(hit.file in files);
+                        (hit.kind === "source" || hit.kind === "symbol") &&
+                        (!hit.sourceHash || !(hit.file in files));
                       const label =
                         hit.kind === "step"
                           ? "tour" in hit

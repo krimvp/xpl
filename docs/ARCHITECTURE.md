@@ -2318,17 +2318,22 @@ and index commit. Missing source is checked against that guide, never filled fro
 same path. Each snapshot's missing source, pruning and unavailable analysis remain visible independently
 of no matches. Catalog-only guides are listed but not searched until their snapshot is opened.
 
-Results carry real links: `guide=<key>`, `snapshot=<index-commit>&file=<path>&range=<line>:<col>-<line>:<col>` (1-based inclusive
-UTF-16 columns; omitted columns mean a line range), or `tour=<id>&step-id=<stable-id>`. Numeric `step`
+Results carry real links: `guide=<key>`, `snapshot=<index-commit>&source-hash=<file-hash>&file=<path>`
+with `range=<line>:<col>-<line>:<col>` (1-based inclusive UTF-16 columns; omitted columns mean a line
+range), or `tour=<id>&step-id=<stable-id>`. The worker hashes the exact supplied file it searched;
+the hash is separate from the index's file hash, which can lag behind a changed working tree. Numeric `step`
 links remain compatible. Opening a range validates it against supplied text, selects exact columns in
 CodeMirror and enters Code. Tour phrases open the recorded step in Guide. Links survive reloads and use
 stable step IDs when reading; malformed or unavailable source ranges do not open another range. A source
-link whose snapshot commit differs from the selected bundle is rejected before rendering source.
+link whose snapshot commit or supplied file hash differs from the selected bundle is rejected before
+rendering source. Same-page opening checks both values before freezing the store. As navigation changes
+the open file in a frozen view, the URL updates that file's hash.
 Current-guide source links freeze the loaded store offline, preserving lazily loaded files as well as
 embedded source. In-flight source fetches are invalidated and reconnection is disabled. Pending edits
-block freezing a live guide. On reload, the loader removes the server attachment and checks the commit
-and requested file. A file loaded only in the previous page is explicitly unavailable if omitted from
-the new bundle; polling and API reads cannot substitute later workspace text.
+block freezing a live guide. On reload, the loader checks the commit, requested file and its source hash,
+then removes the server attachment. A file loaded only in the previous page is explicitly unavailable if
+omitted from the new bundle; changed text under the same commit is also rejected. Polling and API reads
+cannot substitute later workspace text.
 
 Exported pickers enumerate only contained snapshots. A live picker reads the guarded catalog; other-guide
 previews have no API or write identity and author changes are prohibited. Switching requires no unsaved

@@ -23,6 +23,7 @@ import type { WatchAttention, Job, JobReviewAction, RevisionReview } from "@xpl/
  */
 import {
   BUNDLE_SCRIPT_ID,
+  hashText,
   parseBundle,
   parseFeedbackRequest,
   type GuideDescriptor,
@@ -49,25 +50,29 @@ export function loadBundle(doc: Document = document): LoadedBundle {
     };
   }
   try {
-    const bundle = selectGuide(
-      parseBundle(element.textContent ?? ""),
-      new URLSearchParams(doc.location?.search ?? "").get("guide"),
-    );
-    const snapshot = new URLSearchParams(doc.location?.search ?? "").get("snapshot");
+    const params = new URLSearchParams(doc.location?.search ?? "");
+    const bundle = selectGuide(parseBundle(element.textContent ?? ""), params.get("guide"));
+    const snapshot = params.get("snapshot");
     if (snapshot && snapshot !== bundle.index.commit)
       throw new Error(
         `Source snapshot "${snapshot}" is unavailable; this guide supplies "${bundle.index.commit}". Reopen search in the available guide.`,
       );
     // A source link is a fixed snapshot: polling and lazy API reads could replace its text.
     if (snapshot) {
-      const file = new URLSearchParams(doc.location?.search ?? "").get("file");
+      const file = params.get("file");
       if (file && !(file in bundle.files))
         throw new Error(
           `Source file "${file}" is not included in snapshot "${snapshot}". It may have been loaded only in the previous page. Reopen the live guide to load and search it again.`,
         );
+      if (file && !params.get("source-hash"))
+        throw new Error(`Source link for "${file}" has no file hash. Reopen search in the guide.`);
+      if (file && hashText(bundle.files[file]!) !== params.get("source-hash"))
+        throw new Error(
+          `Source file "${file}" changed within snapshot "${snapshot}". Reopen search in the available guide.`,
+        );
       delete bundle.server;
     }
-    const version = new URLSearchParams(doc.location?.search ?? "").get("version");
+    const version = params.get("version");
     if (version && version !== bundle.publication?.current.version)
       throw new Error(
         `This page does not contain version "${version}". Open its immutable version link.`,
