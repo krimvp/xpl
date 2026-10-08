@@ -5,7 +5,15 @@ import {
   reviewFingerprint,
   type Explainer,
 } from "../src/index.js";
-import { anchor, emptyExplainer, graphView, sequenceView, LLM, makeWorld } from "./helpers.js";
+import {
+  anchor,
+  emptyExplainer,
+  graphView,
+  group,
+  sequenceView,
+  LLM,
+  makeWorld,
+} from "./helpers.js";
 
 function example() {
   const world = makeWorld({
@@ -38,6 +46,33 @@ function example() {
 }
 
 describe("ready export rules", () => {
+  it("keeps the system map relationship check advisory", () => {
+    const { world, explainer } = example();
+    explainer.nodes.push(
+      group("grp:app", [], {
+        role: "system",
+        summary: "The application handles incoming jobs.",
+      }),
+      group("grp:store", [], {
+        role: "database",
+        summary: "The database stores jobs.",
+      }),
+    );
+    explainer.views.push(
+      graphView("view:system", ["grp:app", "grp:store"], { title: "System map" }),
+    );
+    const report = checkReadiness(explainer, world.index, world.getText, { scope: "workspace" });
+    expect(report.findings).toContainEqual({
+      severity: "warning",
+      code: "system-map-no-edges",
+      elementId: "view:system",
+      field: "include",
+      message: expect.stringContaining("System map"),
+      hint: expect.stringContaining("source-backed relationships"),
+    });
+    expect(report).toMatchObject({ ready: true, errors: 0 });
+  });
+
   it("reports review state without changing ordinary readiness; explicit policy requires all current content", () => {
     const { world, explainer } = example();
     const check = (requireReview = false) =>
