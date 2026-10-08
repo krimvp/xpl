@@ -185,9 +185,9 @@ it("Rust symbols can be outlined, shown, anchored and exported with their suppor
   });
   expect(data.index.languages.rust).toEqual({
     files: 9,
-    symbols: 82,
+    symbols: 140,
     refs: "heuristic",
-    tool: "tree-sitter-rust@0.24.0/query-v4",
+    tool: "tree-sitter-rust@0.24.0/query-v5",
   });
   expect(
     data.index.analysis?.find(

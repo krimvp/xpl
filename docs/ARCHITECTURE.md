@@ -747,8 +747,9 @@ inference and complex receiver chains are not resolved; unresolved targets produ
 
 Rust's syntax-only `TagsProvider` (`src/tags.ts`, `src/tags/rust.ts`, `rust.scm`) uses the standard
 `@name` and `@definition.*` convention through the same provider normalization. Its corrected query captures
-each declaration once, adds trait signatures, consts/statics and generic/scoped impl blocks, and preserves
-enum/type-alias kinds. Ordered tag containment supplies lexical parents. Functions directly under tagged
+each declaration once, adds trait signatures, consts/statics, named fields, enum variants and generic/scoped
+impl blocks, and preserves enum/type-alias kinds. Ordered tag containment supplies lexical parents.
+Named fields belong to their struct, union or struct-style enum variant. Functions directly under tagged
 traits/impls become methods; module functions remain functions. Impl paths preserve their receiver and trait
 (`impl Runner<Q>.dispatch`, `impl JobQueue for Queue.pop`); methods are children of the impl, not the receiver
 struct. Repeated paths are numbered in source order with explicit parent identities. Multiline receiver
@@ -761,11 +762,12 @@ same file, with exact call-expression ranges and `heuristic` confidence. Shadowe
 closures, qualified/generic calls, methods, trait dispatch and cross-module targets are omitted. Bodies
 containing macros or local imports are skipped. Syntax errors suppress calls for that file. Call coverage
 is partial; other relationship kinds remain unsupported. It does not resolve imports, receiver ownership
-or external `mod` links, expand macros, evaluate cfg, or index fields, variants and local bindings. Declaration
+or external `mod` links, expand macros, evaluate cfg, or index tuple positions and local bindings. Declaration
 ranges exclude leading attributes and doc comments. Syntax recovery adds a limit and a warning. Matching
 tags outcomes share one report with combined file counts; syntax-error files keep a separate report.
 [The tags experiment](rust-tags.md) records declaration coverage; [bounded direct calls](rust-direct-calls.md)
-records the supported slice and a bat smoke test. Tags cache version query-v4 includes call extraction.
+records the supported slice and a bat smoke test. Tags cache version query-v5 includes named members and call
+extraction.
 
 **Analysis coverage** (`core/src/analysis.ts`, `indexer/src/analysis.ts`). An `AnalysisReport` contains a
 stable `provider` id, advertised `capabilities`, scoped `files`, and observed `results`. Capabilities are
