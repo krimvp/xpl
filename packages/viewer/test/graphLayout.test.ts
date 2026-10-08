@@ -36,6 +36,144 @@ function graphOf(include: string[], over: Partial<GraphView> = {}) {
 const all = (nodes: LayoutNode[]): LayoutNode[] => nodes.flatMap((n) => [n, ...all(n.children)]);
 
 describe("layoutGraph", () => {
+  it("straightens a clear long arrow while keeping an authored label", async () => {
+    const ids = ["startup", "settings", "scheduling", "workers", "events"];
+    const edge = (from: string, to: string, label?: string): DerivedEdge => ({
+      id: `edge:${from}-${to}`,
+      from,
+      to,
+      kind: label ? "emits" : "calls",
+      ...(label ? { label } : {}),
+      count: 1,
+      resolution: "static",
+      stored: true,
+      anchors: [],
+    });
+    const graph: DerivedGraph = {
+      nodes: ids.map((id) => ({
+        id,
+        label: id === "events" ? "Events and metrics" : id,
+        kind: "group" as const,
+        role: "component" as const,
+        container: false,
+      })),
+      edges: [
+        edge("startup", "settings"),
+        edge("startup", "scheduling"),
+        edge("startup", "workers"),
+        edge("startup", "events"),
+        edge("scheduling", "workers"),
+        edge("workers", "events", "job.completed"),
+      ],
+      stubs: [],
+      ghosts: [],
+    };
+    const layout = await layoutGraph(graph, { direction: "DOWN" });
+    expect(layout.fallback).toBe(false);
+    const route = layout.edges.find((item) => item.id === "edge:startup-workers")!;
+    expect(route.points).toHaveLength(4);
+    const scheduling = absoluteBoxes(layout.nodes).get("scheduling")!;
+    for (let i = 1; i < route.points.length; i++) {
+      const a = route.points[i - 1]!,
+        b = route.points[i]!;
+      if (a.x !== b.x || Math.max(a.y, b.y) <= scheduling.y) continue;
+      if (Math.min(a.y, b.y) >= scheduling.y + scheduling.height) continue;
+      expect(
+        Math.max(scheduling.x - a.x, a.x - scheduling.x - scheduling.width),
+      ).toBeGreaterThanOrEqual(8);
+    }
+    expect(layout.edges.find((item) => item.id === "edge:workers-events")!.label!.text).toBe(
+      "job.completed",
+    );
+  });
+  it("keeps a shortened arrow outside a sibling box", async () => {
+    const graph: DerivedGraph = {
+      nodes: Array.from({ length: 6 }, (_, i) => ({
+        id: `n${i}`,
+        label: `n${i}`,
+        kind: "group" as const,
+        role: "component" as const,
+        container: false,
+      })),
+      edges: ["0-2", "0-3", "1-2", "1-3", "1-4", "2-4"].map((pair) => ({
+        id: `e${pair}`,
+        from: `n${pair[0]}`,
+        to: `n${pair[2]}`,
+        kind: "calls" as const,
+        count: 1,
+        resolution: "static" as const,
+        stored: true,
+        anchors: [],
+      })),
+      stubs: [],
+      ghosts: [],
+    };
+    const layout = await layoutGraph(graph);
+    const obstruction = absoluteBoxes(layout.nodes).get("n3")!;
+    const points = layout.edges.find((edge) => edge.id === "e1-4")!.points;
+    const crosses = points.slice(1).filter((p, i) => {
+      const q = points[i]!;
+      return p.y === q.y
+        ? p.y > obstruction.y &&
+            p.y < obstruction.y + obstruction.height &&
+            Math.max(p.x, q.x) > obstruction.x &&
+            Math.min(p.x, q.x) < obstruction.x + obstruction.width
+        : p.x > obstruction.x &&
+            p.x < obstruction.x + obstruction.width &&
+            Math.max(p.y, q.y) > obstruction.y &&
+            Math.min(p.y, q.y) < obstruction.y + obstruction.height;
+    });
+    expect(crosses).toEqual([]);
+  });
+  it("keeps widened ports from crossing arrows that were separate", async () => {
+    const graph: DerivedGraph = {
+      nodes: Array.from({ length: 6 }, (_, i) => ({
+        id: `n${i}`,
+        label: `n${i}`,
+        kind: "group" as const,
+        role: "component" as const,
+        container: false,
+      })),
+      edges: ["0-3", "0-4", "1-2", "2-3", "2-5", "3-4"].map((pair) => ({
+        id: `e${pair}`,
+        from: `n${pair[0]}`,
+        to: `n${pair[2]}`,
+        kind: "calls" as const,
+        count: 1,
+        resolution: "static" as const,
+        stored: true,
+        anchors: [],
+      })),
+      stubs: [],
+      ghosts: [],
+    };
+    const { edges } = await layoutGraph(graph);
+    const crossing = edges.some((a, i) =>
+      edges.slice(i + 1).some((b) =>
+        a.points.slice(1).some((q, ai) => {
+          const p = a.points[ai]!;
+          return b.points.slice(1).some((s, bi) => {
+            const r = b.points[bi]!;
+            return (
+              (p.x === q.x &&
+                r.y === s.y &&
+                p.x > Math.min(r.x, s.x) &&
+                p.x < Math.max(r.x, s.x) &&
+                r.y > Math.min(p.y, q.y) &&
+                r.y < Math.max(p.y, q.y)) ||
+              (p.y === q.y &&
+                r.x === s.x &&
+                r.x > Math.min(p.x, q.x) &&
+                r.x < Math.max(p.x, q.x) &&
+                p.y > Math.min(r.y, s.y) &&
+                p.y < Math.max(r.y, s.y))
+            );
+          });
+        }),
+      ),
+    );
+    expect(crossing).toBe(false);
+  });
   it("keeps automatic boxes clear of a pinned sibling without moving the pin", async () => {
     const { graph } = graphOf(["file:src/a.ts", "file:src/b.ts"]);
     const automatic = await layoutGraph(graph);

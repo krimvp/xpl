@@ -171,12 +171,14 @@ export function sideToward(box: Box, toward: Point, direction: Direction): Side 
 
 /**
  * The cross coordinate of every port, by `edgeId:from` / `edgeId:to`: the ports of one side of one box are
- * spread evenly over its middle 60%, in the order of where they go, so arrows leave side by side.
+ * spread evenly in the order of where they go, so arrows leave side by side. Wide ports use more of
+ * the box side when automatic routes need a clear lane; saved pins keep the original middle 60%.
  */
 export function spreadPorts(
   ports: ReadonlyMap<string, Port>,
   boxes: ReadonlyMap<string, Box>,
   direction: Direction,
+  wide = false,
 ): Map<string, number> {
   const { cross } = axes(direction);
   const groups = new Map<string, string[]>();
@@ -193,7 +195,12 @@ export function spreadPorts(
     const size = cross === "y" ? box.height : box.width;
     keys.sort((a, b) => ports.get(a)!.toward - ports.get(b)!.toward || (a < b ? -1 : 1));
     keys.forEach((key, i) => {
-      out.set(key, start + size * (0.2 + (0.6 * (i + 1)) / (keys.length + 1)));
+      const fraction = wide
+        ? keys.length === 1
+          ? 0.5
+          : 0.15 + (0.7 * i) / (keys.length - 1)
+        : 0.2 + (0.6 * (i + 1)) / (keys.length + 1);
+      out.set(key, start + size * fraction);
     });
   }
   return out;
