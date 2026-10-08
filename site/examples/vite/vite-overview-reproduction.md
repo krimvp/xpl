@@ -25,7 +25,7 @@ the public HTML:
    `xpl lint vite-overview`, and `xpl ready vite-overview`. Export with
    `xpl bundle vite-overview -o /tmp/vite-overview.html`.
 7. From the xpl repository root, run
-   `python3 site/examples/vite/publish-overview.py /tmp/vite-overview.html`.
+   `python3 site/examples/vite/publish-vite.py /tmp/vite-overview.html vite-overview`.
    The script adds Vite's license and normalizes the local index root before
    writing `site/examples/vite/vite-overview.html`. Run `npm run site` to check it.
 
