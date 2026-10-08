@@ -34,9 +34,9 @@ it("indexes Rust tags with precise off and keeps lexical trait, impl and module 
   expect(warnings).toEqual([]);
   expect(index.languages.rust).toEqual({
     files: 1,
-    symbols: 18,
+    symbols: 20,
     refs: "heuristic",
-    tool: "tree-sitter-rust@0.24.0/query-v4",
+    tool: "tree-sitter-rust@0.24.0/query-v5",
   });
   expect(
     index.symbols.map((s) => [s.path, s.kind, s.range.startLine, s.range.endLine, s.parent]),
@@ -55,7 +55,9 @@ it("indexes Rust tags with precise off and keeps lexical trait, impl and module 
     ["demo.run~2", "function", 15, 15, "a.rs#demo~2"],
     ["Alias", "type", 16, 16, undefined],
     ["State", "enum", 17, 17, undefined],
+    ["State.Ready", "variable", 17, 17, "a.rs#State"],
     ["Bits", "class", 18, 18, undefined],
+    ["Bits.value", "variable", 18, 18, "a.rs#Bits"],
     ["LIMIT", "variable", 19, 19, undefined],
     ["COUNT", "variable", 20, 20, undefined],
     ["make", "other", 21, 21, undefined],
@@ -66,6 +68,39 @@ it("indexes Rust tags with precise off and keeps lexical trait, impl and module 
   expect(index.refs).toEqual([]);
 });
 
+it("anchors named Rust fields and enum variants under their source declarations", async () => {
+  const { index, dir } = await indexFiles({
+    "model.rs": [
+      "struct Job { id: String, attempts: u8 }",
+      "union Bits { raw: u32 }",
+      "enum Result { Ready, Failed { reason: String }, Count(u8) }",
+      "struct Pair(u8, u8);",
+      "",
+    ].join("\n"),
+  });
+  expect(index.symbols.map(({ id, kind, range, parent }) => [id, kind, range, parent])).toEqual([
+    ["model.rs#Job", "class", { startLine: 1, endLine: 1 }, undefined],
+    ["model.rs#Job.id", "variable", { startLine: 1, endLine: 1 }, "model.rs#Job"],
+    ["model.rs#Job.attempts", "variable", { startLine: 1, endLine: 1 }, "model.rs#Job"],
+    ["model.rs#Bits", "class", { startLine: 2, endLine: 2 }, undefined],
+    ["model.rs#Bits.raw", "variable", { startLine: 2, endLine: 2 }, "model.rs#Bits"],
+    ["model.rs#Result", "enum", { startLine: 3, endLine: 3 }, undefined],
+    ["model.rs#Result.Ready", "variable", { startLine: 3, endLine: 3 }, "model.rs#Result"],
+    ["model.rs#Result.Failed", "variable", { startLine: 3, endLine: 3 }, "model.rs#Result"],
+    [
+      "model.rs#Result.Failed.reason",
+      "variable",
+      { startLine: 3, endLine: 3 },
+      "model.rs#Result.Failed",
+    ],
+    ["model.rs#Result.Count", "variable", { startLine: 3, endLine: 3 }, "model.rs#Result"],
+    ["model.rs#Pair", "class", { startLine: 4, endLine: 4 }, undefined],
+  ]);
+  const warm = await buildIndex({ root: dir, precise: "off" });
+  expect(warm.extraction.hits).toBe(1);
+  expect(warm.index.symbols).toEqual(index.symbols);
+});
+
 it("keeps fixture macro definitions and physical impls without inventing expanded declarations", async () => {
   const { index, warnings } = await buildIndex({
     root: resolve("fixtures/rs-jobrunner"),
@@ -74,12 +109,14 @@ it("keeps fixture macro definitions and physical impls without inventing expande
   expect(warnings).toEqual([]);
   expect(index.languages.rust).toEqual({
     files: 9,
-    symbols: 82,
+    symbols: 140,
     refs: "heuristic",
-    tool: "tree-sitter-rust@0.24.0/query-v4",
+    tool: "tree-sitter-rust@0.24.0/query-v5",
   });
   const expected = [
     ["src/queue.rs#JobQueue", 21, 27, undefined],
+    ["src/queue.rs#Job.id", 6, 6, "src/queue.rs#Job"],
+    ["src/queue.rs#Queue.ready", 30, 30, "src/queue.rs#Queue"],
     ["src/queue.rs#JobQueue.pop", 22, 22, "src/queue.rs#JobQueue"],
     ["src/queue.rs#impl Queue", 38, 68, undefined],
     ["src/queue.rs#impl JobQueue for Queue", 70, 114, undefined],
@@ -87,6 +124,8 @@ it("keeps fixture macro definitions and physical impls without inventing expande
     ["src/runner.rs#counters", 12, 21, undefined],
     ["src/runner.rs#impl RunnerStats.record", 25, 28, "src/runner.rs#impl RunnerStats"],
     ["src/runner.rs#impl Runner<Q>.dispatch", 65, 101, "src/runner.rs#impl Runner<Q>"],
+    ["src/worker.rs#RunResult.Success", 12, 12, "src/worker.rs#RunResult"],
+    ["src/worker.rs#RunResult.Success.value", 12, 12, "src/worker.rs#RunResult.Success"],
     ["src/main.rs#demo.echo", 13, 15, "src/main.rs#demo"],
     ["src/worker.rs#demo.handlers.echo", 106, 108, "src/worker.rs#demo.handlers"],
   ];

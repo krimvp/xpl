@@ -12,7 +12,7 @@ registerProvider(
     id: "rust-tags",
     language: "rust",
     grammar: "rust",
-    version: "tree-sitter-rust@0.24.0/query-v4",
+    version: "tree-sitter-rust@0.24.0/query-v5",
     query: () =>
       readFileSync(
         getWasmDir()
@@ -35,7 +35,7 @@ registerProvider(
       ],
     },
     limitations: [
-      "Syntax tags omit macro-generated declarations, fields, enum variants and local bindings.",
+      "Syntax tags omit macro-generated declarations, tuple positions and local bindings.",
       "Nesting is lexical: impl methods belong to impl blocks; external modules and receiver types are not linked.",
       "Declarations exclude leading attributes and documentation comments; conditional code is included without evaluating cfg.",
     ],
