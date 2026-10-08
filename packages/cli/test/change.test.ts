@@ -239,6 +239,7 @@ describe("xpl change", () => {
     const patch = drafted.json.patch;
     const testStep = patch.tours![0]!.steps!.find((step) => step.note?.includes("indexed test"));
     expect(testStep?.note).toContain("No indexed test reference found for `normalize`");
+    expect(testStep?.note).toContain("check whether tests of other code exercise these symbols");
     expect(testStep?.note).toContain("whether the new branches are tested");
     expect(patch.tours![0]!.summary).toContain(
       "no indexed test reference found for 1 changed symbol",
