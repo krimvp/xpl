@@ -37,6 +37,21 @@ const graph = (patch: ExplainerPatch, id: string) =>
   patch.views!.find((v) => v.id === id) as GraphView | undefined;
 
 describe("xpl draft repo: one service and what it relies on", () => {
+  it("asks whether an imported integration is on the default path in the saved patch", async () => {
+    const project = makeTempDir("xpl-optional-integration-");
+    writeFile(project, "README.md", "# worker\n\nProcesses jobs.\n");
+    writeFile(
+      project,
+      "src/worker.py",
+      "def process(job, archive=False):\n    if archive:\n        import boto3\n        boto3.client('s3').put_object(Bucket='jobs', Key=job)\n    return job\n",
+    );
+    const { patch } = await drafted(project);
+    const outside = patch.tours![0]!.steps!.find((step) => step.focus.includes("grp:aws"));
+    expect(outside?.note).toContain(
+      "for each imported system, whether the default runtime path uses it or it is an optional integration",
+    );
+  });
+
   it("treats a declared framework as a component and does not infer a terminal user from a helper import", async () => {
     const framework = makeTempDir("xpl-framework-");
     writeFile(
@@ -65,6 +80,9 @@ describe("xpl draft repo: one service and what it relies on", () => {
     expect(patch.nodes!.map((n) => n.id)).not.toContain("grp:user");
     expect(patch.nodes!.map((n) => n.id)).toContain("grp:your-app");
     expect(notes.some((n) => n.startsWith("Provisional architecture"))).toBe(true);
+    expect(patch.tours![0]!.steps!.map((step) => step.note).join("\n")).not.toContain(
+      "default runtime path",
+    );
   });
   const dir = makeTempDir("xpl-arch-");
   writeFile(dir, "README.md", "# shop\n\nA small web shop that takes orders and payments.\n");

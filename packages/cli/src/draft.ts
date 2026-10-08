@@ -1865,6 +1865,9 @@ export function draftRepo(input: DraftInput): Draft {
             )}).`,
           ),
           todo("merge boxes that are the same system, and drop one the code only imports."),
+          todo(
+            "for each imported system, whether the default runtime path uses it or it is an optional integration.",
+          ),
         ),
         outbound.slice(0, L.codeRanges).map((s) => reach.get(s.slug)![0]!.anchor),
       ),
