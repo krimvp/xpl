@@ -13,6 +13,20 @@ const buttonsOf = (page: import("@playwright/test").Page, id: string) =>
   page.locator(`.diagram [data-buttons-of="${id}"]`);
 
 test.describe("architecture maps", () => {
+  test("view questions distinguish the system map from a dispatch sequence", async ({ page }) => {
+    await page.goto(ARCHITECTURE_BUNDLE.href + "?perspective=map&view=view:system");
+    await page.waitForFunction(() => window.__xpl !== undefined);
+    await expect(page.locator(".workspace-caption")).toContainText(
+      "Who starts the job runner, and which settings does it read?",
+    );
+    await page.goto(TS_BUNDLE.href + "?perspective=flow&view=view:dispatch");
+    await page.waitForFunction(() => window.__xpl !== undefined);
+    await expect(page.locator(".workspace-caption .eyebrow")).toHaveText("Sequence");
+    await expect(page.locator(".workspace-caption")).toContainText(
+      "How does a job get from the queue to a worker?",
+    );
+  });
+
   test("a reader can follow the visible relationships of a selected component", async ({
     page,
   }) => {
@@ -95,7 +109,7 @@ test.describe("architecture maps", () => {
       "component",
     );
     const trail = page.getByTestId("zoom-trail");
-    await expect(trail).toContainText("The job runner, who starts it and what it reads");
+    await expect(trail).toContainText("The job runner and its surroundings");
     await expect(trail).toContainText("Job runner");
     await trail.getByRole("button").first().click();
     await expect(page.locator('.diagram[data-view-id="view:system"]')).toBeVisible();
@@ -114,6 +128,7 @@ test.describe("architecture maps", () => {
   });
 
   test("a box shows its inside in place, and folds back", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 720 });
     await openBundle(page, "view:system", ARCHITECTURE_BUNDLE);
     const service = box(page, "grp:job-runner");
     await expect(page.locator('.diagram [data-element-id="grp:scheduling"]')).toHaveCount(0);
@@ -127,6 +142,12 @@ test.describe("architecture maps", () => {
     const state = await stateOf(page);
     expect(state.graph!.nodes).toContain("grp:scheduling");
     expect(state.include).toEqual(["grp:operator", "grp:job-runner", "grp:settings-file"]);
+    // At a readable zoom this wide container extends past the pane. Fit shows its fold control.
+    const fit = page.getByRole("button", { name: "Fit to view" });
+    await expect(fit).toBeVisible();
+    await fit.focus();
+    await expect(fit).toBeFocused();
+    await page.keyboard.press("Enter");
     await page.locator('[data-collapse-id="grp:job-runner"]').click();
     await expect(page.locator('.diagram [data-element-id="grp:scheduling"]')).toHaveCount(0);
     await expect(service).not.toHaveClass(/is-container/);

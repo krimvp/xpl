@@ -40,6 +40,8 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
     [state.model, state.selection, state.viewId, state.expanded],
   );
   const flow = workspaceView(state, "flow") as SequenceViewData | undefined;
+  const viewQuestion =
+    state.perspective === "map" ? map.view.scope?.question : flow?.scope?.question;
   const mapMatches = useMemo(
     () =>
       state.cursor
@@ -219,7 +221,13 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
                 <>
                   <div className="workspace-caption">
                     <div>
-                      <p className="eyebrow">{state.perspective === "map" ? "Map" : "Flow"}</p>
+                      <p className="eyebrow">
+                        {state.perspective === "map"
+                          ? "Map"
+                          : flow?.type === "sequence"
+                            ? "Sequence"
+                            : "Flow"}
+                      </p>
                       <ZoomTrail
                         viewId={state.perspective === "map" ? map.view.id : (flow?.id ?? "")}
                       />
@@ -228,6 +236,7 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
                           ? map.view.title
                           : (flow?.title ?? "The guide's steps")}
                       </h2>
+                      {viewQuestion && <p className="view-question">{viewQuestion}</p>}
                       {state.perspective === "flow" && flowOwner && (
                         <p className="caption-owner" data-testid="caption-owner">
                           The steps of <code>{state.model.label(flowOwner)}</code>

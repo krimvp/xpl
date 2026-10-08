@@ -2511,9 +2511,11 @@ ready pages and draft previews; an export decision never retargets a request to 
   "Open full code" opens that complete range and its before/head side. Missing, drifted or unavailable
   source is stated instead of guessed. Source text comes from the bundle or the existing file loader.
 - **Map** and **Flow**: the authored graph view, or flow or sequence view, that best matches the selection
-  (`workspace.ts`), with a picker of the others. Without a graph view the Map is generated from the flow's
-  participants (else the top level of the repo); without a flow, Flow lists the guide's steps in order. Count
-  labels on edges (`calls ×N`, stubs) are quiet: shown on hover or when the edge or an end of it is selected.
+  (`workspace.ts`), with a picker of the others. The heading shows the selected view's `scope.question` when
+  supplied and says "Sequence" for a sequence view, so the reader can tell a structural question from a
+  time-ordered one. Without a graph view the Map is generated from the flow's participants (else the top
+  level of the repo); without a flow, Flow lists the guide's steps in order. Count labels on edges (`calls ×N`,
+  stubs) are quiet: shown on hover or when an edge or one of its ends is selected.
   Reader boxes drop the group, directory and symbol badges.
 - **Code**: the editors and the file tree. On the other tabs "Show source" opens the code beside them.
 

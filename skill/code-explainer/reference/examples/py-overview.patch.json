@@ -163,10 +163,11 @@
     {
       "id": "view:system",
       "type": "graph",
-      "title": "The job runner, who starts it and what it reads",
+      "title": "The job runner and its surroundings",
       "scope": {
         "root": "repo",
-        "depth": 1
+        "depth": 1,
+        "question": "Who starts the job runner, and which settings does it read?"
       },
       "include": ["grp:operator", "grp:job-runner", "grp:settings-file"],
       "stubs": {
@@ -348,7 +349,7 @@
           "id": "t0",
           "view": "view:system",
           "focus": ["grp:job-runner"],
-          "note": "### A program that runs jobs in the background\n\nAn operator starts the job runner from the command line. The program reads a settings file in YAML, then keeps its jobs in memory while it runs them. Zoom into the box to see its five parts.",
+          "note": "### A program that runs jobs in the background\n\nAn operator starts the job runner from the command line. The two arrows show who starts the program and which settings it reads. Zoom into the box to see its five parts.",
           "code": [
             {
               "file": "jobrunner/__main__.py",
@@ -368,7 +369,7 @@
           "id": "t1",
           "view": "view:overview",
           "focus": ["file:jobrunner/__main__.py"],
-          "note": "### One function connects the five parts\n\n`run` in `__main__.py` creates each part and hands it to the parts that need it. For example, `Runner` gets the queue and the worker pool.",
+          "note": "### One function connects the five parts\n\n`run` in `__main__.py` creates each part and hands it to the parts that need it. The call arrows show code links, not the order they run. For example, `Runner` gets the queue and the worker pool.",
           "code": [
             {
               "file": "jobrunner/__main__.py",

@@ -770,6 +770,11 @@
   font-size: 20px;
   margin: 0;
 }
+.view-question {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
 .workspace-caption select {
   max-width: 260px;
   min-width: 0;
