@@ -8,7 +8,9 @@
 ; Reference captures are omitted: syntax alone cannot establish a resolved graph edge.
 
 (struct_item name: (type_identifier) @name) @definition.class
+(field_declaration name: (field_identifier) @name) @definition.variable
 (enum_item name: (type_identifier) @name) @definition.enum
+(enum_variant name: (identifier) @name) @definition.variable
 (union_item name: (type_identifier) @name) @definition.class
 (type_item name: (type_identifier) @name) @definition.type
 (function_item name: (identifier) @name) @definition.function
