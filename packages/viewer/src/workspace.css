@@ -221,6 +221,44 @@
   letter-spacing: 0.07em;
   color: var(--faint);
 }
+.map-connections {
+  margin-top: 16px;
+}
+.map-connections h3 {
+  margin: 0 0 6px;
+  color: var(--faint);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+.map-connections ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.map-connections li button {
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 7px 0;
+  border: 0;
+  border-top: 1px solid var(--border);
+  background: none;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.map-connections li button:hover .map-connection-direction,
+.map-connections li button:focus-visible .map-connection-direction {
+  color: var(--accent);
+}
+.map-connection-relation {
+  color: var(--muted);
+  font-size: 12px;
+}
 .topic-facts .callers h3 code {
   text-transform: none;
   letter-spacing: 0;
