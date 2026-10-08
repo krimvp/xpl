@@ -34,6 +34,7 @@ const SAMPLES: Record<GrammarId, { source: string; root: string; contains: strin
     root: "program",
     contains: ["class", "method"],
   },
+  php: { source: "<?php class Main {}\n", root: "program", contains: ["class_declaration"] },
   go: {
     source: "package main\n\nfunc main() {}\n",
     root: "source_file",

@@ -244,6 +244,7 @@ describe("the files in a change", () => {
     expect(needsBase(record, "src/b.ts")).toBe(false);
     expect(languageOfPath("src/old.ts")).toBe("typescript");
     expect(languageOfPath("src/Main.java")).toBe("java");
+    expect(languageOfPath("src/Runner.php")).toBe("php");
     expect(languageOfPath("README")).toBe("text");
   });
 

@@ -384,6 +384,8 @@ export function languageOfPath(path: FilePath): import("@xpl/core").FileLanguage
       return "rust";
     case ".rb":
       return "ruby";
+    case ".php":
+      return "php";
     case ".go":
       return "go";
     case ".java":

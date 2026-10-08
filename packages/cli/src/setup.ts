@@ -89,6 +89,7 @@ export function verifyArtifact(): Inventory {
     "viewer.html",
     "wasm/rust-tags.scm",
     "wasm/ruby-tags.scm",
+    "wasm/php-tags.scm",
     "skill/code-explainer/SKILL.md",
     "skill/code-explainer/bin/xpl",
     ...allWasmSources().map((source) => `wasm/${source.file}`),

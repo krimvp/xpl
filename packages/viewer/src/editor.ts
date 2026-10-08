@@ -82,6 +82,7 @@ export function languageSupport(language: FileLanguage): Extension {
       return [];
     case "rust":
     case "ruby":
+    case "php":
     case "text":
       return [];
   }

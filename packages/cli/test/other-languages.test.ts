@@ -184,6 +184,67 @@ it("Ruby declarations can be outlined, anchored and bundled with their support l
   expect(data.files["lib/jobrunner/runner.rb"]).toBe(readFile(dir, "lib/jobrunner/runner.rb"));
 });
 
+it("PHP declarations can be outlined, anchored and bundled with their support limits", async () => {
+  const dir = copyFixture("php-jobrunner");
+  const indexed = await xplJson<any>(dir, "index", "--precise", "off");
+  expect(indexed.code).toBe(0);
+  expect(indexed.json.languages.php).toEqual({ files: 4, symbols: 13, refs: "none" });
+  expect(
+    indexed.json.analysis
+      .find((report: { provider: string }) => report.provider === "php-tags")
+      .results.map((result: { status: string }) => result.status),
+  ).toEqual(["partial", "unsupported"]);
+
+  const outlined = await xpl(dir, "outline", "--under", "src/Jobrunner/Runner.php", "--depth", "4");
+  expect(outlined.out).toContain("sym:src/Jobrunner/Runner.php#Jobrunner.Runner.drain");
+  const shown = await xpl(dir, "show", "src/Jobrunner/Runner.php#Jobrunner.Runner.drain");
+  expect(shown.out.split("\n")[0]).toContain("(method) src/Jobrunner/Runner.php:8-15");
+  const searched = await xpl(dir, "search", "results[]", "--code");
+  expect(searched.out).toContain("sym:src/Jobrunner/Runner.php#Jobrunner.Runner.drain");
+
+  expect((await xpl(dir, "new", "php-demo")).code).toBe(0);
+  const patch = {
+    concepts: [
+      {
+        id: "concept:drain",
+        label: "Queue draining",
+        summary: "The runner collects each queued job's result.",
+        anchors: [
+          {
+            file: "src/Jobrunner/Runner.php",
+            symbol: "Jobrunner.Runner.drain",
+            role: "definition",
+          },
+        ],
+      },
+    ],
+    views: [
+      {
+        id: "view:overview",
+        type: "graph",
+        title: "Queue",
+        include: ["sym:src/Jobrunner/Runner.php#Jobrunner.Runner.drain"],
+      },
+    ],
+  };
+  const applied = await invoke(["apply", "php-demo", "-"], {
+    cwd: dir,
+    stdin: JSON.stringify(patch),
+  });
+  expect(applied.code, applied.out + applied.err).toBe(0);
+  expect((await xpl(dir, "validate", "php-demo")).code).toBe(0);
+  const bundled = await invoke(["bundle", "--draft", "php-demo", "-o", "out.html", "--root", dir], {
+    cwd: dir,
+    env: { XPL_VIEWER_HTML: writeViewerStub() },
+  });
+  expect(bundled.code).toBe(0);
+  const match = /<script id="xpl-data" type="application\/json">([\s\S]*?)<\/script>/.exec(
+    readFile(dir, "out.html"),
+  );
+  const data = parseBundle(match![1]!);
+  expect(data.files["src/Jobrunner/Runner.php"]).toBe(readFile(dir, "src/Jobrunner/Runner.php"));
+});
+
 it("Rust symbols can be outlined, shown, anchored and exported with their support limits", async () => {
   const dir = copyFixture("rs-jobrunner");
   const indexed = await xpl(dir, "index", "--precise", "off");

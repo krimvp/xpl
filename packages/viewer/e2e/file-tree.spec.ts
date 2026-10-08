@@ -170,3 +170,26 @@ test.describe("TOML", () => {
     expect(problems).toEqual([]);
   });
 });
+
+test("a PHP source file is listed, opened and labeled with its indexed language", async ({
+  page,
+}) => {
+  const problems = watchProblems(page);
+  await openVariant(page, (bundle) => {
+    bundle.index.files.push({
+      path: "src/Runner.php",
+      language: "php",
+      hash: "sha256:0",
+      lines: 3,
+    });
+    bundle.files["src/Runner.php"] = "<?php\nclass Runner {}\n";
+  });
+  const row = page.locator('.tree-row[data-path="src/Runner.php"]');
+  await expect(row).toBeVisible();
+  await row.click();
+  const pane = page.locator('[data-file="src/Runner.php"]');
+  await expect(pane.locator(".cm-editor")).toBeVisible();
+  await expect(pane.locator(".pane-meta")).toHaveText("php · 3 lines");
+  await expect(pane.locator(".cm-line").nth(1)).toHaveText("class Runner {}");
+  expect(problems).toEqual([]);
+});
