@@ -1,0 +1,54 @@
+name: Publish PR preview
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: Pull request number in this repository
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: xpl-preview-${{ inputs.pr }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    # Opt in only after configuring the protected environment and a dedicated runner.
+    if: vars.XPL_CI_PREVIEWS == 'true' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    environment: xpl-previews
+    runs-on: [self-hosted, linux, xpl-previews]
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Install the authoring skill and configure source access
+        env:
+          GH_TOKEN: ${{ secrets.XPL_READ_TOKEN }}
+        run: |
+          gh auth setup-git
+          node packages/cli/dist/xpl.mjs skill install --dir "$RUNNER_TEMP/xpl-skill"
+      - name: Author and publish the current PR
+        env:
+          XPL_PR: ${{ github.repository }}#${{ inputs.pr }}
+          XPL_CLI: ${{ github.workspace }}/packages/cli/dist/xpl.mjs
+          XPL_SKILL_DIR: ${{ runner.temp }}/xpl-skill
+          XPL_CACHE_DIR: ${{ runner.temp }}/xpl-pr-inputs
+          XPL_AUTHOR: ${{ vars.XPL_AUTHOR }}
+          XPL_AUTHOR_TOKEN: ${{ secrets.XPL_AUTHOR_TOKEN }}
+          XPL_READ_TOKEN: ${{ secrets.XPL_READ_TOKEN }}
+          XPL_PUBLISH_TOKEN: ${{ secrets.XPL_PUBLISH_TOKEN }}
+          XPL_PREVIEW_DIR: ${{ vars.XPL_PREVIEW_DIR }}
+          XPL_PREVIEW_URL: ${{ vars.XPL_PREVIEW_URL }}
+        run: node scripts/pr-preview.mjs
