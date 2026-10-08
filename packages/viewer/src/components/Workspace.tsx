@@ -394,7 +394,10 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
               {info.summary && (
                 <p dangerouslySetInnerHTML={{ __html: renderInline(info.summary) }} />
               )}
-              <TopicFacts id={info.id} />
+              <TopicFacts
+                id={info.id}
+                graph={state.perspective === "map" ? map.graph : undefined}
+              />
               {state.perspective === "guide" && (
                 <div className="section-actions">
                   <button className="btn" onClick={() => store.setPerspective("map")}>

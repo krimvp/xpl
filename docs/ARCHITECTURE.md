@@ -2492,7 +2492,9 @@ ready pages and draft previews; an export decision never retargets a request to 
 Beside the tabs: a breadcrumb (the explainer title, then the open step's title or the selected element), Back
 and Forward through what was read, "Read its explanation" (jumps to the guide step that best covers the
 selection), and a right rail: the selected element's summary ("Current topic", hidden while a guide section
-is the topic), the related files (`relatedFiles`: config, `resources`, tests; hidden when there are none) and,
+is the topic); on a map, a selected box lists the visible incoming and outgoing arrows with their other end,
+relationship label or kind, aggregated count and authored/precise/heuristic cue (up to six before "Show more");
+the related files (`relatedFiles`: config, `resources`, tests; hidden when there are none) and,
 under "Where this is in the code", the details in reader form: no ids, provenance or author actions, and roles
 in plain words ("defined here", "called here", "used here", "setting", "test"). The URL keeps
 `?perspective=<tab>&view=<id>&tour=<id>&step=<n>&focus=<id>…` in step, so a link lands on the same place.

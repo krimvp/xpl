@@ -7,7 +7,7 @@
  * "called here", and a status only when it is not "ok".
  */
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { opensView } from "@xpl/core";
+import { opensView, type DerivedGraph } from "@xpl/core";
 import { callersOf, callerSubject, changeSummary, type Caller } from "../callers.js";
 import { describeElement, type AnchorRow, type ElementInfo } from "../details.js";
 import { changeOf } from "../diff.js";
@@ -440,12 +440,64 @@ function ExplainNote({ phase }: { phase: ExplainPhase }) {
  * What the picked element is in the code that a reader asks first, shown unfolded under the topic summary:
  * what the change did to it, and who calls it.
  */
-export function TopicFacts({ id }: { id: string }) {
+export function TopicFacts({ id, graph }: { id: string; graph?: DerivedGraph }) {
   return (
     <div className="topic-facts" data-testid="topic-facts">
       <ChangeOfElement id={id} />
       <CallersList id={id} />
+      {graph && <MapConnections key={id} id={id} graph={graph} />}
     </div>
+  );
+}
+
+/** The arrows touching one visible map box, described without adding labels to every route. */
+function MapConnections({ id, graph }: { id: string; graph: DerivedGraph }) {
+  const store = useStore();
+  const [all, setAll] = useState(false);
+  const names = new Map(graph.nodes.map((node) => [node.id, node.label]));
+  if (!names.has(id)) return null;
+  const edges = graph.edges.filter((edge) => edge.from === id || edge.to === id);
+  if (edges.length === 0) return null;
+  const shown = all ? edges : edges.slice(0, 6);
+  return (
+    <section
+      className="map-connections"
+      data-testid="map-connections"
+      aria-label="Connections on this map"
+    >
+      <h3>Connections on this map</h3>
+      <ul>
+        {shown.map((edge) => {
+          const outgoing = edge.from === id;
+          const other = names.get(outgoing ? edge.to : edge.from);
+          const relationship = edge.label ?? edge.kind;
+          const signal =
+            edge.resolution === "precise" || edge.resolution === "heuristic"
+              ? `derived · ${edge.resolution}`
+              : edge.resolution === "mixed"
+                ? "derived · mixed precision"
+                : "authored";
+          return (
+            <li key={edge.id}>
+              <button type="button" onClick={() => store.select([edge.id])}>
+                <span className="map-connection-direction">
+                  {outgoing ? "To" : "From"} {other}
+                </span>
+                <span className="map-connection-relation">
+                  {relationship}
+                  {edge.count > 1 ? ` ×${edge.count}` : ""} · {signal}
+                </span>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+      {edges.length > shown.length && (
+        <button type="button" className="link" onClick={() => setAll(true)}>
+          Show {edges.length - shown.length} more
+        </button>
+      )}
+    </section>
   );
 }
 

@@ -13,6 +13,28 @@ const buttonsOf = (page: import("@playwright/test").Page, id: string) =>
   page.locator(`.diagram [data-buttons-of="${id}"]`);
 
 test.describe("architecture maps", () => {
+  test("a reader can follow the visible relationships of a selected component", async ({
+    page,
+  }) => {
+    await page.goto(ARCHITECTURE_BUNDLE.href + "?perspective=map&view=view:overview");
+    await page.waitForFunction(() => window.__xpl !== undefined);
+    await page.getByRole("button", { name: "Workers, component" }).click();
+    const connections = page.getByTestId("map-connections");
+    await expect(connections).toBeVisible();
+    await expect(connections.locator("li button")).toHaveText([
+      /From Startup\s+calls ×2 · derived · heuristic/,
+      /From Scheduling\s+calls ×4 · derived · heuristic/,
+      /To Events and metrics\s+job.completed · authored/,
+    ]);
+    const event = connections.getByRole("button", { name: /To Events and metrics.*job.completed/ });
+    await event.focus();
+    await page.keyboard.press("Enter");
+    await expect(page.getByTestId("breadcrumb-topic")).toHaveText("job.completed");
+    await expect(page.locator('[data-element-id="edge:job-completed"]').first()).toHaveClass(
+      /is-selected/,
+    );
+  });
+
   test("boxes of code show their level: a folder, a file, a class, a method", async ({ page }) => {
     await openBundle(page, "view:overview");
     const icons = await page
