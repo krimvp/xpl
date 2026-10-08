@@ -171,7 +171,7 @@ Conventions (all packages):
    (§3, Analysis coverage). Its reports describe the original run, including in pruned bundles. Relationship
    results record `resolution?: "precise" | "heuristic"` independently of support and reference counts;
    an absent resolution is unknown.
-5. `IndexedFile.language: FileLanguage` = `typescript | tsx | javascript | python | go | java | rust | yaml | json | toml |
+5. `IndexedFile.language: FileLanguage` = `typescript | tsx | javascript | python | go | java | rust | ruby | yaml | json | toml |
    text`.
 6. `Edge.kind` adds `"references"` (lifted type-refs) and, for stored edges to related files, `"loads"`,
    `"discovers"`, `"configures"` and `"overrides"` (`EDGE_KINDS` in `ids.ts`; `related-files.ts` lists them).
@@ -393,7 +393,7 @@ Excluded from candidate files: binaries (NUL in the first 8 KB), files over 1 MB
 deleted but still tracked, and lockfiles (`*-lock.json`, `*.lock`, `go.sum`, `pnpm-lock.yaml`,
 `npm-shrinkwrap.json`). Every remaining text file is an `IndexedFile` (unknown extensions → `text`), so
 file-relative anchors work anywhere. Language by extension: `.ts .mts .cts` typescript, `.tsx` tsx, `.js .mjs
-.cjs .jsx` javascript, `.py .pyi` python, `.go` go, `.java` java, `.rs` rust, `.yaml .yml` yaml,
+.cjs .jsx` javascript, `.py .pyi` python, `.go` go, `.java` java, `.rs` rust, `.rb` ruby, `.yaml .yml` yaml,
 `.json` json, `.toml` toml.
 Named `*.explainer.json` and `*.patch.json` outputs are excluded in both modes. Exported xpl HTML is
 also excluded by its embedded bundle marker; ordinary HTML remains source. Paths are POSIX,
@@ -768,6 +768,17 @@ tags outcomes share one report with combined file counts; syntax-error files kee
 [The tags experiment](rust-tags.md) records declaration coverage; [bounded direct calls](rust-direct-calls.md)
 records the supported slice and a bat smoke test. Tags cache version query-v5 includes named members and call
 extraction.
+
+Ruby's syntax-only `TagsProvider` (`src/tags/ruby.ts`, `ruby.scm`) uses `tree-sitter-ruby@0.23.1`. It
+indexes named classes, modules, instance and singleton methods, and direct constant assignments with full
+declaration ranges. Scoped assignments such as `Other::CONST =` are omitted until ownership can be
+resolved without duplicating or misplacing their path. Lexical containment supplies parents; a singleton
+method keeps its receiver in the symbol path (`Runner.self.build`). Reopened namespaces get source-ordered
+`~N` IDs within a file. This
+does not resolve cross-file namespace ownership, inheritance, calls, imports or metaprogrammed definitions.
+All relationship kinds are unsupported and Ruby reports `refs: none`. Syntax errors can leave declarations
+incomplete and produce a warning. Ruby tags use the existing file-local extraction cache; profile version
+`tree-sitter-ruby@0.23.1/query-v1` binds the query and limitations to its cache entries.
 
 **Analysis coverage** (`core/src/analysis.ts`, `indexer/src/analysis.ts`). An `AnalysisReport` contains a
 stable `provider` id, advertised `capabilities`, scoped `files`, and observed `results`. Capabilities are
@@ -1456,7 +1467,8 @@ stdout (a rejection exits 1); fatal errors (`error: …`) and warnings (`warning
 **Installed artifact.** Workspace packages remain private. `npm run build` writes standalone package
 metadata in `packages/cli/dist`, with `@xpl/cli`'s version, a `bin` entry, Node >=22.12 and no dependencies
 or install scripts. The viewer is required at build time. The directory carries the bundled CLI, viewer,
-WASM runtime and grammars, Rust tags query, the skill, a short README, MIT LICENSE and `integrity.json`.
+WASM runtime and grammars, Rust and Ruby tags queries, the skill, a short README, MIT LICENSE and
+`integrity.json`.
 The published name is `publishName` (`@krimvp/xpl`) in the private `@xpl/cli` workspace manifest; its version is
 0.2.2. The installed-artifact check retains service restart/recovery and checks watch pause/resume,
 durable job history and unavailable-runner submission. It also checks the published name/version, license
@@ -1564,8 +1576,8 @@ Implicit `show --at base` selection uses this loader too, so a guide name ending
 select a different repository JSON file. Unreadable guides still fail selection.
 
 `core/src/languages.ts` classifies every `FileLanguage` with a code display name or `undefined` for config
-and other text. Its derived `CODE_LANGUAGES` set is shared by code search and repo drafts; Rust and Java
-participate in both, and their draft service boxes carry `tech: Rust` or `tech: Java`. Adding a language
+and other text. Its derived `CODE_LANGUAGES` set is shared by code search and repo drafts; Rust, Ruby and
+Java participate in both, and their draft service boxes carry the matching language name. Adding a language
 requires a classification. Test-only Java files keep the empty-code error.
 
 **GitHub PR inputs.** `pr.ts` parses GitHub.com URLs, `owner/repo#number`, or `owner/repo` plus a number.
@@ -2517,7 +2529,8 @@ menu. Left: the diagram (caption: title and question), below it the concept list
 the code, the file tree (collapsible; files outside the focus are greyed `is-dimmed`, files in it `is-focus`; a
 static bundle lists only the files it embeds, with a footer "N of M files included · rebuild with --files all",
 `tree-foot`; under `xpl view` every indexed file is listed and loaded when opened) beside the stack of
-CodeMirror editors (language modes for TS/TSX/JS, Python, Go, Java, YAML and JSON; Rust, TOML and other text are plain).
+CodeMirror editors (language modes for TS/TSX/JS, Python, Go, Java, YAML and JSON; Rust, Ruby, TOML and other
+text are plain).
 Both splits (diagram / panels, diagram / code) are resizable. Below 900 px the halves stack.
 
 **Diagram text alternative** (`components/DiagramText.tsx`, `PanZoom.textView`): every live map,
@@ -3002,6 +3015,10 @@ standard-library `RetryTest` main; `mvn test` does not run that main. The Java a
 a recorded scip-java artifact outside the fixture, with checked ranges/nesting and precise type mentions.
 The repeatable workflow and checked bundle example are in [docs/java-scip.md](java-scip.md).
 
+`fixtures/rb-jobrunner` is a four-file Ruby queue and runner with two standard-library Minitest cases
+(`ruby -Ilib test/jobrunner_test.rb`). It exercises the syntax-only Ruby declaration path through index,
+outline, anchors and bundle without claiming any call relationships.
+
 `fixtures/ts-jobrunner` matches the handoff example **exactly**: `src/runner.ts` with `Runner.dispatch` at
 lines 42–88; offsets (relative to line 42) 4 = the `pop()` call, 18–19 = the `run(job)` call, 30–41 = the
 retry block, 34–36 = the `requeue(...)` call; `Worker.run` offset 21 = the `job.completed` emit;
@@ -3059,6 +3076,7 @@ full CLI (with `change`, `draft` and `lint`), Read, Explore and Present with tou
 under `xpl view` and its live update, architecture maps (`role`, `opens`), change explainers with
 base anchors and a diff view, and example explainers for the original three fixtures. Rust has an
 experimental syntax-tags provider and a browser-tested structural bundle; it has no relationship resolver or committed example explainer.
+Ruby has source-backed declaration tags and a runnable fixture, but no relationship resolver.
 
 Java's tree-sitter pack supplies named declarations and heuristic relationships without a JDK. The optional
 pinned scip-java/Maven artifact imports source-checked declarations and type references, with explicit losses

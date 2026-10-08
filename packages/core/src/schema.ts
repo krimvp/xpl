@@ -190,6 +190,7 @@ export type FileLanguage =
   | "go"
   | "java"
   | "rust"
+  | "ruby"
   | "yaml"
   | "json"
   /** TOML config (`pyproject.toml`, `Cargo.toml`): keys are symbols, like YAML and JSON. */

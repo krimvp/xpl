@@ -382,6 +382,8 @@ export function languageOfPath(path: FilePath): import("@xpl/core").FileLanguage
       return "python";
     case ".rs":
       return "rust";
+    case ".rb":
+      return "ruby";
     case ".go":
       return "go";
     case ".java":
