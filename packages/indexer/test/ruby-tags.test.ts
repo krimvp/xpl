@@ -4,7 +4,7 @@ import { describeAnalysis } from "@xpl/core";
 import { buildIndex } from "../src/index.js";
 import { indexFiles } from "./helpers.js";
 
-it("indexes Ruby namespaces, methods and constants as source-backed declarations", async () => {
+it("indexes direct Ruby declarations and omits scoped constants with ambiguous ownership", async () => {
   const { index, dir } = await indexFiles({
     "jobs.rb": [
       "module Jobs",
@@ -24,7 +24,6 @@ it("indexes Ruby namespaces, methods and constants as source-backed declarations
   expect(index.symbols.map(({ id, kind, range, parent }) => [id, kind, range, parent])).toEqual([
     ["jobs.rb#Jobs", "other", { startLine: 1, endLine: 10 }, undefined],
     ["jobs.rb#Jobs.DEFAULT", "variable", { startLine: 2, endLine: 2 }, "jobs.rb#Jobs"],
-    ["jobs.rb#Jobs.Jobs::VERSION", "variable", { startLine: 3, endLine: 3 }, "jobs.rb#Jobs"],
     ["jobs.rb#Jobs.Runner", "class", { startLine: 4, endLine: 9 }, "jobs.rb#Jobs"],
     ["jobs.rb#Jobs.Runner.run", "method", { startLine: 5, endLine: 7 }, "jobs.rb#Jobs.Runner"],
     [

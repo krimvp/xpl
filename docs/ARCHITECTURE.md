@@ -770,13 +770,15 @@ records the supported slice and a bat smoke test. Tags cache version query-v5 in
 extraction.
 
 Ruby's syntax-only `TagsProvider` (`src/tags/ruby.ts`, `ruby.scm`) uses `tree-sitter-ruby@0.23.1`. It
-indexes named classes, modules, instance and singleton methods, and constant assignments with full
-declaration ranges. Lexical containment supplies parents; a singleton method keeps its receiver in the
-symbol path (`Runner.self.build`). Reopened namespaces get source-ordered `~N` IDs within a file. This
+indexes named classes, modules, instance and singleton methods, and direct constant assignments with full
+declaration ranges. Scoped assignments such as `Other::CONST =` are omitted until ownership can be
+resolved without duplicating or misplacing their path. Lexical containment supplies parents; a singleton
+method keeps its receiver in the symbol path (`Runner.self.build`). Reopened namespaces get source-ordered
+`~N` IDs within a file. This
 does not resolve cross-file namespace ownership, inheritance, calls, imports or metaprogrammed definitions.
 All relationship kinds are unsupported and Ruby reports `refs: none`. Syntax errors can leave declarations
 incomplete and produce a warning. Ruby tags use the existing file-local extraction cache; profile version
-`tree-sitter-ruby@0.23.1/query-v2` binds the query and limitations to its cache entries.
+`tree-sitter-ruby@0.23.1/query-v1` binds the query and limitations to its cache entries.
 
 **Analysis coverage** (`core/src/analysis.ts`, `indexer/src/analysis.ts`). An `AnalysisReport` contains a
 stable `provider` id, advertised `capabilities`, scoped `files`, and observed `results`. Capabilities are

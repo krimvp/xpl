@@ -10,7 +10,7 @@ registerProvider(
     id: "ruby-tags",
     language: "ruby",
     grammar: "ruby",
-    version: "tree-sitter-ruby@0.23.1/query-v2",
+    version: "tree-sitter-ruby@0.23.1/query-v1",
     query: () =>
       readFileSync(
         getWasmDir()
@@ -22,7 +22,7 @@ registerProvider(
     methodParents: [],
     label: (tag, name, context) => (tag === "method" && context ? `${context}.${name}` : name),
     limitations: [
-      "Syntax tags cover named classes, modules, methods and constant assignments; metaprogrammed declarations are unavailable.",
+      "Syntax tags cover named classes, modules, methods and direct constant assignments; scoped and metaprogrammed declarations are unavailable.",
       "Nesting is lexical; scoped names do not establish a link to another file or namespace.",
       "Declarations exclude leading comments and attributes; conditional code is included without execution.",
     ],
