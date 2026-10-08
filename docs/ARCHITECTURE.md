@@ -1686,7 +1686,10 @@ field, a short quote and a fix. Rules (thresholds and word lists live in `LINT_L
   `change-not-shown` (changed files whose code no step shows; docs, tests, lock files and renames may be
   named instead), `far-ranges` (a step whose ranges in one file make more than 3 places over 40 lines apart:
   Present's panes per file), `long-talk-note` (a talk note over Present's `LONG_NOTE`), `big-map` (over 8 boxes on
-  a map a tour shows), `crowded-map` (over 2 arrows per box, with the edge ids to hide; needs the index).
+  a map a tour shows), `crowded-map` (over 2 arrows per box, with the edge ids to hide; needs the index), and
+  `system-map-no-edges` (an architecture map with a non-component role, at least two visible boxes and no visible
+  relationships; needs the index). This advisory asks the author to check for source-backed relationships. It does
+  not add edges or assert that any relationship exists.
 
 `--patch <file|->` merges the patch in memory with core `applyPatch`, the call `xpl apply` makes, so the
 findings are those of the explainer after apply; nothing is written. `--json`: `{ ok, path, strict, checked,
