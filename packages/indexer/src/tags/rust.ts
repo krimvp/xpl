@@ -149,6 +149,17 @@ async function receiverCalls(
   }[] = [];
   const trees: Tree[] = [];
   const parser = await createParser("rust");
+  const rustSources = sources.filter(
+    (source) => source.language === "rust" && eligible.has(source.path),
+  );
+  const crateRoots = [
+    ...new Set(
+      rustSources.flatMap(({ path }) => {
+        const match = path.match(/^(.*\/)?src\/(?:lib|main)\.rs$/);
+        return match ? [`${match[1] ?? ""}src/`] : [];
+      }),
+    ),
+  ];
   const byIdentity = new Map(declarations.map((fact) => [fact.identity, fact]));
   const identity = (file: string, node: Node) => `${file}:${node.startIndex}:${node.endIndex}`;
   const typeName = (text: string) => {
@@ -159,12 +170,15 @@ async function receiverCalls(
     return head && /^[A-Z]\w*$/.test(head) ? head : undefined;
   };
   try {
-    for (const source of sources.filter((s) => s.language === "rust" && eligible.has(s.path))) {
+    for (const source of rustSources) {
       signal?.throwIfAborted();
       const tree = parser.parse(source.text);
       if (!tree) continue;
       trees.push(tree);
       const file = source.path;
+      const crateRoot = crateRoots
+        .filter((root) => file.startsWith(root) && !file.slice(root.length).startsWith("bin/"))
+        .sort((a, b) => b.length - a.length)[0];
       const imports = new Map<string, string>();
       const ambiguousImports = new Set<string>();
       for (const use of tree.rootNode.namedChildren.filter(
@@ -174,9 +188,12 @@ async function receiverCalls(
         if (!match) continue;
         const modulePath = match[1]!.replaceAll("::", "/");
         const names = match[2]!.replace(/[{}\s]/g, "").split(",");
-        const base = file.includes("/") ? file.slice(0, file.lastIndexOf("/") + 1) : "";
         for (const name of names) {
-          const target = `${base}${modulePath}.rs`;
+          if (!crateRoot) {
+            ambiguousImports.add(name);
+            continue;
+          }
+          const target = `${crateRoot}${modulePath}.rs`;
           if (imports.has(name) && imports.get(name) !== target) ambiguousImports.add(name);
           else imports.set(name, target);
         }

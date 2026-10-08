@@ -325,6 +325,37 @@ it("resolves source-backed trait and concrete receiver calls across Rust modules
   expect(warm.index.refs).toEqual(index.refs);
 });
 
+it("resolves crate imports from the crate root, not a nested module directory", async () => {
+  const { index } = await indexFiles({
+    "src/lib.rs": "mod bar; mod foo;\n",
+    "src/bar.rs": "pub struct Thing; impl Thing { pub fn run(&self) {} }\n",
+    "src/foo/mod.rs": [
+      "use crate::bar::Thing;",
+      "pub struct Runner { thing: Thing }",
+      "impl Runner { pub fn dispatch(&self) { self.thing.run(); } }",
+      "",
+    ].join("\n"),
+    "src/foo/bar.rs": "pub struct Thing; impl Thing { pub fn run(&self) {} }\n",
+  });
+  expect(index.refs.map(({ from, to, resolution }) => [from, to, resolution])).toEqual([
+    ["src/foo/mod.rs#impl Runner.dispatch", "src/bar.rs#impl Thing.run", "heuristic"],
+  ]);
+});
+
+it("leaves crate imports unresolved when no crate root is indexed", async () => {
+  const { index } = await indexFiles({
+    "src/bar.rs": "pub struct Thing; impl Thing { pub fn run(&self) {} }\n",
+    "src/foo/mod.rs": [
+      "use crate::bar::Thing;",
+      "pub struct Runner { thing: Thing }",
+      "impl Runner { pub fn dispatch(&self) { self.thing.run(); } }",
+      "",
+    ].join("\n"),
+    "src/foo/bar.rs": "pub struct Thing; impl Thing { pub fn run(&self) {} }\n",
+  });
+  expect(index.refs).toEqual([]);
+});
+
 it("omits ambiguous impls, receiver types and imports", async () => {
   const { index } = await indexFiles({
     "src/a.rs": "pub struct Worker; impl Worker { pub fn run(&self) {} }\n",

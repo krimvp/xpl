@@ -14,8 +14,10 @@ caller, target declaration and range before the reference enters the index.
 - A local with an explicit type can be a receiver. A local assigned from `self.field.method()` can use that
   method's declared return type when the method is unique. This covers `worker` returned by
   `self.pool.lease()` in the fixture.
-- A root-level `use crate::module::Type` or `use crate::module::{Type, Other}` maps that type to a sibling
-  module file. The target must be an indexed declaration there. No external module graph is inferred.
+- A root-level `use crate::module::Type` or `use crate::module::{Type, Other}` maps that type to
+  `<crate root>/module.rs`. The root must be identified by an indexed `src/lib.rs` or `src/main.rs`, and the
+  target must be an indexed declaration there. Without a known root, the imported receiver stays unresolved.
+  Standalone `src/bin` crates and custom crate-root paths are not resolved. No external module graph is inferred.
 
 All references remain `heuristic`. A unique syntax match does not prove Rust method dispatch. Calls inside
 nested functions, closures or macro invocations are omitted. Unknown receivers, competing impl methods,

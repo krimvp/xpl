@@ -765,7 +765,9 @@ Rust uses `tree-sitter-rust@0.24.0` (WASM ABI 14). The CLI copies the corrected 
 and nesting. Its bounded call pass resolves unshadowed bare calls between root functions in one file, then
 resolves receiver calls from explicit fields, local types, and one-method return types. A generic receiver
 with one trait bound points to the trait method. A concrete receiver points to one inherent method. Explicit
-root-level `use crate::module::Type` imports connect those types to sibling module files. Both passes emit
+root-level `use crate::module::Type` imports connect those types to files under an indexed `src/lib.rs` or
+`src/main.rs` crate root. Without that root, imported receivers stay unresolved; standalone `src/bin` crates
+and custom crate-root paths are not resolved. Both passes emit
 exact call-expression ranges with `heuristic` confidence; provider normalization checks source snapshots and
 both declaration identities. A warm extraction cache reruns project receiver resolution against current files.
 Unknown or ambiguous receivers, nested functions, closures and calls inside macros are omitted. Bare-call
