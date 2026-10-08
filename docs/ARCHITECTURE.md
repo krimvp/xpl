@@ -1653,7 +1653,9 @@ file; `--json` adds the counts and what was left out.
   folders left out; label and summary TODOs) plus the outside systems they use, with an `llm` edge (`kind:
   custom`, label TODO) from each part to each system it imports, anchored at that import. `excludeFiles` for
   tests and docs on both. The tour: the system map, what it relies on, the inside of the biggest service,
-  then one step per part, the main part first. The service and outside boxes keep their ids across drafts.
+  then one step per part, the main part first. When imported outbound systems appear, the saved patch asks
+  whether each is on the default runtime path or is optional. The service and outside boxes keep their ids
+  across drafts.
 - `path <entry>`: a sequence of the calls the entry symbol makes (depth 1, source order, at most 6
   participants and 12 calls), and a tour with a big-picture step and one step per main call (at most 8).
 
