@@ -139,9 +139,7 @@ function symbolBlock(sym: ChangedSymbol): string[] {
     );
   }
   if (sym.tests.length === 0) {
-    out.push(
-      "    tests: no test found (no test references it by name; tests of other code may still run it)",
-    );
+    out.push("    tests: no indexed test reference found");
   } else out.push(...listBlock(`tests (${sym.tests.length})`, sym.tests.map(testLine), "    "));
   return out;
 }
@@ -205,8 +203,8 @@ export function renderAnalysis(analysis: ChangeAnalysis, omissions: string[] = [
   out.push("");
   out.push(
     analysis.untested.length === 0
-      ? "every changed symbol has a test that references it"
-      : `no test found for ${plural(analysis.untested.length, "changed symbol")}: ${analysis.untested.join(", ")}`,
+      ? "every changed symbol has an indexed test reference"
+      : `No indexed test reference found for ${plural(analysis.untested.length, "changed symbol")}: ${analysis.untested.join(", ")}`,
   );
   out.push(
     "Direct callers and two-edge call paths come from the index; unindexed dynamic wiring is not inferred. Tests count when they reference the symbol (or build its class); check what they assert.",
@@ -273,8 +271,10 @@ export const changeCommand: CommandSpec = {
     "  - the changed symbols: index symbols that hold an added or edited line (`new` when all of their lines are),",
     "  - one extra call hop through a function/method, with both sites and confidence (max 100 paths/1000 refs).",
     "    Dynamic callback or middleware wiring is not inferred; paths are possible reachability, not execution.",
-    "  - for each one its direct callers outside test files, and the tests that reference it (a test function, or",
-    "    a test file for an import); `no test found` when there is none,",
+    "  - for each one its direct callers outside test files, and indexed tests that reference it (a test function,",
+    "    or a test file for an import); for constructors and instance-call methods, a test that references the",
+    "    class counts too. A missing reference does not mean the behavior has no test,",
+    "  - changed test files are listed separately from per-symbol matches,",
     "  - for a method that runs when an instance is called (`__call__`, `handle`), the code that builds the class,",
     "    marked as a guess (`callers via instance`); for a constructor, the calls of its class.",
     "A bounded Not checked section lists the loaded index's report-level limits and changed paths absent from",
