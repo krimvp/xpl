@@ -1402,6 +1402,7 @@ stdout (a rejection exits 1); fatal errors (`error: …`) and warnings (`warning
 
 | Command | Does |
 |---|---|
+| `xpl completion <bash\|zsh\|fish>` | prints shell completion from the CLI command and option tables; guide-name candidates come from local `.explainer/*.explainer.json` files at completion time |
 | `xpl index [--precise auto\|off\|require] [--commit c] [--no-cache] [--scip artifact\|manifest.json]` | build + write the index; caches file-local extraction by default, `--no-cache` bypasses reads/writes, resolution and semantic tooling stay fresh; `--scip` selects source-verified artifact import instead of automatic tools; writes `.explainer/.gitignore` (`index-*.json`); prints per-language trust, independent coverage, enumerated exclusions and names explainers bound to another index |
 | `xpl outline [--under <id>] [--depth n] [--kind k,...] [--keys] [--limit n]` | dir/file/symbol tree with kind, lines, fan-in/fan-out (references into/out of the subtree); default depth 2; config keys only with `--keys`; `--kind method,function` keeps only those symbol kinds, with the dirs, files and parents that hold a match; the repo line carries the name `xpl new` records |
 | `xpl show <id> [--refs] [--context n] [--lines a-b] [--max-lines n]` | code with 0-based offsets relative to the symbol (the numbers spans use); dirs and the repo list children; `--refs` appends outgoing and incoming references with `+offset`. `xpl show --at base <path> [--lines a-b] [--explainer name]`: a changed file as it was before the change the explainer records, with the offsets a base anchor's span uses (from line 1) and `-` on the lines the change removes or rewrites; paths only (a symbol id is a usage error); `--explainer` picks the explainer when several record a change |
@@ -1471,7 +1472,10 @@ copies, local viewing and offline HTML in pinned Chromium. It checks refusal bef
 ready output, explicit draft labels and disconnected ready exports. CLI subprocesses have Node filesystem permissions
 for scratch only, with a negative checkout-read probe. The harness permits child processes for local git
 and version checks; it is a check of CLI file reads, not an OS sandbox for arbitrary child tools.
-Only Linux x64 (WSL2, Node 22.23.1) has been exercised against the installed artifact.
+The checkout-denied install test has run on Linux x64/WSL2 (Node 22.23.1). The separate
+`npm run test:install:platform` job checks packed installation, the npm and skill launchers, TS indexing,
+a backend-none service, ready export and offline Chromium reading on macOS and Windows. It does not invoke
+the `xpl view` OS browser opener or run Claude-backed jobs.
 
 **Exit codes.** 0 ok (warnings allowed); 1 rejected or failed: unknown id, no index, a rejected patch, a patch
 that changed nothing because the user owns everything it touched, validation errors, `resolve --write` on a
@@ -3046,7 +3050,9 @@ identities to syntax ranges. This is a proposed contract revision, not a change 
 - `xpl lint` is mechanical: it catches slogans, absolute words, long sentences, code titles and order
   problems, not wrong claims. `repeats-summary` finds near-verbatim repeats only.
 - Workspace packages are private; build/pack produce a standalone local npm tarball with
-  its viewer, grammars and skill. Install/update and reader/export checks cover Linux x64/WSL2 only.
+  its viewer, grammars and skill. The full checkout-denied install test covers Linux x64/WSL2;
+  platform CI checks packed install, local service and offline reading on macOS and Windows.
+  The OS browser opener and Claude-backed jobs are outside those platform checks.
   Node ≥22.12 is required. This source tree builds `@krimvp/xpl` 0.2.2 under MIT; a `v*` tag starts publication.
 
 **Next steps, roughly by value** (the review in `docs/review-2026-10-01.md` has the roadmap): an independent
