@@ -5,7 +5,7 @@
 import { describe, expect, it } from "vitest";
 import { ExplainerModel, processFlow, type SequenceView, type TourStep } from "@xpl/core";
 import { placedStages } from "../src/layout/flowLayout.js";
-import { looksLikeCode, readerBadge, roleWords } from "../src/readerWords.js";
+import { looksLikeCode, mapEdgeSource, readerBadge, roleWords } from "../src/readerWords.js";
 import {
   MAX_SENTENCE_TITLE,
   noteParts,
@@ -143,6 +143,18 @@ describe("process flow of another view (Read > Flow, the topic select)", () => {
 });
 
 describe("plain words for readers", () => {
+  it("map sources keep authored overlays, derived precision and indexed facts distinct", () => {
+    expect(mapEdgeSource({ stored: false, resolution: "heuristic" })).toBe("derived · heuristic");
+    expect(mapEdgeSource({ stored: true, resolution: "precise" })).toBe(
+      "authored overlay · derived · precise",
+    );
+    expect(mapEdgeSource({ stored: true, resolution: "mixed" })).toBe(
+      "authored overlay · derived · mixed precision",
+    );
+    expect(mapEdgeSource({ stored: true, resolution: "llm" })).toBe("authored");
+    expect(mapEdgeSource({ stored: true, resolution: "static" })).toBe("from index");
+  });
+
   it("anchor roles say what the lines are", () => {
     expect(roleWords("call-site")).toBe("called here");
     expect(roleWords("definition")).toBe("defined here");

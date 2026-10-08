@@ -14,7 +14,7 @@ import { changeOf } from "../diff.js";
 import { messageOf } from "../data.js";
 import { useDerived, useStore, useViewerState } from "../hooks.js";
 import { renderInline, renderMarkdown } from "../markdown.js";
-import { readerBadge, roleWords } from "../readerWords.js";
+import { mapEdgeSource, readerBadge, roleWords } from "../readerWords.js";
 import { GhostTargetList } from "./GhostTargets.js";
 import { EvidenceEdit } from "./EvidenceEdit.js";
 import { TextEdit } from "./TextEdit.js";
@@ -456,9 +456,33 @@ function MapConnections({ id, graph }: { id: string; graph: DerivedGraph }) {
   const [all, setAll] = useState(false);
   const names = new Map(graph.nodes.map((node) => [node.id, node.label]));
   if (!names.has(id)) return null;
-  const edges = graph.edges.filter((edge) => edge.from === id || edge.to === id);
-  if (edges.length === 0) return null;
-  const shown = all ? edges : edges.slice(0, 6);
+  const arrows = [
+    ...graph.edges
+      .filter((edge) => edge.from === id || edge.to === id)
+      .map((edge) => {
+        const outgoing = edge.from === id;
+        return {
+          id: edge.id,
+          direction: outgoing ? "To" : "From",
+          other: names.get(outgoing ? edge.to : edge.from),
+          relationship: edge.label ?? edge.kind,
+          count: edge.count,
+          source: mapEdgeSource(edge),
+        };
+      }),
+    ...graph.stubs
+      .filter((stub) => stub.inside === id)
+      .map((stub) => ({
+        id: stub.id,
+        direction: stub.direction === "out" ? "To" : "From",
+        other: stub.ghostLabel,
+        relationship: stub.kinds.join(", "),
+        count: stub.count,
+        source: "outside this map",
+      })),
+  ];
+  if (arrows.length === 0) return null;
+  const shown = all ? arrows : arrows.slice(0, 6);
   return (
     <section
       className="map-connections"
@@ -467,34 +491,23 @@ function MapConnections({ id, graph }: { id: string; graph: DerivedGraph }) {
     >
       <h3>Connections on this map</h3>
       <ul>
-        {shown.map((edge) => {
-          const outgoing = edge.from === id;
-          const other = names.get(outgoing ? edge.to : edge.from);
-          const relationship = edge.label ?? edge.kind;
-          const signal =
-            edge.resolution === "precise" || edge.resolution === "heuristic"
-              ? `derived · ${edge.resolution}`
-              : edge.resolution === "mixed"
-                ? "derived · mixed precision"
-                : "authored";
-          return (
-            <li key={edge.id}>
-              <button type="button" onClick={() => store.select([edge.id])}>
-                <span className="map-connection-direction">
-                  {outgoing ? "To" : "From"} {other}
-                </span>
-                <span className="map-connection-relation">
-                  {relationship}
-                  {edge.count > 1 ? ` ×${edge.count}` : ""} · {signal}
-                </span>
-              </button>
-            </li>
-          );
-        })}
+        {shown.map((arrow) => (
+          <li key={arrow.id}>
+            <button type="button" onClick={() => store.select([arrow.id])}>
+              <span className="map-connection-direction">
+                {arrow.direction} {arrow.other}{" "}
+              </span>
+              <span className="map-connection-relation">
+                {arrow.relationship}
+                {arrow.count > 1 ? ` ×${arrow.count}` : ""} · {arrow.source}
+              </span>
+            </button>
+          </li>
+        ))}
       </ul>
-      {edges.length > shown.length && (
+      {arrows.length > shown.length && (
         <button type="button" className="link" onClick={() => setAll(true)}>
-          Show {edges.length - shown.length} more
+          Show {arrows.length - shown.length} more
         </button>
       )}
     </section>
