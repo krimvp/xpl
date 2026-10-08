@@ -5,7 +5,7 @@ What was built, and the contracts it was built against. `docs/handoff.md` is the
 its schema, and fixes the algorithms and interfaces of every package. It was written before the code and
 has been corrected to match it; where the two still disagree, fix one of them in the same change.
 
-Target languages: **TypeScript/JavaScript, Python, Go** (plus YAML, JSON and TOML config keys).
+Target languages: **TypeScript/JavaScript, Python, Go, Java** (plus YAML, JSON and TOML config keys).
 
 ```
 source ── xpl index ──→ .explainer/index-<commit>.json ──┐   static analysis; generated, git-ignored
@@ -171,7 +171,7 @@ Conventions (all packages):
    (§3, Analysis coverage). Its reports describe the original run, including in pruned bundles. Relationship
    results record `resolution?: "precise" | "heuristic"` independently of support and reference counts;
    an absent resolution is unknown.
-5. `IndexedFile.language: FileLanguage` = `typescript | tsx | javascript | python | go | rust | yaml | json | toml |
+5. `IndexedFile.language: FileLanguage` = `typescript | tsx | javascript | python | go | java | rust | yaml | json | toml |
    text`.
 6. `Edge.kind` adds `"references"` (lifted type-refs) and, for stored edges to related files, `"loads"`,
    `"discovers"`, `"configures"` and `"overrides"` (`EDGE_KINDS` in `ids.ts`; `related-files.ts` lists them).
@@ -393,7 +393,8 @@ Excluded from candidate files: binaries (NUL in the first 8 KB), files over 1 MB
 deleted but still tracked, and lockfiles (`*-lock.json`, `*.lock`, `go.sum`, `pnpm-lock.yaml`,
 `npm-shrinkwrap.json`). Every remaining text file is an `IndexedFile` (unknown extensions → `text`), so
 file-relative anchors work anywhere. Language by extension: `.ts .mts .cts` typescript, `.tsx` tsx, `.js .mjs
-.cjs .jsx` javascript, `.py .pyi` python, `.go` go, `.rs` rust, `.yaml .yml` yaml, `.json` json, `.toml` toml.
+.cjs .jsx` javascript, `.py .pyi` python, `.go` go, `.java` java, `.rs` rust, `.yaml .yml` yaml,
+`.json` json, `.toml` toml.
 Named `*.explainer.json` and `*.patch.json` outputs are excluded in both modes. Exported xpl HTML is
 also excluded by its embedded bundle marker; ordinary HTML remains source. Paths are POSIX,
 repo-root-relative, sorted.
@@ -536,7 +537,8 @@ interface LanguagePack {
   id: string; languages: FileLanguage[]; grammarFor(language): GrammarId;
   capabilities: AnalysisCapabilities; // advertised abilities; a missing capability key means unsupported
   extensions?: string[];               // `text` files this pack parses too (a format with no FileLanguage of its own; none does now)
-  packageScope: "file" | "directory";  // how far a top-level name is visible without an import (Go: the package dir)
+  packageScope: "file" | "directory" | "named"; // top-level visibility (Go: dir; Java: package declaration)
+  packageName?(file, repo): string;     // required for named packages, read from captured source
   readConfiguration?(file, repo): void; // preload local config through the shared reader
   importsReexport?: boolean;           // a module's imports are importable from it (Python `__init__.py`)
   offByDefault?(path, repo): boolean;  // a default build leaves the file out (Go build constraints): tried last
@@ -559,7 +561,9 @@ interface FileFacts {
   unsupported; it does not mean an empty result. Per-file extraction outcomes record observed limits separately.
 - Positions are `Span`s: 1-based inclusive lines and columns in UTF-16 (`nodeSpan`/`spanBetween` convert
   tree-sitter's points). A pack must not keep tree nodes: the tree is freed right after `extract`.
-- `SymbolDraft { path, kind, range, parentPath?, anchorOnly? }`: dotted, pre-dedup paths. `anchorOnly` marks a
+- `SymbolDraft { path, kind, range, identifier?, parentPath?, anchorOnly? }`: dotted, pre-dedup paths.
+  `identifier` is an exact source-checked name span when the pack can supply one; it lets a semantic provider
+  join its declaration to the syntax symbol without guessing from a name or line. `anchorOnly` marks a
   symbol that exists to be anchored and outlined and is never referenced by name (a TS test block: its title
   is not a name in the code): the resolvers leave it out of name lookup, so `describe("Queue")` cannot capture
   `Queue()` from the code under test, and no reference points at it; it still is the `from` of the references
@@ -596,7 +600,7 @@ file.
 facts. `TreeSitterProvider` and the SCIP providers implement it. Providers may parse the supplied text,
 consume an artifact, or run a tool. No tree-sitter node or language-pack parser is required by the interface.
 Additional syntax providers always run, including with `precise: "off"`; semantic providers honor precise
-mode. `require` needs explicit precise relationship coverage for programming languages, including Rust.
+mode. `require` needs explicit precise relationship coverage for programming languages, including Java and Rust.
 The old `PreciseResolver` interface and registry were removed; `providers` is the build option.
 
 ```ts
@@ -676,7 +680,7 @@ The built-in tool adapters keep SCIP relationship mapping over existing syntax d
 The CLI selects it with `xpl index --scip <artifact|manifest.json>` instead of automatic semantic tools,
 retaining registered syntax-mode providers first. Artifact import keeps existing syntax symbol sets and may update matching
 checked declaration ranges. Files without existing symbols can receive the artifact's placed declarations. In a mixed repository, `require` still needs precise relationships for
-Rust; an artifact covering only other source files cannot make Rust satisfy that requirement.
+Rust and Java; an artifact covering only other source files cannot make either satisfy that requirement.
 Unknown extensions keep the closed `FileLanguage` value `text`; imported symbols work in outlines, queries,
 checked anchors and bundles. `--precise off` skips semantic providers; combining it with `--scip` is an error.
 
@@ -723,13 +727,23 @@ A range-less standalone artifact with no targets cannot earn `precise` or satisf
 analysis with checked targets and zero relationships still can. Reports remain partial, including empty
 results. Producer ranges may omit leading documentation; the importer never substitutes an identifier extent
 for a full declaration. The CLI reference documents generation and
-manifest creation. Java uses this importer without a language pack or new `FileLanguage` value.
+manifest creation. Java can use this importer in addition to its language pack.
 `scripts/java-scip.ts` runs the pinned Maven producer workflow, captures source/config hashes before
 generation, checks them afterward, and writes a manifest only for a successful run with a fresh artifact.
-Missing JDK, Maven or scip-java and build failures exit 1 with a file-anchor fallback instruction. Java
-remains `text`, including plain editor range highlighting; code-only search and automatic Java service
-classification are not added. [docs/java-scip.md](java-scip.md) records versions, commands, literal fixture
-facts, losses and fixture/Gson generation and import costs. Calls and implementation flags remain unsupported.
+Missing JDK, Maven or scip-java and build failures exit 1 with a syntax-index fallback instruction. Java
+source is indexed by a tree-sitter language pack, so outline, code-only search and repository drafts work
+without a Java toolchain. [docs/java-scip.md](java-scip.md) records versions, commands, literal fixture
+facts, losses and fixture/Gson generation and import costs. The SCIP artifact alone cannot classify calls or
+infer implementation from flags.
+
+Java's `javaPack` uses `tree-sitter-java@0.23.5`. It indexes classes, interfaces, enums, records, nested
+types, methods, constructors, fields and enum constants. A Java `package` declaration defines the shared
+name scope, even across source roots; an unnamed package is limited to its source directory. Explicit class
+and nested-class imports resolve through the indexed package declarations. The pack emits heuristic sites
+for calls, construction, heritage, type uses and field access, with declared field, parameter, local and
+return types to guide receiver lookup. Exact declaration identifier spans let a source-checked SCIP artifact
+join those syntax symbols. Static and wildcard imports, annotation references, record components, `var`
+inference and complex receiver chains are not resolved; unresolved targets produce no relationship claim.
 
 Rust's syntax-only `TagsProvider` (`src/tags.ts`, `src/tags/rust.ts`, `rust.scm`) uses the standard
 `@name` and `@definition.*` convention through the same provider normalization. Its corrected query captures
@@ -833,9 +847,9 @@ exactly like sites.
    type names through imports; a module-level variable of another file has the type its own file's facts give
    it (`bus = new EventBus()`);
 5. last resort, only when the receiver's type is completely unknown: a class named like the qualifier
-   (case-insensitively) that has the member (`queue.pop()` → `Queue.pop`), preferring the same file, then a
-   class the file imports, then the same directory (Go: the same package before the imports). Ambiguity
-   drops the site. Calls and writes only.
+   (case-insensitively) that has the member (`queue.pop()` → `Queue.pop`), preferring the same file, then
+   the same Go or Java package, then imports. File-scoped languages may use another file in the same
+   directory. Ambiguity drops the site. Calls and writes only.
 
 A `read` site resolves by 1–4 to a variable, field or function value; a class or enum becomes a type reference, and the nearest member of that name decides (a property that overrides a base-class attribute is not
 a variable, and the attribute below it is out of reach). An import binding marked `typeOnly` yields a
@@ -1548,11 +1562,9 @@ Implicit `show --at base` selection uses this loader too, so a guide name ending
 select a different repository JSON file. Unreadable guides still fail selection.
 
 `core/src/languages.ts` classifies every `FileLanguage` with a code display name or `undefined` for config
-and other text. Its derived `CODE_LANGUAGES` set is shared by code search and repo drafts; Rust participates
-in both, and its draft service boxes carry `tech: Rust`. Adding a language requires a classification. When a
-repository has eligible `.java` files but no supported code files, `xpl draft repo` reports how many Java
-files were indexed as text and points to `xpl show file:<path>`. File anchors remain available; Java SCIP
-data alone does not enable automatic Java repository levels. Test-only Java files keep the empty-code error.
+and other text. Its derived `CODE_LANGUAGES` set is shared by code search and repo drafts; Rust and Java
+participate in both, and their draft service boxes carry `tech: Rust` or `tech: Java`. Adding a language
+requires a classification. Test-only Java files keep the empty-code error.
 
 **GitHub PR inputs.** `pr.ts` parses GitHub.com URLs, `owner/repo#number`, or `owner/repo` plus a number.
 It calls `gh api --hostname github.com repos/<owner>/<repo>/pulls/<number>` using existing access,
@@ -1647,7 +1659,8 @@ file; `--json` adds the counts and what was left out.
   members = the parts), or one `dir:` box per program when `services/`, `apps/` or `cmd/` (at the root or
   under `src`) hold two or more; who reaches it (web and CLI frameworks, `role: person`) and what it relies on
   (database drivers and ORMs, caches, queues, file stores, HTTP clients and SDKs), found from the import lines
-  of code files (`outside.ts`: a catalog per language family) and drawn as groups with a role, a `tech` and no
+  of code files (`outside.ts`: a catalog per language family, including Java imports and Maven group IDs)
+  and drawn as groups with a role, a `tech` and no
   members, anchored at one import line per part that imports them. Each service box `opens` the map of its
   inside: 4-8 parts (top-level folders with code, a single root folder opened, tests, docs, examples and dot
   folders left out; label and summary TODOs) plus the outside systems they use, with an `llm` edge (`kind:
@@ -2498,7 +2511,7 @@ menu. Left: the diagram (caption: title and question), below it the concept list
 the code, the file tree (collapsible; files outside the focus are greyed `is-dimmed`, files in it `is-focus`; a
 static bundle lists only the files it embeds, with a footer "N of M files included · rebuild with --files all",
 `tree-foot`; under `xpl view` every indexed file is listed and loaded when opened) beside the stack of
-CodeMirror editors (language modes for TS/TSX/JS, Python, Go, YAML and JSON; Rust, TOML and other text are plain).
+CodeMirror editors (language modes for TS/TSX/JS, Python, Go, Java, YAML and JSON; Rust, TOML and other text are plain).
 Both splits (diagram / panels, diagram / code) are resizable. Below 900 px the halves stack.
 
 **Diagram text alternative** (`components/DiagramText.tsx`, `PanZoom.textView`): every live map,
@@ -3034,20 +3047,20 @@ keyboard and small screens (`a11y.spec.ts`). `screenshots.spec.ts` (and screensh
 
 ## 9. Status
 
-**Exists and tested:** the four packages and the skill as described above; three language packs with
-heuristic references, SCIP-precise references for all three, config keys of YAML, JSON and TOML files, the
+**Exists and tested:** the four packages and the skill as described above; four language packs with
+heuristic references, SCIP-precise references for TypeScript/JavaScript, Python and Go, config keys of YAML, JSON and TOML files, the
 full CLI (with `change`, `draft` and `lint`), Read, Explore and Present with tours, feedback from the page
 under `xpl view` and its live update, architecture maps (`role`, `opens`), change explainers with
 base anchors and a diff view, and example explainers for the original three fixtures. Rust has an
 experimental syntax-tags provider and a browser-tested structural bundle; it has no relationship resolver or committed example explainer.
 
-Java artifact import is also exercised without a language pack: the pinned scip-java/Maven workflow
-retains source-checked declarations and type references, with file-anchor fallback and explicit losses
-([docs/java-scip.md](java-scip.md)). Java stays `text`; semantic calls and inheritance are unsupported.
+Java's tree-sitter pack supplies named declarations and heuristic relationships without a JDK. The optional
+pinned scip-java/Maven artifact imports source-checked declarations and type references, with explicit losses
+([docs/java-scip.md](java-scip.md)). The importer does not by itself prove Java calls or inheritance.
 
 The [language-support decision](assessment-2026-10-04-language-support.md) compares syntax tags and
-rust-analyzer SCIP on identical Rust inputs, and Java SCIP separately. Both new-language paths remain
-experimental. The measured Rust artifact has no full ranges: import removes tags in described files and
+rust-analyzer SCIP on identical Rust inputs, and Java SCIP separately. Those measurements predate the Java
+language pack. The measured Rust artifact has no full ranges: import removes tags in described files and
 `require` can still succeed without retained targets or relationships. Use Rust tags with `--precise off`.
 The decision recommends separating examined coverage from replacement authority before joining semantic
 identities to syntax ranges. This is a proposed contract revision, not a change to the current §3 contract.

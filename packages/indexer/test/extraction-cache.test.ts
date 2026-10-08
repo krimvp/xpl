@@ -346,7 +346,9 @@ it("falls back from missing, damaged, wrong-key and interrupted entries without 
   const damaged = JSON.parse(original);
   damaged.payload = damaged.payload.replace("run", "bad");
   const wrongKey = JSON.parse(original);
-  wrongKey.input = wrongKey.input.replace('"revision":1', '"revision":0');
+  const wrongInput = JSON.parse(wrongKey.input);
+  wrongInput.revision++;
+  wrongKey.input = JSON.stringify(wrongInput);
   wrongKey.checksum = createHash("sha256")
     .update(`${wrongKey.input}\0${wrongKey.payload}`)
     .digest("hex");

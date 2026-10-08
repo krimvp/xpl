@@ -1,17 +1,16 @@
-# Java SCIP experiment
+# Java SCIP artifact workflow
 
-Java source uses the existing source-verified SCIP artifact importer. There is no Java `LanguagePack`,
-syntax walker, new schema field or second importer. `.java` files remain `text`. Imported classes,
-methods, fields and local declarations have checked names, full source ranges, hashes and canonical IDs.
-`outline`, `show`, `refs`, `apply`, `validate` and `bundle` work with those IDs. The viewer uses its plain
-text editor; selecting a symbol highlights its source and moving the caret finds its diagram elements.
-Java syntax colouring, `search --code` classification and automatic Java service levels in `draft repo`
-are outside this experiment. Use `search` without `--code` and explicit views.
+xpl indexes `.java` source with a tree-sitter language pack. It recognizes named declarations and selected
+calls, imports, type mentions and inheritance as heuristic syntax facts, without running a Java build.
+Java files count as code in search and repository drafts. The viewer highlights Java syntax. File and
+symbol anchors work without a SCIP artifact.
 
-This is issue #14 under #7. It measures an existing semantic producer without promising complete Java
-analysis. All imported structural capabilities and type references are partial. Calls, reads, writes,
-imports, inheritance and implementation relationships are unsupported for this producer's output.
-The saved `analysis` report records omissions; file anchors remain available for discovered source files.
+The source-verified SCIP artifact importer can confirm declaration ranges and add checked references from
+a configured JDK and Maven build. It retains `precise` and `heuristic` labels separately. The artifact does
+not prove that every source compiled or that every relationship is known. The saved `analysis` report records
+coverage and omissions. Existing syntax symbols keep their IDs; checked range updates require an exact
+source identifier match. This page documents the pinned producer workflow and preserves the earlier
+artifact-only measurements as historical evidence.
 
 ## Tool and source pins
 
@@ -156,11 +155,12 @@ node "$xpl_cli" show --root "$java_work/gson" 'gson/src/main/java/com/google/gso
 # After the first success, a new run can add --offline to the Maven arguments.
 ```
 
-## Literal source facts and limits
+## Recorded artifact facts and limits
 
 `packages/indexer/test/java-scip.test.ts` imports a recorded fixture artifact on every unit-test run,
-without requiring Java tools or network. It uses the existing provider and normalizer, with independently
-chosen IDs and line spans. The artifact's provenance and root removal are recorded beside the test data.
+without requiring Java tools or network. It checks the artifact against the current syntax index.
+The artifact's provenance and root removal are recorded beside the test data. The facts below describe
+what the 2026-10-04 artifact-only import retained; a current combined index can contain more facts.
 
 | Construct | Checked ID suffix | Full lines | Parent suffix |
 |---|---|---:|---|
@@ -176,7 +176,7 @@ The producer encodes overloads as `push().` and `push(+1).`, not parameter types
 `~N` suffixes keep the declarations distinct, but reordering overloads can change IDs. Descriptor
 prefixes establish the checked nested parents even though global `enclosing_symbol` is empty.
 Class kind does not distinguish static/inner or abstract classes. Abstract methods use kind 66.
-Record declarations and unspecified kinds map to `other`; no Java syntax is guessed to fill the gaps.
+In the artifact-only import, record declarations and unspecified kinds mapped to `other`.
 
 `EchoHandler.java:3` has precise type references to BaseHandler at columns 40–50 and Handler at 63–69
 (one-based, inclusive xpl positions). These are type mentions, not `extends`/`implements` edges.
@@ -185,10 +185,12 @@ The flags conflate class inheritance, interface implementation and method relati
 inverse method links. The importer diagnoses and omits them; it never guesses their direction.
 
 All fixture occurrence roles are 0 or 1 (non-definition/definition), and syntax_kind is 0. The producer
-supplies no call, read, write, import or generated-site classification. `Runner.java:44:35` targeting
+supplies no call, read, write, import or generated-site classification. The current syntax pack separately
+emits heuristic relationships at supported positions; those calls do not become precise on artifact import.
+In the earlier artifact-only run, `Runner.java:44:35` targeting
 `Queue.pop`, `Runner.java:51:33` targeting `Worker.run`, and `Metrics.java:17:79` targeting the method
 reference `Metrics.onJobCompleted` are diagnosed as unclassified. Lambda parameters may be checked local
-symbols; anonymous lambda expressions are not synthesized as named methods. No call graph is claimed.
+symbols; anonymous lambda expressions are not synthesized as named methods. That import claimed no call graph.
 
 Full enclosing ranges exist for 223 of 245 fixture definitions. The ten missing global ranges are
 synthetic constructors; synthetic record parameters account for the other twelve omissions. No bodies
@@ -211,8 +213,9 @@ the unbuilt modules remain at file anchors. External JDK/library targets never c
 The helper's process tests exercise missing JDK, Maven and scip-java, failed compilation, changed sources,
 changed POM, added source, absent artifact, stale output reuse and output inside the source root.
 Only successful generation creates a manifest. Failure exits 1, prints the tool/build reason, and names
-`xpl index --precise off` as the fallback. This keeps Java file anchors and YAML config symbols, with
-Java named-symbol and relationship analysis unsupported. It does not relabel failure as semantic success.
+`xpl index --precise off` as the fallback. That command now retains Java syntax symbols and heuristic
+relationships, along with file anchors and YAML config symbols. It does not relabel a failed semantic run
+as precise evidence.
 
 Real failure probes with the pinned tools confirm:
 
@@ -227,10 +230,14 @@ Real failure probes with the pinned tools confirm:
 The helper preflight makes the missing-tool diagnostics shorter than the producer's shell/Java stack
 traces. A previous artifact can survive a failed command run manually; never attest or import it as a
 successful new run. Fix the build and use a fresh directory. `--precise require` on import rejects an
-artifact with no usable precise relationship analysis; `auto` retains file-only fallback on unusable
-facts. A successful partial import is still partial, including absent source files and omitted full ranges.
+artifact with no usable precise relationship analysis; `auto` retains the Java syntax index and heuristic
+references on unusable facts. A successful partial import is still partial, including absent source files
+and omitted full ranges.
 
-## Measured coverage and cost
+## Historical artifact-only coverage and cost
+
+These figures describe the 2026-10-04 artifact-only implementation, before Java syntax indexing. They do not
+measure the current Java pack or the cost of combining syntax facts with a SCIP artifact.
 
 Measured sequentially on 2026-10-04, Node 22.23.1, Linux x86_64 under WSL2. Each corpus has one reported measured
 run, with warmed Maven caches and `--offline clean test-compile`. Other workers ran on the host;
@@ -242,8 +249,8 @@ excluded. `/usr/bin/time -v` reports maximum process RSS in the command tree, no
 | java-jobrunner | 13 | 394 | 16,879 | 223 | 79 | 37.3 | 0.24 | 113,860 |
 | Gson checkout at 828a97b | 249 | 53,021 | 1,824,890 | 10,474 | 7,184 | 564.6 | 0.85 | 276,692 |
 
-Import is `buildIndex({ languages: ["text"], precise: "require", providers: [scipArtifactProvider(...)] })`.
-Because Java stays `text`, discovery also captures three non-Java text files for the fixture and 44 for
+Import used `buildIndex({ languages: ["text"], precise: "require", providers: [scipArtifactProvider(...)] })`.
+Because Java was `text`, discovery also captured three non-Java text files for the fixture and 44 for
 Gson: 16 / 293 indexed files in total. Java-only physical counts above omit the final empty split after a
 trailing newline, as in #13. Symbols and edges are all from Java documents. Gson's producer scope is the
 203-file module above, not all 249 discovered Java files. Import wall/RSS includes tsx startup, artifact
@@ -276,8 +283,10 @@ are omitted rather than mapped to invented declarations. Unknown-kind and parent
 retained declarations, not extra dropped symbol counts. The three generated definitions, 396 range
 losses and 161 descriptor losses explain 11,034 − 10,474 = 560 omitted symbols.
 
-To repeat the import measurement, write this as a scratch `.mts` file, replace the absolute xpl source
-path, and run with `node_modules/.bin/tsx` under `/usr/bin/time -v`. Use separate processes sequentially
+To repeat the historical import measurement, use the xpl revision from 2026-10-04. The script below selects
+`text` and therefore does not select Java files in the current code. Write it as a scratch `.mts` file,
+replace the absolute xpl source path, and run with `node_modules/.bin/tsx` under `/usr/bin/time -v`.
+Use separate processes sequentially
 for fixture and Gson. The driver keeps registered syntax providers while replacing automatic semantic
 tools, so it also works with #13's registry selection. Source counts come from discovered `.java` paths, using original UTF-8 bytes and
 physical lines; do not count the generated `target/` output as source.
@@ -298,17 +307,18 @@ console.log(JSON.stringify({ ms, files: index.files.length, symbols: index.symbo
   edges: index.refs.length, warnings }));
 ```
 
-## Adapter effort and follow-ups
+## Historical adapter effort and follow-ups
 
-Java-specific workflow code is 83 lines in `scripts/java-scip.ts`, including comments and blank lines.
-No production lines change in core, indexer, CLI or viewer. The existing generic artifact importer owns
-mapping, source checks and diagnostics. The recorded artifact is 15,955 compressed bytes; acceptance tests
+The 2026-10-04 artifact-only change added 83 lines of Java-specific workflow code in `scripts/java-scip.ts`,
+including comments and blank lines. It changed no production lines in core, indexer, CLI or viewer.
+The existing generic artifact importer owns mapping, source checks and diagnostics. The recorded artifact
+is 15,955 compressed bytes; acceptance tests
 need no installed Java toolchain. Fixture compilation, RetryTest, the demo, CLI queries, strict validation
 and a real browser bundle check ran. Gson tests were compiled but not executed. Only the Maven producer
 path and Linux pins above were exercised; Gradle, other JDKs and other producer releases were not checked.
 
 The [language-support decision](assessment-2026-10-04-language-support.md) compares these producer/import
-phases with Rust tags and Rust SCIP on the same Rust sources. Java artifact import remains experimental;
-the measured sources and Maven profile do not establish production maturity across Java builds. The decision
-orders the next slices, including Java code identity and evidence-backed call classification. Those abilities
-are not inferred from a successful build or a nonempty symbol count here.
+phases with Rust tags and Rust SCIP on the same Rust sources. It preceded Java syntax support and proposed
+Java code identity and evidence-backed call classification as later work. The measured sources and Maven
+profile do not establish production maturity across Java builds, and a successful build or nonempty symbol
+count does not prove complete coverage.

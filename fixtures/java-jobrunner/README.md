@@ -3,8 +3,8 @@
 A tiny job runner: an in-memory queue, a pool of workers, retry with exponential backoff,
 dead-lettering, and an event bus that feeds metrics. It is a fixture for the xpl code explainer;
 the same design is implemented in `../ts-jobrunner`, `../py-jobrunner` and `../go-jobrunner`.
-Java indexing uses a generated SCIP artifact; the [workflow](../../docs/java-scip.md) includes a checked
-explainer and bundle example. Java stays `text` with imported symbols and range highlighting.
+Java indexing uses tree-sitter without a JDK. The optional [SCIP workflow](../../docs/java-scip.md) includes
+a source-checked explainer and bundle example with precise type references.
 
 ## Layout
 

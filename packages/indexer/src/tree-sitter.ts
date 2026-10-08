@@ -234,6 +234,7 @@ async function indexFile(
       path: draft.path,
       kind: draft.kind,
       declaration: providerRange(draft.range, text),
+      ...(draft.identifier ? { identifier: providerRange(draft.identifier, text) } : {}),
       parentPath: draft.parentPath,
       anchorOnly: draft.anchorOnly,
     }),

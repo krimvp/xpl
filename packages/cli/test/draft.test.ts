@@ -1,5 +1,5 @@
 /**
- * `xpl draft`: the drafts of the three fixtures and of a change in a small git repository apply as they are
+ * `xpl draft`: the drafts of the language fixtures and of a change in a small git repository apply as they are
  * (`xpl apply`), leave a valid explainer (`xpl validate`), and `xpl lint` reports nothing but `todo-left` on them.
  * The change draft anchors every changed file. And the `todo-left` lint rule itself.
  */
@@ -120,6 +120,7 @@ const ENTRIES: Record<string, string> = {
   "ts-jobrunner": "sym:src/runner.ts#Runner.dispatch",
   "py-jobrunner": "sym:jobrunner/runner.py#Runner.dispatch",
   "go-jobrunner": "sym:internal/runner/runner.go#Runner.Dispatch",
+  "java-jobrunner": "sym:src/main/java/jobrunner/Runner.java#Runner.dispatch",
 };
 
 describe.each(Object.keys(ENTRIES))("xpl draft on %s", (fixture) => {
@@ -138,7 +139,7 @@ describe.each(Object.keys(ENTRIES))("xpl draft on %s", (fixture) => {
     expect(system.id).toBe("view:system");
     if (system.type !== "graph") throw new Error("the system map is a graph");
     const service = patch.nodes!.find((n) => n.role === "service")!;
-    expect(service.id).toMatch(/^grp:[a-z-]+$/);
+    expect(service.id).toMatch(/^grp:[a-z0-9-]+$/);
     expect(system.include).toContain(service.id);
     expect(service.opens).toBe("view:overview");
     expect(patch.tours![0]!.steps![0]!.view).toBe("view:system");
@@ -239,7 +240,7 @@ describe("xpl draft: refusals and reuse", () => {
   });
 });
 
-describe("xpl draft repo: unsupported source languages", () => {
+describe("xpl draft repo: Java sources", () => {
   async function emptyRepoWith(path: string, source: string): Promise<string> {
     const dir = makeTempDir("xpl-draft-unsupported-");
     writeFile(dir, path, source);
@@ -250,16 +251,15 @@ describe("xpl draft repo: unsupported source languages", () => {
     return dir;
   }
 
-  it("explains that eligible Java files were indexed as text and gives a file-level next step", async () => {
+  it("builds repository levels from an eligible Java source file", async () => {
     const dir = await emptyRepoWith("src/main/java/App.java", "class App {}\n");
-    const result = await xpl(dir, "draft", "repo", "d");
-    expect(result.code).toBe(1);
-    expect(result.err).toBe(
-      "error: nothing to draft: the index has no supported code files outside tests, docs, examples and benchmarks; " +
-        "it contains 1 eligible Java source file (.java), indexed as text, so repository drafting cannot infer " +
-        "Java symbols or import structure. Inspect one with `xpl show file:src/main/java/App.java`. " +
-        "Importing Java SCIP data alone does not enable Java repository levels.",
-    );
+    const result = await xplJson<DraftJson>(dir, "draft", "repo", "d");
+    expect(result.code).toBe(0);
+    expect(result.json.patch.views?.map((view) => view.id)).toEqual([
+      "view:system",
+      "view:overview",
+    ]);
+    expect(result.json.patch.nodes?.find((node) => node.role === "service")?.tech).toBe("Java");
   });
 
   it("keeps the empty-code diagnostic for test-only Java files", async () => {

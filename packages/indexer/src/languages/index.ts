@@ -6,6 +6,7 @@
  */
 import type { FileLanguage } from "@xpl/core";
 import { goPack } from "./go.js";
+import { javaPack } from "./java.js";
 import { jsonPack } from "./json.js";
 import { pythonPack } from "./python.js";
 import { tomlPack } from "./toml.js";
@@ -33,6 +34,7 @@ export const languagePacks: readonly LanguagePack[] = [
   typescriptPack,
   pythonPack,
   goPack,
+  javaPack,
   yamlPack,
   jsonPack,
   tomlPack,
@@ -62,4 +64,4 @@ export function packForFile(path: string, language: FileLanguage): LanguagePack 
   return dot < 0 ? undefined : byExtension.get(base.slice(dot).toLowerCase());
 }
 
-export { goPack, jsonPack, pythonPack, tomlPack, typescriptPack, yamlPack };
+export { goPack, javaPack, jsonPack, pythonPack, tomlPack, typescriptPack, yamlPack };

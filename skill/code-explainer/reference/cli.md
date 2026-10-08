@@ -120,7 +120,7 @@ typescript  8 files    121 symbols   refs: precise (scip-typescript@0.4.0)
 yaml        1 file     16 symbols    refs: none
 ```
 
-Repeated builds reuse file-local tree-sitter and Rust tags facts from `.explainer/cache`. Source discovery,
+Repeated builds reuse file-local tree-sitter pack and Rust tags facts from `.explainer/cache`. Source discovery,
 hashes, heuristic resolution, resource resolution and semantic providers still run in full. `--no-cache`
 reads and writes no cached facts. Changed paths/languages, exact source content, provider/profile revisions,
 options and actual grammar/runtime bytes change the key. Syntax recovery diagnostics are reused; failed
@@ -149,9 +149,9 @@ available, but symbol and relationship completeness cannot be inferred.
 Provider labels separate a file-only fallback's limits from an artifact provider's usable symbols.
 Tool commands and diagnostic details are omitted from these summaries.
 
-- The last column is how far a language's references can be trusted. `refs: precise (tool)`: SCIP resolved them (TypeScript, Python, Go). `refs: heuristic`: tree-sitter scope-aware guesses, drawn lighter in the viewer; confirm calls with `show`. `refs: none`: usually yaml, json, toml and text without an artifact provider. Rust tags provide partial named declarations, lexical nesting and heuristic bare calls between unambiguous root-level functions in the same file. Unknown/shadowed names, qualified/generic calls, nested functions, closures, methods, trait and cross-module dispatch remain unresolved. Bodies with macros or local imports and files with syntax errors produce no calls; no macro expansion or cfg evaluation runs.
+- The last column is how far a language's references can be trusted. `refs: precise (tool)`: SCIP resolved them (TypeScript, Python, Go). `refs: heuristic`: tree-sitter scope-aware guesses, drawn lighter in the viewer; confirm calls with `show`. Java's built-in pack also produces heuristic references; overloads, ambiguous names and inherited or runtime dispatch can make a target incomplete or wrong. `refs: none`: usually yaml, json, toml and text without an artifact provider. Rust tags provide partial named declarations, lexical nesting and heuristic bare calls between unambiguous root-level functions in the same file. Unknown/shadowed names, qualified/generic calls, nested functions, closures, methods, trait and cross-module dispatch remain unresolved. Bodies with macros or local imports and files with syntax errors do not produce calls; no macro expansion or cfg evaluation runs.
 - `refs: precise 10/11 (scip-go@0.2.7), 1 heuristic`: the tool described only 10 of the 11 files (build-tagged Go files, files a project's own configuration excludes). Those files keep heuristic references, so **their references are hints**; a warning above the summary names them: `warning: scip-go@0.2.7 did not describe 1 file(s) (excluded by build constraints or by the tool's own configuration, or unreadable?); their references stay heuristic: internal/queue/windows_only.go`.
-- `--precise auto` (default) falls back to heuristic with a warning, e.g. ``warning: precise resolver "scip-go" failed (scip-go@v0.2.7 could not be started (is `go` installed and on PATH?): spawn go ENOENT); using heuristic references for go``. `off` never runs SCIP (faster); syntax-only providers such as Rust tags still run. `require` exits 1 instead of falling back.
+- `--precise auto` (default) falls back to heuristic with a warning, e.g. ``warning: precise resolver "scip-go" failed (scip-go@v0.2.7 could not be started (is `go` installed and on PATH?): spawn go ENOENT); using heuristic references for go``. `off` never runs SCIP (faster); syntax packs, including Java, still run. `require` exits 1 instead of falling back.
 - A file with syntax errors is indexed anyway. One warning covers all such files, with the first lines to look at: `warning: 1 file(s) have syntax errors; symbols near these lines may be incomplete: src/broken.ts:2` (at most 5 files and 3 lines each). Errors that cannot have cost a symbol (a TS labelled tuple element such as `[symbol: string]`) are not reported.
 - Reference kinds: `call import extends implements type-ref read write`. A `read` is a use of a module- or package-level variable or constant, or of a field whose type is known, that is not a call or an assignment (`this.config.retry`, `LIMIT`); the built-in syntax/tool adapters omit locals and parameters, while artifact imports can retain role-backed references to checked local declarations. A TS `import type` and a Python `import` under `TYPE_CHECKING` are `type-ref`, not `import`: `import` references are runtime dependencies.
 - Symbols beyond declarations: config keys (`kind: key`) of yaml, json and toml files (`config/default.yaml#retry.maxRetries`, `pyproject.toml#project.scripts.flask`); TS test blocks (statement-level `describe`/`suite`/`context`/`it`/`test` calls with a string title), whose path is the nested titles (`test/retry.test.ts#fails twice, then succeeds: acked after two requeues`; `.` and `#` in a title become `_`). Test blocks can be anchored and outlined but nothing references them by name.
@@ -209,8 +209,8 @@ adding or removing it changes the snapshot identity. Stale or unverified documen
 checked symbols or relationships. Documents must belong to discovered sources; generated build outputs
 and external symbols are not turned into local declarations. A supplied project-root URI must match `--root`.
 
-`--scip` selects the artifact provider instead of automatic SCIP tools. Registered syntax providers such as
-Rust tags still run first. Existing syntax symbol sets survive partial or range-less artifacts; matching
+`--scip` selects the artifact provider instead of automatic SCIP tools. Registered syntax providers,
+including Java, still run first. Existing syntax symbol sets survive partial or range-less artifacts; matching
 checked ranges can update their provenance. Coverage names each provider and its analyzed files; a
 range-less artifact claims no structural files. References and range updates attach only when a definition
 occurrence exactly matches one source-checked syntax identifier in the same file, including its line and
@@ -225,17 +225,16 @@ unclassified occurrences remain limits in `analysis`; diagnostics identify omitt
 reads/writes/imports and mentions of known types become precise references. Calls and ambiguous inheritance
 flags are unsupported. Overloads receive source-ordered `~N` suffixes; reordering can change IDs.
 
-For Java, the checkout helper `scripts/java-scip.ts ROOT FRESH_OUTPUT_DIR [-- MAVEN_ARGS...]` runs the
-pinned scip-java/Maven workflow and writes a source-bound manifest only after successful generation and
-stable before/after hashes. Java stays `text`; use explicit views and `search` without `--code`. The
-[Java workflow](../../../docs/java-scip.md) records the producer/JDK/Maven pins, fixture and Gson commands,
-literal ranges, failure fallback, losses and measured costs. It includes a checked overload bundle example.
+Java files are code and appear in `search --code` and repository drafts. The built-in grammar pack provides
+symbols and heuristic references; inspect those references against source because overloads, ambiguous names,
+and inherited or runtime dispatch can leave targets incomplete or wrong. `--precise off` still runs the Java
+pack. xpl does not run a Java SCIP producer automatically. To add compiler-produced facts, generate a
+source-checked SCIP manifest with a configured Java build, then pass it with `--scip <manifest.json>`.
+Only facts matched to checked source declarations and supported relationships are imported; inspect the
+analysis report for omissions.
 
-Rust tags and Java artifact import are experimental paths, checked on bounded fixtures and pinned bat/Gson
-inputs. They do not promise the maturity of the maintained TS/JS, Python, Go and config packs. Read the
-saved capability results before writing graph claims; a precise type mention does not establish a call,
-inheritance or an implementation edge. Java needs a successful configured JDK/Maven build. When generation
-fails, use `--precise off` for file anchors and config symbols, then regenerate into a fresh output directory.
+Rust tags remain an experimental path. Read the saved capability results before writing graph claims. The
+pinned rust-analyzer producer's limitations are listed below.
 
 Use `--precise off` for Rust. The measured rust-analyzer 0.3.2308 artifact supplies no full declaration
 ranges. Importing it currently removes tags in described files, produces no semantic edges, and can still
@@ -403,7 +402,7 @@ Base classes (TS, JS, Python; not Go, whose embedding does not dispatch) are hop
 
 ## `xpl search <pattern> [--regex] [-i] [--limit n] [--under <dir|glob>] [--code]`
 
-Line-by-line search of the working-tree text of every indexed file (substring, case-sensitive; `--regex` = JavaScript regex; `-i` ignores case). Hit: `<file>:<line>  <enclosing symbol id> +<offset>  <line text>`; outside every symbol it names the file (offset = line − 1). Code files come first, then config (yaml, json, toml), then docs and other text, so the first hits (`--limit`, default 50) are the code; the total is always counted. `--code` drops everything that is not code; Rust (`.rs`) is included. `--under` keeps the search inside a directory, file or symbol (`dir:src/flask`, `src/flask/`, `file:src/app.py`, `sym:src/app.py#Flask`) or a glob on repo paths (`'tests/**'`, `'src/*.py'`); repeat it or comma-separate for several. The total is counted inside the scope.
+Line-by-line search of the working-tree text of every indexed file (substring, case-sensitive; `--regex` = JavaScript regex; `-i` ignores case). Hit: `<file>:<line>  <enclosing symbol id> +<offset>  <line text>`; outside every symbol it names the file (offset = line − 1). Code files come first, then config (yaml, json, toml), then docs and other text, so the first hits (`--limit`, default 50) are the code; the total is always counted. `--code` drops everything that is not code; Java (`.java`) and Rust (`.rs`) are included. `--under` keeps the search inside a directory, file or symbol (`dir:src/flask`, `src/flask/`, `file:src/app.py`, `sym:src/app.py#Flask`) or a glob on repo paths (`'tests/**'`, `'src/*.py'`); repeat it or comma-separate for several. The total is counted inside the scope.
 
 ```
 $ xpl search "job.completed"
@@ -1114,11 +1113,9 @@ Every tour step has at most 2 code ranges, and the note is `### TODO: ...` plus 
 
 When import-derived outbound systems appear, the saved repo patch asks whether each is used on the default runtime path or is an optional integration. No such prompt appears when there are no imported outbound systems.
 
-Repository drafts need files in a supported source language so the index has symbols and import sites to map.
-An eligible `.java` file is indexed as text, so file anchors still work but it cannot produce Java repository
-levels. If no supported code files remain, the error reports the Java file count and suggests
-`xpl show file:<path>`. Importing Java SCIP data alone does not enable automatic Java repository levels;
-test-only Java files keep the empty-code diagnostic.
+Repository drafts need indexed symbols and import sites to map. Java source is supported by the built-in
+grammar pack and can contribute to repository levels. Its inferred references remain heuristic and partial;
+check the draft's systems and relationships against source before using them in an explanation.
 
 ```
 $ xpl draft path jobrunner sym:src/runner.ts#Runner.dispatch -o path.json

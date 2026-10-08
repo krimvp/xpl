@@ -121,9 +121,9 @@ See [Architecture maps](https://krimvp.github.io/xpl/docs/workflows/explain/).
 
 ## Languages and precision
 
-xpl indexes TypeScript, JavaScript, Python, Go, YAML, JSON and TOML. References are labeled precise (SCIP)
-or heuristic. Use `--precise off` when optional semantic tools are unavailable. See [language
-support](https://krimvp.github.io/xpl/docs/concepts/languages/).
+xpl indexes TypeScript, JavaScript, Python, Go and Java, plus YAML, JSON and TOML keys. Java references
+are heuristic unless you import a checked SCIP artifact; heuristic edges are partial and need review.
+References keep their precise or heuristic label. See [language support](https://krimvp.github.io/xpl/docs/concepts/languages/).
 
 ## Repository layout
 

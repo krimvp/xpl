@@ -94,6 +94,8 @@ export interface SymbolDraft {
   path: SymbolPath;
   kind: IndexedSymbol["kind"];
   range: Span;
+  /** Exact source identifier span, when the pack can prove it. Used to join checked SCIP identities. */
+  identifier?: Span;
   /**
    * Path of the logical parent (usually the path minus its last segment). The framework resolves it to
    * the draft with that path (the one containing this draft if several were numbered `~N`). If no draft
@@ -162,6 +164,8 @@ export interface ImportBinding {
   importedName?: string;
   /** The specifier (or the whole statement when there is no finer node). */
   site: Span;
+  /** Lookup-only binding inferred from a qualified name, not an import statement. Emits no import edge. */
+  implicit?: boolean;
   /**
    * The binding only exists for types: TS `import type { A }` / `import { type A }`, Python imports under
    * `if TYPE_CHECKING:`. Its reference is a `type-ref`, not an `import`: erased at run time, not a dependency.
@@ -290,10 +294,12 @@ export interface LanguagePack extends ConfigurationReader {
   /** Grammar used to parse a file of `language` (e.g. javascript -> "tsx"; `text` for `extensions`). */
   grammarFor(language: FileLanguage): GrammarId;
   /**
-   * How far a top-level name is visible without an import: `"file"` (TS, Python) or `"directory"` (Go:
-   * every file of a package directory shares one namespace).
+   * How far a top-level name is visible without an import: `"file"` (TS, Python), `"directory"` (Go),
+   * or `"named"` (Java files with the same package declaration, even across source roots).
    */
-  readonly packageScope: "file" | "directory";
+  readonly packageScope: "file" | "directory" | "named";
+  /** Namespace shared by files of a named package (Java); only used when packageScope is "named". */
+  packageName?(file: FilePath, repo: RepoView): string;
   /**
    * Optional. A module's imports are names other modules can import from it (Python: `from .a import x` in
    * `__init__.py` makes `pkg.x`). Without it (TS, Go), only what the module exports is, `export { x } from`.
