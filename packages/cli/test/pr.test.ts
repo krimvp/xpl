@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
   chmodSync,
@@ -92,7 +92,7 @@ function installedSkill() {
   const cli = writeFile(
     dir,
     "xpl.mjs",
-    `import { tsImport } from ${JSON.stringify(resolve("node_modules/tsx/dist/esm/api/index.mjs"))};\nawait tsImport(${JSON.stringify(resolve("packages/cli/src/main.ts"))}, import.meta.url);\n`,
+    `import { register } from ${JSON.stringify(resolve("node_modules/tsx/dist/esm/api/index.mjs"))};\nregister();\nawait import(${JSON.stringify(resolve("packages/cli/src/main.ts"))});\n`,
   );
   const files = Object.fromEntries(
     ["SKILL.md", "bin/xpl", "reference/create.md"].map((file) => [
@@ -1224,5 +1224,120 @@ describe("PR preview link", () => {
     expect(github.comments()[1]!.body).toContain(
       "**Outdated code explainer preview.** It describes head",
     );
+  });
+});
+
+describe("CI PR preview workflow", () => {
+  it.each([
+    ["XPL_PR", "team/project#7; touch /tmp/unexpected", "XPL_PR must be owner/repo#number"],
+    ["XPL_AUTHOR_TOKEN", "", "Configure XPL_AUTHOR_TOKEN before publishing a preview"],
+    ["XPL_PUBLISH_TOKEN", "", "Configure XPL_PUBLISH_TOKEN before publishing a preview"],
+    ["XPL_READ_TOKEN", "", "Configure XPL_READ_TOKEN before publishing a preview"],
+    ["XPL_PREVIEW_DIR", "relative", "XPL_PREVIEW_DIR must be an absolute path"],
+    [
+      "XPL_PREVIEW_URL",
+      "https://secret:password@example.com",
+      "XPL_PREVIEW_URL must be an HTTP(S) URL without credentials, query or fragment",
+    ],
+  ])("refuses invalid %s before authoring or publishing", (key, value, message) => {
+    const root = makeTempDir();
+    const result = spawnSync(process.execPath, [resolve("scripts/pr-preview.mjs")], {
+      encoding: "utf8",
+      env: {
+        XPL_PR: "team/project#7",
+        XPL_CLI: "/unused-cli",
+        XPL_SKILL_DIR: "/unused-skill",
+        XPL_AUTHOR: process.execPath,
+        XPL_CACHE_DIR: root,
+        XPL_PREVIEW_DIR: root,
+        XPL_PREVIEW_URL: "https://previews.example",
+        XPL_READ_TOKEN: "read",
+        XPL_PUBLISH_TOKEN: "publish",
+        XPL_AUTHOR_TOKEN: "author",
+        [key]: value,
+      },
+    });
+    expect(result.status).toBe(1);
+    expect(result.stderr.trim()).toBe(message);
+    expect(readdirSync(root)).toEqual([]);
+  });
+
+  it("authors, publishes and updates one comment; a moving head preserves the previous current", async () => {
+    const f = await creation();
+    const github = githubComments(f, { private: true });
+    const destination = makeTempDir();
+    const prDestination = join(destination, "pr-7");
+    const agent = writeFile(
+      f.tools,
+      "author",
+      `#!${process.execPath}
+const fs = require('node:fs');
+const { execFileSync } = require('node:child_process');
+if (process.env.GH_TOKEN || process.env.XPL_PUBLISH_TOKEN || process.env.UNRELATED_SECRET) throw Error('publication credentials leaked');
+if (process.env.XPL_AUTHOR_TOKEN !== 'author-secret') throw Error('missing explicit author credential');
+const handoff = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+execFileSync(handoff.command[0], [...handoff.command.slice(1), 'apply', handoff.name, ${JSON.stringify(join(f.directory, "recorded-patch.json"))}], {env: process.env});
+if (fs.existsSync(${JSON.stringify(join(f.tools, "fail-author"))})) { console.error('author-secret'); process.exit(12); }
+if (fs.existsSync(${JSON.stringify(join(f.tools, "move-head"))})) {
+  const pr = JSON.parse(fs.readFileSync(${JSON.stringify(f.env.GH_DATA)}, 'utf8'));
+  pr.head.sha = 'a'.repeat(40);
+  fs.writeFileSync(${JSON.stringify(f.env.GH_DATA)}, JSON.stringify(pr));
+}
+`,
+    );
+    chmodSync(agent, 0o755);
+    const env = {
+      ...process.env,
+      ...f.env,
+      GH_STATE: github.state,
+      XPL_CLI: f.cli,
+      XPL_SKILL_DIR: f.skill,
+      XPL_AUTHOR: agent,
+      XPL_AUTHOR_TOKEN: "author-secret",
+      XPL_READ_TOKEN: "read-secret",
+      XPL_PUBLISH_TOKEN: "publish-secret",
+      UNRELATED_SECRET: "must-not-leak",
+      XPL_PREVIEW_DIR: destination,
+      XPL_PREVIEW_URL: "https://previews.example",
+      XPL_PR: "team/project#7",
+      XPL_CACHE_DIR: f.cache,
+    };
+    // Test GitHub executable reads its state from fixed paths, like the real gh credential helper.
+    writeFile(
+      f.tools,
+      "gh",
+      readFileSync(join(f.tools, "gh"), "utf8")
+        .replaceAll("process.env.GH_DATA", JSON.stringify(f.env.GH_DATA))
+        .replaceAll("process.env.GH_STATE", JSON.stringify(github.state))
+        .replace(
+          "const save = (value) => {",
+          `if (method !== 'GET' && process.env.GH_TOKEN !== 'publish-secret') { process.stderr.write('wrong write credential'); process.exit(1); }
+const save = (value) => {`,
+        ),
+    );
+    const publish = () =>
+      execFileSync(process.execPath, [resolve("scripts/pr-preview.mjs")], {
+        cwd: f.root,
+        env,
+        encoding: "utf8",
+      });
+    const first = JSON.parse(publish());
+    stagedDirectories.push(prDestination);
+    expect(first.action).toBe("created");
+    expect(github.comments().map((c) => c.id)).toEqual([1, 2]);
+    const second = JSON.parse(publish());
+    expect(second.action).toBe("updated");
+    expect(github.comments().map((c) => c.id)).toEqual([1, 2]);
+    const previous = readFileSync(join(prDestination, "current/manifest.json"), "utf8");
+    writeFile(f.tools, "fail-author", "");
+    const commentsBeforeFailure = github.comments();
+    expect(publish).toThrow(/Preview failed during author/);
+    expect(readFileSync(join(prDestination, "current/manifest.json"), "utf8")).toBe(previous);
+    expect(github.comments()).toEqual(commentsBeforeFailure);
+    rmSync(join(f.tools, "fail-author"));
+    writeFile(f.tools, "move-head", "");
+    expect(publish).toThrow(/Preview failed during finish/);
+    expect(readFileSync(join(prDestination, "current/manifest.json"), "utf8")).toBe(previous);
+    expect(github.comments()[1]!.body).toContain("outdated");
   });
 });
