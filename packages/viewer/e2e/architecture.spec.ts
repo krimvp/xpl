@@ -156,11 +156,11 @@ test.describe("architecture maps", () => {
     await page.keyboard.press("Enter");
     await expect(service).not.toHaveClass(/is-container/);
     await expect.poll(async () => (await stateOf(page)).include).toEqual(state.include);
-    await page.setViewportSize({ width: 640, height: 900 });
     await buttonsOf(page, "grp:job-runner").locator(".expand-here").click();
+    await page.setViewportSize({ width: 390, height: 844 });
     await expect(fold).toBeVisible();
     const bounds = await fold.boundingBox();
-    expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(640);
+    expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(390);
     await fold.click();
     await expect(service).not.toHaveClass(/is-container/);
   });
