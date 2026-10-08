@@ -148,7 +148,8 @@ export function Guide({
       returnOpenSeq.current = undefined;
     }
     section.querySelector<HTMLElement>("h3")?.focus({ preventScroll: true });
-  }, [active, state.stepSeq, state.openSeq]);
+    // Opening a source file changes openSeq, but should leave focus in the source pane.
+  }, [active, state.stepSeq]);
 
   useEffect(() => {
     if (staleLink) staleNotice.current?.focus({ preventScroll: true });
@@ -389,7 +390,9 @@ function GuideSection({
         <h3 tabIndex={-1}>{title}</h3>
       )}
       <div className="guide-section-actions">
-        <a href={link.href}>Link to this step</a>
+        <a href={link.href} aria-label={`Link to ${where}`}>
+          Link to this step
+        </a>
         {linked && (
           <button type="button" className="btn" onClick={() => store.present(tourId, index)}>
             Continue from this step

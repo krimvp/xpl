@@ -94,7 +94,8 @@ Run `xpl --help` or see the [CLI reference](skill/code-explainer/reference/cli.m
 
 The local viewer can save edits to the guide. Saved HTML is a snapshot; export it again after
 changes. See [Edit and review](https://krimvp.github.io/xpl/docs/workflows/edit-and-review/).
-Each Guide section has a link to that step. Opening it returns to the section and offers Continue from this step.
+Each Guide section has a link named for that step. Opening it returns to the section and offers Continue from
+this step. Opening a source file keeps focus in the source pane.
 
 ### Author review
 

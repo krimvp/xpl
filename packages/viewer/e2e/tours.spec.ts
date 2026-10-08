@@ -465,9 +465,8 @@ test.describe("the address bar", () => {
     await expect(target).toBeInViewport();
     await expect(target.locator("h3")).toBeFocused();
     await expect(target.getByRole("button", { name: "Continue from this step" })).toBeVisible();
-    const link = new URL(
-      (await target.getByRole("link", { name: "Link to this step" }).getAttribute("href"))!,
-    );
+    const stepLink = target.getByRole("link", { name: /Link to step 2: Where failures go/ });
+    const link = new URL((await stepLink.getAttribute("href"))!);
     expect(link.searchParams.get("perspective")).toBe("guide");
     expect(link.searchParams.get("guide")).toBe("retry.json");
     expect(link.searchParams.get("tour")).toBe("tour:intro");
@@ -479,6 +478,17 @@ test.describe("the address bar", () => {
     await target.getByRole("button", { name: "Continue from this step" }).click();
     await expect(present(page)).toBeVisible();
     await expect(counter(page)).toHaveText("2 / 2");
+  });
+
+  test("opening a source file keeps focus on its file row in a linked Guide", async ({ page }) => {
+    await open(page, "?perspective=guide&tour=tour:intro&step-id=t2");
+    const target = page.locator('[data-section-id="t2"]');
+    await expect(target.locator("h3")).toBeFocused();
+    await page.getByRole("button", { name: "Show source" }).click();
+    const file = page.locator('.tree-row.is-file[data-path="src/queue.ts"]');
+    await file.click();
+    await expect(file).toBeFocused();
+    await expect(target.locator("h3")).not.toBeFocused();
   });
 
   test("a stale linked step explains the fallback to the Guide", async ({ page }) => {
@@ -500,8 +510,9 @@ test.describe("the address bar", () => {
           steps: [{ ...bundle.explainer.tours[0].steps[0], id: "other-step" }],
         });
       },
-      "?perspective=guide&tour=tour:intro&step-id=t2",
+      "?perspective=guide&tour=tour:intro&step-id=removed-step",
     );
+    await expect(page.getByRole("alert")).toContainText("linked step is no longer in this guide");
     await page.getByTestId("guide-tour-picker").selectOption("tour:other");
     await expect(page.getByRole("heading", { name: "Other tour" })).toBeVisible();
     await expect(page.getByRole("alert")).toHaveCount(0);
