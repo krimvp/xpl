@@ -395,6 +395,7 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
                 <p dangerouslySetInnerHTML={{ __html: renderInline(info.summary) }} />
               )}
               <TopicFacts
+                key={`${state.perspective === "map" ? map.view.id : state.perspective}:${info.id}`}
                 id={info.id}
                 graph={state.perspective === "map" ? map.graph : undefined}
               />

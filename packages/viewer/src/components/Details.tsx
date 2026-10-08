@@ -445,7 +445,7 @@ export function TopicFacts({ id, graph }: { id: string; graph?: DerivedGraph }) 
     <div className="topic-facts" data-testid="topic-facts">
       <ChangeOfElement id={id} />
       <CallersList id={id} />
-      {graph && <MapConnections key={id} id={id} graph={graph} />}
+      {graph && <MapConnections id={id} graph={graph} />}
     </div>
   );
 }
