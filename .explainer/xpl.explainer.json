@@ -8527,7 +8527,7 @@
           "role": "definition",
           "hash": "sha256-v2:f3887daed7ba",
           "resolved": {
-            "commit": "wt-141b6c7f94",
+            "commit": "wt-e0cd93ba15",
             "range": {
               "startLine": 29,
               "endLine": 41
@@ -8541,7 +8541,7 @@
           "role": "definition",
           "hash": "sha256-v2:e51041bb638a",
           "resolved": {
-            "commit": "wt-141b6c7f94",
+            "commit": "wt-e0cd93ba15",
             "range": {
               "startLine": 44,
               "endLine": 44
@@ -8555,7 +8555,7 @@
           "role": "definition",
           "hash": "sha256-v2:8fa9fc5bff05",
           "resolved": {
-            "commit": "wt-141b6c7f94",
+            "commit": "wt-e0cd93ba15",
             "range": {
               "startLine": 76,
               "endLine": 78
@@ -8569,7 +8569,7 @@
           "role": "definition",
           "hash": "sha256-v2:b08d3c4ee5c4",
           "resolved": {
-            "commit": "wt-141b6c7f94",
+            "commit": "wt-e0cd93ba15",
             "range": {
               "startLine": 81,
               "endLine": 84
@@ -8583,7 +8583,7 @@
           "role": "definition",
           "hash": "sha256-v2:c17069d975ff",
           "resolved": {
-            "commit": "wt-141b6c7f94",
+            "commit": "wt-e0cd93ba15",
             "range": {
               "startLine": 15,
               "endLine": 42
@@ -8597,7 +8597,7 @@
           "role": "definition",
           "hash": "sha256-v2:aa1432abce91",
           "resolved": {
-            "commit": "wt-141b6c7f94",
+            "commit": "wt-e0cd93ba15",
             "range": {
               "startLine": 2209,
               "endLine": 2211
@@ -8615,7 +8615,7 @@
           "role": "usage",
           "hash": "sha256-v2:5c6297310e7a",
           "resolved": {
-            "commit": "wt-141b6c7f94",
+            "commit": "wt-e0cd93ba15",
             "range": {
               "startLine": 290,
               "endLine": 290
@@ -8633,7 +8633,7 @@
           "role": "usage",
           "hash": "sha256-v2:441c82b0a153",
           "resolved": {
-            "commit": "wt-141b6c7f94",
+            "commit": "wt-e0cd93ba15",
             "range": {
               "startLine": 94,
               "endLine": 94
@@ -8647,7 +8647,7 @@
           "role": "definition",
           "hash": "sha256-v2:a2cccfe5dd4e",
           "resolved": {
-            "commit": "wt-141b6c7f94",
+            "commit": "wt-e0cd93ba15",
             "range": {
               "startLine": 36,
               "endLine": 56
@@ -8661,7 +8661,7 @@
           "role": "definition",
           "hash": "sha256-v2:62e3c2398ab0",
           "resolved": {
-            "commit": "wt-141b6c7f94",
+            "commit": "wt-e0cd93ba15",
             "range": {
               "startLine": 65,
               "endLine": 73
@@ -8675,7 +8675,7 @@
           "role": "definition",
           "hash": "sha256-v2:a6ef40af6c23",
           "resolved": {
-            "commit": "wt-141b6c7f94",
+            "commit": "wt-e0cd93ba15",
             "range": {
               "startLine": 79,
               "endLine": 86
@@ -8689,7 +8689,7 @@
           "role": "definition",
           "hash": "sha256-v2:520e75eea9ca",
           "resolved": {
-            "commit": "wt-141b6c7f94",
+            "commit": "wt-e0cd93ba15",
             "range": {
               "startLine": 2194,
               "endLine": 2201
@@ -8703,7 +8703,7 @@
           "role": "test",
           "hash": "sha256-v2:9a41b41887c6",
           "resolved": {
-            "commit": "wt-141b6c7f94",
+            "commit": "wt-e0cd93ba15",
             "range": {
               "startLine": 41,
               "endLine": 52
@@ -8715,12 +8715,12 @@
           "file": "packages/indexer/src/tags.ts",
           "symbol": "TagsProvider.analyze",
           "role": "definition",
-          "hash": "sha256-v2:ec87524b6b7a",
+          "hash": "sha256-v2:ef4c85e1e2bd",
           "resolved": {
-            "commit": "wt-141b6c7f94",
+            "commit": "wt-e0cd93ba15",
             "range": {
-              "startLine": 82,
-              "endLine": 261
+              "startLine": 83,
+              "endLine": 267
             },
             "status": "ok"
           }
@@ -8728,12 +8728,12 @@
         {
           "file": "packages/indexer/src/tags/rust.ts",
           "role": "definition",
-          "hash": "sha256-v2:33e13e706d32",
+          "hash": "sha256-v2:0c59aef02e42",
           "resolved": {
-            "commit": "wt-141b6c7f94",
+            "commit": "wt-e0cd93ba15",
             "range": {
               "startLine": 1,
-              "endLine": 379
+              "endLine": 391
             },
             "status": "ok"
           }
@@ -8743,7 +8743,7 @@
           "role": "definition",
           "hash": "sha256-v2:d3ab8e8651bd",
           "resolved": {
-            "commit": "wt-141b6c7f94",
+            "commit": "wt-e0cd93ba15",
             "range": {
               "startLine": 1,
               "endLine": 25
@@ -8757,7 +8757,7 @@
           "role": "definition",
           "hash": "sha256-v2:dc5903d18e27",
           "resolved": {
-            "commit": "wt-141b6c7f94",
+            "commit": "wt-e0cd93ba15",
             "range": {
               "startLine": 166,
               "endLine": 243
@@ -8771,7 +8771,7 @@
           "role": "definition",
           "hash": "sha256-v2:5f72cfee0485",
           "resolved": {
-            "commit": "wt-141b6c7f94",
+            "commit": "wt-e0cd93ba15",
             "range": {
               "startLine": 111,
               "endLine": 139
@@ -8785,7 +8785,7 @@
           "role": "definition",
           "hash": "sha256-v2:459c65643260",
           "resolved": {
-            "commit": "wt-141b6c7f94",
+            "commit": "wt-e0cd93ba15",
             "range": {
               "startLine": 67,
               "endLine": 86
@@ -8799,7 +8799,7 @@
           "role": "definition",
           "hash": "sha256-v2:659a7407d5fa",
           "resolved": {
-            "commit": "wt-141b6c7f94",
+            "commit": "wt-e0cd93ba15",
             "range": {
               "startLine": 38,
               "endLine": 179
@@ -8815,7 +8815,7 @@
       ],
       "provenance": {
         "origin": "llm",
-        "commit": "wt-141b6c7f94"
+        "commit": "wt-e0cd93ba15"
       }
     },
     {

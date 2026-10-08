@@ -325,8 +325,10 @@ it("resolves source-backed trait and concrete receiver calls across Rust modules
   expect(warm.index.refs).toEqual(index.refs);
 });
 
-it("omits ambiguous impl methods and imports that occur only in comments", async () => {
+it("omits ambiguous impls, receiver types and imports", async () => {
   const { index } = await indexFiles({
+    "src/a.rs": "pub struct Worker; impl Worker { pub fn run(&self) {} }\n",
+    "src/b.rs": "pub struct Worker; impl Worker { pub fn run(&self) {} }\n",
     "src/remote.rs": "pub struct Remote; impl Remote { pub fn run(&self) {} }\n",
     "src/local.rs": [
       "// use crate::remote::Remote;",
@@ -354,6 +356,13 @@ it("omits ambiguous impl methods and imports that occur only in comments", async
       "use crate::remote::Remote;",
       "struct Owner { remote: external::Remote }",
       "impl Owner { fn dispatch(&self) { self.remote.run(); } }",
+      "",
+    ].join("\n"),
+    "src/duplicate-import.rs": [
+      "use crate::a::Worker;",
+      "use crate::b::Worker;",
+      "struct Owner { worker: Worker }",
+      "impl Owner { fn dispatch(&self) { self.worker.run(); } }",
       "",
     ].join("\n"),
   });

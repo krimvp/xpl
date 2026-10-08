@@ -42,6 +42,7 @@ interface TagsProfile {
       sources: readonly ProviderSource[],
       declarations: readonly ProviderDeclaration[],
       eligible: ReadonlySet<string>,
+      signal?: AbortSignal,
     ): Promise<ProviderRelationship[]>;
   };
 }
@@ -242,7 +243,12 @@ export class TagsProvider implements IndexProvider {
       }
       if (this.profile.calls?.resolveProject)
         relationships.push(
-          ...(await this.profile.calls.resolveProject(input.sources, declarations, eligible)),
+          ...(await this.profile.calls.resolveProject(
+            input.sources,
+            declarations,
+            eligible,
+            input.signal,
+          )),
         );
     } finally {
       query?.delete();

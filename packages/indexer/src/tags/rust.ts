@@ -129,6 +129,7 @@ async function receiverCalls(
   sources: readonly ProviderSource[],
   declarations: readonly ProviderDeclaration[],
   eligible: ReadonlySet<string>,
+  signal?: AbortSignal,
 ): Promise<ProviderRelationship[]> {
   type Method = { fact: ProviderDeclaration; owner: string; trait: boolean; returnType?: string };
   const methods: Method[] = [];
@@ -143,6 +144,7 @@ async function receiverCalls(
     owner: string;
     bounds: Map<string, string>;
     imports: Map<string, string>;
+    ambiguousImports: Set<string>;
     locals: Map<string, string>;
   }[] = [];
   const trees: Tree[] = [];
@@ -158,11 +160,13 @@ async function receiverCalls(
   };
   try {
     for (const source of sources.filter((s) => s.language === "rust" && eligible.has(s.path))) {
+      signal?.throwIfAborted();
       const tree = parser.parse(source.text);
       if (!tree) continue;
       trees.push(tree);
       const file = source.path;
       const imports = new Map<string, string>();
+      const ambiguousImports = new Set<string>();
       for (const use of tree.rootNode.namedChildren.filter(
         (node) => node.type === "use_declaration",
       )) {
@@ -171,7 +175,11 @@ async function receiverCalls(
         const modulePath = match[1]!.replaceAll("::", "/");
         const names = match[2]!.replace(/[{}\s]/g, "").split(",");
         const base = file.includes("/") ? file.slice(0, file.lastIndexOf("/") + 1) : "";
-        for (const name of names) imports.set(name, `${base}${modulePath}.rs`);
+        for (const name of names) {
+          const target = `${base}${modulePath}.rs`;
+          if (imports.has(name) && imports.get(name) !== target) ambiguousImports.add(name);
+          else imports.set(name, target);
+        }
       }
       const visit = (node: Node) => {
         if (node.type === "struct_item") {
@@ -298,6 +306,7 @@ async function receiverCalls(
                       owner,
                       bounds,
                       imports,
+                      ambiguousImports,
                       locals: new Map(locals),
                     });
                 }
@@ -314,6 +323,7 @@ async function receiverCalls(
     }
     const refs: ProviderRelationship[] = [];
     for (const call of calls) {
+      signal?.throwIfAborted();
       const receiver = call.receiver;
       let type: string | undefined;
       if (receiver.type === "self") type = call.owner;
@@ -332,6 +342,7 @@ async function receiverCalls(
       let inferredFile: string | undefined;
       if (type.startsWith("@")) {
         const [owner, name] = type.slice(1).split(".");
+        if (owner && call.ambiguousImports.has(owner)) continue;
         const targetFile = (owner && call.imports.get(owner)) ?? call.file;
         const providers = methods.filter(
           (method) =>
@@ -348,6 +359,7 @@ async function receiverCalls(
       const genericTrait = call.bounds.get(type);
       const targetType = genericTrait ?? typeName(type);
       if (!targetType) continue;
+      if (call.ambiguousImports.has(targetType)) continue;
       const targetFile = inferredFile ?? call.imports.get(targetType) ?? call.file;
       const targets = methods.filter(
         (method) =>
