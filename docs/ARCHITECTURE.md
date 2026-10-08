@@ -2327,13 +2327,13 @@ CodeMirror and enters Code. Tour phrases open the recorded step in Guide. Links 
 stable step IDs when reading; malformed or unavailable source ranges do not open another range. A source
 link whose snapshot commit or supplied file hash differs from the selected bundle is rejected before
 rendering source. Same-page opening checks both values before freezing the store. As navigation changes
-the open file in a frozen view, the URL updates that file's hash.
+the open file or its head/Before side in a frozen view, the URL updates the hash from that side's text.
 Current-guide source links freeze the loaded store offline, preserving lazily loaded files as well as
 embedded source. In-flight source fetches are invalidated and reconnection is disabled. Pending edits
-block freezing a live guide. On reload, the loader checks the commit, requested file and its source hash,
-then removes the server attachment. A file loaded only in the previous page is explicitly unavailable if
-omitted from the new bundle; changed text under the same commit is also rejected. Polling and API reads
-cannot substitute later workspace text.
+block freezing a live guide. On reload, the loader checks the commit, requested file and its source hash
+against the URL's head or Before side, then removes the server attachment. A file loaded only in the
+previous page is unavailable if omitted from the new bundle; changed text under the same commit is also
+rejected. Polling and API reads cannot substitute later workspace text.
 
 Exported pickers enumerate only contained snapshots. A live picker reads the guarded catalog; other-guide
 previews have no API or write identity and author changes are prohibited. Switching requires no unsaved

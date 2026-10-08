@@ -4,7 +4,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { injectBundle, parseBundle, hashText } from "@xpl/core";
-import { readEmbeddedBundle, stateOf, watchProblems, openEditMenu, toExplore } from "./helpers.js";
+import {
+  CHANGE_BUNDLE,
+  readEmbeddedBundle,
+  stateOf,
+  watchProblems,
+  openEditMenu,
+  toExplore,
+} from "./helpers.js";
 
 // A real file:// page: no service can fill in omitted source or guide snapshots.
 test("offline library searches supplied source and prose, opens exact links and switches bounded guides", async ({
@@ -498,5 +505,56 @@ test("a source link rejects changed text when the index commit stays the same", 
   await page.goto(unbound.href);
   await expect(page.getByTestId("no-data")).toContainText(
     'Source link for "src/metrics.ts" has no file hash',
+  );
+});
+
+test("a source link can move to a change's Before file and survive reload", async ({ page }) => {
+  const { html, bundle: raw } = readEmbeddedBundle(CHANGE_BUNDLE);
+  const bundle = parseBundle(JSON.stringify(raw));
+  bundle.files["src/metrics.ts"] = "// needle A\n";
+  const changed = structuredClone(bundle);
+  changed.baseFiles!["src/legacy.ts"] = "// wrong! B\n";
+  let reloadChanged = false;
+  await page.route("http://xpl.test/**", (route) =>
+    route.fulfill({
+      contentType: "text/html",
+      body: injectBundle(html, reloadChanged ? changed : bundle),
+    }),
+  );
+  await page.goto("http://xpl.test/");
+  await page.getByRole("button", { name: "Search and guides" }).click();
+  await page.getByRole("searchbox", { name: "Search guide snapshots" }).fill("needle A");
+  await page.locator('a[data-kind="source"]').click();
+  await expect(page.locator('[data-file="src/metrics.ts"] .cm-content').first()).toContainText(
+    "needle A",
+  );
+  await page.evaluate(() => window.__xpl!.setCursor("src/runner.ts", 75));
+  await expect
+    .poll(() => new URL(page.url()).searchParams.get("source-hash"))
+    .toBe(hashText(bundle.files["src/runner.ts"]!));
+  await page.evaluate(() => window.__xpl!.select(["concept:retry-policy"]));
+  const runnerBefore = page.locator('.pane[data-file="src/runner.ts"][data-side="base"]');
+  await runnerBefore.getByTestId("pane-fold").click();
+  await runnerBefore.locator('.cm-line[data-line="76"]').click();
+  await expect.poll(() => new URL(page.url()).searchParams.get("side")).toBe("base");
+  await expect
+    .poll(() => new URL(page.url()).searchParams.get("source-hash"))
+    .toBe(hashText(bundle.baseFiles!["src/runner.ts"]!));
+  await page.getByTestId("tree-filter").fill("leg");
+  await page.locator('.tree-row[data-path="src/legacy.ts"]').click();
+  const before = page.locator('.pane[data-file="src/legacy.ts"][data-side="base"]');
+  await expect(before.locator(".cm-content")).toContainText("linearDelay");
+  await before.locator('.cm-line[data-line="3"]').click();
+  await expect.poll(() => new URL(page.url()).searchParams.get("side")).toBe("base");
+  await expect
+    .poll(() => new URL(page.url()).searchParams.get("source-hash"))
+    .toBe(hashText(bundle.baseFiles!["src/legacy.ts"]!));
+  await page.reload();
+  await expect(before.locator(".cm-content")).toContainText("linearDelay");
+  await expect(page.getByTestId("no-data")).toHaveCount(0);
+  reloadChanged = true;
+  await page.reload();
+  await expect(page.getByTestId("no-data")).toContainText(
+    `Source file "src/legacy.ts" changed within snapshot "${bundle.index.commit}"`,
   );
 });

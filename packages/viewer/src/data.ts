@@ -60,13 +60,14 @@ export function loadBundle(doc: Document = document): LoadedBundle {
     // A source link is a fixed snapshot: polling and lazy API reads could replace its text.
     if (snapshot) {
       const file = params.get("file");
-      if (file && !(file in bundle.files))
+      const files = params.get("side") === "base" ? bundle.baseFiles : bundle.files;
+      if (file && !(file in (files ?? {})))
         throw new Error(
           `Source file "${file}" is not included in snapshot "${snapshot}". It may have been loaded only in the previous page. Reopen the live guide to load and search it again.`,
         );
       if (file && !params.get("source-hash"))
         throw new Error(`Source link for "${file}" has no file hash. Reopen search in the guide.`);
-      if (file && hashText(bundle.files[file]!) !== params.get("source-hash"))
+      if (file && hashText(files![file]!) !== params.get("source-hash"))
         throw new Error(
           `Source file "${file}" changed within snapshot "${snapshot}". Reopen search in the available guide.`,
         );

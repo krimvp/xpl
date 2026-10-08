@@ -126,8 +126,14 @@ export function watchUrl(
       const params = new URLSearchParams(next);
       if (params.has("snapshot")) {
         const file = params.get("file");
-        if (file !== new URLSearchParams(search).get("file") || !params.has("source-hash")) {
-          const text = file ? state.files[file] : undefined;
+        const previous = new URLSearchParams(search);
+        if (
+          file !== previous.get("file") ||
+          params.get("side") !== previous.get("side") ||
+          !params.has("source-hash")
+        ) {
+          const files = params.get("side") === "base" ? state.baseFiles : state.files;
+          const text = file ? files?.[file] : undefined;
           if (text === undefined) params.delete("source-hash");
           else params.set("source-hash", hashText(text));
           next = `?${params.toString().replace(/%3A/gi, ":")}`;
