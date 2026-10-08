@@ -4,7 +4,14 @@
  * worked overview (global-setup.ts).
  */
 import { expect, test } from "@playwright/test";
-import { ARCHITECTURE_BUNDLE, openBundle, stateOf, TS_BUNDLE } from "./helpers.js";
+import {
+  ARCHITECTURE_BUNDLE,
+  openBundle,
+  readEmbeddedBundle,
+  stateOf,
+  TS_BUNDLE,
+  withBundle,
+} from "./helpers.js";
 
 const box = (page: import("@playwright/test").Page, id: string) =>
   page.locator(`.diagram [data-element-id="${id}"]`).first();
@@ -180,5 +187,68 @@ test.describe("architecture maps", () => {
       /is-container/,
     );
     await expect.poll(async () => (await stateOf(page)).include).toEqual(include);
+  });
+
+  for (const [perspective, caption] of [
+    ["explore", ".diagram-caption"],
+    ["map", ".workspace-caption"],
+  ] as const) {
+    test(`a phone reader expands and folds the service in ${perspective}`, async ({ page }) => {
+      await page.setViewportSize({ width: 390, height: 844 });
+      await page.goto(ARCHITECTURE_BUNDLE.href + `?perspective=${perspective}&view=view:system`);
+      await page.waitForFunction(() => window.__xpl !== undefined);
+      const include = (await stateOf(page)).include;
+      const expand = page.locator(caption).getByRole("button", {
+        name: "Show parts of Job runner here",
+      });
+      await expect(expand).toBeVisible();
+      const bounds = await expand.boundingBox();
+      expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(390);
+      await page.locator('[data-element-id="grp:operator"]').first().click();
+      await expect(expand).toBeVisible();
+      await expand.click();
+      const service = page.locator('[data-element-id="grp:job-runner"]').first();
+      await expect(service).toHaveClass(/is-container/);
+      await expect(service.locator(".node:not(.ghost)")).toHaveCount(5);
+      const fold = page.locator(caption).getByRole("button", { name: "Fold Job runner back" });
+      await fold.click();
+      await expect(service).not.toHaveClass(/is-container/);
+      await expand.focus();
+      await expect(expand).toBeFocused();
+      await page.keyboard.press("Enter");
+      await expect(service).toHaveClass(/is-container/);
+      await expect.poll(async () => (await stateOf(page)).include).toEqual(include);
+    });
+  }
+
+  test("a phone map offers its sole expandable box after another map was expanded", async ({
+    page,
+  }) => {
+    const { html, bundle } = readEmbeddedBundle(ARCHITECTURE_BUNDLE);
+    const explainer = bundle.explainer as {
+      nodes: { id: string; opens?: string }[];
+      views: { id: string; include: string[] }[];
+    };
+    explainer.nodes.find((node) => node.id === "grp:scheduling")!.opens = "view:scheduling-parts";
+    const overview = explainer.views.find((view) => view.id === "view:overview")!;
+    explainer.views.push({
+      ...overview,
+      id: "view:scheduling-parts",
+      include: ["file:jobrunner/runner.py", "file:jobrunner/queue.py"],
+    });
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.route("http://xpl.test/**", (route) =>
+      route.fulfill({ contentType: "text/html", body: withBundle(html, bundle) }),
+    );
+    await page.goto("http://xpl.test/?mode=explore&view=view:system");
+    await page.waitForFunction(() => window.__xpl !== undefined);
+    await page.getByRole("button", { name: "Show parts of Job runner here" }).click();
+    await expect(box(page, "grp:job-runner")).toHaveClass(/is-container/);
+    await page.evaluate(() => window.__xpl!.setView("view:overview"));
+    await expect(page.locator('.diagram[data-view-id="view:overview"]')).toBeVisible();
+    const expand = page.getByRole("button", { name: "Show parts of Scheduling here" });
+    await expect(expand).toBeVisible();
+    await expand.click();
+    await expect(box(page, "grp:scheduling")).toHaveClass(/is-container/);
   });
 });
