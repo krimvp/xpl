@@ -439,6 +439,111 @@ test.describe("keys", () => {
 });
 
 test.describe("the address bar", () => {
+  test("a linked Guide step survives direct load and refresh, with a way to continue", async ({
+    page,
+  }) => {
+    const { html, bundle } = readEmbeddedBundle();
+    const data = bundle as Loose;
+    data.guideId = "repository";
+    data.guides = [
+      {
+        guideId: "retry.json",
+        explainer: { ...data.explainer, title: "Retry subsystem" },
+        index: data.index,
+        files: data.files,
+      },
+    ];
+    await page.route("http://xpl.test/**", (route) =>
+      route.fulfill({ contentType: "text/html", body: withBundle(html, data) }),
+    );
+    await page.goto(
+      "http://xpl.test/?guide=retry.json&perspective=guide&tour=tour:intro&step-id=t2",
+    );
+    await page.waitForFunction(() => window.__xpl !== undefined);
+    await expect(page.locator(".header .title")).toHaveText("Retry subsystem");
+    const target = page.locator('[data-section-id="t2"]');
+    await expect(target).toBeInViewport();
+    await expect(target.locator("h3")).toBeFocused();
+    await expect(target.getByRole("button", { name: "Continue from this step" })).toBeVisible();
+    const stepLink = target.getByRole("link", { name: /Link to step 2: Where failures go/ });
+    const link = new URL((await stepLink.getAttribute("href"))!);
+    expect(link.searchParams.get("perspective")).toBe("guide");
+    expect(link.searchParams.get("guide")).toBe("retry.json");
+    expect(link.searchParams.get("tour")).toBe("tour:intro");
+    expect(link.searchParams.get("step-id")).toBe("t2");
+    await page.reload();
+    await expect(page.locator(".header .title")).toHaveText("Retry subsystem");
+    await expect(target).toBeInViewport();
+    await expect(target.locator("h3")).toBeFocused();
+    await target.getByRole("button", { name: "Continue from this step" }).click();
+    await expect(present(page)).toBeVisible();
+    await expect(counter(page)).toHaveText("2 / 2");
+  });
+
+  test("opening a source file keeps focus on its file row in a linked Guide", async ({ page }) => {
+    await open(page, "?perspective=guide&tour=tour:intro&step-id=t2");
+    const target = page.locator('[data-section-id="t2"]');
+    await expect(target.locator("h3")).toBeFocused();
+    await page.getByRole("button", { name: "Show source" }).click();
+    const file = page.locator('.tree-row.is-file[data-path="src/queue.ts"]');
+    await file.click();
+    await expect(file).toBeFocused();
+    await expect(target.locator("h3")).not.toBeFocused();
+  });
+
+  test("a stale linked step explains the fallback to the Guide", async ({ page }) => {
+    await open(page, "?perspective=guide&tour=tour:intro&step-id=removed-step&step=2");
+    await expect(page.getByRole("alert")).toContainText("linked step is no longer in this guide");
+    await expect(page.getByRole("alert")).toBeFocused();
+    await expect(page.getByTestId("guide")).toBeVisible();
+    await expect(page.locator('[data-section-id="t2"]')).not.toBeInViewport();
+  });
+
+  test("changing tours clears the old linked-step warning", async ({ page }) => {
+    await openVariant(
+      page,
+      (bundle) => {
+        bundle.explainer.tours.push({
+          ...bundle.explainer.tours[0],
+          id: "tour:other",
+          title: "Other tour",
+          steps: [{ ...bundle.explainer.tours[0].steps[0], id: "other-step" }],
+        });
+      },
+      "?perspective=guide&tour=tour:intro&step-id=removed-step",
+    );
+    await expect(page.getByRole("alert")).toContainText("linked step is no longer in this guide");
+    await page.getByTestId("guide-tour-picker").selectOption("tour:other");
+    await expect(page.getByRole("heading", { name: "Other tour" })).toBeVisible();
+    await expect(page.getByRole("alert")).toHaveCount(0);
+  });
+
+  test("a removed linked tour still explains the fallback when no tours remain", async ({
+    page,
+  }) => {
+    await openVariant(
+      page,
+      (bundle) => {
+        bundle.explainer.tours = [];
+      },
+      "?perspective=guide&tour=tour:removed&step-id=t2",
+    );
+    await expect(page.getByRole("alert")).toContainText("linked guide is no longer available");
+    await expect(page.getByRole("alert")).toBeFocused();
+  });
+
+  test("a same-page Search step link focuses the heading and offers Continue", async ({ page }) => {
+    await open(page, "?perspective=guide");
+    await page.getByRole("button", { name: "Search and guides" }).click();
+    const panel = page.getByRole("dialog", { name: "Search and guides" });
+    await panel.getByRole("searchbox", { name: "Search this snapshot" }).fill("Where failures go");
+    await panel.locator('[data-kind="step"]').first().click();
+    await expect(page).toHaveURL(/step-id=t2/);
+    const target = page.locator('[data-section-id="t2"]');
+    await expect(target.locator("h3")).toBeFocused();
+    await expect(target.getByRole("button", { name: "Continue from this step" })).toBeVisible();
+  });
+
   test("?mode=present&tour=<id>&step=<n> opens that step; the URL follows the steps and Esc", async ({
     page,
   }) => {
