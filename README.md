@@ -16,6 +16,10 @@ npm install --global @krimvp/xpl
 xpl skill install
 ```
 
+For shell completion, add `source <(xpl completion bash)` to `~/.bashrc`, or
+`source <(xpl completion zsh)` to `~/.zshrc` after `compinit`. For fish, run
+`xpl completion fish > ~/.config/fish/completions/xpl.fish`.
+
 Claude Code is the default target. For Codex, Pi, Factory Droid or Devin, select the harness with
 `xpl skill install --agent <name>`. Codex, Pi and Droid install to `~/.agents/skills/code-explainer`;
 Devin installs to the project `.agents/skills/code-explainer`. Use `--dir <path>` to choose a destination

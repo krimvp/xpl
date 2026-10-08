@@ -16,6 +16,7 @@ import { draftCommand } from "./commands/draft.js";
 import { feedbackCommand } from "./commands/feedback.js";
 import { doctorCommand } from "./commands/doctor.js";
 import { skillCommand } from "./commands/skill.js";
+import { completionCommand } from "./commands/completion.js";
 import { lintCommand } from "./commands/lint.js";
 import { newCommand } from "./commands/new.js";
 import { outlineCommand } from "./commands/outline.js";
@@ -65,6 +66,7 @@ export const COMMANDS: readonly CommandSpec[] = [
   stageCommand,
   doctorCommand,
   skillCommand,
+  completionCommand(() => COMMANDS),
 ];
 
 const defaultIo: Io = {
