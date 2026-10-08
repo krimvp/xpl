@@ -1226,7 +1226,7 @@ export function draftChange(input: DraftInput, change: ChangeRecord): Draft {
         todo("what the tests cover, as a plain statement"),
         todo("which test checks each behavior change, and whether the new branches are tested."),
         untested.length > 0
-          ? `No indexed test matched ${nameList(untested)} by name: ${todo("check changed test files for coverage through other code.")}`
+          ? `No indexed test reference found for ${nameList(untested)}: ${todo("check changed test files for coverage through other code.")}`
           : "",
       ),
       testAnchors.length > 0
@@ -1276,7 +1276,7 @@ export function draftChange(input: DraftInput, change: ChangeRecord): Draft {
           todo(
             `what the tests cover (${newTests} new test functions` +
               (untested.length > 0
-                ? `; no indexed test matched ${plural(untested.length, "changed symbol")} by name).`
+                ? `; no indexed test reference found for ${plural(untested.length, "changed symbol")}).`
                 : ")."),
           ),
         ].join(" "),

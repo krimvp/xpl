@@ -209,9 +209,9 @@ describe("xpl change", () => {
 
     const change = await xpl(dir, "change", "demo", "HEAD~1..HEAD");
     expect(change.code).toBe(0);
-    expect(change.out).toContain("tests: no indexed test matches this symbol by name");
+    expect(change.out).toContain("tests: no indexed test reference found");
     expect(change.out).toContain(
-      "No indexed test matched 1 changed symbol by name: sym:src/engine.py#normalize",
+      "No indexed test reference found for 1 changed symbol: sym:src/engine.py#normalize",
     );
     expect(change.out).toContain("test files the change touches (1):\n  tests/test_service.py");
     const structured = await xplJson<{
@@ -230,16 +230,19 @@ describe("xpl change", () => {
     ]);
 
     const help = await invoke(["change", "--help"]);
-    expect(help.out).toContain("a missing match does not mean the behavior has no test");
+    expect(help.out).toContain("class counts too");
+    expect(help.out).toContain("A missing reference does not mean the behavior has no test");
     expect(help.out).toContain("changed test files are listed separately");
 
     const drafted = await xplJson<{ patch: ExplainerPatch }>(dir, "draft", "change", "demo");
     expect(drafted.code).toBe(0);
     const patch = drafted.json.patch;
     const testStep = patch.tours![0]!.steps!.find((step) => step.note?.includes("indexed test"));
-    expect(testStep?.note).toContain("No indexed test matched `normalize` by name");
+    expect(testStep?.note).toContain("No indexed test reference found for `normalize`");
     expect(testStep?.note).toContain("whether the new branches are tested");
-    expect(patch.tours![0]!.summary).toContain("no indexed test matched 1 changed symbol by name");
+    expect(patch.tours![0]!.summary).toContain(
+      "no indexed test reference found for 1 changed symbol",
+    );
   });
 
   it("records the change with full SHAs, statuses and hunks, and prints the analysis", async () => {
@@ -293,7 +296,9 @@ describe("xpl change", () => {
     expect(r.out).toContain("sym:app.py#helper  (function, lines 17-18)  changed");
     expect(r.out).toContain("sym:app.py#App.handle  (method, lines 11-14)  changed at 12-14");
     expect(r.out).toContain("sym:tests/test_app.py#test_app  (changed, uses its class)");
-    expect(r.out).toContain("No indexed test matched 1 changed symbol by name: sym:new.py#fresh");
+    expect(r.out).toContain(
+      "No indexed test reference found for 1 changed symbol: sym:new.py#fresh",
+    );
     expect(r.out).toContain(
       "changed lines outside any symbol (imports, module-level code):\n  app.py: 1",
     );
