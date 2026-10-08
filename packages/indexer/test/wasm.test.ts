@@ -34,6 +34,11 @@ const SAMPLES: Record<GrammarId, { source: string; root: string; contains: strin
     root: "source_file",
     contains: ["function_declaration"],
   },
+  java: {
+    source: "package demo;\nclass Runner { void run() {} }\n",
+    root: "program",
+    contains: ["class_declaration", "method_declaration"],
+  },
   yaml: {
     source: "retry:\n  maxRetries: 3\n",
     root: "stream",

@@ -188,6 +188,7 @@ export type FileLanguage =
   | "javascript"
   | "python"
   | "go"
+  | "java"
   | "rust"
   | "yaml"
   | "json"

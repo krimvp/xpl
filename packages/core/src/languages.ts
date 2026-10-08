@@ -7,6 +7,7 @@ export const CODE_LANGUAGE_NAMES: Readonly<Record<FileLanguage, string | undefin
   javascript: "JavaScript",
   python: "Python",
   go: "Go",
+  java: "Java",
   rust: "Rust",
   yaml: undefined,
   json: undefined,

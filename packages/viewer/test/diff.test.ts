@@ -243,6 +243,7 @@ describe("the files in a change", () => {
     // a pure rename removes nothing
     expect(needsBase(record, "src/b.ts")).toBe(false);
     expect(languageOfPath("src/old.ts")).toBe("typescript");
+    expect(languageOfPath("src/Main.java")).toBe("java");
     expect(languageOfPath("README")).toBe("text");
   });
 

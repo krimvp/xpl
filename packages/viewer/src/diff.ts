@@ -384,6 +384,8 @@ export function languageOfPath(path: FilePath): import("@xpl/core").FileLanguage
       return "rust";
     case ".go":
       return "go";
+    case ".java":
+      return "java";
     case ".yaml":
     case ".yml":
       return "yaml";

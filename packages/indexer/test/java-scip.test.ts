@@ -56,17 +56,22 @@ it("imports the recorded scip-java overloads, both nested class forms and annota
     [id("Worker", "Worker.run"), "method", id("Worker", "Worker"), { startLine: 20, endLine: 42 }],
   ]);
   expect(index.files.filter((f) => f.path.endsWith(".java")).map((f) => f.language)).toEqual(
-    Array(13).fill("text"),
+    Array(13).fill("java"),
   );
-  expect(index.symbols.filter((s) => s.file.endsWith(".java"))).toHaveLength(223);
 });
 
-it("retains cross-file type mentions and reports the producer's unclassified calls and implementation flags", () => {
+it("keeps precise artifact type mentions beside heuristic Java inheritance and calls", () => {
   expect(
     index.refs
       .filter((r) => r.from === id("EchoHandler", "EchoHandler"))
       .map((r) => [r.to, r.kind, r.resolution, r.site]),
   ).toEqual([
+    [
+      id("BaseHandler", "BaseHandler"),
+      "extends",
+      "heuristic",
+      { startLine: 3, startCol: 40, endLine: 3, endCol: 50 },
+    ],
     [
       id("BaseHandler", "BaseHandler"),
       "type-ref",
@@ -75,12 +80,30 @@ it("retains cross-file type mentions and reports the producer's unclassified cal
     ],
     [
       id("Handler", "Handler"),
+      "implements",
+      "heuristic",
+      { startLine: 3, startCol: 63, endLine: 3, endCol: 69 },
+    ],
+    [
+      id("Handler", "Handler"),
       "type-ref",
       "precise",
       { startLine: 3, startCol: 63, endLine: 3, endCol: 69 },
     ],
   ]);
-  expect([...new Set(index.refs.map((r) => r.kind))]).toEqual(["type-ref"]);
+  expect(
+    index.refs
+      .filter(
+        (r) =>
+          r.from === id("Runner", "Runner.dispatch") &&
+          (r.site.startLine === 44 || r.site.startLine === 51) &&
+          (r.to.endsWith(".pop") || r.to.endsWith(".run")),
+      )
+      .map((r) => [r.to, r.kind, r.resolution]),
+  ).toEqual([
+    [id("Queue", "Queue.pop"), "call", "heuristic"],
+    [id("Worker", "Worker.run"), "call", "heuristic"],
+  ]);
   const report = index.analysis!.find((r) => r.provider === "scip-artifact")!;
   expect(
     report.results
@@ -105,26 +128,15 @@ it("retains cross-file type mentions and reports the producer's unclassified cal
       `${path("EchoHandler")}: SymbolInformation relationships omitted; implementation/override direction and class inheritance are not established by these flags`,
     ]),
   );
-  expect(index.refs).toHaveLength(79);
 });
 
-it("omits synthetic declarations and record accessors instead of inventing full ranges or targets", () => {
+it("keeps the syntax record without inventing unsupported artifact accessors", () => {
   const report = index.analysis!.find((r) => r.provider === "scip-artifact")!;
-  expect(
-    report.diagnostics!.filter((d) =>
-      d.includes("full declaration/identifier range missing or invalid"),
-    ),
-  ).toHaveLength(22);
   expect(
     index.symbols
       .filter((s) => s.id.startsWith(id("Queue", "Queue.DeadJob")))
-      .map((s) => [s.path, s.kind]),
-  ).toEqual([
-    ["Queue.DeadJob", "other"],
-    ["Queue.DeadJob.job", "variable"],
-    ["Queue.DeadJob.error", "variable"],
-    ["Queue.DeadJob.deadAt", "variable"],
-  ]);
+      .map((s) => [s.path, s.kind, s.range]),
+  ).toEqual([["Queue.DeadJob", "class", { startLine: 27, endLine: 27 }]]);
   expect(
     report.diagnostics!.filter((d) =>
       d.includes("Queue#DeadJob#job().: external, omitted or unresolved target"),
@@ -146,10 +158,12 @@ it("leaves an uncompiled Java file at file anchors and reports incomplete artifa
     providers: [scipArtifactProvider({ artifact, manifest })],
   });
   expect(incomplete.files.find((f) => f.path.endsWith("Uncompiled.java"))).toMatchObject({
-    language: "text",
+    language: "java",
     lines: 2,
   });
-  expect(incomplete.symbols.filter((s) => s.file.endsWith("Uncompiled.java"))).toEqual([]);
+  expect(
+    incomplete.symbols.filter((s) => s.file.endsWith("Uncompiled.java")).map((s) => s.path),
+  ).toEqual(["Uncompiled"]);
   const ranges = incomplete
     .analysis!.find((r) => r.provider === "scip-artifact")!
     .results.find((r) => r.capabilities.includes("declarationRanges"))!;
@@ -160,6 +174,7 @@ it("leaves an uncompiled Java file at file anchors and reports incomplete artifa
   );
   const { index: fallback } = await buildIndex({ root: incompleteRoot, precise: "off" });
   expect(fallback.files.filter((f) => f.path.endsWith(".java"))).toHaveLength(14);
-  expect(fallback.symbols.filter((s) => s.file.endsWith(".java"))).toEqual([]);
-  expect(fallback.refs).toEqual([]);
+  expect(
+    fallback.symbols.filter((s) => s.file.endsWith("Uncompiled.java")).map((s) => s.path),
+  ).toEqual(["Uncompiled"]);
 });

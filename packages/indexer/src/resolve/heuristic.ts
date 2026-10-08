@@ -10,8 +10,8 @@
  *
  * 1. no qualifier: the lexical scope chain (nested functions, namespaces), then top-level symbols of the
  *    file, then import bindings (via `LanguagePack.resolveModule`, following re-exports), then
- *    `from x import *`-style star exports, then - for `packageScope: "directory"` languages (Go) - top-level
- *    symbols of the other files of the same directory. A name the pack marks `local` (a local, a parameter
+ *    `from x import *`-style star exports, then - for directory or named-package languages - top-level
+ *    symbols of other files in that directory or package. A name the pack marks `local` (a local, a parameter
  *    or a nested function binds it around the site) only resolves through the scope chain: a callback
  *    parameter `fact` is not the module's `fact`;
  * 2. qualifier `this` (`self`/receiver): a member of the enclosing class, then of its base classes;
@@ -25,7 +25,7 @@
  *    the facts of its own file give it (`bus = new EventBus()`);
  * 5. last resort, only when the receiver's type is completely unknown: a class named like the qualifier
  *    (case-insensitive) that has the member (`queue.pop()` -> `Queue.pop`), preferring the same file, then
- *    a class the file imports, then the same directory (for Go, the same package comes before the imports);
+ *    the same Go/Java package, then imports; file-scoped languages may use another file in the same directory;
  *    a class elsewhere in the repository is not taken, and ambiguity drops the site. Calls and writes only.
  *
  * A `read` site resolves the same way (1-4) but only to variables: package-level variables and constants,
@@ -176,7 +176,7 @@ interface Ctx {
 
 interface FileIndex {
   file: ResolverFile;
-  dir: string;
+  scopeKey: string;
   /** Symbols by pack-space path, in source order (duplicates share a key). */
   symbols: Map<string, IndexedSymbol[]>;
   bindings: Map<string, ImportBinding[]>;
@@ -210,7 +210,7 @@ function pushTo<K, V>(map: Map<K, V[]>, key: K, value: V): void {
 
 class Resolver {
   private readonly files = new Map<FilePath, FileIndex>();
-  private readonly byDir = new Map<string, FileIndex[]>();
+  private readonly byScope = new Map<string, FileIndex[]>();
   private readonly classesByLowerName = new Map<string, IndexedSymbol[]>();
   private readonly ownersOfMembers = new Set<SymbolId>();
   private readonly baseSites = new Map<SymbolId, { ctx: Ctx; site: SiteDraft }[]>();
@@ -230,9 +230,13 @@ class Resolver {
 
   constructor(private readonly input: ResolverInput) {
     for (const file of input.files) {
+      const scopeKey =
+        file.pack.packageScope === "named"
+          ? `${file.pack.id}\0${file.pack.packageName!(file.path, input.repo)}`
+          : dirOf(file.path);
       const index: FileIndex = {
         file,
-        dir: dirOf(file.path),
+        scopeKey,
         symbols: new Map(),
         bindings: new Map(),
         exportsByName: new Map(),
@@ -252,10 +256,10 @@ class Resolver {
         else pushTo(index.vars, `${fact.scopePath}\0${fact.name}`, fact);
       }
       this.files.set(file.path, index);
-      pushTo(this.byDir, index.dir, index);
+      pushTo(this.byScope, index.scopeKey, index);
     }
     // the files of a default build first: a package's other variants declare the same names
-    for (const list of this.byDir.values()) {
+    for (const list of this.byScope.values()) {
       const off = new Set(list.filter((f) => this.isOffByDefault(f.file)));
       if (off.size > 0) list.sort((a, b) => Number(off.has(a)) - Number(off.has(b)));
     }
@@ -345,6 +349,7 @@ class Resolver {
   // ── imports ────────────────────────────────────────────────────────────────────────────────────
 
   private resolveBinding(file: ResolverFile, binding: ImportBinding): void {
+    if (binding.implicit) return;
     const ctx = this.contextAt(file, binding.site);
     const entity = this.bindingEntity(file.path, binding);
     const kind = binding.typeOnly ? "type-ref" : "import";
@@ -506,13 +511,13 @@ class Resolver {
     return chain;
   }
 
-  /** A symbol by pack-space path in `file`, or - for directory-scoped languages - in the same package. */
+  /** A symbol by pack-space path in `file`, or in its directory/named package when shared. */
   private lookupPath(file: FilePath, path: string, want: Want): IndexedSymbol | undefined {
     const index = this.files.get(file);
     if (!index) return undefined;
     const own = this.pick(index.symbols.get(path), want);
-    if (own || index.file.pack.packageScope !== "directory") return own;
-    for (const other of this.byDir.get(index.dir) ?? []) {
+    if (own || index.file.pack.packageScope === "file") return own;
+    for (const other of this.byScope.get(index.scopeKey) ?? []) {
       if (other === index) continue;
       const found = this.pick(other.symbols.get(path), want);
       if (found) return found;
@@ -586,8 +591,8 @@ class Resolver {
       const found = this.exported(this.modules(file, star.module!), name, want, new Set());
       if (found) return found;
     }
-    if (index.file.pack.packageScope === "directory") {
-      for (const other of this.byDir.get(index.dir) ?? []) {
+    if (index.file.pack.packageScope !== "file") {
+      for (const other of this.byScope.get(index.scopeKey) ?? []) {
         if (other === index) continue;
         const found = this.pick(other.symbols.get(name), want);
         if (found) return { k: "sym", sym: found };
@@ -892,9 +897,9 @@ class Resolver {
     if (seen.has(sym.id) || level > MAX_BASE_DEPTH) return undefined;
     seen.add(sym.id);
     const files = [sym.file];
-    const packageWide = this.files.get(sym.file)?.file.pack.packageScope === "directory";
+    const packageWide = this.files.get(sym.file)?.file.pack.packageScope !== "file";
     if (packageWide)
-      for (const other of this.byDir.get(this.files.get(sym.file)!.dir) ?? [])
+      for (const other of this.byScope.get(this.files.get(sym.file)!.scopeKey) ?? [])
         if (other.file.path !== sym.file) files.push(other.file.path);
     const scope = this.basePath(sym);
     for (const path of files) {
@@ -1091,22 +1096,21 @@ class Resolver {
   }
 
   /**
-   * Closeness of a candidate class to the site: same file, imported by the file, same directory, elsewhere (3,
-   * never taken). For
-   * a language whose package is the directory (Go), the same directory is the file's own package: it comes
-   * before what the file imports.
+   * Closeness of a candidate class to the site: same file, same package when shared, imported by the file,
+   * same directory for file-scoped languages, then elsewhere (never taken).
    */
   private rank(cls: IndexedSymbol, ctx: Ctx): number {
     if (cls.file === ctx.file) return 0;
     const index = this.files.get(ctx.file)!;
-    const sameDir = dirOf(cls.file) === index.dir;
-    const packageDir = index.file.pack.packageScope === "directory";
-    if (sameDir && packageDir) return 1;
+    const sameDir = dirOf(cls.file) === dirOf(ctx.file);
+    const samePackage = this.files.get(cls.file)?.scopeKey === index.scopeKey;
+    const packageWide = index.file.pack.packageScope !== "file";
+    if (samePackage && packageWide) return 1;
     for (const bindings of index.bindings.values()) {
       for (const binding of bindings)
-        if (this.modules(ctx.file, binding.module).includes(cls.file)) return packageDir ? 2 : 1;
+        if (this.modules(ctx.file, binding.module).includes(cls.file)) return packageWide ? 2 : 1;
     }
-    return sameDir ? 2 : 3;
+    return index.file.pack.packageScope === "file" && sameDir ? 2 : 3;
   }
 }
 

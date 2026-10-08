@@ -37,6 +37,41 @@ const graph = (patch: ExplainerPatch, id: string) =>
   patch.views!.find((v) => v.id === id) as GraphView | undefined;
 
 describe("xpl draft repo: one service and what it relies on", () => {
+  it("shows Spring clients and PostgreSQL from Java imports", async () => {
+    const project = makeTempDir("xpl-java-shop-");
+    writeFile(project, "README.md", "# shop\n\nA Java web application.\n");
+    writeFile(
+      project,
+      "pom.xml",
+      "<project><parent><groupId>org.springframework.boot</groupId></parent><groupId>dev.shop</groupId></project>\n",
+    );
+    writeFile(
+      project,
+      "src/main/java/dev/shop/OrderController.java",
+      "package dev.shop;\nimport org.springframework.boot.web.servlet.ServletRegistrationBean;\nimport org.postgresql.ds.PGSimpleDataSource;\nimport dev.shop.OrderStore;\nclass OrderController { ServletRegistrationBean<?> servlet; PGSimpleDataSource db; OrderStore store; }\n",
+    );
+    writeFile(
+      project,
+      "src/main/java/dev/shop/OrderStore.java",
+      "package dev.shop; class OrderStore {}\n",
+    );
+    const { patch } = await drafted(project);
+    const service = patch.nodes!.find((node) => node.role === "service")!;
+    expect(graph(patch, "view:system")?.include).toEqual([
+      "grp:clients",
+      service.id,
+      "grp:postgres",
+    ]);
+    expect(service.tech).toBe("Java");
+    expect(patch.nodes?.find((node) => node.id === "grp:postgres")?.anchors).toEqual([
+      {
+        file: "src/main/java/dev/shop/OrderController.java",
+        span: { from: 2, to: 2 },
+        role: "usage",
+      },
+    ]);
+  });
+
   it("asks whether an imported integration is on the default path in the saved patch", async () => {
     const project = makeTempDir("xpl-optional-integration-");
     writeFile(project, "README.md", "# worker\n\nProcesses jobs.\n");
