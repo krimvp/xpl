@@ -197,6 +197,8 @@ test.describe("architecture maps", () => {
       await expect(expand).toBeVisible();
       const bounds = await expand.boundingBox();
       expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(390);
+      await page.locator('[data-element-id="grp:operator"]').first().click();
+      await expect(expand).toBeVisible();
       await expand.click();
       const service = page.locator('[data-element-id="grp:job-runner"]').first();
       await expect(service).toHaveClass(/is-container/);
