@@ -181,4 +181,34 @@ test.describe("architecture maps", () => {
     );
     await expect.poll(async () => (await stateOf(page)).include).toEqual(include);
   });
+
+  for (const [perspective, caption] of [
+    ["explore", ".diagram-caption"],
+    ["map", ".workspace-caption"],
+  ] as const) {
+    test(`a phone reader expands and folds the service in ${perspective}`, async ({ page }) => {
+      await page.setViewportSize({ width: 390, height: 844 });
+      await page.goto(ARCHITECTURE_BUNDLE.href + `?perspective=${perspective}&view=view:system`);
+      await page.waitForFunction(() => window.__xpl !== undefined);
+      const include = (await stateOf(page)).include;
+      const expand = page.locator(caption).getByRole("button", {
+        name: "Show parts of Job runner here",
+      });
+      await expect(expand).toBeVisible();
+      const bounds = await expand.boundingBox();
+      expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(390);
+      await expand.click();
+      const service = page.locator('[data-element-id="grp:job-runner"]').first();
+      await expect(service).toHaveClass(/is-container/);
+      await expect(service.locator(".node:not(.ghost)")).toHaveCount(5);
+      const fold = page.locator(caption).getByRole("button", { name: "Fold Job runner back" });
+      await fold.click();
+      await expect(service).not.toHaveClass(/is-container/);
+      await expand.focus();
+      await expect(expand).toBeFocused();
+      await page.keyboard.press("Enter");
+      await expect(service).toHaveClass(/is-container/);
+      await expect.poll(async () => (await stateOf(page)).include).toEqual(include);
+    });
+  }
 });

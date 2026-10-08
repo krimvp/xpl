@@ -796,6 +796,17 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.mobile-expand-action {
+  display: none;
+  max-width: 26ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+@media (max-width: 760px) {
+  .mobile-expand-action {
+    display: inline-block;
+  }
+}
 /* a11y: the maps a box on this one opens, as plain links under the title (manager V4) */
 .caption-insides {
   display: flex;

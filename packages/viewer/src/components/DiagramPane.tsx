@@ -7,6 +7,7 @@ import { ErrorBoundary } from "./ErrorBoundary.js";
 import { GraphView } from "./GraphView.js";
 import { GraphAuthor } from "./GraphAuthor.js";
 import { FlowDiagram } from "./FlowDiagram.js";
+import { ExpandInPlaceAction } from "./ExpandInPlaceAction.js";
 import { FoldBackAction } from "./FoldBackAction.js";
 import { SequenceView } from "./SequenceView.js";
 import { ZoomTrail } from "./ZoomTrail.js";
@@ -36,7 +37,10 @@ export function DiagramPane() {
         <span className="caption-title">{view.title}</span>
         {question && <span className="caption-question">{question}</span>}
         {view.type === "graph" && derived.view.graph && (
-          <FoldBackAction visibleIds={derived.view.graph.nodes.map((node) => node.id)} />
+          <>
+            <ExpandInPlaceAction nodes={derived.view.graph.nodes} />
+            <FoldBackAction visibleIds={derived.view.graph.nodes.map((node) => node.id)} />
+          </>
         )}
         {view.type === "graph" && <GraphAuthor key={view.id} view={view} />}
       </div>

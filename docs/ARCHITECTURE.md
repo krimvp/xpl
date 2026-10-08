@@ -2627,9 +2627,11 @@ status stays in the sticky Save/Cancel bar, including the disabled Save reason.
   view (`GraphNode.expandable`) also offers "Show the inside here": `store.toggleExpanded` adds it to
   `state.expanded`, and the view is drawn through `expandInPlace` (core `levels.ts`), with the boxes of the
   view it opens added, so the parts of a service sit inside its box and their arrows cross its border; its
-  collapse button folds it back. If the expanded box extends past the visible pane at readable zoom, a
-  caption button also folds the most recently expanded box on that map by pointer or keyboard. Neither
-  action changes the stored view or pins. Every box has an icon left of its label
+  collapse button folds it back. At 760 px and narrower, the caption offers "Show parts of [box] here"
+  for the sole expandable box on the map, or for a selected one when several can open. The action stays
+  reachable when that box's SVG corner is outside the pane. If an expanded box extends past the visible
+  pane at readable zoom, a caption button also folds the most recently expanded box on that map by pointer
+  or keyboard. Neither action changes the stored view or pins. Every box has an icon left of its label
   (`components/icons.tsx`): its role, else the kind of code (folder, file, group, a letter per symbol kind).
   Not while presenting. Pan by dragging, zoom with
   the wheel, the buttons or `+`/`-`, and "Fit" (or `0`). Maps with saved pins keep at least zoom 0.9 on load and
