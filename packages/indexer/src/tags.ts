@@ -24,6 +24,11 @@ interface TagsProfile {
   kinds: Readonly<Record<string, IndexedSymbol["kind"]>>;
   methodParents: readonly string[];
   label(tag: string, name: string, context?: string): string;
+  scope?(
+    tag: string,
+    node: Node,
+    root: Node,
+  ): { endIndex: number; range: ProviderRange } | undefined;
   limitations: string[];
   calls?: {
     extract(
@@ -122,6 +127,7 @@ export class TagsProvider implements IndexProvider {
               const parent = stack.at(-1);
               const kind = this.profile.kinds[tag.tag] ?? KINDS[tag.tag];
               if (!kind) continue;
+              const scope = this.profile.scope?.(tag.tag, tag.node, tree.rootNode);
               const declaration: ProviderDeclaration = {
                 identity: `${source.path}:${tag.node.startIndex}:${tag.node.endIndex}`,
                 file: source.path,
@@ -135,11 +141,11 @@ export class TagsProvider implements IndexProvider {
                 ...(tag.name.startPosition.row === tag.name.endPosition.row
                   ? { identifier: range(tag.name) }
                   : {}),
-                declaration: range(tag.node),
+                declaration: scope?.range ?? range(tag.node),
                 ...(parent ? { parent: parent.declaration.identity } : {}),
               };
               declarations.push(declaration);
-              stack.push({ end: tag.node.endIndex, declaration, tag: tag.tag });
+              stack.push({ end: scope?.endIndex ?? tag.node.endIndex, declaration, tag: tag.tag });
             }
             const errors = significantSyntaxErrors(source.path, findSyntaxErrors(tree.rootNode));
             return {

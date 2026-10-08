@@ -124,6 +124,8 @@ See [Architecture maps](https://krimvp.github.io/xpl/docs/workflows/explain/).
 xpl indexes TypeScript, JavaScript, Python, Go and Java, plus YAML, JSON and TOML keys. Ruby has
 source-backed class, module, method and constant declarations without relationship analysis. Java references
 are heuristic unless you import a checked SCIP artifact; heuristic edges are partial and need review.
+PHP has source-backed declaration tags for namespaces, types, functions, methods and constants, with
+`refs: none` until a checked relationship source exists.
 References keep their precise or heuristic label. See [language support](https://krimvp.github.io/xpl/docs/concepts/languages/).
 
 ## Repository layout

@@ -19,7 +19,7 @@ describe("xpl index", () => {
     const help = await invoke(["index", "--help"]);
     expect(help.code).toBe(0);
     expect(help.out).toContain(
-      "`refs: none` (Ruby, yaml, json, toml, text without an artifact provider)",
+      "`refs: none` (Ruby, PHP, yaml, json, toml, text without an artifact provider)",
     );
   });
   it("writes .explainer/index-<commit>.json and prints path, commit and per-language summary", async () => {

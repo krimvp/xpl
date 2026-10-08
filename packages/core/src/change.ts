@@ -288,8 +288,13 @@ function blankOrComment(text: string, language: string | undefined): boolean {
     case "tsx":
     case "javascript":
     case "go":
+    case "php":
       return (
-        line.startsWith("//") || line.startsWith("/*") || line.startsWith("*") || line === "*/"
+        line.startsWith("//") ||
+        line.startsWith("/*") ||
+        line.startsWith("*") ||
+        line === "*/" ||
+        (language === "php" && line.startsWith("#"))
       );
     default:
       return false;

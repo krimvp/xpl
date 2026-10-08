@@ -142,6 +142,7 @@ async function smoke(io: Io): Promise<number> {
     python: { source: "x = 1\n", root: "module" },
     rust: { source: "fn main() {}\n", root: "source_file" },
     ruby: { source: "class Runner; end\n", root: "program" },
+    php: { source: "<?php class Runner {}\n", root: "program" },
     go: { source: "package main\n", root: "source_file" },
     java: { source: "class Main {}\n", root: "program" },
     yaml: { source: "a: 1\n", root: "stream" },
