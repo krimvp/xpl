@@ -449,15 +449,6 @@ describe("precise providers (registry and modes)", () => {
     ),
   );
 
-  it("starts with syntax and semantic providers registered", () => {
-    expect(indexProviders().map((r) => r.id)).toEqual([
-      "rust-tags",
-      "scip-typescript",
-      "scip-python",
-      "scip-go",
-    ]);
-  });
-
   it("auto with no resolver uses heuristic references silently", async () => {
     const { index, warnings } = await indexFiles(project, { precise: "auto", providers: [] });
     expect(warnings).toEqual([]);

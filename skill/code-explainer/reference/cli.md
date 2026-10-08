@@ -120,7 +120,7 @@ typescript  8 files    121 symbols   refs: precise (scip-typescript@0.4.0)
 yaml        1 file     16 symbols    refs: none
 ```
 
-Repeated builds reuse file-local tree-sitter pack and Rust tags facts from `.explainer/cache`. Source discovery,
+Repeated builds reuse file-local tree-sitter pack, Rust and Ruby tags facts from `.explainer/cache`. Source discovery,
 hashes, heuristic resolution, resource resolution and semantic providers still run in full. `--no-cache`
 reads and writes no cached facts. Changed paths/languages, exact source content, provider/profile revisions,
 options and actual grammar/runtime bytes change the key. Syntax recovery diagnostics are reused; failed
@@ -149,7 +149,7 @@ available, but symbol and relationship completeness cannot be inferred.
 Provider labels separate a file-only fallback's limits from an artifact provider's usable symbols.
 Tool commands and diagnostic details are omitted from these summaries.
 
-- The last column is how far a language's references can be trusted. `refs: precise (tool)`: SCIP resolved them (TypeScript, Python, Go). `refs: heuristic`: tree-sitter scope-aware guesses, drawn lighter in the viewer; confirm calls with `show`. Java's built-in pack also produces heuristic references; overloads, ambiguous names and inherited or runtime dispatch can make a target incomplete or wrong. `refs: none`: usually yaml, json, toml and text without an artifact provider. Rust tags provide partial named declarations, including struct and union fields and enum variants, lexical nesting and heuristic bare calls between unambiguous root-level functions in the same file. Tuple positions and macro-generated members have no symbol. Unknown/shadowed names, qualified/generic calls, nested functions, closures, methods, trait and cross-module dispatch remain unresolved. Bodies with macros or local imports and files with syntax errors do not produce calls; no macro expansion or cfg evaluation runs.
+- The last column is how far a language's references can be trusted. `refs: precise (tool)`: SCIP resolved them (TypeScript, Python, Go). `refs: heuristic`: tree-sitter scope-aware guesses, drawn lighter in the viewer; confirm calls with `show`. Java's built-in pack also produces heuristic references; overloads, ambiguous names and inherited or runtime dispatch can make a target incomplete or wrong. `refs: none`: Ruby, yaml, json, toml and text without an artifact provider. Ruby tags provide partial named classes, modules, methods and constant assignments with lexical nesting, but no relationship analysis. Rust tags provide partial named declarations, including struct and union fields and enum variants, lexical nesting and heuristic bare calls between unambiguous root-level functions in the same file. Tuple positions and macro-generated members have no symbol. Unknown/shadowed names, qualified/generic calls, nested functions, closures, methods, trait and cross-module dispatch remain unresolved. Bodies with macros or local imports and files with syntax errors do not produce calls; no macro expansion or cfg evaluation runs.
 - `refs: precise 10/11 (scip-go@0.2.7), 1 heuristic`: the tool described only 10 of the 11 files (build-tagged Go files, files a project's own configuration excludes). Those files keep heuristic references, so **their references are hints**; a warning above the summary names them: `warning: scip-go@0.2.7 did not describe 1 file(s) (excluded by build constraints or by the tool's own configuration, or unreadable?); their references stay heuristic: internal/queue/windows_only.go`.
 - `--precise auto` (default) falls back to heuristic with a warning, e.g. ``warning: precise resolver "scip-go" failed (scip-go@v0.2.7 could not be started (is `go` installed and on PATH?): spawn go ENOENT); using heuristic references for go``. `off` never runs SCIP (faster); syntax packs, including Java, still run. `require` exits 1 instead of falling back.
 - A file with syntax errors is indexed anyway. One warning covers all such files, with the first lines to look at: `warning: 1 file(s) have syntax errors; symbols near these lines may be incomplete: src/broken.ts:2` (at most 5 files and 3 lines each). Errors that cannot have cost a symbol (a TS labelled tuple element such as `[symbol: string]`) are not reported.
@@ -235,6 +235,11 @@ analysis report for omissions.
 
 Rust tags remain an experimental path. Read the saved capability results before writing graph claims. The
 pinned rust-analyzer producer's limitations are listed below.
+
+Ruby tags also report partial declarations. They capture direct class, module, method and constant syntax,
+but omit metaprogrammed declarations and all relationships. `--precise off` still runs them;
+`--precise require` fails without a Ruby precise provider. Ruby files appear in `search --code` and repository drafts,
+and their source opens as plain text in the viewer.
 
 Use `--precise off` for Rust. The measured rust-analyzer 0.3.2308 artifact supplies no full declaration
 ranges. Importing it currently removes tags in described files, produces no semantic edges, and can still
@@ -402,7 +407,7 @@ Base classes (TS, JS, Python; not Go, whose embedding does not dispatch) are hop
 
 ## `xpl search <pattern> [--regex] [-i] [--limit n] [--under <dir|glob>] [--code]`
 
-Line-by-line search of the working-tree text of every indexed file (substring, case-sensitive; `--regex` = JavaScript regex; `-i` ignores case). Hit: `<file>:<line>  <enclosing symbol id> +<offset>  <line text>`; outside every symbol it names the file (offset = line − 1). Code files come first, then config (yaml, json, toml), then docs and other text, so the first hits (`--limit`, default 50) are the code; the total is always counted. `--code` drops everything that is not code; Java (`.java`) and Rust (`.rs`) are included. `--under` keeps the search inside a directory, file or symbol (`dir:src/flask`, `src/flask/`, `file:src/app.py`, `sym:src/app.py#Flask`) or a glob on repo paths (`'tests/**'`, `'src/*.py'`); repeat it or comma-separate for several. The total is counted inside the scope.
+Line-by-line search of the working-tree text of every indexed file (substring, case-sensitive; `--regex` = JavaScript regex; `-i` ignores case). Hit: `<file>:<line>  <enclosing symbol id> +<offset>  <line text>`; outside every symbol it names the file (offset = line − 1). Code files come first, then config (yaml, json, toml), then docs and other text, so the first hits (`--limit`, default 50) are the code; the total is always counted. `--code` drops everything that is not code; Java (`.java`), Rust (`.rs`) and Ruby (`.rb`) are included. `--under` keeps the search inside a directory, file or symbol (`dir:src/flask`, `src/flask/`, `file:src/app.py`, `sym:src/app.py#Flask`) or a glob on repo paths (`'tests/**'`, `'src/*.py'`); repeat it or comma-separate for several. The total is counted inside the scope.
 
 ```
 $ xpl search "job.completed"
