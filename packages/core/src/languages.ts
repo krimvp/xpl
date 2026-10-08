@@ -10,6 +10,7 @@ export const CODE_LANGUAGE_NAMES: Readonly<Record<FileLanguage, string | undefin
   java: "Java",
   rust: "Rust",
   ruby: "Ruby",
+  php: "PHP",
   yaml: undefined,
   json: undefined,
   toml: undefined,

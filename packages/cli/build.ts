@@ -62,6 +62,7 @@ for (const source of allWasmSources()) {
 }
 await copyFile(join(here, "../indexer/src/tags/rust.scm"), join(dist, "wasm/rust-tags.scm"));
 await copyFile(join(here, "../indexer/src/tags/ruby.scm"), join(dist, "wasm/ruby-tags.scm"));
+await copyFile(join(here, "../indexer/src/tags/php.scm"), join(dist, "wasm/php-tags.scm"));
 console.log(`copied ${allWasmSources().length} wasm files to dist/wasm/`);
 
 await copyFile(viewerHtml, join(dist, "viewer.html"));

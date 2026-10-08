@@ -34,6 +34,7 @@ export const GRAMMAR_WASM: Record<GrammarId, WasmSource> = {
   ruby: { pkg: "tree-sitter-ruby", file: "tree-sitter-ruby.wasm" },
   go: { pkg: "tree-sitter-go", file: "tree-sitter-go.wasm" },
   java: { pkg: "tree-sitter-java", file: "tree-sitter-java.wasm" },
+  php: { pkg: "tree-sitter-php", file: "tree-sitter-php.wasm" },
   yaml: { pkg: "@tree-sitter-grammars/tree-sitter-yaml", file: "tree-sitter-yaml.wasm" },
   json: { pkg: "tree-sitter-json", file: "tree-sitter-json.wasm" },
   toml: { pkg: "@tree-sitter-grammars/tree-sitter-toml", file: "tree-sitter-toml.wasm" },
