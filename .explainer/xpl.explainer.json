@@ -17592,10 +17592,10 @@
               "role": "call-site",
               "hash": "sha256-v2:2259d93ba53d",
               "resolved": {
-                "commit": "wt-27ab9089b3",
+                "commit": "2ffdc55",
                 "range": {
-                  "startLine": 1226,
-                  "endLine": 1226
+                  "startLine": 1286,
+                  "endLine": 1286
                 },
                 "status": "ok"
               }
@@ -17606,7 +17606,7 @@
               "role": "config",
               "hash": "sha256-v2:7c03ca4f89a3",
               "resolved": {
-                "commit": "wt-27ab9089b3",
+                "commit": "2ffdc55",
                 "range": {
                   "startLine": 480,
                   "endLine": 484
@@ -17620,10 +17620,10 @@
               "role": "definition",
               "hash": "sha256-v2:5c4d4bce6537",
               "resolved": {
-                "commit": "wt-27ab9089b3",
+                "commit": "2ffdc55",
                 "range": {
-                  "startLine": 1219,
-                  "endLine": 1231
+                  "startLine": 1279,
+                  "endLine": 1291
                 },
                 "status": "ok"
               }
@@ -17634,7 +17634,7 @@
               "role": "definition",
               "hash": "sha256-v2:d1f61ce6b8db",
               "resolved": {
-                "commit": "wt-27ab9089b3",
+                "commit": "2ffdc55",
                 "range": {
                   "startLine": 323,
                   "endLine": 426
@@ -17646,12 +17646,12 @@
               "file": "packages/viewer/src/layout/graphLayout.ts",
               "symbol": "layeredLayout",
               "role": "definition",
-              "hash": "sha256-v2:94d6af4b1fe1",
+              "hash": "sha256-v2:5bdcd55ae8c5",
               "resolved": {
-                "commit": "wt-27ab9089b3",
+                "commit": "2ffdc55",
                 "range": {
-                  "startLine": 643,
-                  "endLine": 1004
+                  "startLine": 678,
+                  "endLine": 1064
                 },
                 "status": "ok"
               }
@@ -17662,7 +17662,7 @@
               "role": "definition",
               "hash": "sha256-v2:2e23fde7739e",
               "resolved": {
-                "commit": "wt-27ab9089b3",
+                "commit": "2ffdc55",
                 "range": {
                   "startLine": 539,
                   "endLine": 548
@@ -17676,7 +17676,7 @@
               "role": "definition",
               "hash": "sha256-v2:1baf9a27d77d",
               "resolved": {
-                "commit": "wt-27ab9089b3",
+                "commit": "2ffdc55",
                 "range": {
                   "startLine": 75,
                   "endLine": 143
@@ -17690,10 +17690,10 @@
               "role": "definition",
               "hash": "sha256-v2:11c780cb0aa2",
               "resolved": {
-                "commit": "wt-27ab9089b3",
+                "commit": "2ffdc55",
                 "range": {
-                  "startLine": 1014,
-                  "endLine": 1046
+                  "startLine": 1074,
+                  "endLine": 1106
                 },
                 "status": "ok"
               }
@@ -17704,7 +17704,7 @@
               "role": "definition",
               "hash": "sha256-v2:9dc605fca4f8",
               "resolved": {
-                "commit": "wt-27ab9089b3",
+                "commit": "2ffdc55",
                 "range": {
                   "startLine": 487,
                   "endLine": 494
@@ -17718,7 +17718,7 @@
               "role": "definition",
               "hash": "sha256-v2:8177185f4600",
               "resolved": {
-                "commit": "wt-27ab9089b3",
+                "commit": "2ffdc55",
                 "range": {
                   "startLine": 575,
                   "endLine": 620
@@ -17727,7 +17727,7 @@
               }
             }
           ],
-          "summary": "Layered layout honors finite pins inside each container before sizing its parent. Negative child positions expand the frame around a stable origin. Automatic siblings yield space and arrows reroute to the moved boxes. A fallback grid also keeps stored pins."
+          "summary": "Layered layout sizes nested containers from the inside out, honors finite pins and reroutes arrows around moved boxes. On automatic maps, it also shortens a long arrow when a direct right-angled path avoids boxes and other arrows. The fallback grid keeps stored pins."
         },
         {
           "id": "viewer-draw:6",
@@ -17953,7 +17953,7 @@
       ],
       "provenance": {
         "origin": "llm",
-        "commit": "8440d90"
+        "commit": "2ffdc55"
       }
     },
     {
