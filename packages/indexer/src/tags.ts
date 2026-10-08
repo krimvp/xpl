@@ -25,6 +25,12 @@ interface TagsProfile {
   kinds: Readonly<Record<string, IndexedSymbol["kind"]>>;
   methodParents: readonly string[];
   label(tag: string, name: string, context?: string): string;
+  resolve?(
+    tag: string,
+    node: Node,
+    lexicalParent: ProviderDeclaration | undefined,
+    declarations: readonly ProviderDeclaration[],
+  ): { path: string; parent?: string } | null | undefined;
   scope?(
     tag: string,
     node: Node,
@@ -135,12 +141,21 @@ export class TagsProvider implements IndexProvider {
               const parent = stack.at(-1);
               const kind = this.profile.kinds[tag.tag] ?? KINDS[tag.tag];
               if (!kind) continue;
+              const resolved = this.profile.resolve?.(
+                tag.tag,
+                tag.node,
+                parent?.declaration,
+                declarations,
+              );
+              if (resolved === null) continue;
               const scope = this.profile.scope?.(tag.tag, tag.node, tree.rootNode);
               const declaration: ProviderDeclaration = {
                 identity: `${source.path}:${tag.node.startIndex}:${tag.node.endIndex}`,
                 file: source.path,
                 name: tag.name.text,
-                path: parent ? `${parent.declaration.path}.${tag.label}` : tag.label,
+                path:
+                  resolved?.path ??
+                  (parent ? `${parent.declaration.path}.${tag.label}` : tag.label),
                 kind:
                   kind === "function" && parent && this.profile.methodParents.includes(parent.tag)
                     ? "method"
@@ -150,7 +165,13 @@ export class TagsProvider implements IndexProvider {
                   ? { identifier: range(tag.name) }
                   : {}),
                 declaration: scope?.range ?? range(tag.node),
-                ...(parent ? { parent: parent.declaration.identity } : {}),
+                ...(resolved
+                  ? resolved.parent
+                    ? { parent: resolved.parent }
+                    : {}
+                  : parent
+                    ? { parent: parent.declaration.identity }
+                    : {}),
               };
               declarations.push(declaration);
               stack.push({ end: scope?.endIndex ?? tag.node.endIndex, declaration, tag: tag.tag });
