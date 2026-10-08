@@ -649,8 +649,8 @@ function routesMeet(a: readonly Point[], b: readonly Point[]): boolean {
   return false;
 }
 
-function routeCrossings(routes: readonly Point[][]): number {
-  let count = 0;
+function routeCrossings(routes: readonly Point[][]): Set<string> {
+  const pairs = new Set<string>();
   for (let i = 0; i < routes.length; i++) {
     const a = routes[i]!;
     for (let j = i + 1; j < routes.length; j++) {
@@ -671,12 +671,17 @@ function routeCrossings(routes: readonly Point[][]): number {
             y = r.y - p.y;
           const alongA = (x * ey - y * ex) / det,
             alongB = (x * dy - y * dx) / det;
-          if (alongA > 0.001 && alongA < 0.999 && alongB > 0.001 && alongB < 0.999) count++;
+          if (alongA > 0.001 && alongA < 0.999 && alongB > 0.001 && alongB < 0.999)
+            pairs.add(`${i}\0${j}`);
         }
       }
     }
   }
-  return count;
+  return pairs;
+}
+
+function hasNoNewHits<T>(before: ReadonlySet<T>, after: ReadonlySet<T>): boolean {
+  return [...after].every((hit) => before.has(hit));
 }
 
 function routeLength(points: readonly Point[]): number {
@@ -996,16 +1001,15 @@ function layeredLayout(model: Model, direction: Direction, pins: GraphView["layo
     // Selection can lay this level out again; keep the added route search within the viewer's small-map limit.
     const simplifyRoutes = !pinned && siblings.length + items.length <= BOTH_DIRECTIONS_LIMIT;
     const obstacles = siblings.map((node) => [node.id, nodeBox(node)] as const);
-    const boxHits = (routes: readonly Point[][]) =>
-      routes.reduce(
-        (count, route, i) =>
-          count +
-          obstacles.filter(
-            ([id, box]) =>
-              id !== items[i]!.from.key && id !== items[i]!.to.key && crossesBox(route, box, 0),
-          ).length,
-        0,
-      );
+    const boxHits = (routes: readonly Point[][]) => {
+      const hits = new Set<string>();
+      routes.forEach((route, i) => {
+        for (const [id, box] of obstacles)
+          if (id !== items[i]!.from.key && id !== items[i]!.to.key && crossesBox(route, box, 0))
+            hits.add(`${i}\0${id}`);
+      });
+      return hits;
+    };
     const routeWith = (wide: boolean) => {
       const spread = spreadPorts(ports, boxes, direction, wide);
       const routes = items.map((item) =>
@@ -1031,8 +1035,8 @@ function layeredLayout(model: Model, direction: Direction, pins: GraphView["layo
     const widened = simplifyRoutes ? routeWith(true) : undefined;
     const routed =
       widened &&
-      routeCrossings(widened) <= routeCrossings(original) &&
-      boxHits(widened) <= boxHits(original)
+      hasNoNewHits(routeCrossings(original), routeCrossings(widened)) &&
+      hasNoNewHits(boxHits(original), boxHits(widened))
         ? widened
         : original;
     if (simplifyRoutes) {
