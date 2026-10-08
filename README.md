@@ -3,9 +3,12 @@
 [Try the live example](https://krimvp.github.io/xpl/) or open the
 [documentation](https://krimvp.github.io/xpl/docs/).
 
-xpl links diagrams to source code and source code back to diagrams. An authoring agent writes an explanation as
-data; xpl checks each source anchor against a static index before the guide can be exported. Share
-it as a live view or one self-contained HTML file.
+xpl adds interactive code explanations to an existing repository. It links diagrams to source code and
+source code back to diagrams, so readers can follow how a system works or what changed between commits.
+As code changes accelerate, including changes written with AI, `xpl change` gives reviewers a way to explore
+the diff alongside an explanation. An authoring agent writes the explanation as data; xpl checks that each
+source anchor exists and is current before export. It does not check whether the explanation is semantically
+correct or complete. Share a guide as a live view or one self-contained HTML file.
 
 ## Quick start
 
@@ -105,9 +108,9 @@ review](https://krimvp.github.io/xpl/docs/workflows/edit-and-review/).
 
 ### Explaining a change
 
-Use `xpl change` to explain a diff between commits. Before-code claims are checked against the base
-commit. The viewer marks changed lines and the changed words within paired rewrites. See the
-[change workflow](https://krimvp.github.io/xpl/docs/workflows/change/).
+Use `xpl change` to explain a diff between commits, including AI-generated changes. Before-code claims are
+checked against the base commit. The viewer marks changed lines and the changed words within paired rewrites.
+See the [change workflow](https://krimvp.github.io/xpl/docs/workflows/change/).
 
 ### Architecture maps
 
@@ -116,8 +119,8 @@ See [Architecture maps](https://krimvp.github.io/xpl/docs/workflows/explain/).
 
 ## Languages and precision
 
-xpl indexes TypeScript, JavaScript, Python, Go, YAML, JSON and TOML. References are labeled precise
-(SCIP) or heuristic. Use `--precise off` when optional semantic tools are unavailable. See [language
+xpl indexes TypeScript, JavaScript, Python, Go, YAML, JSON and TOML. References are labeled precise (SCIP)
+or heuristic. Use `--precise off` when optional semantic tools are unavailable. See [language
 support](https://krimvp.github.io/xpl/docs/concepts/languages/).
 
 ## Repository layout
