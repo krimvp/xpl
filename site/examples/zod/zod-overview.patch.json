@@ -1,0 +1,363 @@
+{
+  "title": "How Zod validates data with schemas",
+  "scope": {
+    "audience": "Leaders and engineers new to Zod"
+  },
+  "nodes": [
+    {
+      "id": "grp:app",
+      "kind": "group",
+      "label": "Application",
+      "summary": "Defines a schema and sends input to Zod for validation.",
+      "parent": "repo",
+      "members": [],
+      "role": "person",
+      "tech": "TypeScript or JavaScript",
+      "anchors": [
+        {
+          "file": "packages/zod/README.md",
+          "span": {
+            "from": 55,
+            "to": 55
+          },
+          "role": "usage"
+        }
+      ]
+    },
+    {
+      "id": "grp:zod",
+      "kind": "group",
+      "label": "Zod library",
+      "summary": "Provides schema definitions and validates values against them.",
+      "parent": "repo",
+      "members": [
+        "file:packages/zod/src/index.ts",
+        "file:packages/zod/src/v4/classic/schemas.ts",
+        "file:packages/zod/src/v4/classic/parse.ts",
+        "file:packages/zod/src/v4/core/schemas.ts",
+        "file:packages/zod/src/v4/core/parse.ts"
+      ],
+      "role": "service",
+      "tech": "TypeScript",
+      "opens": "view:inside",
+      "anchors": []
+    },
+    {
+      "id": "grp:result",
+      "kind": "group",
+      "label": "Parsed result",
+      "summary": "A successful parse returns validated data; invalid input produces an error or a failed result.",
+      "parent": "repo",
+      "members": [],
+      "role": "external",
+      "tech": "value or error",
+      "anchors": [
+        {
+          "file": "packages/zod/src/v4/core/parse.ts",
+          "symbol": "_parse",
+          "span": {
+            "from": 12,
+            "to": 12
+          },
+          "role": "usage"
+        }
+      ]
+    },
+    {
+      "id": "file:packages/zod/src/index.ts",
+      "kind": "file",
+      "label": "Public exports",
+      "summary": "Exports the classic Zod API as the package entry point.",
+      "parent": "dir:packages/zod/src",
+      "role": "component",
+      "anchors": []
+    },
+    {
+      "id": "file:packages/zod/src/v4/classic/schemas.ts",
+      "kind": "file",
+      "label": "Schema methods",
+      "summary": "Exposes instance methods such as `parse` and `safeParse` on classic schemas.",
+      "parent": "dir:packages/zod/src/v4/classic",
+      "role": "component",
+      "anchors": []
+    },
+    {
+      "id": "file:packages/zod/src/v4/classic/parse.ts",
+      "kind": "file",
+      "label": "Classic facade",
+      "summary": "Binds the classic error class to core parse functions.",
+      "parent": "dir:packages/zod/src/v4/classic",
+      "role": "component",
+      "anchors": []
+    },
+    {
+      "id": "file:packages/zod/src/v4/core/schemas.ts",
+      "kind": "file",
+      "label": "Schema runtime",
+      "summary": "Runs schema parsing and checks, collecting issues alongside the parsed value.",
+      "parent": "dir:packages/zod/src/v4/core",
+      "role": "component",
+      "anchors": []
+    },
+    {
+      "id": "file:packages/zod/src/v4/core/parse.ts",
+      "kind": "file",
+      "label": "Parse outcome",
+      "summary": "Runs a schema and turns its value and issues into either data, an error, or a safe result.",
+      "parent": "dir:packages/zod/src/v4/core",
+      "role": "component",
+      "anchors": []
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge:application-parses-input",
+      "from": "grp:app",
+      "to": "grp:zod",
+      "kind": "calls",
+      "label": "calls schema.parse(input)",
+      "summary": "The application calls parse on a Zod schema with an input value. The README shows this use, and the classic schema method passes the value to the parser.",
+      "anchors": [
+        {
+          "file": "packages/zod/README.md",
+          "span": {
+            "from": 55,
+            "to": 55
+          },
+          "role": "call-site"
+        },
+        {
+          "file": "packages/zod/src/v4/classic/schemas.ts",
+          "span": {
+            "from": 297,
+            "to": 297
+          },
+          "role": "definition"
+        }
+      ]
+    },
+    {
+      "id": "edge:parse-produces-result",
+      "from": "grp:zod",
+      "to": "grp:result",
+      "kind": "custom",
+      "label": "reports parse outcome",
+      "summary": "For parse, the core parser returns the parsed value when there are no issues and throws an error when issues are present. safeParse instead returns a success result with data or a failure result with an error.",
+      "anchors": [
+        {
+          "file": "packages/zod/src/v4/core/parse.ts",
+          "span": {
+            "from": 33,
+            "to": 33
+          },
+          "role": "usage"
+        },
+        {
+          "file": "packages/zod/src/v4/core/parse.ts",
+          "span": {
+            "from": 31,
+            "to": 31
+          },
+          "role": "usage"
+        },
+        {
+          "file": "packages/zod/README.md",
+          "span": {
+            "from": 55,
+            "to": 55
+          },
+          "role": "usage"
+        },
+        {
+          "file": "packages/zod/src/v4/core/parse.ts",
+          "span": {
+            "from": 77,
+            "to": 77
+          },
+          "role": "usage"
+        }
+      ]
+    }
+  ],
+  "concepts": [],
+  "views": [
+    {
+      "id": "view:system",
+      "type": "graph",
+      "title": "An application validates input through Zod",
+      "scope": {
+        "root": "repo",
+        "depth": 1,
+        "question": "How do schemas turn untrusted input into validated data?"
+      },
+      "include": [
+        "grp:app",
+        "grp:zod",
+        "grp:result"
+      ],
+      "stubs": {
+        "mode": "none"
+      }
+    },
+    {
+      "id": "view:inside",
+      "type": "graph",
+      "title": "Public schema methods lead to the core parser",
+      "scope": {
+        "root": "repo",
+        "depth": 2,
+        "question": "What runs when an application parses data?"
+      },
+      "include": [
+        "file:packages/zod/src/index.ts",
+        "file:packages/zod/src/v4/classic/schemas.ts",
+        "file:packages/zod/src/v4/classic/parse.ts",
+        "file:packages/zod/src/v4/core/schemas.ts",
+        "file:packages/zod/src/v4/core/parse.ts"
+      ],
+      "edgeKinds": [
+        "calls"
+      ],
+      "excludeFiles": [
+        "**/tests/**",
+        "**/*.test.*",
+        "packages/docs/**"
+      ],
+      "stubs": {
+        "mode": "none"
+      }
+    }
+  ],
+  "tours": [
+    {
+      "id": "tour:overview",
+      "title": "How Zod validates data with schemas",
+      "summary": "Zod is a TypeScript-first validation library. An application defines a schema and parses data against it. The classic API delegates to a core runtime that gathers a parsed value and any validation issues. A caller can request a throwing parse or a result object that reports success.",
+      "steps": [
+        {
+          "id": "t1",
+          "view": "view:system",
+          "focus": [
+            "grp:zod"
+          ],
+          "code": [
+            {
+              "file": "packages/zod/README.md",
+              "span": {
+                "from": 40,
+                "to": 40
+              },
+              "role": "usage"
+            }
+          ],
+          "note": "### Zod checks input against a declared schema\n\nAn application defines a shape for data, then parses an input value. The parsed result carries validated data or reports why the input failed. The schema also provides a TypeScript type.",
+          "editor": {
+            "primary": "packages/zod/README.md"
+          }
+        },
+        {
+          "id": "t2",
+          "view": "view:inside",
+          "focus": [
+            "file:packages/zod/src/index.ts"
+          ],
+          "code": [
+            {
+              "file": "packages/zod/src/index.ts",
+              "span": {
+                "from": 1,
+                "to": 1
+              },
+              "role": "usage"
+            }
+          ],
+          "note": "### The package entry exposes the classic API\n\nThe main package export leads to the classic schema constructors and parsing methods. Applications can import this API as `z`.",
+          "editor": {
+            "primary": "packages/zod/src/index.ts"
+          }
+        },
+        {
+          "id": "t3",
+          "view": "view:inside",
+          "focus": [
+            "file:packages/zod/src/v4/classic/schemas.ts"
+          ],
+          "code": [
+            {
+              "file": "packages/zod/src/v4/classic/schemas.ts",
+              "span": {
+                "from": 297,
+                "to": 297
+              },
+              "role": "usage"
+            },
+            {
+              "file": "packages/zod/src/v4/classic/schemas.ts",
+              "span": {
+                "from": 303,
+                "to": 303
+              },
+              "role": "usage"
+            }
+          ],
+          "note": "### A schema exposes two common parse choices\n\nOne method returns a value or throws. Another returns a result that callers can branch on.",
+          "editor": {
+            "primary": "packages/zod/src/v4/classic/schemas.ts"
+          }
+        },
+        {
+          "id": "t4",
+          "view": "view:inside",
+          "focus": [
+            "file:packages/zod/src/v4/core/schemas.ts"
+          ],
+          "code": [
+            {
+              "file": "packages/zod/src/v4/core/schemas.ts",
+              "span": {
+                "from": 118,
+                "to": 118
+              },
+              "role": "usage"
+            }
+          ],
+          "note": "### The runtime gathers value and issues\n\nSchema execution carries a value and an issue list through its checks. A nonempty issue list marks invalid input.",
+          "editor": {
+            "primary": "packages/zod/src/v4/core/schemas.ts"
+          }
+        },
+        {
+          "id": "t5",
+          "view": "view:inside",
+          "focus": [
+            "file:packages/zod/src/v4/core/parse.ts"
+          ],
+          "code": [
+            {
+              "file": "packages/zod/src/v4/core/parse.ts",
+              "symbol": "_parse",
+              "span": {
+                "from": 7,
+                "to": 7
+              },
+              "role": "usage"
+            },
+            {
+              "file": "packages/zod/src/v4/core/parse.ts",
+              "symbol": "_safeParse",
+              "span": {
+                "from": 7,
+                "to": 7
+              },
+              "role": "usage"
+            }
+          ],
+          "note": "### Parsing turns the issue list into an outcome\n\nA valid run returns parsed data. Invalid input becomes a thrown error or a failed result, depending on the method used.",
+          "editor": {
+            "primary": "packages/zod/src/v4/core/parse.ts"
+          }
+        }
+      ]
+    }
+  ]
+}
