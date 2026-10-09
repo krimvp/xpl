@@ -37,6 +37,7 @@ updates:
       - dependency-name: "tree-sitter-*"
       - dependency-name: web-tree-sitter
       - dependency-name: "@playwright/test"
+      - dependency-name: "@dagrejs/dagre"
 
   - package-ecosystem: github-actions
     directory: /
