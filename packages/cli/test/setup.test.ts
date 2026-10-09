@@ -24,7 +24,7 @@ const hasGo =
 describe("setup commands", () => {
   it.each([
     { version: "0.1.0", status: "outdated", order: "<", recovery: "xpl skill install" },
-    { version: "0.3.0", status: "mismatch", order: ">", recovery: "CLI version 0.3.0" },
+    { version: "0.4.0", status: "mismatch", order: ">", recovery: "CLI version 0.4.0" },
   ])(
     "reports a $status managed skill with the right recovery",
     async ({ version, status, order, recovery }) => {
@@ -49,7 +49,7 @@ describe("setup commands", () => {
       expect(skillCheck).toMatchObject({
         required: false,
         status,
-        detail: `skill version ${version} ${order} CLI 0.2.2`,
+        detail: `skill version ${version} ${order} CLI 0.3.0`,
         recovery: expect.stringContaining(recovery),
       });
       if (status === "mismatch") expect(skillCheck.recovery).not.toContain("xpl skill install");
@@ -59,7 +59,7 @@ describe("setup commands", () => {
   it("reports a newer registry version only from doctor and honors the offline switch", async () => {
     const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => ({
       ok: true,
-      json: async () => ({ version: "0.2.3" }),
+      json: async () => ({ version: "0.3.1" }),
     }));
     vi.stubGlobal("fetch", fetchMock);
     const root = makeTempDir();
@@ -68,7 +68,7 @@ describe("setup commands", () => {
     });
     expect(
       JSON.parse(result.out).checks.find((check: { id: string }) => check.id === "update"),
-    ).toMatchObject({ status: "outdated", required: false, detail: "CLI 0.2.2 < latest 0.2.3" });
+    ).toMatchObject({ status: "outdated", required: false, detail: "CLI 0.3.0 < latest 0.3.1" });
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(fetchMock.mock.calls[0]![0]).toBe("https://registry.npmjs.org/@krimvp%2Fxpl/latest");
     await invoke(["--version"], { cwd: root });

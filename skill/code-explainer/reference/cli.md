@@ -16,7 +16,7 @@ xpl doctor --agent claude
 
 Alternatively, from the public [source repository](https://github.com/krimvp/xpl),
 run `npm install && npm run build`, then `npm pack ./packages/cli/dist` and
-`npm install -g --ignore-scripts ./krimvp-xpl-0.2.2.tgz`. Install a maintainer's tarball offline with
+`npm install -g --ignore-scripts ./krimvp-xpl-0.3.0.tgz`. Install a maintainer's tarball offline with
 `npm install -g --offline --ignore-scripts <tarball>`, then run `xpl skill install`.
 Claude Code is the default install target. Codex, Pi, Factory Droid and Devin are also supported by the
 installer. Each harness needs separate installation, authentication and provider access.

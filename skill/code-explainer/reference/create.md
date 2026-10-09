@@ -22,7 +22,7 @@ xpl remotely.
 
 Alternatively, from the public [source repository](https://github.com/krimvp/xpl),
 run `npm install && npm run build`, then `npm pack ./packages/cli/dist` and install the tarball with
-`npm install -g --ignore-scripts ./krimvp-xpl-0.2.2.tgz`. For an offline tarball, use
+`npm install -g --ignore-scripts ./krimvp-xpl-0.3.0.tgz`. For an offline tarball, use
 `npm install -g --offline --ignore-scripts <tarball>`.
 
 Use the installed skill's `bin/xpl` launcher for the commands below. Run from the repository root, or pass `--root /absolute/path/to/repo`. The authoring agent reads the code and writes the JSON patch; the user supplies the intent.
