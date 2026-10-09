@@ -54,6 +54,67 @@ test.describe("architecture maps", () => {
     await expect(page.locator(".present-right")).toBeInViewport();
   });
 
+  test("a reader can follow completion and return to the five-part map", async ({ page }) => {
+    await openBundle(page, "view:overview", ARCHITECTURE_BUNDLE);
+    await expect(
+      page.locator('.diagram[data-view-id="view:overview"] .node:not(.ghost)'),
+    ).toHaveCount(5);
+    await page.getByRole("tab", { name: "Worker setup and success events" }).click();
+    await expect(page.locator('.diagram[data-view-id="view:completion-path"]')).toBeVisible();
+    await expect(
+      page.locator('.diagram[data-view-id="view:completion-path"] .node:not(.ghost)'),
+    ).toHaveCount(3);
+    await expect(box(page, "file:jobrunner/__main__.py")).toBeVisible();
+    await expect(box(page, "file:jobrunner/worker.py")).toBeVisible();
+    await expect(box(page, "grp:events")).toBeVisible();
+    await expect(page.locator('[data-element-id="edge:job-completed"]').first()).toBeVisible();
+    await expect
+      .poll(async () => (await stateOf(page)).graph?.edges.sort())
+      .toEqual(
+        [
+          "edge:calls:file:jobrunner/__main__.py->file:jobrunner/worker.py",
+          "edge:calls:file:jobrunner/__main__.py->grp:events",
+          "edge:job-completed",
+        ].sort(),
+      );
+    for (const id of [
+      "edge:calls:file:jobrunner/__main__.py->file:jobrunner/worker.py",
+      "edge:calls:file:jobrunner/__main__.py->grp:events",
+    ]) {
+      await expect(page.locator(`.diagram .edge[data-element-id="${id}"]`).first()).toHaveClass(
+        /kind-calls.*res-heuristic|res-heuristic.*kind-calls/,
+      );
+    }
+    await expect(
+      page.locator('.diagram .edge[data-element-id="edge:job-completed"]').first(),
+    ).toHaveClass(/kind-emits.*res-llm|res-llm.*kind-emits/);
+    await page.getByRole("tab", { name: "The five parts of the job runner" }).click();
+    await expect(
+      page.locator('.diagram[data-view-id="view:overview"] .node:not(.ghost)'),
+    ).toHaveCount(5);
+
+    await page.goto(ARCHITECTURE_BUNDLE.href + "?perspective=guide");
+    await page.getByTestId("guide-tour-picker").selectOption("tour:completion-path");
+    await expect(page.getByTestId("guide-tour-picker")).toHaveValue("tour:completion-path");
+    await expect(
+      page.getByRole("navigation", { name: "Guide contents" }).getByRole("button"),
+    ).toHaveCount(2);
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto(ARCHITECTURE_BUNDLE.href + "?mode=read&perspective=map&view=view:overview");
+    await page.waitForFunction(() => window.__xpl !== undefined);
+    const topic = page.getByRole("combobox", { name: "Choose a topic" });
+    await topic.selectOption("view:completion-path");
+    await expect(
+      page.getByRole("heading", { name: "Worker setup and success events" }),
+    ).toBeVisible();
+    await expect(page.locator('.graph[data-direction="DOWN"]')).toBeVisible();
+    await topic.selectOption("view:overview");
+    await expect(
+      page.getByRole("heading", { name: "The five parts of the job runner" }),
+    ).toBeVisible();
+  });
+
   test("view questions distinguish the system map from a dispatch sequence", async ({ page }) => {
     await page.goto(ARCHITECTURE_BUNDLE.href + "?perspective=map&view=view:system");
     await page.waitForFunction(() => window.__xpl !== undefined);
