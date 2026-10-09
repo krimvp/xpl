@@ -3038,8 +3038,8 @@ fixes; its `json patch` blocks are applied by a test), `cli.md` (every command w
 `writing.md` (which field holds what, plain-language rules, the tour summary, rewrites; `xpl lint` checks the
 mechanical part), `explain-change.md` (the PR, MR and branch guide),
 `examples/go-retry.patch.json` (a worked question patch for `fixtures/go-jobrunner`) and
-`examples/py-overview.patch.json` (a worked repo overview for `fixtures/py-jobrunner`); tests apply and
-validate both.
+`examples/py-overview.patch.json` (a worked repo overview for `fixtures/py-jobrunner`, with an optional
+completion-path map and short tour); tests apply and validate both.
 
 ---
 

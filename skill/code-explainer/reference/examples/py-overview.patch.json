@@ -337,6 +337,30 @@
           ]
         }
       ]
+    },
+    {
+      "id": "view:completion-path",
+      "type": "graph",
+      "title": "Worker setup and success events",
+      "scope": {
+        "root": "repo",
+        "depth": 2,
+        "question": "Which code wires workers and metrics at startup, and what event follows a successful attempt?"
+      },
+      "include": ["file:jobrunner/__main__.py", "file:jobrunner/worker.py", "grp:events"],
+      "excludeFiles": [
+        "**/*_test.go",
+        "**/test/**",
+        "**/tests/**",
+        "**/*.test.*",
+        "**/test_*.py",
+        "**/examples/**",
+        "docs/**"
+      ],
+      "hidden": ["edge:calls:file:jobrunner/worker.py->grp:events"],
+      "stubs": {
+        "mode": "none"
+      }
     }
   ],
   "tours": [
@@ -524,6 +548,55 @@
           ],
           "editor": {
             "primary": "jobrunner/runner.py"
+          }
+        }
+      ]
+    },
+    {
+      "id": "tour:completion-path",
+      "title": "How successful attempts reach metrics",
+      "summary": "Start with the five-part map, then inspect startup wiring and the successful completion event. Scheduling and dispatch remain on the five-part map.",
+      "steps": [
+        {
+          "id": "completion:overview",
+          "view": "view:overview",
+          "focus": ["file:jobrunner/__main__.py"],
+          "note": "### Start with five parts\n\nStartup reads settings and connects Scheduling, Workers, and Events and metrics. The arrows show code links, not a job traveling between parts. Scheduling and dispatch remain on this map.",
+          "code": [
+            {
+              "file": "jobrunner/__main__.py",
+              "symbol": "run",
+              "span": {
+                "from": 1,
+                "to": 12
+              },
+              "role": "definition"
+            }
+          ],
+          "editor": {
+            "primary": "jobrunner/__main__.py"
+          }
+        },
+        {
+          "id": "completion:event",
+          "view": "view:completion-path",
+          "focus": ["edge:job-completed"],
+          "note": "### A worker announces success\n\nAfter a successful attempt, Workers send `job.completed` to Events and metrics. The direct Startup arrow shows metrics wiring, not a second completion event. This map leaves out Scheduling and dispatch; the five-part map shows them.",
+          "code": [
+            {
+              "file": "jobrunner/worker.py",
+              "symbol": "Worker.run",
+              "find": "self._bus.emit(\"job.completed\"",
+              "role": "call-site"
+            },
+            {
+              "file": "jobrunner/metrics.py",
+              "symbol": "register_metrics",
+              "role": "definition"
+            }
+          ],
+          "editor": {
+            "primary": "jobrunner/worker.py"
           }
         }
       ]
