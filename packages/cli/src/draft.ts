@@ -67,6 +67,7 @@ import {
   readmeUsage,
   workspaceParents,
 } from "./outside.js";
+import { plural } from "./format.js";
 
 export const DRAFT_LIMITS = {
   /** Boxes on a drafted map (the skill: 4-8). */
@@ -1223,9 +1224,9 @@ export function draftChange(input: DraftInput, change: ChangeRecord): Draft {
       [testGroup ?? mainFocus],
       note(
         todo("what the tests cover, as a plain statement"),
-        todo("which test checks which behaviour change, and which new branch no test covers."),
+        todo("which test checks each behavior change, and whether the new branches are tested."),
         untested.length > 0
-          ? `No test found for ${nameList(untested)}: ${todo("check whether tests of other code run them.")}`
+          ? `No indexed test reference found for ${nameList(untested)}: ${todo("check whether tests of other code exercise these symbols.")}`
           : "",
       ),
       testAnchors.length > 0
@@ -1275,7 +1276,7 @@ export function draftChange(input: DraftInput, change: ChangeRecord): Draft {
           todo(
             `what the tests cover (${newTests} new test functions` +
               (untested.length > 0
-                ? `; no test found for ${untested.length} changed symbols).`
+                ? `; no indexed test reference found for ${plural(untested.length, "changed symbol")}).`
                 : ")."),
           ),
         ].join(" "),
@@ -1400,7 +1401,7 @@ export function draftRepo(input: DraftInput): Draft {
     for (const file of files) {
       // a file of imports and constants only (a package's `__init__.py`) is not a part of its own
       const body = model
-        .topLevelSymbols(file)
+        .symbolsInFile(file)
         .some((s) => s.kind !== "variable" && s.kind !== "key" && s.kind !== "other");
       if (isCode(file) && body) {
         out.push({ id: `file:${file}`, path: file, dir: false, files: [file] });
@@ -1845,6 +1846,9 @@ export function draftRepo(input: DraftInput): Draft {
             )}).`,
           ),
           todo("merge boxes that are the same system, and drop one the code only imports."),
+          todo(
+            "for each imported system, whether the default runtime path uses it or it is an optional integration.",
+          ),
         ),
         outbound.slice(0, L.codeRanges).map((s) => reach.get(s.slug)![0]!.anchor),
       ),

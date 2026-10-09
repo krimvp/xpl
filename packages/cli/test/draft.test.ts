@@ -1,5 +1,5 @@
 /**
- * `xpl draft`: the drafts of the three fixtures and of a change in a small git repository apply as they are
+ * `xpl draft`: the drafts of the language fixtures and of a change in a small git repository apply as they are
  * (`xpl apply`), leave a valid explainer (`xpl validate`), and `xpl lint` reports nothing but `todo-left` on them.
  * The change draft anchors every changed file. And the `todo-left` lint rule itself.
  */
@@ -120,6 +120,7 @@ const ENTRIES: Record<string, string> = {
   "ts-jobrunner": "sym:src/runner.ts#Runner.dispatch",
   "py-jobrunner": "sym:jobrunner/runner.py#Runner.dispatch",
   "go-jobrunner": "sym:internal/runner/runner.go#Runner.Dispatch",
+  "java-jobrunner": "sym:src/main/java/jobrunner/Runner.java#Runner.dispatch",
 };
 
 describe.each(Object.keys(ENTRIES))("xpl draft on %s", (fixture) => {
@@ -138,7 +139,7 @@ describe.each(Object.keys(ENTRIES))("xpl draft on %s", (fixture) => {
     expect(system.id).toBe("view:system");
     if (system.type !== "graph") throw new Error("the system map is a graph");
     const service = patch.nodes!.find((n) => n.role === "service")!;
-    expect(service.id).toMatch(/^grp:[a-z-]+$/);
+    expect(service.id).toMatch(/^grp:[a-z0-9-]+$/);
     expect(system.include).toContain(service.id);
     expect(service.opens).toBe("view:overview");
     expect(patch.tours![0]!.steps![0]!.view).toBe("view:system");
@@ -236,6 +237,39 @@ describe("xpl draft: refusals and reuse", () => {
     // the boxes already have summaries: no new overlay for them
     expect(second.json.patch.nodes).toEqual([]);
     expect(first.patch.nodes!.length).toBeGreaterThan(0);
+  });
+});
+
+describe("xpl draft repo: Java sources", () => {
+  async function emptyRepoWith(path: string, source: string): Promise<string> {
+    const dir = makeTempDir("xpl-draft-unsupported-");
+    writeFile(dir, path, source);
+    const indexed = await xpl(dir, "index", "--precise", "off");
+    expect(indexed.code, indexed.err + indexed.out).toBe(0);
+    const created = await xpl(dir, "new", "d");
+    expect(created.code, created.err + created.out).toBe(0);
+    return dir;
+  }
+
+  it("builds repository levels from an eligible Java source file", async () => {
+    const dir = await emptyRepoWith("src/main/java/App.java", "class App {}\n");
+    const result = await xplJson<DraftJson>(dir, "draft", "repo", "d");
+    expect(result.code).toBe(0);
+    expect(result.json.patch.views?.map((view) => view.id)).toEqual([
+      "view:system",
+      "view:overview",
+    ]);
+    expect(result.json.patch.nodes?.find((node) => node.role === "service")?.tech).toBe("Java");
+  });
+
+  it("keeps the empty-code diagnostic for test-only Java files", async () => {
+    const dir = await emptyRepoWith("src/test/java/AppTest.java", "class AppTest {}\n");
+    const result = await xpl(dir, "draft", "repo", "d");
+    expect(result.code).toBe(1);
+    expect(result.err).toBe(
+      "error: nothing to draft: the index has no code files outside tests, docs, examples and benchmarks: " +
+        "there is nothing to put on an overview",
+    );
   });
 });
 
@@ -447,9 +481,9 @@ describe("xpl draft change", () => {
     expect(pieces.indexOf("sym:runner.py#backoff")).toBeLessThan(
       pieces.indexOf("sym:helpers.py#clamp"),
     );
-    // the tests step names the changed symbols no test references
+    // the tests step names changed symbols with no indexed test reference
     const tests = steps.at(-2)!.note!;
-    expect(tests).toContain("No test found for");
+    expect(tests).toContain("No indexed test reference found");
     expect(tests).toContain("`clamp`");
     // the steps cite changed lines: no step shows more than 2 ranges
     for (const step of steps) expect(step.code!.length).toBeLessThanOrEqual(2);

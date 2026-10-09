@@ -1,14 +1,16 @@
 # xpl documentation
 
-<p class="eyebrow">Follow the idea. Find the code.</p>
+<p class="eyebrow">Understand the code. Review the change.</p>
 
-xpl is a code explainer. It makes a page where diagrams are linked both ways to the source. Click a box, an
-arrow or a step and the editor highlights the exact code. Put the cursor in the code and the diagram
-elements that cover it light up.
+AI makes it easier to change code, so systems can change faster than people can understand them. xpl helps
+you get oriented in an existing repository and see what a change or pull request does.
 
-An agent writes the explanation, and xpl checks every claim against an index of your repository. An anchor
-that points at code which is not there, or code that changed since it was explained, is reported, and a
-ready export refuses until it is fixed.
+xpl turns an explanation into a page where diagrams link to source code. Select a box, arrow or step to see
+the code it points to; select code to see the parts of the explanation that cover it. Use repository guides
+to understand how a system fits together, or change guides to follow a diff and its surrounding code.
+
+xpl checks that code anchors resolve to the indexed source and reports anchors that have drifted. This checks
+where an explanation points, not whether its prose is correct. Review the explanation for accuracy.
 
 ![The Runner.dispatch box is selected in the diagram, and the dispatch function in runner.ts is highlighted beside it](../../site/images/jobrunner-light.png#only-light)
 ![The Runner.dispatch box is selected in the diagram, and the dispatch function in runner.ts is highlighted beside it](../../site/images/jobrunner-dark.png#only-dark)

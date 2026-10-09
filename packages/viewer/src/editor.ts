@@ -13,6 +13,7 @@
  * is reported as a range of lines, which the store turns into a reverse lookup.
  */
 import { go } from "@codemirror/lang-go";
+import { java } from "@codemirror/lang-java";
 import { javascript } from "@codemirror/lang-javascript";
 import { json } from "@codemirror/lang-json";
 import { python } from "@codemirror/lang-python";
@@ -70,6 +71,8 @@ export function languageSupport(language: FileLanguage): Extension {
       return python();
     case "go":
       return go();
+    case "java":
+      return java();
     case "yaml":
       return yaml();
     case "json":
@@ -78,6 +81,8 @@ export function languageSupport(language: FileLanguage): Extension {
       // No CodeMirror mode is installed for TOML (a legacy mode would be a new dependency): plain text.
       return [];
     case "rust":
+    case "ruby":
+    case "php":
     case "text":
       return [];
   }

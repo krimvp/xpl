@@ -97,6 +97,21 @@ export function PresentMode() {
   useEffect(() => {
     if (started) slide.current?.focus({ preventScroll: true });
   }, [started]);
+  const diagramAtTop = useRef(true);
+  useLayoutEffect(
+    () => () => {
+      diagramAtTop.current = window.scrollY < 100;
+    },
+    [tour?.id, step?.id],
+  );
+  useEffect(() => {
+    if (!step || !diagramAtTop.current || !matchMedia("(max-width: 640px)").matches) return;
+    // CodeMirror moves the focused source range within its pane. On a stacked phone slide it also moves
+    // the document down to that pane, hiding the diagram and caption. Keep the reader's position when
+    // they have moved down to source intentionally; only keep diagram-first steps at the top.
+    const frame = requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: "instant" }));
+    return () => cancelAnimationFrame(frame);
+  }, [tour?.id, step?.id]);
   useEffect(
     () => () => {
       requestAnimationFrame(() =>

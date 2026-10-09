@@ -27,13 +27,13 @@ test("Rust symbol selection highlights source and reports bounded heuristic call
   );
   await expect(notice).toContainText("rust (rust-tags): calls partial (9/9 files analyzed)");
   await expect(notice).toContainText(
-    "Heuristic calls cover only bare names between unambiguous root-level functions in the same file.",
+    "Heuristic calls cover unambiguous same-file root functions and statically identified receivers with explicit crate imports.",
   );
   await expect(notice).toContainText(
     "rust (rust-tags): imports, inheritance, implementations, type references, reads, writes unsupported (0/9 files analyzed)",
   );
   await expect(notice).toContainText("Syntax tags omit macro-generated declarations");
   await expect(notice).not.toContainText("rust-analyzer");
-  await expect(page.locator(".diagram .edge")).toHaveCount(0);
+  await expect(page.locator(".diagram .edge")).not.toHaveCount(0);
   expect(problems).toEqual([]);
 });

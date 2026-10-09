@@ -21,7 +21,7 @@ import { readWatchState } from "../watch-state.js";
 import { listText, plural, renderIssues } from "../format.js";
 import { artifactIdentity, feedbackContextReason } from "@xpl/core";
 import { readRequests, type QueuedRequest } from "../requests.js";
-import { loadExplainer, openWorkspace } from "../repo.js";
+import { loadReadExplainer, openWorkspace } from "../repo.js";
 import { renderResolveReport } from "./resolve.js";
 
 /** A graph view that draws more ghost boxes than this stops in too many places to be read. */
@@ -414,6 +414,7 @@ export const statusCommand: CommandSpec = {
     "--all resolves every .explainer/*.explainer.json guide against the current index and reports moved,",
     "drifted and missing anchors, including user-owned anchors and unreadable guides. No prose is written.",
     "Moved code keeps its prose; drift and missing evidence need explicit repair. Watch status is included in --json.",
+    "Omit the explainer when the repository has exactly one; otherwise supply its name.",
     "The skill's to-do list for an explainer, without changing anything:",
     "  - per view, the visible nodes, edges and steps that have no `summary` (static edges are optional),",
     "  - per graph view, where it stops: the ghost boxes and stubs it draws (counts, and the most referenced ghost",
@@ -473,8 +474,7 @@ export const statusCommand: CommandSpec = {
         );
       return 0;
     }
-    if (!args.positionals[0]) throw new UsageError("supply an explainer or --all");
-    const loaded = loadExplainer(ctx, args.positionals[0]!);
+    const loaded = loadReadExplainer(ctx, args.positionals[0], "status");
     const ws = await openWorkspace(ctx, { explainer: loaded });
     const model = new ExplainerModel(loaded.explainer, ws.model);
     const viewId = args.str("view");

@@ -9,7 +9,7 @@ import {
   type LintFinding,
   type LintRule,
 } from "../lint.js";
-import { loadExplainer, openWorkspace, type Workspace } from "../repo.js";
+import { loadReadExplainer, openWorkspace, type Workspace } from "../repo.js";
 import { readPatch } from "./apply.js";
 
 /** `(tour step)`, `(flow step in view:x)`: what an element is, after its id in the text output. */
@@ -42,7 +42,7 @@ function countLine(findings: readonly LintFinding[]): string {
 
 export const lintCommand: CommandSpec = {
   name: "lint",
-  usage: "xpl lint <explainer> [--patch <file|->] [--warn-only]",
+  usage: "xpl lint [explainer] [--patch <file|->] [--warn-only]",
   summary:
     "Check the reader-facing text and the tour order; --patch checks a patch before you apply it",
   details: [
@@ -80,7 +80,7 @@ export const lintCommand: CommandSpec = {
     "  markdown-in-summary  a # heading line or a [text](link) in the summary of an element or a step (inline",
     "                       markdown such as code spans, **bold** and *emphasis* is fine there)",
     "What the viewer will show (boxes and arrows are counted on the index; without one, big-map counts",
-    "`include` and crowded-map is skipped):",
+    "`include` and crowded-map and system-map-no-edges are skipped):",
     `  untitled-step        a tour step without a note, or whose note has no "### title" and a first sentence over`,
     `                       ${LINT_LIMITS.titleSentenceChars} characters: the viewer shows that sentence cut short, or "Step N"`,
     "  change-not-shown     a changed file (explainer of a change) whose code no tour step shows (its code ranges,",
@@ -93,6 +93,8 @@ export const lintCommand: CommandSpec = {
     `  big-map              a graph view a tour shows with more than ${LINT_LIMITS.tourMapBoxes} boxes`,
     `  crowded-map          a graph view with more than ${LINT_LIMITS.edgesPerBox} arrows (derived and stored) per box; the hint and`,
     "                       --json (ids) list the least used drawn edges to put in the view's `hidden`",
+    "  system-map-no-edges  an indexed architecture map with a non-component role, at least two boxes and no",
+    "                       visible relationships; check whether source-backed relationships are missing",
     "Code spans (`...`) are left out of the word checks, and example values in code spans (`503`, `-1`, `null`,",
     '`/admin/*`, `"utf-8"`) do not count as code names. An absolute word has its evidence in the text of an',
     "element with anchors, and in a tour note sentence that names a part the step shows (a focused element with",
@@ -105,6 +107,7 @@ export const lintCommand: CommandSpec = {
     "--patch <file|->: lint the explainer as it would be after `xpl apply <explainer> <file>`: the patch is merged",
     "in memory the way apply merges it (same checks, --actor llm), and nothing is written. A patch that apply would",
     "reject prints the rejection, as apply prints it, and exits 1. Fix the findings in the patch, then apply it.",
+    "Omit the explainer when the repository has exactly one; otherwise supply its name.",
     "Exit codes: 0 no findings; 1 any finding (so `xpl lint --patch p.json && xpl apply x p.json` stops on one;",
     "with --warn-only only a todo-left error), or a rejected patch; 2 usage error.",
   ],
@@ -123,13 +126,13 @@ export const lintCommand: CommandSpec = {
       desc: "Exit 1 when there is any finding (the default; kept for older scripts)",
     },
   },
-  positionals: [{ name: "explainer" }],
+  positionals: [{ name: "explainer", required: false }],
   async run(ctx, args) {
     const strict = !args.flag("warn-only");
     const patchSource = args.str("patch");
     const read =
       patchSource === undefined ? undefined : await readPatch(ctx, patchSource, "--patch -");
-    const loaded = loadExplainer(ctx, args.positionals[0]!);
+    const loaded = loadReadExplainer(ctx, args.positionals[0], "lint");
 
     let explainer: Explainer = loaded.explainer;
     let ws: Workspace | undefined;

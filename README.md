@@ -3,9 +3,12 @@
 [Try the live example](https://krimvp.github.io/xpl/) or open the
 [documentation](https://krimvp.github.io/xpl/docs/).
 
-xpl links diagrams to source code and source code back to diagrams. An authoring agent writes an explanation as
-data; xpl checks each source anchor against a static index before the guide can be exported. Share
-it as a live view or one self-contained HTML file.
+xpl adds interactive code explanations to an existing repository. It links diagrams to source code and
+source code back to diagrams, so readers can follow how a system works or what changed between commits.
+As code changes accelerate, including changes written with AI, `xpl change` gives reviewers a way to explore
+the diff alongside an explanation. An authoring agent writes the explanation as data; xpl checks that each
+source anchor exists and is current before export. It does not check whether the explanation is semantically
+correct or complete. Share a guide as a live view or one self-contained HTML file.
 
 ## Quick start
 
@@ -47,13 +50,17 @@ in your repository, then `xpl view <name>` and complete the TODO text.
 ### GitHub pull requests
 
 Prepare a PR's base and head as an isolated input with `xpl pr prepare`; author a guide and run `xpl
-pr finish` to check it and export HTML. These commands do not publish. A private target repository
-requires a team-visible preview, with access controlled by the host. See the [CLI
+pr finish` to check it and export HTML. These commands do not publish. Optional
+[CI preview publishing](docs-site/pages/workflows/pull-requests.md#optional-ci-authoring-and-publishing)
+runs an explicitly configured author and updates the PR preview. A private target repository requires a
+team-visible preview, with access controlled by the host. See the [CLI
 reference](skill/code-explainer/reference/cli.md) for the full command options.
 
 ### Search, libraries and saved versions
 
-Use the viewer's Search panel to find symbols, source, concepts and tour steps. `xpl bundle` can
+Use the viewer's Search panel to find symbols, source, concepts and tour steps across its contained
+guides. Source results name the guide and commit, then check the searched file's text when opened or
+reloaded. A changed file is reported even when the index commit is unchanged. `xpl bundle` can
 include several checked guides for offline browsing; `xpl stage` stores immutable versions locally.
 See [Find and share](https://krimvp.github.io/xpl/docs/workflows/find-and-share/).
 
@@ -92,6 +99,8 @@ Run `xpl --help` or see the [CLI reference](skill/code-explainer/reference/cli.m
 
 The local viewer can save edits to the guide. Saved HTML is a snapshot; export it again after
 changes. See [Edit and review](https://krimvp.github.io/xpl/docs/workflows/edit-and-review/).
+Each Guide section has a link named for that step. Opening it returns to the section and offers Continue from
+this step. Opening a source file keeps focus in the source pane.
 
 ### Author review
 
@@ -101,9 +110,9 @@ review](https://krimvp.github.io/xpl/docs/workflows/edit-and-review/).
 
 ### Explaining a change
 
-Use `xpl change` to explain a diff between commits. Before-code claims are checked against the base
-commit. The viewer marks changed lines and the changed words within paired rewrites. See the
-[change workflow](https://krimvp.github.io/xpl/docs/workflows/change/).
+Use `xpl change` to explain a diff between commits, including AI-generated changes. Before-code claims are
+checked against the base commit. The viewer marks changed lines and the changed words within paired rewrites.
+See the [change workflow](https://krimvp.github.io/xpl/docs/workflows/change/).
 
 ### Architecture maps
 
@@ -112,9 +121,12 @@ See [Architecture maps](https://krimvp.github.io/xpl/docs/workflows/explain/).
 
 ## Languages and precision
 
-xpl indexes TypeScript, JavaScript, Python, Go, YAML, JSON and TOML. References are labeled precise
-(SCIP) or heuristic. Use `--precise off` when optional semantic tools are unavailable. See [language
-support](https://krimvp.github.io/xpl/docs/concepts/languages/).
+xpl indexes TypeScript, JavaScript, Python, Go and Java, plus YAML, JSON and TOML keys. Ruby has
+source-backed class, module, method and constant declarations without relationship analysis. Java references
+are heuristic unless you import a checked SCIP artifact; heuristic edges are partial and need review.
+PHP has source-backed declaration tags for namespaces, types, functions, methods and constants, with
+`refs: none` until a checked relationship source exists.
+References keep their precise or heuristic label. See [language support](https://krimvp.github.io/xpl/docs/concepts/languages/).
 
 ## Repository layout
 

@@ -848,7 +848,8 @@ A box for something outside the repo is a group with a `role` and **no `members`
     {
       "id": "view:system",
       "type": "graph",
-      "title": "The job runner, who starts it and what it reads",
+      "title": "The job runner and its surroundings",
+      "scope": { "root": "repo", "depth": 1, "question": "Who starts it, and what does it read?" },
       "include": ["grp:operator", "grp:jobrunner", "grp:config-file"],
       "stubs": { "mode": "none" }
     },

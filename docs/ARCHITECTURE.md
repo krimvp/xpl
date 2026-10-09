@@ -5,7 +5,7 @@ What was built, and the contracts it was built against. `docs/handoff.md` is the
 its schema, and fixes the algorithms and interfaces of every package. It was written before the code and
 has been corrected to match it; where the two still disagree, fix one of them in the same change.
 
-Target languages: **TypeScript/JavaScript, Python, Go** (plus YAML, JSON and TOML config keys).
+Target languages: **TypeScript/JavaScript, Python, Go, Java** (plus YAML, JSON and TOML config keys).
 
 ```
 source ── xpl index ──→ .explainer/index-<commit>.json ──┐   static analysis; generated, git-ignored
@@ -171,7 +171,7 @@ Conventions (all packages):
    (§3, Analysis coverage). Its reports describe the original run, including in pruned bundles. Relationship
    results record `resolution?: "precise" | "heuristic"` independently of support and reference counts;
    an absent resolution is unknown.
-5. `IndexedFile.language: FileLanguage` = `typescript | tsx | javascript | python | go | rust | yaml | json | toml |
+5. `IndexedFile.language: FileLanguage` = `typescript | tsx | javascript | python | go | java | rust | ruby | php | yaml | json | toml |
    text`.
 6. `Edge.kind` adds `"references"` (lifted type-refs) and, for stored edges to related files, `"loads"`,
    `"discovers"`, `"configures"` and `"overrides"` (`EDGE_KINDS` in `ids.ts`; `related-files.ts` lists them).
@@ -393,7 +393,8 @@ Excluded from candidate files: binaries (NUL in the first 8 KB), files over 1 MB
 deleted but still tracked, and lockfiles (`*-lock.json`, `*.lock`, `go.sum`, `pnpm-lock.yaml`,
 `npm-shrinkwrap.json`). Every remaining text file is an `IndexedFile` (unknown extensions → `text`), so
 file-relative anchors work anywhere. Language by extension: `.ts .mts .cts` typescript, `.tsx` tsx, `.js .mjs
-.cjs .jsx` javascript, `.py .pyi` python, `.go` go, `.rs` rust, `.yaml .yml` yaml, `.json` json, `.toml` toml.
+.cjs .jsx` javascript, `.py .pyi` python, `.go` go, `.java` java, `.rs` rust, `.rb` ruby, `.php` php, `.yaml .yml` yaml,
+`.json` json, `.toml` toml.
 Named `*.explainer.json` and `*.patch.json` outputs are excluded in both modes. Exported xpl HTML is
 also excluded by its embedded bundle marker; ordinary HTML remains source. Paths are POSIX,
 repo-root-relative, sorted.
@@ -413,7 +414,7 @@ reading them again. Snapshot roots must match; language filtering still applies.
 disk, so the caller must recheck the revision before publishing. A changed-and-restored input supersedes a
 build even when its content fingerprint matches. Source reads are checked before and after capture.
 
-Configuration capture runs a syntax-only, cache-free resolver pass with `getText` recording every local
+Configuration capture runs a syntax-only resolver pass with `getText` recording every local
 configuration read, including missing paths. The returned text map is frozen for the real build. There is
 no filename-extension allowlist: ignored extends chains, package manifests and any other pack reads are
 captured through the same `SourceRepoView` reader. Packs and providers share the pure
@@ -421,6 +422,11 @@ captured through the same `SourceRepoView` reader. Packs and providers share the
 callers match the real build's mode and provider selection. Enabled semantic providers preload local
 inputs through the same recording reader without running tools. Declarations name the pinned tool version
 and the source file whose lookup they mirror; recheck them when bumping a tool:
+
+The capture pass uses the file-local extraction cache. On an edit it reuses unchanged files and writes
+facts for changed files, so the subsequent snapshot build can reuse both. It still resolves every site and
+records configuration reads afresh. Cache failures or an unsafe cache location fall back to extraction;
+the cache never stores configuration or semantic results.
 
 - Python 0.6.6 searches `scip-pyrightconfig.json` before `pyrightconfig.json`, nearest directory first,
   through ancestors. Only without any JSON config does it search `pyproject.toml`; `[tool.scip]` wins
@@ -536,7 +542,8 @@ interface LanguagePack {
   id: string; languages: FileLanguage[]; grammarFor(language): GrammarId;
   capabilities: AnalysisCapabilities; // advertised abilities; a missing capability key means unsupported
   extensions?: string[];               // `text` files this pack parses too (a format with no FileLanguage of its own; none does now)
-  packageScope: "file" | "directory";  // how far a top-level name is visible without an import (Go: the package dir)
+  packageScope: "file" | "directory" | "named"; // top-level visibility (Go: dir; Java: package declaration)
+  packageName?(file, repo): string;     // required for named packages, read from captured source
   readConfiguration?(file, repo): void; // preload local config through the shared reader
   importsReexport?: boolean;           // a module's imports are importable from it (Python `__init__.py`)
   offByDefault?(path, repo): boolean;  // a default build leaves the file out (Go build constraints): tried last
@@ -559,7 +566,9 @@ interface FileFacts {
   unsupported; it does not mean an empty result. Per-file extraction outcomes record observed limits separately.
 - Positions are `Span`s: 1-based inclusive lines and columns in UTF-16 (`nodeSpan`/`spanBetween` convert
   tree-sitter's points). A pack must not keep tree nodes: the tree is freed right after `extract`.
-- `SymbolDraft { path, kind, range, parentPath?, anchorOnly? }`: dotted, pre-dedup paths. `anchorOnly` marks a
+- `SymbolDraft { path, kind, range, identifier?, parentPath?, anchorOnly? }`: dotted, pre-dedup paths.
+  `identifier` is an exact source-checked name span when the pack can supply one; it lets a semantic provider
+  join its declaration to the syntax symbol without guessing from a name or line. `anchorOnly` marks a
   symbol that exists to be anchored and outlined and is never referenced by name (a TS test block: its title
   is not a name in the code): the resolvers leave it out of name lookup, so `describe("Queue")` cannot capture
   `Queue()` from the code under test, and no reference points at it; it still is the `from` of the references
@@ -596,7 +605,7 @@ file.
 facts. `TreeSitterProvider` and the SCIP providers implement it. Providers may parse the supplied text,
 consume an artifact, or run a tool. No tree-sitter node or language-pack parser is required by the interface.
 Additional syntax providers always run, including with `precise: "off"`; semantic providers honor precise
-mode. `require` needs explicit precise relationship coverage for programming languages, including Rust.
+mode. `require` needs explicit precise relationship coverage for programming languages, including Java and Rust.
 The old `PreciseResolver` interface and registry were removed; `providers` is the build option.
 
 ```ts
@@ -676,7 +685,7 @@ The built-in tool adapters keep SCIP relationship mapping over existing syntax d
 The CLI selects it with `xpl index --scip <artifact|manifest.json>` instead of automatic semantic tools,
 retaining registered syntax-mode providers first. Artifact import keeps existing syntax symbol sets and may update matching
 checked declaration ranges. Files without existing symbols can receive the artifact's placed declarations. In a mixed repository, `require` still needs precise relationships for
-Rust; an artifact covering only other source files cannot make Rust satisfy that requirement.
+Rust and Java; an artifact covering only other source files cannot make either satisfy that requirement.
 Unknown extensions keep the closed `FileLanguage` value `text`; imported symbols work in outlines, queries,
 checked anchors and bundles. `--precise off` skips semantic providers; combining it with `--scip` is an error.
 
@@ -723,18 +732,29 @@ A range-less standalone artifact with no targets cannot earn `precise` or satisf
 analysis with checked targets and zero relationships still can. Reports remain partial, including empty
 results. Producer ranges may omit leading documentation; the importer never substitutes an identifier extent
 for a full declaration. The CLI reference documents generation and
-manifest creation. Java uses this importer without a language pack or new `FileLanguage` value.
+manifest creation. Java can use this importer in addition to its language pack.
 `scripts/java-scip.ts` runs the pinned Maven producer workflow, captures source/config hashes before
 generation, checks them afterward, and writes a manifest only for a successful run with a fresh artifact.
-Missing JDK, Maven or scip-java and build failures exit 1 with a file-anchor fallback instruction. Java
-remains `text`, including plain editor range highlighting; code-only search and automatic Java service
-classification are not added. [docs/java-scip.md](java-scip.md) records versions, commands, literal fixture
-facts, losses and fixture/Gson generation and import costs. Calls and implementation flags remain unsupported.
+Missing JDK, Maven or scip-java and build failures exit 1 with a syntax-index fallback instruction. Java
+source is indexed by a tree-sitter language pack, so outline, code-only search and repository drafts work
+without a Java toolchain. [docs/java-scip.md](java-scip.md) records versions, commands, literal fixture
+facts, losses and fixture/Gson generation and import costs. The SCIP artifact alone cannot classify calls or
+infer implementation from flags.
+
+Java's `javaPack` uses `tree-sitter-java@0.23.5`. It indexes classes, interfaces, enums, records, nested
+types, methods, constructors, fields and enum constants. A Java `package` declaration defines the shared
+name scope, even across source roots; an unnamed package is limited to its source directory. Explicit class
+and nested-class imports resolve through the indexed package declarations. The pack emits heuristic sites
+for calls, construction, heritage, type uses and field access, with declared field, parameter, local and
+return types to guide receiver lookup. Exact declaration identifier spans let a source-checked SCIP artifact
+join those syntax symbols. Static and wildcard imports, annotation references, record components, `var`
+inference and complex receiver chains are not resolved; unresolved targets produce no relationship claim.
 
 Rust's syntax-only `TagsProvider` (`src/tags.ts`, `src/tags/rust.ts`, `rust.scm`) uses the standard
 `@name` and `@definition.*` convention through the same provider normalization. Its corrected query captures
-each declaration once, adds trait signatures, consts/statics and generic/scoped impl blocks, and preserves
-enum/type-alias kinds. Ordered tag containment supplies lexical parents. Functions directly under tagged
+each declaration once, adds trait signatures, consts/statics, named fields, enum variants and generic/scoped
+impl blocks, and preserves enum/type-alias kinds. Ordered tag containment supplies lexical parents.
+Named fields belong to their struct, union or struct-style enum variant. Functions directly under tagged
 traits/impls become methods; module functions remain functions. Impl paths preserve their receiver and trait
 (`impl Runner<Q>.dispatch`, `impl JobQueue for Queue.pop`); methods are children of the impl, not the receiver
 struct. Repeated paths are numbered in source order with explicit parent identities. Multiline receiver
@@ -742,16 +762,47 @@ labels collapse whitespace; those compound names have full declaration evidence 
 
 Rust uses `tree-sitter-rust@0.24.0` (WASM ABI 14). The CLI copies the corrected query beside its grammar in
 `dist/wasm`; source runs read it from the adapter directory. Rust reports partial symbols, declaration ranges
-and nesting. Its bounded call pass resolves bare calls between unambiguous root-level functions in the
-same file, with exact call-expression ranges and `heuristic` confidence. Shadowed names, nested functions,
-closures, qualified/generic calls, methods, trait dispatch and cross-module targets are omitted. Bodies
-containing macros or local imports are skipped. Syntax errors suppress calls for that file. Call coverage
-is partial; other relationship kinds remain unsupported. It does not resolve imports, receiver ownership
-or external `mod` links, expand macros, evaluate cfg, or index fields, variants and local bindings. Declaration
+and nesting. Its bounded call pass resolves unshadowed bare calls between root functions in one file, then
+resolves receiver calls from explicit fields, local types, and one-method return types. A generic receiver
+with one trait bound points to the trait method. A concrete receiver points to one inherent method. Explicit
+root-level `use crate::module::Type` imports connect those types to files under an indexed `src/lib.rs` or
+`src/main.rs` crate root. Without that root, imported receivers stay unresolved; standalone `src/bin` crates
+and custom crate-root paths are not resolved. Both passes emit
+exact call-expression ranges with `heuristic` confidence; provider normalization checks source snapshots and
+both declaration identities. A warm extraction cache reruns project receiver resolution against current files.
+Unknown or ambiguous receivers, nested functions, closures and calls inside macros are omitted. Bare-call
+analysis skips bodies with macros or local imports. Syntax errors suppress calls for that file. Call coverage
+is partial; other relationship kinds remain unsupported. It does not infer concrete implementations of
+generic trait receivers, resolve external `mod` links, expand macros, evaluate cfg, or index tuple positions and local bindings. Declaration
 ranges exclude leading attributes and doc comments. Syntax recovery adds a limit and a warning. Matching
 tags outcomes share one report with combined file counts; syntax-error files keep a separate report.
 [The tags experiment](rust-tags.md) records declaration coverage; [bounded direct calls](rust-direct-calls.md)
-records the supported slice and a bat smoke test. Tags cache version query-v4 includes call extraction.
+records the supported slice and a bat smoke test. Tags cache version query-v6 includes named members and call
+extraction.
+
+Ruby's syntax-only `TagsProvider` (`src/tags/ruby.ts`, `ruby.scm`) uses `tree-sitter-ruby@0.23.1`. It
+indexes named classes, modules, instance and singleton methods, and constant assignments with full
+declaration ranges. A qualified class, module or assignment target gets a dotted path and parent only when
+its owner has a preceding class or module declaration in the same file. Lookup checks actual enclosing
+class/module declarations before the file root, without treating dotted path ancestors as lexical scopes;
+`::` starts at the root. An unknown owner and the children of an ownerless
+class or module are omitted, including an owner declared
+only in another file. Direct declarations keep lexical parents; a singleton method keeps its receiver in
+the symbol path (`Runner.self.build`). Reopened namespaces get source-ordered `~N` IDs within a file.
+This does not resolve cross-file namespace ownership, inheritance, calls, imports or metaprogrammed definitions.
+All relationship kinds are unsupported and Ruby reports `refs: none`. Syntax errors can leave declarations
+incomplete and produce a warning. Ruby tags use the existing file-local extraction cache; profile version
+`tree-sitter-ruby@0.23.1/query-v5` binds the query and ownership rule to its cache entries.
+[The scoped constant check](ruby-scoped-constants.md) records the bounded rule and pinned Rack sample.
+
+PHP's syntax-only `TagsProvider` (`src/tags/php.ts`, `php.scm`) uses `tree-sitter-php@0.24.2` with the
+mixed PHP/HTML grammar. It indexes named namespaces, classes, interfaces, traits, functions, methods and
+constants. An unbraced namespace owns following top-level declarations until the next namespace; its
+full range extends to the last declaration in that section. Braced namespaces use the syntax range.
+Repeated namespace declarations retain separate parent identities and source-ordered IDs. PHP reports
+partial declarations and `refs: none`; calls, imports, inheritance, dynamic dispatch, anonymous and
+generated declarations are unavailable. Syntax recovery warns that declarations may be incomplete.
+The query and namespace-scope rule use the file-local cache profile `tree-sitter-php@0.24.2/query-v1`.
 
 **Analysis coverage** (`core/src/analysis.ts`, `indexer/src/analysis.ts`). An `AnalysisReport` contains a
 stable `provider` id, advertised `capabilities`, scoped `files`, and observed `results`. Capabilities are
@@ -833,9 +884,9 @@ exactly like sites.
    type names through imports; a module-level variable of another file has the type its own file's facts give
    it (`bus = new EventBus()`);
 5. last resort, only when the receiver's type is completely unknown: a class named like the qualifier
-   (case-insensitively) that has the member (`queue.pop()` → `Queue.pop`), preferring the same file, then a
-   class the file imports, then the same directory (Go: the same package before the imports). Ambiguity
-   drops the site. Calls and writes only.
+   (case-insensitively) that has the member (`queue.pop()` → `Queue.pop`), preferring the same file, then
+   the same Go or Java package, then imports. File-scoped languages may use another file in the same
+   directory. Ambiguity drops the site. Calls and writes only.
 
 A `read` site resolves by 1–4 to a variable, field or function value; a class or enum becomes a type reference, and the nearest member of that name decides (a property that overrides a base-class attribute is not
 a variable, and the attribute below it is out of reach). An import binding marked `typeOnly` yields a
@@ -1385,7 +1436,9 @@ Reset may clear selected pins or all pins; a later placement edit conflicts rath
   - **Tests**: test functions (top level, or methods of a test class) with any reference to the symbol, or to
     its class for the two cases above; a test file only for a module-level reference (an import) when none of
     its tests has one. `testSymbols` lists the tests the change adds or edits. `untested` lists the changed
-    symbols no test references ("no test found": tests of other code may still run them).
+    symbols with no indexed test reference. For constructors and instance-call methods, tests that reference
+    the class count too. Changed test files are listed separately; a missing reference does not prove the
+    behavior has no test.
 
 ---
 
@@ -1394,8 +1447,11 @@ Reset may clear selected pins or all pins; a later placement edit conflicts rath
 Global: `--root <dir>` (default cwd), `--json` (machine output), `--index <path>`, `-h`/`--help` (`xpl help
 [command]`), `-v`/`--version`; options may come before or after the command name. `<id>` arguments accept
 `sym:…`, `file:…`, `dir:…`, `src/a.ts#A.b`, `src/a.ts`, `./src/`, and come back with "did you mean"
-suggestions when wrong. `<explainer>` is a name (`jobrunner`), a file name or a path. Output is compact and
-copy-pasteable, for Claude as much as for people: exact ids, `<line> <offset>│ code` with the 0-based offsets
+suggestions when wrong. `<explainer>` is a name (`jobrunner`), a file name or a path. `validate`, `lint`,
+`ready`, `bundle` and `status` use the only repository guide when the name is omitted and print `using <name>`
+to stderr. With several guides they list the names; with none they point to `xpl new`. Writes still need an
+explicit name. Output is compact and copy-pasteable, for Claude as much as for people: exact ids,
+`<line> <offset>│ code` with the 0-based offsets
 that spans use, `+34..36` for the span of a reference site. `--json` on every command prints `{ "ok": true,
 …, "warnings"? }`; errors print `{ "ok": false, "error", … }`. Results, issue lists and patch rejections go to
 stdout (a rejection exits 1); fatal errors (`error: …`) and warnings (`warning: …`) go to stderr.
@@ -1412,14 +1468,14 @@ stdout (a rejection exits 1); fatal errors (`error: …`) and warnings (`warning
 | `xpl start <name> --question q --audience a [--entry symbol] [--precise auto\|off\|require]` | first-guide path: runs `index`, `new`, `draft repo` (or `draft path` with `--entry`) and `apply`; saves the checked patch and all draft notes outside the repository, prints up to three notes and apply warnings (full lists in `--json` and the notes file), then names `view` and `lint` as next steps; refuses an existing guide |
 | `xpl new <name> [--title t] [--repo r] [--url u]` | create `.explainer/<name>.explainer.json` bound to the index; never overwrites; repo name from `--repo`, else `package.json`, `go.mod`, `pyproject.toml`, git remote, directory name |
 | `xpl apply <explainer> <patch.json\|-> [--actor llm\|user] [--dry-run]` | §4.7; prints every issue of a rejected patch at once; atomic; `--help` summarises the patch format |
-| `xpl validate <explainer> [--lenient]` | §4.6 |
+| `xpl validate [explainer] [--lenient]` | §4.6 |
 | `xpl anchors <explainer> [id...] [--full] [--max-lines n]` | each anchor of an element (or of every element) resolved now: role, `file#symbol +span`, status, lines, and the code at them with offsets (a long anchor: its first lines, an elision line, its last lines); a base anchor prints as `<file>@base +a..b … [before the change]` with the base code; `tour:<id>` (or `tour:<id>/<step>`) also shows what a step without `code` derives from its `focus`, marked derived; verifies spans without reading JSON |
 | `xpl resolve <explainer> [--write] [--allow-stale]` | §4.2 re-resolve against the index of the current code; report drifted llm elements, missing anchors; `--write` saves |
 | `xpl feedback <explainer> [--import <file> \| --export <file> \| --outcomes <file>]` | durable reader feedback: stable-ID import deduplication, snapshot context inspection, portable export and selected-ID outcome merges; no generation |
 | `xpl revise <explainer> --select <id,id> [--include <id,id>] [-o file]` / `--run <id> [--proposal file \| --decisions file \| --accept]` | explicitly selected feedback; bounded ordinary patch proposals, source and explanation diff; author subset/missing-anchor decisions; identity/freshness/readiness before atomic acceptance; prior artifact and retry journal |
 | `xpl status [explainer] [--view <id>] [--all]` | `--all` inventories every repository guide against one current index, without saving prose; otherwise the skill's to-do list, read-only: per view the shown nodes, stored edges and steps without a summary (static edges optional), concepts without one, drift (user-owned drift counted apart), missing anchors, broken references (ids gone from the index), stale derived-edge overlays, queued requests; per graph view the ghosts and stubs it draws (counts, the most referenced ghost ids, and for each folded ghost up to 3 of the elements it stands for with their counts; `--json`: every ghost with its count and all its `targets` (`{id, count}`), and every stub id, in `views[].ghosts`) with a warning above 12 ghosts; the tours (id, step count, steps whose focus ids or view are gone); `--view <id>`: that view only, with what it draws (each arrow: id, kind, ends, references, stored or derived, label; each `hidden` id and what it takes out; a flow's step links) |
-| `xpl ready <explainer> [--note reason] [--require-review]` | shared readiness report before export; `--json` adds `ok` to the report above; 0 ready (warnings allowed), 1 blockers/failure, 2 usage; writes nothing; a note records intentional warning/omission decisions |
-| `xpl lint <explainer> [--patch <file\|->] [--warn-only]` | checks the text a reader sees (the index, when there is one, counts the boxes and arrows of maps): rules below; `--patch` lints the explainer as it would be after `xpl apply` of that patch (merged in memory as actor `llm`, nothing written; a patch apply would reject prints the rejection and exits 1); exit 1 with any finding (so `lint --patch && apply` stops on one), 0 with `--warn-only` unless a `todo-left` error |
+| `xpl ready [explainer] [--note reason] [--require-review]` | shared readiness report before export; `--json` adds `ok` to the report above; 0 ready (warnings allowed), 1 blockers/failure, 2 usage; writes nothing; a note records intentional warning/omission decisions |
+| `xpl lint [explainer] [--patch <file\|->] [--warn-only]` | checks the text a reader sees (the index, when there is one, counts the boxes and arrows of maps): rules below; `--patch` lints the explainer as it would be after `xpl apply` of that patch (merged in memory as actor `llm`, nothing written; a patch apply would reject prints the rejection and exits 1); exit 1 with any finding (so `lint --patch && apply` stops on one), 0 with `--warn-only` unless a `todo-left` error |
 | `xpl change <explainer> [<base>..<head>]` | records the change from git in the explainer and prints its analysis (§4.8; below); without a range, prints the analysis of the change already recorded |
 | `xpl pr prepare <url\|owner/repo#number\|owner/repo> [number] [--cache-dir dir] [--precise off\|auto\|require]` | resolves GitHub base/head through existing `gh`, fetches an isolated detached head, indexes head only and publishes an immutable input manifest; no agent or ready result |
 | `xpl pr cleanup <directory> [--cache-dir dir]` | removes only a marked owned PR input directly under the selected cache; refuses symlinks and developer-tree paths |
@@ -1427,7 +1483,7 @@ stdout (a rejection exits 1); fatal errors (`error: …`) and warnings (`warning
 | `xpl draft change\|repo\|path <explainer> [<entry id> ...] [-o file]` | prints a patch skeleton built from the index (and the change record) with no LLM, `TODO:` in every text to write (below); the summary goes to stderr |
 | `xpl view <explainer> [--port p] [--host h] [--no-open]` | local server (below) |
 | `xpl service <start\|pause\|resume\|stop\|status> [explainer] [--background] [--port p] [--backend none\|claude] [--skill-dir folder] [--job-timeout seconds] [--recover] [--watch]` | optional repository-scoped lifecycle around the same viewer server; loopback only; persisted context and explicit interrupted-owner recovery |
-| `xpl bundle <explainer> -o out.html [--mode explore\|present] [--tour id] [--files referenced\|boundary\|all] [--boundary-max n] [--embed-index full\|pruned] [--draft] [--note reason] [--require-review] [--allow-drift]` | self-contained HTML after the shared readiness check (exit 1 before writing with errors); `--draft` writes a labelled preview with findings; `--allow-drift` is a legacy draft flag that still refuses stale indexes; warnings and optional author notes are retained; `--tour` (`tour:intro` or `intro`) implies present mode; embeds the files the explainer references by default and prints what went in (`8 of 12 files embedded (referenced: 18.4 KB of source; --files all adds 4 files, 6.7 KB)`), `--files boundary` adds the direct callers, callees and tests of anchored symbols (at most `--boundary-max`, default 40), `--files all` every indexed file; with a change recorded, every changed file at head and the base text of the changed files go in too; the symbol index in it is pruned to what the viewer can draw with `--files referenced` or `boundary` and whole with `--files all` (`--embed-index` overrides) and packed (the summary line says `index 0.3 MB (1.3 MB as plain JSON, pruned from 9.0 MB)`) |
+| `xpl bundle [explainer] -o out.html [--mode explore\|present] [--tour id] [--files referenced\|boundary\|all] [--boundary-max n] [--embed-index full\|pruned] [--draft] [--note reason] [--require-review] [--allow-drift]` | self-contained HTML after the shared readiness check (exit 1 before writing with errors); `--draft` writes a labelled preview with findings; `--allow-drift` is a legacy draft flag that still refuses stale indexes; warnings and optional author notes are retained; `--tour` (`tour:intro` or `intro`) implies present mode; embeds the files the explainer references by default and prints what went in (`8 of 12 files embedded (referenced: 18.4 KB of source; --files all adds 4 files, 6.7 KB)`), `--files boundary` adds the direct callers, callees and tests of anchored symbols (at most `--boundary-max`, default 40), `--files all` every indexed file; with a change recorded, every changed file at head and the base text of the changed files go in too; the symbol index in it is pruned to what the viewer can draw with `--files referenced` or `boundary` and whole with `--files all` (`--embed-index` overrides) and packed (the summary line says `index 0.3 MB (1.3 MB as plain JSON, pruned from 9.0 MB)`) |
 | `xpl doctor [--agent none\|claude\|codex\|pi\|droid\|devin] [--skill-dir path]` | local setup report: Node, artifact hashes, grammar loading, installed skill version, optional git/npx/Go and selected harness; requests the latest npm version with a 1.5-second timeout unless `XPL_NO_UPDATE_CHECK=1`; no tool downloads or authentication probes; required failures exit 1 |
 | `xpl stage <explainer> --dir <outside-folder> [--preview] [--files referenced\|boundary\|all] [--note reason] [--require-review] [--pr-result result.json]` | previews included head/base files; stages only ready local HTML and an immutable manifest, rechecks inputs before promoting an atomic current symlink under a lock; retains prior versions; PR guides require a verified ready result and a final GitHub base/head check |
 | `xpl skill install [--agent claude\|codex\|pi\|droid\|devin] [--dir path]` | copies the bundled skill and writes its CLI binding; repeat to update; Claude is default; defaults to `~/.claude/skills/code-explainer` for Claude, `~/.agents/skills/code-explainer` for Codex/Pi/Droid, and the current project's `.agents/skills/code-explainer` for Devin; refuses unmanaged directories, symlinks and local edits |
@@ -1435,7 +1491,8 @@ stdout (a rejection exits 1); fatal errors (`error: …`) and warnings (`warning
 **Installed artifact.** Workspace packages remain private. `npm run build` writes standalone package
 metadata in `packages/cli/dist`, with `@xpl/cli`'s version, a `bin` entry, Node >=22.12 and no dependencies
 or install scripts. The viewer is required at build time. The directory carries the bundled CLI, viewer,
-WASM runtime and grammars, Rust tags query, the skill, a short README, MIT LICENSE and `integrity.json`.
+WASM runtime and grammars, Rust, Ruby and PHP tags queries, the skill, a short README, MIT LICENSE and
+`integrity.json`.
 The published name is `publishName` (`@krimvp/xpl`) in the private `@xpl/cli` workspace manifest; its version is
 0.2.2. The installed-artifact check retains service restart/recovery and checks watch pause/resume,
 durable job history and unavailable-runner submission. It also checks the published name/version, license
@@ -1543,8 +1600,9 @@ Implicit `show --at base` selection uses this loader too, so a guide name ending
 select a different repository JSON file. Unreadable guides still fail selection.
 
 `core/src/languages.ts` classifies every `FileLanguage` with a code display name or `undefined` for config
-and other text. Its derived `CODE_LANGUAGES` set is shared by code search and repo drafts; Rust participates
-in both, and its draft service boxes carry `tech: Rust`. Adding a language requires a classification.
+and other text. Its derived `CODE_LANGUAGES` set is shared by code search and repo drafts; Rust, Ruby, PHP and
+Java participate in both, and their draft service boxes carry the matching language name. Adding a language
+requires a classification. Test-only Java files keep the empty-code error.
 
 **GitHub PR inputs.** `pr.ts` parses GitHub.com URLs, `owner/repo#number`, or `owner/repo` plus a number.
 It calls `gh api --hostname github.com repos/<owner>/<repo>/pulls/<number>` using existing access,
@@ -1639,13 +1697,18 @@ file; `--json` adds the counts and what was left out.
   members = the parts), or one `dir:` box per program when `services/`, `apps/` or `cmd/` (at the root or
   under `src`) hold two or more; who reaches it (web and CLI frameworks, `role: person`) and what it relies on
   (database drivers and ORMs, caches, queues, file stores, HTTP clients and SDKs), found from the import lines
-  of code files (`outside.ts`: a catalog per language family) and drawn as groups with a role, a `tech` and no
+  of code files (`outside.ts`: a catalog per language family, including Java imports and Maven group IDs)
+  and drawn as groups with a role, a `tech` and no
   members, anchored at one import line per part that imports them. Each service box `opens` the map of its
   inside: 4-8 parts (top-level folders with code, a single root folder opened, tests, docs, examples and dot
   folders left out; label and summary TODOs) plus the outside systems they use, with an `llm` edge (`kind:
   custom`, label TODO) from each part to each system it imports, anchored at that import. `excludeFiles` for
   tests and docs on both. The tour: the system map, what it relies on, the inside of the biggest service,
-  then one step per part, the main part first. The service and outside boxes keep their ids across drafts.
+  then one step per part, the main part first. When imported outbound systems appear, the saved patch asks
+  whether each is on the default runtime path or is optional. The service and outside boxes keep their ids
+  across drafts. A code file qualifies as a part when any indexed declaration in it has a substantive kind,
+  including a class or method inside a Ruby module or PHP namespace. Imports, namespace wrappers and constants
+  alone do not qualify; tests remain excluded. A `refs: none` index supplies no cross-file call arrows.
 - `path <entry>`: a sequence of the calls the entry symbol makes (depth 1, source order, at most 6
   participants and 12 calls), and a tour with a big-picture step and one step per main call (at most 8).
 
@@ -1681,7 +1744,10 @@ field, a short quote and a fix. Rules (thresholds and word lists live in `LINT_L
   `change-not-shown` (changed files whose code no step shows; docs, tests, lock files and renames may be
   named instead), `far-ranges` (a step whose ranges in one file make more than 3 places over 40 lines apart:
   Present's panes per file), `long-talk-note` (a talk note over Present's `LONG_NOTE`), `big-map` (over 8 boxes on
-  a map a tour shows), `crowded-map` (over 2 arrows per box, with the edge ids to hide; needs the index).
+  a map a tour shows), `crowded-map` (over 2 arrows per box, with the edge ids to hide; needs the index), and
+  `system-map-no-edges` (an architecture map with a non-component role, at least two visible boxes and no visible
+  relationships; needs the index). This advisory asks the author to check for source-backed relationships. It does
+  not add edges or assert that any relationship exists.
 
 `--patch <file|->` merges the patch in memory with core `applyPatch`, the call `xpl apply` makes, so the
 findings are those of the explainer after apply; nothing is written. `--json`: `{ ok, path, strict, checked,
@@ -2100,6 +2166,20 @@ base/head moved, keeping only the last version link. It needs no checkout or sta
 `gh api` with the caller's token; two concurrent writers could still post two comments, so the workflow
 template serializes runs per PR.
 
+**Optional CI preview authoring (88).** `.github/workflows/pr-preview.yml` is manual and disabled until
+`XPL_CI_PREVIEWS=true`. Only the default branch runs, through the protected `xpl-previews` environment
+on a dedicated self-hosted Linux runner. `scripts/pr-preview.mjs` composes existing CLI commands:
+create, configured author executable, finish, stage and link. No schema or CLI command is added.
+Environment configuration names the author executable/credential, separate GitHub read/comment tokens,
+and a repository-specific mounted destination folder/base URL; visibility is always team. The mount's
+credentials and access controls belong to the runner operator and host. The author receives a handoff
+path, an allowlisted environment with only its provider token, and a fresh HOME. This is not a sandbox;
+a trusted author and ephemeral runner are required. Existing readiness and base/head checks own
+publication eligibility. On pipeline failure the script attempts check-link, preserving historical
+versions; a failed API request can prevent the stale-comment update. Dispatches serialize per PR.
+The author has a 20-minute timeout and child output is suppressed to keep secrets/source out of CI logs.
+See `docs-site/pages/workflows/pull-requests.md` for the complete setup and author contract.
+
 **Version navigation (34B).** `ViewerBundle.publication` carries a current `PublishedVersion` and prior
 summaries captured under the staging lock from retained immutable manifests. Each summary reuses locator,
 time, index/change commits, artifactIdentity, included head/base files and review state. The viewer never
@@ -2294,15 +2374,29 @@ and scanning run off the UI thread. The worker calls core's pure `query` using s
 have independent 16-row pages for symbols, concepts, steps, guides/tours and source (80 rows maximum).
 Each group reports its visible range and total, with Previous/Next controls; source lines cannot crowd out
 explanations or symbol results. Snippets retain at most 400 characters around matches. Stale request IDs
-are ignored, and changing the query or supplied snapshot resets all pages. Source and
-symbols refer to the active snapshot; prose can refer to any contained guide. Missing source, retained/
-total symbols and references, and unavailable analysis remain visible independently of no matches.
+are ignored, and changing the query or supplied snapshots resets all pages. Source, symbols and prose
+are searched across every contained guide, current guide first, using each guide's own index and supplied
+files. Pages span guides without multiplying the 16-row limit. Source and symbol rows name their guide
+and index commit. Missing source is checked against that guide, never filled from another guide with the
+same path. Each snapshot's missing source, pruning and unavailable analysis remain visible independently
+of no matches. Catalog-only guides are listed but not searched until their snapshot is opened.
 
-Results carry real links: `guide=<key>`, `file=<path>&range=<line>:<col>-<line>:<col>` (1-based inclusive
-UTF-16 columns; omitted columns mean a line range), or `tour=<id>&step-id=<stable-id>`. Numeric `step`
+Results carry real links: `guide=<key>`, `snapshot=<index-commit>&source-hash=<file-hash>&file=<path>`
+with `range=<line>:<col>-<line>:<col>` (1-based inclusive UTF-16 columns; omitted columns mean a line
+range), or `tour=<id>&step-id=<stable-id>`. The worker hashes the exact supplied file it searched;
+the hash is separate from the index's file hash, which can lag behind a changed working tree. Numeric `step`
 links remain compatible. Opening a range validates it against supplied text, selects exact columns in
 CodeMirror and enters Code. Tour phrases open the recorded step in Guide. Links survive reloads and use
-stable step IDs when reading; malformed or unavailable source ranges do not open another range.
+stable step IDs when reading; malformed or unavailable source ranges do not open another range. A source
+link whose snapshot commit or supplied file hash differs from the selected bundle is rejected before
+rendering source. Same-page opening checks both values before freezing the store. As navigation changes
+the open file or its head/Before side in a frozen view, the URL updates the hash from that side's text.
+Current-guide source links freeze the loaded store offline, preserving lazily loaded files as well as
+embedded source. In-flight source fetches are invalidated and reconnection is disabled. Pending edits
+block freezing a live guide. On reload, the loader checks the commit, requested file and its source hash
+against the URL's head or Before side, then removes the server attachment. A file loaded only in the
+previous page is unavailable if omitted from the new bundle; changed text under the same commit is also
+rejected. Polling and API reads cannot substitute later workspace text.
 
 Exported pickers enumerate only contained snapshots. A live picker reads the guarded catalog; other-guide
 previews have no API or write identity and author changes are prohibited. Switching requires no unsaved
@@ -2417,23 +2511,34 @@ ready pages and draft previews; an export decision never retargets a request to 
   (an IntersectionObserver), and once per view. Tests (`stepTests.ts`) are the test code the step's focus
   points at (`test` anchors, and focused code in test files), one entry per test function, gathered in one
   list. The summaries of the focused elements only stand in for a missing note. A tour picker sits above the
-  title when there are several tours. The Guide opens at its top, not scrolled to step 1.
+  title when there are several tours. The Guide opens at its top, except a link to a stable step ID scrolls
+  to that section and focuses its heading. Each section has a link named for its step that preserves the
+  selected guide, and a selected section offers Continue from this step in Present, including after same-page
+  Search navigation. Opening a file in the source pane keeps focus there; it does not refocus the heading.
+  A missing step ID falls back to the guide start with an explanation; its old numeric position does not
+  substitute for the removed step. A missing tour still shows the explanation when no tours remain.
   Each section shows a source excerpt beside its prose (stacked in narrow sections). `stepSelection`
   reuses the full code view's checked focus, including explicit `step.code` and before-change anchors.
   The first range in source order supplies at most 12 lines; a count explains when more ranges exist.
   "Open full code" opens that complete range and its before/head side. Missing, drifted or unavailable
   source is stated instead of guessed. Source text comes from the bundle or the existing file loader.
 - **Map** and **Flow**: the authored graph view, or flow or sequence view, that best matches the selection
-  (`workspace.ts`), with a picker of the others. Without a graph view the Map is generated from the flow's
-  participants (else the top level of the repo); without a flow, Flow lists the guide's steps in order. Count
-  labels on edges (`calls ×N`, stubs) are quiet: shown on hover or when the edge or an end of it is selected.
+  (`workspace.ts`), with a picker of the others. The heading shows the selected view's `scope.question` when
+  supplied and says "Sequence" for a sequence view, so the reader can tell a structural question from a
+  time-ordered one. Without a graph view the Map is generated from the flow's participants (else the top
+  level of the repo); without a flow, Flow lists the guide's steps in order. Count labels on edges (`calls ×N`,
+  stubs) are quiet: shown on hover or when an edge or one of its ends is selected.
   Reader boxes drop the group, directory and symbol badges.
 - **Code**: the editors and the file tree. On the other tabs "Show source" opens the code beside them.
 
 Beside the tabs: a breadcrumb (the explainer title, then the open step's title or the selected element), Back
 and Forward through what was read, "Read its explanation" (jumps to the guide step that best covers the
 selection), and a right rail: the selected element's summary ("Current topic", hidden while a guide section
-is the topic), the related files (`relatedFiles`: config, `resources`, tests; hidden when there are none) and,
+is the topic); on a map, a selected box lists the visible incoming and outgoing arrows, including dashed
+arrows to boxes outside the view, with their other end, relationship label or kind and aggregated count.
+Fully shown arrows distinguish authored text, overlays on precise/heuristic references, and indexed facts;
+boundary arrows say that the other end is outside this map. The list shows six rows before "Show more";
+the related files (`relatedFiles`: config, `resources`, tests; hidden when there are none) and,
 under "Where this is in the code", the details in reader form: no ids, provenance or author actions, and roles
 in plain words ("defined here", "called here", "used here", "setting", "test"). The URL keeps
 `?perspective=<tab>&view=<id>&tour=<id>&step=<n>&focus=<id>…` in step, so a link lands on the same place.
@@ -2452,7 +2557,8 @@ menu. Left: the diagram (caption: title and question), below it the concept list
 the code, the file tree (collapsible; files outside the focus are greyed `is-dimmed`, files in it `is-focus`; a
 static bundle lists only the files it embeds, with a footer "N of M files included · rebuild with --files all",
 `tree-foot`; under `xpl view` every indexed file is listed and loaded when opened) beside the stack of
-CodeMirror editors (language modes for TS/TSX/JS, Python, Go, YAML and JSON; Rust, TOML and other text are plain).
+CodeMirror editors (language modes for TS/TSX/JS, Python, Go, Java, YAML and JSON; Rust, Ruby, PHP, TOML and other
+text are plain).
 Both splits (diagram / panels, diagram / code) are resizable. Below 900 px the halves stack.
 
 **Diagram text alternative** (`components/DiagramText.tsx`, `PanZoom.textView`): every live map,
@@ -2490,9 +2596,18 @@ status stays in the sticky Save/Cancel bar, including the disabled Save reason.
   kept if it fits at least 8% larger. The direction is on the graph as `data-direction`. Containers
   for nested includes, laid out inside-out with room for their header; an edge that crosses a container's
   border gets a port there (a node of its own in the container's first or last layer), so the part inside
-  is routed around the boxes; edges routed inside their lowest common container, right-angled, with the ends that share a side of a box spread along it and the turns in one gap
-  between layers on separate tracks. `GraphView.layout` replaces automatic positions at each container
-  level before sizing its parent. Pins are finite logical coordinates relative to the rendered container,
+  is routed around the boxes; edges routed inside their lowest common container, right-angled, with the ends
+  that share a side of a box spread along it and the turns in one gap between layers on separate tracks.
+  Automatic levels of at most 150 boxes and edges spread ports over 15–85% of a box side when this adds no
+  crossing arrow pairs or edge-box intersections. They shorten a longer route only when the new path clears other
+  boxes by at least 8 diagram units and avoids other arrows.
+  Its label follows the chosen path. At levels with at most 150 edges, a label that meets another route's
+  orthogonal segment tries positions on its own route with four units of clearance from those segments
+  and other labels. It stays inside its level and outside boxes; if none fits, it keeps the earlier position.
+  Larger levels keep prior label placement to bound layout time; larger and pinned levels keep port spacing
+  and routing rules.
+  `GraphView.layout` replaces automatic positions at each
+  container level before sizing its parent. Pins are finite logical coordinates relative to the rendered container,
   or to the canvas for roots. Negative child coordinates expand the container frame to the left/top
   without translating those children or changing saved pins. Routes reconnect to the moved frames;
   unpinned siblings yield space when a pin occupies their old position. Changed levels discard stale
@@ -2522,7 +2637,11 @@ status stays in the sticky Save/Cancel bar, including the disabled Save reason.
   view (`GraphNode.expandable`) also offers "Show the inside here": `store.toggleExpanded` adds it to
   `state.expanded`, and the view is drawn through `expandInPlace` (core `levels.ts`), with the boxes of the
   view it opens added, so the parts of a service sit inside its box and their arrows cross its border; its
-  collapse button folds it back. Nothing is stored. Every box has an icon left of its label
+  collapse button folds it back. At 760 px and narrower, the caption offers "Show parts of [box] here"
+  for the sole expandable box on the map, or for a selected one when several can open. The action stays
+  reachable when that box's SVG corner is outside the pane. If an expanded box extends past the visible
+  pane at readable zoom, a caption button also folds the most recently expanded box on that map by pointer
+  or keyboard. Neither action changes the stored view or pins. Every box has an icon left of its label
   (`components/icons.tsx`): its role, else the kind of code (folder, file, group, a letter per symbol kind).
   Not while presenting. Pan by dragging, zoom with
   the wheel, the buttons or `+`/`-`, and "Fit" (or `0`). Maps with saved pins keep at least zoom 0.9 on load and
@@ -2697,6 +2816,9 @@ read-only: no drill-in, expand or collapse, and ghosts are pictures. Framing rul
   zoom buttons stay hidden until the mouse moves.
 - Two places far apart in one file (more than about a pane apart, present/ranges.ts) get a pane each, the
   step's first one on top, like two files. Read mode shows "‹ range 1 / 2 ›" in the pane header instead.
+- On a phone, the diagram and caption stack above source. Entering a talk or moving between steps while the
+  diagram is at the top keeps it in view after the editor focuses its code range. A reader who has moved down
+  to source stays there between steps; source still scrolls to its focused range inside the editor.
 - The code font grows with the screen (`clamp(15px, 4px + 0.45vw + 0.75vh, 22px)`: about 15 px at 1280×720,
   17 px at 1440×900; 14 px in a code column under 420 px). Long lines wrap with a hanging indent (Present
   only) that keeps the first row of a line from being empty. A pane is as tall as its focus,
@@ -2916,8 +3038,8 @@ fixes; its `json patch` blocks are applied by a test), `cli.md` (every command w
 `writing.md` (which field holds what, plain-language rules, the tour summary, rewrites; `xpl lint` checks the
 mechanical part), `explain-change.md` (the PR, MR and branch guide),
 `examples/go-retry.patch.json` (a worked question patch for `fixtures/go-jobrunner`) and
-`examples/py-overview.patch.json` (a worked repo overview for `fixtures/py-jobrunner`); tests apply and
-validate both.
+`examples/py-overview.patch.json` (a worked repo overview for `fixtures/py-jobrunner`, with an optional
+completion-path map and short tour); tests apply and validate both.
 
 ---
 
@@ -2936,6 +3058,14 @@ nested-class forms, interfaces, abstract methods, callbacks and records. It has 
 standard-library `RetryTest` main; `mvn test` does not run that main. The Java acceptance test imports
 a recorded scip-java artifact outside the fixture, with checked ranges/nesting and precise type mentions.
 The repeatable workflow and checked bundle example are in [docs/java-scip.md](java-scip.md).
+
+`fixtures/rb-jobrunner` is a four-file Ruby queue and runner with two standard-library Minitest cases
+(`ruby -Ilib test/jobrunner_test.rb`). It exercises the syntax-only Ruby declaration path through index,
+outline, anchors and bundle without claiming any call relationships.
+
+`fixtures/php-jobrunner` adds four PHP source files: a queue, runner, interface and small executable check.
+`php tests/RunnerTest.php` runs when PHP is installed; indexing needs only the pinned WASM grammar.
+It exercises namespace ranges, methods, a constant and a source-linked CLI-to-bundle anchor.
 
 `fixtures/ts-jobrunner` matches the handoff example **exactly**: `src/runner.ts` with `Runner.dispatch` at
 lines 42–88; offsets (relative to line 42) 4 = the `pop()` call, 18–19 = the `run(job)` call, 30–41 = the
@@ -2988,20 +3118,23 @@ keyboard and small screens (`a11y.spec.ts`). `screenshots.spec.ts` (and screensh
 
 ## 9. Status
 
-**Exists and tested:** the four packages and the skill as described above; three language packs with
-heuristic references, SCIP-precise references for all three, config keys of YAML, JSON and TOML files, the
+**Exists and tested:** the four packages and the skill as described above; four language packs with
+heuristic references, SCIP-precise references for TypeScript/JavaScript, Python and Go, config keys of YAML, JSON and TOML files, the
 full CLI (with `change`, `draft` and `lint`), Read, Explore and Present with tours, feedback from the page
 under `xpl view` and its live update, architecture maps (`role`, `opens`), change explainers with
 base anchors and a diff view, and example explainers for the original three fixtures. Rust has an
-experimental syntax-tags provider and a browser-tested structural bundle; it has no relationship resolver or committed example explainer.
+experimental syntax-tags provider with bounded heuristic calls and a browser-tested structural bundle; it has no committed example explainer.
+Ruby has source-backed declaration tags and a runnable fixture, but no relationship resolver.
 
-Java artifact import is also exercised without a language pack: the pinned scip-java/Maven workflow
-retains source-checked declarations and type references, with file-anchor fallback and explicit losses
-([docs/java-scip.md](java-scip.md)). Java stays `text`; semantic calls and inheritance are unsupported.
+PHP has source-backed declaration tags and a small source fixture, but no relationship resolver.
+
+Java's tree-sitter pack supplies named declarations and heuristic relationships without a JDK. The optional
+pinned scip-java/Maven artifact imports source-checked declarations and type references, with explicit losses
+([docs/java-scip.md](java-scip.md)). The importer does not by itself prove Java calls or inheritance.
 
 The [language-support decision](assessment-2026-10-04-language-support.md) compares syntax tags and
-rust-analyzer SCIP on identical Rust inputs, and Java SCIP separately. Both new-language paths remain
-experimental. The measured Rust artifact has no full ranges: import removes tags in described files and
+rust-analyzer SCIP on identical Rust inputs, and Java SCIP separately. Those measurements predate the Java
+language pack. The measured Rust artifact has no full ranges: import removes tags in described files and
 `require` can still succeed without retained targets or relationships. Use Rust tags with `--precise off`.
 The decision recommends separating examined coverage from replacement authority before joining semantic
 identities to syntax ranges. This is a proposed contract revision, not a change to the current §3 contract.
@@ -3036,8 +3169,9 @@ identities to syntax ranges. This is a proposed contract revision, not a change 
 - `xpl change` needs the head checked out and indexed (the head must be the index commit); the change of an
   uncommitted working tree cannot be recorded, since it has no head commit.
 - The change analysis adds at most one hop beyond direct callers and is as good as the index: callers through a variable, a callback or a
-  framework are not seen, `callers via instance` is a guess, and "no test found" means no test names the
-  symbol, not that no test runs it.
+  framework are not seen, `callers via instance` is a guess, and a missing indexed test reference does not
+  prove the behavior has no test. Tests that reference the class count for constructors and instance-call
+  methods. Changed test files are listed separately.
 - Drafts give structure, not understanding: a map, a sequence, anchors and a tour in the right order. The
   concepts, flows, `llm` edges, base anchors and every sentence are written by the selected authoring agent.
   A draft covers about one view and most of the tour steps of a hand-written explainer, with roughly half

@@ -18,7 +18,9 @@ import {
 import { CodeArea } from "./CodeArea.js";
 import { Details, TopicFacts } from "./Details.js";
 import { ErrorBoundary } from "./ErrorBoundary.js";
+import { ExpandInPlaceAction } from "./ExpandInPlaceAction.js";
 import { FlowDiagram } from "./FlowDiagram.js";
+import { FoldBackAction } from "./FoldBackAction.js";
 import { GraphView } from "./GraphView.js";
 import { Guide } from "./Guide.js";
 import { RelatedFiles } from "./RelatedFiles.js";
@@ -40,6 +42,8 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
     [state.model, state.selection, state.viewId, state.expanded],
   );
   const flow = workspaceView(state, "flow") as SequenceViewData | undefined;
+  const viewQuestion =
+    state.perspective === "map" ? map.view.scope?.question : flow?.scope?.question;
   const mapMatches = useMemo(
     () =>
       state.cursor
@@ -214,12 +218,18 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
               )}
             >
               {state.perspective === "guide" ? (
-                <Guide onReading={setReading} />
+                <Guide onReading={setReading} returningFromPresent={startWithSource} />
               ) : (
                 <>
                   <div className="workspace-caption">
                     <div>
-                      <p className="eyebrow">{state.perspective === "map" ? "Map" : "Flow"}</p>
+                      <p className="eyebrow">
+                        {state.perspective === "map"
+                          ? "Map"
+                          : flow?.type === "sequence"
+                            ? "Sequence"
+                            : "Flow"}
+                      </p>
                       <ZoomTrail
                         viewId={state.perspective === "map" ? map.view.id : (flow?.id ?? "")}
                       />
@@ -228,6 +238,7 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
                           ? map.view.title
                           : (flow?.title ?? "The guide's steps")}
                       </h2>
+                      {viewQuestion && <p className="view-question">{viewQuestion}</p>}
                       {state.perspective === "flow" && flowOwner && (
                         <p className="caption-owner" data-testid="caption-owner">
                           The steps of <code>{state.model.label(flowOwner)}</code>
@@ -248,29 +259,37 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
                         </p>
                       )}
                     </div>
-                    <select
-                      aria-label="Choose a topic"
-                      value={state.perspective === "map" ? map.view.id : (flow?.id ?? "")}
-                      onChange={(event) => store.setView(event.target.value)}
-                    >
-                      {state.model.views
-                        .filter((view) =>
-                          state.perspective === "map"
-                            ? view.type === "graph"
-                            : view.type !== "graph",
-                        )
-                        .map((view) => (
-                          <option key={view.id} value={view.id}>
-                            {view.title}
-                          </option>
-                        ))}
-                      {state.perspective === "map" && map.generated && (
-                        <option value={map.view.id}>Map</option>
+                    <div className="caption-actions">
+                      {state.perspective === "map" && (
+                        <>
+                          <ExpandInPlaceAction nodes={map.graph.nodes} />
+                          <FoldBackAction visibleIds={map.graph.nodes.map((node) => node.id)} />
+                        </>
                       )}
-                      {state.perspective === "flow" && !flow && (
-                        <option value="">The guide's steps</option>
-                      )}
-                    </select>
+                      <select
+                        aria-label="Choose a topic"
+                        value={state.perspective === "map" ? map.view.id : (flow?.id ?? "")}
+                        onChange={(event) => store.setView(event.target.value)}
+                      >
+                        {state.model.views
+                          .filter((view) =>
+                            state.perspective === "map"
+                              ? view.type === "graph"
+                              : view.type !== "graph",
+                          )
+                          .map((view) => (
+                            <option key={view.id} value={view.id}>
+                              {view.title}
+                            </option>
+                          ))}
+                        {state.perspective === "map" && map.generated && (
+                          <option value={map.view.id}>Map</option>
+                        )}
+                        {state.perspective === "flow" && !flow && (
+                          <option value="">The guide's steps</option>
+                        )}
+                      </select>
+                    </div>
                   </div>
                   {state.perspective === "map" ? (
                     <div className="workspace-diagram">
@@ -394,7 +413,11 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
               {info.summary && (
                 <p dangerouslySetInnerHTML={{ __html: renderInline(info.summary) }} />
               )}
-              <TopicFacts id={info.id} />
+              <TopicFacts
+                key={`${state.perspective === "map" ? map.view.id : state.perspective}:${info.id}`}
+                id={info.id}
+                graph={state.perspective === "map" ? map.graph : undefined}
+              />
               {state.perspective === "guide" && (
                 <div className="section-actions">
                   <button className="btn" onClick={() => store.setPerspective("map")}>

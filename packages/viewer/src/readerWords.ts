@@ -3,7 +3,17 @@
  * author's vocabulary; a reader (Read mode and Present) sees what they mean instead, or nothing when the
  * word only matters to the author.
  */
-import type { AnchorRole } from "@xpl/core";
+import type { AnchorRole, DerivedEdge } from "@xpl/core";
+
+/** A map arrow's source, including an authored note laid over a derived relationship. */
+export function mapEdgeSource(edge: Pick<DerivedEdge, "resolution" | "stored">): string {
+  const { resolution, stored } = edge;
+  if (resolution === "precise" || resolution === "heuristic" || resolution === "mixed") {
+    const precision = resolution === "mixed" ? "mixed precision" : resolution;
+    return `${stored ? "authored overlay · " : ""}derived · ${precision}`;
+  }
+  return resolution === "static" ? "from index" : "authored";
+}
 
 /** What a highlighted range is, for a reader: "called here", not "call-site". */
 export const ROLE_WORDS: Record<AnchorRole, string> = {

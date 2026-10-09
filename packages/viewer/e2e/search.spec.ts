@@ -4,7 +4,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { injectBundle, parseBundle, hashText } from "@xpl/core";
-import { readEmbeddedBundle, stateOf, watchProblems, openEditMenu, toExplore } from "./helpers.js";
+import {
+  CHANGE_BUNDLE,
+  readEmbeddedBundle,
+  stateOf,
+  watchProblems,
+  openEditMenu,
+  toExplore,
+} from "./helpers.js";
 
 // A real file:// page: no service can fill in omitted source or guide snapshots.
 test("offline library searches supplied source and prose, opens exact links and switches bounded guides", async ({
@@ -41,7 +48,7 @@ test("offline library searches supplied source and prose, opens exact links and 
     await page.goto(url);
     await page.getByRole("button", { name: "Search and guides" }).click();
     const panel = page.getByRole("dialog", { name: "Search and guides" });
-    const input = panel.getByRole("searchbox", { name: "Search this snapshot" });
+    const input = panel.getByRole("searchbox", { name: "Search guide snapshots" });
     await input.fill("needle-search-literal");
     const longLine = panel.locator('[data-kind="source"]').first();
     await expect(longLine).toContainText("needle-search-literal");
@@ -79,7 +86,7 @@ test("offline library searches supplied source and prose, opens exact links and 
     await expect(panel).toContainText("pruned");
     await expect(panel).toContainText("not included in this export");
     await input.fill("no-such-phrase-12345");
-    await expect(panel.getByRole("status")).toContainText("No matches in the supplied snapshot");
+    await expect(panel.getByRole("status")).toContainText("No matches in the supplied snapshots");
     await expect(panel).toContainText("Analysis unavailable");
     await panel.getByRole("button", { name: "Close search" }).click();
     await (await openEditMenu(page)).getByTestId("edit-save-html").click();
@@ -275,3 +282,279 @@ for (const width of [1440, 390]) {
     await expect(page.getByRole("button", { name: "Move worker.ts", exact: true })).toBeFocused();
   });
 }
+
+test("source and symbol search keeps each contained guide's commit and missing-source boundary", async ({
+  page,
+}) => {
+  const dir = mkdtempSync(join(tmpdir(), "xpl-cross-guide-"));
+  try {
+    const { html, bundle: raw } = readEmbeddedBundle();
+    const bundle = parseBundle(JSON.stringify(raw));
+    bundle.guideId = "current-guide";
+    bundle.index.commit = "current-commit";
+    bundle.explainer.repo.commit = "current-commit";
+    bundle.explainer.index.commit = "current-commit";
+    bundle.files["src/metrics.ts"] = Array.from({ length: 20 }, () => "// shared phrase").join(
+      "\n",
+    );
+    const oldText =
+      'export function archivedOnly() {\n  return "buried phrase";\n}\n// shared phrase\n';
+    const index = structuredClone(bundle.index);
+    index.commit = "archived-commit";
+    index.symbols = [
+      {
+        id: "src/metrics.ts#archivedOnly",
+        file: "src/metrics.ts",
+        path: "archivedOnly",
+        kind: "function",
+        range: { startLine: 1, endLine: 3 },
+        hash: hashText(oldText),
+      },
+      {
+        id: "src/queue.ts#omittedOnly",
+        file: "src/queue.ts",
+        path: "omittedOnly",
+        kind: "function",
+        range: { startLine: 1, endLine: 1 },
+        hash: "missing",
+      },
+    ];
+    index.refs = [];
+    index.pruned = {
+      files: bundle.index.files.length,
+      symbols: bundle.index.symbols.length,
+      refs: bundle.index.refs.length,
+    };
+    bundle.guides = [
+      {
+        guideId: "archive",
+        explainer: {
+          ...bundle.explainer,
+          title: "Archived guide",
+          repo: { ...bundle.explainer.repo, commit: "archived-commit" },
+          index: { ...bundle.explainer.index, commit: "archived-commit" },
+        },
+        index,
+        files: { "src/metrics.ts": oldText },
+      },
+    ];
+    const url = pathToFileURL(join(dir, "library.html")).href;
+    writeFileSync(join(dir, "library.html"), injectBundle(html, bundle));
+    await page.goto(url);
+    await page.getByRole("button", { name: "Search and guides" }).click();
+    const panel = page.getByRole("dialog", { name: "Search and guides" });
+    await panel.getByRole("searchbox").fill("archivedOnly");
+    const symbol = panel.locator('a[data-kind="symbol"]').filter({ hasText: "archivedOnly" });
+    await expect(symbol).toContainText("Archived guide");
+    await expect(symbol).toContainText("archived-commit");
+    await symbol.focus();
+    await page.keyboard.press("Enter");
+    await expect(page.locator(".header .title")).toHaveText("Archived guide");
+    await expect(page.locator('[data-file="src/metrics.ts"] .cm-content').first()).toContainText(
+      "buried phrase",
+    );
+    await expect
+      .poll(() => stateOf(page).then((s) => s.cursor))
+      .toMatchObject({ file: "src/metrics.ts", fromLine: 1, toLine: 3 });
+    await page.goto(url);
+    await page.getByRole("button", { name: "Search and guides" }).click();
+    await panel.getByRole("searchbox").fill("shared phrase");
+    const sourceGroup = panel.getByRole("region", { name: "Source" });
+    await expect(sourceGroup).toContainText("1–16 of 21 matches");
+    await sourceGroup.getByRole("button", { name: "Next Source results" }).click();
+    await expect(sourceGroup).toContainText("17–21 of 21 matches");
+    await expect(sourceGroup.locator("a").filter({ hasText: "Archived guide" })).toHaveCount(1);
+    await panel.getByRole("searchbox").fill("buried phrase");
+    const source = panel.locator('a[data-kind="source"]').filter({ hasText: "buried phrase" });
+    await expect(source).toContainText("Archived guide");
+    await expect(source).toHaveAttribute("href", /guide=archive.*snapshot=archived-commit/);
+    await source.click();
+    await page.locator('[data-file="src/metrics.ts"] .cm-content').first().focus();
+    await expect
+      .poll(() => page.evaluate(() => window.getSelection()?.toString()))
+      .toBe("buried phrase");
+    await page.reload();
+    await expect(page.locator(".header .title")).toHaveText("Archived guide");
+    await page.getByRole("button", { name: "Search and guides" }).click();
+    await panel.getByRole("searchbox").fill("omittedOnly");
+    await expect(panel.locator('[data-kind="symbol"]')).toContainText("source not supplied");
+    await expect(panel.locator('a[data-kind="symbol"]')).toHaveCount(0);
+    await expect(panel).toContainText("pruned");
+    await page.goto(url + "?guide=archive&snapshot=current-commit&file=src/metrics.ts&range=2-2");
+    await expect(page.getByTestId("no-data")).toContainText("snapshot");
+    await expect(page.locator(".cm-content")).toHaveCount(0);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+for (const lazy of [false, true]) {
+  test(`live ${lazy ? "lazy" : "embedded"} source results keep their snapshot when the server advances`, async ({
+    page,
+  }) => {
+    const { html, bundle: raw } = readEmbeddedBundle();
+    const original = parseBundle(JSON.stringify(raw));
+    original.guideId = "repository";
+    original.index.commit =
+      original.explainer.index.commit =
+      original.explainer.repo.commit =
+        "snapshot-A";
+    original.files["src/metrics.ts"] = "// needle A\n";
+    if (lazy) delete original.files["src/metrics.ts"];
+    original.server = {
+      api: "/api",
+      attachment: { root: "/repo", guide: ".explainer/repository.explainer.json" },
+    };
+    const newer = structuredClone(original);
+    newer.index.commit = newer.explainer.index.commit = newer.explainer.repo.commit = "snapshot-B";
+    newer.files["src/metrics.ts"] = "// wrong! B\n";
+    let update = false;
+    await page.route("http://xpl.test/**", async (route) => {
+      const path = new URL(route.request().url()).pathname;
+      if (path === "/")
+        return route.fulfill({ contentType: "text/html", body: injectBundle(html, original) });
+      if (path === "/api/explainer")
+        return update
+          ? route.fulfill({ json: newer.explainer, headers: { etag: "B" } })
+          : route.fulfill({ status: 304 });
+      if (path === "/api/file")
+        return route.fulfill({ contentType: "text/plain", body: "// needle A\n" });
+      if (path === "/api/bundle") return route.fulfill({ json: newer });
+      if (path === "/api/guides") return route.fulfill({ json: { guides: [], errors: [] } });
+      if (path === "/api/requests") return route.fulfill({ json: { requests: [] } });
+      return route.fulfill({ status: 404 });
+    });
+    await page.goto("http://xpl.test/");
+    if (lazy) {
+      await page.waitForFunction(() => !!window.__xpl);
+      await page.evaluate(() => window.__xpl!.setCursor("src/metrics.ts", 1));
+      await expect(page.locator('[data-file="src/metrics.ts"] .cm-content').first()).toContainText(
+        "needle A",
+      );
+    }
+    await page.getByRole("button", { name: "Search and guides" }).click();
+    await page.getByRole("searchbox", { name: "Search guide snapshots" }).fill("needle A");
+    await page.locator('a[data-kind="source"]').click();
+    const editor = page.locator('[data-file="src/metrics.ts"] .cm-content').first();
+    await expect(editor).toContainText("needle A");
+    await expect(page).toHaveURL(/snapshot=snapshot-A/);
+    update = true;
+    // Advance beyond several polling intervals: a live server must not replace pinned source.
+    await page.waitForTimeout(6500);
+    await expect(editor).toContainText("needle A");
+    await expect(editor).not.toContainText("wrong! B");
+    await editor.focus();
+    await expect
+      .poll(() => page.evaluate(() => window.getSelection()?.toString()))
+      .toBe("needle A");
+    await expect.poll(() => stateOf(page).then((s) => s.serverMode)).toBe(false);
+    await page.reload();
+    if (lazy) {
+      await expect(page.locator("body")).toContainText(
+        'Source file "src/metrics.ts" is not included in snapshot "snapshot-A"',
+      );
+      await expect(page.locator(".cm-content")).toHaveCount(0);
+    } else await expect(editor).toContainText("needle A");
+  });
+}
+
+test("a source link rejects changed text when the index commit stays the same", async ({
+  page,
+}) => {
+  const { html, bundle: raw } = readEmbeddedBundle();
+  const original = parseBundle(JSON.stringify(raw));
+  original.guideId = "repository";
+  original.index.commit =
+    original.explainer.index.commit =
+    original.explainer.repo.commit =
+      "snapshot-A";
+  original.files["src/metrics.ts"] = "// needle A\n";
+  const changed = structuredClone(original);
+  changed.files["src/metrics.ts"] = "// wrong! B\n";
+  let reload = false;
+  await page.route("http://xpl.test/**", (route) =>
+    route.fulfill({
+      contentType: "text/html",
+      body: injectBundle(html, reload ? changed : original),
+    }),
+  );
+  await page.goto("http://xpl.test/");
+  await page.getByRole("button", { name: "Search and guides" }).click();
+  await page.getByRole("searchbox", { name: "Search guide snapshots" }).fill("needle A");
+  await page.locator('a[data-kind="source"]').click();
+  await expect(page.locator('[data-file="src/metrics.ts"] .cm-content').first()).toContainText(
+    "needle A",
+  );
+  await page.evaluate(() => window.__xpl!.setCursor("src/queue.ts", 1));
+  await expect
+    .poll(() => new URL(page.url()).searchParams.get("source-hash"))
+    .toBe(hashText(original.files["src/queue.ts"]!));
+  await page.evaluate(() => window.__xpl!.setCursor("src/metrics.ts", 1));
+  await expect
+    .poll(() => new URL(page.url()).searchParams.get("source-hash"))
+    .toBe(hashText("// needle A\n"));
+  reload = true;
+  await page.reload();
+  await expect(page.getByTestId("no-data")).toContainText(
+    'Source file "src/metrics.ts" changed within snapshot "snapshot-A"',
+  );
+  await expect(page.locator(".cm-content")).toHaveCount(0);
+  expect(new URL(page.url()).searchParams.get("source-hash")).toBe(hashText("// needle A\n"));
+  const unbound = new URL(page.url());
+  unbound.searchParams.delete("source-hash");
+  await page.goto(unbound.href);
+  await expect(page.getByTestId("no-data")).toContainText(
+    'Source link for "src/metrics.ts" has no file hash',
+  );
+});
+
+test("a source link can move to a change's Before file and survive reload", async ({ page }) => {
+  const { html, bundle: raw } = readEmbeddedBundle(CHANGE_BUNDLE);
+  const bundle = parseBundle(JSON.stringify(raw));
+  bundle.files["src/metrics.ts"] = "// needle A\n";
+  const changed = structuredClone(bundle);
+  changed.baseFiles!["src/legacy.ts"] = "// wrong! B\n";
+  let reloadChanged = false;
+  await page.route("http://xpl.test/**", (route) =>
+    route.fulfill({
+      contentType: "text/html",
+      body: injectBundle(html, reloadChanged ? changed : bundle),
+    }),
+  );
+  await page.goto("http://xpl.test/");
+  await page.getByRole("button", { name: "Search and guides" }).click();
+  await page.getByRole("searchbox", { name: "Search guide snapshots" }).fill("needle A");
+  await page.locator('a[data-kind="source"]').click();
+  await expect(page.locator('[data-file="src/metrics.ts"] .cm-content').first()).toContainText(
+    "needle A",
+  );
+  await page.evaluate(() => window.__xpl!.setCursor("src/runner.ts", 75));
+  await expect
+    .poll(() => new URL(page.url()).searchParams.get("source-hash"))
+    .toBe(hashText(bundle.files["src/runner.ts"]!));
+  await page.evaluate(() => window.__xpl!.select(["concept:retry-policy"]));
+  const runnerBefore = page.locator('.pane[data-file="src/runner.ts"][data-side="base"]');
+  await runnerBefore.getByTestId("pane-fold").click();
+  await runnerBefore.locator('.cm-line[data-line="76"]').click();
+  await expect.poll(() => new URL(page.url()).searchParams.get("side")).toBe("base");
+  await expect
+    .poll(() => new URL(page.url()).searchParams.get("source-hash"))
+    .toBe(hashText(bundle.baseFiles!["src/runner.ts"]!));
+  await page.getByTestId("tree-filter").fill("leg");
+  await page.locator('.tree-row[data-path="src/legacy.ts"]').click();
+  const before = page.locator('.pane[data-file="src/legacy.ts"][data-side="base"]');
+  await expect(before.locator(".cm-content")).toContainText("linearDelay");
+  await before.locator('.cm-line[data-line="3"]').click();
+  await expect.poll(() => new URL(page.url()).searchParams.get("side")).toBe("base");
+  await expect
+    .poll(() => new URL(page.url()).searchParams.get("source-hash"))
+    .toBe(hashText(bundle.baseFiles!["src/legacy.ts"]!));
+  await page.reload();
+  await expect(before.locator(".cm-content")).toContainText("linearDelay");
+  await expect(page.getByTestId("no-data")).toHaveCount(0);
+  reloadChanged = true;
+  await page.reload();
+  await expect(page.getByTestId("no-data")).toContainText(
+    `Source file "src/legacy.ts" changed within snapshot "${bundle.index.commit}"`,
+  );
+});

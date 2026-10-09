@@ -24,13 +24,14 @@ export interface OutsideSystem extends OutsideKind {
   sites: { file: string; line: number; module: string }[];
 }
 
-type Family = "js" | "py" | "go";
+type Family = "js" | "py" | "go" | "java";
 
 /** Module names (or prefixes, ending in `/` or `.`) per language family, and what they stand for. */
 interface Entry extends OutsideKind {
   js?: string[];
   py?: string[];
   go?: string[];
+  java?: string[];
 }
 
 const POSTGRES: OutsideKind = {
@@ -44,7 +45,7 @@ const SQL: OutsideKind = { slug: "database", label: "SQL database", role: "datab
 const CATALOG: readonly Entry[] = [
   // databases
   { ...POSTGRES, js: ["pg", "postgres", "pg-promise"], py: ["psycopg2", "psycopg", "asyncpg"] },
-  { ...POSTGRES, go: ["github.com/jackc/pgx", "github.com/lib/pq"] },
+  { ...POSTGRES, go: ["github.com/jackc/pgx", "github.com/lib/pq"], java: ["org.postgresql"] },
   {
     slug: "mysql",
     label: "MySQL database",
@@ -79,7 +80,17 @@ const CATALOG: readonly Entry[] = [
     py: ["sqlalchemy", "django.db", "peewee", "sqlmodel", "tortoise"],
     go: ["gorm.io/gorm", "github.com/jmoiron/sqlx", "entgo.io/ent"],
   },
-  { ...SQL, go: ["database/sql"] },
+  {
+    ...SQL,
+    go: ["database/sql"],
+    java: [
+      "java.sql",
+      "javax.sql",
+      "jakarta.persistence",
+      "org.hibernate",
+      "org.springframework.data.jpa",
+    ],
+  },
   {
     slug: "dynamodb",
     label: "DynamoDB table",
@@ -105,6 +116,7 @@ const CATALOG: readonly Entry[] = [
     js: ["redis", "ioredis", "@upstash/redis"],
     py: ["redis", "aioredis"],
     go: ["github.com/redis/go-redis", "github.com/go-redis/redis", "github.com/gomodule/redigo"],
+    java: ["org.springframework.data.redis", "redis.clients.jedis", "io.lettuce.core"],
   },
   {
     slug: "memcached",
@@ -124,6 +136,7 @@ const CATALOG: readonly Entry[] = [
     js: ["kafkajs"],
     py: ["kafka", "confluent_kafka", "aiokafka"],
     go: ["github.com/segmentio/kafka-go", "github.com/Shopify/sarama", "github.com/IBM/sarama"],
+    java: ["org.apache.kafka", "org.springframework.kafka"],
   },
   {
     slug: "rabbitmq",
@@ -203,6 +216,11 @@ const CATALOG: readonly Entry[] = [
     js: ["axios", "node-fetch", "got", "undici", "ky", "superagent"],
     py: ["requests", "httpx", "aiohttp", "urllib3"],
     go: ["github.com/go-resty/resty"],
+    java: [
+      "java.net.http",
+      "org.springframework.web.client",
+      "org.springframework.web.reactive.function.client",
+    ],
   },
   {
     slug: "grpc",
@@ -309,6 +327,11 @@ const CATALOG: readonly Entry[] = [
       "github.com/gorilla/mux",
       "github.com/gofiber/fiber",
     ],
+    java: [
+      "org.springframework.web.bind.annotation",
+      "org.springframework.web.servlet",
+      "org.springframework.boot.web",
+    ],
   },
   {
     slug: "user",
@@ -328,12 +351,13 @@ const FAMILY: Record<string, Family> = {
   javascript: "js",
   python: "py",
   go: "go",
+  java: "java",
 };
 
-/** `module` is `name`, or inside it (`name/sub` for js and go, `name.sub` for python). */
+/** `module` is `name`, or inside it (`name/sub` for js and go, `name.sub` for python and Java). */
 function within(module: string, name: string, family: Family): boolean {
   if (module === name) return true;
-  const sep = family === "py" ? "." : "/";
+  const sep = family === "py" || family === "java" ? "." : "/";
   return module.startsWith(name + sep);
 }
 
@@ -349,7 +373,7 @@ function lookup(module: string, family: Family): OutsideKind | undefined {
     }
   }
   if (!best) return undefined;
-  const { js: _js, py: _py, go: _go, ...kind } = best.entry;
+  const { js: _js, py: _py, go: _go, java: _java, ...kind } = best.entry;
   return kind;
 }
 
@@ -363,6 +387,7 @@ const JS_IMPORTS = [
 const PY_IMPORT = /^\s*import\s+([\w.]+(?:\s*,\s*[\w.]+)*)/;
 const PY_FROM = /^\s*from\s+([\w.]+)\s+import\b/;
 const GO_SPEC = /^\s*(?:[\w.]+\s+)?"([^"]+)"/;
+const JAVA_IMPORT = /^\s*import\s+(?:static\s+)?([\w.]+)(?:\.\*)?\s*;/;
 
 /**
  * Each line with its comments blanked out: from `//` to the end of the line, and block comments across lines. Quoted
@@ -440,6 +465,9 @@ export function importsOf(
         const plain = PY_IMPORT.exec(text);
         if (plain) for (const name of plain[1]!.split(",")) out.push({ module: name.trim(), line });
       }
+    } else if (family === "java") {
+      const imported = JAVA_IMPORT.exec(text);
+      if (imported) out.push({ module: imported[1]!, line });
     } else {
       if (goBlock) {
         if (/^\s*\)/.test(text)) goBlock = false;
@@ -512,7 +540,7 @@ export function findOutsideSystems(
 }
 
 /** Manifest files that name a package, at any depth (a monorepo has one per package). */
-const MANIFESTS = /(?:^|\/)(?:package\.json|pyproject\.toml|go\.mod)$/;
+const MANIFESTS = /(?:^|\/)(?:package\.json|pyproject\.toml|go\.mod|pom\.xml)$/;
 
 /**
  * The module names the repository's own code is imported by: the `name` of each package.json, the name in each
@@ -535,6 +563,11 @@ export function ownModules(model: IndexModel, texts: TextCache): string[] {
     } else if (path.endsWith("pyproject.toml")) {
       const name = /^\s*name\s*=\s*["']([^"']+)["']/m.exec(text)?.[1];
       if (name) names.add(name.replace(/[-.]/g, "_").toLowerCase());
+    } else if (path.endsWith("pom.xml")) {
+      // A parent POM names a dependency, not this project's Java package.
+      const project = text.replace(/<parent\b[^>]*>[\s\S]*?<\/parent>/g, "");
+      const groupId = /<groupId>\s*([^<\s]+)\s*<\/groupId>/.exec(project)?.[1];
+      if (groupId) names.add(groupId);
     } else {
       const module = /^\s*module\s+(\S+)/m.exec(text)?.[1];
       if (module) names.add(module);
@@ -549,6 +582,25 @@ export function ownModules(model: IndexModel, texts: TextCache): string[] {
     if (dir === "") continue;
     const slash = dir.lastIndexOf("/");
     if (!inits.has(dir.slice(0, Math.max(0, slash)))) names.add(dir.slice(slash + 1));
+  }
+  // Java packages, not source directories, define the namespace. The common prefix excludes this
+  // repository's own imports in a multi-module project such as Spring Framework.
+  const javaPackages = paths
+    .filter((path) => path.endsWith(".java") && !/(?:^|\/)src\/test\//.test(path))
+    .map(
+      (path) =>
+        /^\s*package\s+([\w.]+)\s*;/m.exec(
+          withoutComments((texts.text(path) ?? "").split("\n")).join("\n"),
+        )?.[1],
+    )
+    .filter((name): name is string => name !== undefined);
+  if (javaPackages.length > 0) {
+    const parts = javaPackages[0]!.split(".");
+    for (const name of javaPackages.slice(1)) {
+      const next = name.split(".");
+      while (parts.length > 0 && parts.some((part, i) => part !== next[i])) parts.pop();
+    }
+    if (parts.length >= 2) names.add(parts.join("."));
   }
   return [...names];
 }
@@ -622,7 +674,7 @@ export function readmeUsage(
       continue;
     }
     const block = lines.slice(start, i);
-    for (const family of ["js", "py", "go"] as const) {
+    for (const family of ["js", "py", "go", "java"] as const) {
       const hit = importsOf(block, family).find(({ module }) =>
         own.some((name) => within(module, name, family)),
       );

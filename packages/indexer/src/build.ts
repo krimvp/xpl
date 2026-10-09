@@ -35,6 +35,8 @@ import { ParserPool } from "./parse.js";
 import { indexProviders } from "./providers.js";
 import type { IndexProvider } from "./providers.js";
 import "./tags/rust.js"; // registers syntax-only Rust tags
+import "./tags/ruby.js"; // registers syntax-only Ruby tags
+import "./tags/php.js"; // registers syntax-only PHP tags
 import "./scip/index.js"; // registers the SCIP providers (scip-typescript, scip-python, scip-go)
 import { SymbolLookup } from "./symbols.js";
 import type { SymbolEntry } from "./symbols.js";

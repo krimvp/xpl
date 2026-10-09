@@ -29,10 +29,21 @@ const SAMPLES: Record<GrammarId, { source: string; root: string; contains: strin
     contains: ["class_definition", "function_definition"],
   },
   rust: { source: "fn main() {}\n", root: "source_file", contains: ["function_item"] },
+  ruby: {
+    source: "class Runner\n  def run; end\nend\n",
+    root: "program",
+    contains: ["class", "method"],
+  },
+  php: { source: "<?php class Main {}\n", root: "program", contains: ["class_declaration"] },
   go: {
     source: "package main\n\nfunc main() {}\n",
     root: "source_file",
     contains: ["function_declaration"],
+  },
+  java: {
+    source: "package demo;\nclass Runner { void run() {} }\n",
+    root: "program",
+    contains: ["class_declaration", "method_declaration"],
   },
   yaml: {
     source: "retry:\n  maxRetries: 3\n",
