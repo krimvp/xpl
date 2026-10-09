@@ -1134,10 +1134,23 @@ function layeredLayout(model: Model, direction: Direction, pins: GraphView["layo
   }
   const width = top.result.width;
   const height = top.result.height;
-  spreadLabels(canvasEdges);
+  spreadLabels(
+    canvasEdges,
+    top.nodes.map((node) => nodeBox(node)),
+    { x: 0, y: 0, width, height },
+  );
   const spreadInside = (list: LayoutNode[]) => {
     for (const node of list) {
-      spreadLabels(node.edges);
+      spreadLabels(
+        node.edges,
+        node.children.map((child) => nodeBox(child)),
+        {
+          x: node.frame?.x ?? 0,
+          y: node.frame?.y ?? 0,
+          width: node.width,
+          height: node.height,
+        },
+      );
       spreadInside(node.children);
     }
   };
@@ -1215,9 +1228,15 @@ const overlap = (a: Box, b: Box, gap: number) =>
 /**
  * Labels of one level that would overlap ("calls ×5" over "calls ×15", where two edges share a gap) are
  * moved apart: the later one slides along its own line, as far as that line goes, else steps off it
- * across the line. Each label stays on or beside its edge.
+ * across the line. Each label stays on or beside its edge. A second pass on levels of at most 150 edges
+ * tries positions along the owner route when another route crosses a label. If none clears the other
+ * routes, labels and boxes inside the level, the first pass's position stays.
  */
-export function spreadLabels(edges: readonly Pick<LayoutEdge, "points" | "label">[]): void {
+export function spreadLabels(
+  edges: readonly Pick<LayoutEdge, "points" | "label">[],
+  boxes: readonly Box[] = [],
+  bounds?: Box,
+): void {
   const placed: Box[] = [];
   for (const edge of edges) {
     const label = edge.label;
@@ -1260,6 +1279,68 @@ export function spreadLabels(edges: readonly Pick<LayoutEdge, "points" | "label"
       }
     }
     placed.push(label);
+  }
+  if (edges.length > BOTH_DIRECTIONS_LIMIT) return;
+  for (const edge of edges) {
+    const label = edge.label;
+    if (!label) continue;
+    const foreign = edges.filter((other) => other !== edge);
+    if (!foreign.some((other) => crossesBox(other.points, label, 0))) continue;
+    const centre = { x: label.x + label.width / 2, y: label.y + label.height / 2 };
+    const otherLabels = placed.filter((other) => other !== label);
+    const withinLevel = (candidate: Box) =>
+      !boxes.some((box) => overlap(candidate, box, 0)) &&
+      (!bounds ||
+        (candidate.x >= bounds.x &&
+          candidate.y >= bounds.y &&
+          candidate.x + candidate.width <= bounds.x + bounds.width &&
+          candidate.y + candidate.height <= bounds.y + bounds.height));
+    const clear = (candidate: Box) =>
+      withinLevel(candidate) &&
+      !otherLabels.some((other) => overlap(candidate, other, LABEL_GAP)) &&
+      !foreign.some((other) => crossesBox(other.points, candidate, LABEL_GAP));
+    const positions = edge.points.slice(1).flatMap((end, i) => {
+      const start = edge.points[i]!;
+      const axis = start.x === end.x ? "y" : "x";
+      const between = (value: number) =>
+        value >= Math.min(start[axis], end[axis]) && value <= Math.max(start[axis], end[axis]);
+      const beside = otherLabels.flatMap((other) =>
+        [
+          other[axis] - LABEL_GAP - extent(label, axis) / 2,
+          other[axis] + extent(other, axis) + LABEL_GAP + extent(label, axis) / 2,
+        ]
+          .filter(between)
+          .map((value) => ({ ...start, [axis]: value })),
+      );
+      const across = axis === "y" ? "x" : "y";
+      return [
+        start,
+        { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 },
+        end,
+        ...beside,
+      ].flatMap((point) =>
+        [0, 1, -1, 2, -2, 3, -3, 4, -4].map((offset) => ({
+          ...point,
+          [across]: point[across] + offset,
+        })),
+      );
+    });
+    positions.sort(
+      (a, b) =>
+        Math.hypot(a.x - centre.x, a.y - centre.y) - Math.hypot(b.x - centre.x, b.y - centre.y),
+    );
+    for (const point of positions) {
+      const candidate = {
+        x: point.x - label.width / 2,
+        y: point.y - label.height / 2,
+        width: label.width,
+        height: label.height,
+      };
+      if (!clear(candidate)) continue;
+      label.x = candidate.x;
+      label.y = candidate.y;
+      break;
+    }
   }
 }
 
