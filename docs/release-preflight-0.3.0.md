@@ -15,3 +15,7 @@ publish, then publishes to npm with provenance and creates a GitHub Release. The
 [Pages workflow](../.github/workflows/pages.yml) builds and deploys the same tagged source. Verify
 the npm version and provenance, GitHub Release, Pages URL, and tag workflow results before closing
 [#222](https://github.com/krimvp/xpl/issues/222).
+
+GitHub's generated notes may compare from the tag-only `v0.2.4`. After successful publication, edit
+the 0.3.0 GitHub Release body to lead with the curated highlights and link
+[`v0.2.2...v0.3.0`](https://github.com/krimvp/xpl/compare/v0.2.2...v0.3.0), the last npm package comparison.

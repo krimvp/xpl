@@ -6,6 +6,8 @@ User-facing changes are listed here. Versions link to their GitHub releases.
 
 - xpl indexes Java repositories and named Ruby, PHP and Rust declarations. Rust support also resolves bounded
   same-file calls. Relationships are still labeled as heuristic when precise evidence is unavailable.
+- Watched input capture reuses file-local extraction for unchanged files and passes changed-file facts to
+  the snapshot build. It still resolves references and records configuration reads afresh.
 - Authors can create an index-backed first draft with `xpl start` and complete commands and local guide names
   in the shell. Repository drafts can mark imported systems optional and include nested declarations.
 - The existing Claude skill installer now also targets Codex, Pi, Factory Droid and Devin. An opt-in CI
