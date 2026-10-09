@@ -22,7 +22,7 @@ node "$XPL" index --precise off
 node "$XPL" new xpl-overview --title "How xpl links guides to source" --repo xpl --url https://github.com/krimvp/xpl
 node "$XPL" lint xpl-overview --patch "$SITE/xpl/xpl-overview.patch.json"
 node "$XPL" apply xpl-overview "$SITE/xpl/xpl-overview.patch.json"
-node "$XPL" new xpl-checked-edits --title "How xpl checks edits before saving" --repo xpl --url https://github.com/krimvp/xpl
+node "$XPL" new xpl-checked-edits --title "How xpl checks and applies guide edits" --repo xpl --url https://github.com/krimvp/xpl
 node "$XPL" lint xpl-checked-edits --patch "$SITE/xpl/xpl-checked-edits.patch.json"
 node "$XPL" apply xpl-checked-edits "$SITE/xpl/xpl-checked-edits.patch.json"
 ```
