@@ -113,7 +113,7 @@
           "id": "execution:4",
           "from": "sym:command.go#Command.execute",
           "to": "sym:command.go#Command.execute",
-          "label": "Help requested?",
+          "label": "Help or not runnable?",
           "kind": "call",
           "anchors": [
             {
@@ -127,6 +127,15 @@
             },
             {
               "file": "command.go",
+              "symbol": "Command.execute",
+              "span": {
+                "from": 50,
+                "to": 51
+              },
+              "role": "usage"
+            },
+            {
+              "file": "command.go",
               "symbol": "Command.ExecuteC",
               "span": {
                 "from": 67,
@@ -135,7 +144,7 @@
               "role": "usage"
             }
           ],
-          "summary": "A help flag returns `flag.ErrHelp`, which `ExecuteC` turns into help output.",
+          "summary": "A help flag or a selected command without a runnable handler returns `flag.ErrHelp`. `ExecuteC` then prints help and reports success.",
           "shape": "decision",
           "next": [
             {
@@ -165,7 +174,7 @@
               "role": "usage"
             }
           ],
-          "summary": "`ExecuteC` calls the selected command’s help function and returns a nil error.",
+          "summary": "On `flag.ErrHelp`, `ExecuteC` calls the selected command’s help function and returns a nil error.",
           "shape": "terminal"
         },
         {
@@ -295,7 +304,7 @@
     {
       "id": "tour:execution",
       "title": "How Cobra selects and runs a command",
-      "summary": "Cobra finds the command named by the input and normally parses its flags before checking for help. Apps can disable flag parsing so their handlers receive raw arguments. For a runnable command, Cobra checks arguments, runs pre-run hooks, validates flag rules, and calls the app’s handler. Successful handlers continue through post-run hooks; version printing and completion requests are outside this tour.",
+      "summary": "Cobra finds the selected command and normally parses its flags; apps can disable parsing to pass raw arguments to handlers. Help requests and commands without a runnable handler print help and return. Runnable commands check arguments, run pre-run hooks, check flag rules, and call the handler; successful handlers continue through post-run hooks. Version printing and completion requests are outside this tour.",
       "steps": [
         {
           "id": "t1",
@@ -395,6 +404,15 @@
             },
             {
               "file": "command.go",
+              "symbol": "Command.execute",
+              "span": {
+                "from": 50,
+                "to": 51
+              },
+              "role": "usage"
+            },
+            {
+              "file": "command.go",
               "symbol": "Command.ExecuteC",
               "span": {
                 "from": 67,
@@ -403,7 +421,7 @@
               "role": "usage"
             }
           ],
-          "note": "### A help request exits the normal run path\n\nThe help flag returns a special error from the selected command. The outer execution method catches it, prints help, and reports success.",
+          "note": "### Help requests and non-runnable commands exit\n\nThe runnable check follows the version route. Argument validation comes after both help exits.",
           "editor": {
             "primary": "command.go"
           }
@@ -425,7 +443,7 @@
               "role": "usage"
             }
           ],
-          "note": "### Positional arguments get checked before hooks\n\nA non-runnable command requests help instead. For runnable commands, argument validation can stop execution before any configured pre-run hook.",
+          "note": "### Positional arguments get checked before hooks\n\nWhen a runnable command reaches this step, argument validation can stop execution before any configured pre-run hook.",
           "editor": {
             "primary": "command.go"
           }
