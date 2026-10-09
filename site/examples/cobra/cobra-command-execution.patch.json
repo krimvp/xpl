@@ -1,0 +1,521 @@
+{
+  "title": "How Cobra selects and runs a command",
+  "scope": {
+    "audience": "Go developers tracing command execution"
+  },
+  "nodes": [
+    {
+      "id": "sym:command.go#Command.ExecuteC",
+      "kind": "symbol",
+      "label": "Command.ExecuteC",
+      "summary": "Starts execution from the root command, selects a command from the input, and delegates to that command’s execution method.",
+      "parent": "sym:command.go#Command",
+      "anchors": []
+    },
+    {
+      "id": "sym:command.go#Command.execute",
+      "kind": "symbol",
+      "label": "Command.execute",
+      "summary": "Initializes help and, when configured, version flags. Command execution parses input unless disabled, checks arguments and flag rules, then runs hooks and a handler.",
+      "parent": "sym:command.go#Command",
+      "anchors": []
+    }
+  ],
+  "views": [
+    {
+      "id": "view:execution",
+      "type": "flow",
+      "title": "From command selection to handler return",
+      "scope": {
+        "root": "repo",
+        "depth": 2,
+        "question": "How does Cobra select and run a command?",
+        "entryPoints": [
+          "command.go#Command.ExecuteC",
+          "command.go#Command.execute"
+        ]
+      },
+      "participants": [
+        "sym:command.go#Command.ExecuteC",
+        "sym:command.go#Command.execute"
+      ],
+      "steps": [
+        {
+          "id": "execution:1",
+          "from": "sym:command.go#Command.ExecuteC",
+          "to": "sym:command.go#Command.ExecuteC",
+          "label": "Select a command",
+          "kind": "call",
+          "anchors": [
+            {
+              "file": "command.go",
+              "symbol": "Command.ExecuteC",
+              "span": {
+                "from": 35,
+                "to": 40
+              },
+              "role": "usage"
+            }
+          ],
+          "summary": "`ExecuteC` uses `Traverse` when `TraverseChildren` is set; otherwise it uses `Find`.",
+          "shape": "stage"
+        },
+        {
+          "id": "execution:2",
+          "from": "sym:command.go#Command.ExecuteC",
+          "to": "sym:command.go#Command.ExecuteC",
+          "label": "Pass command input",
+          "kind": "call",
+          "anchors": [
+            {
+              "file": "command.go",
+              "symbol": "Command.ExecuteC",
+              "span": {
+                "from": 58,
+                "to": 64
+              },
+              "role": "usage"
+            }
+          ],
+          "summary": "The selected command receives the remaining flags and runs `execute`.",
+          "shape": "stage"
+        },
+        {
+          "id": "execution:3",
+          "from": "sym:command.go#Command.execute",
+          "to": "sym:command.go#Command.execute",
+          "label": "Parse flags if enabled",
+          "kind": "call",
+          "anchors": [
+            {
+              "file": "command.go",
+              "symbol": "Command.execute",
+              "span": {
+                "from": 11,
+                "to": 16
+              },
+              "role": "usage"
+            },
+            {
+              "file": "command.go",
+              "symbol": "Command.ParseFlags",
+              "span": {
+                "from": 1,
+                "to": 1
+              },
+              "role": "usage"
+            }
+          ],
+          "summary": "`execute` initializes help and, when configured, version flags. `ParseFlags` skips parsing when `DisableFlagParsing` is true; otherwise it parses the selected command’s input.",
+          "shape": "stage"
+        },
+        {
+          "id": "execution:4",
+          "from": "sym:command.go#Command.execute",
+          "to": "sym:command.go#Command.execute",
+          "label": "Help or not runnable?",
+          "kind": "call",
+          "anchors": [
+            {
+              "file": "command.go",
+              "symbol": "Command.execute",
+              "span": {
+                "from": 29,
+                "to": 30
+              },
+              "role": "usage"
+            },
+            {
+              "file": "command.go",
+              "symbol": "Command.execute",
+              "span": {
+                "from": 50,
+                "to": 51
+              },
+              "role": "usage"
+            },
+            {
+              "file": "command.go",
+              "symbol": "Command.ExecuteC",
+              "span": {
+                "from": 67,
+                "to": 70
+              },
+              "role": "usage"
+            }
+          ],
+          "summary": "A help flag or a selected command without a runnable handler returns `flag.ErrHelp`. `ExecuteC` then prints help and reports success.",
+          "shape": "decision",
+          "next": [
+            {
+              "step": "execution:5",
+              "label": "yes"
+            },
+            {
+              "step": "execution:6",
+              "label": "no"
+            }
+          ]
+        },
+        {
+          "id": "execution:5",
+          "from": "sym:command.go#Command.ExecuteC",
+          "to": "sym:command.go#Command.ExecuteC",
+          "label": "Show command help",
+          "kind": "call",
+          "anchors": [
+            {
+              "file": "command.go",
+              "symbol": "Command.ExecuteC",
+              "span": {
+                "from": 67,
+                "to": 70
+              },
+              "role": "usage"
+            }
+          ],
+          "summary": "On `flag.ErrHelp`, `ExecuteC` calls the selected command’s help function and returns a nil error.",
+          "shape": "terminal"
+        },
+        {
+          "id": "execution:6",
+          "from": "sym:command.go#Command.execute",
+          "to": "sym:command.go#Command.execute",
+          "label": "Check arguments",
+          "kind": "call",
+          "anchors": [
+            {
+              "file": "command.go",
+              "symbol": "Command.execute",
+              "span": {
+                "from": 50,
+                "to": 64
+              },
+              "role": "usage"
+            }
+          ],
+          "summary": "A runnable command checks positional arguments before its configured run hooks.",
+          "shape": "stage"
+        },
+        {
+          "id": "execution:7",
+          "from": "sym:command.go#Command.execute",
+          "to": "sym:command.go#Command.execute",
+          "label": "Run pre-hooks",
+          "kind": "call",
+          "anchors": [
+            {
+              "file": "command.go",
+              "symbol": "Command.execute",
+              "span": {
+                "from": 67,
+                "to": 100
+              },
+              "role": "usage"
+            }
+          ],
+          "summary": "`execute` runs a persistent pre-run hook, then the selected command’s pre-run hook when present.",
+          "shape": "stage"
+        },
+        {
+          "id": "execution:8",
+          "from": "sym:command.go#Command.execute",
+          "to": "sym:command.go#Command.execute",
+          "label": "Check flag rules",
+          "kind": "call",
+          "anchors": [
+            {
+              "file": "command.go",
+              "symbol": "Command.execute",
+              "span": {
+                "from": 102,
+                "to": 106
+              },
+              "role": "usage"
+            }
+          ],
+          "summary": "Required flags and flag groups must pass validation before the handler runs.",
+          "shape": "stage"
+        },
+        {
+          "id": "execution:9",
+          "from": "sym:command.go#Command.execute",
+          "to": "sym:command.go#Command.execute",
+          "label": "Run the handler",
+          "kind": "call",
+          "anchors": [
+            {
+              "file": "command.go",
+              "symbol": "Command.execute",
+              "span": {
+                "from": 109,
+                "to": 115
+              },
+              "role": "usage"
+            }
+          ],
+          "summary": "`execute` calls `RunE` when set; otherwise it calls `Run`. A `RunE` error returns early.",
+          "shape": "stage"
+        },
+        {
+          "id": "execution:10",
+          "from": "sym:command.go#Command.execute",
+          "to": "sym:command.go#Command.execute",
+          "label": "Run post-hooks",
+          "kind": "call",
+          "anchors": [
+            {
+              "file": "command.go",
+              "symbol": "Command.execute",
+              "span": {
+                "from": 116,
+                "to": 136
+              },
+              "role": "usage"
+            }
+          ],
+          "summary": "After a successful handler, `execute` runs the selected command’s post-run hook and then a persistent post-run hook.",
+          "shape": "stage"
+        },
+        {
+          "id": "execution:11",
+          "from": "sym:command.go#Command.execute",
+          "to": "sym:command.go#Command.execute",
+          "label": "Return success",
+          "kind": "call",
+          "anchors": [
+            {
+              "file": "command.go",
+              "symbol": "Command.execute",
+              "span": {
+                "from": 139,
+                "to": 139
+              },
+              "role": "usage"
+            }
+          ],
+          "summary": "After the post-run hooks complete without error, `execute` returns nil.",
+          "shape": "terminal"
+        }
+      ]
+    }
+  ],
+  "tours": [
+    {
+      "id": "tour:execution",
+      "title": "How Cobra selects and runs a command",
+      "summary": "Cobra finds the selected command and normally parses its flags; apps can disable parsing to pass raw arguments to handlers. Help requests and commands without a runnable handler print help and return. Runnable commands check arguments, run pre-run hooks, check flag rules, and call the handler; successful handlers continue through post-run hooks. Version printing and completion requests are outside this tour.",
+      "steps": [
+        {
+          "id": "t1",
+          "view": "view:execution",
+          "focus": [
+            "execution:1"
+          ],
+          "code": [
+            {
+              "file": "command.go",
+              "symbol": "Command.ExecuteC",
+              "span": {
+                "from": 35,
+                "to": 40
+              },
+              "role": "usage"
+            },
+            {
+              "file": "command.go",
+              "symbol": "Command.Find",
+              "role": "definition"
+            }
+          ],
+          "note": "### Command selection follows the command tree\n\nBy default, `Find` walks subcommand names after removing flags. With `TraverseChildren`, `Traverse` parses each parent’s flags while descending.",
+          "editor": {
+            "primary": "command.go"
+          }
+        },
+        {
+          "id": "t2",
+          "view": "view:execution",
+          "focus": [
+            "execution:2"
+          ],
+          "code": [
+            {
+              "file": "command.go",
+              "symbol": "Command.ExecuteC",
+              "span": {
+                "from": 58,
+                "to": 64
+              },
+              "role": "usage"
+            }
+          ],
+          "note": "### The selected command receives the remaining input\n\nSelection ends with a command and its remaining flag strings. Cobra then runs that command, so child commands use their own handlers and validation.",
+          "editor": {
+            "primary": "command.go"
+          }
+        },
+        {
+          "id": "t3",
+          "view": "view:execution",
+          "focus": [
+            "execution:3"
+          ],
+          "code": [
+            {
+              "file": "command.go",
+              "symbol": "Command.ParseFlags",
+              "span": {
+                "from": 1,
+                "to": 1
+              },
+              "role": "usage"
+            },
+            {
+              "file": "command.go",
+              "symbol": "Command.execute",
+              "span": {
+                "from": 11,
+                "to": 16
+              },
+              "role": "usage"
+            }
+          ],
+          "note": "### Flag parsing can be skipped by the app\n\nCobra initializes help and, when configured, version flags at execution time. With `DisableFlagParsing`, the handler receives raw arguments; otherwise a parse error stops the command.",
+          "editor": {
+            "primary": "command.go"
+          }
+        },
+        {
+          "id": "t4",
+          "view": "view:execution",
+          "focus": [
+            "execution:4"
+          ],
+          "code": [
+            {
+              "file": "command.go",
+              "symbol": "Command.execute",
+              "span": {
+                "from": 29,
+                "to": 30
+              },
+              "role": "usage"
+            },
+            {
+              "file": "command.go",
+              "symbol": "Command.execute",
+              "span": {
+                "from": 50,
+                "to": 51
+              },
+              "role": "usage"
+            },
+            {
+              "file": "command.go",
+              "symbol": "Command.ExecuteC",
+              "span": {
+                "from": 67,
+                "to": 70
+              },
+              "role": "usage"
+            }
+          ],
+          "note": "### Help requests and non-runnable commands exit\n\nThe runnable check follows the version route. Argument validation comes after both help exits.",
+          "editor": {
+            "primary": "command.go"
+          }
+        },
+        {
+          "id": "t5",
+          "view": "view:execution",
+          "focus": [
+            "execution:6"
+          ],
+          "code": [
+            {
+              "file": "command.go",
+              "symbol": "Command.execute",
+              "span": {
+                "from": 50,
+                "to": 64
+              },
+              "role": "usage"
+            }
+          ],
+          "note": "### Positional arguments get checked before hooks\n\nWhen a runnable command reaches this step, argument validation can stop execution before any configured pre-run hook.",
+          "editor": {
+            "primary": "command.go"
+          }
+        },
+        {
+          "id": "t6",
+          "view": "view:execution",
+          "focus": [
+            "execution:7"
+          ],
+          "code": [
+            {
+              "file": "command.go",
+              "symbol": "Command.execute",
+              "span": {
+                "from": 67,
+                "to": 100
+              },
+              "role": "usage"
+            }
+          ],
+          "note": "### Pre-run hooks can prepare or stop work\n\nCobra checks persistent hooks across the parent chain, then the selected command’s hook. By default, the first persistent hook found runs; error-returning hooks can stop execution.",
+          "editor": {
+            "primary": "command.go"
+          }
+        },
+        {
+          "id": "t7",
+          "view": "view:execution",
+          "focus": [
+            "execution:8",
+            "execution:9"
+          ],
+          "code": [
+            {
+              "file": "command.go",
+              "symbol": "Command.execute",
+              "span": {
+                "from": 102,
+                "to": 115
+              },
+              "role": "usage"
+            }
+          ],
+          "note": "### Flag rules guard the app handler\n\nCobra checks required flags and flag groups before calling the app’s `RunE` or `Run` handler. A `RunE` error stops the normal post-run path.",
+          "editor": {
+            "primary": "command.go"
+          }
+        },
+        {
+          "id": "t8",
+          "view": "view:execution",
+          "focus": [
+            "execution:10"
+          ],
+          "code": [
+            {
+              "file": "command.go",
+              "symbol": "Command.execute",
+              "span": {
+                "from": 116,
+                "to": 139
+              },
+              "role": "usage"
+            }
+          ],
+          "note": "### Post-run hooks follow a successful handler\n\nA handler error returns before these hooks. If a post-run hook reports an error, execution returns that error instead of success.",
+          "editor": {
+            "primary": "command.go"
+          }
+        }
+      ]
+    }
+  ]
+}

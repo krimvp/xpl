@@ -1,0 +1,474 @@
+{
+  "title": "How xpl links guides to source",
+  "scope": {
+    "audience": "Developers evaluating xpl"
+  },
+  "nodes": [
+    {
+      "id": "grp:xpl",
+      "kind": "group",
+      "label": "xpl",
+      "summary": "Indexes a repository, checks a source-linked explanation, and exports an interactive HTML guide.",
+      "parent": "repo",
+      "members": [
+        "dir:packages/cli",
+        "dir:packages/core/src",
+        "dir:packages/indexer/src",
+        "dir:packages/viewer"
+      ],
+      "role": "service",
+      "tech": "TypeScript CLI",
+      "opens": "view:overview",
+      "anchors": []
+    },
+    {
+      "id": "dir:packages/cli",
+      "kind": "dir",
+      "label": "CLI",
+      "summary": "Runs the authoring commands, loads repository files, and writes or exports guides.",
+      "parent": "dir:packages",
+      "role": "component",
+      "anchors": []
+    },
+    {
+      "id": "dir:packages/core/src",
+      "kind": "dir",
+      "label": "Checks and data",
+      "summary": "Defines guide data and checks source anchors, patches, diagrams, and export readiness.",
+      "parent": "dir:packages/core",
+      "role": "component",
+      "anchors": []
+    },
+    {
+      "id": "dir:packages/indexer/src",
+      "kind": "dir",
+      "label": "Source index",
+      "summary": "Discovers source files and records declarations, ranges, and labelled relationships.",
+      "parent": "dir:packages/indexer",
+      "role": "component",
+      "anchors": []
+    },
+    {
+      "id": "dir:packages/viewer",
+      "kind": "dir",
+      "label": "Interactive reader",
+      "summary": "Shows diagrams beside code and connects selections in either pane.",
+      "parent": "dir:packages",
+      "role": "component",
+      "anchors": []
+    },
+    {
+      "id": "grp:author",
+      "label": "Guide author",
+      "summary": "A person or authoring agent writes the explanation as a JSON patch.",
+      "role": "person",
+      "tech": "Human or AI",
+      "anchors": [
+        {
+          "file": "README.md",
+          "find": "An authoring agent writes the explanation as data; xpl checks that each",
+          "role": "usage"
+        }
+      ]
+    },
+    {
+      "id": "grp:source-repo",
+      "label": "Source repository",
+      "summary": "The existing project whose files and declarations xpl indexes.",
+      "role": "external",
+      "tech": "Git repository",
+      "anchors": [
+        {
+          "file": "README.md",
+          "find": "xpl adds interactive code explanations to an existing repository.",
+          "role": "usage"
+        }
+      ]
+    },
+    {
+      "id": "grp:guide",
+      "label": "Interactive guide",
+      "summary": "A self-contained HTML page with the checked source locations, diagrams, and code.",
+      "role": "external",
+      "tech": "HTML",
+      "anchors": [
+        {
+          "file": "packages/cli/src/commands/bundle.ts",
+          "find": "const page = injectBundle(html, bundle, { packIndex: true });",
+          "role": "definition"
+        }
+      ]
+    },
+    {
+      "id": "grp:reader",
+      "label": "Guide reader",
+      "summary": "Explores the diagrams and the code they point to.",
+      "role": "person",
+      "tech": "Browser",
+      "anchors": [
+        {
+          "file": "README.md",
+          "find": "It links diagrams to source code and",
+          "role": "usage"
+        }
+      ]
+    }
+  ],
+  "views": [
+    {
+      "id": "view:system",
+      "type": "graph",
+      "title": "xpl checks source links and builds a guide",
+      "scope": {
+        "root": "repo",
+        "depth": 1,
+        "question": "Source links are checked; prose still needs review."
+      },
+      "include": [
+        "grp:author",
+        "grp:source-repo",
+        "grp:xpl",
+        "grp:guide",
+        "grp:reader"
+      ],
+      "excludeFiles": [
+        "**/*_test.go",
+        "**/test/**",
+        "**/tests/**",
+        "**/*.test.*",
+        "**/test-d/**",
+        "**/*.test-d.*",
+        "**/test_*.py",
+        "**/examples/**",
+        "**/_examples/**",
+        "docs/**",
+        "benchmarks/**"
+      ],
+      "stubs": {
+        "mode": "none"
+      }
+    },
+    {
+      "id": "view:overview",
+      "type": "graph",
+      "title": "Four parts turn source into a readable guide",
+      "scope": {
+        "root": "repo",
+        "depth": 3,
+        "question": "What does xpl do and how do its main parts fit together?"
+      },
+      "include": [
+        "dir:packages/cli",
+        "dir:packages/core/src",
+        "dir:packages/indexer/src",
+        "dir:packages/viewer"
+      ],
+      "excludeFiles": [
+        "**/*_test.go",
+        "**/test/**",
+        "**/tests/**",
+        "**/*.test.*",
+        "**/test-d/**",
+        "**/*.test-d.*",
+        "**/test_*.py",
+        "**/examples/**",
+        "**/_examples/**",
+        "docs/**",
+        "benchmarks/**"
+      ],
+      "stubs": {
+        "mode": "none"
+      },
+      "edgeKinds": []
+    }
+  ],
+  "tours": [
+    {
+      "id": "tour:overview",
+      "title": "How xpl links guides to source",
+      "summary": "xpl turns a repository and an authored explanation into an interactive code guide. xpl indexes source, checks that explanation links point to current code, and exports one HTML page. These checks cannot prove the prose is correct or complete. This tour shows the reader path and the four main parts behind it.",
+      "steps": [
+        {
+          "id": "t1",
+          "view": "view:system",
+          "focus": [
+            "grp:xpl"
+          ],
+          "code": [
+            {
+              "file": "README.md",
+              "span": {
+                "from": 5,
+                "to": 7
+              },
+              "role": "usage"
+            }
+          ],
+          "note": "### A source-backed guide starts with code and an author\n\nThe guide author writes an explanation for the source repository. xpl checks its source links and exports an interactive guide. The guide reader moves between diagrams and code; the prose still needs human review.",
+          "editor": {
+            "primary": "README.md"
+          }
+        },
+        {
+          "id": "t2",
+          "view": "view:overview",
+          "focus": [
+            "dir:packages/cli"
+          ],
+          "code": [
+            {
+              "file": "packages/cli/src/commands/apply.ts",
+              "symbol": "applyCommand",
+              "role": "definition"
+            },
+            {
+              "file": "packages/cli/src/commands/bundle.ts",
+              "symbol": "bundleCommand",
+              "role": "definition"
+            }
+          ],
+          "note": "### The CLI runs the authoring workflow\n\nCommands load the index and guide, check an author's patch, and write or export the result. The command layer owns filesystem access.",
+          "editor": {
+            "primary": "packages/cli/src/commands/apply.ts"
+          }
+        },
+        {
+          "id": "t3",
+          "view": "view:overview",
+          "focus": [
+            "dir:packages/core/src"
+          ],
+          "code": [
+            {
+              "file": "packages/core/src/anchors.ts",
+              "symbol": "makeAnchor",
+              "role": "definition"
+            },
+            {
+              "file": "packages/core/src/apply.ts",
+              "symbol": "applyPatch",
+              "role": "definition"
+            }
+          ],
+          "note": "### Shared rules check each source link\n\nThe core builds checked anchors from the index and source text. Its patch merge also preserves fields a reader edited.",
+          "editor": {
+            "primary": "packages/core/src/anchors.ts"
+          }
+        },
+        {
+          "id": "t4",
+          "view": "view:overview",
+          "focus": [
+            "dir:packages/indexer/src"
+          ],
+          "code": [
+            {
+              "file": "packages/indexer/src/build.ts",
+              "symbol": "buildIndex",
+              "role": "definition"
+            },
+            {
+              "file": "packages/indexer/src/files.ts",
+              "symbol": "discoverFiles",
+              "role": "definition"
+            }
+          ],
+          "note": "### The index records what source contains\n\nThe indexer discovers files and extracts symbols and relationships. The guide can then refer to known locations rather than free-form line claims.",
+          "editor": {
+            "primary": "packages/indexer/src/build.ts"
+          }
+        },
+        {
+          "id": "t5",
+          "view": "view:overview",
+          "focus": [
+            "dir:packages/viewer"
+          ],
+          "code": [
+            {
+              "file": "packages/viewer/src/App.tsx",
+              "symbol": "App",
+              "role": "definition"
+            },
+            {
+              "file": "packages/viewer/src/components/CodeArea.tsx",
+              "symbol": "CodeArea",
+              "role": "definition"
+            }
+          ],
+          "note": "### The viewer lets readers follow both directions\n\nThe page renders a diagram and code together. Selecting a diagram element finds its source, while cursor movement can highlight related elements.",
+          "editor": {
+            "primary": "packages/viewer/src/App.tsx"
+          }
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge:source-index",
+      "from": "grp:source-repo",
+      "to": "grp:xpl",
+      "kind": "custom",
+      "label": "indexes code",
+      "summary": "The index command reads the repository and writes a source index.",
+      "anchors": [
+        {
+          "file": "README.md",
+          "find": "xpl adds interactive code explanations to an existing repository.",
+          "role": "usage"
+        },
+        {
+          "file": "packages/cli/src/commands/build-index.ts",
+          "find": "result = await buildIndex({",
+          "role": "call-site"
+        }
+      ]
+    },
+    {
+      "id": "edge:author-patch",
+      "from": "grp:author",
+      "to": "grp:xpl",
+      "kind": "custom",
+      "label": "submits explanation",
+      "summary": "An author supplies explanation data as a patch; the CLI reads it before checking the merge.",
+      "anchors": [
+        {
+          "file": "README.md",
+          "find": "An authoring agent writes the explanation as data; xpl checks that each",
+          "role": "usage"
+        },
+        {
+          "file": "packages/cli/src/commands/apply.ts",
+          "find": "const { patch, label } = await readPatch(ctx, args.positionals[1]!);",
+          "role": "call-site"
+        }
+      ]
+    },
+    {
+      "id": "edge:xpl-guide",
+      "from": "grp:xpl",
+      "to": "grp:guide",
+      "kind": "custom",
+      "label": "exports checked links",
+      "summary": "The bundle command checks readiness, embeds the guide and source, and writes one HTML page. Anchor checks do not verify prose truth.",
+      "anchors": [
+        {
+          "file": "packages/cli/src/commands/bundle.ts",
+          "find": "const { ws, explainer, drift, report } = await workspaceReadiness(",
+          "role": "call-site"
+        },
+        {
+          "file": "packages/cli/src/commands/bundle.ts",
+          "find": "const page = injectBundle(html, bundle, { packIndex: true });",
+          "role": "call-site"
+        }
+      ]
+    },
+    {
+      "id": "edge:guide-reader",
+      "from": "grp:guide",
+      "to": "grp:reader",
+      "kind": "custom",
+      "label": "shows linked code",
+      "summary": "The browser loads the embedded guide and connects diagram selections to source code.",
+      "anchors": [
+        {
+          "file": "packages/cli/src/commands/bundle.ts",
+          "find": "const page = injectBundle(html, bundle, { packIndex: true });",
+          "role": "usage"
+        },
+        {
+          "file": "packages/viewer/src/main.tsx",
+          "find": "const store = new ViewerStore(loaded.bundle, readLaunchParams());",
+          "role": "call-site"
+        },
+        {
+          "file": "README.md",
+          "find": "It links diagrams to source code and",
+          "role": "usage"
+        }
+      ]
+    },
+    {
+      "id": "edge:cli-indexer",
+      "from": "dir:packages/cli",
+      "to": "dir:packages/indexer/src",
+      "kind": "custom",
+      "label": "builds source index",
+      "summary": "The CLI calls the indexer to discover files, symbols, and relationships.",
+      "anchors": [
+        {
+          "file": "packages/cli/src/commands/build-index.ts",
+          "find": "result = await buildIndex({",
+          "role": "call-site"
+        },
+        {
+          "file": "packages/indexer/src/index.ts",
+          "find": "export { buildIndex, writeIndex } from \"./build.js\";",
+          "role": "definition"
+        }
+      ]
+    },
+    {
+      "id": "edge:cli-core",
+      "from": "dir:packages/cli",
+      "to": "dir:packages/core/src",
+      "kind": "custom",
+      "label": "checks patches",
+      "summary": "The CLI calls core to validate and merge an authored patch.",
+      "anchors": [
+        {
+          "file": "packages/cli/src/commands/apply.ts",
+          "find": "const result = applyPatch(loaded.explainer, patch as ExplainerPatch, ws.model, ws.texts, {",
+          "role": "call-site"
+        },
+        {
+          "file": "packages/core/src/apply.ts",
+          "find": "export function applyPatch(",
+          "role": "definition"
+        }
+      ]
+    },
+    {
+      "id": "edge:viewer-core",
+      "from": "dir:packages/viewer",
+      "to": "dir:packages/core/src",
+      "kind": "custom",
+      "label": "uses shared rules",
+      "summary": "The viewer imports core rules for graph derivation, source focus, and reader edits.",
+      "anchors": [
+        {
+          "file": "packages/viewer/src/store.ts",
+          "find": "  applyPatch,",
+          "role": "usage"
+        },
+        {
+          "file": "packages/core/src/index.ts",
+          "find": "export * from \"./apply.js\";",
+          "role": "definition"
+        }
+      ]
+    },
+    {
+      "id": "edge:cli-viewer",
+      "from": "dir:packages/cli",
+      "to": "dir:packages/viewer",
+      "kind": "custom",
+      "label": "embeds reader page",
+      "summary": "The bundle command loads the viewer HTML and inserts the guide data into it.",
+      "anchors": [
+        {
+          "file": "packages/cli/src/commands/bundle.ts",
+          "find": "const html = readViewerHtml(ctx.env);",
+          "role": "call-site"
+        },
+        {
+          "file": "packages/viewer/src/main.tsx",
+          "find": "const loaded = loadBundle();",
+          "role": "usage"
+        }
+      ]
+    }
+  ]
+}
