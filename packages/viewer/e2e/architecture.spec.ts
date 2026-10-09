@@ -297,6 +297,18 @@ test.describe("architecture maps", () => {
         name: "Show parts of Job runner here",
       });
       await expect(expand).toBeVisible();
+      if (perspective === "map") {
+        await expect(expand).toHaveText("Show parts");
+        const topic = page.locator(caption).getByRole("combobox", { name: "Choose a topic" });
+        await expect
+          .poll(async () => {
+            const actionBounds = (await expand.boundingBox())!;
+            const topicBounds = (await topic.boundingBox())!;
+            return Math.abs(actionBounds.y - topicBounds.y);
+          })
+          .toBeLessThan(4);
+        await expect.poll(async () => (await topic.boundingBox())?.width ?? 0).toBeGreaterThan(160);
+      }
       const bounds = await expand.boundingBox();
       expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(390);
       await page.locator('[data-element-id="grp:operator"]').first().click();

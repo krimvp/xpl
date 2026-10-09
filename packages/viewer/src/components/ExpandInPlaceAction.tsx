@@ -19,9 +19,10 @@ export function ExpandInPlaceAction({ nodes }: { nodes: readonly GraphNode[] }) 
       type="button"
       className="btn mobile-expand-action"
       title={label}
+      aria-label={label}
       onClick={() => store.toggleExpanded(chosen.id)}
     >
-      {label}
+      Show parts
     </button>
   );
 }
