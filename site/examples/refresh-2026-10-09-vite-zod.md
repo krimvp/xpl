@@ -1,7 +1,9 @@
 # Vite and Zod example refresh, 2026-10-09
 
-This run refreshed four site bundles with xpl `0.2.2` built from xpl commit
-`40c53ae34a0bd7a5b3a84cd4fb7f22b40973b29d` using Node `22.22.3`.
+The final run refreshed four site bundles with xpl `0.2.2` built from xpl commit
+`7a291f9407ccbdf1a6a7e3a8bab23041f55883e1` using Node `22.22.3` and the
+locked Vite `8.3.3` build dependency. This includes the phone map and Flow fixes
+from #218 and #219. The first candidate used xpl commit `40c53ae34a0bd7a5b3a84cd4fb7f22b40973b29d`.
 Vite stayed at `8a4c19cfc035f2dd203f2fa6d00ab9256a5e77c9`; Zod stayed at
 `0b216ef674e297ebe41d8bf902262e56f8755822`. There was no upstream source
 revision change. Fresh, detached worktrees of those commits kept the existing study
@@ -56,20 +58,30 @@ root `.`, its pinned commit, and no `/Users/` path. The bundles include referenc
 source and opened from `file://` in Chromium. A check of the embedded bundles
 found 21, 22, 15, and 30 resolved anchors respectively, each with status `ok`
 and its source file included. The Vite and Zod parse explainers are identical
-to their previous exports. The Zod overview differs only in the one arrow label.
+to their original exports. The Zod overview differs from its original export
+only in the one arrow label. All four final exports carry the same explainer
+data as the first candidate; their viewer output changed after the phone layout fixes.
 
 ## Browser and repository checks
 
-Matched before and after screenshots were captured in Chromium at 1440 × 900
+Matched before and after screenshots were captured with system Chrome at 1440 × 900
 in light mode and 390 × 844 in dark mode. All four guides were viewed at their
-default entry; the two system maps were also viewed with an authored arrow
-selected on desktop and phone. The focused guides were viewed with a flow step
-selected on desktop. The new exports render the maps and focused walkthroughs;
-selected arrows and steps show the corresponding topic and source links.
-These are visual observations, separate from the source checks above.
+default entry and with an authored arrow or flow step selected on desktop and
+phone. Twelve views changed after the current viewer build; four focused-guide
+default views were byte-identical. The overview maps use the compact phone
+controls from #218. Zod's selected parse flow keeps the lower outcomes in the
+diagram pane after #219. Vite HMR's later branch needs panning or scrolling on
+a 390px phone; Fit and Text view remain available. Selected elements show the
+corresponding topic and source links. These are visual observations, separate
+from the source checks above. The matched changed pairs are published in the
+[PR screenshots](https://github.com/krimvp/xpl/pull/214).
 
 `npm run site`, `npm run typecheck`, `npm run format:check`, and `git diff --check`
-passed locally. The full local `npm test` run had 151 passing files and 10
-failing files. The failures included macOS `/var` versus `/private/var` path
-comparisons and a duplicate CodeMirror instance from a symlinked Java language
-dependency in this small worktree. Hosted CI is the full-suite gate.
+passed locally. The full local `npm test` run under Node 22 with `TMPDIR=/private/tmp`
+had 158 passing files, 3 failing files, and 1 skipped file (2,822 passing tests,
+31 failing tests, 22 skipped tests). The failures include Claude process cleanup
+that requires Linux `/proc`, plus one server `EPIPE` case. A local
+`npm run test:e2e` built the viewer and fixture, then could not launch the
+pinned Playwright Chromium revision 1194: this Mac has revision 1248. System
+Chrome was used for the matched browser review; hosted CI is the full-suite
+gate with its own browser installation.
