@@ -1,0 +1,428 @@
+{
+  "title": "How Cobra builds command-line programs",
+  "scope": {
+    "audience": "Go developers new to Cobra"
+  },
+  "nodes": [
+    {
+      "id": "grp:your-app",
+      "kind": "group",
+      "label": "Your Go app",
+      "summary": "Defines a root command and its subcommands, then calls `Execute` to process command-line input.",
+      "parent": "repo",
+      "members": [],
+      "role": "external",
+      "tech": "Go program",
+      "anchors": [
+        {
+          "file": "README.md",
+          "span": {
+            "from": 56,
+            "to": 56
+          },
+          "role": "usage"
+        },
+        {
+          "file": "site/content/user_guide.md",
+          "span": {
+            "from": 58,
+            "to": 58
+          },
+          "role": "usage"
+        }
+      ]
+    },
+    {
+      "id": "grp:cobra",
+      "kind": "group",
+      "label": "Cobra library",
+      "summary": "Provides a command tree, flag handling, validation, help, completion, and documentation generation for Go programs.",
+      "parent": "repo",
+      "members": [
+        "file:command.go",
+        "file:args.go",
+        "file:flag_groups.go",
+        "file:completions.go",
+        "dir:doc",
+        "file:cobra.go"
+      ],
+      "role": "system",
+      "tech": "Go library",
+      "opens": "view:overview",
+      "anchors": []
+    },
+    {
+      "id": "grp:pflag",
+      "kind": "group",
+      "label": "pflag",
+      "summary": "Provides the flag sets that Cobra commands parse and inspect.",
+      "parent": "repo",
+      "members": [],
+      "role": "external",
+      "tech": "Go library",
+      "anchors": [
+        {
+          "file": "command.go",
+          "span": {
+            "from": 29,
+            "to": 29
+          },
+          "role": "usage"
+        }
+      ]
+    },
+    {
+      "id": "file:command.go",
+      "kind": "file",
+      "label": "Commands",
+      "summary": "Defines command trees and runs a selected command after parsing flags and checking arguments.",
+      "parent": "repo",
+      "role": "component",
+      "tech": "Go",
+      "anchors": []
+    },
+    {
+      "id": "file:args.go",
+      "kind": "file",
+      "label": "Arguments",
+      "summary": "Provides reusable checks for positional arguments, such as count limits and duplicate detection.",
+      "parent": "repo",
+      "role": "component",
+      "tech": "Go",
+      "anchors": []
+    },
+    {
+      "id": "file:flag_groups.go",
+      "kind": "file",
+      "label": "Flag rules",
+      "summary": "Checks required, one-of, and mutually exclusive flag groups after flags are parsed.",
+      "parent": "repo",
+      "role": "component",
+      "tech": "Go",
+      "anchors": []
+    },
+    {
+      "id": "file:completions.go",
+      "kind": "file",
+      "label": "Completion",
+      "summary": "Adds completion commands and determines candidate values for shell completion requests.",
+      "parent": "repo",
+      "role": "component",
+      "tech": "Go",
+      "anchors": []
+    },
+    {
+      "id": "dir:doc",
+      "kind": "dir",
+      "label": "Docs",
+      "summary": "Generates command reference pages in formats including Markdown, man pages, reStructuredText, and YAML.",
+      "parent": "repo",
+      "role": "component",
+      "tech": "Go",
+      "anchors": []
+    },
+    {
+      "id": "file:cobra.go",
+      "kind": "file",
+      "label": "Shared setup",
+      "summary": "Holds shared settings and initialization functions used during command execution.",
+      "parent": "repo",
+      "role": "component",
+      "tech": "Go",
+      "anchors": []
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge:app-uses-cobra",
+      "from": "grp:your-app",
+      "to": "grp:cobra",
+      "kind": "custom",
+      "label": "runs commands",
+      "summary": "The user guide shows an app calling `rootCmd.Execute`; Cobra selects and runs the command.",
+      "anchors": [
+        {
+          "file": "site/content/user_guide.md",
+          "span": {
+            "from": 58,
+            "to": 58
+          },
+          "role": "call-site"
+        },
+        {
+          "file": "command.go",
+          "symbol": "Command.ExecuteC",
+          "role": "definition"
+        }
+      ]
+    },
+    {
+      "id": "edge:cobra-uses-pflag",
+      "from": "grp:cobra",
+      "to": "grp:pflag",
+      "kind": "custom",
+      "label": "parses flags",
+      "summary": "Cobra imports pflag and invokes its flag-set parser when command flag parsing is enabled.",
+      "anchors": [
+        {
+          "file": "command.go",
+          "span": {
+            "from": 29,
+            "to": 29
+          },
+          "role": "usage"
+        },
+        {
+          "file": "command.go",
+          "symbol": "Command.ParseFlags",
+          "span": {
+            "from": 14,
+            "to": 14
+          },
+          "role": "call-site"
+        }
+      ]
+    }
+  ],
+  "views": [
+    {
+      "id": "view:system",
+      "type": "graph",
+      "title": "Go apps use Cobra and its flag library",
+      "scope": {
+        "root": "repo",
+        "depth": 1,
+        "question": "What are the main parts of the Cobra library and how do they fit together?"
+      },
+      "include": [
+        "grp:your-app",
+        "grp:cobra",
+        "grp:pflag"
+      ],
+      "excludeFiles": [
+        "**/*_test.go",
+        "**/test/**",
+        "**/tests/**",
+        "**/*.test.*",
+        "**/test-d/**",
+        "**/*.test-d.*",
+        "**/test_*.py",
+        "**/examples/**",
+        "**/_examples/**",
+        "docs/**",
+        "benchmarks/**"
+      ],
+      "stubs": {
+        "mode": "none"
+      }
+    },
+    {
+      "id": "view:overview",
+      "type": "graph",
+      "title": "Inside Cobra: commands and supporting parts",
+      "scope": {
+        "root": "repo",
+        "depth": 1,
+        "question": "What are the main parts of the Cobra library and how do they fit together?"
+      },
+      "include": [
+        "file:command.go",
+        "file:args.go",
+        "file:flag_groups.go",
+        "file:completions.go",
+        "dir:doc",
+        "file:cobra.go",
+        "grp:pflag"
+      ],
+      "excludeFiles": [
+        "**/*_test.go",
+        "**/test/**",
+        "**/tests/**",
+        "**/*.test.*",
+        "**/test-d/**",
+        "**/*.test-d.*",
+        "**/test_*.py",
+        "**/examples/**",
+        "**/_examples/**",
+        "docs/**",
+        "benchmarks/**"
+      ],
+      "stubs": {
+        "mode": "none"
+      }
+    }
+  ],
+  "tours": [
+    {
+      "id": "tour:overview",
+      "title": "How Cobra builds and runs Go commands",
+      "summary": "Cobra is a Go library for command-line programs. Applications define commands and handlers; Cobra selects a command, parses flags, checks arguments, and runs the handler. Separate parts supply completion and reference documentation. This tour shows the library structure and the main execution path.",
+      "steps": [
+        {
+          "id": "t1",
+          "view": "view:system",
+          "focus": [
+            "grp:cobra"
+          ],
+          "code": [
+            {
+              "file": "README.md",
+              "span": {
+                "from": 36,
+                "to": 36
+              },
+              "role": "usage"
+            },
+            {
+              "file": "site/content/user_guide.md",
+              "span": {
+                "from": 57,
+                "to": 61
+              },
+              "role": "usage"
+            }
+          ],
+          "note": "### A Go app delegates command handling to Cobra\n\nYour Go app defines commands and calls Cobra to process its input. Cobra uses pflag for flag sets; the app supplies the work each command performs.",
+          "editor": {
+            "primary": "README.md"
+          }
+        },
+        {
+          "id": "t2",
+          "view": "view:overview",
+          "focus": [
+            "file:command.go"
+          ],
+          "code": [
+            {
+              "file": "command.go",
+              "symbol": "Command.ExecuteC",
+              "span": {
+                "from": 35,
+                "to": 40
+              },
+              "role": "usage"
+            },
+            {
+              "file": "command.go",
+              "symbol": "Command.ExecuteC",
+              "span": {
+                "from": 58,
+                "to": 64
+              },
+              "role": "usage"
+            }
+          ],
+          "note": "### The root selects the command that runs\n\nThe root searches its child command tree, then passes the remaining input to the selected command. That command checks its own flags and handler.",
+          "editor": {
+            "primary": "command.go"
+          }
+        },
+        {
+          "id": "t3",
+          "view": "view:overview",
+          "focus": [
+            "file:args.go",
+            "file:flag_groups.go"
+          ],
+          "code": [
+            {
+              "file": "args.go",
+              "symbol": "ExactArgs",
+              "role": "definition"
+            },
+            {
+              "file": "flag_groups.go",
+              "symbol": "Command.ValidateFlagGroups",
+              "role": "definition"
+            }
+          ],
+          "note": "### Argument and flag rules reject invalid input\n\nAn app can choose a positional argument check such as `ExactArgs`. Flag group rules can require a set or reject conflicting flags before the handler runs.",
+          "editor": {
+            "primary": "args.go"
+          }
+        },
+        {
+          "id": "t4",
+          "view": "view:overview",
+          "focus": [
+            "file:completions.go"
+          ],
+          "code": [
+            {
+              "file": "completions.go",
+              "symbol": "Command.initCompleteCmd",
+              "span": {
+                "from": 1,
+                "to": 12
+              },
+              "role": "usage"
+            }
+          ],
+          "note": "### Completion requests use a hidden command\n\nCobra creates a hidden command for shell completion. Its handler calls `getCompletions` to produce candidates for the shell.",
+          "editor": {
+            "primary": "completions.go"
+          }
+        },
+        {
+          "id": "t5",
+          "view": "view:overview",
+          "focus": [
+            "dir:doc"
+          ],
+          "code": [
+            {
+              "file": "doc/md_docs.go",
+              "symbol": "GenMarkdownCustom",
+              "span": {
+                "from": 4,
+                "to": 24
+              },
+              "role": "usage"
+            },
+            {
+              "file": "doc/md_docs.go",
+              "symbol": "GenMarkdownCustom",
+              "span": {
+                "from": 41,
+                "to": 52
+              },
+              "role": "usage"
+            }
+          ],
+          "note": "### The same command model supplies reference pages\n\nThe documentation package reads command names, descriptions, and flags. Its Markdown generator writes one command page and links to available children.",
+          "editor": {
+            "primary": "doc/md_docs.go"
+          }
+        },
+        {
+          "id": "t6",
+          "view": "view:overview",
+          "focus": [
+            "file:cobra.go",
+            "grp:pflag"
+          ],
+          "code": [
+            {
+              "file": "cobra.go",
+              "symbol": "OnInitialize",
+              "role": "definition"
+            },
+            {
+              "file": "command.go",
+              "span": {
+                "from": 29,
+                "to": 29
+              },
+              "role": "usage"
+            }
+          ],
+          "note": "### Shared setup and pflag support the command path\n\nCobra stores initializer and finalizer functions in shared setup. Its command code imports pflag to hold and parse flag sets.",
+          "editor": {
+            "primary": "cobra.go"
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,439 @@
+{
+  "title": "How xpl checks and applies guide edits",
+  "scope": {
+    "audience": "Developers evaluating xpl"
+  },
+  "nodes": [
+    {
+      "id": "sym:packages/cli/src/commands/apply.ts#applyCommand",
+      "kind": "symbol",
+      "label": "applyCommand",
+      "summary": "Reads the named guide and patch, then asks core to check the merge. Saves changes only when the result is valid and dry-run is off.",
+      "parent": "file:packages/cli/src/commands/apply.ts",
+      "anchors": []
+    },
+    {
+      "id": "sym:packages/cli/src/repo.ts#resolveExplainerPath",
+      "kind": "symbol",
+      "label": "resolveExplainerPath",
+      "summary": "Checks the guide name and locates its file under `.explainer`.",
+      "parent": "file:packages/cli/src/repo.ts",
+      "anchors": []
+    },
+    {
+      "id": "sym:packages/cli/src/commands/apply.ts#readPatch",
+      "kind": "symbol",
+      "label": "readPatch",
+      "summary": "Reads patch JSON from a file or standard input and parses it.",
+      "parent": "file:packages/cli/src/commands/apply.ts",
+      "anchors": []
+    },
+    {
+      "id": "sym:packages/cli/src/commands/apply.ts#withLockedExplainer",
+      "kind": "symbol",
+      "label": "withLockedExplainer",
+      "summary": "Locks the guide file while loading it and provides an atomic save function.",
+      "parent": "file:packages/cli/src/commands/apply.ts",
+      "anchors": []
+    },
+    {
+      "id": "sym:packages/cli/src/repo.ts#openWorkspace",
+      "kind": "symbol",
+      "label": "openWorkspace",
+      "summary": "Loads the selected index and source reader needed to check the patch against current code.",
+      "parent": "file:packages/cli/src/repo.ts",
+      "anchors": []
+    },
+    {
+      "id": "sym:packages/core/src/apply.ts#applyPatch",
+      "kind": "symbol",
+      "label": "applyPatch",
+      "summary": "Checks patch fields and source anchors, merges permitted edits, and returns the original guide if any error occurs.",
+      "parent": "file:packages/core/src/apply.ts",
+      "anchors": []
+    }
+  ],
+  "views": [
+    {
+      "id": "view:apply-command",
+      "type": "sequence",
+      "title": "Check patches before saving",
+      "scope": {
+        "root": "repo",
+        "depth": 2,
+        "question": "Source links and patch fields are checked.",
+        "entryPoints": [
+          "packages/cli/src/commands/apply.ts#applyCommand"
+        ]
+      },
+      "participants": [
+        "sym:packages/cli/src/commands/apply.ts#applyCommand",
+        "sym:packages/cli/src/repo.ts#resolveExplainerPath",
+        "sym:packages/cli/src/commands/apply.ts#readPatch",
+        "sym:packages/cli/src/commands/apply.ts#withLockedExplainer",
+        "sym:packages/cli/src/repo.ts#openWorkspace",
+        "sym:packages/core/src/apply.ts#applyPatch"
+      ],
+      "steps": [
+        {
+          "id": "apply-command:1",
+          "from": "sym:packages/cli/src/commands/apply.ts#applyCommand",
+          "to": "sym:packages/cli/src/repo.ts#resolveExplainerPath",
+          "label": "resolveExplainerPath(ctx, args.positionals[0]!)",
+          "kind": "call",
+          "anchors": [
+            {
+              "file": "packages/cli/src/commands/apply.ts",
+              "symbol": "applyCommand.run",
+              "span": {
+                "from": 3,
+                "to": 3
+              },
+              "role": "call-site"
+            },
+            {
+              "file": "packages/cli/src/repo.ts",
+              "symbol": "resolveExplainerPath",
+              "role": "definition"
+            }
+          ],
+          "summary": "Find the guide file before touching it."
+        },
+        {
+          "id": "apply-command:2",
+          "from": "sym:packages/cli/src/commands/apply.ts#applyCommand",
+          "to": "sym:packages/cli/src/commands/apply.ts#readPatch",
+          "label": "readPatch(ctx, args.positionals[1]!)",
+          "kind": "call",
+          "anchors": [
+            {
+              "file": "packages/cli/src/commands/apply.ts",
+              "symbol": "applyCommand.run",
+              "span": {
+                "from": 4,
+                "to": 4
+              },
+              "role": "call-site"
+            },
+            {
+              "file": "packages/cli/src/commands/apply.ts",
+              "symbol": "readPatch",
+              "role": "definition"
+            }
+          ],
+          "summary": "Read the patch as JSON from the named file or standard input."
+        },
+        {
+          "id": "apply-command:3",
+          "from": "sym:packages/cli/src/commands/apply.ts#applyCommand",
+          "to": "sym:packages/cli/src/commands/apply.ts#withLockedExplainer",
+          "label": "withLockedExplainer()",
+          "kind": "call",
+          "anchors": [
+            {
+              "file": "packages/cli/src/commands/apply.ts",
+              "symbol": "applyCommand.run",
+              "span": {
+                "from": 5,
+                "to": 5
+              },
+              "role": "call-site"
+            },
+            {
+              "file": "packages/cli/src/commands/apply.ts",
+              "symbol": "withLockedExplainer",
+              "role": "definition"
+            }
+          ],
+          "summary": "Hold the guide lock while checking and writing."
+        },
+        {
+          "id": "apply-command:4",
+          "from": "sym:packages/cli/src/commands/apply.ts#applyCommand",
+          "to": "sym:packages/cli/src/repo.ts#openWorkspace",
+          "label": "openWorkspace(ctx, { explainer: loaded })",
+          "kind": "call",
+          "anchors": [
+            {
+              "file": "packages/cli/src/commands/apply.ts",
+              "symbol": "applyCommand.run",
+              "span": {
+                "from": 6,
+                "to": 6
+              },
+              "role": "call-site"
+            },
+            {
+              "file": "packages/cli/src/repo.ts",
+              "symbol": "openWorkspace",
+              "role": "definition"
+            }
+          ],
+          "summary": "Open the index and source text for the guide."
+        },
+        {
+          "id": "apply-command:5",
+          "from": "sym:packages/cli/src/commands/apply.ts#applyCommand",
+          "to": "sym:packages/core/src/apply.ts#applyPatch",
+          "label": "applyPatch(…)",
+          "kind": "call",
+          "anchors": [
+            {
+              "file": "packages/cli/src/commands/apply.ts",
+              "symbol": "applyCommand.run",
+              "span": {
+                "from": 7,
+                "to": 9
+              },
+              "role": "call-site"
+            },
+            {
+              "file": "packages/core/src/apply.ts",
+              "symbol": "applyPatch",
+              "role": "definition"
+            }
+          ],
+          "summary": "Core checks anchors and ownership, then returns a result."
+        }
+      ]
+    }
+  ],
+  "tours": [
+    {
+      "id": "tour:apply-command",
+      "title": "How xpl checks and applies guide edits",
+      "summary": "The `xpl apply` command reads a patch, loads the guide and its source index, and asks core to check the proposed merge. Core checks source anchors and protects reader-owned fields. The CLI writes the guide only after a successful result with changes; this tour leaves out later export checks.",
+      "steps": [
+        {
+          "id": "t1",
+          "view": "view:apply-command",
+          "focus": [
+            "sym:packages/cli/src/commands/apply.ts#applyCommand"
+          ],
+          "code": [
+            {
+              "file": "packages/cli/src/commands/apply.ts",
+              "symbol": "applyCommand",
+              "role": "definition"
+            }
+          ],
+          "note": "### A patch changes the guide only after checks\n\nThe command reads one patch and one saved guide. The core returns either a checked replacement or the original guide with issues.",
+          "editor": {
+            "primary": "packages/cli/src/commands/apply.ts"
+          }
+        },
+        {
+          "id": "t2",
+          "view": "view:apply-command",
+          "focus": [
+            "apply-command:1"
+          ],
+          "code": [
+            {
+              "file": "packages/cli/src/commands/apply.ts",
+              "symbol": "applyCommand.run",
+              "span": {
+                "from": 3,
+                "to": 3
+              },
+              "role": "call-site"
+            },
+            {
+              "file": "packages/cli/src/repo.ts",
+              "symbol": "resolveExplainerPath",
+              "role": "definition"
+            }
+          ],
+          "note": "### The command first locates the saved guide\n\nA guide name resolves to a file under `.explainer`. Invalid names fail before the command reads the patch.",
+          "editor": {
+            "primary": "packages/cli/src/commands/apply.ts"
+          }
+        },
+        {
+          "id": "t3",
+          "view": "view:apply-command",
+          "focus": [
+            "apply-command:2"
+          ],
+          "code": [
+            {
+              "file": "packages/cli/src/commands/apply.ts",
+              "symbol": "applyCommand.run",
+              "span": {
+                "from": 4,
+                "to": 4
+              },
+              "role": "call-site"
+            },
+            {
+              "file": "packages/cli/src/commands/apply.ts",
+              "symbol": "readPatch",
+              "role": "definition"
+            }
+          ],
+          "note": "### The patch is parsed as JSON\n\nThe author may pass a file path or pipe JSON through standard input. A parse failure stops the command before merging.",
+          "editor": {
+            "primary": "packages/cli/src/commands/apply.ts"
+          }
+        },
+        {
+          "id": "t4",
+          "view": "view:apply-command",
+          "focus": [
+            "apply-command:3"
+          ],
+          "code": [
+            {
+              "file": "packages/cli/src/commands/apply.ts",
+              "symbol": "applyCommand.run",
+              "span": {
+                "from": 5,
+                "to": 5
+              },
+              "role": "call-site"
+            },
+            {
+              "file": "packages/cli/src/commands/apply.ts",
+              "symbol": "withLockedExplainer",
+              "role": "definition"
+            }
+          ],
+          "note": "### A lock covers the read and possible write\n\nThe command loads the guide while holding a file lock. Its save function writes the replacement atomically.",
+          "editor": {
+            "primary": "packages/cli/src/commands/apply.ts"
+          }
+        },
+        {
+          "id": "t5",
+          "view": "view:apply-command",
+          "focus": [
+            "apply-command:4"
+          ],
+          "code": [
+            {
+              "file": "packages/cli/src/commands/apply.ts",
+              "symbol": "applyCommand.run",
+              "span": {
+                "from": 6,
+                "to": 6
+              },
+              "role": "call-site"
+            },
+            {
+              "file": "packages/cli/src/repo.ts",
+              "symbol": "openWorkspace",
+              "role": "definition"
+            }
+          ],
+          "note": "### The workspace supplies code for checking\n\nThe command opens the guide's index and a source text reader. Core uses both to resolve new anchors.",
+          "editor": {
+            "primary": "packages/cli/src/commands/apply.ts"
+          }
+        },
+        {
+          "id": "t6",
+          "view": "view:apply-command",
+          "focus": [
+            "apply-command:5"
+          ],
+          "code": [
+            {
+              "file": "packages/cli/src/commands/apply.ts",
+              "symbol": "applyCommand.run",
+              "span": {
+                "from": 7,
+                "to": 9
+              },
+              "role": "call-site"
+            },
+            {
+              "file": "packages/core/src/apply.ts",
+              "symbol": "applyPatch",
+              "role": "definition"
+            }
+          ],
+          "note": "### Core decides whether the patch is safe\n\nThe merge checks fields, source locations, and ownership. An error returns the input guide and the command reports rejection.",
+          "editor": {
+            "primary": "packages/cli/src/commands/apply.ts"
+          }
+        },
+        {
+          "id": "t6a",
+          "view": "view:apply-command",
+          "focus": [
+            "sym:packages/core/src/apply.ts#applyPatch"
+          ],
+          "code": [
+            {
+              "file": "packages/core/src/apply.ts",
+              "symbol": "Applier.anchors",
+              "span": {
+                "from": 7,
+                "to": 17
+              },
+              "role": "usage"
+            },
+            {
+              "file": "packages/core/src/anchors.ts",
+              "symbol": "makeAnchor",
+              "role": "definition"
+            }
+          ],
+          "note": "### Source links must resolve against the index\n\nCore turns each proposed source link into a checked anchor. A failed lookup records an error tied to that patch field.",
+          "editor": {
+            "primary": "packages/core/src/apply.ts"
+          }
+        },
+        {
+          "id": "t6b",
+          "view": "view:apply-command",
+          "focus": [
+            "sym:packages/core/src/apply.ts#applyPatch"
+          ],
+          "code": [
+            {
+              "file": "packages/core/src/apply.ts",
+              "symbol": "Applier.skipUserOwned",
+              "role": "definition"
+            },
+            {
+              "file": "packages/core/src/apply.ts",
+              "symbol": "Applier.convertFields",
+              "span": {
+                "from": 16,
+                "to": 24
+              },
+              "role": "usage"
+            }
+          ],
+          "note": "### Reader edits keep their ownership\n\nA model patch skips a reader-authored element and fields the reader changed. The merge records those skips as protected warnings.",
+          "editor": {
+            "primary": "packages/core/src/apply.ts"
+          }
+        },
+        {
+          "id": "t7",
+          "view": "view:apply-command",
+          "focus": [
+            "sym:packages/cli/src/commands/apply.ts#applyCommand"
+          ],
+          "code": [
+            {
+              "file": "packages/cli/src/commands/apply.ts",
+              "symbol": "applyCommand.run",
+              "span": {
+                "from": 72,
+                "to": 82
+              },
+              "role": "usage"
+            }
+          ],
+          "note": "### The CLI saves only a valid change\n\nThe write condition requires a successful merge, a normal run, and at least one change. Dry runs and rejected patches leave the guide file as it was.",
+          "editor": {
+            "primary": "packages/cli/src/commands/apply.ts"
+          }
+        }
+      ]
+    }
+  ]
+}
