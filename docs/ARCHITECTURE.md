@@ -1494,12 +1494,12 @@ or install scripts. The viewer is required at build time. The directory carries 
 WASM runtime and grammars, Rust, Ruby and PHP tags queries, the skill, a short README, MIT LICENSE and
 `integrity.json`.
 The published name is `publishName` (`@krimvp/xpl`) in the private `@xpl/cli` workspace manifest; its version is
-0.2.2. The installed-artifact check retains service restart/recovery and checks watch pause/resume,
+0.3.0. The installed-artifact check retains service restart/recovery and checks watch pause/resume,
 durable job history and unavailable-runner submission. It also checks the published name/version, license
 and packed file inventory. npm rejected `xpl` as too similar to an existing name; `@krimvp/xpl` is the selected fallback.
 `npm run pack -- --pack-destination <outside-repo-dir>` builds and packs that directory. Install its local tarball with
 `npm install --global --prefix "$HOME/.local" --offline --ignore-scripts <absolute-tarball-path>`; put
-`$HOME/.local/bin` on PATH. No source build is needed at installation. This source tree builds version 0.2.2;
+`$HOME/.local/bin` on PATH. No source build is needed at installation. This source tree builds version 0.3.0;
 a `v*` tag starts publication. Install the latest published version with
 `npm install --global @krimvp/xpl`. Nothing is published by build, pack, diagnosis or skill installation.
 
@@ -3187,7 +3187,7 @@ identities to syntax ranges. This is a proposed contract revision, not a change 
   its viewer, grammars and skill. The full checkout-denied install test covers Linux x64/WSL2;
   platform CI checks packed install, local service and offline reading on macOS and Windows.
   The OS browser opener and Claude-backed jobs are outside those platform checks.
-  Node ≥22.12 is required. This source tree builds `@krimvp/xpl` 0.2.2 under MIT; a `v*` tag starts publication.
+  Node ≥22.12 is required. This source tree builds `@krimvp/xpl` 0.3.0 under MIT; a `v*` tag starts publication.
 
 **Next steps, roughly by value** (the review in `docs/review-2026-10-01.md` has the roadmap): an independent
 accuracy pass for change explainers; editable step titles and code in

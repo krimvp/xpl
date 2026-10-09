@@ -29,7 +29,7 @@ Turns "how does X work?", "give me an overview of this repo", "explain this PR" 
    invocation has not had live QA.
 
 Alternatively, from the [source repository](https://github.com/krimvp/xpl), run `npm install && npm run build`,
-then `npm pack ./packages/cli/dist` and `npm install -g --ignore-scripts ./krimvp-xpl-0.2.2.tgz`.
+then `npm pack ./packages/cli/dist` and `npm install -g --ignore-scripts ./krimvp-xpl-0.3.0.tgz`.
 A maintainer's tarball can also be installed with `npm install -g --offline --ignore-scripts <tarball>`.
 
 After updating or moving the CLI, rerun `xpl skill install` with the same destination. No source checkout

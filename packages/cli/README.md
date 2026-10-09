@@ -44,7 +44,7 @@ The workflow has been checked on Linux x64; other platforms have not been verifi
 
 The [source repository](https://github.com/krimvp/xpl) is public. `npm install && npm run build` builds the
 CLI; `npm pack ./packages/cli/dist` creates a local tarball that you can install with
-`npm install -g --ignore-scripts ./krimvp-xpl-0.2.2.tgz`.
+`npm install -g --ignore-scripts ./krimvp-xpl-0.3.0.tgz`.
 See the bundled `skill/code-explainer/README.md` for authoring and recovery instructions.
 
 MIT license. Copyright 2026 krimvp.
