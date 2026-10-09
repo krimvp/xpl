@@ -2601,7 +2601,11 @@ status stays in the sticky Save/Cancel bar, including the disabled Save reason.
   Automatic levels of at most 150 boxes and edges spread ports over 15–85% of a box side when this adds no
   crossing arrow pairs or edge-box intersections. They shorten a longer route only when the new path clears other
   boxes by at least 8 diagram units and avoids other arrows.
-  Its label follows the chosen path. Larger and pinned levels keep the prior port spacing and routing rules.
+  Its label follows the chosen path. At levels with at most 150 edges, a label that meets another route's
+  orthogonal segment tries positions on its own route with four units of clearance from those segments
+  and other labels. It stays inside its level and outside boxes; if none fits, it keeps the earlier position.
+  Larger levels keep prior label placement to bound layout time; larger and pinned levels keep port spacing
+  and routing rules.
   `GraphView.layout` replaces automatic positions at each
   container level before sizing its parent. Pins are finite logical coordinates relative to the rendered container,
   or to the canvas for roots. Negative child coordinates expand the container frame to the left/top
