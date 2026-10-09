@@ -18,7 +18,9 @@ import {
 import { CodeArea } from "./CodeArea.js";
 import { Details, TopicFacts } from "./Details.js";
 import { ErrorBoundary } from "./ErrorBoundary.js";
+import { ExpandInPlaceAction } from "./ExpandInPlaceAction.js";
 import { FlowDiagram } from "./FlowDiagram.js";
+import { FoldBackAction } from "./FoldBackAction.js";
 import { GraphView } from "./GraphView.js";
 import { Guide } from "./Guide.js";
 import { RelatedFiles } from "./RelatedFiles.js";
@@ -257,29 +259,37 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
                         </p>
                       )}
                     </div>
-                    <select
-                      aria-label="Choose a topic"
-                      value={state.perspective === "map" ? map.view.id : (flow?.id ?? "")}
-                      onChange={(event) => store.setView(event.target.value)}
-                    >
-                      {state.model.views
-                        .filter((view) =>
-                          state.perspective === "map"
-                            ? view.type === "graph"
-                            : view.type !== "graph",
-                        )
-                        .map((view) => (
-                          <option key={view.id} value={view.id}>
-                            {view.title}
-                          </option>
-                        ))}
-                      {state.perspective === "map" && map.generated && (
-                        <option value={map.view.id}>Map</option>
+                    <div className="caption-actions">
+                      {state.perspective === "map" && (
+                        <>
+                          <ExpandInPlaceAction nodes={map.graph.nodes} />
+                          <FoldBackAction visibleIds={map.graph.nodes.map((node) => node.id)} />
+                        </>
                       )}
-                      {state.perspective === "flow" && !flow && (
-                        <option value="">The guide's steps</option>
-                      )}
-                    </select>
+                      <select
+                        aria-label="Choose a topic"
+                        value={state.perspective === "map" ? map.view.id : (flow?.id ?? "")}
+                        onChange={(event) => store.setView(event.target.value)}
+                      >
+                        {state.model.views
+                          .filter((view) =>
+                            state.perspective === "map"
+                              ? view.type === "graph"
+                              : view.type !== "graph",
+                          )
+                          .map((view) => (
+                            <option key={view.id} value={view.id}>
+                              {view.title}
+                            </option>
+                          ))}
+                        {state.perspective === "map" && map.generated && (
+                          <option value={map.view.id}>Map</option>
+                        )}
+                        {state.perspective === "flow" && !flow && (
+                          <option value="">The guide's steps</option>
+                        )}
+                      </select>
+                    </div>
                   </div>
                   {state.perspective === "map" ? (
                     <div className="workspace-diagram">

@@ -4,6 +4,7 @@
  *
  *   npx tsx scripts/pr-shots.ts shoot <outDir> [--viewer-dir <dir>] [--build] [--set ux]
  *                                     [--shot <name>=<bundle>[?query]]... [--scheme light|dark]
+ *                                     [--expand <box-id>]
  *                                     [--size 1440x900] [--service connected|configured|disconnected|unmanaged]
  *   npx tsx scripts/pr-shots.ts compare <beforeDir> <afterDir> <outDir>
  *
@@ -66,6 +67,7 @@ async function shoot(argv: string[]): Promise<void> {
       "evidence-editor": { type: "boolean", default: false },
       "graph-authoring": { type: "boolean", default: false },
       "graph-pins": { type: "boolean", default: false },
+      expand: { type: "string" },
       questions: { type: "boolean", default: false },
       "question-history": { type: "boolean", default: false },
     },
@@ -466,6 +468,10 @@ async function shoot(argv: string[]): Promise<void> {
       if (values["graph-pins"]) {
         await page.getByRole("button", { name: "Show source", exact: true }).click();
         await page.locator(".cm-editor").first().waitFor();
+      }
+      if (values.expand) {
+        await page.locator(`[data-buttons-of="${values.expand}"] .expand-here`).click();
+        await page.locator(`[data-element-id="${values.expand}"].is-container`).waitFor();
       }
       await page.waitForTimeout(400);
       if (values["graph-authoring"]) {

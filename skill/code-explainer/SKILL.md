@@ -248,4 +248,4 @@ A talk built from existing views, by the rules of "The tour". Default: the newes
 - `reference/explain-change.md`: the guide for a PR, MR or branch.
 - `reference/patch-format.md`: a template per element, merge rules, provenance, rejections, repair.
 - `reference/cli.md`: every command and option.
-- `reference/examples/go-retry.patch.json` (a question) and `py-overview.patch.json` (a repo, with a system map and the inside of the service): finished patches for `fixtures/go-jobrunner` and `fixtures/py-jobrunner`. Read them for the text.
+- `reference/examples/go-retry.patch.json` (a question) and `py-overview.patch.json` (a repo, with a system map, five-part overview, and optional completion path): finished patches for `fixtures/go-jobrunner` and `fixtures/py-jobrunner`. Read them for the text.

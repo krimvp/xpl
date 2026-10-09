@@ -145,10 +145,13 @@ it("keeps reuse when directories share an inode number on different devices", as
   const realStat = fs.stat.bind(fs);
   const spy = vi.spyOn(fs, "stat").mockImplementation(async (file, options) => {
     const info = await realStat(String(file) === mounted ? shared : file, options);
-    if (String(file) === mounted)
+    if (String(file) === mounted) {
+      if (info === undefined)
+        throw new Error("expected fs.stat to find the shared cache directory");
       Object.defineProperty(info, "dev", {
         value: typeof info.dev === "bigint" ? info.dev + 1n : info.dev + 1,
       });
+    }
     return info;
   });
   syncBuiltinESMExports();
