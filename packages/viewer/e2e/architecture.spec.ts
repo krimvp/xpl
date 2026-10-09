@@ -20,6 +20,40 @@ const buttonsOf = (page: import("@playwright/test").Page, id: string) =>
   page.locator(`.diagram [data-buttons-of="${id}"]`);
 
 test.describe("architecture maps", () => {
+  test("a phone presentation starts on its diagram while source focus stays in the code pane", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto(ARCHITECTURE_BUNDLE.href + "?mode=present&tour=tour:overview&step=1");
+    await page.waitForFunction(() => window.__xpl !== undefined);
+    await expect(page.getByTestId("present")).toHaveAttribute("data-step-id", "t0");
+    await expect(page.getByTestId("present")).toBeFocused();
+    await expect(page.locator(".present .diagram")).toBeInViewport();
+    await expect(page.getByTestId("tour-caption")).toBeInViewport();
+    await expect
+      .poll(() =>
+        page
+          .locator(".present .cm-scroller")
+          .first()
+          .evaluate((el) => el.scrollTop),
+      )
+      .toBeGreaterThan(0);
+    await page.keyboard.press("ArrowRight");
+    await expect(page.getByTestId("present")).toHaveAttribute("data-step-id", "t1");
+    await expect(page.locator(".present .diagram")).toBeInViewport();
+    await page.keyboard.press("ArrowLeft");
+    await expect(page.getByTestId("present")).toHaveAttribute("data-step-id", "t0");
+    await expect(page.locator(".present .diagram")).toBeInViewport();
+    await page.locator(".present-right").scrollIntoViewIfNeeded();
+    await expect(page.locator(".present-right")).toBeInViewport();
+    await page.keyboard.press("ArrowRight");
+    await expect(page.getByTestId("present")).toHaveAttribute("data-step-id", "t1");
+    await expect(page.locator(".present-right")).toBeInViewport();
+    await page.keyboard.press("ArrowLeft");
+    await expect(page.getByTestId("present")).toHaveAttribute("data-step-id", "t0");
+    await expect(page.locator(".present-right")).toBeInViewport();
+  });
+
   test("view questions distinguish the system map from a dispatch sequence", async ({ page }) => {
     await page.goto(ARCHITECTURE_BUNDLE.href + "?perspective=map&view=view:system");
     await page.waitForFunction(() => window.__xpl !== undefined);

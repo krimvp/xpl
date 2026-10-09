@@ -2816,6 +2816,9 @@ read-only: no drill-in, expand or collapse, and ghosts are pictures. Framing rul
   zoom buttons stay hidden until the mouse moves.
 - Two places far apart in one file (more than about a pane apart, present/ranges.ts) get a pane each, the
   step's first one on top, like two files. Read mode shows "‹ range 1 / 2 ›" in the pane header instead.
+- On a phone, the diagram and caption stack above source. Entering a talk or moving between steps while the
+  diagram is at the top keeps it in view after the editor focuses its code range. A reader who has moved down
+  to source stays there between steps; source still scrolls to its focused range inside the editor.
 - The code font grows with the screen (`clamp(15px, 4px + 0.45vw + 0.75vh, 22px)`: about 15 px at 1280×720,
   17 px at 1440×900; 14 px in a code column under 420 px). Long lines wrap with a hanging indent (Present
   only) that keeps the first row of a line from being empty. A pane is as tall as its focus,
