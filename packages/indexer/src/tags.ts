@@ -13,6 +13,7 @@ import type {
   ProviderRange,
   ProviderDeclaration,
   ProviderRelationship,
+  ProviderSource,
 } from "./providers.js";
 
 interface TagsProfile {
@@ -24,6 +25,12 @@ interface TagsProfile {
   kinds: Readonly<Record<string, IndexedSymbol["kind"]>>;
   methodParents: readonly string[];
   label(tag: string, name: string, context?: string): string;
+  resolve?(
+    tag: string,
+    node: Node,
+    lexicalScopes: readonly ProviderDeclaration[],
+    declarations: readonly ProviderDeclaration[],
+  ): { path: string; parent?: string } | null | undefined;
   scope?(
     tag: string,
     node: Node,
@@ -37,6 +44,12 @@ interface TagsProfile {
       declarations: readonly ProviderDeclaration[],
     ): ProviderRelationship[];
     limitations: string[];
+    resolveProject?(
+      sources: readonly ProviderSource[],
+      declarations: readonly ProviderDeclaration[],
+      eligible: ReadonlySet<string>,
+      signal?: AbortSignal,
+    ): Promise<ProviderRelationship[]>;
   };
 }
 const KINDS: Readonly<Record<string, IndexedSymbol["kind"]>> = {
@@ -79,6 +92,7 @@ export class TagsProvider implements IndexProvider {
     const relationships: ProviderRelationship[] = [];
     const analysis = new Map<boolean, AnalysisReport>();
     const sourceHashes: Record<string, string> = {};
+    const eligible = new Set<string>();
     let query: Query | undefined;
     try {
       const queryText = this.profile.query();
@@ -120,19 +134,35 @@ export class TagsProvider implements IndexProvider {
               );
             const stack: { end: number; declaration: ProviderDeclaration; tag: string }[] = [];
             const seen = new Set<number>();
+            let omittedScopeEnd = 0;
             for (const tag of tags) {
+              if (tag.node.startIndex < omittedScopeEnd) continue;
               if (seen.has(tag.node.id)) continue;
               seen.add(tag.node.id);
               while (stack.length && stack.at(-1)!.end <= tag.node.startIndex) stack.pop();
               const parent = stack.at(-1);
               const kind = this.profile.kinds[tag.tag] ?? KINDS[tag.tag];
               if (!kind) continue;
+              const resolved = this.profile.resolve?.(
+                tag.tag,
+                tag.node,
+                stack.map((entry) => entry.declaration),
+                declarations,
+              );
+              if (resolved === null) {
+                // Children of an ownerless namespace cannot acquire the outer lexical parent.
+                if (tag.tag === "class" || tag.tag === "module")
+                  omittedScopeEnd = tag.node.endIndex;
+                continue;
+              }
               const scope = this.profile.scope?.(tag.tag, tag.node, tree.rootNode);
               const declaration: ProviderDeclaration = {
                 identity: `${source.path}:${tag.node.startIndex}:${tag.node.endIndex}`,
                 file: source.path,
                 name: tag.name.text,
-                path: parent ? `${parent.declaration.path}.${tag.label}` : tag.label,
+                path:
+                  resolved?.path ??
+                  (parent ? `${parent.declaration.path}.${tag.label}` : tag.label),
                 kind:
                   kind === "function" && parent && this.profile.methodParents.includes(parent.tag)
                     ? "method"
@@ -142,7 +172,13 @@ export class TagsProvider implements IndexProvider {
                   ? { identifier: range(tag.name) }
                   : {}),
                 declaration: scope?.range ?? range(tag.node),
-                ...(parent ? { parent: parent.declaration.identity } : {}),
+                ...(resolved
+                  ? resolved.parent
+                    ? { parent: resolved.parent }
+                    : {}
+                  : parent
+                    ? { parent: parent.declaration.identity }
+                    : {}),
               };
               declarations.push(declaration);
               stack.push({ end: scope?.endIndex ?? tag.node.endIndex, declaration, tag: tag.tag });
@@ -180,6 +216,7 @@ export class TagsProvider implements IndexProvider {
           : await extract();
         declarations.push(...result.declarations);
         relationships.push(...result.relationships);
+        if (!result.recovered) eligible.add(source.path);
         if (result.warning) input.warn(result.warning);
         // All other outcomes are fixed by this profile; syntax recovery changes the limitations.
         const recovered = result.recovered;
@@ -232,6 +269,15 @@ export class TagsProvider implements IndexProvider {
           ],
         });
       }
+      if (this.profile.calls?.resolveProject)
+        relationships.push(
+          ...(await this.profile.calls.resolveProject(
+            input.sources,
+            declarations,
+            eligible,
+            input.signal,
+          )),
+        );
     } finally {
       query?.delete();
       parser?.delete();

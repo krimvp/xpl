@@ -144,7 +144,7 @@ describe.each(["auto", "require"])(
         files: 1,
         symbols: 1,
         refs: "heuristic",
-        tool: "tree-sitter-rust@0.24.0/query-v5",
+        tool: "tree-sitter-rust@0.24.0/query-v6",
       });
       expect(index.analysis!.find((r) => r.provider === "rust-tags")).toMatchObject({
         files: ["a.rs"],

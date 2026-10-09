@@ -762,28 +762,38 @@ labels collapse whitespace; those compound names have full declaration evidence 
 
 Rust uses `tree-sitter-rust@0.24.0` (WASM ABI 14). The CLI copies the corrected query beside its grammar in
 `dist/wasm`; source runs read it from the adapter directory. Rust reports partial symbols, declaration ranges
-and nesting. Its bounded call pass resolves bare calls between unambiguous root-level functions in the
-same file, with exact call-expression ranges and `heuristic` confidence. Shadowed names, nested functions,
-closures, qualified/generic calls, methods, trait dispatch and cross-module targets are omitted. Bodies
-containing macros or local imports are skipped. Syntax errors suppress calls for that file. Call coverage
-is partial; other relationship kinds remain unsupported. It does not resolve imports, receiver ownership
-or external `mod` links, expand macros, evaluate cfg, or index tuple positions and local bindings. Declaration
+and nesting. Its bounded call pass resolves unshadowed bare calls between root functions in one file, then
+resolves receiver calls from explicit fields, local types, and one-method return types. A generic receiver
+with one trait bound points to the trait method. A concrete receiver points to one inherent method. Explicit
+root-level `use crate::module::Type` imports connect those types to files under an indexed `src/lib.rs` or
+`src/main.rs` crate root. Without that root, imported receivers stay unresolved; standalone `src/bin` crates
+and custom crate-root paths are not resolved. Both passes emit
+exact call-expression ranges with `heuristic` confidence; provider normalization checks source snapshots and
+both declaration identities. A warm extraction cache reruns project receiver resolution against current files.
+Unknown or ambiguous receivers, nested functions, closures and calls inside macros are omitted. Bare-call
+analysis skips bodies with macros or local imports. Syntax errors suppress calls for that file. Call coverage
+is partial; other relationship kinds remain unsupported. It does not infer concrete implementations of
+generic trait receivers, resolve external `mod` links, expand macros, evaluate cfg, or index tuple positions and local bindings. Declaration
 ranges exclude leading attributes and doc comments. Syntax recovery adds a limit and a warning. Matching
 tags outcomes share one report with combined file counts; syntax-error files keep a separate report.
 [The tags experiment](rust-tags.md) records declaration coverage; [bounded direct calls](rust-direct-calls.md)
-records the supported slice and a bat smoke test. Tags cache version query-v5 includes named members and call
+records the supported slice and a bat smoke test. Tags cache version query-v6 includes named members and call
 extraction.
 
 Ruby's syntax-only `TagsProvider` (`src/tags/ruby.ts`, `ruby.scm`) uses `tree-sitter-ruby@0.23.1`. It
-indexes named classes, modules, instance and singleton methods, and direct constant assignments with full
-declaration ranges. Scoped assignments such as `Other::CONST =` are omitted until ownership can be
-resolved without duplicating or misplacing their path. Lexical containment supplies parents; a singleton
-method keeps its receiver in the symbol path (`Runner.self.build`). Reopened namespaces get source-ordered
-`~N` IDs within a file. This
-does not resolve cross-file namespace ownership, inheritance, calls, imports or metaprogrammed definitions.
+indexes named classes, modules, instance and singleton methods, and constant assignments with full
+declaration ranges. A qualified class, module or assignment target gets a dotted path and parent only when
+its owner has a preceding class or module declaration in the same file. Lookup checks actual enclosing
+class/module declarations before the file root, without treating dotted path ancestors as lexical scopes;
+`::` starts at the root. An unknown owner and the children of an ownerless
+class or module are omitted, including an owner declared
+only in another file. Direct declarations keep lexical parents; a singleton method keeps its receiver in
+the symbol path (`Runner.self.build`). Reopened namespaces get source-ordered `~N` IDs within a file.
+This does not resolve cross-file namespace ownership, inheritance, calls, imports or metaprogrammed definitions.
 All relationship kinds are unsupported and Ruby reports `refs: none`. Syntax errors can leave declarations
 incomplete and produce a warning. Ruby tags use the existing file-local extraction cache; profile version
-`tree-sitter-ruby@0.23.1/query-v1` binds the query and limitations to its cache entries.
+`tree-sitter-ruby@0.23.1/query-v5` binds the query and ownership rule to its cache entries.
+[The scoped constant check](ruby-scoped-constants.md) records the bounded rule and pinned Rack sample.
 
 PHP's syntax-only `TagsProvider` (`src/tags/php.ts`, `php.scm`) uses `tree-sitter-php@0.24.2` with the
 mixed PHP/HTML grammar. It indexes named namespaces, classes, interfaces, traits, functions, methods and
@@ -1696,7 +1706,9 @@ file; `--json` adds the counts and what was left out.
   tests and docs on both. The tour: the system map, what it relies on, the inside of the biggest service,
   then one step per part, the main part first. When imported outbound systems appear, the saved patch asks
   whether each is on the default runtime path or is optional. The service and outside boxes keep their ids
-  across drafts.
+  across drafts. A code file qualifies as a part when any indexed declaration in it has a substantive kind,
+  including a class or method inside a Ruby module or PHP namespace. Imports, namespace wrappers and constants
+  alone do not qualify; tests remain excluded. A `refs: none` index supplies no cross-file call arrows.
 - `path <entry>`: a sequence of the calls the entry symbol makes (depth 1, source order, at most 6
   participants and 12 calls), and a tour with a big-picture step and one step per main call (at most 8).
 
@@ -2584,9 +2596,18 @@ status stays in the sticky Save/Cancel bar, including the disabled Save reason.
   kept if it fits at least 8% larger. The direction is on the graph as `data-direction`. Containers
   for nested includes, laid out inside-out with room for their header; an edge that crosses a container's
   border gets a port there (a node of its own in the container's first or last layer), so the part inside
-  is routed around the boxes; edges routed inside their lowest common container, right-angled, with the ends that share a side of a box spread along it and the turns in one gap
-  between layers on separate tracks. `GraphView.layout` replaces automatic positions at each container
-  level before sizing its parent. Pins are finite logical coordinates relative to the rendered container,
+  is routed around the boxes; edges routed inside their lowest common container, right-angled, with the ends
+  that share a side of a box spread along it and the turns in one gap between layers on separate tracks.
+  Automatic levels of at most 150 boxes and edges spread ports over 15–85% of a box side when this adds no
+  crossing arrow pairs or edge-box intersections. They shorten a longer route only when the new path clears other
+  boxes by at least 8 diagram units and avoids other arrows.
+  Its label follows the chosen path. At levels with at most 150 edges, a label that meets another route's
+  orthogonal segment tries positions on its own route with four units of clearance from those segments
+  and other labels. It stays inside its level and outside boxes; if none fits, it keeps the earlier position.
+  Larger levels keep prior label placement to bound layout time; larger and pinned levels keep port spacing
+  and routing rules.
+  `GraphView.layout` replaces automatic positions at each
+  container level before sizing its parent. Pins are finite logical coordinates relative to the rendered container,
   or to the canvas for roots. Negative child coordinates expand the container frame to the left/top
   without translating those children or changing saved pins. Routes reconnect to the moved frames;
   unpinned siblings yield space when a pin occupies their old position. Changed levels discard stale
@@ -2616,7 +2637,11 @@ status stays in the sticky Save/Cancel bar, including the disabled Save reason.
   view (`GraphNode.expandable`) also offers "Show the inside here": `store.toggleExpanded` adds it to
   `state.expanded`, and the view is drawn through `expandInPlace` (core `levels.ts`), with the boxes of the
   view it opens added, so the parts of a service sit inside its box and their arrows cross its border; its
-  collapse button folds it back. Nothing is stored. Every box has an icon left of its label
+  collapse button folds it back. At 760 px and narrower, the caption offers "Show parts of [box] here"
+  for the sole expandable box on the map, or for a selected one when several can open. The action stays
+  reachable when that box's SVG corner is outside the pane. If an expanded box extends past the visible
+  pane at readable zoom, a caption button also folds the most recently expanded box on that map by pointer
+  or keyboard. Neither action changes the stored view or pins. Every box has an icon left of its label
   (`components/icons.tsx`): its role, else the kind of code (folder, file, group, a letter per symbol kind).
   Not while presenting. Pan by dragging, zoom with
   the wheel, the buttons or `+`/`-`, and "Fit" (or `0`). Maps with saved pins keep at least zoom 0.9 on load and
@@ -2791,6 +2816,9 @@ read-only: no drill-in, expand or collapse, and ghosts are pictures. Framing rul
   zoom buttons stay hidden until the mouse moves.
 - Two places far apart in one file (more than about a pane apart, present/ranges.ts) get a pane each, the
   step's first one on top, like two files. Read mode shows "‹ range 1 / 2 ›" in the pane header instead.
+- On a phone, the diagram and caption stack above source. Entering a talk or moving between steps while the
+  diagram is at the top keeps it in view after the editor focuses its code range. A reader who has moved down
+  to source stays there between steps; source still scrolls to its focused range inside the editor.
 - The code font grows with the screen (`clamp(15px, 4px + 0.45vw + 0.75vh, 22px)`: about 15 px at 1280×720,
   17 px at 1440×900; 14 px in a code column under 420 px). Long lines wrap with a hanging indent (Present
   only) that keeps the first row of a line from being empty. A pane is as tall as its focus,
@@ -3010,8 +3038,8 @@ fixes; its `json patch` blocks are applied by a test), `cli.md` (every command w
 `writing.md` (which field holds what, plain-language rules, the tour summary, rewrites; `xpl lint` checks the
 mechanical part), `explain-change.md` (the PR, MR and branch guide),
 `examples/go-retry.patch.json` (a worked question patch for `fixtures/go-jobrunner`) and
-`examples/py-overview.patch.json` (a worked repo overview for `fixtures/py-jobrunner`); tests apply and
-validate both.
+`examples/py-overview.patch.json` (a worked repo overview for `fixtures/py-jobrunner`, with an optional
+completion-path map and short tour); tests apply and validate both.
 
 ---
 
@@ -3095,7 +3123,7 @@ heuristic references, SCIP-precise references for TypeScript/JavaScript, Python 
 full CLI (with `change`, `draft` and `lint`), Read, Explore and Present with tours, feedback from the page
 under `xpl view` and its live update, architecture maps (`role`, `opens`), change explainers with
 base anchors and a diff view, and example explainers for the original three fixtures. Rust has an
-experimental syntax-tags provider and a browser-tested structural bundle; it has no relationship resolver or committed example explainer.
+experimental syntax-tags provider with bounded heuristic calls and a browser-tested structural bundle; it has no committed example explainer.
 Ruby has source-backed declaration tags and a runnable fixture, but no relationship resolver.
 
 PHP has source-backed declaration tags and a small source fixture, but no relationship resolver.

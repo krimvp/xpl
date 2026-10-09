@@ -779,6 +779,34 @@
   max-width: 260px;
   min-width: 0;
 }
+.caption-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: 0;
+}
+.caption-actions .btn {
+  flex: none;
+}
+.fold-back-action {
+  max-width: 22ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mobile-expand-action {
+  display: none;
+  max-width: 26ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+@media (max-width: 760px) {
+  .mobile-expand-action {
+    display: inline-block;
+  }
+}
 /* a11y: the maps a box on this one opens, as plain links under the title (manager V4) */
 .caption-insides {
   display: flex;

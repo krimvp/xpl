@@ -35,7 +35,163 @@ function graphOf(include: string[], over: Partial<GraphView> = {}) {
 
 const all = (nodes: LayoutNode[]): LayoutNode[] => nodes.flatMap((n) => [n, ...all(n.children)]);
 
+const routeHitsLabel = (
+  points: readonly { x: number; y: number }[],
+  label: { x: number; y: number; width: number; height: number },
+) =>
+  points.some((point, i) => {
+    if (i === 0) return false;
+    const previous = points[i - 1]!;
+    return point.x === previous.x
+      ? point.x > label.x &&
+          point.x < label.x + label.width &&
+          Math.max(point.y, previous.y) > label.y &&
+          Math.min(point.y, previous.y) < label.y + label.height
+      : point.y > label.y &&
+          point.y < label.y + label.height &&
+          Math.max(point.x, previous.x) > label.x &&
+          Math.min(point.x, previous.x) < label.x + label.width;
+  });
+
 describe("layoutGraph", () => {
+  it("straightens a clear long arrow while keeping an authored label", async () => {
+    const ids = ["startup", "settings", "scheduling", "workers", "events"];
+    const edge = (from: string, to: string, label?: string): DerivedEdge => ({
+      id: `edge:${from}-${to}`,
+      from,
+      to,
+      kind: label ? "emits" : "calls",
+      ...(label ? { label } : {}),
+      count: 1,
+      resolution: "static",
+      stored: true,
+      anchors: [],
+    });
+    const graph: DerivedGraph = {
+      nodes: ids.map((id) => ({
+        id,
+        label: id === "events" ? "Events and metrics" : id,
+        kind: "group" as const,
+        role: "component" as const,
+        container: false,
+      })),
+      edges: [
+        edge("startup", "settings"),
+        edge("startup", "scheduling"),
+        edge("startup", "workers"),
+        edge("startup", "events"),
+        edge("scheduling", "workers"),
+        edge("workers", "events", "job.completed"),
+      ],
+      stubs: [],
+      ghosts: [],
+    };
+    const layout = await layoutGraph(graph, { direction: "DOWN" });
+    expect(layout.fallback).toBe(false);
+    const route = layout.edges.find((item) => item.id === "edge:startup-workers")!;
+    expect(route.points).toHaveLength(4);
+    const scheduling = absoluteBoxes(layout.nodes).get("scheduling")!;
+    for (let i = 1; i < route.points.length; i++) {
+      const a = route.points[i - 1]!,
+        b = route.points[i]!;
+      if (a.x !== b.x || Math.max(a.y, b.y) <= scheduling.y) continue;
+      if (Math.min(a.y, b.y) >= scheduling.y + scheduling.height) continue;
+      expect(
+        Math.max(scheduling.x - a.x, a.x - scheduling.x - scheduling.width),
+      ).toBeGreaterThanOrEqual(8);
+    }
+    expect(layout.edges.find((item) => item.id === "edge:workers-events")!.label!.text).toBe(
+      "job.completed",
+    );
+  });
+  it("keeps a shortened arrow outside a sibling box", async () => {
+    const graph: DerivedGraph = {
+      nodes: Array.from({ length: 6 }, (_, i) => ({
+        id: `n${i}`,
+        label: `n${i}`,
+        kind: "group" as const,
+        role: "component" as const,
+        container: false,
+      })),
+      edges: ["0-2", "0-3", "1-2", "1-3", "1-4", "2-4"].map((pair) => ({
+        id: `e${pair}`,
+        from: `n${pair[0]}`,
+        to: `n${pair[2]}`,
+        kind: "calls" as const,
+        count: 1,
+        resolution: "static" as const,
+        stored: true,
+        anchors: [],
+      })),
+      stubs: [],
+      ghosts: [],
+    };
+    const layout = await layoutGraph(graph);
+    const obstruction = absoluteBoxes(layout.nodes).get("n3")!;
+    const points = layout.edges.find((edge) => edge.id === "e1-4")!.points;
+    const crosses = points.slice(1).filter((p, i) => {
+      const q = points[i]!;
+      return p.y === q.y
+        ? p.y > obstruction.y &&
+            p.y < obstruction.y + obstruction.height &&
+            Math.max(p.x, q.x) > obstruction.x &&
+            Math.min(p.x, q.x) < obstruction.x + obstruction.width
+        : p.x > obstruction.x &&
+            p.x < obstruction.x + obstruction.width &&
+            Math.max(p.y, q.y) > obstruction.y &&
+            Math.min(p.y, q.y) < obstruction.y + obstruction.height;
+    });
+    expect(crosses).toEqual([]);
+  });
+  it("keeps widened ports from crossing arrows that were separate", async () => {
+    const graph: DerivedGraph = {
+      nodes: Array.from({ length: 6 }, (_, i) => ({
+        id: `n${i}`,
+        label: `n${i}`,
+        kind: "group" as const,
+        role: "component" as const,
+        container: false,
+      })),
+      edges: ["0-3", "0-4", "1-2", "2-3", "2-5", "3-4"].map((pair) => ({
+        id: `e${pair}`,
+        from: `n${pair[0]}`,
+        to: `n${pair[2]}`,
+        kind: "calls" as const,
+        count: 1,
+        resolution: "static" as const,
+        stored: true,
+        anchors: [],
+      })),
+      stubs: [],
+      ghosts: [],
+    };
+    const { edges } = await layoutGraph(graph);
+    const crossing = edges.some((a, i) =>
+      edges.slice(i + 1).some((b) =>
+        a.points.slice(1).some((q, ai) => {
+          const p = a.points[ai]!;
+          return b.points.slice(1).some((s, bi) => {
+            const r = b.points[bi]!;
+            return (
+              (p.x === q.x &&
+                r.y === s.y &&
+                p.x > Math.min(r.x, s.x) &&
+                p.x < Math.max(r.x, s.x) &&
+                r.y > Math.min(p.y, q.y) &&
+                r.y < Math.max(p.y, q.y)) ||
+              (p.y === q.y &&
+                r.x === s.x &&
+                r.x > Math.min(p.x, q.x) &&
+                r.x < Math.max(p.x, q.x) &&
+                p.y > Math.min(r.y, s.y) &&
+                p.y < Math.max(r.y, s.y))
+            );
+          });
+        }),
+      ),
+    );
+    expect(crossing).toBe(false);
+  });
   it("keeps automatic boxes clear of a pinned sibling without moving the pin", async () => {
     const { graph } = graphOf(["file:src/a.ts", "file:src/b.ts"]);
     const automatic = await layoutGraph(graph);
@@ -575,6 +731,153 @@ describe("what a map draws", () => {
     expect(apart).toBe(true);
     // still on its line
     expect(b!.y).toBe(3);
+  });
+
+  it("keeps the Go overview event label off unrelated incoming routes", () => {
+    const edges = [
+      {
+        points: [
+          { x: 388.5, y: 288 },
+          { x: 388.5, y: 304 },
+          { x: 494, y: 304 },
+          { x: 494, y: 328 },
+          { x: 494.5, y: 368 },
+        ],
+        label: { text: "job.completed", x: 439.5, y: 319, width: 109, height: 18 },
+      },
+      {
+        points: [
+          { x: 447.95, y: 176 },
+          { x: 447.95, y: 368 },
+        ],
+      },
+      {
+        points: [
+          { x: 541.05, y: 268 },
+          { x: 541.05, y: 368 },
+        ],
+      },
+    ];
+    spreadLabels(edges);
+    const label = edges[0]!.label!;
+    expect(edges.slice(1).map((edge) => routeHitsLabel(edge.points, label))).toEqual([
+      false,
+      false,
+    ]);
+    const centre = { x: label.x + label.width / 2, y: label.y + label.height / 2 };
+    expect(
+      Math.min(
+        ...edges[0]!.points
+          .slice(1)
+          .map((point, i) => distanceToSegment(centre, edges[0]!.points[i]!, point)),
+      ),
+    ).toBeLessThan(12);
+  });
+
+  it("clears a foreign route with a small shift beside the owner's segment", () => {
+    const edges = [
+      {
+        points: [
+          { x: 359.55, y: 288 },
+          { x: 359.55, y: 304 },
+          { x: 457.25, y: 304 },
+          { x: 457.25, y: 328 },
+          { x: 457.5, y: 368 },
+        ],
+        label: { text: "job.completed", x: 405.75, y: 319, width: 103, height: 18 },
+      },
+      {
+        points: [
+          { x: 414.1, y: 176 },
+          { x: 414.1, y: 368 },
+        ],
+      },
+      {
+        points: [
+          { x: 500.9, y: 268 },
+          { x: 500.9, y: 368 },
+        ],
+      },
+    ];
+    spreadLabels(
+      edges,
+      [
+        { x: 259.25, y: 240, width: 118, height: 48 },
+        { x: 395.5, y: 368, width: 124, height: 48 },
+      ],
+      { x: 0, y: 0, width: 629, height: 528 },
+    );
+    const label = edges[0]!.label!;
+    expect(edges.slice(1).map((edge) => routeHitsLabel(edge.points, label))).toEqual([
+      false,
+      false,
+    ]);
+    expect(Math.abs(label.x + label.width / 2 - 359.55)).toBeLessThanOrEqual(2);
+    expect(label.x + label.width).toBeLessThanOrEqual(414.1 - 4);
+    expect(label.y).toBe(295);
+  });
+
+  it("does not move a cleared label into its target box", async () => {
+    const graph: DerivedGraph = {
+      nodes: Array.from({ length: 6 }, (_, i) => ({
+        id: `n${i}`,
+        label: `n${i}`,
+        kind: "group" as const,
+        role: "component" as const,
+        container: false,
+      })),
+      edges: ["0-4", "1-2", "1-4", "3-4", "3-5"].map((pair) => ({
+        id: `e${pair}`,
+        from: `n${pair[0]}`,
+        to: `n${pair[2]}`,
+        kind: "calls" as const,
+        label: pair === "1-2" || pair.startsWith("3-") ? "event.completed" : "short",
+        count: 1,
+        resolution: "static" as const,
+        stored: true,
+        anchors: [],
+      })),
+      stubs: [],
+      ghosts: [],
+    };
+    const layout = await layoutGraph(graph);
+    const label = layout.edges.find((edge) => edge.id === "e1-2")!.label!;
+    const target = absoluteBoxes(layout.nodes).get("n2")!;
+    expect(
+      label.x + label.width <= target.x ||
+        label.x >= target.x + target.width ||
+        label.y + label.height <= target.y ||
+        label.y >= target.y + target.height,
+    ).toBe(true);
+  });
+
+  it("does not introduce a foreign-route hit while clearing another label", async () => {
+    const graph: DerivedGraph = {
+      nodes: Array.from({ length: 6 }, (_, i) => ({
+        id: `n${i}`,
+        label: `n${i}`,
+        kind: "group" as const,
+        role: "component" as const,
+        container: false,
+      })),
+      edges: ["0-1", "1-3", "1-4", "2-3", "2-4", "2-5"].map((pair) => ({
+        id: `e${pair}`,
+        from: `n${pair[0]}`,
+        to: `n${pair[2]}`,
+        kind: "calls" as const,
+        label: pair === "1-3" ? "short" : "event.completed",
+        count: 1,
+        resolution: "static" as const,
+        stored: true,
+        anchors: [],
+      })),
+      stubs: [],
+      ghosts: [],
+    };
+    const layout = await layoutGraph(graph, { direction: "DOWN" });
+    const label = layout.edges.find((edge) => edge.id === "e2-4")!.label!;
+    const foreign = layout.edges.find((edge) => edge.id === "e2-5")!;
+    expect(routeHitsLabel(foreign.points, label)).toBe(false);
   });
 });
 

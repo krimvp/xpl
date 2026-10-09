@@ -13,6 +13,8 @@ reasons=()
 while IFS= read -r f; do
   case "$f" in
     packages/viewer/src/*|packages/viewer/index.html) reasons+=("UI/UX: $f") ;;
+    skill/code-explainer/reference/examples/*.patch.json)
+      reasons+=("worked example maps: $f") ;;
     packages/core/src/graph.ts|packages/core/src/stubs.ts|packages/core/src/levels.ts|packages/core/src/focus.ts|\
     packages/core/src/flow.ts|packages/core/src/sequence.ts|packages/core/src/bundle.ts|packages/core/src/prune.ts|\
     packages/core/src/related-files.ts|packages/core/src/model.ts|packages/core/src/constants.ts|\

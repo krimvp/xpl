@@ -310,6 +310,30 @@ const pinsTest = test.extend<{ pins: PinsFixture }>({
   },
 });
 
+pinsTest(
+  "phone expansion leaves saved pins and the stored map unchanged",
+  async ({ page, pins }) => {
+    const { path, server, saved } = pins;
+    await seedPins(pins);
+    const before = readFileSync(path, "utf8");
+    const layout = saved().views.find((view: { id: string }) => view.id === "view:system").layout;
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto(server.url + "?mode=explore&view=view:system");
+    await page.waitForFunction(() => !!window.__xpl);
+    await page.getByRole("button", { name: "Show parts of Job runner here" }).click();
+    await expect(byId(page, "grp:job-runner")).toHaveClass(/is-container/);
+    await page
+      .locator(".diagram-caption")
+      .getByRole("button", { name: "Fold Job runner back" })
+      .click();
+    await expect(byId(page, "grp:job-runner")).not.toHaveClass(/is-container/);
+    await expect.poll(() => readFileSync(path, "utf8")).toBe(before);
+    await expect
+      .poll(() => saved().views.find((view: { id: string }) => view.id === "view:system").layout)
+      .toEqual(layout);
+  },
+);
+
 for (const [view, id, label] of levels)
   pinsTest(`live ${view} pins reload with linked source`, async ({ page, pins }) => {
     const { server, saved } = pins;
