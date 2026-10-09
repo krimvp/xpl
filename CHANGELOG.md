@@ -6,10 +6,12 @@ User-facing changes are listed here. Versions link to their GitHub releases.
 
 - xpl indexes Java repositories and named Ruby, PHP and Rust declarations. Rust support also resolves bounded
   same-file calls. Relationships are still labeled as heuristic when precise evidence is unavailable.
-- Authors get an index-backed first draft, shell completion, clearer repository maps, and a skill installer for
-  Claude, Codex, Pi, Factory Droid and Devin. An opt-in CI workflow can publish a source-linked PR preview.
-- Readers can search source across saved versions, navigate diagrams and linked code with arrow keys, inspect
-  source excerpts while reading, and view diagram relationships as text.
+- Authors can create an index-backed first draft with `xpl start` and complete commands and local guide names
+  in the shell. Repository drafts can mark imported systems optional and include nested declarations.
+- The existing Claude skill installer now also targets Codex, Pi, Factory Droid and Devin. An opt-in CI
+  workflow can publish a source-linked PR preview.
+- Readers can search supplied source across contained guide snapshots, navigate diagrams and linked code
+  with arrow keys, inspect source excerpts while reading, and view diagram relationships as text.
 - Published examples now cover xpl and Cobra alongside refreshed Vite and Zod guides. Phone maps and focused
   flows keep their controls and selected branches more accessible.
 
