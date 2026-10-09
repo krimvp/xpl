@@ -806,6 +806,12 @@
   .mobile-expand-action {
     display: inline-block;
   }
+  .caption-actions {
+    width: 100%;
+  }
+  .caption-actions select {
+    flex: 1 1 12ch;
+  }
 }
 /* a11y: the maps a box on this one opens, as plain links under the title (manager V4) */
 .caption-insides {
