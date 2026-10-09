@@ -2669,7 +2669,10 @@ status stays in the sticky Save/Cancel bar, including the disabled Save reason.
   after their label; a link of a stage to itself is a loop on its right side; labels are drawn after all
   lines. A code-first view (`codeFirstView`) puts the code in the main pane (Read: a flow view gets a narrow
   outline column; Explore: the diagram column is narrow) and the outline keeps the caret's step (else the
-  selection) near its middle (`PanZoom.revealMargin`). Read keeps sequence views in the diagram pane,
+  selection) near its middle (`PanZoom.revealMargin`). On a phone taller than 560 px, selecting a flow stage
+  gives the diagram a 750 px minimum height. The reader can scroll the page to see lower branches and tap
+  them above the step and source panes. The first screen of a long flow still shows only its first stages;
+  "Fit all", pan and Text view reach the rest. Read keeps sequence views in the diagram pane,
   regardless of `layout`; "Show source" opens their linked code. Explore narrows a sequence's diagram column
   only for explicit `layout: "code-first"`, keeping its lifelines, arrows and frames without a
   caret-following process outline. One-file sequences otherwise keep Explore's usual diagram layout.

@@ -1265,6 +1265,13 @@
   }
 }
 
+/* A picked phone flow keeps room for its next stages above the step and source panes. */
+@media (max-width: 760px) and (min-height: 561px) {
+  .workspace[data-perspective="flow"] .workspace-primary:has(.flow-stage.is-selected) {
+    min-height: 750px;
+  }
+}
+
 /* a11y: a short screen (200% zoom on a laptop, a phone on its side): the view's caption is one line and the
    location bar is slim, so the diagram gets the height (M15). */
 @media (max-height: 560px) {

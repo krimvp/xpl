@@ -280,6 +280,22 @@ function withTallFlow(bundle: Loose, count = 10): void {
   bundle.explainer.tours[0].steps[1].focus = ["dispatch:1"];
 }
 
+function withPhoneBranchFlow(bundle: Loose): void {
+  withTallFlow(bundle, 8);
+  const view = bundle.explainer.views.find((v: Loose) => v.id === "view:dispatch");
+  view.layout = "code-first";
+  view.steps[3].label = "Help requested?";
+  view.steps[3].shape = "decision";
+  view.steps[3].next = [
+    { step: "dispatch:5", label: "yes" },
+    { step: "dispatch:6", label: "no" },
+  ];
+  view.steps[4].label = "Show help";
+  view.steps[4].shape = "terminal";
+  view.steps[4].next = [];
+  view.steps[5].label = "Check arguments";
+}
+
 const LONG_NOTE = [
   "### File downloads now stop when the client leaves",
   "",
@@ -348,6 +364,46 @@ test.describe("round 2 of the review", () => {
     await page.getByRole("button", { name: "Fit to view" }).click();
     await expect.poll(() => stagesInPane(page)).toBe(10);
     expect(problems).toEqual([]);
+  });
+
+  test("a phone flow keeps both destinations in reach after selecting a decision", async ({
+    page,
+  }) => {
+    await openVariant(
+      page,
+      withPhoneBranchFlow,
+      "?perspective=flow&view=view:dispatch&focus=dispatch:4",
+      { width: 390, height: 844 },
+    );
+    await expect(byId(page, "dispatch:4")).toHaveClass(/is-selected/);
+    await expect(page.getByTestId("step-neighbours")).toBeVisible();
+    const pane = page.locator(".flow-diagram .panzoom");
+    const destinations = page.locator(
+      '.flow-stage[data-stage-id="dispatch:5"], .flow-stage[data-stage-id="dispatch:6"]',
+    );
+    await expect(destinations).toHaveCount(2);
+    await expect
+      .poll(async () => {
+        const bounds = (await pane.boundingBox())!;
+        const boxes = await destinations.all();
+        const centres = await Promise.all(
+          boxes.map(async (stage) => {
+            const box = (await stage.boundingBox())!;
+            return box.y + box.height / 2;
+          }),
+        );
+        return Math.max(...centres) - (bounds.y + bounds.height);
+      })
+      .toBeLessThan(0);
+    await byId(page, "dispatch:5").click();
+    await expect(byId(page, "dispatch:5")).toHaveClass(/is-selected/);
+    await expect(page.getByRole("button", { name: "Read its explanation" })).toBeVisible();
+    await expect(page.locator(".workspace-source")).toBeVisible();
+    await expect(page.locator(".workspace-source .xpl-hl").first()).toBeVisible();
+    await page.goto("http://xpl.test/?perspective=flow&view=view:dispatch&focus=dispatch:4");
+    await expect(byId(page, "dispatch:4")).toHaveClass(/is-selected/);
+    await byId(page, "dispatch:6").click();
+    await expect(byId(page, "dispatch:6")).toHaveClass(/is-selected/);
   });
 
   test("Present: a sequence framed far down keeps the participant names in sight", async ({
