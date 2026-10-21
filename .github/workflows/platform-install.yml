@@ -1,18 +1,9 @@
 name: Platform install
 
+# Release tags only for now: CI costs money and slows fast iteration. Add main and pull_request back to check them.
 on:
   push:
-    branches: [main]
     tags: ["v*"]
-  pull_request:
-    paths:
-      - .github/workflows/platform-install.yml
-      - package.json
-      - package-lock.json
-      - scripts/test-install-platform.mjs
-      - packages/**
-      - skill/code-explainer/**
-      - fixtures/ts-jobrunner/**
   workflow_dispatch:
 
 permissions:

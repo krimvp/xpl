@@ -7,7 +7,7 @@ description: Checklist for committing, pushing and opening or updating a pull re
 
 ## 1. Prove it
 
-The repo has no CI workflow yet, so these local checks are the gate. Fix anything red before pushing:
+CI runs only when started by hand, so these local checks are the gate. Fix anything red before pushing:
 
 ```sh
 npm run typecheck
@@ -34,8 +34,7 @@ tests that own the changed code. Fix what it finds before pushing, and mention t
 `scripts/pr-screenshots.sh origin/main --publish` (the `pr-screenshots` skill) without asking and paste the
 printed Screenshots section into the PR description. Above each image, add one or two sentences explaining
 the previous behaviour, the expected behaviour after the change, and where to look when the difference is
-subtle. With no visible change it prints a section saying so; paste that. CI posts the same images as a PR
-comment.
+subtle. With no visible change it prints a section saying so; paste that.
 
 ## 4. Commit
 
@@ -49,4 +48,5 @@ End the message with whatever attribution trailer your harness requires.
 - Fill `.github/pull_request_template.md`: summary for users of xpl, how it works, how it was verified (the
   commands you ran and their result), screenshots, docs touched, risks.
 - Keep the PR to one concern. Follow-ups go in the description as named items, not as drive-by edits.
-- After pushing, watch CI and review comments; fix red CI at the root (`diagnose`), never by skipping tests.
+- After pushing, watch review comments. If someone runs CI by hand and it is red, fix it at the root (`diagnose`),
+  never by skipping tests.
