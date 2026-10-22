@@ -1,9 +1,8 @@
 name: CI
 
+# Manual only for now: CI costs money and slows fast iteration. Restore push and pull_request to run it again.
 on:
-  push:
-    branches: [main]
-  pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read

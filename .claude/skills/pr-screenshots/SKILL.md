@@ -65,8 +65,7 @@ Look below the box title for the new PostgreSQL label.
 ![arch-system](https://github.com/<owner>/<repo>/blob/<sha>/<branch>/arch-system.png?raw=true)
 ```
 
-CI (`.github/workflows/ci.yml`, job `screenshots`) takes the standard set plus xpl's own map on every PR from
-this repository that needs them, and posts or updates one comment with the images; it does not replace the
-description's section, which names what to look at.
+CI runs only when started by hand, so its `screenshots` job no longer posts images on PRs. The script above is
+the way to take and publish them.
 
 Refresh the images when a later push changes the UI again.

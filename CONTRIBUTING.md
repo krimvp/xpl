@@ -16,7 +16,8 @@ npm test
 npm run format:check
 ```
 
-Run `npm run test:e2e` for viewer changes. CI runs the checks for pull requests.
+Run `npm run test:e2e` for viewer changes. CI runs only when a maintainer starts it, so these local checks
+are the gate for pull requests.
 
 ## Keep in mind
 
@@ -32,7 +33,7 @@ Run `npm run test:e2e` for viewer changes. CI runs the checks for pull requests.
 
 Use [the pull request template](.github/pull_request_template.md). Explain what changes for a user, then list
 the checks you ran. Add before-and-after screenshots for viewer changes and changes that affect what a map
-shows at system, service or code level. CI checks this requirement and can publish screenshots.
+shows at system, service or code level. `scripts/needs-screenshots.sh` says whether a change needs them.
 
 Use a conventional commit subject scoped to the package, such as `fix(indexer): keep heuristic references
 labeled`. Open a branch from `main`, and follow the required checks and reviews shown by GitHub. Release tags

@@ -61,8 +61,8 @@ After `npm run build`, the CLI is `node packages/cli/dist/xpl.mjs` (alias it `xp
 fixture, never in `fixtures/` itself: `cp -r fixtures/ts-jobrunner /tmp/j && cd /tmp/j && xpl index && xpl
 validate jobrunner`. You can also run xpl on this repository (`xpl index --precise off && xpl outline`).
 
-CI (`.github/workflows/ci.yml`) runs the same checks on every push and pull request; run them locally first
-so a push is green.
+CI (`.github/workflows/ci.yml`) runs the same checks only when started by hand from the Actions tab, so these
+local checks are the gate: run them before every push.
 
 ## Invariants and gotchas
 
@@ -93,7 +93,7 @@ so a push is green.
   skill included). Re-anchor it in the same change (`docs-sync` skill).
 - **The user docs include README sections.** `docs-site/pages` pulls sections of `README.md` by heading and
   whole files of `skill/code-explainer`; renaming such a heading or a new `xpl` command without a `cli.md`
-  section fails `npm run site`, which the Pages workflow runs on every pull request.
+  section fails `npm run site`. The Pages workflow runs it only on release tags, so run it locally.
 - **Dated records are history.** Do not edit `docs/review-*.md`, `docs/handoff.md` or `docs/analysis-*.txt`.
 
 ## Design principles
@@ -129,9 +129,8 @@ An agent does not call work finished until each item is done or the reply says w
 
 Do yourself everything a tool can do; ask the user only for decisions, never to run a step.
 
-- **CI** (`.github/workflows/ci.yml`): typecheck, unit tests, format and e2e on every push and PR. On a PR
-  that needs screenshots it takes them, pushes them to the `pr-assets` branch and posts or updates one
-  comment with Before/After images.
+- **CI** (`.github/workflows/ci.yml`): typecheck, unit tests, format and e2e, only when started by hand from
+  the Actions tab, to save cost. Its PR screenshot job no longer runs; take screenshots with the scripts below.
 - **Scripts**: `scripts/needs-screenshots.sh` (are screenshots required?), `scripts/pr-screenshots.sh`
   (take them; `--publish` also pushes them and prints the PR section), `scripts/publish-pr-shots.sh` (push a
   compare directory to `pr-assets`). The `pr-assets` branch only holds screenshots; push to it freely.
@@ -150,7 +149,7 @@ Do yourself everything a tool can do; ask the user only for decisions, never to 
   package owns what. `scripts/needs-screenshots.sh` says whether a change needs them.
   `scripts/pr-screenshots.sh origin/main --publish` (the `pr-screenshots` skill) photographs base and head
   the same way, publishes the changed shots side by side and prints the Screenshots section to paste. Do it
-  without asking; CI also posts them as a PR comment.
+  without asking.
   Above each Before/After image, add one or two sentences explaining what changed and what the reviewer
   should look for. Describe the previous behaviour and the expected behaviour after the change, including
   where to look when the difference is subtle.

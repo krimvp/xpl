@@ -3,10 +3,10 @@ name: Pages
 # The public site deploys only from a release tag (v*), so it documents the version users install from
 # npm. Pull requests build it without deploying. A manual run deploys only when started on a v* tag.
 # The github-pages environment must allow deployments from v* tags (Settings > Environments).
+# Release tags only for now: CI costs money and slows fast iteration. Add pull_request back to check PRs.
 on:
   push:
     tags: ["v*"]
-  pull_request:
   workflow_dispatch:
 
 permissions:
