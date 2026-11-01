@@ -128,7 +128,7 @@ export const NOT_DESIGN: readonly string[] = [
 /** File and directory names that usually hold the entry point of a project. */
 const ENTRY_NAMES = /^(?:main|__main__|cli|cmd|app|apps|application|applications|index|server)$/;
 
-export type DraftKind = "change" | "repo" | "path" | "map" | "class";
+export type DraftKind = "change" | "repo" | "path" | "map" | "class" | "states";
 
 export interface DraftInput {
   explainer: Explainer;
@@ -262,7 +262,7 @@ function trimBlank(
 }
 
 /** Lines `start..end` (1-based) of a symbol: the whole symbol when they cover it, else a span from its first line. */
-function symbolLines(
+export function symbolLines(
   texts: TextCache,
   sym: IndexedSymbol,
   start: number,

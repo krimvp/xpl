@@ -76,6 +76,15 @@ function links(
   return [...out.values()].sort((a, b) => byPlace(a.sym, b.sym));
 }
 
+/** `FancyCircle` -> `fancy-circle`, `QUEUED` -> `queued`; empty when no letter or digit is left. */
+export function kebab(name: string): string {
+  return name
+    .replace(/([a-z0-9])([A-Z])/g, "$1-$2")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
 export function draftClass(input: DraftInput, entry: IndexedSymbol): Draft {
   const { explainer, model, texts } = input;
   const ids = new FreeIds(explainer);
@@ -164,12 +173,7 @@ export function draftClass(input: DraftInput, entry: IndexedSymbol): Draft {
     nodes.push({ id, summary: todo(`one plain sentence: what this type is for (${hint(sym)}).`) });
   }
 
-  const slug =
-    shortName(entry)
-      .replace(/([a-z0-9])([A-Z])/g, "$1-$2")
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "") || "type";
+  const slug = kebab(shortName(entry)) || "type";
   const base = RESERVED_PREFIXES.includes(slug) ? `${slug}-class` : slug;
   const viewId = ids.get("view", `${base}-types`);
 

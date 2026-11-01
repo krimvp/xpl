@@ -119,6 +119,8 @@ See the [change workflow](https://krimvp.github.io/xpl/docs/workflows/change/).
 Use `xpl draft repo` to build a starting map from the index, then add reader-focused explanations.
 `xpl draft class <guide> <type>` maps the classes and interfaces around one type, from what extends and
 implements what.
+`xpl draft states <guide> <type>` maps the states of a status type (an enum or a union of string literals)
+and the functions that move it from one state to another.
 See [Architecture maps](https://krimvp.github.io/xpl/docs/workflows/explain/).
 
 ### Quick maps

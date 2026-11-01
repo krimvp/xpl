@@ -21,6 +21,7 @@ import {
 } from "../draft.js";
 import { MAP_LIMITS, draftMap } from "../draft-map.js";
 import { CLASS_ENTRY_KINDS, CLASS_LIMITS, draftClass } from "../draft-class.js";
+import { STATES_LIMITS, draftStates } from "../draft-states.js";
 import { CliError, UsageError, errorMessage } from "../errors.js";
 import { resolveCommit } from "../git.js";
 import { plural, renderIssues } from "../format.js";
@@ -28,7 +29,7 @@ import { atomicWrite, displayPath, jsonFile } from "../fsutil.js";
 import { loadExplainer, openWorkspace } from "../repo.js";
 import { resolveTarget } from "../target.js";
 
-const KINDS: readonly DraftKind[] = ["change", "repo", "path", "map", "class"];
+const KINDS: readonly DraftKind[] = ["change", "repo", "path", "map", "class", "states"];
 
 /** What a draft holds, for the summary line and `--json`. */
 export interface DraftCounts {
@@ -99,13 +100,15 @@ export function draftCounts(patch: ExplainerPatch): DraftCounts {
 
 function summaryLine(kind: DraftKind, name: string, counts: DraftCounts): string {
   const picture =
-    kind === "path"
-      ? counts.views > 1
-        ? `${counts.views} sequences of ${plural(counts.sequenceSteps, "call")} in all`
-        : `a sequence of ${plural(counts.sequenceSteps, "call")} between ${plural(counts.participants, "participant")}`
-      : counts.maps > 1
-        ? `${counts.maps} maps of ${plural(counts.boxes, "box", "boxes")} in all`
-        : `a map of ${plural(counts.boxes, "box", "boxes")}`;
+    kind === "states"
+      ? `a flow of ${plural(counts.sequenceSteps, "step")} (one per state, one per transition)`
+      : kind === "path"
+        ? counts.views > 1
+          ? `${counts.views} sequences of ${plural(counts.sequenceSteps, "call")} in all`
+          : `a sequence of ${plural(counts.sequenceSteps, "call")} between ${plural(counts.participants, "participant")}`
+        : counts.maps > 1
+          ? `${counts.maps} maps of ${plural(counts.boxes, "box", "boxes")} in all`
+          : `a map of ${plural(counts.boxes, "box", "boxes")}`;
   return (
     `draft ${kind} for ${name}: ${picture}, ${plural(counts.overlays, "summary", "summaries")}` +
     (counts.groups > 0 ? `, ${plural(counts.groups, "group")}` : "") +
@@ -139,9 +142,9 @@ function pathEntry(model: IndexModel, arg: string): PathEntry {
 
 export const draftCommand: CommandSpec = {
   name: "draft",
-  usage: "xpl draft change|repo|path|map|class <explainer> [<entry id> ...] [-o <file>]",
+  usage: "xpl draft change|repo|path|map|class|states <explainer> [<entry id> ...] [-o <file>]",
   summary:
-    "Print a patch skeleton for a change, a repo, a path, a map or a class; you write the TODO text",
+    "Print a patch skeleton for a change, a repo, a path, a map, a class or the states of a type; you write the TODO text",
   details: [
     "Builds a provisional patch from indexed references and the change record, with",
     "`TODO: <what to write>` in every text a person must write. `xpl apply` accepts it as it is; `xpl lint` reports",
@@ -180,6 +183,15 @@ export const draftCommand: CommandSpec = {
     "                            the way up) and what extends or implements it (two levels down), on one map of",
     `                            extends and implements arrows (at most ${CLASS_LIMITS.boxes} boxes), each with a summary TODO that`,
     "                            names its kind, links and methods; a tour: the entry, then each type next to it.",
+    "  states <explainer> <entry>",
+    "                            the states of a status type on one flow: a TypeScript enum or union of string",
+    "                            literals, a Python Enum class, or a Go type with a const block of its values (in its",
+    "                            file). A stage per state, anchored where the code sets it (an assignment, a return,",
+    "                            an object key, a React setter) and tests it (a comparison, is, case); a stage per",
+    "                            transition where one function tests a state and then sets another under that test",
+    "                            (both sites anchored). Comments and other strings do not count. The notes name the",
+    `                            states never set or tested and the other uses. At most ${STATES_LIMITS.states} states and`,
+    `                            ${STATES_LIMITS.transitions} transitions; a tour: the type, then each state.`,
     'Change and repo maps get `stubs: {mode: "none"}` (a folder map keeps its stubs: what uses it and what it uses);',
     "tour steps hold at most 2 code ranges. Ids already in the explainer are not reused (`view:change-map-2`; a map",
     "keeps its own view ids and updates them), and nodes it already explains get no new summary.",
@@ -197,7 +209,7 @@ export const draftCommand: CommandSpec = {
     },
   },
   positionals: [
-    { name: "change|repo|path|map|class" },
+    { name: "change|repo|path|map|class|states" },
     { name: "explainer" },
     { name: "entry", required: false, rest: true },
   ],
@@ -205,7 +217,7 @@ export const draftCommand: CommandSpec = {
     const kind = args.positionals[0] as DraftKind;
     if (!KINDS.includes(kind)) {
       throw new UsageError(
-        `unknown draft "${args.positionals[0]}": use change, repo, path, map or class`,
+        `unknown draft "${args.positionals[0]}": use change, repo, path, map, class or states`,
       );
     }
     const name = args.positionals[1]!;
@@ -221,9 +233,14 @@ export const draftCommand: CommandSpec = {
         "draft class takes one <entry>: a class or an interface, e.g. sym:src/queue.ts#Queue",
       );
     }
-    if (kind !== "path" && kind !== "class" && entryArg !== undefined) {
+    if (kind === "states" && entryArgs.length !== 1) {
       throw new UsageError(
-        `unexpected argument "${entryArg}": only draft path and class take an entry`,
+        "draft states takes one <entry>: a type that enumerates states, e.g. sym:src/status.ts#Status",
+      );
+    }
+    if (kind !== "path" && kind !== "class" && kind !== "states" && entryArg !== undefined) {
+      throw new UsageError(
+        `unexpected argument "${entryArg}": only draft path, class and states take an entry`,
       );
     }
     const loaded = loadExplainer(ctx, name);
@@ -258,6 +275,16 @@ export const draftCommand: CommandSpec = {
       }
       classEntry = sym;
     }
+    let statesEntry: IndexedSymbol | undefined;
+    if (kind === "states") {
+      const target = resolveTarget(ws.model, entryArg!);
+      if (target.type !== "symbol") {
+        throw new CliError(
+          `the entry must be a type that enumerates states, not ${target.id}: \`xpl outline --kind enum,type,class\` lists them`,
+        );
+      }
+      statesEntry = target.symbol;
+    }
 
     // A map finds moved files by their text at the commit their box was written at: git reads it by full SHA.
     const commits = new Map<string, string>();
@@ -282,7 +309,9 @@ export const draftCommand: CommandSpec = {
               ? draftMap(input)
               : kind === "class"
                 ? draftClass(input, classEntry!)
-                : draftPath(input, entries);
+                : kind === "states"
+                  ? draftStates(input, statesEntry!)
+                  : draftPath(input, entries);
     } catch (error) {
       throw new CliError(`nothing to draft: ${errorMessage(error)}`);
     }
