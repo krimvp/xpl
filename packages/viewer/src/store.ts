@@ -162,6 +162,11 @@ export interface ViewerState {
   viewId: string | undefined;
   /** Selected element ids, in the order they were added. */
   selection: readonly ElementId[];
+  /**
+   * The reader traces a box on a map: what it leads to (`down`) or what leads to it (`up`). It shows while that
+   * box is the one selected (derive.ts `reachOf`); picking anything else ends it.
+   */
+  reach?: { from: ElementId; direction: "down" | "up" };
   cursor: Cursor | undefined;
   /**
    * A file the user asked for (file tree, anchor list, `setCursor`). It goes first in the editor stack,
@@ -690,6 +695,16 @@ export class ViewerStore {
       openedFile: undefined,
       openedBase: false,
       applied: undefined,
+    });
+  }
+
+  /** Traces the selected box down or up the map's arrows, or stops (`undefined`, or the same direction again). */
+  traceReach(direction: "down" | "up" | undefined): void {
+    const [from] = this.state.selection;
+    const current = this.state.reach;
+    const same = current !== undefined && current.from === from && current.direction === direction;
+    this.set({
+      reach: from === undefined || direction === undefined || same ? undefined : { from, direction },
     });
   }
 

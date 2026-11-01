@@ -2733,7 +2733,10 @@ status stays in the sticky Save/Cancel bar, including the disabled Save reason.
   opens the file at its lines). Actions: "Explain this", or "Send to Claude" with feedback typed above it
   (`feedback`: "What should Claude change?"; queues a request with the feedback as its note under `xpl view`,
   offline saves in browser storage and offers JSON export through Feedback), "Add … to the view" for a stub, "Open children",
-  "Collapse".
+  "Collapse". A box of a map with arrows offers "What it leads to" and "What leads to it" (only the ways the map
+  has arrows): `store.traceReach` keeps `state.reach`, and while that box is the one selected, the selection's
+  related set is `reachOf` (derive.ts): the boxes and arrows reached along (down) or against (up) the map's own
+  arrows, stubs not followed. Pressing it again, or picking anything else, ends the trace.
 
 **Feedback:** a header button in Read, Explore and Present opens a panel for corrections, explanations
 and expansions attached to the selected element and cursor lines (or the element's first source range).

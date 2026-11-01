@@ -951,6 +951,13 @@ code {
   cursor: not-allowed;
 }
 
+/* A trace button that is on (Details: "What it leads to", "What leads to it"). */
+.trace .btn[aria-pressed="true"] {
+  background: var(--related-soft);
+  border-color: var(--related);
+  font-weight: 600;
+}
+
 .btn.is-primary {
   background: var(--accent);
   border-color: var(--accent);

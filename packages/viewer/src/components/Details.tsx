@@ -69,6 +69,13 @@ export function Details({
   }
 
   const graphNode = derived.view.graph?.nodes.find((n) => n.id === info.id);
+  // Trace the box on the map: what it leads to, what leads to it (along the arrows the map draws)
+  const arrows = graphNode ? (derived.view.graph?.edges ?? []) : [];
+  const traces = (["down", "up"] as const).filter((direction) =>
+    arrows.some((e) => (direction === "down" ? e.from : e.to) === info.id),
+  );
+  const tracing =
+    state.reach?.from === info.id && state.selection.length === 1 ? state.reach.direction : undefined;
   const kind = reader ? (info.type === "node" ? readerBadge(info.kind) : undefined) : info.kind;
   const facts = reader ? info.facts.filter((fact) => !AUTHOR_FACTS.has(fact.label)) : info.facts;
   return (
@@ -101,6 +108,22 @@ export function Details({
               {store.isExpanded(info.id) ? "Fold back into one box" : "Show its parts in this box"}
             </button>
           )}
+        </div>
+      )}
+      {traces.length > 0 && (
+        <div className="actions trace" role="group" aria-label="Trace on this map">
+          {traces.map((direction) => (
+            <button
+              key={direction}
+              type="button"
+              className="btn"
+              aria-pressed={tracing === direction}
+              data-trace={direction}
+              onClick={() => store.traceReach(direction)}
+            >
+              {direction === "down" ? "What it leads to" : "What leads to it"}
+            </button>
+          ))}
         </div>
       )}
 

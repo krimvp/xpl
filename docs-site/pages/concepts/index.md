@@ -16,7 +16,8 @@ A guide holds views and tours:
 
 - A **map** shows parts and how they relate: folders, files, classes and functions, or for an overview the
   system, the services inside it and what they rely on. A box can open into the level below it. On a quick
-  map (`xpl draft map`) each box also shows its one-sentence summary.
+  map (`xpl draft map`) each box also shows its one-sentence summary. Pick a box and its details offer "What it
+  leads to" and "What leads to it": the map lights up every box reached along its arrows.
 - A **flow** follows the steps and decisions of a process.
 - A **sequence** shows who calls whom, in order.
 - A **tour** is the story: a short summary, then steps, each with a picture and its code.
