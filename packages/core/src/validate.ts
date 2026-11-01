@@ -1245,6 +1245,13 @@ class Validator {
       }
     }
     if (view.stubs !== undefined) this.checkStubPolicy(view.stubs, `${path}.stubs`, id);
+    if (view.boxText !== undefined && view.boxText !== "summary") {
+      this.error(
+        `${path}.boxText`,
+        'boxText must be "summary" (each box shows its summary under its label)',
+        id,
+      );
+    }
     if (view.layout !== undefined) {
       if (!isRecord(view.layout)) this.error(`${path}.layout`, "layout must map ids to {x, y}", id);
       else {

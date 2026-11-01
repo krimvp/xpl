@@ -1616,6 +1616,13 @@ code {
   fill: var(--fg);
 }
 
+/* A box's summary under its label (GraphView.boxText); graphLayout SUMMARY_FONT and SUMMARY_LINE. */
+.node .box-summary {
+  font-size: 12.5px;
+  font-weight: 400;
+  fill: var(--muted);
+}
+
 .node .badge rect {
   fill: hsl(var(--k-hue, 220) var(--pill-s) var(--pill-bg-l));
 }

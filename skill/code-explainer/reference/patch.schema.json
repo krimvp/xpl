@@ -551,6 +551,17 @@
             }
           ]
         },
+        "boxText": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": ["summary"]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "stubs": {
           "anyOf": [
             {

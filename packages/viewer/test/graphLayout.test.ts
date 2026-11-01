@@ -15,11 +15,14 @@ import {
   layoutGraph,
   layoutGraphFitting,
   spreadLabels,
+  SUMMARY_FONT,
+  ICON_ROOM,
   startAnchor,
   startFocus,
   type LayoutEdge,
   type LayoutNode,
 } from "../src/layout/graphLayout.js";
+import { textWidth } from "../src/measure.js";
 import { distanceToSegment } from "../src/svg.js";
 import { makeBundle } from "./world.js";
 
@@ -509,6 +512,42 @@ describe("layoutGraph", () => {
   it("is deterministic", async () => {
     const { graph } = graphOf(["grp:core", "file:config/c.yaml"]);
     expect(await layoutGraph(graph)).toEqual(await layoutGraph(graph));
+  });
+
+  it("wraps a box's summary on at most three lines that fit the box, and makes the box taller", async () => {
+    const LONG =
+      "Reads every job from the queue, runs it with the handler registered for its kind, retries it with a growing delay when it fails, and records how long each run took for the metrics page.";
+    const box = (id: string, summary?: string) => ({
+      id,
+      label: id,
+      kind: "file" as const,
+      container: false,
+      ...(summary ? { summary } : {}),
+    });
+    const graph: DerivedGraph = {
+      nodes: [box("short", "Holds jobs."), box("long", LONG), box("bare")],
+      edges: [],
+      stubs: [],
+      ghosts: [],
+    };
+    const layout = await layoutGraph(graph);
+    const node = (id: string) => layout.nodes.find((n) => n.id === id)!;
+    expect(node("short").lines).toEqual(["Holds jobs."]);
+    expect(node("bare").lines).toBeUndefined();
+    const long = node("long").lines!;
+    expect(long).toHaveLength(3);
+    expect(long[2]).toMatch(/…$/);
+    // the words of the lines, in order, are the summary's first words
+    const shown = long.join(" ").replace(/…$/, "").split(" ");
+    expect(LONG.split(" ").slice(0, shown.length - 1)).toEqual(shown.slice(0, -1));
+    for (const line of long) {
+      expect(textWidth(line, SUMMARY_FONT)).toBeLessThanOrEqual(
+        node("long").width - 28 - ICON_ROOM,
+      );
+    }
+    expect(node("short").height).toBeGreaterThan(node("bare").height);
+    expect(node("long").height).toBeGreaterThan(node("short").height);
+    expect(node("short").width).toBe(node("long").width);
   });
 });
 

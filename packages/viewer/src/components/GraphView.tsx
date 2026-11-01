@@ -45,6 +45,7 @@ import {
   type GraphLayout,
   type LayoutEdge,
   type LayoutNode,
+  SUMMARY_LINE,
 } from "../layout/graphLayout.js";
 import {
   arrowHeadPath,
@@ -949,13 +950,18 @@ function LeafText({
   lid: number;
 }) {
   const two = Boolean(badgeText || node.change);
+  const lines = node.lines ?? [];
   // A box of code keeps its fixed rows. An architecture box is taller (and a cylinder has a lid): the text
-  // block (label, gap, badge: 35 px; a label alone: 14 px) is centred in what is left.
-  const top = node.role
-    ? lid + (node.height - lid - (two ? 35 : 14)) / 2
-    : two
-      ? 6
-      : node.height / 2 - 8;
+  // block (label, gap, badge: 35 px; a label alone: 14 px) is centred in what is left. A box that shows its
+  // summary starts at the top, and the summary's lines follow the badge row.
+  const top =
+    lines.length > 0
+      ? lid + 6
+      : node.role
+        ? lid + (node.height - lid - (two ? 35 : 14)) / 2
+        : two
+          ? 6
+          : node.height / 2 - 8;
   const labelY = top + 13;
   const badgeY = node.role ? top + 19 : 27;
   return (
@@ -966,6 +972,15 @@ function LeafText({
       {badgeText && <Badge x={x} y={badgeY} text={badgeText} width={badge} />}
       {node.change && (
         <ChangePill x={x + (badgeText ? badge + PILL_GAP : 0)} y={badgeY} change={node.change} />
+      )}
+      {lines.length > 0 && (
+        <text className="box-summary" x={x} y={(two ? badgeY + 16 : labelY) + SUMMARY_LINE}>
+          {lines.map((line, i) => (
+            <tspan key={i} x={x} dy={i === 0 ? 0 : SUMMARY_LINE}>
+              {line}
+            </tspan>
+          ))}
+        </text>
       )}
     </>
   );

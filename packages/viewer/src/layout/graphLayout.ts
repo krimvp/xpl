@@ -84,6 +84,8 @@ export interface LayoutNode {
   opens?: string;
   /** The box opens a map, whose boxes it can also show inside itself, on this map. */
   expandable?: boolean;
+  /** Its summary as drawn under the label, line by line (`GraphView.boxText`); the last may end in "…". */
+  lines?: string[];
   /** Position relative to the container (or to the canvas for top-level nodes). */
   x: number;
   y: number;
@@ -159,6 +161,49 @@ const BADGE_FONT = 12;
 const GHOST_LABEL_FONT = 13.5;
 const GHOST_DETAIL_FONT = 12.5;
 const EDGE_LABEL_FONT = 13;
+/** A box's summary (`GraphView.boxText`): its font, line height, and the lines it may take. */
+export const SUMMARY_FONT = 12.5;
+export const SUMMARY_LINE = 16;
+const SUMMARY_LINES = 3;
+/** A box that shows its summary is at least this wide, so a sentence wraps on a few lines, not a dozen. */
+const SUMMARY_BOX_WIDTH = 240;
+
+/**
+ * `text` wrapped at word boundaries into lines no wider than `width`, at most `max` of them; the last line of a
+ * longer text is cut and ends in "…". A word longer than a line is cut too.
+ */
+export function wrapText(text: string, width: number, max = SUMMARY_LINES): string[] {
+  const fits = (line: string) => textWidth(line, SUMMARY_FONT) <= width;
+  const cut = (line: string) => {
+    let out = line;
+    while (out.length > 1 && !fits(`${out}…`)) out = out.slice(0, -1);
+    return `${out.trimEnd()}…`;
+  };
+  const lines: string[] = [];
+  let line = "";
+  const words = text.trim().split(/\s+/);
+  for (let i = 0; i < words.length; i++) {
+    const word = words[i]!;
+    const next = line === "" ? word : `${line} ${word}`;
+    if (fits(next)) {
+      line = next;
+      continue;
+    }
+    if (line === "") {
+      lines.push(cut(word));
+    } else {
+      lines.push(line);
+      line = word;
+    }
+    if (lines.length === max) {
+      lines[max - 1] = cut(`${lines[max - 1]!.replace(/…$/, "")} ${words.slice(i).join(" ")}`);
+      return lines;
+    }
+  }
+  if (line !== "") lines.push(fits(line) ? line : cut(line));
+  if (lines.length > max) lines.splice(max - 1, lines.length, cut(lines.slice(max - 1).join(" ")));
+  return lines;
+}
 
 /** Width of the kind badge pill. */
 export function badgeWidth(text: string): number {
@@ -298,6 +343,9 @@ interface ModelNode {
   hint?: string;
   change?: ChangeStatus;
   role?: NodeRole;
+  /** Its summary, to show under the label (`GraphView.boxText`), and that summary as wrapped by `leafSize`. */
+  summary?: string;
+  lines?: string[];
   opens?: string;
   expandable?: boolean;
 }
@@ -337,6 +385,7 @@ function buildModel(graph: DerivedGraph, changes: ChangeMarks | undefined): Mode
       ...(node.role !== undefined ? { role: node.role } : {}),
       ...(node.opens !== undefined ? { opens: node.opens } : {}),
       ...(node.expandable ? { expandable: true } : {}),
+      ...(node.summary && !node.container ? { summary: node.summary } : {}),
     });
   }
   for (const node of graph.nodes) {
@@ -440,10 +489,12 @@ function leafSize(model: Model, id: string): { width: number; height: number } {
   if (isGhost(node)) {
     return { width: ghostWidth(node.label, node.detail ?? ""), height: GHOST_HEIGHT };
   }
-  return {
-    width: leafWidth(node.label, node.badge, node.change, node),
-    height: leafHeight(node.role),
-  };
+  const width = leafWidth(node.label, node.badge, node.change, node);
+  if (node.summary === undefined) return { width, height: leafHeight(node.role) };
+  const wide = Math.max(width, SUMMARY_BOX_WIDTH);
+  // the text starts after the icon, like the label
+  node.lines = wrapText(node.summary, wide - 2 * PAD_X - ICON_ROOM);
+  return { width: wide, height: leafHeight(node.role) + node.lines.length * SUMMARY_LINE + 6 };
 }
 
 function makeNode(
@@ -472,6 +523,7 @@ function makeNode(
   if (node.role !== undefined) out.role = node.role;
   if (node.opens !== undefined) out.opens = node.opens;
   if (node.expandable) out.expandable = true;
+  if (node.lines !== undefined && children.length === 0) out.lines = node.lines;
   return out;
 }
 

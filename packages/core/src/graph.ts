@@ -52,6 +52,8 @@ export interface GraphNode {
   opens?: string;
   /** It opens a map, whose boxes can be shown inside it on this one (`expandInPlace`). */
   expandable?: boolean;
+  /** Its summary, on a view whose boxes show it (`GraphView.boxText`). */
+  summary?: string;
 }
 
 /**
@@ -621,6 +623,7 @@ export function deriveGraph(
       out.opens = node.opens;
       if (model.view(node.opens)?.type === "graph") out.expandable = true;
     }
+    if (view.boxText === "summary" && node.summary) out.summary = node.summary;
     const parent = finalParent.get(id);
     if (parent !== undefined) out.parent = parent;
     return out;

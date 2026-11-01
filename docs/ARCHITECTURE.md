@@ -276,6 +276,11 @@ Conventions (all packages):
     none are named. Missing legacy records mean unchecked. Only user patches record or remove a review.
     Scope is `{ content: "all" | string[], source: "anchored" | "repository", files?: string[] }`;
     the fingerprint is `{ version: "xpl-review@1", contentHash, evidenceHash }` (§4.6).
+22. `GraphView` adds `boxText?: "summary"`: every box that is not a container shows its summary under its
+    label, so a reader scans what each box does without opening it (the maps of `xpl draft map` set it).
+    `deriveGraph` hands the summary over as `GraphNode.summary` only on such a view; the viewer wraps it on
+    at most 3 lines in a box at least 240 units wide, the last line cut with "…" (§6). `null` clears it;
+    any other value is a validation error.
 
 Patch-side types (never stored) live in `packages/core/src/patch.ts`; its header holds the authoritative
 merge rules and `skill/code-explainer/reference/patch-format.md` is the practical guide. The authoring
@@ -2630,7 +2635,9 @@ status stays in the sticky Save/Cancel bar, including the disabled Save reason.
   in it. Double-clicking a node calls `drillIn`; a container has a collapse button. A box with a `role` is
   drawn as what it is (`RoleBox`: a cylinder for `database`, `cache` and `storage`, a pipe for `queue`, a
   dashed box for `external` and `person`, with a person icon, a heavier border for `service` and `system`) and
-  its badge is its `tech` or its role. A box with `opens` has a zoom button ("See what is inside"; a
+  its badge is its `tech` or its role. On a view with `boxText: "summary"` a box that is not a container shows
+  its summary under the badge row (`LayoutNode.lines`, wrapped by `graphLayout.wrapText` on at most 3 lines,
+  the last cut with "…"); such a box is at least 240 units wide and grows 16 per line. A box with `opens` has a zoom button ("See what is inside"; a
   double-click does the same, and Details offers it too): `store.zoomInto` shows that view, in the map or flow
   perspective that draws it, as a navigation step (Back returns). Above the diagram, `ZoomTrail` lists the
   levels above the current view (`zoomTrail`), each a link (`store.goToLevel`). A box that opens a graph
