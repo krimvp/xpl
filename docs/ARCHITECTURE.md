@@ -1749,8 +1749,12 @@ file; `--json` adds the counts and what was left out.
   the full SHA, `DraftInput.commits`), has the same text as exactly one new file gives that file its label
   and summary. The map's own tours (`tour:map`, `tour:changes-*`, when the user did not edit them) are resent
   without the focus and code of what is gone; a start-tour folder step gets its folder's code again, and a
-  step with no focus left is dropped (a tour with no step, removed). Notes count the files on and off the
-  map, name the moved files and the maps of more than 30 boxes.
+  step with no focus left is dropped (a tour with no step, removed). A new folder map of more than 30 boxes
+  groups the folder's files that use each other (`groupFiles`: pairs by reference count, union-find, at most
+  8 files a group, kept from 3): each group is a `grp:map-<path>-<n>` box that `opens` `view:map-<path>-<n>`
+  with its files, and the folder map shows the group, not its files; a refresh keeps the files of an earlier
+  group on the group's map (`includeRemove` and `members` for the ones gone). Notes count the files on and
+  off the map, name the moved files, the groups and the maps still over 30 boxes.
 
 A draft gives structure, not understanding: the concepts, flows, `llm` edges and base anchors that explain
 why the code is as it is are left to Claude.

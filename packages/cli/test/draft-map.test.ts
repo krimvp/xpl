@@ -44,15 +44,15 @@ function shop(): string {
   return dir;
 }
 
-async function draft(dir: string): Promise<DraftJson> {
+async function draft(dir: string, guide = "shop"): Promise<DraftJson> {
   const out = join(makeTempDir("xpl-map-out-"), "map.json");
-  const r = await xpl(dir, "draft", "map", "shop", "-o", out);
+  const r = await xpl(dir, "draft", "map", guide, "-o", out);
   expect(r.code, r.err + r.out).toBe(0);
-  const json = await xplJson<DraftJson>(dir, "draft", "map", "shop");
-  const applied = await xpl(dir, "apply", "shop", out);
+  const json = await xplJson<DraftJson>(dir, "draft", "map", guide);
+  const applied = await xpl(dir, "apply", guide, out);
   expect(applied.code, applied.out).toBe(0);
   expect(applied.out, "no warnings from apply").not.toContain("warning");
-  const validated = await xpl(dir, "validate", "shop");
+  const validated = await xpl(dir, "validate", guide);
   expect(validated.out).toMatch(/no errors, no warnings$/);
   return { patch: JSON.parse(readFileSync(out, "utf8")) as ExplainerPatch, notes: json.json.notes };
 }
@@ -287,5 +287,72 @@ describe("headerComment", () => {
   it("is not the doc of the first declaration, nor code", () => {
     expect(header("/** Payload of a job. */\nexport interface Job {}")).toBeUndefined();
     expect(header("export function a() {}\n// later")).toBeUndefined();
+  });
+});
+
+describe("xpl draft map on a crowded folder", () => {
+  /** Two chains of 16 files each in one folder: a1 -> a2 -> ... -> a16 and b1 -> ... -> b16. */
+  function crowded(): string {
+    const dir = makeTempDir("xpl-map-crowded-");
+    writeFile(dir, "package.json", '{ "name": "big" }\n');
+    for (const team of ["a", "b"]) {
+      for (let i = 1; i <= 16; i++) {
+        const next = i < 16 ? `import { ${team}${i + 1} } from "./${team}${i + 1}";\n\n` : "";
+        const body = i < 16 ? `  return ${team}${i + 1}() + 1;` : "  return 1;";
+        writeFile(
+          dir,
+          `src/${team}${i}.ts`,
+          `${next}export function ${team}${i}(): number {\n${body}\n}\n`,
+        );
+      }
+    }
+    return dir;
+  }
+
+  it("groups files that use each other; each group is a box that opens the map of its files", async () => {
+    const dir = crowded();
+    expect((await xpl(dir, "index", "--precise", "off")).code).toBe(0);
+    expect((await xpl(dir, "new", "big")).code).toBe(0);
+    const { patch, notes } = await draft(dir, "big");
+    const groups = patch.nodes!.filter((n) => n.id.startsWith("grp:"));
+    // every file is in a group of at most 8 files of one chain
+    expect(groups.map((g) => g.members!.length).reduce((a, b) => a + b, 0)).toBe(32);
+    for (const g of groups) {
+      expect(g.members!.length).toBeLessThanOrEqual(8);
+      expect(new Set(g.members!.map((m) => m.slice("file:src/".length)[0])).size).toBe(1);
+      expect(g.label).toMatch(/^TODO: 1-3 plain words for what these files do together/);
+      expect(view(patch, g.opens!)?.include).toEqual(g.members);
+    }
+    // the folder's map shows the groups, not their files
+    expect(view(patch, "view:map")?.include).toEqual(groups.map((g) => g.id));
+    expect(notes).toEqual([
+      "32 code files on 5 maps; 0 files left off (tests, examples, fixtures, docs and benchmarks)",
+      "crowded maps get groups of files that use each other (the top: 4 groups of 32 files): name each group, or remove the ones that are not one job",
+    ]);
+  });
+
+  it("run again, keeps the group maps and drops the files that are gone from them", async () => {
+    const dir = crowded();
+    expect((await xpl(dir, "index", "--precise", "off")).code).toBe(0);
+    expect((await xpl(dir, "new", "big")).code).toBe(0);
+    const first = (await draft(dir, "big")).patch;
+    const group = first.nodes!.find((n) => n.members?.includes("file:src/a16.ts"))!;
+
+    rmSync(join(dir, "src/a16.ts"));
+    writeFile(dir, "src/a15.ts", "export function a15(): number {\n  return 1;\n}\n");
+    writeFile(dir, "src/c1.ts", "export function c1(): number {\n  return 1;\n}\n");
+    expect((await xpl(dir, "index", "--precise", "off")).code).toBe(0);
+    expect((await xpl(dir, "resolve", "big", "--write")).code).toBe(0);
+    const { patch } = await draft(dir, "big");
+
+    expect(patch.views).toEqual([
+      { id: "view:map", type: "graph", includeAdd: ["file:src/c1.ts"] },
+      { id: group.opens, type: "graph", includeRemove: ["file:src/a16.ts"] },
+    ]);
+    expect(patch.nodes?.find((n) => n.id === group.id)).toEqual({
+      id: group.id,
+      members: group.members!.filter((m) => m !== "file:src/a16.ts"),
+    });
+    expect(patch.remove).toEqual(["file:src/a16.ts"]);
   });
 });
