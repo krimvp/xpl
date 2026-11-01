@@ -29,6 +29,7 @@ const REF_KINDS: readonly Reference["kind"][] = [
   "type-ref",
   "read",
   "write",
+  "request",
 ];
 
 /**

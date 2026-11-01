@@ -42,6 +42,7 @@ export const DERIVED_EDGE_KINDS = [
   "references",
   "reads",
   "writes",
+  "requests",
 ] as const satisfies readonly Edge["kind"][];
 export type DerivedEdgeKind = (typeof DERIVED_EDGE_KINDS)[number];
 
@@ -65,6 +66,7 @@ export const REF_TO_EDGE_KIND: Readonly<Record<Reference["kind"], DerivedEdgeKin
   "type-ref": "references",
   read: "reads",
   write: "writes",
+  request: "requests",
 };
 
 /** Derived `Edge.kind` -> `Reference.kind` (`emits` and `custom` have no references). */
@@ -76,6 +78,7 @@ export const EDGE_TO_REF_KIND: Readonly<Partial<Record<Edge["kind"], Reference["
   references: "type-ref",
   reads: "read",
   writes: "write",
+  requests: "request",
 };
 
 /** Id prefixes that are never valid view slugs (a step id `file:3` would be ambiguous). */

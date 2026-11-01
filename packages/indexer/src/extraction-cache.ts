@@ -1,6 +1,6 @@
 /**
  * File-local facts only. Default builds rerun resolution, normalization and semantic tools.
- * Bump EXTRACTION_REVISION when extraction, resource sites or diagnostics change (see ARCHITECTURE §3).
+ * Bump EXTRACTION_REVISION when extraction, resource or HTTP sites, or diagnostics change (see ARCHITECTURE §3).
  * SHA-256 addresses entries; exact stored input comparison handles address collisions. A separate checksum
  * detects damaged payloads. Missing/invalid entries and failed writes never affect the published index.
  */
@@ -13,7 +13,7 @@ import { GRAMMAR_WASM, RUNTIME_WASM, resolveWasmFile, type GrammarId } from "./w
 import type { ProviderSource } from "./providers.js";
 import { loadedWasmMatches } from "./wasm.js";
 
-const EXTRACTION_REVISION = 2;
+const EXTRACTION_REVISION = 3;
 const CACHE_FORMAT = "xpl-extraction@1";
 
 export interface ExtractionProfile {

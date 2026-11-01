@@ -22,6 +22,7 @@ const labels: Record<AnalysisCapability, string> = {
   "type-ref": "type references",
   read: "reads",
   write: "writes",
+  request: "web requests",
 };
 
 /** Known omissions for this change, based only on the loaded index's recorded coverage. */
