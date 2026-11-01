@@ -20,6 +20,7 @@
  *  13. A flow step's `next` links (FlowLink) add `kind`: "recurse" (one level down) or "return" (up one level,
  *      to `step` or, without one, the caller).
  *  14. SequenceView adds `layout` ("code-first" or "diagram"): how Read and Explore lay the view out.
+ *  15. GraphView adds `boxText` ("summary"): every box that is not a container shows its summary under its label.
  *
  * Two files per repo:
  *   index-<commit>.json    SymbolIndex. Static analysis of one commit. Built once, shared by every view.
@@ -488,6 +489,12 @@ export interface GraphView extends ViewBase {
    * a crowded view stays readable (see StubPolicy).
    */
   stubs?: StubPolicy;
+  /**
+   * (amended) What a box shows under its label. `"summary"`: its summary (one or two sentences), wrapped on a few
+   * lines, so a reader can scan what every box does without opening it (a map of a whole project). Containers keep
+   * their header. Absent: the label and its badge only.
+   */
+  boxText?: "summary";
   /** Finite positions relative to the rendered container's stable origin (canvas for roots).
    * Negative children expand the frame around that origin. Everything else is auto-laid-out. */
   layout?: Record<ElementId, { x: number; y: number }>;

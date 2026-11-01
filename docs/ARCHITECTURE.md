@@ -276,6 +276,11 @@ Conventions (all packages):
     none are named. Missing legacy records mean unchecked. Only user patches record or remove a review.
     Scope is `{ content: "all" | string[], source: "anchored" | "repository", files?: string[] }`;
     the fingerprint is `{ version: "xpl-review@1", contentHash, evidenceHash }` (§4.6).
+22. `GraphView` adds `boxText?: "summary"`: every box that is not a container shows its summary under its
+    label, so a reader scans what each box does without opening it (the maps of `xpl draft map` set it).
+    `deriveGraph` hands the summary over as `GraphNode.summary` only on such a view; the viewer wraps it on
+    at most 3 lines in a box at least 300 units wide, the last line cut with "…" (§6). `null` clears it;
+    any other value is a validation error.
 
 Patch-side types (never stored) live in `packages/core/src/patch.ts`; its header holds the authoritative
 merge rules and `skill/code-explainer/reference/patch-format.md` is the practical guide. The authoring
@@ -1480,7 +1485,7 @@ stdout (a rejection exits 1); fatal errors (`error: …`) and warnings (`warning
 | `xpl pr prepare <url\|owner/repo#number\|owner/repo> [number] [--cache-dir dir] [--precise off\|auto\|require]` | resolves GitHub base/head through existing `gh`, fetches an isolated detached head, indexes head only and publishes an immutable input manifest; no agent or ready result |
 | `xpl pr cleanup <directory> [--cache-dir dir]` | removes only a marked owned PR input directly under the selected cache; refuses symlinks and developer-tree paths |
 | `xpl pr link <staged-dir> --url <base-url> --visibility team\|public` / `xpl pr check-link <PR>` | points one PR comment at the staged current version after a GitHub base/head check; a PR workflow marks it outdated when base/head move (below) |
-| `xpl draft change\|repo\|path <explainer> [<entry id> ...] [-o file]` | prints a patch skeleton built from the index (and the change record) with no LLM, `TODO:` in every text to write (below); the summary goes to stderr |
+| `xpl draft change\|repo\|path\|map <explainer> [<entry id> ...] [-o file]` | prints a patch skeleton built from the index (and the change record) with no LLM, `TODO:` in every text to write (below); the summary goes to stderr |
 | `xpl view <explainer> [--port p] [--host h] [--no-open]` | local server (below) |
 | `xpl service <start\|pause\|resume\|stop\|status> [explainer] [--background] [--port p] [--backend none\|claude] [--skill-dir folder] [--job-timeout seconds] [--recover] [--watch]` | optional repository-scoped lifecycle around the same viewer server; loopback only; persisted context and explicit interrupted-owner recovery |
 | `xpl bundle [explainer] -o out.html [--mode explore\|present] [--tour id] [--files referenced\|boundary\|all] [--boundary-max n] [--embed-index full\|pruned] [--draft] [--note reason] [--require-review] [--allow-drift]` | self-contained HTML after the shared readiness check (exit 1 before writing with errors); `--draft` writes a labelled preview with findings; `--allow-drift` is a legacy draft flag that still refuses stale indexes; warnings and optional author notes are retained; `--tour` (`tour:intro` or `intro`) implies present mode; embeds the files the explainer references by default and prints what went in (`8 of 12 files embedded (referenced: 18.4 KB of source; --files all adds 4 files, 6.7 KB)`), `--files boundary` adds the direct callers, callees and tests of anchored symbols (at most `--boundary-max`, default 40), `--files all` every indexed file; with a change recorded, every changed file at head and the base text of the changed files go in too; the symbol index in it is pruned to what the viewer can draw with `--files referenced` or `boundary` and whole with `--files all` (`--embed-index` overrides) and packed (the summary line says `index 0.3 MB (1.3 MB as plain JSON, pruned from 9.0 MB)`) |
@@ -1679,11 +1684,12 @@ Ready means the API matched at `checkedAt`; GitHub cannot lock an external PR du
 `xpl pr link` rechecks them again before pointing the PR at it. `finish` starts no publishing workflow,
 writes no GitHub state and creates no current pointer. The offline HTML remains readable independently of GitHub or the retained checkout.
 
-**`xpl draft change|repo|path`** prints a patch that `xpl apply` accepts as it is: views, groups, overlays,
+**`xpl draft change|repo|path|map`** prints a patch that `xpl apply` accepts as it is: views, groups, overlays,
 participants, steps, anchors and a tour, with `TODO: <what to write>` in every text (tour notes as `### TODO:
 …` plus a body). It checks the draft with `applyPatch` before printing it, never reuses an id the explainer
-has (`view:change-map-2`), never adds a summary to a node the explainer already explains, gives graph views
-`stubs: { mode: "none" }` and each tour step at most 2 code ranges and an `editor.primary`. `-o` writes it to a
+has (`view:change-map-2`; a map keeps and updates its own view ids), never adds a summary to a node the
+explainer already explains, gives the graph views of `change` and `repo` `stubs: { mode: "none" }` and each
+tour step at most 2 code ranges and an `editor.primary`. `-o` writes it to a
 file; `--json` adds the counts and what was left out.
 
 - `change` needs the change record and builds on `analyzeChange`: a map of at most 8 boxes (the changed
@@ -1711,6 +1717,27 @@ file; `--json` adds the counts and what was left out.
   alone do not qualify; tests remain excluded. A `refs: none` index supplies no cross-file call arrows.
 - `path <entry>`: a sequence of the calls the entry symbol makes (depth 1, source order, at most 6
   participants and 12 calls), and a tour with a big-picture step and one step per main call (at most 8).
+- `map` (`draft-map.ts`): the quick map, every code file outside tests, examples, fixtures, docs, benchmarks
+  and dot folders. One graph view per folder, `view:map` for the top (below folders that hold all the code)
+  and `view:map-<path>` below it, with `boxText: "summary"`, `excludeFiles` as for an overview and the
+  default stubs (what uses the folder and what it uses). A folder box `opens` its folder's view; a folder of
+  one file is that file; a folder that only holds one folder is that folder. Every box gets a label and a
+  summary TODO; a file's TODO holds its header comment (`headerComment`: a comment that opens the file and is
+  followed by a blank line, an import or a package line), its top-level definitions, and the files that use
+  it and that it uses, ranked by references and named by their shortest unique path. A start tour
+  (`tour:map`): the top view at the README's description (`aboutAnchor`), then each top-level folder, at most
+  8, at the first definition of its most used file. With a change record, `tour:changes-<head7>`: one step
+  per changed file on the map (at most 12), focus on its box in its folder's view, code from
+  `changedFileAnchor`, notes that ask how the change serves the request. Run again, it is a refresh: existing
+  map views get `includeAdd` / `includeRemove`, overlays only for undescribed files, `remove` for the
+  `file:` and `dir:` nodes whose paths left the index and for map views no longer drawn (user-edited ones are
+  kept, with a note), and no second start tour or change tour for the same head. A file that moved keeps its
+  text: a gone `file:` box whose file, read at its `provenance.commit` (the command expands the short id to
+  the full SHA, `DraftInput.commits`), has the same text as exactly one new file gives that file its label
+  and summary. The map's own tours (`tour:map`, `tour:changes-*`, when the user did not edit them) are resent
+  without the focus and code of what is gone; a start-tour folder step gets its folder's code again, and a
+  step with no focus left is dropped (a tour with no step, removed). Notes count the files on and off the
+  map, name the moved files and the maps of more than 30 boxes.
 
 A draft gives structure, not understanding: the concepts, flows, `llm` edges and base anchors that explain
 why the code is as it is are left to Claude.
@@ -2447,7 +2474,15 @@ or request deletion. Agent-backed job submission and proposal review remain the 
 **Three modes, one header.** **Read** is the default screen, for readers. **Explore** is the author's
 workbench. **Present** plays a tour as slides. The header is one row built the same way in each: the title,
 what the mode moves between, the save state (only when there is something to say: "Unsaved", "Saving…", "Not
-saved"), the mode's one action, and the **Edit** menu.
+saved"), the theme button, the mode's one action, and the **Edit** menu.
+
+**Theme.** The colours are CSS variables (`styles.css`); the dark ones apply under `<html data-theme="dark">`.
+`theme.ts` sets that attribute before the first render, from the reader's choice: Auto (the default, which
+follows `prefers-color-scheme` and its changes), Light or Dark. The header's icon button cycles the three and
+names the current one and the next in its label (at 760 px and narrower the header has no room for it, and the
+page keeps the choice made on a wider screen, or Auto); the choice is kept in `localStorage` (`xpl-theme`), per page
+origin, and for the page's lifetime when storage is blocked. A saved HTML copy is taken before the attribute
+is set, so it opens in its reader's theme.
 
 Below the header, **Analysis coverage** is a collapsed disclosure in every mode. It names missing or
 failed analysis and opens into capabilities, file counts and limits, labeled by analysis provider id.
@@ -2630,7 +2665,9 @@ status stays in the sticky Save/Cancel bar, including the disabled Save reason.
   in it. Double-clicking a node calls `drillIn`; a container has a collapse button. A box with a `role` is
   drawn as what it is (`RoleBox`: a cylinder for `database`, `cache` and `storage`, a pipe for `queue`, a
   dashed box for `external` and `person`, with a person icon, a heavier border for `service` and `system`) and
-  its badge is its `tech` or its role. A box with `opens` has a zoom button ("See what is inside"; a
+  its badge is its `tech` or its role. On a view with `boxText: "summary"` a box that is not a container shows
+  its summary under the badge row (`LayoutNode.lines`, wrapped by `graphLayout.wrapText` on at most 3 lines,
+  the last cut with "…"); such a box is at least 300 units wide and grows 16 per line. A box with `opens` has a zoom button ("See what is inside"; a
   double-click does the same, and Details offers it too): `store.zoomInto` shows that view, in the map or flow
   perspective that draws it, as a navigation step (Back returns). Above the diagram, `ZoomTrail` lists the
   levels above the current view (`zoomTrail`), each a link (`store.goToLevel`). A box that opens a graph

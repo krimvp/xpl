@@ -15,14 +15,16 @@ repository, or explain a change between two commits.
 A guide holds views and tours:
 
 - A **map** shows parts and how they relate: folders, files, classes and functions, or for an overview the
-  system, the services inside it and what they rely on. A box can open into the level below it.
+  system, the services inside it and what they rely on. A box can open into the level below it. On a quick
+  map (`xpl draft map`) each box also shows its one-sentence summary.
 - A **flow** follows the steps and decisions of a process.
 - A **sequence** shows who calls whom, in order.
 - A **tour** is the story: a short summary, then steps, each with a picture and its code.
 
 The viewer opens on the Guide, which reads the tour as a page. The Map, Flow and Code tabs show the views
 and the source. Explore puts every view next to the editor. Present plays a tour one step at a time, with the
-arrow keys.
+arrow keys. The theme button in the header switches between Auto (follows your device), Light and Dark; the
+browser remembers the choice.
 
 ## Anchors and checked claims
 

@@ -97,9 +97,11 @@ async function headerControls(page: Page): Promise<string[]> {
                   ? "progress"
                   : el.classList.contains("save-status")
                     ? "status"
-                    : el.classList.contains("edit-menu")
-                      ? "edit"
-                      : (el.textContent ?? "").trim(),
+                    : el.classList.contains("theme-btn")
+                      ? "theme"
+                      : el.classList.contains("edit-menu")
+                        ? "edit"
+                        : (el.textContent ?? "").trim(),
       ),
   );
 }
@@ -132,6 +134,7 @@ test.describe("one header in every mode", () => {
       expect(await headerControls(page)).toEqual([
         "title",
         "tabs",
+        "theme",
         "Search",
         "Feedback",
         "Present",
@@ -145,6 +148,7 @@ test.describe("one header in every mode", () => {
       expect(await headerControls(page)).toEqual([
         "title",
         "views",
+        "theme",
         "Search",
         "Feedback",
         "Present",
@@ -174,6 +178,7 @@ test.describe("one header in every mode", () => {
         "title",
         "tour",
         "progress",
+        "theme",
         "Search",
         "Feedback",
         "Exit",

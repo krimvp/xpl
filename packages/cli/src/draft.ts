@@ -110,7 +110,7 @@ export const OVERVIEW_EXCLUDE: readonly string[] = [
 ];
 
 /** Code that is not the design: callers here stay off a change map, files here stay off an overview. */
-const NOT_DESIGN: readonly string[] = [
+export const NOT_DESIGN: readonly string[] = [
   "**/examples/**",
   "**/example/**",
   "**/_examples/**",
@@ -128,13 +128,18 @@ const NOT_DESIGN: readonly string[] = [
 /** File and directory names that usually hold the entry point of a project. */
 const ENTRY_NAMES = /^(?:main|__main__|cli|cmd|app|apps|application|applications|index|server)$/;
 
-export type DraftKind = "change" | "repo" | "path";
+export type DraftKind = "change" | "repo" | "path" | "map";
 
 export interface DraftInput {
   explainer: Explainer;
   model: IndexModel;
   /** Head text, and (through its second reader) the text at the base of a change. */
   texts: TextCache;
+  /**
+   * The full SHA of each short commit id the explainer records (`provenance.commit`), where git knows it: the
+   * reader of `texts` reads old text at full SHAs only. A map draft uses it to find files that moved.
+   */
+  commits?: ReadonlyMap<string, string>;
 }
 
 export interface Draft {
@@ -146,11 +151,11 @@ export interface Draft {
 
 // ─── Text ───────────────────────────────────────────────────────────────────────────────────────
 
-const todo = (text: string): string => `TODO: ${text}`;
-const tick = (text: string): string => `\`${text}\``;
+export const todo = (text: string): string => `TODO: ${text}`;
+export const tick = (text: string): string => `\`${text}\``;
 
 /** A tour note: `### <title>`, a blank line, then the body sentences (a part that starts with a newline: a block). */
-function note(title: string, ...body: string[]): string {
+export function note(title: string, ...body: string[]): string {
   const text = body
     .filter((part) => part !== "")
     .reduce(
@@ -161,7 +166,7 @@ function note(title: string, ...body: string[]): string {
 }
 
 /** `` `a`, `b` and `c` `` (at most `max` names, then "and N more"). */
-function nameList(names: readonly string[], max = DRAFT_LIMITS.names): string {
+export function nameList(names: readonly string[], max = DRAFT_LIMITS.names): string {
   const unique = [...new Set(names)];
   const shown = unique.slice(0, max).map(tick);
   const more = unique.length - shown.length;
@@ -191,7 +196,7 @@ function displayName(id: string): string {
 // ─── Ids and stored nodes ───────────────────────────────────────────────────────────────────────
 
 /** Ids already used in the explainer, so a draft never overwrites: `view:x` becomes `view:x-2`. */
-class FreeIds {
+export class FreeIds {
   private readonly taken = new Set<string>();
 
   constructor(explainer: Explainer) {
@@ -220,7 +225,7 @@ class FreeIds {
   }
 }
 
-function storedNodeIds(explainer: Explainer): Set<string> {
+export function storedNodeIds(explainer: Explainer): Set<string> {
   return new Set(
     (Array.isArray(explainer.nodes) ? explainer.nodes : [])
       .map((node) => node?.id)
@@ -389,7 +394,7 @@ function baseRuns(file: ChangedFile): Cluster[] {
  * a span of the file), the whole file when no run does (a pure rename), or, for a deleted file or one the index does
  * not hold, the first run of the lines the change removes, in the code before the change.
  */
-function changedFileAnchor(
+export function changedFileAnchor(
   model: IndexModel,
   texts: TextCache,
   change: ChangeRecord,
@@ -425,7 +430,7 @@ function primary(code: readonly AnchorInput[], model: IndexModel): PatchTourStep
 }
 
 /** A tour step with at most `DRAFT_LIMITS.codeRanges` code ranges. */
-function tourStep(
+export function tourStep(
   model: IndexModel,
   id: string,
   view: string,
@@ -1301,7 +1306,7 @@ interface Unit {
  * Where the project says what it is: the first paragraph of prose in the README (after the logo, badges and links),
  * else the description in the package metadata, else the metadata file.
  */
-function aboutAnchor(model: IndexModel, texts: TextCache): AnchorInput | undefined {
+export function aboutAnchor(model: IndexModel, texts: TextCache): AnchorInput | undefined {
   const rootFiles = model.dirChildren("").files;
   const readme = rootFiles.find((f) => /^readme(?:\.[a-z]+)?$/i.test(f));
   const lines = readme ? texts.lines(readme) : undefined;

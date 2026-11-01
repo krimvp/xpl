@@ -165,9 +165,10 @@ const GRAPH_SPEC: Spec = {
     hidden: "string[]",
     excludeFiles: "string[]",
     stubs: "object",
+    boxText: "string",
     layout: "object",
   },
-  nullable: ["edgeKinds", "hidden", "excludeFiles", "stubs", "layout"],
+  nullable: ["edgeKinds", "hidden", "excludeFiles", "stubs", "boxText", "layout"],
 };
 const SEQUENCE_SPEC: Spec = {
   fields: {
@@ -1661,6 +1662,7 @@ class Applier {
         ...(f.hidden !== undefined ? { hidden: f.hidden } : {}),
         ...(f.excludeFiles !== undefined ? { excludeFiles: f.excludeFiles } : {}),
         ...(f.stubs !== undefined ? { stubs: f.stubs } : {}),
+        ...(f.boxText !== undefined ? { boxText: f.boxText } : {}),
         ...(f.layout !== undefined ? { layout: f.layout } : {}),
         provenance,
       };

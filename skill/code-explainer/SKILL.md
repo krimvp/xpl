@@ -1,6 +1,6 @@
 ---
 name: code-explainer
-description: Generate an interactive code explainer, meaning a short guided tour with linked diagrams (box-and-arrow map, process flow, sequence diagram) next to a code viewer, where clicking a box, arrow or step highlights the exact code and selecting code lights up the matching diagram elements. Use when the user wants to understand how code works ("how does X work", "how does a failed job get retried"), get an architecture overview of a repo, understand or review a change (a PR, MR, branch or commit range, read locally), explore an unfamiliar codebase, or prepare a code walkthrough, demo or presentation. Operations - explain <question> (part of a project), explain repo (architecture), explain change <base>..<head> (a diff), expand (grow a view), feedback (do what the user asked for in the viewer), make tour (a talk).
+description: Generate an interactive code explainer, meaning a short guided tour with linked diagrams (box-and-arrow map, process flow, sequence diagram) next to a code viewer, where clicking a box, arrow or step highlights the exact code and selecting code lights up the matching diagram elements. Use when the user wants to understand how code works ("how does X work", "how does a failed job get retried"), get an architecture overview of a repo, understand or review a change (a PR, MR, branch or commit range, read locally), explore an unfamiliar codebase, see what every file of a project does (a quick map, for example of code an AI assistant wrote, kept current after each change), or prepare a code walkthrough, demo or presentation. Operations - explain <question> (part of a project), explain repo (architecture), explain map (every file, in plain words), explain change <base>..<head> (a diff), expand (grow a view), feedback (do what the user asked for in the viewer), make tour (a talk).
 ---
 
 # Code explainer
@@ -16,7 +16,7 @@ The reader sees the tour title and its **summary** first, then the steps (a titl
 1. Gather the root, audience, question and guide name; choose new or existing (Setup). Then `xpl index`, and `xpl new <name>` for a new guide.
 2. Choose the scope, and say it in the reply.
 3. A change only: `xpl change <name> <base>..<head>` records it and prints its analysis.
-4. `xpl draft change|repo|path <name> [<entry id>] --audience "<reader>" --question "<question>" -o <file>` (outside the repo).
+4. `xpl draft change|repo|path|map <name> [<entry id>] --audience "<reader>" --question "<question>" -o <file>` (outside the repo).
 5. Read the code. Write every `TODO`, fix the structure where the code shows the draft is wrong, add what the tour needs. Every flow and sequence participant needs a `summary` (an overlay in the same patch).
 6. `xpl lint <name> --patch <file> && xpl apply <name> <file>`: lint exits 1 on any finding, so a flawed patch is not applied.
 7. `xpl validate`, `xpl status`, `xpl anchors <name> tour:<slug>`.
@@ -73,11 +73,12 @@ verified by xpl.
 
 ## Choose the scope
 
-| Request                                                    | Scope                                    | Draft                          | Tour answers                                                      |
-| ---------------------------------------------------------- | ---------------------------------------- | ------------------------------ | ----------------------------------------------------------------- |
-| "how does X work", a question about one subsystem          | `explain <question>` (part of a project) | `draft path <name> <entry id>` | the question, from the entry point to the answer                  |
-| "explain this repo", "give me an overview", "architecture" | `explain repo` (whole project)           | `draft repo <name>`            | what the project is, its parts, the main path through them        |
-| a PR, an MR, a branch, a commit range, "my changes"        | `explain change <base>..<head>` (a diff) | `draft change <name>`          | what changes for users, where, who else is affected, tests, risks |
+| Request                                                          | Scope                                    | Draft                          | Tour answers                                                                                    |
+| ---------------------------------------------------------------- | ---------------------------------------- | ------------------------------ | ----------------------------------------------------------------------------------------------- |
+| "how does X work", a question about one subsystem                | `explain <question>` (part of a project) | `draft path <name> <entry id>` | the question, from the entry point to the answer                                                |
+| "explain this repo", "give me an overview", "architecture"       | `explain repo` (whole project)           | `draft repo <name>`            | what the project is, its parts, the main path through them                                      |
+| a PR, an MR, a branch, a commit range, "my changes"              | `explain change <base>..<head>` (a diff) | `draft change <name>`          | what changes for users, where, who else is affected, tests, risks                               |
+| "what is in this app", "map every file", "what did the AI build" | `explain map` (every file, quick)        | `draft map <name>`             | what the project is and its parts; after a change, what was asked and how each change serves it |
 
 If the request can mean two materially different things (which service, which branch to compare with), ask one short question with concrete options. Otherwise proceed and state your assumption.
 
@@ -135,6 +136,18 @@ Three levels, each a zoom into a box of the one above (`opens`):
 5. **Main path:** when there is an obvious entry point (`main`, `cmd/`, a server), run `xpl draft path` on it, and let its part `opens` the sequence. Copy its view, its nodes and the tour steps you keep into the repo patch, with the next free step ids.
 6. **Tour:** the system map (what it is, who uses it), what it relies on, the inside, the main path, then each remaining part, or one step that names the parts it skips.
 7. **Lazy:** leave deeper nodes unexplained; offer 2-3 expansions in the reply.
+
+## explain map: every file, in plain words
+
+A quick map for someone who wants to know what is in a project, file by file, often code an AI assistant wrote. Lighter than `explain repo`: no architecture to design, one name and one sentence per box, shown on the box.
+
+1. **Draft:** `xpl draft map <name> -o map.json`. One map per folder; a folder box zooms into its files. Each file's `TODO` lists what the index knows: its header comment, what it defines, what uses it, what it uses.
+2. **Write every box:** a label of 2-5 plain words for what it does ("Job queue", not `queue.ts`: the path is in the box's details), and one sentence of at most about 120 characters that starts with a verb and says what it does for the project. Write it from the `TODO`'s facts; open the file (`xpl show file:<path>`) when they do not say. The reader is the owner of the project, who may not read code: everyday words, no framework names unless the user asks for a technical map. Folders get the same.
+3. **Many boxes** (more than about 150): split the patch's `nodes` by map (`view:map-<path>`) among parallel helpers if you can start them; each writes its boxes' text into its own patch and keeps the ids. Lint and apply each.
+4. **Crowded maps** (the draft notes those over 30 boxes): group files that work together with a `grp:` box, or leave them.
+5. **Tour** `tour:map`: what the project is, then each top folder, one or two sentences each.
+6. **After work on the code** (yours in this conversation, or the user's): `xpl index`, `xpl resolve <name> --write`, then, when the work is committed, `xpl change <name> <base>..HEAD` (`<base>`: the commit before the work; do not commit for the user unless they ask), and `xpl draft map <name>` again. It drafts only new files, removes the boxes of deleted ones, keeps the text (a moved file keeps its own), and, with the change recorded, adds `tour:changes-<head>`. Its summary says what was asked, in the asker's words, and what was done; each step says how that file's change serves the request.
+7. **Reply:** the bundle path, the parts of the project in 3-5 lines, and that running `xpl draft map` again keeps the map current.
 
 ## explain change <base>..<head>: a PR, an MR or a branch diff
 
@@ -226,7 +239,7 @@ A talk built from existing views, by the rules of "The tour". Default: the newes
 
 ## After the code changed
 
-`xpl index`, `xpl resolve <name> --write`, then work through `xpl status <name>` with `reference/patch-format.md` section 8. Ask the user before you re-anchor or remove a missing anchor. `xpl validate <name>` must pass before you finish.
+`xpl index`, `xpl resolve <name> --write`, then work through `xpl status <name>` with `reference/patch-format.md` section 8. For a map, `xpl draft map <name>` does the bookkeeping (explain map, step 6). Ask the user before you re-anchor or remove a missing anchor. `xpl validate <name>` must pass before you finish.
 
 ## Hard rules
 
