@@ -5,6 +5,7 @@ import {
   type AnchorInput,
   type ExplainerPatch,
   type IndexModel,
+  type IndexedSymbol,
 } from "@xpl/core";
 import type { CommandSpec } from "../command.js";
 import {
@@ -19,6 +20,7 @@ import {
   type DraftKind,
 } from "../draft.js";
 import { MAP_LIMITS, draftMap } from "../draft-map.js";
+import { CLASS_ENTRY_KINDS, CLASS_LIMITS, draftClass } from "../draft-class.js";
 import { CliError, UsageError, errorMessage } from "../errors.js";
 import { resolveCommit } from "../git.js";
 import { plural, renderIssues } from "../format.js";
@@ -26,7 +28,7 @@ import { atomicWrite, displayPath, jsonFile } from "../fsutil.js";
 import { loadExplainer, openWorkspace } from "../repo.js";
 import { resolveTarget } from "../target.js";
 
-const KINDS: readonly DraftKind[] = ["change", "repo", "path", "map"];
+const KINDS: readonly DraftKind[] = ["change", "repo", "path", "map", "class"];
 
 /** What a draft holds, for the summary line and `--json`. */
 export interface DraftCounts {
@@ -137,8 +139,9 @@ function pathEntry(model: IndexModel, arg: string): PathEntry {
 
 export const draftCommand: CommandSpec = {
   name: "draft",
-  usage: "xpl draft change|repo|path|map <explainer> [<entry id> ...] [-o <file>]",
-  summary: "Print a patch skeleton for a change, a repo, a path or a map; you write the TODO text",
+  usage: "xpl draft change|repo|path|map|class <explainer> [<entry id> ...] [-o <file>]",
+  summary:
+    "Print a patch skeleton for a change, a repo, a path, a map or a class; you write the TODO text",
   details: [
     "Builds a provisional patch from indexed references and the change record, with",
     "`TODO: <what to write>` in every text a person must write. `xpl apply` accepts it as it is; `xpl lint` reports",
@@ -173,6 +176,10 @@ export const draftCommand: CommandSpec = {
     `                            Run again after the code changed: only new files are drafted, boxes of files that`,
     `                            are gone are removed, written text stays (a moved file keeps its own), and the map's`,
     `                            tours drop what is gone. Maps over ${MAP_LIMITS.boxes} boxes get a note.`,
+    "  class <explainer> <entry>  the type hierarchy around a class or interface: what it extends and implements (all",
+    "                            the way up) and what extends or implements it (two levels down), on one map of",
+    `                            extends and implements arrows (at most ${CLASS_LIMITS.boxes} boxes), each with a summary TODO that`,
+    "                            names its kind, links and methods; a tour: the entry, then each type next to it.",
     'Change and repo maps get `stubs: {mode: "none"}` (a folder map keeps its stubs: what uses it and what it uses);',
     "tour steps hold at most 2 code ranges. Ids already in the explainer are not reused (`view:change-map-2`; a map",
     "keeps its own view ids and updates them), and nodes it already explains get no new summary.",
@@ -190,14 +197,16 @@ export const draftCommand: CommandSpec = {
     },
   },
   positionals: [
-    { name: "change|repo|path|map" },
+    { name: "change|repo|path|map|class" },
     { name: "explainer" },
     { name: "entry", required: false, rest: true },
   ],
   async run(ctx, args) {
     const kind = args.positionals[0] as DraftKind;
     if (!KINDS.includes(kind)) {
-      throw new UsageError(`unknown draft "${args.positionals[0]}": use change, repo, path or map`);
+      throw new UsageError(
+        `unknown draft "${args.positionals[0]}": use change, repo, path, map or class`,
+      );
     }
     const name = args.positionals[1]!;
     const entryArgs = args.positionals.slice(2);
@@ -207,8 +216,15 @@ export const draftCommand: CommandSpec = {
         "missing <entry>: the symbol the path starts at, e.g. sym:src/runner.ts#Runner.dispatch",
       );
     }
-    if (kind !== "path" && entryArg !== undefined) {
-      throw new UsageError(`unexpected argument "${entryArg}": only draft path takes an entry`);
+    if (kind === "class" && entryArgs.length !== 1) {
+      throw new UsageError(
+        "draft class takes one <entry>: a class or an interface, e.g. sym:src/queue.ts#Queue",
+      );
+    }
+    if (kind !== "path" && kind !== "class" && entryArg !== undefined) {
+      throw new UsageError(
+        `unexpected argument "${entryArg}": only draft path and class take an entry`,
+      );
     }
     const loaded = loadExplainer(ctx, name);
     const change = loaded.explainer.change;
@@ -231,6 +247,17 @@ export const draftCommand: CommandSpec = {
     }
     const entries: PathEntry[] = [];
     if (kind === "path") for (const arg of entryArgs) entries.push(pathEntry(ws.model, arg));
+    let classEntry: IndexedSymbol | undefined;
+    if (kind === "class") {
+      const target = resolveTarget(ws.model, entryArg!);
+      const sym = target.type === "symbol" ? target.symbol : undefined;
+      if (!sym || !CLASS_ENTRY_KINDS.has(sym.kind)) {
+        throw new CliError(
+          `the entry must be a class or an interface, not ${target.id} (${sym ? `a ${sym.kind}` : `a ${target.type}`}): \`xpl outline --kind class,interface\` lists them`,
+        );
+      }
+      classEntry = sym;
+    }
 
     // A map finds moved files by their text at the commit their box was written at: git reads it by full SHA.
     const commits = new Map<string, string>();
@@ -253,7 +280,9 @@ export const draftCommand: CommandSpec = {
             ? draftRepo(input)
             : kind === "map"
               ? draftMap(input)
-              : draftPath(input, entries);
+              : kind === "class"
+                ? draftClass(input, classEntry!)
+                : draftPath(input, entries);
     } catch (error) {
       throw new CliError(`nothing to draft: ${errorMessage(error)}`);
     }

@@ -704,7 +704,8 @@ export class ViewerStore {
     const current = this.state.reach;
     const same = current !== undefined && current.from === from && current.direction === direction;
     this.set({
-      reach: from === undefined || direction === undefined || same ? undefined : { from, direction },
+      reach:
+        from === undefined || direction === undefined || same ? undefined : { from, direction },
     });
   }
 

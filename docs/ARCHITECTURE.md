@@ -1491,7 +1491,7 @@ stdout (a rejection exits 1); fatal errors (`error: …`) and warnings (`warning
 | `xpl pr prepare <url\|owner/repo#number\|owner/repo> [number] [--cache-dir dir] [--precise off\|auto\|require]` | resolves GitHub base/head through existing `gh`, fetches an isolated detached head, indexes head only and publishes an immutable input manifest; no agent or ready result |
 | `xpl pr cleanup <directory> [--cache-dir dir]` | removes only a marked owned PR input directly under the selected cache; refuses symlinks and developer-tree paths |
 | `xpl pr link <staged-dir> --url <base-url> --visibility team\|public` / `xpl pr check-link <PR>` | points one PR comment at the staged current version after a GitHub base/head check; a PR workflow marks it outdated when base/head move (below) |
-| `xpl draft change\|repo\|path\|map <explainer> [<entry id> ...] [-o file]` | prints a patch skeleton built from the index (and the change record) with no LLM, `TODO:` in every text to write (below); the summary goes to stderr |
+| `xpl draft change\|repo\|path\|map\|class <explainer> [<entry id> ...] [-o file]` | prints a patch skeleton built from the index (and the change record) with no LLM, `TODO:` in every text to write (below); the summary goes to stderr |
 | `xpl view <explainer> [--port p] [--host h] [--no-open]` | local server (below) |
 | `xpl service <start\|pause\|resume\|stop\|status> [explainer] [--background] [--port p] [--backend none\|claude] [--skill-dir folder] [--job-timeout seconds] [--recover] [--watch]` | optional repository-scoped lifecycle around the same viewer server; loopback only; persisted context and explicit interrupted-owner recovery |
 | `xpl bundle [explainer] -o out.html [--mode explore\|present] [--tour id] [--files referenced\|boundary\|all] [--boundary-max n] [--embed-index full\|pruned] [--draft] [--note reason] [--require-review] [--allow-drift]` | self-contained HTML after the shared readiness check (exit 1 before writing with errors); `--draft` writes a labelled preview with findings; `--allow-drift` is a legacy draft flag that still refuses stale indexes; warnings and optional author notes are retained; `--tour` (`tour:intro` or `intro`) implies present mode; embeds the files the explainer references by default and prints what went in (`8 of 12 files embedded (referenced: 18.4 KB of source; --files all adds 4 files, 6.7 KB)`), `--files boundary` adds the direct callers, callees and tests of anchored symbols (at most `--boundary-max`, default 40), `--files all` every indexed file; with a change recorded, every changed file at head and the base text of the changed files go in too; the symbol index in it is pruned to what the viewer can draw with `--files referenced` or `boundary` and whole with `--files all` (`--embed-index` overrides) and packed (the summary line says `index 0.3 MB (1.3 MB as plain JSON, pruned from 9.0 MB)`) |
@@ -1690,11 +1690,11 @@ Ready means the API matched at `checkedAt`; GitHub cannot lock an external PR du
 `xpl pr link` rechecks them again before pointing the PR at it. `finish` starts no publishing workflow,
 writes no GitHub state and creates no current pointer. The offline HTML remains readable independently of GitHub or the retained checkout.
 
-**`xpl draft change|repo|path|map`** prints a patch that `xpl apply` accepts as it is: views, groups, overlays,
+**`xpl draft change|repo|path|map|class`** prints a patch that `xpl apply` accepts as it is: views, groups, overlays,
 participants, steps, anchors and a tour, with `TODO: <what to write>` in every text (tour notes as `### TODO:
 …` plus a body). It checks the draft with `applyPatch` before printing it, never reuses an id the explainer
 has (`view:change-map-2`; a map keeps and updates its own view ids), never adds a summary to a node the
-explainer already explains, gives the graph views of `change` and `repo` `stubs: { mode: "none" }` and each
+explainer already explains, gives the graph views of `change`, `repo` and `class` `stubs: { mode: "none" }` and each
 tour step at most 2 code ranges and an `editor.primary`. `-o` writes it to a
 file; `--json` adds the counts and what was left out.
 
@@ -1723,6 +1723,12 @@ file; `--json` adds the counts and what was left out.
   alone do not qualify; tests remain excluded. A `refs: none` index supplies no cross-file call arrows.
 - `path <entry>`: a sequence of the calls the entry symbol makes (depth 1, source order, at most 6
   participants and 12 calls), and a tour with a big-picture step and one step per main call (at most 8).
+- `class <entry>` (`draft-class.ts`): the type hierarchy around a class or interface. Up: the targets of the
+  entry's `extends` and `implements` references, breadth first, at most 6. Down: the symbols whose `extends` or
+  `implements` references point at it, two levels, the map at most 14 boxes. One graph view with `edgeKinds:
+  ["extends", "implements"]` (the derived arrows), each box a symbol overlay whose summary TODO names its
+  kind, links and methods (overload suffixes and constructors left out). A tour: the entry, then each direct
+  neighbour (at most 8 steps); the first note names the boxes no step visits (`tour-covers-map`).
 - `map` (`draft-map.ts`): the quick map, every code file outside tests, examples, fixtures, docs, benchmarks
   and dot folders. One graph view per folder, `view:map` for the top (below folders that hold all the code)
   and `view:map-<path>` below it, with `boxText: "summary"`, `excludeFiles` as for an overview and the

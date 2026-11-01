@@ -75,7 +75,9 @@ export function Details({
     arrows.some((e) => (direction === "down" ? e.from : e.to) === info.id),
   );
   const tracing =
-    state.reach?.from === info.id && state.selection.length === 1 ? state.reach.direction : undefined;
+    state.reach?.from === info.id && state.selection.length === 1
+      ? state.reach.direction
+      : undefined;
   const kind = reader ? (info.type === "node" ? readerBadge(info.kind) : undefined) : info.kind;
   const facts = reader ? info.facts.filter((fact) => !AUTHOR_FACTS.has(fact.label)) : info.facts;
   return (

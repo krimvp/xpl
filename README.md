@@ -117,6 +117,8 @@ See the [change workflow](https://krimvp.github.io/xpl/docs/workflows/change/).
 ### Architecture maps
 
 Use `xpl draft repo` to build a starting map from the index, then add reader-focused explanations.
+`xpl draft class <guide> <type>` maps the classes and interfaces around one type, from what extends and
+implements what.
 See [Architecture maps](https://krimvp.github.io/xpl/docs/workflows/explain/).
 
 ### Quick maps

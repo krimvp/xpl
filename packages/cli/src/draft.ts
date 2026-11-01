@@ -128,7 +128,7 @@ export const NOT_DESIGN: readonly string[] = [
 /** File and directory names that usually hold the entry point of a project. */
 const ENTRY_NAMES = /^(?:main|__main__|cli|cmd|app|apps|application|applications|index|server)$/;
 
-export type DraftKind = "change" | "repo" | "path" | "map";
+export type DraftKind = "change" | "repo" | "path" | "map" | "class";
 
 export interface DraftInput {
   explainer: Explainer;
@@ -287,7 +287,7 @@ function symbolLines(
 }
 
 /** The first line of a symbol after its decorators (`def handle(...)`, `async send(...)`). */
-function signature(texts: TextCache, sym: IndexedSymbol): AnchorInput | undefined {
+export function signature(texts: TextCache, sym: IndexedSymbol): AnchorInput | undefined {
   const text = texts.lines(sym.file);
   let line = sym.range.startLine;
   while (line < sym.range.endLine && /^\s*(@|$)/.test(text?.[line - 1] ?? "")) line++;
