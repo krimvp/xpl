@@ -32,6 +32,17 @@ describe("renderMarkdown", () => {
     expect(html).not.toMatch(/data:text/i);
   });
 
+  it("renders a pipe table with a header row, its cells sanitised like the rest", () => {
+    const html = renderMarkdown(
+      "| Option | Retries |\n| --- | ---: |\n| `fixed` | 3 <b>x</b> |\n| backoff | **5** |",
+    );
+    expect(html.replace(/\n/g, "")).toBe(
+      '<table><thead><tr><th>Option</th><th align="right">Retries</th></tr></thead>' +
+        '<tbody><tr><td><code>fixed</code></td><td align="right">3 &lt;b&gt;x&lt;/b&gt;</td></tr>' +
+        '<tr><td>backoff</td><td align="right"><strong>5</strong></td></tr></tbody></table>',
+    );
+  });
+
   it("replaces images by their alt text", () => {
     const html = renderMarkdown("![diagram](https://example.com/x.png)");
     expect(html).not.toContain("<img");

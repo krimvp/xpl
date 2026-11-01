@@ -20,7 +20,9 @@ A guide holds views and tours:
   leads to" and "What leads to it": the map lights up every box reached along its arrows.
 - A **flow** follows the steps and decisions of a process.
 - A **sequence** shows who calls whom, in order.
-- A **tour** is the story: a short summary, then steps, each with a picture and its code.
+- A **tour** is the story: a short summary that gives the answer in its first sentence and then up to four
+  reasons, then steps, each with a picture and its code. A step's note can hold a small table that compares
+  options side by side.
 
 The viewer opens on the Guide, which reads the tour as a page. The Map, Flow and Code tabs show the views
 and the source. Explore puts every view next to the editor. Present plays a tour one step at a time, with the

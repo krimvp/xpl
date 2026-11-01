@@ -2457,6 +2457,37 @@ code {
   color: var(--accent);
 }
 
+/* A comparison table in a note: header row on a tint, rules between rows; a wide one scrolls on its own. */
+.markdown table {
+  display: block;
+  max-width: 100%;
+  margin-top: 0.5em;
+  overflow-x: auto;
+  border-collapse: collapse;
+  font-size: 0.92em;
+  line-height: 1.35;
+}
+
+.markdown :is(th, td) {
+  padding: 4px 10px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+}
+
+.markdown :is(th, td)[align="right"] {
+  text-align: right;
+}
+
+.markdown :is(th, td)[align="center"] {
+  text-align: center;
+}
+
+.markdown th {
+  background: var(--panel-2);
+  font-weight: 600;
+}
+
 /* A heading inside a note or a summary is a sub-heading of the text around it, never a page title. */
 .markdown :is(h1, h2, h3, h4, h5, h6) {
   margin: 10px 0 4px;

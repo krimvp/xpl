@@ -34,8 +34,8 @@ has no full ranges and currently erases tags on import, even when `--precise req
 ## What every patch needs
 
 - **A summary for every box and participant** a view shows: overlays (`{id, summary}`) in the same patch as the view. `xpl status` counts the rest as unexplained.
-- **A tour summary** of 2-4 sentences (5 for a change): what it is, why it matters; for a change, the behaviour, the risk, the tests.
-- **Notes** that start with `### Plain title`, then 1-3 short sentences (60 words at most; 280 characters in a talk).
+- **A tour summary** that gives the answer in its first sentence, then up to four reasons (2-5 sentences); for a change, the behaviour, the risk, the tests.
+- **Notes** that start with `### Plain title`, then 1-3 short sentences (60 words at most; 280 characters in a talk). A note may hold a small pipe table for a comparison.
 - **`code` on every step**: at most 2 ranges, the one the note talks about first. Ranges over 40 lines apart are separate places, and a slide shows at most 3 places of one file (`far-ranges`).
 - **Maps** of 4-8 boxes (3-7 on a system map), `"stubs": {"mode": "none"}`, at most about 2 arrows per box (hide the rest with `hidden`).
 - **`llm` edges** only for what the index cannot see, anchored at both ends (an edge from a box to itself draws as a loop on it; in a flow, show recursion with a `recurse` link). A path through code that is not a box: one edge with `via`; a hop the index shows needs no anchors.

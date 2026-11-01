@@ -169,10 +169,12 @@ A draft applies as it is. Each text holds `TODO: <what to write>`; each note sta
 
 ## The tour
 
+- **Answer first.** The tour `summary` gives the answer in its first sentence (what the code does, or what the change does for its users), then up to four reasons, one sentence each. A reader who stops after the first sentence still has the answer. The steps then show the reasons in the code.
 - 5-9 steps, up to 12 for a change.
 - Top-down: the first step shows the big picture (the map). Then the main path in execution order, then the details that change the outcome. Edge cases and open questions come last. A repo tour visits every overview box or names the ones it skips.
 - Concepts before code: a step on the system map or the inside of a service names at most one piece of code; it says what the part is for and what it relies on. Code names belong to the steps about code (`xpl lint`: `code-heavy`, `long-note`).
 - Each step focuses one main element, plus at most one concept that explains it.
+- A note that compares two or three things (options, before and after, policies) may put them in a small Markdown table under its sentences (`reference/writing.md`, section 1).
 - `code` on every step: at most 2 ranges, and `editor.primary` on the file the note is about. **Range order:** the range the note talks about first; when the note is about a before and after, the before range (a base anchor), then the after range.
 - 4-8 boxes on a map (3-7 on a system map). Every graph view a tour uses has `"stubs": {"mode": "none"}`; an overview has `excludeFiles` for tests, examples and docs. The drafts set both.
 

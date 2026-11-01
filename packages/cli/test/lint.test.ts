@@ -80,6 +80,22 @@ describe("lintExplainer: plain notes for readers who do not know the code", () =
     expect(only(findings, "long-note").map((f) => f.elementId)).toEqual(["tour:t/t1"]);
   });
 
+  it("a table in a note: each cell is read on its own, so rows are not one long sentence", () => {
+    const table = (cell: string) =>
+      "### Two ways to wait between retries\n\n" +
+      "The fixed policy waits the same time after each failure.\n\n" +
+      "| Policy | Wait after the first failure | Wait after the third failure |\n" +
+      "| --- | :-- | --: |\n" +
+      `| fixed | 500 ms | ${cell} |\n` +
+      "| backoff | 500 ms | 2 s |\n" +
+      "| none | no retry | no retry |";
+    expect(lintExplainer(explainer({ tours: [tour([table("500 ms")])] })).findings).toEqual([]);
+    // the cells are still prose: a filler word in one is found
+    expect(
+      rules(lintExplainer(explainer({ tours: [tour([table("simply 500 ms")])] })).findings),
+    ).toEqual(["filler-word"]);
+  });
+
   it("code-heavy: too many code names, fewer allowed on an architecture map and in the summary", () => {
     const three =
       "### The runner takes a job\n\n`Runner.dispatch` asks `Queue.pop` for a job and runs it on `Worker.run`.";
@@ -174,29 +190,27 @@ describe("lintExplainer", () => {
       field: "summary",
       quote: "How a job runs",
     });
-    expect(missing.findings[0]!.hint).toContain("2-4 sentences");
+    expect(missing.findings[0]!.hint).toContain("2-5 sentences");
     // a summary that is not a string (an old or hand-edited file) counts as missing, never throws
     expect(
       rules(lintExplainer(explainer({ tours: [tour([], { summary: 42 })] })).findings),
     ).toEqual(["tour-summary"]);
-    const long = lintExplainer(
-      explainer({ tours: [tour([], { summary: "One. Two. Three. Four. Five." })] }),
-    );
-    expect(only(long.findings, "tour-summary")[0]!.message).toBe("5 sentences (more than 4)");
     const short = lintExplainer(
       explainer({ tours: [tour([], { summary: "A job goes from the queue to a worker." })] }),
     );
     expect(only(short.findings, "tour-summary")[0]!.message).toBe("1 sentence (fewer than 2)");
   });
 
-  it("the tour summary of a change may have 5 sentences (behaviour, risk and tests), not 6", () => {
+  it("a tour summary may give the answer and four reasons (5 sentences), not 6, in a change too", () => {
     const change = { base: "a", head: "b", files: [] };
-    const five = lintExplainer(
-      explainer({ change, tours: [tour([], { summary: "One. Two. Three. Four. Five." })] }),
-    );
-    expect(only(five.findings, "tour-summary")).toEqual([]);
+    for (const parts of [{}, { change }]) {
+      const five = lintExplainer(
+        explainer({ ...parts, tours: [tour([], { summary: "One. Two. Three. Four. Five." })] }),
+      );
+      expect(only(five.findings, "tour-summary")).toEqual([]);
+    }
     const six = lintExplainer(
-      explainer({ change, tours: [tour([], { summary: "One. Two. Three. Four. Five. Six." })] }),
+      explainer({ tours: [tour([], { summary: "One. Two. Three. Four. Five. Six." })] }),
     );
     expect(only(six.findings, "tour-summary")[0]).toMatchObject({
       message: "6 sentences (more than 5)",
@@ -1357,7 +1371,7 @@ describe("lintExplainer: concrete text passes", () => {
   it("long-sentence in a full summary: shorten it, do not split it (tour-summary caps the sentences)", () => {
     const long = `${"word ".repeat(27).trim()}.`;
     const full = lintExplainer(
-      explainer({ tours: [tour([], { summary: `${long} Two. Three. Four.` })] }),
+      explainer({ tours: [tour([], { summary: `${long} Two. Three. Four. Five.` })] }),
     );
     expect(only(full.findings, "tour-summary")).toEqual([]);
     expect(only(full.findings, "long-sentence")[0]!.hint).toMatch(

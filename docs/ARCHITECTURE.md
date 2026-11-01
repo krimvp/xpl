@@ -201,7 +201,7 @@ Conventions (all packages):
     embeds a copy with something dropped (§5, Bundle payload). Every file entry is kept, so `files` only repeats
     `files.length`; `symbols.length` and `refs.length` say what is left, and `languages` still describes the
     full index. Absent on a complete index, which is everything `xpl index` writes.
-14. `Tour` adds `summary?: string`: 2-4 sentences of markdown, what the tour is about and why it matters (for a
+14. `Tour` adds `summary?: string`: 2-5 sentences of markdown, the answer first, then up to four reasons (for a
     change: what behaves differently, the risk, the tests). Readers see it first, under the tour title. It is a
     user field like `title` (§4.7), and `null` in a patch clears it.
 15. `Explainer` adds `change?: ChangeRecord`: the change the explainer is about (a PR or MR). Only `xpl change`
@@ -1886,15 +1886,17 @@ field, a short quote and a fix. Rules (thresholds and word lists live in `LINT_L
   structural metadata. Each stored field gets one error; a tour note includes its heading and body.
   Nested text names its field path (`next[0].label`) and nearest element ID. Exit 1 even with `--warn-only`;
   any other finding exits 1 without it.
-- Tours: `tour-summary` (missing, or not 2-4 sentences), `tour-first-step` (the first step focuses a test, a
-  concept that lights up nothing, or a flow when the tour has a map, or its title says "edge case"),
+- Tours: `tour-summary` (missing, or not 2-5 sentences: the answer, then up to four reasons),
+  `tour-first-step` (the first step focuses a test, a concept that lights up nothing, or a flow when the tour
+  has a map, or its title says "edge case"),
   `tour-covers-map` (a box of a used map of at most 10 boxes that no step focuses and no note names),
   `tour-length` (more than 12 steps), `note-heading` (a note without a `### title` line).
 - Titles: `code-title` (a title that looks like code), `placeholder-title` ("Fix 1", "Note", "Step 3").
 - Sentences: `long-sentence` (over 25 words), `long-average` (a field averaging over 20), `bare-it` ("It" or
   "This" and a verb), `filler-word`, `absolute-word` ("all", "never", "only" … that needs evidence; idioms
   such as "at all" and narrowing uses such as "compares only the host part" do not count, nor a claim next to
-  its evidence: the text of an element with anchors, a note sentence that names a part the step shows),
+  its evidence: the text of an element with anchors, a note sentence that names a part the step shows; each
+  cell of a markdown table row is read on its own, and the rule under its header is left out),
   `repeats-summary` (a note sentence that repeats a focused element's summary), `long-note` (a note body over
   60 words), `code-heavy` (more different code spans than 3 in a note, 1 in a note on an architecture map, a
   graph view with a box that has a `role`, or 2 in a tour summary; example values such as `503` or `/admin/*`
@@ -2535,7 +2537,10 @@ and tour edits stay in memory: the header shows "Unsaved", and the Edit menu off
 they are sent 250 ms after the last change through `PUT /api/views/<id>` / `PUT /api/tours/<id>` ("Saving…",
 "Saved", "Retry save" on failure) and recorded as user edits (`userFields`). Markdown (the tour `summary`, step
 notes, `detail`) is sanitised: raw HTML shows as text, images become their alt text, links keep only http(s),
-mailto and in-page targets. Element and step summaries are rendered as inline markdown (`renderInline`: code
+mailto and in-page targets. A pipe table (header row, rule row, rows that start and end with `|`) renders as
+a table: the header on `--panel-2`, a `--border` rule under each row, column alignment from the rule row, and
+a horizontal scroll of its own when it is wider than the note (`.markdown table`); Guide, Present and the
+details share it. Element and step summaries are rendered as inline markdown (`renderInline`: code
 spans, bold, emphasis); titles and labels are plain text. The page title is "<tour title> · xpl" while a tour
 is open (the Guide, Present), else "<explainer title> · xpl".
 
