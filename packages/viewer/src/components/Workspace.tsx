@@ -39,7 +39,7 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
   const columns = useRef<HTMLDivElement>(null);
   const map = useMemo(
     () => workspaceMap(state),
-    [state.model, state.selection, state.viewId, state.expanded],
+    [state.model, state.selection, state.viewId, state.expanded, state.reach],
   );
   const flow = workspaceView(state, "flow") as SequenceViewData | undefined;
   const viewQuestion =

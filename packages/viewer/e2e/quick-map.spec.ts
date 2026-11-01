@@ -104,3 +104,19 @@ test("a box traced on the map lights up what it leads to, then what leads to it"
   await expect.poll(related).toEqual([]);
   expect(problems).toEqual([]);
 });
+
+test("a reader can trace a box too, from its connections on the map", async ({ page }) => {
+  const problems = watchProblems(page);
+  await page.goto(`${TS_BUNDLE.href}?perspective=map&view=view:overview`);
+  await byId(page, "grp:scheduling").click();
+  const connections = page.getByTestId("map-connections");
+  await connections.getByRole("button", { name: "What it leads to" }).click();
+  await expect
+    .poll(() =>
+      page
+        .locator(".graph .node.is-related")
+        .evaluateAll((els) => els.map((el) => el.getAttribute("data-element-id")).sort()),
+    )
+    .toEqual(["file:src/metrics.ts", "file:src/worker.ts", "grp:scheduling"]);
+  expect(problems).toEqual([]);
+});

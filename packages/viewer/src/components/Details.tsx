@@ -69,15 +69,6 @@ export function Details({
   }
 
   const graphNode = derived.view.graph?.nodes.find((n) => n.id === info.id);
-  // Trace the box on the map: what it leads to, what leads to it (along the arrows the map draws)
-  const arrows = graphNode ? (derived.view.graph?.edges ?? []) : [];
-  const traces = (["down", "up"] as const).filter((direction) =>
-    arrows.some((e) => (direction === "down" ? e.from : e.to) === info.id),
-  );
-  const tracing =
-    state.reach?.from === info.id && state.selection.length === 1
-      ? state.reach.direction
-      : undefined;
   const kind = reader ? (info.type === "node" ? readerBadge(info.kind) : undefined) : info.kind;
   const facts = reader ? info.facts.filter((fact) => !AUTHOR_FACTS.has(fact.label)) : info.facts;
   return (
@@ -112,22 +103,7 @@ export function Details({
           )}
         </div>
       )}
-      {traces.length > 0 && (
-        <div className="actions trace" role="group" aria-label="Trace on this map">
-          {traces.map((direction) => (
-            <button
-              key={direction}
-              type="button"
-              className="btn"
-              aria-pressed={tracing === direction}
-              data-trace={direction}
-              onClick={() => store.traceReach(direction)}
-            >
-              {direction === "down" ? "What it leads to" : "What leads to it"}
-            </button>
-          ))}
-        </div>
-      )}
+      {graphNode && derived.view.graph && <TraceButtons id={info.id} graph={derived.view.graph} />}
 
       {!reader &&
         state.mode !== "present" &&
@@ -475,6 +451,37 @@ export function TopicFacts({ id, graph }: { id: string; graph?: DerivedGraph }) 
   );
 }
 
+/**
+ * Trace a box on the map: what it leads to, what leads to it, along the arrows the map draws (`state.reach`,
+ * derive.ts `reachOf`). Only the ways the box has arrows are offered; pressing a pressed one ends the trace.
+ */
+function TraceButtons({ id, graph }: { id: string; graph: DerivedGraph }) {
+  const store = useStore();
+  const state = useViewerState();
+  const traces = (["down", "up"] as const).filter((direction) =>
+    graph.edges.some((e) => (direction === "down" ? e.from : e.to) === id),
+  );
+  if (traces.length === 0) return null;
+  const tracing =
+    state.reach?.from === id && state.selection.length === 1 ? state.reach.direction : undefined;
+  return (
+    <div className="actions trace" role="group" aria-label="Trace on this map">
+      {traces.map((direction) => (
+        <button
+          key={direction}
+          type="button"
+          className="btn"
+          aria-pressed={tracing === direction}
+          data-trace={direction}
+          onClick={() => store.traceReach(direction)}
+        >
+          {direction === "down" ? "What it leads to" : "What leads to it"}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 /** The arrows touching one visible map box, described without adding labels to every route. */
 function MapConnections({ id, graph }: { id: string; graph: DerivedGraph }) {
   const store = useStore();
@@ -515,6 +522,7 @@ function MapConnections({ id, graph }: { id: string; graph: DerivedGraph }) {
       aria-label="Connections on this map"
     >
       <h3>Connections on this map</h3>
+      <TraceButtons id={id} graph={graph} />
       <ul>
         {shown.map((arrow) => (
           <li key={arrow.id}>
