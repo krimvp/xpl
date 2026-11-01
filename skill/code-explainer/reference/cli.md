@@ -517,6 +517,22 @@ Edited re-saves lose the staged version claim when their artifactIdentity change
 This command configures no server, remote destination, credentials or upload. To point a PR at a staged
 PR folder, use `xpl pr link` below.
 
+## `xpl update <explainer> [--since <rev>] [-o <file>] [--precise auto|off|require]`
+
+After work on the code, brings a map guide (`xpl draft map`) up to date in one run: `xpl index`, `xpl resolve <explainer> --write`, `xpl change <explainer> <rev>..HEAD` when `--since` is given (the work must be committed), then `xpl draft map <explainer>`. The draft holds only what changed (boxes for new files, the removal of boxes whose code is gone, a moved file keeping its text) and, with the change recorded, a tour of the changed files. Nothing is applied: write the TODOs, lint and apply as usual. Without `-o` the draft goes to a new folder outside the repository. A failing step stops the run with its own message; the steps before it stay done. To keep a map current after every session of an AI assistant, run it at the end of the session (for example from the assistant's stop hook) with `--since` set to the commit the session started from.
+
+```
+$ xpl update shop --since HEAD~1 -o map.json
+index: built; shop moved to it
+change: 5c1e0a2 since 9f3b7d4, 1 file
+draft: /work/map.json
+  1 new box, 1 tour step, 7 TODOs to write
+note: 4 code files on 2 maps; 0 files left off (tests, examples, fixtures, docs and benchmarks)
+next: write each TODO, then `xpl lint shop --patch /work/map.json` and `xpl apply shop /work/map.json`
+```
+
+`--json`: `{ok, resolved: <resolve report>, change: <change result> | null, draft: {out, counts, notes}}`.
+
 ## `xpl start <name> --question q --audience a [--entry symbol] [--precise auto|off|require]`
 
 Creates a first guide in one command. It runs `index`, `new`, `draft` and `apply`, using the same source anchor checks as manual authoring. Without `--entry`, the draft is a repository map. With an indexed function or method such as `src/runner.ts#Runner.dispatch`, it is a call sequence from that entry. The applied guide contains TODO text and can be opened with `xpl view <name>`; complete and check the text before sharing. The patch and all draft notes are saved in a temporary directory outside the repository. The text output shows up to three notes and apply warnings; `--json` includes their full lists. Existing guides are never overwritten.
