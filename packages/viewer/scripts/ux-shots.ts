@@ -24,7 +24,9 @@ async function open(page: Page, bundle: string, query = "") {
   await page.waitForFunction(() => !!window.__xpl);
 }
 
-const browser = await chromium.launch();
+const browser = await chromium.launch(
+  process.env.XPL_CHROMIUM_PATH ? { executablePath: process.env.XPL_CHROMIUM_PATH } : {},
+);
 for (const scheme of ["light", "dark"] as const) {
   for (const [w, h] of [
     [1440, 900],

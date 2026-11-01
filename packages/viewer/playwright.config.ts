@@ -1,7 +1,9 @@
 import { defineConfig, devices } from "@playwright/test";
 
 // Browsers come from PLAYWRIGHT_BROWSERS_PATH (/opt/pw-browsers in the sandbox, matching the
-// pinned @playwright/test version). Never run `playwright install` there.
+// pinned @playwright/test version). Never run `playwright install` there. Where the preinstalled
+// browser is another build than the pinned version expects, XPL_CHROMIUM_PATH names its executable
+// (e.g. XPL_CHROMIUM_PATH=/opt/pw-browsers/chromium).
 // `npm run test:e2e` builds the viewer first; the global setup then builds the TS fixture bundle
 // (scripts/make-bundle.ts) and the specs open that self-contained file:// page.
 export default defineConfig({
@@ -21,5 +23,8 @@ export default defineConfig({
     ...devices["Desktop Chrome"],
     viewport: { width: 1440, height: 900 },
     trace: "retain-on-failure",
+    ...(process.env.XPL_CHROMIUM_PATH
+      ? { launchOptions: { executablePath: process.env.XPL_CHROMIUM_PATH } }
+      : {}),
   },
 });

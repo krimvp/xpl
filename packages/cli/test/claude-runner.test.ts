@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { once } from "node:events";
 import { fileURLToPath } from "node:url";
 import { randomUUID, createHash } from "node:crypto";
-import { chmodSync, existsSync, unlinkSync } from "node:fs";
+import { chmodSync, existsSync, readFileSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
 import { artifactIdentity } from "@xpl/core";
@@ -108,6 +108,23 @@ async function setup(body: string, creation = false) {
 }
 
 const valid = `fs.writeFileSync(output,JSON.stringify([{id:'request-original',patch:{nodes:[{id:'file:src/queue.ts',summary:'Stores jobs until a worker claims them.'}]}}]));\nconsole.log(JSON.stringify({type:'result',is_error:false,result:'Proposal written'}));`;
+
+/**
+ * Is the process still running? A killed child whose parent is gone is reparented to PID 1, and in a container
+ * whose PID 1 does not reap (no init) it stays a zombie: dead, but `kill(pid, 0)` still succeeds on it.
+ */
+function alive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+  } catch {
+    return false;
+  }
+  try {
+    return readFileSync(`/proc/${pid}/stat`, "utf8").split(" ")[2] !== "Z";
+  } catch {
+    return true;
+  }
+}
 
 describe("configured Claude adapter (stub executable, no provider)", () => {
   it.each([
@@ -629,12 +646,7 @@ describe("configured Claude adapter (stub executable, no provider)", () => {
         } else await jobs.fence("demo", job.id, action);
         await expect
           .poll(() => {
-            try {
-              process.kill(capture.pid, 0);
-              return false;
-            } catch {
-              return true;
-            }
+            return !alive(capture.pid);
           })
           .toBe(true);
         const stored = await jobs.get("demo", job.id);
