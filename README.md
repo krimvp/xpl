@@ -119,6 +119,15 @@ See the [change workflow](https://krimvp.github.io/xpl/docs/workflows/change/).
 Use `xpl draft repo` to build a starting map from the index, then add reader-focused explanations.
 See [Architecture maps](https://krimvp.github.io/xpl/docs/workflows/explain/).
 
+### Quick maps
+
+`xpl draft map` drafts a map of every code file, one map per folder, for code you did not write line by line,
+such as code an AI assistant wrote. Each box gets a plain name and one sentence, shown on the box. The draft
+puts what the index knows about each file (its header comment, what it defines, what uses it) next to each
+sentence to write. Run it again after the code changes: it drafts only new files, removes the boxes of
+deleted files, and keeps the text already written. With `xpl change` recorded first, it adds a tour of the
+changed files that asks how each change serves what was asked.
+
 ## Languages and precision
 
 xpl indexes TypeScript, JavaScript, Python, Go and Java, plus YAML, JSON and TOML keys. Ruby has

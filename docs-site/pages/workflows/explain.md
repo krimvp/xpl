@@ -14,3 +14,7 @@ choice and what to do when a run stops.
 ## Architecture maps
 
 <!-- include README.md "### Architecture maps" -->
+
+## Quick maps
+
+<!-- include README.md "### Quick maps" -->

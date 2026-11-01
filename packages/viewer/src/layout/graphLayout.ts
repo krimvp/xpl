@@ -166,7 +166,7 @@ export const SUMMARY_FONT = 12.5;
 export const SUMMARY_LINE = 16;
 const SUMMARY_LINES = 3;
 /** A box that shows its summary is at least this wide, so a sentence wraps on a few lines, not a dozen. */
-const SUMMARY_BOX_WIDTH = 240;
+const SUMMARY_BOX_WIDTH = 300;
 
 /**
  * `text` wrapped at word boundaries into lines no wider than `width`, at most `max` of them; the last line of a

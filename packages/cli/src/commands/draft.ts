@@ -18,13 +18,14 @@ import {
   type Draft,
   type DraftKind,
 } from "../draft.js";
+import { MAP_LIMITS, draftMap } from "../draft-map.js";
 import { CliError, UsageError, errorMessage } from "../errors.js";
 import { plural, renderIssues } from "../format.js";
 import { atomicWrite, displayPath, jsonFile } from "../fsutil.js";
 import { loadExplainer, openWorkspace } from "../repo.js";
 import { resolveTarget } from "../target.js";
 
-const KINDS: readonly DraftKind[] = ["change", "repo", "path"];
+const KINDS: readonly DraftKind[] = ["change", "repo", "path", "map"];
 
 /** What a draft holds, for the summary line and `--json`. */
 export interface DraftCounts {
@@ -135,8 +136,8 @@ function pathEntry(model: IndexModel, arg: string): PathEntry {
 
 export const draftCommand: CommandSpec = {
   name: "draft",
-  usage: "xpl draft change|repo|path <explainer> [<entry id> ...] [-o <file>]",
-  summary: "Print a patch skeleton for a change, a repo or a path; you write the TODO text",
+  usage: "xpl draft change|repo|path|map <explainer> [<entry id> ...] [-o <file>]",
+  summary: "Print a patch skeleton for a change, a repo, a path or a map; you write the TODO text",
   details: [
     "Builds a provisional patch from indexed references and the change record, with",
     "`TODO: <what to write>` in every text a person must write. `xpl apply` accepts it as it is; `xpl lint` reports",
@@ -164,8 +165,15 @@ export const draftCommand: CommandSpec = {
     "                            are too many. Several entries: one sequence each, in one tour (a question with two",
     "                            halves). A method a class inherits (`sym:a.py#Child.run`) starts at the base that",
     "                            defines it, and self calls go where the class's method order finds them.",
-    'Graph views get `stubs: {mode: "none"}`; tour steps hold at most 2 code ranges. Ids already in the explainer',
-    "are not reused (`view:change-map-2`), and nodes it already explains get no new summary.",
+    "  map <explainer>           a quick map of every code file outside tests: one map per folder, a folder box opens",
+    "                            the map of its files. Each box gets a name and one sentence to write; a file's TODO",
+    "                            holds its header comment, what it defines, who uses it and what it uses. A start tour,",
+    "                            and with a change recorded a tour of the changed files (how each serves the request).",
+    `                            Run again after the code changed: only new files are drafted, boxes of files that`,
+    `                            are gone are removed, written text stays. Maps over ${MAP_LIMITS.boxes} boxes get a note.`,
+    'Change and repo maps get `stubs: {mode: "none"}` (a folder map keeps its stubs: what uses it and what it uses);',
+    "tour steps hold at most 2 code ranges. Ids already in the explainer are not reused (`view:change-map-2`; a map",
+    "keeps its own view ids and updates them), and nodes it already explains get no new summary.",
     "Prints the patch on stdout (the summary on stderr), or writes it with -o and prints the summary.",
     "Then: write the text, `xpl lint <explainer> --patch <file>`, `xpl apply <explainer> <file>`.",
     "Exit codes: 0 ok, 1 no change recorded, an unknown entry, or nothing to draft, 2 usage error.",
@@ -180,14 +188,14 @@ export const draftCommand: CommandSpec = {
     },
   },
   positionals: [
-    { name: "change|repo|path" },
+    { name: "change|repo|path|map" },
     { name: "explainer" },
     { name: "entry", required: false, rest: true },
   ],
   async run(ctx, args) {
     const kind = args.positionals[0] as DraftKind;
     if (!KINDS.includes(kind)) {
-      throw new UsageError(`unknown draft "${args.positionals[0]}": use change, repo or path`);
+      throw new UsageError(`unknown draft "${args.positionals[0]}": use change, repo, path or map`);
     }
     const name = args.positionals[1]!;
     const entryArgs = args.positionals.slice(2);
@@ -230,7 +238,9 @@ export const draftCommand: CommandSpec = {
           ? draftChange(input, change!)
           : kind === "repo"
             ? draftRepo(input)
-            : draftPath(input, entries);
+            : kind === "map"
+              ? draftMap(input)
+              : draftPath(input, entries);
     } catch (error) {
       throw new CliError(`nothing to draft: ${errorMessage(error)}`);
     }
