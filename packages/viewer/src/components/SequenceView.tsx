@@ -117,6 +117,7 @@ export function SequenceView({
       height={layout.height}
       resetKey={resetKey}
       label="Sequence diagram. Drag to pan, scroll to zoom."
+      imageName={view.title}
       maxFitZoom={present ? PRESENT_MAX_FIT_ZOOM : undefined}
       fitPadding={present ? PRESENT_FIT_PADDING : undefined}
       readableZoom={present ? PRESENT_READABLE_ZOOM : undefined}

@@ -2755,6 +2755,16 @@ transition IDs and shows the checked source anchors of both endpoints (only the 
 the caller). Details names its direction and explains that links have no separate source anchor. The
 toggle precedes the list in keyboard order. Selection uses the same store action as the diagram. The list updates with the current level, nodes and edge-kind filters. Scrolling it never zooms
 the hidden SVG. Turning the toggle off restores the diagram and its selection.
+
+**Save image** (`image.ts`, `PanZoom.imageName`): the zoom toolbar of every live map, sequence and flow has
+"Save image" after its Key. It downloads `<view title>.png` (characters a file system refuses become `-`):
+the whole diagram at its own size plus 16 units of margin, not the part the viewport shows, at 2 pixels per
+unit (less when a side would pass 16384 px). The diagram is styled by CSS tokens, which an SVG drawn as an
+image does not see, so each element of a copy gets the computed values of its paint properties (fill,
+stroke, opacity, font, text anchor and the like), and the copy is drawn on the pane's background colour:
+the image looks like the screen in either theme, with the selection, trace and match marks it shows. The
+sticky participant heads of a sequence (an overlay) are left out; the heads drawn at the top are in. It
+fetches nothing, so it works in an offline bundle.
 **Diagram keyboard navigation** (`components/PanZoom.tsx`): focus the canvas and press Enter to
 focus its first element. Up/Down cycle through the drawn elements in reading order; Home/End go to the
 first/last. Left/Right follow incoming/outgoing relationships: maps and sequences move through an arrow

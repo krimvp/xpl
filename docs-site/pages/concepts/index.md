@@ -26,7 +26,9 @@ A guide holds views and tours:
 
 The viewer opens on the Guide, which reads the tour as a page. The Map, Flow and Code tabs show the views
 and the source. Explore puts every view next to the editor. Present plays a tour one step at a time, with the
-arrow keys. The theme button in the header switches between Auto (follows your device), Light and Dark; the
+arrow keys. Each diagram has "Save image" beside its zoom buttons: it downloads the whole diagram as a PNG,
+named after the view, as it looks on screen (selection and theme included), to paste into a chat or a doc.
+The theme button in the header switches between Auto (follows your device), Light and Dark; the
 browser remembers the choice.
 
 ## Anchors and checked claims

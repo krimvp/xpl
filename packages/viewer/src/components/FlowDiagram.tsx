@@ -371,6 +371,7 @@ export function FlowDiagram({ view, snapshot, outline = false }: FlowDiagramProp
         keepInView={followed ?? focus?.boxes[0]}
         revealMargin={outline ? OUTLINE_MARGIN : undefined}
         label="Process flow"
+        imageName={view.title}
         maxFitZoom={present ? PRESENT_MAX_FIT_ZOOM : undefined}
         fitPadding={present ? PRESENT_FIT_PADDING : undefined}
         // Present: a flow is read from the back of the room: it starts fitted only when its text comes out

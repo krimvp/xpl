@@ -41,6 +41,7 @@ import {
   type Focus,
   type Transform,
 } from "../viewport.js";
+import { saveDiagramImage } from "../image.js";
 
 const FIT_PADDING = 24;
 /** Fitting never blows a small diagram up by more than this (a talk allows more: `maxFitZoom`). */
@@ -147,6 +148,8 @@ export interface PanZoomProps {
   children: ReactNode;
   /** Source-linked text alternative for this diagram. */
   textView?: ReactNode;
+  /** The name "Save image" gives the PNG of the whole diagram (the view's title). */
+  imageName: string;
 }
 
 export function PanZoom({
@@ -168,8 +171,10 @@ export function PanZoom({
   revealMargin,
   children,
   textView,
+  imageName,
 }: PanZoomProps) {
   const wrap = useRef<HTMLDivElement>(null);
+  const content = useRef<SVGGElement>(null);
   const [textMode, setTextMode] = useState(false);
   const textId = useId();
   const [size, setSize] = useState({ w: 0, h: 0 });
@@ -555,7 +560,9 @@ export function PanZoom({
         role="presentation"
         style={textMode ? { display: "none" } : undefined}
       >
-        <g transform={`translate(${t.x} ${t.y}) scale(${t.k})`}>{children}</g>
+        <g ref={content} transform={`translate(${t.x} ${t.y}) scale(${t.k})`}>
+          {children}
+        </g>
         {overlay?.(t, size)}
       </svg>
       {!textMode && !short && cues}
@@ -588,6 +595,13 @@ export function PanZoom({
               Fit
             </button>
             {tools}
+            <button
+              type="button"
+              title="Save the whole diagram as a PNG image, as it looks here"
+              onClick={() => void saveDiagramImage(content.current!, width, height, imageName)}
+            >
+              Save image
+            </button>
           </>
         )}
         {textView && (
