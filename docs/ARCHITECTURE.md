@@ -1528,7 +1528,7 @@ stdout (a rejection exits 1); fatal errors (`error: …`) and warnings (`warning
 | `xpl pr prepare <url\|owner/repo#number\|owner/repo> [number] [--cache-dir dir] [--precise off\|auto\|require]` | resolves GitHub base/head through existing `gh`, fetches an isolated detached head, indexes head only and publishes an immutable input manifest; no agent or ready result |
 | `xpl pr cleanup <directory> [--cache-dir dir]` | removes only a marked owned PR input directly under the selected cache; refuses symlinks and developer-tree paths |
 | `xpl pr link <staged-dir> --url <base-url> --visibility team\|public` / `xpl pr check-link <PR>` | points one PR comment at the staged current version after a GitHub base/head check; a PR workflow marks it outdated when base/head move (below) |
-| `xpl draft change\|repo\|path\|map\|class <explainer> [<entry id> ...] [-o file]` | prints a patch skeleton built from the index (and the change record) with no LLM, `TODO:` in every text to write (below); the summary goes to stderr |
+| `xpl draft change\|repo\|path\|map\|class\|states <explainer> [<entry id> ...] [-o file]` | prints a patch skeleton built from the index (and the change record) with no LLM, `TODO:` in every text to write (below); the summary goes to stderr |
 | `xpl view <explainer> [--port p] [--host h] [--no-open]` | local server (below) |
 | `xpl service <start\|pause\|resume\|stop\|status> [explainer] [--background] [--port p] [--backend none\|claude] [--skill-dir folder] [--job-timeout seconds] [--recover] [--watch]` | optional repository-scoped lifecycle around the same viewer server; loopback only; persisted context and explicit interrupted-owner recovery |
 | `xpl bundle [explainer] -o out.html [--mode explore\|present] [--tour id] [--files referenced\|boundary\|all] [--boundary-max n] [--embed-index full\|pruned] [--draft] [--note reason] [--require-review] [--allow-drift]` | self-contained HTML after the shared readiness check (exit 1 before writing with errors); `--draft` writes a labelled preview with findings; `--allow-drift` is a legacy draft flag that still refuses stale indexes; warnings and optional author notes are retained; `--tour` (`tour:intro` or `intro`) implies present mode; embeds the files the explainer references by default and prints what went in (`8 of 12 files embedded (referenced: 18.4 KB of source; --files all adds 4 files, 6.7 KB)`), `--files boundary` adds the direct callers, callees and tests of anchored symbols (at most `--boundary-max`, default 40), `--files all` every indexed file; with a change recorded, every changed file at head and the base text of the changed files go in too; the symbol index in it is pruned to what the viewer can draw with `--files referenced` or `boundary` and whole with `--files all` (`--embed-index` overrides) and packed (the summary line says `index 0.3 MB (1.3 MB as plain JSON, pruned from 9.0 MB)`) |
@@ -1766,6 +1766,31 @@ file; `--json` adds the counts and what was left out.
   ["extends", "implements"]` (the derived arrows), each box a symbol overlay whose summary TODO names its
   kind, links and methods (overload suffixes and constructors left out). A tour: the entry, then each direct
   neighbour (at most 8 steps); the first note names the boxes no step visits (`tour-covers-map`).
+- `states <entry>` (`draft-states.ts`): the states of a status type and the moves between them. The entry is a
+  TypeScript `enum` or union of string literals, a Python class whose bases name `Enum` (`IntEnum`, `StrEnum`,
+  `Flag`, `IntFlag`), or a Go type with constants of it in its own file (`Name Type = ...` in a `const` block
+  and the bare names that repeat it); anything else is refused. The states are its members, from the
+  declaration text (Python members and Go constants are also index symbols). A use of a state is found on the
+  lines of the references to the type and to its member symbols: `Type.Member` for an enum, the constant's
+  name for Go. A union literal is matched in the files that refer to the type, only next to a holder: a field
+  or parameter declared with the type (`phase: Phase`), a React `useRef<Phase>` (as `.current`) or
+  `useState<Phase>` (the value, and its setter as a set), a `case` of a `switch` on a holder, or a `return` in a
+  function declared to return the type. Comments and the contents of strings are blanked before matching. A use
+  is a set (after a single `=`, `return`, an object key, a ternary branch of an assignment), a test (a
+  comparison, `is`, `case`; `!==`, `!=` and `is not` are negated) or neither (an argument, a list: counted in a
+  note). A transition A -> B is drafted only inside one function or method, where a set of B follows a test of
+  A: the nearest test before it, the set on its line or indented under it with no `else` between, or a negated
+  test whose branch leaves (`throw`, `return`, `raise`, `panic`, `continue`, `break`) with the set after it at
+  its level. One `flow` view (`view:<type>-states`, `layout: "diagram"`): a stage per state (anchored at its
+  declaration, then its first sets and tests, at most 4 anchors) whose `next` lists its transitions, and a
+  stage per transition, drawn from the function that makes it and anchored at the test and the set, whose
+  `next` is the new state. At most 16 states and 16 transitions. A flow rather than a graph: TypeScript enum
+  members and literals are not index symbols, so they cannot be boxes, and a flow stage takes free text and
+  anchors. The participants are the type (its file, for Go constants outside it) and each function with a
+  transition, each with a summary TODO. A tour: the type, then each state (at most 11). The notes name the
+  states never set and never tested, the uses that are neither, and that transitions come from text matching.
+  Not handled: discriminated unions (`{ status: "idle" } | ...`), Java enums, Go constants in other files,
+  a transition split across functions (a test in a caller, the set in a callee), and multi-line conditions.
 - `map` (`draft-map.ts`): the quick map, every code file outside tests, examples, fixtures, docs, benchmarks
   and dot folders. One graph view per folder, `view:map` for the top (below folders that hold all the code)
   and `view:map-<path>` below it, with `boxText: "summary"`, `excludeFiles` as for an overview and the

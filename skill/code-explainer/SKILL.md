@@ -16,7 +16,7 @@ The reader sees the tour title and its **summary** first, then the steps (a titl
 1. Gather the root, audience, question and guide name; choose new or existing (Setup). Then `xpl index`, and `xpl new <name>` for a new guide.
 2. Choose the scope, and say it in the reply.
 3. A change only: `xpl change <name> <base>..<head>` records it and prints its analysis.
-4. `xpl draft change|repo|path|map|class <name> [<entry id>] --audience "<reader>" --question "<question>" -o <file>` (outside the repo).
+4. `xpl draft change|repo|path|map|class|states <name> [<entry id>] --audience "<reader>" --question "<question>" -o <file>` (outside the repo).
 5. Read the code. Write every `TODO`, fix the structure where the code shows the draft is wrong, add what the tour needs. Every flow and sequence participant needs a `summary` (an overlay in the same patch).
 6. `xpl lint <name> --patch <file> && xpl apply <name> <file>`: lint exits 1 on any finding, so a flawed patch is not applied.
 7. `xpl validate`, `xpl status`, `xpl anchors <name> tour:<slug>`.
@@ -74,13 +74,14 @@ verified by xpl.
 
 ## Choose the scope
 
-| Request                                                          | Scope                                    | Draft                          | Tour answers                                                                                    |
-| ---------------------------------------------------------------- | ---------------------------------------- | ------------------------------ | ----------------------------------------------------------------------------------------------- |
-| "how does X work", a question about one subsystem                | `explain <question>` (part of a project) | `draft path <name> <entry id>` | the question, from the entry point to the answer                                                |
-| "explain this repo", "give me an overview", "architecture"       | `explain repo` (whole project)           | `draft repo <name>`            | what the project is, its parts, the main path through them                                      |
-| a PR, an MR, a branch, a commit range, "my changes"              | `explain change <base>..<head>` (a diff) | `draft change <name>`          | what changes for users, where, who else is affected, tests, risks                               |
-| "what is in this app", "map every file", "what did the AI build" | `explain map` (every file, quick)        | `draft map <name>`             | what the project is and its parts; after a change, what was asked and how each change serves it |
-| "what are the kinds of X", "how do these classes relate"         | `explain <question>` (a type hierarchy)  | `draft class <name> <type id>` | what the type is for, what it shares with the types around it, how they differ                  |
+| Request                                                          | Scope                                    | Draft                           | Tour answers                                                                                    |
+| ---------------------------------------------------------------- | ---------------------------------------- | ------------------------------- | ----------------------------------------------------------------------------------------------- |
+| "how does X work", a question about one subsystem                | `explain <question>` (part of a project) | `draft path <name> <entry id>`  | the question, from the entry point to the answer                                                |
+| "explain this repo", "give me an overview", "architecture"       | `explain repo` (whole project)           | `draft repo <name>`             | what the project is, its parts, the main path through them                                      |
+| a PR, an MR, a branch, a commit range, "my changes"              | `explain change <base>..<head>` (a diff) | `draft change <name>`           | what changes for users, where, who else is affected, tests, risks                               |
+| "what is in this app", "map every file", "what did the AI build" | `explain map` (every file, quick)        | `draft map <name>`              | what the project is and its parts; after a change, what was asked and how each change serves it |
+| "what are the kinds of X", "how do these classes relate"         | `explain <question>` (a type hierarchy)  | `draft class <name> <type id>`  | what the type is for, what it shares with the types around it, how they differ                  |
+| "what states can X be in", "what moves an order to shipped"      | `explain <question>` (a state flow)      | `draft states <name> <type id>` | what each state means, what moves the thing between states, which moves the code never makes    |
 
 **Sketch first.** When the user wants the big picture before the code (a plan, an idea, "roughly how would this work"), or before a long read: start with a sketch view (`view:sketch`, 3-7 sketch boxes, labelled arrows) in plain words, and say in its title and in the reply that it is a sketch. Then read the code and turn each box you can anchor into a box of code (`"sketch": null` with `members` or `anchors`). Boxes that stay sketches stay marked.
 
