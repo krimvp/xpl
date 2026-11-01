@@ -5,6 +5,9 @@ import { COMMANDS } from "../src/cli.js";
 import { GLOBAL_OPTIONS } from "../src/args.js";
 import { invoke, makeTempDir, writeFile } from "./helpers.js";
 
+/** zsh is not on every machine (a minimal container): its checks run where it is installed, bash's everywhere. */
+const HAS_ZSH = spawnSync("zsh", ["-f", "-c", "true"]).status === 0;
+
 function bashComplete(script: string, cwd: string, ...words: string[]): string[] {
   const file = writeFile(cwd, "completion.bash", script);
   const code = [
@@ -78,24 +81,27 @@ describe("xpl completion", () => {
     expect((await invoke(["completion", "powershell"])).code).toBe(2);
   });
 
-  it("zsh offers guide names after value options and only at guide positions", async () => {
-    const { out } = await invoke(["completion", "zsh"]);
-    const dir = makeTempDir();
-    writeFile(dir, ".explainer/alpha.explainer.json", "{}");
-    writeFile(dir, ".explainer/my guide.explainer.json", "{}");
-    expect(zshComplete(out, dir, "xpl", "view", "--port", "4747", "")).toEqual([
-      "alpha",
-      "my guide",
-    ]);
-    expect(zshComplete(out, dir, "xpl", "service", "start", "")).toEqual(["alpha", "my guide"]);
-    expect(zshComplete(out, dir, "xpl", "apply", "alpha", "")).toEqual([]);
-  });
+  it.skipIf(!HAS_ZSH)(
+    "zsh offers guide names after value options and only at guide positions",
+    async () => {
+      const { out } = await invoke(["completion", "zsh"]);
+      const dir = makeTempDir();
+      writeFile(dir, ".explainer/alpha.explainer.json", "{}");
+      writeFile(dir, ".explainer/my guide.explainer.json", "{}");
+      expect(zshComplete(out, dir, "xpl", "view", "--port", "4747", "")).toEqual([
+        "alpha",
+        "my guide",
+      ]);
+      expect(zshComplete(out, dir, "xpl", "service", "start", "")).toEqual(["alpha", "my guide"]);
+      expect(zshComplete(out, dir, "xpl", "apply", "alpha", "")).toEqual([]);
+    },
+  );
 
   it("bash and zsh find commands and guides after global options", async () => {
     const cwd = makeTempDir();
     const root = join(makeTempDir(), "repo with space");
     writeFile(root, ".explainer/my guide.explainer.json", "{}");
-    for (const shell of ["bash", "zsh"] as const) {
+    for (const shell of HAS_ZSH ? (["bash", "zsh"] as const) : (["bash"] as const)) {
       const { out } = await invoke(["completion", shell]);
       const complete = shell === "bash" ? bashComplete : zshComplete;
       expect(complete(out, cwd, "xpl", "--root", root, "")).toEqual(COMMANDS.map((c) => c.name));

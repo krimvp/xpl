@@ -100,7 +100,9 @@ async function shoot(argv: string[]): Promise<void> {
   if (!(width > 0 && height > 0))
     throw new Error(`--size ${values.size}: expected <width>x<height>`);
   const colorScheme = values.scheme === "dark" ? "dark" : "light";
-  const browser = await chromium.launch();
+  const browser = await chromium.launch(
+    process.env.XPL_CHROMIUM_PATH ? { executablePath: process.env.XPL_CHROMIUM_PATH } : {},
+  );
   try {
     for (const spec of values.shot) {
       const eq = spec.indexOf("=");
@@ -539,7 +541,9 @@ async function compare(argv: string[]): Promise<void> {
   const added = [...after].filter((n) => !before.has(n)).sort();
   const removed = [...before].filter((n) => !after.has(n)).sort();
 
-  const browser = await chromium.launch();
+  const browser = await chromium.launch(
+    process.env.XPL_CHROMIUM_PATH ? { executablePath: process.env.XPL_CHROMIUM_PATH } : {},
+  );
   try {
     const page = await browser.newPage({ viewport: { width: 2000, height: 800 } });
     for (const name of changed) {

@@ -85,7 +85,9 @@ local checks are the gate: run them before every push.
 - **`.npmrc` sets `ignore-scripts=true`**, so npm also skips `pre*`/`post*` scripts of our own packages. Do
   not add any.
 - **Playwright is pinned to 1.56.1** to match the preinstalled browsers (`PLAYWRIGHT_BROWSERS_PATH`). Never
-  run `playwright install` in a sandbox that has them; only CI installs its own.
+  run `playwright install` in a sandbox that has them; only CI installs its own. When the preinstalled browser
+  is another build than 1.56.1 expects ("Executable doesn't exist"), point at it instead:
+  `XPL_CHROMIUM_PATH=/opt/pw-browsers/chromium npm run test:e2e` (the screenshot scripts read it too).
 - **Keep patch files and scratch output outside the repo.** A new file in the repo changes the index commit id.
 - **Docs are part of the change.** Where code and `docs/ARCHITECTURE.md` disagree, fix one of them in the
   same commit. That includes `--help` text, the product skill references, and the self-explainer:
