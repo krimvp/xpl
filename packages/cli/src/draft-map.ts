@@ -23,6 +23,7 @@ import {
   baseName,
   isTestFile,
   matchesAnyGlob,
+  type AnchorInput,
   type ExplainerPatch,
   type PatchNode,
   type PatchTourStep,
@@ -240,6 +241,36 @@ export function draftMap(input: DraftInput): Draft {
   const crowded: string[] = [];
   const topFolder = folderOf(root);
 
+  // ── Files that moved: a box whose file is gone, and a new file with the same text as that file had at the
+  // commit the box was written at. The box's name and sentence go to the new path (exact moves only).
+  const owned = (p?: { origin?: string; userFields?: string[] }) =>
+    p?.origin !== "user" && (p?.userFields?.length ?? 0) === 0;
+  const moves = new Map<string, NonNullable<(typeof explainer.nodes)[number]>>();
+  const moved: string[] = [];
+  const newFiles = allMapped.filter((f) => !stored.has(`file:${f}`));
+  let byText: Map<string, string[]> | undefined;
+  for (const [id, n] of storedNodes) {
+    if (!id.startsWith("file:") || model.hasFile(id.slice(5)) || !owned(n.provenance)) continue;
+    const commit = n.provenance?.commit;
+    const full = commit ? (input.commits?.get(commit) ?? commit) : undefined;
+    const old = full ? texts.textAt(full, id.slice(5)) : undefined;
+    if (old === undefined) continue;
+    byText ??= newFiles.reduce((map, f) => {
+      const text = texts.text(f);
+      if (text !== undefined) map.set(text, [...(map.get(text) ?? []), f]);
+      return map;
+    }, new Map<string, string[]>());
+    const same = (byText.get(old) ?? []).filter((f) => !moves.has(f));
+    if (same.length !== 1) continue;
+    moves.set(same[0]!, n);
+    moved.push(`${id.slice(5)} -> ${same[0]}`);
+  }
+  if (moved.length > 0) {
+    notes.push(
+      `${plural(moved.length, "moved file")} ${moved.length === 1 ? "keeps its" : "keep their"} text: ${moved.join(", ")}`,
+    );
+  }
+
   const visit = (path: string, folder: Folder) => {
     const viewId = viewIdOf(root, path);
     computed.add(viewId);
@@ -305,6 +336,15 @@ export function draftMap(input: DraftInput): Draft {
     for (const file of folder.files) {
       const id = `file:${file}`;
       if (stored.has(id)) continue;
+      const from = moves.get(file);
+      if (from) {
+        nodes.push({
+          id,
+          ...(from.label !== undefined ? { label: from.label } : {}),
+          ...(from.summary !== undefined ? { summary: from.summary } : {}),
+        });
+        continue;
+      }
       nodes.push({
         id,
         label: todo(`2-5 plain words for this file (now: ${baseName(file)})`),
@@ -355,6 +395,51 @@ export function draftMap(input: DraftInput): Draft {
     const first = main ? definitions(main)[0] : undefined;
     return main && first ? { file: main, symbol: first, role: "definition" as const } : undefined;
   };
+  // The map's own tours (start here, changes) follow the code: steps lose the boxes and code that are gone, a
+  // folder step of the start tour gets its folder's code again, and a step with nothing left to show goes.
+  const goneId = (id: string) =>
+    (id.startsWith("file:") && !model.hasFile(id.slice(5))) ||
+    (id.startsWith("dir:") && !model.hasDirectory(id.slice(4)));
+  for (const tour of Array.isArray(explainer.tours) ? explainer.tours : []) {
+    if (!/^tour:(?:map$|changes-)/.test(tour.id) || !owned(tour.provenance)) continue;
+    let changed = false;
+    const steps: PatchTourStep[] = [];
+    for (const step of tour.steps) {
+      const focus = step.focus.filter((id) => !goneId(id));
+      const kept = (step.code ?? []).filter((a) => a.at === "base" || model.hasFile(a.file));
+      let code: (AnchorInput | undefined)[] = kept.map((a) => ({
+        file: a.file,
+        role: a.role,
+        ...(a.at ? { at: a.at } : {}),
+        ...(a.symbol ? { symbol: a.symbol } : {}),
+        ...(a.span ? { span: a.span } : {}),
+      }));
+      if (kept.length < (step.code ?? []).length && tour.id === "tour:map" && focus.length === 1) {
+        code = focus[0]!.startsWith("dir:") ? [mainDefinition(focus[0]!.slice(4))] : [];
+      }
+      const gone =
+        focus.length === 0 || (step.view.startsWith("view:map") && remove.includes(step.view));
+      if (gone || focus.length < step.focus.length || kept.length < (step.code ?? []).length) {
+        changed = true;
+      }
+      if (gone) continue;
+      const anchors = code.filter((a): a is AnchorInput => a !== undefined);
+      steps.push({
+        id: step.id,
+        view: step.view,
+        focus,
+        ...(step.note !== undefined ? { note: step.note } : {}),
+        ...(anchors.length > 0 ? { code: anchors } : {}),
+        ...(step.editor && anchors.some((a) => a.file === step.editor?.primary)
+          ? { editor: step.editor }
+          : {}),
+      });
+    }
+    if (!changed) continue;
+    if (steps.length === 0) remove.push(tour.id);
+    else tours.push({ id: tour.id, steps });
+  }
+
   if (!tourIds.has("tour:map")) {
     const parts = [...topFolder.dirs]
       .sort((a, b) => mappedUnder(b).length - mappedUnder(a).length || a.localeCompare(b))

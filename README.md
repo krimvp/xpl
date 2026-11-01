@@ -125,7 +125,7 @@ See [Architecture maps](https://krimvp.github.io/xpl/docs/workflows/explain/).
 such as code an AI assistant wrote. Each box gets a plain name and one sentence, shown on the box. The draft
 puts what the index knows about each file (its header comment, what it defines, what uses it) next to each
 sentence to write. Run it again after the code changes: it drafts only new files, removes the boxes of
-deleted files, and keeps the text already written. With `xpl change` recorded first, it adds a tour of the
+deleted files, and keeps the text already written, also for a file that moved. With `xpl change` recorded first, it adds a tour of the
 changed files that asks how each change serves what was asked.
 
 ## Languages and precision

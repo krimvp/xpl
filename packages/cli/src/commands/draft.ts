@@ -20,6 +20,7 @@ import {
 } from "../draft.js";
 import { MAP_LIMITS, draftMap } from "../draft-map.js";
 import { CliError, UsageError, errorMessage } from "../errors.js";
+import { resolveCommit } from "../git.js";
 import { plural, renderIssues } from "../format.js";
 import { atomicWrite, displayPath, jsonFile } from "../fsutil.js";
 import { loadExplainer, openWorkspace } from "../repo.js";
@@ -170,7 +171,8 @@ export const draftCommand: CommandSpec = {
     "                            holds its header comment, what it defines, who uses it and what it uses. A start tour,",
     "                            and with a change recorded a tour of the changed files (how each serves the request).",
     `                            Run again after the code changed: only new files are drafted, boxes of files that`,
-    `                            are gone are removed, written text stays. Maps over ${MAP_LIMITS.boxes} boxes get a note.`,
+    `                            are gone are removed, written text stays (a moved file keeps its own), and the map's`,
+    `                            tours drop what is gone. Maps over ${MAP_LIMITS.boxes} boxes get a note.`,
     'Change and repo maps get `stubs: {mode: "none"}` (a folder map keeps its stubs: what uses it and what it uses);',
     "tour steps hold at most 2 code ranges. Ids already in the explainer are not reused (`view:change-map-2`; a map",
     "keeps its own view ids and updates them), and nodes it already explains get no new summary.",
@@ -230,7 +232,18 @@ export const draftCommand: CommandSpec = {
     const entries: PathEntry[] = [];
     if (kind === "path") for (const arg of entryArgs) entries.push(pathEntry(ws.model, arg));
 
-    const input = { explainer: loaded.explainer, model: ws.model, texts: ws.texts };
+    // A map finds moved files by their text at the commit their box was written at: git reads it by full SHA.
+    const commits = new Map<string, string>();
+    if (kind === "map") {
+      for (const node of loaded.explainer.nodes ?? []) {
+        const commit = node.provenance?.commit;
+        if (!commit || commits.has(commit) || !node.id.startsWith("file:")) continue;
+        if (ws.model.hasFile(node.id.slice(5)) || !/^[0-9a-f]{7,39}$/.test(commit)) continue;
+        const full = await resolveCommit(ws.root, commit);
+        if (full) commits.set(commit, full);
+      }
+    }
+    const input = { explainer: loaded.explainer, model: ws.model, texts: ws.texts, commits };
     let draft: Draft;
     try {
       draft =

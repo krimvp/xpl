@@ -5,7 +5,7 @@
  * gone, keeping the text already written. With a change recorded, it adds a tour of the changed files.
  */
 import { readFileSync, rmSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { ExplainerPatch, GraphView, PatchGraphView } from "@xpl/core";
 import { headerComment } from "../src/draft-map.js";
@@ -154,6 +154,65 @@ describe("xpl draft map", () => {
     ]);
     expect(patch.remove).toEqual(["file:src/orders/cancel.ts"]);
     expect(patch.tours).toBeUndefined();
+  });
+
+  it("run again, carries the written name and sentence of a moved file to its new path", async () => {
+    const dir = shop();
+    git(dir, "init", "-q", "-b", "main");
+    git(dir, "add", "-A");
+    git(dir, "commit", "-q", "-m", "base");
+    expect((await xpl(dir, "index", "--precise", "off")).code).toBe(0);
+    expect((await xpl(dir, "new", "shop")).code).toBe(0);
+    await draft(dir);
+    const written = join(makeTempDir("xpl-map-text-"), "text.json");
+    writeFile(
+      dirname(written),
+      "text.json",
+      JSON.stringify({
+        nodes: [
+          {
+            id: "file:src/orders/place.ts",
+            label: "Place an order",
+            summary: "Charges the card for a new order.",
+          },
+        ],
+      }),
+    );
+    expect((await xpl(dir, "apply", "shop", written)).code).toBe(0);
+
+    git(dir, "mv", "src/orders/place.ts", "src/orders/checkout.ts");
+    writeFile(
+      dir,
+      "src/main.ts",
+      readFileSync(join(dir, "src/main.ts"), "utf8").replace("./orders/place", "./orders/checkout"),
+    );
+    git(dir, "commit", "-q", "-am", "rename");
+    expect((await xpl(dir, "index", "--precise", "off")).code).toBe(0);
+    expect((await xpl(dir, "resolve", "shop", "--write")).code).toBe(0);
+    const { patch, notes } = await draft(dir);
+
+    expect(patch.nodes).toEqual([
+      {
+        id: "file:src/orders/checkout.ts",
+        label: "Place an order",
+        summary: "Charges the card for a new order.",
+      },
+    ]);
+    expect(patch.remove).toEqual(["file:src/orders/place.ts"]);
+    // the start tour's step for the folder shows its code at the new path
+    expect(patch.tours?.map((t) => [t.id, t.steps?.map((step) => [step.id, step.code])])).toEqual([
+      [
+        "tour:map",
+        [
+          ["t1", [{ file: "README.md", span: { from: 2, to: 2 }, role: "usage" }]],
+          ["t2", [{ file: "src/orders/checkout.ts", symbol: "placeOrder", role: "definition" }]],
+        ],
+      ],
+    ]);
+    expect(notes).toEqual([
+      "4 code files on 2 maps; 1 file left off (tests, examples, fixtures, docs and benchmarks)",
+      "1 moved file keeps its text: src/orders/place.ts -> src/orders/checkout.ts",
+    ]);
   });
 
   it("with a change recorded, adds a tour of the changed files on their folder's map", async () => {

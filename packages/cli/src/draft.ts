@@ -135,6 +135,11 @@ export interface DraftInput {
   model: IndexModel;
   /** Head text, and (through its second reader) the text at the base of a change. */
   texts: TextCache;
+  /**
+   * The full SHA of each short commit id the explainer records (`provenance.commit`), where git knows it: the
+   * reader of `texts` reads old text at full SHAs only. A map draft uses it to find files that moved.
+   */
+  commits?: ReadonlyMap<string, string>;
 }
 
 export interface Draft {

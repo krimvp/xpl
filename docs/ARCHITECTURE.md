@@ -1731,8 +1731,13 @@ file; `--json` adds the counts and what was left out.
   `changedFileAnchor`, notes that ask how the change serves the request. Run again, it is a refresh: existing
   map views get `includeAdd` / `includeRemove`, overlays only for undescribed files, `remove` for the
   `file:` and `dir:` nodes whose paths left the index and for map views no longer drawn (user-edited ones are
-  kept, with a note), and no second start tour or change tour for the same head. Notes count the files on
-  and off the map and name maps of more than 30 boxes.
+  kept, with a note), and no second start tour or change tour for the same head. A file that moved keeps its
+  text: a gone `file:` box whose file, read at its `provenance.commit` (the command expands the short id to
+  the full SHA, `DraftInput.commits`), has the same text as exactly one new file gives that file its label
+  and summary. The map's own tours (`tour:map`, `tour:changes-*`, when the user did not edit them) are resent
+  without the focus and code of what is gone; a start-tour folder step gets its folder's code again, and a
+  step with no focus left is dropped (a tour with no step, removed). Notes count the files on and off the
+  map, name the moved files and the maps of more than 30 boxes.
 
 A draft gives structure, not understanding: the concepts, flows, `llm` edges and base anchors that explain
 why the code is as it is are left to Claude.
