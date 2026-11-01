@@ -2474,7 +2474,8 @@ saved"), the theme button, the mode's one action, and the **Edit** menu.
 **Theme.** The colours are CSS variables (`styles.css`); the dark ones apply under `<html data-theme="dark">`.
 `theme.ts` sets that attribute before the first render, from the reader's choice: Auto (the default, which
 follows `prefers-color-scheme` and its changes), Light or Dark. The header's icon button cycles the three and
-names the current one and the next in its label; the choice is kept in `localStorage` (`xpl-theme`), per page
+names the current one and the next in its label (at 760 px and narrower the header has no room for it, and the
+page keeps the choice made on a wider screen, or Auto); the choice is kept in `localStorage` (`xpl-theme`), per page
 origin, and for the page's lifetime when storage is blocked. A saved HTML copy is taken before the attribute
 is set, so it opens in its reader's theme.
 

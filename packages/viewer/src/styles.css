@@ -371,6 +371,11 @@ code {
   color: var(--fg);
 }
 
+.theme-btn svg {
+  width: 19px;
+  height: 19px;
+}
+
 /* Present: ‹ 3 / 10 › beside the tour picker, and the progress as a bar along the header's lower edge. */
 .step-progress {
   display: flex;
@@ -825,6 +830,11 @@ code {
 
 @media (max-width: 760px) {
   .spacer {
+    display: none;
+  }
+
+  /* No room for it in a narrow header: the page follows the device (Auto) or the choice made on a wider one. */
+  .theme-btn {
     display: none;
   }
 }
