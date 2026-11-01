@@ -977,7 +977,8 @@ function LeafText({
         <text className="box-summary" x={x} y={(two ? badgeY + 16 : labelY) + SUMMARY_LINE}>
           {lines.map((line, i) => (
             <tspan key={i} x={x} dy={i === 0 ? 0 : SUMMARY_LINE}>
-              {line}
+              {/* the space keeps the words apart when the text is read or copied as one */}
+              {i < lines.length - 1 ? `${line} ` : line}
             </tspan>
           ))}
         </text>

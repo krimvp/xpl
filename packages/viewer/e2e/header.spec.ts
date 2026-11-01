@@ -458,6 +458,8 @@ test.describe("keyboard", () => {
     await expect(viewsMenu(page)).toBeVisible();
     await page.keyboard.press("Tab");
     await expect(viewsMenu(page)).toHaveCount(0);
+    await expect(page.locator(".theme-btn")).toBeFocused();
+    await page.keyboard.press("Tab");
     await expect(
       page.getByRole("button", { name: "Search and guides", exact: true }),
     ).toBeFocused();

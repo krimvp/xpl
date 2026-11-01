@@ -29,7 +29,7 @@ function tokens(text: string): Record<string, string> {
 }
 
 const light = tokens(block(":root {"));
-const dark = { ...light, ...tokens(block("@media (prefers-color-scheme: dark)")) };
+const dark = { ...light, ...tokens(block(':root[data-theme="dark"] {')) };
 
 function parse(color: string): Rgba {
   if (color.startsWith("#")) {

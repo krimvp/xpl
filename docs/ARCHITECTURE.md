@@ -2469,7 +2469,14 @@ or request deletion. Agent-backed job submission and proposal review remain the 
 **Three modes, one header.** **Read** is the default screen, for readers. **Explore** is the author's
 workbench. **Present** plays a tour as slides. The header is one row built the same way in each: the title,
 what the mode moves between, the save state (only when there is something to say: "Unsaved", "Saving…", "Not
-saved"), the mode's one action, and the **Edit** menu.
+saved"), the theme button, the mode's one action, and the **Edit** menu.
+
+**Theme.** The colours are CSS variables (`styles.css`); the dark ones apply under `<html data-theme="dark">`.
+`theme.ts` sets that attribute before the first render, from the reader's choice: Auto (the default, which
+follows `prefers-color-scheme` and its changes), Light or Dark. The header's icon button cycles the three and
+names the current one and the next in its label; the choice is kept in `localStorage` (`xpl-theme`), per page
+origin, and for the page's lifetime when storage is blocked. A saved HTML copy is taken before the attribute
+is set, so it opens in its reader's theme.
 
 Below the header, **Analysis coverage** is a collapsed disclosure in every mode. It names missing or
 failed analysis and opens into capabilities, file counts and limits, labeled by analysis provider id.

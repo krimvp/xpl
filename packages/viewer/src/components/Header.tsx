@@ -20,6 +20,7 @@ import { explainerFileName } from "../edits.js";
 import { useStore, useViewerState } from "../hooks.js";
 import { stepNumber } from "../modes.js";
 import { canSaveHtml } from "../saveHtml.js";
+import { NEXT_THEME, setThemeChoice, themeChoice, type ThemeChoice } from "../theme.js";
 import { Review } from "./Review.js";
 import { SaveHtml } from "./SaveHtml.js";
 import { FeedbackPanel } from "./FeedbackPanel.js";
@@ -81,6 +82,7 @@ export function Header() {
 
       <div className="spacer" />
       <SaveStatus />
+      <ThemeButton />
       <button
         ref={searchButton}
         className="btn"
@@ -123,6 +125,59 @@ export function Header() {
       {feedbackOpen && <FeedbackPanel onClose={() => store.closeFeedback()} />}
       {toursOpen && <TourPanel onClose={() => setToursOpen(false)} />}
     </header>
+  );
+}
+
+const THEME_NAME: Record<ThemeChoice, string> = {
+  auto: "Auto (follows your device)",
+  light: "Light",
+  dark: "Dark",
+};
+
+/** Light, dark, or the device's choice: one button that cycles Auto, Light, Dark. Kept in this browser. */
+function ThemeButton() {
+  const [choice, setChoice] = useState<ThemeChoice>(themeChoice);
+  const next = NEXT_THEME[choice];
+  const label = `Theme: ${THEME_NAME[choice]}. Press for ${THEME_NAME[next].split(" ")[0]}.`;
+  return (
+    <button
+      className="btn theme-btn"
+      type="button"
+      aria-label={label}
+      title={label}
+      data-theme-choice={choice}
+      onClick={() => {
+        setThemeChoice(next);
+        setChoice(next);
+      }}
+    >
+      <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+        {choice === "auto" ? (
+          <>
+            <circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" strokeWidth="2" />
+            <path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor" />
+          </>
+        ) : choice === "light" ? (
+          <>
+            <circle cx="12" cy="12" r="4" fill="none" stroke="currentColor" strokeWidth="2" />
+            <path
+              d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9 7 7M17 17l2.1 2.1M4.9 19.1 7 17M17 7l2.1-2.1"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+            />
+          </>
+        ) : (
+          <path
+            d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinejoin="round"
+          />
+        )}
+      </svg>
+    </button>
   );
 }
 

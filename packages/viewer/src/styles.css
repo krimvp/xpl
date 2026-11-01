@@ -1,11 +1,11 @@
 /*
- * xpl viewer styles. Light by default, dark under prefers-color-scheme. Everything themeable is a CSS
- * variable on :root (the SVG diagrams and the CodeMirror editors read them too), so the two themes
- * differ only in the variable block below.
+ * xpl viewer styles. Light by default, dark under `<html data-theme="dark">` (theme.ts: the reader's choice,
+ * Auto by default, which follows the device). Everything themeable is a CSS variable on :root (the SVG
+ * diagrams and the CodeMirror editors read them too), so the two themes differ only in the variable blocks.
  */
 
 :root {
-  color-scheme: light dark;
+  color-scheme: light;
   --font-ui: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
   --font-mono:
     ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
@@ -113,104 +113,104 @@
   --syn-invalid-dim: #c44e55;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #0d1014;
-    --panel: #161a20;
-    --panel-2: #1c2129;
-    --canvas: #12161b;
-    --fg: #e6e9ee;
-    --muted: #a0abb8;
-    --faint: #8994a2;
-    --border: #2a313b;
-    --border-strong: #3d4653;
-    --hover: rgba(255, 255, 255, 0.07);
+/* The dark theme: theme.ts sets data-theme on <html> from the reader's choice (Auto follows the device). */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0d1014;
+  --panel: #161a20;
+  --panel-2: #1c2129;
+  --canvas: #12161b;
+  --fg: #e6e9ee;
+  --muted: #a0abb8;
+  --faint: #8994a2;
+  --border: #2a313b;
+  --border-strong: #3d4653;
+  --hover: rgba(255, 255, 255, 0.07);
 
-    --accent: #6ea2ff;
-    --accent-fg: #0b1220;
-    --accent-soft: #1d2f52;
-    --match: #ffb443;
-    --match-soft: #4a3610;
-    --related: #4ad6bf;
-    --related-soft: #10403a;
-    --danger: #ff8078;
-    --danger-soft: #4a1f1c;
-    --warn: #f5b04c;
-    --warn-soft: #43300f;
-    --ok: #6ee7a0;
-    --ok-soft: #123a26;
-    --purple: #c4a1ff;
-    --purple-soft: #2e2250;
+  --accent: #6ea2ff;
+  --accent-fg: #0b1220;
+  --accent-soft: #1d2f52;
+  --match: #ffb443;
+  --match-soft: #4a3610;
+  --related: #4ad6bf;
+  --related-soft: #10403a;
+  --danger: #ff8078;
+  --danger-soft: #4a1f1c;
+  --warn: #f5b04c;
+  --warn-soft: #43300f;
+  --ok: #6ee7a0;
+  --ok-soft: #123a26;
+  --purple: #c4a1ff;
+  --purple-soft: #2e2250;
 
-    --pill-s: 45%;
-    --pill-bg-l: 24%;
-    --pill-fg-l: 82%;
+  --pill-s: 45%;
+  --pill-bg-l: 24%;
+  --pill-fg-l: 82%;
 
-    --node-bg: #1c2129;
-    --store-bg: #2b2319;
-    --node-border: #4a5566;
-    --container-bg: rgba(110, 162, 255, 0.07);
-    --edge: #9ba7b6;
-    --edge-heuristic: #596574;
-    --edge-llm: #b58cff;
-    --edge-user: #4ade80;
-    --edge-stub: #75818f;
-    --ghost-border: #66727f;
-    --frame-bg: rgba(160, 175, 200, 0.06);
+  --node-bg: #1c2129;
+  --store-bg: #2b2319;
+  --node-border: #4a5566;
+  --container-bg: rgba(110, 162, 255, 0.07);
+  --edge: #9ba7b6;
+  --edge-heuristic: #596574;
+  --edge-llm: #b58cff;
+  --edge-user: #4ade80;
+  --edge-stub: #75818f;
+  --ghost-border: #66727f;
+  --frame-bg: rgba(160, 175, 200, 0.06);
 
-    --code-bg: #13171c;
-    --code-fg: #e6e9ee;
-    --code-gutter-bg: #181d23;
-    --code-gutter-fg: #949ca5;
-    --code-selection: rgba(110, 162, 255, 0.32);
-    --hl-definition: rgba(110, 162, 255, 0.16);
-    --hl-definition-bar: #6ea2ff;
-    --hl-call-site: rgba(255, 180, 67, 0.15);
-    --hl-call-site-bar: #ffb443;
-    --hl-usage: rgba(181, 140, 255, 0.18);
-    --hl-usage-bar: #b58cff;
-    --hl-config: rgba(74, 222, 128, 0.12);
-    --hl-config-bar: #4ade80;
-    --hl-test: rgba(244, 114, 182, 0.17);
-    --hl-test-bar: #f472b6;
-    --site-bg: rgba(255, 180, 67, 0.1);
-    --diff-add-bg: rgba(63, 185, 80, 0.16);
-    --diff-add-bar: #3fb950;
-    --diff-add-fg: #3fb950;
-    --diff-del-bg: rgba(248, 81, 73, 0.14);
-    --diff-del-bar: #f85149;
-    --diff-del-fg: #ffb3ad;
+  --code-bg: #13171c;
+  --code-fg: #e6e9ee;
+  --code-gutter-bg: #181d23;
+  --code-gutter-fg: #949ca5;
+  --code-selection: rgba(110, 162, 255, 0.32);
+  --hl-definition: rgba(110, 162, 255, 0.16);
+  --hl-definition-bar: #6ea2ff;
+  --hl-call-site: rgba(255, 180, 67, 0.15);
+  --hl-call-site-bar: #ffb443;
+  --hl-usage: rgba(181, 140, 255, 0.18);
+  --hl-usage-bar: #b58cff;
+  --hl-config: rgba(74, 222, 128, 0.12);
+  --hl-config-bar: #4ade80;
+  --hl-test: rgba(244, 114, 182, 0.17);
+  --hl-test-bar: #f472b6;
+  --site-bg: rgba(255, 180, 67, 0.1);
+  --diff-add-bg: rgba(63, 185, 80, 0.16);
+  --diff-add-bar: #3fb950;
+  --diff-add-fg: #3fb950;
+  --diff-del-bg: rgba(248, 81, 73, 0.14);
+  --diff-del-bar: #f85149;
+  --diff-del-fg: #ffb3ad;
 
-    --syn-meta: #a2acb9;
-    --syn-keyword: #c4a1ff;
-    --syn-atom: #79c0ff;
-    --syn-number: #7ee0b5;
-    --syn-string: #ff9d8f;
-    --syn-string-special: #ffb27a;
-    --syn-definition: #7ab7ff;
-    --syn-local: #b8a5ff;
-    --syn-type: #5eead4;
-    --syn-class: #67d4ee;
-    --syn-special: #9db4cc;
-    --syn-property: #8fb4ff;
-    --syn-comment: #a2acb9;
-    --syn-invalid: #ff8880;
-    --code-fg-dim: #8d9196;
-    --syn-meta-dim: #7a828d;
-    --syn-keyword-dim: #8d76b9;
-    --syn-atom-dim: #5687b2;
-    --syn-number-dim: #528e76;
-    --syn-string-dim: #b17169;
-    --syn-string-special-dim: #a57756;
-    --syn-definition-dim: #5984b6;
-    --syn-local-dim: #8579b9;
-    --syn-type-dim: #3f9187;
-    --syn-class-dim: #468a9c;
-    --syn-special-dim: #728395;
-    --syn-property-dim: #6782b6;
-    --syn-comment-dim: #7a828d;
-    --syn-invalid-dim: #bf6965;
-  }
+  --syn-meta: #a2acb9;
+  --syn-keyword: #c4a1ff;
+  --syn-atom: #79c0ff;
+  --syn-number: #7ee0b5;
+  --syn-string: #ff9d8f;
+  --syn-string-special: #ffb27a;
+  --syn-definition: #7ab7ff;
+  --syn-local: #b8a5ff;
+  --syn-type: #5eead4;
+  --syn-class: #67d4ee;
+  --syn-special: #9db4cc;
+  --syn-property: #8fb4ff;
+  --syn-comment: #a2acb9;
+  --syn-invalid: #ff8880;
+  --code-fg-dim: #8d9196;
+  --syn-meta-dim: #7a828d;
+  --syn-keyword-dim: #8d76b9;
+  --syn-atom-dim: #5687b2;
+  --syn-number-dim: #528e76;
+  --syn-string-dim: #b17169;
+  --syn-string-special-dim: #a57756;
+  --syn-definition-dim: #5984b6;
+  --syn-local-dim: #8579b9;
+  --syn-type-dim: #3f9187;
+  --syn-class-dim: #468a9c;
+  --syn-special-dim: #728395;
+  --syn-property-dim: #6782b6;
+  --syn-comment-dim: #7a828d;
+  --syn-invalid-dim: #bf6965;
 }
 
 /* ── Base ─────────────────────────────────────────────────────────────────────────────────────── */
@@ -357,8 +357,18 @@ code {
 .tour-picker,
 .step-progress,
 .present-btn,
+.theme-btn,
 .edit-menu {
   flex: none;
+}
+
+/* The theme button: an icon, as tall as the text buttons beside it. */
+.theme-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 7px;
+  color: var(--fg);
 }
 
 /* Present: ‹ 3 / 10 › beside the tour picker, and the progress as a bar along the header's lower edge. */
