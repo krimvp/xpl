@@ -4,6 +4,8 @@ xpl indexes TypeScript, JavaScript, Python, Go and Java with language packs. YAM
 
 Tree-sitter WASM extracts symbols without installing language toolchains. References (calls, imports, inheritance, type uses and reads) come from xpl's scope-aware heuristic resolver or, when available, a compiler-grade SCIP indexer. References always keep their source label. The viewer draws heuristic edges lighter; the authoring skill treats them as hints to confirm.
 
+Web requests are references too. A request with a literal or template path (`fetch`, axios, ky, got, `useSWR`, Python `requests` and `httpx`, Go `net/http`) is linked to the handler of the route with the same method and path, when the repository defines one (Express, Koa, Hono, Fastify, Next.js route files and `pages/api`, FastAPI, Flask, net/http, chi, gin, echo; simple prefix mounts included). Parameters (`:id`, `{id}`, `<int:id>`, `[id]`, `${id}`) match any segment, the query string is ignored, and a URL to a host other than a local or example one is left out. These links are always heuristic: a proxy or another server can answer the same path. Maps show them as `requests` edges.
+
 `xpl index` reports analysis coverage separately for file anchors, symbols, declaration ranges, nesting and each relationship type. An empty relationship set does not prove full coverage. Saved indexes and exports retain analyzed files, limits and failures; older indexes load with coverage marked unknown.
 
 ## Precise reference tools and artifacts

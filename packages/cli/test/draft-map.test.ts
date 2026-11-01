@@ -123,6 +123,36 @@ describe("xpl draft map", () => {
     expect(Object.keys(lint.json.counts)).toEqual(["todo-left"]);
   });
 
+  it("shows the requests of the screen code to the server routes as an arrow between their folders", async () => {
+    const dir = makeTempDir("xpl-map-");
+    writeFile(
+      dir,
+      "web/orders.ts",
+      'export function loadOrders() {\n  return fetch("/api/orders");\n}\n',
+    );
+    writeFile(dir, "web/main.ts", 'import { loadOrders } from "./orders";\nloadOrders();\n');
+    writeFile(
+      dir,
+      "server/orders.ts",
+      "export function listOrders(req, res) {\n  res.json([]);\n}\n",
+    );
+    writeFile(
+      dir,
+      "server/app.ts",
+      'import express from "express";\nimport { listOrders } from "./orders";\nconst app = express();\napp.get("/api/orders", listOrders);\n',
+    );
+    expect((await xpl(dir, "index", "--precise", "off")).code).toBe(0);
+    expect((await xpl(dir, "new", "shop")).code).toBe(0);
+    const { patch } = await draft(dir);
+
+    expect(view(patch, "view:map")?.include).toEqual(["dir:server", "dir:web"]);
+    const { json } = await xplJson<any>(dir, "status", "shop");
+    const map = json.views.find((v: any) => v.id === "view:map");
+    expect(map.edges.unexplained.map((e: any) => e.id)).toEqual([
+      "edge:requests:dir:web->dir:server",
+    ]);
+  });
+
   it("run again, drafts only new files and drops the boxes of files that are gone", async () => {
     const dir = shop();
     expect((await xpl(dir, "index", "--precise", "off")).code).toBe(0);

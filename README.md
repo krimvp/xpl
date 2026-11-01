@@ -155,6 +155,9 @@ source-backed class, module, method and constant declarations without relationsh
 are heuristic unless you import a checked SCIP artifact; heuristic edges are partial and need review.
 PHP has source-backed declaration tags for namespaces, types, functions, methods and constants, with
 `refs: none` until a checked relationship source exists.
+Web requests with a literal or template path (`fetch`, axios, `requests`, `httpx`, Go `net/http`) are linked
+to the handler of the matching route the repository defines (Express, Koa, Hono, Fastify, Next.js, FastAPI,
+Flask, net/http, chi, gin, echo); these links are always heuristic.
 References keep their precise or heuristic label. See [language support](https://krimvp.github.io/xpl/docs/concepts/languages/).
 
 ## Repository layout

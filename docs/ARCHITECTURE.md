@@ -158,7 +158,9 @@ Conventions (all packages):
 2. `IndexedSymbol.kind` adds `"enum"` and `"key"` (config keys). TS namespaces are `"other"`.
 3. `Reference` adds `resolution: "precise" | "heuristic"`. `from`/`to` may be a *module scope* id
    `"<file>#"` (empty symbol path) for top-level code and whole-module imports; the index has no symbol
-   entry for it. All kinds are emitted: `call import extends implements type-ref read write`. A `read` is a
+   entry for it. All kinds are emitted: `call import extends implements type-ref read write request`. A
+   `request` is a web request whose method and path match a route of the repository, from the symbol that
+   sends it to the route's handler; it is always `heuristic` (§3, Web requests). A `read` is a
    use of a module- or package-level variable or constant, or of a field whose type is known, that is neither
    a call nor a write. A TS `import type` and a Python import under `TYPE_CHECKING` are `type-ref`, so
    `import` references are the runtime dependencies (§3).
@@ -173,7 +175,8 @@ Conventions (all packages):
    an absent resolution is unknown.
 5. `IndexedFile.language: FileLanguage` = `typescript | tsx | javascript | python | go | java | rust | ruby | php | yaml | json | toml |
    text`.
-6. `Edge.kind` adds `"references"` (lifted type-refs) and, for stored edges to related files, `"loads"`,
+6. `Edge.kind` adds `"references"` (lifted type-refs), `"requests"` (lifted web requests) and, for stored
+   edges to related files, `"loads"`,
    `"discovers"`, `"configures"` and `"overrides"` (`EDGE_KINDS` in `ids.ts`; `related-files.ts` lists them).
 7. `GraphView` adds `edgeKinds?: Edge["kind"][]`: the derived edge kinds shown. Default
    `DEFAULT_EDGE_KINDS` = `["calls", "extends", "implements"]`. Stored edges are always shown.
@@ -380,7 +383,57 @@ string]`, and its recovery stays inside the tuple; for the JSON pack, the traili
 `testdata/`, `fixtures/` or `__fixtures__/` are never reported. An extraction failure is a warning and a file
 without symbols. References are sorted by file, position and kind. The same walk collects resource sites
 (`resources.ts`, TS/JS, Python, Go: literal paths and globs passed to file-reading and glob calls, relative
-imports of `.json`/`.yaml`/`.toml`), resolved against the indexed files into `SymbolIndex.resources` (§2.18).
+imports of `.json`/`.yaml`/`.toml`), resolved against the indexed files into `SymbolIndex.resources` (§2.18),
+and HTTP sites (below).
+
+**Web requests** (`http.ts`). The extraction walk also collects, per TS/JS, Python and Go file, the routes it
+defines, the web requests it sends and the prefixes it mounts routers under, each with a path built from
+string literals (template literals, f-strings, `+`, `%`, `fmt.Sprintf` and `.format` leave a hole where
+the code computes a part). After every other reference is known (precise ones included), `resolveRequests`
+adds the mount prefixes to the routes, matches each request against them and emits `request` references
+(`resolution: "heuristic"`, never precise) from the innermost symbol around the call to the handler.
+
+- Routes. TS/JS: `<r>.get|post|put|patch|delete|head|options|all(path, ..., handler)` in a file that imports
+  express, koa, `@koa/router`, hono, fastify, restify or polka, or on a receiver named `app`, `router`,
+  `server` or `fastify`; Next.js `app/**/route.ts` exports named after a method (route groups `(x)` and
+  slots `@x` dropped) and `pages/api/**` default exports (any method). Python: `@<r>.get|post|...(path)` and
+  `@<r>.route|api_route(path, methods=[...])` (default `GET`). Go: `HandleFunc`/`Handle` (a Go 1.22
+  pattern `"GET /orders/{id}"` gives the method, none means any), chi `Get/Post/...` and `Method(m, path,
+  h)`, gin and echo `GET/POST/.../Any` (the handler is the last argument, the second in a file that imports
+  echo).
+- Handlers. A name (`listOrders`, `h.list`, `makeHandler(db)`) is what the reference at its site points to,
+  so imports resolve as for any other reference; an inline function, a decorated Python function or a name
+  that resolves to nothing is the innermost symbol around it (the module scope `<file>#` for a callback at
+  the top level); a Next.js export is that symbol.
+- Mounts. TS/JS `<r>.use|route(prefix, child)` (koa `child.routes()` too) and `new Router({ prefix })`;
+  Python `APIRouter(prefix=)`, `Blueprint(..., url_prefix=)`, `include_router(child, prefix=)` and
+  `register_blueprint(child, url_prefix=)`; Go `g := r.Group(prefix)` and chi `r.Route(prefix, func(r
+  chi.Router) {...})` (lexical). A router is a variable: the target of the reference at its use, else its
+  name in the file. A constructor prefix is the router's own and comes after the prefixes of the routers it
+  is mounted on (at most 16 prefixes per router; cycles stop).
+- Requests. TS/JS: `fetch`, `axios`, `ky`, `got`, `$fetch`, `ofetch`, `useSWR` (always `GET`), and
+  `.get/.post/...` on `axios`, `ky`, `got`, `superagent`, `request(...)` or a receiver named `api`, `http`,
+  `client` or ending in `Client`, `Api`, `Http` when the call is not a route (above). A plain call takes its
+  method from the init or config object (`{ method: "POST" }`, default `GET`; computed: any). Python:
+  `.get/.post/...` and `.request(method, url)` on `requests`, `httpx`, `session`, `client`, `http`, `api` or
+  a `..._client` / `..._session`. Go: `http.Get/Head/Post/PostForm`, `http.NewRequest(WithContext)` (method literal or
+  `http.MethodX`), and `Get/Head/Post` with the client's argument count on a receiver named `...client`.
+- Paths. Segments `:id`, `{id}`, `<int:id>`, `[id]` and a hole are a parameter; `*`, `*name`, `{p...}`,
+  `{p:path}`, `<path:p>`, `[...p]` and `[[...p]]` the rest of the path (one segment or more). The query and
+  hash are dropped, and so are empty segments, a trailing slash and Go's `{$}`. A leading hole before `/`
+  (`${API_BASE}/orders`) is a configured origin and is dropped. An absolute URL keeps its path when the host
+  is local or an example (`localhost`, `127.0.0.1`, `0.0.0.0`, `[::1]`, `*.localhost`, `*.local`, `*.test`,
+  `example.com/org/net`) or computed; a request to any other host is not linked.
+- Matching. The methods agree (or either is any) and every segment matches: a route parameter takes any
+  segment, a request hole only a route parameter. Of the matching routes, those with the most literal
+  segments win (`/orders/latest` over `/orders/:id`), then those with the request's own method; ties keep
+  them all. A request to its own symbol is dropped.
+
+Limits: paths held in variables or built by helpers, routes registered from data (a list of route objects,
+`app.route("/x").get(h)` chains, fastify plugins' `prefix`, `basePath`, Django URL confs), proxies that
+rewrite paths, and clients named otherwise are not seen. Receivers are matched by name, so a non-HTTP
+`client.get("/x")` or a router variable reused under the same name in two functions of one file can link
+wrongly.
 `providers` replaces the additional provider registry (syntax and semantic; tests inject fakes).
 `languages` restricts the build to some `FileLanguage`s (the CLI does not expose it).
 
@@ -478,8 +531,8 @@ living inside this monorepo get stable ids.
 **Extraction cache** (`src/extraction-cache.ts`). By default `buildIndex` reuses file-local facts in
 `.explainer/cache/extraction-v1/`. `cache: false` (`xpl index --no-cache`) reads and writes no cache entries.
 The cached value is `FileFacts` (symbols, sites, imports, types, exports, warnings and pack-private JSON data),
-resource sites and syntax diagnostics, or a syntax tags file's declarations/recovery diagnostics. No live
-nodes, trees, parsers or final relationships are serialized. Successful syntax recovery is reusable; failed
+resource and HTTP sites and syntax diagnostics, or a syntax tags file's declarations/recovery diagnostics. No
+live nodes, trees, parsers or final relationships are serialized. Successful syntax recovery is reusable; failed
 extraction is retried. JSON-incompatible pack data is used for this build but never persisted.
 
 The address is full SHA-256 of a JSON input containing the exact captured source string (BOM/CRLF included),
@@ -487,8 +540,8 @@ repo-relative path, language, provider ID/version/profile configuration, indexer
 `xpl-extraction@1`, `EXTRACTION_REVISION`, grammar ID, pinned runtime/grammar package versions and SHA-256
 of the actual runtime/grammar WASM bytes. Built-in profiles include pack capabilities and reference mode;
 tags profiles include query text, kinds, method parents and limitations. `EXTRACTION_REVISION` must increase
-when extraction logic, resource collection, tag labels or diagnostics change without a package/profile
-version change. Change `CACHE_FORMAT` and the directory version when the envelope/serialization changes.
+when extraction logic, resource or HTTP site collection, tag labels or diagnostics change without a
+package/profile version change. Change `CACHE_FORMAT` and the directory version when the envelope/serialization changes.
 No abbreviated anchor hash is used as a cache key. Stored input must equal the full expected input, so an
 address collision becomes a miss rather than wrong facts. The payload checksum covers input and payload;
 SHA-256 integrity is corruption detection, not authentication of a hostile local writer.
@@ -512,8 +565,8 @@ remain usable. The cache location is fixed: no option or environment variable re
 may itself be a symlink. Location eligibility does not change extraction facts or their key revision.
 
 Every build discovers and captures sources again, recomputes source hashes, assigns IDs/hashes/parents,
-resolves all heuristic sites (including Go inference), resolves resources, runs selected semantic providers,
-and normalizes/merges coverage. Renames/language changes miss because identity is in the key; deletions and
+resolves all heuristic sites (including Go inference), resolves resources and web requests, runs selected
+semantic providers, and normalizes/merges coverage. Renames/language changes miss because identity is in the key; deletions and
 filters simply stop consuming old entries. Repository configuration (`tsconfig` aliases, package exports,
 Python/Go module settings) is read fresh during resolution/tooling, so unchanged callers may resolve differently
 without re-extraction. It is not an input to the current file-local extractors. Language filters, precise mode
@@ -1093,8 +1146,10 @@ id wins (validation reports the duplicates).
   symbol: a loop on its box), or one end renders inside the other (in the render tree, at
   any depth: a call from a child of an opened file to a sibling that is not shown lifts to the file, and an
   arrow from a box to its own container says nothing). Kind map: call→calls, import→imports, extends,
-  implements, type-ref→references, read→reads, write→writes; only kinds in `edgeKinds` (default
-  `DEFAULT_EDGE_KINDS`). Module scopes lift to their file. Aggregate per `(kind, a, b)` into
+  implements, type-ref→references, read→reads, write→writes, request→requests; only kinds in `edgeKinds`
+  (default `DEFAULT_EDGE_KINDS`; `xpl draft map` adds `requests` to the views it creates when the index has
+  request references, so the code that sends a request points at the server code that answers it).
+  Module scopes lift to their file. Aggregate per `(kind, a, b)` into
   `edge:<kind>:<a>-><b>` with `count`, `resolution` (`precise` or `heuristic` when all references agree, otherwise `mixed`) and derived
   anchors: each site as `call-site` (calls) or `usage`, plus each target's definition, at most 50 of each,
   never stored.
@@ -1508,7 +1563,7 @@ stdout (a rejection exits 1); fatal errors (`error: …`) and warnings (`warning
 | `xpl index [--precise auto\|off\|require] [--commit c] [--no-cache] [--scip artifact\|manifest.json]` | build + write the index; caches file-local extraction by default, `--no-cache` bypasses reads/writes, resolution and semantic tooling stay fresh; `--scip` selects source-verified artifact import instead of automatic tools; writes `.explainer/.gitignore` (`index-*.json`); prints per-language trust, independent coverage, enumerated exclusions and names explainers bound to another index |
 | `xpl outline [--under <id>] [--depth n] [--kind k,...] [--keys] [--limit n]` | dir/file/symbol tree with kind, lines, fan-in/fan-out (references into/out of the subtree); default depth 2; config keys only with `--keys`; `--kind method,function` keeps only those symbol kinds, with the dirs, files and parents that hold a match; the repo line carries the name `xpl new` records |
 | `xpl show <id> [--refs] [--context n] [--lines a-b] [--max-lines n]` | code with 0-based offsets relative to the symbol (the numbers spans use); dirs and the repo list children; `--refs` appends outgoing and incoming references with `+offset`. `xpl show --at base <path> [--lines a-b] [--explainer name]`: a changed file as it was before the change the explainer records, with the offsets a base anchor's span uses (from line 1) and `-` on the lines the change removes or rewrites; paths only (a symbol id is a usage error); `--explainer` picks the explainer when several record a change |
-| `xpl refs <id> [--in\|--out] [--kind k] [--depth n] [--max-children n] [--limit n] [--tests]` | call/reference hierarchy with sites; hops through interfaces as `impl` lines and through base classes (TS, JS, Python) as `override` lines; test doubles and test subclasses hidden unless `--tests`; a subtree is printed once (later occurrences: `(expanded above)`), at most `--max-children` (default 15) references under a line of a hierarchy (`... +8 more`); `--kind read` finds the readers of a variable or field |
+| `xpl refs <id> [--in\|--out] [--kind k] [--depth n] [--max-children n] [--limit n] [--tests]` | call/reference hierarchy with sites; hops through interfaces as `impl` lines and through base classes (TS, JS, Python) as `override` lines; test doubles and test subclasses hidden unless `--tests`; a subtree is printed once (later occurrences: `(expanded above)`), at most `--max-children` (default 15) references under a line of a hierarchy (`... +8 more`); `--kind read` finds the readers of a variable or field, `--kind request` the web requests to a route handler |
 | `xpl search <pattern> [--regex] [-i] [--limit n] [--under <dir\|glob>] [--code]` | text hits over the working tree with enclosing symbol id and offset; code files first, then config, then docs (`--code`: code only); `--under` keeps the search in a dir, file, symbol or glob |
 | `xpl guides` | local guide metadata by title, recorded view questions, audience and source/index snapshot; no index or service required; unreadable/invalid/escaping guides are separate errors, exit 1; no guides is exit 0 |
 | `xpl update <explainer> [--since <rev>] [-o file] [--precise auto\|off\|require]` | after work on the code, for a map guide: runs `index`, `resolve --write`, `change <rev>..HEAD` (with `--since`) and `draft map` in-process (`commands/update.ts`); stops at the first failing step with its message; applies nothing and prints where the draft is |
@@ -1794,8 +1849,9 @@ file; `--json` adds the counts and what was left out.
 - `map` (`draft-map.ts`): the quick map, every code file outside tests, examples, fixtures, docs, benchmarks
   and dot folders. One graph view per folder, `view:map` for the top (below folders that hold all the code)
   and `view:map-<path>` below it, with `boxText: "summary"`, `excludeFiles` as for an overview and the
-  default stubs (what uses the folder and what it uses). A folder box `opens` its folder's view; a folder of
-  one file is that file; a folder that only holds one folder is that folder. Every box gets a label and a
+  default stubs (what uses the folder and what it uses). When the index has `request` references, a new
+  view's `edgeKinds` are the defaults plus `requests` (existing views keep theirs). A folder box `opens` its
+  folder's view; a folder of one file is that file; a folder that only holds one folder is that folder. Every box gets a label and a
   summary TODO; a file's TODO holds its header comment (`headerComment`: a comment that opens the file and is
   followed by a blank line, an import or a package line), its top-level definitions, and the files that use
   it and that it uses, ranked by references and named by their shortest unique path. A start tour

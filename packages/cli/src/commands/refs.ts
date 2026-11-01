@@ -24,7 +24,8 @@ export const refsCommand: CommandSpec = {
     'in source order. +<offset> counts lines from the start of the referencing symbol (named after "in" when',
     "it is not the element itself: outgoing references of a file, directory or class), so a call-site",
     "anchor's span is +34..36 -> span {from: 34, to: 36}. Kinds: call, import, extends, implements,",
-    "type-ref, read, write. heuristic references are hints, not proof.",
+    "type-ref, read, write, request (a web request to the handler of the server route whose method and path",
+    "match, always heuristic). heuristic references are hints, not proof.",
     "--depth n expands each other end in turn (a call hierarchy); an element is expanded once, repeats are marked",
     "(expanded above) or (cycle), so no subtree is printed twice (one met on the last levels first is expanded again,",
     "deeper, when it turns up nearer the top; an element with nothing below it is never marked). At most",
@@ -49,7 +50,7 @@ export const refsCommand: CommandSpec = {
       type: "string",
       multiple: true,
       arg: "<k>",
-      desc: "Only these kinds (repeat or comma-separate): call, import, extends, implements, type-ref, read, write",
+      desc: "Only these kinds (repeat or comma-separate): call, import, extends, implements, type-ref, read, write, request",
     },
     depth: { type: "string", arg: "<n>", desc: "Levels to expand (default 1)" },
     "max-children": {

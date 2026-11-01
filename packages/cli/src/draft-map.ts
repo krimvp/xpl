@@ -19,6 +19,7 @@
  */
 import {
   CODE_LANGUAGES,
+  DEFAULT_EDGE_KINDS,
   analyzeChange,
   baseName,
   isTestFile,
@@ -333,6 +334,7 @@ export function draftMap(input: DraftInput): Draft {
     for (const member of n.members ?? []) groupOfFile.set(member, id);
   }
 
+  const hasRequests = model.refs.some((ref) => ref.kind === "request");
   const visit = (path: string, folder: Folder) => {
     const viewId = viewIdOf(root, path);
     computed.add(viewId);
@@ -358,6 +360,7 @@ export function draftMap(input: DraftInput): Draft {
         title: todo("what this group's files do together, in plain words"),
         scope: { root: group.id, depth: 1 },
         include: [...members],
+        ...(hasRequests ? { edgeKinds: [...DEFAULT_EDGE_KINDS, "requests" as const] } : {}),
         excludeFiles: [...OVERVIEW_EXCLUDE],
         boxText: "summary",
       });
@@ -404,6 +407,8 @@ export function draftMap(input: DraftInput): Draft {
             : todo(`what this map shows, in plain words (now: the files of ${path})`),
         scope: { root: path === "" ? "repo" : `dir:${path}`, depth: 1 },
         include,
+        // Web requests to the repository's own routes: the arrow from the screen code to the server code.
+        ...(hasRequests ? { edgeKinds: [...DEFAULT_EDGE_KINDS, "requests" as const] } : {}),
         excludeFiles: [...OVERVIEW_EXCLUDE],
         boxText: "summary",
       });
