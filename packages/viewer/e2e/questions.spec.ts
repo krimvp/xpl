@@ -509,3 +509,27 @@ for (const side of ["head", "base"] as const)
       });
     await expect(pane.locator(".cm-selectionBackground").first()).toBeVisible();
   });
+
+test("an answer shows on the map: the boxes whose code holds its evidence", async ({ page }) => {
+  const app = await service(async (job) => evidence(job));
+  try {
+    await page.goto(app.server.url + "?mode=explore&view=view:overview");
+    await page.waitForFunction(() => !!window.__xpl);
+    await page.evaluate(() => window.__xpl!.select(["file:src/worker.ts"]));
+    await page.getByRole("button", { name: "Ask a question", exact: true }).click();
+    const panel = page.getByRole("dialog", { name: "Reader feedback" });
+    await panel.getByLabel("Feedback note").fill("Where are jobs kept?");
+    await expect(page.getByTestId("connection-status")).toContainText("Connected");
+    await panel.getByRole("button", { name: "Ask a question", exact: true }).click();
+    const answer = panel.getByRole("region", { name: "Answer", exact: true });
+    await expect(answer).toContainText("Queue holds pending jobs.");
+    // the evidence is in src/queue.ts, which the overview draws inside the Scheduling group
+    await answer.getByRole("button", { name: "Show on the map" }).click();
+    await expect
+      .poll(() => page.evaluate(() => window.__xpl!.state().selection))
+      .toEqual(["grp:scheduling"]);
+    await expect(byId(page, "grp:scheduling")).toHaveClass(/is-selected/);
+  } finally {
+    await app.close();
+  }
+});

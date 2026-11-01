@@ -53,6 +53,8 @@ export const MAP_LIMITS = {
   tourParts: 8,
   /** Changed files the change tour visits. */
   changeSteps: 12,
+  /** A group proposed on a crowded map holds at most this many files. */
+  groupFiles: 8,
   /** A header comment is cut to about this many characters. */
   headerChars: 100,
 };
@@ -239,6 +241,57 @@ export function draftMap(input: DraftInput): Draft {
   const viewOfFile = new Map<string, string>();
   const computed = new Set<string>();
   const crowded: string[] = [];
+  const grouping: string[] = [];
+
+  /**
+   * Groups of the files of one folder that use each other: pairs joined by the most references first, a group at
+   * most `MAP_LIMITS.groupFiles` files, kept when it has at least 3. Ties go by path, so a draft is stable.
+   */
+  const groupFiles = (path: string, files: readonly string[]): PatchNode[] => {
+    const inFolder = new Set(files);
+    const weight = new Map<string, number>();
+    for (const to of files) {
+      for (const [from, n] of usedBy.get(to) ?? []) {
+        if (!inFolder.has(from) || from === to) continue;
+        const key = from < to ? `${from}\0${to}` : `${to}\0${from}`;
+        weight.set(key, (weight.get(key) ?? 0) + n);
+      }
+    }
+    const owner = new Map(files.map((f) => [f, f]));
+    const find = (f: string): string => {
+      let at = f;
+      while (owner.get(at) !== at) at = owner.get(at)!;
+      owner.set(f, at);
+      return at;
+    };
+    const size = new Map(files.map((f) => [f, 1]));
+    const pairs = [...weight].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+    for (const [key] of pairs) {
+      const [a, b] = key.split("\0") as [string, string];
+      const [ra, rb] = [find(a), find(b)];
+      if (ra === rb || size.get(ra)! + size.get(rb)! > MAP_LIMITS.groupFiles) continue;
+      const [keep, drop] = ra < rb ? [ra, rb] : [rb, ra];
+      owner.set(drop, keep);
+      size.set(keep, size.get(keep)! + size.get(drop)!);
+    }
+    const clusters = new Map<string, string[]>();
+    for (const f of files) clusters.set(find(f), [...(clusters.get(find(f)) ?? []), f]);
+    const slug = path
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "");
+    return [...clusters.values()]
+      .filter((members) => members.length >= 3)
+      .sort((a, b) => b.length - a.length || a[0]!.localeCompare(b[0]!))
+      .map((members, i) => ({
+        id: `grp:map-${slug || "top"}-${i + 1}`,
+        label: todo(
+          `1-3 plain words for what these files do together (${nameList(members.map(shortName), MAP_LIMITS.hints)})`,
+        ),
+        summary: todo("one plain sentence: the job these files share."),
+        members: members.map((f) => `file:${f}`),
+      }));
+  };
   const topFolder = folderOf(root);
 
   // ── Files that moved: a box whose file is gone, and a new file with the same text as that file had at the
@@ -271,16 +324,58 @@ export function draftMap(input: DraftInput): Draft {
     );
   }
 
+  // Groups of an earlier draft (`grp:map-…`, each opening the map of its files): their files stay on their group's
+  // map, which a refresh keeps and updates like a folder's.
+  const groupOfFile = new Map<string, string>();
+  let topInclude: string[] = [];
+  for (const [id, n] of storedNodes) {
+    if (!id.startsWith("grp:map-") || typeof n.opens !== "string") continue;
+    for (const member of n.members ?? []) groupOfFile.set(member, id);
+  }
+
   const visit = (path: string, folder: Folder) => {
     const viewId = viewIdOf(root, path);
     computed.add(viewId);
     const include = [
       ...folder.dirs.map((d) => `dir:${d}`),
-      ...folder.files.map((f) => `file:${f}`),
+      ...folder.files.filter((f) => !groupOfFile.has(`file:${f}`)).map((f) => `file:${f}`),
     ];
     for (const file of folder.files) viewOfFile.set(file, viewId);
-    if (include.length > MAP_LIMITS.boxes) crowded.push(`${path || "the top"} (${include.length})`);
     const existing = existingViews.get(viewId);
+    // a crowded new map: its files that use each other become groups, each a box that opens the map of its files
+    const groups =
+      existing === undefined && include.length > MAP_LIMITS.boxes
+        ? groupFiles(path, folder.files)
+        : [];
+    for (const group of groups) {
+      const members = group.members ?? [];
+      const opens = `view:${group.id.slice("grp:".length)}`;
+      computed.add(opens);
+      nodes.push({ ...group, opens });
+      views.push({
+        id: opens,
+        type: "graph",
+        title: todo("what this group's files do together, in plain words"),
+        scope: { root: group.id, depth: 1 },
+        include: [...members],
+        excludeFiles: [...OVERVIEW_EXCLUDE],
+        boxText: "summary",
+      });
+      for (const member of members) {
+        viewOfFile.set(member.slice("file:".length), opens);
+        include.splice(include.indexOf(member), 1);
+      }
+    }
+    if (groups.length > 0) {
+      include.splice(folder.dirs.length, 0, ...groups.map((g) => g.id));
+      const grouped = groups.reduce((n, g) => n + (g.members?.length ?? 0), 0);
+      grouping.push(
+        `${path === root ? "the top" : path}: ${plural(groups.length, "group")} of ${grouped} files`,
+      );
+    }
+    if (include.length > MAP_LIMITS.boxes)
+      crowded.push(`${path === root ? "the top" : path} (${include.length})`);
+    if (path === root) topInclude = [...include];
     if (existing?.type === "graph") {
       const current = new Set(existing.include);
       const includeAdd = include.filter((id) => !current.has(id));
@@ -366,6 +461,23 @@ export function draftMap(input: DraftInput): Draft {
       kept.push(id);
     else remove.push(id);
   }
+  // the maps of the groups of an earlier draft: kept, without the files that are gone
+  for (const [id, n] of storedNodes) {
+    if (!id.startsWith("grp:map-") || typeof n.opens !== "string" || remove.includes(id)) continue;
+    const members = n.members ?? [];
+    const present = members.filter((m) => model.hasFile(m.slice("file:".length)));
+    for (const m of present) viewOfFile.set(m.slice("file:".length), n.opens);
+    computed.add(n.opens);
+    if (present.length === members.length) continue;
+    nodes.push({ id, members: present });
+    const view = existingViews.get(n.opens);
+    if (view?.type === "graph") {
+      const includeRemove = view.include.filter(
+        (m) => m.startsWith("file:") && !present.includes(m),
+      );
+      if (includeRemove.length > 0) views.push({ id: n.opens, type: "graph", includeRemove });
+    }
+  }
   for (const [id, v] of existingViews) {
     if (!id.startsWith("view:map") || computed.has(id)) continue;
     if (v.provenance?.origin === "user" || (v.provenance?.userFields?.length ?? 0) > 0) continue;
@@ -383,10 +495,8 @@ export function draftMap(input: DraftInput): Draft {
   // ── Tours: start here (once), and the change (once per recorded change).
   const tourIds = new Set((Array.isArray(explainer.tours) ? explainer.tours : []).map((t) => t.id));
   const tours: NonNullable<ExplainerPatch["tours"]> = [];
-  const topIds = [
-    ...topFolder.dirs.map((d) => `dir:${d}`),
-    ...topFolder.files.map((f) => `file:${f}`),
-  ];
+  // the boxes of the top map, as drawn (with its groups)
+  const topIds = topInclude;
   /** The first definition of the part's most used file: where a reader of the part starts. */
   const mainDefinition = (dir: string) => {
     const users = (file: string) =>
@@ -551,6 +661,11 @@ export function draftMap(input: DraftInput): Draft {
   notes.unshift(
     `${plural(allMapped.length, "code file")} on ${plural(computed.size, "map")}; ${plural(left, "file")} left off (tests, examples, fixtures, docs and benchmarks)`,
   );
+  if (grouping.length > 0) {
+    notes.push(
+      `crowded maps get groups of files that use each other (${grouping.join("; ")}): name each group, or remove the ones that are not one job`,
+    );
+  }
   if (crowded.length > 0) {
     notes.push(
       `maps with more than ${MAP_LIMITS.boxes} boxes: ${crowded.join(", ")}. Consider grp boxes for the files that work together`,

@@ -128,7 +128,8 @@ such as code an AI assistant wrote. Each box gets a plain name and one sentence,
 puts what the index knows about each file (its header comment, what it defines, what uses it) next to each
 sentence to write. Run it again after the code changes: it drafts only new files, removes the boxes of
 deleted files, and keeps the text already written, also for a file that moved. With `xpl change` recorded first, it adds a tour of the
-changed files that asks how each change serves what was asked.
+changed files that asks how each change serves what was asked. `xpl update <guide> --since <rev>` does all of it
+in one run after work on the code: index, record the change, draft the map again.
 
 ### Sketches
 

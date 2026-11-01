@@ -1476,6 +1476,7 @@ stdout (a rejection exits 1); fatal errors (`error: …`) and warnings (`warning
 | `xpl refs <id> [--in\|--out] [--kind k] [--depth n] [--max-children n] [--limit n] [--tests]` | call/reference hierarchy with sites; hops through interfaces as `impl` lines and through base classes (TS, JS, Python) as `override` lines; test doubles and test subclasses hidden unless `--tests`; a subtree is printed once (later occurrences: `(expanded above)`), at most `--max-children` (default 15) references under a line of a hierarchy (`... +8 more`); `--kind read` finds the readers of a variable or field |
 | `xpl search <pattern> [--regex] [-i] [--limit n] [--under <dir\|glob>] [--code]` | text hits over the working tree with enclosing symbol id and offset; code files first, then config, then docs (`--code`: code only); `--under` keeps the search in a dir, file, symbol or glob |
 | `xpl guides` | local guide metadata by title, recorded view questions, audience and source/index snapshot; no index or service required; unreadable/invalid/escaping guides are separate errors, exit 1; no guides is exit 0 |
+| `xpl update <explainer> [--since <rev>] [-o file] [--precise auto\|off\|require]` | after work on the code, for a map guide: runs `index`, `resolve --write`, `change <rev>..HEAD` (with `--since`) and `draft map` in-process (`commands/update.ts`); stops at the first failing step with its message; applies nothing and prints where the draft is |
 | `xpl start <name> --question q --audience a [--entry symbol] [--precise auto\|off\|require]` | first-guide path: runs `index`, `new`, `draft repo` (or `draft path` with `--entry`) and `apply`; saves the checked patch and all draft notes outside the repository, prints up to three notes and apply warnings (full lists in `--json` and the notes file), then names `view` and `lint` as next steps; refuses an existing guide |
 | `xpl new <name> [--title t] [--repo r] [--url u]` | create `.explainer/<name>.explainer.json` bound to the index; never overwrites; repo name from `--repo`, else `package.json`, `go.mod`, `pyproject.toml`, git remote, directory name |
 | `xpl apply <explainer> <patch.json\|-> [--actor llm\|user] [--dry-run]` | §4.7; prints every issue of a rejected patch at once; atomic; `--help` summarises the patch format |
@@ -1748,8 +1749,12 @@ file; `--json` adds the counts and what was left out.
   the full SHA, `DraftInput.commits`), has the same text as exactly one new file gives that file its label
   and summary. The map's own tours (`tour:map`, `tour:changes-*`, when the user did not edit them) are resent
   without the focus and code of what is gone; a start-tour folder step gets its folder's code again, and a
-  step with no focus left is dropped (a tour with no step, removed). Notes count the files on and off the
-  map, name the moved files and the maps of more than 30 boxes.
+  step with no focus left is dropped (a tour with no step, removed). A new folder map of more than 30 boxes
+  groups the folder's files that use each other (`groupFiles`: pairs by reference count, union-find, at most
+  8 files a group, kept from 3): each group is a `grp:map-<path>-<n>` box that `opens` `view:map-<path>-<n>`
+  with its files, and the folder map shows the group, not its files; a refresh keeps the files of an earlier
+  group on the group's map (`includeRemove` and `members` for the ones gone). Notes count the files on and
+  off the map, name the moved files, the groups and the maps still over 30 boxes.
 
 A draft gives structure, not understanding: the concepts, flows, `llm` edges and base anchors that explain
 why the code is as it is are left to Claude.
@@ -2792,7 +2797,9 @@ is separate: pending outcomes show **Revision: not yet reviewed**, without chang
 Answers show text, their original identity, exact references and recorded excerpts. Reference clicks compare
 recorded source hashes with loaded source before using existing file/cursor linking, including base panes.
 If text changed or is unavailable, the highlighted recorded excerpt stays in Feedback; current lines are
-never presented as the old evidence. Answers cannot alter guide content or author outcomes. Optional changes
+never presented as the old evidence. "Show on the map" (`ShowOnMap`, only when the map on screen holds some of the
+evidence) selects the boxes whose code holds the answer's current-code references, by the view's reverse index
+(at most 200 lines per reference), and turns to the map. Answers cannot alter guide content or author outcomes. Optional changes
 still need explicit revision review and acceptance through #30/#39C.
 
 **Reading aids.** A "Key" button beside the zoom buttons says what the diagram's marks mean (`Legend.tsx`:
