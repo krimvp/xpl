@@ -514,6 +514,30 @@ describe("layoutGraph", () => {
     expect(await layoutGraph(graph)).toEqual(await layoutGraph(graph));
   });
 
+  it("badges a sketch box as a sketch, whatever its role, and keeps the role's shape", async () => {
+    const graph: DerivedGraph = {
+      nodes: [
+        {
+          id: "grp:client",
+          label: "Client",
+          kind: "group",
+          role: "person",
+          sketch: true,
+          container: false,
+        },
+        { id: "grp:db", label: "Orders", kind: "group", role: "database", container: false },
+      ],
+      edges: [],
+      stubs: [],
+      ghosts: [],
+    };
+    const layout = await layoutGraph(graph);
+    expect(layout.nodes.map((n) => [n.id, n.badge, n.role, n.sketch])).toEqual([
+      ["grp:client", "sketch", "person", true],
+      ["grp:db", "database", "database", undefined],
+    ]);
+  });
+
   it("wraps a box's summary on at most three lines that fit the box, and makes the box taller", async () => {
     const LONG =
       "Reads every job from the queue, runs it with the handler registered for its kind, retries it with a growing delay when it fails, and records how long each run took for the metrics page.";

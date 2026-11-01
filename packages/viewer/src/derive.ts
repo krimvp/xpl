@@ -241,6 +241,37 @@ function stubFocus(stub: Stub, vd: ViewDerived, model: ExplainerModel): FocusRan
   return out;
 }
 
+/**
+ * What a box of a map leads to (`down`: along the arrows) or what leads to it (`up`: against them), as far as the
+ * map's own arrows go, with the arrows taken and the box itself. Stubs to boxes outside the view are not followed:
+ * the trace claims nothing the map does not draw.
+ */
+export function reachOf(
+  graph: DerivedGraph,
+  from: ElementId,
+  direction: "down" | "up",
+): Set<ElementId> {
+  const out = new Set<ElementId>([from]);
+  const next = new Map<ElementId, DerivedEdge[]>();
+  for (const edge of graph.edges) {
+    const key = direction === "down" ? edge.from : edge.to;
+    next.set(key, [...(next.get(key) ?? []), edge]);
+  }
+  const queue = [from];
+  while (queue.length > 0) {
+    const at = queue.shift()!;
+    for (const edge of next.get(at) ?? []) {
+      out.add(edge.id);
+      const to = direction === "down" ? edge.to : edge.from;
+      if (!out.has(to)) {
+        out.add(to);
+        queue.push(to);
+      }
+    }
+  }
+  return out;
+}
+
 function relatedIds(vd: ViewDerived, model: ExplainerModel, selection: readonly ElementId[]) {
   const out = new Set<ElementId>();
   for (const id of selection) {
@@ -388,6 +419,7 @@ function deriveSelection(
   model: ExplainerModel,
   selection: readonly ElementId[],
   override: CodeOverride | undefined,
+  reach?: ViewerState["reach"],
 ): SelectionDerived {
   const focus: FocusRange[] = [];
   const base: FocusRange[] = [];
@@ -438,7 +470,10 @@ function deriveSelection(
     baseFiles: mergeFocusByFile(base),
     order,
     focusFiles: new Set(files.map((f) => f.file)),
-    related: relatedIds(vd, model, selection),
+    related:
+      reach && vd.graph && selection.length === 1 && selection[0] === reach.from
+        ? reachOf(vd.graph, reach.from, reach.direction)
+        : relatedIds(vd, model, selection),
   };
 }
 
@@ -539,6 +574,7 @@ let lastSelection:
       view: ViewDerived;
       selection: readonly ElementId[];
       override: readonly Anchor[] | undefined;
+      reach: ViewerState["reach"];
       value: SelectionDerived;
     }
   | undefined;
@@ -599,12 +635,14 @@ export function getDerived(state: ViewerState): Derived {
     !lastSelection ||
     lastSelection.view !== view ||
     lastSelection.selection !== state.selection ||
-    lastSelection.override !== override
+    lastSelection.override !== override ||
+    lastSelection.reach !== state.reach
   ) {
     lastSelection = {
       view,
       selection: state.selection,
       override,
+      reach: state.reach,
       value: deriveSelection(
         view,
         state.model,
@@ -612,6 +650,7 @@ export function getDerived(state: ViewerState): Derived {
         applied && override
           ? { anchors: override, owner: `${applied.tourId}/${applied.stepId}` }
           : undefined,
+        state.reach,
       ),
     };
   }

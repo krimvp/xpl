@@ -117,6 +117,8 @@ See the [change workflow](https://krimvp.github.io/xpl/docs/workflows/change/).
 ### Architecture maps
 
 Use `xpl draft repo` to build a starting map from the index, then add reader-focused explanations.
+`xpl draft class <guide> <type>` maps the classes and interfaces around one type, from what extends and
+implements what.
 See [Architecture maps](https://krimvp.github.io/xpl/docs/workflows/explain/).
 
 ### Quick maps
@@ -127,6 +129,13 @@ puts what the index knows about each file (its header comment, what it defines, 
 sentence to write. Run it again after the code changes: it drafts only new files, removes the boxes of
 deleted files, and keeps the text already written, also for a file that moved. With `xpl change` recorded first, it adds a tour of the
 changed files that asks how each change serves what was asked.
+
+### Sketches
+
+A guide can start with a sketch: a high-level picture of an idea or a plan, before there is code to read, or of
+something read but not found in one place. Sketch boxes are drawn dotted, named "sketch" on the map, and
+linked to no code; xpl never checks them, and never lets them pass for code. Replace a sketch box with a box of
+code once it can point at code.
 
 ## Languages and precision
 

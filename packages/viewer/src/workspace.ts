@@ -11,6 +11,7 @@ import {
   type SequenceView,
   type View,
 } from "@xpl/core";
+import { reachOf } from "./derive.js";
 import type { ViewerState } from "./store.js";
 
 export function topicElements(ids: readonly ElementId[], model: ExplainerModel): Set<ElementId> {
@@ -162,6 +163,11 @@ export function workspaceMap(state: ViewerState) {
   for (const id of topicElements(state.selection, state.model)) {
     const shown = repr(id, included, state.model);
     if (shown) related.add(shown);
+  }
+  // a box traced on the map (`state.reach`): what it leads to, or what leads to it
+  const reach = state.reach;
+  if (reach && state.selection.length === 1 && state.selection[0] === reach.from) {
+    for (const id of reachOf(graph, reach.from, reach.direction)) related.add(id);
   }
   return { view, graph, related, generated: authored === undefined };
 }

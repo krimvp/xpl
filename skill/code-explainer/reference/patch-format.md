@@ -877,6 +877,49 @@ A box for something outside the repo is a group with a `role` and **no `members`
 
 On the system map the service is one box, so the arrows of its parts are drawn there as one arrow per outside box (with the anchors of all; when their labels differ the arrow shows none). Write a tour that goes down a level at a time: a step on the system map, then the inside, then the code (SKILL.md, "explain repo"). Keep 3-7 boxes on a system map. The parts on the map of a service's inside are its `component`s (`xpl draft repo` sets the role): with the role icons, the reader always sees which level a map is at (system, service, component, then code). Boxes on maps of code need no role: the viewer shows their kind (folder, file, class, function) with an icon of its own.
 
+### 3.12 Sketch boxes (the big picture, linked to no code)
+
+A **sketch box** is an idea of the big picture: what the user described before there is code to read, or what you understood from reading that no one place of code shows. It is a group with `"sketch": true`, **no `members` and no `anchors`**: a box that points at code is not a sketch (drop `sketch`, with `"sketch": null`, to make it one). The viewer draws it dotted, with a "sketch" badge, and the map's Key says it is not linked to code. An `llm` edge needs no evidence at an end that is a sketch box; an end that is code still needs its anchor. Keep sketch boxes on a view of their own (`view:sketch`), say in its title that it is a sketch, and replace a box with code as soon as you can anchor it.
+
+```json patch
+{
+  "nodes": [
+    {
+      "id": "grp:sketch-client",
+      "label": "Who sends jobs",
+      "sketch": true,
+      "role": "person",
+      "summary": "Some program hands the runner a job to do later."
+    },
+    {
+      "id": "grp:sketch-runner",
+      "label": "Job runner",
+      "sketch": true,
+      "role": "service",
+      "summary": "Runs each job, and tries a failed one again later."
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge:sketch-submits",
+      "from": "grp:sketch-client",
+      "to": "grp:sketch-runner",
+      "kind": "custom",
+      "label": "hands it a job"
+    }
+  ],
+  "views": [
+    {
+      "id": "view:sketch",
+      "type": "graph",
+      "title": "A first sketch: who hands the runner work",
+      "include": ["grp:sketch-client", "grp:sketch-runner"],
+      "stubs": { "mode": "none" }
+    }
+  ]
+}
+```
+
 ### 3.11 `title`, `scope` and `remove`
 
 `"title"` renames the explainer. `"scope": {"audience": "…"}` is one short line (at most 120 characters) that the viewer shows under the title: who the page is for and how deep it goes, such as `"Overview, for anyone new to ky"` or `"Deep dive, for engineers working on chi's router"`. `{"audience": null}` or `"scope": null` removes it. `"remove"` deletes elements, views, tours and steps by id; an unknown id is a warning, not an error. Removing what something else points at (a step a frame or tour uses, a group a view includes, a concept a tour focuses) is rejected until the same patch fixes the pointer. An `llm` patch cannot remove what the user owns: an element, view or tour with `origin: "user"` or with any `userFields` (they edited part of it), nor a single step of a view whose `steps` they edited; those ids are skipped with a `protected` warning.

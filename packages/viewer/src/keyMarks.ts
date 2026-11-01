@@ -16,6 +16,8 @@ export interface LegendShows {
   code?: boolean;
   /** Dashed boxes for what is not this code: an outside system, a person (`role` external or person). */
   outsideSystems?: boolean;
+  /** Dotted boxes for ideas linked to no code (`Node.sketch`). */
+  sketches?: boolean;
   /** Heavier boxes for a whole system (`role` system). */
   systems?: boolean;
   /** Places that keep data: a database, a cache, a queue, a file store. */
@@ -60,6 +62,7 @@ export function mapKeyShows(
     change: boxes.changed,
     code: false,
     outsideSystems: false,
+    sketches: false,
     systems: false,
     stores: false,
     icons: [],
@@ -77,7 +80,8 @@ export function mapKeyShows(
         continue;
       }
       const role = node.role;
-      if (!role || role === "service" || role === "component") shows.code = true;
+      if (node.sketch) shows.sketches = true;
+      else if (!role || role === "service" || role === "component") shows.code = true;
       else if (OUTSIDE_ROLES.has(role)) shows.outsideSystems = true;
       else if (role === "system") shows.systems = true;
       else if (STORE_ROLES.has(role)) shows.stores = true;

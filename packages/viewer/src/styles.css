@@ -951,6 +951,13 @@ code {
   cursor: not-allowed;
 }
 
+/* A trace button that is on (Details: "What it leads to", "What leads to it"). */
+.trace .btn[aria-pressed="true"] {
+  background: var(--related-soft);
+  border-color: var(--related);
+  font-weight: 600;
+}
+
 .btn.is-primary {
   background: var(--accent);
   border-color: var(--accent);
@@ -1364,6 +1371,13 @@ code {
   stroke-dasharray: 5 3;
 }
 
+.lg-box.is-sketch {
+  fill: var(--panel);
+  stroke-dasharray: 1.5 4;
+  stroke-linecap: round;
+  stroke-width: 1.8;
+}
+
 .lg-box.is-system {
   stroke-width: 2.2;
 }
@@ -1634,6 +1648,14 @@ code {
   font-size: 14px;
   font-weight: 600;
   fill: var(--fg);
+}
+
+/* A sketch box (Node.sketch): an idea linked to no code, so it never looks like a box of checked code. */
+.node.is-sketch .box {
+  stroke-dasharray: 1.5 4;
+  stroke-linecap: round;
+  stroke-width: 1.8;
+  fill: var(--panel);
 }
 
 /* A box's summary under its label (GraphView.boxText); graphLayout SUMMARY_FONT and SUMMARY_LINE. */

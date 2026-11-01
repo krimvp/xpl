@@ -18,3 +18,7 @@ choice and what to do when a run stops.
 ## Quick maps
 
 <!-- include README.md "### Quick maps" -->
+
+## Sketches
+
+<!-- include README.md "### Sketches" -->

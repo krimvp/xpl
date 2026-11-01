@@ -66,3 +66,57 @@ test("the theme button cycles Auto, Light and Dark, and the choice outlives a re
   await page.locator(".theme-btn").click();
   await expect(html).toHaveAttribute("data-theme", "light");
 });
+
+test("a box traced on the map lights up what it leads to, then what leads to it", async ({
+  page,
+}) => {
+  const problems = watchProblems(page);
+  await page.goto(`${TS_BUNDLE.href}?mode=explore`);
+  await page.waitForFunction(() => window.__xpl !== undefined);
+  await page.evaluate(() => window.__xpl!.setView("view:overview"));
+  const related = () =>
+    page
+      .locator(".graph .node.is-related")
+      .evaluateAll((els) => els.map((el) => el.getAttribute("data-element-id")).sort());
+
+  await byId(page, "grp:scheduling").click();
+  const details = page.locator(".details");
+  // nothing leads to it on this map: only the way down is offered
+  await expect(details.locator("[data-trace]")).toHaveText(["What it leads to"]);
+  await details.getByRole("button", { name: "What it leads to" }).click();
+  await expect(details.getByRole("button", { name: "What it leads to" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await expect
+    .poll(related)
+    .toEqual(["file:src/metrics.ts", "file:src/worker.ts", "grp:scheduling"]);
+
+  await byId(page, "file:src/metrics.ts").click();
+  // picking another box ends the trace
+  await expect.poll(related).toEqual([]);
+  await details.getByRole("button", { name: "What leads to it" }).click();
+  await expect
+    .poll(related)
+    .toEqual(["file:src/metrics.ts", "file:src/worker.ts", "grp:scheduling"]);
+  // pressed again, it stops
+  await details.getByRole("button", { name: "What leads to it" }).click();
+  await expect.poll(related).toEqual([]);
+  expect(problems).toEqual([]);
+});
+
+test("a reader can trace a box too, from its connections on the map", async ({ page }) => {
+  const problems = watchProblems(page);
+  await page.goto(`${TS_BUNDLE.href}?perspective=map&view=view:overview`);
+  await byId(page, "grp:scheduling").click();
+  const connections = page.getByTestId("map-connections");
+  await connections.getByRole("button", { name: "What it leads to" }).click();
+  await expect
+    .poll(() =>
+      page
+        .locator(".graph .node.is-related")
+        .evaluateAll((els) => els.map((el) => el.getAttribute("data-element-id")).sort()),
+    )
+    .toEqual(["file:src/metrics.ts", "file:src/worker.ts", "grp:scheduling"]);
+  expect(problems).toEqual([]);
+});
