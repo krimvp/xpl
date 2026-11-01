@@ -128,6 +128,13 @@ sentence to write. Run it again after the code changes: it drafts only new files
 deleted files, and keeps the text already written, also for a file that moved. With `xpl change` recorded first, it adds a tour of the
 changed files that asks how each change serves what was asked.
 
+### Sketches
+
+A guide can start with a sketch: a high-level picture of an idea or a plan, before there is code to read, or of
+something read but not found in one place. Sketch boxes are drawn dotted, named "sketch" on the map, and
+linked to no code; xpl never checks them, and never lets them pass for code. Replace a sketch box with a box of
+code once it can point at code.
+
 ## Languages and precision
 
 xpl indexes TypeScript, JavaScript, Python, Go and Java, plus YAML, JSON and TOML keys. Ruby has

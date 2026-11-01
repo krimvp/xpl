@@ -281,6 +281,12 @@ Conventions (all packages):
     `deriveGraph` hands the summary over as `GraphNode.summary` only on such a view; the viewer wraps it on
     at most 3 lines in a box at least 300 units wide, the last line cut with "…" (§6). `null` clears it;
     any other value is a validation error.
+23. `Node` adds `sketch?: true`: a group that is an idea of the big picture, from a description or from
+    reading, linked to no code. It holds no `members` and no `anchors` (each is a validation error on a sketch,
+    and so is `sketch` on any node but a group), so it never passes for checked code; the "points at no code"
+    warnings skip it. An `llm` edge needs no evidence at an end that is a sketch; the other end, when it is
+    code, still does. `deriveGraph` passes it on as `GraphNode.sketch`; the viewer badges the box "sketch"
+    (whatever its role, whose shape it keeps), draws it dotted, and the map's Key names it. `null` clears it.
 
 Patch-side types (never stored) live in `packages/core/src/patch.ts`; its header holds the authoritative
 merge rules and `skill/code-explainer/reference/patch-format.md` is the practical guide. The authoring
@@ -2665,7 +2671,8 @@ status stays in the sticky Save/Cancel bar, including the disabled Save reason.
   in it. Double-clicking a node calls `drillIn`; a container has a collapse button. A box with a `role` is
   drawn as what it is (`RoleBox`: a cylinder for `database`, `cache` and `storage`, a pipe for `queue`, a
   dashed box for `external` and `person`, with a person icon, a heavier border for `service` and `system`) and
-  its badge is its `tech` or its role. On a view with `boxText: "summary"` a box that is not a container shows
+  its badge is its `tech` or its role. A sketch box (`Node.sketch`) keeps its role's shape, is drawn dotted
+  (`.is-sketch`) and badged "sketch". On a view with `boxText: "summary"` a box that is not a container shows
   its summary under the badge row (`LayoutNode.lines`, wrapped by `graphLayout.wrapText` on at most 3 lines,
   the last cut with "…"); such a box is at least 300 units wide and grows 16 per line. A box with `opens` has a zoom button ("See what is inside"; a
   double-click does the same, and Details offers it too): `store.zoomInto` shows that view, in the map or flow

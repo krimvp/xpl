@@ -119,10 +119,11 @@ const NODE_SPEC: Spec = {
     role: NODE_ROLES,
     tech: "string",
     opens: "string",
+    sketch: "boolean",
     anchors: "array",
     provenance: "object",
   },
-  nullable: ["summary", "detail", "members", "role", "tech", "opens"],
+  nullable: ["summary", "detail", "members", "role", "tech", "opens", "sketch"],
 };
 const EDGE_SPEC: Spec = {
   fields: {
@@ -1484,6 +1485,7 @@ class Applier {
         ...(f.role !== undefined ? { role: f.role } : {}),
         ...(f.tech !== undefined ? { tech: f.tech } : {}),
         ...(f.opens !== undefined ? { opens: f.opens } : {}),
+        ...(f.sketch !== undefined ? { sketch: f.sketch } : {}),
         anchors,
         provenance,
       };

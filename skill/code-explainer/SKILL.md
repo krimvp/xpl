@@ -29,6 +29,7 @@ The reader sees the tour title and its **summary** first, then the steps (a titl
 - **Explainer** `.explainer/<name>.explainer.json`: written only by `xpl apply` and `xpl change`; never edit it.
 - **Tour**: a `summary` and a few steps. **Views**: `graph` (a map), `flow` (decisions and branches), `sequence` (calls between participants). **Elements**: boxes, edges, concepts and steps.
 - **Architecture boxes**: a box with a `role` (`service`, `database`, `queue`, `external`, `person`, ...) and a `tech` is drawn as what it is; a box with `opens` zooms into the view that shows its inside. A database or an outside API is a group with a role and no members, anchored at the code that talks to it (`patch-format.md` 3.10).
+- **Sketch boxes**: a group with `"sketch": true`, no members and no anchors: an idea of the big picture, drawn dotted and named "sketch" on the map. For a first picture before there is code to read (an idea, a plan), or for what you understood but no one place of code shows. Never for something you can anchor (`patch-format.md` 3.12).
 - **Anchor**: a file, a symbol path, and a `span` (0-based line offsets from the symbol's first line) or `find` text, stored with a hash. A **base anchor** (`"at": "base"`) points at the code before a recorded change.
 
 ## Setup
@@ -79,6 +80,8 @@ verified by xpl.
 | "explain this repo", "give me an overview", "architecture"       | `explain repo` (whole project)           | `draft repo <name>`            | what the project is, its parts, the main path through them                                      |
 | a PR, an MR, a branch, a commit range, "my changes"              | `explain change <base>..<head>` (a diff) | `draft change <name>`          | what changes for users, where, who else is affected, tests, risks                               |
 | "what is in this app", "map every file", "what did the AI build" | `explain map` (every file, quick)        | `draft map <name>`             | what the project is and its parts; after a change, what was asked and how each change serves it |
+
+**Sketch first.** When the user wants the big picture before the code (a plan, an idea, "roughly how would this work"), or before a long read: start with a sketch view (`view:sketch`, 3-7 sketch boxes, labelled arrows) in plain words, and say in its title and in the reply that it is a sketch. Then read the code and turn each box you can anchor into a box of code (`"sketch": null` with `members` or `anchors`). Boxes that stay sketches stay marked.
 
 If the request can mean two materially different things (which service, which branch to compare with), ask one short question with concrete options. Otherwise proceed and state your assumption.
 

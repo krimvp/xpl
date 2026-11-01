@@ -54,6 +54,8 @@ export interface GraphNode {
   expandable?: boolean;
   /** Its summary, on a view whose boxes show it (`GraphView.boxText`). */
   summary?: string;
+  /** An idea linked to no code (`Node.sketch`). */
+  sketch?: boolean;
 }
 
 /**
@@ -624,6 +626,7 @@ export function deriveGraph(
       if (model.view(node.opens)?.type === "graph") out.expandable = true;
     }
     if (view.boxText === "summary" && node.summary) out.summary = node.summary;
+    if (node.sketch === true) out.sketch = true;
     const parent = finalParent.get(id);
     if (parent !== undefined) out.parent = parent;
     return out;

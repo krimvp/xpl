@@ -297,6 +297,17 @@
             }
           ]
         },
+        "sketch": {
+          "anyOf": [
+            {
+              "type": "boolean",
+              "enum": [true]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "anchors": {
           "type": "array",
           "items": {

@@ -664,7 +664,7 @@ function BoxShape({ node, marks }: { node: LayoutNode; marks: Marks }) {
   );
   const shape = (
     <g
-      className={`node kind-${node.kindClass}${role}${container ? " is-container" : ""}${zoomable ? " is-zoomable" : ""}${stateClasses(node.id, marks)}`}
+      className={`node kind-${node.kindClass}${role}${node.sketch ? " is-sketch" : ""}${container ? " is-container" : ""}${zoomable ? " is-zoomable" : ""}${stateClasses(node.id, marks)}`}
       data-element-id={still ? undefined : node.id}
       transform={`translate(${node.x} ${node.y})`}
       // a container holds boxes (buttons): it is a group, and says when it is the one picked

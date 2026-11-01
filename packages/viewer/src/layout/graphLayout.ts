@@ -86,6 +86,8 @@ export interface LayoutNode {
   expandable?: boolean;
   /** Its summary as drawn under the label, line by line (`GraphView.boxText`); the last may end in "…". */
   lines?: string[];
+  /** An idea linked to no code (`Node.sketch`): drawn dashed, with a "sketch" badge. */
+  sketch?: boolean;
   /** Position relative to the container (or to the canvas for top-level nodes). */
   x: number;
   y: number;
@@ -220,6 +222,7 @@ export function labelWidth(label: string): number {
  * the kind of code it is.
  */
 function nodeBadge(node: GraphNode): string {
+  if (node.sketch) return "sketch";
   if (node.role !== undefined) return node.tech ?? ROLE_WORDS[node.role];
   return node.symbolKind ?? node.kind;
 }
@@ -346,6 +349,7 @@ interface ModelNode {
   /** Its summary, to show under the label (`GraphView.boxText`), and that summary as wrapped by `leafSize`. */
   summary?: string;
   lines?: string[];
+  sketch?: boolean;
   opens?: string;
   expandable?: boolean;
 }
@@ -386,6 +390,7 @@ function buildModel(graph: DerivedGraph, changes: ChangeMarks | undefined): Mode
       ...(node.opens !== undefined ? { opens: node.opens } : {}),
       ...(node.expandable ? { expandable: true } : {}),
       ...(node.summary && !node.container ? { summary: node.summary } : {}),
+      ...(node.sketch ? { sketch: true } : {}),
     });
   }
   for (const node of graph.nodes) {
@@ -524,6 +529,7 @@ function makeNode(
   if (node.opens !== undefined) out.opens = node.opens;
   if (node.expandable) out.expandable = true;
   if (node.lines !== undefined && children.length === 0) out.lines = node.lines;
+  if (node.sketch) out.sketch = true;
   return out;
 }
 

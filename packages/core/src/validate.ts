@@ -729,6 +729,7 @@ class Validator {
     this.checkStringField(node.summary, path, id, "summary");
     this.checkStringField(node.detail, path, id, "detail");
     this.checkArchitecture(node, path, id);
+    this.checkSketch(node, path, id, expected === "group");
     if (node.provenance === undefined)
       this.error(`${path}.provenance`, "provenance is required", id);
     else this.checkProvenance(node.provenance, `${path}.provenance`, id);
@@ -768,10 +769,16 @@ class Validator {
             );
           else this.refNode(member, `${path}.members[${j}]`, id, "member");
         });
-        // a box with a role may stand for something outside the repo (a database): its anchors are its code
-        if (node.members.length === 0 && node.role === undefined)
+        // a box with a role may stand for something outside the repo (a database): its anchors are its code;
+        // a sketch is an idea and points at no code on purpose
+        if (node.members.length === 0 && node.role === undefined && node.sketch !== true)
           this.warn(`${path}.members`, `group ${id} has no members`, id);
-        if (node.members.length === 0 && node.role !== undefined && arrLength(node.anchors) === 0)
+        if (
+          node.members.length === 0 &&
+          node.role !== undefined &&
+          node.sketch !== true &&
+          arrLength(node.anchors) === 0
+        )
           this.warn(
             `${path}.anchors`,
             `${id} has no members and no anchors, so it points at no code: anchor the code that talks to it (where it is configured, or where its client is built)`,
@@ -786,6 +793,31 @@ class Validator {
       provenance: node.provenance,
       field: "anchors",
     });
+  }
+
+  /**
+   * `sketch`: an idea linked to no code. Only a group can be one, and it holds no members or anchors, so a box of
+   * the map never passes for checked code without being checked.
+   */
+  private checkSketch(node: Node, path: string, id: string, group: boolean): void {
+    if (node.sketch === undefined) return;
+    if (node.sketch !== true) {
+      this.error(`${path}.sketch`, "sketch must be true (or left out)", id);
+      return;
+    }
+    if (!group) {
+      this.error(`${path}.sketch`, `only a group (grp:) can be a sketch: ${id} is code`, id);
+      return;
+    }
+    for (const field of ["members", "anchors"] as const) {
+      if (arrLength(node[field]) > 0) {
+        this.error(
+          `${path}.${field}`,
+          `${id} is a sketch (an idea, linked to no code): it cannot have ${field}; drop sketch to make it a box of code`,
+          id,
+        );
+      }
+    }
   }
 
   /** `role`, `tech` and `opens`: the architecture fields of a box. */
@@ -907,6 +939,8 @@ class Validator {
         [edge.to, "to", toOk],
       ] as const) {
         if (!ok) continue;
+        // a sketch end is an idea: there is no code to show for it
+        if (this.model.node(end)?.sketch === true) continue;
         // evidence is in the current code: an anchor in the code before the change does not count
         const covered = checked.some(
           (c) =>

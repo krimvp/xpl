@@ -21,6 +21,7 @@
  *      to `step` or, without one, the caller).
  *  14. SequenceView adds `layout` ("code-first" or "diagram"): how Read and Explore lay the view out.
  *  15. GraphView adds `boxText` ("summary"): every box that is not a container shows its summary under its label.
+ *  16. Node adds `sketch` (true): a group that is an idea, linked to no code (no members, no anchors).
  *
  * Two files per repo:
  *   index-<commit>.json    SymbolIndex. Static analysis of one commit. Built once, shared by every view.
@@ -365,6 +366,12 @@ export interface Node extends ElementBase {
   role?: NodeRole;
   /** (amended) The technology, in 1-3 words ("PostgreSQL", "REST API", "Go service"). Shown on the box. */
   tech?: string;
+  /**
+   * (amended) A sketch: an idea of the big picture, from a description or from reading, linked to no code. Only a
+   * group can be one, and it holds no members and no anchors, so it never passes for checked code. An llm edge
+   * needs no evidence at an end that is a sketch. The viewer draws it dashed, with a "sketch" badge.
+   */
+  sketch?: true;
   /**
    * (amended) A view that shows what is inside this box: the next level down (a service's components, a
    * component's code). The viewer opens it when the reader zooms into the box, and shows the way back.

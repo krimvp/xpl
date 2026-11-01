@@ -46,6 +46,11 @@ export function Legend({ shows }: { shows: LegendShows }) {
           <rect className="lg-box is-outside" x="1" y="3" width="30" height="16" rx="4" />
         </Row>
       )}
+      {shows.sketches && (
+        <Row label="A sketch: an idea of the big picture, not linked to code">
+          <rect className="lg-box is-sketch" x="1" y="3" width="30" height="16" rx="4" />
+        </Row>
+      )}
       {shows.systems && (
         <Row label="A whole system: this one, your app, or another it works with">
           <rect className="lg-box is-system" x="1" y="3" width="30" height="16" rx="4" />

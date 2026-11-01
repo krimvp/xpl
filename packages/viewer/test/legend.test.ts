@@ -39,6 +39,15 @@ const boxes = (zoom: string[] = [], expand: string[] = []) => ({
 });
 
 describe("mapKeyShows", () => {
+  it("names sketch boxes apart from code and from what they stand for", () => {
+    const shows = mapKeyShows(
+      [node("grp:client", { role: "person", sketch: true }), node("grp:api", { sketch: true })],
+      [],
+      boxes(),
+    );
+    expect(shows).toMatchObject({ sketches: true, code: false, outsideSystems: false });
+  });
+
   it("names outside systems, whole systems and code apart, with one icon each", () => {
     const shows = mapKeyShows(
       [
