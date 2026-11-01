@@ -12,7 +12,7 @@ By default, the service binds to loopback. `status` reports the process, address
 
 ## Questions and feedback
 
-With `--backend claude`, readers can ask about a diagram element or selected source lines. Answers retain the head/base range and snapshot; opening an answer reference selects its source, or shows the recorded excerpt if that source changed. Questions do not edit a guide or finalize revision outcomes. Without an answer backend, questions stay pending for an explicit offline feedback pass.
+With `--backend claude`, readers can ask about a diagram element or selected source lines. Answers retain the head/base range and snapshot; opening an answer reference selects its source, or shows the recorded excerpt if that source changed. "Show on the map" picks the boxes of the map whose code holds the answer's evidence. Questions do not edit a guide or finalize revision outcomes. Without an answer backend, questions stay pending for an explicit offline feedback pass.
 
 The Feedback panel records requests and offers progress, retry and cancel controls. **Save for the next revision pass** records feedback without asking the worker. Browser storage is optional; refusal does not stop live answers. History survives reload and JSON import/export. Merging history rejects reused answer IDs and more than 1,000 answers per question.
 

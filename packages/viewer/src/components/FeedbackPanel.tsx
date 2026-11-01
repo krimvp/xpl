@@ -8,8 +8,47 @@ import {
   type FeedbackAnswer,
   type AnswerReference,
 } from "@xpl/core";
-import { useStore, useViewerState } from "../hooks.js";
+import { useDerived, useStore, useViewerState } from "../hooks.js";
 import { messageOf } from "../data.js";
+
+/** Lines of evidence read per reference when looking for the boxes that hold it (a long range is a hint, not a tour). */
+const MAP_LINES = 200;
+
+/**
+ * The answer on the map on screen: the boxes whose code holds its evidence (the current code's references, looked
+ * up line by line in the map's code-to-box index). No button when the map holds none of it.
+ */
+function ShowOnMap({ answer }: { answer: FeedbackAnswer }) {
+  const store = useStore();
+  const state = useViewerState();
+  const derived = useDerived();
+  const graph = derived.view.graph;
+  if (!graph) return null;
+  const boxes = new Set(graph.nodes.map((n) => n.id));
+  const reverse = derived.view.reverse();
+  const ids = new Set<string>();
+  for (const reference of answer.references) {
+    if (reference.side !== "head") continue;
+    const last = Math.min(reference.toLine, reference.fromLine + MAP_LINES - 1);
+    for (let line = reference.fromLine; line <= last; line++) {
+      for (const id of reverse.lookup(reference.file, line)) if (boxes.has(id)) ids.add(id);
+    }
+  }
+  if (ids.size === 0) return null;
+  return (
+    <button
+      className="btn"
+      type="button"
+      onClick={() => {
+        store.select([...ids].sort());
+        if (state.perspective !== "explore") store.setPerspective("map");
+        store.closeFeedback();
+      }}
+    >
+      Show on the map
+    </button>
+  );
+}
 
 function AnswerEvidence({
   answer,
@@ -367,6 +406,7 @@ export function FeedbackPanel({ onClose }: { onClose: () => void }) {
                       Source: <code>{answer.context.sourceHash}</code>
                     </p>
                   </details>
+                  <ShowOnMap answer={answer} />
                   {answer.references.map((reference, i) => (
                     <AnswerEvidence key={i} answer={answer} reference={reference} />
                   ))}

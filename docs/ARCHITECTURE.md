@@ -2797,7 +2797,9 @@ is separate: pending outcomes show **Revision: not yet reviewed**, without chang
 Answers show text, their original identity, exact references and recorded excerpts. Reference clicks compare
 recorded source hashes with loaded source before using existing file/cursor linking, including base panes.
 If text changed or is unavailable, the highlighted recorded excerpt stays in Feedback; current lines are
-never presented as the old evidence. Answers cannot alter guide content or author outcomes. Optional changes
+never presented as the old evidence. "Show on the map" (`ShowOnMap`, only when the map on screen holds some of the
+evidence) selects the boxes whose code holds the answer's current-code references, by the view's reverse index
+(at most 200 lines per reference), and turns to the map. Answers cannot alter guide content or author outcomes. Optional changes
 still need explicit revision review and acceptance through #30/#39C.
 
 **Reading aids.** A "Key" button beside the zoom buttons says what the diagram's marks mean (`Legend.tsx`:
