@@ -958,6 +958,39 @@ nothing linted: fix the patch, then run `xpl lint --patch` again
 
 A flow step is named with its view (`host-check:1 (step in view:host-check)`). `--json`: `{ok, path, patch?, changed?, protectedIds?, strict, checked, total, counts: {<rule>: n}, findings: [{rule, severity?, elementId, kind: explainer|tour|tour-step|view|step|node|edge|concept, view?, field, quote, message, hint, ids?}]}` (`ok` is false when the exit code is 1: a finding (with `--warn-only`, a `todo-left` error), or a rejected patch, which gives `{ok: false, path, patch, changed: [], issues, error}` as `apply` does; `field` is `title`, `summary`, `note`, `note heading`, `label`, `detail`, `steps` for the order checks, `code` for `far-ranges`, `change` for `change-not-shown`, `include` or `hidden` for the map checks; `strict` is false with `--warn-only`; `view` names the map of a `tour-covers-map` finding; `ids` lists the boxes, files or edges a finding is about).
 
+## `xpl health`
+
+A quick check of the indexed files for the classic problems of code nobody read line by line, such as code an AI assistant wrote. Each finding has a file and line, a severity, why it matters and a short fix. It is a quick check, not a security audit: a clean report does not mean the code is safe. Run `xpl index` first; the index's ignore rules apply, so a git-ignored `.env` is never read.
+
+- **Secrets in code** (high): well-known key shapes (`AKIA…`, `sk_live_`, `ghp_`/`github_pat_`, `xox…-`, `AIza…`, `sk-…`, private key headers). Medium: `sk_test_` keys, JSON web tokens assigned to a variable, a password in a connection URL, and a literal assigned to a name like `password`, `secret`, `api_key` or `token` (long, mixed characters, not a placeholder such as `changeme`, `<your key>` or `${VAR}`, not an environment lookup).
+- **Secrets in browser variables** (high): a `NEXT_PUBLIC_`, `VITE_`, `REACT_APP_` or `PUBLIC_` variable holding a server key or named with `SECRET`, `PRIVATE`, `PASSWORD` or `SERVICE_ROLE`.
+- **Committed `.env` files** with values: high when one is named like a secret, else medium. `.env.example` and similar are skipped.
+- **Very large code files** (low): over 1,000 lines.
+- **Possibly unused code files** (low, a guess): no other file references the file in the index, and it is not an entry point (`main`, `index`, `cli`, `server`, `app`, …), a test, a config file or under `scripts/`, `bin/` or `cmd/`.
+
+In tests, fixtures, docs and examples, key shapes are reported one severity lower and the other secret checks are skipped: fake values dominate there. **A secret value is never printed**: the hint shows at most its first 4 characters, then `…`. Exit 0 with or without findings (it is a report, not a gate), 1 without an index, 2 on a usage error.
+
+```text
+$ xpl health
+Health of 4 files: a quick check, not a security audit.
+2 high, 0 medium, 1 low
+
+High (2)
+  .env:2           Committed .env file with secrets
+    Why: .env files hold local settings and secrets, and are meant to stay on one machine. This one is in the project's files, so its values are shared with everyone who gets the code.
+    Fix: Add .env files to .gitignore, remove this one from the repository, change the secrets in it, and commit a .env.example with empty values instead.
+  src/orphan.ts:2  AWS access key (AKIA…)
+    Why: A key written into the code works for anyone who can read the code or its history, and code gets copied, shared and published.
+    Fix: Revoke the key and make a new one, then read it from an environment variable or a secret store, never from the code.
+
+Low (1)
+  src/orphan.ts:1  Possibly unused file
+    Why: Nothing else in the project refers to this file, so it may be left over. This is a guess from the index: code loaded by name, by a framework or from outside the project is not seen.
+    Fix: Check whether anything still uses it, and delete it if nothing does.
+```
+
+When you report findings, name the file, the line and what kind of secret it is; never copy a value out of the file. `--json`: `{ok, index, commit, note, findings: [{check: secret|browser-secret|env-file|large-file|unused-file, severity: high|medium|low, file, line, title, explanation, fix, hint?, heuristic?}], counts: {high, medium, low}, files, notes}` (`files`: files read; `notes`: checks that were skipped and why, such as the unused check on an index without references).
+
 ## `xpl pr prepare <url|owner/repo#number|owner/repo> [number]`
 
 Prepare GitHub.com PR input with existing `gh` and git access:

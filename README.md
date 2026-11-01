@@ -131,6 +131,14 @@ deleted files, and keeps the text already written, also for a file that moved. W
 changed files that asks how each change serves what was asked. `xpl update <guide> --since <rev>` does all of it
 in one run after work on the code: index, record the change, draft the map again.
 
+### Health check
+
+`xpl health` lists classic problems of code nobody read line by line, each at a file and line with a
+severity, why it matters and a short fix: keys and passwords written into the code, secrets in variables
+that are sent to the browser (`NEXT_PUBLIC_`, `VITE_`, `REACT_APP_`, `PUBLIC_`), committed `.env` files,
+code files over 1,000 lines, and code files that nothing else references (a guess from the index). It never
+prints a secret, only its first characters. It is a quick check, not a security audit, and it always exits 0. See the [CLI reference](skill/code-explainer/reference/cli.md).
+
 ### Sketches
 
 A guide can start with a sketch: a high-level picture of an idea or a plan, before there is code to read, or of

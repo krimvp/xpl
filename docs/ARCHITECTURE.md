@@ -1401,6 +1401,41 @@ Reset may clear selected pins or all pins; a later placement edit conflicts rath
   Local and exported callers supply their own stable keys and available explainers. This contract does
   not change `ViewerBundle`; the viewer search, guide picker and exported navigation follow in #35B.
 
+- `health.ts`: `healthCheck(index, getTextOrCache) → HealthReport`, what `xpl health` prints. Findings come by
+  severity, then file and line, each with a check, a title, an explanation, a fix and, for a secret, a masked
+  `hint`. Pure: it reads only indexed files through `GetText`. The checks:
+  - `secret`: key shapes (`AKIA…`/`ASIA…`, `sk_live_`/`rk_live_` high and `sk_test_`/`rk_test_` medium, `ghp_`
+    and the other `gh?_` prefixes, `github_pat_`, `xox?-`, `AIza…`, `sk-…`, `-----BEGIN … PRIVATE KEY-----`),
+    all high unless noted; and, medium, a JSON web token after `=` or `:`, a password in a `scheme://user:pass@`
+    URL, and a literal assigned to a name ending in `password`, `pwd`, `secret`, `secretkey`, `apikey`,
+    `accesskey`, `authkey`, `privatekey` or `token`. A literal must be quoted in code (unquoted values count in
+    config and text files), 8-200 characters without spaces, of at least two character kinds, with at least 3
+    bits of entropy per character, and not a placeholder (`xxx`, `changeme`, `your`, `example`, `<…>`, `${…}`,
+    `{{…}}`, …), an environment lookup, a `$`-prefixed hash, or lower-case words joined by `.`, `_`, `-`, `:` or
+    `/`. One finding per line, the first that applies.
+  - `browser-secret` (high): a `NEXT_PUBLIC_`, `VITE_`, `REACT_APP_` or `PUBLIC_` variable assigned a server key
+    shape, or named with `SECRET`, `PRIVATE`, `PASSWORD` or `SERVICE_ROLE`. Other values of such variables are
+    public by design and are not reported (`AIza…` browser keys, anonymous tokens).
+  - `env-file`: a `.env` or `.env.<name>` file with values, at its first value whose name holds `KEY`, `SECRET`,
+    `TOKEN`, `PASS`, `PWD`, `PRIVATE`, `CREDENTIAL`, `AUTH` or `DSN` (any case; high), else at its first value (medium). On its lines the assignment check
+    does not run (key shapes, tokens, URLs and browser variables do), and `.env.example`, `.sample`,
+    `.template` and `.dist` files are skipped.
+  - `large-file` (low): a code file over `HEALTH_LARGE_FILE_LINES` (1,000) lines.
+  - `unused-file` (low, `heuristic: true`): a code file with symbols whose symbols and module scope no other
+    file references, and no other file loads as a `resource`. Entry points are left out: file names `main`,
+    `index`, `cli`, `server`, `app`, `__main__`, `__init__`, `mod`, `lib`, `build`, `setup`, `manage`, `wsgi`,
+    `asgi`, `middleware`, `page`, `layout`, `route` (any extension), `*.config.*`, `*.d.ts`, dotfiles, files
+    under `scripts/`, `bin/`, `cmd/`, `pages/`, `routes/` or `migrations/`, and test-like files. A file without
+    symbols (a list of re-exports) is left out too, because imports resolve through it to the symbols it
+    re-exports. Skipped, with a note, when the index has no references or is pruned. Code loaded by name, by a
+    framework convention not listed, or from outside the repository (a `package.json` `bin`, an HTML page)
+    still reads as unused.
+
+  Test-like files (`TEST_FILE_GLOBS`, `fixtures/`, `__fixtures__/`, `testdata/`, `e2e/`, `docs/`, `examples/`,
+  `example/`, `*.md`, `*.mdx`, `*.rst`, `*.example`, `*.sample`, `*.template`, `*.dist`) hold fake keys far
+  more often than real ones. There, key shapes are reported one severity lower (high becomes medium), titled
+  "… in test or example code", and the other secret checks are skipped. A real key in a test is still found;
+  a hardcoded password in a test is not.
 - `implementations.ts`: `implementationsOf(index, id)` / `implementedBy(index, id)`: who implements an
   interface (or one of its methods) and which interface member a method implements, from type-level
   `implements` references (TS clauses, Go's inferred satisfaction) matched to members by name (a Go method
@@ -1488,6 +1523,7 @@ stdout (a rejection exits 1); fatal errors (`error: …`) and warnings (`warning
 | `xpl status [explainer] [--view <id>] [--all]` | `--all` inventories every repository guide against one current index, without saving prose; otherwise the skill's to-do list, read-only: per view the shown nodes, stored edges and steps without a summary (static edges optional), concepts without one, drift (user-owned drift counted apart), missing anchors, broken references (ids gone from the index), stale derived-edge overlays, queued requests; per graph view the ghosts and stubs it draws (counts, the most referenced ghost ids, and for each folded ghost up to 3 of the elements it stands for with their counts; `--json`: every ghost with its count and all its `targets` (`{id, count}`), and every stub id, in `views[].ghosts`) with a warning above 12 ghosts; the tours (id, step count, steps whose focus ids or view are gone); `--view <id>`: that view only, with what it draws (each arrow: id, kind, ends, references, stored or derived, label; each `hidden` id and what it takes out; a flow's step links) |
 | `xpl ready [explainer] [--note reason] [--require-review]` | shared readiness report before export; `--json` adds `ok` to the report above; 0 ready (warnings allowed), 1 blockers/failure, 2 usage; writes nothing; a note records intentional warning/omission decisions |
 | `xpl lint [explainer] [--patch <file\|->] [--warn-only]` | checks the text a reader sees (the index, when there is one, counts the boxes and arrows of maps): rules below; `--patch` lints the explainer as it would be after `xpl apply` of that patch (merged in memory as actor `llm`, nothing written; a patch apply would reject prints the rejection and exits 1); exit 1 with any finding (so `lint --patch && apply` stops on one), 0 with `--warn-only` unless a `todo-left` error |
+| `xpl health` | a quick check of the indexed files (below): committed secrets, secrets in browser variables, `.env` files, code files over 1,000 lines, possibly unused code files; each finding with file, line, severity, why and fix; secret values masked; always exits 0 (a report, not a gate) |
 | `xpl change <explainer> [<base>..<head>]` | records the change from git in the explainer and prints its analysis (§4.8; below); without a range, prints the analysis of the change already recorded |
 | `xpl pr prepare <url\|owner/repo#number\|owner/repo> [number] [--cache-dir dir] [--precise off\|auto\|require]` | resolves GitHub base/head through existing `gh`, fetches an isolated detached head, indexes head only and publishes an immutable input manifest; no agent or ready result |
 | `xpl pr cleanup <directory> [--cache-dir dir]` | removes only a marked owned PR input directly under the selected cache; refuses symlinks and developer-tree paths |
@@ -1796,6 +1832,16 @@ field, a short quote and a fix. Rules (thresholds and word lists live in `LINT_L
 `--patch <file|->` merges the patch in memory with core `applyPatch`, the call `xpl apply` makes, so the
 findings are those of the explainer after apply; nothing is written. `--json`: `{ ok, path, strict, checked,
 total, counts, findings, patch?, changed?, protectedIds? }`.
+
+**`xpl health`** prints core `healthCheck` (§4.8) over the index and the working-tree text of its files, so the
+index's ignore rules apply and a git-ignored `.env` is never read. It is for code an AI assistant wrote and nobody
+read line by line. The text report opens with the number of files read and "a quick check, not a security
+audit", then lists the findings by severity (high, medium, low) with counts. Findings that share an explanation
+are listed together, followed by one `Why:` and one `Fix:` line. Notes say which checks were skipped. `--json`:
+`{ ok, index, commit, note, findings, counts, files, notes }`; each finding is `{ check, severity, file, line,
+title, explanation, fix, hint?, heuristic? }`. Exit 0 with or without findings, 1 without an index, 2 usage
+error. A secret value never reaches the output: `hint` holds at most its first 4 characters (a quarter of a
+short one), then `…`.
 
 **`xpl view`** serves the viewer on `http://127.0.0.1:<port>/`: port 4747, else any free port when that is
 taken (`--port 0` = any; an explicit port that is taken is an error). `--host` other than loopback exposes

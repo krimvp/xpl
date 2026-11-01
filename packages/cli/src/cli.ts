@@ -26,6 +26,7 @@ import { refsCommand } from "./commands/refs.js";
 import { resolveCommand } from "./commands/resolve.js";
 import { searchCommand } from "./commands/search.js";
 import { guidesCommand } from "./commands/guides.js";
+import { healthCommand } from "./commands/health.js";
 import { showCommand } from "./commands/show.js";
 import { statusCommand } from "./commands/status.js";
 import { startCommand } from "./commands/start.js";
@@ -39,7 +40,7 @@ import { CliError, UsageError, errorMessage } from "./errors.js";
 export type { CommandSpec } from "./command.js";
 export type { Io } from "./context.js";
 
-/** The commands of ARCHITECTURE.md §5, in the order of its table (`lint`, `change` and `draft` added after `status`). */
+/** The commands of ARCHITECTURE.md §5, in the order of its table (`lint`, `health`, `change` and `draft` added after `status`). */
 export const COMMANDS: readonly CommandSpec[] = [
   indexCommand,
   outlineCommand,
@@ -59,6 +60,7 @@ export const COMMANDS: readonly CommandSpec[] = [
   reviseCommand,
   lintCommand,
   readyCommand,
+  healthCommand,
   changeCommand,
   prCommand,
   draftCommand,
