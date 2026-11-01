@@ -116,9 +116,9 @@ describe("xpl draft map", () => {
         ],
       ],
     );
-    expect(notes).toContain(
+    expect(notes).toEqual([
       "4 code files on 2 maps; 1 file left off (tests, examples, fixtures, docs and benchmarks)",
-    );
+    ]);
     const lint = await xplJson<{ counts: Record<string, number> }>(dir, "lint", "shop");
     expect(Object.keys(lint.json.counts)).toEqual(["todo-left"]);
   });

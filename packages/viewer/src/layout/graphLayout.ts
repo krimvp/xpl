@@ -172,7 +172,7 @@ const SUMMARY_BOX_WIDTH = 300;
  * `text` wrapped at word boundaries into lines no wider than `width`, at most `max` of them; the last line of a
  * longer text is cut and ends in "…". A word longer than a line is cut too.
  */
-export function wrapText(text: string, width: number, max = SUMMARY_LINES): string[] {
+function wrapText(text: string, width: number, max = SUMMARY_LINES): string[] {
   const fits = (line: string) => textWidth(line, SUMMARY_FONT) <= width;
   const cut = (line: string) => {
     let out = line;
