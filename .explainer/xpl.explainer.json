@@ -439,7 +439,7 @@
           "role": "definition",
           "hash": "sha256-v2:f2d606e229a3",
           "resolved": {
-            "commit": "dfb05d9",
+            "commit": "2e3a04a",
             "range": {
               "startLine": 1,
               "endLine": 10
@@ -453,7 +453,7 @@
           "role": "config",
           "hash": "sha256-v2:8869d37515f9",
           "resolved": {
-            "commit": "dfb05d9",
+            "commit": "2e3a04a",
             "range": {
               "startLine": 6,
               "endLine": 6
@@ -465,12 +465,12 @@
           "file": "packages/indexer/src/build.ts",
           "symbol": "buildIndex",
           "role": "definition",
-          "hash": "sha256-v2:9e46bec66f48",
+          "hash": "sha256-v2:2ab46f75f837",
           "resolved": {
-            "commit": "dfb05d9",
+            "commit": "2e3a04a",
             "range": {
-              "startLine": 189,
-              "endLine": 534
+              "startLine": 190,
+              "endLine": 537
             },
             "status": "ok"
           }
@@ -478,7 +478,7 @@
       ],
       "provenance": {
         "origin": "llm",
-        "commit": "8440d90"
+        "commit": "2e3a04a"
       }
     },
     {
@@ -2310,7 +2310,7 @@
           "role": "call-site",
           "hash": "sha256-v2:c6cc5f912353",
           "resolved": {
-            "commit": "dfb05d9",
+            "commit": "2e3a04a",
             "range": {
               "startLine": 126,
               "endLine": 134
@@ -2328,7 +2328,7 @@
           "role": "call-site",
           "hash": "sha256-v2:4504e1ccefbf",
           "resolved": {
-            "commit": "dfb05d9",
+            "commit": "2e3a04a",
             "range": {
               "startLine": 137,
               "endLine": 137
@@ -2346,7 +2346,7 @@
           "role": "call-site",
           "hash": "sha256-v2:9ab26b0fd66e",
           "resolved": {
-            "commit": "dfb05d9",
+            "commit": "2e3a04a",
             "range": {
               "startLine": 76,
               "endLine": 76
@@ -2360,7 +2360,7 @@
           "role": "call-site",
           "hash": "sha256-v2:336b04a7cf0e",
           "resolved": {
-            "commit": "dfb05d9",
+            "commit": "2e3a04a",
             "range": {
               "startLine": 81,
               "endLine": 100
@@ -2374,7 +2374,7 @@
           "role": "usage",
           "hash": "sha256-v2:fe9b6179d3ae",
           "resolved": {
-            "commit": "dfb05d9",
+            "commit": "2e3a04a",
             "range": {
               "startLine": 254,
               "endLine": 328
@@ -2386,12 +2386,12 @@
           "file": "packages/indexer/src/build.ts",
           "symbol": "buildIndex",
           "role": "definition",
-          "hash": "sha256-v2:9e46bec66f48",
+          "hash": "sha256-v2:2ab46f75f837",
           "resolved": {
-            "commit": "dfb05d9",
+            "commit": "2e3a04a",
             "range": {
-              "startLine": 189,
-              "endLine": 534
+              "startLine": 190,
+              "endLine": 537
             },
             "status": "ok"
           }
@@ -2402,10 +2402,10 @@
           "role": "definition",
           "hash": "sha256-v2:152f31c89834",
           "resolved": {
-            "commit": "dfb05d9",
+            "commit": "2e3a04a",
             "range": {
-              "startLine": 586,
-              "endLine": 624
+              "startLine": 589,
+              "endLine": 627
             },
             "status": "ok"
           }
@@ -2416,7 +2416,7 @@
           "role": "definition",
           "hash": "sha256-v2:61ce7105c86d",
           "resolved": {
-            "commit": "dfb05d9",
+            "commit": "2e3a04a",
             "range": {
               "startLine": 309,
               "endLine": 380
@@ -2427,7 +2427,7 @@
       ],
       "provenance": {
         "origin": "llm",
-        "commit": "8440d90"
+        "commit": "2e3a04a"
       }
     },
     {
@@ -6191,10 +6191,10 @@
           "role": "definition",
           "hash": "sha256-v2:893b61f21ea0",
           "resolved": {
-            "commit": "dfb05d9",
+            "commit": "2e3a04a",
             "range": {
-              "startLine": 669,
-              "endLine": 693
+              "startLine": 680,
+              "endLine": 704
             },
             "status": "ok"
           }
@@ -6209,7 +6209,7 @@
           "role": "definition",
           "hash": "sha256-v2:1a9bc9838aec",
           "resolved": {
-            "commit": "dfb05d9",
+            "commit": "2e3a04a",
             "range": {
               "startLine": 381,
               "endLine": 390
@@ -6227,7 +6227,7 @@
           "role": "definition",
           "hash": "sha256-v2:4b8d6b151d3f",
           "resolved": {
-            "commit": "dfb05d9",
+            "commit": "2e3a04a",
             "range": {
               "startLine": 490,
               "endLine": 514
@@ -6245,7 +6245,7 @@
           "role": "definition",
           "hash": "sha256-v2:def7e8fc00c4",
           "resolved": {
-            "commit": "dfb05d9",
+            "commit": "2e3a04a",
             "range": {
               "startLine": 530,
               "endLine": 546
@@ -6259,7 +6259,7 @@
           "role": "definition",
           "hash": "sha256-v2:3e8483f70a0f",
           "resolved": {
-            "commit": "dfb05d9",
+            "commit": "2e3a04a",
             "range": {
               "startLine": 65,
               "endLine": 87
@@ -6273,7 +6273,7 @@
           "role": "definition",
           "hash": "sha256-v2:4e3c915651e0",
           "resolved": {
-            "commit": "dfb05d9",
+            "commit": "2e3a04a",
             "range": {
               "startLine": 651,
               "endLine": 685
@@ -6291,7 +6291,7 @@
           "role": "call-site",
           "hash": "sha256-v2:3177bea2cd42",
           "resolved": {
-            "commit": "dfb05d9",
+            "commit": "2e3a04a",
             "range": {
               "startLine": 131,
               "endLine": 131
@@ -6305,7 +6305,7 @@
           "role": "test",
           "hash": "sha256-v2:19aa5613912d",
           "resolved": {
-            "commit": "dfb05d9",
+            "commit": "2e3a04a",
             "range": {
               "startLine": 214,
               "endLine": 248
@@ -6319,7 +6319,7 @@
           "role": "test",
           "hash": "sha256-v2:1e9b24bac67f",
           "resolved": {
-            "commit": "dfb05d9",
+            "commit": "2e3a04a",
             "range": {
               "startLine": 565,
               "endLine": 599
@@ -6334,9 +6334,9 @@
             "to": 1099
           },
           "role": "usage",
-          "hash": "sha256-v2:2d16ca547398",
+          "hash": "sha256-v2:c4911411c288",
           "resolved": {
-            "commit": "dfb05d9",
+            "commit": "2e3a04a",
             "range": {
               "startLine": 1091,
               "endLine": 1100
@@ -6351,9 +6351,9 @@
             "to": 252
           },
           "role": "usage",
-          "hash": "sha256-v2:8fd7e196cb74",
+          "hash": "sha256-v2:cce51aeb3c8d",
           "resolved": {
-            "commit": "dfb05d9",
+            "commit": "2e3a04a",
             "range": {
               "startLine": 253,
               "endLine": 253
@@ -6372,7 +6372,7 @@
       ],
       "provenance": {
         "origin": "llm",
-        "commit": "wt-822d05d315"
+        "commit": "2e3a04a"
       }
     },
     {
@@ -8167,7 +8167,7 @@
           "role": "definition",
           "hash": "sha256-v2:0246e0d7f5a2",
           "resolved": {
-            "commit": "dfb05d9",
+            "commit": "2e3a04a",
             "range": {
               "startLine": 381,
               "endLine": 496
@@ -8179,12 +8179,12 @@
           "file": "packages/indexer/src/build.ts",
           "symbol": "buildIndex",
           "role": "definition",
-          "hash": "sha256-v2:9e46bec66f48",
+          "hash": "sha256-v2:2ab46f75f837",
           "resolved": {
-            "commit": "dfb05d9",
+            "commit": "2e3a04a",
             "range": {
-              "startLine": 189,
-              "endLine": 534
+              "startLine": 190,
+              "endLine": 537
             },
             "status": "ok"
           }
@@ -8195,7 +8195,7 @@
           "role": "definition",
           "hash": "sha256-v2:0246e0d7f5a2",
           "resolved": {
-            "commit": "dfb05d9",
+            "commit": "2e3a04a",
             "range": {
               "startLine": 381,
               "endLine": 496
@@ -8209,7 +8209,7 @@
           "role": "definition",
           "hash": "sha256-v2:960f34ef5b0e",
           "resolved": {
-            "commit": "dfb05d9",
+            "commit": "2e3a04a",
             "range": {
               "startLine": 92,
               "endLine": 104
@@ -8223,7 +8223,7 @@
           "role": "definition",
           "hash": "sha256-v2:60ab9422ea4b",
           "resolved": {
-            "commit": "dfb05d9",
+            "commit": "2e3a04a",
             "range": {
               "startLine": 451,
               "endLine": 457
@@ -8237,7 +8237,7 @@
           "role": "definition",
           "hash": "sha256-v2:7996042f251f",
           "resolved": {
-            "commit": "dfb05d9",
+            "commit": "2e3a04a",
             "range": {
               "startLine": 460,
               "endLine": 467
@@ -8255,10 +8255,10 @@
           "role": "usage",
           "hash": "sha256-v2:0cd75a02b5b3",
           "resolved": {
-            "commit": "dfb05d9",
+            "commit": "2e3a04a",
             "range": {
-              "startLine": 566,
-              "endLine": 566
+              "startLine": 569,
+              "endLine": 569
             },
             "status": "ok"
           }
@@ -8269,7 +8269,7 @@
           "role": "usage",
           "hash": "sha256-v2:198710fb912a",
           "resolved": {
-            "commit": "dfb05d9",
+            "commit": "2e3a04a",
             "range": {
               "startLine": 41,
               "endLine": 47
@@ -8283,10 +8283,10 @@
           "role": "usage",
           "hash": "sha256-v2:05f0e3ae19a7",
           "resolved": {
-            "commit": "dfb05d9",
+            "commit": "2e3a04a",
             "range": {
-              "startLine": 160,
-              "endLine": 181
+              "startLine": 162,
+              "endLine": 183
             },
             "status": "ok"
           }
@@ -8297,7 +8297,7 @@
           "role": "test",
           "hash": "sha256-v2:68cf78bc98b6",
           "resolved": {
-            "commit": "dfb05d9",
+            "commit": "2e3a04a",
             "range": {
               "startLine": 76,
               "endLine": 110
@@ -8311,7 +8311,7 @@
           "role": "test",
           "hash": "sha256-v2:b9d668b0c88a",
           "resolved": {
-            "commit": "dfb05d9",
+            "commit": "2e3a04a",
             "range": {
               "startLine": 312,
               "endLine": 330
@@ -8325,7 +8325,7 @@
           "role": "test",
           "hash": "sha256-v2:7c44a45abeac",
           "resolved": {
-            "commit": "dfb05d9",
+            "commit": "2e3a04a",
             "range": {
               "startLine": 218,
               "endLine": 228
@@ -8345,7 +8345,7 @@
       ],
       "provenance": {
         "origin": "llm",
-        "commit": "8440d90"
+        "commit": "2e3a04a"
       }
     },
     {
@@ -13367,7 +13367,7 @@
               "role": "usage",
               "hash": "sha256-v2:08f1a4c0c540",
               "resolved": {
-                "commit": "dfb05d9",
+                "commit": "2e3a04a",
                 "range": {
                   "startLine": 16,
                   "endLine": 16
@@ -13385,12 +13385,12 @@
               "role": "call-site",
               "hash": "sha256-v2:13de86e3022f",
               "resolved": {
-                "commit": "dfb05d9",
+                "commit": "2e3a04a",
                 "range": {
-                  "startLine": 275,
-                  "endLine": 275
+                  "startLine": 277,
+                  "endLine": 277
                 },
-                "status": "moved"
+                "status": "ok"
               }
             },
             {
@@ -13403,7 +13403,7 @@
               "role": "call-site",
               "hash": "sha256-v2:c6cc5f912353",
               "resolved": {
-                "commit": "dfb05d9",
+                "commit": "2e3a04a",
                 "range": {
                   "startLine": 126,
                   "endLine": 134
@@ -13421,7 +13421,7 @@
               "role": "call-site",
               "hash": "sha256-v2:4504e1ccefbf",
               "resolved": {
-                "commit": "dfb05d9",
+                "commit": "2e3a04a",
                 "range": {
                   "startLine": 137,
                   "endLine": 137
@@ -13433,12 +13433,12 @@
               "file": "packages/indexer/src/build.ts",
               "symbol": "buildIndex",
               "role": "definition",
-              "hash": "sha256-v2:9e46bec66f48",
+              "hash": "sha256-v2:2ab46f75f837",
               "resolved": {
-                "commit": "dfb05d9",
+                "commit": "2e3a04a",
                 "range": {
-                  "startLine": 189,
-                  "endLine": 534
+                  "startLine": 190,
+                  "endLine": 537
                 },
                 "status": "ok"
               }
@@ -13449,10 +13449,10 @@
               "role": "definition",
               "hash": "sha256-v2:152f31c89834",
               "resolved": {
-                "commit": "dfb05d9",
+                "commit": "2e3a04a",
                 "range": {
-                  "startLine": 586,
-                  "endLine": 624
+                  "startLine": 589,
+                  "endLine": 627
                 },
                 "status": "ok"
               }
@@ -13463,10 +13463,10 @@
               "role": "usage",
               "hash": "sha256-v2:6b5e848d5dce",
               "resolved": {
-                "commit": "dfb05d9",
+                "commit": "2e3a04a",
                 "range": {
-                  "startLine": 580,
-                  "endLine": 580
+                  "startLine": 583,
+                  "endLine": 583
                 },
                 "status": "ok"
               }
@@ -13932,7 +13932,7 @@
       ],
       "provenance": {
         "origin": "llm",
-        "commit": "aa06978"
+        "commit": "2e3a04a"
       }
     },
     {
@@ -13975,7 +13975,7 @@
               "role": "call-site",
               "hash": "sha256-v2:c6cc5f912353",
               "resolved": {
-                "commit": "dfb05d9",
+                "commit": "2e3a04a",
                 "range": {
                   "startLine": 126,
                   "endLine": 134
@@ -13987,12 +13987,12 @@
               "file": "packages/indexer/src/build.ts",
               "symbol": "buildIndex",
               "role": "definition",
-              "hash": "sha256-v2:9e46bec66f48",
+              "hash": "sha256-v2:2ab46f75f837",
               "resolved": {
-                "commit": "dfb05d9",
+                "commit": "2e3a04a",
                 "range": {
-                  "startLine": 189,
-                  "endLine": 534
+                  "startLine": 190,
+                  "endLine": 537
                 },
                 "status": "ok"
               }
@@ -14179,12 +14179,12 @@
               "file": "packages/indexer/src/build.ts",
               "symbol": "buildIndex",
               "role": "call-site",
-              "hash": "sha256-v2:9e46bec66f48",
+              "hash": "sha256-v2:2ab46f75f837",
               "resolved": {
-                "commit": "dfb05d9",
+                "commit": "2e3a04a",
                 "range": {
-                  "startLine": 189,
-                  "endLine": 534
+                  "startLine": 190,
+                  "endLine": 537
                 },
                 "status": "ok"
               }
@@ -14193,12 +14193,12 @@
               "file": "packages/indexer/src/tree-sitter.ts",
               "symbol": "indexFile",
               "role": "definition",
-              "hash": "sha256-v2:4c36b3f6832d",
+              "hash": "sha256-v2:0fbedabb2f5b",
               "resolved": {
-                "commit": "dfb05d9",
+                "commit": "2e3a04a",
                 "range": {
-                  "startLine": 187,
-                  "endLine": 253
+                  "startLine": 192,
+                  "endLine": 260
                 },
                 "status": "ok"
               }
@@ -14542,7 +14542,7 @@
       ],
       "provenance": {
         "origin": "llm",
-        "commit": "wt-0527b6118e"
+        "commit": "2e3a04a"
       }
     },
     {
@@ -14950,12 +14950,12 @@
               "file": "packages/indexer/src/build.ts",
               "symbol": "buildIndex",
               "role": "definition",
-              "hash": "sha256-v2:9e46bec66f48",
+              "hash": "sha256-v2:2ab46f75f837",
               "resolved": {
-                "commit": "dfb05d9",
+                "commit": "2e3a04a",
                 "range": {
-                  "startLine": 189,
-                  "endLine": 534
+                  "startLine": 190,
+                  "endLine": 537
                 },
                 "status": "ok"
               }
@@ -14970,10 +14970,10 @@
               "role": "definition",
               "hash": "sha256-v2:7ab3f8620bb0",
               "resolved": {
-                "commit": "dfb05d9",
+                "commit": "2e3a04a",
                 "range": {
-                  "startLine": 442,
-                  "endLine": 442
+                  "startLine": 443,
+                  "endLine": 443
                 },
                 "status": "ok"
               }
@@ -15076,12 +15076,12 @@
               "file": "packages/indexer/src/build.ts",
               "symbol": "buildIndex",
               "role": "definition",
-              "hash": "sha256-v2:9e46bec66f48",
+              "hash": "sha256-v2:2ab46f75f837",
               "resolved": {
-                "commit": "dfb05d9",
+                "commit": "2e3a04a",
                 "range": {
-                  "startLine": 189,
-                  "endLine": 534
+                  "startLine": 190,
+                  "endLine": 537
                 },
                 "status": "ok"
               }
@@ -15096,7 +15096,7 @@
               "role": "call-site",
               "hash": "sha256-v2:969eed20d327",
               "resolved": {
-                "commit": "dfb05d9",
+                "commit": "2e3a04a",
                 "range": {
                   "startLine": 149,
                   "endLine": 149
@@ -15225,7 +15225,7 @@
       ],
       "provenance": {
         "origin": "llm",
-        "commit": "wt-fdbf9b14ac"
+        "commit": "2e3a04a"
       }
     },
     {
