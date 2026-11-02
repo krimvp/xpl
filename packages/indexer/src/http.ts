@@ -28,8 +28,9 @@
  * Paths: `:id`, `{id}`, `<int:id>`, `[id]` and `${...}` / f-string / `%s` holes are one parameter;
  * `*`, `{p...}`, `{p:path}`, `<path:p>` and `[...p]` the rest of the path. The query string and the hash
  * are dropped. An absolute URL keeps its path only for a local or example host (`localhost`, `127.0.0.1`,
- * `example.com`, ...); a request to any other host is left out. A leading `${base}` before the first `/` is
- * dropped (a configured origin).
+ * `example.com`, ...); a request to any other host is left out. A string constant at the top of the file reads
+ * as its value (`${API_BASE}/greeting`); any other leading `${base}` before the first `/` is dropped (a
+ * configured origin). A catch-all route that matches no literal segment (a single-page fallback) links nothing.
  */
 import type { Node } from "web-tree-sitter";
 import type { FilePath, Reference, SymbolId } from "@xpl/core";
@@ -66,18 +67,51 @@ const REST = "{*}";
 const METHODS = ["get", "post", "put", "patch", "delete", "head", "options"];
 const PRINTF_VERB = /%[-#0 +]*\d*(?:\.\d+)?[a-zA-Z]/g;
 
+/**
+ * The string constants at the top of the file being collected (`const API_BASE = "/api/chat"`, `API = "/api"`,
+ * Go `const base = "/v1"`), read by name in a path: `` `${API_BASE}/greeting` `` is `/api/chat/greeting`. Set by
+ * `collectHttpSites` for the duration of one file.
+ */
+let constants = new Map<string, string>();
+
+function fileConstants(root: Node): Map<string, string> {
+  constants = new Map();
+  const declarations = (node: Node): Node[] =>
+    node.type === "export_statement"
+      ? node.namedChildren.flatMap(declarations)
+      : node.type === "expression_statement"
+        ? node.namedChildren.filter((c) => c.type === "assignment") // Python
+        : node.type === "lexical_declaration" && node.text.startsWith("const")
+          ? node.namedChildren.filter((c) => c.type === "variable_declarator")
+          : node.type === "const_declaration" // Go
+            ? node.namedChildren.filter((c) => c.type === "const_spec")
+            : [];
+  for (const d of root.namedChildren.flatMap(declarations)) {
+    const name = d.childForFieldName("name") ?? d.childForFieldName("left");
+    const value = d.childForFieldName("value") ?? d.childForFieldName("right");
+    const text = pathValue(value?.type === "expression_list" ? value.namedChildren[0] : value);
+    if (name?.type === "identifier" && text !== undefined && !text.includes(HOLE))
+      constants.set(name.text, text);
+  }
+  return constants;
+}
+
 /** The text of a string built from literals, with holes for what is computed; undefined for anything else. */
 function pathValue(node: Node | null | undefined, depth = 0): string | undefined {
   if (!node || depth > 8) return undefined;
   switch (node.type) {
+    case "identifier":
+      return constants.get(node.text);
     case "string":
     case "template_string":
     case "interpreted_string_literal":
     case "raw_string_literal": {
       let out = "";
       for (const c of node.namedChildren) {
-        if (c.type === "template_substitution" || c.type === "interpolation") out += HOLE;
-        else if (c.type !== "string_start" && c.type !== "string_end") out += c.text;
+        if (c.type === "template_substitution" || c.type === "interpolation") {
+          const inner = c.namedChildren.length === 1 ? c.namedChildren[0] : undefined;
+          out += (inner?.type === "identifier" && constants.get(inner.text)) || HOLE;
+        } else if (c.type !== "string_start" && c.type !== "string_end") out += c.text;
       }
       return out;
     }
@@ -299,6 +333,7 @@ export function collectHttpSites(ctx: FileContext): HttpSites | undefined {
   }[ctx.language as string];
   if (!collect) return undefined;
   const sites: HttpSites = { file: ctx.file, routes: [], requests: [], mounts: [] };
+  fileConstants(ctx.tree.rootNode);
   const span = (node: Node) => nodeSpan(node, ctx.lines);
   const routerOf = (node: Node | null | undefined) =>
     node?.type === "identifier" ? { name: node.text, site: span(node) } : undefined;
@@ -672,7 +707,9 @@ export function resolveRequests(
       for (const r of routes) {
         if (q.method !== "*" && r.method !== "*" && q.method !== r.method) continue;
         const literal = matchScore(segments, r.segments);
-        if (literal === undefined) continue;
+        // A catch-all that matches no literal segment (`/{full_path:path}`, `app.get("*")`) is a single-page
+        // fallback or a proxy: it answers every path, so it tells nothing about this one.
+        if (literal === undefined || (literal === 0 && r.segments.includes(REST))) continue;
         const score = literal * 2 + (q.method === r.method ? 1 : 0);
         if (score > best) [best, targets] = [score, [r.to]];
         else if (score === best) targets.push(r.to);

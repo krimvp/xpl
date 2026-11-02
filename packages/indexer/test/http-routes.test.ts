@@ -55,6 +55,42 @@ describe("web requests to server routes", () => {
     ]);
   });
 
+  it("a path built on a string constant of its file is read through it; a single-page catch-all answers nothing", async () => {
+    // As in a FastAPI backend serving a Next.js export: the fallback route returns index.html for any path.
+    expect(
+      await requests({
+        "backend/main.py": [
+          "from fastapi import FastAPI",
+          "from routes.chat import router as chat_router",
+          "app = FastAPI()",
+          "app.include_router(chat_router)",
+          '@app.get("/{full_path:path}")',
+          "def serve_spa(full_path: str):",
+          "    return full_path",
+        ].join("\n"),
+        "backend/routes/chat.py": [
+          "from fastapi import APIRouter",
+          'router = APIRouter(prefix="/api/chat")',
+          '@router.get("/greeting")',
+          "def greeting():",
+          "    return 1",
+          '@router.post("/message")',
+          "def message():",
+          "    return 2",
+        ].join("\n"),
+        "frontend/chatApi.ts": [
+          "const API_BASE = '/api/chat';",
+          "export function getGreeting() { return fetch(`${API_BASE}/greeting`); }",
+          'export function sendMessage(m) { return fetch(`${API_BASE}/message`, { method: "POST", body: m }); }',
+          "export function missing() { return fetch('/api/nothing/here'); }",
+        ].join("\n"),
+      }),
+    ).toEqual([
+      "frontend/chatApi.ts#getGreeting -> backend/routes/chat.py#greeting (request)",
+      "frontend/chatApi.ts#sendMessage -> backend/routes/chat.py#message (request)",
+    ]);
+  });
+
   it("TS: Next.js route files and pages/api handlers answer fetch calls and SWR keys", async () => {
     expect(
       await requests({
