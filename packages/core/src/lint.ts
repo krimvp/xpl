@@ -139,11 +139,12 @@ export const LINT_LIMITS = {
   sentenceWords: 25,
   /** A field whose sentences (two or more) average more words than this is a finding. */
   averageWords: 20,
-  /** A tour summary of fewer or more sentences than these is a finding (the skill asks for 2-4)... */
+  /**
+   * A tour summary of fewer or more sentences than these is a finding: the skill asks for the answer first, then
+   * up to four reasons (a change: the behaviour, the risk and the tests).
+   */
   summaryMinSentences: 2,
-  summarySentences: 4,
-  /** ...or up to this many in an explainer of a change (its summary carries the behaviour, the risk and the tests). */
-  changeSummarySentences: 5,
+  summarySentences: 5,
   /** Quotes are cut to about this many characters. */
   quoteChars: 72,
   /**
@@ -432,10 +433,16 @@ function plainText(text: string): string {
     .trim();
 }
 
+/** A row of a markdown table (a line that starts and ends with `|`; code spans are masked, so their `|` is not). */
+const TABLE_ROW = /^\|.*\|$/;
+/** The rule under a table's header row: `| --- | :-: |`. */
+const TABLE_RULE = /^\|[\s:|-]+\|$/;
+
 /**
  * The sentences of a masked text: paragraphs and list items are split apart, then each at `.`, `!` or `?`
  * followed by white space (not after `e.g.`, `i.e.`, `etc.`, ...). Heading lines are left out (titles are checked
- * on their own).
+ * on their own). Each cell of a table row is read on its own, so a row is never one long sentence; the rule
+ * under the header row is left out.
  */
 function sentences(masked: string): string[] {
   const blocks: string[] = [];
@@ -448,6 +455,13 @@ function sentences(masked: string): string[] {
     const line = raw.trim();
     if (line === "" || HEADING.test(raw)) {
       flush();
+      continue;
+    }
+    if (TABLE_ROW.test(line)) {
+      flush();
+      if (!TABLE_RULE.test(line)) {
+        for (const cell of line.slice(1, -1).split("|")) if (cell.trim()) blocks.push(cell.trim());
+      }
       continue;
     }
     const item = /^(?:[-*+]|\d+[.)])\s+(.*)$/.exec(line);
@@ -1835,9 +1849,7 @@ export function lintExplainer(explainer: Explainer, model?: ExplainerModel): Lin
     lint.plain(at("title"), tour.title);
     // `summary` is optional (and newer than tours): read it defensively
     const summary = tour.summary;
-    const most = explainer.change
-      ? LINT_LIMITS.changeSummarySentences
-      : LINT_LIMITS.summarySentences;
+    const most = LINT_LIMITS.summarySentences;
     const range = `${LINT_LIMITS.summaryMinSentences}-${most} sentences`;
     if (typeof summary === "string" && summary.trim() !== "") {
       const room = most - sentences(mask(summary).text).length;
@@ -1869,7 +1881,7 @@ export function lintExplainer(explainer: Explainer, model?: ExplainerModel): Lin
           "tour-summary",
           excerpt(summary),
           `${plural(count, "sentence")} (fewer than ${LINT_LIMITS.summaryMinSentences})`,
-          `write ${range}: what this is and why it matters; for a change: what behaves differently, the risk, the tests`,
+          `write ${range}: the answer first, then up to four reasons; for a change: what behaves differently, the risk, the tests`,
         );
       }
     } else {
@@ -1878,7 +1890,7 @@ export function lintExplainer(explainer: Explainer, model?: ExplainerModel): Lin
         "tour-summary",
         excerpt(str(tour.title) ?? tourId),
         "no summary: readers see the summary first, under the tour title",
-        `add ${range}: what this is and why it matters; for a change: what behaves differently, the risk, the tests`,
+        `add ${range}: the answer first, then up to four reasons; for a change: what behaves differently, the risk, the tests`,
       );
     }
     orderChecks(lint, tourId, tour, byId);

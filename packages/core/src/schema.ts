@@ -613,9 +613,9 @@ export interface Tour {
   id: string;
   title: string;
   /**
-   * What the tour is about, in 2-4 sentences of markdown: what it is, why it matters (for a change: what
-   * changes in behaviour, the risk, the tests). Readers see it first, under the tour title. Optional; `null`
-   * in a patch clears it.
+   * What the tour is about, in 2-5 sentences of markdown: the answer first, then up to four reasons (for a
+   * change: what changes in behaviour, the risk, the tests). Readers see it first, under the tour title.
+   * Optional; `null` in a patch clears it.
    */
   summary?: string;
   steps: TourStep[];

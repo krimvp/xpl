@@ -666,7 +666,7 @@ A tour step has:
 
 - `id` (`t1`, `t2`, ...; unique in the tour, never renumbered) and `view` (the picture the step shows);
 - `focus`: element ids to highlight. A flow or sequence step id must belong to that tour step's `view`, else a warning;
-- `note` (markdown): the first line is `### <plain title>`, which the viewer shows as the step title and does not repeat; then the body (`writing.md`, sections 1 and 3);
+- `note` (markdown): the first line is `### <plain title>`, which the viewer shows as the step title and does not repeat; then the body (`writing.md`, sections 1 and 3). The body may end with a small table for a comparison: a header row, a rule row (`| --- | --- |`, with `:--`, `:-:` or `--:` to align a column), then one row per item, each row starting and ending with `|`, after a blank line. In JSON the rows are joined with `\n`: `"### Two ways to wait\n\nThe fixed policy never grows the delay.\n\n| Policy | Third retry waits |\n| --- | --: |\n| fixed | 500 ms |\n| backoff | 2 s |"`. `xpl lint` reads each cell on its own (no row is one long sentence), and the cells count toward the note's 60 words;
 - `code`: `AnchorInput[]` that replaces the code the focus would show (base anchors too). Without it, a group, file or directory focus shows whole files (focusing `grp:retry-engine` alone shows runner.go 1-146, queue.go 1-154 and deadletter.go 1-35);
 - `editor`: `primary` (the file shown first), `dimOthers`, `hideFileTree`.
 

@@ -444,6 +444,7 @@ export function GraphView({
         height={canvas!.height}
         resetKey={resetKey}
         label="Diagram. Drag to pan, scroll to zoom."
+        imageName={state.model.view(viewId)?.title ?? viewId}
         maxFitZoom={present ? PRESENT_MAX_FIT_ZOOM : undefined}
         fitPadding={present ? PRESENT_FIT_PADDING : undefined}
         minFitZoom={pinned ? GRAPH_READABLE_ZOOM : undefined}
