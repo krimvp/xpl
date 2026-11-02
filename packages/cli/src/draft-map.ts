@@ -135,7 +135,10 @@ export function draftMap(input: DraftInput): Draft {
     matchesAnyGlob(path, NOT_DESIGN) ||
     path.split("/").some((segment) => segment.startsWith("."));
   const isCodeFile = (path: string) => CODE_LANGUAGES.has(model.file(path)?.language ?? "");
-  const mapped = (path: string) => isCodeFile(path) && !offMap(path);
+  // A file that defines nothing and uses nothing (a package's docstring-only `__init__.py`) has nothing to box.
+  const using = new Set(model.refs.map((ref) => model.fileOfSymbolId(ref.from)));
+  const hollow = (path: string) => model.topLevelSymbols(path).length === 0 && !using.has(path);
+  const mapped = (path: string) => isCodeFile(path) && !offMap(path) && !hollow(path);
   const mappedUnder = (dir: string) => model.filesUnder(dir).filter(mapped);
 
   /** The boxes of a folder: its sub-folders (a folder that only holds one folder is that folder) and its files. */
@@ -662,9 +665,13 @@ export function draftMap(input: DraftInput): Draft {
     }
   }
 
-  const left = model.files.filter((f) => isCodeFile(f.path) && !mapped(f.path)).length;
+  const left = model.files.filter((f) => isCodeFile(f.path) && offMap(f.path)).length;
+  const empty = model.files.filter(
+    (f) => isCodeFile(f.path) && !offMap(f.path) && hollow(f.path),
+  ).length;
   notes.unshift(
-    `${plural(allMapped.length, "code file")} on ${plural(computed.size, "map")}; ${plural(left, "file")} left off (tests, examples, fixtures, docs and benchmarks)`,
+    `${plural(allMapped.length, "code file")} on ${plural(computed.size, "map")}; ${plural(left, "file")} left off (tests, examples, fixtures, docs and benchmarks)` +
+      (empty > 0 ? `; ${plural(empty, "empty file")} left off (they define and use nothing)` : ""),
   );
   if (grouping.length > 0) {
     notes.push(

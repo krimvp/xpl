@@ -153,6 +153,27 @@ describe("xpl draft map", () => {
     ]);
   });
 
+  it("leaves off files that define and use nothing, such as a package's docstring-only __init__.py", async () => {
+    const dir = makeTempDir("xpl-map-");
+    writeFile(dir, "app/__init__.py", '"""The app package."""\n');
+    writeFile(dir, "app/routes/__init__.py", '"""API routes package."""\n');
+    writeFile(dir, "app/routes/orders.py", "def list_orders():\n    return []\n");
+    writeFile(dir, "app/routes/users.py", "def list_users():\n    return []\n");
+    writeFile(dir, "app/main.py", "from app.routes.orders import list_orders\n\nlist_orders()\n");
+    expect((await xpl(dir, "index", "--precise", "off")).code).toBe(0);
+    expect((await xpl(dir, "new", "shop")).code).toBe(0);
+    const { patch, notes } = await draft(dir);
+
+    expect(view(patch, "view:map")?.include).toEqual(["dir:app/routes", "file:app/main.py"]);
+    expect(view(patch, "view:map-app-routes")?.include).toEqual([
+      "file:app/routes/orders.py",
+      "file:app/routes/users.py",
+    ]);
+    expect(notes).toEqual([
+      "3 code files on 2 maps; 0 files left off (tests, examples, fixtures, docs and benchmarks); 2 empty files left off (they define and use nothing)",
+    ]);
+  });
+
   it("run again, drafts only new files and drops the boxes of files that are gone", async () => {
     const dir = shop();
     expect((await xpl(dir, "index", "--precise", "off")).code).toBe(0);

@@ -420,16 +420,19 @@ adds the mount prefixes to the routes, matches each request against them and emi
   `http.MethodX`), and `Get/Head/Post` with the client's argument count on a receiver named `...client`.
 - Paths. Segments `:id`, `{id}`, `<int:id>`, `[id]` and a hole are a parameter; `*`, `*name`, `{p...}`,
   `{p:path}`, `<path:p>`, `[...p]` and `[[...p]]` the rest of the path (one segment or more). The query and
-  hash are dropped, and so are empty segments, a trailing slash and Go's `{$}`. A leading hole before `/`
-  (`${API_BASE}/orders`) is a configured origin and is dropped. An absolute URL keeps its path when the host
+  hash are dropped, and so are empty segments, a trailing slash and Go's `{$}`. A name of a string constant
+  at the top of the file (`const API_BASE = "/api/chat"`, Python `API = "/api"`, Go `const base = "/v1"`)
+  reads as its value, alone or in a hole. Any other leading hole before `/` (`${API_BASE}/orders`) is a
+  configured origin and is dropped. An absolute URL keeps its path when the host
   is local or an example (`localhost`, `127.0.0.1`, `0.0.0.0`, `[::1]`, `*.localhost`, `*.local`, `*.test`,
   `example.com/org/net`) or computed; a request to any other host is not linked.
 - Matching. The methods agree (or either is any) and every segment matches: a route parameter takes any
   segment, a request hole only a route parameter. Of the matching routes, those with the most literal
   segments win (`/orders/latest` over `/orders/:id`), then those with the request's own method; ties keep
-  them all. A request to its own symbol is dropped.
+  them all. A catch-all that matches no literal segment (`/{full_path:path}`, `app.get("*")`, a single-page
+  fallback or a proxy) links nothing. A request to its own symbol is dropped.
 
-Limits: paths held in variables or built by helpers, routes registered from data (a list of route objects,
+Limits: paths held in variables other than a file's string constants or built by helpers, routes registered from data (a list of route objects,
 `app.route("/x").get(h)` chains, fastify plugins' `prefix`, `basePath`, Django URL confs), proxies that
 rewrite paths, and clients named otherwise are not seen. Receivers are matched by name, so a non-HTTP
 `client.get("/x")` or a router variable reused under the same name in two functions of one file can link
@@ -1847,7 +1850,8 @@ file; `--json` adds the counts and what was left out.
   Not handled: discriminated unions (`{ status: "idle" } | ...`), Java enums, Go constants in other files,
   a transition split across functions (a test in a caller, the set in a callee), and multi-line conditions.
 - `map` (`draft-map.ts`): the quick map, every code file outside tests, examples, fixtures, docs, benchmarks
-  and dot folders. One graph view per folder, `view:map` for the top (below folders that hold all the code)
+  and dot folders, except a file with no symbols that no reference leaves (a docstring-only `__init__.py`;
+  the note counts them as empty files). One graph view per folder, `view:map` for the top (below folders that hold all the code)
   and `view:map-<path>` below it, with `boxText: "summary"`, `excludeFiles` as for an overview and the
   default stubs (what uses the folder and what it uses). When the index has `request` references, a new
   view's `edgeKinds` are the defaults plus `requests` (existing views keep theirs). A folder box `opens` its
