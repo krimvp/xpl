@@ -35,6 +35,7 @@ export const REF_KINDS: readonly RefKind[] = [
   "type-ref",
   "read",
   "write",
+  "request",
 ];
 
 export interface RefEntry {

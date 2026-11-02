@@ -167,7 +167,7 @@ test.describe("one header in every mode", () => {
         /Download explainer JSON/,
       ]);
       await expect(menu.getByRole("group", { name: "This view" })).toContainText("Stubs");
-      await expect(menu.locator("[data-edge-kind]")).toHaveCount(7);
+      await expect(menu.locator("[data-edge-kind]")).toHaveCount(8); // one per derived edge kind, requests included
       await page.keyboard.press("Escape");
       await fits();
 

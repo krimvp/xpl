@@ -22,6 +22,8 @@
  *  14. SequenceView adds `layout` ("code-first" or "diagram"): how Read and Explore lay the view out.
  *  15. GraphView adds `boxText` ("summary"): every box that is not a container shows its summary under its label.
  *  16. Node adds `sketch` (true): a group that is an idea, linked to no code (no members, no anchors).
+ *  17. Reference.kind adds "request" (a web request to the server route that answers it, always heuristic) and
+ *      Edge.kind adds "requests" (lifted request references).
  *
  * Two files per repo:
  *   index-<commit>.json    SymbolIndex. Static analysis of one commit. Built once, shared by every view.
@@ -248,8 +250,13 @@ export interface Reference {
   from: SymbolId;
   /** (amended) Referenced symbol, or a module scope ("<file>#") for whole-module imports. */
   to: SymbolId;
-  /** `read` includes function values/callback registration; only an invocation is a `call`. */
-  kind: "call" | "import" | "extends" | "implements" | "type-ref" | "read" | "write";
+  /**
+   * `read` includes function values/callback registration; only an invocation is a `call`.
+   * (amended) `request`: a web request (`fetch("/api/orders")`, `requests.get(...)`, `http.Get(...)`) whose
+   * method and path match a server route of the repository; `to` is the route's handler (or the module scope of
+   * the file that defines an inline handler). Always `resolution: "heuristic"`.
+   */
+  kind: "call" | "import" | "extends" | "implements" | "type-ref" | "read" | "write" | "request";
   site: Range;
   /**
    * (amended) How `to` was determined. "precise": a SCIP indexer resolved it. "heuristic": the
@@ -412,7 +419,10 @@ export type NodeRole =
 export interface Edge extends ElementBase {
   from: ElementId;
   to: ElementId;
-  /** (amended) Adds "references": lifted type-refs (`Reference.kind === "type-ref"`). */
+  /**
+   * (amended) Adds "references": lifted type-refs (`Reference.kind === "type-ref"`), and "requests": lifted
+   * web requests (`Reference.kind === "request"`).
+   */
   kind:
     | "calls"
     | "imports"
@@ -421,6 +431,7 @@ export interface Edge extends ElementBase {
     | "references"
     | "reads"
     | "writes"
+    | "requests"
     | "emits"
     | "loads"
     | "discovers"

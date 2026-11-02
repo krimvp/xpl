@@ -217,8 +217,8 @@ it.each(equivalenceRoots)(
 it("reuses extraction while publishing the whole clean index, including inference and diagnostics", async () => {
   const root = makeDir({
     "a.ts":
-      'import { readFileSync } from "node:fs"; export function run() { readFileSync("./config.json"); }',
-    "a.py": "class Runner:\n    def run(self): pass\n",
+      'import { readFileSync } from "node:fs"; export function run() { readFileSync("./config.json"); }\nexport function load() { return fetch("/run"); }',
+    "a.py": 'class Runner:\n    def run(self): pass\n@app.get("/run")\ndef serve(): pass\n',
     "a.go":
       "package a\ntype Work interface { Run() }\ntype Runner struct{}\nfunc (Runner) Run() {}\n",
     "a.rs": "trait Work { fn run(&self); }\nfn broken(\n",
@@ -239,6 +239,9 @@ it("reuses extraction while publishing the whole clean index, including inferenc
     [["a.go#Runner", "a.go#Work"]],
   );
   expect(warm.index.resources?.map((r) => r.files)).toEqual([["config.json"]]);
+  expect(warm.index.refs.filter((r) => r.kind === "request").map((r) => [r.from, r.to])).toEqual([
+    ["a.ts#load", "a.py#serve"],
+  ]);
   expect(warm.warnings).toHaveLength(2);
 });
 

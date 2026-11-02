@@ -43,6 +43,7 @@ import type { SymbolEntry } from "./symbols.js";
 import { spanContains } from "./ast.js";
 import { GRAMMAR_WASM } from "./wasm-files.js";
 import { resolveResources } from "./resources.js";
+import { resolveRequests } from "./http.js";
 import { relationshipReport } from "./analysis.js";
 import { TreeSitterProvider, syntaxClassifier } from "./tree-sitter.js";
 import { SourceRepoView } from "./repo.js";
@@ -483,6 +484,8 @@ export async function buildIndex(opts: BuildIndexOptions): Promise<BuildIndexRes
         );
     }
   }
+  // Web requests match routes after every other reference is known: a handler name resolves through them.
+  refs.push(...resolveRequests(syntax.httpSites, entries, refs));
   refs.sort(compareRefs);
 
   progress({ phase: "Finishing" });

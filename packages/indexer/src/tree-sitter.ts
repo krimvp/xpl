@@ -15,6 +15,7 @@ import type { SymbolEntry } from "./symbols.js";
 import { findSyntaxErrors, significantSyntaxErrors, syntaxErrorWarning } from "./syntax-errors.js";
 import type { SyntaxErrorFile } from "./syntax-errors.js";
 import { collectResourceSites, type ResourceSite } from "./resources.js";
+import { collectHttpSites, type HttpSites } from "./http.js";
 import {
   extractionReports,
   HEURISTIC_SUPPORT,
@@ -42,6 +43,7 @@ export class TreeSitterProvider implements IndexProvider {
   readonly capabilities = { ...STRUCTURE_SUPPORT, ...HEURISTIC_SUPPORT };
   usedPacks: { pack: LanguagePack; language: FileLanguage }[] = [];
   resourceSites: ResourceSite[] = [];
+  httpSites: HttpSites[] = [];
   warnings: string[] = [];
   resolutionMs = 0;
   async analyze(input: ProviderInput): Promise<ProviderOutput> {
@@ -54,6 +56,7 @@ export class TreeSitterProvider implements IndexProvider {
     const usedPackKeys = new Set<string>();
     const syntaxErrors: SyntaxErrorFile[] = [];
     const resourceSites: ResourceSite[] = [];
+    const httpSites: HttpSites[] = [];
     const extractionOutcomes = new Map<FilePath, ExtractionOutcome>();
     const identities = new Map<string, string>();
     const pool = new ParserPool();
@@ -70,6 +73,7 @@ export class TreeSitterProvider implements IndexProvider {
           syntaxErrors,
           warnings,
           resourceSites,
+          httpSites,
           input.extractionCache,
           this.experiment ? (path, identity) => identities.set(path, identity) : undefined,
         );
@@ -126,6 +130,7 @@ export class TreeSitterProvider implements IndexProvider {
     this.resolutionMs = performance.now() - resolutionStarted;
     this.usedPacks = usedPacks;
     this.resourceSites = resourceSites;
+    this.httpSites = httpSites;
     this.warnings = warnings;
     output.relationships = refs.map((ref) => ({
       from: ref.from,
@@ -192,6 +197,7 @@ async function indexFile(
   syntaxErrors: SyntaxErrorFile[],
   warnings: string[],
   resourceSites: ResourceSite[],
+  httpSites: HttpSites[],
   cache: ExtractionCache | undefined,
   onIdentity?: (path: string, identity: string) => void,
 ): Promise<{ file: IndexedFile; pack: LanguagePack | undefined; outcome: ExtractionOutcome }> {
@@ -223,6 +229,7 @@ async function indexFile(
     : await extract();
   const { facts, outcome } = extracted;
   resourceSites.push(...extracted.resourceSites);
+  if (extracted.httpSites) httpSites.push(extracted.httpSites);
   if (extracted.syntaxErrors) syntaxErrors.push(extracted.syntaxErrors);
   warnings.push(...extracted.warnings);
   if (!facts) return { file, pack, outcome };
@@ -256,6 +263,7 @@ interface FileExtraction {
   facts?: FileFacts;
   outcome: ExtractionOutcome;
   resourceSites: ResourceSite[];
+  httpSites?: HttpSites;
   syntaxErrors?: SyntaxErrorFile;
   warnings: string[];
 }
@@ -277,6 +285,8 @@ async function extractFile(
       try {
         result.facts = pack.extract(parsed.ctx);
         result.resourceSites = collectResourceSites(parsed.ctx);
+        const http = collectHttpSites(parsed.ctx);
+        if (http) result.httpSites = http;
         const errors = significantSyntaxErrors(
           source.path,
           findSyntaxErrors(parsed.ctx.tree.rootNode, pack),
