@@ -10,6 +10,7 @@ import { useDerived, useStore, useViewerState } from "../hooks.js";
 import {
   aroundFlow,
   codeFirstView,
+  startOrder,
   topicElements,
   topicMatches,
   workspaceMap,
@@ -44,6 +45,10 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
   const map = useMemo(
     () => workspaceMap(state),
     [state.model, state.selection, state.viewId, state.expanded, state.reach],
+  );
+  const mapOrder = useMemo(
+    () => startOrder(state.model, map.view, state.tour?.tourId),
+    [state.model, map.view, state.tour?.tourId],
   );
   const flow = workspaceView(state, "flow") as SequenceViewData | undefined;
   const viewQuestion =
@@ -361,7 +366,7 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
                         selection={[...state.selection, ...map.related]}
                         matches={mapMatches}
                         related={map.related}
-                        order={map.view.include}
+                        order={mapOrder}
                         present={map.generated}
                         reader
                       />

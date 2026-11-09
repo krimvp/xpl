@@ -84,3 +84,69 @@ test("on a phone the tables are laid out top to bottom, larger than side by side
   const job = (await byId(page, JOB).boundingBox())!;
   expect(job.y).toBeGreaterThan(queue.y + queue.height);
 });
+
+test("a data map too big to read whole opens on the box its tour starts on, all of it in sight", async ({
+  page,
+}) => {
+  // every type of the job runner with its fields: too big to fit at a readable size in 1024 x 768
+  const types: Record<string, string[]> = {
+    "src/bus.ts#JobCompleted": ["jobId", "type", "durationMs"],
+    "src/bus.ts#EventBus": ["listeners"],
+    "src/config.ts#RetryConfig": ["maxRetries", "baseDelayMs", "maxDelayMs"],
+    "src/config.ts#Config": ["queue", "workers", "retry", "metrics"],
+    "src/config.ts#RunnerConfig": ["idleDelayMs", "timeoutMs", "retry"],
+    "src/metrics.ts#Metrics": ["prefix", "completed", "totalDurationMs", "completedByType"],
+    "src/queue.ts#Job": [
+      "id",
+      "type",
+      "payload",
+      "priority",
+      "attempts",
+      "enqueuedAt",
+      "availableAt",
+    ],
+    "src/queue.ts#DeadJob": ["job", "error", "deadAt"],
+    "src/queue.ts#Queue": ["dead", "acked", "ready", "inflight", "maxPending", "nextId"],
+    "src/runner.ts#Runner": ["stats", "queue", "pool", "config", "logger", "running", "stopped"],
+    "src/runner.ts#RunnerStats": ["processed", "deadLettered", "msByType"],
+    "src/worker.ts#Worker": ["id", "current", "handlers", "bus"],
+    "src/worker.ts#WorkerPool": ["idle", "waiting"],
+  };
+  const include = Object.entries(types).flatMap(([type, fields]) => [
+    `sym:${type}`,
+    ...fields.map((field) => `sym:${type}.${field}`),
+  ]);
+  const { html, bundle } = readEmbeddedBundle();
+  const explainer = (bundle as Loose).explainer;
+  explainer.tours.unshift({
+    id: "tour:data",
+    title: "What the runner keeps",
+    steps: [{ id: "t1", view: "view:data", focus: [JOB], note: "### A job\n\nThe unit of work." }],
+  });
+  await page.setViewportSize({ width: 1024, height: 768 });
+  await page.route("http://xpl.test/**", (route) =>
+    route.fulfill({ contentType: "text/html", body: withBundle(html, bundle) }),
+  );
+  explainer.views.push({
+    id: "view:data",
+    type: "graph",
+    title: "What the runner keeps",
+    scope: { root: "repo", depth: 1 },
+    provenance: { origin: "llm" },
+    include,
+    edgeKinds: ["references"],
+    boxText: "members",
+    stubs: { mode: "none" },
+  } satisfies Loose);
+  await page.goto("http://xpl.test/?perspective=map&view=view:data");
+  await page.waitForFunction(() => window.__xpl !== undefined);
+  // the map is framed, not fitted (the reader is told part of it is out of sight) ...
+  await expect(page.getByRole("button", { name: /Fit all \(\d+ out of sight\)/ })).toBeVisible();
+  // ... and the frame holds the whole of the tour's first box (the include list starts elsewhere)
+  const pane = (await page.locator(".workspace-diagram svg.pz-svg").boundingBox())!;
+  const job = (await byId(page, JOB).boundingBox())!;
+  expect(job.x).toBeGreaterThanOrEqual(pane.x - 1);
+  expect(job.y).toBeGreaterThanOrEqual(pane.y - 1);
+  expect(job.x + job.width).toBeLessThanOrEqual(pane.x + pane.width + 1);
+  expect(job.y + job.height).toBeLessThanOrEqual(pane.y + pane.height + 1);
+});

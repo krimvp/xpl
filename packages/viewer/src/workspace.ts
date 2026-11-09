@@ -134,6 +134,26 @@ export function workspaceView(state: ViewerState, type: "map" | "flow"): View | 
   );
 }
 
+/**
+ * The ids a map's first view looks for its first box in (GraphView `order`): the focus of the first tour step
+ * on this map (the tour being read first), then the map's include list. A map opened with nothing selected
+ * starts on the box the tour starts on, not on whatever box the include list names first (V4-02).
+ */
+export function startOrder(
+  model: ExplainerModel,
+  view: GraphView,
+  tourId?: string,
+): readonly ElementId[] {
+  const include = Array.isArray(view.include) ? view.include : [];
+  const current = tourId ? model.tour(tourId) : undefined;
+  const tours = current ? [current, ...model.tours.filter((t) => t !== current)] : model.tours;
+  for (const tour of tours)
+    for (const step of tour.steps)
+      if (step.view === view.id && Array.isArray(step.focus) && step.focus.length > 0)
+        return [...step.focus, ...include];
+  return include;
+}
+
 export function workspaceMap(state: ViewerState) {
   const authored = workspaceView(state, "map") as GraphView | undefined;
   const process = workspaceView(state, "flow") as SequenceView | undefined;

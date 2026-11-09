@@ -2,6 +2,7 @@
  * The diagram of the current view (graph or sequence) under a caption with its title and question. (The
  * stub and edge-kind toggles of a graph view are in the header's Edit menu, with the other author tools.)
  */
+import { useMemo } from "react";
 import { useDerived, useViewerState } from "../hooks.js";
 import { ErrorBoundary } from "./ErrorBoundary.js";
 import { GraphView } from "./GraphView.js";
@@ -11,12 +12,17 @@ import { ExpandInPlaceAction } from "./ExpandInPlaceAction.js";
 import { FoldBackAction } from "./FoldBackAction.js";
 import { SequenceView } from "./SequenceView.js";
 import { ZoomTrail } from "./ZoomTrail.js";
-import { codeFirstView } from "../workspace.js";
+import { codeFirstView, startOrder } from "../workspace.js";
 
 export function DiagramPane() {
   const state = useViewerState();
   const derived = useDerived();
   const view = derived.view.view;
+  const tourId = state.tour?.tourId;
+  const order = useMemo(
+    () => (view?.type === "graph" ? startOrder(state.model, view, tourId) : undefined),
+    [state.model, view, tourId],
+  );
   if (!view) {
     return (
       <div className="diagram">
@@ -62,7 +68,7 @@ export function DiagramPane() {
               selection={state.selection}
               matches={derived.matches}
               related={derived.selection.related}
-              order={Array.isArray(view.include) ? view.include : undefined}
+              order={order}
               present={present}
             />
           ) : view.type === "flow" ? (
