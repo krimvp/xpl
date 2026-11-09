@@ -1,4 +1,5 @@
 import {
+  HEURISTIC_REFS_LIMIT,
   RELATIONSHIP_CAPABILITIES,
   STRUCTURE_CAPABILITIES,
   type AnalysisCapabilities,
@@ -78,8 +79,7 @@ export function extractionReports(
         const limitations = [
           ...new Set(matching.flatMap((file) => outcomes.get(file)!.limitations)),
         ];
-        if (relationship)
-          limitations.push("References matched by name are hints; some can be missing.");
+        if (relationship) limitations.push(HEURISTIC_REFS_LIMIT);
         if (capability === "declarationRanges" && ability === "partial")
           limitations.push("Some declaration ranges omit leading syntax.");
         const observed =

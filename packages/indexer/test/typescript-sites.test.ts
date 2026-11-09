@@ -226,6 +226,26 @@ describe("heritage and type-ref sites", () => {
     ]);
   });
 
+  it("a named type in an alias's intersection is extended, as by an interface; elsewhere it is a type use", async () => {
+    const source = src(
+      "type Options = Base & ns.More<T> & { hooks: Hooks };",
+      "type Pair = (Left & { left: string }) & Right;",
+      "type Either = A | B;",
+      "function f(x: P & Q) {}",
+    );
+    expect(await sitesOf(source, "a.ts", ["extends", "implements"])).toEqual([
+      "extends Base «Base»",
+      "extends ns.More «ns.More»",
+      // the outer intersection first
+      "extends Right «Right»",
+      "extends Left «Left»",
+    ]);
+    const refs = await sitesOf(source, "a.ts", ["type-ref"]);
+    expect(refs).toContain("type-ref Hooks «Hooks»");
+    expect(refs).toContain("type-ref P «P»");
+    expect(refs.some((site) => /Base|Left|Right/.test(site))).toBe(false);
+  });
+
   it("type references in every position, but not declaration names, type parameters or heritage", async () => {
     const source = src(
       "class Box<T extends Base> implements Item {",

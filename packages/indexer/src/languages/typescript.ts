@@ -107,6 +107,7 @@ const SCAN_TYPES = [
   "extends_clause",
   "implements_clause",
   "extends_type_clause",
+  "intersection_type",
   "type_identifier",
   "nested_type_identifier",
   "jsx_opening_element",
@@ -715,9 +716,27 @@ function heritageKind(node: Node): "extends" | "implements" | undefined {
       top = parent;
       continue;
     }
+    if (parent.type === "intersection_type" && isAliasIntersection(parent)) return "extends";
     if (!HERITAGE_CLAUSES.has(parent.type)) return undefined;
     return parent.type === "implements_clause" ? "implements" : "extends";
   }
+}
+
+/** The nodes that name a type (`Base`, `ns.Base`, `Base<T>`): what an `extends` site can point at. */
+const TYPE_NAME_NODES = new Set(["type_identifier", "nested_type_identifier", "generic_type"]);
+
+/**
+ * Is this intersection the value of a type alias (`type X = Base & { ... }`, also inside parentheses)? Its named
+ * types are what `X` extends, as `interface X extends Base` says; an intersection elsewhere is a type use.
+ */
+function isAliasIntersection(node: Node): boolean {
+  let top = node;
+  while (top.parent?.type === "parenthesized_type" || top.parent?.type === "intersection_type")
+    top = top.parent;
+  return (
+    top.parent?.type === "type_alias_declaration" &&
+    top.parent.childForFieldName("value")?.id === top.id
+  );
 }
 
 /** Is this `type_identifier` a use of a type parameter (`T` inside `class C<T>`, `<T>(x: T) => …`)? */
@@ -1579,6 +1598,11 @@ class Extractor {
           break;
         case "extends_type_clause":
           for (const type of n.childrenForFieldName("type")) this.heritage("extends", type);
+          break;
+        case "intersection_type":
+          if (isAliasIntersection(n))
+            for (const type of n.namedChildren)
+              if (TYPE_NAME_NODES.has(type.type)) this.heritage("extends", type);
           break;
         case "type_identifier":
         case "nested_type_identifier":
