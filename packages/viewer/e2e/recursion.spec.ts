@@ -88,9 +88,9 @@ test("a return without a step is an arrow out of its box, back to whoever made t
     .locator(".flow-transition.is-return text")
     .evaluate((text) => [...text.querySelectorAll("tspan")].map((t) => t.textContent).join(" "));
   expect(words).toBe("done (up one level)");
-  // it leaves the box and ends above it, on no other box
+  // it leaves the box (its shape, not the frame name above it) and ends above it, on no other box
   const box = (await page
-    .locator(`.flow-stage[data-stage-id="${flow.steps![2]!.id}"]`)
+    .locator(`.flow-stage[data-stage-id="${flow.steps![2]!.id}"] > rect`)
     .boundingBox())!;
   const line = (await back.locator("polyline").boundingBox())!;
   expect(line.x).toBeGreaterThan(box.x + box.width / 2);
