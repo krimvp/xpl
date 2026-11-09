@@ -79,6 +79,24 @@ describe("xpl draft repo: one service and what it relies on", () => {
     ]);
   });
 
+  it("says in a singular sentence that one outside system is only imported off the map", async () => {
+    const project = makeTempDir("xpl-off-map-system-");
+    for (const name of ["a", "b", "c", "d", "e", "f", "g", "h"])
+      writeFile(project, `${name}.py`, `def ${name}():\n    return 1\n`);
+    writeFile(
+      project,
+      "z.py",
+      "import argparse\n\ndef main():\n    return argparse.ArgumentParser().parse_args()\n",
+    );
+    const { notes } = await drafted(project);
+    expect(notes).toContain(
+      "1 outside system is only imported from files left off the maps: User at the terminal",
+    );
+    expect(notes).toContainEqual(
+      expect.stringMatching(/^1 file or folder of \S+ is left off its map/),
+    );
+  });
+
   it("asks whether an imported integration is on the default path in the saved patch", async () => {
     const project = makeTempDir("xpl-optional-integration-");
     writeFile(project, "README.md", "# worker\n\nProcesses jobs.\n");

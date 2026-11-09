@@ -1808,7 +1808,7 @@ export function draftRepo(input: DraftInput): Draft {
   for (const inside of insides) {
     if (inside.offMap.length > 0) {
       notes.push(
-        `${inside.offMap.length} files or folders of ${inside.root || repoName} are left off its map (at most ${L.mapBoxes} boxes); its first step asks to group them`,
+        `${plural(inside.offMap.length, "file or folder", "files or folders")} of ${inside.root || repoName} ${inside.offMap.length === 1 ? "is" : "are"} left off its map (at most ${L.mapBoxes} boxes); its first step asks to group them`,
       );
     }
   }
@@ -1839,7 +1839,7 @@ export function draftRepo(input: DraftInput): Draft {
   const outbound = linked.filter((s) => !s.inbound);
   if (systems.length > linked.length) {
     notes.push(
-      `${systems.length - linked.length} outside systems are only imported from files left off the maps: ${plainList(
+      `${plural(systems.length - linked.length, "outside system is", "outside systems are")} only imported from files left off the maps: ${plainList(
         systems.filter((s) => !reach.has(s.slug)).map((s) => s.label),
       )}`,
     );
