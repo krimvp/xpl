@@ -106,6 +106,14 @@ Guides and the viewer:
 - A selected row of a data map lists its own "holds" arrow and marks the table it holds as linked.
 - Code in backticks in a box summary is drawn as code on the box.
 - "About this guide" says in one plain line per language what xpl could read.
+- Arrows out of one choice on a flow run in lanes of their own, so "yes" and "no" are two lines that do not
+  cross. An arrow or label that ran through a box on a map or flow goes around it.
+- A tour step about every box shows the whole diagram, smaller, not a frame of part of it. A sequence frame
+  zooms out to keep the names of the lifelines the next arrows join.
+- A guide excerpt of a change marks removed, added and rewritten lines as the code pane does.
+- Search lists the guide's own words first, then names with code in the page, and test names last.
+- The key line names each kind of mark once, with the mark itself as its swatch. A jump to a line scrolls
+  only its own code pane.
 
 Indexing:
 
@@ -123,6 +131,13 @@ Indexing:
   method of the enclosing class. `xpl health` never calls a file that declares a program's entry point
   (Java `static void main`, Python `__main__`, Go `func main`, Rust `fn main`) unused.
 - `xpl outline` shows the code files of a Maven layout by default: a chain of single folders is one row.
+- TypeScript: `type X = { ... }` and `type X = A & { ... }` have fields like an interface, so a data map
+  draws their rows. A package that imports itself by its own name links to its source through the
+  tsconfig `outDir`. A field typed `Options['baseUrl']` holds no arrow to `Options`.
+- Java: a lambda parameter or a for-each variable hides a field only inside the lambda or the loop. Record
+  components and interface constants are fields. `xpl new` names a Maven project after its `artifactId`.
+- A route served by a server that a test starts answers only the requests of that test.
+- `xpl outline` ends a file's range on its last line, as `wc -l` and editors count it.
 
 Drafts and lint:
 
@@ -159,6 +174,13 @@ Drafts and lint:
 - `-o /dev/null` no longer replaces `/dev/null` with a regular file: xpl writes to a device in place.
 - The skill puts its hard rules first, starts every guide from its purpose, and gives each scope a tour shape
   and a length budget. Its writing guide follows Orwell's rules and ASD-STE100 Simplified Technical English.
+- For a library, `xpl draft repo` and `xpl draft path` follow the request its entry makes (ky:
+  `createInstance` to `createRequest` to `Ky.create`), not the builder that returns the entry. A method of
+  the entry's own class gets its own lifeline, and a helper called in an early exit and on the main path is
+  drawn at both calls. `xpl draft map` skips a license or banner comment when it takes a file's description.
+- `xpl lint` flags a step with no `code` that shows more than 2 code ranges (`many-ranges`) and a tour that
+  follows a path with more than one map or one flow or sequence (`many-diagrams`). It checks a note's
+  heading like its body. `xpl lint --patch` prints the warnings `xpl apply` would print.
 
 Command-line messages:
 
@@ -170,6 +192,9 @@ Command-line messages:
 - `xpl resolve` and `xpl change` take the only guide when you leave out its name.
 - Messages and hints use plain words and name the command to run, for example "fix this field with
   `xpl apply`, then run `xpl validate` again".
+- `xpl feedback` says what it imported and exported, and why a request is outdated, in plain words. A bad
+  request file names the request and the field. `xpl start` without `--entry` names one `draft path`
+  command. `--limit -1` says to write `--limit=-1`.
 
 Docs:
 
@@ -193,6 +218,7 @@ Docs:
 - The skill says which 2 steps of `xpl draft path` to keep in a repository guide, and where they go. It
   tells the agent to read the coverage lines of `xpl index` for Rust, Ruby and PHP. The Vite overview
   links its "starts dev server" arrow to the `server.listen()` call.
+- Docs, the skill and the viewer use American spelling (analyze, color, behavior, labeled).
 
 ## [0.3.0] - 2026-10-09
 
