@@ -1,4 +1,10 @@
-import { applyPatch, ExplainerModel, type Explainer, type ExplainerPatch } from "@xpl/core";
+import {
+  applyPatch,
+  ExplainerModel,
+  type Explainer,
+  type ExplainerPatch,
+  type Issue,
+} from "@xpl/core";
 import type { CommandSpec } from "../command.js";
 import { plural, renderIssues } from "../format.js";
 import { LINT_RULES, lintExplainer, type LintFinding, type LintRule } from "../lint.js";
@@ -43,8 +49,8 @@ export const lintCommand: CommandSpec = {
     "It also checks the tour: the big picture first, every box visited, where to go next at the end.",
     "Each finding names the element, the field, a short quote and a fix. Fix them with a patch.",
     "The rules, one per finding code (todo-left, long-sentence, ...), are listed in cli.md.",
-    "--patch lints the guide as it would be after `xpl apply`; nothing is written.",
-    "Exit codes: 0 no findings; 1 any finding (with --warn-only, only todo-left), or a rejected patch; 2 usage.",
+    "--patch lints the guide as it would be after `xpl apply` and prints the warnings apply would print; nothing is written.",
+    "Exit codes: 0 no findings; 1 any finding or apply warning (with --warn-only, only todo-left), or a rejected patch; 2 usage.",
   ],
   options: {
     patch: {
@@ -72,6 +78,8 @@ export const lintCommand: CommandSpec = {
     let explainer: Explainer = loaded.explainer;
     let ws: Workspace | undefined;
     let patchInfo: { source: string; changed: string[]; protectedIds: string[] } | undefined;
+    /** The warnings `xpl apply` would print with this patch (protected ones are in the subject line). */
+    let applyIssues: Issue[] = [];
     if (read !== undefined) {
       // The merge of `xpl apply` (core `applyPatch`), on a copy in memory: nothing is written.
       ws = await openWorkspace(ctx, { explainer: loaded });
@@ -118,6 +126,7 @@ export const lintCommand: CommandSpec = {
         ),
       ];
       patchInfo = { source: read.label, changed: result.changed, protectedIds };
+      applyIssues = result.issues.filter((issue) => issue.code !== "protected");
     }
 
     // The index (when there is one) gives the boxes and arrows of each map; lint works without it.
@@ -133,7 +142,7 @@ export const lintCommand: CommandSpec = {
       ws ? new ExplainerModel(explainer, ws.model) : undefined,
     );
     const errors = findings.filter((f) => f.severity === "error").length;
-    const code = (strict ? findings.length : errors) > 0 ? 1 : 0;
+    const code = (strict ? findings.length + applyIssues.length : errors) > 0 ? 1 : 0;
     const counts: Record<string, number> = {};
     for (const f of findings) counts[f.rule] = (counts[f.rule] ?? 0) + 1;
 
@@ -148,6 +157,7 @@ export const lintCommand: CommandSpec = {
               ...(patchInfo.protectedIds.length > 0
                 ? { protectedIds: patchInfo.protectedIds }
                 : {}),
+              ...(applyIssues.length > 0 ? { applyIssues } : {}),
             }
           : {}),
         strict,
@@ -167,9 +177,23 @@ export const lintCommand: CommandSpec = {
           : "") +
         ")"
       : loaded.rel;
+    const applyLines =
+      applyIssues.length === 0
+        ? []
+        : [
+            "",
+            `\`xpl apply\` would warn (${applyIssues.length}); fix ${applyIssues.length === 1 ? "it" : "them"} in the patch now, because ids never change once applied:`,
+            ...renderIssues(applyIssues, loaded.name),
+          ];
     if (findings.length === 0) {
-      ctx.out(`ok: ${subject}: ${plural(checked, "text")} checked, no findings`);
-      return 0;
+      ctx.out(
+        applyLines.length === 0
+          ? `ok: ${subject}: ${plural(checked, "text")} checked, no findings`
+          : [`${subject}: ${plural(checked, "text")} checked, no findings`, ...applyLines].join(
+              "\n",
+            ),
+      );
+      return code;
     }
     const lines = [`${subject}: ${plural(checked, "text")} checked`];
     for (const [elementId, list] of byElement(findings)) {
@@ -193,6 +217,7 @@ export const lintCommand: CommandSpec = {
           : errors > 0
             ? `; ${plural(errors, "error")} (todo-left): exit 1 even with --warn-only`
             : "; warnings only (--warn-only)"),
+      ...applyLines,
     );
     ctx.out(lines.join("\n"));
     return code;

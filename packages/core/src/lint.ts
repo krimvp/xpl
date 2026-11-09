@@ -41,6 +41,7 @@
  */
 import { deriveGraph, type DerivedGraph } from "./graph.js";
 import { collectAnchors, isBaseAnchor } from "./anchors.js";
+import { codeFocus } from "./focus.js";
 import { isTestFile } from "./index-model.js";
 import { parseId } from "./ids.js";
 import type { Explainer, GraphView } from "./schema.js";
@@ -85,6 +86,8 @@ export type LintRule =
   | "untitled-step"
   | "change-not-shown"
   | "far-ranges"
+  | "many-ranges"
+  | "many-diagrams"
   | "long-talk-note"
   | "big-map"
   | "many-participants"
@@ -130,6 +133,8 @@ export const LINT_RULES: Record<LintRule, string> = {
   "untitled-step": "tour step whose title the viewer has to make up",
   "change-not-shown": "changed file no tour step shows",
   "far-ranges": "step with two far-apart ranges in one file",
+  "many-ranges": "step with no code of its own that shows more ranges than a step holds",
+  "many-diagrams": "tour that uses more diagrams than its budget",
   "long-talk-note": "talk note set in small type",
   "big-map": "map with too many boxes for a tour",
   "many-participants": "sequence with too many participants for a tour",
@@ -238,6 +243,11 @@ export const LINT_LIMITS = {
   farRangeLines: 40,
   /** ...and a slide shows at most this many places of a file, one pane each (viewer `MAX_PLACES`). */
   placesPerFile: 3,
+  /** A tour step holds at most this many code ranges (SKILL.md: "at most 2 code ranges"), derived ones too. */
+  stepRanges: 2,
+  /** A tour that follows a path uses at most this many maps and flows or sequences (SKILL.md's budget table). */
+  tourMaps: 1,
+  tourPaths: 1,
   /** Present sets a note body over this many characters in its smaller caption size (viewer `LONG_NOTE`). */
   talkNoteChars: 280,
   /** A map a tour shows has at most this many boxes (`big-map`)... */
@@ -1475,7 +1485,7 @@ class Linter {
             ? ' ("only" that opens a clause, follows "the" or comes before "by" says nothing else does it)'
             : ""),
         where.kind === "tour-step"
-          ? "check every case in the code, then name the part the step focuses in the same sentence (its anchors are the evidence); or narrow the claim (name the places, add the condition)"
+          ? "check every case in the code, then name the part the step focuses in the same sentence, by its box label in plain words (its anchors are the evidence; a code name counts toward code-heavy); or narrow the claim (name the places, add the condition)"
           : "check every case in the code and anchor it (an element with anchors may say it), or narrow the claim (name the places, add the condition)",
       );
     }
@@ -1604,7 +1614,7 @@ class Linter {
         "keep a title near 8 words that state one fact; put the rest in the text below",
       );
     }
-    this.words(where, masked, evidence);
+    if (masked.text.search(TODO_WORD) < 0) this.words(where, masked, evidence);
   }
 
   /**
@@ -1697,6 +1707,8 @@ class Linter {
     if (typeof value !== "string" || value.trim() === "") return undefined;
     this.checked++;
     const masked = mask(value);
+    // a draft's text (todo-left reports it) is judged once it is written
+    if (masked.text.search(TODO_WORD) >= 0) return masked;
     const list = sentences(masked.text);
     const counts = list.map((s) => words(s).length);
     let dashed = false;
@@ -1763,9 +1775,7 @@ class Linter {
     const passiveHint =
       'name who does it: "The CLI writes the accepted changes", not "Accepted changes are written"; ' +
       'for a state, use a plain verb ("is on", "runs only on Linux")';
-    if (/\bTODO\b/.test(value)) {
-      // a draft's text is judged once it is written
-    } else if (passive.length < LINT_LIMITS.passiveClauses && firstPassive.length > 0) {
+    if (passive.length < LINT_LIMITS.passiveClauses && firstPassive.length > 0) {
       this.add(
         where,
         "passive-voice",
@@ -2138,6 +2148,34 @@ function orderChecks(
     }
   }
 
+  // a tour that follows a path answers one question: one map and one flow or sequence (SKILL.md's budget table). A
+  // change, a talk and an architecture tour have budgets of their own.
+  const views = [
+    ...new Map(
+      steps.flatMap((step) => {
+        const view = viewOf(step);
+        return view ? [[str(view.id) ?? "", view] as const] : [];
+      }),
+    ).values(),
+  ];
+  const paths = views.filter((view) => view.type === "sequence" || view.type === "flow");
+  const graphs = views.filter((view) => view.type === "graph");
+  if (
+    paths.length > 0 &&
+    !change &&
+    !isTalk(tour) &&
+    !graphs.some((view) => isArchitectureView(view, at)) &&
+    (paths.length > LINT_LIMITS.tourPaths || graphs.length > LINT_LIMITS.tourMaps)
+  ) {
+    lint.add(
+      where,
+      "many-diagrams",
+      excerpt(views.map((view) => str(view.id) ?? "?").join(", ")),
+      `${plural(views.length, "diagram")} (${plural(graphs.length, "map")}, ${plural(paths.length, "flow or sequence", "flows or sequences")}): a tour that follows a path uses at most ${LINT_LIMITS.tourMaps} map and ${LINT_LIMITS.tourPaths} flow or sequence`,
+      "keep the diagram that answers the question and show the rest in its steps' code, or split the tour in two (one per question)",
+    );
+  }
+
   if (steps.length > LINT_LIMITS.tourSteps) {
     lint.add(
       where,
@@ -2306,6 +2344,34 @@ function farRanges(lint: Linter, where: Where, step: Record<string, unknown>, at
       return;
     }
   }
+}
+
+/**
+ * `many-ranges`: a tour step with no `code` shows the code of what it focuses. A box with no anchors of its own
+ * falls back to its code (`codeFocus`: a folder's files, a group's members). More ranges than a step holds are a
+ * list to scroll, not the code the note is about. Anchors an author wrote on the focus are judged as written.
+ */
+function manyRanges(
+  lint: Linter,
+  where: Where,
+  step: Record<string, unknown>,
+  at: Lookup,
+  model: ExplainerModel,
+): void {
+  if (list(step.code).length > 0) return;
+  const focus = list<unknown>(step.focus).filter(
+    (id): id is string => typeof id === "string" && list(elementOf(id, at)?.anchors).length === 0,
+  );
+  const ranges = codeFocus(focus, model);
+  if (ranges.length <= LINT_LIMITS.stepRanges) return;
+  const files = [...new Set(ranges.map((r) => r.file))];
+  lint.add(
+    { ...where, field: "code" },
+    "many-ranges",
+    excerpt(files.join(", ")),
+    `no \`code\`, so the step shows the code of what it focuses: ${plural(ranges.length, "range")} in ${plural(files.length, "file")} (a step holds at most ${LINT_LIMITS.stepRanges})`,
+    `give the step \`code\` with the ${LINT_LIMITS.stepRanges} ranges the note is about, or focus a smaller box`,
+  );
 }
 
 /**
@@ -2864,7 +2930,10 @@ export function lintExplainer(explainer: Explainer, model?: ExplainerModel): Lin
       };
       const note = str(step.note);
       // a draft's step (its note a TODO) is judged once it is written, like code-heavy and long-note
-      if (!/\bTODO\b/.test(note ?? "")) farRanges(lint, where, step, byId);
+      if (!/\bTODO\b/.test(note ?? "")) {
+        farRanges(lint, where, step, byId);
+        if (model) manyRanges(lint, where, step, byId, model);
+      }
       if (note === undefined || note.trim() === "") {
         lint.add(
           where,
@@ -2884,10 +2953,8 @@ export function lintExplainer(explainer: Explainer, model?: ExplainerModel): Lin
       const heading = HEADING.exec(lines[first] ?? "");
       let body = note;
       if (heading && heading[1]!.trim() !== "") {
-        // a heading is a title: the step's own code links under it are its evidence
-        const titleEvidence =
-          list(step.code).length > 0 ? { ...evidence, anchored: true } : evidence;
-        lint.title({ ...where, field: "note heading" }, heading[1], titleEvidence);
+        // a heading is a title, checked like the body: a claim in it names the part that proves it
+        lint.title({ ...where, field: "note heading" }, heading[1], evidence);
         body = lines.slice(first + 1).join("\n");
       } else if (!sentenceTitle(note)) {
         lint.add(

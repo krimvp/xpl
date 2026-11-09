@@ -1541,6 +1541,92 @@ describe("lintExplainer: reader checks", () => {
     ]);
   });
 
+  it("many-ranges: a step with no code that focuses a folder shows each file; its own code or anchored focus is fine (needs the index)", () => {
+    const files = ["a", "b", "c"].map((n) => ({
+      path: `src/${n}.ts`,
+      language: "typescript",
+      hash: "h",
+      lines: 10,
+    }));
+    const index = {
+      schema: INDEX_SCHEMA,
+      commit: "c",
+      tool: "test",
+      languages: {},
+      files,
+      symbols: [],
+      refs: [],
+    } as unknown as SymbolIndex;
+    const step = (id: string, extra: Record<string, unknown>) => ({
+      id,
+      view: "view:v",
+      note: "### Where to go next\nThe source folder holds the runner.",
+      ...extra,
+    });
+    const doc = explainer({
+      concepts: [
+        {
+          id: "concept:c",
+          label: "Retry",
+          summary: "Failed jobs come back.",
+          anchors: ["a", "b", "c"].map((n) => ({ file: `src/${n}.ts`, role: "definition" })),
+        },
+      ],
+      tours: [
+        {
+          ...tour([]),
+          steps: [
+            step("t1", { focus: ["dir:src"] }),
+            step("t2", { focus: ["dir:src"], code: [{ file: "src/a.ts", role: "definition" }] }),
+            step("t3", { focus: ["file:src/a.ts"] }),
+            step("t4", { focus: ["concept:c"] }),
+          ],
+        },
+      ],
+    });
+    // without the index, no folder to expand
+    expect(only(lintExplainer(doc).findings, "many-ranges")).toEqual([]);
+    const { findings } = lintExplainer(doc, new ExplainerModel(doc, index));
+    expect(only(findings, "many-ranges").map((f) => [f.elementId, f.field, f.message])).toEqual([
+      [
+        "tour:t/t1",
+        "code",
+        "no `code`, so the step shows the code of what it focuses: 3 ranges in 3 files (a step holds at most 2)",
+      ],
+    ]);
+  });
+
+  it("many-diagrams: a tour that follows a path uses one map and one flow or sequence; a repo tour may use more", () => {
+    const views = [
+      { id: "view:files", type: "graph", title: "The files", include: ["file:src/a.ts"] },
+      { id: "view:seq", type: "sequence", title: "The calls", participants: [], steps: [] },
+      { id: "view:flow", type: "flow", title: "The decision", steps: [] },
+    ];
+    const steps = (ids: string[]) =>
+      ids.map((view, i) => ({
+        id: `t${i + 1}`,
+        view,
+        focus: [],
+        note: "### The runner takes a job\nThe runner takes the next job.",
+      }));
+    const found = (tourViews: string[], nodes: unknown[] = []) =>
+      only(
+        lintExplainer(
+          explainer({ nodes, views, tours: [{ ...tour([]), steps: steps(tourViews) }] }),
+        ).findings,
+        "many-diagrams",
+      ).map((f) => f.message);
+    // ky's retries guide: the map of the files, the sequence and a flow
+    expect(found(["view:files", "view:seq", "view:flow"])).toEqual([
+      "3 diagrams (1 map, 2 flows or sequences): a tour that follows a path uses at most 1 map and 1 flow or sequence",
+    ]);
+    expect(found(["view:files", "view:seq"])).toEqual([]);
+    // a map with a role box is an architecture map: a repo tour has its own budget
+    expect(
+      found(["view:files", "view:seq", "view:flow"], [{ id: "file:src/a.ts", role: "service" }]),
+    ).toEqual([]);
+  });
+
   it("long-talk-note: a note over LONG_NOTE in a talk; other tours may say more", () => {
     const body = "The runner takes the next job from the queue. ".repeat(7).trim();
     expect(body.length).toBeGreaterThan(LINT_LIMITS.talkNoteChars);
@@ -1898,6 +1984,19 @@ describe("lintExplainer: length, voice and words", () => {
     ]);
   });
 
+  it("a draft's TODO text gets only todo-left: its sentence length, voice and words are judged once it is written", () => {
+    const todo =
+      "TODO: one plain sentence: what this file does for the project (defines `Queue`, `push` and `pop`; used by every worker, the runner and the main entry of the program).";
+    const { findings } = lintExplainer(
+      explainer({
+        nodes: [{ id: "file:src/queue.ts", label: "TODO: a name", summary: todo }],
+        concepts: [{ id: "concept:retry", label: "Retry", summary: `${todo} It is always used.` }],
+        tours: [tour([`### TODO: a title that names every part\n\n${todo}`])],
+      }),
+    );
+    expect(rules(findings).sort()).toEqual(["todo-left", "todo-left", "todo-left", "todo-left"]);
+  });
+
   it("map-box: a file name as a label, a noun or a passive first word, and a vague verb; a draft's long TODO waits", () => {
     const box = (id: string, label: string, summary: string) => ({ id, label, summary });
     const todo =
@@ -1915,6 +2014,8 @@ describe("lintExplainer: length, voice and words", () => {
       box("file:src/a.ts", "One two three four five", "Answers the question of the reader."),
       box("file:src/b.ts", "One two three four five six", "Is where jobs wait."),
       box("file:src/c.ts", "Setup guide", "Tells a new developer how to install and run it."),
+      // the folder's own name as its label, and a first word that ends in "ss" like a noun
+      box("dir:src/tasks", "tasks", "Process the jobs in order."),
       box("dir:src/jobs", "Jobs", todo),
     ];
     const { findings } = lintExplainer(
@@ -1956,6 +2057,8 @@ describe("lintExplainer: length, voice and words", () => {
         "label",
         "6 words (more than 5): a box on a map that shows summaries takes a label of 2-5 plain words",
       ],
+      ["dir:src/tasks", "label", fileName],
+      ["dir:src/tasks", "summary", `it starts with "Process", not a verb${after}`],
     ]);
   });
 
@@ -2492,7 +2595,7 @@ describe("lintExplainer: words and voice on real code English", () => {
   });
 
   // "in all" is "in total", a quoted test name is the code's words, a heading has its step's code
-  it('absolute-word skips "in all", a quoted test name, and a heading on a step with code', () => {
+  it('absolute-word skips "in all" and a quoted test name; a heading needs evidence like the body', () => {
     const steps = [
       "### Retries\nThe old code waited 3.5 s in all.",
       '### Tests\nThe older "always fails" test now passes.',
@@ -2506,14 +2609,11 @@ describe("lintExplainer: words and voice on real code English", () => {
       ...(i === 2 ? { code: [{ file: "src/worker.ts", role: "definition" }] } : {}),
     }));
     const { findings } = lintExplainer(explainer({ tours: [{ ...tour([]), steps }] }));
-    expect(only(findings, "absolute-word").map((f) => f.elementId)).toEqual(["tour:t/t4"]);
-    // the same heading with no code under it still needs evidence
-    const bare = lintExplainer(
-      explainer({
-        tours: [tour(["### Only a missing handler is not retryable\nThe worker marks it."])],
-      }),
-    );
-    expect(only(bare.findings, "absolute-word").map((f) => f.elementId)).toEqual(["tour:t/t1"]);
+    // the code under t3 does not prove a claim about every case: its heading is checked like its body
+    expect(only(findings, "absolute-word").map((f) => [f.elementId, f.field])).toEqual([
+      ["tour:t/t3", "note heading"],
+      ["tour:t/t4", "note"],
+    ]);
   });
 
   it('we-voice: "us" after a number is microseconds', () => {
@@ -2914,6 +3014,46 @@ describe("xpl lint", () => {
       const missing = await xpl(dir, "lint", "demo", "--patch", "nope.json");
       expect(missing.code).toBe(1);
       expect(missing.err).toContain("cannot read patch file");
+    });
+
+    it("prints the warnings `xpl apply` would print (a step id without its view slug), before the ids are fixed", async () => {
+      const dir = cloneDir(demo);
+      expect((await xpl(dir, "new", "clean", "--title", "How a job runs")).code).toBe(0);
+      const patch = {
+        views: [
+          {
+            id: "view:retry-flow",
+            type: "flow",
+            title: "How a job is retried",
+            participants: ["file:src/runner.ts"],
+            steps: [
+              {
+                id: "retry:1",
+                kind: "call",
+                from: "file:src/runner.ts",
+                to: "file:src/runner.ts",
+                label: "Run the job",
+                anchors: [],
+              },
+            ],
+          },
+        ],
+      };
+      writeFile(dir, "flow.json", JSON.stringify(patch));
+      const lint = await xpl(dir, "lint", "clean", "--patch", "flow.json");
+      expect(lint.code).toBe(1);
+      expect(lint.out.split("\n")).toEqual([
+        ".explainer/clean.explainer.json with patch flow.json (1 id changed, nothing written): 3 texts checked, no findings",
+        "",
+        "`xpl apply` would warn (1); fix it in the patch now, because ids never change once applied:",
+        'warning views[0].steps[0].id [retry:1]: step id "retry:1" should start with the view slug "retry-flow:"',
+      ]);
+      expect((await xpl(dir, "lint", "clean", "--patch", "flow.json", "--warn-only")).code).toBe(0);
+      const json = await xplJson(dir, "lint", "clean", "--patch", "flow.json");
+      expect(json.json).toMatchObject({ ok: false, total: 0 });
+      expect(json.json.applyIssues).toMatchObject([
+        { severity: "warning", path: "views[0].steps[0].id" },
+      ]);
     });
 
     it("the exit code counts the findings after the patch: `lint --patch && apply` stops on one", async () => {
