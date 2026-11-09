@@ -1,5 +1,10 @@
 import { expect, it } from "vitest";
-import { changeOmissions, describeAnalysis, readerCoverage } from "../src/index.js";
+import {
+  changeOmissions,
+  describeAnalysis,
+  HEURISTIC_REFS_LIMIT,
+  readerCoverage,
+} from "../src/index.js";
 import { makeWorld } from "./helpers.js";
 
 it("labels analysis sources when a file-only fallback and an artifact report different symbol support", () => {
@@ -106,6 +111,40 @@ it("lists only observed limits for changed head files and bounds a long report",
     ),
     "2 more recorded limits.",
   ]);
+});
+
+it("drops the name-matching hint of a language whose references a language tool checked", () => {
+  const { index } = makeWorld({ files: [{ path: "a.ts", language: "typescript", text: "a\n" }] });
+  const heuristic = (provider: string, limit: string) => ({
+    provider,
+    capabilities: { call: "partial" as const },
+    files: ["a.ts"],
+    results: [
+      {
+        capabilities: ["call" as const],
+        status: "partial" as const,
+        analyzedFiles: ["a.ts"],
+        limitations: [limit],
+      },
+    ],
+  });
+  index.analysis = [
+    heuristic("typescript", HEURISTIC_REFS_LIMIT),
+    heuristic("scip-typescript", "Indirect calls are not resolved."),
+  ];
+  const change = {
+    base: "a",
+    head: "b",
+    files: [{ path: "a.ts", status: "modified" as const, hunks: [] }],
+  };
+  const named =
+    "typescript report: calls partial; 1 of 1 changed paths in its scope analyzed. Reported limit: References matched by name are hints; some can be missing.";
+  const scip =
+    "scip-typescript report: calls partial; 1 of 1 changed paths in its scope analyzed. Reported limit: Indirect calls are not resolved.";
+  index.languages = { typescript: { files: 1, symbols: 0, refs: "heuristic" } };
+  expect(changeOmissions(change, index)).toEqual([named, scip]);
+  index.languages = { typescript: { files: 1, symbols: 0, refs: "precise" } };
+  expect(changeOmissions(change, index)).toEqual([scip]);
 });
 
 it("identifies a reused index before reporting its coverage", () => {

@@ -87,9 +87,10 @@ describe("xpl start", () => {
       "off",
     );
     expect(result.code, result.err).toBe(0);
-    // the draft is applied already: the next line says to apply an edited patch again
+    // the draft is applied already: the next line says to apply an edited patch again, and what the viewer
+    // cannot edit (the titles and the tour summary hold TODOs too)
     expect(result.out).toMatch(
-      /^next: write the TODOs in `xpl view \S+` \(Edit > Edit the tour\), or edit (\S+) and run `xpl apply \S+ \1`; then `xpl lint \S+`$/m,
+      /^next: write the TODOs in (\S+) and run `xpl apply job-retries \1`, then `xpl lint job-retries`\. `xpl view job-retries` also edits the step notes \(Edit > Edit the tour\) and box texts \(Edit text\), not the titles or the tour summary$/m,
     );
     expect(result.out).toContain("note: the draft guesses the kind of project");
     expect(result.out).toContain("draft notes:");

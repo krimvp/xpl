@@ -850,7 +850,7 @@ describe("repository service lifecycle", () => {
       );
       expect((await xplJson(root, "service", "status")).json.state).toBe("unavailable");
       expect((await xplJson(root, "service", "stop")).json.error).toMatch(
-        /cannot verify service ownership/,
+        /cannot tell which process owns the service/,
       );
       const refused = await invoke(["service", "start", "--recover", "--json"], {
         cwd: root,

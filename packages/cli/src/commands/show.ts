@@ -268,7 +268,10 @@ async function showCode(
   const absWidth = String(Math.max(...shown.map((s) => s.line))).length;
   const offsetWidth = String(Math.max(0, ...shown.map((s) => s.offset ?? 0))).length;
   const word = whole ? kind : kindWord(ws.model, target.symbol);
-  const out = [`${target.id} (${word}) ${file}:${rangeText(range)} ${indexedHash}`];
+  // a file's header ends at its last line, as `wc -l` counts it (the `--json` range keeps the index's)
+  const out = [
+    `${target.id} (${word}) ${file}:${rangeText(whole ? { startLine: 1, endLine: end } : range)} ${indexedHash}`,
+  ];
   for (const s of shown) {
     const abs = String(s.line).padStart(absWidth);
     const off =

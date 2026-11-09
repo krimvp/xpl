@@ -364,7 +364,7 @@ export const serviceCommand: CommandSpec = {
     if (action === "pause" || action === "resume") {
       const instance = readInstance(p.instance, p.root);
       if (!instance || !(await contact(instance)))
-        throw new CliError("cannot verify service ownership; inspect xpl service status");
+        throw new CliError("cannot tell which process owns the service; run `xpl service status`");
       const response = await fetch(new URL("/api/watch", instance.url!), {
         method: "POST",
         headers: { Authorization: `Bearer ${instance.token}`, "Content-Type": "application/json" },
@@ -388,7 +388,7 @@ export const serviceCommand: CommandSpec = {
       }
       if (!(await contact(instance)))
         throw new CliError(
-          "cannot verify service ownership; inspect xpl service status. No process was signaled.",
+          "cannot tell which process owns the service; run `xpl service status`. xpl stopped no process.",
         );
       if (!(await contact(instance, true)))
         throw new CliError("service stop was not confirmed; inspect xpl service status");

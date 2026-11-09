@@ -519,7 +519,12 @@ class Applier {
           "the change record is not part of a patch: `xpl change <name> <base>..<head>` writes it from git",
         );
       } else if (!PATCH_KEYS.includes(key)) {
-        this.error(key, `unknown patch field "${key}" (allowed: ${PATCH_KEYS.join(", ")})`);
+        // a plural or singular slip (`node`, `tour`) names the field it meant
+        const near = PATCH_KEYS.find((known) => known === `${key}s` || `${known}s` === key);
+        this.error(
+          key,
+          `unknown patch field "${key}"${near ? `. Did you mean: ${near}?` : ""} (allowed: ${PATCH_KEYS.join(", ")})`,
+        );
       }
     }
     let corrupt = false;

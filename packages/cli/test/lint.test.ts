@@ -1591,7 +1591,7 @@ describe("lintExplainer: reader checks", () => {
       [
         "tour:t/t1",
         "code",
-        "no `code`, so the step shows the code of what it focuses: 3 ranges in 3 files (a step holds at most 2)",
+        "no `code`, so the step shows the code of its focus: 3 ranges in 3 files (at most 2)",
       ],
     ]);
   });
@@ -1601,6 +1601,7 @@ describe("lintExplainer: reader checks", () => {
       { id: "view:files", type: "graph", title: "The files", include: ["file:src/a.ts"] },
       { id: "view:seq", type: "sequence", title: "The calls", participants: [], steps: [] },
       { id: "view:flow", type: "flow", title: "The decision", steps: [] },
+      { id: "view:files2", type: "graph", title: "More files", include: ["file:src/b.ts"] },
     ];
     const steps = (ids: string[]) =>
       ids.map((view, i) => ({
@@ -1609,10 +1610,20 @@ describe("lintExplainer: reader checks", () => {
         focus: [],
         note: "### The runner takes a job\nThe runner takes the next job.",
       }));
-    const found = (tourViews: string[], nodes: unknown[] = []) =>
+    const found = (
+      tourViews: string[],
+      nodes: unknown[] = [],
+      extra: Record<string, unknown> = {},
+      tourId = "tour:t",
+    ) =>
       only(
         lintExplainer(
-          explainer({ nodes, views, tours: [{ ...tour([]), steps: steps(tourViews) }] }),
+          explainer({
+            nodes,
+            views,
+            tours: [{ ...tour([]), id: tourId, steps: steps(tourViews) }],
+            ...extra,
+          }),
         ).findings,
         "many-diagrams",
       ).map((f) => f.message);
@@ -1625,6 +1636,14 @@ describe("lintExplainer: reader checks", () => {
     expect(
       found(["view:files", "view:seq", "view:flow"], [{ id: "file:src/a.ts", role: "service" }]),
     ).toEqual([]);
+    // two maps and one sequence: over the map budget
+    expect(found(["view:files", "view:files2", "view:seq"])).toEqual([
+      "3 diagrams (2 maps, 1 flow or sequence): a tour that follows a path uses at most 1 map and 1 flow or sequence",
+    ]);
+    // a change's review tour and a presentation have budgets of their own
+    const change = { change: { base: "a", head: "b", files: [] } };
+    expect(found(["view:files", "view:seq", "view:flow"], [], change)).toEqual([]);
+    expect(found(["view:files", "view:seq", "view:flow"], [], {}, "tour:talk")).toEqual([]);
   });
 
   it("long-talk-note: a note over LONG_NOTE in a talk; other tours may say more", () => {
@@ -1669,6 +1688,43 @@ describe("lintExplainer: reader checks", () => {
       ],
     ]);
     expect(only(findings, "many-participants")[0]!.severity).toBeUndefined();
+  });
+
+  it("long-flow: a flow a tour shows with more than 8 steps", () => {
+    const flow = (id: string, count: number) => ({
+      id,
+      type: "flow",
+      title: `Flow ${id}`,
+      participants: [],
+      steps: Array.from({ length: count }, (_, i) => ({
+        id: `${id.slice(5)}:${i + 1}`,
+        kind: "process",
+        label: `Stage ${i + 1}`,
+        anchors: [],
+      })),
+    });
+    const step = (id: string, view: string) => ({
+      id,
+      view,
+      focus: [],
+      note: "### A stage\nIt runs.",
+    });
+    const { findings } = lintExplainer(
+      explainer({
+        views: [flow("view:nine", 9), flow("view:eight", 8), flow("view:off", 12)],
+        tours: [{ ...tour([]), steps: [step("t1", "view:nine"), step("t2", "view:eight")] }],
+      }),
+    );
+    expect(
+      only(findings, "long-flow").map((f) => [f.elementId, f.field, f.message, f.hint]),
+    ).toEqual([
+      [
+        "view:nine",
+        "steps",
+        "9 steps (more than 8) on a flow a tour shows: the boxes get too small to read",
+        "split the decision into two flows (which cases, then what happens in each), or merge steps that make the same point",
+      ],
+    ]);
   });
 
   it("big-map (on include without an index); an edge from a box to itself is drawn, so it is not a finding", () => {
@@ -2383,6 +2439,31 @@ describe("lintExplainer: words and voice on real code English", () => {
     ]);
   });
 
+  it("passive-voice: one passive in a note heading or a title; a label, a How-title and a clause after the main one do not count", () => {
+    const { findings } = lintExplainer(
+      explainer({
+        title: "Jobs are retried by the runner",
+        concepts: [
+          {
+            ...conceptWith("concept:c", "The runner retries a job."),
+            label: "Jobs that are retried",
+          },
+        ],
+        tours: [
+          tour([
+            "### The patch is parsed as JSON\n\nThe CLI reads the patch.",
+            "### The runner retries a job when it is told to\n\nThe runner reads the flag.",
+            "### How a failed job is retried\n\nThe runner reads the flag.",
+          ]),
+        ],
+      }),
+    );
+    expect(only(findings, "passive-voice").map((f) => [f.elementId, f.field, f.message])).toEqual([
+      ["(explainer)", "title", 'a passive clause ("are retried") in a title: who does it?'],
+      ["tour:t/t1", "note heading", 'a passive clause ("is parsed") in a title: who does it?'],
+    ]);
+  });
+
   it("passive-voice: irregular, get-, being-, adverb and re- forms count; adjectives in -ed do not", () => {
     const found = concepts([
       "The flag is set by the caller.",
@@ -3024,7 +3105,7 @@ describe("xpl lint", () => {
           {
             id: "view:retry-flow",
             type: "flow",
-            title: "How a job is retried",
+            title: "How the runner retries a job",
             participants: ["file:src/runner.ts"],
             steps: [
               {
@@ -3053,6 +3134,34 @@ describe("xpl lint", () => {
       expect(json.json).toMatchObject({ ok: false, total: 0 });
       expect(json.json.applyIssues).toMatchObject([
         { severity: "warning", path: "views[0].steps[0].id" },
+      ]);
+    });
+
+    it("an apply warning about the guide, not the patch (a stale index binding), is shown apart and does not fail lint", async () => {
+      const dir = cloneDir(demo);
+      expect((await xpl(dir, "new", "clean", "--title", "How a job runs")).code).toBe(0);
+      const file = ".explainer/clean.explainer.json";
+      const guide = JSON.parse(readFile(dir, file));
+      guide.index.commit = "0000000";
+      writeFile(dir, file, JSON.stringify(guide, null, 2));
+      writeFile(dir, "title.json", JSON.stringify({ title: "How the runner runs a job" }));
+      const lint = await xpl(dir, "lint", "clean", "--patch", "title.json");
+      expect(lint.code).toBe(0);
+      const lines = lint.out.split("\n");
+      expect(lines.slice(0, 3)).toEqual([
+        "ok: .explainer/clean.explainer.json with patch title.json (1 id changed, nothing written): 1 text checked, no findings",
+        "",
+        "`xpl apply` will also warn (1), about the guide, not this patch:",
+      ]);
+      expect(lines[3]).toMatch(
+        /^warning index\.commit: the guide was last resolved against index 0000000, but the index given is /,
+      );
+      expect(lines).toHaveLength(4);
+      const json = await xplJson(dir, "lint", "clean", "--patch", "title.json");
+      expect(json.code).toBe(0);
+      expect(json.json).toMatchObject({ ok: true });
+      expect(json.json.applyIssues).toMatchObject([
+        { severity: "warning", path: "index.commit", fromPatch: false },
       ]);
     });
 

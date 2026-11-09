@@ -441,5 +441,11 @@ describe("xpl outline and show on Go code", () => {
     );
     expect(find(json.json.tree, "sym:q.go#Job")?.kind).toBe("class");
     expect(find(json.json.tree, "sym:q.go#Default")).toBeUndefined();
+    // the footer names the kind as typed, not the stored one
+    expect(
+      (await xpl(go, "outline", "--under", "file:q.go", "--kind", "field")).out.split("\n").at(-1),
+    ).toBe(
+      "--kind field: only symbols of these kinds, plus the dirs, files and parent symbols that contain them",
+    );
   });
 });

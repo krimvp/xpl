@@ -398,6 +398,10 @@ describe("headerComment", () => {
     expect(header("/*! MIT License © Sindre Sorhus */\n\nimport {Ky} from './core/Ky.js';")).toBe(
       undefined,
     );
+    // a `/*!` banner without a license word is a banner too
+    expect(
+      header("/*! Tiny HTTP client based on fetch. */\n\nimport {Ky} from './core/Ky.js';"),
+    ).toBe(undefined);
     expect(
       header(
         "// Copyright 2024 The Authors.\n// SPDX-License-Identifier: Apache-2.0\n\n// Package queue holds the jobs.\npackage queue",

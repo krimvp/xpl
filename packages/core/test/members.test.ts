@@ -4,7 +4,7 @@
  * methods.
  */
 import { describe, expect, it } from "vitest";
-import { deriveGraph, ExplainerModel, type GraphView } from "../src/index.js";
+import { deriveGraph, ExplainerModel, symbolKindWord, type GraphView } from "../src/index.js";
 import { emptyExplainer, makeWorld } from "./helpers.js";
 
 const w = makeWorld({
@@ -200,6 +200,13 @@ describe('boxText: "members"', () => {
       ["Queue", undefined],
       ["Queue.dead", "field"],
     ]);
+  });
+
+  // `type Options = { baseUrl: string }` gives its members as `variable` children of a `type`, as an interface does
+  it('gives a field of an object type alias the word "field", as an interface field', () => {
+    expect(symbolKindWord("typescript", "variable", "type")).toBe("field");
+    expect(symbolKindWord("typescript", "variable", "interface")).toBe("field");
+    expect(symbolKindWord("typescript", "variable", "function")).toBeUndefined();
   });
 });
 

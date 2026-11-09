@@ -128,7 +128,8 @@ export const feedbackCommand: CommandSpec = {
                 `imported ${plural(imported, "request")}; ${mine.length} ${mine.length === 1 ? "is" : "are"} stored for ${loaded.name}`,
               ]
             : []),
-          ...(requests.length === 0 ? [`no reader requests for ${loaded.name}`] : []),
+          // with --export, "wrote … (0 requests)" says it already
+          ...(requests.length === 0 && !exportTo ? [`no reader requests for ${loaded.name}`] : []),
           ...requests.flatMap((r) => requestLines(r, r.contextReason)),
           ...(requests.some(isOpenRequest)
             ? [

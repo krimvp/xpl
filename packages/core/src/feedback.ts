@@ -110,7 +110,8 @@ function parseFeedbackRange(value: unknown): NonNullable<FeedbackRequest["range"
 export function parseFeedbackRequest(value: unknown): FeedbackRequest {
   const data = object(value);
   const kind = text(data.kind, "kind", 20);
-  if (!["correct", "explain", "expand"].includes(kind)) throw new Error("unknown feedback kind");
+  if (!["correct", "explain", "expand"].includes(kind))
+    throw new Error(`unknown feedback kind "${kind}" (expected correct, explain or expand)`);
   const result = object(data.outcome, "outcome", " {revision, status, reason, at}");
   // Existing v1 exports predate counters. Their times cannot establish an ordering.
   const revision = result.revision === undefined ? 0 : result.revision;
@@ -118,7 +119,9 @@ export function parseFeedbackRequest(value: unknown): FeedbackRequest {
     throw new Error("outcome.revision must be a non-negative safe integer");
   const status = text(result.status, "status", 20);
   if (!["pending", "addressed", "unresolved", "rejected", "outdated"].includes(status)) {
-    throw new Error("unknown feedback status");
+    throw new Error(
+      `unknown feedback status "${status}" (expected pending, addressed, unresolved, rejected or outdated)`,
+    );
   }
   let context: ArtifactIdentity | null = null;
   if (data.context !== null) {

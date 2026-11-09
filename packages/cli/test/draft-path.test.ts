@@ -412,6 +412,65 @@ describe("xpl draft path: too many calls", () => {
   });
 });
 
+describe("xpl draft path: too many methods of its own class", () => {
+  it("gives own methods lifelines while they fit, then folds the rest into one lifeline of the class", async () => {
+    const helpers = Array.from({ length: 13 }, (_, i) =>
+      [
+        `    def step${i}(self, x):`,
+        `        y = x + ${i}`,
+        "        z = y * 2",
+        "        return z",
+        "",
+      ].join("\n"),
+    );
+    const dir = await repo({
+      "store.py": [
+        "def encode(x):",
+        "    return str(x)",
+        "",
+        "",
+        "def write(x):",
+        "    return encode(x)",
+        "",
+        "",
+        "class Store:",
+        "    def save(self, x):",
+        "        text = write(x)",
+        "        return text",
+        "",
+      ].join("\n"),
+      "job.py": [
+        "from store import Store",
+        "",
+        "",
+        "class Job:",
+        "    def run(self, x):",
+        ...Array.from({ length: 13 }, (_, i) => `        x = self.step${i}(x)`),
+        "        return Store().save(x)",
+        "",
+        ...helpers,
+      ].join("\n"),
+    });
+    const { patch, notes } = await drafted(dir, "sym:job.py#Job.run");
+    const view = sequence(patch);
+    // the budget of 12 calls fills again: the cap of 6 lifelines folds methods, it does not drop their calls
+    expect(view.steps).toHaveLength(12);
+    expect(view.participants).toEqual([
+      "sym:job.py#Job.run",
+      "sym:job.py#Job.step0",
+      "sym:job.py#Job.step1",
+      "sym:job.py#Job.step2",
+      "sym:job.py#Job",
+      "sym:store.py#Store",
+    ]);
+    expect(view.steps!.at(-1)!.label).toBe("save(x)");
+    const folded = notes.find((n) => n.startsWith("methods of Job drawn on one lifeline"))!;
+    expect(folded).toBe(
+      "methods of Job drawn on one lifeline for the class (at most 6 participants): Job.step3, Job.step4, Job.step5, Job.step6, Job.step7, Job.step8, Job.step9, Job.step10",
+    );
+  });
+});
+
 describe("xpl draft path: loops and branches", () => {
   it("frames the calls of a loop and of each branch, an if that leaves early as an alt with the rest as its else, and gives a two-way branch one tour step", async () => {
     const dir = copyFixture("ts-jobrunner");

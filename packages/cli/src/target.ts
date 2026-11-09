@@ -10,9 +10,11 @@ import {
   type IndexModel,
   type IndexedFile,
   type IndexedSymbol,
+  type TextCache,
   type SymbolId,
 } from "@xpl/core";
 import { CliError } from "./errors.js";
+import { editorLineCount } from "./format.js";
 
 export type Target =
   | { type: "repo"; id: string }
@@ -118,15 +120,18 @@ export function subtreeIds(model: IndexModel, target: Target): SymbolId[] {
   }
 }
 
-/** One line naming a target: `sym:src/a.ts#A.b (method) src/a.ts:12-30`. */
-export function describeTarget(target: Target): string {
+/**
+ * One line naming a target: `sym:src/a.ts#A.b (method) src/a.ts:12-30`. A file ends at its last line as `wc -l`
+ * counts it when its text is given.
+ */
+export function describeTarget(target: Target, texts?: TextCache): string {
   switch (target.type) {
     case "repo":
       return "repo";
     case "dir":
       return `${target.id} (dir)`;
     case "file":
-      return `${target.id} (${target.file.language}) ${target.path}:1-${target.file.lines}`;
+      return `${target.id} (${target.file.language}) ${target.path}:1-${editorLineCount(texts?.lines(target.path), target.file.lines)}`;
     case "symbol": {
       const { file, kind, range } = target.symbol;
       return `${target.id} (${kind}) ${file}:${range.startLine}-${range.endLine}`;

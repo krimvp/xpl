@@ -46,6 +46,33 @@ function example() {
 }
 
 describe("ready export rules", () => {
+  it("a step id without its view slug is kept: the hint says so instead of asking for a fix", () => {
+    const { world, explainer } = example();
+    explainer.views.push(
+      sequenceView(
+        "view:retry-flow",
+        ["file:a.ts", "file:b.ts"],
+        [
+          {
+            id: "retry:1",
+            kind: "call",
+            from: "file:a.ts",
+            to: "file:b.ts",
+            label: "Read b",
+            anchors: [],
+          },
+        ],
+        { title: "The value a reads" },
+      ),
+    );
+    const report = checkReadiness(explainer, world.index, world.getText, { scope: "workspace" });
+    expect(report.findings.find((f) => f.elementId === "retry:1")).toMatchObject({
+      severity: "warning",
+      code: "step",
+      hint: "keep this id, because a tour may point at it (SKILL.md hard rule 8); give new steps ids that start with the view slug",
+    });
+  });
+
   it("keeps the system map relationship check advisory", () => {
     const { world, explainer } = example();
     explainer.nodes.push(

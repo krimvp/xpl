@@ -271,6 +271,38 @@ describe("xpl draft data", () => {
     expect(r.out).not.toContain("no fields the index knows");
   });
 
+  it("`type X = Base & { ... }` extends Base, as an interface does: Base gets a table; a short tour is not padded", async () => {
+    const dir = makeTempDir("xpl-data-and-");
+    writeFile(
+      dir,
+      "options.ts",
+      [
+        "export type Base = {",
+        "  timeout: number;",
+        "};",
+        "export type Options = Base & {",
+        "  baseUrl: string;",
+        "};",
+        "",
+      ].join("\n"),
+    );
+    expect((await xpl(dir, "index", "--precise", "off")).code).toBe(0);
+    expect((await xpl(dir, "new", "ky")).code).toBe(0);
+    const out = join(makeTempDir("xpl-data-out-"), "data.json");
+    const r = await xpl(dir, "draft", "data", "ky", "sym:options.ts#Options", "-o", out);
+    expect(r.code, r.err + r.out).toBe(0);
+    const patch = JSON.parse(readFileSync(out, "utf8")) as ExplainerPatch;
+    expect(types(patch.views![0] as GraphView)).toEqual([
+      "sym:options.ts#Options",
+      "sym:options.ts#Base",
+    ]);
+    const summary = (id: string) => patch.nodes!.find((n) => n.id === id)!.summary;
+    expect(summary("sym:options.ts#Options")).toContain("(type, 1 field; extends `Base`)");
+    expect(r.out).toMatch(
+      /a tour of [1-4] steps? \(short is right for a small subject: do not pad it\)/,
+    );
+  });
+
   it("a field of a type's own type draws no arrow, so the type's summary TODO names it", async () => {
     const dir = makeTempDir("xpl-data-self-");
     writeFile(

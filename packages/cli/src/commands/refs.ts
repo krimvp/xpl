@@ -102,7 +102,7 @@ export const refsCommand: CommandSpec = {
       return 0;
     }
 
-    const lines = [describeTarget(target)];
+    const lines = [describeTarget(target, ws.texts)];
     for (const { direction, tree } of trees) {
       if (tree.nodes.length === 0) {
         lines.push(`${direction}: none${kinds ? ` (kind ${[...kinds].join(", ")})` : ""}`);

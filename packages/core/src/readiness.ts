@@ -185,7 +185,10 @@ export function checkReadiness(
         ? "make the change record again with `xpl change <name> <base>..<head>`"
         : issue.code === "commit" || /anchor/.test(issue.code ?? "")
           ? "run `xpl resolve <explainer> --write`, then rewrite the text of the code that changed and fix the code links that are gone"
-          : "fix this field with `xpl apply`, then run `xpl validate` again",
+          : // a step id without its view slug: renaming it breaks the tours that point at it
+            issue.code === "step" && issue.severity === "warning" && issue.path.endsWith(".id")
+            ? "keep this id, because a tour may point at it (SKILL.md hard rule 8); give new steps ids that start with the view slug"
+            : "fix this field with `xpl apply`, then run `xpl validate` again",
   }));
   if (options.sourceWarning)
     findings.unshift({

@@ -10,6 +10,8 @@ export const RELATIONSHIP_CAPABILITIES = [
   "read",
   "write",
 ] as const;
+/** The limit the heuristic resolver reports on every relationship; a language tool's references lift it. */
+export const HEURISTIC_REFS_LIMIT = "References matched by name are hints; some can be missing.";
 export const STRUCTURE_CAPABILITIES = ["symbols", "declarationRanges", "nesting"] as const;
 const labels: Record<AnalysisCapability, string> = {
   fileAnchors: "file anchors",
@@ -48,11 +50,18 @@ export function changeOmissions(change: ChangeRecord, index: SymbolIndex): strin
         : [`${file.path}: absent from the loaded index; source analysis is not recorded there.`];
     }),
   );
+  const languageOf = new Map(index.files.map((f) => [f.path, f.language]));
   for (const report of index.analysis ?? []) {
     const changed = report.files.filter((path) => headPaths.has(path));
     if (changed.length === 0) continue;
+    // a language tool checked the references of these files: the name matcher's partial result is not the limit
+    const precise = changed.every((path) => {
+      const language = languageOf.get(path);
+      return language !== undefined && index.languages?.[language]?.refs === "precise";
+    });
     for (const result of report.results) {
       if (result.status === "supported") continue;
+      if (precise && result.limitations.includes(HEURISTIC_REFS_LIMIT)) continue;
       const analyzed = changed.filter((path) => result.analyzedFiles.includes(path)).length;
       const names = result.capabilities.map((capability) => labels[capability]).join(", ");
       const detail = result.limitations[0] ? ` Reported limit: ${result.limitations[0]}` : "";

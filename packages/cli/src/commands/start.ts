@@ -199,8 +199,9 @@ export const startCommand: CommandSpec = {
             : []),
           ...(pathHint ? [`note: ${pathHint}`] : []),
           // the draft is applied already: an edited patch changes nothing until it is applied again
-          `next: write the TODOs in \`xpl view ${name}\` (Edit > Edit the tour), or edit ${patchPath} and run ` +
-            `\`xpl apply ${name} ${patchPath}\`; then \`xpl lint ${name}\``,
+          // the viewer edits notes and box texts, not the titles or the tour summary the draft leaves TODOs in
+          `next: write the TODOs in ${patchPath} and run \`xpl apply ${name} ${patchPath}\`, then \`xpl lint ${name}\`. ` +
+            `\`xpl view ${name}\` also edits the step notes (Edit > Edit the tour) and box texts (Edit text), not the titles or the tour summary`,
         ].join("\n"),
       );
     }

@@ -26,7 +26,7 @@
  * Reader checks look at what the viewer will show: a step it has to title itself (`untitled-step`), changed files
  * no step shows the code of (`change-not-shown`), more far-apart places of a step in one file than a slide has panes for (`far-ranges`), a talk note set in
  * small type (`long-talk-note`), maps too big or too crowded for a picture (`big-map`, `crowded-map`), sequences with
- * too many lifelines (`many-participants`), and a
+ * too many lifelines (`many-participants`), flows with too many steps (`long-flow`), and a
  * system map with no visible arrows (`system-map-no-edges`). Map counts need the index: pass an
  * `ExplainerModel` to get them (`xpl lint` does when there is an index).
  *
@@ -91,6 +91,7 @@ export type LintRule =
   | "long-talk-note"
   | "big-map"
   | "many-participants"
+  | "long-flow"
   | "crowded-map"
   | "system-map-no-edges"
   | "map-box";
@@ -133,11 +134,12 @@ export const LINT_RULES: Record<LintRule, string> = {
   "untitled-step": "tour step whose title the viewer has to make up",
   "change-not-shown": "changed file no tour step shows",
   "far-ranges": "step with two far-apart ranges in one file",
-  "many-ranges": "step with no code of its own that shows more ranges than a step holds",
+  "many-ranges": "step with no `code` that shows more than 2 ranges",
   "many-diagrams": "tour that uses more diagrams than its budget",
   "long-talk-note": "talk note set in small type",
   "big-map": "map with too many boxes for a tour",
   "many-participants": "sequence with too many participants for a tour",
+  "long-flow": "flow with too many steps for a tour",
   "crowded-map": "map with too many arrows",
   "system-map-no-edges": "system map with no visible arrows",
   "map-box": "box on a map of summaries with a long label or sentence",
@@ -256,6 +258,8 @@ export const LINT_LIMITS = {
   edgesPerBox: 2,
   /** A sequence a tour shows has at most this many participants (`many-participants`; SKILL.md "3-6"). */
   sequenceParticipants: 6,
+  /** A flow a tour shows has at most this many steps (`long-flow`; SKILL.md "A flow has at most 8 steps"). */
+  flowSteps: 8,
 };
 
 /**
@@ -1578,7 +1582,7 @@ class Linter {
     });
   }
 
-  /** A title: code-like, placeholder, filler and absolute words. */
+  /** A title: code-like, placeholder, filler and absolute words, and passive voice outside a label. */
   title(where: Where, title: unknown, evidence?: Evidence): void {
     if (typeof title !== "string" || title.trim() === "") return;
     this.checked++;
@@ -1614,7 +1618,24 @@ class Linter {
         "keep a title near 8 words that state one fact; put the rest in the text below",
       );
     }
-    if (masked.text.search(TODO_WORD) < 0) this.words(where, masked, evidence);
+    if (masked.text.search(TODO_WORD) >= 0) return;
+    this.words(where, masked, evidence);
+    // a title or heading is the sentence a reader keeps: one passive in its main clause hides who acts.
+    // A label names a thing ("Jobs that are retried"), and a question title ("How a failed job is retried",
+    // writing.md's example) puts its clause under "How": neither is judged.
+    const passive =
+      where.field === "label" || /^\s*(?:how|why|what|when|where|which)\b/i.test(masked.text)
+        ? []
+        : passives(mainClause(masked.text));
+    if (passive.length > 0) {
+      this.add(
+        where,
+        "passive-voice",
+        excerpt(title),
+        `a passive clause ("${passive[0]}") in a title: who does it?`,
+        'name who does it: "The CLI parses the patch", not "The patch is parsed"',
+      );
+    }
   }
 
   /**
@@ -2369,7 +2390,7 @@ function manyRanges(
     { ...where, field: "code" },
     "many-ranges",
     excerpt(files.join(", ")),
-    `no \`code\`, so the step shows the code of what it focuses: ${plural(ranges.length, "range")} in ${plural(files.length, "file")} (a step holds at most ${LINT_LIMITS.stepRanges})`,
+    `no \`code\`, so the step shows the code of its focus: ${plural(ranges.length, "range")} in ${plural(files.length, "file")} (at most ${LINT_LIMITS.stepRanges})`,
     `give the step \`code\` with the ${LINT_LIMITS.stepRanges} ranges the note is about, or focus a smaller box`,
   );
 }
@@ -2495,7 +2516,8 @@ function changeChecks(lint: Linter, explainer: Explainer, at: Lookup): void {
 
 /**
  * The map checks: `big-map` (a graph view a tour shows with more than `tourMapBoxes` boxes), `many-participants` (a
- * sequence view a tour shows with more than `sequenceParticipants` participants), `crowded-map` (more
+ * sequence view a tour shows with more than `sequenceParticipants` participants), `long-flow` (a flow view a tour
+ * shows with more than `flowSteps` steps), `crowded-map` (more
  * arrows than `edgesPerBox` per box, with the ids of the least used drawn edges to hide), and `system-map-no-edges`
  * (an architecture map with a non-component role, at least two boxes and no visible edges or stubs). The box and
  * arrow counts come from the index when there is one (`model`; the rows of a table are not boxes), else from the
@@ -2523,6 +2545,29 @@ function mapChecks(
       excerpt(str(view.title) ?? viewId),
       `${count} participants (more than ${LINT_LIMITS.sequenceParticipants}) on a sequence a tour shows: the lifelines get too narrow to read`,
       "fold a helper that one participant calls into that participant's lifeline, or leave out the calls that do not change the answer (and say so in a note)",
+    );
+  }
+  // a flow of a type's states (`xpl draft states`: a step per state and per move) draws a state machine, not a
+  // decision: it is not judged (it needs the index to tell)
+  const statesOf = (view: Record<string, unknown>) =>
+    list(record(view.scope).entryPoints).some((id) => {
+      if (typeof id !== "string") return false;
+      // an entry point is a symbol id (`status.py#JobStatus`) or an element id (`sym:status.py#JobStatus`)
+      const parsed = id.startsWith("sym:") ? parseId(id) : undefined;
+      const kind = model?.index.symbol(parsed?.type === "symbol" ? parsed.symbolId : id)?.kind;
+      return kind !== undefined && ["enum", "class", "type", "interface"].includes(kind);
+    });
+  for (const view of at.views.values()) {
+    if (view.type !== "flow" || !toured.has(str(view.id)) || statesOf(view)) continue;
+    const count = list(view.steps).length;
+    if (count <= LINT_LIMITS.flowSteps) continue;
+    const viewId = str(view.id) ?? "(view)";
+    lint.add(
+      { elementId: viewId, kind: "view", field: "steps" },
+      "long-flow",
+      excerpt(str(view.title) ?? viewId),
+      `${count} steps (more than ${LINT_LIMITS.flowSteps}) on a flow a tour shows: the boxes get too small to read`,
+      "split the decision into two flows (which cases, then what happens in each), or merge steps that make the same point",
     );
   }
   const graphs = [...at.views.values()].filter((view) => view.type === "graph");

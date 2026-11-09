@@ -61,7 +61,7 @@ function runner(ctx: Ctx, options: { skillDir?: string; timeoutMs?: number } = {
       verifySkill(skillDir);
     } catch (error) {
       throw new CliError(
-        `Installed code-explainer skill unavailable: ${errorMessage(error)}. Run xpl skill install --dir <folder>, select it with service --skill-dir <folder>, and retry.`,
+        `the installed code-explainer skill is missing: ${errorMessage(error)}. Run \`xpl skill install --dir <folder>\`, then \`xpl service start --skill-dir <folder>\`.`,
       );
     }
     const root = await realpath(ctx.root);
@@ -160,7 +160,8 @@ function runner(ctx: Ctx, options: { skillDir?: string; timeoutMs?: number } = {
           child.once("error", reject);
         });
         const ended = new Promise<number | null>((resolve, reject) => {
-          abort = () => reject(new CliError("Claude attempt canceled; output discarded."));
+          abort = () =>
+            reject(new CliError("the Claude run was canceled: xpl kept none of its output"));
           signal.addEventListener("abort", abort, { once: true });
           timer = setTimeout(
             () =>

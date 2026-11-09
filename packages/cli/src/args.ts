@@ -22,7 +22,7 @@ export const GLOBAL_OPTIONS: OptionDefs = {
   index: {
     type: "string",
     arg: "<path>",
-    desc: "Symbol index to use (default: the index of the current commit id, else the newest)",
+    desc: "Symbol index to use (default: the guide's own index, else the index of the current commit id, else the newest)",
   },
   help: { type: "boolean", short: "h", desc: "Show help" },
   version: { type: "boolean", short: "v", desc: "Show the version" },
@@ -122,6 +122,9 @@ export function parseCommandArgs(
       const flag = ambiguous[1]!;
       const value =
         argv[argv.findIndex((a) => a === flag || a === `-${all[flag.slice(2)]?.short}`) + 1];
+      // a number option (`<n>`, `<port>`) takes no negative value: say that, not how to write one
+      if (/^<(?:n|port|seconds)>$/.test(all[flag.slice(2)]?.arg ?? "") && /^-\d/.test(value ?? ""))
+        throw new UsageError(`${flag} must be a non-negative integer (got "${value}")`);
       throw new UsageError(
         `${flag} needs a value (got "${value}"; a value that starts with "-" is written ${flag}=${value})`,
       );
@@ -134,7 +137,10 @@ export function parseCommandArgs(
     throw new UsageError(
       near.length > 0
         ? `unknown option ${unknown[1]}. Did you mean: ${near.map((n) => `--${n}`).join(", ")}?`
-        : `unknown option ${unknown[1]}. A value that starts with "-" goes after "--".`,
+        : // `--audience` is an option of another command; `-x` or `-1` may be a value meant for a positional
+          /^--[a-z]/i.test(unknown[1]!)
+          ? `unknown option ${unknown[1]}`
+          : `unknown option ${unknown[1]}. A value that starts with "-" goes after "--".`,
     );
   }
   const given = parsed.positionals;

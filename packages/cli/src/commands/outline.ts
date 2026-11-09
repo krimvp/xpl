@@ -1,5 +1,6 @@
 import type { CommandSpec } from "../command.js";
 import { UsageError } from "../errors.js";
+import { editorLineCount } from "../format.js";
 import { REPO_TARGET, resolveTarget } from "../target.js";
 import {
   SYMBOL_KINDS,
@@ -25,7 +26,7 @@ export const outlineCommand: CommandSpec = {
     "in and out count the references into and out of the subtree, not the ones that stay inside it.",
     "`recursive` marks a symbol that calls itself. [+n] marks n children below the depth limit.",
     "A chain of folders that each hold only one folder (src/main/java/app) is one row.",
-    "Go code says `struct` and `field`, and --kind takes them; --json keeps the kinds `class` and `variable`.",
+    "A field shows as `field` and a Go struct as `struct`; --kind takes both, --json keeps `variable` and `class`.",
     "Ruby modules and PHP namespaces show as `other`; a constant in a class shows as `field`.",
     "With --kind, the folders, files and symbols that hold a match are listed too.",
   ],
@@ -56,6 +57,13 @@ export const outlineCommand: CommandSpec = {
   positionals: [],
   async run(ctx, args) {
     const kinds = parseKinds(args.list("kind"));
+    // the kinds as the user typed them (`field`, not the stored `variable`), for the footer
+    const typedKinds = args
+      .list("kind")
+      .flatMap((raw) => raw.split(","))
+      .map((raw) => raw.trim().toLowerCase())
+      .filter((raw) => raw !== "")
+      .join(",");
     // a search by kind is for the matches, wherever they are: no depth limit unless one is given
     const depth = args.int("depth") ?? (kinds ? Number.MAX_SAFE_INTEGER : 2);
     const limit = args.int("limit") ?? DEFAULT_OUTLINE_LINES;
@@ -74,9 +82,7 @@ export const outlineCommand: CommandSpec = {
         ...(kinds ? { kinds } : {}),
         fileLines: (path) => {
           const lines = ws.texts.lines(path);
-          if (!lines) return undefined;
-          // a final newline ends the last line; it starts none (as `xpl show` prints a file)
-          return lines.length > 1 && lines.at(-1) === "" ? lines.length - 1 : lines.length;
+          return lines ? editorLineCount(lines, lines.length) : undefined;
         },
       });
     let shown = depth;
@@ -121,8 +127,8 @@ export const outlineCommand: CommandSpec = {
         (tree.type === "symbol" && kinds.has(tree.kind));
       legend.push(
         matches
-          ? `--kind ${[...kinds].join(",")}: only symbols of these kinds, plus the dirs, files and parent symbols that contain them`
-          : `no symbol of kind ${[...kinds].join(", ")} under ${tree.id}`,
+          ? `--kind ${typedKinds}: only symbols of these kinds, plus the dirs, files and parent symbols that contain them`
+          : `no symbol of kind ${typedKinds.replaceAll(",", ", ")} under ${tree.id}`,
       );
     }
     ctx.out([...lines, ...(legend.length > 0 ? ["", ...legend] : [])].join("\n"));

@@ -67,12 +67,16 @@ describe("xpl show", () => {
     // the empty line after the final newline, as the index's does, though the display leaves it out)
     expect(err).toBe("");
     const lines = out.split("\n");
-    expect(lines[0]).toMatch(/^file:src\/queue\.ts \(typescript\) src\/queue\.ts:1-104 sha256-v2:/);
+    expect(lines[0]).toMatch(/^file:src\/queue\.ts \(typescript\) src\/queue\.ts:1-103 sha256-v2:/);
     expect(lines[1]).toMatch(/^ {2}1 {3}0│ export interface Job \{$/);
     expect(out).toMatch(
       /^ 87 {2}86│ {3}async requeue\(job: Job, delayMs: number\): Promise<void> \{$/m,
     );
     expect(lines.at(-1)).toMatch(/^103 102│ \}$/);
+    // `refs` and `outline` count the file's lines the same way (`wc -l` says 103)
+    expect((await xpl(dir, "refs", "file:src/queue.ts")).out.split("\n")[0]).toBe(
+      "file:src/queue.ts (typescript) src/queue.ts:1-103",
+    );
   });
 
   it("--context adds surrounding lines without offsets", async () => {

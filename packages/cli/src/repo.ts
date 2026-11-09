@@ -315,15 +315,16 @@ export async function stalenessOf(
   const head =
     `index ${index.commit} (${displayPath(env.root, indexFile)}) does not match the working tree ` +
     `(${current}): ${parts.join(", ")}`;
-  let message = `${head}. Line numbers and offsets may be off; run \`xpl index\``;
   const newer = listIndexFiles(env.root).find((c) => c.commit === current && c.abs !== indexFile);
-  if (newer) {
-    message += ` (an index for the current tree exists: ${displayPath(env.root, newer.abs)}${
-      explainer ? `; run \`xpl resolve ${explainer.name} --write\` to move the guide to it` : ""
-    })`;
-  } else if (explainer) {
-    message += `, then \`xpl resolve ${explainer.name} --write\``;
-  }
+  // with an index of the current tree at hand, `xpl index` is not the step to take
+  let message = newer
+    ? `${head}. Line numbers and offsets may be off. An index of the current tree exists (${displayPath(env.root, newer.abs)})${
+        explainer
+          ? `: run \`xpl resolve ${explainer.name} --write\` to move the guide to it`
+          : `: pass it with --index`
+      }`
+    : `${head}. Line numbers and offsets may be off; run \`xpl index\``;
+  if (!newer && explainer) message += `, then \`xpl resolve ${explainer.name} --write\``;
   return { head, message: `${message}.` };
 }
 

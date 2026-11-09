@@ -1,7 +1,7 @@
 import { readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import type { LanguageInfo } from "@xpl/core";
-import { describeAnalysis } from "@xpl/core";
+import { describeAnalysis, HEURISTIC_REFS_LIMIT } from "@xpl/core";
 import { buildIndex, writeIndex } from "@xpl/indexer";
 import { scipProviders } from "../index-options.js";
 import type { CommandSpec } from "../command.js";
@@ -11,8 +11,7 @@ import { displayPath, toPosix } from "../fsutil.js";
 import { EXPLAINER_DIR, EXPLAINER_SUFFIX, readExplainerFile } from "../repo.js";
 
 const PRECISE = ["auto", "off", "require"] as const;
-/** The limits `@xpl/indexer` records for heuristic and for precise relationship results (analysis.ts). */
-const HEURISTIC_LIMIT = "References matched by name are hints";
+/** The limit `@xpl/indexer` records for precise relationship results (analysis.ts). */
 const PRECISE_LIMIT =
   "A tool can miss a reference, so an empty result does not prove there is none.";
 
@@ -34,7 +33,7 @@ export function coverageDetails(
     if (!m) return [{ key: "~", line }];
     const [, langs, provider, rest] = m as unknown as [string, string, string, string];
     if (provider === "files") return [{ key: "", line: `all ${plural(files, "file")}: ${rest}` }];
-    if (provider === langs && precise(langs) && rest.includes(HEURISTIC_LIMIT)) return [];
+    if (provider === langs && precise(langs) && rest.includes(HEURISTIC_REFS_LIMIT)) return [];
     // a tool that analyzed every file but does not report what it may miss: "partial" reads as broken
     const all = /^(.*) partial \((\d+)\/\2 files analyzed\)\. (.*)$/.exec(rest);
     const text =
@@ -191,7 +190,7 @@ export const indexCommand: CommandSpec = {
     } catch (error) {
       if (signal.aborted)
         throw new CliError(
-          "Indexing canceled; no partial index was published. Any previous complete index is retained.",
+          "Indexing canceled: xpl wrote no index and kept the last complete one.",
           130,
         );
       throw new CliError(errorMessage(error));

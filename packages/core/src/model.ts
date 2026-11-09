@@ -50,9 +50,14 @@ export type ElementRef =
 const STATIC: Provenance = Object.freeze({ origin: "static" }) as Provenance;
 const NONE: readonly never[] = Object.freeze([]) as readonly never[];
 
-/** Label of a symbol: its last path segment; methods keep `Class.method`. */
+/**
+ * Label of a symbol: its last path segment; methods keep `Class.method`. A Ruby singleton method
+ * (`Jobrunner.self.run`) reads as it is called, `Jobrunner.run`.
+ */
 export function symbolLabel(sym: Pick<IndexedSymbol, "path" | "kind">): string {
   const segments = sym.path.split(".");
+  if (sym.kind === "method" && segments.length >= 3 && segments.at(-2) === "self")
+    segments.splice(-2, 1);
   return segments.slice(sym.kind === "method" ? -2 : -1).join(".");
 }
 

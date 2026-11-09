@@ -88,7 +88,7 @@ it("says when there is nothing, and what it wrote", async () => {
   expect(empty.out).toBe("no reader requests for demo");
   const out = makeTempDir() + "/none.json";
   const exported = await xpl(root, "feedback", "demo", "--export", out);
-  expect(exported.out).toBe(`wrote ${out} (0 requests)\nno reader requests for demo`);
+  expect(exported.out).toBe(`wrote ${out} (0 requests)`);
 });
 
 it("a request without its outcome names the request and the field", async () => {

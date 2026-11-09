@@ -30,6 +30,16 @@ export function kindWord(model: IndexModel, symbol: IndexedSymbol): string {
   );
 }
 
+/**
+ * A file's last line as an editor and `wc -l` number it: a final newline ends the last line and starts none.
+ * The index counts that empty "line" (`IndexedFile.lines`, the region a whole-file anchor hashes); without the
+ * text, that count is all there is.
+ */
+export function editorLineCount(lines: readonly string[] | undefined, indexed: number): number {
+  if (!lines) return indexed;
+  return lines.length > 1 && lines.at(-1) === "" ? lines.length - 1 : lines.length;
+}
+
 export function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;

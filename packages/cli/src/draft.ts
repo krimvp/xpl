@@ -1072,7 +1072,7 @@ export function draftChange(input: DraftInput, change: ChangeRecord): Draft {
   }
   if (unanchored.length > 0) {
     notes.push(
-      `no anchor for ${unanchored.join(", ")} (an added file the index does not hold, such as a binary file)`,
+      `no anchor for ${unanchored.join(", ")} (a changed file the index does not hold, such as a binary file or one under .explainer/)`,
     );
   }
   const otherSteps = Math.min(2, Math.ceil(leftovers.length / L.codeRanges));
@@ -2510,6 +2510,8 @@ interface Call {
   dispatched?: IndexedSymbol;
   /** How much the call matters: what it reaches and how much code is behind it (see `callScore`). */
   score: number;
+  /** A method of the entry's own class: the class's lifeline, which it folds into when lifelines run out. */
+  classLane?: string;
 }
 
 /** `pop()`, `run(job, opts)`, `Options{…}`: the call as written at the site, its arguments cut when long. */
@@ -2854,7 +2856,19 @@ function pathSequence(
         : 3 * Math.min(reachOf(model, runs, skip), 20) +
           Math.min(lineCount(runs), 60) / 6 +
           (participant.startsWith(`sym:${sym.file}#`) ? 0 : 2);
-    calls.push({ ref, callee, participant, hop, ...(dispatched ? { dispatched } : {}), score });
+    const classLane =
+      !recursion && own && owner && participant === `sym:${callee.id}`
+        ? `sym:${owner.id}`
+        : undefined;
+    calls.push({
+      ref,
+      callee,
+      participant,
+      hop,
+      ...(dispatched ? { dispatched } : {}),
+      score,
+      ...(classLane ? { classLane } : {}),
+    });
   }
   if (repeated.size > 0) {
     notes.push(
@@ -2899,6 +2913,31 @@ function pathSequence(
     entryId,
     ...new Set(calls.map((c) => c.participant).filter((p) => p !== entryId)),
   ];
+  // Over the lifeline cap, the entry's own methods that matter least fold into one lifeline for their class
+  // (the first ones keep their own), so their calls stay: the cap folds lifelines before it drops calls.
+  const folded: Call[] = [];
+  while (participantsOf().length > L.participants) {
+    const own = calls.filter((c) => c.classLane !== undefined && c.participant !== c.classLane);
+    const laneShown = own.some((c) => participantsOf().includes(c.classLane!));
+    // folding the one method left into a new class lifeline would not save one
+    if (new Set(own.map((c) => c.participant)).size < (laneShown ? 1 : 2)) break;
+    const least = lightest(own).participant;
+    for (const c of calls) {
+      if (c.participant !== least) continue;
+      c.participant = c.classLane!;
+      folded.push(c);
+    }
+  }
+  if (folded.length > 0) {
+    const owner = ownerOf(model, folded[0]!.callee)!;
+    notes.push(
+      `methods of ${owner.path} drawn on one lifeline for the class (at most ${L.participants} participants): ` +
+        [...folded]
+          .sort((a, b) => calls.indexOf(a) - calls.indexOf(b))
+          .map((c) => c.callee.path)
+          .join(", "),
+    );
+  }
   while (participantsOf().length > L.participants) {
     // the participant whose calls matter least goes
     const weight = new Map<string, number>();
@@ -3234,7 +3273,7 @@ export function draftPath(input: DraftInput, entries: readonly PathEntry[]): Dra
                 ),
               )
             : note(
-                todo("what this call does for the reader, as a plain statement"),
+                todo("what this call does on this path, as a plain statement"),
                 todo("why this call matters here, and the condition under which it runs."),
               ),
           branch

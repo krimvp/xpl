@@ -2663,6 +2663,16 @@ describe("applyPatch: one wave of errors", () => {
     expect(pathsOf(r)).toEqual(["nope", "concepts[0].anchors[0]"]);
   });
 
+  it("an unknown patch field that is one letter off a known one names it", () => {
+    const r = apply({ node: [] } as never);
+    expect(errorsOf(r)[0]!.message).toMatch(
+      /^unknown patch field "node"\. Did you mean: nodes\? \(allowed: title, .*\bnodes\b.*\)$/,
+    );
+    expect(errorsOf(apply({ nope: [] } as never))[0]!.message).toMatch(
+      /^unknown patch field "nope" \(allowed: /,
+    );
+  });
+
   it("finds the dangling reference of a removal in the same wave as a bad anchor", () => {
     const r = apply({
       remove: ["dispatch:3"], // the frame and the tour still point at it

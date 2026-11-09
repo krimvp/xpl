@@ -167,11 +167,18 @@ describe("xpl cli", () => {
     expect(unknown.code).toBe(2);
     expect(unknown.err).toContain("unknown option --frobnicate");
 
-    // a value that starts with "-": xpl's words, not Node's
+    expect(unknown.err.split("\n")[0]).toBe("error: unknown option --frobnicate");
+
+    // a negative number for a number option: xpl's words, not Node's, and no hint to a form that fails too
     const dashed = await invoke(["outline", "--limit", "-1"]);
     expect(dashed.code).toBe(2);
     expect(dashed.err.split("\n")[0]).toBe(
-      'error: --limit needs a value (got "-1"; a value that starts with "-" is written --limit=-1)',
+      'error: --limit must be a non-negative integer (got "-1")',
+    );
+    // a value that starts with "-" for a text option
+    const text = await invoke(["new", "demo", "--title", "-x"]);
+    expect(text.err.split("\n")[0]).toBe(
+      'error: --title needs a value (got "-x"; a value that starts with "-" is written --title=-x)',
     );
 
     const bad = await invoke(["outline", "--depth", "abc"]);

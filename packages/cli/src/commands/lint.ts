@@ -1,6 +1,7 @@
 import {
   applyPatch,
   ExplainerModel,
+  validateExplainer,
   type Explainer,
   type ExplainerPatch,
   type Issue,
@@ -47,10 +48,10 @@ export const lintCommand: CommandSpec = {
   details: [
     "Checks the text a reader sees against the writing rules of the skill (reference/writing.md).",
     "It also checks the tour: the big picture first, every box visited, where to go next at the end.",
-    "Each finding names the element, the field, a short quote and a fix. Fix them with a patch.",
-    "The rules, one per finding code (todo-left, long-sentence, ...), are listed in cli.md.",
+    "Each finding names the element, the field, a short quote and a fix. The rules are listed in cli.md.",
     "--patch lints the guide as it would be after `xpl apply` and prints the warnings apply would print; nothing is written.",
-    "Exit codes: 0 no findings; 1 any finding or apply warning (with --warn-only, only todo-left), or a rejected patch; 2 usage.",
+    "Warnings the guide had before the patch (an old index binding) come last and do not change the exit code.",
+    "Exit codes: 0 no findings; 1 any finding or a warning the patch causes (with --warn-only, only todo-left), or a rejected patch; 2 usage.",
   ],
   options: {
     patch: {
@@ -78,8 +79,12 @@ export const lintCommand: CommandSpec = {
     let explainer: Explainer = loaded.explainer;
     let ws: Workspace | undefined;
     let patchInfo: { source: string; changed: string[]; protectedIds: string[] } | undefined;
-    /** The warnings `xpl apply` would print with this patch (protected ones are in the subject line). */
-    let applyIssues: Issue[] = [];
+    /**
+     * The warnings `xpl apply` would print with this patch (protected ones are in the subject line).
+     * `fromPatch` is false for a warning the guide had before the patch (an index binding, older drift,
+     * older errors elsewhere): the patch cannot fix it, so it does not fail lint.
+     */
+    let applyIssues: (Issue & { fromPatch: boolean })[] = [];
     if (read !== undefined) {
       // The merge of `xpl apply` (core `applyPatch`), on a copy in memory: nothing is written.
       ws = await openWorkspace(ctx, { explainer: loaded });
@@ -126,7 +131,17 @@ export const lintCommand: CommandSpec = {
         ),
       ];
       patchInfo = { source: read.label, changed: result.changed, protectedIds };
-      applyIssues = result.issues.filter((issue) => issue.code !== "protected");
+      const key = (issue: Issue) => `${issue.code ?? ""}|${issue.elementId ?? ""}|${issue.message}`;
+      const before = new Set(
+        validateExplainer(loaded.explainer, ws.model, ws.texts, { mode: "strict" }).map(key),
+      );
+      applyIssues = result.issues
+        .filter((issue) => issue.code !== "protected")
+        .map((issue) => ({
+          ...issue,
+          // the summary of older errors elsewhere has no path; an index binding is never the patch's
+          fromPatch: issue.code !== "commit" && issue.path !== "" && !before.has(key(issue)),
+        }));
     }
 
     // The index (when there is one) gives the boxes and arrows of each map; lint works without it.
@@ -142,7 +157,9 @@ export const lintCommand: CommandSpec = {
       ws ? new ExplainerModel(explainer, ws.model) : undefined,
     );
     const errors = findings.filter((f) => f.severity === "error").length;
-    const code = (strict ? findings.length + applyIssues.length : errors) > 0 ? 1 : 0;
+    const patchIssues = applyIssues.filter((issue) => issue.fromPatch);
+    const guideIssues = applyIssues.filter((issue) => !issue.fromPatch);
+    const code = (strict ? findings.length + patchIssues.length : errors) > 0 ? 1 : 0;
     const counts: Record<string, number> = {};
     for (const f of findings) counts[f.rule] = (counts[f.rule] ?? 0) + 1;
 
@@ -177,21 +194,28 @@ export const lintCommand: CommandSpec = {
           : "") +
         ")"
       : loaded.rel;
-    const applyLines =
-      applyIssues.length === 0
+    const applyLines = [
+      ...(patchIssues.length === 0
         ? []
         : [
             "",
-            `\`xpl apply\` would warn (${applyIssues.length}); fix ${applyIssues.length === 1 ? "it" : "them"} in the patch now, because ids never change once applied:`,
-            ...renderIssues(applyIssues, loaded.name),
-          ];
+            `\`xpl apply\` would warn (${patchIssues.length}); fix ${patchIssues.length === 1 ? "it" : "them"} in the patch now, because ids never change once applied:`,
+            ...renderIssues(patchIssues, loaded.name),
+          ]),
+      ...(guideIssues.length === 0
+        ? []
+        : [
+            "",
+            `\`xpl apply\` will also warn (${guideIssues.length}), about the guide, not this patch:`,
+            ...renderIssues(guideIssues, loaded.name),
+          ]),
+    ];
     if (findings.length === 0) {
       ctx.out(
-        applyLines.length === 0
-          ? `ok: ${subject}: ${plural(checked, "text")} checked, no findings`
-          : [`${subject}: ${plural(checked, "text")} checked, no findings`, ...applyLines].join(
-              "\n",
-            ),
+        [
+          `${code === 0 && patchIssues.length === 0 ? "ok: " : ""}${subject}: ${plural(checked, "text")} checked, no findings`,
+          ...applyLines,
+        ].join("\n"),
       );
       return code;
     }
