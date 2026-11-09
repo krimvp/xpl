@@ -1756,6 +1756,15 @@ export class ViewerStore {
   private keepFeedback(requests: readonly FeedbackRequest[]): void {
     const held = mergeFeedbackRequests([...this.state.feedback, ...requests]);
     held.forEach(parseFeedbackRequest);
+    // (no storage at all, outside a browser: say so without building an error to catch)
+    if (typeof localStorage === "undefined") {
+      this.set({
+        feedback: held,
+        feedbackStorageError:
+          "Browser storage unavailable: localStorage is not defined. Export feedback JSON to keep it.",
+      });
+      return;
+    }
     let stored: FeedbackRequest[] = [];
     try {
       // Read both legacy arrays and per-ID records. New writes never replace either format.
