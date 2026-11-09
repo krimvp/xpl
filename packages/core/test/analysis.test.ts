@@ -48,7 +48,7 @@ it("labels analysis sources when a file-only fallback and an artifact report dif
   ]);
 });
 
-it("lists only observed limits for changed head files and bounds a long report", () => {
+it("lists only observed limits for changed head files, one plain line per reason with its files", () => {
   const { index } = makeWorld({
     files: [
       { path: "a.ts", language: "typescript", text: "export const a = 1;\n" },
@@ -83,18 +83,50 @@ it("lists only observed limits for changed head files and bounds a long report",
       { path: "a.ts", status: "modified" as const, hunks: [] },
       { path: "missing.ts", status: "added" as const, hunks: [] },
       { path: "old.ts", status: "deleted" as const, hunks: [] },
+      {
+        path: "site/a.html",
+        status: "modified" as const,
+        hunks: [],
+        excluded: "oversized" as const,
+      },
+      {
+        path: ".explainer/x.explainer.json",
+        status: "modified" as const,
+        hunks: [],
+        excluded: "generated" as const,
+      },
+      { path: "site/b.html", status: "added" as const, hunks: [], excluded: "oversized" as const },
+      { path: "big.bin", status: "deleted" as const, hunks: [], excluded: "binary" as const },
     ],
   };
   expect(changeOmissions(change, index)).toEqual([
-    "missing.ts: absent from the loaded index; source analysis is not recorded there.",
-    "old.ts: removed from the head; the loaded index cannot inspect its old code.",
-    "scip report: calls partial; 1 of 1 changed paths in its scope analyzed. Reported limit: Indirect calls are not resolved.",
+    {
+      text: "2 files over the 1 MB size limit were not analyzed.",
+      files: ["site/a.html", "site/b.html"],
+    },
+    {
+      text: "1 file made by xpl itself (guides, patches, exported pages) was not analyzed.",
+      files: [".explainer/x.explainer.json"],
+    },
+    { text: "1 file missing from the index was not analyzed.", files: ["missing.ts"] },
+    {
+      text: "2 removed files were not analyzed: the index holds the code after the change only.",
+      files: ["old.ts", "big.bin"],
+    },
+    {
+      text: "scip report: calls partial; 1 of 1 changed paths in its scope analyzed. Reported limit: Indirect calls are not resolved.",
+      files: [],
+    },
   ]);
   expect(
     changeOmissions({ ...change, files: [{ path: "b.ts", status: "modified", hunks: [] }] }, index),
   ).toEqual([
-    "scip report: calls partial; 0 of 1 changed paths in its scope analyzed. Reported limit: Indirect calls are not resolved.",
+    {
+      text: "scip report: calls partial; 0 of 1 changed paths in its scope analyzed. Reported limit: Indirect calls are not resolved.",
+      files: [],
+    },
   ]);
+  // many files with one reason stay one line, every file named in it
   const many = {
     ...change,
     files: Array.from({ length: 7 }, (_, n) => ({
@@ -104,12 +136,10 @@ it("lists only observed limits for changed head files and bounds a long report",
     })),
   };
   expect(changeOmissions(many, index)).toEqual([
-    ...Array.from(
-      { length: 5 },
-      (_, n) =>
-        `missing-${n}.ts: absent from the loaded index; source analysis is not recorded there.`,
-    ),
-    "2 more recorded limits.",
+    {
+      text: "7 files missing from the index were not analyzed.",
+      files: Array.from({ length: 7 }, (_, n) => `missing-${n}.ts`),
+    },
   ]);
 });
 
@@ -142,9 +172,10 @@ it("drops the name-matching hint of a language whose references a language tool 
   const scip =
     "scip-typescript report: calls partial; 1 of 1 changed paths in its scope analyzed. Reported limit: Indirect calls are not resolved.";
   index.languages = { typescript: { files: 1, symbols: 0, refs: "heuristic" } };
-  expect(changeOmissions(change, index)).toEqual([named, scip]);
+  const texts = () => changeOmissions(change, index).map((omission) => omission.text);
+  expect(texts()).toEqual([named, scip]);
   index.languages = { typescript: { files: 1, symbols: 0, refs: "precise" } };
-  expect(changeOmissions(change, index)).toEqual([scip]);
+  expect(texts()).toEqual([scip]);
 });
 
 it("identifies a reused index before reporting its coverage", () => {
@@ -156,7 +187,10 @@ it("identifies a reused index before reporting its coverage", () => {
     files: [{ path: "a.ts", status: "modified" as const, hunks: [] }],
   };
   expect(changeOmissions(change, index)).toEqual([
-    "Loaded index aaaaaaa differs from change head bbbbbbb; head analysis coverage is unknown here.",
+    {
+      text: "The index is of commit aaaaaaa, not of the change's last commit bbbbbbb: what it says about the changed code may be out of date.",
+      files: [],
+    },
   ]);
 });
 

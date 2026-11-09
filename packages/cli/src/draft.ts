@@ -41,6 +41,7 @@ import {
   implementationsOf,
   isTestFile,
   matchesAnyGlob,
+  notAnalyzedReason,
   parseId,
   symbolIdForElementId,
   type AnchorInput,
@@ -455,7 +456,9 @@ function baseRuns(file: ChangedFile): Cluster[] {
 /**
  * One anchor in a changed file: its first changed run that holds text (in a symbol when the run lies in one, else as
  * a span of the file), the whole file when no run does (a pure rename), or, for a deleted file or one the index does
- * not hold, the first run of the lines the change removes, in the code before the change.
+ * not hold, the first run of the lines the change removes, in the code before the change. None in a file the index
+ * leaves out on purpose (`ChangedFile.excluded`: an exported page, a lockfile): its old text would go into the page
+ * for nothing a reader can use.
  */
 export function changedFileAnchor(
   model: IndexModel,
@@ -476,7 +479,7 @@ export function changedFileAnchor(
     }
     return { file: file.path, role };
   }
-  if (file.status === "added") return undefined;
+  if (file.status === "added" || file.excluded !== undefined) return undefined;
   for (const run of baseRuns(file)) {
     const anchor = baseLines(texts, change, file, run.start, run.end, role);
     if (anchor) return anchor;
@@ -1062,7 +1065,7 @@ export function draftChange(input: DraftInput, change: ChangeRecord): Draft {
     ...filesOf(testAnchors),
   ]);
   const leftovers: { path: string; anchor: AnchorInput }[] = [];
-  const unanchored: string[] = [];
+  const unanchored: ChangedFile[] = [];
   for (const file of analysis.files) {
     if (file.test || covered.has(file.path)) continue;
     const record = changedFile.get(file.path);
@@ -1070,11 +1073,11 @@ export function draftChange(input: DraftInput, change: ChangeRecord): Draft {
     const runs = file.outside.length > 0 ? clusters(file.outside) : hunkRuns(record);
     const anchor = changedFileAnchor(model, texts, change, record, "usage", runs);
     if (anchor) leftovers.push({ path: file.path, anchor });
-    else unanchored.push(file.path);
+    else unanchored.push(record);
   }
   if (unanchored.length > 0) {
     notes.push(
-      `no anchor for ${unanchored.join(", ")} (a changed file the index does not hold, such as a binary file or one under .explainer/)`,
+      `no anchor in the changed files the index does not hold: ${unanchored.map((f) => `${f.path} (${notAnalyzedReason(f)})`).join(", ")}`,
     );
   }
   const otherSteps = Math.min(2, Math.ceil(leftovers.length / L.codeRanges));

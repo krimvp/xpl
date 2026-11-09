@@ -406,6 +406,10 @@
   margin: 0;
   padding-left: 20px;
 }
+.change-omissions details ul {
+  font: 13px var(--font-mono);
+  overflow-wrap: anywhere;
+}
 .guide-section {
   container-type: inline-size;
   padding: 24px;
@@ -599,7 +603,8 @@
   color: var(--muted);
   margin-right: -8px;
 }
-.change-old {
+.change-old,
+.change-note {
   color: var(--muted);
   font: 12px var(--font-ui);
 }

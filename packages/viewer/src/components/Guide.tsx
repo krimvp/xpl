@@ -10,6 +10,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   changeOmissions,
+  notAnalyzedReason,
   codeFocus,
   isTestFile,
   type ExplainerModel,
@@ -319,16 +320,17 @@ function ChangeOmissions() {
   if (!change) return null;
   const omissions = changeOmissions(change, state.model.index.index);
   if (omissions.length === 0) return null;
-  // The files' own lines read plainly; the tools' reports ("<provider> report: …") are for whoever checks
-  // the analysis: one plain line, the reports folded under it.
+  // The lines about files read plainly, their files folded under each; the tools' reports ("<provider>
+  // report: …") are for whoever checks the analysis: one plain line, the reports folded under it.
   const index = state.model.index.index;
   // A language a SCIP tool covers: its name-matching report says nothing the reader needs.
   const precise = (language: string | undefined) =>
     !!language && index.languages[language]?.refs === "precise";
-  const reports = omissions.filter(
-    (item) => /^\S+ report: /.test(item) && !precise(item.slice(0, item.indexOf(" "))),
-  );
-  const files = omissions.filter((item) => !/^\S+ report: /.test(item));
+  const isReport = (text: string) => /^\S+ report: /.test(text);
+  const reports = omissions
+    .map((item) => item.text)
+    .filter((text) => isReport(text) && !precise(text.slice(0, text.indexOf(" "))));
+  const files = omissions.filter((item) => !isReport(item.text));
   if (files.length === 0 && reports.length === 0) return null;
   const languageOf = new Map(index.files.map((file) => [file.path, file.language]));
   const allPrecise = change.files
@@ -344,7 +346,21 @@ function ChangeOmissions() {
       <h3>{heading}</h3>
       <ul>
         {files.map((item) => (
-          <li key={item}>{item}</li>
+          <li key={item.text}>
+            {item.text}
+            {item.files.length > 0 && (
+              <details>
+                <summary>
+                  {item.files.length === 1 ? "The file" : `The files (${item.files.length})`}
+                </summary>
+                <ul>
+                  {item.files.map((file) => (
+                    <li key={file}>{file}</li>
+                  ))}
+                </ul>
+              </details>
+            )}
+          </li>
         ))}
         {reports.length > 0 && (
           <li>
@@ -756,6 +772,7 @@ function ChangeFiles() {
   const state = useViewerState();
   const change = changeOf(state.explainer);
   const rows = useMemo(() => (change ? changeFiles(change) : []), [change]);
+  const indexModel = state.model.index;
   if (!change || rows.length === 0) return null;
   const added = rows.reduce((sum, row) => sum + row.added, 0);
   const deleted = rows.reduce((sum, row) => sum + row.deleted, 0);
@@ -770,10 +787,14 @@ function ChangeFiles() {
       </h3>
       <ul>
         {rows.map((row) => {
+          // a file the index leaves out has no pane: its row says why instead of opening
+          const left =
+            row.status === "deleted" ? row.excluded !== undefined : !indexModel.hasFile(row.path);
           const openable =
             row.status === "deleted"
-              ? true
-              : state.serverMode || Object.hasOwn(state.files, row.path);
+              ? Object.hasOwn(state.baseFiles, row.path) || (state.serverMode && !left)
+              : Object.hasOwn(state.files, row.path) || (state.serverMode && !left);
+          const note = openable ? undefined : left ? notAnalyzedReason(row) : undefined;
           const slash = row.path.lastIndexOf("/");
           return (
             <li key={row.path}>
@@ -787,7 +808,9 @@ function ChangeFiles() {
                 title={
                   openable
                     ? `Open ${row.path} in the code${row.status === "deleted" ? " (as it was before the change)" : ""}`
-                    : `${row.path} is not included in this page`
+                    : note
+                      ? `${row.path} shows no diff: ${note}, so xpl did not analyze it`
+                      : `${row.path} is not included in this page`
                 }
                 onClick={() => {
                   store.openFile(row.path, row.line);
@@ -799,6 +822,7 @@ function ChangeFiles() {
                   {slash !== -1 && <span className="dir">{row.path.slice(0, slash + 1)}</span>}
                   <b>{row.path.slice(slash + 1)}</b>
                   {row.oldPath && <span className="change-old">from {row.oldPath}</span>}
+                  {note && <span className="change-note">no diff: {note}</span>}
                 </span>
                 {row.test && <span className="change-test">test</span>}
                 <span

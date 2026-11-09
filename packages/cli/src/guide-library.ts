@@ -96,7 +96,7 @@ export async function guideSnapshot(
     files: collected.paths,
     choice: options.indexChoice ?? defaultIndexChoice(collected.choice),
   }).index;
-  const base = collectBaseFiles(explainer, ws.texts);
+  const base = collectBaseFiles(explainer, ws.model, ws.texts);
   return {
     guideId: loaded.name,
     explainer,

@@ -3,6 +3,7 @@ import {
   artifactIdentity,
   checkReadiness,
   reviewFingerprint,
+  TextCache,
   type Explainer,
 } from "../src/index.js";
 import {
@@ -46,6 +47,28 @@ function example() {
 }
 
 describe("ready export rules", () => {
+  it("needs the code before the change only of the changed files a page can show", () => {
+    const { world, explainer } = example();
+    const base = "c".repeat(40);
+    explainer.change = {
+      base,
+      head: "d".repeat(40),
+      files: [
+        { path: "a.ts", status: "modified", hunks: [] },
+        { path: "site/page.html", status: "modified", hunks: [], excluded: "oversized" },
+        { path: "gone.ts", status: "deleted", hunks: [] },
+        { path: "gone.lock", status: "deleted", hunks: [], excluded: "lockfile" },
+      ],
+    };
+    // a snapshot's reader: the base text of nothing
+    const texts = new TextCache(world.getText, () => undefined);
+    const report = checkReadiness(explainer, world.index, texts, { scope: "embedded-snapshot" });
+    expect(report.findings.filter((f) => f.field === "baseFiles").map((f) => f.message)).toEqual([
+      "a.ts@base: before-source needed by the change is unavailable.",
+      "gone.ts@base: before-source needed by the change is unavailable.",
+    ]);
+  });
+
   it("a step id without its view slug is kept: the hint says so instead of asking for a fix", () => {
     const { world, explainer } = example();
     explainer.views.push(

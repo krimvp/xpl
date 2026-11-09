@@ -1098,10 +1098,10 @@ same comment back to current.
 Records the change an explainer is about, from git, and prints what it touches. Run it once, at the start of explaining a PR or MR, on a checkout of the head with the index built (`xpl index`). Nothing is written to the repository. With one guide in the repository, leave out its name: `xpl change main..HEAD`. A lone argument is the guide when a guide has that name, else the range.
 
 - `<base>..<head>` takes any git revisions (`main..HEAD`, `2284ff0^..2284ff0`); `<base>...<head>` starts from their merge base; `<base>` alone ends at the commit of the index. The head must be the commit the index was built from, else it stops: `the head HEAD~1 (85c3b74) is not the commit the index was built from (2284ff0). Check out 85c3b74, run xpl index, then run this again`.
-- It stores `change: {base, head, files: [{path, status: added|modified|deleted|renamed, oldPath?, hunks: [{oldStart, oldLines, newStart, newLines}]}]}` in the explainer (full SHAs; hunks as `git diff -U0` prints them). Patches cannot change it.
+- It stores `change: {base, head, files: [{path, status: added|modified|deleted|renamed, oldPath?, hunks: [{oldStart, oldLines, newStart, newLines}], excluded?}]}` in the explainer (full SHAs; hunks as `git diff -U0` prints them). `excluded` says why `xpl index` leaves the file out: `generated`, `dependency`, `lockfile`, `oversized`, `binary`, `non-file` or `unreadable`. Patches cannot change it.
 - It prints the changed files with `+added -removed`, and the **changed symbols**: index symbols that hold an added or edited line (`new` when every line is new; a function nested in a function counts as part of it). For each changed symbol it prints its **direct callers** outside test files, and the indexed tests that reference it (a test function, or a test file for an import). A test also counts in three cases. It calls one of the symbol's direct callers (`through <caller>`: one call between them, as for the call paths). It calls the class of a changed constructor. Or it builds the class of a changed method (`builds its class; a guess`). When none of these finds a test, the output says so. A missing reference does not prove that no test exercises the behavior. Changed test files are listed separately. A method that runs when an instance is called (`__call__`, `handle`) gets `callers via instance`: the code that builds its class. That is a guess, and the output says so. Lines outside any symbol (imports, module-level code) are listed apart.
 - For changed functions and methods, **call paths through one intermediate function** show two indexed call sites with each hop labeled precise or heuristic. They show possible reachability, not guaranteed execution. No runtime callback or middleware wiring is inferred. Tests, cycles and instance guesses are not expanded. Each changed symbol has at most 100 paths and 1000 inspected references; a truncation note means the result is incomplete, including in JSON. Draft maps keep their direct callers.
-- A bounded **Not checked** section lists report-level partial, unavailable or failed analysis with the number of changed paths that report actually analyzed. It also lists changed paths absent from the loaded index and removed files the index cannot inspect. A commit mismatch is called out, so a stale index's limits are not presented as head coverage. No section means no omission was recorded; it does not prove complete semantic coverage. The exported change guide puts the same section below its summary, and `--json` includes `omissions: string[]`.
+- A **Not checked** section says what was not analyzed, in plain words. Changed files the index leaves out get one line per reason with a count, and the files under it (`8 files over the 1 MB size limit were not analyzed.`); removed files get one line. It also lists report-level partial, unavailable or failed analysis with the number of changed paths that report actually analyzed. A commit mismatch is called out first, so a stale index's limits are not presented as head coverage. No section means no omission was recorded; it does not prove complete semantic coverage. The exported change guide puts the same lines below its summary, the files folded under each, and `--json` includes `omissions: string[]` (the lines; `change.files[].excluded` gives each file's reason).
 - `xpl change <explainer>` without a range prints the analysis of the recorded change again.
 
 ```
@@ -1157,7 +1157,7 @@ Needs the change record: run `xpl change <explainer> <base>..<head>` first.
 
 - One map, "What this change touches" (`stubs: none`; arrows for calls, reads, type uses, `extends` and `implements`, so a changed default value or type has its arrows). It holds the changed symbols, their direct callers outside tests, and one group box for the changed tests.
 - Box summaries that start with `New:`, `Changed:` or `Unchanged:`.
-- A code link for every changed file, tests too. A deleted file links to the code before the change (`at: "base"`).
+- A code link for every changed file, tests too. A deleted file links to the code before the change (`at: "base"`). A file the index leaves out (an exported page over 1 MB, a lockfile, a guide file) gets none, so its old text stays out of the page.
 
 A caller is code that calls. A test, or code that only names a changed type, is not a caller.
 
@@ -1170,7 +1170,7 @@ A caller is code that calls. A test, or code that only names a changed type, is 
 **Notes it prints**
 
 - Pieces left off the map (at most 8 boxes) and pieces with no step of their own.
-- Callers that are a guess, and files with no code link.
+- Callers that are a guess, and files with no code link, each with its reason (`site/page.html (over the 1 MB size limit)`).
 
 ### `xpl draft repo`
 
@@ -1581,7 +1581,7 @@ $ xpl bundle complete -o all.html --files all
 wrote all.html (1.2 MB): .explainer/complete.explainer.json, 12 files embedded (all: 25.1 KB of source), index 92.3 KB as JSON (24.7 KB packed), mode explore
 ```
 
-**With a change recorded** (`xpl change`), every changed file that exists after the change is embedded, whatever `--files` says, and so is the code before the change of every modified, renamed or deleted file (`baseFiles` in the page, read from git). The summary line adds `change 5774f2c..349730f: 1 changed file in, code before the change of 1 file (3.2 KB)`, and names the changed files the selection had left out (`(2 added to the selection: ...)`).
+**With a change recorded** (`xpl change`), every changed file that exists after the change is embedded, whatever `--files` says, and so is the code before the change of every modified, renamed or deleted file the page can show (`baseFiles` in the page, read from git). A file the index leaves out (`excluded`: an exported page over 1 MB, a lockfile) brings no old text unless a base anchor points into it; the page lists it with its counts and the reason it shows no diff. The summary line adds `change 5774f2c..349730f: 1 changed file in, code before the change of 1 file (3.2 KB)`, and names the changed files the selection had left out (`(2 added to the selection: ...)`).
 
 `--json`: `{ok, readiness, exportStatus: "ready"|"draft", path, absolutePath, bytes, mode, tour?, anchors: {total, drifted, missing}, files: {embedded, choice, referenced?, boundary?: {added: [{file, reason: caller|callee|test, refs}], cut: [same], max, symbols}, embeddedBytes, indexed, indexedBytes}, change?: {base, head, changedFiles, addedToSelection: [paths], baseFiles: [paths], baseBytes, baseMissing?}, index: {path, commit, choice: "full"|"pruned", pruned, bytes, fullBytes, packedBytes, symbols: {embedded, indexed}, refs: {embedded, indexed}}}` (`index.bytes` and `fullBytes`: the embedded and the whole index as compact JSON; `packedBytes`: the embedded one as the page holds it).
 

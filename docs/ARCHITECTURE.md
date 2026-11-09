@@ -219,7 +219,11 @@ Conventions (all packages):
       status: "added" | "modified" | "deleted" | "renamed";
       oldPath?: FilePath; // renamed files only: the path at base
       hunks: ChangeHunk[]; // as `git diff -U0` prints them
+      excluded?: ExclusionReason; // why `xpl index` leaves it out (at head; a deleted file at base)
     }
+    // why file discovery (§3) leaves a file out
+    type ExclusionReason =
+      "generated" | "dependency" | "lockfile" | "oversized" | "binary" | "non-file" | "unreadable";
     interface ChangeHunk {
       oldStart: number;
       oldLines: number;
@@ -230,7 +234,10 @@ Conventions (all packages):
 
     Lines are 1-based, as in git. A hunk replaces `oldLines` base lines from `oldStart` with `newLines` head
     lines from `newStart`. A count of 0 is a pure insertion or deletion, and the start is then the line after
-    which it happened (0: at the top). Files come in git's order (sorted by path).
+    which it happened (0: at the top). Files come in git's order (sorted by path). `xpl change` sets
+    `excluded` with the rules of `xpl index`: for a file at head the index lacks, from the working tree; for a
+    deleted file, from its text at base (size, a NUL byte, the mark of an exported page, the path rules). A
+    record written before the field existed has none; such a file reads as "missing from the index".
 16. `Anchor` adds `at?: "base"`: a **base anchor** points at the code before the change, the base commit of
     `Explainer.change`. It has `file` and an optional `span` counted from line 1 of the base file; never a
     `symbol`, because the base is not indexed. `file` is always `ChangedFile.path` (a patch may name a renamed
@@ -961,12 +968,17 @@ its provider id, so a file-only fallback's limits do not describe a separate art
 `readerCoverage` gives readers a summary and one plain line per language in the diagrams' words ("names in
 part", "arrows matched by name, so some can be missing", "no inherits or type uses"), with data files as
 "keys only" and text as "the whole file only".
-`changeOmissions` intersects the change's paths with the loaded index's observed reports. It names report-level
-partial, unsupported or failed outcomes with the count of changed paths actually analyzed, without assigning a
-report-level limit to each file. It also names paths absent from the loaded index and removed files whose old
-code it cannot inspect. A commit mismatch is called out: those results describe the loaded index, not the
-change head. The list is capped at five items with a remaining count; no result or missing legacy report is
-treated as proof of complete analysis. Pruned and packed bundles retain the original reports.
+`changeOmissions` intersects the change's paths with the loaded index's observed reports and returns
+`{ text, files }[]`, written for a reader. Changed files the index lacks get one line per reason, with a count
+and the files (`ChangedFile.excluded`: "8 files over the 1 MB size limit were not analyzed."; no reason
+recorded: "missing from the index"); the reason with the most files comes first. Removed files get one line
+(the index holds the head only). Every changed file the index lacks is in exactly one line, so grouping hides
+none. It names report-level partial, unsupported or failed outcomes with the count of changed paths actually
+analyzed, without assigning a report-level limit to each file. A commit mismatch is called out first: those
+results describe the loaded index, not the change head. The list is not capped: grouping keeps it short, and
+no result or missing legacy report is treated as proof of complete analysis. `notAnalyzedReason` gives one
+file's reason in a few words ("over the 1 MB size limit"). Pruned and packed bundles retain the original
+reports.
 Tool commands and diagnostic details remain author-facing.
 
 | Language | Symbols (kind) | Path rules |
@@ -1897,7 +1909,9 @@ it to a file; `--json` adds the counts and what was left out.
   that use the changed code). Box summaries start with `New:`, `Changed:` or `Unchanged:`. The tour follows
   the review order, at most 12 steps: what changes for users, where it enters, one step per changed piece in
   call order ("Before/Now" TODOs), other changed files, who else is affected, tests and gaps, risks. Anchors
-  come from the hunks; every changed file gets one, a deleted file in the base (`at: "base"`). A changed
+  come from the hunks; every changed file gets one, a deleted file or one the index does not hold in the base
+  (`at: "base"`), except a file the index leaves out on purpose (`ChangedFile.excluded`): its old text would
+  only make the page heavier, and the note names each such file with its reason. A changed
   piece's step shows the old lines of its first hunk that removed text (a base anchor) before the new ones.
   "Who else is affected" is always a step: with no caller beyond the entry it says so and asks for the
   readers of a changed result, the public entry points and the siblings (explain-change.md §5). A caller is
@@ -2178,7 +2192,7 @@ services add process/backend metadata. Offline exports strip `server` and retain
 
 | Route | |
 |---|---|
-| `GET /` | the viewer HTML with the bundle injected (`server: { api: "/api", attachment: { root, guide } }`, `mode: "explore"`, `files` = the files the explainer references; others are fetched lazily; `baseFiles` whole, when the explainer has a change: only the changed files, so it is small) |
+| `GET /` | the viewer HTML with the bundle injected (`server: { api: "/api", attachment: { root, guide } }`, `mode: "explore"`, `files` = the files the explainer references; others are fetched lazily; `baseFiles` whole, when the explainer has a change: only the changed files the page can show, `baseSourceFiles`, so it is small) |
 | `GET /api/bundle` | the same bundle as JSON |
 | `GET /api/export` | current export snapshot with all referenced source (including stubs), base source and a forced workspace freshness check; `exportInfo.report` has shared readiness findings; no HTML is written |
 | `GET /api/explainer` | the explainer with its anchors re-resolved (as in the bundle), with an `ETag` of the file; 304 on a matching `If-None-Match` |
@@ -2668,11 +2682,15 @@ identity, checked source scope, findings and the author's optional decision note
 workspace; offline re-saves record `embedded-snapshot`, never a claim about the current repository. Draft
 pages show a persistent preview banner. Legacy bundles can still open; saving them runs the same checks.
 
-**Base files.** `baseFiles: Record<FilePath, string>` is the code before the change: the base text of every
-modified, renamed and deleted file of `explainer.change`, keyed by `ChangedFile.path` (the new path of a
-renamed file). Added files have none, and it is absent without a change record. `xpl bundle` reads it with `git
-show` and names any file git could not read (that file then shows no "before"); the viewer fetches a missing
-one from `/api/base-file` under `xpl view`.
+**Base files.** `baseFiles: Record<FilePath, string>` is the code before the change, keyed by
+`ChangedFile.path` (the new path of a renamed file): the base text of the changed files a page can show
+(`baseSourceFiles` in core). That is a modified or renamed file the index has (its pane marks the removed
+lines), a deleted file the index would have read (`excluded` unset: the page opens its old code), and any file
+a base anchor points into. A file the index leaves out shows no diff, so its old text stays out: on xpl's own
+change `37ef0e4..a1b2e7b`, the old text of eight showcase pages over 1 MB made the page 31.9 MB, not 6.3 MB.
+Readiness asks for the base text of the same files only. Added files have none, and it is absent without a
+change record. `xpl bundle` reads it with `git show` and names any file git could not read (that file then
+shows no "before"); the viewer fetches a missing one from `/api/base-file` under `xpl view`.
 
 **Boundary.** `--files boundary` embeds the referenced files plus a safe boundary around what the explainer
 anchors, so a reader can check the neighbours of a claim. Around every anchored symbol outside test files (an
@@ -2890,9 +2908,12 @@ words ("TypeScript (8 files): names in full; arrows matched by name, so some can
 analyzer's own report, by capability and provider id, is for authors (`xpl index --verbose`).
 It describes the original indexed repository, including when only some sources are embedded or the index
 is pruned. A legacy index shows coverage unknown. Live refresh and Save as HTML use the current index report.
-In a change guide, a bounded **Not checked** section below the author's summary names observed limits from
-the loaded index: the files' own limits as written, the tools' reports folded under one plain line. It is
-separate from the authored impact text and also appears in `xpl change` text and JSON.
+In a change guide, a **Not checked** section below the author's summary names observed limits from the loaded
+index (`changeOmissions`): one plain line per reason the index left changed files out, with a count and the
+files folded under it, and the tools' reports folded under one plain line. It is separate from the authored
+impact text and also appears in `xpl change` text (each line with its files) and JSON. In "Files in this
+change", a file with no pane (the index leaves it out) is listed with its counts, disabled, and says why:
+"no diff: over the 1 MB size limit".
 If no omissions are recorded, the section is absent; that absence says nothing about unobserved runtime effects.
 
 | Mode    | Moves between                                                              | Action  |

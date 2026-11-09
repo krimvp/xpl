@@ -260,7 +260,7 @@ Repair these findings, or use --draft for a labeled preview.`,
       files: collected.paths,
       choice: indexOption ?? defaultIndexChoice(collected.choice),
     });
-    const base = collectBaseFiles(loaded.explainer, ws.texts);
+    const base = collectBaseFiles(loaded.explainer, ws.model, ws.texts);
     if (base && base.missing.length > 0) {
       ctx.warn(
         `the code before the change could not be read for ${listText(base.missing)} (git show failed): the reader will see no "before" for ${base.missing.length === 1 ? "it" : "them"}`,

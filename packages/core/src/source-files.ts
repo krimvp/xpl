@@ -1,11 +1,12 @@
 /** Source selection shared by the offline export and readiness rules. */
-import { collectAnchors } from "./anchors.js";
+import { collectAnchors, isBaseAnchor } from "./anchors.js";
+import { baseVersionFiles } from "./change.js";
 import { codeFocus, viewCandidates, derivedEdgeMap, type FocusOptions } from "./focus.js";
 import { deriveGraph, derivedEdgeAnchors, excludedRefs, repr, type DerivedGraph } from "./graph.js";
 import { REF_TO_EDGE_KIND, elementIdForSymbolId } from "./ids.js";
 import { ExplainerModel } from "./model.js";
 import { relatedFiles } from "./related-files.js";
-import type { Explainer, GraphView, Reference } from "./schema.js";
+import type { ChangedFile, Explainer, GraphView, Reference } from "./schema.js";
 import type { IndexModel } from "./index-model.js";
 
 /**
@@ -55,6 +56,26 @@ export function referencedFiles(
     }
   }
   return [...files].filter((file) => index.hasFile(file)).sort();
+}
+
+/**
+ * The changed files whose code before the change a page can show (`ViewerBundle.baseFiles`), in record order: a
+ * modified or renamed file the index has (its pane marks the removed lines), a deleted file the index would have
+ * read (`ChangedFile.excluded` unset; the page shows its old code), and any file a base anchor points into. A file
+ * the index leaves out (an exported page over 1 MB, a lockfile) has no pane, so its old text would be dead weight.
+ */
+export function baseSourceFiles(explainer: Explainer, index: IndexModel): ChangedFile[] {
+  const anchored = new Set(
+    collectAnchors(explainer)
+      .filter((site) => isBaseAnchor(site.anchor))
+      .map((site) => site.anchor.file),
+  );
+  return baseVersionFiles(explainer.change).filter(
+    (file) =>
+      anchored.has(file.path) ||
+      (file.oldPath !== undefined && anchored.has(file.oldPath)) ||
+      (file.status === "deleted" ? file.excluded === undefined : index.hasFile(file.path)),
+  );
 }
 
 /**

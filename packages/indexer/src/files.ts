@@ -14,9 +14,14 @@
 import { execFile } from "node:child_process";
 import { open, lstat, readFile, readdir, realpath } from "node:fs/promises";
 import { join } from "node:path";
-import type { FileLanguage, FilePath } from "@xpl/core";
+import {
+  EXCLUSION_REASONS,
+  type ExclusionReason,
+  type FileLanguage,
+  type FilePath,
+} from "@xpl/core";
 
-/** Files larger than this are not indexed. */
+/** Files larger than this are not indexed (`changeOmissions` in core tells readers "1 MB"). */
 export const MAX_FILE_BYTES = 1024 * 1024;
 /** How much of a file is inspected for NUL bytes. */
 export const BINARY_SNIFF_BYTES = 8192;
@@ -181,24 +186,13 @@ export interface Discovery {
   exclusions: ExclusionReport;
 }
 
-export type ExclusionReason =
-  "generated" | "dependency" | "lockfile" | "oversized" | "binary" | "non-file" | "unreadable";
+export type { ExclusionReason };
 
 /** Only enumerated candidates are counted; ignored files and skipped walk directories are unseen. */
 export interface ExclusionReport {
   scope: "git candidates" | "walked files" | "snapshot unavailable";
   reasons: { reason: ExclusionReason; count: number; examples: string[] }[];
 }
-
-const EXCLUSION_REASONS: readonly ExclusionReason[] = [
-  "generated",
-  "dependency",
-  "lockfile",
-  "oversized",
-  "binary",
-  "non-file",
-  "unreadable",
-];
 
 /** Paths git lists for `root` (tracked + untracked, minus ignored), relative to `root`. */
 async function gitPaths(root: string, options?: GitOptions): Promise<string[] | undefined> {
@@ -263,19 +257,41 @@ export async function isIndexInputFile(abs: string): Promise<boolean | undefined
   return reason === undefined ? true : reason === "unreadable" ? undefined : false;
 }
 
+/** The page `xpl bundle` writes carries this: such a page is generated, not source. */
+const BUNDLE_MARK =
+  '<script id="xpl-data" type="application/json">{"schema":"code-explainer/bundle@0"';
+
 async function contentExclusion(abs: string): Promise<ExclusionReason | undefined> {
   const reason = await contentFilterExclusion(abs);
   if (reason || !/\.html?$/i.test(abs)) return reason;
   try {
-    const text = await readFile(abs, "utf8");
-    return text.includes(
-      '<script id="xpl-data" type="application/json">{"schema":"code-explainer/bundle@0"',
-    )
-      ? "generated"
-      : undefined;
+    return (await readFile(abs, "utf8")).includes(BUNDLE_MARK) ? "generated" : undefined;
   } catch {
     return "unreadable";
   }
+}
+
+/**
+ * Why discovery leaves out the file at `path` (relative to `root`, on disk), or undefined when it would index it:
+ * the same rules as `discoverFiles`, for one file.
+ */
+export async function fileExclusion(
+  root: string,
+  path: FilePath,
+): Promise<ExclusionReason | undefined> {
+  return pathExclusion(path) ?? (await contentExclusion(join(root, ...path.split("/"))));
+}
+
+/**
+ * The same rules for a file's text that is not on disk (`git show <base>:<path>` of a deleted file): its path, its
+ * size in UTF-8 bytes, a NUL byte in its first `BINARY_SNIFF_BYTES`, the mark of an exported page.
+ */
+export function textExclusion(path: FilePath, text: string): ExclusionReason | undefined {
+  const reason = pathExclusion(path);
+  if (reason) return reason;
+  if (Buffer.byteLength(text) > MAX_FILE_BYTES) return "oversized";
+  if (text.slice(0, BINARY_SNIFF_BYTES).includes("\0")) return "binary";
+  return /\.html?$/i.test(path) && text.includes(BUNDLE_MARK) ? "generated" : undefined;
 }
 
 /** Is `path` (relative to `root`) a text file within the limits? Cheap checks first, then a NUL sniff. */

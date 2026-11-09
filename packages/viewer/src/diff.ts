@@ -249,6 +249,8 @@ export interface ChangeFileRow {
   test: boolean;
   /** The line the code view opens it at (the first change), in the head file; base line 1 for a deleted file. */
   line: number;
+  /** Why the index leaves it out (`ChangedFile.excluded`). */
+  excluded?: ChangedFile["excluded"];
 }
 
 /** The changed files, source files first (in the record's order), then the test files. */
@@ -263,6 +265,7 @@ export function changeFiles(change: ChangeRecord): ChangeFileRow[] {
       deleted: diff.deleted,
       test: isTestFile(file.path),
       line: file.status === "deleted" ? 1 : firstChangedLine(file),
+      ...(file.excluded ? { excluded: file.excluded } : {}),
     };
   });
   return [...rows.filter((row) => !row.test), ...rows.filter((row) => row.test)];

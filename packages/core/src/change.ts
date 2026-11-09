@@ -4,6 +4,7 @@
  * files, the index symbols the change touches, their direct callers and two-edge call paths outside tests,
  * and the tests that reference them. Pure: the CLI runs git and hands the record in.
  */
+import { EXCLUSION_REASONS } from "./constants.js";
 import { elementIdForSymbolId, symbolIdForElementId } from "./ids.js";
 import { isTestFile, type IndexModel } from "./index-model.js";
 import type {
@@ -138,6 +139,12 @@ export function changeShapeIssues(value: unknown): { path: string; message: stri
       add(`${at}.oldPath`, "a renamed file needs oldPath, its path at base");
     } else if (file.status !== "renamed" && file.oldPath !== undefined) {
       add(`${at}.oldPath`, "only a renamed file has oldPath");
+    }
+    if (
+      file.excluded !== undefined &&
+      !(EXCLUSION_REASONS as readonly unknown[]).includes(file.excluded)
+    ) {
+      add(`${at}.excluded`, `excluded must be one of ${EXCLUSION_REASONS.join(", ")}`);
     }
     if (!Array.isArray(file.hunks)) {
       add(`${at}.hunks`, "hunks must be an array of {oldStart, oldLines, newStart, newLines}");
