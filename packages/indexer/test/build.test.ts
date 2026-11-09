@@ -339,14 +339,14 @@ describe("buildIndex", () => {
 });
 
 describe("writeIndex", () => {
-  it("writes .explainer/index-<commit>.json pretty-printed, and a .gitignore for indexes, cache entries and revision journals", async () => {
+  it("writes .explainer/index-<commit>.json as one line of JSON, and a .gitignore for indexes, cache entries and revision journals", async () => {
     const dir = makeDir(project);
     const { index } = await buildIndex({ root: dir, commit: "abc1234", precise: "off" });
     const path = await writeIndex(dir, index);
     expect(path).toBe(join(dir, ".explainer", "index-abc1234.json"));
     const text = readFileSync(path, "utf8");
-    expect(text).toBe(`${JSON.stringify(index, null, 2)}\n`);
-    expect(text.startsWith('{\n  "schema": "code-explainer/index@0"')).toBe(true);
+    expect(text).toBe(`${JSON.stringify(index)}\n`);
+    expect(text.startsWith('{"schema":"code-explainer/index@0"')).toBe(true);
     expect(JSON.parse(text)).toEqual(index);
     expect(readFileSync(join(dir, ".explainer", ".gitignore"), "utf8")).toBe(
       "index-*.json\ncache/\nrevisions/\n",

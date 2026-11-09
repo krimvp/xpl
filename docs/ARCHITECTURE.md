@@ -419,6 +419,9 @@ writeIndex(root: string, index: SymbolIndex, signal?: AbortSignal): Promise<stri
 // atomic write of <root>/.explainer/index-<commit>.json; ignores indexes and cache/ in .explainer/.gitignore
 ```
 
+The index file is one line of JSON, without indentation: on xpl that is 20.9 MB instead of 28.9 MB, and every
+command parses it. Pipe it through `jq .` to read it.
+
 Pipeline: discover files → per file: read, hash, reuse extraction or parse/`pack.extract`/free the tree → assemble symbols
 (ids, `~N` suffixes, whole-line ranges, hashes, parents) → heuristic resolution of every site, plus the packs'
 `inferRefs` → providers normalize and merge declarations and references by capability and file → commit id → `SymbolIndex`. `tool` =

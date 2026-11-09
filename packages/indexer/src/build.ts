@@ -586,7 +586,8 @@ function summarizeLanguages(
 const GITIGNORE_LINES = ["index-*.json", "cache/", "revisions/"];
 
 /**
- * Write `<root>/.explainer/index-<commit>.json` (pretty-printed) and make sure `.explainer/.gitignore`
+ * Write `<root>/.explainer/index-<commit>.json` (one line of JSON: indentation was 28% of its bytes, paid by
+ * every command that parses it) and make sure `.explainer/.gitignore`
  * ignores `index-*.json`. Returns the absolute path of the index file.
  */
 export async function writeIndex(
@@ -620,7 +621,7 @@ export async function writeIndex(
   const temp = join(dir, `.index-${commit}.json.${randomUUID()}.tmp`);
   try {
     signal?.throwIfAborted();
-    await writeFile(temp, `${JSON.stringify(index, null, 2)}\n`, { signal });
+    await writeFile(temp, `${JSON.stringify(index)}\n`, { signal });
     signal?.throwIfAborted();
     await rename(temp, target);
   } finally {
