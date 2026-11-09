@@ -24,7 +24,7 @@ An overview of a repository goes from the top down. The first map shows the syst
 services inside it and what they rely on, such as a database or a payments API. A box with a zoom badge
 opens the map of the level below it: the parts of one service, then its code.
 
-![A system map: customers place orders with the shop backend, which stores orders in a database and calls an email API and a payments API.](../../../docs/images/architecture-system-map-light.png)
+![A system map of a job runner: an operator starts it from the command line, and it reads its settings from a YAML file. The job runner box opens the map of its parts.](../../../docs/images/architecture-system-map-light.png)
 
 `xpl draft repo` drafts these maps from the index, and the agent or you write the text. Three more drafts
 show the types:
