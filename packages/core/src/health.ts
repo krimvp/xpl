@@ -181,14 +181,21 @@ const KEY_SHAPES: readonly KeyShape[] = [
 
 const JWT =
   /(?:[:=]|=>)\s*["'`]?(eyJ[0-9A-Za-z_-]{10,}\.eyJ[0-9A-Za-z_-]{10,}\.[0-9A-Za-z_-]{10,})/;
+/*
+ * The name and scheme patterns below are linear in the line. Each starts only where a run of name (or scheme)
+ * characters starts (the lookbehind), skips the run's leading digits, dots and dashes, and takes the rest of
+ * the run whole (`(?=(…))\N`, an atomic group), so a match is tried once per run. Without that, a run of
+ * 80,000 letters in a generated file was tried at each letter and scanned to its end each time: seconds per line.
+ */
 /** `scheme://user:password@host`. */
-const URL_PASSWORD = /\b[a-z][a-z0-9+.-]*:\/\/([^\s:@/"'`]*):([^\s@/"'`]+)@[^\s"'`]/i;
+const URL_PASSWORD =
+  /(?<![\w+.-])[+.-]*[a-z](?=([a-z0-9+.-]*))\1:\/\/([^\s:@/"'`]*):([^\s@/"'`]+)@[^\s"'`]/i;
 /** `name = "value"`, `name: 'value'`, `"name": "value"`, `name := "value"`, `'name' => 'value'`. */
 const QUOTED_ASSIGNMENT =
-  /(["']?)([A-Za-z_$][\w$.-]*)\1\s*(?::=|=>|(?<![=!<>])=(?![=>])|:)\s*(["'`])([^"'`\n]*)\3/g;
+  /(?:(["'])|(?<![\w$.-])[\d.-]*)(?=([A-Za-z_$][\w$.-]*))\2\1\s*(?::=|=>|(?<![=!<>])=(?![=>])|:)\s*(["'`])([^"'`\n]*)\3/g;
 /** The same in config files, where a value may be unquoted. */
 const BARE_ASSIGNMENT =
-  /(["']?)([A-Za-z_$][\w$.-]*)\1\s*(?::=|(?<![=!<>])=(?![=>])|:)[ \t]*["'`]?([^\s"'`#,;]+)/g;
+  /(?:(["'])|(?<![\w$.-])[\d.-]*)(?=([A-Za-z_$][\w$.-]*))\2\1\s*(?::=|(?<![=!<>])=(?![=>])|:)[ \t]*["'`]?([^\s"'`#,;]+)/g;
 /** Name endings that say "this holds a secret" (lower case, `_` and `-` removed). */
 const SECRET_NAME_ENDINGS = [
   "password",
@@ -367,7 +374,7 @@ function lineSecret(
   }
   const url = URL_PASSWORD.exec(line);
   if (url) {
-    const [, user, password] = url as unknown as [string, string, string];
+    const [, , user, password] = url as unknown as [string, string, string, string];
     if (password !== user && password.length >= 6 && !isPlaceholder(password)) {
       return {
         check: "secret",

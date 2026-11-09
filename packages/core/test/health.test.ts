@@ -233,6 +233,30 @@ describe("healthCheck: secrets written into code", () => {
       },
     ]);
   });
+
+  it("scans a 100,000-character line in linear time and still finds the secret at its end", () => {
+    // Generated and minified files hold such lines (vite's playground has an SVG with an 80,000-letter
+    // run). The name, scheme and value patterns once restarted at every letter of a run: quadratic, seconds
+    // per line. Linear, the whole check takes milliseconds; the bound is generous.
+    const run = 100_000;
+    const files: FileDecl[] = [
+      {
+        path: "assets/big.svg",
+        text: `${"x".repeat(run)} password: ${PASSWORD}`,
+        language: "text",
+      },
+      { path: "src/dotted.ts", text: `${"a.".repeat(run / 2)} token = "${PASSWORD}";` },
+      { path: "src/dashed.ts", text: `${"ab-".repeat(run / 3)} secret = "${PASSWORD}";` },
+    ];
+    const start = performance.now();
+    const report = check(files);
+    expect(performance.now() - start).toBeLessThan(1000);
+    expect(secretFindings(report).map((f) => `${f.at} ${f.title}`)).toEqual([
+      "assets/big.svg:1 Hardcoded secret in password",
+      "src/dashed.ts:1 Hardcoded secret in secret",
+      "src/dotted.ts:1 Hardcoded secret in token",
+    ]);
+  });
 });
 
 describe("healthCheck: .env files and browser variables", () => {
