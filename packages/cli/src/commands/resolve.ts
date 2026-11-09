@@ -9,7 +9,7 @@ import { loadExplainer, onlyExplainerName, openWorkspace, resolveExplainerPath }
 export function renderResolveReport(report: ResolveReport): string[] {
   const { counts } = report;
   const lines = [
-    `anchors: ${report.total} (ok ${counts.ok}, moved ${counts.moved}, drifted ${counts.drifted}, missing ${counts.missing})`,
+    `code links: ${report.total} (ok ${counts.ok}, moved ${counts.moved}, drifted ${counts.drifted}, missing ${counts.missing})`,
   ];
   if (report.drifted.length > 0) {
     lines.push(`drifted llm elements to re-explain (${report.drifted.length}):`);

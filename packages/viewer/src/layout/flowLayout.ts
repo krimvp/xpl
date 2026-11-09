@@ -19,6 +19,8 @@ export interface FlowLayout {
   height: number;
   /** Which way the steps run: `DOWN` (top to bottom, the default) or `RIGHT` (left to right). */
   direction: Direction;
+  /** One column in step order, for a phone (`FlowLayoutOptions.column`). */
+  column?: boolean;
   /**
    * Characters per line of a box's label (`wrapWords`), by shape: a left-to-right flow has narrower boxes,
    * and its diamonds are narrow and tall.
@@ -226,6 +228,11 @@ export interface FlowLayoutOptions {
   parts?: number;
   /** The actor line drawn under each step's label, by step id: a decision diamond is sized to hold it. */
   actors?: ReadonlyMap<string, string>;
+  /**
+   * One column for a phone (`inColumn`): the steps one under the other in step order, with the narrow boxes
+   * and diamonds of a left-to-right flow, and every arrow that skips a step run in a lane on the right.
+   */
+  column?: boolean;
 }
 
 /**
@@ -240,13 +247,21 @@ export async function layoutFlow(
 ): Promise<FlowLayout> {
   const direction = options.direction ?? "DOWN";
   const across = direction === "RIGHT";
-  const labelChars = across
+  const column = !across && options.column === true;
+  const narrow = across || column;
+  const labelChars = narrow
     ? { stage: STAGE_LABEL_CHARS_ACROSS, decision: DECISION_LABEL_CHARS_ACROSS }
     : { stage: STAGE_LABEL_CHARS, decision: STAGE_LABEL_CHARS };
   // in a left-to-right flow every size goes in turned, and the result is turned back at the end
   const turn = <T extends { width: number; height: number }>(size: T): T =>
     across ? { ...size, width: size.height, height: size.width } : size;
-  const { boxes, transitions: links } = repeatEnds(source);
+  // (a column has no long routes to save: its ends are drawn once)
+  const { boxes, transitions: links }: ReturnType<typeof repeatEnds> = column
+    ? {
+        boxes: source.stages.map(({ step, shape }) => ({ id: step.id, shape })),
+        transitions: source.transitions,
+      }
+    : repeatEnds(source);
   const flow = { ...source, transitions: links };
   const labelOf = new Map(source.stages.map(({ step }) => [step.id, step.label] as const));
   const decisions = new Set(boxes.filter((b) => b.shape === "decision").map((b) => b.id));
@@ -258,7 +273,7 @@ export async function layoutFlow(
         shape === "decision"
           ? decisionSize(label, options.actors?.get(copyOf ?? id), labelChars.decision)
           : {
-              width: across ? STAGE_WIDTH_ACROSS : STAGE_WIDTH,
+              width: narrow ? STAGE_WIDTH_ACROSS : STAGE_WIDTH,
               height: stageHeight(label, labelChars.stage),
             },
       ),
@@ -280,6 +295,17 @@ export async function layoutFlow(
   const joins = flow.transitions.flatMap((edge) =>
     edge.to === undefined ? [] : [{ ...edge, to: edge.to }],
   );
+  if (column) {
+    const steps = joins.filter((edge) => edge.from !== edge.to);
+    const { result, routed } = inColumn(children, steps, labels, decisions);
+    return {
+      ...finishFlow(flow, result, steps, routed, labels, children, decisions),
+      direction,
+      labelChars,
+      parts: 1,
+      column: true,
+    };
+  }
   const result = layered(
     children,
     joins.map((edge) => ({
@@ -290,7 +316,7 @@ export async function layoutFlow(
     })),
     {
       direction: "DOWN",
-      nodeGap: across ? 28 : 36,
+      nodeGap: narrow ? 28 : 36,
       layerGap: across ? 56 : 70,
       edgeGap: 14,
       pad: { top: 30, right: 24, bottom: 30, left: 24 },
@@ -308,26 +334,153 @@ export async function layoutFlow(
   // The main path of a run of choices goes straight down: a box moves under the one before it, its
   // early exits step aside. Kept only when no route then runs through a box and no box lands on another
   // (an exit moved aside can reach the next choice's ends).
-  const straight = straightened(facing, transitions, 36, indexOf);
+  const ordered = endsInOrder(facing, transitions, indexOf);
+  const straight = straightened(ordered, transitions, 36, indexOf);
   let routed: Point[][] = routeFlow(
-    straight ?? facing,
+    straight ?? ordered,
     transitions,
-    straight ? straight.moved : new Set(),
+    new Set([...ordered.moved, ...(straight?.moved ?? [])]),
   );
-  let placed: LayeredResult = straight ?? facing;
+  let placed: LayeredResult = straight ?? ordered;
   if (
     straight &&
     (!clearOfBoxes(routed, transitions, straight.boxes) || !apart(straight.boxes, 0))
   ) {
-    routed = routeFlow(facing, transitions, new Set());
-    placed = facing;
+    routed = routeFlow(ordered, transitions, ordered.moved);
+    placed = ordered;
   }
   onDiamonds(routed, transitions, placed.boxes, decisions);
   const laid = finishFlow(flow, placed, transitions, routed, labels, children, decisions);
   const parts = Math.max(1, Math.floor(options.parts ?? 1));
   const split = parts > 1 ? inParts(laid, parts) : undefined;
-  const out = { ...(split ?? laid), direction, labelChars, parts: split ? parts : 1 };
+  const out = {
+    ...(split ?? laid),
+    direction,
+    labelChars,
+    parts: split ? parts : 1,
+  };
   return across ? turned(out) : out;
+}
+
+/** The space between two steps of a column, and between two lanes of arrows beside it. */
+const COLUMN_GAP = 40;
+const LANE_GAP = 16;
+
+/**
+ * One column for a phone, read top to bottom: the boxes one under the other in step order, centred on one
+ * line. An arrow to the next step runs straight down. Every other arrow leaves its box on the right, runs
+ * in a lane beside the column and comes into its target's right side; the arrows into one step share a
+ * lane, and lanes whose runs do not overlap share a place. A box's ends on the right are spread along it.
+ */
+function inColumn(
+  children: readonly { id: string; width: number; height: number }[],
+  transitions: readonly { id: string; from: string; to: string }[],
+  labels: ReadonlyMap<string, { width: number; height: number }>,
+  decisions: ReadonlySet<string>,
+): { result: LayeredResult; routed: Point[][] } {
+  const pad = { top: 30, side: 24 };
+  const widest = Math.max(...children.map((c) => c.width));
+  const centre = pad.side + widest / 2;
+  const row = new Map(children.map((c, i) => [c.id, i] as const));
+  const next = (edge: { from: string; to: string }) => row.get(edge.to) === row.get(edge.from)! + 1;
+  const boxes = new Map<string, Box>();
+  let y = pad.top;
+  children.forEach((c, i) => {
+    boxes.set(c.id, { x: centre - c.width / 2, y, width: c.width, height: c.height });
+    const down = transitions.find((edge) => edge.from === c.id && row.get(edge.to) === i + 1);
+    const words = down && labels.get(down.id);
+    y += c.height + Math.max(COLUMN_GAP, words ? words.height + 30 : 0);
+  });
+  // where each arrow in a lane meets its boxes: the target's end first, then the ways out, along the right side
+  const aside = transitions.filter((edge) => !next(edge));
+  const ends = new Map<string, number>();
+  for (const c of children) {
+    const keys = [
+      ...(aside.some((edge) => edge.to === c.id) ? [`in:${c.id}`] : []),
+      ...aside.filter((edge) => edge.from === c.id).map((edge) => `out:${edge.id}`),
+    ];
+    const b = boxes.get(c.id)!;
+    const step = Math.min(26, b.height / (keys.length + 1));
+    keys.forEach((key, k) =>
+      ends.set(key, b.y + b.height / 2 + (k - (keys.length - 1) / 2) * step),
+    );
+  }
+  // a box's right side at a height: a diamond's outline narrows toward its top and bottom
+  const rightAt = (id: string, at: number) => {
+    const b = boxes.get(id)!;
+    if (!decisions.has(id)) return b.x + b.width;
+    const off = Math.abs(at - (b.y + b.height / 2)) / (b.height / 2);
+    return b.x + b.width / 2 + (b.width / 2) * (1 - Math.min(1, off));
+  };
+  // the lanes: one per target, placed left to right so that runs which overlap get places of their own
+  const targets = [...new Set(aside.map((edge) => edge.to))];
+  const span = (to: string) => {
+    const ys = [
+      ends.get(`in:${to}`)!,
+      ...aside.filter((edge) => edge.to === to).map((edge) => ends.get(`out:${edge.id}`)!),
+    ];
+    return { top: Math.min(...ys), bottom: Math.max(...ys) };
+  };
+  const placeOf = new Map<string, number>();
+  const taken: number[] = [];
+  for (const to of [...targets].sort((a, b) => span(a).top - span(b).top)) {
+    const { top, bottom } = span(to);
+    let place = taken.findIndex((last) => last + 12 < top);
+    if (place < 0) place = taken.length;
+    taken[place] = bottom;
+    placeOf.set(to, place);
+  }
+  // the words on an arrow's way out sit on it, just right of the box; words that would sit on the words of
+  // another way out of the same box move right of them
+  const wordsAt = new Map<string, number>();
+  const placed: { from: string; y: number; height: number; right: number }[] = [];
+  for (const edge of aside) {
+    const words = labels.get(edge.id);
+    if (!words) continue;
+    const y = ends.get(`out:${edge.id}`)!;
+    const over = placed.filter(
+      (p) => p.from === edge.from && Math.abs(p.y - y) < (p.height + words.height) / 2 + 2,
+    );
+    const x = Math.max(rightAt(edge.from, y) + 8, ...over.map((p) => p.right + 6));
+    wordsAt.set(edge.id, x);
+    placed.push({ from: edge.from, y, height: words.height, right: x + words.width });
+  }
+  // the first lane clears the boxes and those words
+  const first = Math.max(
+    ...children.map((c) => boxes.get(c.id)!.x + c.width + 16),
+    ...placed.map((p) => p.right + 12),
+  );
+  const routes = new Map<string, { via: Point[]; label?: Point }>();
+  const routed = transitions.map((edge) => {
+    const from = boxes.get(edge.from)!,
+      to = boxes.get(edge.to)!;
+    const words = labels.get(edge.id);
+    if (next(edge)) {
+      const start = { x: centre, y: from.y + from.height };
+      const end = { x: centre, y: to.y };
+      routes.set(edge.id, {
+        via: [],
+        ...(words ? { label: { x: centre, y: (start.y + end.y) / 2 } } : {}),
+      });
+      return [start, end];
+    }
+    const out = ends.get(`out:${edge.id}`)!;
+    const into = ends.get(`in:${edge.to}`)!;
+    const lane = first + LANE_GAP * placeOf.get(edge.to)!;
+    const start = { x: rightAt(edge.from, out), y: out };
+    routes.set(edge.id, {
+      via: [],
+      ...(words ? { label: { x: wordsAt.get(edge.id)! + words.width / 2, y: out } } : {}),
+    });
+    return [
+      start,
+      { x: lane, y: out },
+      { x: lane, y: into },
+      { x: rightAt(edge.to, into), y: into },
+    ];
+  });
+  const width = first + LANE_GAP * Math.max(0, taken.length - 1) + pad.side;
+  return { result: { width, height: y - COLUMN_GAP + pad.top, boxes, routes }, routed };
 }
 
 /**
@@ -398,10 +551,15 @@ const FIT_MAX_ZOOM = 1.25;
 /** Left to right has to fit this much larger to win: a flow reads top to bottom otherwise. */
 const ACROSS_MARGIN = 1.08;
 
+/** An upright pane narrower than this, px (a phone), shows a flow as one column, top to bottom. */
+export const NARROW_PANE = 600;
+
 /**
- * Lays the flow out for a pane of the given size, as a data map does (`layoutGraphFitting`): top to bottom,
- * unless that cannot show the flow at its natural size and left to right fits it in the pane at a larger
- * scale. A long run of choices is one tall column top to bottom; turned, it fills a wide pane.
+ * Lays the flow out for a pane of the given size: top to bottom while that shows the flow at its natural
+ * size. Else by the pane's shape: an upright phone pane keeps one column (the reader scrolls one way); a
+ * landscape pane sets the flow left to right, in the rows that show it largest; an upright wider pane sets it
+ * top to bottom in columns. Columns in a landscape pane cut between choices, and send each choice's exits
+ * down, across and back up past each other.
  */
 export async function layoutFlowFitting(
   flow: ProcessFlow,
@@ -410,15 +568,16 @@ export async function layoutFlowFitting(
 ): Promise<FlowLayout> {
   const down = await layoutFlow(flow, options);
   if (!pane || pane.width <= 0 || pane.height <= 0 || flowFit(down, pane) >= 1) return down;
+  const upright = pane.height > pane.width;
+  if (upright && pane.width < NARROW_PANE) return layoutFlow(flow, { ...options, column: true });
+  const direction = upright ? "DOWN" : "RIGHT";
   let best = down;
-  for (const direction of ["DOWN", "RIGHT"] as const)
-    for (let parts = 1; parts <= MAX_PARTS; parts++) {
-      if (direction === "DOWN" && parts === 1) continue;
-      const layout = await layoutFlow(flow, { ...options, direction, parts });
-      if (layout.parts !== parts) break;
-      if (flowFit(layout, pane) > flowFit(best, pane) * (best === down ? ACROSS_MARGIN : 1))
-        best = layout;
-    }
+  for (let parts = upright ? 2 : 1; parts <= MAX_PARTS; parts++) {
+    const layout = await layoutFlow(flow, { ...options, direction, parts });
+    if (layout.parts !== parts) break;
+    if (flowFit(layout, pane) > flowFit(best, pane) * (best === down ? ACROSS_MARGIN : 1))
+      best = layout;
+  }
   return best;
 }
 
@@ -426,6 +585,8 @@ export async function layoutFlowFitting(
 const MAX_PARTS = 4;
 /** The space between two parts of a flow: the arrows from one part to the next run in it. */
 const PART_GAP = 56;
+/** The space between two lanes of arrows from one part to the next. */
+const WRAP_LANE = 16;
 
 /**
  * A top-to-bottom layout set in `parts` columns side by side, like a newspaper: cut between two layers
@@ -542,14 +703,24 @@ function inParts(
     for (const p of points) extend(part, p.x, p.x, crossing.includes(edge) ? -Infinity : p.y);
     for (const l of edge.labels) extend(part, l.x, l.x + l.width, l.y + l.height);
   }
-  const lanes = crossing.length;
+  // The arrows that leave one box share a lane (one trunk, split only near their ends), and the lanes keep
+  // `WRAP_LANE` apart: the arrow that leaves furthest along runs innermost, so no two of them cross.
+  const headEnd = (edge: FlowLayout["edges"][number]) => {
+    const head = kept.get(edge.id)!;
+    return head[head.length - 1]!.x;
+  };
+  const sources = [...new Set(crossing.map((edge) => edge.from))];
+  const farthest = (from: string) =>
+    Math.max(...crossing.filter((edge) => edge.from === from).map(headEnd));
+  sources.sort((a, b) => farthest(b) - farthest(a));
+  const lanes = sources.length;
   const dx: number[] = [],
     dy: number[] = [];
   let cursor = Math.min(...lo);
   for (let part = 0; part < parts; part++) {
     dx.push(cursor - lo[part]!);
     dy.push(part === 0 ? 0 : top - cutsAt[part - 1]!);
-    cursor += hi[part]! - lo[part]! + PART_GAP + 8 * Math.max(0, lanes - 1);
+    cursor += hi[part]! - lo[part]! + PART_GAP + WRAP_LANE * Math.max(0, lanes - 1);
   }
   const move =
     (part: number) =>
@@ -572,15 +743,15 @@ function inParts(
         labels: edge.labels.map((l) => ({ ...l, ...m(l) })),
       };
     }
-    const lane = crossing.indexOf(edge);
+    const lane = sources.indexOf(edge.from);
     const to = partOf(edge.to!);
     const head = kept.get(edge.id)!.map(move(from));
     const last = head[head.length - 1]!;
     const points = pointsOf(edge);
     const end = move(to)(points[points.length - 1]!);
-    const run = low[from]! + dy[from]! + 18 + 8 * lane;
-    const gutter = hi[from]! + dx[from]! + PART_GAP / 2 + 8 * lane;
-    const over = top - 16 - 8 * lane;
+    const run = low[from]! + dy[from]! + 18 + WRAP_LANE * lane;
+    const gutter = hi[from]! + dx[from]! + PART_GAP / 2 + WRAP_LANE * lane;
+    const over = top - 16 - WRAP_LANE * lane;
     const route = [
       ...head,
       { x: last.x, y: run },
@@ -767,6 +938,49 @@ function clearOfBoxes(
 }
 
 /**
+ * The flow with the boxes one choice leads to (each with no other way in, side by side in one layer) in step
+ * order, the lowest number first: read left to right, or top to bottom once a left-to-right flow is turned.
+ * Boxes of other sizes keep the room they had between them. `moved` names the boxes that moved.
+ */
+function endsInOrder(
+  result: LayeredResult,
+  transitions: readonly { from: string; to: string }[],
+  indexOf: (id: string) => number,
+): LayeredResult & { moved: Set<string> } {
+  const boxes = new Map([...result.boxes].map(([id, b]) => [id, { ...b }]));
+  const out = new Map<string, string[]>();
+  const into = new Map<string, number>();
+  for (const edge of transitions) {
+    out.set(edge.from, [...(out.get(edge.from) ?? []), edge.to]);
+    into.set(edge.to, (into.get(edge.to) ?? 0) + 1);
+  }
+  const centreY = (b: Box) => Math.round(b.y + b.height / 2);
+  const moved = new Set<string>();
+  for (const nexts of out.values()) {
+    const ends = [...new Set(nexts)].filter((id) => into.get(id) === 1);
+    const row = ends.map((id) => boxes.get(id)!).sort((a, b) => a.x - b.x);
+    if (ends.length < 2 || row.some((b) => centreY(b) !== centreY(row[0]!))) continue;
+    // (no other box between them: they swap only among themselves)
+    const left = row[0]!.x,
+      right = row[row.length - 1]!.x + row[row.length - 1]!.width;
+    const between = [...boxes].some(
+      ([id, b]) =>
+        !ends.includes(id) && centreY(b) === centreY(row[0]!) && b.x > left && b.x < right,
+    );
+    if (between) continue;
+    const gap = row.length > 1 ? row[1]!.x - (row[0]!.x + row[0]!.width) : 0;
+    let x = left;
+    for (const id of [...ends].sort((a, b) => indexOf(a) - indexOf(b))) {
+      const b = boxes.get(id)!;
+      if (Math.abs(b.x - x) >= 0.5) moved.add(id);
+      b.x = x;
+      x += b.width + gap;
+    }
+  }
+  return { ...result, boxes, moved };
+}
+
+/**
  * The flow with its main path straight: going down rank by rank, the main next box of each box (the one more
  * of the flow follows; the first written on a tie) moves under it when that box has no other way in, and the
  * boxes beside it that lead nowhere (early exits) step aside to make room. Undefined when nothing moves.
@@ -795,22 +1009,6 @@ function straightened(
   };
   const centreY = (b: Box) => Math.round(b.y + b.height / 2);
   const moved = new Set<string>();
-  // the boxes one choice leads to (each with no other way in), side by side in one row, in step order
-  for (const nexts of out.values()) {
-    const ends = nexts.filter((id) => into.get(id) === 1);
-    const row = ends.map((id) => boxes.get(id)!);
-    if (ends.length < 2 || row.some((b) => b.y !== row[0]!.y || b.width !== row[0]!.width))
-      continue;
-    const slots = row.map((b) => b.x).sort((a, b) => a - b);
-    [...ends]
-      .sort((a, b) => indexOf(a) - indexOf(b))
-      .forEach((id, n) => {
-        const b = boxes.get(id)!;
-        if (Math.abs(b.x - slots[n]!) < 0.5) return;
-        b.x = slots[n]!;
-        moved.add(id);
-      });
-  }
   const ids = [...boxes.keys()].sort((a, b) => boxes.get(a)!.y - boxes.get(b)!.y);
   for (const id of ids) {
     const nexts = out.get(id) ?? [];
@@ -1142,11 +1340,50 @@ function anchorOwner(
 }
 
 /**
+ * A flow of states (`stateRoles`) as a state diagram: the states are its boxes, and each move is a labelled
+ * arrow from the state before it to the state after it. `moveOf` names the move step of each arrow (a move
+ * reached from two states is two arrows), so a click on an arrow still picks the move and its code.
+ * Undefined when a move has no state before it: it would have no arrow to be drawn on.
+ */
+export function stateMachine(
+  flow: ProcessFlow,
+  roles: ReadonlyMap<string, "state" | "move">,
+): { flow: ProcessFlow; moveOf: Map<string, string> } | undefined {
+  const after = new Map<string, string>();
+  for (const edge of flow.transitions)
+    if (roles.get(edge.from) === "move" && edge.to !== undefined) after.set(edge.from, edge.to);
+  const labels = new Map(flow.stages.map(({ step }) => [step.id, step.label] as const));
+  const moveOf = new Map<string, string>();
+  const reached = new Set<string>();
+  const transitions = flow.transitions.flatMap((edge) => {
+    const move = edge.to;
+    if (roles.get(edge.from) !== "state" || move === undefined || roles.get(move) !== "move")
+      return [];
+    const to = after.get(move);
+    if (to === undefined) return [];
+    const id = reached.has(move) ? `${move}#from:${edge.from}` : move;
+    reached.add(move);
+    moveOf.set(id, move);
+    return [{ id, from: edge.from, to, label: labels.get(move) ?? "" }];
+  });
+  const moves = [...roles].filter(([, role]) => role === "move").map(([id]) => id);
+  if (moves.some((move) => !reached.has(move))) return undefined;
+  return {
+    flow: {
+      ...flow,
+      stages: flow.stages.filter(({ step }) => roles.get(step.id) === "state"),
+      transitions,
+    },
+    moveOf,
+  };
+}
+
+/**
  * The states and the moves of a flow that `xpl draft states` drew, by step id, or undefined for any
  * other flow. Such a flow starts at the status type (its entry point and first participant); a state step
  * runs from that type to itself and leads only to moves, and a move step runs inside the function that
- * makes it and leads to one state. The viewer draws states as pills and moves as plain boxes, with no step
- * numbers: a state machine has no order to number.
+ * makes it and leads to one state. The viewer draws states as pills and moves as labelled arrows between
+ * them (`stateMachine`), with no step numbers: a state machine has no order to number.
  */
 export function stateRoles(
   view: Pick<SequenceView, "type" | "scope" | "participants" | "steps">,

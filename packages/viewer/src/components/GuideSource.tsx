@@ -7,12 +7,16 @@ import { firstContentLine } from "../readerWords.js";
 /** The most lines an excerpt shows; "Show code" opens the whole range. */
 const EXCERPT_LINES = 12;
 
-/** Which code link a step's excerpt shows first: where a thing is defined, then where it is called. */
+/**
+ * Which code link a step's excerpt shows first when the author did not order them (a step with no `code`,
+ * whose links come from its focus): where a thing is defined, then where it is called.
+ */
 const ROLE_ORDER: Record<string, number> = { definition: 0, "call-site": 1 };
 
 /**
- * One short excerpt of the step's code, under its picture. It shows the step's most telling code link (a
- * definition before a call, a call before a usage) and starts after the import lines at the top of a file:
+ * One short excerpt of the step's code, under its picture. It shows the step's first code link, the one its
+ * note talks about first (with no `code` on the step: a definition before a call, a call before a usage),
+ * and starts after the import lines at the top of a file:
  * twelve lines of imports tell a reader nothing. A link with only imports in it is skipped.
  */
 export function GuideSource({
@@ -43,11 +47,16 @@ export function GuideSource({
     }
     return out;
   }, [selection]);
-  // ... then by role, for the one shown first (a stable sort keeps the step's order)
+  // ... the author's order when the step names its code; else by role (a stable sort keeps the order)
+  const ordered = !!step.code?.length;
   const candidates = useMemo(
     () =>
-      [...links].sort((a, b) => (ROLE_ORDER[a.focus.role] ?? 2) - (ROLE_ORDER[b.focus.role] ?? 2)),
-    [links],
+      ordered
+        ? links
+        : [...links].sort(
+            (a, b) => (ROLE_ORDER[a.focus.role] ?? 2) - (ROLE_ORDER[b.focus.role] ?? 2),
+          ),
+    [links, ordered],
   );
   const total = links.length;
   // the reader pages through the step's code links (the code before a change among them).
@@ -173,7 +182,7 @@ function Pager({
       <button
         type="button"
         className="btn"
-        aria-label={`Code link ${((position + total - 2) % total) + 1} of ${total}`}
+        aria-label={`Previous code link (${((position + total - 2) % total) + 1} of ${total})`}
         onClick={() => onPage(-1)}
       >
         ‹
@@ -181,7 +190,7 @@ function Pager({
       <button
         type="button"
         className="btn"
-        aria-label={`Code link ${(position % total) + 1} of ${total}`}
+        aria-label={`Next code link (${(position % total) + 1} of ${total})`}
         onClick={() => onPage(1)}
       >
         ›

@@ -83,7 +83,10 @@ export const reviseCommand: CommandSpec = {
       ctx.out(
         [
           `Revision ${packet.runId}: ${packet.state}. Previous artifact: ${packet.previousArtifact}`,
-          ...packet.requests.map((r) => `${r.id}: ${r.contextReason ?? "current context"}`),
+          ...packet.requests.flatMap((r) => [
+            `${r.id}: ${r.contextReason ?? "current context"}`,
+            ...(r.note ? [`  ${JSON.stringify(r.note)}`] : []),
+          ]),
           ...packet.changes.map(
             (c) => `${c.id}\nBEFORE\n${jsonFile(c.before)}AFTER\n${jsonFile(c.after)}`,
           ),

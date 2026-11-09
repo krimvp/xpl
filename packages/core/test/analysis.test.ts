@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { changeOmissions, describeAnalysis } from "../src/index.js";
+import { changeOmissions, describeAnalysis, readerCoverage } from "../src/index.js";
 import { makeWorld } from "./helpers.js";
 
 it("labels analysis sources when a file-only fallback and an artifact report different symbol support", () => {
@@ -131,4 +131,176 @@ it("does not turn missing coverage or an empty result into a claim of complete a
   expect(changeOmissions(change, index)).toEqual([]);
   index.analysis = [];
   expect(changeOmissions(change, index)).toEqual([]);
+});
+
+it("gives readers one plain line per language, in the words of the diagrams", () => {
+  const { index } = makeWorld({
+    files: [
+      { path: "src/a.ts", language: "typescript" },
+      { path: "src/b.tsx", language: "tsx" },
+      { path: "src/main.rs", language: "rust" },
+      { path: "cmd/main.go", language: "go" },
+      { path: "pkg/q.go", language: "go" },
+      { path: "config.yaml", language: "yaml" },
+      { path: "package.json", language: "json" },
+      { path: "README.md", language: "text" },
+    ],
+  });
+  const all = (status: "supported" | "partial", files: string[], resolution?: "precise") => ({
+    capabilities: [
+      "symbols",
+      "declarationRanges",
+      "nesting",
+      "call",
+      "import",
+      "extends",
+      "implements",
+      "type-ref",
+      "read",
+      "write",
+    ] as const,
+    status,
+    analyzedFiles: files,
+    limitations: [],
+  });
+  index.analysis = [
+    {
+      provider: "typescript",
+      capabilities: {},
+      files: ["src/a.ts", "src/b.tsx"],
+      results: [
+        {
+          capabilities: ["symbols", "declarationRanges", "nesting"],
+          status: "supported",
+          analyzedFiles: ["src/a.ts", "src/b.tsx"],
+          limitations: [],
+        },
+        {
+          ...all("partial", ["src/a.ts", "src/b.tsx"]),
+          capabilities: [...all("partial", []).capabilities],
+          resolution: "heuristic",
+        },
+      ],
+    },
+    {
+      provider: "rust-tags",
+      capabilities: {},
+      files: ["src/main.rs"],
+      results: [
+        {
+          capabilities: ["symbols", "call", "import"],
+          status: "partial",
+          analyzedFiles: ["src/main.rs"],
+          limitations: [],
+        },
+        {
+          capabilities: ["extends", "implements", "type-ref", "read", "write"],
+          status: "unsupported",
+          analyzedFiles: [],
+          limitations: [],
+        },
+      ],
+    },
+    {
+      provider: "go",
+      capabilities: {},
+      files: ["cmd/main.go", "pkg/q.go"],
+      results: [
+        {
+          ...all("partial", ["cmd/main.go", "pkg/q.go"]),
+          capabilities: [...all("partial", []).capabilities],
+          resolution: "heuristic",
+        },
+      ],
+    },
+    {
+      provider: "scip-go",
+      capabilities: {},
+      files: ["cmd/main.go", "pkg/q.go"],
+      results: [
+        {
+          capabilities: ["call", "import", "extends", "implements", "type-ref", "read", "write"],
+          status: "supported",
+          analyzedFiles: ["cmd/main.go"],
+          limitations: [],
+          resolution: "precise",
+        },
+      ],
+    },
+    {
+      provider: "yaml",
+      capabilities: {},
+      files: ["config.yaml"],
+      results: [
+        {
+          capabilities: ["symbols"],
+          status: "supported",
+          analyzedFiles: ["config.yaml"],
+          limitations: [],
+        },
+      ],
+    },
+    {
+      provider: "text",
+      capabilities: {},
+      files: ["README.md"],
+      results: [
+        {
+          capabilities: ["symbols", "call"],
+          status: "unsupported",
+          analyzedFiles: [],
+          limitations: [],
+        },
+      ],
+    },
+  ];
+  expect(readerCoverage(index)).toEqual({
+    summary: "What xpl could read: 8 files. Some languages only in part.",
+    lines: [
+      "Go (2 files): names in part; arrows checked by a language tool in 1 file, matched by name in the rest, so some can be missing.",
+      "Rust (1 file): names in part; calls and imports matched by name, so some can be missing; no inherits, implements, type uses, reads or writes.",
+      "TypeScript (2 files): names in full; arrows matched by name, so some can be missing.",
+      "JSON, YAML (2 files): keys only; no arrows.",
+      "Text (1 file): the whole file only.",
+    ],
+  });
+});
+
+it("says what xpl could read in a summary alone when the index recorded nothing", () => {
+  const { index } = makeWorld({ files: [{ path: "a.ts" }] });
+  delete index.analysis;
+  expect(readerCoverage(index)).toEqual({
+    summary: "What xpl could read was not recorded (an older index).",
+    lines: [],
+  });
+});
+
+it("says in the summary that arrows are matched by name when every language is read in full that way", () => {
+  const { index } = makeWorld({ files: [{ path: "src/A.java", language: "java" }] });
+  index.analysis = [
+    {
+      provider: "java",
+      capabilities: {},
+      files: ["src/A.java"],
+      results: [
+        {
+          capabilities: ["symbols", "declarationRanges", "nesting"],
+          status: "supported",
+          analyzedFiles: ["src/A.java"],
+          limitations: [],
+        },
+        {
+          capabilities: ["call", "import", "extends", "implements", "type-ref", "read", "write"],
+          status: "partial",
+          analyzedFiles: ["src/A.java"],
+          limitations: [],
+          resolution: "heuristic",
+        },
+      ],
+    },
+  ];
+  expect(readerCoverage(index)).toEqual({
+    summary: "What xpl could read: 1 file. Some arrows are matched by name and can be missing.",
+    lines: ["Java (1 file): names in full; arrows matched by name, so some can be missing."],
+  });
 });

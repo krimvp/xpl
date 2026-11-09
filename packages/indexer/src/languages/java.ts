@@ -76,6 +76,78 @@ function receiver(node: Node | undefined): string[] | undefined {
   return undefined;
 }
 
+/** The members a class body declares by name, for bare names inside its methods. */
+interface ClassScope {
+  path: string;
+  fields: Set<string>;
+  methods: Set<string>;
+}
+
+function classScope(path: string, declaration: Node): ClassScope {
+  const scope: ClassScope = { path, fields: new Set(), methods: new Set() };
+  const body = field(declaration, "body");
+  for (const member of body?.namedChildren ?? []) {
+    if (member.type === "method_declaration") {
+      const name = field(member, "name");
+      if (name) scope.methods.add(name.text);
+    } else if (member.type === "field_declaration" || member.type === "constant_declaration") {
+      for (const child of member.namedChildren)
+        if (child.type === "variable_declarator") {
+          const name = field(child, "name");
+          if (name) scope.fields.add(name.text);
+        }
+    } else if (member.type === "enum_body_declarations") {
+      for (const inner of member.namedChildren)
+        if (inner.type === "method_declaration") {
+          const name = field(inner, "name");
+          if (name) scope.methods.add(name.text);
+        }
+    }
+  }
+  if (declaration.type === "record_declaration")
+    for (const param of field(declaration, "parameters")?.namedChildren ?? []) {
+      const name = field(param, "name");
+      if (name) scope.fields.add(name.text);
+    }
+  if (declaration.type === "enum_declaration")
+    for (const member of body?.namedChildren ?? [])
+      if (member.type === "enum_constant") {
+        const name = field(member, "name");
+        if (name) scope.fields.add(name.text);
+      }
+  return scope;
+}
+
+/** Every name a method binds itself: parameters, locals, lambda, catch, for-each and resource names. */
+function boundNames(method: Node): Set<string> {
+  const names = new Set<string>();
+  const walk = (node: Node) => {
+    switch (node.type) {
+      case "formal_parameter":
+      case "spread_parameter":
+      case "catch_formal_parameter":
+      case "enhanced_for_statement":
+      case "resource":
+      case "variable_declarator": {
+        const name = field(node, "name");
+        if (name) names.add(name.text);
+        break;
+      }
+      case "lambda_expression": {
+        const params = field(node, "parameters");
+        if (params?.type === "identifier") names.add(params.text);
+        else
+          for (const param of params?.namedChildren ?? [])
+            if (param.type === "identifier") names.add(param.text);
+        break;
+      }
+    }
+    for (const child of node.namedChildren) walk(child);
+  };
+  walk(method);
+  return names;
+}
+
 function extractJava(ctx: FileContext): { facts: FileFacts; located: LocatedSite[] } {
   const facts: FileFacts = { symbols: [], sites: [], imports: [], typeFacts: [] };
   const located: LocatedSite[] = [];
@@ -169,6 +241,14 @@ function extractJava(ctx: FileContext): { facts: FileFacts; located: LocatedSite
     };
     visitType(node);
   };
+  // Enclosing classes, innermost last, and the names the enclosing method binds. Java resolves a bare
+  // name to a local first, then to a member of the innermost class that declares it.
+  const classes: ClassScope[] = [];
+  let bound = new Set<string>();
+  const memberOwner = (name: string, kind: "fields" | "methods") =>
+    bound.has(name) && kind === "fields"
+      ? undefined
+      : [...classes].reverse().find((scope) => scope[kind].has(name));
   const visit = (node: Node, owner = "", typeOwner = "") => {
     if (node.type === "package_declaration") return;
     if (node.type === "import_declaration") return importNode(node);
@@ -184,12 +264,17 @@ function extractJava(ctx: FileContext): { facts: FileFacts; located: LocatedSite
         identifier: nodeSpan(name, lines),
         ...(owner && { parentPath: owner }),
       });
+      classes.push(classScope(path, node));
+      const outerBound = bound;
+      bound = new Set();
       for (const child of node.namedChildren) {
         if (child.type === "superclass" || child.type === "extends_interfaces")
           heritage(child, "extends");
         else if (child.type === "super_interfaces") heritage(child, "implements");
         else if (child !== name) visit(child, path, path);
       }
+      bound = outerBound;
+      classes.pop();
       return;
     }
     if (
@@ -210,7 +295,10 @@ function extractJava(ctx: FileContext): { facts: FileFacts; located: LocatedSite
       parameters(field(node, "parameters"), path);
       if (node.type === "method_declaration")
         typeFact(path, name.text, "return", field(node, "type"));
+      const outerBound = bound;
+      bound = boundNames(node);
       for (const child of node.namedChildren) if (child !== name) visit(child, path, typeOwner);
+      bound = outerBound;
       return;
     }
     if (node.type === "field_declaration" && typeOwner) {
@@ -251,7 +339,17 @@ function extractJava(ctx: FileContext): { facts: FileFacts; located: LocatedSite
     }
     if (node.type === "method_invocation") {
       const name = field(node, "name");
-      const qualifier = receiver(field(node, "object"));
+      const object = field(node, "object");
+      let qualifier = receiver(object);
+      if (name && !object) {
+        // `backoffDelay(…)`: a method of the innermost enclosing class that declares it
+        const declaring = memberOwner(name.text, "methods");
+        if (declaring) qualifier = [`:${declaring.path}`];
+      } else if (object?.type === "identifier" && qualifier?.length === 1) {
+        // `pool.lease()` with no local `pool`: the field of the innermost class that declares it
+        const declaring = memberOwner(object.text, "fields");
+        if (declaring) qualifier = [`:${declaring.path}`, object.text];
+      }
       if (name && qualifier) emit("call", name, node, qualifier);
     } else if (node.type === "object_creation_expression") {
       const type = field(node, "type");

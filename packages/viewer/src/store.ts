@@ -1949,11 +1949,14 @@ export class ViewerStore {
     return JSON.stringify(this.feedbackFile(), null, 2) + "\n";
   }
 
-  /** Capture the element and selected inclusive lines against exactly the snapshot being viewed. */
+  /**
+   * Capture the element and selected inclusive lines against exactly the snapshot being viewed. With no kind,
+   * a typed note is a question ("explain"); an empty one asks for more detail ("expand").
+   */
   async requestExplain(
     id: ElementId,
     note?: string,
-    kind: FeedbackKind = "expand",
+    kind: FeedbackKind = note?.trim() ? "explain" : "expand",
   ): Promise<"queued" | "command"> {
     const request = this.captureFeedback(id, note, kind);
     if (!this.api) return "command";

@@ -112,6 +112,11 @@ describe("xpl start", () => {
     expect(result.out).toContain(
       "run `xpl draft path job-retries sym:src/runner.ts#Runner.dispatch -o <file>`",
     );
+    // and every note that names a path to draft names the same entry
+    expect([...result.out.matchAll(/xpl draft path job-retries (\S+)/g)].map((m) => m[1])).toEqual([
+      "sym:src/runner.ts#Runner.dispatch`",
+      "sym:src/runner.ts#Runner.dispatch",
+    ]);
   });
 
   it("starts a path draft at a named source symbol", async () => {

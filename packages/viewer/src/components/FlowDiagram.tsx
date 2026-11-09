@@ -14,11 +14,13 @@ import { useStore, useViewerState } from "../hooks.js";
 import {
   EDGE_LABEL_LINE,
   EDGE_LABEL_CHARS,
+  layoutFlow,
   layoutFlowFitting,
   levelTitle,
   type FlowLayout,
   placedStages,
   sharedActor,
+  stateMachine,
   stateRoles,
   LEVEL_WORDS,
   stageActor,
@@ -45,6 +47,11 @@ import {
 
 /** How far the outline keeps the step it follows from the pane's edge, px: near the middle, with its neighbours. */
 const OUTLINE_MARGIN = 140;
+/**
+ * A flow (Read tab, Explore) starts whole when that shows its 13-unit words at 10px or more: the reader sees
+ * all of it, and the layout "Fit all" shows. Smaller, it starts on its focus at `FLOW_READABLE_ZOOM`.
+ */
+const FLOW_WHOLE_ZOOM = 10 / 13;
 /** The smallest zoom of that outline: its 13-14 unit words come out at 9-10 px. */
 const OUTLINE_MIN_ZOOM = 0.7;
 
@@ -66,10 +73,15 @@ export function FlowDiagram({ view, snapshot, outline = false }: FlowDiagramProp
   const store = useStore();
   const state = useViewerState();
   const flow = useMemo(() => processFlow(view), [view]);
+  // a flow of states and the moves between them: states are pills, each move a labelled arrow between two
+  // of them (no numbers: a state machine has no order), the arrow still the move's link to its code
+  const roles = useMemo(() => stateRoles(view), [view]);
+  const machine = useMemo(() => (roles ? stateMachine(flow, roles) : undefined), [flow, roles]);
+  const drawn = machine?.flow ?? flow;
   // The layout remembers the flow it belongs to: after a switch to another view, the old layout is not
   // drawn with the new flow (that used to crash) while the new one is computed.
   const [laidOut, setLaidOut] = useState<{ flow: ProcessFlow; layout: FlowLayout }>();
-  const layout = laidOut?.flow === flow ? laidOut.layout : undefined;
+  const layout = laidOut && laidOut.flow === drawn ? laidOut.layout : undefined;
   const [error, setError] = useState<string>();
   const arrow = useId().replace(/:/g, "");
   const present = state.mode === "present" && !snapshot;
@@ -115,23 +127,27 @@ export function FlowDiagram({ view, snapshot, outline = false }: FlowDiagramProp
   // The steps of one function: its name is said once over the flow (the caption), not under every box.
   // A still picture and Present have no caption with it, so their boxes keep it.
   const owner = snapshot || present ? undefined : sharedActor(flow);
+  // (a state names its type nowhere but the caption: under every pill it says nothing the title does not)
   // The line under each step's label: the layout sizes a decision's diamond to hold it.
   const actors = useMemo(
     () =>
       new Map(
         flow.stages.map(({ step, shape }) => [
           step.id,
-          stageActor(step, state.model, shape === "decision" ? 26 : 34, shape, owner),
+          roles?.get(step.id) === "state"
+            ? ""
+            : stageActor(step, state.model, shape === "decision" ? 26 : 34, shape, owner),
         ]),
       ),
-    [flow, state.model, owner],
+    [flow, roles, state.model, owner],
   );
-  // The pane's size, coarsely (as GraphView): the first one a flow is drawn in picks its direction and parts.
+  // The pane's size, coarsely (as GraphView): a slide picks its flow's direction and parts for it. Elsewhere
+  // a flow keeps the shape it got for the window (`layoutFlowView`), whatever pane it is drawn in.
   const [host, setHost] = useState<HTMLDivElement | null>(null);
   const [pane, setPane] = useState<{ width: number; height: number }>();
   useLayoutEffect(() => {
     const el = host;
-    if (!el) return;
+    if (!el || !present) return;
     const step = (n: number) => Math.round(Math.log(Math.max(n, 1)) / Math.log(1.15));
     let last = "";
     const measure = () => {
@@ -144,23 +160,22 @@ export function FlowDiagram({ view, snapshot, outline = false }: FlowDiagramProp
     const observer = new ResizeObserver(measure);
     observer.observe(el);
     return () => observer.disconnect();
-  }, [host]);
+  }, [host, present]);
+  const slidePane = present ? pane : undefined;
   useEffect(() => {
-    // a live diagram waits for its pane's size; a still picture has none and uses the window's
-    if (!snapshot && !pane) return;
+    // a slide waits for its pane's size
+    if (present && !slidePane) return;
     let cancelled = false;
     setError(undefined);
-    const size = pane ?? {
-      width: Math.max(320, window.innerWidth - 240),
-      height: Math.max(320, window.innerHeight - 130),
-    };
-    // (a slide picks its own, for its pane, as a map's does)
-    (present
-      ? layoutFlowFitting(flow, size, { actors })
-      : layoutFlowView(view.id, flow, size, { actors })
+    // (an outline beside the code is one narrow column, top to bottom, whatever the window's shape)
+    (slidePane
+      ? layoutFlowFitting(drawn, slidePane, { actors })
+      : outline
+        ? layoutFlow(drawn, { actors })
+        : layoutFlowView(view.id, drawn, { actors })
     ).then(
       (result) => {
-        if (!cancelled) setLaidOut({ flow, layout: result });
+        if (!cancelled) setLaidOut({ flow: drawn, layout: result });
       },
       (reason: unknown) => {
         if (!cancelled) setError(reason instanceof Error ? reason.message : String(reason));
@@ -169,7 +184,7 @@ export function FlowDiagram({ view, snapshot, outline = false }: FlowDiagramProp
     return () => {
       cancelled = true;
     };
-  }, [flow, actors, pane, present, snapshot, view.id]);
+  }, [drawn, actors, slidePane, present, outline, view.id]);
   if (error)
     return (
       <div className="diagram-message" role="alert">
@@ -184,9 +199,9 @@ export function FlowDiagram({ view, snapshot, outline = false }: FlowDiagramProp
     );
   if (flow.stages.length === 0)
     return <div className="diagram-message">This process has no stages yet.</div>;
-  const placed = placedStages(flow, layout);
-  // a flow of states and the moves between them: states are pills, moves plain boxes, neither numbered
-  const roles = stateRoles(view);
+  const placed = placedStages(drawn, layout);
+  // the element an arrow stands for: itself, or the move it draws
+  const elementOf = (edge: { id: string }) => machine?.moveOf.get(edge.id) ?? edge.id;
   const relatedStages = flowRelated(
     flow,
     snapshot?.selection ?? state.selection,
@@ -204,14 +219,22 @@ export function FlowDiagram({ view, snapshot, outline = false }: FlowDiagramProp
   // (a repeated end is framed by its first box: its copies are only drawn)
   const originals = placed.filter(({ node }) => !node.copyOf);
   const selectedStages = originals.filter(({ node }) => topics.has(node.id));
+  // (a selected move: the two states its arrow joins)
+  const movedBetween = new Set(
+    (layout.edges ?? []).flatMap((edge) =>
+      machine && topics.has(elementOf(edge)) ? [edge.from, ...(edge.to ? [edge.to] : [])] : [],
+    ),
+  );
   const focused = (
     selectedStages.length > 0
       ? selectedStages
-      : originals.filter(
-          ({ stage: { step } }) =>
-            topicMatches(step.from, topics, state.model) ||
-            topicMatches(step.to, topics, state.model),
-        )
+      : movedBetween.size > 0
+        ? originals.filter(({ node }) => movedBetween.has(node.id))
+        : originals.filter(
+            ({ stage: { step } }) =>
+              topicMatches(step.from, topics, state.model) ||
+              topicMatches(step.to, topics, state.model),
+          )
   ).map(({ node }) => node.id);
   const focusIds = new Set(focused);
   const nextTo = new Set<string>();
@@ -250,7 +273,13 @@ export function FlowDiagram({ view, snapshot, outline = false }: FlowDiagramProp
     outline && followCaret ? originals.find(({ node }) => matches.has(node.id)) : undefined;
   const followed = caretStage ? boxOf(caretStage.node) : undefined;
   const transitionClass = (edge: FlowLayout["edges"][number]) =>
-    `flow-transition${state.selection.includes(edge.id) ? " is-selected" : ""}${flow.projected ? " is-projected" : ""}${edge.kind ? ` is-${edge.kind}` : ""}`;
+    `flow-transition${state.selection.includes(elementOf(edge)) ? " is-selected" : ""}${machine?.moveOf.has(edge.id) ? ` is-move${matches.has(elementOf(edge)) ? " is-matched" : ""}` : ""}${flow.projected ? " is-projected" : ""}${edge.kind ? ` is-${edge.kind}` : ""}`;
+  const transitionWords = (edge: FlowLayout["edges"][number]) => {
+    const to = edge.to ? stageLabels.get(nodes.get(edge.to)?.copyOf ?? edge.to) : "caller";
+    return machine?.moveOf.has(edge.id)
+      ? `Move: ${stageLabels.get(elementOf(edge))}, from ${stageLabels.get(edge.from)} to ${to}`
+      : `${stageLabels.get(edge.from)} to ${to}${edge.labels.length ? `: ${edge.labels.map((label) => label.text).join(" ")}` : ""}`;
+  };
   const select = (id: string, additive: boolean) => {
     if (!snapshot) store.click(id, additive);
   };
@@ -280,90 +309,10 @@ export function FlowDiagram({ view, snapshot, outline = false }: FlowDiagramProp
           <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--purple)" />
         </marker>
       </defs>
-      {(layout.edges ?? []).map((edge) => (
-        <g
-          key={edge.id}
-          className={transitionClass(edge)}
-          data-transition-kind={edge.kind}
-          data-element-id={snapshot ? undefined : edge.id}
-          role={snapshot ? undefined : "button"}
-          tabIndex={snapshot ? undefined : 0}
-          aria-label={`${stageLabels.get(edge.from)} to ${edge.to ? stageLabels.get(edge.to) : "caller"}${edge.labels.length ? `: ${edge.labels.map((label) => label.text).join(" ")}` : ""}`}
-          onClick={(event) => {
-            event.stopPropagation();
-            select(edge.id, event.shiftKey);
-          }}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" || event.key === " ") {
-              event.preventDefault();
-              select(edge.id, event.shiftKey);
-            }
-          }}
-          data-navigation-from={snapshot ? undefined : edge.from}
-          data-navigation-to={
-            snapshot || edge.to === undefined ? undefined : (nodes.get(edge.to)?.copyOf ?? edge.to)
-          }
-        >
-          {edge.kind && (
-            <title>
-              {levelTitle(
-                edge.kind,
-                edge.to === undefined
-                  ? undefined
-                  : (stageLabels.get(nodes.get(edge.to)?.copyOf ?? edge.to) ?? ""),
-              )}
-            </title>
-          )}
-          {(edge.sections ?? []).map((section, i) => (
-            <polyline
-              key={i}
-              points={[section.startPoint, ...(section.bendPoints ?? []), section.endPoint]
-                .map((point) => `${point.x},${point.y}`)
-                .join(" ")}
-              fill="none"
-              stroke={edge.kind ? "var(--purple)" : "var(--edge)"}
-              strokeWidth="2"
-              markerEnd={`url(#${edge.kind ? `${arrow}-level` : arrow})`}
-            />
-          ))}
-        </g>
-      ))}
-      {/* The labels after all the lines: no line runs over a label. */}
-      {(layout.edges ?? []).map((edge) =>
-        (edge.labels ?? []).length === 0 ? null : (
-          <g key={`${edge.id}:label`} className={transitionClass(edge)} aria-hidden="true">
-            {(edge.labels ?? []).map((label, i) => {
-              const lines = wrapWords(label.text ?? "", EDGE_LABEL_CHARS);
-              const x = (label.x ?? 0) + (label.width ?? 0) / 2;
-              return (
-                <g key={i}>
-                  <rect
-                    x={label.x ?? 0}
-                    y={label.y ?? 0}
-                    width={label.width ?? 0}
-                    height={label.height ?? 24}
-                    rx="5"
-                    fill="var(--panel)"
-                  />
-                  <text x={x} y={(label.y ?? 0) + 17} textAnchor="middle">
-                    {lines.map((line, n) => (
-                      <tspan key={n} x={x} dy={n === 0 ? 0 : EDGE_LABEL_LINE}>
-                        {line}
-                      </tspan>
-                    ))}
-                  </text>
-                </g>
-              );
-            })}
-          </g>
-        ),
-      )}
-      {placed.map(({ node, stage }, index) => {
+      {/* The steps first, then the arrows: the reader (and Tab) meets the steps in reading order, and an
+          arrow's end shows over the box it meets. */}
+      {placed.map(({ node, stage }) => {
         const { step, shape, frames } = stage;
-        // A loop or a branch is named once, over the first box it covers, not again over every box in it.
-        const frameText = frames.join(" · ");
-        const newFrame =
-          frames.length > 0 && placed[index - 1]?.stage.frames.join(" · ") !== frameText;
         const width = node.width ?? 250,
           height = node.height ?? 100;
         const active = topics.has(step.id),
@@ -476,13 +425,111 @@ export function FlowDiagram({ view, snapshot, outline = false }: FlowDiagramProp
                   <ChangePill x={width - pill - 12} y={-8} change={status} />
                 );
               })()}
-            {newFrame && (
-              // Above the arrowhead (it ends at the box), on a halo: the dashed line runs behind it.
-              <text className="flow-frame" x={width / 2} y="-18" textAnchor="middle">
-                {frameText.slice(0, 60)}
-              </text>
-            )}
           </g>
+        );
+      })}
+      {(layout.edges ?? []).map((edge) => (
+        <g
+          key={edge.id}
+          className={transitionClass(edge)}
+          data-transition-kind={edge.kind}
+          data-element-id={snapshot ? undefined : elementOf(edge)}
+          role={snapshot ? undefined : "button"}
+          tabIndex={snapshot ? undefined : 0}
+          aria-label={snapshot ? undefined : transitionWords(edge)}
+          onClick={(event) => {
+            event.stopPropagation();
+            select(elementOf(edge), event.shiftKey);
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              select(elementOf(edge), event.shiftKey);
+            }
+          }}
+          data-navigation-from={snapshot ? undefined : edge.from}
+          data-navigation-to={
+            snapshot || edge.to === undefined ? undefined : (nodes.get(edge.to)?.copyOf ?? edge.to)
+          }
+        >
+          {edge.kind && (
+            <title>
+              {levelTitle(
+                edge.kind,
+                edge.to === undefined
+                  ? undefined
+                  : (stageLabels.get(nodes.get(edge.to)?.copyOf ?? edge.to) ?? ""),
+              )}
+            </title>
+          )}
+          {(edge.sections ?? []).map((section, i) => (
+            <polyline
+              key={i}
+              points={[section.startPoint, ...(section.bendPoints ?? []), section.endPoint]
+                .map((point) => `${point.x},${point.y}`)
+                .join(" ")}
+              fill="none"
+              stroke={edge.kind ? "var(--purple)" : "var(--edge)"}
+              strokeWidth="2"
+              markerEnd={`url(#${edge.kind ? `${arrow}-level` : arrow})`}
+            />
+          ))}
+        </g>
+      ))}
+      {/* The labels after all the lines: no line runs over a label. */}
+      {(layout.edges ?? []).map((edge) =>
+        (edge.labels ?? []).length === 0 ? null : (
+          <g
+            key={`${edge.id}:label`}
+            className={transitionClass(edge)}
+            aria-hidden="true"
+            onClick={(event) => {
+              event.stopPropagation();
+              select(elementOf(edge), event.shiftKey);
+            }}
+          >
+            {(edge.labels ?? []).map((label, i) => {
+              const lines = wrapWords(label.text ?? "", EDGE_LABEL_CHARS);
+              const x = (label.x ?? 0) + (label.width ?? 0) / 2;
+              return (
+                <g key={i}>
+                  <rect
+                    x={label.x ?? 0}
+                    y={label.y ?? 0}
+                    width={label.width ?? 0}
+                    height={label.height ?? 24}
+                    rx="5"
+                    fill="var(--panel)"
+                  />
+                  <text x={x} y={(label.y ?? 0) + 17} textAnchor="middle">
+                    {lines.map((line, n) => (
+                      <tspan key={n} x={x} dy={n === 0 ? 0 : EDGE_LABEL_LINE}>
+                        {line}
+                      </tspan>
+                    ))}
+                  </text>
+                </g>
+              );
+            })}
+          </g>
+        ),
+      )}
+      {/* A loop or a branch is named once, over the first box it covers, after the arrows: on a halo, the
+          dashed line into the box runs behind it. */}
+      {placed.map(({ node, stage }, index) => {
+        const frameText = stage.frames.join(" · ");
+        if (stage.frames.length === 0 || placed[index - 1]?.stage.frames.join(" · ") === frameText)
+          return null;
+        return (
+          <text
+            key={`${node.id}:frame`}
+            className="flow-frame"
+            x={(node.x ?? 0) + (node.width ?? 250) / 2}
+            y={(node.y ?? 0) - 18}
+            textAnchor="middle"
+          >
+            {frameText.slice(0, 60)}
+          </text>
         );
       })}
     </>
@@ -492,7 +539,8 @@ export function FlowDiagram({ view, snapshot, outline = false }: FlowDiagramProp
       <SnapshotFrame
         width={layout.width ?? 400}
         height={layout.height ?? 300}
-        focus={focus}
+        // (the picture slides to cut as few boxes as it can at its edges: a step cut in half reads as a mistake)
+        focus={focus && { ...focus, others: originals.map(({ node }) => boxOf(node)) }}
         where="Flow"
       >
         {content}
@@ -531,7 +579,7 @@ export function FlowDiagram({ view, snapshot, outline = false }: FlowDiagramProp
         // The outline beside the code (a 360 px column) starts at the zoom that shows the flow's whole width,
         // but never below `OUTLINE_MIN_ZOOM`, and its Fit all stops there too: it pans rather than shrinking
         // the words to 4 px.
-        readableMin={present ? PRESENT_FLOW_MAX_ZOOM : outline ? OUTLINE_MIN_ZOOM : undefined}
+        readableMin={present ? PRESENT_FLOW_MAX_ZOOM : outline ? OUTLINE_MIN_ZOOM : FLOW_WHOLE_ZOOM}
         minFitZoom={outline ? OUTLINE_MIN_ZOOM : undefined}
         panCue={false}
         focusMin={present ? PRESENT_FLOW_FOCUS_ZOOM : undefined}
@@ -543,7 +591,7 @@ export function FlowDiagram({ view, snapshot, outline = false }: FlowDiagramProp
               terminal: placed.some(({ stage }) => stage.shape === "terminal"),
               frames: placed.some(({ stage }) => stage.frames.length > 0),
               copies: placed.some(({ node }) => node.copyOf !== undefined),
-              states: roles !== undefined,
+              states: machine !== undefined,
               projected: Boolean(flow.projected),
               recurse: flow.transitions.some((edge) => edge.kind === "recurse"),
               returns: flow.transitions.some((edge) => edge.kind === "return"),
@@ -568,10 +616,10 @@ export function FlowDiagram({ view, snapshot, outline = false }: FlowDiagramProp
 export function readingOrder(layout: Pick<FlowLayout, "direction" | "parts">): string {
   if (layout.direction === "RIGHT")
     return layout.parts > 1
-      ? "Read from left to right, then on in the row below."
+      ? "Read from left to right; the flow goes on in the row below."
       : "Read from left to right.";
   return layout.parts > 1
-    ? "Read from top to bottom, then on in the next column."
+    ? "Read from top to bottom; the flow goes on in the next column."
     : "Read from top to bottom.";
 }
 

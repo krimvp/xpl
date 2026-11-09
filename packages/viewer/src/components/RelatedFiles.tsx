@@ -117,6 +117,8 @@ export function RelatedFiles({
             }}
           >
             {place.file.slice(place.file.lastIndexOf("/") + 1)}
+            {/* (a screen reader joins the two without it: "README.mdlines 3–6") */}
+            <span className="sr-only">, </span>
             <span className="step-code-lines">
               {place.from === place.to ? `line ${place.from}` : `lines ${place.from}–${place.to}`}
             </span>

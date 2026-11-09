@@ -392,7 +392,7 @@ describe("configured Claude adapter (stub executable, no provider)", () => {
         expect(finished.error).toContain("Claude is rate limited");
         expect(finished.error).toContain("Claude exit code 2");
       }
-      if (guard === "timeout") expect(finished.error).toContain("timed out after 1000 ms");
+      if (guard === "timeout") expect(finished.error).toContain("timed out after 1 s");
       writeFile(tooling, "retry", "retry");
       const retryable = terminal === "failed" || terminal === "interrupted";
       const nextId = retryable ? id : randomUUID();
@@ -652,7 +652,7 @@ describe("configured Claude adapter (stub executable, no provider)", () => {
         const stored = await jobs.get("demo", job.id);
         expect(stored.result).toBeNull();
         if (action === "timeout") {
-          expect(stored.error).toContain("timed out after 1000 ms");
+          expect(stored.error).toContain("timed out after 1 s");
         } else expect(stored.state).toBe(action);
         await expect.poll(() => existsSync(capture.cwd)).toBe(false);
         expect(

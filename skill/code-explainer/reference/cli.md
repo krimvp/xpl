@@ -122,8 +122,8 @@ symbols or references.`). A failed analysis is always printed. `--verbose` also 
 hits/misses and wall milliseconds, fresh heuristic-resolution time and semantic runs/time. `--json` includes
 `extraction` (`enabled`, `scope`, `hits`, `misses`, `writeFailures`, `wallMs`, optional `bypassReason`) and
 `work` (`heuristicResolutionMs`, `semanticMs`, `semanticRuns`). The text summary also prints a cache bypass
-reason or failed cache writes. Plain text without an extractor counts as neither a hit nor a miss. Measurements cover analysis stages, not CLI startup
-or index serialization. These incidental measurements are outside the saved index and exported viewers.
+reason or failed cache writes. Plain text without an extractor counts as neither a hit nor a miss.
+Measurements cover analysis stages, not CLI startup or index serialization. These incidental measurements are outside the saved index and exported viewers.
 Removing `.explainer/cache` reclaims old content entries; `--no-cache` leaves them untouched.
 
 With `--verbose`, the summary is followed by **Analysis coverage** and per-capability outcomes labelled by
@@ -135,7 +135,21 @@ available, but symbol and relationship completeness cannot be inferred.
 Provider labels separate a file-only fallback's limits from an artifact provider's usable symbols.
 Tool commands and diagnostic details are omitted from these summaries.
 
-- The last column is how far a language's references can be trusted. `refs: precise (tool)`: SCIP resolved them (TypeScript, Python, Go). `refs: heuristic`: tree-sitter scope-aware guesses, drawn lighter in the viewer; confirm calls with `show`. Java's built-in pack also produces heuristic references; overloads, ambiguous names and inherited or runtime dispatch can make a target incomplete or wrong. `refs: none`: Ruby, PHP, yaml, json, toml and text without an artifact provider. Ruby tags provide partial named classes, modules, methods and constants; qualified owners need a preceding same-file class or module declaration. Ruby has no relationship analysis. PHP tags provide partial named namespaces, classes, interfaces, traits, functions, methods and constants with lexical nesting, but no relationship analysis. Rust tags provide partial named declarations, including struct and union fields and enum variants, lexical nesting and heuristic bare calls between unambiguous root-level functions in the same file. Tuple positions and macro-generated members have no symbol. Unknown/shadowed names, qualified/generic calls, nested functions, closures, methods, trait and cross-module dispatch remain unresolved. Bodies with macros or local imports and files with syntax errors do not produce calls; no macro expansion or cfg evaluation runs.
+- The last column says how much you can trust a language's references:
+  - `refs: precise (tool)`: SCIP resolved them (TypeScript, Python, Go).
+  - `refs: heuristic`: tree-sitter scope-aware guesses, drawn dashed in the viewer; confirm calls with `show`.
+  - Java (heuristic): the built-in pack follows calls through locals, parameters and fields of a known type,
+    and bare calls to methods of the same or an outer class. Overloads, ambiguous names, inherited fields and
+    runtime dispatch can make a target incomplete or wrong.
+  - Rust (heuristic): declarations (struct and union fields and enum variants included), lexical nesting, some
+    calls (to functions and to methods on a known type) and the `mod` and `use` imports inside the crate.
+    Tuple positions and macro-generated members have no symbol. A body with macros or local imports, or a file
+    with syntax errors, gives no calls. No macro expansion or cfg evaluation runs.
+  - `refs: none`: Ruby, PHP, yaml, json, toml and text with no SCIP file given.
+  - Ruby tags give partial named classes, modules, methods and constants, and no relationships. A qualified
+    owner needs a class or module declared before it in the same file.
+  - PHP tags give partial named namespaces, classes, interfaces, traits, functions, methods and constants with
+    lexical nesting, and no relationships.
 - `refs: precise 10/11 (scip-go@0.2.7), 1 heuristic`: the tool described only 10 of the 11 files (build-tagged Go files, files a project's own configuration excludes). Those files keep heuristic references, so **their references are hints**; a warning above the summary names them: `warning: scip-go@0.2.7 did not describe 1 file(s) (excluded by build constraints or by the tool's own configuration, or unreadable?); their references stay heuristic: internal/queue/windows_only.go`.
 - `--precise auto` (default) falls back to heuristic with a warning, e.g. ``warning: precise resolver "scip-go" failed (scip-go@v0.2.7 could not be started (is `go` installed and on PATH?): spawn go ENOENT); using heuristic references for go``. `off` never runs SCIP (faster); syntax packs, including Java, still run. `require` exits 1 instead of falling back.
 - A file with syntax errors is indexed anyway. One warning covers all such files, with the first lines to look at: `warning: 1 file(s) have syntax errors; symbols near these lines may be incomplete: src/broken.ts:2` (at most 5 files and 3 lines each). Errors that cannot have cost a symbol (a TS labelled tuple element such as `[symbol: string]`) are not reported.
@@ -222,7 +236,8 @@ analysis report for omissions.
 Rust tags are experimental. They give declarations, heuristic calls in a few forms, and the imports of `mod`
 declarations and of `use` paths inside the package (`crate::`, `self::`, `super::` or the crate's own name).
 Read the coverage line that `xpl index` prints for Rust before you write graph claims; `--verbose` and About
-this guide give the whole report. xpl has no Rust SCIP import: plain `xpl index` needs no flag, and `--precise require` fails.
+this guide give the whole report. xpl has no Rust SCIP import: plain `xpl index` needs no flag, and
+`--precise require` fails.
 
 Ruby tags also report partial declarations. They capture class, module, method and constant syntax. Qualified
 class, module and assignment targets need a preceding same-file owner declaration; unknown owners and
@@ -238,7 +253,7 @@ drafts, and its source opens as plain text in the viewer.
 
 ## `xpl outline [--under <id>] [--depth <n>] [--kind <k,...>] [--keys] [--limit <n>]`
 
-One line per element: `<id>  <kind>  <first>-<last line>  in=<fan-in> out=<fan-out>`. `in`/`out` count references into and out of the element's subtree (calls, imports, type uses, reads), so high numbers mark hubs. A symbol's calls of itself stay inside it and do not count. `recursive` after the counts marks a symbol that calls itself (`"recursive": true` in `--json`). `[+n]` = n children below the depth limit. Default depth 2, `--limit 400` lines. Config keys (yaml, json, toml) are hidden unless `--keys`. `--kind method,function` lists only symbols of those kinds (`class interface function method type variable enum key other`; repeat or comma-separate) together with the dirs, files and parent symbols that hold a match, so each keeps its place; with `--kind` and no `--depth` it searches every level. Go code shows `struct` and `field` where the index stores `class` and `variable` (`--json` keeps the stored kind, and `--kind struct,field` works too); a method on `T` or `*T` is `sym:<file>#T.Method`. The `repo` line carries the name `xpl new` records (from `package.json`, `go.mod`, `pyproject.toml`, the git remote), not the directory's.
+One line per element: `<id>  <kind>  <first>-<last line>  in=<fan-in> out=<fan-out>`. `in`/`out` count references into and out of the element's subtree (calls, imports, type uses, reads), so high numbers mark hubs. A symbol's calls of itself stay inside it and do not count. `recursive` after the counts marks a symbol that calls itself (`"recursive": true` in `--json`). `[+n]` = n children below the depth limit. Default depth 2, or deeper until a code file shows (a Maven `src/main/java/<package>`), `--limit 400` lines. A chain of folders that each hold only one folder is one row (`dir:src/main/java/app`) and one level. Config keys (yaml, json, toml) are hidden unless `--keys`. `--kind method,function` lists only symbols of those kinds (`class interface function method type variable enum key other`, and Go's `struct` and `field`; repeat or comma-separate) together with the dirs, files and parent symbols that hold a match, so each keeps its place; with `--kind` and no `--depth` it searches every level. Go code shows `struct` and `field` where the index stores `class` and `variable` (`--json` keeps the stored kind, and `--kind struct,field` works too); a method on `T` or `*T` is `sym:<file>#T.Method`. The `repo` line carries the name `xpl new` records (from `package.json`, `go.mod`, `pyproject.toml`, `Cargo.toml`, the git remote), not the directory's.
 
 ```
 $ xpl outline --depth 1
@@ -422,14 +437,15 @@ failed or unsupported symbol analysis does not disable text search. No matches r
 Lists `.explainer/*.explainer.json` by stored title, audience, distinct view questions/roots and source/index
 commits. No symbol index or service is required. The filename is a stable key and path, not the guide's
 reader-facing identity. Scope is recorded metadata: change, question, repository, subsystem, or unknown
-when there is no recorded view scope. This is not a readiness or freshness check. Use `ready <name>` for
-export checks; `status <name>` inspects evidence after indexing.
+when there is no recorded view scope. The list does not say whether a guide is ready or up to date: run
+`xpl ready` or `xpl status <name>` for that.
 
 `--json`: `{ok, guides: [{id, path, title, audience?, questions[], roots[], kind, commit, indexCommit,
-change?: {base, head}}], errors: [{id, error}]}`. Loadable guides with invalid metadata stay in `guides`
-as `{id, path, metadataError}`, also reported in `errors`. Empty string titles stay recorded as empty.
+change?: {base, head}}], errors: [{id, error}]}`. A guide with bad metadata is still listed, by its file
+(`{id, path, metadataError}`), and reported in `errors`. An empty title stays empty.
 Each guide is read from its discovered path, even when its name matches another repository JSON file.
-Read or metadata errors exit 1; no local guides is a valid empty library and exits 0. No files are written.
+Read or metadata errors exit 1. With no guide, it says how to make one with `xpl start` and exits 0. No
+files are written.
 
 ## `xpl update <explainer> [--since <rev>] [-o <file>] [--precise auto|off|require]`
 
@@ -449,7 +465,7 @@ next: write each TODO, then `xpl lint shop --patch /work/map.json` and `xpl appl
 
 ## `xpl start <name> --question <question> --audience <reader> [--entry <symbol>] [--precise auto|off|require]`
 
-Creates a first guide in one command. It runs `index`, `new`, `draft` and `apply`, using the same source anchor checks as manual authoring. Without `--entry`, the draft is a repository map, not the path that answers the question. The output says so, and names a function to start that path at, with the `xpl draft path` command to run. The function is a guess from the question's words, ranked by the words in its name and code. With an indexed function or method such as `src/runner.ts#Runner.dispatch`, it is a call sequence from that entry. The applied guide contains TODO text and can be opened with `xpl view <name>`; complete and check the text before sharing. The patch and all draft notes are saved in a temporary directory outside the repository. The text output shows up to three notes and apply warnings; `--json` includes their full lists. Existing guides are never overwritten.
+Creates a first guide in one command. It runs `index`, `new`, `draft` and `apply`, using the same source anchor checks as manual authoring. Without `--entry`, the draft is a repository map, not the path that answers the question. The output says so, and names a function to start that path at, with the `xpl draft path` command to run. The function is a guess from the question's words, ranked by the words in its name and code. With an indexed function or method such as `src/runner.ts#Runner.dispatch`, it is a call sequence from that entry. The applied guide contains TODO text and can be opened with `xpl view <name>`; complete and check the text before sharing. The patch and all draft notes are saved in a temporary directory outside the repository. The text output shows up to three notes and apply warnings; `--json` includes their full lists. Every note that names a path to draft names the same guessed entry. Existing guides are never overwritten.
 
 ```
 $ xpl start job-retries --question "How does a failed job get retried?" --audience maintainers --precise off
@@ -457,6 +473,8 @@ created .explainer/job-retries.explainer.json for maintainers
 draft patch: /tmp/xpl-first-guide-…/draft.patch.json
 draft notes: /tmp/xpl-first-guide-…/draft-notes.json
 note: the draft guesses the kind of project, its users and its entry points from the code and its import lines: check each in the README and the code
+note: settings files the code loads (from the index): `config/default.yaml`; check that the code reads each at run time
+note: room is left for 2 more steps (9 at most), the main path and its risks: run `xpl draft path job-retries sym:src/runner.ts#Runner.dispatch` and copy the steps you keep
 note: drafted an overview of the whole repository, not the path that answers the question (no --entry). To draft that path, run `xpl draft path job-retries sym:src/runner.ts#Runner.dispatch -o <file>` (a guess from the question's words), or pass --entry next time.
 next: write the TODOs in `xpl view job-retries` (Edit > Edit the tour), or edit /tmp/xpl-first-guide-…/draft.patch.json and run `xpl apply job-retries /tmp/xpl-first-guide-…/draft.patch.json`; then `xpl lint job-retries`
 ```
@@ -465,7 +483,7 @@ next: write the TODOs in `xpl view job-retries` (Edit > Edit the tour), or edit 
 
 ## `xpl new <name> [--title <title>] [--repo <name>] [--url <url>]`
 
-Creates an empty `.explainer/<name>.explainer.json` bound to the selected index. Refuses to overwrite (`error: … already exists; not overwriting it`). It records a repository name (`repo.name`, the label of the repo box): `--repo`, else the first of these. The `package.json` `name`, the last element of the `go.mod` module (`example.com/acme/jobrunner/v2` gives `jobrunner`), `[project] name` in `pyproject.toml`, the base name of the git remote (`origin`, else the first), the directory name. `--url` records where the repository lives; it is never taken from the git remote (which may carry credentials).
+Creates an empty `.explainer/<name>.explainer.json` bound to the selected index. Refuses to overwrite (`error: … already exists; not overwriting it`). It records a repository name (`repo.name`, the label of the repo box): `--repo`, else the first of these. The `package.json` `name`, the last element of the `go.mod` module (`example.com/acme/jobrunner/v2` gives `jobrunner`), `[project] name` in `pyproject.toml`, `[package] name` in `Cargo.toml`, the base name of the git remote (`origin`, else the first), the directory name. `--url` records where the repository lives; it is never taken from the git remote (which may carry credentials).
 
 ```
 $ xpl new jobrunner --title "Job runner"
@@ -659,13 +677,18 @@ claim that all required prose is finished. Catalog metadata checks do not gate t
 an empty title is a warning, so it does not replace the report or trigger attention.
 Do not combine `--all` with a guide or `--view`.
 
-The skill's to-do list, read-only: per view, the shown nodes, participants, stored edges and steps without a `summary` (and the ids of the static edges without one, which you need to overlay them). A summary that still starts with `TODO` counts as none, and the `to do` total counts each id once. Per graph view, where it stops (its ghosts and stubs); concepts without a summary; the tours, and each tour without a summary; drifted llm elements; missing anchors; **broken references**; stale edge overlays; requests queued by the viewer. Static edges are optional. `status` reads the explainer through the index it is bound to: after manual `xpl index`, run `xpl resolve <name> --write` first so that it sees the new code. A running watcher supplies the current index without saving the guide.
+The skill's to-do list, read-only: per view, the shown nodes, participants, stored edges and steps without a `summary` (and the ids of the static edges without one, which you need to overlay them). A summary that still starts with `TODO` counts as none, and the `to do` total counts each id once. Per graph view, where it stops (its ghosts and stubs); concepts without a summary; the tours, and each tour without a summary; drifted llm elements; missing anchors; **broken references**; stale arrow overlays; requests queued by the viewer. Static edges are optional. `status` reads the explainer through the index it is bound to: after manual `xpl index`, run `xpl resolve <name> --write` first so that it sees the new code. A running watcher supplies the current index without saving the guide.
 
 - The `to do:` line counts drift the user owns apart: `4 changed code links (1 user-owned: ask the user)`. User-owned = an element that is not llm-authored, or an llm element whose anchors (or, for a step, whose view's `steps`) the user edited: an llm patch cannot repair those.
-- `outside this map: 2 dashed boxes for 7 arrows (stubs: top 6), most referenced: ghost:file:src/main.ts ×23, ...`: the graph view draws 2 ghost boxes, with 7 stubs (dashed edges) leading to them; `stubs: top 6` is the view's stub policy (the default is `top 8`); `×23` is how many references lead to that ghost. A folded ghost stands for several elements and is named by what it folds: `ghost:more:out ×8` ("+8 more", the ghosts beyond the cap), `ghost:rest:file:src/main.ts ×1` ("rest of main.ts", the outside symbols of a file the view shows in part). Folded ghosts are not elements (they cannot be `include`d), but their ids and the stub ids go in `hidden`. Each folded ghost also gets a line under `ghosts:` with the elements it stands for (`ghost:rest:file:src/runner.ts ×6 → sym:src/runner.ts#Runner.log ×3, ...`): up to 3 ids with their reference counts, most referenced first, then `... +N more`. `includeAdd` one of them; a ghost that is one element (`ghost:file:x`) gets no such line. `--json` lists every ghost (`views[].ghosts.list[]`: `{id, kind: target|rest|more, label, count, direction, targets: [{id, count}]}`, most referenced first) with all the elements it stands for in `targets` (most referenced first; a `target` ghost has just itself), and every stub id (`views[].ghosts.stubIds`), with `mode`, `max`, `total`, `stubs` and `crowded`. Above 12 ghosts a warning follows the line.
+- `outside this map: 2 dashed boxes for 7 arrows (stubs: top 6), most referenced: ghost:file:src/main.ts ×23, ...`: the graph view draws 2 ghost boxes, with 7 stubs (dashed edges) leading to them; `stubs: top 6` is the view's stub policy (the default is `top 8`); `×23` is how many references lead to that ghost. Above 12 ghosts a warning follows the line. `--json` lists every ghost (`views[].ghosts.list[]`: `{id, kind: target|rest|more, label, count, direction, targets: [{id, count}]}`, most referenced first) with all the elements it stands for in `targets` (most referenced first; a `target` ghost has just itself), and every stub id (`views[].ghosts.stubIds`), with `mode`, `max`, `total`, `stubs` and `crowded`.
+- Folded ghosts stand for several elements and are named by what they fold:
+  - `ghost:more:out ×8` ("+8 more"): the ghosts beyond the cap.
+  - `ghost:rest:file:src/main.ts ×1` ("rest of main.ts"): the outside symbols of a file the view shows in part.
+  - A folded ghost is not an element (it cannot be `include`d), but its id and the stub ids go in `hidden`.
+  - Each folded ghost gets a line under `ghosts:` with the elements it stands for (`ghost:rest:file:src/runner.ts ×6 → sym:src/runner.ts#Runner.log ×3, ...`): up to 3 ids with their reference counts, most referenced first, then `... +N more`. `includeAdd` one of them. A ghost that is one element (`ghost:file:x`) gets no such line.
 - `tours (n)`: each tour with its step count, and the steps whose `focus` ids or `view` no longer exist (`1 step points at something that is gone: t2 (focus: sym:src/queue.ts#Queue.pop)`). Fix them with the tour's `stepsUpdate` (that step's `view` and `focus`). If the user edited the tour, make a new one instead.
 - `broken references (n)`: ids that no longer exist in the index (lenient validation): the overlay of a deleted symbol, an `include`, `members`, `related` or `participants` entry, a step end, a tour's `focus`. The line `, n broken references` is appended to `to do:` only when there are some.
-- `warning: stale edge overlays (n)`: stored `edge:<kind>:<a>-><b>` overlays that no graph view derives any more (the ends of a derived id follow the view's `include`, or the code changed). They are ignored until re-created on a current id; hidden edges do not count.
+- `warning: stale arrow overlays (n)`: stored `edge:<kind>:<a>-><b>` text for arrows found in the code that no map draws any more (their ids follow the view's `include`, or the code changed). They are ignored until written again on a current id; hidden arrows do not count.
 - `--view <id>`: only that view, and what it draws. A graph view lists each arrow (`edge:calls:...  calls  grp:ky → grp:fetch  ×2  found in the code  "label"  no summary`: id, kind, ends, references, `stored` or `found in the code` (`found in the code (stored text on it)` when you overlaid it), label, whether it has a summary), most references first, then each id in its `hidden` with the arrow it takes out. A hidden id that is no arrow says what it is: a box, a stub, a ghost box, or nothing (remove it). It can also be a stored edge that is part of another arrow between the same boxes on this map: hiding it does nothing, so hide that arrow. A flow lists the links between its steps (`(back to the caller)` for a return without a step); a sequence its messages. `--json`: `{path, view: {...the view's status, edges: {drawn, hidden} | {links}}}`.
 
 ```
@@ -769,6 +792,12 @@ The outcome revision never decreases in the disk store, browser or portable expo
 responses and older pages cannot erase a newer result. Equal revisions keep the held result; import a
 newer portable result into the author's store before recording its replacement.
 
+The text output lists each request as `<id>  <status>  <question|correction|more detail> <element>`, then
+the reader's note in quotes, then what the author did (not for a pending request). It names an outdated
+context only for a request still open (pending or unresolved), and tells you to start the skill only while
+one is open. `--import` keeps one of two requests that ask the same thing (same guide, element, kind, note,
+code range and snapshot) under different ids, as a reader who clicks Save twice makes.
+
 Inspection reports `contextStatus: current|outdated` and `contextReason` separately from the stored
 outcome. A changed explanation/source snapshot or stale source needs explicit reconciliation; it is never
 silently rebound to the newer guide. Legacy records lacking a snapshot are unbound and outdated.
@@ -779,7 +808,8 @@ Keep feedback exports/outcome input files outside the source tree so they do not
 See [revise.md](revise.md) for how to act on reader feedback. `--select` keeps the ids and context of the
 requests you pick. It checks that the code has not changed and resolves in memory. `--include <id,id>` names
 the other ids the revision may change or add. `-o /tmp/review.json` saves the code and the text before and
-after, for review.
+after, for review. The text output names each selected request with its context and, under it, the
+reader's note in quotes.
 
 `--run <id> --proposal /tmp/proposal.json` reviews `[{id, patch}]` using ordinary apply patches as `llm`.
 `--decisions /tmp/decisions.json` reviews one `{id, status, reason, reconciliation?, missing?}` per selected
@@ -832,7 +862,16 @@ Checks the text a reader sees. That is the explainer title, tour titles, tour `s
 - `we-voice`: "we", "our", "us" or "let's" outside code spans and any quote (`"us"` may be a region code): name who does it, or write to the reader as "you"
 - `dash-chain`: a sentence with two or more dashes (an em dash, or a spaced `-`, `--` or en dash): split it into sentences
 - `tool-word`: a word of the tool in lower case. In tours: node, edge (not "edge case"), anchor, evidence, upsert, llm, provenance, stub, ghost, overlay and call-site. In box, arrow and concept text, only the tool's own senses count. These are a stub box or arrow, a ghost box, an authored overlay, anchor evidence, and stub or ghost in a sentence that says "this map", "the diagram", "boxes" or "arrows". The verb "maps" does not count, and neither does "a box" alone, which code may draw. A word passes when the guide names its own code with it: in the label or id of a box or concept, a linked file's path, the guide's title or a view's question. Quoted text passes, and "stub" passes in a text about tests
-- `absolute-word`: all, every, everything, everywhere, everyone, anything, never, always, only, consistent(ly), guaranteed: check every case and anchor it, or narrow the claim. **Evidence next to the text passes:** the text of an element with `anchors` (a node, edge, concept or step). So does a tour note sentence that names a part the step shows: a focused element with anchors, a symbol or a file, or any focused element when the step has `code`. A note's `### title` passes when its step has `code`: the code links under it are the evidence. In an explainer of a change, a tour summary or note sentence about what changes (`only download progress changes`, `the only change is ...`) passes too: the diff is its evidence. The same words get the same verdict in every field. Not counted: `all`, `every` or `only` before a count in digits (`all 22 new cases pass`, `only 4 of the 22`), a measured result. Nor `only when/if/after ...` (a condition), or `only` after a verb or a noun, which narrows a claim (`compares only the host part`). Nor `all` after a list of named cases (``URL, `TrustedHostMiddleware` and `Host.matches` all call ...``), `outside everything` (a position), `not all` and `if every`. Idioms do not count either (`not ... at all`, `after all.`, `in all.` (in total), `once and for all`, `all of a sudden`; `at all times` and `in all cases` still count), nor words in quotes (a test name, a value). Still counted: `only` that opens a clause (`Only the router ...`, `now only URL ...`), `the only`, `only by`; `all three`, `each x and each y all ...`
+- `absolute-word`: all, every, everything, everywhere, everyone, anything, never, always, only, consistent(ly), guaranteed: check every case and anchor it, or narrow the claim. The same words get the same verdict in every field. These pass:
+  - **Evidence next to the text:** the text of an element with `anchors` (a node, edge, concept or step).
+  - A tour note sentence that names a part the step shows: a focused element with anchors, a symbol or a file, or any focused element when the step has `code`.
+  - A note's `### title` when its step has `code`: the code links under it are the evidence.
+  - In an explainer of a change, a tour summary or note sentence about what changes (`only download progress changes`, `the only change is ...`): the diff is its evidence.
+  - `all`, `every` or `only` before a count in digits (`all 22 new cases pass`, `only 4 of the 22`), a measured result.
+  - `only when/if/after ...` (a condition), and `only` after a verb or a noun, which narrows a claim (`compares only the host part`).
+  - `all` after a list of named cases (``URL, `TrustedHostMiddleware` and `Host.matches` all call ...``), `outside everything` (a position), `not all` and `if every`.
+  - Idioms: `not ... at all`, `after all.`, `in all.` (in total), `once and for all`, `all of a sudden` (`at all times` and `in all cases` still count), and words in quotes (a test name, a value).
+  - These still count: `only` that opens a clause (`Only the router ...`, `now only URL ...`), `the only`, `only by`; `all three`, `each x and each y all ...`
 - `repeats-summary`: a note sentence that repeats the summary of an element the step focuses (the reader sees both)
 - `long-note`: a note whose text under its `### title` is over 50 words: keep the one point of the step in 1-3 short sentences
 - `long-summary`: the `summary` of a node, edge, concept, flow or sequence step of more than 2 sentences or 45 words. Say what the part is for and move the cases into `detail`. Rewrite it whole when the code changes; never append a sentence
@@ -849,7 +888,7 @@ Checks the text a reader sees. That is the explainer title, tour titles, tour `s
 - `many-participants`: a sequence a tour shows with more than 6 participants: the lifelines get too narrow to read. Fold a helper into the lifeline that calls it, or leave out calls that do not change the answer
 - `crowded-map`: a graph view with more than 2 arrows (derived and stored) per box (needs the index). The hint and `ids` in `--json` list the least used drawn edges: put them in the view's `hidden`
 - `system-map-no-edges`: an indexed architecture map with at least one non-component role, at least two visible boxes and no visible arrows; check whether arrows the code shows are missing
-- `map-box`: a box on a map that draws its summary under the label (`boxText: "summary"`, as `xpl draft map` makes). Its label is over 5 words, or its summary is over 130 characters or starts with an article, "This", "It" or the file's own name. The explain map asks for 2-5 plain words and one sentence of about 120 characters that starts with a verb
+- `map-box`: a box on a map that draws its summary under the label (`boxText: "summary"`, as `xpl draft map` makes). Its label is over 5 words, or is a file name (`main.ts`, a code mark, the file's own name). Its summary is over 130 characters, or does not start with a verb in the present: it starts with an article, "This", "It", a code mark, the file's own name, the label's first word ("Job queue that …"), a word in -ing or -ed ("Used by …"), a word that does not end in "s" ("Configuration …"), or a vague verb ("Contains", "Handles", "Manages"). The explain map asks for 2-5 plain words and one sentence of about 120 characters that starts with a verb
 
 Markdown fields: a tour `summary`, a step `note` (with its `### title` line) and a `detail` take any markdown; the `summary` of an element or a step takes inline markdown; titles and labels are plain text. Code spans (`` `...` ``) are left out of the word checks and count as one word. Every finding names the element, the field, a short quote and a fix. Exit codes: 0 no findings; 1 any finding (with `--warn-only`: only a `todo-left` error), or a rejected patch; 2 usage error.
 
@@ -898,7 +937,7 @@ A quick check of the indexed files for the classic problems of code nobody read 
 - **Secrets in browser variables** (high): a `NEXT_PUBLIC_`, `VITE_`, `REACT_APP_` or `PUBLIC_` variable holding a server key or named with `SECRET`, `PRIVATE`, `PASSWORD` or `SERVICE_ROLE`.
 - **Committed `.env` files** with values: high when one is named like a secret, else medium. `.env.example` and similar are skipped.
 - **Code files over 1,000 lines** (low).
-- **Possibly unused code files** (low, a guess): no other file references the file in the index, and it is not an entry point (`main`, `index`, `cli`, `server`, `app`, …), a test, a config file or under `scripts/`, `bin/` or `cmd/`. When the index does not follow a language's imports, xpl cannot tell, so it reports no such file and a note says how many it could not judge (`<language>: the index does not follow imports, so xpl cannot tell whether 2 files are unused.`).
+- **Possibly unused code files** (low, a guess): no other file references the file in the index, and it is not an entry point (`main`, `index`, `cli`, `server`, `app`, …, or a file that declares a program's `main`: Java `static void main`, Python `if __name__ == "__main__":`, Go `func main` in `package main`, Rust `fn main`), a test, a config file or under `scripts/`, `bin/` or `cmd/`. When the index does not follow a language's imports, xpl cannot tell, so it reports no such file and a note says how many it could not judge (`<language>: the index does not follow imports, so xpl cannot tell whether 2 files are unused.`).
 
 In tests, fixtures, docs and examples, key shapes are reported one severity lower and the other secret checks are skipped: fake values dominate there. **A secret value is never printed**: the hint shows at most its first 4 characters, then `…`. Exit 0 with or without findings (it is a report, not a gate), 1 without an index, 2 on a usage error.
 
@@ -1153,7 +1192,8 @@ A caller is code that calls. A test, or code that only names a changed type, is 
 
 - Each call links to its call site and to the callee's definition. A method goes to its class's lifeline; a call through an interface, to its one implementation.
 - Frames from the syntax tree: a `loop` around calls in a loop, an `alt` around a branch with calls in two or more arms (`arms`), an `opt` around a branch with calls in one arm. An `if` that ends in `continue`, `return`, `break`, `raise` or `throw` makes the rest of its block the other arm. Each label is a TODO that quotes the condition.
-- When the calls cross files, a map of those files first (`view:<entry>-files`).
+- When the calls cross files, a map of those files first (`view:<entry>-files`), with a summary TODO per file box.
+- A call's label keeps short arguments; long ones are cut to their names and the names of the calls in them (`requeue(job, backoffDelay(…))`).
 
 Several entries give one sequence each and one tour.
 
@@ -1216,7 +1256,7 @@ Run it again after the code changed (`xpl index`, `xpl resolve <explainer> --wri
 ```
 $ xpl draft path jobrunner sym:src/runner.ts#Runner.dispatch -o path.json
 wrote path.json
-draft path for jobrunner: a sequence of 9 calls between 6 participants after a map of the 3 files it crosses, 5 summaries, a tour of 8 steps, 29 anchors, 46 TODOs to write
+draft path for jobrunner: a sequence of 9 calls between 6 participants after a map of the 3 files it crosses, 9 summaries, a tour of 8 steps, 29 anchors, 50 TODOs to write
 note: called more than once, drawn once at the first call: Runner.log (3 calls)
 note: not drawn, one-line helpers that call nothing: backoffDelay
 note: calls without a tour step of their own (at most 5 call steps): Runner.log, RunnerStats.record, WorkerPool.release
@@ -1451,7 +1491,8 @@ require no reviewer record.
 
 `--json` emits `{ok, ready, scope: "workspace", identity: {explainerHash, sourceHash}, errors, warnings,
 findings: [{severity, code, elementId, field, message, hint}], review: {status, required}, decisionNote?}`. The text
-output prints one line per finding: `<severity> <element>.<field> (<code>): <message>; fix: <hint>`. Exit 0 ready (warnings allowed),
+output starts `ready:` or `not ready:` with the counts, then prints one line per finding:
+`<severity> <element>, field <field> (<code>): <message>; fix: <hint>` (`the guide` for the guide's own fields). Exit 0 ready (warnings allowed),
 1 blockers/failure, 2 usage. Bundle failures include this report as `readiness`. The identity function lives in
 core `readiness.ts`; explanation content/provenance/anchors/index metadata change `explainerHash`, while
 indexed file path/hash changes or change base/head SHAs change `sourceHash`. HTML, launch mode, server URL,

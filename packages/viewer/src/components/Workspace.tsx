@@ -1,7 +1,7 @@
 import { useEffect, useId, useMemo, useRef, useState, type CSSProperties } from "react";
 import { derivedEdgeMap, processFlow, type SequenceView as SequenceViewData } from "@xpl/core";
 import { viewReverseIndex } from "../derive.js";
-import { sharedActor } from "../layout/flowLayout.js";
+import { sharedActor, stateRoles } from "../layout/flowLayout.js";
 import { describeElement } from "../details.js";
 import { renderInline } from "../markdown.js";
 import { leadSentences, looksLikeCode, mapEdgeSource } from "../readerWords.js";
@@ -277,7 +277,18 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
       </div>
       <div className="workspace-columns" ref={columns}>
         {!code && (
-          <section className="workspace-primary" aria-label="Explanation">
+          <section
+            className="workspace-primary"
+            aria-label="Explanation"
+            // Enter on a box, an arrow or a step selects it (the diagram's own handler) and shows its code, as
+            // the diagram's keyboard hint says: the code column opens as "Show code" opens it.
+            onKeyDownCapture={(event) => {
+              if (event.key !== "Enter" || code || codeFirst) return;
+              const target = event.target as Element;
+              if (target.closest(".pz-svg") && target.getAttribute("role") === "button")
+                setSourceOpen(true);
+            }}
+          >
             <ErrorBoundary
               // A diagram that fails does not take the other views down with it: another view starts over.
               key={
@@ -343,7 +354,9 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
                               ?.scrollIntoView({ block: "start" })
                           }
                         >
-                          Steps, in order ↓
+                          {flow.type === "flow" && stateRoles(flow)
+                            ? "States and moves ↓"
+                            : "Steps, in order ↓"}
                         </button>
                       )}
                       {viewQuestion && (

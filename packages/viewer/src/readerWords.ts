@@ -126,3 +126,26 @@ export function asSentence(text: string): string {
 export function plainWords(text: string): string {
   return text.replace(/`/g, "");
 }
+
+/** The most names a picture's text alternative lists before "and N more". */
+const PICTURE_NAMES = 8;
+
+/**
+ * a11y: what a still picture of a diagram shows, in one or two sentences, for a reader who cannot see it:
+ * its parts by name, then what the step lights up.
+ */
+export function pictureWords(
+  parts: readonly string[],
+  lit: readonly string[],
+  word: "boxes" | "lifelines" | "steps",
+): string {
+  const list = (names: readonly string[]) => {
+    const unique = [...new Set(names)];
+    return unique.length > PICTURE_NAMES
+      ? `${unique.slice(0, PICTURE_NAMES).join(", ")} and ${unique.length - PICTURE_NAMES} more`
+      : unique.join(", ");
+  };
+  const shows = parts.length ? `Shows ${parts.length} ${word}: ${list(parts)}.` : "";
+  const marked = lit.length ? `Lit: ${list(lit)}.` : "";
+  return [shows, marked].filter(Boolean).join(" ");
+}

@@ -21,6 +21,7 @@ import {
 import {
   layoutFlow,
   layoutFlowFitting,
+  NARROW_PANE,
   type FlowLayout,
   type FlowLayoutOptions,
 } from "./layout/flowLayout.js";
@@ -159,9 +160,17 @@ export function startOrder(
   const include = Array.isArray(view.include) ? view.include : [];
   const current = tourId ? model.tour(tourId) : undefined;
   const tours = current ? [current, ...model.tours.filter((t) => t !== current)] : model.tours;
+  // (a step about every box of the map names no part to start on: the next step that names some does)
+  const all = (focus: readonly ElementId[]) =>
+    include.length > 1 && include.every((id) => focus.includes(id));
   for (const tour of tours)
     for (const step of tour.steps)
-      if (step.view === view.id && Array.isArray(step.focus) && step.focus.length > 0)
+      if (
+        step.view === view.id &&
+        Array.isArray(step.focus) &&
+        step.focus.length > 0 &&
+        !all(step.focus)
+      )
         return [...step.focus, ...include];
   return include;
 }
@@ -331,21 +340,39 @@ export async function layoutView(
 }
 
 /** Per flow view: the direction and the number of parts it was first laid out in (as `directions`). */
-const flowShapes = new Map<string, Pick<FlowLayout, "direction" | "parts">>();
+const flowShapes = new Map<string, Pick<FlowLayout, "direction" | "parts" | "column">>();
 
 /**
- * `layoutFlowFitting` the first time a flow is drawn with a pane size; the same direction and parts every
- * time after, so the Tour's picture, the Flow tab and Explore draw a flow the same way round.
+ * The pane a flow's shape is chosen for: the window less the page's columns and header, the same size
+ * whichever tab or picture draws the flow first. (The real panes differ: the Tour's picture, the Flow tab,
+ * Explore and a pane that shows code. A shape picked from the first of them made one flow two layouts on one
+ * page, and the next page load could pick a third.)
+ */
+export function flowPane(): { width: number; height: number } {
+  const wide = window.innerWidth >= NARROW_PANE;
+  return {
+    width: Math.max(320, window.innerWidth - (wide ? 240 : 0)),
+    height: Math.max(320, window.innerHeight - 130),
+  };
+}
+
+/**
+ * `layoutFlowFitting` for `flowPane` the first time a flow is drawn; the same direction and parts every time
+ * after, so the Tour's picture, the Flow tab and Explore draw a flow the same way round, and "Fit all" or a
+ * pane that changes shape changes only the zoom. (Present picks its own, for its slide.)
  */
 export async function layoutFlowView(
   viewId: string,
   flow: ProcessFlow,
-  pane: { width: number; height: number } | undefined,
   options: Omit<FlowLayoutOptions, "direction" | "parts"> = {},
 ): Promise<FlowLayout> {
   const known = flowShapes.get(viewId);
   if (known) return layoutFlow(flow, { ...options, ...known });
-  const layout = await layoutFlowFitting(flow, pane, options);
-  if (pane) flowShapes.set(viewId, { direction: layout.direction, parts: layout.parts });
+  const layout = await layoutFlowFitting(flow, flowPane(), options);
+  flowShapes.set(viewId, {
+    direction: layout.direction,
+    parts: layout.parts,
+    ...(layout.column ? { column: true } : {}),
+  });
   return layout;
 }

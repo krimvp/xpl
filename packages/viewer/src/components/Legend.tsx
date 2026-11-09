@@ -290,15 +290,37 @@ export function KeyLine({
   )
     items.splice(sharedBadge ? 1 : 0, 0, ...kindItems);
   return (
-    <p className="key-line" data-testid="key-line" aria-label="Key to this map's lines">
+    // a11y: a list a screen reader names and counts, each item with the look of its mark in words
+    <ul className="key-line" data-testid="key-line" aria-label="Key to this map's lines">
       {items.map((item) => (
-        <span key={item.key} className="key-line-item" data-key-item={item.key}>
+        <li key={item.key} className="key-line-item" data-key-item={item.key}>
           {item.swatch}
+          {markWords(item.key) && <span className="sr-only">{markWords(item.key)}: </span>}
           {item.words}
-        </span>
+        </li>
       ))}
-    </p>
+    </ul>
   );
+}
+
+/** What a key line's swatch looks like, in words (its swatch is hidden from screen readers). */
+function markWords(key: string): string | undefined {
+  if (key.startsWith("kind-")) {
+    const head = headOf(key.slice(5));
+    return head === "hollow"
+      ? "solid arrow, hollow head"
+      : head === "open"
+        ? "solid arrow, open head"
+        : "solid arrow";
+  }
+  return {
+    authored: "thick purple arrow",
+    found: "solid arrow",
+    heuristic: "dashed arrow",
+    mixed: "partly dashed arrow",
+    ghost: "dashed box",
+    stub: "dotted arrow",
+  }[key];
 }
 
 export interface FlowKeyShows {
@@ -314,12 +336,40 @@ export interface FlowKeyShows {
   returns?: boolean;
   /** An end drawn again near another way into it (`repeatEnds`). */
   copies?: boolean;
-  /** A flow of states and the moves between them (`stateRoles`). */
+  /** A flow of states, its moves drawn as labelled arrows between them (`stateMachine`). */
   states?: boolean;
 }
 
 /** The key of a process flow (FlowDiagram). */
 export function FlowKey({ shows }: { shows: FlowKeyShows }) {
+  // a flow of states has no steps and no "then": its boxes are states, its labelled arrows the moves
+  if (shows.states)
+    return (
+      <KeyButton foot="Click a state or a move to see its code.">
+        <Row label="A state the value can be in. States have no fixed order, so no numbers.">
+          <g className="flow-stage is-state">
+            <rect x="1" y="3" width="30" height="16" rx="8" />
+          </g>
+        </Row>
+        <Row label="Moves to: the label names the move, the code that changes the state">
+          <g className="flow-transition is-move">
+            <line className="lg-move-line" x1="1" y1="11" x2="26" y2="11" />
+            <path className="lg-move-head" d="M25 7 L31 11 L25 15 Z" />
+            <rect x="7" y="5" width="13" height="12" rx="3" fill="var(--panel)" />
+          </g>
+        </Row>
+        <Row label="Selected">
+          <g className="flow-stage is-selected">
+            <rect x="2" y="4" width="28" height="14" rx="7" />
+          </g>
+        </Row>
+        <Row label="Linked to the code you selected">
+          <g className="flow-stage is-related">
+            <rect x="2" y="4" width="28" height="14" rx="7" />
+          </g>
+        </Row>
+      </KeyButton>
+    );
   return (
     <KeyButton foot="Click a step to see its code.">
       <Row label="One step: what runs, with the name of its code under it">
@@ -327,20 +377,6 @@ export function FlowKey({ shows }: { shows: FlowKeyShows }) {
           <rect x="1" y="3" width="30" height="16" rx="5" />
         </g>
       </Row>
-      {shows.states && (
-        <>
-          <Row label="A state the value can be in (no number: the states have no fixed order)">
-            <g className="flow-stage is-state">
-              <rect x="1" y="3" width="30" height="16" rx="8" />
-            </g>
-          </Row>
-          <Row label="A move: the code that changes the state, from the state before it to the one after">
-            <g className="flow-stage is-move">
-              <rect x="1" y="3" width="30" height="16" rx="2" />
-            </g>
-          </Row>
-        </>
-      )}
       {shows.decision && (
         <Row label="A choice: the path splits here">
           <g className="flow-stage">
@@ -356,7 +392,7 @@ export function FlowKey({ shows }: { shows: FlowKeyShows }) {
         </Row>
       )}
       {shows.copies && (
-        <Row label="An end drawn again near another way into it (dashed, no number): the same step">
+        <Row label="Dashed, no number: the same end, drawn again to keep arrows short">
           <g className="flow-stage is-copy">
             <rect x="1" y="3" width="30" height="16" rx="8" />
           </g>

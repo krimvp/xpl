@@ -5,6 +5,7 @@ import {
   byId,
   openBundle,
   openEditMenu,
+  openVariant,
   readEmbeddedBundle,
   withBundle,
   watchProblems,
@@ -30,7 +31,7 @@ test("disconnected reader captures selected source, reloads and exports the orig
   const panel = page.getByRole("dialog", { name: "Reader feedback" });
   await panel.getByLabel("Request kind").selectOption("correct");
   await panel.getByLabel("Feedback note").fill("Explain the retry limit here.");
-  await panel.getByRole("button", { name: "Save for later", exact: true }).click();
+  await panel.getByRole("button", { name: "Save for the author", exact: true }).click();
   await expect(panel.getByRole("status")).toContainText("Saved in this browser");
   const file = await exported(page);
   expect(file.schema).toBe("code-explainer/feedback@1");
@@ -56,6 +57,45 @@ test("disconnected reader captures selected source, reloads and exports the orig
   expect(problems).toEqual([]);
 });
 
+test("a shared page saves a question for the author, says how to send it, and lists it in plain words", async ({
+  page,
+}) => {
+  // a page as `xpl bundle` writes it (it names its guide), read, not explored
+  await openVariant(page, (bundle) => {
+    bundle.guideId = "jobrunner";
+  });
+  await page.evaluate(() => window.__xpl!.select(["sym:src/runner.ts#Runner.dispatch"]));
+  await page.getByRole("button", { name: /^Feedback/ }).click();
+  const panel = page.getByRole("dialog", { name: "Reader feedback" });
+  // no local service: nothing on this page can answer, so nothing offers to
+  await expect(panel.getByTestId("feedback-offline-intro")).toHaveText(
+    "Your note stays in this browser. Export it and send the file to whoever gave you this page. You see the answer when they send you a new page.",
+  );
+  await expect(panel.getByRole("button", { name: "Ask a question" })).toHaveCount(0);
+  await expect(panel.getByRole("button", { name: "Save for the author" })).toHaveClass(
+    /is-primary/,
+  );
+  // the author's commands are folded away, with the guide's own name
+  const author = panel.locator("details.feedback-author");
+  await expect(author).not.toHaveAttribute("open");
+  await expect(author.locator("code").first()).toBeHidden();
+  await author.locator("summary").click();
+  await expect(author.locator("code").first()).toHaveText(
+    "xpl feedback jobrunner --import feedback.json",
+  );
+  await panel.getByLabel("Feedback note").fill("Why does dispatch wait for a free worker?");
+  await panel.getByRole("button", { name: "Save for the author", exact: true }).click();
+  const item = panel.locator(".feedback-list > li");
+  await expect(item).toHaveCount(1);
+  await expect(item.locator("strong").first()).toHaveText("Question about Runner.dispatch");
+  await expect(item).toContainText("Waiting for the author");
+  // no raw id, no author words, and no answer button that cannot work here
+  await expect(item.locator("code")).toHaveCount(0);
+  await expect(item).not.toContainText("Revision");
+  await expect(item).not.toContainText("(head)");
+  await expect(item.getByRole("button", { name: "Get an answer" })).toHaveCount(0);
+});
+
 test("feedback captured after an offline view edit survives reload with its edited context", async ({
   page,
 }) => {
@@ -65,7 +105,7 @@ test("feedback captured after an offline view edit survives reload with its edit
   await page.getByRole("button", { name: /^Feedback/ }).click();
   const panel = page.getByRole("dialog", { name: "Reader feedback" });
   await panel.getByLabel("Feedback note").fill("Explain the newly added bus.");
-  await panel.getByRole("button", { name: "Save for later", exact: true }).click();
+  await panel.getByRole("button", { name: "Save for the author", exact: true }).click();
   await expect(panel.getByRole("status")).toContainText("Saved in this browser");
   const original = await exported(page);
   expect(original.requests).toHaveLength(1);
@@ -110,7 +150,7 @@ test("two tabs retain both requests when each save reads the same pre-write snap
   await other.getByLabel("Feedback note").fill("Second tab request.");
   await Promise.all(
     [page, other].map((tab) =>
-      tab.getByRole("button", { name: "Save for later", exact: true }).click(),
+      tab.getByRole("button", { name: "Save for the author", exact: true }).click(),
     ),
   );
   const first = (await exported(page)).requests;
@@ -181,7 +221,7 @@ test("saved-page feedback retains terminal outcomes and reports changed explanat
   await page.goto("http://feedback.test/");
   await page.getByRole("button", { name: /^Feedback/ }).click();
   const panel = page.getByRole("dialog", { name: "Reader feedback" });
-  await expect(panel).toContainText("Revision: unresolved");
+  await expect(panel).toContainText("The author could not settle it yet");
   await expect(panel).toContainText("outdated context");
   await expect(panel).toContainText("Need a runtime trace; retry later.");
   expect((await exported(page)).requests).toEqual(
@@ -210,7 +250,7 @@ test("saved-page feedback retains terminal outcomes and reports changed explanat
   await page.evaluate(() => window.__xpl!.select(["concept:retry-policy"]));
   await page.getByRole("button", { name: /^Feedback \(1\)/ }).click();
   await panel.getByLabel("Feedback note").fill("Explain retries in this draft.");
-  await panel.getByRole("button", { name: "Save for later", exact: true }).click();
+  await panel.getByRole("button", { name: "Save for the author", exact: true }).click();
   await expect(panel.getByRole("status")).toContainText("Saved in this browser");
   const requests = (await exported(page)).requests;
   expect(requests).toHaveLength(2);
@@ -336,7 +376,7 @@ test("before-source feedback keeps the selected range when browser storage refus
   await page.getByRole("button", { name: /^Feedback/ }).click();
   const panel = page.getByRole("dialog", { name: "Reader feedback" });
   await panel.getByLabel("Feedback note").fill("Why did the old retry use exponential delay?");
-  await panel.getByRole("button", { name: "Save for later", exact: true }).click();
+  await panel.getByRole("button", { name: "Save for the author", exact: true }).click();
   await expect(panel.getByRole("alert")).toContainText("Browser storage unavailable");
   const file = await exported(page);
   expect(file.requests).toHaveLength(1);

@@ -1,6 +1,7 @@
 import {
   BUNDLE_SCHEMA,
   createExplainer,
+  ExplainerModel,
   hashText,
   INDEX_SCHEMA,
   type Anchor,
@@ -8,7 +9,7 @@ import {
   type ViewerBundle,
 } from "@xpl/core";
 import { describe, expect, it } from "vitest";
-import { getDerived, MAX_PANES } from "../src/derive.js";
+import { getDerived, identityOf, MAX_PANES, stepSelection } from "../src/derive.js";
 import { ViewerStore } from "../src/store.js";
 import { makeBundle } from "./world.js";
 
@@ -358,5 +359,33 @@ describe("memoisation", () => {
     expect(after.panes).toBe(before.panes);
     expect(after.matches).not.toBe(before.matches);
     expect(getDerived(store.getState())).toBe(after);
+  });
+});
+
+// Both are cached: the viewer never changes a guide or an index in place, so each object stands for its content.
+describe("the caches of a guide's identity and of a tour step's view", () => {
+  it("give another identity for the same guide with another index", () => {
+    const bundle = makeBundle();
+    const changed = structuredClone(bundle.index);
+    changed.files[0]!.hash = "another";
+    const one = identityOf(bundle.explainer, bundle.index);
+    expect(identityOf(bundle.explainer, bundle.index)).toBe(one);
+    expect(identityOf(bundle.explainer, changed).sourceHash).not.toBe(one.sourceHash);
+    expect(identityOf(bundle.explainer, changed).explainerHash).toBe(one.explainerHash);
+  });
+
+  it("derive a step's view again for another guide: its concept lights what that map draws", () => {
+    const step = { id: "t9", view: "view:overview", focus: ["concept:retry"] };
+    const grouped = makeBundle();
+    const files = makeBundle();
+    const overview = files.explainer.views.find((view) => view.id === "view:overview")!;
+    if (overview.type === "graph") overview.include = ["file:src/a.ts", "file:config/c.yaml"];
+    const related = (bundle: ViewerBundle) => [
+      ...stepSelection(step, "tour:demo", new ExplainerModel(bundle.explainer, bundle.index))
+        .related,
+    ];
+    expect(related(grouped)).toContain("grp:core");
+    expect(related(files)).toContain("file:src/a.ts");
+    expect(related(files)).not.toContain("grp:core");
   });
 });

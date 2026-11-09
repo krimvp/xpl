@@ -352,6 +352,8 @@ it("records `mod` declarations and in-package `use` paths as heuristic imports o
     "src/jobs/mod.rs": "mod queue;\nuse super::config::{self as settings, Settings};\n",
     "src/jobs/queue.rs": "use self::inner::Deep;\nuse super::super::config::*;\nuse std::fmt;\n",
     "src/main.rs": "use job_runner::jobs::queue;\nuse other_crate::Thing;\nfn main() {}\n",
+    // a binary under src/bin is a crate of its own: its `crate::` is not the library's
+    "src/bin/tool.rs": "use crate::config::Settings;\nfn main() {}\n",
   });
   expect(
     index.refs.map(({ from, to, kind, site, resolution }) => [

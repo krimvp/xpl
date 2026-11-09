@@ -209,11 +209,16 @@ test("a Before/Now step numbers its code links in the step's order and pages to 
   );
   await page.goto("http://xpl.test/");
   const excerpt = page.getByRole("region", { name: "Source excerpt, step 1" });
-  // the definition shows first, and says it is the step's second code link
+  // the step's first code link shows first (the one its note talks about first), not the definition
+  await expect(excerpt.locator(".guide-source-caption")).toHaveText(
+    "src/runner.ts (before the change) · lines 76–77 · code link 1 of 2",
+  );
+  // the two arrows say which way they go
+  await excerpt.getByRole("button", { name: "Next code link (2 of 2)" }).click();
   await expect(excerpt.locator(".guide-source-caption")).toHaveText(
     /^src\/queue\.ts · lines? \d+(–\d+)? · code link 2 of 2$/,
   );
-  await excerpt.getByRole("button", { name: "Code link 1 of 2" }).first().click();
+  await excerpt.getByRole("button", { name: "Previous code link (1 of 2)" }).click();
   await expect(excerpt.locator(".guide-source-caption")).toHaveText(
     "src/runner.ts (before the change) · lines 76–77 · code link 1 of 2",
   );

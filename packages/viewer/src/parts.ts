@@ -11,7 +11,8 @@ import {
   type GraphView,
   type SequenceView,
 } from "@xpl/core";
-import { drawnEdges, isHolds } from "./drawnEdges.js";
+import { drawnEdges, isHolds, rowTypeText } from "./drawnEdges.js";
+import { stateRoles } from "./layout/flowLayout.js";
 import { ROLE_WORDS } from "./layout/graphLayout.js";
 import { boxOrder } from "./matrix.js";
 import { readerBadge } from "./readerWords.js";
@@ -58,6 +59,8 @@ export interface StepPart {
   /** Who does it and to whom (a sequence's arrow, a flow step's actor when it has another end). */
   from?: string;
   to?: string;
+  /** In a flow of states (`stateRoles`): a state or a move, neither of them numbered on the diagram. */
+  role?: "state" | "move";
 }
 
 /** The first sentence of a text (all of it when it has one sentence), without trailing space. */
@@ -85,17 +88,13 @@ function verbsOf(edge: DerivedGraph["edges"][number]): [string, string] {
   // (lifted to a file or a folder, core says where the interface is: "implements an interface in")
   if (edge.kind === "implements")
     return edge.label && !edge.stored
-      ? [edge.label, "has an interface implemented by"]
+      ? [edge.label, "is implemented in"]
       : ["implements", "implemented by"];
   // Go has no parent types: core labels its embedded types "embeds" ("embeds a type in" when lifted)
   if (edge.kind === "extends" && !edge.stored && edge.label?.startsWith("embeds"))
-    return edge.label === "embeds"
-      ? ["embeds", "embedded by"]
-      : [edge.label, "has a type embedded by"];
+    return edge.label === "embeds" ? ["embeds", "embedded by"] : [edge.label, "is embedded in"];
   if (edge.kind === "extends")
-    return edge.label && !edge.stored
-      ? [edge.label, "has a type extended by"]
-      : ["extends", "extended by"];
+    return edge.label && !edge.stored ? [edge.label, "is extended in"] : ["extends", "extended by"];
   return ["uses", "used by"];
 }
 
@@ -137,6 +136,11 @@ export function mapParts(graph: DerivedGraph, view: GraphView, model: ExplainerM
       linkWords(verb, names, fields ? "fields" : "boxes")!,
     );
   };
+  // a row's type as the map draws it: the table it holds named as that table is
+  const rowType = (id: string, type: string) => {
+    const held = edges.filter((edge) => edge.from === id && isHolds(edge));
+    return rowTypeText(type, held.length === 1 ? byId.get(held[0]!.to)!.label : undefined);
+  };
   const boxes: BoxPart[] = [];
   const walk = (parent: string | undefined, depth: number) => {
     const list = [...(children.get(parent) ?? [])].sort((a, b) => rank(a.id) - rank(b.id));
@@ -148,7 +152,7 @@ export function mapParts(graph: DerivedGraph, view: GraphView, model: ExplainerM
         node.row !== undefined
           ? // a row of a table (data map): a field, with the type it holds
             node.memberType
-            ? `field · ${node.memberType}`
+            ? `field · ${rowType(node.id, node.memberType)}`
             : "field"
           : node.role !== undefined
             ? (node.tech ?? ROLE_WORDS[node.role])
@@ -191,8 +195,13 @@ export function mapParts(graph: DerivedGraph, view: GraphView, model: ExplainerM
 
 /** The steps of a flow or a sequence, numbered as the diagram numbers them. */
 export function stepParts(view: SequenceView, model: ExplainerModel): StepPart[] {
-  if (view.type === "flow")
-    return processFlow(view).stages.map(({ step }, i) => part(step, i, model, false));
+  if (view.type === "flow") {
+    const roles = stateRoles(view);
+    return processFlow(view).stages.map(({ step }, i) => {
+      const role = roles?.get(step.id);
+      return { ...part(step, i, model, false), ...(role ? { role } : {}) };
+    });
+  }
   return (Array.isArray(view.steps) ? view.steps : []).map((step, i) => part(step, i, model, true));
 }
 

@@ -871,11 +871,16 @@ describe("under xpl view (server mode)", () => {
     ).toEqual(["concept:retry", "concept:retry"]);
   });
 
-  it("sends what the user wants changed as the request's note", async () => {
+  it("sends a typed note as a question, and no note as a request for more detail", async () => {
     const store = graphStore(true);
-    await store.requestExplain("concept:retry", "  too long  ");
-    expect(body(0)).toMatchObject({ kind: "expand", elementId: "concept:retry", note: "too long" });
+    await store.requestExplain("concept:retry", "  why so long?  ");
+    expect(body(0)).toMatchObject({
+      kind: "explain",
+      elementId: "concept:retry",
+      note: "why so long?",
+    });
     await store.requestExplain("concept:retry", "   ");
+    expect(body(1)).toMatchObject({ kind: "expand" });
     expect(body(1)).not.toHaveProperty("note");
   });
 

@@ -160,7 +160,7 @@ export const prCommand: CommandSpec = {
       });
     else
       ctx.out(
-        `prepared ${pr.url}\nbase: ${pr.base.sha}\nhead: ${pr.head.sha}\nrepository: ${prepared.repository}\ninput manifest: ${prepared.manifestPath}\n${handoff ? `Start the installed skill:\n${handoff.invocation}` : "Input only; use pr create for installed skill handoff."}`,
+        `prepared ${pr.url}\nbase: ${pr.base.sha}\nhead: ${pr.head.sha}\nrepository: ${prepared.repository}\ninput manifest: ${prepared.manifestPath}\n${handoff ? `Start the installed skill:\n${handoff.invocation}` : "Wrote the input only. To hand it to your agent, run `xpl pr create`."}`,
       );
     return 0;
   },

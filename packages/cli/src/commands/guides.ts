@@ -28,7 +28,11 @@ export const guidesCommand: CommandSpec = {
             ].join("\n"),
       );
       lines.push(...errors.map((e) => `${e.id}: unavailable (${e.error})`));
-      ctx.out(lines.length ? lines.join("\n") : "no local guides; create one with xpl new");
+      ctx.out(
+        lines.length
+          ? lines.join("\n")
+          : "no local guides; make one with `xpl start <name> --question <question> --audience <reader>`",
+      );
     }
     return errors.length ? 1 : 0;
   },

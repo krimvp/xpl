@@ -222,14 +222,34 @@ function helpText(): string {
 }
 
 /**
+ * A detail line that starts with `[kind,kind] ` belongs to those kinds of a command whose first argument is a
+ * choice; `[all] ` marks a line only the help of the whole command shows. The tag is never printed.
+ */
+const TAGGED = /^\[([a-z,]+)\] /;
+
+/** The lines of `details` for one topic (a kind), or for the whole command (`topic` undefined), without tags. */
+function forTopic(details: readonly string[], topic: string | undefined): string[] {
+  return details.flatMap((line) => {
+    const tags = TAGGED.exec(line)?.[1]?.split(",");
+    if (!tags) return [line];
+    return tags.includes(topic ?? "all") ? [line.replace(TAGGED, "")] : [];
+  });
+}
+
+/** The topic of `xpl <command> <kind> --help`, when the command's first argument is a choice of kinds. */
+function helpTopic(command: CommandSpec, topic: string | undefined): string | undefined {
+  const choices = command.positionals[0]?.name.split("|") ?? [];
+  return topic !== undefined && choices.length > 1 && choices.includes(topic) ? topic : undefined;
+}
+
+/**
  * The details of one kind of a command whose first argument is a choice (`xpl draft path --help`): the lines
  * before the table of kinds, the row of that kind, and the lines after the table. Undefined for any other topic.
  */
 function topicDetails(command: CommandSpec, topic: string | undefined): string[] | undefined {
   const choices = command.positionals[0]?.name.split("|") ?? [];
-  if (topic === undefined || choices.length < 2 || !choices.includes(topic) || !command.details)
-    return undefined;
-  const lines = command.details;
+  if (helpTopic(command, topic) === undefined || !command.details) return undefined;
+  const lines = forTopic(command.details, topic);
   const rowOf = (line: string) => /^ {2}([a-z]+)\b/.exec(line)?.[1];
   const isRow = (line: string) => choices.includes(rowOf(line) ?? "");
   const first = lines.findIndex(isRow);
@@ -245,10 +265,21 @@ function topicDetails(command: CommandSpec, topic: string | undefined): string[]
   return [...lines.slice(0, first), "", ...out.slice(first), "", ...lines.slice(last + 1)];
 }
 
+/** The usage of one kind: `xpl draft repo` and the arguments of its row, then the command's options. */
+function topicUsage(command: CommandSpec, topic: string): string | undefined {
+  const row = command.details?.find((line) => new RegExp(`^ {2}${topic}\\b`).test(line));
+  const args = row && /^ {2}(\S+(?: [<[][^ ]+)*)/.exec(row)?.[1];
+  if (!args) return undefined;
+  const options = command.usage.match(/\[-[^\]]*\]/g) ?? [];
+  return [`xpl ${command.name} ${args}`, ...options].join(" ");
+}
+
 function commandHelp(command: CommandSpec, topic?: string): string {
-  const details = topicDetails(command, topic) ?? command.details;
+  const kind = helpTopic(command, topic);
+  const details =
+    topicDetails(command, kind) ?? (command.details && forTopic(command.details, undefined));
   return [
-    ...usageLines(command.usage),
+    ...usageLines((kind && topicUsage(command, kind)) ?? command.usage),
     "",
     ...wrapHelpLine(command.summary),
     ...(details ? ["", ...wrapHelp(details)] : []),

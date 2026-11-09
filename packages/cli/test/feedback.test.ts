@@ -94,3 +94,51 @@ it("refuses malformed imports without replacing existing disk feedback", async (
   expect(rejected.err).toContain("kind must be");
   expect((await xplJson(root, "feedback", "demo")).json.requests).toEqual([]);
 });
+
+it("lists each request with the reader's note, keeps one of two equal saves, and says nothing to do once all are answered", async () => {
+  const root = cloneDir(demo);
+  const scratch = makeTempDir();
+  const context = artifactIdentity(
+    readJson<Explainer>(root, ".explainer/demo.explainer.json"),
+    fullIndex(root),
+  );
+  const at = "2026-10-04T12:00:00.000Z";
+  const question = (id: string) => ({
+    id,
+    elementId: "file:src/worker.ts",
+    kind: "explain",
+    note: "Does a timeout count as a failed attempt?",
+    at,
+    context,
+    outcome: { revision: 0, status: "pending", reason: "Awaiting an explicit revision pass.", at },
+  });
+  const input = writeFile(
+    scratch,
+    "feedback.json",
+    JSON.stringify({ schema: FEEDBACK_SCHEMA, requests: [question("q1"), question("q2")] }),
+  );
+  const imported = await xpl(root, "feedback", "demo", "--import", input);
+  expect(imported.code).toBe(0);
+  expect(imported.out.split("\n")).toEqual([
+    "Imported 1; 1 stored request(s).",
+    "q1  pending  question file:src/worker.ts",
+    '  "Does a timeout count as a failed attempt?"',
+    "To act on the requests, start the code-explainer skill in your agent. Saving feedback starts nothing.",
+  ]);
+  const outcomes = writeFile(
+    scratch,
+    "outcomes.json",
+    JSON.stringify([{ id: "q1", context, status: "addressed", reason: "Step 4 answers it." }]),
+  );
+  expect((await xpl(root, "feedback", "demo", "--outcomes", outcomes)).code).toBe(0);
+  // the guide changes when the author answers: an answered request has no context left to reconcile
+  editFile(root, ".explainer/demo.explainer.json", (text) =>
+    text.replace('"title": "', '"title": "Changed '),
+  );
+  const listed = await xpl(root, "feedback", "demo");
+  expect(listed.out.split("\n")).toEqual([
+    "q1  addressed  question file:src/worker.ts",
+    '  "Does a timeout count as a failed attempt?"',
+    "  Step 4 answers it.",
+  ]);
+});

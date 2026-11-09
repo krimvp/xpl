@@ -8,6 +8,9 @@
  * lines): the screen is split once per tour, so it does not jump between a map step and a flow step. The
  * diagram takes less of that extra width when the tour's code needs it (present/split.ts).
  *
+ * While no code is on screen (a step without code, or a detour that selected none) the diagram takes the
+ * whole width, as the Map and the Flow do.
+ *
  * The caption keeps one type size for the whole tour, and is as tall as its own text, up to 40% of
  * the column: the diagram above it gets the rest. The type size is the largest at which the tour's tallest
  * caption, measured off-screen, fits that cap; only at the smallest size does a caption scroll.
@@ -29,7 +32,7 @@ import type { TourStep } from "@xpl/core";
 import { CodeArea } from "../components/CodeArea.js";
 import { DiagramPane } from "../components/DiagramPane.js";
 import { Presenting, PresentRoom } from "../components/PanZoom.js";
-import { useStore, useViewerState } from "../hooks.js";
+import { useDerived, useStore, useViewerState } from "../hooks.js";
 import { renderInline, renderMarkdown } from "../markdown.js";
 import { stepNumber } from "../modes.js";
 import { stepText } from "../stepTitle.js";
@@ -42,6 +45,7 @@ const LONG_NOTE = 280;
 export function PresentMode() {
   const store = useStore();
   const state = useViewerState();
+  const derived = useDerived();
   const tour = store.currentTour();
   const index = state.tour?.step ?? 0;
   const step = tour?.steps[index];
@@ -231,6 +235,8 @@ export function PresentMode() {
         } as CSSProperties
       }
       data-room={need !== undefined ? "wide" : undefined}
+      // no code on screen (a step with none, or a click away from it): the diagram takes the code's width
+      data-code={derived.panes.length === 0 ? "none" : undefined}
       data-pointer={pointer ? "moved" : undefined}
     >
       <section className="present-left" aria-label="Diagram and caption" ref={left}>

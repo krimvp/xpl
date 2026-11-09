@@ -19,6 +19,7 @@ import { DEFAULT_EDGE_KINDS, resolveStubPolicy } from "@xpl/core";
 import { explainerFileName } from "../edits.js";
 import { useStore, useViewerState } from "../hooks.js";
 import { stepNumber } from "../modes.js";
+import { stepText } from "../stepTitle.js";
 import { canSaveHtml } from "../saveHtml.js";
 import { NEXT_THEME, setThemeChoice, themeChoice, type ThemeChoice } from "../theme.js";
 import { Review } from "./Review.js";
@@ -40,6 +41,7 @@ export function Header() {
   const state = useViewerState();
   const [searchOpen, setSearchOpen] = useState(false);
   const searchButton = useRef<HTMLButtonElement>(null);
+  const feedbackButton = useRef<HTMLButtonElement>(null);
   const feedbackOpen = state.feedbackOpen;
   const [toursOpen, setToursOpen] = useState(false);
   useEffect(() => {
@@ -120,8 +122,10 @@ export function Header() {
       )}
       {!present && (
         <button
+          ref={feedbackButton}
           className="btn"
           type="button"
+          aria-haspopup="dialog"
           aria-expanded={feedbackOpen}
           onClick={() => {
             if (feedbackOpen) store.closeFeedback();
@@ -136,7 +140,14 @@ export function Header() {
       {present ? <ExitButton /> : <PresentButton />}
       <EditMenu toursOpen={toursOpen} onTours={() => setToursOpen((open) => !open)} />
 
-      {feedbackOpen && <FeedbackPanel onClose={() => store.closeFeedback()} />}
+      {feedbackOpen && (
+        <FeedbackPanel
+          onClose={() => {
+            store.closeFeedback();
+            feedbackButton.current?.focus();
+          }}
+        />
+      )}
       {toursOpen && <TourPanel onClose={() => setToursOpen(false)} />}
     </header>
   );
@@ -238,6 +249,7 @@ function StepProgress() {
   const count = tour?.steps.length ?? 0;
   if (!tour || count === 0) return null;
   const index = state.tour?.step ?? 0;
+  const step = tour.steps[index];
   const detour = state.applied === undefined;
   return (
     <div className="step-progress" title="← → step · Home, End: first, last · Esc: leave">
@@ -252,8 +264,13 @@ function StepProgress() {
       >
         ‹
       </button>
-      <span className="tour-counter" data-testid="tour-counter" aria-live="polite">
+      <span className="tour-counter" data-testid="tour-counter" aria-hidden="true">
         {stepNumber(index)} / {count}
+      </span>
+      {/* a11y: a slide change is heard with the step's title, not only its number */}
+      <span className="sr-only" aria-live="polite" data-testid="tour-announce">
+        Step {stepNumber(index)} of {count}
+        {step ? `: ${stepText(step, state.model).title}` : ""}
       </span>
       <button
         type="button"
@@ -375,6 +392,9 @@ function EditMenu({ toursOpen, onTours }: { toursOpen: boolean; onTours: () => v
     if (open) root.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus();
   }, [open]);
 
+  // A modal <dialog> gives the focus back, as it closes, to the menu item that opened it: that item is gone
+  // by then, so the focus would land on the page. Take it to the Edit button once the dialog is gone.
+  const focusEdit = () => requestAnimationFrame(() => button.current?.focus());
   const close = (refocus: boolean) => {
     setOpen(false);
     if (refocus) button.current?.focus();
@@ -404,7 +424,7 @@ function EditMenu({ toursOpen, onTours }: { toursOpen: boolean; onTours: () => v
         <Review
           onClose={() => {
             setReviewOpen(false);
-            button.current?.focus();
+            focusEdit();
           }}
         />
       )}
@@ -412,7 +432,7 @@ function EditMenu({ toursOpen, onTours }: { toursOpen: boolean; onTours: () => v
         <SaveHtml
           onClose={() => {
             setHtmlOpen(false);
-            button.current?.focus();
+            focusEdit();
           }}
           onDownload={(name, html) => download(name, html, "text/html")}
         />

@@ -2446,7 +2446,45 @@ function callLabel(texts: TextCache, file: string, site: Reference["site"], name
   const open = paren + name.length;
   const close = matchingClose(text, open);
   const args = close > open ? text.slice(open + 1, close).trim() : "";
-  return `${name}(${args.length > 32 || args.includes("\n") || close === -1 ? "…" : args})`;
+  if (close === -1) return `${name}(…)`;
+  return `${name}(${args.length > 32 ? shortArgs(args) : args})`;
+}
+
+/**
+ * Long arguments, cut: a name stays, a call keeps its own name (`job, backoffDelay(…)`, so the step says what it
+ * computes), anything else is `…`. All of it is `…` when even that is long.
+ */
+function shortArgs(args: string): string {
+  const parts: string[] = [];
+  let start = 0;
+  for (let i = 0; i <= args.length; i++) {
+    const c = args[i];
+    if (c === "(" || c === "[" || c === "{" || c === '"' || c === "'" || c === "`") {
+      const end =
+        c === '"' || c === "'" || c === "`" ? closingQuote(args, i) : matchingClose(args, i);
+      if (end === -1) return "…";
+      i = end;
+    } else if (c === "," || i === args.length) {
+      parts.push(args.slice(start, i).trim());
+      start = i + 1;
+    }
+  }
+  const short = parts.map((part) => {
+    if (/^[\p{L}_$][\p{L}\p{N}_$.]*$/u.test(part) && part.length <= 16) return part;
+    const call = /^(?:new\s+)?([\p{L}_$][\p{L}\p{N}_$]*)\s*\(.*\)$/su.exec(part);
+    return call ? `${call[1]}(…)` : "…";
+  });
+  const text = short.join(", ");
+  return text.length > 32 || short.every((part) => part === "…") ? "…" : text;
+}
+
+/** The index of the quote that closes the one at `open`, or -1. */
+function closingQuote(text: string, open: number): number {
+  for (let i = open + 1; i < text.length; i++) {
+    if (text[i] === "\\") i++;
+    else if (text[i] === text[open]) return i;
+  }
+  return -1;
 }
 
 /** The index of the bracket that closes the one at `open` (strings skipped), or -1 when the text ends first. */
@@ -3111,6 +3149,11 @@ export function draftPath(input: DraftInput, entries: readonly PathEntry[]): Dra
       edgeKinds: ["calls"],
       stubs: { mode: "none" },
     });
+    // the map shows each file as a box: each needs its summary, like the participants
+    for (const id of fileIds) {
+      const node = overlay(stored, id, todo("one sentence: what this file is for on this path."));
+      if (node) nodes.push(node);
+    }
     tourSteps.unshift(
       tourStep(
         model,
@@ -3120,7 +3163,7 @@ export function draftPath(input: DraftInput, entries: readonly PathEntry[]): Dra
         note(
           todo("where this path runs in the project, as a plain statement"),
           todo(
-            "what each file is for, in one short sentence each, in the order the path crosses them.",
+            "what each part is for, one short sentence each, in path order. Name a part in plain words (the runner), not by its file.",
           ),
         ),
         [definition(first.entry.symbol)],

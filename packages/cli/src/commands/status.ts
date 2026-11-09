@@ -643,9 +643,9 @@ export const statusCommand: CommandSpec = {
     if (stale.length > 0) {
       lines.push(
         "",
-        `warning: stale edge overlays (${stale.length}): stored overlays of derived edges that no graph view derives now ` +
-          "(the ends of a derived id follow the view's include, and the code may have changed), so they are ignored. " +
-          "Re-create them on the current ids (`status --json`: views[].edges.unexplained) or remove them:",
+        `warning: stale arrow overlays (${stale.length}): stored text for arrows found in the code that no map draws now ` +
+          "(their ids follow the view's include, and the code may have changed), so they are ignored. " +
+          "Write the text again on the current ids (`status --json`: views[].edges.unexplained) or remove it:",
         ...stale.map((id) => `  ${id}`),
       );
     }

@@ -81,7 +81,7 @@ describe("xpl new", () => {
     for (const name of ["../evil", "a/b", ".hidden", "sp ace"]) {
       const { code, err } = await xpl(dir, "new", name);
       expect(code, name).toBe(2);
-      expect(err).toContain("invalid explainer name");
+      expect(err).toContain("invalid guide name");
     }
   });
 
@@ -396,7 +396,7 @@ describe("xpl resolve", () => {
 
     const dry = await xpl(dir, "resolve", "demo");
     expect(dry.code).toBe(0);
-    expect(dry.out).toMatch(/anchors: 12 \(ok 7, moved 5, drifted 0, missing 0\)/);
+    expect(dry.out).toMatch(/code links: 12 \(ok 7, moved 5, drifted 0, missing 0\)/);
     expect(dry.out).toContain("not written: pass --write");
     expect(readJson(dir, EXPLAINER).views[1].steps[2].anchors[0].resolved.range).toEqual({
       startLine: 76,
@@ -431,7 +431,7 @@ describe("xpl resolve", () => {
 
     const { code, out } = await xpl(dir, "resolve", "demo");
     expect(code).toBe(0);
-    expect(out).toMatch(/anchors: 12 \(ok \d+, moved 0, drifted [1-9]\d*, missing 0\)/);
+    expect(out).toMatch(/code links: 12 \(ok \d+, moved 0, drifted [1-9]\d*, missing 0\)/);
     expect(out).toContain("drifted llm elements to re-explain");
     // the step whose call site was edited, with the anchor as it was written
     expect(out).toContain("dispatch:3  (step in view:dispatch)");

@@ -250,6 +250,7 @@ export function frameView(
       start: (box: Box) => number,
       length: (box: Box) => number,
       across: (box: Box) => boolean,
+      sideCut?: (box: Box) => boolean,
     ): number => {
       const visible = (pane - 2 * padding) / t.k;
       if (total <= visible) return at;
@@ -260,14 +261,21 @@ export function frameView(
       // (`s` is where the padded window starts; the pane shows `edge` more on each side of it)
       const edge = padding / t.k;
       const boxes = others.filter(across);
+      // (a box the other axis already cuts at the side is cut wherever this window shows any of it: an
+      // arrow that runs off the side, its words cut, reads as a mistake as much as one cut at the top)
       const cuts = (s: number) =>
         boxes.filter((box) => {
           const a = start(box);
           const b = a + length(box);
           const left = s - edge;
           const right = s + visible + edge;
+          if (sideCut?.(box)) return a < right && left < b;
           return (a < left && left < b) || (a < right && right < b);
         }).length;
+      // (of two windows that cut as many and hold as many whole, one that cuts none at its start: a box cut
+      // at the left or top edge hides its name, one that runs off the far edge shows it)
+      const startCuts = (s: number) =>
+        boxes.filter((box) => start(box) < s - edge && s - edge < start(box) + length(box)).length;
       const candidates = [from, lo, hi];
       for (const box of boxes) {
         const a = start(box);
@@ -285,17 +293,24 @@ export function frameView(
           : 0;
       let best = from;
       let fewest = cuts(from);
+      let atStart = startCuts(from);
       let most = held(from);
       for (const raw of candidates) {
         const s = clamp(raw, lo, hi);
         const n = cuts(s);
+        const first = startCuts(s);
         const h = held(s);
         if (
           n < fewest ||
-          (n === fewest && (h > most || (h === most && Math.abs(s - from) < Math.abs(best - from))))
+          (n === fewest &&
+            (h > most ||
+              (h === most &&
+                (first < atStart ||
+                  (first === atStart && Math.abs(s - from) < Math.abs(best - from))))))
         ) {
           best = s;
           fewest = n;
+          atStart = first;
           most = h;
         }
       }
@@ -313,6 +328,8 @@ export function frameView(
       inRows(t.y),
     );
     const inColumns = (box: Box) => box.x + box.width > -x / t.k && box.x < (size.w - x) / t.k;
+    const cutAtSide = (box: Box) =>
+      inColumns(box) && (box.x * t.k + x < -1 || (box.x + box.width) * t.k + x > size.w + 1);
     const y = axis(
       t.y,
       size.h,
@@ -320,6 +337,7 @@ export function frameView(
       (b) => b.y,
       (b) => b.height,
       inColumns,
+      cutAtSide,
     );
     return { k: t.k, x, y };
   };

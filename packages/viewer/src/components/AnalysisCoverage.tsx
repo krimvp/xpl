@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import {
   collectAnchors,
-  describeAnalysis,
+  readerCoverage,
   parseId,
   type Explainer,
   type FilePath,
@@ -11,7 +11,8 @@ import { useViewerState } from "../hooks.js";
 
 /**
  * A bar above the page, only when the analysis missed code that this guide links to: a tool failed on it,
- * or a programming language was not analysed (in full) there. Data files (JSON, YAML, text) have no calls
+ * or a programming language was not analyzed (in full) there. A kind of relationship the language cannot
+ * have (Python has no `implements`) is no gap. Data files (JSON, YAML, text) have no calls
  * to find, files the guide does not point at put none of its arrows at risk, and names matched by name are
  * what every dashed arrow already says: none of these earns a bar on every page. One plain line; the full
  * report is in "About this guide" (`AnalysisDetails`).
@@ -28,7 +29,7 @@ export function AnalysisCoverage() {
       <summary>
         {gap.failed
           ? `Some arrows may be missing: the code analysis failed in ${count} this guide links to.`
-          : `Some arrows may be missing: xpl could not analyse all the code in ${count} this guide links to.`}
+          : `Some arrows may be missing: xpl could not analyze all the code in ${count} this guide links to.`}
       </summary>
       <ul>
         {gap.files.slice(0, 8).map((file) => (
@@ -43,16 +44,19 @@ export function AnalysisCoverage() {
   );
 }
 
-/** What the analysis covered, inside "About this guide". */
+/**
+ * What xpl could read, inside "About this guide": one plain line per language. The analyser's own report
+ * is for authors (`xpl index --verbose`).
+ */
 export function AnalysisDetails() {
   const index = useViewerState().model.index.index;
-  const coverage = useMemo(() => describeAnalysis(index), [index]);
+  const coverage = useMemo(() => readerCoverage(index), [index]);
   return (
     <details data-testid="analysis-details">
       <summary>{coverage.summary}</summary>
       <ul>
-        {coverage.details.map((detail, i) => (
-          <li key={i}>{detail}</li>
+        {coverage.lines.map((line, i) => (
+          <li key={i}>{line}</li>
         ))}
       </ul>
     </details>
@@ -61,6 +65,13 @@ export function AnalysisDetails() {
 
 /** Languages with no calls or imports to find: their missing relationship analysis is no gap. */
 const DATA_LANGUAGES = new Set(["json", "yaml", "toml", "text", "markdown", "xml", "ini", "csv"]);
+
+/** Kinds of relationship a language does not have: the analysis leaving them out misses nothing. */
+const NOT_IN_LANGUAGE: Record<string, ReadonlySet<string>> = {
+  python: new Set(["implements"]),
+  javascript: new Set(["implements"]),
+  ruby: new Set(["implements"]),
+};
 
 /** The files this guide points at: its code links, and the files and symbols its diagrams draw. */
 export function linkedFiles(explainer: Explainer): Set<FilePath> {
@@ -110,7 +121,8 @@ export function coverageGap(
         const missed = code.filter(
           (path) =>
             (result.status === "failed" && !result.analyzedFiles.includes(path)) ||
-            !covered.get(capability)!.has(path),
+            (!covered.get(capability)!.has(path) &&
+              !NOT_IN_LANGUAGE[languageOf.get(path) ?? ""]?.has(capability)),
         );
         if (missed.length > 0 && result.status === "failed") failed = true;
         for (const path of missed) files.add(path);

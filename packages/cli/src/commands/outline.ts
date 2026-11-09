@@ -5,6 +5,7 @@ import {
   SYMBOL_KINDS,
   buildOutline,
   outlineJson,
+  outlineHasCode,
   outlineNotes,
   renderOutline,
 } from "../outline-tree.js";
@@ -23,7 +24,8 @@ export const outlineCommand: CommandSpec = {
     "Paste the ids into patches (sym:src/a.ts#A.b) or into other commands.",
     "in and out count the references into and out of the subtree, not the ones that stay inside it.",
     "`recursive` marks a symbol that calls itself. [+n] marks n children below the depth limit.",
-    "Go code says `struct` and `field`; --json keeps the stored kinds `class` and `variable`.",
+    "A chain of folders that each hold only one folder (src/main/java/app) is one row.",
+    "Go code says `struct` and `field`, and --kind takes them; --json keeps the kinds `class` and `variable`.",
     "With --kind, the folders, files and symbols that hold a match are listed too.",
   ],
   options: {
@@ -35,7 +37,7 @@ export const outlineCommand: CommandSpec = {
     depth: {
       type: "string",
       arg: "<n>",
-      desc: "Levels below the start to show (default 2; with --kind, every level)",
+      desc: "Levels below the start (default 2, or down to the first code file; with --kind, all)",
     },
     keys: { type: "boolean", desc: "Also show config keys (yaml/json/toml)" },
     kind: {
@@ -62,18 +64,26 @@ export const outlineCommand: CommandSpec = {
     // Asking for the keys of a config key (or below), or for the kind `key`, is asking to see them.
     const rootIsKey = target.type === "symbol" && target.symbol.kind === "key";
     const keys = args.flag("keys") || rootIsKey || kinds?.has("key") === true;
-    const tree = buildOutline(ws.model, target.id, {
-      depth,
-      keys,
-      repoName: (await detectRepoName(ctx.root)).name,
-      ...(kinds ? { kinds } : {}),
-    });
+    const repoName = (await detectRepoName(ctx.root)).name;
+    const outline = (levels: number) =>
+      buildOutline(ws.model, target.id, {
+        depth: levels,
+        keys,
+        repoName,
+        ...(kinds ? { kinds } : {}),
+      });
+    let shown = depth;
+    let tree = outline(shown);
+    // the default depth goes on down until a code file shows (deep in src/main/java/<package>, say)
+    const deepen = args.int("depth") === undefined && !kinds;
+    while (deepen && !outlineHasCode(tree) && outlineNotes(tree).cut && shown < 8)
+      tree = outline(++shown);
     if (ctx.json) {
       ctx.emit({
         index: ws.indexRel,
         commit: ws.index.commit,
         // with --kind and no --depth: every level (no number to report)
-        ...(depth === Number.MAX_SAFE_INTEGER ? {} : { depth }),
+        ...(shown === Number.MAX_SAFE_INTEGER ? {} : { depth: shown }),
         ...(kinds ? { kinds: [...kinds] } : {}),
         tree: outlineJson(tree),
       });
@@ -123,7 +133,9 @@ function parseKinds(values: readonly string[]): Set<string> | undefined {
       ({ struct: "class", field: "variable" } as Record<string, string>)[raw.toLowerCase()] ??
       raw.toLowerCase();
     if (!SYMBOL_KINDS.includes(kind)) {
-      throw new UsageError(`unknown symbol kind "${raw}" (expected: ${SYMBOL_KINDS.join(", ")})`);
+      throw new UsageError(
+        `unknown symbol kind "${raw}" (expected: ${SYMBOL_KINDS.join(", ")}; Go: struct, field)`,
+      );
     }
     out.add(kind);
   }

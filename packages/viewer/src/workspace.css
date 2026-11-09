@@ -1192,8 +1192,10 @@
   fill: var(--muted);
   font-size: 13px;
 }
-.flow-stage .flow-frame {
+.flow-frame {
   fill: var(--purple);
+  font-family: var(--font-ui);
+  pointer-events: none;
   font-size: 13px;
   paint-order: stroke;
   stroke: var(--canvas);
@@ -1388,6 +1390,10 @@
     overflow: hidden;
     text-overflow: ellipsis;
   }
+  /* (one row: the question and the way to Explore wait for a taller screen; the Tour and Edit have them) */
+  .workspace-caption :is(.view-question, .explore-link) {
+    display: none;
+  }
   .workspace-location {
     min-height: 0;
     padding: 4px 12px;
@@ -1422,7 +1428,7 @@
     text-overflow: ellipsis;
   }
   .workspace-context {
-    max-height: 24vh;
+    max-height: 20vh;
   }
 }
 /* Optional reading guidance stays compact until a reader asks for it. */
@@ -1629,13 +1635,38 @@
 .flow-stage.is-copy > rect {
   stroke-dasharray: 6 4;
 }
-/* A flow of states (xpl draft states): a state is a pill with a firm edge, a move a flat box on the panel colour. */
+/* A flow of states (xpl draft states): a state is a pill with a firm edge. A move is the chip on the arrow
+   between two states, framed like a button: it is the move's link to its code. (Dashes mean "not here" or
+   "not checked" only: a stub, a heuristic arrow, a repeated end.) */
 .flow-stage.is-state > rect {
   stroke-width: 2.5;
 }
+.flow-transition.is-move rect {
+  stroke: var(--edge);
+  stroke-width: 1;
+  cursor: pointer;
+}
+.flow-transition.is-move:hover rect,
+.flow-transition.is-move:focus rect {
+  stroke: var(--accent);
+}
+.flow-transition.is-move.is-selected rect {
+  stroke: var(--accent);
+  stroke-width: 2;
+  fill: var(--accent-soft);
+}
+.flow-transition.is-move.is-matched rect {
+  stroke: var(--match);
+  stroke-width: 2;
+  fill: var(--match-soft);
+}
+.flow-transition.is-move.is-matched polyline {
+  stroke: var(--match);
+}
+/* a move drawn as a box (one no state leads to): a flat box with a thin solid edge */
 .flow-stage.is-move > rect {
   fill: var(--panel-2);
-  stroke-dasharray: 2 3;
+  stroke-width: 1;
 }
 /* Which diagram a chip's step is in, when two chips have the same name. */
 .guide-mini-where {

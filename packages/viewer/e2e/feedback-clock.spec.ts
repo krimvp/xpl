@@ -65,7 +65,7 @@ for (const [direction, skew] of [
       await page.getByRole("button", { name: /^Feedback/ }).click();
       const panel = page.getByRole("dialog", { name: "Reader feedback" });
       await panel.getByLabel("Feedback note").fill("Explain this reader's retry limit.");
-      await panel.getByRole("button", { name: "Save for later", exact: true }).click();
+      await panel.getByRole("button", { name: "Save for the author", exact: true }).click();
       await expect(panel.getByRole("status")).toContainText("Saved in this browser");
       const captured = await feedbackExport(page);
       const original = captured.requests[0];
@@ -100,7 +100,7 @@ for (const [direction, skew] of [
       await live.goto(url);
       await live.getByRole("button", { name: /^Feedback/ }).click();
       const livePanel = live.getByRole("dialog", { name: "Reader feedback" });
-      await expect(livePanel.locator(".feedback-list")).toContainText("Revision: not yet reviewed");
+      await expect(livePanel.locator(".feedback-list")).toContainText("Waiting for the author");
       const updates = join(scratch, "outcomes.json");
       const outcomeFile = join(scratch, "recorded.json");
       writeFileSync(

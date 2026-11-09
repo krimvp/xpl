@@ -381,7 +381,7 @@ test.describe("the change in the reading screens", () => {
     );
     // the arrow from Scheduling to worker.ts draws no words of its own; the key line names its kind
     await expect(page.getByTestId("key-line").locator('[data-key-item="kind-calls"]')).toHaveText(
-      "calls",
+      "solid arrow: calls",
     );
     // inside the group: runner.ts changed
     await byId(page, "grp:scheduling").dblclick();

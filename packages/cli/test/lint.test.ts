@@ -1898,6 +1898,67 @@ describe("lintExplainer: length, voice and words", () => {
     ]);
   });
 
+  it("map-box: a file name as a label, a noun or a passive first word, and a vague verb; a draft's long TODO waits", () => {
+    const box = (id: string, label: string, summary: string) => ({ id, label, summary });
+    const todo =
+      "TODO: This file is for the queue on this path (defines `Queue`, `push` and `pop`; used by `runner.rs`, `worker.rs` and `main.rs`), in one plain sentence.";
+    expect(todo.length).toBeGreaterThan(130);
+    const boxes = [
+      box("file:src/main.ts", "main.ts", "Starts the runner and stops it on a signal."),
+      box("file:src/config.ts", "`config`", "Configuration types and defaults for the runner."),
+      box("file:src/queue.ts", "Job queue", "Job queue that holds work for the workers."),
+      box("file:src/worker.ts", "Worker", "Used by the runner to run one job."),
+      box("file:src/bus.ts", "Event bus", "Contains the listeners of each event."),
+      box("file:src/pool.ts", "Worker pool", "pool keeps the idle workers."),
+      box("file:src/stats.ts", "Run statistics", "`Stats` counts the jobs by type."),
+      box("file:src/retry.ts", "Holds retry delays", "Holding the delays of each retry."),
+      box("file:src/a.ts", "One two three four five", "Answers the question of the reader."),
+      box("file:src/b.ts", "One two three four five six", "Is where jobs wait."),
+      box("file:src/c.ts", "Setup guide", "Tells a new developer how to install and run it."),
+      box("dir:src/jobs", "Jobs", todo),
+    ];
+    const { findings } = lintExplainer(
+      explainer({
+        nodes: boxes,
+        views: [
+          {
+            id: "view:map",
+            type: "graph",
+            title: "The job runner",
+            include: boxes.map((b) => b.id),
+            boxText: "summary",
+          },
+        ],
+      }),
+    );
+    const after = ": the box shows this sentence under its label";
+    const fileName = "a file name: name what it does in 2-5 everyday words";
+    expect(only(findings, "map-box").map((f) => [f.elementId, f.field, f.message])).toEqual([
+      ["file:src/main.ts", "label", fileName],
+      ["file:src/config.ts", "label", fileName],
+      ["file:src/config.ts", "summary", `it starts with "Configuration", not a verb${after}`],
+      ["file:src/queue.ts", "summary", `it starts with "Job", the label, not a verb${after}`],
+      ["file:src/worker.ts", "summary", `it starts with "Used", not a verb in the present${after}`],
+      [
+        "file:src/bus.ts",
+        "summary",
+        `it starts with "Contains": say what it does for the project ("Keeps …", "Answers …")${after}`,
+      ],
+      ["file:src/pool.ts", "summary", `it starts with "pool", not a verb${after}`],
+      ["file:src/stats.ts", "summary", `it starts with "Stats", not a verb${after}`],
+      [
+        "file:src/retry.ts",
+        "summary",
+        `it starts with "Holding", not a verb in the present${after}`,
+      ],
+      [
+        "file:src/b.ts",
+        "label",
+        "6 words (more than 5): a box on a map that shows summaries takes a label of 2-5 plain words",
+      ],
+    ]);
+  });
+
   it("long-summary: the summary of a flow or sequence step counts too", () => {
     const { findings } = lintExplainer(
       explainer({

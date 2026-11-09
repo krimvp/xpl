@@ -71,6 +71,8 @@ describe("sequenceFocus: the first view of a big sequence", () => {
     expect([LANES[2], LANES[3]].map((id) => inside(id!))).toEqual([true, true]);
     // (the empty first lifeline is the one left out, not one the arrows in sight join)
     expect(inside(LANES[0]!)).toBe(false);
+    // (that choice is frameView's `fill` tie-break: a sequence asks for it)
+    expect(sequenceFocus(seq, new Set(["s2"])).fill).toBe(true);
   });
 
   it("does not cut a lifeline's name at a side when a place that cuts none exists", () => {

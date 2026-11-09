@@ -28,6 +28,14 @@ for (const scheme of ["light", "dark"] as const) {
     expect(onMap).not.toBe("none");
     const keyLine = page.getByTestId("key-line");
     await expect(keyLine.locator('[data-key-item="heuristic"]')).toContainText("matched by name");
+    // a screen reader hears a list of marks, each with its look in words, not one run-on sentence
+    await expect(keyLine).toHaveAccessibleName("Key to this map's lines");
+    await expect(keyLine.getByRole("listitem").filter({ hasText: "matched by name" })).toHaveText(
+      "dashed arrow: matched by name",
+    );
+    await expect(keyLine.locator('[data-key-item="authored"]')).toHaveText(
+      "thick purple arrow: added by the author, checked against the code",
+    );
     expect(await dash(keyLine.locator('[data-key-item="heuristic"] line'))).toBe(onMap);
     // an authored arrow beside it stays solid
     expect(await dash(keyLine.locator('[data-key-item="authored"] line'))).toBe("none");

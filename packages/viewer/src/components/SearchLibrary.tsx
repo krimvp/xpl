@@ -11,6 +11,7 @@ import type {
 } from "../search-worker.js";
 import { containedGuides } from "../library.js";
 import { ServerApi, messageOf } from "../data.js";
+import { keepTabInside } from "../focusTrap.js";
 import { useStore, useViewerState } from "../hooks.js";
 import { renderInline } from "../markdown.js";
 import "../search.css";
@@ -196,22 +197,7 @@ export function SearchLibrary({ onClose }: { onClose: () => void }) {
       event.preventDefault();
       onClose();
     }
-    if (event.key === "Tab") {
-      const focusable = [
-        ...panel.current!.querySelectorAll<HTMLElement>(
-          "input:not(:disabled), button:not(:disabled), a[href]",
-        ),
-      ];
-      const first = focusable[0],
-        last = focusable.at(-1);
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last?.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first?.focus();
-      }
-    }
+    keepTabInside(event, panel.current);
   };
   const open = (event: MouseEvent<HTMLAnchorElement>, guide: string, hit?: SearchHit) => {
     const switching = guide !== current;

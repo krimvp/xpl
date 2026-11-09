@@ -11,7 +11,7 @@ import { DiagramText } from "./DiagramText.js";
  * transparent hit area covering its label and arrow, so clicking anywhere on the row selects it.
  */
 import type { ExplainerModel, SequenceView as SequenceViewData } from "@xpl/core";
-import { useMemo, type KeyboardEvent, type MouseEvent } from "react";
+import { useMemo, useSyncExternalStore, type KeyboardEvent, type MouseEvent } from "react";
 import {
   ARM_TOP,
   frameLabelWidth,
@@ -36,6 +36,25 @@ import {
   PRESENT_MAX_FIT_ZOOM,
   PRESENT_READABLE_ZOOM,
 } from "./PanZoom.js";
+
+/**
+ * On a laptop, a sequence a little wider than its pane at `READABLE_ZOOM` starts at the zoom that shows all
+ * its lifelines, down to this (13-unit words at about 9px): it is cut only at the bottom, where the reader
+ * scrolls on. A phone (`PHONE_MAX` px or less) keeps its 10px floor and pans across.
+ */
+const SEQUENCE_WIDTH_ZOOM = 0.7;
+const PHONE_MAX = 640;
+
+/** True while the window is a phone's width: read again when the window is resized. */
+function usePhoneWidth(): boolean {
+  return useSyncExternalStore(
+    (changed) => {
+      window.addEventListener("resize", changed);
+      return () => window.removeEventListener("resize", changed);
+    },
+    () => window.innerWidth <= PHONE_MAX,
+  );
+}
 
 export interface SequenceViewProps {
   view: SequenceViewData;
@@ -62,6 +81,7 @@ export function SequenceView({
   present = false,
 }: SequenceViewProps) {
   const store = useStore();
+  const phone = usePhoneWidth();
   const layout = useMemo(() => layoutSequence(view, model), [view, model]);
   const selected = useMemo(() => new Set(selection), [selection]);
   const matched = useMemo(() => new Set(matches), [matches]);
@@ -98,6 +118,7 @@ export function SequenceView({
       fitPadding={present ? PRESENT_FIT_PADDING : undefined}
       // Whole only when its words read at 10px or more (13.5 units at 0.75); else framed on the step.
       readableZoom={present ? PRESENT_READABLE_ZOOM : READABLE_ZOOM}
+      readableMin={present || phone ? undefined : SEQUENCE_WIDTH_ZOOM}
       focus={startBoxes.length > 0 ? startFocus : undefined}
       keepInView={startCore}
       overlay={(t, size) => <StickyHeads lifelines={layout.lifelines} t={t} paneWidth={size.w} />}

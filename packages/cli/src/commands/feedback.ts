@@ -10,7 +10,13 @@ import {
 import type { CommandSpec } from "../command.js";
 import { CliError } from "../errors.js";
 import { atomicWrite, jsonFile, parseJson, readTextFile } from "../fsutil.js";
-import { importRequests, readRequests, recordOutcomes } from "../requests.js";
+import {
+  importRequests,
+  isOpenRequest,
+  readRequests,
+  recordOutcomes,
+  requestLines,
+} from "../requests.js";
 import { loadExplainer, openWorkspace } from "../repo.js";
 
 export const feedbackCommand: CommandSpec = {
@@ -59,7 +65,7 @@ export const feedbackCommand: CommandSpec = {
       const file = parseFeedbackFile(parseJson(readTextFile(path, "feedback"), path));
       if (file.requests.some((r) => r.explainer !== undefined && r.explainer !== loaded.name))
         throw new CliError("feedback names a different guide; import it with that guide's name");
-      imported = (await importRequests(ctx.root, file.requests)).imported;
+      imported = (await importRequests(ctx.root, file.requests, { dropDuplicates: true })).imported;
     }
     const queue = readRequests(ctx.root);
     if (queue.error) throw new CliError(queue.error);
@@ -118,11 +124,12 @@ export const feedbackCommand: CommandSpec = {
           ...(imported !== undefined
             ? [`Imported ${imported}; ${mine.length} stored request(s).`]
             : []),
-          ...requests.map(
-            (r) =>
-              `${r.id}  ${r.outcome.status}${r.contextStatus === "outdated" ? " (outdated context)" : ""}  ${r.kind} ${r.elementId}\n  ${r.outcome.reason}${r.contextReason ? `\n  ${r.contextReason}` : ""}`,
-          ),
-          "To act on the requests, start the code-explainer skill in your agent. Saving feedback starts nothing.",
+          ...requests.flatMap((r) => requestLines(r, r.contextReason)),
+          ...(requests.some(isOpenRequest)
+            ? [
+                "To act on the requests, start the code-explainer skill in your agent. Saving feedback starts nothing.",
+              ]
+            : []),
         ].join("\n"),
       );
     return 0;

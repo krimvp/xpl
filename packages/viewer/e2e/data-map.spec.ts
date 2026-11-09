@@ -87,7 +87,9 @@ test('a field\'s arrow is named "holds" on the map, its key line and its text vi
   // three arrows from rows, each named "holds" (not "references ×1")
   await expect(page.locator(".edge-label text", { hasText: /^holds$/ })).toHaveCount(3);
   await expect(page.locator(".edge-label text", { hasText: /references/ })).toHaveCount(0);
-  await expect(page.locator('[data-key-item="kind-holds"]')).toHaveText("a field holds this type");
+  await expect(page.locator('[data-key-item="kind-holds"]')).toHaveText(
+    "solid arrow, open head: a field holds this type",
+  );
   await page.getByRole("button", { name: "Text view" }).click();
   const text = page.getByRole("region", { name: "Diagram as text" });
   await expect(text.getByRole("list", { name: "Arrows" })).toContainText("DeadJob.job holds Job");
@@ -252,6 +254,19 @@ test("a selected table lists its rows' arrows and marks the tables it holds as l
   ]);
   await expect(byId(page, JOB)).toHaveClass(/is-related/);
   await expect(byId(page, QUEUE)).toHaveClass(/is-related/);
+});
+
+// a selected row listed no arrow at all, and the table it holds was not marked linked
+test("a selected row lists its own arrow and marks the table it holds as linked", async ({
+  page,
+}) => {
+  await openDataMap(page, "perspective=map");
+  await page.evaluate((id) => window.__xpl!.select([id]), `${DEAD}.job`);
+  await expect(page.getByTestId("map-connections").locator("li")).toHaveText([
+    "To Job holds · heuristic: matched by name",
+  ]);
+  await expect(byId(page, JOB)).toHaveClass(/is-related/);
+  await expect(byId(page, QUEUE)).not.toHaveClass(/is-related/);
 });
 
 // a clicked row showed only its name ("job"), not its table or its type

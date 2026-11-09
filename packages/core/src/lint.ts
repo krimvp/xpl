@@ -2685,19 +2685,10 @@ function placeholderChecks(lint: Linter, explainer: Explainer): void {
   walk(explainer, { elementId: "(explainer)", kind: "explainer", field: "" });
 }
 
-/** The checks of `xpl lint` on one explainer, in document order (see the file comment). */
 /** First words that show a box sentence does not start with a verb ("This file …", "The dispatcher …"). */
-const NOT_VERB_START = new Set([
-  "this",
-  "the",
-  "a",
-  "an",
-  "it",
-  "these",
-  "its",
-  "here",
-  "contains",
-]);
+const NOT_VERB_START = new Set(["this", "the", "a", "an", "it", "these", "its", "here"]);
+/** Verbs too vague to say what a part does for the project. */
+const VAGUE_START = new Set(["contains", "includes", "has", "handles", "manages"]);
 
 /**
  * `map-box`: the explain map's box rules, on every box a graph view draws with its summary (`boxText: "summary"`):
@@ -2716,9 +2707,23 @@ function mapBoxChecks(lint: Linter, explainer: Explainer): void {
     const id = str(node.id);
     if (id === undefined || !drawn.has(id)) continue;
     const label = str(node.label);
+    const own =
+      id
+        .replace(/^(?:file|dir):/, "")
+        .split("/")
+        .pop() ?? "";
     if (label !== undefined && !/\bTODO\b/.test(label)) {
       const count = words(mask(label).text).length;
-      if (count > LINT_LIMITS.mapLabelWords)
+      const bare = label.replace(/`/g, "").trim();
+      if (label.includes("`") || /\.\w{1,5}$/.test(bare) || bare === own)
+        lint.add(
+          { elementId: id, kind: "node", field: "label" },
+          "map-box",
+          excerpt(label),
+          "a file name: name what it does in 2-5 everyday words",
+          'name what the part does for the project ("Job queue", not `queue.rs`)',
+        );
+      else if (count > LINT_LIMITS.mapLabelWords)
         lint.add(
           { elementId: id, kind: "node", field: "label" },
           "map-box",
@@ -2731,18 +2736,28 @@ function mapBoxChecks(lint: Linter, explainer: Explainer): void {
     if (summary === undefined || summary.trim() === "" || /\bTODO\b/.test(summary)) continue;
     const plain = summary.replace(/`/g, "").trim();
     const first = plain.split(/\s+/)[0]!.replace(/[,:;]$/, "");
-    const file =
-      id
-        .replace(/^(?:file|dir):/, "")
-        .split("/")
-        .pop() ?? "";
+    const file = own;
+    const lower = first.toLowerCase();
+    const labelFirst = label?.replace(/`/g, "").trim().split(/\s+/)[0]?.toLowerCase();
     const problems: string[] = [];
     if (plain.length > LINT_LIMITS.mapSummaryChars)
       problems.push(`${plain.length} characters (more than ${LINT_LIMITS.mapSummaryChars})`);
-    if (
-      NOT_VERB_START.has(first.toLowerCase()) ||
+    // the skill's box sentences start with a verb in the present, third person: Keeps, Runs, Answers, Is, Has
+    if (VAGUE_START.has(lower))
+      problems.push(
+        `it starts with "${first}": say what it does for the project ("Keeps …", "Answers …")`,
+      );
+    else if (/(?:ing|ed)$/.test(lower) && lower.length >= 4)
+      problems.push(`it starts with "${first}", not a verb in the present`);
+    else if (labelFirst !== undefined && lower === labelFirst && !/s$/.test(lower))
+      problems.push(`it starts with "${first}", the label, not a verb`);
+    else if (
+      NOT_VERB_START.has(lower) ||
+      summary.trimStart().startsWith("`") ||
       first === file ||
-      (file.includes(".") && first === file.slice(0, file.lastIndexOf(".")))
+      (file.includes(".") && first === file.slice(0, file.lastIndexOf("."))) ||
+      !/s$/.test(lower) ||
+      /ss$/.test(lower)
     )
       problems.push(`it starts with "${first}", not a verb`);
     if (problems.length === 0) continue;
@@ -2756,6 +2771,7 @@ function mapBoxChecks(lint: Linter, explainer: Explainer): void {
   }
 }
 
+/** The checks of `xpl lint` on one explainer, in document order (see the file comment). */
 export function lintExplainer(explainer: Explainer, model?: ExplainerModel): LintResult {
   // the code's own words: the labels and ids of boxes and concepts, and the boxes and lifelines views show
   const own = [...list(explainer.nodes), ...list(explainer.concepts)].flatMap((item) => [

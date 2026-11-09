@@ -211,6 +211,22 @@ export function mergeFeedbackRequests(requests: readonly FeedbackRequest[]): Fee
   return [...merged.values()];
 }
 
+/**
+ * A pending request that asks the same thing as `request` under another id: the same guide, element, kind,
+ * note and code range, from the same snapshot. A reader who clicks "Save" twice saves one request.
+ */
+export function duplicateRequest(
+  requests: readonly FeedbackRequest[],
+  request: FeedbackRequest,
+): FeedbackRequest | undefined {
+  const key = (r: FeedbackRequest) =>
+    JSON.stringify([r.explainer, r.elementId, r.kind, r.note?.trim(), r.range, r.context]);
+  const wanted = key(request);
+  return requests.find(
+    (r) => r.id !== request.id && r.outcome.status === "pending" && key(r) === wanted,
+  );
+}
+
 /** Outdated context is reported separately, so importing an old result never discards its reason. */
 export function feedbackContextReason(
   request: FeedbackRequest,

@@ -205,6 +205,28 @@ describe("xpl draft path: nested calls of the same function", () => {
     expect(rec).toEqual(["wrap(wrap(n - 1) - 1)", "wrap(n - 1)"]);
   });
 
+  it("cuts long arguments to their names and the names of the calls in them", async () => {
+    const dir = await repo({
+      "a.ts": [
+        "export function delay(attempt: number, base: number, max: number): number {",
+        "  console.log(attempt);",
+        "  return Math.min(base * 2 ** attempt, max);",
+        "}",
+        "export function requeue(job: string, ms: number): void {",
+        "  console.log(job);",
+        "  console.log(ms);",
+        "}",
+        "export function retry(job: string, attempt: number): void {",
+        '  requeue(job, delay(attempt, Number("100"), Number("60000")));',
+        '  requeue(job, attempt > 3 ? Number("1") : Number("2") + Number("3"));',
+        "}",
+        "",
+      ].join("\n"),
+    });
+    const labels = sequence((await drafted(dir, "a.ts#retry")).patch).steps.map((s) => s.label);
+    expect(labels).toEqual(["requeue(job, delay(…))", "delay(attempt, Number(…), Number(…))"]);
+  });
+
   it("says which calls it left out when none is worth drawing", async () => {
     const dir = await repo({
       "a.ts": [
@@ -511,7 +533,11 @@ describe("xpl draft path: Go code that calls through an interface", () => {
       "calls file:internal/runner/runner.go -> file:internal/worker/pool.go",
     );
     // what implements what points the other way and answers another question: not on this map
-    expect(arrows.filter((a) => !a.startsWith("calls "))).toEqual([]);
+    expect(arrows.filter((a) => !a.startsWith("calls "))).toEqual([]); // each file box gets a summary to write, so "no TODO left" means no box is left without text
+    const summaries = new Map(patch.nodes!.map((n) => [n.id, n.summary]));
+    expect(files.include!.map((id) => summaries.get(id))).toEqual(
+      files.include!.map(() => "TODO: one sentence: what this file is for on this path."),
+    );
   });
 
   it("every sentence of a note that speaks to the author is a TODO, so lint stops it from reaching a reader", async () => {

@@ -12,12 +12,39 @@ import {
   type FeedbackStatus,
   type FeedbackAnswer,
   sameFeedbackContent,
+  duplicateRequest,
 } from "@xpl/core";
 import { CliError, errorMessage } from "./errors.js";
 import { atomicWrite, withRepositoryLock, jsonFile } from "./fsutil.js";
 import { EXPLAINER_DIR } from "./repo.js";
 
 export const REQUESTS_FILE = "requests.json";
+
+/** The reader's word for what a request asks. */
+const KIND_WORDS: Record<FeedbackRequest["kind"], string> = {
+  correct: "correction",
+  explain: "question",
+  expand: "more detail",
+};
+
+/** Requests a revision pass still has to act on. */
+export const isOpenRequest = (request: FeedbackRequest): boolean =>
+  request.outcome.status === "pending" || request.outcome.status === "unresolved";
+
+/**
+ * A request as `xpl feedback` and `xpl revise` print it: its id, status, kind and element, then the reader's
+ * note, what the author did with it, and, while it is still open, why its context is out of date.
+ */
+export function requestLines(request: FeedbackRequest, contextReason?: string): string[] {
+  const open = isOpenRequest(request);
+  const outdated = open && contextReason !== undefined;
+  return [
+    `${request.id}  ${request.outcome.status}${outdated ? " (outdated context)" : ""}  ${KIND_WORDS[request.kind]} ${request.elementId}`,
+    ...(request.note ? [`  ${JSON.stringify(request.note)}`] : []),
+    ...(request.outcome.status === "pending" ? [] : [`  ${request.outcome.reason}`]),
+    ...(outdated ? [`  ${contextReason}`] : []),
+  ];
+}
 export type QueuedRequest = FeedbackRequest;
 export function requestsPath(root: string): string {
   return join(root, EXPLAINER_DIR, REQUESTS_FILE);
@@ -83,10 +110,16 @@ async function mutate<T>(
 export async function importRequests(
   root: string,
   incoming: readonly FeedbackRequest[],
+  /** Keep one of the requests a reader saved twice (`duplicateRequest`), as an import from a page does. */
+  options: { dropDuplicates?: boolean } = {},
 ): Promise<{ imported: number; total: number }> {
   const checked = incoming.map(parseFeedbackRequest);
   return mutate(root, (requests) => {
-    const merged = mergeFeedbackRequests([...requests, ...checked]);
+    const fresh: FeedbackRequest[] = [];
+    for (const request of checked)
+      if (!options.dropDuplicates || !duplicateRequest([...requests, ...fresh], request))
+        fresh.push(request);
+    const merged = mergeFeedbackRequests([...requests, ...fresh]);
     const imported = merged.length - requests.length;
     requests.splice(0, requests.length, ...merged);
     return { imported, total: merged.length };

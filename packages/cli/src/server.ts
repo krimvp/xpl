@@ -42,6 +42,7 @@ import {
   artifactIdentity,
   applyUserEdits,
   UserEditError,
+  duplicateRequest,
   feedbackContextReason,
   parseFeedbackRequest,
 } from "@xpl/core";
@@ -767,7 +768,7 @@ export async function startViewServer(options: ViewServerOptions): Promise<ViewS
           }
           if (request.explainer !== undefined && request.explainer !== name)
             throw new HttpError(400, "feedback names a different guide");
-          await serial(() => importRequests(env.root, [request]));
+          await serial(() => importRequests(env.root, [request], { dropDuplicates: true }));
           const state = await loadState();
           const contextReason =
             feedbackContextReason(request, artifactIdentity(freshExplainer(state), state.index)) ??
@@ -776,7 +777,10 @@ export async function startViewServer(options: ViewServerOptions): Promise<ViewS
           checkRequestStore();
           sendJson(req, res, 201, {
             ok: true,
-            request: readRequests(env.root).requests.find((r) => r.id === request.id),
+            request: (() => {
+              const saved = readRequests(env.root).requests;
+              return saved.find((r) => r.id === request.id) ?? duplicateRequest(saved, request);
+            })(),
             ...(contextReason
               ? { contextStatus: "outdated", contextReason }
               : { contextStatus: "current" }),

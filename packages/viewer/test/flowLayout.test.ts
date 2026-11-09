@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 /**
  * How a flow is laid out for reading: the step numbers read left to right where a path
  * splits, the main path of a run of choices goes straight down, and a box is as tall as its words.
@@ -217,6 +218,40 @@ describe("a flow laid out for reading", () => {
     expect(routesThroughBoxes(layout)).toEqual([]);
   });
 
+  // zod's parse and safeParse: "yes" (step 5) sat above "no" (step 4), so the numbers ran upward
+  it("puts the ends of a choice in step order, left to right, or top to bottom when turned", async () => {
+    const choice = (yes: number, no: number, label: string, yesWord = "yes", noWord = "no") => ({
+      label,
+      shape: "decision" as const,
+      next: [
+        { step: `f:${yes}`, label: yesWord },
+        { step: `f:${no}`, label: noWord },
+      ],
+    });
+    const end = (label: string) => ({ label, shape: "terminal" as const });
+    const flow = flowOf([
+      choice(2, 6, "Choose parse or safeParse", "parse", "safeParse"),
+      { label: "parse runs the schema" },
+      choice(5, 4, "parse found issues?"),
+      end("Return parsed value"),
+      end("Construct and throw error"),
+      { label: "safeParse runs the schema" },
+      choice(9, 8, "safeParse found issues?"),
+      end("Return successful result"),
+      { label: "Return failed result" },
+      choice(11, 12, "Does caller read error?"),
+      end("Build and cache error"),
+      end("Keep failed result"),
+    ]);
+    for (const direction of ["DOWN", "RIGHT"] as const) {
+      const layout = await layoutFlow(flow, { direction });
+      const at = (id: string) => (direction === "DOWN" ? box(layout, id).x : box(layout, id).y);
+      expect([at("f:4") < at("f:5"), at("f:8") < at("f:9")]).toEqual([true, true]);
+      expect(overlaps(layout)).toEqual([]);
+      expect(routesThroughBoxes(layout)).toEqual([]);
+    }
+  });
+
   it("makes a box with a one-line label shorter than one with three lines", async () => {
     const layout = await layoutFlow(
       flowOf([
@@ -283,9 +318,87 @@ describe("a long flow in a laptop's pane", () => {
     expect(routesThroughBoxes(layout)).toEqual([]);
   });
 
+  it("sets it in rows, never in columns, in any landscape pane", async () => {
+    // (columns cut between choices send each choice's exits down, across and back up past each other)
+    // (a still picture names the function under every box: larger diamonds)
+    const flow = choices();
+    const actors = new Map(flow.stages.map(({ step }) => [step.id, "updateModules"]));
+    for (const wide of [pane, { width: 1160, height: 660 }, { width: 1200, height: 770 }]) {
+      const layout = await layoutFlowFitting(flow, wide, { actors });
+      expect(layout.direction).toBe("RIGHT");
+    }
+  });
+
+  it("is one column top to bottom in an upright phone pane: the reader scrolls one way", async () => {
+    const layout = await layoutFlowFitting(choices(), { width: 372, height: 700 });
+    expect([layout.direction, layout.parts, layout.column]).toEqual(["DOWN", 1, true]);
+    // narrow boxes in step order, the arrows that skip a step in lanes beside them: it fits across the
+    // phone with its words at 10px
+    const tops = layout.children.map((c) => c.y);
+    expect(tops).toEqual([...tops].sort((a, b) => a - b));
+    expect(layout.width * (10 / 13)).toBeLessThanOrEqual(372);
+  });
+
+  // a state's two moves out of it to later states had their words on top of each other
+  it("in that column, keeps apart the words of two arrows out of one box into the lanes", async () => {
+    const flow = flowOf([
+      {
+        label: "Running on a worker",
+        next: [
+          { step: "f:2", label: "It succeeded" },
+          { step: "f:3", label: "It failed, no retries left" },
+          { step: "f:4", label: "It failed, retries left" },
+        ],
+      },
+      { label: "Done", next: [] },
+      { label: "Failed", next: [] },
+      { label: "Waiting", next: [] },
+    ]);
+    const layout = await layoutFlow(flow, { column: true });
+    const words = layout.edges.flatMap((edge) => edge.labels);
+    expect(words).toHaveLength(3);
+    const clash = words.filter((a, i) =>
+      words
+        .slice(i + 1)
+        .some(
+          (b) =>
+            a.x < b.x + b.width &&
+            b.x < a.x + a.width &&
+            a.y < b.y + b.height &&
+            b.y < a.y + a.height,
+        ),
+    );
+    expect(clash).toEqual([]);
+    expect(routesThroughBoxes(layout)).toEqual([]);
+  });
+
   it("keeps a flow that fits top to bottom in one column", async () => {
     const layout = await layoutFlowFitting(flowOf([{}, {}, {}]), pane);
     expect([layout.direction, layout.parts]).toEqual(["DOWN", 1]);
+  });
+
+  // two arrows out of one choice ran side by side, 7 px apart, across the whole width: they read as dividers
+  it("runs the arrows from one box to the next row as one trunk, other boxes' arrows a lane apart", async () => {
+    const layout = await layoutFlow(choices(), { direction: "RIGHT", parts: 2 });
+    const row = (id: string) => (box(layout, id).y > box(layout, "f:1").y + 150 ? 1 : 0);
+    const wraps = layout.edges.filter(
+      (edge) => edge.to !== undefined && row(edge.from) !== row(edge.to),
+    );
+    expect(wraps.length).toBeGreaterThan(1);
+    // each one's longest run across the flow: its height
+    const across = (edge: FlowLayout["edges"][number]) => {
+      const points = edge.sections.flatMap((s) => [s.startPoint, ...s.bendPoints, s.endPoint]);
+      const runs = points
+        .slice(1)
+        .map((p, i) => ({ y: p.y, length: Math.abs(p.x - points[i]!.x) }));
+      return runs.sort((a, b) => b.length - a.length)[0]!.y;
+    };
+    for (const a of wraps)
+      for (const b of wraps) {
+        if (a === b) continue;
+        if (a.from === b.from) expect(across(a)).toBe(across(b));
+        else expect(Math.abs(across(a) - across(b))).toBeGreaterThanOrEqual(16);
+      }
   });
 
   it("runs the arrow from the end of one row to the start of the next between the rows", async () => {
@@ -385,5 +498,38 @@ describe("a flow of states (xpl draft states)", () => {
     expect(stateRoles({ ...view, scope: { root: "repo", depth: 2 } } as never)).toBeUndefined();
     const one = { ...view, steps: view.steps.map((s) => ({ ...s, from: T, to: T })) };
     expect(stateRoles(one as never)).toBeUndefined();
+  });
+
+  // each guard below, removed, drew an ordinary flow as pills and plain boxes with no step numbers
+  it("finds none when a state leads straight to another state: its steps do not take turns", () => {
+    const steps = [
+      step("queued", T, ["running"]),
+      step("running", T, ["start"]),
+      step("start", start, ["done"]),
+      step("done", T, []),
+    ];
+    expect(stateRoles({ ...view, participants: [T, start], steps } as never)).toBeUndefined();
+  });
+
+  it("finds none when the flow does not start at its first participant", () => {
+    const scope = { ...view.scope, entryPoints: ["src/other.ts#Runner"] };
+    expect(stateRoles({ ...view, scope } as never)).toBeUndefined();
+  });
+
+  it("finds none when a step calls from one part to another", () => {
+    const steps = view.steps.map((s) => (s.id === "start" ? { ...s, to: T } : s));
+    expect(stateRoles({ ...view, steps } as never)).toBeUndefined();
+  });
+
+  it("finds none in Cobra's command execution, whose steps stay in two functions", () => {
+    const patch = JSON.parse(
+      readFileSync(
+        new URL("../../../site/examples/cobra/cobra-command-execution.patch.json", import.meta.url),
+        "utf8",
+      ),
+    ) as { views: { id: string }[] };
+    const execution = patch.views.find((v) => v.id === "view:execution");
+    expect(execution).toBeDefined();
+    expect(stateRoles(execution as never)).toBeUndefined();
   });
 });

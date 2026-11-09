@@ -54,6 +54,7 @@ import {
   type LayoutEdge,
   type LayoutNode,
   SUMMARY_LINE,
+  codeRuns,
 } from "../layout/graphLayout.js";
 import { GENERATED_MAP_ID, layoutView } from "../workspace.js";
 import {
@@ -255,8 +256,8 @@ function anchoredRows(layout: Pick<GraphLayout, "nodes">, anchors: readonly Code
 }
 
 /**
- * On a data map, the tables a selected table holds or is held by (through its rows' arrows), marked as linked
- * the way a selected box's neighbours are.
+ * On a data map, the tables a selected table or row holds or is held by (through the rows' arrows), marked as
+ * linked the way a selected box's neighbours are.
  */
 function heldTables(
   layout: Pick<GraphLayout, "nodes" | "edges">,
@@ -277,8 +278,10 @@ function heldTables(
   for (const edge of allEdgesOf(layout)) {
     const from = tableOf.get(edge.from) ?? edge.from;
     const to = tableOf.get(edge.to) ?? edge.to;
-    if (selected.has(from) && tableOf.has(from) && to !== from) out.add(to);
-    if (selected.has(to) && tableOf.has(to) && to !== from) out.add(from);
+    if (to === from) continue;
+    // a selected table, or the selected row the arrow leaves from or ends on
+    if (selected.has(edge.from) || (selected.has(from) && tableOf.has(from))) out.add(to);
+    if (selected.has(edge.to) || (selected.has(to) && tableOf.has(to))) out.add(from);
   }
   return [...out];
 }
@@ -982,10 +985,10 @@ function BoxShape({ node, marks }: { node: LayoutNode; marks: Marks }) {
       className={`node kind-${node.kindClass}${role}${node.sketch ? " is-sketch" : ""}${container ? " is-container" : ""}${node.rows ? " is-table" : ""}${zoomable ? " is-zoomable" : ""}${stateClasses(node.id, marks)}`}
       data-element-id={still ? undefined : node.id}
       transform={`translate(${node.x} ${node.y})`}
-      // a container holds boxes (buttons): it is a group, and says when it is the one picked
+      // a container holds boxes (buttons): it is a group, and says when it is the one selected
       role={still ? undefined : container ? "group" : "button"}
       tabIndex={still ? undefined : 0}
-      aria-label={still ? undefined : container && selected ? `${name}, picked` : name}
+      aria-label={still ? undefined : container && selected ? `${name}, selected` : name}
       aria-pressed={still || container ? undefined : selected}
       // a table of a data map shows its rows or is folded to its header ("-" and "+")
       aria-expanded={still ? undefined : node.rows ? true : unfoldable ? false : undefined}
@@ -1337,10 +1340,19 @@ function LeafText({
       )}
       {lines.length > 0 && (
         <text className="box-summary" x={x} y={(two ? badgeY + 16 : labelY) + SUMMARY_LINE}>
-          {lines.map((line, i) => (
+          {codeRuns(lines).map((runs, i) => (
             <tspan key={i} x={x} dy={i === 0 ? 0 : SUMMARY_LINE}>
+              {runs.map((run, n) =>
+                run.code ? (
+                  <tspan key={n} className="box-code">
+                    {run.text}
+                  </tspan>
+                ) : (
+                  run.text
+                ),
+              )}
               {/* the space keeps the words apart when the text is read or copied as one */}
-              {i < lines.length - 1 ? `${line} ` : line}
+              {i < lines.length - 1 ? " " : ""}
             </tspan>
           ))}
         </text>

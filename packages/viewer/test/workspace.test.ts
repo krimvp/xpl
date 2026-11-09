@@ -16,6 +16,7 @@ import {
   hasFlowTab,
   hasMapTab,
   layoutView,
+  startOrder,
   topicElements,
   workspaceMap,
 } from "../src/workspace.js";
@@ -284,5 +285,20 @@ describe("the Flow tab", () => {
     expect(tabsLine({ map: hasMapTab(state), flow: hasFlowTab(state) })).toBe(
       "Tour: the steps, in order. Map: the parts and what each calls. Code: the files.",
     );
+  });
+});
+
+describe("where a map starts", () => {
+  it("skips a tour step about every box of the map: it names no part to start on", () => {
+    const bundle = makeBundle();
+    const steps = bundle.explainer.tours[0]!.steps;
+    // a draft map's first step names all of its boxes, the next one the box to start from
+    steps.unshift(
+      { id: "all", view: "view:overview", focus: ["grp:core", "file:config/c.yaml"] },
+      { id: "start", view: "view:overview", focus: ["file:config/c.yaml"] },
+    );
+    const model = new ExplainerModel(bundle.explainer, bundle.index);
+    const view = bundle.explainer.views.find((v) => v.id === "view:overview") as GraphView;
+    expect(startOrder(model, view, "tour:demo")[0]).toBe("file:config/c.yaml");
   });
 });

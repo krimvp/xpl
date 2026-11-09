@@ -338,7 +338,7 @@ describe("xpl status: stale derived-edge overlays", () => {
       ).code,
     ).toBe(0);
     const before = await xpl(dir, "status", "demo");
-    expect(before.out).not.toContain("stale edge overlays");
+    expect(before.out).not.toContain("stale arrow overlays");
 
     const moved = await applyStdin(dir, {
       views: [
@@ -351,9 +351,9 @@ describe("xpl status: stale derived-edge overlays", () => {
     });
     expect(moved.code, moved.out).toBe(0);
     const { out } = await xpl(dir, "status", "demo");
-    expect(out).toContain("warning: stale edge overlays (1):");
+    expect(out).toContain("warning: stale arrow overlays (1):");
     expect(out).toContain(`  ${OVERLAY}`);
-    expect(out).toContain("Re-create them on the current ids");
+    expect(out).toContain("Write the text again on the current ids");
     const { json } = await xplJson<any>(dir, "status", "demo");
     expect(json.staleOverlays).toEqual([OVERLAY]);
     // the current id of that edge is listed for the view, ready for a new overlay
@@ -393,7 +393,7 @@ describe("xpl status: stale derived-edge overlays", () => {
 
   it("an explainer without derived-edge overlays has no such section", async () => {
     const { out } = await xpl(demo, "status", "demo");
-    expect(out).not.toContain("stale edge overlays");
+    expect(out).not.toContain("stale arrow overlays");
     const { json } = await xplJson<any>(demo, "status", "demo");
     expect(json.staleOverlays).toEqual([]);
   });

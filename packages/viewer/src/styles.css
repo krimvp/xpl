@@ -885,6 +885,29 @@ code {
   }
 }
 
+/* a11y: a short, narrow screen (a laptop at 200% zoom: 720x450 or 640x360 CSS pixels) keeps the reading
+   header to one row: the logo goes, the title gives way, the buttons are a little tighter. The diagram
+   gets the height a second row took. */
+@media (max-height: 560px) and (max-width: 1100px) {
+  .header.is-reading {
+    flex-wrap: nowrap;
+    column-gap: 6px;
+    padding-inline: 8px;
+  }
+  .header.is-reading .logo {
+    display: none;
+  }
+  .header.is-reading .brand {
+    flex: 0 1 auto;
+  }
+  .header.is-reading .btn {
+    padding: 3px 8px;
+  }
+  .header.is-reading .workspace-tabs button {
+    padding: 5px 8px;
+  }
+}
+
 .tab-icon {
   flex: none;
   width: 13px;
@@ -1609,6 +1632,18 @@ code {
   stroke-width: 1.6;
 }
 
+/* the Key's move: an arrow with a chip on it, as a flow of states draws one */
+.lg-move-line {
+  stroke: var(--edge);
+  stroke-width: 1.6;
+}
+.lg-move-head {
+  fill: var(--edge);
+}
+.legend-panel .flow-transition {
+  cursor: default;
+}
+
 .lg-edge path {
   fill: var(--edge);
 }
@@ -1880,6 +1915,12 @@ code {
   font-size: 12.5px;
   font-weight: 400;
   fill: var(--muted);
+}
+
+/* A code span in a box's summary (its backticks dropped): the code font, as the parts panel shows it. */
+.node .box-summary .box-code {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
 }
 
 /* A data-model table (GraphView.boxText "members"): the type's header, then one row per field. A row is a box
@@ -3911,6 +3952,17 @@ code {
   }
 }
 
+/* present: no code on screen (PresentMode `data-code`): the diagram takes the code column's width. */
+.present[data-code="none"],
+.present[data-code="none"][data-split],
+.present[data-code="none"][data-room],
+.present[data-code="none"][data-room][data-split="wide"][style] {
+  grid-template-columns: minmax(0, 1fr);
+}
+.present[data-code="none"] > .present-right {
+  display: none;
+}
+
 /* present: the Edit menu (a presenter's tools, not the audience's) shows once the mouse moves over the
    page, or when it has the keyboard focus, like the zoom buttons. */
 .app:has(> .present:not([data-pointer])) .header .edit-menu:not(:focus-within) {
@@ -3978,10 +4030,16 @@ code {
 }
 
 /* present: the zoom toolbar sits in the diagram's title bar (PanZoom ToolbarSlot), off the picture: "Fit all"
-   never covers a box, fitted or not. It keeps its width while hidden, so the title does not move. */
+   never covers a box, fitted or not. While it is hidden it takes no room (it is still a Tab stop): the
+   question has the bar's width, not the few letters the toolbar left it. The title stays where it is. */
 .present .caption-tools {
+  position: relative;
   flex: none;
   margin-left: auto;
+}
+.present:not([data-pointer]) .pz-toolbar:not(:focus-within):not(:has(> .pz-fit.is-cue)) {
+  position: absolute;
+  right: 0;
 }
 .present .pz-toolbar {
   position: static;
@@ -4023,6 +4081,7 @@ code {
 }
 .present:not([data-pointer]) .pz-toolbar:has(> .pz-fit.is-cue):not(:focus-within) > :not(.pz-fit) {
   visibility: hidden;
+  position: absolute;
 }
 
 /* present: a lower level names its parent box once ("xpl ›"), not every level above it: the title
@@ -4882,6 +4941,22 @@ code {
 .review-dialog select[multiple] {
   min-height: 100px;
 }
+/* the fields one under the other, with room between them; the button keeps its own width */
+.review-fields {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  margin-block: 16px;
+}
+.review-fields > label,
+.review-fields > p {
+  align-self: stretch;
+  margin: 0;
+}
+.review-dialog p {
+  margin-block: 0 10px;
+}
 .review-dialog [data-testid="review-inspection"] {
   overflow-wrap: anywhere;
 }
@@ -5343,6 +5418,7 @@ code {
   gap: 2px 14px;
   margin: 0;
   padding: 5px 12px;
+  list-style: none;
   border-bottom: 1px solid var(--border);
   background: var(--canvas);
   color: var(--muted);
@@ -5547,6 +5623,19 @@ code {
   background: var(--panel);
   font-size: 11px;
   font-weight: 700;
+}
+/* a flow of states: a state's mark is a small pill, a move's an arrow; neither is numbered */
+.parts-number.is-role:empty {
+  min-width: 22px;
+  height: 12px;
+  margin-top: 4px;
+  border-width: 2px;
+}
+.parts-number.is-role:not(:empty) {
+  border: none;
+  background: none;
+  color: var(--muted);
+  font-size: 14px;
 }
 .parts-outside {
   margin: 12px 0 0;

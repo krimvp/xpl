@@ -310,7 +310,7 @@ Repair these findings, or use --draft for a labelled preview.`,
     const embedded = Object.keys(collected.files).length;
     if (bytes > LARGE_BUNDLE_BYTES) {
       ctx.warn(
-        `the page is ${formatBytes(bytes)}: a page this large opens slowly and is hard to send${collected.choice === "referenced" ? "" : "; --files referenced embeds only the files the explainer points at"}`,
+        `the page is ${formatBytes(bytes)}: a page this large opens slowly and is hard to send${collected.choice === "referenced" ? "" : "; --files referenced embeds only the files the guide points at"}`,
       );
     }
 

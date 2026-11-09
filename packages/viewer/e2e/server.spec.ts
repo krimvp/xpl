@@ -495,8 +495,9 @@ test("feedback typed under Explain this is queued as the note, and the change co
   await page.getByRole("button", { name: "Send to your agent" }).click();
   await expect(page.locator(".explain-note")).toContainText("Saved for later");
   expect(recorded.posts).toHaveLength(1);
+  // a typed note is saved as a question
   expect(recorded.posts[0]).toMatchObject({
-    kind: "expand",
+    kind: "explain",
     elementId: "concept:retry-policy",
     note: "Too long: one sentence is enough.",
     view: "view:dispatch",
@@ -703,7 +704,7 @@ test("a managed page shows backend unavailability, refuses another service, and 
   await page.getByRole("button", { name: /^Feedback/ }).click();
   const panel = page.getByRole("dialog", { name: "Reader feedback" });
   await panel.getByLabel("Feedback note").fill("Manual revision after stop.");
-  await panel.getByRole("button", { name: "Save for later", exact: true }).click();
+  await panel.getByRole("button", { name: "Save for the author", exact: true }).click();
   await expect(panel.getByRole("status")).toContainText("Saved in this browser");
   await panel.getByRole("button", { name: "Close feedback" }).click();
   await openEditMenu(page);

@@ -196,6 +196,23 @@ const SUMMARY_LINES = 3;
 const SUMMARY_BOX_WIDTH = 300;
 
 /**
+ * A box summary's lines (`wrapText`, backticks kept) as runs of plain words and of code: a run between
+ * backticks is code, also when the span goes on to the next line. The backticks are dropped: the code is
+ * drawn in the code font, as the parts panel and Details show it.
+ */
+export function codeRuns(lines: readonly string[]): { text: string; code: boolean }[][] {
+  let code = false;
+  return lines.map((line) => {
+    const runs: { text: string; code: boolean }[] = [];
+    line.split("`").forEach((text, i) => {
+      if (i > 0) code = !code;
+      if (text) runs.push({ text, code });
+    });
+    return runs;
+  });
+}
+
+/**
  * `text` wrapped at word boundaries into lines no wider than `width`, at most `max` of them; the last line of a
  * longer text is cut and ends in "…". A word longer than a line is cut too.
  */

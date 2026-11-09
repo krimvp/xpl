@@ -122,7 +122,7 @@ export function parseCommandArgs(
     throw new UsageError(
       near.length > 0
         ? `unknown option ${unknown[1]}. Did you mean: ${near.map((n) => `--${n}`).join(", ")}?`
-        : `unknown option ${unknown[1]} (a value that starts with "-" must come after "--")`,
+        : `unknown option ${unknown[1]}. A value that starts with "-" goes after "--".`,
     );
   }
   const given = parsed.positionals;

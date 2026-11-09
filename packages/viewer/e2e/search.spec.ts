@@ -91,6 +91,11 @@ test("offline library searches supplied source and prose, opens exact links and 
     await page.getByRole("button", { name: "Search and guides" }).click();
     // what the page leaves out is said in plain words, behind one disclosure
     const limits = panel.getByTestId("search-limits");
+    // (folded: the limits are a click away, not in the way of the results)
+    await expect(limits).not.toHaveAttribute("open");
+    await expect(limits.locator("li").first()).toBeHidden();
+    await limits.locator("summary").click();
+    await expect(limits.locator("li").first()).toBeVisible();
     await expect(limits).toContainText("This page does not say which code xpl could read.");
     await expect(limits).toContainText("may be one it left out");
     await expect(limits).toContainText("files are not in this page, so their code is not searched");

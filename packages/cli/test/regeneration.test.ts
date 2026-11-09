@@ -359,7 +359,7 @@ describe("3. backoff is renamed to delay in the requeue call and its declaration
 
   it("prints both lists in the text report", async () => {
     const text = await xpl(r.dir, "resolve", NAME);
-    expect(text.out).toContain("anchors: 16 (ok 12, moved 0, drifted 4, missing 0)");
+    expect(text.out).toContain("code links: 16 (ok 12, moved 0, drifted 4, missing 0)");
     expect(text.out).toContain("drifted llm elements to re-explain (3):");
     expect(text.out).toContain(`  ${DISPATCH}  (node)  [keep userFields: summary]`);
     expect(text.out).toContain("  dispatch:3  (step in view:dispatch)");

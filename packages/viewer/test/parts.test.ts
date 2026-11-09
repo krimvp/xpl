@@ -73,7 +73,7 @@ describe("the parts of a diagram in words", () => {
     const parts = mapParts(graph, overview, model);
     expect(parts.boxes.map((box) => box.links)).toEqual([
       ["implements an interface in c.yaml"],
-      ["has an interface implemented by Core"],
+      ["is implemented in Core"],
     ]);
   });
 
@@ -100,7 +100,55 @@ describe("the parts of a diagram in words", () => {
     graph.edges = [edge("embeds a type in")];
     expect(mapParts(graph, overview, model).boxes.map((box) => box.links)).toEqual([
       ["embeds a type in c.yaml"],
-      ["has a type embedded by Core"],
+      ["is embedded in Core"],
+    ]);
+  });
+
+  // the map draws a row's type as its table is named there; the list said the code's words beside it
+  it("names a row's type as the map names its table: qualified where two types share a name", () => {
+    const { model, overview } = world();
+    const graph = deriveGraph(overview, model);
+    const node = (id: string, label: string, more: object = {}) => ({
+      id,
+      label,
+      kind: "symbol" as const,
+      container: false,
+      ...more,
+    });
+    graph.nodes = [
+      node("sym:runner.go#Runner", "Runner", { container: true, rows: true }),
+      node("sym:runner.go#Runner.cfg", "cfg", {
+        parent: "sym:runner.go#Runner",
+        row: 0,
+        memberType: "Config",
+      }),
+      node("sym:runner.go#Config", "runner.Config", { container: true, rows: true }),
+      node("sym:runner.go#Config.Retry", "Retry", {
+        parent: "sym:runner.go#Config",
+        row: 0,
+        memberType: "config.Retry",
+      }),
+      node("sym:config/config.go#Retry", "Retry", { container: true, rows: true }),
+    ];
+    const holds = (from: string, to: string) => ({
+      id: `edge:references:${from}->${to}`,
+      from,
+      to,
+      kind: "references" as const,
+      label: "holds",
+      count: 1,
+      resolution: "heuristic" as const,
+      stored: false,
+      anchors: [],
+    });
+    graph.edges = [
+      holds("sym:runner.go#Runner.cfg", "sym:runner.go#Config"),
+      holds("sym:runner.go#Config.Retry", "sym:config/config.go#Retry"),
+    ];
+    const rows = mapParts(graph, overview, model).boxes.filter((box) => box.depth === 1);
+    expect(rows.map((box) => [box.label, box.kind, box.links])).toEqual([
+      ["cfg", "field · runner.Config", ["holds runner.Config"]],
+      ["Retry", "field · Retry", ["holds Retry"]],
     ]);
   });
 

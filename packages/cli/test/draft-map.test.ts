@@ -20,6 +20,8 @@ function shop(): string {
   const dir = makeTempDir("xpl-map-");
   writeFile(dir, "README.md", "# shop\n\nSells things.\n");
   writeFile(dir, "package.json", '{ "name": "shop" }\n');
+  // a file off the map (docs) that is not code: the note on files with no box leaves it out
+  writeFile(dir, "docs/notes.txt", "Notes.\n");
   writeFile(
     dir,
     "src/main.ts",
@@ -130,6 +132,40 @@ describe("xpl draft map", () => {
     ]);
     const lint = await xplJson<{ counts: Record<string, number> }>(dir, "lint", "shop");
     expect(Object.keys(lint.json.counts)).toEqual(["todo-left"]);
+  });
+
+  it("starts a newcomer at the shallowest file with a `main` function, else at the shallowest entry name", async () => {
+    const lastCode = async (entry: string) => {
+      const dir = makeTempDir("xpl-map-entry-");
+      writeFile(
+        dir,
+        "src/index.ts",
+        'import { run } from "../tools/run/start";\n\nexport function boot(): void {\n  run();\n}\n',
+      );
+      writeFile(
+        dir,
+        "tools/run/start.ts",
+        `export function run(): void {}\n\nexport function ${entry}(): void {\n  run();\n}\n`,
+      );
+      writeFile(
+        dir,
+        "src/cli/sub/main.ts",
+        `import { boot } from "../../index";\n\nexport function ${entry}(): void {\n  boot();\n}\n`,
+      );
+      expect((await xpl(dir, "index", "--precise", "off")).code).toBe(0);
+      expect((await xpl(dir, "new", "m")).code).toBe(0);
+      const json = await xplJson<DraftJson>(dir, "draft", "map", "m");
+      expect(json.code, json.out).toBe(0);
+      return json.json.patch.tours?.[0]?.steps?.at(-1)?.code;
+    };
+    // a `main` beats an entry name, and the shallower `main` beats the deeper one
+    expect(await lastCode("main")).toEqual([
+      { file: "tools/run/start.ts", symbol: "main", role: "definition" },
+    ]);
+    // no `main` anywhere: the shallowest entry name, at its first definition
+    expect(await lastCode("go")).toEqual([
+      { file: "src/index.ts", symbol: "boot", role: "definition" },
+    ]);
   });
 
   it("shows the requests of the screen code to the server routes as an arrow between their folders", async () => {

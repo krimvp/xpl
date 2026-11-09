@@ -226,7 +226,7 @@ test.describe("Explore with nothing selected gives the diagram the height", () =
    * The first selection brings the code and Details. Details goes into the code column, above the code: the
    * diagram keeps its height and re-fits once, to what was selected.
    */
-  test("a step selected in a long sequence: the pane keeps 700px or more, with its neighbours and both lifelines in view", async ({
+  test("a step selected in a long sequence: the pane keeps 700px or more, and the frame moves to the step and both its lifelines", async ({
     page,
   }) => {
     const problems = watchProblems(page);
@@ -252,16 +252,22 @@ test.describe("Explore with nothing selected gives the diagram the height", () =
       { width: 1440, height: 900 },
     );
     await expect(page.locator(".explore .lifeline-head").first()).toBeVisible();
-    await page.evaluate(() => window.__xpl!.select(["dispatch:8"]));
+    // the last step starts out of sight, as does the step before it
+    const away = ["dispatch:15", "dispatch:16"];
+    await expect
+      .poll(async () => (await explore(page)).cut.filter((id) => away.includes(id!)))
+      .toEqual(away);
+    await page.evaluate(() => window.__xpl!.select(["dispatch:16"]));
     await expect(page.locator(".right .editor-stack .pane").first()).toBeVisible();
     await expect(page.locator(".right .details")).toBeVisible();
     await expect.poll(async () => (await explore(page)).height).toBeGreaterThan(700);
-    const shown = (await explore(page)).cut;
-    expect(
-      ["dispatch:7", "dispatch:8", "dispatch:9", lanes[1], lanes[4]].filter((id) =>
-        shown.includes(id!),
-      ),
-    ).toEqual([]);
+    // it, the step before it and both its lifelines (main to worker) come into view
+    await expect
+      .poll(async () => {
+        const cut = (await explore(page)).cut;
+        return [...away, lanes[0], lanes[3]].filter((id) => cut.includes(id!));
+      })
+      .toEqual([]);
     expect(problems).toEqual([]);
   });
 
@@ -341,6 +347,22 @@ test.describe("a phone gives the diagram most of the screen", () => {
     expect(problems).toEqual([]);
   });
 
+  test("Map: Hide code after reading the code down the page takes the reader back up to the map", async ({
+    page,
+  }) => {
+    await page.goto(`${TS_BUNDLE.href}?perspective=map`);
+    const columns = page.locator(".workspace-columns");
+    await page.getByRole("button", { name: "Show code" }).click();
+    await byId(page, "file:src/worker.ts").first().click();
+    await expect(page.locator(".workspace-source .cm-editor").first()).toBeVisible();
+    await columns.evaluate((el) => (el.scrollTop = el.scrollHeight));
+    await expect.poll(() => columns.evaluate((el) => el.scrollTop)).toBeGreaterThan(300);
+    await page.getByRole("button", { name: "Hide code" }).click();
+    await expect(page.locator(".workspace-source")).toHaveCount(0);
+    await expect.poll(() => columns.evaluate((el) => el.scrollTop)).toBe(0);
+    await expect(page.locator(".workspace-caption h2")).toBeInViewport();
+  });
+
   test("the Code tab with no file open shows the whole file list, and a hint at its own height", async ({
     page,
   }) => {
@@ -411,7 +433,7 @@ test("a Tour step with no related files lists its own code, which opens it; a ph
 }) => {
   await page.goto(TS_BUNDLE.href);
   const place = page.getByTestId("step-code").getByRole("button").first();
-  await expect(place).toHaveText(/^runner\.ts ?lines? \d+/);
+  await expect(place).toHaveText(/^runner\.ts, lines? \d+/);
   await place.click();
   await expect(page.locator(".workspace-source .pane-file").first()).toContainText("runner.ts");
   await page.setViewportSize({ width: 390, height: 844 });
@@ -488,7 +510,20 @@ test.describe("Present keeps the 12px floor and widens the diagram column", () =
           focus: ["long:12"],
           note: "A longer note. ".repeat(12).trim(),
         },
-        { id: "s3", view: "view:four", focus: ["four:1"], note: "One line." },
+        // (with code on the slide: a step without any gives the diagram the whole width)
+        {
+          id: "s3",
+          view: "view:four",
+          focus: ["four:1"],
+          note: "One line.",
+          code: [
+            {
+              file: "src/worker.ts",
+              role: "definition",
+              resolved: { status: "ok", range: { startLine: 1, endLine: 8 } },
+            },
+          ],
+        },
       ],
     });
   };
@@ -699,6 +734,55 @@ test("a view's question shows its `code` as code, and a slide cut short gives al
   );
 });
 
+test("Present: the hidden zoom buttons leave the question the title bar's width", async ({
+  page,
+}) => {
+  await openVariant(
+    page,
+    (bundle: Loose) => {
+      const view = bundle.explainer.views.find((v: Loose) => v.id === "view:dispatch");
+      view.scope.question = "How does the runner hand a job to a worker?";
+    },
+    "?mode=present&step=2",
+    { width: 1280, height: 720 },
+  );
+  const question = page.locator(".present .caption-question");
+  await expect(question).toBeVisible();
+  await expect.poll(() => question.evaluate((el) => el.scrollWidth - el.clientWidth)).toBe(0);
+});
+
+test("Present: a step with no code gives the diagram the code's width, and a screen reader hears each step's title", async ({
+  page,
+}) => {
+  await openVariant(
+    page,
+    (bundle: Loose) => {
+      // step 1 shows a box with no code link of its own and names no code
+      const step = bundle.explainer.tours[0].steps[0];
+      step.focus = [];
+      delete step.code;
+    },
+    "?mode=present",
+    { width: 1440, height: 900 },
+  );
+  const present = page.getByTestId("present");
+  await expect(present).toHaveAttribute("data-step", "1");
+  await expect(present).toHaveAttribute("data-code", "none");
+  await expect(page.locator(".present-right")).toBeHidden();
+  // (the slide's padding is 8px on each side)
+  await expect
+    .poll(async () => Math.round((await page.locator(".present-left").boundingBox())!.width))
+    .toBe(1440 - 16);
+  const announce = page.getByTestId("tour-announce");
+  await expect(announce).toHaveText(/^Step 1 of 2: .+/);
+  await page.keyboard.press("ArrowRight");
+  await expect(present).toHaveAttribute("data-step", "2");
+  await expect(present).not.toHaveAttribute("data-code", "none");
+  await expect(page.locator(".present-right")).toBeVisible();
+  await expect(announce).toHaveText(/^Step 2 of 2: .+/);
+  await expect(announce).toHaveAttribute("aria-live", "polite");
+});
+
 test("the Code tab with a file open and nothing selected gives the code the whole width", async ({
   page,
 }) => {
@@ -726,6 +810,25 @@ test("J and K step through the Tour, and the list of steps says so", async ({ pa
   await page.keyboard.press("j");
   await expect.poll(step).toBe("t2");
   await page.keyboard.press("k");
+  await expect.poll(step).toBe("t1");
+  // a text field keeps its letters: real key presses into the search box
+  await page.getByRole("button", { name: "Search and guides" }).click();
+  const box = page.getByRole("searchbox");
+  await box.pressSequentially("jk");
+  await expect(box).toHaveValue("jk");
+  await expect.poll(step).toBe("t1");
+  await page.keyboard.press("Escape");
+  // ... and so do the code beside the Tour and the Edit menu
+  await page.locator(".workspace-location").getByRole("button", { name: "Show code" }).click();
+  const code = page.locator(".workspace-source .cm-content").first();
+  await code.click();
+  await expect(code).toBeFocused();
+  await page.keyboard.press("j");
+  await expect(page.getByTestId("guide")).toBeVisible();
+  await expect.poll(step).toBe("t1");
+  await page.getByTestId("edit-button").click();
+  await expect(page.getByRole("menuitem").first()).toBeFocused();
+  await page.keyboard.press("j");
   await expect.poll(step).toBe("t1");
 });
 

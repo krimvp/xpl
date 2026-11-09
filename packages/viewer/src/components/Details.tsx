@@ -523,13 +523,17 @@ function MapConnections({ id, graph }: { id: string; graph: DerivedGraph }) {
     ),
   );
   const tableOf = (end: string) => rows.get(end)?.parent ?? end;
-  const mine = (end: string) => tableOf(end) === id;
+  // a selected row has its own arrows; a selected table those of its rows
+  const mine = (end: string) => end === id || tableOf(end) === id;
   const arrows = [
     ...graph.edges
       .filter((edge) => mine(edge.from) !== mine(edge.to))
       .map((edge) => {
         const outgoing = mine(edge.from);
-        const row = (rows.get(edge.from) ?? rows.get(edge.to))?.label;
+        // (the selected row is not named again in its own list)
+        const row = [edge.from, edge.to]
+          .map((end) => rows.get(end))
+          .find((r) => r && r.id !== id)?.label;
         return {
           id: edge.id,
           direction: outgoing ? "To" : "From",

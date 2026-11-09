@@ -82,7 +82,7 @@ export function resolveTarget(
     default:
       throw new CliError(
         `"${input}" is not something the index knows: use repo, dir:<path>, file:<path> or sym:<file>#<symbol> ` +
-          `(ids of groups, concepts, edges and steps only exist inside an explainer)`,
+          `(the ids of groups, concepts, arrows and steps exist only in a guide)`,
       );
   }
 }

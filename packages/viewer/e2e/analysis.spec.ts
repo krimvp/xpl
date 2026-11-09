@@ -10,15 +10,16 @@ test("analysis coverage is in About this guide; a bar only when linked code was 
   await expect(page.getByTestId("analysis-coverage")).toHaveCount(0);
   await page.getByTestId("explanation-info").locator(":scope > summary").click();
   const notice = page.getByTestId("analysis-details");
+  // one plain line per language, in the diagrams' words (the analyser's report is for authors)
   await expect(notice.locator("summary")).toHaveText(
-    "Analysis coverage: 12 files; some analysis is limited or unavailable.",
+    "What xpl could read: 12 files. Some arrows are matched by name and can be missing.",
   );
   await notice.locator("summary").click();
-  await expect(notice).toContainText(
-    "Only file anchors are available; named symbols and references are unavailable.",
-  );
-  await expect(notice).toContainText("References matched by name are hints; some can be missing.");
-  await expect(notice).toContainText("typescript (typescript):");
+  await expect(notice.locator("li")).toHaveText([
+    "TypeScript (8 files): names in full; arrows matched by name, so some can be missing.",
+    "JSON, YAML (3 files): keys only; no arrows.",
+    "Text (1 file): the whole file only.",
+  ]);
   // a file the guide does not link to, left out of the analysis: no bar either
   await openVariant(page, (bundle) => {
     bundle.index.files.push({ path: "src/extra.ts", language: "typescript", hash: "x", lines: 1 });
@@ -41,9 +42,9 @@ test("legacy coverage stays unknown and failed analysis is visible", async ({ pa
   await expect(page.getByTestId("analysis-coverage")).toHaveCount(0);
   await page.getByTestId("explanation-info").locator(":scope > summary").click();
   const details = page.getByTestId("analysis-details");
-  await expect(details.locator("summary")).toHaveText("Analysis coverage unknown (legacy index).");
-  await details.locator("summary").click();
-  await expect(details).toContainText("an empty result does not prove there is none");
+  await expect(details.locator("summary")).toHaveText(
+    "What xpl could read was not recorded (an older index).",
+  );
   const notice = page.getByTestId("analysis-coverage");
   await openVariant(page, (bundle) => {
     bundle.index.analysis.push({
@@ -69,9 +70,11 @@ test("legacy coverage stays unknown and failed analysis is visible", async ({ pa
   await expect(notice).toContainText("src/runner.ts");
   await page.getByTestId("explanation-info").locator(":scope > summary").click();
   const report = page.getByTestId("analysis-details");
-  await expect(report.locator("summary")).toContainText("some analysis failed");
+  await expect(report.locator("summary")).toHaveText(
+    "What xpl could read: 12 files. The analysis failed in part.",
+  );
   await report.locator("summary").click();
-  await expect(report).toContainText("calls failed (0/1 files analyzed)");
-  await expect(report).toContainText("typescript (test-tool): calls failed");
+  await expect(report).toContainText("TypeScript (8 files):");
+  await expect(report).toContainText("the analysis failed in part");
   await expect(report).not.toContainText("/private/bin/tool");
 });

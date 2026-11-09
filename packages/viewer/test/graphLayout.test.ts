@@ -9,6 +9,7 @@ import {
 import { describe, expect, it } from "vitest";
 import {
   absoluteBoxes,
+  codeRuns,
   cutAt,
   fitScale,
   foldPins,
@@ -1532,5 +1533,26 @@ describe("a row's type names the table it holds as the map does", () => {
     );
     // (two mentions: which one is the table is not clear, so the code's words stay)
     expect(rowTypeText("Map<Job, Job>", "queue.Job")).toBe("Map<Job, Job>");
+  });
+});
+
+describe("a box summary's code", () => {
+  // "Keeps each `Job` in order" showed both backticks on the box, and the parts panel drew code
+  it("is drawn as runs of words and code, the backticks dropped, a span going on to the next line", () => {
+    expect(codeRuns(["Keeps each `Job` in", "order until `Worker", "takes` it."])).toEqual([
+      [
+        { text: "Keeps each ", code: false },
+        { text: "Job", code: true },
+        { text: " in", code: false },
+      ],
+      [
+        { text: "order until ", code: false },
+        { text: "Worker", code: true },
+      ],
+      [
+        { text: "takes", code: true },
+        { text: " it.", code: false },
+      ],
+    ]);
   });
 });

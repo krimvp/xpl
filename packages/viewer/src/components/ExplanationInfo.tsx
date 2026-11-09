@@ -129,7 +129,11 @@ export function ExplanationInfo() {
       {review && (
         <>
           <p>
-            {review.reviewer} (self-reported), reviewed {review.reviewedAt}. Text checked:{" "}
+            {review.reviewer} (self-reported), reviewed{" "}
+            {Number.isNaN(Date.parse(review.reviewedAt))
+              ? review.reviewedAt
+              : new Date(review.reviewedAt).toLocaleDateString(undefined, { dateStyle: "medium" })}
+            . Text checked:{" "}
             {review.scope.content === "all" ? "all of the guide" : review.scope.content.join(", ")}.
             Code checked against:{" "}
             {review.scope.source === "repository"

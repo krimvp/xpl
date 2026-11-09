@@ -1,8 +1,11 @@
 # Feedback and revision
 
-A reader can leave a correction, a request to explain something, or a request to show more. It goes on a
-selected box, arrow or step and on lines of code. In `xpl view`, feedback is saved to disk. In a saved HTML
-page, it stays in browser storage until you export it as JSON. Saving feedback never starts your agent.
+A reader can leave a question, a correction, or a request for more detail. It goes on a selected box, arrow
+or step and on lines of code. In `xpl view`, feedback is saved to disk. In a saved HTML page, nothing can
+answer: the panel's main button is **Save for the author**, the note stays in browser storage, and the reader
+exports it as JSON and sends the file to whoever gave them the page. The command below is under **For the
+author** in the panel, with the guide's name. Saving feedback never starts your agent. A reader sees the
+answer when you send them a new page: their saved requests do not update.
 
 ```sh
 xpl feedback retry-guide --import /path/to/feedback.json

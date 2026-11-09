@@ -166,7 +166,7 @@ function runner(ctx: Ctx, options: { skillDir?: string; timeoutMs?: number } = {
             () =>
               reject(
                 new CliError(
-                  `Claude timed out after ${timeoutMs} ms. Inspect provider/tool availability or raise service --job-timeout, then retry.`,
+                  `Claude timed out after ${timeoutMs / 1000} s. Check that Claude Code and its tools can run, or start the service with a longer \`xpl service start --job-timeout <seconds>\`, then retry.`,
                 ),
               ),
             timeoutMs,

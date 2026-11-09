@@ -6,7 +6,15 @@
  * ones that stay inside it. A directory's subtree is its files, a file's is its module scope plus all
  * its symbols, a symbol's is itself and its descendants.
  */
-import { baseName, dirOf, parseId, symId, type IndexModel, type IndexedSymbol } from "@xpl/core";
+import {
+  baseName,
+  CODE_LANGUAGES,
+  dirOf,
+  parseId,
+  symId,
+  type IndexModel,
+  type IndexedSymbol,
+} from "@xpl/core";
 import { kindWord, rangeText } from "./format.js";
 
 export interface OutlineNode {
@@ -250,7 +258,15 @@ export function buildOutline(model: IndexModel, id: string, opts: OutlineOptions
       node.more = ids.length;
       return;
     }
-    for (const childId of ids) {
+    for (let childId of ids) {
+      // a chain of folders that each hold one folder and nothing else (Maven's src/main/java/<package>) is
+      // one row, as IDEs show it, and one level of depth
+      for (;;) {
+        if (!childId.startsWith("dir:")) break;
+        const inner = childIds(model, childId, opts.keys, filter).ids;
+        if (inner.length !== 1 || !inner[0]!.startsWith("dir:")) break;
+        childId = inner[0]!;
+      }
       const child = makeNode(model, fans, childId, opts);
       fill(child, depth - 1);
       node.children.push(child);
@@ -300,6 +316,13 @@ export function outlineJson(node: OutlineNode): unknown {
     ...(node.hiddenKeys > 0 ? { hiddenKeys: node.hiddenKeys } : {}),
     ...(node.children.length > 0 ? { children: node.children.map(outlineJson) } : {}),
   };
+}
+
+/** Does the tree show a code file (not only settings and text)? */
+export function outlineHasCode(root: OutlineNode): boolean {
+  return (
+    (root.type === "file" && CODE_LANGUAGES.has(root.kind)) || root.children.some(outlineHasCode)
+  );
 }
 
 /** Does the tree contain nodes with children cut off by the depth limit / hidden config keys? */

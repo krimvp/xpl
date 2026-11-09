@@ -42,6 +42,36 @@ describe("xpl outline", () => {
     expect(out).toContain("[+n]: n children below the depth limit");
   });
 
+  it("shows code files by default in a Maven layout: one row for a chain of single folders, deeper until code shows", async () => {
+    const maven = makeTempDir("xpl-outline-maven-");
+    writeFile(maven, "src/main/java/app/A.java", "package app;\nclass A { void a() {} }\n");
+    writeFile(maven, "src/main/java/app/B.java", "package app;\nclass B {}\n");
+    writeFile(maven, "src/test/java/app/ATest.java", "package app;\nclass ATest {}\n");
+    // a file at the top that is not code does not stop the search for code
+    writeFile(maven, "README.md", "# app\n");
+    expect((await xpl(maven, "index", "--precise", "off")).code).toBe(0);
+    const { code, out } = await xpl(maven, "outline");
+    expect(code).toBe(0);
+    expect(out.split("\n").map((line) => line.replace(/(\S) {2}.*$/, "$1"))).toEqual([
+      "repo",
+      "  dir:src",
+      "    dir:src/main/java/app",
+      "      file:src/main/java/app/A.java",
+      "      file:src/main/java/app/B.java",
+      "    dir:src/test/java/app",
+      "      file:src/test/java/app/ATest.java",
+      "  file:README.md",
+      "",
+      "[+n]: n children below the depth limit (raise --depth, or --under <id> to open one)",
+    ]);
+    // an explicit depth is kept as asked
+    const two = await xpl(maven, "outline", "--depth", "2");
+    expect(two.out).toMatch(
+      /^ {4}dir:src\/main\/java\/app {2}dir {2}2 files {2}in=0 out=0 {2}\[\+2\]$/m,
+    );
+    expect(two.out).not.toContain("file:src");
+  });
+
   it("--under with --depth lists symbols with kind and line range", async () => {
     const { code, out } = await xpl(
       dir,
@@ -330,7 +360,7 @@ describe("xpl outline", () => {
       const { code, err } = await xpl(dir, "outline", "--kind", "meth");
       expect(code).toBe(2);
       expect(err).toContain(
-        'unknown symbol kind "meth" (expected: class, interface, function, method, type, variable, enum, key, other)',
+        'unknown symbol kind "meth" (expected: class, interface, function, method, type, variable, enum, key, other; Go: struct, field)',
       );
       expect((await xpl(dir, "outline", "--help")).out).toContain("--kind <k,...>");
     });

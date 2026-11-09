@@ -36,6 +36,8 @@ export function PartsPanel({ view, graph, matches }: PartsPanelProps) {
     () => (view.type !== "graph" ? viewReverseIndex(view, model) : undefined),
     [view, model],
   );
+  // a flow of states: its states and moves have no order, so the list has no numbers
+  const states = steps?.some((step) => step.role !== undefined) ?? false;
   const lit = new Set<string>(
     matches ??
       (state.cursor && reverse ? reverse.lookup(state.cursor.file, state.cursor.fromLine) : []),
@@ -61,10 +63,14 @@ export function PartsPanel({ view, graph, matches }: PartsPanelProps) {
   return (
     <section className="parts-panel" data-testid="parts-panel" aria-labelledby="parts-title">
       <h3 className="eyebrow parts-heading" id="parts-title">
-        {map ? "On this map" : "Steps, in order"}
+        {map ? "On this map" : states ? "States and moves" : "Steps, in order"}
       </h3>
       <p className="parts-hint">
-        {map ? "Click a box or an arrow to see its code." : "Click a step to see its code."}
+        {map
+          ? "Click a box or an arrow to see its code."
+          : states
+            ? "Click a state or a move to see its code."
+            : "Click a step to see its code."}
       </p>
       {map && (
         <>
@@ -126,7 +132,7 @@ export function PartsPanel({ view, graph, matches }: PartsPanelProps) {
         </>
       )}
       {steps && (
-        <ol className="parts-list is-steps" aria-label="Steps">
+        <ol className="parts-list is-steps" aria-label={states ? "States and moves" : "Steps"}>
           {steps.map((step) => (
             <li key={step.id}>
               <button
@@ -136,9 +142,15 @@ export function PartsPanel({ view, graph, matches }: PartsPanelProps) {
                 onClick={() => pick(step.id)}
                 {...hover(step.id)}
               >
-                <span className="parts-number" aria-hidden="true">
-                  {step.number}
-                </span>
+                {step.role ? (
+                  <span className="parts-number is-role" aria-hidden="true">
+                    {step.role === "state" ? "" : "→"}
+                  </span>
+                ) : (
+                  <span className="parts-number" aria-hidden="true">
+                    {step.number}
+                  </span>
+                )}
                 <span className="parts-name">{step.label}</span>
                 {step.from && step.to && (
                   <span className="parts-ends">

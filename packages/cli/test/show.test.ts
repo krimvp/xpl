@@ -231,7 +231,7 @@ describe("xpl show", () => {
     expect(dirAsFile.err).toContain("is a directory; use dir:src");
     const group = await xpl(dir, "show", "grp:scheduling");
     expect(group.code).toBe(1);
-    expect(group.err).toContain("only exist inside an explainer");
+    expect(group.err).toContain("exist only in a guide");
   });
 
   it("warns when the code changed since indexing, and still prints", async () => {

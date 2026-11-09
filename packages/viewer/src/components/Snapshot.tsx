@@ -7,7 +7,7 @@
  * Laying out a graph or a flow is asynchronous and not free, so a picture is only laid out once its
  * section is near the screen (an IntersectionObserver), and a layout is kept per view for the page's life.
  */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import {
   deriveGraph,
   repr,
@@ -32,6 +32,7 @@ import { FlowDiagram } from "./FlowDiagram.js";
 import { GraphPicture, useGraphChanges } from "./GraphView.js";
 import { SequencePicture, StickyHeads } from "./SequenceView.js";
 import { layoutView } from "../workspace.js";
+import { pictureWords } from "../readerWords.js";
 import { SNAPSHOT_HEIGHT, SNAPSHOT_TALL_HEIGHT, SnapshotFrame } from "./SnapshotFrame.js";
 
 /** Graph layouts by view, for the page's life: a guide shows the same view in many sections. */
@@ -79,6 +80,22 @@ export function Snapshot({
   context?: string;
 }) {
   const host = useRef<HTMLDivElement>(null);
+  const model = useViewerState().model;
+  const wordsId = useId();
+  // a11y: the drawing is hidden from screen readers; these words say what it shows instead
+  const words = useMemo(() => {
+    const parts =
+      view.type === "graph"
+        ? (view.include ?? [])
+        : view.type === "sequence"
+          ? view.participants
+          : view.steps.map((step) => step.id);
+    return pictureWords(
+      parts.map((id) => model.label(id)),
+      focus.map((id) => model.label(id)),
+      view.type === "graph" ? "boxes" : view.type === "sequence" ? "lifelines" : "steps",
+    );
+  }, [view, focus, model]);
   const [near, setNear] = useState(false);
   const [width, setWidth] = useState(0);
 
@@ -112,10 +129,16 @@ export function Snapshot({
       data-testid="guide-snapshot"
       data-view-id={view.id}
       aria-label={`Diagram: ${view.title}`}
+      aria-describedby={words ? wordsId : undefined}
       // A still picture: a double-click opens the live diagram, where boxes open and code shows.
       onDoubleClick={onOpen}
       title={`Double-click to open in the ${graph ? "Map" : "Flow"}`}
     >
+      {words && (
+        <p id={wordsId} className="sr-only">
+          {words}
+        </p>
+      )}
       <figcaption>
         <span className="guide-snapshot-title">{view.title}</span>
         <button

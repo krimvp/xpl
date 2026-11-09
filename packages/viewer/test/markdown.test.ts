@@ -68,3 +68,15 @@ describe("renderInline (step titles)", () => {
     expect(html).toContain('href="#"');
   });
 });
+
+describe("a Python name with double underscores", () => {
+  // "Defines __all__ and …" showed a bold "all" in the parts panel, and "__all__" on the box
+  it("stays a name, not bold, in a summary and in its text", () => {
+    expect(renderInline("Defines __all__ and __init__.")).toBe("Defines __all__ and __init__.");
+    expect(renderMarkdown("Sets `__slots__` and __all__.")).toContain(
+      "<code>__slots__</code> and __all__.",
+    );
+    // bold the author meant still works
+    expect(renderInline("a **big** job")).toContain("<strong>big</strong>");
+  });
+});
