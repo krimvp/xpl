@@ -474,14 +474,23 @@ test.describe("the Guide", () => {
       (await sequence.locator(`[data-frame-id="${frame}"] .frame-box`).boundingBox())!;
     const label = async (id: string) =>
       (await sequence.locator(`[data-element-id="${id}"] .label`).boundingBox())!;
-    const within = (box: { y: number; height: number }, call: { y: number; height: number }) =>
-      call.y > box.y && call.y + call.height < box.y + box.height;
+    // the numbers, so a failure says how far the call's label is from the frame's edge
+    const expectWithin = (
+      box: { y: number; height: number },
+      call: { y: number; height: number },
+      id: string,
+    ) => {
+      expect(call.y, `${id} top`).toBeGreaterThan(box.y);
+      expect(call.y + call.height, `${id} bottom`).toBeLessThan(box.y + box.height);
+    };
     const loop = await inside("frame:dispatch-loop");
     const retry = await inside("frame:retry");
     for (const id of ["dispatch:1", "dispatch:2", "dispatch:3"])
-      expect(within(loop, await label(id)), id).toBe(true);
-    expect(within(retry, await label("dispatch:3"))).toBe(true);
-    expect(within(retry, await label("dispatch:2"))).toBe(false);
+      expectWithin(loop, await label(id), id);
+    expectWithin(retry, await label("dispatch:3"), "dispatch:3");
+    // run(job) sits above the retry frame
+    const run = await label("dispatch:2");
+    expect(run.y + run.height).toBeLessThanOrEqual(retry.y);
     await expect(sequence.locator('[data-element-id="dispatch:3"]')).toHaveClass(/is-selected/);
 
     await page
