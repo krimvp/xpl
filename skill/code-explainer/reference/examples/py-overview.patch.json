@@ -434,7 +434,7 @@
           "id": "t3",
           "view": "view:overview",
           "focus": ["grp:scheduling"],
-          "note": "### The loop takes a job, runs it, then decides\n\nA successful job is acked. A failed job is requeued with a delay while retries are left; after that it goes to the dead-letter list.",
+          "note": "### The loop takes a job, runs it, then decides\n\nThe runner acks a successful job. The runner requeues a failed job with a delay while it has retries left, and then moves the job to the dead-letter list.",
           "code": [
             {
               "file": "jobrunner/runner.py",

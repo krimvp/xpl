@@ -250,7 +250,7 @@
               "role": "definition"
             }
           ],
-          "note": "### Shared rules check each source link\n\nThe core builds checked anchors from the index and source text. Its patch merge also preserves fields a reader edited.",
+          "note": "### Shared rules check each source link\n\nThe core builds checked code links from the index and source text. Its patch merge also keeps the fields the user edited.",
           "editor": {
             "primary": "packages/core/src/anchors.ts"
           }

@@ -202,7 +202,7 @@
     {
       "id": "tour:apply-command",
       "title": "How xpl checks and applies guide edits",
-      "summary": "The `xpl apply` command reads a patch, loads the guide and its source index, and asks core to check the proposed merge. Core checks source anchors and protects reader-owned fields. The CLI writes the guide only after a successful result with changes; this tour leaves out later export checks.",
+      "summary": "The `xpl apply` command reads a patch, loads the guide and its source index, and asks core to check the proposed merge. Core checks code links and protects the fields the user owns. The CLI writes the guide only after a successful result with changes; this tour leaves out later export checks.",
       "steps": [
         {
           "id": "t1",
@@ -325,7 +325,7 @@
               "role": "definition"
             }
           ],
-          "note": "### The workspace supplies code for checking\n\nThe command opens the guide's index and a source text reader. Core uses both to resolve new anchors.",
+          "note": "### The workspace supplies code for checking\n\nThe command opens the guide's index and a source text reader. Core uses both to resolve new code links.",
           "editor": {
             "primary": "packages/cli/src/commands/apply.ts"
           }
@@ -379,7 +379,7 @@
               "role": "definition"
             }
           ],
-          "note": "### Source links must resolve against the index\n\nCore turns each proposed source link into a checked anchor. A failed lookup records an error tied to that patch field.",
+          "note": "### Source links must resolve against the index\n\nCore turns each proposed source link into a checked code link. A failed lookup records an error tied to that patch field.",
           "editor": {
             "primary": "packages/core/src/apply.ts"
           }
@@ -406,7 +406,7 @@
               "role": "usage"
             }
           ],
-          "note": "### Reader edits keep their ownership\n\nA model patch skips a reader-authored element and fields the reader changed. The merge records those skips as protected warnings.",
+          "note": "### The user's edits stay theirs\n\nA model patch skips an element the user wrote and the fields the user changed. The merge records those skips as protected warnings.",
           "editor": {
             "primary": "packages/core/src/apply.ts"
           }
