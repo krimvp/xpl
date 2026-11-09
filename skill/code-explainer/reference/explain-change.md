@@ -80,14 +80,16 @@ Unchanged code that you show for context is described as unchanged: "Unchanged: 
 
 Understanding the change is the main review task, and files shown last get fewer comments. The draft builds the tour in this order:
 
-| Step | Title says                        | Shows                                                                                     |
-| ---- | --------------------------------- | ----------------------------------------------------------------------------------------- |
-| 1    | what changes for users            | the map of the change; `code`: the 1-2 hunks that make the change                         |
-| 2    | where the change enters           | the code that calls the change (often unchanged); none found: the changed public function |
-| 3+   | each changed piece, one step each | the hunk in call order, with the base lines next to it; "Before: ... Now: ..."            |
-| next | who else is affected              | callers, consumers, public exports and siblings (section 5)                               |
-| next | tests and gaps                    | the changed test files; what no test covers                                               |
-| last | risks and open questions          | the worst realistic failure, edge cases, inputs that still behave the old way             |
+| Step | Title says                        | Shows                                                                                       |
+| ---- | --------------------------------- | ------------------------------------------------------------------------------------------- |
+| 1    | what changes for users            | the map of the change; `code`: the 1-2 hunks that make the change                           |
+| 2    | where the change enters           | the code that calls the change (often unchanged); none found: the changed public function   |
+| 3+   | each changed piece, one step each | the hunk in call order: the old lines (a base anchor), then the new; "Before: ... Now: ..." |
+| next | who else is affected              | the other callers outside tests, or "none beyond the entry"; then the checks of section 5   |
+| next | tests and gaps                    | the changed test files; what no test covers                                                 |
+| last | risks and open questions          | the worst realistic failure, edge cases, inputs that still behave the old way               |
+
+For a modified symbol, the draft puts a base anchor on the old lines of its first hunk, before the head anchor. Check that it covers the old code the "Before:" sentence is about, and add one for each other hunk you describe. The draft always writes the "who else is affected" step. With no other callers, it says so and asks for the checks of section 5: readers of a changed result, public exports and siblings.
 
 Keep the first step and the last in place. To fit a small change, merge the rest:
 
@@ -97,7 +99,7 @@ Keep the first step and the last in place. To fit a small change, merge the rest
 
 **The risk** names the worst realistic failure the change can cause, and the input that triggers it. Check it against the code: what does a caller or a wrapper of the changed code do that now fails, hangs or behaves differently? Do not narrow it to tests when real callers can hit it too. Do not make it bigger than the code allows. The tour summary, the last step and the reply carry it.
 
-**Views.** The draft's map, "What this change touches", holds the changed symbols, their direct callers and one group box for the tests. Its box summaries start with `New:`, `Changed:` or `Unchanged:`; keep that word and write the rest. Add **a flow** of the new behaviour only when the change adds or moves a decision. Label its boxes with plain stage names ("Check the retry delays", "Reject the config"). A branch that belongs to one caller says so in its label.
+**Views.** The draft's map, "What this change touches", holds the changed symbols, their direct callers and one group box for the tests. Its box summaries start with `New:`, `Changed:` or `Unchanged:`; keep that word and write the rest. Add **a flow** of the new behaviour only when the change adds or moves a decision, or changes its condition. Draw the new condition as its own `decision` step. Label its boxes with plain stage names ("Check the retry delays", "Reject the config"). A branch that belongs to one caller says so in its label.
 
 ## 8. A large change
 
@@ -111,13 +113,13 @@ Run the accuracy pass, then bundle and reply: SKILL.md, "Workflow", steps 8 and 
 
 Summary:
 
-> Before this change, a config file could set `retry.maxDelayMs` lower than `retry.baseDelayMs`, and every retry then waited `maxDelayMs`. Now `loadConfig` rejects such a file with an error that names both keys. Risk: a deployed config with such values now stops the program at start. Two new tests cover the check; no test covers a `maxDelayMs` of 0.
+> Before this change, a config file could set `retry.maxDelayMs` lower than `retry.baseDelayMs`, and every retry then waited `retry.maxDelayMs`. Now the config loader rejects such a file with an error that names both settings. Risk: a deployed config with such values now stops the program at start. Two new tests cover the check; no test covers a `maxDelayMs` of 0.
 
 Steps:
 
 1. `### Invalid retry delays now stop the program`: the map; `code`: the new check in `loadConfig`.
-2. `### The check runs when the config is loaded`: unchanged; `main` calls `loadConfig` before it creates the queue, so a bad file stops the program before any job runs.
-3. `### The config loader compares the two delays`: "Before: any two numbers were accepted. Now: `loadConfig` throws when `maxDelayMs < baseDelayMs`." `code`: the old lines of `loadConfig` (a base anchor), then the new check.
-4. `### Who else reads the retry settings`: `runnerConfig` passes them to `Runner` (unchanged); `backoffDelay` now sees only valid values. No other code reads `retry.*` keys (checked with `search`).
+2. `### The check runs when the config is loaded`: unchanged; the program loads its config before it creates the queue, so a bad file stops the program before any job runs.
+3. `### The config loader compares the two delays`: "Before: the loader accepted any two numbers. Now: it throws when `maxDelayMs < baseDelayMs`." `code`: the old lines of `loadConfig` (a base anchor), then the new check.
+4. `### Who else reads the retry settings`: the runner settings pass the retry values on unchanged, so the delay function now gets valid values. No other code reads them. (How you checked, with `search`, goes in the reply, not in the note.)
 5. `### Two new tests, one gap`: both tests are in `test/retry.test.ts`; one fails on the base, the other also passes there. That second test does not show the old bug, but it checks that a valid config still loads. No test covers `maxDelayMs: 0`, which passes the new check when `baseDelayMs` is 0 too.
 6. `### Risk: configs that loaded before now stop the program`: the worst realistic failure is a deployed config with `maxDelayMs` below `baseDelayMs`; the program now exits at start instead of retrying with short delays. Open question: equal delays are accepted, so every retry waits the same time. Is that intended?

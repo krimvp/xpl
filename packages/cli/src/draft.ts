@@ -388,6 +388,35 @@ function hunkRuns(file: ChangedFile): Cluster[] {
   return clusters(lines);
 }
 
+/**
+ * The code before the change of the first changed symbol of a run that lost lines: the first hunk inside it that
+ * removes or rewrites lines that hold text, as a base anchor. Undefined when every hunk only adds lines.
+ */
+function removedLines(
+  texts: TextCache,
+  change: ChangeRecord,
+  run: readonly ChangeBox[],
+): AnchorInput | undefined {
+  for (const sym of run.flatMap((box) => box.symbols)) {
+    const file = (Array.isArray(change.files) ? change.files : []).find((f) => f.path === sym.file);
+    for (const hunk of Array.isArray(file?.hunks) ? file!.hunks : []) {
+      const end = hunk.newStart + Math.max(hunk.newLines, 1) - 1;
+      if (hunk.oldLines === 0 || end < sym.range.startLine || hunk.newStart > sym.range.endLine)
+        continue;
+      const anchor = baseLines(
+        texts,
+        change,
+        file!,
+        hunk.oldStart,
+        hunk.oldStart + hunk.oldLines - 1,
+        "definition",
+      );
+      if (anchor) return anchor;
+    }
+  }
+  return undefined;
+}
+
 /** Base lines the hunks remove or rewrite, by run. */
 function baseRuns(file: ChangedFile): Cluster[] {
   const lines: number[] = [];
@@ -1022,8 +1051,7 @@ export function draftChange(input: DraftInput, change: ChangeRecord): Draft {
   }
   const otherSteps = Math.min(2, Math.ceil(leftovers.length / L.codeRanges));
 
-  const fixed =
-    1 + (entryUnit || entryBox ? 1 : 0) + (otherCallers.length > 0 ? 1 : 0) + 1 + 1 + otherSteps;
+  const fixed = 1 + (entryUnit || entryBox ? 1 : 0) + 1 + 1 + 1 + otherSteps;
   const pieceBudget = Math.max(0, L.changeSteps - fixed);
   const skipped: ChangeBox[] = [];
   while (pieces.length > pieceBudget) {
@@ -1126,10 +1154,13 @@ export function draftChange(input: DraftInput, change: ChangeRecord): Draft {
     const first = run[0]!;
     const names = run.flatMap((b) => b.symbols.map((s) => displayName(s.id)));
     const fresh = run.every((b) => b.status === "new");
-    const code =
-      run.length === 1
+    const before = fresh ? undefined : removedLines(texts, change, run);
+    const code = [
+      ...(before ? [before] : []),
+      ...(run.length === 1
         ? boxAnchors(model, texts, first, L.codeRanges)
-        : run.slice(0, L.codeRanges).flatMap((b) => boxAnchors(model, texts, b, 1));
+        : run.slice(0, L.codeRanges).flatMap((b) => boxAnchors(model, texts, b, 1))),
+    ];
     steps.push(
       tourStep(
         model,
@@ -1145,7 +1176,9 @@ export function draftChange(input: DraftInput, change: ChangeRecord): Draft {
           fresh
             ? todo(`what ${tick(names[0]!)} adds, and which code uses it.`)
             : todo(
-                "Before: what the old code did (read it with `xpl show --at base`). Now: what the new code does.",
+                before
+                  ? "Before: what the old code did (the first code link shows it). Now: what the new code does."
+                  : "Before: what the old code did (read it with `xpl show --at base`). Now: what the new code does.",
               ),
           names.length > 1 && !fresh
             ? `${nameList(names)} change in a few lines each: ${todo("say what they have in common, or give each its own step.")}`
@@ -1196,8 +1229,33 @@ export function draftChange(input: DraftInput, change: ChangeRecord): Draft {
       );
   }
 
-  // who else is affected
-  if (otherCallers.length > 0) {
+  // who else is affected: always a step, since §5 of explain-change.md asks for more than callers
+  if (otherCallers.length === 0) {
+    const entryName = entryUnit ? displayName(entryUnit.id) : undefined;
+    // the changed types and the other changed symbols: their readers and siblings are the next place to look
+    const changedTypes = analysis.symbols.filter((sym) => !callable(sym));
+    const shown = [...changedTypes, ...analysis.symbols.filter(callable)]
+      .map((sym) => model.symbol(sym.symbolId))
+      .filter((sym): sym is IndexedSymbol => sym !== undefined);
+    steps.push(
+      tourStep(
+        model,
+        next(),
+        mapId,
+        [mainFocus],
+        note(
+          todo("who else is affected, as a plain statement"),
+          entryName
+            ? `Callers outside tests: none beyond the entry, ${tick(entryName)} (the index shows no other).`
+            : "Callers outside tests: none found in the index.",
+          todo(
+            "who reads a changed result or type, and which public entry points expose the change. Which sibling code still works the old way (explain-change.md §5)?",
+          ),
+        ),
+        shown.slice(0, L.codeRanges).map((sym) => definition(sym)),
+      ),
+    );
+  } else {
     const onMap = otherCallers.map((c) => unitOf(c)).find((u) => u !== undefined);
     const names = otherCallers.map((c) => {
       const unit = unitOf(c);
@@ -1237,7 +1295,7 @@ export function draftChange(input: DraftInput, change: ChangeRecord): Draft {
       [testGroup ?? mainFocus],
       note(
         todo("what the tests cover, as a plain statement"),
-        todo("which test checks each behavior change, and whether the new branches are tested."),
+        todo("which test checks each behaviour change, and whether the new branches are tested."),
         untested.length > 0
           ? `No indexed test reference found for ${nameList(untested)}: ${todo("check whether tests of other code exercise these symbols.")}`
           : "",
@@ -2152,6 +2210,13 @@ function ownerOf(model: IndexModel, sym: IndexedSymbol): IndexedSymbol | undefin
 /** Kinds of symbol a call can only convert to or build data of: no code of theirs runs (Go's `nodeTyp(t)`). */
 const TYPE_KINDS: ReadonlySet<IndexedSymbol["kind"]> = new Set(["type", "interface", "enum"]);
 
+/**
+ * Names of calls that write a log line (`log`, `_log`, `logf`, `console.debug`): drawn, but they rank last for a
+ * tour step, after calls that change state or data.
+ */
+const LOG_CALL =
+  /^_*(?:log|logf|logger|debug|debugf|trace|tracef|info|infof|warn|warnf|warning|print|printf|println|console)$/i;
+
 /** The classes a class extends, in the order its declaration names them. */
 function basesOf(model: IndexModel, cls: IndexedSymbol): IndexedSymbol[] {
   const out: IndexedSymbol[] = [];
@@ -2438,6 +2503,17 @@ function pathSequence(
   const repeated = new Map<string, number>();
   const built: string[] = [];
   const helpers: string[] = [];
+  const guards: string[] = [];
+  // the conditions of the branches: the code on an arm's first line before its body (`if result.OK() {`)
+  const guardAt = (line: number, col: number) =>
+    (entry.blocks ?? []).some(
+      (block) =>
+        block.kind === "branch" &&
+        block.arms.some(
+          (arm) =>
+            !arm.implicit && arm.condition !== "else" && arm.start === line && col < arm.startCol,
+        ),
+    );
   for (const ref of refs) {
     let callee = model.symbol(ref.to)!;
     let hop = false;
@@ -2484,6 +2560,16 @@ function pathSequence(
       if (!helpers.includes(runs.path)) helpers.push(runs.path);
       continue;
     }
+    // a one-line check that is the whole point of a branch's condition: the frame's guard says it
+    if (
+      !recursion &&
+      bodyLines(texts, runs) <= 1 &&
+      !callsMore &&
+      guardAt(ref.site.startLine, ref.site.startCol ?? 1)
+    ) {
+      if (!guards.includes(runs.path)) guards.push(runs.path);
+      continue;
+    }
     // each recursive call is drawn (they usually recurse on different inputs); other callees once
     if (!recursion && seen.has(callee.id)) {
       repeated.set(callee.id, (repeated.get(callee.id) ?? 1) + 1);
@@ -2494,17 +2580,20 @@ function pathSequence(
     // stands for the entry alone), a function to its own; only recursion is a call of the entry to itself
     const participant = recursion ? entryId : `sym:${(owner ?? callee).id}`;
     const skip = new Set([sym.id]);
+    const calleeName = callee.path.slice(callee.path.lastIndexOf(".") + 1);
     const score = recursion
       ? 1000
-      : 3 * Math.min(reachOf(model, runs, skip), 20) +
-        Math.min(lineCount(runs), 60) / 6 +
-        (participant.startsWith(`sym:${sym.file}#`) ? 0 : 2);
+      : LOG_CALL.test(calleeName)
+        ? 0
+        : 3 * Math.min(reachOf(model, runs, skip), 20) +
+          Math.min(lineCount(runs), 60) / 6 +
+          (participant.startsWith(`sym:${sym.file}#`) ? 0 : 2);
     calls.push({ ref, callee, participant, hop, ...(dispatched ? { dispatched } : {}), score });
   }
   if (repeated.size > 0) {
     notes.push(
       "called more than once, drawn once at the first call: " +
-        [...repeated].map(([id, n]) => `sym:${id} (${n} calls)`).join(", "),
+        [...repeated].map(([id, n]) => `${model.symbol(id)?.path ?? id} (${n} calls)`).join(", "),
     );
   }
   if (built.length > 0) {
@@ -2515,10 +2604,13 @@ function pathSequence(
   if (helpers.length > 0) {
     notes.push(`not drawn, one-line helpers that call nothing: ${helpers.join(", ")}`);
   }
+  if (guards.length > 0) {
+    notes.push(`not drawn, one-line checks that a branch's condition makes: ${guards.join(", ")}`);
+  }
   if (calls.length === 0) {
     return {
       error:
-        built.length + helpers.length > 0
+        built.length + helpers.length + guards.length > 0
           ? `${entryId} makes no call worth drawing, every call it makes is left out (${notes.join("; ")}): start from a callee with more code, or explain it in a guide step`
           : `${entryId} makes no call the index knows (calls into libraries outside the repository are not indexed): there is nothing to draw`,
     };
@@ -2554,7 +2646,7 @@ function pathSequence(
   if (dropped.length > 0) {
     notes.push(
       `calls left out of the sequence (at most ${L.pathCalls} calls and ${L.participants} participants), ` +
-        `the ones that reach the least code: ${dropped.map((c) => `sym:${c.callee.id}`).join(", ")}`,
+        `the ones that reach the least code: ${dropped.map((c) => c.callee.path).join(", ")}`,
     );
   }
   const participants = participantsOf();
@@ -2818,7 +2910,11 @@ export function draftPath(input: DraftInput, entries: readonly PathEntry[]): Dra
           ...seq.notes
             .filter((text) => /called more than once|calls left out of the sequence/.test(text))
             .map((text) => {
-              const targets = (text.match(/sym:[^\s,)]+/g) ?? []).map(tick).join(", ");
+              const targets = text
+                .slice(text.lastIndexOf(": ") + 2)
+                .split(", ")
+                .map((name) => tick(name.replace(/ \(\d+ calls\)$/, "")))
+                .join(", ");
               return text.startsWith("called more than once")
                 ? todo(`say if these repeated calls matter, or delete this line: ${targets}.`)
                 : todo(`say what these left-out calls do, or delete this line: ${targets}.`);
@@ -2833,6 +2929,13 @@ export function draftPath(input: DraftInput, entries: readonly PathEntry[]): Dra
     for (const group of main) {
       const [{ step }] = group.calls as [(typeof group.calls)[number]];
       const branch = group.frame !== undefined;
+      // a branch whose other arm is the rest of the path (an early exit): its step is about the arm it holds, so two
+      // nested branches do not share one heading
+      const arm = group.frame?.arms?.find((a) => group.calls.every((c) => holds(a, c.step.id)));
+      const armCode =
+        group.frame && implicitArms.has(group.frame) && arm
+          ? /the code: (`[^`]+`)/.exec(arm.label)?.[1]
+          : undefined;
       tourSteps.push(
         tourStep(
           model,
@@ -2841,7 +2944,11 @@ export function draftPath(input: DraftInput, entries: readonly PathEntry[]): Dra
           group.calls.map((c) => c.step.id),
           branch
             ? note(
-                todo("what this branch decides, as a plain statement"),
+                todo(
+                  armCode
+                    ? `what happens in this arm (the code: ${armCode}), as a plain statement`
+                    : "what this branch decides, as a plain statement",
+                ),
                 todo(
                   `when each call runs (${nameList(group.calls.map((c) => c.step.label))}), in one short sentence each.`,
                 ),

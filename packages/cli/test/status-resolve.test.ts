@@ -75,7 +75,7 @@ describe("xpl status: unexplained edges", () => {
   it("lists the ids of the static edges without a summary in the text too", async () => {
     const { out } = await xpl(demo, "status", "demo");
     expect(out).toContain(
-      "edges: 2 shown; every stored edge is explained; 1 static without summary (optional): edge:calls:grp:scheduling->file:src/worker.ts",
+      "arrows: 2 shown; every stored arrow has text; 1 found in the code without summary (optional): edge:calls:grp:scheduling->file:src/worker.ts",
     );
     // the same ids as --json, ready to become overlays
     const { json } = await xplJson<any>(demo, "status", "demo");
@@ -114,7 +114,7 @@ describe("xpl status: unexplained edges", () => {
     ).toBe(0);
     const { out } = await xpl(dir, "status", "demo");
     expect(out).toMatch(
-      /static without summary \(optional\): (edge:\S+, ){8}\.\.\. \+\d+ more \(--json lists all\)/,
+      /found in the code without summary \(optional\): (edge:\S+, ){8}\.\.\. \+\d+ more \(--json lists all\)/,
     );
   });
 });
@@ -152,7 +152,7 @@ describe("xpl status: drift the user owns", () => {
     const { out } = await xpl(dir, "status", "demo");
     // the dispatch overlay, retry-policy and dispatch:3 are the llm's; concept:mine is the user's
     expect(out).toMatch(
-      /^to do: \d+ unexplained, 4 drifted \(1 user-owned: ask the user\), 0 missing anchors, 0 requests$/m,
+      /^to do: \d+ with no text, 4 changed code links \(1 user-owned: ask the user\), 0 missing code links, 0 requests$/m,
     );
     const { json } = await xplJson<any>(dir, "status", "demo");
     expect(json.todo).toMatchObject({ drifted: 4, driftedUserOwned: 1 });
@@ -194,7 +194,7 @@ describe("xpl status: drift the user owns", () => {
     expect(json.drifted.map((d: any) => d.elementId)).toContain("concept:retry-policy");
     expect(json.todo).toMatchObject({ drifted: 3, driftedUserOwned: 1 });
     const { out } = await xpl(dir, "status", "demo");
-    expect(out).toMatch(/, 3 drifted \(1 user-owned: ask the user\), /);
+    expect(out).toMatch(/, 3 changed code links \(1 user-owned: ask the user\), /);
   });
 
   it("without user-owned drift the line reads as before", async () => {
@@ -202,7 +202,9 @@ describe("xpl status: drift the user owns", () => {
     editFile(clean, "src/runner.ts", REQUEUE_EDIT);
     await regenerate(clean);
     const { out } = await xpl(clean, "status", "demo");
-    expect(out).toMatch(/^to do: \d+ unexplained, 3 drifted, 0 missing anchors, 0 requests$/m);
+    expect(out).toMatch(
+      /^to do: \d+ with no text, 3 changed code links, 0 missing code links, 0 requests$/m,
+    );
     expect(out).not.toContain("user-owned");
   });
 });
@@ -263,7 +265,7 @@ describe("xpl status: broken references", () => {
   it("lists the ids that vanished from the index, with where they are used", async () => {
     const { out } = await xpl(dir, "status", "demo");
     expect(out).toMatch(
-      /^to do: \d+ unexplained, \d+ drifted.*, \d+ missing anchors, 0 requests, 4 broken references$/m,
+      /^to do: \d+ with no text, \d+ changed code links.*, \d+ missing code links, 0 requests, 4 broken references$/m,
     );
     const section = out.slice(out.indexOf("broken references ("));
     expect(section).toContain("broken references (4): ids that no longer exist in the index");

@@ -180,9 +180,13 @@ describe("git parsing", () => {
 });
 
 describe("xpl change", () => {
-  it("labels a changed integration test separately from symbol-name matches", async () => {
+  it("counts a test that calls a caller of the changed code, and labels a changed test apart", async () => {
     const dir = makeTempDir("xpl-change-integration-");
-    writeFile(dir, "src/engine.py", "def normalize(value):\n    return value\n");
+    writeFile(
+      dir,
+      "src/engine.py",
+      "def normalize(value):\n    return value\n\n\ndef trim(value):\n    return value\n",
+    );
     writeFile(
       dir,
       "src/service.py",
@@ -196,7 +200,11 @@ describe("xpl change", () => {
     git(dir, "init", "-q", "-b", "main");
     git(dir, "add", "-A");
     git(dir, "commit", "-q", "-m", "base");
-    writeFile(dir, "src/engine.py", "def normalize(value):\n    return value.upper()\n");
+    writeFile(
+      dir,
+      "src/engine.py",
+      "def normalize(value):\n    return value.upper()\n\n\ndef trim(value):\n    return value.strip()\n",
+    );
     writeFile(
       dir,
       "tests/test_service.py",
@@ -209,9 +217,12 @@ describe("xpl change", () => {
 
     const change = await xpl(dir, "change", "demo", "HEAD~1..HEAD");
     expect(change.code).toBe(0);
-    expect(change.out).toContain("tests: no indexed test reference found");
+    // the test calls handle, which calls normalize: one call between them, as for the call paths of callers
     expect(change.out).toContain(
-      "No indexed test reference found for 1 changed symbol: sym:src/engine.py#normalize",
+      "    tests (1):\n      sym:tests/test_service.py#test_request  (changed, through sym:src/service.py#handle)",
+    );
+    expect(change.out).toContain(
+      "No indexed test reference found for 1 changed symbol: sym:src/engine.py#trim",
     );
     expect(change.out).toContain("test files the change touches (1):\n  tests/test_service.py");
     const structured = await xplJson<{
@@ -221,7 +232,7 @@ describe("xpl change", () => {
         testSymbols: { id: string }[];
       };
     }>(dir, "change", "demo");
-    expect(structured.json.analysis.untested).toEqual(["sym:src/engine.py#normalize"]);
+    expect(structured.json.analysis.untested).toEqual(["sym:src/engine.py#trim"]);
     expect(structured.json.analysis.files.find((file) => file.test)?.path).toBe(
       "tests/test_service.py",
     );
@@ -230,7 +241,7 @@ describe("xpl change", () => {
     ]);
 
     const help = await invoke(["change", "--help"]);
-    expect(help.out).toContain("class counts too");
+    expect(help.out).toContain("when it calls one of those callers");
     expect(help.out).toContain("A missing test reference does not mean the behaviour has no test");
     expect(help.out).toContain("changed test files, listed apart from the per-symbol matches");
 
@@ -238,7 +249,7 @@ describe("xpl change", () => {
     expect(drafted.code).toBe(0);
     const patch = drafted.json.patch;
     const testStep = patch.tours![0]!.steps!.find((step) => step.note?.includes("indexed test"));
-    expect(testStep?.note).toContain("No indexed test reference found for `normalize`");
+    expect(testStep?.note).toContain("No indexed test reference found for `trim`");
     expect(testStep?.note).toContain("check whether tests of other code exercise these symbols");
     expect(testStep?.note).toContain("whether the new branches are tested");
     expect(patch.tours![0]!.summary).toContain(
@@ -296,7 +307,7 @@ describe("xpl change", () => {
     expect(r.out).toContain("R  tools.py <- util.py");
     expect(r.out).toContain("sym:app.py#helper  (function, lines 17-18)  changed");
     expect(r.out).toContain("sym:app.py#App.handle  (method, lines 11-14)  changed at 12-14");
-    expect(r.out).toContain("sym:tests/test_app.py#test_app  (changed, uses its class)");
+    expect(r.out).toContain("sym:tests/test_app.py#test_app  (changed, builds its class; a guess)");
     expect(r.out).toContain(
       "No indexed test reference found for 1 changed symbol: sym:new.py#fresh",
     );

@@ -5,6 +5,7 @@
  */
 import { asIndexModel, baseName, dirOf, type IndexModel } from "./index-model.js";
 import { dirId, fileId, parseId, REPO_ID, symId } from "./ids.js";
+import { symbolKindWord } from "./languages.js";
 import type {
   Concept,
   Edge,
@@ -28,6 +29,8 @@ import { cmp, isRecord } from "./util.js";
 export interface ModelNode extends Node {
   /** For symbol nodes: the indexed symbol's kind. */
   symbolKind?: IndexedSymbol["kind"];
+  /** The reader's word for `symbolKind` when it differs from it: "struct" (Go), "field" (`symbolKindWord`). */
+  kindWord?: string;
   /** A stored node with this id exists in the explainer (a group, or an overlay on a structural node). */
   stored: boolean;
   /** The node is derived from the index (repo, dir, file, symbol); false for stored groups. */
@@ -493,6 +496,12 @@ export class ExplainerModel {
         if (!sym) return undefined;
         base = derived(id, "symbol", symbolLabel(sym), this.parent(id) ?? REPO_ID, stored);
         base.symbolKind = sym.kind;
+        const word = symbolKindWord(
+          this.index.file(sym.file)?.language,
+          sym.kind,
+          this.index.parentSymbol(sym.id)?.kind,
+        );
+        if (word !== undefined) base.kindWord = word;
         break;
       }
       case "group": {

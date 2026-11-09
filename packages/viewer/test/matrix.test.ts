@@ -3,10 +3,31 @@
  * The order is the contract a reader relies on: what a box uses lies to the right of the diagonal, so a cell
  * below it is an arrow back against the layers (with its mirror cell, a cycle).
  */
-import type { DerivedEdge, DerivedGraph, GraphNode } from "@xpl/core";
+import {
+  ExplainerModel,
+  type DerivedEdge,
+  type DerivedGraph,
+  type GraphNode,
+  type GraphView,
+} from "@xpl/core";
 import { describe, expect, it } from "vitest";
 import { buildMatrix } from "../src/matrix.js";
 import { mapParts } from "../src/parts.js";
+import { makeBundle } from "./world.js";
+
+/** The parts list of a made-up graph: a real model (none of the graph's ids are in it) and a bare view. */
+function partsOf(g: DerivedGraph) {
+  const bundle = makeBundle();
+  const view: GraphView = {
+    id: "view:m",
+    type: "graph",
+    title: "m",
+    scope: { root: "repo", depth: 1 },
+    include: [],
+    provenance: { origin: "llm" },
+  };
+  return mapParts(g, view, new ExplainerModel(bundle.explainer, bundle.index)).boxes;
+}
 
 const box = (id: string, over: Partial<GraphNode> = {}): GraphNode => ({
   id,
@@ -273,9 +294,38 @@ describe("the matrix of a data map", () => {
     expect(picture(g)).toEqual(["Queue: . 1 2", "DeadJob: . . 1", "Job: . . ."]);
     const cell = m.cells[0]![2]!;
     expect(cell.text).toBe("holds (ready, inflight)");
+    // the cell counts fields, not references: its name says no "references ×2" (V5-04)
+    expect(cell.fields).toBe(true);
     expect(cell.select).toEqual([
       "edge:references:Queue.ready->Job",
       "edge:references:Queue.inflight->Job",
+    ]);
+    // the parts list says the same verb, and names a field with its table (R5-4, R4-9)
+    expect(partsOf(g).map((b) => [b.label, b.links])).toEqual([
+      ["Queue", []],
+      ["ready", ["holds Job"]],
+      ["inflight", ["holds Job"]],
+      ["dead", ["holds DeadJob"]],
+      ["DeadJob", ["held by Queue.dead"]],
+      ["job", ["holds Job"]],
+      ["Job", ["held by 3 fields here"]],
+      ["id", []],
+    ]);
+  });
+
+  it("says one extends or implements arrow without a count", () => {
+    const g = graph(
+      [box("Queue"), box("JobQueue")],
+      [arrow("implements", "Queue", "JobQueue"), arrow("calls", "JobQueue", "Queue")],
+    );
+    expect(
+      buildMatrix(g)
+        .cells.flat()
+        .flatMap((cell) => (cell ? [cell.text] : [])),
+    ).toEqual(["implements", "calls ×1"]);
+    expect(partsOf(g).map((b) => [b.label, b.links])).toEqual([
+      ["Queue", ["implements JobQueue", "used by JobQueue"]],
+      ["JobQueue", ["uses Queue", "implemented by Queue"]],
     ]);
   });
 });
@@ -295,11 +345,7 @@ describe("one order for the parts list and the matrix", () => {
         arrow("calls", "file:run.ts", "file:list.ts"),
       ],
     );
-    const view = { id: "view:m", type: "graph", title: "m", include: [] } as unknown as Parameters<
-      typeof mapParts
-    >[1];
-    const model = { node: () => undefined } as unknown as Parameters<typeof mapParts>[2];
-    const parts = mapParts(g, view, model).boxes.map((b) => b.label);
+    const parts = partsOf(g).map((b) => b.label);
     expect(parts).toEqual(["Commands", "run.ts", "list.ts", "astore.ts"]);
     expect(buildMatrix(g).boxes.map((b) => b.label)).toEqual(["run.ts", "list.ts", "astore.ts"]);
   });
@@ -321,11 +367,7 @@ describe("one order for the parts list and the matrix", () => {
       ],
       [],
     );
-    const view = { id: "view:d", type: "graph", title: "d", include: [] } as unknown as Parameters<
-      typeof mapParts
-    >[1];
-    const model = { node: () => undefined } as unknown as Parameters<typeof mapParts>[2];
-    expect(mapParts(g, view, model).boxes.map((b) => [b.label, b.depth, b.kind])).toEqual([
+    expect(partsOf(g).map((b) => [b.label, b.depth, b.kind])).toEqual([
       ["Queue", 0, undefined],
       ["ready", 1, "field · Job[]"],
       ["dead", 1, "field"],

@@ -12,6 +12,12 @@ import {
   type View,
 } from "@xpl/core";
 import { reachOf } from "./derive.js";
+import {
+  layoutGraph,
+  layoutGraphFitting,
+  type ChangeMarks,
+  type GraphLayout,
+} from "./layout/graphLayout.js";
 import type { ViewerState } from "./store.js";
 
 export function topicElements(ids: readonly ElementId[], model: ExplainerModel): Set<ElementId> {
@@ -198,7 +204,8 @@ export function workspaceMap(state: ViewerState) {
  * the flow as a narrow outline beside it, which follows the selection and the caret. Without a setting: a flow or
  * sequence of three steps or more whose code (every step's anchors in the current code) is all in one file, the
  * steps of one function, where the question lives in the code and a big canvas only repeats it (review
- * 2026-10-03, senior §5).
+ * 2026-10-03, senior §5). A flow with two or more outcomes (terminal steps) is a choice between them: it is
+ * drawn as a diagram, where the outcomes sit side by side (a narrow outline cut them off, R5-N2).
  */
 export function codeFirstView(view: View | undefined): boolean {
   if (!view || view.type === "graph") return false;
@@ -206,6 +213,8 @@ export function codeFirstView(view: View | undefined): boolean {
   if (view.layout === "diagram") return false;
   const steps = Array.isArray(view.steps) ? view.steps : [];
   if (steps.length < 3) return false;
+  if (view.type === "flow" && steps.filter((step) => step?.shape === "terminal").length >= 2)
+    return false;
   const files = new Set<string>();
   for (const step of steps) {
     const anchors = (Array.isArray(step?.anchors) ? step.anchors : []).filter(
@@ -258,4 +267,29 @@ export function stepLinks(flow: ProcessFlow, stepId: string): StepLink[] {
     }
   }
   return out;
+}
+
+/**
+ * The direction (right or down) each graph view was first laid out in, for the page's life (R5-5): the Tour's
+ * picture, the Map, Present and Explore draw a view the same way round, and a pane that changes shape (Show
+ * code, a wider slide column) changes only the zoom. The first pane a view is drawn in picks it.
+ */
+const directions = new Map<string, GraphLayout["direction"]>();
+
+/** `layoutGraphFitting` the first time a view is drawn; the same direction every time after. */
+export async function layoutView(
+  viewId: string,
+  graph: Parameters<typeof layoutGraphFitting>[0],
+  viewport: { width: number; height: number } | undefined,
+  maxZoom: number | undefined,
+  padding: number | undefined,
+  changes: ChangeMarks | undefined,
+  pins: GraphView["layout"],
+): Promise<GraphLayout> {
+  const known = directions.get(viewId);
+  if (known) return layoutGraph(graph, { direction: known, pins }, changes);
+  const layout = await layoutGraphFitting(graph, viewport, maxZoom, padding, changes, pins);
+  // (a layout with no direction, the grid fallback, decides nothing)
+  if (!layout.fallback && viewport) directions.set(viewId, layout.direction);
+  return layout;
 }

@@ -41,7 +41,7 @@ function compareVersions(left: string, right: string): number | undefined {
 
 export const doctorCommand: CommandSpec = {
   name: "doctor",
-  usage: "xpl doctor [--agent none|claude|codex|pi|droid|devin] [--skill-dir <path>]",
+  usage: "xpl doctor [--agent none|claude|codex|pi|droid|devin] [--skill-dir <folder>]",
   summary: "Diagnose local setup without downloading tools or starting authoring",
   details: [
     "Checks Node >=22.12, bundled file hashes and grammar loading. Required failures exit 1.",
@@ -60,7 +60,7 @@ export const doctorCommand: CommandSpec = {
     },
     "skill-dir": {
       type: "string",
-      arg: "<path>",
+      arg: "<folder>",
       desc: "Installed skill to check (default: ~/.claude/skills/code-explainer)",
     },
   },

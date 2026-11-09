@@ -119,7 +119,7 @@ describe('boxText: "members"', () => {
   // holds a value of the type it points at.
   it('names an arrow from a row "holds", and leaves the arrows of an ordinary map as they are', () => {
     expect(derive(TS_INCLUDE, "members").edges.map((e) => e.label)).toEqual(["holds", "holds"]);
-    expect(derive(TS_INCLUDE).edges.every((e) => e.label === undefined)).toBe(true);
+    expect(derive(TS_INCLUDE).edges.map((e) => e.label)).toEqual([undefined, undefined, undefined]);
   });
 
   it("makes each type with rows a table, rows in code order, each with the type its line names", () => {
@@ -135,7 +135,7 @@ describe('boxText: "members"', () => {
       [sym("src/models.ts#Queue.dead"), 0, "DeadJob[]"],
     ]);
     // an ordinary map has containers, not tables
-    expect(derive(TS_INCLUDE).nodes.some((n) => n.rows || n.row !== undefined)).toBe(false);
+    expect(derive(TS_INCLUDE).nodes.filter((n) => n.rows || n.row !== undefined)).toEqual([]);
   });
 
   it("reads the type of a Python and a Go field, and none from a plain assignment", () => {
@@ -160,6 +160,30 @@ describe('boxText: "members"', () => {
     ).toEqual([
       ["Job.Ready", "[]*Job"],
       ["Job.Tag", "string"],
+    ]);
+  });
+
+  // D8/V5-03: a Go struct is indexed as "class"; the reader reads the language's own word on every box.
+  it('gives a Go struct the word "struct" and a field of any type the word "field"', () => {
+    const words = (include: string[]) =>
+      derive(include.map(sym), "members").nodes.map((n) => [n.id.split("#")[1], n.kindWord]);
+    expect(words(["queue/models.go#Job", "queue/models.go#Job.Ready"])).toEqual([
+      ["Job", "struct"],
+      ["Job.Ready", "field"],
+    ]);
+    // a TypeScript class keeps its word; its field and an interface's field are fields
+    expect(
+      words([
+        "src/models.ts#Queue",
+        "src/models.ts#Queue.dead",
+        "src/models.ts#Job",
+        "src/models.ts#Job.id",
+      ]),
+    ).toEqual([
+      ["Job", undefined],
+      ["Job.id", "field"],
+      ["Queue", undefined],
+      ["Queue.dead", "field"],
     ]);
   });
 });

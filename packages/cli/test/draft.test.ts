@@ -437,9 +437,13 @@ describe("xpl draft change", () => {
     );
     const anchored = new Set(patchAnchors(patch).map((a) => a.file));
     for (const file of changed) expect(anchored, file).toContain(file);
-    // the deleted files are anchored in the code before the change
+    // the deleted files are anchored in the code before the change, and so are the old lines of a changed piece
     const base = patchAnchors(patch).filter((a) => a.at === "base");
-    expect([...new Set(base.map((a) => a.file))].sort()).toEqual(["old.py", "tests/test_old.py"]);
+    expect([...new Set(base.map((a) => a.file))].sort()).toEqual([
+      "old.py",
+      "runner.py",
+      "tests/test_old.py",
+    ]);
     expect(notes.filter((n) => n.startsWith("no anchor"))).toEqual([]);
     // `xpl anchors --json` agrees: every changed file has an anchor in the stored explainer
     const listed = await xplJson<{ elements: { anchors: { file: string }[] }[] }>(
@@ -509,7 +513,20 @@ describe("xpl draft change", () => {
     // the tests step names changed symbols with no indexed test reference
     const tests = steps.at(-2)!.note!;
     expect(tests).toContain("No indexed test reference found");
-    expect(tests).toContain("`clamp`");
+    // clamp is not named: test_backoff calls backoff, which calls it
+    expect(tests).toContain("`Runner.dispatch`");
+    expect(tests).not.toContain("`clamp`");
+    // a changed piece shows its old lines first (a base anchor), then the new ones
+    const dispatch = steps.find((s) => s.focus[0] === "sym:runner.py#Runner.dispatch")!;
+    expect(dispatch.code).toEqual([
+      { file: "runner.py", at: "base", span: { from: 12, to: 12 }, role: "definition" },
+      expect.objectContaining({ file: "runner.py", symbol: "Runner.dispatch" }),
+    ]);
+    expect(dispatch.note).toContain("the first code link shows it");
+    // who else is affected: always a step, even with no caller beyond the entry
+    const others = steps.find((s) => s.note!.includes("who else is affected"))!;
+    expect(others.note).toContain("Callers outside tests: none beyond the entry, `main`");
+    expect(others.note).toContain("explain-change.md §5");
     // the steps cite changed lines: no step shows more than 2 ranges
     for (const step of steps) expect(step.code!.length).toBeLessThanOrEqual(2);
   });

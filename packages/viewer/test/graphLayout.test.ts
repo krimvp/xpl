@@ -989,7 +989,8 @@ describe("what a map draws", () => {
     const apart = a!.x + a!.width <= b!.x || b!.x + b!.width <= a!.x;
     expect(apart).toBe(true);
     // still at its line (on it, or beside it and touching it, where the other line does not run through it)
-    expect(b!.y <= 12 + 2 && b!.y + b!.height >= 12 - 2).toBe(true);
+    expect(b!.y).toBeLessThanOrEqual(12 + 2);
+    expect(b!.y + b!.height).toBeGreaterThanOrEqual(12 - 2);
     expect(routeHitsLabel(edges[0]!.points, b!)).toBe(false);
   });
 

@@ -2,18 +2,20 @@
  * The icon in the corner of a diagram box: what the box is, at a glance. Architecture boxes show their role
  * (a server for a service, a cylinder for a database, a globe for an outside system); boxes of code show
  * their level (a book for the repo, a folder, a file, stacked layers for a group) and symbols a letter
- * (C class, I interface, ƒ function, m method, ...). Drawn here, in a 16x16 box, so no icon set is bundled.
+ * (C class, S struct, I interface, ƒ function, m method, ...). Drawn here, in a 16x16 box, so no icon set is bundled.
  */
 import type { ReactNode } from "react";
 
 /** Letters for kinds of symbols, drawn in a rounded square. */
 const LETTERS: Record<string, string> = {
   class: "C",
+  struct: "S",
   interface: "I",
   function: "ƒ",
   method: "m",
   type: "T",
   variable: "x",
+  field: "x",
   enum: "E",
   key: "k",
   symbol: "•",

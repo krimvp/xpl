@@ -115,3 +115,9 @@ export function leadSentences(text: string, count: number): string {
   }
   return trimmed;
 }
+
+/** A person's text as a sentence: a stop is added only when it does not already end in ".", "!" or "?". */
+export function asSentence(text: string): string {
+  const trimmed = text.trim();
+  return /[.!?]$/.test(trimmed) ? trimmed : `${trimmed}.`;
+}

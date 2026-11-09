@@ -540,7 +540,7 @@ export function draftData(input: DraftInput, scope: Target): Draft {
       note(
         "Where to go next",
         leftOff.length > 0
-          ? `${todo("the types left off the map and what each would answer, one short sentence each.")} Left off: ${names(leftOff)}.`
+          ? `${todo("the types left off the map and what each would answer, one short sentence each.")} Left off: ${names(leftOff).replace(/(?<!…)$/, ".")}`
           : todo(
               "where the code changes this data, and what to read for it, one short sentence each (`xpl refs <field> --in --kind write` lists the writers).",
             ),

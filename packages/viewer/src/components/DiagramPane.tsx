@@ -2,11 +2,12 @@
  * The diagram of the current view (graph or sequence) under a caption with its title and question. (The
  * stub and edge-kind toggles of a graph view are in the header's Edit menu, with the other author tools.)
  */
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useDerived, useViewerState } from "../hooks.js";
 import { ErrorBoundary } from "./ErrorBoundary.js";
 import { GraphView } from "./GraphView.js";
 import { GraphAuthor } from "./GraphAuthor.js";
+import { ToolbarSlot } from "./PanZoom.js";
 import { FlowDiagram } from "./FlowDiagram.js";
 import { ExpandInPlaceAction } from "./ExpandInPlaceAction.js";
 import { FoldBackAction } from "./FoldBackAction.js";
@@ -18,6 +19,8 @@ export function DiagramPane() {
   const state = useViewerState();
   const derived = useDerived();
   const view = derived.view.view;
+  // Present: the zoom toolbar goes into the title bar, off the picture (D9).
+  const [slot, setSlot] = useState<HTMLElement | null>(null);
   const tourId = state.tour?.tourId;
   const order = useMemo(
     // (Explore starts on the tour's box only while a tour is chosen; else on the view's own first box)
@@ -57,47 +60,50 @@ export function DiagramPane() {
           </>
         )}
         {view.type === "graph" && <GraphAuthor key={view.id} view={view} />}
+        {present && <span className="caption-tools" ref={setSlot} />}
       </div>
-      <div className="diagram-body">
-        <ErrorBoundary
-          key={view.id}
-          fallback={(error) => (
-            <div className="diagram-message is-error">
-              This view could not be drawn: {error.message}
-            </div>
-          )}
-        >
-          {view.type === "graph" && derived.view.graph ? (
-            <GraphView
-              viewId={view.id}
-              resetKey={resetKey}
-              graph={derived.view.graph}
-              pins={view.layout}
-              selection={state.selection}
-              matches={derived.matches}
-              related={derived.selection.related}
-              order={order}
-              present={present}
-            />
-          ) : view.type === "flow" ? (
-            <FlowDiagram view={view} outline={!present && codeFirstView(view)} />
-          ) : view.type === "sequence" ? (
-            <SequenceView
-              view={view}
-              resetKey={resetKey}
-              model={state.model}
-              selection={state.selection}
-              matches={derived.matches}
-              related={derived.selection.related}
-              present={present}
-            />
-          ) : (
-            <div className="diagram-message">
-              This viewer cannot draw views of type "{String((view as { type?: unknown }).type)}".
-            </div>
-          )}
-        </ErrorBoundary>
-      </div>
+      <ToolbarSlot.Provider value={present ? slot : undefined}>
+        <div className="diagram-body">
+          <ErrorBoundary
+            key={view.id}
+            fallback={(error) => (
+              <div className="diagram-message is-error">
+                This view could not be drawn: {error.message}
+              </div>
+            )}
+          >
+            {view.type === "graph" && derived.view.graph ? (
+              <GraphView
+                viewId={view.id}
+                resetKey={resetKey}
+                graph={derived.view.graph}
+                pins={view.layout}
+                selection={state.selection}
+                matches={derived.matches}
+                related={derived.selection.related}
+                order={order}
+                present={present}
+              />
+            ) : view.type === "flow" ? (
+              <FlowDiagram view={view} outline={!present && codeFirstView(view)} />
+            ) : view.type === "sequence" ? (
+              <SequenceView
+                view={view}
+                resetKey={resetKey}
+                model={state.model}
+                selection={state.selection}
+                matches={derived.matches}
+                related={derived.selection.related}
+                present={present}
+              />
+            ) : (
+              <div className="diagram-message">
+                This viewer cannot draw views of type "{String((view as { type?: unknown }).type)}".
+              </div>
+            )}
+          </ErrorBoundary>
+        </div>
+      </ToolbarSlot.Provider>
     </div>
   );
 }

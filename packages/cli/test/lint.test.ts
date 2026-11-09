@@ -1553,6 +1553,36 @@ describe("lintExplainer: reader checks", () => {
     }
   });
 
+  // structure R5-02: SKILL.md "a sequence has 3-6 participants"
+  it("many-participants: a sequence a tour shows with more than 6 participants", () => {
+    const sequence = (id: string, count: number) => ({
+      id,
+      type: "sequence",
+      title: `Sequence ${id}`,
+      participants: Array.from({ length: count }, (_, i) => `sym:src/f.ts#p${i}`),
+      steps: [],
+    });
+    const step = (id: string, view: string) => ({
+      id,
+      view,
+      focus: [],
+      note: "### A call\nIt runs.",
+    });
+    const { findings } = lintExplainer(
+      explainer({
+        views: [sequence("view:seven", 7), sequence("view:six", 6), sequence("view:off", 9)],
+        tours: [{ ...tour([]), steps: [step("t1", "view:seven"), step("t2", "view:six")] }],
+      }),
+    );
+    expect(only(findings, "many-participants").map((f) => [f.elementId, f.message])).toEqual([
+      [
+        "view:seven",
+        "7 participants (more than 6) on a sequence a tour shows: the lifelines get too narrow to read",
+      ],
+    ]);
+    expect(only(findings, "many-participants")[0]!.severity).toBeUndefined();
+  });
+
   it("big-map (on include without an index); an edge from a box to itself is drawn, so it is not a finding", () => {
     const include = Array.from({ length: 9 }, (_, i) => `file:src/f${i}.ts`);
     const { findings } = lintExplainer(
@@ -2317,6 +2347,55 @@ describe("lintExplainer: words and voice on real code English", () => {
     expect(ids(found, "tool-word")).toEqual(["concept:c1"]);
   });
 
+  // language L5-1: a one-word quote of a value (a region code, a mode, a key) is the code's word, not a scare quote
+  it("we-voice skips every quote; filler-word skips a one-word quote of a value, not a scare quote", () => {
+    const found = concepts([
+      'Defaults the region to "us" when none is set.',
+      'Accepts "simple" and "just" as values of the --style flag.',
+      'Stores the ratio under the key "leverage".',
+      'The status is "seamless" or "split", read from the config.',
+      'The pool "manages" its connections.',
+      'The "robust" retry loop never gives up.',
+    ]);
+    expect(ids(found, "we-voice")).toEqual([]);
+    expect(ids(found, "filler-word")).toEqual(["concept:c5", "concept:c6"]);
+  });
+
+  // language L5-2: the verb "maps" and code that draws a box of its own do not make a sentence about the map
+  it("tool-word: a sentence with the verb maps or a code box is not about the guide's map", () => {
+    const found = concepts([
+      "Builds the gRPC stub for each service and maps its methods to handlers.",
+      "Returns a stub response and draws a box around the error in the log.",
+      "Each stub of this map is a box for code outside it.",
+    ]);
+    expect(ids(found, "tool-word")).toEqual(["concept:c3"]);
+  });
+
+  // newcomer R5-S6: "in all" is "in total", a quoted test name is the code's words, a heading has its step's code
+  it('absolute-word skips "in all", a quoted test name, and a heading on a step with code', () => {
+    const steps = [
+      "### Retries\nThe old code waited 3.5 s in all.",
+      '### Tests\nThe older "always fails" test now passes.',
+      "### Only a missing handler is not retryable\nThe worker marks the two failures.",
+      "### Retries\nThe runner retries in all cases.",
+    ].map((note, i) => ({
+      id: `t${i + 1}`,
+      view: "view:v",
+      focus: [],
+      note,
+      ...(i === 2 ? { code: [{ file: "src/worker.ts", role: "definition" }] } : {}),
+    }));
+    const { findings } = lintExplainer(explainer({ tours: [{ ...tour([]), steps }] }));
+    expect(only(findings, "absolute-word").map((f) => f.elementId)).toEqual(["tour:t/t4"]);
+    // the same heading with no code under it still needs evidence
+    const bare = lintExplainer(
+      explainer({
+        tours: [tour(["### Only a missing handler is not retryable\nThe worker marks it."])],
+      }),
+    );
+    expect(only(bare.findings, "absolute-word").map((f) => f.elementId)).toEqual(["tour:t/t1"]);
+  });
+
   it('we-voice: "us" after a number is microseconds', () => {
     expect(ids(concepts(["The value is in µs, so 1000 us is one ms."]), "we-voice")).toEqual([]);
   });
@@ -2507,7 +2586,7 @@ describe("xpl lint", () => {
       {
         elementId: "view:system",
         field: "include",
-        message: expect.stringContaining("System map"),
+        message: expect.stringContaining("has 2 boxes and no arrows"),
         hint: expect.stringContaining("arrows the code shows"),
       },
     ]);

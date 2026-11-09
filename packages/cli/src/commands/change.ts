@@ -75,7 +75,9 @@ function callerLine(entry: CallerEntry): string {
 function testLine(entry: TestEntry): string {
   const notes = [
     ...(entry.changed ? [entry.changed === "new" ? "new" : "changed"] : []),
-    ...(entry.via !== undefined ? ["uses its class"] : []),
+    ...(entry.via === "class" ? ["calls its class"] : []),
+    ...(entry.via === "instance" ? ["builds its class; a guess"] : []),
+    ...(entry.via === "call" && entry.through ? [`through ${entry.through}`] : []),
   ];
   return `${entry.id}${notes.length > 0 ? `  (${notes.join(", ")})` : ""}`;
 }
@@ -207,7 +209,7 @@ export function renderAnalysis(analysis: ChangeAnalysis, omissions: string[] = [
       : `No indexed test reference found for ${plural(analysis.untested.length, "changed symbol")}: ${analysis.untested.join(", ")}`,
   );
   out.push(
-    "Direct callers and two-edge call paths come from the index; unindexed dynamic wiring is not inferred. Tests count when they reference the symbol (or build its class); check what they assert.",
+    "Direct callers and two-edge call paths come from the index; unindexed dynamic wiring is not inferred. Tests count when they reference the symbol, call one of its callers or build its class; check what they assert.",
   );
   if (omissions.length > 0) out.push("", "Not checked:", ...omissions.map((item) => `  ${item}`));
   return out;
@@ -270,8 +272,8 @@ export const changeCommand: CommandSpec = {
     "  - the changed files with their added and removed lines;",
     "  - the changed symbols: index symbols that hold an added or edited line (`new` when all of their lines are);",
     "  - for each changed symbol its direct callers outside test files, and indexed tests that reference it (a",
-    "    test function, or a test file for an import); for constructors and instance-call methods, a test that",
-    "    references the class counts too;",
+    "    test function, or a test file for an import). A test also counts when it calls one of those callers",
+    "    (`through …`), when it calls the class of a constructor, or when it builds the class of a method (a guess);",
     "  - for a method that runs when an instance is called (`__call__`, `handle`), the code that builds the class,",
     "    marked as a guess (`callers via instance`); for a constructor, the calls of its class;",
     "  - changed test files, listed apart from the per-symbol matches;",

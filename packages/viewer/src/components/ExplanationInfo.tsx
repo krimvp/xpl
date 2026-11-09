@@ -2,6 +2,7 @@ import { checkReview, reviewShapeIssues, type PublishedVersion } from "@xpl/core
 import { snapshotTexts } from "../snapshot.js";
 import { AnalysisDetails } from "./AnalysisCoverage.js";
 import { useStore, useViewerState } from "../hooks.js";
+import { asSentence } from "../readerWords.js";
 import { searchFor, versionUrl } from "../url.js";
 
 function VersionDetails({ version }: { version: PublishedVersion }) {
@@ -109,8 +110,8 @@ export function ExplanationInfo() {
             </ul>
           </details>
           <p>
-            Version links require the staged directory tree. This page captures history at staging;
-            it does not contact a repository service.
+            The version links work only next to the staged folder. This page holds the history from
+            when it was staged; it does not ask a server for more.
           </p>
         </section>
       )}
@@ -125,7 +126,7 @@ export function ExplanationInfo() {
               : "the code links"}
             {review.scope.files?.length ? ` and ${review.scope.files.join(", ")}` : ""}.{" "}
             {review.omissions.length
-              ? `Not checked: ${review.omissions.join("; ")}.`
+              ? `Not checked: ${asSentence(review.omissions.join("; "))}`
               : "Nothing left out."}{" "}
             {status === "out-of-date" &&
               "The reviewed text or its code changed, or the code is not in this page."}

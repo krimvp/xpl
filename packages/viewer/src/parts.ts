@@ -11,7 +11,7 @@ import {
   type GraphView,
   type SequenceView,
 } from "@xpl/core";
-import { drawnEdges } from "./drawnEdges.js";
+import { drawnEdges, isHolds } from "./drawnEdges.js";
 import { ROLE_WORDS } from "./layout/graphLayout.js";
 import { boxOrder } from "./matrix.js";
 import { readerBadge } from "./readerWords.js";
@@ -24,11 +24,11 @@ export interface BoxPart {
   /** The first sentence of its summary. */
   summary?: string;
   /**
-   * The boxes of this map it uses, and the ones that use it, by name (its drawn arrows; code outside the map
-   * does not count).
+   * Its drawn arrows in words, out of it first, then into it (`linkWords`): "uses worker.ts", "used by main.ts",
+   * a field's "holds Job" and its type's "held by Queue.ready", "implements JobQueue". Code outside the map does
+   * not count.
    */
-  uses: string[];
-  usedBy: string[];
+  links: string[];
   /** 0 for a box on the map itself, 1 for a box drawn inside it, and so on. */
   depth: number;
 }
@@ -69,10 +69,22 @@ export function firstSentence(text: string | undefined): string | undefined {
 }
 
 /** "uses worker.ts", "used by main.ts and test", "uses 3 boxes": the links of a box on its map, in words. */
-export function linkWords(verb: string, names: readonly string[]): string | undefined {
+export function linkWords(
+  verb: string,
+  names: readonly string[],
+  noun = "boxes",
+): string | undefined {
   if (names.length === 0) return undefined;
   if (names.length <= 2) return `${verb} ${names.join(" and ")}`;
-  return `${verb} ${names.length} boxes here`;
+  return `${verb} ${names.length} ${noun} here`;
+}
+
+/** The verbs of an arrow, at its start and at its end: what it says on the map, not "uses" for every kind. */
+function verbsOf(edge: DerivedGraph["edges"][number]): [string, string] {
+  if (isHolds(edge)) return ["holds", "held by"];
+  if (edge.kind === "implements") return ["implements", "implemented by"];
+  if (edge.kind === "extends") return ["extends", "extended by"];
+  return ["uses", "used by"];
 }
 
 export function mapParts(graph: DerivedGraph, view: GraphView, model: ExplainerModel): MapParts {
@@ -90,13 +102,36 @@ export function mapParts(graph: DerivedGraph, view: GraphView, model: ExplainerM
   }
   const rank = (id: string) => order.get(id) ?? Number.MAX_SAFE_INTEGER;
   const edges = drawnEdges(graph.edges.filter((edge) => byId.has(edge.from) && byId.has(edge.to)));
+  // a row is named with its table: "held by Queue.ready", not "held by ready"
+  const nameOf = (id: string) => {
+    const node = byId.get(id)!;
+    const table = node.row !== undefined && node.parent ? byId.get(node.parent) : undefined;
+    return table ? `${table.label}.${node.label}` : node.label;
+  };
+  const links = (id: string): string[] => {
+    const words = new Map<string, { names: string[]; fields: boolean }>();
+    const add = (verb: string, other: string) => {
+      const entry = words.get(verb) ?? { names: [], fields: true };
+      words.set(verb, entry);
+      const name = nameOf(other);
+      if (!entry.names.includes(name)) entry.names.push(name);
+      entry.fields &&= byId.get(other)!.row !== undefined;
+    };
+    for (const edge of edges)
+      if (edge.from === id && edge.to !== id) add(verbsOf(edge)[0], edge.to);
+    for (const edge of edges)
+      if (edge.to === id && edge.from !== id) add(verbsOf(edge)[1], edge.from);
+    return [...words].map(([verb, { names, fields }]) =>
+      linkWords(verb, names, fields ? "fields" : "boxes")!,
+    );
+  };
   const boxes: BoxPart[] = [];
   const walk = (parent: string | undefined, depth: number) => {
     const list = [...(children.get(parent) ?? [])].sort((a, b) => rank(a.id) - rank(b.id));
     for (const node of list) {
       const inside = children.get(node.id)?.length ?? 0;
       // (a file is said by the box's own badge; a group says how many files it holds)
-      const badge = readerBadge(node.symbolKind ?? node.kind);
+      const badge = readerBadge(node.kindWord ?? node.symbolKind ?? node.kind);
       const kind =
         node.row !== undefined
           ? // a row of a table (data map): a field, with the type it holds (R4-3)
@@ -118,14 +153,7 @@ export function mapParts(graph: DerivedGraph, view: GraphView, model: ExplainerM
         label: node.label,
         ...(kind ? { kind } : {}),
         ...(summary ? { summary } : {}),
-        uses: [
-          ...new Set(edges.filter((e) => e.from === node.id && e.to !== node.id).map((e) => e.to)),
-        ].map((id) => byId.get(id)!.label),
-        usedBy: [
-          ...new Set(
-            edges.filter((e) => e.to === node.id && e.from !== node.id).map((e) => e.from),
-          ),
-        ].map((id) => byId.get(id)!.label),
+        links: links(node.id),
         depth,
       });
       walk(node.id, depth + 1);

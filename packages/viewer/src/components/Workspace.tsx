@@ -141,7 +141,23 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
   // The topic column names the picked element (not in the guide while its section is the topic).
   const topicShown =
     !!info && onScreen && !wholeFlow && !(state.perspective === "guide" && appliedStep);
-  const showSource = code || sourceOpen || codeFirst;
+  // D9: on the Map and the Flow the code column waits for code to show. While nothing is selected (no box,
+  // no caret, no file opened) the diagram keeps the width, and the column appears with the first selection.
+  // Once code has shown, the column stays until "Hide code" or another tab: clearing the selection does not
+  // move the diagram again.
+  const [codeShown, setCodeShown] = useState(false);
+  useEffect(() => setCodeShown(false), [sourceOpen, state.perspective]);
+  useEffect(() => {
+    if (sourceOpen && derived.panes.length > 0) setCodeShown(true);
+  }, [sourceOpen, derived.panes.length]);
+  const waiting =
+    sourceOpen &&
+    !codeShown &&
+    !code &&
+    !codeFirst &&
+    (state.perspective === "map" || state.perspective === "flow") &&
+    derived.panes.length === 0;
+  const showSource = code || codeFirst || (sourceOpen && !waiting);
   // Where the reader is: the step on screen, else what is selected. A map or a flow with nothing selected
   // is named by its caption (title and levels), not a second time here (U24).
   const crumb = readingStep
@@ -241,6 +257,11 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
           >
             {sourceOpen ? "Hide code" : "Show code"}
           </button>
+        )}
+        {waiting && (
+          <p className="code-waiting" role="status" data-testid="code-waiting">
+            Click a box, an arrow or a step to see its code.
+          </p>
         )}
       </div>
       <div className="workspace-columns" ref={columns}>
@@ -474,7 +495,7 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
               <p className="eyebrow">{state.perspective === "map" ? "This map" : "This flow"}</p>
               <h2>{diagramTitle}</h2>
               <p data-testid="topic-off-view">
-                {info.title}, which you picked, is not in this{" "}
+                {info.title}, which you selected, is not in this{" "}
                 {state.perspective === "map" ? "map" : "flow"}.
               </p>
             </section>

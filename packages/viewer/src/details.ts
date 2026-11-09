@@ -18,6 +18,7 @@ import {
   type Stub,
 } from "@xpl/core";
 import type { ViewDerived } from "./derive.js";
+import { isHolds, kindCount } from "./drawnEdges.js";
 import { trustWords } from "./readerWords.js";
 
 export interface AnchorRow {
@@ -203,7 +204,7 @@ function buildInfo(id: ElementId, model: ExplainerModel, vd: ViewDerived): Eleme
         type: "node",
         title: node.label,
         // an architecture box is what it is ("database"), not the kind of code it groups
-        kind: node.role ?? node.symbolKind ?? node.kind,
+        kind: node.role ?? node.kindWord ?? node.symbolKind ?? node.kind,
         facts,
         anchors: rowsFor(node.anchors, id, model, vd),
         related: [],
@@ -247,29 +248,31 @@ function buildInfo(id: ElementId, model: ExplainerModel, vd: ViewDerived): Eleme
     }
     case "derived-edge": {
       const derived = vd.edgeMap.get(id);
-      // a field's arrow on a data map (core labels it "holds"): "ready holds Job"
-      const holds = derived?.label === "holds";
+      // a field's arrow on a data map (core labels it "holds"): "Queue.ready holds Job", one field, no count
+      const holds = derived !== undefined && isHolds(derived);
+      const from = holds ? fieldName(ref.from, model) : model.label(ref.from);
+      const to = model.label(ref.to);
       const info: ElementInfo = {
         id,
         type: "derived-edge",
         title: holds
-          ? `${model.label(ref.from)} holds ${model.label(ref.to)}`
+          ? `${from} holds ${to}`
           : derived
-            ? (derived.label ?? `${derived.kind} ×${derived.count}`)
+            ? (derived.label ?? kindCount(derived.kind, derived.count))
             : ref.kind,
-        kind: ref.kind,
-        where: `${model.label(ref.from)} → ${model.label(ref.to)}`,
+        kind: holds ? "holds" : ref.kind,
+        where: `${from} → ${to}`,
         summary: holds
-          ? `The field ${model.label(ref.from)} holds a value of type ${model.label(ref.to)}, found in the code${trustWords(derived!.resolution) ? ` (${trustWords(derived!.resolution)})` : ""}.`
+          ? `The field ${from} holds a value of type ${to}, found in the code${trustWords(derived.resolution) ? ` (${trustWords(derived.resolution)})` : ""}.`
           : derived
-            ? `${plural(derived.count, "reference")} from ${model.label(ref.from)} to ${model.label(ref.to)}, found in the code${trustWords(derived.resolution) ? ` (${trustWords(derived.resolution)})` : ""}.`
+            ? `${plural(derived.count, "reference")} from ${from} to ${to}, found in the code${trustWords(derived.resolution) ? ` (${trustWords(derived.resolution)})` : ""}.`
             : `An arrow found in the code (${ref.kind}).`,
         facts: [
-          { label: "From", value: model.label(ref.from) },
-          { label: "To", value: model.label(ref.to) },
+          { label: "From", value: from },
+          { label: "To", value: to },
           ...(derived
             ? [
-                { label: "References", value: String(derived.count) },
+                ...(holds ? [] : [{ label: "References", value: String(derived.count) }]),
                 { label: "Resolution", value: derived.resolution },
               ]
             : []),
@@ -327,4 +330,12 @@ function buildInfo(id: ElementId, model: ExplainerModel, vd: ViewDerived): Eleme
       return info;
     }
   }
+}
+
+/** A field named with the type that owns it ("Queue.ready"); any other element by its label. */
+function fieldName(id: ElementId, model: ExplainerModel): string {
+  const node = model.node(id);
+  const owner =
+    node?.parent !== undefined && node.parent !== null ? model.node(node.parent) : undefined;
+  return owner?.kind === "symbol" ? `${owner.label}.${node!.label}` : model.label(id);
 }

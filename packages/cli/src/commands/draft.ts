@@ -174,7 +174,8 @@ export const draftCommand: CommandSpec = {
     `                            the change (changed symbols, or their files when many; direct callers outside`,
     `                            tests; one group box for the tests), and a tour in review order: what changes for`,
     `                            users, where it enters, one step per changed piece, who else is affected, tests,`,
-    `                            risks (at most ${DRAFT_LIMITS.changeSteps} steps). Every changed file is anchored, tests too.`,
+    `                            risks (at most ${DRAFT_LIMITS.changeSteps} steps). Every changed file is anchored, tests too; a`,
+    "                            changed piece's step shows its old lines (a base anchor) before the new ones.",
     `  repo <explainer>          two levels. A system map: the project as a service box (one per program under`,
     `                            services/, apps/ or cmd/), who reaches it and what it relies on (databases, caches,`,
     `                            queues, other APIs, found from the import lines). A web server found from its start`,
@@ -198,8 +199,9 @@ export const draftCommand: CommandSpec = {
     "                            too), the big picture, one step per main call (a branch with two outcomes is one",
     "                            step), and where to go next. Calls to helpers of the entry's own class get a",
     "                            lifeline of their own; recursion is a call to itself; one-line helpers, type",
-    "                            conversions and data built from a type are left out (the notes list them), and so",
-    "                            are the calls that reach the least code when there are too many.",
+    "                            conversions, data built from a type and one-line checks a branch's condition makes",
+    "                            are left out (the notes list them), and so are the calls that reach the least code",
+    "                            when there are too many. Log calls get a tour step last.",
     "                            Several entries: one sequence each, in one tour (a question with two halves). A",
     "                            method a class inherits (`sym:a.py#Child.run`) starts at the base that defines it,",
     "                            and self calls go where the class's method order finds them.",
@@ -417,7 +419,7 @@ export const draftCommand: CommandSpec = {
         if (view.scope) view.scope.question = question;
       }
       for (const tour of draft.patch.tours ?? []) {
-        tour.summary = `TODO: answer ${JSON.stringify(question)}${audience ? ` for ${audience}` : ""}. State the scope and excluded behavior.`;
+        tour.summary = `TODO: answer ${JSON.stringify(question)}${audience ? ` for ${audience}` : ""}. State the scope and excluded behaviour.`;
       }
     }
 

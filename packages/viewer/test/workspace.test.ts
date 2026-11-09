@@ -1,10 +1,16 @@
-import { ExplainerModel, processFlow, type SequenceView } from "@xpl/core";
+import {
+  deriveGraph,
+  ExplainerModel,
+  processFlow,
+  type GraphView,
+  type SequenceView,
+} from "@xpl/core";
 import { describe, expect, it } from "vitest";
 import { ViewerStore } from "../src/store.js";
 import { makeBundle } from "./world.js";
 import { readLaunchParams } from "../src/data.js";
 import { searchFor } from "../src/url.js";
-import { aroundFlow, flowRelated, topicElements } from "../src/workspace.js";
+import { aroundFlow, flowRelated, layoutView, topicElements } from "../src/workspace.js";
 
 describe("explanation workspace", () => {
   it("starts with the guide but preserves explicit explore and present launches", () => {
@@ -203,5 +209,26 @@ it("restores a step, explicit view, selection and range together", () => {
     tour: { tourId: "tour:demo", step: 1 },
     applied: { stepId: "t2" },
     cursor: { file: "src/a.ts", fromLine: 12, toLine: 12, fromCol: 6, toCol: 9 },
+  });
+});
+
+describe("one direction per view (R5-5)", () => {
+  // one layer per file, then one per method: long one way and thin the other, so the pane decides
+  const graph = () => {
+    const bundle = makeBundle();
+    const explainer = structuredClone(bundle.explainer);
+    const view = explainer.views.find((v) => v.id === "view:overview") as GraphView;
+    view.include = ["file:src/a.ts", "file:src/b.ts", "sym:src/a.ts#A.run", "sym:src/b.ts#B.go"];
+    return deriveGraph(view, new ExplainerModel(explainer, bundle.index));
+  };
+  const lay = (id: string, width: number, height: number) =>
+    layoutView(id, graph(), { width, height }, undefined, undefined, undefined, undefined);
+
+  it("the first pane a view is drawn in picks the direction; later panes only zoom", async () => {
+    expect((await lay("view:once", 1200, 300)).direction).toBe("RIGHT");
+    // (the same view in a tall pane: a Tour picture after the Map, a phone turned, Show code)
+    expect((await lay("view:once", 300, 1200)).direction).toBe("RIGHT");
+    // another view picks its own
+    expect((await lay("view:other", 300, 1200)).direction).toBe("DOWN");
   });
 });

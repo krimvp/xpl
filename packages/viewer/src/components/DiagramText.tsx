@@ -1,7 +1,7 @@
 import { useId } from "react";
 import type { DerivedGraph, ProcessFlow } from "@xpl/core";
 import { readingOrder, type SequenceLayout } from "../layout/sequenceLayout.js";
-import { drawnEdges } from "../drawnEdges.js";
+import { drawnEdges, isHolds, kindCount } from "../drawnEdges.js";
 import { useStore, useViewerState } from "../hooks.js";
 import { boxOrder } from "../matrix.js";
 import { mapEdgeSource } from "../readerWords.js";
@@ -50,10 +50,9 @@ export function DiagramText(props: Props) {
     relationships = drawnEdges(graph.edges).map((edge) => ({
       id: edge.id,
       select: edge.id,
-      label:
-        edge.label === "holds" && edge.kind === "references"
-          ? `${nameOf(edge.from)} holds ${nameOf(edge.to)}`
-          : `${nameOf(edge.from)} to ${nameOf(edge.to)}: ${edge.label ?? `${edge.kind} ×${edge.count}`}`,
+      label: isHolds(edge)
+        ? `${nameOf(edge.from)} holds ${nameOf(edge.to)}`
+        : `${nameOf(edge.from)} to ${nameOf(edge.to)}: ${edge.label ?? kindCount(edge.kind, edge.count)}`,
       trust: mapEdgeSource(edge),
     }));
     relationships.push(

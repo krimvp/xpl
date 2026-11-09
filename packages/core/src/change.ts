@@ -4,7 +4,7 @@
  * files, the index symbols the change touches, their direct callers and two-edge call paths outside tests,
  * and the tests that reference them. Pure: the CLI runs git and hands the record in.
  */
-import { elementIdForSymbolId } from "./ids.js";
+import { elementIdForSymbolId, symbolIdForElementId } from "./ids.js";
 import { isTestFile, type IndexModel } from "./index-model.js";
 import type {
   ChangedFile,
@@ -207,7 +207,14 @@ export interface TestEntry {
   kinds: Reference["kind"][];
   /** The test is itself part of the change. */
   changed?: "new" | "changed";
-  via?: "class" | "instance";
+  /**
+   * How it reaches the symbol when not by name: `class` = it calls the class of a constructor; `instance` = it
+   * builds the class of a method (a guess: it may never call the method); `call` = it calls `through`, a
+   * function or method outside tests that calls the symbol (one call between them, as for callers).
+   */
+  via?: "class" | "instance" | "call";
+  /** With `via: "call"`: the function or method between the test and the symbol. */
+  through?: ElementId;
 }
 
 /** A symbol of the index that the change touches. */
@@ -357,8 +364,10 @@ export function changeStatusOfRange(
  * - one extra indexed call hop through a function or method, preserving both reference sites and labels,
  *   capped at 100 paths and 1000 inspected references per changed symbol; no dynamic wiring is inferred;
  * - the tests that reference it: test functions (or test files, for an import) with a reference of any kind to it,
- *   or to its class for a constructor or an instance method;
- * - `untested`: the changed symbols that no test references.
+ *   or to its class for a constructor or an instance method; for any other method, a test that calls its class
+ *   (builds one: a guess, `via: "instance"`); for a function or method, a test that calls one of its direct
+ *   callers outside tests (`via: "call"`, the same one extra hop as the call paths);
+ * - `untested`: the changed symbols that none of these tests reach.
  *
  * `getText` (the head text) is used to skip blank and comment lines; without it every changed line counts.
  */
@@ -559,7 +568,7 @@ function relations(
     if (!entry.kinds.includes(ref.kind)) entry.kinds.push(ref.kind);
     if (ref.resolution === "precise") entry.resolution = "precise";
   };
-  const addTest = (ref: Reference, via?: TestEntry["via"]): void => {
+  const addTest = (ref: Reference, via?: TestEntry["via"], through?: ElementId): void => {
     const file = index.fileOfSymbolId(ref.from);
     if (file === undefined) return;
     const owner = testOwner(index, ref.from);
@@ -573,6 +582,7 @@ function relations(
         kinds: [],
         ...(changed ? { changed } : {}),
         ...(via ? { via } : {}),
+        ...(through ? { through } : {}),
       };
       tests.set(owner.id, entry);
     }
@@ -580,6 +590,13 @@ function relations(
     if (!entry.kinds.includes(ref.kind)) entry.kinds.push(ref.kind);
   };
 
+  /** A guess adds a test that no closer reference found, and never adds to the count of one that it did. */
+  const guessTest = (ref: Reference, via: "instance" | "call", through?: ElementId): void => {
+    const file = index.fileOfSymbolId(ref.from);
+    if (ref.kind !== "call" || file === undefined || !isTestFile(file)) return;
+    const held = tests.get(testOwner(index, ref.from).id);
+    if (!held || held.via === via) addTest(ref, via, through);
+  };
   const inside = (id: SymbolId, of: IndexedSymbol) => index.symbolWithin(id, of.id);
   const scan = (target: IndexedSymbol, via?: "class" | "instance") => {
     for (const ref of index.refsTo(target.id)) {
@@ -597,7 +614,19 @@ function relations(
   scan(sym);
   if (viaClass) scan(viaClass, "class");
   if (viaInstance) scan(viaInstance, "instance");
-
+  if (sym.kind === "function" || sym.kind === "method") {
+    // one call between a test and the symbol, as for the call paths of callers
+    for (const caller of [...callers.values()]) {
+      const wrapperId = symbolIdForElementId(caller.id);
+      const wrapper = wrapperId === undefined ? undefined : index.symbol(wrapperId);
+      if (!wrapper || (wrapper.kind !== "function" && wrapper.kind !== "method")) continue;
+      for (const ref of index.refsTo(wrapper.id)) guessTest(ref, "call", caller.id);
+    }
+  }
+  if (!viaClass && !viaInstance && parent?.kind === "class" && sym.kind === "method") {
+    // a test that builds the class of a changed method may run it: a guess, as for an instance method
+    for (const ref of index.refsTo(parent.id)) guessTest(ref, "instance");
+  }
   // a test file that imports the symbol and also uses it in its tests: the tests say more than the import
   const testList = [...tests.values()];
   const withSymbols = new Set(testList.filter((t) => t.id.startsWith("sym:")).map((t) => t.file));

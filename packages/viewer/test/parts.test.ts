@@ -22,10 +22,9 @@ describe("the parts of a diagram in words", () => {
     // the boxes it uses and the ones that use it, by name; a file's kind is left to its badge
     expect(parts.boxes[0]).toMatchObject({
       summary: "A and B together.",
-      uses: ["c.yaml"],
-      usedBy: [],
+      links: ["uses c.yaml"],
     });
-    expect(parts.boxes[1]).toMatchObject({ uses: [], usedBy: ["Core"] });
+    expect(parts.boxes[1]).toMatchObject({ links: ["used by Core"] });
     expect(parts.boxes[1]!.kind).toBeUndefined();
     // an arrow its author named is listed by its words, between the names of its two boxes
     expect(parts.arrows).toEqual([
@@ -59,6 +58,7 @@ describe("the parts of a diagram in words", () => {
     expect(linkWords("used by", ["main.ts", "test"])).toBe("used by main.ts and test");
     expect(linkWords("uses", ["a", "b", "c"])).toBe("uses 3 boxes here");
     expect(linkWords("uses", [])).toBeUndefined();
+    expect(linkWords("held by", ["a", "b", "c"], "fields")).toBe("held by 3 fields here");
   });
 
   it("keeps the first sentence of a summary, not a dot inside a name", () => {

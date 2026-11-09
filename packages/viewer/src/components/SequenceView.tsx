@@ -411,6 +411,19 @@ function stepNumbers(steps: readonly string[], rows: readonly Row[]): string {
 }
 
 /**
+ * What a frame's name or an arm's condition shows when clicked, and what it cannot show (V5-05): a frame and an
+ * arm have no code link of their own (the schema gives them none), so the line that tests the condition is not
+ * highlighted. The tooltip says where to look: the code above the frame's first step.
+ */
+function frameLimit(box: FrameBox, rows: readonly Row[]): string {
+  const first = box.steps.length > 0 ? stepNumbers(box.steps.slice(0, 1), rows) : undefined;
+  return (
+    "Click to see its steps and their code. The condition has no code link of its own" +
+    (first ? `: it is in the code above ${first}.` : ".")
+  );
+}
+
+/**
  * A frame's tab and name: a button that selects the frame's steps (V4-09). With arms, the name says what the
  * frame decides and is set apart from the conditions (R4-17): no brackets, italic.
  */
@@ -443,6 +456,7 @@ function FrameHead({
       onClick={still ? undefined : act}
       onKeyDown={still ? undefined : onEnter(act)}
     >
+      {!still && <title>{frameLimit(box, rows)}</title>}
       <rect className="hit" x={box.x + 1} y={box.y + 1} width={width} height={20} rx={4} />
       <path className="frame-tab" d={`M${box.x} ${box.y}h${tab}v12l-8 8h-${tab - 8}z`} />
       <text className="frame-kind" x={box.x + 8} y={box.y + 14}>
@@ -498,6 +512,7 @@ function ArmShape({
       onClick={still ? undefined : act}
       onKeyDown={still ? undefined : onEnter(act)}
     >
+      {!still && <title>{frameLimit(box, rows)}</title>}
       {n > 0 && (
         <line
           className="frame-divider"

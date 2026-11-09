@@ -26,11 +26,13 @@ const ICON_WORDS: Record<string, string> = {
   file: "a file",
   group: "a group of files",
   class: "a class",
+  struct: "a struct",
   interface: "an interface",
   function: "a function",
   method: "a method",
   type: "a type",
   variable: "a variable",
+  field: "a field",
   enum: "an enum",
   key: "a setting",
 };
@@ -286,7 +288,7 @@ export function KeyLine({
 export interface FlowKeyShows {
   decision: boolean;
   terminal: boolean;
-  /** A loop or branch label over a box. */
+  /** A loop or branch label over a step. */
   frames: boolean;
   /** Arrows drawn dashed: the order of the calls, read from the code (a projected flow). */
   projected: boolean;
@@ -338,12 +340,12 @@ export function FlowKey({ shows }: { shows: FlowKeyShows }) {
         </Row>
       )}
       {shows.returns && (
-        <Row label="Up one level: the call returns, to the box at the arrow's end (an arrow that ends on no box: to whoever made the call)">
+        <Row label="Up one level: the call returns, to the step at the arrow's end (an arrow that ends on no step: to whoever made the call)">
           <Arrow className="lg-edge is-return" />
         </Row>
       )}
       {shows.frames && (
-        <Row label="A condition: the purple words above a box say when it and the boxes after it run">
+        <Row label="A condition: the purple words above a step say when it and the steps after it run">
           <text className="lg-frame" x="16" y="15">
             if…
           </text>
@@ -395,7 +397,7 @@ export function SequenceKey({ shows }: { shows: SequenceKeyShows }) {
         </Row>
       )}
       {shows.frames && (
-        <Row label="A box around steps: they repeat (loop), run only when a condition holds (opt), or one of its arms runs (alt)">
+        <Row label="A box around steps: they repeat (loop), run only when a condition holds (opt), or one of its arms runs (alt). Its condition has no code link of its own: it is in the code above the first step">
           <g className="frame">
             <rect className="frame-box" x="1" y="2" width="30" height="18" rx="2" />
             <path className="frame-tab" d="M1 2 h12 v5 l-3 3 h-9 z" />

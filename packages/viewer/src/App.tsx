@@ -253,7 +253,7 @@ function ExploreLayout({
         onResize={(d) => setWidth((w) => clamp(w + d, 280, window.innerWidth - 360))}
       />
       <section className="right" aria-label="Code">
-        <CodeArea tree="collapsible" />
+        <CodeArea tree="collapsible" idle />
       </section>
     </main>
   );

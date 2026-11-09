@@ -177,3 +177,47 @@ test("each tour picture is as tall as its frame", async ({ page }) => {
       expect(Math.abs(svgHeight! - frameHeight!)).toBeLessThan(2);
   }
 });
+
+test("a Before/Now step numbers its code links in the step's order and pages to the code before (R5-N1)", async ({
+  page,
+}) => {
+  const { html, bundle } = readEmbeddedBundle(CHANGE_BUNDLE);
+  const edited = bundle as Parameters<Parameters<typeof openVariant>[1]>[0];
+  edited.explainer.tours[0].steps = [
+    {
+      id: "before-now",
+      view: "view:overview",
+      focus: [],
+      note: "Before: one delay. Now: a growing delay.",
+      code: [
+        {
+          file: "src/runner.ts",
+          at: "base",
+          role: "context",
+          resolved: { status: "ok", range: { startLine: 76, endLine: 77 } },
+        },
+        {
+          file: "src/queue.ts",
+          role: "definition",
+          resolved: { status: "ok", range: { startLine: 1, endLine: 10 } },
+        },
+      ],
+    },
+  ];
+  await page.route("http://xpl.test/**", (route) =>
+    route.fulfill({ contentType: "text/html", body: withBundle(html, edited) }),
+  );
+  await page.goto("http://xpl.test/");
+  const excerpt = page.getByRole("region", { name: "Source excerpt, step 1" });
+  // the definition shows first, and says it is the step's second code link
+  await expect(excerpt.locator(".guide-source-caption")).toHaveText(
+    /^src\/queue\.ts · lines? \d+(–\d+)? · code link 2 of 2$/,
+  );
+  await excerpt.getByRole("button", { name: "Code link 1 of 2" }).first().click();
+  await expect(excerpt.locator(".guide-source-caption")).toHaveText(
+    "src/runner.ts (before the change) · lines 76–77 · code link 1 of 2",
+  );
+  await expect(excerpt.locator("pre.is-before")).toContainText(
+    "this.config.retry.baseDelayMs * attempts",
+  );
+});

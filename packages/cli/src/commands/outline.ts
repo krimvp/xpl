@@ -27,7 +27,8 @@ export const outlineCommand: CommandSpec = {
     "Config keys (yaml/json/toml) are hidden unless --keys is given. Go code says `struct` and `field` where the",
     "index stores `class` and `variable` (`--json` keeps the stored kind; `--kind struct,field` works too).",
     `--kind method,function,class lists only symbols of those kinds (${SYMBOL_KINDS.join(", ")}); the dirs, files`,
-    "and parent symbols that contain a match are listed too, so each keeps its place. The repo line carries the",
+    "and parent symbols that contain a match are listed too, so each keeps its place; it searches every level unless",
+    "--depth is given. The repo line carries the",
     "name `xpl new` gives the repository (package.json, go.mod, pyproject.toml, git remote), not the directory's.",
   ],
   options: {
@@ -36,7 +37,11 @@ export const outlineCommand: CommandSpec = {
       arg: "<id>",
       desc: "Start at this dir, file or symbol (default: the repo)",
     },
-    depth: { type: "string", arg: "<n>", desc: "Levels below the start to show (default 2)" },
+    depth: {
+      type: "string",
+      arg: "<n>",
+      desc: "Levels below the start to show (default 2; with --kind, every level)",
+    },
     keys: { type: "boolean", desc: "Also show config keys (yaml/json/toml)" },
     kind: {
       type: "string",
@@ -52,10 +57,11 @@ export const outlineCommand: CommandSpec = {
   },
   positionals: [],
   async run(ctx, args) {
-    const depth = args.int("depth") ?? 2;
+    const kinds = parseKinds(args.list("kind"));
+    // a search by kind is for the matches, wherever they are: no depth limit unless one is given
+    const depth = args.int("depth") ?? (kinds ? Number.MAX_SAFE_INTEGER : 2);
     const limit = args.int("limit") ?? DEFAULT_OUTLINE_LINES;
     const under = args.str("under");
-    const kinds = parseKinds(args.list("kind"));
     const ws = await openWorkspace(ctx);
     const target = under !== undefined ? resolveTarget(ws.model, under) : REPO_TARGET;
     // Asking for the keys of a config key (or below), or for the kind `key`, is asking to see them.
@@ -71,7 +77,8 @@ export const outlineCommand: CommandSpec = {
       ctx.emit({
         index: ws.indexRel,
         commit: ws.index.commit,
-        depth,
+        // with --kind and no --depth: every level (no number to report)
+        ...(depth === Number.MAX_SAFE_INTEGER ? {} : { depth }),
         ...(kinds ? { kinds: [...kinds] } : {}),
         tree: outlineJson(tree),
       });

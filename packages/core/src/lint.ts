@@ -25,7 +25,8 @@
  *
  * Reader checks look at what the viewer will show: a step it has to title itself (`untitled-step`), changed files
  * no step shows the code of (`change-not-shown`), more far-apart places of a step in one file than a slide has panes for (`far-ranges`), a talk note set in
- * small type (`long-talk-note`), maps too big or too crowded for a picture (`big-map`, `crowded-map`), and a
+ * small type (`long-talk-note`), maps too big or too crowded for a picture (`big-map`, `crowded-map`), sequences with
+ * too many lifelines (`many-participants`), and a
  * system map with no visible arrows (`system-map-no-edges`). Map counts need the index: pass an
  * `ExplainerModel` to get them (`xpl lint` does when there is an index).
  *
@@ -86,6 +87,7 @@ export type LintRule =
   | "far-ranges"
   | "long-talk-note"
   | "big-map"
+  | "many-participants"
   | "crowded-map"
   | "system-map-no-edges";
 
@@ -129,6 +131,7 @@ export const LINT_RULES: Record<LintRule, string> = {
   "far-ranges": "step with two far-apart ranges in one file",
   "long-talk-note": "talk note set in small type",
   "big-map": "map with too many boxes for a tour",
+  "many-participants": "sequence with too many participants for a tour",
   "crowded-map": "map with too many arrows",
   "system-map-no-edges": "system map with no visible arrows",
 };
@@ -232,6 +235,8 @@ export const LINT_LIMITS = {
   tourMapBoxes: 8,
   /** ...and at most this many arrows per box (`crowded-map`). */
   edgesPerBox: 2,
+  /** A sequence a tour shows has at most this many participants (`many-participants`; SKILL.md "3-6"). */
+  sequenceParticipants: 6,
 };
 
 /**
@@ -446,6 +451,7 @@ export const ABSOLUTE_IDIOMS: readonly { phrase: string; only?: "end" | "connect
   { phrase: "above all", only: "end" },
   { phrase: "first of all", only: "end" },
   { phrase: "all in all", only: "end" },
+  { phrase: "in all", only: "end" },
   { phrase: "all of a sudden" },
   { phrase: "once and for all" },
   { phrase: "all right" },
@@ -1078,15 +1084,34 @@ const WE_WORDS =
 const REPORTED =
   /(?:prints|logs|says|shows|returns|reads|writes|throws|raises|error|message|label|title|text|named|called|as)\s*$/i;
 
+const QUOTE = /"[^"\n]*"|“[^”\n]*”/g;
+/** A one-word quote followed by these is a value or a name, not a scare quote (`"us" or "eu"`, `"robust" when`). */
+const VALUE_AFTER_QUOTE =
+  /^\s*(?:$|[.,;:!?)\]]|(?:or|and|as|when|if|for|in|to|is|are|was)(?![\p{L}\p{N}_'-]))/iu;
+
 /**
- * Quoted text (a comment, an error message) is the code's words, not the explainer's: a quote of two words or more,
- * or one after a word that reports it (`prints "done"`). A one-word quote anywhere else is a scare quote, the writer's
- * own word (`The pool "manages" its connections`), and stays checked.
+ * Quoted text (a comment, an error message, a value) is the code's words, not the explainer's: a quote of two words
+ * or more, one after a word that reports it (`prints "done"`), one in a list of quotes (`"a", "b"`), or one before
+ * punctuation, the end, or a word such as "or", "and", "when" (`the mode "robust" when ...`). A one-word quote before
+ * the word it modifies is a scare quote, the writer's own word (`The pool "manages" its connections`), and stays
+ * checked.
  */
 function withoutQuotes(text: string): string {
-  return text.replace(/"[^"\n]*"|“[^”\n]*”/g, (q, at: number) =>
-    /\s/.test(q.slice(1, -1).trim()) || REPORTED.test(text.slice(0, at)) ? " ".repeat(q.length) : q,
-  );
+  return text.replace(QUOTE, (q, at: number) => {
+    const after = text.slice(at + q.length);
+    const value =
+      /\s/.test(q.slice(1, -1).trim()) ||
+      REPORTED.test(text.slice(0, at)) ||
+      VALUE_AFTER_QUOTE.test(after) ||
+      /["”],\s*$/.test(text.slice(0, at)) ||
+      /^,\s*["“]/.test(after);
+    return value ? " ".repeat(q.length) : q;
+  });
+}
+
+/** Every quote masked, whatever its length: for checks that never read quoted words (we-voice, absolute words). */
+function withoutAnyQuotes(text: string): string {
+  return text.replace(QUOTE, (q) => " ".repeat(q.length));
 }
 
 /**
@@ -1126,8 +1151,11 @@ const XPL_SENSE: Readonly<Record<string, { before?: RegExp; after?: RegExp }>> =
   evidence: { before: /\b(?:source|anchor|code-link|answer)[\s-]+$/i },
 };
 const xplSense = (word: string) => XPL_SENSE[word.replace(/s$/, "")];
-/** Words of a diagram: a sentence with one of them talks about the guide's map. */
-const MAP_WORDS = /\b(?:box|boxes|arrows?|maps?|diagrams?)\b/i;
+/**
+ * Words of a diagram: a sentence with one of them talks about the guide's map. The nouns with a determiner only:
+ * "maps its methods" is a verb, and code draws boxes of its own ("draws a box around the error").
+ */
+const MAP_WORDS = /\b(?:(?:this|the|a|each|its) (?:map|diagram)|boxes|arrows?)\b/i;
 /** The sentence of `text` that holds `index`. */
 function plainSentenceAt(text: string, index: number): string {
   const start = Math.max(text.lastIndexOf(". ", index), text.lastIndexOf("\n", index)) + 1;
@@ -1401,7 +1429,8 @@ class Linter {
       );
     }
     const absolutes: { word: string; index: number }[] = [];
-    const plainWords = withoutIdioms(text);
+    // a quoted word is the code's (a test name, a value), not a claim of the guide
+    const plainWords = withoutAnyQuotes(withoutIdioms(text));
     for (const { word, pattern } of ABSOLUTE_PATTERNS) {
       pattern.lastIndex = 0;
       for (let m = pattern.exec(plainWords); m; m = pattern.exec(plainWords)) {
@@ -1445,7 +1474,8 @@ class Linter {
 
   /** `we-voice`: "we", "our", "us" or "let's" outside code spans and quotes ("US" is a place). */
   private weVoice(where: Where, text: string, quoteAt: (index: number) => string): void {
-    const plain = withoutQuotes(text);
+    // quoted text is never the guide's voice: "us" may be a region code, "we" a word the code prints
+    const plain = withoutAnyQuotes(text);
     // "US" is a place; "us" after a number is microseconds ("1000 us")
     const found = [...plain.matchAll(WE_WORDS)].filter(
       (m) =>
@@ -2389,7 +2419,8 @@ function changeChecks(lint: Linter, explainer: Explainer, at: Lookup): void {
 }
 
 /**
- * The map checks: `big-map` (a graph view a tour shows with more than `tourMapBoxes` boxes), `crowded-map` (more
+ * The map checks: `big-map` (a graph view a tour shows with more than `tourMapBoxes` boxes), `many-participants` (a
+ * sequence view a tour shows with more than `sequenceParticipants` participants), `crowded-map` (more
  * arrows than `edgesPerBox` per box, with the ids of the least used drawn edges to hide), and `system-map-no-edges`
  * (an architecture map with a non-component role, at least two boxes and no visible edges or stubs). The box and
  * arrow counts come from the index when there is one (`model`; the rows of a table are not boxes), else from the
@@ -2406,6 +2437,19 @@ function mapChecks(
       list(record(tour).steps).map((step) => str(record(step).view)),
     ),
   );
+  for (const view of at.views.values()) {
+    if (view.type !== "sequence" || !toured.has(str(view.id))) continue;
+    const count = list(view.participants).length;
+    if (count <= LINT_LIMITS.sequenceParticipants) continue;
+    const viewId = str(view.id) ?? "(view)";
+    lint.add(
+      { elementId: viewId, kind: "view", field: "participants" },
+      "many-participants",
+      excerpt(str(view.title) ?? viewId),
+      `${count} participants (more than ${LINT_LIMITS.sequenceParticipants}) on a sequence a tour shows: the lifelines get too narrow to read`,
+      "fold a helper that one participant calls into that participant's lifeline, or leave out the calls that do not change the answer (and say so in a note)",
+    );
+  }
   const graphs = [...at.views.values()].filter((view) => view.type === "graph");
   for (const view of graphs) {
     const viewId = str(view.id) ?? "(view)";
@@ -2463,7 +2507,7 @@ function mapChecks(
         where,
         "system-map-no-edges",
         excerpt(str(view.title) ?? viewId),
-        `system map ${str(view.title) ?? viewId} has ${plural(graph.nodes.length, "box")} and no arrows`,
+        `system map ${str(view.title) ?? viewId} has ${plural(graph.nodes.length, "box", "boxes")} and no arrows`,
         "check whether the map misses arrows the code shows; add only arrows a code link backs",
       );
     }
@@ -2745,7 +2789,10 @@ export function lintExplainer(explainer: Explainer, model?: ExplainerModel): Lin
       const heading = HEADING.exec(lines[first] ?? "");
       let body = note;
       if (heading && heading[1]!.trim() !== "") {
-        lint.title({ ...where, field: "note heading" }, heading[1], evidence);
+        // a heading is a title: the step's own code links under it are its evidence
+        const titleEvidence =
+          list(step.code).length > 0 ? { ...evidence, anchored: true } : evidence;
+        lint.title({ ...where, field: "note heading" }, heading[1], titleEvidence);
         body = lines.slice(first + 1).join("\n");
       } else if (!sentenceTitle(note)) {
         lint.add(

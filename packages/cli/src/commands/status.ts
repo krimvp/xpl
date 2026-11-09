@@ -186,13 +186,13 @@ function ghostLines(g: GhostStatus): string[] {
   if (g.total === 0) {
     return [
       g.mode === "none"
-        ? "  ghosts: none drawn (stubs: none)"
-        : "  ghosts: none (nothing leaves the view)",
+        ? "  outside this map: none drawn (stubs: none)"
+        : "  outside this map: none (nothing leaves the view)",
     ];
   }
   const shown = g.list.slice(0, TOP_GHOSTS).map((ghost) => `${ghost.id} ×${ghost.count}`);
   const lines = [
-    `  ghosts: ${plural(g.total, "box", "boxes")} for ${plural(g.stubs, "stub")} (policy: ${policy}), most referenced: ${shown.join(", ")}${
+    `  outside this map: ${plural(g.total, "dashed box", "dashed boxes")} for ${plural(g.stubs, "arrow")} (stubs: ${policy}), most referenced: ${shown.join(", ")}${
       g.list.length > TOP_GHOSTS
         ? `, ... +${g.list.length - TOP_GHOSTS} more (--json lists all, and the stub ids)`
         : ""
@@ -206,7 +206,7 @@ function ghostLines(g: GhostStatus): string[] {
   }
   if (g.crowded) {
     lines.push(
-      `  warning: ${g.total} ghosts: this view stops in too many places to read (more than ${CROWDED_GHOSTS}). ` +
+      `  warning: ${g.total} dashed boxes outside this map: this view stops in too many places to read (more than ${CROWDED_GHOSTS}). ` +
         (g.mode === "all"
           ? 'Set "stubs": {"mode": "top"} (what a view without "stubs" does: the 8 most referenced ghosts, the rest folded), '
           : `Lower "stubs": {"max": ${g.max}} to 8 or fewer, `) +
@@ -448,14 +448,15 @@ export const statusCommand: CommandSpec = {
     "The skill's to-do list for an explainer, without changing anything:",
     "  - per view, the visible nodes, edges and steps that have no `summary`, or one that still starts with",
     "    `TODO` (static edges are optional). The total counts each id once;",
-    "  - per graph view, where it stops: the ghost boxes and stubs it draws (counts, and the most referenced ghost",
-    `    ids), with a warning above ${CROWDED_GHOSTS} ghosts (a view without "stubs" keeps the 8 most referenced and`,
-    "    folds the rest). A folded ghost (ghost:rest:file:<path>, ghost:more:in|out) is not an element: it gets a line",
-    "    under the counts that names up to 3 of the elements it stands for, and includeAdd takes any of them. --json",
-    "    lists every ghost id with its count and all its targets, and every stub id, in views[].ghosts;",
+    "  - per graph view, where it stops (`outside this map`): the ghost boxes and stubs it draws (counts, and the",
+    `    most referenced ghost ids), with a warning above ${CROWDED_GHOSTS} ghosts (a view without "stubs" keeps the 8`,
+    "    most referenced and folds the rest). A folded ghost (ghost:rest:file:<path>, ghost:more:in|out) is not an",
+    "    element: it gets a line under the counts that names up to 3 of the elements it stands for, and includeAdd",
+    "    takes any of them. --json lists every ghost id with its count and all its targets, and every stub id, in",
+    "    views[].ghosts;",
     "  - concepts without a summary;",
     "  - tours: id, number of steps, and the steps whose focus ids (or view) no longer resolve; a tour without a",
-    "    summary (or a TODO one) counts as unexplained;",
+    "    summary (or a TODO one) counts as having no text;",
     "  - llm elements whose anchors drifted (re-explain them, keeping userFields) and missing anchors; drift the",
     "    user owns is counted apart (ask the user);",
     "  - broken references: ids that vanished from the index (overlays of deleted symbols, include, members,",
@@ -599,9 +600,9 @@ export const statusCommand: CommandSpec = {
 
     const lines = [
       `${loaded.rel}: index ${ws.index.commit}, ${plural(views.length, "view")}, ${plural(model.concepts.length, "concept")}`,
-      `to do: ${todo.unexplained} unexplained, ${todo.drifted} drifted${
+      `to do: ${todo.unexplained} with no text, ${todo.drifted} changed code links${
         todo.driftedUserOwned > 0 ? ` (${todo.driftedUserOwned} user-owned: ask the user)` : ""
-      }, ${todo.missing} missing anchors, ${plural(todo.requests, "request")}${
+      }, ${todo.missing} missing code links, ${plural(todo.requests, "request")}${
         todo.broken > 0 ? `, ${plural(todo.broken, "broken reference")}` : ""
       }`,
     ];
@@ -609,29 +610,29 @@ export const statusCommand: CommandSpec = {
       lines.push("", "no views yet: apply a patch with a graph or sequence view");
     for (const view of views) {
       lines.push("", `${view.id} (${view.type}): ${view.title}`);
-      const shown = view.type === "graph" ? "nodes" : "participants";
+      const shown = view.type === "graph" ? "boxes" : "participants";
       lines.push(
         view.nodes.unexplained.length === 0
-          ? `  ${shown}: all ${view.nodes.total} explained`
+          ? `  ${shown}: all ${view.nodes.total} have text`
           : `  ${shown} without summary (${view.nodes.unexplained.length} of ${view.nodes.total}): ${listText(view.nodes.unexplained, 8)}`,
       );
       if (view.type === "graph") {
         const stored = view.edges.unexplained.filter((e) => e.stored).map((e) => e.id);
         const staticEdges = view.edges.unexplained.filter((e) => !e.stored).map((e) => e.id);
         lines.push(
-          `  edges: ${view.edges.total} shown; ` +
+          `  arrows: ${view.edges.total} shown; ` +
             (stored.length > 0
               ? `stored without summary (${stored.length}): ${listText(stored, 8)}`
-              : "every stored edge is explained") +
+              : "every stored arrow has text") +
             (staticEdges.length > 0
-              ? `; ${staticEdges.length} static without summary (optional): ${edgeIds(staticEdges)}`
+              ? `; ${staticEdges.length} found in the code without summary (optional): ${edgeIds(staticEdges)}`
               : ""),
         );
         if (view.ghosts) lines.push(...ghostLines(view.ghosts));
       } else {
         lines.push(
           view.steps.unexplained.length === 0
-            ? `  steps: all ${view.steps.total} explained`
+            ? `  steps: all ${view.steps.total} have text`
             : `  steps without summary (${view.steps.unexplained.length} of ${view.steps.total}): ${listText(view.steps.unexplained, 12)}`,
         );
       }

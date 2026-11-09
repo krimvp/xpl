@@ -73,6 +73,8 @@ describe("xpl draft data", () => {
     expect(steps.at(-1)?.note).toMatch(
       /^### Where to go next\n\nTODO: the types left off the map .* Left off: Config, /,
     );
+    // a cut list ends in "…", with no stop after it (adhd-text R5-06)
+    expect(steps.at(-1)?.note).toMatch(/, …$/);
     expect(r.out).toContain(
       "draft data for jobrunner: a data map of 6 types (a table each) with 27 field rows (a row needs no text),",
     );

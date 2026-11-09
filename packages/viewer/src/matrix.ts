@@ -1,5 +1,5 @@
 import type { DerivedEdge, DerivedGraph } from "@xpl/core";
-import { drawnEdges } from "./drawnEdges.js";
+import { drawnEdges, isHolds, kindCount } from "./drawnEdges.js";
 
 /**
  * A map as a dependency matrix (MatrixView): one row and one column per box, and in cell (row, column) the
@@ -37,6 +37,8 @@ export interface MatrixCell {
   text: string;
   /** The row comes after the column: the arrow goes back against the order. */
   back: boolean;
+  /** Every arrow drawn here is a field's "holds": `count` counts the fields, and `text` names them. */
+  fields: boolean;
 }
 
 /** A box's lines out of the map, or into it: the stubs the map draws to its dashed boxes. */
@@ -95,6 +97,7 @@ export function buildMatrix(graph: DerivedGraph, include: readonly string[] = []
       text: "",
       resolution: edge.resolution,
       back: r > c,
+      fields: true,
     });
   };
   // the drawn arrows first: they set the cell's trust label
@@ -106,14 +109,15 @@ export function buildMatrix(graph: DerivedGraph, include: readonly string[] = []
     cell.select.push(edge.id);
     cell.count += edge.count;
     cell.authored &&= AUTHORED.has(edge.resolution);
-    if (fold.has(edge.from) && edge.label === "holds") {
+    if (fold.has(edge.from) && isHolds(edge)) {
       // a field's arrow, folded into its table's row: the cell names the fields
       const fields = held.get(cell) ?? [];
       if (fields.length === 0) held.set(cell, fields);
       fields.push(labels.get(edge.from)!);
       continue;
     }
-    const text = edge.label ?? `${edge.kind} ×${edge.count}`;
+    cell.fields = false;
+    const text = edge.label ?? kindCount(edge.kind, edge.count);
     cell.text = cell.text ? `${cell.text}; ${text}` : text;
   }
   for (const [cell, fields] of held) {

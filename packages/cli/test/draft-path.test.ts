@@ -342,7 +342,9 @@ describe("xpl draft path: too many calls", () => {
     expect(view.participants).toContain("sym:store.py#Store");
     const left = notes.find((n) => n.startsWith("calls left out of the sequence"))!;
     expect(left).toContain("the ones that reach the least code");
-    expect(left.match(/sym:job\.py#Job\.step\d+/g)).toHaveLength(2);
+    // bare names, as a reader writes them (R4-08)
+    expect(left.match(/(?<!#)\bJob\.step\d+/g)).toHaveLength(2);
+    expect(left).not.toContain("sym:");
   });
 });
 
@@ -397,7 +399,18 @@ describe("xpl draft path: loops and branches", () => {
     ]);
     // the success outcome keeps a step of its own (an opt or alt arm outweighs a plain call: structure R4-04)
     const ack = view.steps!.find((s) => s.label === "ack(job)")!.id;
-    expect(tour.some((s) => s.focus.length === 1 && s.focus[0] === ack)).toBe(true);
+    const ackStep = tour.find((s) => s.focus.length === 1 && s.focus[0] === ack)!;
+    // nested branches get different headings: the outer one is about the arm it holds (structure R5-04)
+    expect(ackStep.note!.split("\n")[0]).toBe(
+      "### TODO: what happens in this arm (the code: `if (result.ok)`), as a plain statement",
+    );
+    expect(branch.note!.split("\n")[0]).toBe(
+      "### TODO: what this branch decides, as a plain statement",
+    );
+    // a log line is drawn, but a call that changes state gets the tour step first (viz V5-06)
+    const step = (name: string) => view.steps!.find((s) => s.label.startsWith(name))!.id;
+    expect(tour.some((s) => s.focus.includes(step("log(")))).toBe(false);
+    expect(tour.some((s) => s.focus.includes(step("lease(")))).toBe(true);
   });
 
   it("a Go call that computes its branch's condition runs before the frame, an early exit is an alt, and a branch with no drawn call has none", async () => {
@@ -421,6 +434,9 @@ describe("xpl draft path: loops and branches", () => {
       "Lease(ctx)",
     ]);
     expect(view.frames![2]!.arms![0]!.label).toContain("`if result.OK()`");
+    // `result.OK()` is the alt's own guard and a one-line check: no step, no lifeline (viz V5-06)
+    expect(view.steps!.map((s) => s.label)).not.toContain("OK()");
+    expect(view.participants).not.toContain("sym:internal/worker/worker.go#Result");
   });
 
   it("an if, elif and else with a call in each is one alt frame with three arms", async () => {

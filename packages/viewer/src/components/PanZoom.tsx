@@ -44,6 +44,7 @@ import {
   type Focus,
   type Transform,
 } from "../viewport.js";
+import { createPortal } from "react-dom";
 import { saveDiagramImage } from "../image.js";
 
 const FIT_PADDING = 24;
@@ -85,6 +86,11 @@ export const Presenting = createContext(false);
  * to a limit and keeps the widest width a step asked for.
  */
 export const PresentRoom = createContext<((extra: number) => void) | undefined>(undefined);
+/**
+ * Present (D9): where the zoom toolbar goes instead of over the picture, the diagram's title bar (null until
+ * that element is in the page). "Fit all" there never covers a box, fitted or not.
+ */
+export const ToolbarSlot = createContext<HTMLElement | null | undefined>(undefined);
 /** Room kept between the floating toolbar and the diagram under it, px. */
 const TOOLBAR_GAP = 6;
 const DRAG_THRESHOLD = 4;
@@ -215,16 +221,15 @@ export function PanZoom({
   /** How far down the band moves a fitted diagram. */
   const bandTop = bandBelow ? 0 : band;
   const presenting = useContext(Presenting);
-  // In Present the toolbar stays out of sight until the mouse moves (a talk is driven by keys): a slide's
-  // first view takes the whole pane; "Fit all", clicked with the toolbar in sight, keeps clear of it.
-  const startBand = presenting ? 0 : band;
+  const slot = useContext(ToolbarSlot);
+  // In Present too the first view keeps clear of the band: "Fit all" stays on the slide while part of the
+  // diagram is out of sight, and it never covers a box (D9).
   const fitSize = useMemo(() => {
     const h = shown !== undefined && shown < size.h ? shown : size.h;
     return { w: size.w, h: Math.max(1, h - band) };
   }, [size, shown, band]);
   /** The pane on screen, the toolbar's band included: whether a diagram reads whole is decided on it. */
   const paneSize = useMemo(() => ({ w: fitSize.w, h: fitSize.h + band }), [fitSize, band]);
-  const startSize = startBand === band ? fitSize : paneSize;
   const [t, setT] = useState<Transform>({ k: 1, x: 0, y: 0 });
   /** Focused elements the first view leaves out ("+N more"); 0 once the user moves the view. */
   const [more, setMore] = useState(0);
@@ -305,17 +310,21 @@ export function PanZoom({
     // A diagram that reads whole in the pane starts whole, under the toolbar's band (a little smaller):
     // the band does not turn it into one that starts on its focus.
     if (rawFitScale(paneSize, { width, height }, fitPadding) >= floor) {
-      const fit = fitTransform(startSize, { width, height }, options);
+      const fit = fitTransform(fitSize, { width, height }, options);
       if (!fit) return;
-      setT({ ...fit, y: fit.y + startBand });
+      setT({ ...fit, y: fit.y + bandTop });
       setMore(0);
       return;
     }
-    const next = frameView(startSize, { width, height }, start.current, options);
+    const next = frameView(fitSize, { width, height }, start.current, options);
     if (!next) return;
-    setT({ ...next.transform, y: next.transform.y + startBand });
+    // A frame of the focus with all of the diagram's height in the pane starts at its top, not centred
+    // under an empty band (a sequence's lifeline names come first, R5-2).
+    const y =
+      height * next.transform.k + 2 * fitPadding <= fitSize.h ? fitPadding : next.transform.y;
+    setT({ ...next.transform, y: y + bandTop });
     setMore(next.hidden);
-  }, [paneSize, startSize, width, height, options, startBand, fitPadding, floor]);
+  }, [paneSize, fitSize, width, height, options, bandTop, fitPadding, floor]);
 
   // Read the caller's focus before the effect below uses it.
   useLayoutEffect(() => {
@@ -628,6 +637,77 @@ export function PanZoom({
     </>
   );
 
+  const toolbar = (
+    <div className="pz-toolbar" onPointerDown={(event) => event.stopPropagation()}>
+      {!textMode && (
+        <>
+          {short && cues}
+          <button
+            type="button"
+            aria-label="Zoom in"
+            title="Zoom in (+)"
+            onClick={() => zoomBy(1.25)}
+          >
+            +
+          </button>
+          <button
+            type="button"
+            aria-label="Zoom out"
+            title="Zoom out (-)"
+            onClick={() => zoomBy(1 / 1.25)}
+          >
+            &minus;
+          </button>
+          <button
+            type="button"
+            className={`pz-fit${cue ? " is-cue" : ""}`}
+            data-testid="pz-fit"
+            title={
+              readableAgain
+                ? `All of it is in view at ${Math.round(t.k * 100)}%, too small to read comfortably. Zoom back to a readable size.`
+                : big
+                  ? `Part of this diagram is out of sight${outOfSight > 0 ? ` (${outOfSight} boxes)` : ""}: it starts at a readable size. Fit all of it in the view (0).`
+                  : "Fit all of it in the view (0)"
+            }
+            onClick={() => {
+              if (readableAgain) {
+                follow.current = "start";
+                showStart();
+              } else fitEverything();
+            }}
+          >
+            {readableAgain ? "Readable size" : "Fit all"}
+            {/* (a cue says what is out of sight: a bare "Fit all" in its frame read as pressed, R5-N2) */}
+            {!readableAgain && (outOfSight > 0 || cue) && (
+              <span className="pz-fit-count">
+                {" "}
+                ({outOfSight > 0 ? `${outOfSight} out of sight` : "part out of sight"})
+              </span>
+            )}
+          </button>
+          {tools}
+          <button
+            type="button"
+            title="Save the whole diagram as a PNG image, as it looks here"
+            onClick={() => void saveDiagramImage(content.current!, width, height, imageName)}
+          >
+            Save image
+          </button>
+        </>
+      )}
+      {textView && (
+        <button
+          type="button"
+          aria-pressed={textMode}
+          aria-controls={textId}
+          onClick={() => setTextMode((shown) => !shown)}
+        >
+          Text view
+        </button>
+      )}
+    </div>
+  );
+
   return (
     <div
       ref={wrap}
@@ -653,74 +733,12 @@ export function PanZoom({
       }}
     >
       <span id={keyboardHelp} className="pz-keyboard-hint">
-        Enter to navigate. Up/Down: next element. Left/Right: follow links. Enter: select code.
-        Escape: canvas.
+        Press Enter to move through the diagram. Up and Down: next box. Left and Right: follow its
+        arrows. Enter: show its code. Escape: back to the diagram.
       </span>
-      {/* Before the canvas: Tab reaches the zoom buttons drawn above the diagram before its boxes (U51). */}
-      <div className="pz-toolbar" onPointerDown={(event) => event.stopPropagation()}>
-        {!textMode && (
-          <>
-            {short && cues}
-            <button
-              type="button"
-              aria-label="Zoom in"
-              title="Zoom in (+)"
-              onClick={() => zoomBy(1.25)}
-            >
-              +
-            </button>
-            <button
-              type="button"
-              aria-label="Zoom out"
-              title="Zoom out (-)"
-              onClick={() => zoomBy(1 / 1.25)}
-            >
-              &minus;
-            </button>
-            <button
-              type="button"
-              className={`pz-fit${cue ? " is-cue" : ""}`}
-              data-testid="pz-fit"
-              title={
-                readableAgain
-                  ? `All of it is in view at ${Math.round(t.k * 100)}%, too small to read comfortably. Zoom back to a readable size.`
-                  : big
-                    ? `Part of this diagram is out of sight${outOfSight > 0 ? ` (${outOfSight} boxes)` : ""}: it starts at a readable size. Fit all of it in the view (0).`
-                    : "Fit all of it in the view (0)"
-              }
-              onClick={() => {
-                if (readableAgain) {
-                  follow.current = "start";
-                  showStart();
-                } else fitEverything();
-              }}
-            >
-              {readableAgain ? "Readable size" : "Fit all"}
-              {!readableAgain && outOfSight > 0 && (
-                <span className="pz-fit-count"> ({outOfSight} out of sight)</span>
-              )}
-            </button>
-            {tools}
-            <button
-              type="button"
-              title="Save the whole diagram as a PNG image, as it looks here"
-              onClick={() => void saveDiagramImage(content.current!, width, height, imageName)}
-            >
-              Save image
-            </button>
-          </>
-        )}
-        {textView && (
-          <button
-            type="button"
-            aria-pressed={textMode}
-            aria-controls={textId}
-            onClick={() => setTextMode((shown) => !shown)}
-          >
-            Text view
-          </button>
-        )}
-      </div>
+      {/* Before the canvas: Tab reaches the zoom buttons drawn above the diagram before its boxes (U51). In
+          Present they sit in the diagram's title bar (ToolbarSlot), off the picture. */}
+      {slot === undefined ? toolbar : slot ? createPortal(toolbar, slot) : null}
       <svg
         ref={canvas}
         className="pz-svg"

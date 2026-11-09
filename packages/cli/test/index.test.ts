@@ -61,10 +61,19 @@ describe("xpl index", () => {
     expect(out).toMatch(/typescript\s+8 files\s+\d+ symbols\s+refs: heuristic/);
     expect(out).toMatch(/yaml\s+1 file\s+16 symbols\s+refs: none/);
     expect(index.languages.typescript.refs).toBe("heuristic");
-    expect(out).toContain("Analysis coverage: 12 files; some analysis is limited or unavailable.");
+    // one plain line per limited language under the table; the coverage report waits for --verbose (L5-4)
+    expect(out).toContain(
+      "\ntext: file only; no symbols or references.\ntypescript: references matched by name; some can be missing.\n",
+    );
+    expect(out).not.toContain("Analysis coverage");
+    expect(out).not.toContain("Fresh work");
+    const verbose = (await xpl(dir, "index", "--precise", "off", "--verbose")).out;
+    expect(verbose).toContain(
+      "Analysis coverage: 12 files; some analysis is limited or unavailable.",
+    );
     // one line per language, in name order, the provider only when it is not the language
-    const coverage = out
-      .slice(out.indexOf("Analysis coverage:"))
+    const coverage = verbose
+      .slice(verbose.indexOf("Analysis coverage:"))
       .split("\n\n")[0]!
       .split("\n")
       .slice(1);
@@ -74,7 +83,7 @@ describe("xpl index", () => {
     );
     const order = coverage.slice(1).map((line) => line.split(":")[0]);
     expect(order).toEqual([...order].sort());
-    expect(out).not.toContain("typescript (typescript)");
+    expect(verbose).not.toContain("typescript (typescript)");
     expect(index.symbols.some((s: any) => s.id === "src/runner.ts#Runner.dispatch")).toBe(true);
   });
 
@@ -142,7 +151,7 @@ describe("xpl index", () => {
     const clean = await xplJson(dir, "index", "--precise", "off", "--no-cache");
     expect(clean.code).toBe(0);
     expect(clean.json.extraction).toMatchObject({ enabled: false, hits: 0, misses: 11 });
-    const human = await xpl(dir, "index", "--precise", "off");
+    const human = await xpl(dir, "index", "--precise", "off", "--verbose");
     expect(human.out).toMatch(
       /Extraction \(cache enabled\): 11 hits, 0 misses of the 11 files with a grammar, [\d.]+ ms wall; file-local tree-sitter and tags only\./,
     );

@@ -109,7 +109,7 @@ export function FlowDiagram({ view, snapshot, outline = false }: FlowDiagramProp
         Could not lay out the process: {error}
       </div>
     );
-  if (!layout) return <div className="diagram-message">Laying out the process…</div>;
+  if (!layout) return <div className="diagram-message">Drawing the flow…</div>;
   if (flow.stages.length === 0)
     return <div className="diagram-message">This process has no stages yet.</div>;
   const placed = placedStages(flow, layout);

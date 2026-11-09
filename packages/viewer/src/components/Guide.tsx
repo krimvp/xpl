@@ -294,18 +294,36 @@ function ChangeOmissions() {
   if (omissions.length === 0) return null;
   // The files' own lines read plainly; the tools' reports ("<provider> report: …") are for whoever checks
   // the analysis: one plain line, the reports folded under it.
-  const reports = omissions.filter((item) => /^\S+ report: /.test(item));
-  const files = omissions.filter((item) => !reports.includes(item));
+  const index = state.model.index.index;
+  // A language a SCIP tool covers: its name-matching report says nothing the reader needs (R5-N5).
+  const precise = (language: string | undefined) =>
+    !!language && index.languages[language]?.refs === "precise";
+  const reports = omissions.filter(
+    (item) => /^\S+ report: /.test(item) && !precise(item.slice(0, item.indexOf(" "))),
+  );
+  const files = omissions.filter((item) => !/^\S+ report: /.test(item));
+  if (files.length === 0 && reports.length === 0) return null;
+  const languageOf = new Map(index.files.map((file) => [file.path, file.language]));
+  const allPrecise = change.files
+    .filter((file) => file.status !== "deleted")
+    .every((file) => {
+      const language = languageOf.get(file.path);
+      return !language || index.languages[language]?.refs !== "heuristic" || precise(language);
+    });
+  // Only the tools' limits: not something a person left out.
+  const heading = files.length > 0 ? "Not checked" : "Limits of the code analysis";
   return (
-    <section className="change-omissions" data-testid="change-omissions" aria-label="Not checked">
-      <h3>Not checked</h3>
+    <section className="change-omissions" data-testid="change-omissions" aria-label={heading}>
+      <h3>{heading}</h3>
       <ul>
         {files.map((item) => (
           <li key={item}>{item}</li>
         ))}
         {reports.length > 0 && (
           <li>
-            Some arrows in the changed files may be missing, or matched by name only.
+            {allPrecise
+              ? "A language tool found the arrows in the changed files; a tool can still miss one."
+              : "Some arrows in the changed files may be missing, or matched by name only."}
             <details>
               <summary>What the code analysis reported ({reports.length})</summary>
               <ul>

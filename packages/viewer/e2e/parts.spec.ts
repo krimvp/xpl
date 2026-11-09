@@ -54,13 +54,21 @@ test("a sequence's steps in words carry the numbers its arrows carry", async ({ 
   await page.goto(TS_BUNDLE.href + "?perspective=flow&view=view:dispatch");
   await page.waitForFunction(() => window.__xpl !== undefined);
   const steps = page.getByTestId("parts-panel").getByRole("list", { name: "Steps" });
-  await expect(steps.locator(".parts-number").first()).toHaveText("1");
-  const first = steps.locator("[data-part-id]").first();
-  const id = await first.getAttribute("data-part-id");
-  await expect(
-    page.locator(`.workspace-diagram [data-element-id="${id}"] .step-number text`),
-  ).toHaveText("1");
-  await first.click();
-  await expect.poll(async () => (await stateOf(page)).selection).toEqual([id]);
+  // every step, not only the first: a numbering that counted frames or arms would drift from step 2 on (T-07)
+  const ids = ["dispatch:1", "dispatch:2", "dispatch:3"];
+  await expect(steps.locator(".parts-number")).toHaveText(["1", "2", "3"]);
+  await expect
+    .poll(() =>
+      steps
+        .locator("[data-part-id]")
+        .evaluateAll((els) => els.map((el) => el.getAttribute("data-part-id"))),
+    )
+    .toEqual(ids);
+  for (const [i, id] of ids.entries())
+    await expect(
+      page.locator(`.workspace-diagram [data-element-id="${id}"] .step-number text`),
+    ).toHaveText(String(i + 1));
+  await steps.locator(`[data-part-id="${ids[1]}"]`).click();
+  await expect.poll(async () => (await stateOf(page)).selection).toEqual([ids[1]]);
   expect(problems).toEqual([]);
 });

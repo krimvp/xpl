@@ -498,11 +498,10 @@ test.describe("the reader's screen", () => {
     await expect(first.getByTestId("focus-summary")).toHaveCount(0);
     await expect(first.locator(".guide-mini-node")).toHaveText(["runner.ts", "queue.ts"]);
     // the right-hand column does not say the open section again; no cards for a step that has none (the
-    // tour has some elsewhere, so the column stays and says so, R4-4)
+    // tour has some elsewhere, so the column stays and lists the step's own code, R4-4, R5-3)
     await expect(page.getByTestId("topic-summary")).toHaveCount(0);
-    await expect(page.getByRole("region", { name: "Related files" })).toHaveText(
-      "No related files for this step.",
-    );
+    await expect(page.getByRole("region", { name: "Related files" })).toHaveCount(0);
+    await expect(page.getByRole("region", { name: "This step's code" })).toBeVisible();
     await expect(page.locator(".workspace-context")).not.toContainText("Select a stage");
     // a box picked from the section is another topic: that one gets its summary (markdown rendered)
     await first.locator(".guide-mini-node", { hasText: "queue.ts" }).click();

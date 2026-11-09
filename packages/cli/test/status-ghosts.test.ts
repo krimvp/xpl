@@ -102,8 +102,10 @@ describe("xpl status: ghosts and stubs", () => {
     const { out } = await ok(crowd, "status", "crowd");
     // 14 leaf files and the rest of hub.ts; the default policy keeps 8 and folds the others into one ghost
     expect(out).toContain("view:crowd (graph): Around run");
-    const line = out.split("\n").find((l) => l.startsWith("  ghosts:"))!;
-    expect(line).toMatch(/^  ghosts: 9 boxes for \d+ stubs? \(policy: top 8\), most referenced: /);
+    const line = out.split("\n").find((l) => l.startsWith("  outside this map:"))!;
+    expect(line).toMatch(
+      /^  outside this map: 9 dashed boxes for \d+ arrows? \(stubs: top 8\), most referenced: /,
+    );
     // by references, the most referenced first: leaf07 is called 7 times
     expect(line).toContain("most referenced: ghost:file:src/leaf07.ts ×7, ");
     expect(line).toContain("... +4 more (--json lists all, and the stub ids)");
@@ -201,10 +203,12 @@ describe("xpl status: ghosts and stubs", () => {
     const dir = cloneDir(crowd);
     editView(dir, { stubs: { mode: "all" } });
     const { out } = await ok(dir, "status", "crowd");
-    const line = out.split("\n").find((l) => l.startsWith("  ghosts:"))!;
-    expect(line).toMatch(/^  ghosts: 16 boxes for \d+ stubs \(policy: all\), most referenced: /);
+    const line = out.split("\n").find((l) => l.startsWith("  outside this map:"))!;
+    expect(line).toMatch(
+      /^  outside this map: 16 dashed boxes for \d+ arrows? \(stubs: all\), most referenced: /,
+    );
     expect(out).toContain(
-      "warning: 16 ghosts: this view stops in too many places to read (more than 12)",
+      "warning: 16 dashed boxes outside this map: this view stops in too many places to read (more than 12)",
     );
     expect(out).toContain('Set "stubs": {"mode": "top"}');
     expect(out).toContain('put ghost ids in "hidden"');
@@ -234,7 +238,7 @@ describe("xpl status: ghosts and stubs", () => {
     const dir = cloneDir(crowd);
     editView(dir, { stubs: { mode: "none" } });
     const { out } = await ok(dir, "status", "crowd");
-    expect(out).toContain("  ghosts: none drawn (stubs: none)");
+    expect(out).toContain("  outside this map: none drawn (stubs: none)");
     const { json } = await xplJson<any>(dir, "status", "crowd");
     expect(json.views.find((v: any) => v.id === "view:crowd").ghosts).toMatchObject({
       mode: "none",
@@ -246,7 +250,7 @@ describe("xpl status: ghosts and stubs", () => {
     // everything of the repo is in the view: nothing leaves it
     editView(dir, { stubs: undefined, include: ["dir:src"] });
     const whole = await ok(dir, "status", "crowd");
-    expect(whole.out).toContain("  ghosts: none (nothing leaves the view)");
+    expect(whole.out).toContain("  outside this map: none (nothing leaves the view)");
   });
 
   it("sequence views carry no ghosts", async () => {
@@ -256,7 +260,7 @@ describe("xpl status: ghosts and stubs", () => {
     const graph = json.views.find((v: any) => v.id === "view:overview");
     expect(graph.ghosts.total).toBe(graph.ghosts.list.length);
     const { out } = await ok(demo, "status", "demo");
-    expect(out.match(/^  ghosts: /gm)).toHaveLength(1);
+    expect(out.match(/^  outside this map: /gm)).toHaveLength(1);
   });
 });
 

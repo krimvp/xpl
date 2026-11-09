@@ -16,18 +16,11 @@ choice and what to do when a run stops.
 A guide to a question starts on a map of the code it touches, then follows one path in a flow or a
 sequence. Select a step and its code lights up beside the diagram.
 
-![A sequence of how a job is dispatched: Runner.dispatch takes a job from the queue, runs it on a worker and requeues it in a loop until it succeeds or runs out of retries. The requeue step is selected, and its code in runner.ts and queue.ts is highlighted.](../../../docs/images/dispatch-step-selected-light.png)
+![A sequence of how a job is dispatched: Runner.dispatch takes a job from the queue, runs it on a worker and requeues it. The loop frame reads "while the runner is running". The requeue step is selected, and its code in runner.ts and queue.ts is highlighted.](../../../docs/images/dispatch-step-selected-light.png)
 
-## Architecture maps
+## Types, states and data
 
-An overview of a repository goes from the top down. The first map shows the system: who uses it, the
-services inside it and what they rely on, such as a database or a payments API. A box with a zoom badge
-opens the map of the level below it: the parts of one service, then its code.
-
-![A system map of a job runner: an operator starts it from the command line, and it reads its settings from a YAML file. The job runner box opens the map of its parts.](../../../docs/images/architecture-system-map-light.png)
-
-`xpl draft repo` drafts these maps from the index, and the agent or you write the text. Three more drafts
-show the types:
+Some questions are about types, states or data, not a path. Three drafts answer them:
 
 - `xpl draft class <guide> <type>` maps the classes and interfaces around one type: what it extends and
   implements, and what extends or implements it.
@@ -41,6 +34,16 @@ show the types:
 Choose a data map over a class map when the question is about fields, not subtypes. Sometimes no enum names
 the states of an item: its state is the list or table that holds it. Then `draft states` finds nothing. Draft
 the data map of those containers, and let the agent write a flow of the moves between them.
+
+## Architecture maps
+
+An overview of a repository goes from the top down. The first map shows the system: who uses it, the
+services inside it and what they rely on, such as a database or a payments API. A box with a zoom badge
+opens the map of the level below it: the parts of one service, then its code.
+
+![A system map of a job runner: an operator starts it from the command line, and it reads its settings from a YAML file. The job runner box opens the map of its parts.](../../../docs/images/architecture-system-map-light.png)
+
+`xpl draft repo` drafts these maps from the index, and the agent or you write the text.
 
 ## Quick maps
 

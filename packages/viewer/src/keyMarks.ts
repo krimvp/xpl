@@ -86,12 +86,13 @@ const TECH_ICONS: [RegExp, string][] = [
 export function iconName(box: {
   role?: string | undefined;
   kindClass: string;
+  kindWord?: string | undefined;
   badge?: string | undefined;
 }): string {
   // (only where the role's own icon would mislead: the globe of an outside system, a person)
   if ((box.role === "external" || box.role === "person") && box.badge)
     for (const [pattern, icon] of TECH_ICONS) if (pattern.test(box.badge)) return icon;
-  return box.role ?? box.kindClass;
+  return box.role ?? box.kindWord ?? box.kindClass;
 }
 
 const OUTSIDE_ROLES = new Set(["external", "person"]);

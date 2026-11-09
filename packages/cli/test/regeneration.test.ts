@@ -1028,7 +1028,7 @@ describe("all five edits in one second commit", () => {
     const text = await xpl(dir, "status", NAME);
     expect(text.code).toBe(0);
     expect(text.out).toMatch(
-      /^to do: \d+ unexplained, 5 drifted \(1 user-owned: ask the user\), 1 missing anchors, 0 requests$/m,
+      /^to do: \d+ with no text, 5 changed code links \(1 user-owned: ask the user\), 1 missing code links, 0 requests$/m,
     );
     const section = (from: string, to?: string) => {
       const start = text.out.indexOf(from);

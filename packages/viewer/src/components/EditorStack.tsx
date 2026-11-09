@@ -52,6 +52,7 @@ import {
 import { symbolAtWord } from "../callers.js";
 import { useDerived, useStore, useViewerState } from "../hooks.js";
 import { talkPanes, type TalkPane } from "../present/ranges.js";
+import { renderMarkdown } from "../markdown.js";
 import { roleWords } from "../readerWords.js";
 import type { Cursor, ViewerStore } from "../store.js";
 import { RangeStepper } from "./RangeStepper.js";
@@ -363,6 +364,17 @@ const EditorPane = memo(function EditorPane({
   const diff = useMemo(
     () => (showChanges ? paneDiff(pane.side, changed, baseLines, baseError, headLines) : null),
     [showChanges, pane.side, changed, baseLines, baseError, headLines],
+  );
+  const prose = useMemo(
+    () =>
+      wantLines !== undefined &&
+      /\.(md|markdown)$/i.test(pane.file) &&
+      pane.focused &&
+      !base &&
+      text
+        ? renderMarkdown(focusText(splitLines(text), pane.ranges))
+        : undefined,
+    [wantLines, pane.file, pane.focused, pane.ranges, base, text],
   );
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
@@ -775,12 +787,40 @@ const EditorPane = memo(function EditorPane({
               : "Loading…"}
           </div>
         ) : (
-          <div className="editor-host" ref={host} />
+          <>
+            {/* Present (R5-6): a markdown code link reads as prose, its own lines only: no raw image
+                links or headings of the lines around it on a slide. The editor stays, out of sight. */}
+            {prose !== undefined && (
+              <div
+                className="pane-prose markdown"
+                data-testid="pane-prose"
+                dangerouslySetInnerHTML={{ __html: prose }}
+              />
+            )}
+            <div className="editor-host" ref={host} hidden={prose !== undefined} />
+          </>
         )}
       </div>
     </section>
   );
 });
+
+/** The lines of a pane's focus, in order, a blank line between ranges that are apart. */
+function focusText(lines: readonly string[], ranges: PaneSpec["ranges"]): string {
+  const spans = [...ranges]
+    .map((r) => [r.range.startLine, r.range.endLine] as const)
+    .sort((a, b) => a[0] - b[0]);
+  const parts: string[] = [];
+  let last = 0;
+  for (const [from, to] of spans) {
+    const start = Math.max(from, last + 1);
+    if (start > to) continue;
+    if (parts.length > 0 && start > last + 1) parts.push("");
+    parts.push(...lines.slice(start - 1, to));
+    last = to;
+  }
+  return parts.join("\n");
+}
 
 /**
  * Names in a pane's code: "Who calls it" picks the symbol and shows its callers (the topic column, brought on

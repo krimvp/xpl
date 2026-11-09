@@ -559,8 +559,11 @@ function OutsideCell({
 
 /** "CLI → Indexer: imports ×214. heuristic (matched by name)": the map's own words, with the count. */
 function cellName(from: string, to: string, cell: MatrixCell): string {
+  // (the words of the cell already count, or name the fields it counts)
   const count =
-    cell.authored || cell.text.includes("×") ? "" : ` (${cell.kinds.join(" & ")} ×${cell.count})`;
+    cell.authored || cell.fields || cell.text.includes("×")
+      ? ""
+      : ` (${cell.kinds.join(" & ")} ×${cell.count})`;
   return (
     `${from} → ${to}: ${cell.text}${count}. ${TRUST[cell.resolution]}` +
     (cell.back ? ". Goes back up the list" : "")

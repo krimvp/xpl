@@ -14,6 +14,15 @@ import {
   type Loose,
 } from "./helpers.js";
 
+// a console error that only one path raises (the keyboard, a phone) fails the test that took it (T-13)
+let problems: string[] = [];
+test.beforeEach(({ page }) => {
+  problems = watchProblems(page);
+});
+test.afterEach(() => {
+  expect(problems).toEqual([]);
+});
+
 const CALLS = "edge:calls:grp:scheduling->file:src/worker.ts";
 
 /** The overview opens as a matrix (`render: "matrix"`): its three boxes are too few for the reader's switch. */
@@ -32,7 +41,6 @@ async function openMatrix(page: Page): Promise<void> {
 test("each row of the matrix uses its columns; a cell selects the arrow and shows where it is called", async ({
   page,
 }) => {
-  const problems = watchProblems(page);
   await openMatrix(page);
   await expect(page.getByRole("rowheader")).toHaveText([
     "1Scheduling",
@@ -63,7 +71,6 @@ test("each row of the matrix uses its columns; a cell selects the arrow and show
       ["src/runner.ts", 60],
       ["src/runner.ts", 63],
     ]);
-  expect(problems).toEqual([]);
 });
 
 test("the caret on a call site lights the cell of its arrow", async ({ page }) => {
@@ -114,12 +121,15 @@ test("the lines out of the map fill an Outside column and row; a cell selects th
   page,
 }) => {
   await openMatrix(page);
-  const out = page.locator(".matrix-cell.is-outside.has-arrow").first();
-  await expect(out).toHaveAccessibleName(/outside this map/);
-  await out.click();
-  const picked = await selectionOf(page);
-  expect(picked.length).toBeGreaterThan(0);
-  expect(picked.every((id) => id.startsWith("stub:"))).toBe(true);
+  // what outside the map uses worker.ts: the tests and main.ts, two stubs on the map, one cell here
+  const into = [
+    "stub:in:file:src/worker.ts->ghost:dir:test",
+    "stub:in:file:src/worker.ts->ghost:file:src/main.ts",
+  ];
+  const cell = page.locator(`.matrix-cell.is-outside[data-element-id="${into[0]}"]`);
+  await expect(cell).toHaveAccessibleName("Outside this map → worker.ts: calls ×4");
+  await cell.click();
+  await expect.poll(() => selectionOf(page)).toEqual(into);
   await expect(page.getByTestId("matrix-key").locator('[data-key-item="outside"]')).toHaveText(
     "leads outside this map",
   );

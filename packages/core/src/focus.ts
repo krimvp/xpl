@@ -355,7 +355,9 @@ export interface ReverseIndex {
 /**
  * Interval index over the focus ranges of `candidateIds` (see `viewCandidates`). Pass
  * `opts.derivedEdges` (from `derivedEdgeMap`) so derived-edge candidates do not rescan the index.
- * An element with several ranges around a line counts with its smallest one.
+ * An element with several ranges around a line counts with its smallest one. An arrow's "definition" range that
+ * is exactly a candidate box's own range is left out: the caret in a drawn box's body lights the box, not every
+ * arrow into it (V4-17). The arrow keeps its reference sites, and the definition of an end it draws no box for.
  */
 export function buildReverseIndex(
   candidateIds: readonly ElementId[],
@@ -368,8 +370,20 @@ export function buildReverseIndex(
     id: ElementId;
   }
   const byFile = new Map<FilePath, Entry[]>();
-  for (const id of unique(candidateIds)) {
-    for (const focus of codeFocus([id], model, opts)) {
+  const key = (focus: FocusRange) =>
+    `${focus.file}\0${focus.range.startLine}\0${focus.range.endLine}`;
+  const focusOf = unique(candidateIds).map((id) => ({ id, ranges: codeFocus([id], model, opts) }));
+  const isArrow = (id: ElementId) => {
+    const type = model.element(id)?.type;
+    return type === "edge" || type === "derived-edge";
+  };
+  const boxes = new Set(
+    focusOf.filter(({ id }) => !isArrow(id)).flatMap(({ ranges }) => ranges.map(key)),
+  );
+  for (const { id, ranges } of focusOf) {
+    const arrow = isArrow(id);
+    for (const focus of ranges) {
+      if (arrow && focus.role === "definition" && boxes.has(key(focus))) continue;
       const entry = { start: focus.range.startLine, end: focus.range.endLine, id };
       const list = byFile.get(focus.file);
       if (list) list.push(entry);

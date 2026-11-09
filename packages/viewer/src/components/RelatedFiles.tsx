@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import type { ExplainerModel, RelatedFileSet, Tour, TourStep } from "@xpl/core";
+import type { ExplainerModel, FocusRange, RelatedFileSet, Tour, TourStep } from "@xpl/core";
 import { stepSelection } from "../derive.js";
 import { useDerived, useStore, useViewerState } from "../hooks.js";
 import { holdsCode, mergeSameCards, readerCards, repeatsShownCode } from "../relatedCards.js";
@@ -31,6 +31,18 @@ export function tourHasCards(tour: Tour, model: ExplainerModel): boolean {
   });
 }
 
+/** The step's own code: one place per file (its first range), in the order the step shows them; at most 4. */
+function ownPlaces(focus: readonly FocusRange[]): { file: string; from: number; to: number }[] {
+  const seen = new Set<string>();
+  const places: { file: string; from: number; to: number }[] = [];
+  for (const { file, range } of focus) {
+    if (seen.has(file)) continue;
+    seen.add(file);
+    places.push({ file, from: range.startLine, to: range.endLine });
+  }
+  return places.slice(0, 4);
+}
+
 /**
  * `reading`: the tour step scrolled to in the Tour, when it is not the step last applied. The cards then
  * follow the step on screen, not the one clicked before the scroll.
@@ -42,7 +54,7 @@ export function RelatedFiles({
 }: {
   onOpen: () => void;
   reading?: { tourId: string; step: TourStep };
-  /** Say so when the step has none (the Tour keeps its right column for the whole tour, R4-4). */
+  /** The Tour keeps its right column for the whole tour (R4-4): a step with no cards lists its own code. */
   keepPlace?: boolean;
 }) {
   const store = useStore();
@@ -91,15 +103,37 @@ export function RelatedFiles({
     [selection, state.model, focus, guide, step, state.applied],
   );
   // Nothing to list: no panel at all (an empty one only says that there is nothing), unless the column
-  // stays for the tour: then one line says that this step has none.
-  if (links.length === 0)
-    return keepPlace ? (
-      <section className="related-files is-empty" aria-label="Related files">
-        <p className="related-none" data-testid="related-none">
-          No related files for this step.
-        </p>
+  // stays for the tour: then it lists where the step's own code is (R5-3), one click from showing it.
+  if (links.length === 0) {
+    if (!keepPlace) return null;
+    const places = ownPlaces(focus);
+    return places.length > 0 ? (
+      <section className="related-files is-own-code" aria-label="This step's code">
+        <h3>This step's code</h3>
+        <ul data-testid="step-code">
+          {places.map((place) => (
+            <li key={`${place.file}:${place.from}`}>
+              <button
+                type="button"
+                className="resource-file"
+                onClick={() => {
+                  store.openFile(place.file, place.from);
+                  onOpen();
+                }}
+              >
+                {place.file.slice(place.file.lastIndexOf("/") + 1)}
+                <span className="step-code-lines">
+                  {place.from === place.to
+                    ? `line ${place.from}`
+                    : `lines ${place.from}–${place.to}`}
+                </span>
+              </button>
+            </li>
+          ))}
+        </ul>
       </section>
     ) : null;
+  }
   // "Show N more" holds for this selection only.
   const shown = all === selection ? links : links.slice(0, CARDS_SHOWN);
   return (

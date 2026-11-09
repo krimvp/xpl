@@ -85,7 +85,7 @@ export const viewCommand: CommandSpec = {
     "may be out of date.",
     "The server binds to 127.0.0.1 unless --host says otherwise: anything else exposes your source code.",
     "Omit the explainer when the repository has exactly one; otherwise supply its name.",
-    "The installed CLI includes the viewer. For source development, run npm run build; XPL_VIEWER_HTML overrides it.",
+    "The installed CLI includes the viewer; from source, run npm run build first. XPL_VIEWER_HTML overrides it.",
   ],
   options: {
     port: {

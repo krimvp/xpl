@@ -18,8 +18,8 @@ New commands and drafts:
   of string literals, a Python Enum, a Go const block) and the functions that move it between them. (#237)
 - `xpl draft data <guide> [<scope>]` drafts a data map: a table per type with a row per field and its type,
   and arrows from a field to the type it holds (`boxText: "members"` on any map). Rows link to their code
-  both ways. It maps every group of linked types, and in Python the attributes `__init__` sets on `self`
-  are fields.
+  both ways. It maps the largest groups of linked types, 6 boxes in all, and gives each group left off a note
+  with the command that maps it. In Python the attributes `__init__` sets on `self` are fields.
 - `xpl health` lists committed secrets, secrets in variables sent to the browser, committed `.env` files,
   code files over 1,000 lines and files nothing uses. It shows at most the first 4 characters of a secret
   and exits 0 with or without findings. (#236)
@@ -53,8 +53,8 @@ Guides and the viewer:
 - The parts list beside a map says which boxes of the map each box uses and is used by.
 - An `alt` frame in a sequence draws its arms: a dashed line between two choices, each with its condition in
   brackets. Click a condition to select its steps and their code. `xpl draft path` drafts the arms, and a
-  patch sets them with `arms`. An `if` that ends in `continue`, `return`, `break` or `raise` is drafted as an
-  `alt` whose other arm is the rest of the loop body.
+  patch sets them with `arms`. An `if` that ends in `continue`, `return`, `break`, `raise` or `throw` is drafted
+  as an `alt` whose other arm is the rest of the loop body or function.
 - A data map names an arrow from a field "holds", on the map, the key, the text view and the matrix. Its
   matrix has one row and column per type, and a cell names the fields. A field row needs no text: it shows
   the field's declaration. Go structs and fields are called "struct" and "field".

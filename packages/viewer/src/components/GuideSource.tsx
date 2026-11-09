@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { splitLines, type FocusRange, type TourStep } from "@xpl/core";
 import { stepSelection } from "../derive.js";
 import { useStore, useViewerState } from "../hooks.js";
@@ -30,8 +30,8 @@ export function GuideSource({
     () => stepSelection(step, tourId, state.model),
     [step, tourId, state.model],
   );
-  // every code link of the step, in the step's own order, then by role (stable sort keeps that order)
-  const candidates = useMemo(() => {
+  // every code link of the step, in the step's own order (the order its numbers follow)
+  const links = useMemo(() => {
     const seen = new Set<string>();
     const out: { focus: FocusRange; base: boolean }[] = [];
     for (const side of selection.order) {
@@ -41,9 +41,17 @@ export function GuideSource({
       for (const focus of side.base ? selection.base : selection.focus)
         if (focus.file === side.file) out.push({ focus, base: side.base });
     }
-    return out.sort((a, b) => (ROLE_ORDER[a.focus.role] ?? 2) - (ROLE_ORDER[b.focus.role] ?? 2));
+    return out;
   }, [selection]);
-  const total = selection.focus.length + selection.base.length;
+  // ... then by role, for the one shown first (a stable sort keeps the step's order)
+  const candidates = useMemo(
+    () =>
+      [...links].sort((a, b) => (ROLE_ORDER[a.focus.role] ?? 2) - (ROLE_ORDER[b.focus.role] ?? 2)),
+    [links],
+  );
+  const total = links.length;
+  // R5-N1: the reader pages through the step's code links (the code before a change among them).
+  const [picked, setPicked] = useState<number | undefined>(undefined);
   const textOf = (candidate: { focus: FocusRange; base: boolean }) =>
     (candidate.base ? state.baseFiles : state.files)[candidate.focus.file];
   // The first link that has code past its imports. One whose file has not loaded yet stops the search: it
@@ -57,7 +65,7 @@ export function GuideSource({
     }
     return undefined;
   }, [candidates, state.files, state.baseFiles]);
-  const candidate = chosen?.candidate ?? candidates[0];
+  const candidate = picked !== undefined ? links[picked] : (chosen?.candidate ?? candidates[0]);
   const focus = candidate?.focus;
   const base = candidate?.base ?? false;
   const file = focus?.file;
@@ -82,9 +90,17 @@ export function GuideSource({
   // every link of the step holds only imports: no excerpt (the picture and "Show code" remain)
   if (candidates.length > 0 && !chosen && candidates.every((c) => textOf(c) !== undefined))
     return null;
-  const start = chosen?.start ?? range?.startLine ?? 0;
+  const start =
+    (picked === undefined
+      ? chosen?.start
+      : range && lines.length > 0
+        ? firstContentLine(lines, range)
+        : undefined) ??
+    range?.startLine ??
+    0;
   const end = range ? Math.min(range.endLine, start + EXCERPT_LINES - 1) : 0;
-  const position = candidate ? candidates.indexOf(candidate) + 1 : 0;
+  const position = candidate ? links.indexOf(candidate) + 1 : 0;
+  const page = (by: -1 | 1) => setPicked(((position - 1 + by + total) % total) as number);
   return (
     <section className="guide-source" aria-label={`Source excerpt, step ${index + 1}`}>
       {available && range && file !== undefined && text !== undefined ? (
@@ -98,7 +114,11 @@ export function GuideSource({
               ` (${end - start + 1} of its ${range.endLine - range.startLine + 1} lines)`}
             {total > 1 && ` · code link ${position} of ${total}`}
           </p>
-          <pre tabIndex={0} aria-label={`Source lines ${start} to ${end}`}>
+          <pre
+            tabIndex={0}
+            className={base ? "is-before" : undefined}
+            aria-label={`Source lines ${start} to ${end}${base ? ", before the change" : ""}`}
+          >
             <code>
               {lines.slice(start - 1, end).map((line, offset) => (
                 <span className="guide-source-line" key={offset}>
@@ -110,23 +130,63 @@ export function GuideSource({
               ))}
             </code>
           </pre>
-          <button
-            className="btn"
-            onClick={() => store.openRange(file, range, base ? "base" : "head")}
-          >
-            Show code
-          </button>
+          <div className="guide-source-actions">
+            <button
+              className="btn"
+              onClick={() => store.openRange(file, range, base ? "base" : "head")}
+            >
+              Show code
+            </button>
+            {total > 1 && <Pager position={position} total={total} onPage={page} />}
+          </div>
         </>
       ) : (
-        <p>
-          {!focus
-            ? "No checked code for this step."
-            : !checked || (!base && state.sourceWarning)
-              ? "The code has changed; open it to check this part."
-              : "This page does not include this code."}
-        </p>
+        <>
+          <p>
+            {!focus
+              ? "No checked code for this step."
+              : !checked || (!base && state.sourceWarning)
+                ? "The code has changed; open it to check this part."
+                : "This page does not include this code."}
+          </p>
+          {picked !== undefined && total > 1 && (
+            <Pager position={position} total={total} onPage={page} />
+          )}
+        </>
       )}
     </section>
+  );
+}
+
+/** "‹ ›" between the step's code links. */
+function Pager({
+  position,
+  total,
+  onPage,
+}: {
+  position: number;
+  total: number;
+  onPage: (by: -1 | 1) => void;
+}) {
+  return (
+    <span className="guide-source-pager">
+      <button
+        type="button"
+        className="btn"
+        aria-label={`Code link ${((position + total - 2) % total) + 1} of ${total}`}
+        onClick={() => onPage(-1)}
+      >
+        ‹
+      </button>
+      <button
+        type="button"
+        className="btn"
+        aria-label={`Code link ${(position % total) + 1} of ${total}`}
+        onClick={() => onPage(1)}
+      >
+        ›
+      </button>
+    </span>
   );
 }
 

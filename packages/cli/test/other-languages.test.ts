@@ -247,10 +247,14 @@ it("PHP declarations can be outlined, anchored and bundled with their support li
 
 it("Rust symbols and heuristic calls can be shown, followed and exported", async () => {
   const dir = copyFixture("rs-jobrunner");
-  const indexed = await xpl(dir, "index", "--precise", "off");
+  const indexed = await xpl(dir, "index", "--precise", "off", "--verbose");
   expect(indexed.code).toBe(0);
   expect(indexed.out).toContain(
     "rust (rust-tags): named symbols, full declaration ranges, nesting partial (9/9 files analyzed)",
+  );
+  // without --verbose, one plain line says the same
+  expect((await xpl(dir, "index", "--precise", "off")).out).toContain(
+    "\nrust: some symbols can be missing (partial extraction).\n",
   );
   const outlined = await xpl(dir, "outline", "--under", "src/runner.rs", "--depth", "4");
   expect(outlined.code).toBe(0);

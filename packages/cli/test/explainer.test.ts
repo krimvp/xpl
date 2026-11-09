@@ -492,12 +492,14 @@ describe("xpl status", () => {
     );
     expect(out).toContain("view:overview (graph): Overview");
     expect(out).toContain(
-      "nodes without summary (2 of 3): file:src/metrics.ts, file:src/worker.ts",
+      "boxes without summary (2 of 3): file:src/metrics.ts, file:src/worker.ts",
     );
-    expect(out).toContain("every stored edge is explained");
+    expect(out).toContain("every stored arrow has text");
     expect(out).toContain("view:dispatch (sequence): How a job is dispatched");
     expect(out).toContain("steps without summary (3 of 3): dispatch:1, dispatch:2, dispatch:3");
-    expect(out).toMatch(/^to do: 7 unexplained, 0 drifted, 0 missing anchors, 0 requests$/m);
+    expect(out).toMatch(
+      /^to do: 7 with no text, 0 changed code links, 0 missing code links, 0 requests$/m,
+    );
   });
 
   it("shrinks as summaries are added", async () => {
@@ -547,7 +549,7 @@ describe("xpl status", () => {
     });
     expect(applied.code, applied.out).toBe(0);
     const { out } = await xpl(dir, "status", "demo");
-    expect(out).toContain("nodes without summary (1 of 3): file:src/worker.ts");
+    expect(out).toContain("boxes without summary (1 of 3): file:src/worker.ts");
   });
 
   it("includes drifted llm elements, missing anchors and queued requests", async () => {
@@ -573,7 +575,9 @@ describe("xpl status", () => {
     );
     const { code, out } = await xpl(dir, "status", "demo");
     expect(code).toBe(0);
-    expect(out).toMatch(/to do: \d+ unexplained, [1-9]\d* drifted, 1 missing anchors, 1 request$/m);
+    expect(out).toMatch(
+      /to do: \d+ with no text, [1-9]\d* changed code links, 1 missing code links, 1 request$/m,
+    );
     expect(out).toContain("drifted llm elements to re-explain");
     expect(out).toContain("missing anchors (1)");
     expect(out).toContain(

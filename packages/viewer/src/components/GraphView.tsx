@@ -48,6 +48,7 @@ import {
   type LayoutNode,
   SUMMARY_LINE,
 } from "../layout/graphLayout.js";
+import { layoutView } from "../workspace.js";
 import {
   arrowHeadPath,
   distanceToSegment,
@@ -58,9 +59,10 @@ import {
   type Point,
 } from "../svg.js";
 import { changeMarks, changeOf } from "../diff.js";
+import { isHolds } from "../drawnEdges.js";
 import { useStore, useViewerState } from "../hooks.js";
 import { headOf, mapKeyShows } from "../keyMarks.js";
-import { boxName, readingOrder } from "../mapOrder.js";
+import { boxName, readingOrder, tabOrder } from "../mapOrder.js";
 import { readerBadge } from "../readerWords.js";
 import { READABLE_ZOOM } from "../viewport.js";
 import { GhostTargetList } from "./GhostTargets.js";
@@ -96,12 +98,22 @@ const BoxNames = createContext<ReadonlyMap<string, string>>(new Map());
 function boxNames(
   nodes: readonly LayoutNode[],
   into = new Map<string, string>(),
+  table?: string,
 ): Map<string, string> {
   for (const node of nodes) {
-    into.set(node.id, node.label);
-    boxNames(node.children, into);
+    // a row is named with its table: "Queue.ready"
+    into.set(node.id, node.row && table !== undefined ? `${table}.${node.label}` : node.label);
+    boxNames(node.children, into, node.rows ? node.label : undefined);
   }
   return into;
+}
+
+/** An arrow's accessible name: "Runner to Queue: calls ×2"; a field's arrow "Queue.ready holds Job". */
+function arrowName(edge: LayoutEdge, names: ReadonlyMap<string, string>): string {
+  const from = names.get(edge.from) ?? "?";
+  const to = names.get(edge.to) ?? "?";
+  if (isHolds({ kind: edge.kind, label: edge.title })) return `${from} holds ${to}`;
+  return `${from} to ${to}: ${edge.title}` + (edge.stub ? " (outside this map)" : "");
 }
 
 /** Where a ghost box is on screen, relative to the diagram pane (the menu of a folded ghost opens beside it). */
@@ -423,13 +435,15 @@ export function GraphView({
     return () => observer.disconnect();
   }, []);
 
-  // The layout direction (right or down) is chosen for the pane the diagram is drawn in.
+  // The layout direction (right or down) is chosen for the first pane the view is drawn in, and kept for
+  // the view (`layoutView`, R5-5): the Tour's picture, this map and Explore draw it the same way round.
   useEffect(() => {
     if (paneShape === "") return; // (measured right after the first render)
     let cancelled = false;
     const el = host.current;
     const viewport = el ? { width: el.clientWidth, height: el.clientHeight } : undefined;
-    layoutGraphFitting(
+    // (a slide picks its own: D7 turns a map in the wider column it asks for)
+    (present ? layoutGraphFitting : layoutView.bind(null, viewId))(
       graph,
       viewport,
       present ? PRESENT_MAX_FIT_ZOOM : undefined,
@@ -449,7 +463,7 @@ export function GraphView({
     return () => {
       cancelled = true;
     };
-  }, [graph, present, changes, activePins, paneShape]);
+  }, [viewId, graph, present, changes, activePins, paneShape]);
 
   // The menu belongs to the layout it was opened on.
   useEffect(() => setMenu(undefined), [graph, present, viewId]);
@@ -554,7 +568,7 @@ export function GraphView({
       />
     );
   else if (error) body = <div className="diagram-message is-error">Layout failed: {error}</div>;
-  else if (!layout) body = <div className="diagram-message">Laying out the graph…</div>;
+  else if (!layout) body = <div className="diagram-message">Drawing the map…</div>;
   else if (layout.nodes.length === 0) {
     body = (
       <div className="diagram-message">
@@ -615,7 +629,7 @@ export function GraphView({
           </g>
           <EdgeLabels edges={layout.edges} marks={marks} />
           <g className="nodes">
-            {readingOrder(layout.nodes).map((node) => (
+            {tabOrder(layout.nodes, order).map((node) => (
               <NodeShape key={node.id} node={node} marks={marks} />
             ))}
           </g>
@@ -773,7 +787,8 @@ function RowShape({ node, marks }: { node: LayoutNode; marks: Marks }) {
       data-element-id={still ? undefined : node.id}
       transform={`translate(${node.x} ${node.y})`}
       role={still ? undefined : "button"}
-      tabIndex={still ? undefined : 0}
+      // one Tab stop per table: the arrow keys move through its rows (the table's own keys, PanZoom)
+      tabIndex={still ? undefined : -1}
       aria-label={still ? undefined : name}
       aria-pressed={still ? undefined : selected}
       onClick={(event) => {
@@ -883,7 +898,24 @@ function BoxShape({ node, marks }: { node: LayoutNode; marks: Marks }) {
         if (zoomable) zoom();
         else if (!readOnly) store.drillIn(node.id);
       }}
-      onKeyDown={(event) => activate(event, () => select(event))}
+      aria-keyshortcuts={node.rows && !still ? "ArrowDown" : undefined}
+      onKeyDown={(event) => {
+        // a table's rows are not Tab stops: Down (or Home) goes into the first of them
+        if (
+          node.rows &&
+          event.target === event.currentTarget &&
+          /^(ArrowDown|Home)$/.test(event.key)
+        ) {
+          const row = event.currentTarget.querySelector<SVGElement>(".node.is-row");
+          if (row) {
+            event.preventDefault();
+            event.stopPropagation();
+            row.focus();
+            return;
+          }
+        }
+        activate(event, () => select(event));
+      }}
     >
       <title>
         {zoomable
@@ -949,7 +981,8 @@ function BoxShape({ node, marks }: { node: LayoutNode; marks: Marks }) {
               <g
                 className="collapse"
                 role="button"
-                tabIndex={0}
+                // (a table is one Tab stop, D9: its fold button is a click, as on a phone)
+                tabIndex={node.rows ? -1 : 0}
                 aria-label={expandedHere ? `Fold ${node.label} back` : `Collapse ${node.label}`}
                 data-collapse-id={node.id}
                 transform={`translate(${node.width - 30} 8)`}
@@ -1527,10 +1560,7 @@ function EdgeKey({ edge }: { edge: LayoutEdge }) {
       data-navigation-to={edge.to}
       role="button"
       tabIndex={0}
-      aria-label={
-        `${names.get(edge.from) ?? "?"} to ${names.get(edge.to) ?? "?"}: ${edge.title}` +
-        (edge.stub ? " (outside this map)" : "")
-      }
+      aria-label={arrowName(edge, names)}
       onKeyDown={(event) => activate(event, () => select(event))}
     >
       <path d={roundedPath(edge.own ?? edge.points)} />
@@ -1621,12 +1651,7 @@ const EdgeShape = memo(function EdgeShape({
       role={still || !focusable ? undefined : "button"}
       tabIndex={still || !focusable ? undefined : 0}
       aria-hidden={!still && !focusable ? true : undefined}
-      aria-label={
-        still || !focusable
-          ? undefined
-          : `${names.get(edge.from) ?? "?"} to ${names.get(edge.to) ?? "?"}: ${edge.title}` +
-            (edge.stub ? " (outside this map)" : "")
-      }
+      aria-label={still || !focusable ? undefined : arrowName(edge, names)}
       onClick={(event) => {
         event.stopPropagation();
         select(event);

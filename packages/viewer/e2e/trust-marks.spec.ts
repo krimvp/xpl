@@ -38,7 +38,8 @@ for (const scheme of ["light", "dark"] as const) {
 
     // lines out of the map: hidden and out of the Tab order until a box is selected, then dotted
     const stubs = page.locator(".workspace-diagram .edge.is-stub");
-    expect(await stubs.count()).toBeGreaterThan(0);
+    // (the overview's 8 lines out of it: 3 boxes used by main.ts and the tests, 2 of them using bus.ts)
+    await expect(stubs).toHaveCount(8);
     await expect(page.locator('.workspace-diagram [data-key-for^="stub:"]')).toHaveCount(0);
     await expect(keyLine.locator('[data-key-item="stub"]')).toHaveCount(0);
     await expect(keyLine.locator('[data-key-item="ghost"]')).toContainText("outside this map");

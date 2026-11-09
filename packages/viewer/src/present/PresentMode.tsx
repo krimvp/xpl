@@ -8,10 +8,9 @@
  * lines): the screen is split once per tour, so it does not jump between a map step and a flow step. The
  * diagram takes less of that extra width when the tour's code needs it (present/split.ts).
  *
- * The caption keeps one height and one type size for the whole tour: as tall as its tallest step needs,
- * measured off-screen, so the diagram above it does not jump from step to step. The diagram keeps a
- * minimum (`DIAGRAM_MIN`); when the captions do not fit what is left, their type gets smaller first, and
- * only at the smallest size does a caption scroll.
+ * The caption keeps one type size for the whole tour, and is as tall as its own text (D9), up to 40% of
+ * the column: the diagram above it gets the rest. The type size is the largest at which the tour's tallest
+ * caption, measured off-screen, fits that cap; only at the smallest size does a caption scroll.
  *
  * Keys live in App.tsx (arrows, PageUp/PageDown, Space, Home/End, Esc). Clicking around the diagram is
  * a detour: the selection follows the click and the header says so; the next arrow key applies the
@@ -67,8 +66,8 @@ export function PresentMode() {
     [tour, wide, state.model, state.files],
   );
 
-  // One caption height for the tour: the tallest step's, measured on hidden copies of every caption, at the
-  // largest type size that leaves the diagram its room.
+  // One type size for the tour: the largest at which the tallest step's caption, measured on hidden copies
+  // of every caption, fits the cap. Each caption then takes the height of its own text.
   const left = useRef<HTMLElement>(null);
   const measure = useRef<HTMLDivElement>(null);
   const [fit, setFit] = useState<
@@ -100,17 +99,17 @@ export function PresentMode() {
       return tallest;
     };
     const next = { ...captionFit(tallestAt, cap, long), cap, tour: tour?.id };
-    // A step whose diagram took a wider column (D7) leaves the caption wider, and its text needs less height:
-    // the caption keeps the tallest the tour has needed, so it does not change height from step to step.
+    // A step whose diagram took a wider column (D7) leaves the caption wider: its type does not grow back
+    // for that (the size only goes down within a tour), so the words keep one size from step to step.
     setFit((known) =>
-      known && known.tour === next.tour && known.cap === next.cap && known.height >= next.height
+      known && known.tour === next.tour && known.cap === next.cap && known.size >= next.size
         ? known
         : next,
     );
   }, [tour, width, state.model, height, long]);
 
-  // D7: a map or a sequence that does not read whole at the 12px floor gets a wider column, up to `--diagram-max`
-  // (styles.css), before it falls back to a frame of the step's focus. The width a step asked for is kept for
+  // D7: a map or a sequence that does not read whole at the 12px floor gets a wider column, up to 65% of the
+  // screen (`.present[data-room]` in styles.css), before it falls back to a frame of the step's focus. The width a step asked for is kept for
   // the step (going back to it does not jump), and only grows: a map laid out again for the wider pane does
   // not hand the room back and forth.
   const [room, setRoom] = useState<ReadonlyMap<string, number>>(new Map());
@@ -246,7 +245,7 @@ export function PresentMode() {
           aria-label="Caption"
           data-testid="tour-caption"
           data-size={fit?.size ?? (long ? 1 : 0)}
-          style={fit ? { height: fit.height, maxHeight: fit.cap } : undefined}
+          style={fit ? { maxHeight: fit.cap } : undefined}
         >
           {text!.titleMarkdown !== undefined ? (
             <h2

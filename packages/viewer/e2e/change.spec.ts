@@ -323,6 +323,45 @@ test.describe("the change in the reading screens", () => {
     await expect(page.getByTestId("change-omissions")).toHaveCount(0);
   });
 
+  test("a guide analysed by a language tool lists the tool's limits, not name matching (R5-N5)", async ({
+    page,
+  }) => {
+    const { html, bundle } = readEmbeddedBundle(CHANGE_BUNDLE);
+    const data = bundle as any;
+    data.explainer.change.files = data.explainer.change.files.filter(
+      (file: any) => file.path === "src/runner.ts",
+    );
+    data.index.languages.typescript = { ...data.index.languages.typescript, refs: "precise" };
+    const report = (provider: string, limit: string) => ({
+      provider,
+      capabilities: { call: "partial" },
+      files: ["src/runner.ts"],
+      results: [
+        {
+          capabilities: ["call"],
+          status: "partial",
+          analyzedFiles: ["src/runner.ts"],
+          limitations: [limit],
+        },
+      ],
+    });
+    data.index.analysis = [
+      report("typescript", "References matched by name are hints; some can be missing."),
+      report("scip-typescript", "A tool can miss a reference."),
+    ];
+    await page.route("http://xpl.test/**", (route) =>
+      route.fulfill({ contentType: "text/html", body: withBundle(html, data) }),
+    );
+    await page.goto("http://xpl.test/");
+    const limits = page.getByRole("region", { name: "Limits of the code analysis" });
+    await expect(limits.getByRole("heading")).toHaveText("Limits of the code analysis");
+    await expect(limits).toContainText(
+      "A language tool found the arrows in the changed files; a tool can still miss one.",
+    );
+    await expect(limits).toContainText("What the code analysis reported (1)");
+    await expect(limits).not.toContainText("matched by name");
+  });
+
   test("the map marks the boxes the change touches with plain words", async ({ page }) => {
     const problems = watchProblems(page);
     await open(page, "?perspective=map");
@@ -587,22 +626,27 @@ test.describe("reading the diagrams", () => {
     expect(problems).toEqual([]);
   });
 
-  test("Present keeps one caption height for the whole tour, so the diagram does not jump", async ({
+  test("Present keeps one type size for the tour; each caption is as tall as its text, at most 40% (D9)", async ({
     page,
   }) => {
     const problems = watchProblems(page);
     await page.setViewportSize({ width: 1280, height: 720 });
     await open(page, "?mode=present");
-    const caption = page.getByTestId("tour-caption");
     const counter = page.getByTestId("tour-counter");
     const total = Number((await counter.innerText()).split("/")[1]);
-    const heights = new Set<number>();
+    const caption = () =>
+      page.getByTestId("tour-caption").evaluate((el: HTMLElement) => ({
+        size: el.dataset.size,
+        // (no empty room under the text: it is as tall as what it holds)
+        spare: el.clientHeight - el.scrollHeight,
+        atMost40: el.offsetHeight <= 0.4 * el.parentElement!.clientHeight + 1,
+      }));
+    const first = await caption();
     for (let step = 1; step <= total; step++) {
       await expect(counter).toHaveText(`${step} / ${total}`);
-      heights.add(Math.round((await caption.boundingBox())!.height));
+      await expect.poll(caption).toEqual({ size: first.size, spare: 0, atMost40: true });
       await page.keyboard.press("ArrowRight");
     }
-    expect(heights.size).toBe(1);
     expect(problems).toEqual([]);
   });
 });

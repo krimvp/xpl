@@ -266,7 +266,7 @@ describe("layoutSequence", () => {
     });
     const [first, second] = layoutSequence(view, m).rows;
     expect(first!.lines.length).toBeGreaterThan(1);
-    expect(first!.lines.every((line) => line.length <= 42)).toBe(true);
+    expect(first!.lines.filter((line) => line.length > 42)).toEqual([]);
     expect(first!.lines.join(" ").replace(/\s+/g, "")).toBe(long.replace(/\s+/g, ""));
     expect([first!.depth, second!.depth]).toEqual([0, 1]);
   });

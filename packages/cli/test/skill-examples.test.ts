@@ -194,7 +194,7 @@ describe("reference/examples", () => {
       // it is complete: nothing the views show is left without a summary
       const status = await xpl(dir, "status", "example");
       expect(status.out).toMatch(
-        /^to do: 0 unexplained, 0 drifted, 0 missing anchors, 0 requests$/m,
+        /^to do: 0 with no text, 0 changed code links, 0 missing code links, 0 requests$/m,
       );
       // applying it again is a no-op
       const again = await xpl(dir, "apply", "example", patch);

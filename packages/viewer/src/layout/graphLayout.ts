@@ -25,7 +25,7 @@ import {
   type NodeRole,
   type Stub,
 } from "@xpl/core";
-import { drawnEdges } from "../drawnEdges.js";
+import { drawnEdges, kindCount } from "../drawnEdges.js";
 import type { ChangeStatus } from "../diff.js";
 import { textWidth } from "../measure.js";
 import {
@@ -65,6 +65,8 @@ export interface LayoutNode {
   badgeShared?: boolean;
   /** CSS class suffix: the node kind, or the symbol kind for symbols; `ghost` for ghost boxes. */
   kindClass: string;
+  /** The reader's word for the symbol kind where it is not `kindClass` (core `GraphNode.kindWord`): "struct". */
+  kindWord?: string;
   ghost: boolean;
   /** Ghosts: the element that joins the view when the ghost is clicked (a ghost for one element). */
   ghostTarget?: string;
@@ -247,7 +249,7 @@ export function labelWidth(label: string): number {
 function nodeBadge(node: GraphNode): string {
   if (node.sketch) return "sketch";
   if (node.role !== undefined) return node.tech ?? ROLE_WORDS[node.role];
-  return node.symbolKind ?? node.kind;
+  return node.kindWord ?? node.symbolKind ?? node.kind;
 }
 
 /** The plain name of each role, for the badge of a box without a `tech`. */
@@ -341,7 +343,7 @@ function ghostWidth(label: string, detail: string): number {
 
 function edgeLabelText(edge: DerivedEdge): string {
   const text =
-    (edge.label ? edge.label : `${edge.kind} ×${edge.count}`) +
+    (edge.label ? edge.label : kindCount(edge.kind, edge.count)) +
     (edge.resolution === "mixed" ? " (partly matched by name)" : "");
   // "A reaches C through B": one arrow, which names what it passes through
   const via = edge.via?.map((item) => item.label) ?? [];
@@ -382,6 +384,7 @@ interface ModelNode {
   badge: string;
   badgeShared?: boolean;
   kindClass: string;
+  kindWord?: string;
   ghostTarget?: string;
   ghostFold?: LayoutNode["ghostFold"];
   detail?: string;
@@ -433,6 +436,7 @@ function buildModel(graph: DerivedGraph, changes: ChangeMarks | undefined): Mode
       label: node.label,
       badge: nodeBadge(node),
       kindClass: node.symbolKind ?? node.kind,
+      ...(node.kindWord !== undefined ? { kindWord: node.kindWord } : {}),
       ...(change ? { change } : {}),
       ...(node.role !== undefined ? { role: node.role } : {}),
       ...(node.opens !== undefined ? { opens: node.opens } : {}),
@@ -497,7 +501,7 @@ function buildModel(graph: DerivedGraph, changes: ChangeMarks | undefined): Mode
       from: edge.from,
       to: edge.to,
       label: edgeLabelText(edge),
-      counted: !edge.label && !edge.via?.length,
+      counted: !edge.label && !edge.via?.length && kindCount(edge.kind, edge.count) !== edge.kind,
       ...(edge.via?.length ? { via: edge.via.map((item) => item.label) } : {}),
       stub: false,
       resolution: edge.resolution,
@@ -585,6 +589,7 @@ function makeNode(
     badge: node.badge,
     ...(node.badgeShared ? { badgeShared: true } : {}),
     kindClass: node.kindClass,
+    ...(node.kindWord !== undefined ? { kindWord: node.kindWord } : {}),
     ghost: isGhost(node),
     ...box,
     children,

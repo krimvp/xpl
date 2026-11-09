@@ -83,6 +83,12 @@
 .switch-notice:empty {
   padding: 0;
 }
+/* D9: "Show code" with nothing selected: no empty code column, one line says how to fill it. */
+.code-waiting {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
 .workspace-columns {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 280px;
@@ -914,12 +920,25 @@
   font-size: 11px;
   overflow-wrap: anywhere;
 }
-/* R4-4: the Tour keeps its right column for every step of a tour that has related files: one quiet line
-   where a step has none. */
-.related-none {
+/* R4-4, R5-3: the Tour keeps its right column for every step of a tour that has related files; a step with
+   none lists where its own code is. On a phone the step's card shows that code already: no bar for it. */
+.related-files.is-own-code ul {
   margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.step-code-lines {
+  margin-left: 6px;
   color: var(--muted);
-  font-size: 13px;
+  font-size: 12px;
+}
+@media (max-width: 760px) {
+  .related-files.is-own-code {
+    display: none;
+  }
+  .workspace[data-perspective="guide"] .workspace-context:not(:has(> :not(.is-own-code))) {
+    display: none;
+  }
 }
 
 .resource-set {
@@ -1306,6 +1325,17 @@
   .workspace-source {
     min-height: 450px;
   }
+  /* R5-8: no code open yet (the Code tab on arrival): the file list gets the room, the hint its own height. */
+  .workspace-source:has(.editor-stack.is-empty) {
+    min-height: 0;
+  }
+  .workspace .code-area:has(> .editor-stack.is-empty) {
+    grid-template-rows: auto auto;
+    height: auto;
+  }
+  .workspace .code-area:has(> .editor-stack.is-empty) > .tree-panel {
+    max-height: none;
+  }
   .workspace-tabs button {
     padding: 8px;
     font-size: 12px;
@@ -1453,6 +1483,20 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+/* R5-N1: the code before a change reads as removed lines, as in the code pane. */
+.guide-source pre.is-before {
+  border-left: 3px solid var(--danger);
+  background: color-mix(in srgb, var(--danger) 7%, transparent);
+}
+.guide-source-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.guide-source-pager {
+  display: inline-flex;
+  gap: 4px;
+}
 .guide-source-number {
   display: inline-block;
   width: 4ch;
@@ -1553,4 +1597,9 @@
 }
 .workspace[data-perspective="guide"] .workspace-columns:has(> .workspace-context:empty) {
   grid-template-columns: minmax(0, 1fr);
+}
+
+/* R5-4: in a Tour picture the lifeline names kept at the top hide what scrolled under them completely. */
+.guide-snapshot .sticky-band {
+  opacity: 1;
 }

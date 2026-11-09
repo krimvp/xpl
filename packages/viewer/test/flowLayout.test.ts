@@ -32,30 +32,32 @@ function flowOf(steps: Step[]) {
 const box = (layout: FlowLayout, id: string) => layout.children.find((child) => child.id === id)!;
 const centreX = (layout: FlowLayout, id: string) => box(layout, id).x + box(layout, id).width / 2;
 
-/** True when no route of the flow runs through a box it does not start or end at. */
-function routesClearBoxes(layout: FlowLayout): boolean {
-  return layout.edges.every((edge) => {
+/** The routes of the flow that run through a box they do not start or end at: "a->b crosses c" (none is right). */
+function routesThroughBoxes(layout: FlowLayout): string[] {
+  const out: string[] = [];
+  for (const edge of layout.edges) {
     const points = edge.sections.flatMap((s) => [s.startPoint, ...s.bendPoints, s.endPoint]);
-    return layout.children
-      .filter((child) => child.id !== edge.from && child.id !== edge.to)
-      .every((child) =>
-        points.slice(1).every((p, i) => {
-          const a = points[i]!;
-          const inside = (v: number, lo: number, hi: number) => v > lo + 1 && v < hi - 1;
-          if (Math.abs(a.x - p.x) < 0.5)
-            return !(
-              inside(a.x, child.x, child.x + child.width) &&
-              Math.max(a.y, p.y) > child.y + 1 &&
-              Math.min(a.y, p.y) < child.y + child.height - 1
-            );
-          return !(
-            inside(a.y, child.y, child.y + child.height) &&
-            Math.max(a.x, p.x) > child.x + 1 &&
-            Math.min(a.x, p.x) < child.x + child.width - 1
+    for (const child of layout.children) {
+      if (child.id === edge.from || child.id === edge.to) continue;
+      const crosses = points.slice(1).some((p, i) => {
+        const a = points[i]!;
+        const inside = (v: number, lo: number, hi: number) => v > lo + 1 && v < hi - 1;
+        if (Math.abs(a.x - p.x) < 0.5)
+          return (
+            inside(a.x, child.x, child.x + child.width) &&
+            Math.max(a.y, p.y) > child.y + 1 &&
+            Math.min(a.y, p.y) < child.y + child.height - 1
           );
-        }),
-      );
-  });
+        return (
+          inside(a.y, child.y, child.y + child.height) &&
+          Math.max(a.x, p.x) > child.x + 1 &&
+          Math.min(a.x, p.x) < child.x + child.width - 1
+        );
+      });
+      if (crosses) out.push(`${edge.from}->${edge.to} crosses ${child.id}`);
+    }
+  }
+  return out;
 }
 
 describe("a flow laid out for reading", () => {
@@ -104,7 +106,7 @@ describe("a flow laid out for reading", () => {
       ["f:11", "f:12"],
     ] as const)
       expect([left, centreX(layout, left) < centreX(layout, right)]).toEqual([left, true]);
-    expect(routesClearBoxes(layout)).toBe(true);
+    expect(routesThroughBoxes(layout)).toEqual([]);
   });
 
   it("keeps the main path of a run of choices in one column, with each early exit beside it", async () => {
@@ -142,7 +144,7 @@ describe("a flow laid out for reading", () => {
     const layout = await layoutFlow(flow);
     const main = ["f:1", "f:3", "f:5", "f:7"].map((id) => centreX(layout, id));
     expect(Math.max(...main) - Math.min(...main)).toBeLessThan(1);
-    expect(routesClearBoxes(layout)).toBe(true);
+    expect(routesThroughBoxes(layout)).toEqual([]);
   });
 
   it("never puts one box on another when it straightens a main path", async () => {
@@ -206,7 +208,7 @@ describe("a flow laid out for reading", () => {
         .map((b) => `${a.id} on ${b.id}`),
     );
     expect(overlaps).toEqual([]);
-    expect(routesClearBoxes(layout)).toBe(true);
+    expect(routesThroughBoxes(layout)).toEqual([]);
   });
 
   it("makes a box with a one-line label shorter than one with three lines", async () => {

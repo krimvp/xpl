@@ -1135,6 +1135,65 @@ code {
   padding: 8px 8px 8px 0;
 }
 
+/* D9: no code on screen: the code column is the file tree alone (a strip when folded), and the diagram
+   takes the rest of the width. (Stacked on a narrow screen, it is the tree and one line under the diagram.) */
+@media (min-width: 901px) {
+  .explore:has(> .right > .code-area.is-idle) {
+    grid-template-columns: minmax(0, 1fr) 0 auto;
+  }
+  .explore:has(> .right > .code-area.is-idle) > .splitter.is-col {
+    visibility: hidden;
+  }
+}
+.code-area.is-idle {
+  display: flex;
+  flex-direction: column;
+  width: 220px;
+}
+.code-area.is-idle > .tree-panel {
+  flex: 1;
+  min-height: 0;
+  border-right: 0;
+}
+.code-idle-hint {
+  margin: 0;
+  padding: 10px 12px;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 12.5px;
+}
+.code-area.is-idle.is-tree-closed {
+  width: 44px;
+}
+.code-area.is-idle.is-tree-closed > .tree-panel {
+  flex: none;
+}
+.code-area.is-idle.is-tree-closed > .code-idle-hint {
+  flex: 1;
+  border-top: 0;
+  padding: 8px 0;
+  writing-mode: vertical-rl;
+  align-self: center;
+  white-space: nowrap;
+}
+@media (max-width: 900px) {
+  .right:has(> .code-area.is-idle) {
+    height: auto;
+  }
+  .code-area.is-idle,
+  .code-area.is-idle.is-tree-closed {
+    width: auto;
+  }
+  .code-area.is-idle > .tree-panel {
+    max-height: 45vh;
+  }
+  .code-area.is-idle.is-tree-closed > .code-idle-hint {
+    writing-mode: horizontal-tb;
+    white-space: normal;
+    align-self: stretch;
+  }
+}
+
 .lower {
   display: grid;
   grid-template-columns: minmax(190px, 36%) minmax(0, 1fr);
@@ -3401,6 +3460,18 @@ code {
   inset: 0;
 }
 
+/* Present: a markdown code link as prose (EditorStack `prose`), marked like the focused lines of code. */
+.pane-prose {
+  position: absolute;
+  inset: 0;
+  overflow: auto;
+  padding: 12px 18px;
+  border-left: 4px solid var(--accent);
+  background: var(--panel);
+  font-size: calc(var(--code-font-size, 15px) * 1.05);
+  line-height: 1.5;
+}
+
 .editor-host .cm-editor {
   height: 100%;
 }
@@ -3840,16 +3911,27 @@ code {
   white-space: nowrap;
 }
 
-/* present: the zoom toolbar sits at the bottom of the diagram, clear of a sequence's participant names at
-   the top (PanZoom keeps a fitted diagram above it). */
+/* present: the zoom toolbar sits in the diagram's title bar (PanZoom ToolbarSlot), off the picture: "Fit all"
+   never covers a box, fitted or not (D9). It keeps its width while hidden, so the title does not move. */
+.present .caption-tools {
+  flex: none;
+  margin-left: auto;
+}
 .present .pz-toolbar {
-  top: auto;
-  bottom: 10px;
+  position: static;
+  padding: 1px;
+  box-shadow: none;
   opacity: 0;
   transition: opacity 0.15s;
 }
+.present[data-pointer] .pz-toolbar {
+  opacity: 1;
+}
+/* (a talk saves no image and reads no text view: the title bar keeps its room for the title) */
+.present .pz-toolbar > :is(.pz-save, .pz-text) {
+  display: none;
+}
 
-.present .panzoom:hover .pz-toolbar,
 .present .pz-toolbar:focus-within {
   opacity: 1;
 }
@@ -3860,8 +3942,7 @@ code {
   transition: opacity 0.15s;
 }
 
-.present:not([data-pointer]) .pz-badge:not(:focus-visible),
-.present:not([data-pointer]) .panzoom:hover .pz-toolbar:not(:focus-within):not(:has(> .is-cue)) {
+.present:not([data-pointer]) .pz-badge:not(:focus-visible) {
   opacity: 0;
 }
 
@@ -3870,8 +3951,12 @@ code {
 .present .pz-toolbar:has(> .pz-fit.is-cue) {
   opacity: 1;
 }
+.present:not([data-pointer]) .pz-toolbar:has(> .pz-fit.is-cue):not(:focus-within) {
+  border-color: transparent;
+  background: transparent;
+}
 .present:not([data-pointer]) .pz-toolbar:has(> .pz-fit.is-cue):not(:focus-within) > :not(.pz-fit) {
-  display: none;
+  visibility: hidden;
 }
 
 /* present (N10): a lower level names its parent box once ("xpl ›"), not every level above it: the title
@@ -3890,8 +3975,7 @@ code {
 /* present on a phone or a touch screen (R3-25): no pointer to reveal the toolbar, so "Fit all" shows, alone
    (the other buttons would cover the slide); the title bar is the title, without the question. */
 @media (max-width: 640px), (hover: none) {
-  .present .pz-toolbar,
-  .present:not([data-pointer]) .panzoom:hover .pz-toolbar:not(:focus-within) {
+  .present .pz-toolbar {
     opacity: 1;
   }
   .present .pz-toolbar > :not(.pz-fit) {
@@ -4853,6 +4937,21 @@ code {
 }
 .graph-author summary {
   cursor: pointer;
+}
+/* D9: Explore's diagram can take most of the width: "Edit map" stays by the title, clear of the panels that
+   open over the right of the page (Jobs, Search), and its controls open to the right of it. */
+.explore .diagram-caption > .caption-question {
+  order: 2;
+  flex: 1 1 0;
+  min-width: 0;
+}
+.explore .diagram-caption > .graph-author {
+  order: 1;
+  margin-left: 0;
+}
+.explore .diagram-caption .graph-author-controls {
+  left: 0;
+  right: auto;
 }
 .graph-author-controls {
   position: absolute;

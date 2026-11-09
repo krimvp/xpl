@@ -21,7 +21,6 @@ import {
   cutAt,
   graphBounds,
   frameFocus,
-  layoutGraphFitting,
   type ChangeMarks,
   type GraphLayout,
 } from "../layout/graphLayout.js";
@@ -30,7 +29,11 @@ import { SNAPSHOT_WHOLE, unionBox, type Box } from "../viewport.js";
 import { FlowDiagram } from "./FlowDiagram.js";
 import { GraphPicture, useGraphChanges } from "./GraphView.js";
 import { SequencePicture, StickyHeads } from "./SequenceView.js";
+import { layoutView } from "../workspace.js";
 import { SNAPSHOT_HEIGHT, SNAPSHOT_TALL_HEIGHT, SnapshotFrame } from "./SnapshotFrame.js";
+
+/** How far above a step (layout units) the condition of the choice it is in is still drawn with it. */
+const CONDITION_REACH = 360;
 
 /** Graph layouts by view, for the page's life: a guide shows the same view in many sections. */
 const graphLayouts = new WeakMap<View, Promise<GraphLayout>>();
@@ -38,7 +41,8 @@ const graphLayouts = new WeakMap<View, Promise<GraphLayout>>();
 /**
  * The layout of a picture `width` px wide: laid out to the right or downwards, whichever shows larger in a
  * picture of that width and the tallest height a picture may take (a tall map in a wide column reads better
- * turned). Kept for the view, laid out for the first width asked.
+ * turned), unless the view was drawn already (the Map, Present: `layoutView` keeps one direction per view).
+ * Kept for the view, laid out for the first width asked.
  */
 function graphLayoutOf(
   view: GraphView,
@@ -48,7 +52,8 @@ function graphLayoutOf(
 ) {
   let known = graphLayouts.get(view);
   if (!known) {
-    known = layoutGraphFitting(
+    known = layoutView(
+      view.id,
       graph,
       width > 0 ? { width, height: SNAPSHOT_TALL_HEIGHT } : undefined,
       // the picture is whole at this zoom or more: a direction that reaches it is as good as any
@@ -258,17 +263,20 @@ function SequenceSnapshot({ view, focus }: { view: SequenceView; focus: readonly
           ]
         : [];
     });
-    boxes.push(unionBox([band, ...ends])!);
+    const own: Box[] = [band, ...ends];
     // ... and the frames around it start in the picture when there is room: a frame's name is not cut mid-word.
     for (const box of layout.frames) {
       if (!box.steps.includes(row.step.id)) continue;
-      near.push({
-        x: box.x,
-        y: band.y,
-        width: Math.min(box.width, frameLabelWidth(box.frame.kind, box.frame.label)),
-        height: band.height,
-      });
+      const width = Math.min(box.width, frameLabelWidth(box.frame.kind, box.frame.label));
+      // The condition this step runs under (R5-4): the frame's name, or the line of its arm. A choice
+      // (alt, opt) near the step is part of the picture; a long loop's name only when there is room.
+      const arm = box.arms.find((one) => one.steps.includes(row.step.id));
+      const top = arm && arm !== box.arms[0] ? arm.top : box.y;
+      const condition = { x: box.x, y: top, width, height: band.y - top };
+      if (box.frame.kind !== "loop" && band.y - top <= CONDITION_REACH) own.push(condition);
+      else near.push({ x: box.x, y: band.y, width, height: band.height });
     }
+    boxes.push(unionBox(own)!);
   }
   for (const lifeline of layout.lifelines) {
     if (!selected.has(lifeline.id)) continue;

@@ -10,11 +10,13 @@ import { watchUrl } from "../src/url.js";
 import { makeBundle } from "./world.js";
 
 describe("the caption of a talk", () => {
-  it("leaves the diagram 200px, or 45% of a very short column", () => {
-    // 1280x720: a 659px column, a 40px title bar over the diagram
-    expect(captionCap(659, 40)).toBe(659 - 8 - 40 - 200);
-    // 853x480 with a two-row header: a 384px column
-    expect(captionCap(384, 34)).toBe(384 - 8 - 34 - 173);
+  it("takes at most 40% of the column, and leaves the diagram 200px, or 45% of a very short column", () => {
+    // 1280x720: a 659px column: 40% of it (D9)
+    expect(captionCap(659, 40)).toBe(264);
+    // 853x480 with a two-row header: a 384px column, 40% of it is less than what the diagram leaves
+    expect(captionCap(384, 34)).toBe(154);
+    // a 250px column: the diagram's 45% (113px) leaves less than 40%
+    expect(captionCap(250, 34)).toBe(250 - 8 - 34 - 113);
     expect(captionCap(150, 34)).toBe(80);
   });
 

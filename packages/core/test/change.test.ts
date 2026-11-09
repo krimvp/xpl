@@ -350,14 +350,47 @@ describe("analyzeChange", () => {
   it("gives direct callers outside tests, and the tests that reference a symbol", () => {
     const serve = analysis.symbols[0]!;
     expect(serve.callers.map((c) => [c.id, c.lines])).toEqual([["sym:src/main.ts#main", [3]]]);
-    expect(serve.tests.map((t) => t.id)).toEqual(["sym:test/app.test.ts#serves"]);
+    expect(serve.tests).toEqual([
+      expect.objectContaining({ id: "sym:test/app.test.ts#serves", refs: 1 }),
+    ]);
+    expect(serve.tests[0]!.via).toBeUndefined();
     const helper = analysis.symbols[1]!;
     // the caller is part of the change itself
     expect(helper.callers).toEqual([
       expect.objectContaining({ id: "sym:src/app.ts#App.serve", changed: "changed" }),
     ]);
-    expect(helper.tests).toEqual([]);
-    expect(analysis.untested).toEqual(["sym:src/app.ts#App.helper"]);
+  });
+
+  it("a test reaches a symbol through one of its callers, or by building the class of a method", () => {
+    // `serves` calls App.serve, which calls the changed App.helper: one call between them (newcomer R5-S1)
+    const helper = analysis.symbols[1]!;
+    expect(helper.tests).toEqual([
+      expect.objectContaining({
+        id: "sym:test/app.test.ts#serves",
+        via: "call",
+        through: "sym:src/app.ts#App.serve",
+      }),
+    ]);
+    expect(analysis.untested).toEqual([]);
+    // a test that only builds App may run the method: a guess
+    const builds = makeWorld({
+      commit: "bbbbbbb",
+      files: [
+        { path: "src/app.ts", text: APP },
+        { path: "test/app.test.ts", lines: 30 },
+      ],
+      symbols: [
+        { id: "src/app.ts#App", kind: "class", start: 1, end: 17 },
+        { id: "src/app.ts#App.serve", start: 3, end: 7 },
+        { id: "src/app.ts#App.helper", start: 10, end: 12 },
+        { id: "test/app.test.ts#serves", kind: "function", start: 2, end: 10 },
+      ],
+      refs: [{ from: "test/app.test.ts#serves", to: "src/app.ts#App", line: 3 }],
+    });
+    const result = analyzeChange(CHANGE, builds.model, builds.getText);
+    expect(result.symbols[1]!.tests).toEqual([
+      expect.objectContaining({ id: "sym:test/app.test.ts#serves", via: "instance", refs: 1 }),
+    ]);
   });
 
   it("lists the tests the change touches, not the helpers nested in them", () => {

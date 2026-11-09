@@ -6,7 +6,9 @@
 import { expect, test, type Page } from "@playwright/test";
 import {
   ARCHITECTURE_BUNDLE,
+  byId,
   openVariant,
+  smallestDiagramText,
   TS_BUNDLE,
   watchProblems,
   type Loose,
@@ -55,6 +57,74 @@ test.describe("the zoom toolbar never covers a box of a fitted map (D6)", () => 
   }
 });
 
+/** The width of the diagram's canvas, and the ids of the boxes not wholly inside it. */
+const canvas = (page: Page) =>
+  page.evaluate(() => {
+    const svg = [...document.querySelectorAll(".pz-svg")].find(
+      (el) => el.getBoundingClientRect().width > 0,
+    )!;
+    const pane = svg.getBoundingClientRect();
+    const cut = [...svg.querySelectorAll(".nodes g[data-element-id]")]
+      .filter((g) => {
+        const r = g.getBoundingClientRect();
+        return (
+          r.left < pane.left - 1 ||
+          r.right > pane.right + 1 ||
+          r.top < pane.top - 1 ||
+          r.bottom > pane.bottom + 1
+        );
+      })
+      .map((g) => (g as SVGElement).dataset.elementId);
+    return { width: Math.round(pane.width), cut };
+  });
+
+test.describe("while no code is on screen the diagram takes the code column's width (D9, V5-01)", () => {
+  test.use({ viewport: { width: 1440, height: 900 } });
+
+  test("Explore: the file list alone beside the diagram, the code column with the first selection", async ({
+    page,
+  }) => {
+    const problems = watchProblems(page);
+    await page.goto(`${TS_BUNDLE.href}?mode=explore&view=view:overview`);
+    await expect(page.getByTestId("code-idle")).toHaveText(
+      "Click a box, an arrow or a step to see its code.",
+    );
+    // the editor column is gone: the diagram has all but the file list (220px) and the padding
+    await expect.poll(async () => (await canvas(page)).width).toBeGreaterThan(1150);
+    await expect.poll(async () => (await canvas(page)).cut).toEqual([]);
+    expect(await smallestDiagramText(page)).toBeGreaterThanOrEqual(9);
+    // a file in the list is still one click away
+    await expect(page.locator('.tree-row[data-path="src/queue.ts"]')).toBeVisible();
+    // a box clicked: its code shows, beside a diagram as wide as the split says (52% of 1440)
+    await byId(page, "file:src/worker.ts").first().click();
+    await expect(page.locator(".right .editor-stack .pane").first()).toBeVisible();
+    await expect(page.getByTestId("code-idle")).toHaveCount(0);
+    await expect.poll(async () => (await canvas(page)).width).toBeLessThan(760);
+    expect(problems).toEqual([]);
+  });
+
+  test("Map: Show code with nothing selected leaves the map its width, and says how to fill it", async ({
+    page,
+  }) => {
+    const problems = watchProblems(page);
+    await page.goto(`${TS_BUNDLE.href}?perspective=map`);
+    await expect(page.locator(".pz-svg .nodes g[data-element-id]").first()).toBeVisible();
+    const before = (await canvas(page)).width;
+    await page.locator(".workspace-location").getByRole("button", { name: "Show code" }).click();
+    await expect(page.getByTestId("code-waiting")).toHaveText(
+      "Click a box, an arrow or a step to see its code.",
+    );
+    await expect(page.locator(".workspace-source")).toHaveCount(0);
+    expect((await canvas(page)).width).toBe(before);
+    // the first box clicked brings the code column (and its file's code)
+    await byId(page, "file:src/worker.ts").first().click();
+    await expect(page.locator(".workspace-source .editor-stack .pane").first()).toBeVisible();
+    await expect(page.getByTestId("code-waiting")).toHaveCount(0);
+    await expect.poll(async () => (await canvas(page)).width).toBeLessThan(before - 300);
+    expect(problems).toEqual([]);
+  });
+});
+
 test.describe("a phone gives the diagram most of the screen (R3-2)", () => {
   test.use({ viewport: { width: 390, height: 844 } });
 
@@ -93,6 +163,25 @@ test.describe("a phone gives the diagram most of the screen (R3-2)", () => {
     });
   }
 
+  test("the Code tab with no file open shows the whole file list, and a hint at its own height (R5-8)", async ({
+    page,
+  }) => {
+    await page.goto(`${TS_BUNDLE.href}?perspective=code`);
+    await expect(page.locator(".tree-row").first()).toBeVisible();
+    const layout = () =>
+      page.evaluate(() => {
+        const tree = document.querySelector(".workspace .tree-panel")!.getBoundingClientRect();
+        const rows = [...document.querySelectorAll(".workspace .tree-row")];
+        const hint = document.querySelector(".workspace .editor-stack.is-empty")!;
+        return {
+          clipped: rows.filter((row) => row.getBoundingClientRect().bottom > tree.bottom + 1)
+            .length,
+          hintTaller: hint.getBoundingClientRect().height > 300,
+        };
+      });
+    await expect.poll(layout).toEqual({ clipped: 0, hintTaller: false });
+  });
+
   test("the matrix gets the same height as the map", async ({ page }) => {
     await openVariant(
       page,
@@ -114,9 +203,9 @@ test("the Tour decides its right column once per tour, so the text never changes
 }) => {
   await page.goto(TS_BUNDLE.href);
   await expect(page.getByTestId("guide")).toBeVisible();
-  // step 2 lists a settings file, so the column is there from step 1 on, which says it has none
+  // step 2 lists a settings file, so the column is there from step 1 on, which lists its own code (R5-3)
   await expect(page.locator(".workspace-context")).toBeVisible();
-  await expect(page.getByTestId("related-none")).toHaveText("No related files for this step.");
+  await expect(page.getByTestId("step-code")).toContainText("runner.ts");
   const width = () =>
     page.locator('.guide-section[data-section-id="t1"]').evaluate((el) => el.clientWidth);
   const before = await width();
@@ -139,25 +228,59 @@ test("the Tour decides its right column once per tour, so the text never changes
   await expect(page.locator(".workspace-context")).toBeHidden();
 });
 
+test("a Tour step with no related files lists its own code, which opens it; a phone shows no bar for it (R5-3)", async ({
+  page,
+}) => {
+  await page.goto(TS_BUNDLE.href);
+  const place = page.getByTestId("step-code").getByRole("button").first();
+  await expect(place).toHaveText(/^runner\.ts ?lines? \d+/);
+  await place.click();
+  await expect(page.locator(".workspace-source .pane-file").first()).toContainText("runner.ts");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(TS_BUNDLE.href);
+  await expect(page.getByTestId("guide")).toBeVisible();
+  await expect(page.locator(".workspace-context")).toBeHidden();
+});
+
 /**
- * Present (D7): a slide keeps the 12px text floor. A diagram that does not read whole at that size in the 40%
- * column gets a wider one (up to 65%) and then fits whole; one still too big starts on the step's focus, with
- * the lifelines its arrows join in the frame, and "Fit all" in sight without a mouse.
+ * Present (D7, D9): a slide keeps the 12px text floor. A diagram that does not read whole at that size in the
+ * 40% column gets a wider one (up to 65%) and then fits whole; one still too big starts on the step's focus,
+ * with the lifelines its arrows join in the frame, and "Fit all" in sight without a mouse. The text card is as
+ * tall as its text (at most 40% of the column), and "Fit all" sits in the title bar, never on a box.
  */
-test.describe("Present keeps the 12px floor and widens the diagram column (D7)", () => {
+test.describe("Present keeps the 12px floor and widens the diagram column (D7, D9)", () => {
   const FILES = ["main", "runner", "queue", "worker", "bus", "metrics", "config"].map(
     (name) => `file:src/${name}.ts`,
   );
   const addTour = (bundle: Loose) => {
     const views = bundle.explainer.views as Loose[];
+    const files = (id: string, title: string, include: string[]) =>
+      views.push({
+        id,
+        type: "graph",
+        title,
+        scope: { root: "repo", depth: 1 },
+        include,
+        provenance: { origin: "llm" },
+        stubs: { mode: "none" },
+      });
+    files("view:files", "Every file", FILES);
+    // four lifelines, one arrow from the first to each: wide and short, whole at 12px only in a wider column
+    const four = FILES.slice(0, 4);
     views.push({
-      id: "view:files",
-      type: "graph",
-      title: "Every file",
+      id: "view:four",
+      type: "sequence",
+      title: "Four parts",
       scope: { root: "repo", depth: 1 },
-      include: FILES,
+      participants: four,
+      steps: four.slice(1).map((to, i) => ({
+        id: `four:${i + 1}`,
+        from: four[0]!,
+        to,
+        label: `call ${i + 1}`,
+        kind: "call",
+      })),
       provenance: { origin: "llm" },
-      stubs: { mode: "none" },
     });
     // a long sequence: twelve arrows over six lifelines, the step talked about the last one, at the right
     const lanes = FILES.slice(1);
@@ -180,15 +303,26 @@ test.describe("Present keeps the 12px floor and widens the diagram column (D7)",
       id: "tour:d7",
       title: "D7",
       steps: [
-        { id: "s1", view: "view:files", focus: [FILES[1]] },
-        { id: "s2", view: "view:long", focus: ["long:12"] },
+        { id: "s1", view: "view:files", focus: [FILES[1]], note: "One line." },
+        {
+          id: "s2",
+          view: "view:long",
+          focus: ["long:12"],
+          note: "A longer note. ".repeat(12).trim(),
+        },
+        { id: "s3", view: "view:four", focus: ["four:1"], note: "One line." },
       ],
     });
   };
-  /** Boxes, and lifeline heads, wholly in the diagram's pane; the text size; is "Fit all" on screen? */
+  /**
+   * The slide: the diagram column's share of the width, boxes not wholly in the pane, the smallest text, is
+   * "Fit all" on the slide (and does it cross a box), and the text card's height as a share of the column
+   * (with the room its text leaves empty).
+   */
   const slide = (page: Page) =>
     page.evaluate(() => {
       const pane = document.querySelector(".present-left .pz-svg")!.getBoundingClientRect();
+      const left = document.querySelector(".present-left")!.getBoundingClientRect();
       const inside = (el: Element) => {
         const r = el.getBoundingClientRect();
         return (
@@ -203,62 +337,99 @@ test.describe("Present keeps the 12px floor and widens the diagram column (D7)",
         .map((t) => parseFloat(getComputedStyle(t).fontSize) * (t.getScreenCTM()?.a ?? 1));
       const fit = document.querySelector<HTMLElement>(".present [data-testid=pz-fit]")!;
       const bar = fit.closest<HTMLElement>(".pz-toolbar")!;
+      const chip = fit.getBoundingClientRect();
+      const boxes = [
+        ...document.querySelectorAll(
+          ".present-left :is(.nodes g, .lifelines .lifeline-head)[data-element-id]",
+        ),
+      ];
+      const caption = document.querySelector<HTMLElement>("[data-testid=tour-caption]")!;
       return {
-        column: document.querySelector(".present-left")!.getBoundingClientRect().width / innerWidth,
-        cut: [...document.querySelectorAll(".present-left .nodes g[data-element-id]")]
-          .filter((g) => !inside(g))
-          .map((g) => (g as SVGElement).dataset.elementId),
+        column: Math.round((left.width / innerWidth) * 100) / 100,
+        cut: boxes.filter((g) => !inside(g)).map((g) => (g as SVGElement).dataset.elementId),
         smallest: Math.min(...sizes),
         fitShown: fit.offsetParent !== null && getComputedStyle(bar).opacity === "1",
         cue: fit.classList.contains("is-cue"),
+        chipOnBox: boxes.some((g) => {
+          const r = g.getBoundingClientRect();
+          return (
+            r.left < chip.right && r.right > chip.left && r.top < chip.bottom && r.bottom > chip.top
+          );
+        }),
+        caption: caption.offsetHeight / left.height,
+        captionSpare: caption.clientHeight - caption.scrollHeight,
       };
     });
 
-  for (const size of [
-    { width: 1440, height: 900 },
-    { width: 1280, height: 720 },
-  ]) {
-    test(`${size.width}x${size.height}`, async ({ page }) => {
-      const problems = watchProblems(page);
-      await openVariant(page, addTour, "?mode=present&tour=tour:d7", size);
-      await expect(page.getByTestId("present")).toHaveAttribute("data-step", "1");
-      // a map: whole in the 40% column at 12px, or given a wider column (at most 65%); one still too big
-      // starts on the step's box, "Fit all" in sight
-      await expect(page.locator(".present-left .nodes g[data-element-id]").first()).toBeVisible();
-      await page.waitForTimeout(500);
-      let now = await slide(page);
-      expect(now.smallest).toBeGreaterThanOrEqual(11.9);
-      expect(now.column).toBeLessThanOrEqual(0.66);
-      if (now.cut.length > 0) {
-        expect(now.column).toBeGreaterThan(0.6);
-        await expect.poll(async () => (await slide(page)).fitShown).toBe(true);
-        expect(now.cut).not.toContain(FILES[1]);
-      }
-      // (at 1280x720 this map does not read whole at 12px in 40%: the column is wider)
-      if (size.width === 1280) expect(now.column).toBeGreaterThan(0.45);
+  test("1440x900: the map reads whole in the 40% column; the text card is as tall as its text", async ({
+    page,
+  }) => {
+    const problems = watchProblems(page);
+    await openVariant(page, addTour, "?mode=present&tour=tour:d7", { width: 1440, height: 900 });
+    await expect(page.getByTestId("present")).toHaveAttribute("data-step", "1");
+    await expect(page.locator(".present-left .nodes g[data-element-id]").first()).toBeVisible();
+    await expect
+      .poll(() => slide(page))
+      .toMatchObject({ cut: [], column: 0.4, fitShown: false, chipOnBox: false, captionSpare: 0 });
+    const one = await slide(page);
+    expect(one.smallest).toBeGreaterThanOrEqual(11.9);
+    // (one line of text: far less than the 40% the card may take)
+    expect(one.caption).toBeLessThan(0.2);
 
-      // a sequence too tall for any column: the step's arrow and both its lifelines in the frame, at 12px or
-      // more, with "Fit all" on the slide while the mouse has not moved
-      await page.keyboard.press("ArrowRight");
-      await expect(page.getByTestId("present")).toHaveAttribute("data-step", "2");
-      await expect.poll(async () => (await slide(page)).fitShown).toBe(true);
-      now = await slide(page);
-      expect(now.cue).toBe(true);
-      expect(now.smallest).toBeGreaterThanOrEqual(11.9);
-      const pane = await page.locator(".present-left .pz-svg").boundingBox();
-      for (const id of ["long:12", "file:src/worker.ts", "file:src/config.ts"]) {
-        // (a lifeline: its head, which stays at the top of the pane as the diagram moves)
-        const box = await page
-          .locator(`.present-left [data-element-id="${id}"]`)
-          .first()
-          .boundingBox();
-        expect(box, id).not.toBeNull();
-        expect(box!.x, id).toBeGreaterThanOrEqual(pane!.x - 1);
-        expect(box!.x + box!.width, id).toBeLessThanOrEqual(pane!.x + pane!.width + 1);
-      }
-      expect(problems).toEqual([]);
+    // a sequence too tall for any column: the step's arrow and both its lifelines in the frame, at 12px or
+    // more, "Fit all" on the slide while the mouse has not moved, on no box; the longer note, a taller card
+    await page.keyboard.press("ArrowRight");
+    await expect(page.getByTestId("present")).toHaveAttribute("data-step", "2");
+    await expect
+      .poll(() => slide(page))
+      .toMatchObject({ fitShown: true, cue: true, chipOnBox: false, captionSpare: 0 });
+    const two = await slide(page);
+    expect(two.smallest).toBeGreaterThanOrEqual(11.9);
+    expect(two.caption).toBeGreaterThan(one.caption);
+    expect(two.caption).toBeLessThanOrEqual(0.4);
+    const pane = await page.locator(".present-left .pz-svg").boundingBox();
+    for (const id of ["long:12", "file:src/worker.ts", "file:src/config.ts"]) {
+      // (a lifeline: its head, which stays at the top of the pane as the diagram moves)
+      const box = await page
+        .locator(`.present-left [data-element-id="${id}"]`)
+        .first()
+        .boundingBox();
+      expect(box, id).not.toBeNull();
+      expect(box!.x, id).toBeGreaterThanOrEqual(pane!.x - 1);
+      expect(box!.x + box!.width, id).toBeLessThanOrEqual(pane!.x + pane!.width + 1);
+    }
+    expect(problems).toEqual([]);
+  });
+
+  test("1280x720: a diagram too wide for 40% gets a wider column and reads whole; a bigger one starts on its focus", async ({
+    page,
+  }) => {
+    const problems = watchProblems(page);
+    await openVariant(page, addTour, "?mode=present&tour=tour:d7&step=3", {
+      width: 1280,
+      height: 720,
     });
-  }
+    // four lifelines: whole at 12px only in a wider column than 40%, which it gets (D7's middle case)
+    await expect(page.getByTestId("present")).toHaveAttribute("data-step", "3");
+    await expect(page.locator(".present-left .pz-svg text").first()).toBeVisible();
+    await expect
+      .poll(() => slide(page))
+      .toMatchObject({ cut: [], fitShown: false, chipOnBox: false });
+    const four = await slide(page);
+    expect(four.column).toBeGreaterThan(0.45);
+    expect(four.column).toBeLessThan(0.65);
+    expect(four.smallest).toBeGreaterThanOrEqual(11.9);
+    // seven files: too big even at 65%: the step's box in the frame, "Fit all" in the title bar
+    await page.keyboard.press("Home");
+    await expect(page.getByTestId("present")).toHaveAttribute("data-step", "1");
+    await expect
+      .poll(() => slide(page))
+      .toMatchObject({ column: 0.64, fitShown: true, cue: true, chipOnBox: false });
+    const seven = await slide(page);
+    expect(seven.cut).not.toContain(FILES[1]);
+    expect(seven.smallest).toBeGreaterThanOrEqual(11.9);
+    expect(problems).toEqual([]);
+  });
 });
 
 test.describe("the phone caption's disclosure (R4-21, R4-22)", () => {

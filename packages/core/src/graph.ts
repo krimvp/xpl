@@ -49,6 +49,8 @@ export interface GraphNode {
   kind: Node["kind"];
   /** For symbol nodes: the indexed symbol's kind. */
   symbolKind?: IndexedSymbol["kind"];
+  /** The reader's word for `symbolKind` when it differs from it (`ModelNode.kindWord`): "struct", "field". */
+  kindWord?: string;
   /** Some included node renders inside this one. */
   container: boolean;
   /** The included element this node renders inside (its container), if any. */
@@ -744,6 +746,7 @@ export function deriveGraph(
       container: containers.has(id),
     };
     if (node.symbolKind !== undefined) out.symbolKind = node.symbolKind;
+    if (node.kindWord !== undefined) out.kindWord = node.kindWord;
     if (node.role !== undefined) out.role = node.role;
     if (node.tech !== undefined) out.tech = node.tech;
     if (node.opens !== undefined) {

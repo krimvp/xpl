@@ -281,6 +281,14 @@ describe("xpl outline", () => {
       expect(find(commas.json.tree, "file:src/runner.ts")).toBeDefined();
     });
 
+    // adhd-text R3-09 / R5-03: `--kind enum,type` names the candidates `draft states` points at, at any depth
+    it("searches every level when no --depth is given", async () => {
+      const { code, out } = await xpl(dir, "outline", "--kind", "type");
+      expect(code).toBe(0);
+      expect(symbols(out)).toContainEqual(["sym:src/bus.ts#Listener", "type"]);
+      expect(out).not.toContain("[+");
+    });
+
     it("counts only what matches in [+n]", async () => {
       // depth 2 from the repo stops at the files: src/queue.ts holds one class and no other match
       const { out } = await xpl(dir, "outline", "--kind", "class", "--depth", "2");

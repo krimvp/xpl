@@ -85,10 +85,29 @@ export function describeRefs(info: LanguageInfo): string {
   return `precise ${Math.max(0, info.files - heuristic)}/${info.files}${tool}, ${heuristic} heuristic`;
 }
 
+/**
+ * One plain line per language whose code links are limited (`xpl index` without --verbose): references matched by
+ * name, or a file with no symbols. Config languages (yaml, json, toml) have no references by design: the table says
+ * `refs: none`, and nothing more is needed.
+ */
+export function limitLines(languages: Readonly<Record<string, LanguageInfo>>): string[] {
+  return Object.entries(languages).flatMap(([name, info]) => {
+    if (info.refs === "heuristic")
+      return [`${name}: references matched by name; some can be missing.`];
+    if (info.refs === "precise" && (info.heuristicFiles ?? 0) > 0)
+      return [
+        `${name}: references of ${plural(info.heuristicFiles!, "file")} matched by name; some can be missing.`,
+      ];
+    if (info.symbols === 0 && info.refs === "none")
+      return [`${name}: file only; no symbols or references.`];
+    return [];
+  });
+}
+
 export const indexCommand: CommandSpec = {
   name: "index",
   usage:
-    "xpl index [--precise auto|off|require] [--commit <c>] [--no-cache] [--scip <artifact|manifest.json>]",
+    "xpl index [--precise auto|off|require] [--commit <c>] [--no-cache] [--scip <artifact|manifest.json>] [--verbose]",
   summary: "Build and write the symbol index; print languages and excluded source candidates",
   details: [
     "Indexes every text file under --root (git-aware) and writes .explainer/index-<commit>.json.",
@@ -107,8 +126,10 @@ export const indexCommand: CommandSpec = {
     "`refs: none` (Ruby, PHP, yaml, json, toml, text without an artifact provider), or, when the precise tool",
     "did not describe every file, `refs: precise 64/82 (scip-python@0.6.6), 18 heuristic`: the references of",
     "those 18 files are hints.",
-    "Analysis coverage lists, per language, what was found (symbols, each kind of reference), the files analyzed,",
-    "the limits and the failures.",
+    "Under the table, one line names each language whose references are matched by name, whose symbols are",
+    "partial (tags), or that has no symbols.",
+    "--verbose adds the cache and timing lines, and the analysis coverage: per language, what was found (symbols,",
+    "each kind of reference), the files analyzed, the limits and the failures. A failed analysis is always printed.",
     "Excluded file counts and up to three paths per reason cover enumerated candidates only; git-ignored files",
     "and directories skipped by the fallback walk are not counted.",
     "An empty result does not prove there is no reference. Saved indexes and exported pages keep this report.",
@@ -134,6 +155,10 @@ export const indexCommand: CommandSpec = {
       desc: "Reference resolution: SCIP when available (auto, default), never (off), or fail (require)",
     },
     commit: { type: "string", arg: "<c>", desc: "Commit id to record instead of the computed one" },
+    verbose: {
+      type: "boolean",
+      desc: "Also print the cache and timing lines and the analysis coverage per language",
+    },
   },
   positionals: [],
   async run(ctx, args) {
@@ -230,22 +255,35 @@ export const indexCommand: CommandSpec = {
       ),
     ];
     const { extraction, work } = result;
-    lines.push(
-      "",
-      `Extraction (${extraction.enabled ? "cache enabled" : "cache disabled"}): ${plural(extraction.hits, "hit")}, ${plural(extraction.misses, "miss", "misses")} of the ${plural(extraction.hits + extraction.misses, "file")} with a grammar, ${extraction.wallMs.toFixed(1)} ms wall; file-local tree-sitter and tags only.`,
-    );
+    const verbose = args.flag("verbose");
+    const coverage = describeAnalysis(index);
+    if (!verbose) {
+      const details = coverageDetails(coverage.details, index.files.length, index.languages);
+      const failed = details.filter((line) => / failed \(/.test(line));
+      // symbols found by tags (Rust, Ruby, PHP): some declarations have no symbol
+      const partialSymbols = details.flatMap((line) => {
+        const m = /^([\w-]+)(?: \([^)]+\))?: named symbols\b.* partial \(/.exec(line);
+        return m ? [`${m[1]}: some symbols can be missing (partial extraction).`] : [];
+      });
+      const limits = [...partialSymbols, ...limitLines(index.languages), ...failed];
+      if (limits.length > 0) lines.push("", ...limits);
+    }
+    if (verbose)
+      lines.push(
+        "",
+        `Extraction (${extraction.enabled ? "cache enabled" : "cache disabled"}): ${plural(extraction.hits, "hit")}, ${plural(extraction.misses, "miss", "misses")} of the ${plural(extraction.hits + extraction.misses, "file")} with a grammar, ${extraction.wallMs.toFixed(1)} ms wall; file-local tree-sitter and tags only.`,
+      );
     if (extraction.writeFailures)
       lines.push(`Cache writes failed: ${extraction.writeFailures}; fresh facts were used.`);
     if (extraction.bypassReason) lines.push(`Cache bypassed: ${extraction.bypassReason}.`);
-    lines.push(
-      `Fresh work: heuristic resolution ${work.heuristicResolutionMs.toFixed(1)} ms wall; semantic providers ${work.semanticRuns} runs, ${work.semanticMs.toFixed(1)} ms wall.`,
-    );
-    const coverage = describeAnalysis(index);
-    lines.push(
-      "",
-      coverage.summary,
-      ...coverageDetails(coverage.details, index.files.length, index.languages),
-    );
+    if (verbose) {
+      lines.push(
+        `Fresh work: heuristic resolution ${work.heuristicResolutionMs.toFixed(1)} ms wall; semantic providers ${work.semanticRuns} runs, ${work.semanticMs.toFixed(1)} ms wall.`,
+        "",
+        coverage.summary,
+        ...coverageDetails(coverage.details, index.files.length, index.languages),
+      );
+    }
     const { exclusions } = result;
     const excluded = exclusions.reasons.map(
       ({ reason, count, examples }) =>

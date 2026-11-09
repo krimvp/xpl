@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import { ExplainerModel, processFlow, type SequenceView, type TourStep } from "@xpl/core";
 import { placedStages } from "../src/layout/flowLayout.js";
 import {
+  asSentence,
   firstContentLine,
   looksLikeCode,
   mapEdgeSource,
@@ -232,5 +233,13 @@ describe("titles that are code", () => {
       "",
     ])
       expect(looksLikeCode(words), words).toBe(false);
+  });
+});
+
+describe("a person's text in a sentence", () => {
+  it("gets one stop, never two", () => {
+    expect(asSentence("Tests not read")).toBe("Tests not read.");
+    expect(asSentence("Tests not read.")).toBe("Tests not read.");
+    expect(asSentence("Which tests? ")).toBe("Which tests?");
   });
 });

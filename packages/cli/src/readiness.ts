@@ -27,10 +27,10 @@ export async function workspaceReadiness(
 
 export function describeReadiness(report: ReadinessReport): string {
   return [
-    `${report.ready ? "Ready" : "Not ready"} (${report.scope}): ${report.errors} errors, ${report.warnings} warnings. Source checks do not verify prose claims or complete runtime coverage.`,
+    `${report.ready ? "Ready" : "Not ready"} (${report.scope}): ${report.errors} errors, ${report.warnings} warnings. xpl checks the code links, not whether the text is true.`,
     ...(report.review
       ? [
-          `Author review: ${report.review.status}; team policy ${report.review.required ? "requires all content" : "off"}. Names are self-reported, not verified identities.`,
+          `Author review: ${report.review.status}; team policy ${report.review.required ? "requires all content" : "off"}. xpl does not check reviewer names.`,
         ]
       : []),
     ...report.findings.map(

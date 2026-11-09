@@ -184,6 +184,17 @@ describe("code-first views", () => {
     ).toBe(true);
   });
 
+  it("leave out a flow with two or more outcomes: it is a choice, drawn as a diagram (R5-N2)", () => {
+    const flow = steps(["tree.go", "tree.go", "tree.go", "tree.go"]);
+    const shaped = (shapes: SequenceView["steps"][number]["shape"][]): SequenceView => ({
+      ...flow,
+      steps: flow.steps.map((step, i) => ({ ...step, shape: shapes[i] })),
+    });
+    expect(codeFirstView(shaped(["stage", "decision", "terminal", "terminal"]))).toBe(false);
+    // one end (a recursive walk that returns): still the steps of one function
+    expect(codeFirstView(shaped(["decision", "stage", "terminal", undefined]))).toBe(true);
+  });
+
   it("follow the view's layout setting when it has one", () => {
     expect(codeFirstView({ ...steps(["a.go", "b.go"]), layout: "code-first" })).toBe(true);
     expect(codeFirstView({ ...steps(["a.go", "a.go", "a.go"]), layout: "diagram" })).toBe(false);

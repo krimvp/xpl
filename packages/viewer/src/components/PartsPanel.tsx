@@ -9,7 +9,7 @@ import type { DerivedGraph, GraphView, SequenceView } from "@xpl/core";
 import { viewReverseIndex } from "../derive.js";
 import { useStore, useViewerState } from "../hooks.js";
 import { renderInline } from "../markdown.js";
-import { linkWords, mapParts, stepParts } from "../parts.js";
+import { mapParts, stepParts } from "../parts.js";
 
 export interface PartsPanelProps {
   /** The map on screen (with its derived graph), or the flow or sequence on screen. */
@@ -64,7 +64,7 @@ export function PartsPanel({ view, graph, matches }: PartsPanelProps) {
         {map ? "On this map" : "Steps, in order"}
       </h3>
       <p className="parts-hint">
-        {map ? "Pick a box or an arrow to see its code." : "Pick a step to see its code."}
+        {map ? "Click a box or an arrow to see its code." : "Click a step to see its code."}
       </p>
       {map && (
         <>
@@ -84,12 +84,8 @@ export function PartsPanel({ view, graph, matches }: PartsPanelProps) {
                   <span className="parts-name">{box.label}</span>
                   {box.kind && <span className="parts-kind">{box.kind}</span>}
                   {summary(box.summary)}
-                  {(box.uses.length > 0 || box.usedBy.length > 0) && (
-                    <span className="parts-links">
-                      {[linkWords("uses", box.uses), linkWords("used by", box.usedBy)]
-                        .filter(Boolean)
-                        .join(" · ")}
-                    </span>
+                  {box.links.length > 0 && (
+                    <span className="parts-links">{box.links.join(" · ")}</span>
                   )}
                 </button>
               </li>
@@ -124,7 +120,7 @@ export function PartsPanel({ view, graph, matches }: PartsPanelProps) {
               {map.outside === 1
                 ? "1 dashed box stands for code outside this map."
                 : `${map.outside} dashed boxes stand for code outside this map.`}{" "}
-              Pick a box to see its dashed arrows.
+              Click a box to see its dashed arrows.
             </p>
           )}
         </>
