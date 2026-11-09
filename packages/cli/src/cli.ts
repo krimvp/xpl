@@ -118,17 +118,35 @@ function wrapHelp(lines: readonly string[]): string[] {
   const indentOf = (line: string) => /^ */.exec(line)![0].length;
   const continuation = (line: string | undefined): line is string =>
     line !== undefined &&
-    /^ *[^\s-]/.test(line) &&
-    !/^ *Exit codes?:/.test(line) &&
+    /^ *(?:[^\s-]|--?\w)/.test(line) &&
+    !/^ *(?:Exit codes?:|xpl |\$ )/.test(line) &&
     !/^ *\S(?:\S| (?! ))* {2,}/.test(line);
   for (let i = 0; i < todo.length; i++) {
-    const line = todo[i]!;
+    let line = todo[i]!;
+    // a line that stops inside a sentence takes the rest of its paragraph, so the paragraph wraps as a whole
+    // (no short line in the middle, no word left alone on a line)
+    while (
+      /[^.:;!?]$/.test(line) &&
+      !/^ *(?:xpl |\$ )/.test(line) &&
+      continuation(todo[i + 1]) &&
+      indentOf(todo[i + 1]!) === indentOf(line) &&
+      (/^ *- /.test(line) ? false : true)
+    ) {
+      line = `${line} ${todo[i + 1]!.trimStart()}`;
+      todo.splice(i + 1, 1);
+    }
     const next = todo[i + 1];
     // `Head: text` over indented lines that continue it: wrap the head under that indent too.
     const hang = continuation(next) && indentOf(next) > indentOf(line) ? indentOf(next) : undefined;
     const pieces = wrapHelpLine(line, hang);
     const last = pieces[pieces.length - 1]!;
-    const continues = pieces.length > 1 && continuation(next) && indentOf(next) === indentOf(last);
+    // the end of a wrapped line moves onto the next line of its paragraph when it ends inside a sentence, or when
+    // it is too short to stand alone; a full sentence ending keeps its own line
+    const continues =
+      pieces.length > 1 &&
+      continuation(next) &&
+      indentOf(next) === indentOf(last) &&
+      (/[^.:;!?]$/.test(last) || last.trim().length < 40);
     if (continues) {
       todo[i + 1] = `${last} ${next.trimStart()}`;
       pieces.pop();
@@ -203,12 +221,37 @@ function helpText(): string {
   ].join("\n");
 }
 
-function commandHelp(command: CommandSpec): string {
+/**
+ * The details of one kind of a command whose first argument is a choice (`xpl draft path --help`): the lines
+ * before the table of kinds, the row of that kind, and the lines after the table. Undefined for any other topic.
+ */
+function topicDetails(command: CommandSpec, topic: string | undefined): string[] | undefined {
+  const choices = command.positionals[0]?.name.split("|") ?? [];
+  if (topic === undefined || choices.length < 2 || !choices.includes(topic) || !command.details)
+    return undefined;
+  const lines = command.details;
+  const rowOf = (line: string) => /^ {2}([a-z]+)\b/.exec(line)?.[1];
+  const isRow = (line: string) => choices.includes(rowOf(line) ?? "");
+  const first = lines.findIndex(isRow);
+  if (first === -1) return undefined;
+  let last = first;
+  for (let i = first; i < lines.length && /^ {2}/.test(lines[i]!); i++) last = i;
+  const out = lines.slice(0, first);
+  let inRow = false;
+  for (const line of lines.slice(first, last + 1)) {
+    if (isRow(line)) inRow = rowOf(line) === topic;
+    if (inRow) out.push(line);
+  }
+  return [...lines.slice(0, first), "", ...out.slice(first), "", ...lines.slice(last + 1)];
+}
+
+function commandHelp(command: CommandSpec, topic?: string): string {
+  const details = topicDetails(command, topic) ?? command.details;
   return [
     ...usageLines(command.usage),
     "",
     ...wrapHelpLine(command.summary),
-    ...(command.details ? ["", ...wrapHelp(command.details)] : []),
+    ...(details ? ["", ...wrapHelp(details)] : []),
     ...(Object.keys(command.options).length > 0
       ? ["", "Options:", ...optionRows(command.options)]
       : []),
@@ -316,7 +359,7 @@ async function dispatch(argv: string[], io: Io): Promise<number> {
   const command = COMMANDS.find((candidate) => candidate.name === name);
   if (!command) throw unknownCommand(name);
   if (first.values.help === true) {
-    io.out(commandHelp(command));
+    io.out(commandHelp(command, first.positionals[1]));
     return 0;
   }
 
@@ -371,7 +414,12 @@ function reportError(io: Io, json: boolean, error: unknown): number {
     } else {
       io.err(`error: ${error.message}`);
       if (error instanceof UsageError && error.usage) {
-        io.err(`usage: ${error.usage}`);
+        // wrapped like the Usage of --help
+        io.err(
+          usageLines(error.usage)
+            .join("\n")
+            .replace(/^Usage:/, "usage:"),
+        );
         io.err(`Run "xpl ${error.usage.split(/\s+/)[1] ?? ""} --help" for details.`);
       }
     }

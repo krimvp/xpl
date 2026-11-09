@@ -156,7 +156,7 @@ export const applyCommand: CommandSpec = {
       if (!result.ok) {
         lines.push(
           `rejected: ${plural(errors, "error")}, nothing was applied to ${loaded.rel} (patch from ${label})`,
-          ...renderIssues(result.issues),
+          ...renderIssues(result.issues, loaded.name),
         );
         ctx.out(lines.join("\n"));
         return 1;
@@ -164,7 +164,7 @@ export const applyCommand: CommandSpec = {
       if (allProtected) {
         lines.push(
           `nothing was applied to ${loaded.rel} (patch from ${label}): ${protectedSummary(protectedIds)}`,
-          ...renderIssues(result.issues),
+          ...renderIssues(result.issues, loaded.name),
           PROTECTED_ADVICE,
         );
         ctx.out(lines.join("\n"));
@@ -184,7 +184,10 @@ export const applyCommand: CommandSpec = {
       if (result.changed.length > 0)
         lines.push("changed:", ...result.changed.map((id) => `  ${id}`));
       if (result.issues.length > 0) {
-        lines.push(`issues (${issueSummary(result.issues)}):`, ...renderIssues(result.issues));
+        lines.push(
+          `issues (${issueSummary(result.issues)}):`,
+          ...renderIssues(result.issues, loaded.name),
+        );
       }
       // The warnings that matter most go last, where they are read.
       if (protectedIds.length > 0) {

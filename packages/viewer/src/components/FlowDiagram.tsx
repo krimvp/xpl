@@ -31,6 +31,8 @@ import {
 
 /** How far the outline keeps the step it follows from the pane's edge, px: near the middle, with its neighbours. */
 const OUTLINE_MARGIN = 140;
+/** The smallest zoom of that outline: its 13-14 unit words come out at 9-10 px. */
+const OUTLINE_MIN_ZOOM = 0.7;
 
 export interface FlowDiagramProps {
   view: SequenceView;
@@ -413,7 +415,12 @@ export function FlowDiagram({ view, snapshot, outline = false }: FlowDiagramProp
         // at 16px or more, else at that size on its focus and the stages next to it ("Fit all" shows the
         // rest). All of the focus is in view: smaller (down to 10px) when it does not fit at 16px.
         readableZoom={present ? PRESENT_FLOW_MAX_ZOOM : FLOW_READABLE_ZOOM}
-        readableMin={present ? PRESENT_FLOW_MAX_ZOOM : undefined}
+        // The outline beside the code (a 360 px column) starts at the zoom that shows the flow's whole width,
+        // but never below `OUTLINE_MIN_ZOOM`, and its Fit all stops there too: it pans rather than shrinking
+        // the words to 4 px (V1-02).
+        readableMin={present ? PRESENT_FLOW_MAX_ZOOM : outline ? OUTLINE_MIN_ZOOM : undefined}
+        minFitZoom={outline ? OUTLINE_MIN_ZOOM : undefined}
+        panCue={false}
         focusMin={present ? PRESENT_FLOW_FOCUS_ZOOM : undefined}
         onBackgroundClick={() => store.clearSelection()}
         tools={

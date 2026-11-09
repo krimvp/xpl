@@ -1,4 +1,4 @@
-import type { FocusRange, RelatedFileSet } from "@xpl/core";
+import type { ElementId, ExplainerModel, FocusRange, RelatedFileSet } from "@xpl/core";
 
 /**
  * A card made from the step's own setting or test anchor in a file whose code the step already shows (an
@@ -33,4 +33,30 @@ export function mergeSameCards(links: readonly RelatedFileSet[]): RelatedFileSet
     first.summary ??= link.summary;
   }
   return [...byKey.values()];
+}
+
+/**
+ * A box that holds other code (a system, a service, a group, a folder) keeps only the cards about the box
+ * itself: arrows drawn from or to it, and setting and test cards for files that its own code links (or its
+ * step's) name. A file read, or a setting linked, somewhere
+ * inside it is a fact about that code, not about the whole box; on the box it reads as a claim about the
+ * system. A selection with any box of code (a file, a symbol, an arrow, a concept) keeps every card.
+ */
+export function ownCards(
+  links: readonly RelatedFileSet[],
+  ids: readonly ElementId[],
+  model: ExplainerModel,
+  ownFiles: ReadonlySet<string> = new Set(),
+): RelatedFileSet[] {
+  const holds = (id: ElementId) => {
+    const node = model.node(id);
+    return !!node && (node.kind === "group" || node.kind === "dir" || node.kind === "repo");
+  };
+  if (ids.length === 0 || !ids.every(holds)) return [...links];
+  const selected = new Set(ids);
+  return links.filter((link) => {
+    if (link.id.startsWith("anchor:")) return link.files.every((file) => ownFiles.has(file));
+    const edge = model.edge(link.id);
+    return !!edge && (selected.has(edge.from) || selected.has(edge.to));
+  });
 }

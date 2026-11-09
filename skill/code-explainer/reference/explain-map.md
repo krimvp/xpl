@@ -1,0 +1,10 @@
+# explain map: every file, in plain words
+
+A quick map of what is in a project, file by file. It is often for code that an AI assistant wrote. The reader is the owner of the project, who may not read code. The workflow, the hard rules and the accuracy rules of `SKILL.md` still apply.
+
+1. **Draft:** `xpl draft map <name> -o map.json` makes one map per folder; a folder box zooms into its files. Each file's `TODO` lists what the index knows about it. Then run `xpl health`, a quick check for secrets in the code, committed `.env` files, large files and unused files.
+2. **Write every box:** a label of 2-5 plain words ("Job queue", not `queue.ts`), and one sentence of about 120 characters at most. The sentence starts with a verb and says what the file does for the project. Use everyday words and no framework names, unless the user asks for a technical map. Write it from the facts in the `TODO`. When they say too little, open the file (`xpl show file:<path>`). Folders get the same.
+3. **Many boxes** (more than about 150): if you can start parallel helpers, split the patch's `nodes` by map among them. Each helper keeps the ids, and lints and applies its own patch.
+4. **Crowded folders:** in a folder of more than 30 files that use each other, the draft groups the files. Name each group by the job its files share, or remove a group that is not one job.
+5. **After work on the code:** run `xpl update <name> --since <base> -o map.json`. `<base>` is the commit before the work; leave out `--since` while the work is not committed. The command indexes, records the change and drafts the map again. The new draft keeps your text, adds the new files and removes the boxes of deleted files. It also adds `tour:changes-<head>`. Its summary says what the user asked for, in their words, and each step says how that file's change serves the request. Do not commit for the user unless they ask.
+6. **Reply:** the bundle path, and the parts of the project in 3-5 lines. List each high-severity `xpl health` finding with its file, line, kind and fix. Never copy a secret value anywhere, not even in part. Call it a quick check, not a security audit.

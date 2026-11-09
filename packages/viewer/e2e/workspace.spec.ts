@@ -17,7 +17,7 @@ test("opens a readable guide with optional synchronized map, flow and source", a
   await page.getByRole("navigation", { name: "Tour steps" }).getByRole("button").nth(1).click();
   const selection = await selectionOf(page);
   await page.getByTestId("perspective-map").click();
-  await expect(page.locator(".workspace-diagram svg")).toBeVisible();
+  await expect(page.locator(".workspace-diagram svg.pz-svg")).toBeVisible();
   expect(await selectionOf(page)).toEqual(selection);
   await page.getByTestId("perspective-flow").click();
   await expect(page.locator(".workspace-diagram .sequence")).toBeVisible();
@@ -212,7 +212,7 @@ test("offers the map, guide and code even without a tour or process model", asyn
   await page.goto("http://xpl.test/");
   await expect(page.locator(".guide-fallback")).toBeVisible();
   await page.getByTestId("perspective-map").click();
-  await expect(page.locator(".workspace-diagram svg")).toBeVisible();
+  await expect(page.locator(".workspace-diagram svg.pz-svg")).toBeVisible();
   await page.getByTestId("perspective-flow").click();
   await expect(page.locator(".guide-path")).toContainText("no flow diagram");
   await page.getByTestId("perspective-code").click();
@@ -249,6 +249,22 @@ test("Ctrl+F finds in a file, in the page's colours, counts the matches and Ente
   await page.keyboard.press("Escape");
   await expect(field).toHaveCount(0);
   expect(problems).toEqual([]);
+});
+
+test("Related files follow the tour step scrolled to, not the one applied before the scroll", async ({
+  page,
+}) => {
+  await page.goto(TS_BUNDLE.href);
+  await expect(page.getByTestId("guide")).toBeVisible();
+  // step 1 (the Scheduling group) has no cards of its own
+  await expect(page.getByRole("region", { name: "Related files" })).toHaveCount(0);
+  await page
+    .locator('.guide-section[data-section-id="t2"]')
+    .evaluate((el) => el.scrollIntoView({ block: "start" }));
+  await expect(page.getByTestId("breadcrumb-topic")).toContainText("Where failures go");
+  await expect(page.getByRole("region", { name: "Related files" })).toContainText(
+    "config/default.yaml",
+  );
 });
 
 test("Related files: the triangle sits in the heading, a file's path shows once", async ({

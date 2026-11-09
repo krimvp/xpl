@@ -25,7 +25,19 @@ export const REPO_TARGET: Target = { type: "repo", id: REPO_ID };
 export function resolveTarget(model: IndexModel, input: string): Target {
   const normalized = normalizeElementId(input, model);
   if (!normalized.ok) {
-    throw new CliError(normalized.error, 1, {
+    // nothing close to suggest: say how to find an id
+    const word =
+      input
+        .replace(/^(?:sym|file|dir):/, "")
+        .split(/[#/.]/)
+        .filter(Boolean)
+        .at(-1) ?? input;
+    const hint =
+      (normalized.candidates?.length ?? 0) === 0 &&
+      !/`xpl (?:outline|search)/.test(normalized.error)
+        ? ` Find ids with \`xpl search ${word}\` or \`xpl outline\`.`
+        : "";
+    throw new CliError(normalized.error + hint, 1, {
       ...(normalized.candidates ? { candidates: normalized.candidates } : {}),
     });
   }

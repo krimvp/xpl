@@ -117,12 +117,9 @@ export function EditorStack() {
         <div className="empty-hint">
           <h2>No code on screen</h2>
           <p>
-            Click a box, an arrow, a step or a concept and its code shows up here, highlighted and
-            with everything else dimmed. Or pick a file in the tree.
+            Click a box, an arrow or a step, and its code shows here. Or click a file in the list.
           </p>
-          <p>
-            You can also click into the code: the diagram elements that explain that line light up.
-          </p>
+          <p>Click a line of code, and the boxes and steps that explain it light up.</p>
         </div>
       </div>
     );
@@ -421,6 +418,11 @@ const EditorPane = memo(function EditorPane({
     if (editor) applyDiff(editor, diff);
   }, [diff, text, pane.file, language]);
 
+  // ‹ change 2 / 3 ›: steps through the changes of the file, whole ones in view.
+  const hunks = useMemo(() => paneHunks(diff), [diff]);
+  const [hunkAt, setHunkAt] = useState(-1);
+  useEffect(() => setHunkAt(-1), [hunks, focusToken]);
+
   // Scroll to the range the step is about when the focus changes (or the file is opened again): the first
   // one in the step's order (`pane.lead`), else the lowest.
   useEffect(() => {
@@ -433,16 +435,26 @@ const EditorPane = memo(function EditorPane({
         ?.filter((block) => block.place === "before" && block.at === first)
         .reduce((sum, block) => sum + (block.text ? block.count : 1), 0) ?? 0;
     const margin = (wantLines !== undefined ? 22 : 44) + above * editor.defaultLineHeight;
-    if (first !== undefined) scrollToLine(editor, first, margin);
+    // A change guide: when the range runs on past the screen before its first change (a whole file), the
+    // pane opens on that change, not on the imports at the top.
+    const range = pane.ranges.find((r) => r.range.startLine <= first! && r.range.endLine >= first!);
+    const fits = Math.max(
+      8,
+      Math.floor(editor.scrollDOM.clientHeight / editor.defaultLineHeight) - 2,
+    );
+    const change =
+      first !== undefined && range
+        ? hunks.find((h) => h.from >= first && h.from <= range.range.endLine)
+        : undefined;
+    if (change && change.from > first! + fits) {
+      scrollToHunk(editor, change);
+      setHunkAt(hunks.indexOf(change));
+    } else if (first !== undefined) scrollToLine(editor, first, margin);
     else if (openToken > 0) scrollToLine(editor, 1);
     // `pane.ranges` belongs to this very `focusToken`; the token is what says "the focus changed". (The
     // diff is applied by the effect above in the same commit; turning it on or off does not scroll.)
   }, [focusToken, openToken, text, pane.file, language, wantLines !== undefined]);
 
-  // ‹ change 2 / 3 ›: steps through the changes of the file, whole ones in view.
-  const hunks = useMemo(() => paneHunks(diff), [diff]);
-  const [hunkAt, setHunkAt] = useState(-1);
-  useEffect(() => setHunkAt(-1), [hunks, focusToken]);
   const goToHunk = (step: 1 | -1) => {
     const editor = view.current;
     if (!editor || hunks.length === 0) return;
@@ -633,12 +645,14 @@ const EditorPane = memo(function EditorPane({
             {language} · {lines} lines
           </span>
         )}
+        {/* Shown once lines are selected (a disabled button read as broken), never on a slide. It keeps its
+            place while hidden: a drag that selects lines must not move the code under the pointer. */}
         {!folded && (
           <button
-            className="pane-toggle"
+            className={"pane-toggle pane-ask" + (cursor ? "" : " is-idle")}
             type="button"
             disabled={!cursor}
-            title={cursor ? "Ask about these exact source lines" : "Select code lines first"}
+            title="Ask about these exact source lines"
             onClick={() => store.openFeedback()}
           >
             Ask about selected lines

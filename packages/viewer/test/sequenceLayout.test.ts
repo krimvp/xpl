@@ -1,6 +1,6 @@
 import { ExplainerModel, type SequenceView } from "@xpl/core";
 import { describe, expect, it } from "vitest";
-import { layoutSequence } from "../src/layout/sequenceLayout.js";
+import { frameLabelWidth, layoutSequence } from "../src/layout/sequenceLayout.js";
 import { makeBundle } from "./world.js";
 
 const RUN = "sym:src/a.ts#A.run";
@@ -122,6 +122,33 @@ describe("layoutSequence", () => {
     expect(inside(outer, 3)).toBe(false);
     expect(inside(inner, 0)).toBe(false);
     expect(inside(inner, 1) && inside(inner, 2)).toBe(true);
+  });
+
+  it("makes a frame wide enough for its condition, however short its rows", () => {
+    const label = "until the job succeeds or it has been tried maxRetries times";
+    const { model: m, view } = model((v) => {
+      v.steps = [step("flow:1", RUN, RUN, "go()")];
+      v.frames = [{ id: "frame:alt", kind: "alt", label, fromStep: "flow:1", toStep: "flow:1" }];
+    });
+    const layout = layoutSequence(view, m);
+    const [frame] = layout.frames;
+    expect(frame!.width).toBeGreaterThanOrEqual(frameLabelWidth("alt", label));
+    expect(frame!.x + frame!.width).toBeLessThanOrEqual(layout.width);
+  });
+
+  it("wraps a long message over lines of about 40 characters, and says which rows sit in a frame", () => {
+    const long = "applyPatch(explainer, patch, model, texts, {actor: 'llm', check: true})";
+    const { model: m, view } = model((v) => {
+      v.steps = [step("flow:1", RUN, "file:src/b.ts", long), step("flow:2", RUN, "file:src/b.ts")];
+      v.frames = [
+        { id: "frame:l", kind: "loop", label: "each", fromStep: "flow:2", toStep: "flow:2" },
+      ];
+    });
+    const [first, second] = layoutSequence(view, m).rows;
+    expect(first!.lines.length).toBeGreaterThan(1);
+    expect(first!.lines.every((line) => line.length <= 42)).toBe(true);
+    expect(first!.lines.join(" ").replace(/\s+/g, "")).toBe(long.replace(/\s+/g, ""));
+    expect([first!.depth, second!.depth]).toEqual([0, 1]);
   });
 
   it("copes with a view without steps, participants or frames", () => {

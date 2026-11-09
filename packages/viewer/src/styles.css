@@ -50,6 +50,11 @@
   --edge-llm: #8b4fdc;
   --edge-user: #16994a;
   --edge-stub: #7b8794;
+  /* Trust is never shown by colour alone (D5): one dash pattern per kind of line, the same in both themes,
+     on the map, the key line and the Key. Heuristic: dashed; mixed: dash-dot; outside the map: dotted. */
+  --dash-heuristic: 6 4;
+  --dash-mixed: 12 3 2 3;
+  --dash-stub: 1.5 4;
   --ghost-border: #7d8896;
   --frame-bg: rgba(90, 100, 120, 0.05);
 
@@ -854,9 +859,10 @@ code {
     display: none;
   }
 
-  /* No room for it in a narrow header: the page follows the device (Auto) or the choice made on a wider one. */
-  .theme-btn {
-    display: none;
+  /* The second row holds the theme button, Search, Feedback, Present and Edit: a little less gap fits them
+     in 390px. */
+  .header {
+    column-gap: 8px;
   }
 }
 
@@ -1203,6 +1209,8 @@ code {
 
 .diagram {
   display: grid;
+  /* one column no wider than the pane: a wide drawing must not stretch the caption past a phone screen */
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: auto minmax(0, 1fr);
   min-height: 0;
   min-width: 0;
@@ -1480,8 +1488,33 @@ code {
   fill: var(--edge-llm);
 }
 
+/* the heads of other kinds of arrow (keyMarks headOf): hollow for extends and implements, open for imports */
+.lg-edge path.is-hollow {
+  fill: var(--panel);
+  stroke: var(--edge);
+  stroke-width: 1.4;
+  stroke-linejoin: round;
+}
+
+.lg-edge path.is-open {
+  fill: none;
+  stroke: var(--edge);
+  stroke-width: 1.6;
+  stroke-linejoin: round;
+}
+
 .lg-edge.is-heuristic line {
   stroke: var(--edge-heuristic);
+  stroke-dasharray: var(--dash-heuristic);
+}
+
+.lg-edge.is-mixed line {
+  stroke: var(--edge-heuristic);
+  stroke-dasharray: var(--dash-mixed);
+}
+
+.lg-edge.is-mixed path {
+  fill: var(--edge-heuristic);
 }
 
 .lg-edge.is-heuristic path {
@@ -1490,7 +1523,13 @@ code {
 
 .lg-edge.is-stub line {
   stroke: var(--edge-stub);
-  stroke-dasharray: 4 3;
+  stroke-dasharray: var(--dash-stub);
+  stroke-linecap: round;
+}
+
+/* A flow read from the code (FlowKey "projected"): its own dash, as FlowDiagram draws it. */
+.lg-edge.is-projected line {
+  stroke-dasharray: 5 4;
 }
 
 .lg-edge.is-stub path {
@@ -1525,7 +1564,7 @@ code {
   stroke: var(--warn);
 }
 
-/* "Fit all" / "Readable size": a diagram too big to read whole starts zoomed in (PanZoom, viewport.ts). */
+/* "Pan to explore": a pinned map keeps its labels readable and pans instead (PanZoom). */
 .pz-badge {
   position: absolute;
   left: 10px;
@@ -1546,11 +1585,26 @@ code {
   color: var(--accent-fg);
 }
 
+/* "Fit all" while part of a big diagram is out of sight (PanZoom): the one fit control, marked. */
+.pz-toolbar button.pz-fit.is-cue {
+  border: 1px solid var(--accent);
+  background: var(--accent-soft);
+  color: var(--fg);
+  font-weight: 650;
+}
+
+/* (a phone keeps the toolbar on one row: the count is in the button's title) */
+@media (max-width: 640px) {
+  .pz-fit-count {
+    display: none;
+  }
+}
+
 /* framing: "+N more", the step's elements the first view leaves out (PanZoom, viewport.ts frameView). */
 .pz-more {
   position: absolute;
   left: 10px;
-  bottom: 42px;
+  bottom: 10px;
   padding: 3px 12px;
   border: 1px solid var(--accent);
   border-radius: 999px;
@@ -1560,6 +1614,9 @@ code {
   font-weight: 650;
   cursor: pointer;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.14);
+}
+.pz-badge ~ .pz-more {
+  bottom: 42px;
 }
 .pz-more:hover {
   background: var(--accent);
@@ -1720,6 +1777,8 @@ code {
   fill: var(--warn);
 }
 
+.node.is-hover > .box,
+.node.is-hover > .node-frame > .box,
 .node:hover > .box,
 .node:hover > .node-frame > .box {
   stroke: var(--accent);
@@ -1984,7 +2043,12 @@ code {
 .edge.res-mixed .line,
 .edge.res-heuristic .line {
   stroke: var(--edge-heuristic);
-  stroke-width: 1;
+  stroke-width: 1.3;
+  stroke-dasharray: var(--dash-heuristic);
+}
+
+.edge.res-mixed .line {
+  stroke-dasharray: var(--dash-mixed);
 }
 
 .edge.res-mixed .head,
@@ -2012,8 +2076,9 @@ code {
 
 .edge.is-stub .line {
   stroke: var(--edge-stub);
-  stroke-width: 1.3;
-  stroke-dasharray: 5 4;
+  stroke-width: 1.5;
+  stroke-dasharray: var(--dash-stub);
+  stroke-linecap: round;
 }
 
 .edge.is-stub .head {
@@ -2097,6 +2162,61 @@ code {
 .edge:focus-visible .halo {
   stroke: var(--accent);
   opacity: 0.4;
+}
+
+/* The head says the kind (keyMarks headOf): hollow for extends and implements (a class hierarchy), open for
+   imports and type references. The colour is the line's (`color` per trust and state). */
+.edge {
+  color: var(--edge);
+}
+.edge.res-mixed,
+.edge.res-heuristic {
+  color: var(--edge-heuristic);
+}
+.edge.res-llm {
+  color: var(--edge-llm);
+}
+.edge.res-user {
+  color: var(--edge-user);
+}
+.edge.is-stub {
+  color: var(--edge-stub);
+}
+.edge:hover,
+.edge.is-hover,
+.edge.is-selected {
+  color: var(--accent);
+}
+/* a row of the parts list under the pointer lights its element (PartsPanel) */
+.edge.is-hover .line {
+  stroke: var(--accent);
+}
+.edge.is-hover .head:not(.is-hollow):not(.is-open) {
+  fill: var(--accent);
+}
+.edge.is-hover.is-dim {
+  opacity: 1;
+}
+.step.is-hover .hit {
+  fill: var(--accent-soft);
+}
+.edge .head.is-hollow {
+  fill: var(--canvas);
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+}
+.edge .head.is-open {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+/* With something selected, the arrows that do not touch it step back (V2-05): its own arrows read on a busy map. */
+.edge.is-dim {
+  opacity: 0.22;
 }
 
 /* Sequence diagrams */
@@ -2197,14 +2317,11 @@ code {
   stroke-linecap: round;
 }
 
+/* (no halo: the label's plate keeps the lifelines off the words, and a canvas halo would show inside a frame) */
 .step .label {
   font-size: 13.5px;
   font-weight: 500;
   fill: var(--fg);
-  paint-order: stroke;
-  stroke: var(--canvas);
-  stroke-width: 4px;
-  stroke-linejoin: round;
 }
 
 .step.is-selected .hit {
@@ -2226,7 +2343,6 @@ code {
 
 .step.is-selected .label {
   font-weight: 700;
-  stroke: var(--accent-soft);
 }
 
 .step.is-related .hit {
@@ -2241,10 +2357,6 @@ code {
 
 .step.is-match .line {
   stroke: var(--match);
-}
-
-.step.is-match .label {
-  stroke: var(--match-soft);
 }
 
 .frame * {
@@ -2269,6 +2381,13 @@ code {
   fill: var(--muted);
 }
 
+/* the condition on a halo of the canvas: a lifeline never runs through "[until …]" (U9, N19) */
+.frame-label {
+  paint-order: stroke;
+  stroke: var(--canvas);
+  stroke-width: 4px;
+  stroke-linejoin: round;
+}
 .frame-label {
   font-size: 12px;
   font-weight: 500;
@@ -3416,6 +3535,13 @@ code {
   align-items: center;
   gap: 5px;
 }
+.pane-ask.is-idle {
+  visibility: hidden;
+}
+.present .pane-ask {
+  display: none;
+}
+
 .pane-toggle-box {
   display: inline-grid;
   place-items: center;
@@ -4859,7 +4985,8 @@ code {
   display: flex;
   flex-direction: column;
 }
-.pz-svg {
+/* (the live canvas only: a still picture's svg is not in a flex box, and `height: auto` there is 150 px) */
+.panzoom > .pz-svg {
   flex: 1 1 0;
   min-height: 0;
   height: auto;
@@ -4884,38 +5011,23 @@ code {
   align-items: center;
   gap: 5px;
 }
-/* a short arrow drawn in CSS, in the colour and dash of the arrows it names */
+/* a short arrow (or a dashed box), drawn with the Key's classes: the colour and dash of the marks it names */
 .key-swatch {
-  position: relative;
-  display: inline-block;
-  width: 22px;
-  height: 0;
-  border-top: 2px solid var(--edge);
+  flex: 0 0 auto;
+  overflow: visible;
 }
-.key-swatch::after {
-  content: "";
-  position: absolute;
-  right: -1px;
-  top: -5px;
-  border: 4px solid transparent;
-  border-left: 6px solid var(--edge);
-  border-right: 0;
-}
-.key-swatch.is-authored {
-  border-top-color: var(--edge-llm);
-}
-.key-swatch.is-authored::after {
-  border-left-color: var(--edge-llm);
-}
-.key-swatch.is-heuristic {
-  border-top-style: dashed;
-  opacity: 0.7;
-}
-.key-swatch.is-stub {
-  border-top: 1.5px dashed var(--edge-stub);
-}
-.key-swatch.is-stub::after {
-  border-left-color: var(--edge-stub);
+/* On a phone the key line is one row that scrolls sideways: the diagram keeps the height. */
+@media (max-width: 640px) {
+  .key-line {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    white-space: nowrap;
+    scrollbar-width: none;
+    mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent);
+  }
+  .key-line-item {
+    flex: 0 0 auto;
+  }
 }
 /* a short screen (200% zoom): the map keeps the height; the Key button still says it all */
 @media (max-height: 560px) {
@@ -4949,6 +5061,13 @@ code {
 /* Sequence: each arrow's words on a plate (no lifeline through them), its number where it starts. */
 .step .label-plate {
   fill: var(--canvas);
+}
+.step .label-plate-tint {
+  fill: var(--frame-bg);
+}
+.step.is-selected .label-plate-tint,
+.step.is-match .label-plate-tint {
+  fill: none;
 }
 .step.is-selected .label-plate {
   fill: var(--accent-soft);
@@ -5002,9 +5121,11 @@ code {
   color: var(--muted);
   font-size: 13px;
 }
-.parts-heading {
+.parts-panel .parts-heading {
   margin: 16px 0 8px;
-  font-size: 13px;
+}
+.parts-panel .parts-heading:first-child {
+  margin-top: 0;
 }
 .parts-list {
   margin: 0;
@@ -5013,6 +5134,10 @@ code {
 }
 .parts-list > li {
   margin: 0 0 4px;
+}
+/* the row's text lines up with the headings; its hover background reaches past them */
+.parts-list {
+  margin-inline: -10px;
 }
 .parts-row {
   display: grid;
@@ -5037,7 +5162,8 @@ code {
 .is-steps .parts-row > :not(.parts-number) {
   grid-column: 2;
 }
-.parts-row:hover {
+.parts-row:hover,
+.parts-row:focus-visible {
   border-color: var(--border);
   background: var(--panel-2);
 }

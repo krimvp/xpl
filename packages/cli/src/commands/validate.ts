@@ -10,7 +10,7 @@ export const validateCommand: CommandSpec = {
   details: [
     "Checks ids, references, anchors (they must still resolve: ok or moved) and the evidence rule for",
     "llm edges against the index and the working-tree text. Strict by default; --lenient (use it after",
-    "`xpl resolve --write`) turns drifted and missing anchors into warnings.",
+    "`xpl resolve <explainer> --write`) turns drifted and missing anchors into warnings.",
     "Strict validation also requires an index that matches the working tree. Reindex and resolve before",
     "validating changed code. --lenient reports a stale index as a warning for repair workflows.",
     "Omit the explainer when the repository has exactly one; otherwise supply its name.",
@@ -62,7 +62,7 @@ export const validateCommand: CommandSpec = {
     ctx.out(
       [
         `${loaded.rel} (${mode}, index ${ws.index.commit}): ${issueSummary(issues)}`,
-        ...renderIssues(issues),
+        ...renderIssues(issues, loaded.name),
       ].join("\n"),
     );
     return errors === 0 ? 0 : 1;

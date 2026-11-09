@@ -22,7 +22,7 @@ test("selected source previews checked evidence, saves with undo, and reopens in
   await expect(page.getByTestId("evidence-preview")).toContainText("file-relative, L1");
   await expect(page.getByTestId("evidence-preview")).toContainText("import");
   await page.getByRole("button", { name: "Add selected evidence", exact: true }).click();
-  await page.getByRole("button", { name: "Save evidence", exact: true }).click();
+  await page.getByRole("button", { name: "Save code links", exact: true }).click();
   await expect(page.getByTestId("evidence-edit")).toBeVisible();
   const json = JSON.parse(readFileSync((await (await downloadJson(page)).path())!, "utf8"));
   const concept = json.concepts.find((c: { id: string }) => c.id === "concept:retry-policy");
@@ -73,7 +73,7 @@ test("a base-pane selection is previewed and saved against the change base, neve
   await expect(page.getByTestId("evidence-preview")).toContainText("Checked base: src/runner.ts");
   await expect(page.getByTestId("evidence-preview")).toContainText("file-relative, L1");
   await page.getByRole("button", { name: "Add selected evidence", exact: true }).click();
-  await page.getByRole("button", { name: "Save evidence", exact: true }).click();
+  await page.getByRole("button", { name: "Save code links", exact: true }).click();
   await expect(page.getByTestId("evidence-edit")).toBeVisible();
   const json = JSON.parse(readFileSync((await (await downloadJson(page)).path())!, "utf8"));
   const anchor = json.concepts
@@ -160,7 +160,7 @@ test("live repair rejects incomplete and stale evidence, persists explicit repai
       .locator('.evidence-list li[data-status="drifted"]')
       .getByRole("button", { name: "Replace with selected lines" })
       .click();
-    await page.getByRole("button", { name: "Save evidence", exact: true }).click();
+    await page.getByRole("button", { name: "Save code links", exact: true }).click();
     await expect(page.getByRole("alert")).toContainText(
       'file "test/retry.test.ts" is not in the index',
     );
@@ -175,7 +175,7 @@ test("live repair rejects incomplete and stale evidence, persists explicit repai
       sourcePath,
       readFileSync(sourcePath, "utf8").replace("2 * backoffDelay", "3 * backoffDelay"),
     );
-    await page.getByRole("button", { name: "Save evidence", exact: true }).click();
+    await page.getByRole("button", { name: "Save code links", exact: true }).click();
     await expect(page.getByRole("alert")).toContainText("stale anchor");
     expect(writes).toBe(1);
     expect(readFileSync(path, "utf8")).toBe(original);
@@ -195,7 +195,7 @@ test("live repair rejects incomplete and stale evidence, persists explicit repai
     await page.evaluate(() => window.__xpl!.select(["file:src/worker.ts"]));
     await page.evaluate(() => window.__xpl!.select(["concept:retry-policy"]));
     await expect(page.getByText("Unsaved evidence draft", { exact: true })).toBeVisible();
-    await page.getByRole("button", { name: "Save evidence", exact: true }).click();
+    await page.getByRole("button", { name: "Save code links", exact: true }).click();
     await expect(page.getByTestId("evidence-edit")).toBeVisible();
     const saved = JSON.parse(readFileSync(path, "utf8")).concepts[0];
     expect(saved.anchors).toHaveLength(2);
@@ -244,10 +244,12 @@ for (const width of [1440, 390]) {
     await expect(page.locator(".evidence-list li")).toHaveCount(3);
     const form = page.locator(".evidence-edit");
     await form.evaluate((form) => form.scrollIntoView({ block: "start" }));
-    await expect(page.getByRole("button", { name: "Save evidence", exact: true })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "Save code links", exact: true })).toBeDisabled();
     await expect(form.getByText("No changes", { exact: true })).toBeInViewport({ ratio: 1 });
-    await expect(page.getByRole("button", { name: "Save evidence", exact: true })).toBeInViewport({
-      ratio: 1,
-    });
+    await expect(page.getByRole("button", { name: "Save code links", exact: true })).toBeInViewport(
+      {
+        ratio: 1,
+      },
+    );
   });
 }

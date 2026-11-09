@@ -124,12 +124,41 @@ function tourStatuses(model: ExplainerModel): TourStatus[] {
   });
 }
 
+/** A summary that is still a draft's placeholder (`TODO: ...`): not explained yet. */
+const isTodo = (text: unknown): boolean => typeof text === "string" && /^\s*TODO\b/.test(text);
+
+/**
+ * What each view shows and what of it has no summary yet. A summary that still starts with `TODO` (a draft's
+ * placeholder) counts as none: `0 unexplained` means the text is written.
+ */
 function viewStatuses(model: ExplainerModel): ViewStatus[] {
   return viewContentStatuses(model).map((status) => {
     const view = model.view(status.id)!;
-    return view.type === "graph"
-      ? { ...status, ghosts: ghostStatus(deriveGraph(view, model), view.stubs) }
-      : status;
+    const add = (list: string[], ids: string[]) => [...new Set([...list, ...ids])];
+    if (view.type === "graph") {
+      const graph = deriveGraph(view, model);
+      const nodes = graph.nodes.filter((n) => isTodo(model.node(n.id)?.summary)).map((n) => n.id);
+      const edges = graph.edges
+        .filter((e) => isTodo(e.summary) && !status.edges.unexplained.some((u) => u.id === e.id))
+        .map((e) => ({ id: e.id, stored: e.stored }));
+      return {
+        ...status,
+        nodes: { ...status.nodes, unexplained: add(status.nodes.unexplained, nodes) },
+        edges: { ...status.edges, unexplained: [...status.edges.unexplained, ...edges] },
+        ghosts: ghostStatus(graph, view.stubs),
+      };
+    }
+    const participants = (Array.isArray(view.participants) ? view.participants : []).filter((id) =>
+      isTodo(model.node(id)?.summary),
+    );
+    const steps = (Array.isArray(view.steps) ? view.steps : [])
+      .filter((s) => isTodo(s.summary))
+      .map((s) => s.id);
+    return {
+      ...status,
+      nodes: { ...status.nodes, unexplained: add(status.nodes.unexplained, participants) },
+      steps: { ...status.steps, unexplained: add(status.steps.unexplained, steps) },
+    };
   });
 }
 
@@ -240,7 +269,7 @@ function staleOverlays(model: ExplainerModel): string[] {
 
 function unexplainedConcepts(model: ExplainerModel): string[] {
   return model.concepts
-    .filter((c) => !(typeof c.summary === "string" && c.summary.trim() !== ""))
+    .filter((c) => !(typeof c.summary === "string" && c.summary.trim() !== "") || isTodo(c.summary))
     .map((c) => c.id);
 }
 
@@ -416,18 +445,20 @@ export const statusCommand: CommandSpec = {
     "Moved code keeps its prose; drift and missing evidence need explicit repair. Watch status is included in --json.",
     "Omit the explainer when the repository has exactly one; otherwise supply its name.",
     "The skill's to-do list for an explainer, without changing anything:",
-    "  - per view, the visible nodes, edges and steps that have no `summary` (static edges are optional),",
+    "  - per view, the visible nodes, edges and steps that have no `summary`, or one that still starts with",
+    "    `TODO` (static edges are optional). The total counts each id once;",
     "  - per graph view, where it stops: the ghost boxes and stubs it draws (counts, and the most referenced ghost",
     `    ids), with a warning above ${CROWDED_GHOSTS} ghosts (a view without "stubs" keeps the 8 most referenced and`,
     "    folds the rest). A folded ghost (ghost:rest:file:<path>, ghost:more:in|out) is not an element: it gets a line",
     "    under the counts that names up to 3 of the elements it stands for, and includeAdd takes any of them. --json",
-    "    lists every ghost id with its count and all its targets, and every stub id, in views[].ghosts,",
-    "  - concepts without a summary,",
-    "  - tours: id, number of steps, and the steps whose focus ids (or view) no longer resolve,",
+    "    lists every ghost id with its count and all its targets, and every stub id, in views[].ghosts;",
+    "  - concepts without a summary;",
+    "  - tours: id, number of steps, and the steps whose focus ids (or view) no longer resolve; a tour without a",
+    "    summary (or a TODO one) counts as unexplained;",
     "  - llm elements whose anchors drifted (re-explain them, keeping userFields) and missing anchors; drift the",
-    "    user owns is counted apart (ask the user),",
+    "    user owns is counted apart (ask the user);",
     "  - broken references: ids that vanished from the index (overlays of deleted symbols, include, members,",
-    "    related, participants, step ends), and stored derived-edge overlays that no graph view derives now,",
+    "    related, participants, step ends), and stored derived-edge overlays that no graph view derives now;",
     "  - explain-this requests the viewer queued in .explainer/requests.json (record selected outcomes with xpl feedback --outcomes).",
     "",
     "--view <id>: only that view, and what it draws: a graph view's edges (id, kind, ends, references, stored or",
@@ -523,16 +554,20 @@ export const statusCommand: CommandSpec = {
         r.outcome.status !== "rejected",
     );
 
-    // What the skill must do: nodes, stored edges, steps and concepts without a summary.
-    const unexplained =
-      views.reduce(
-        (sum, v) =>
-          sum +
-          v.nodes.unexplained.length +
-          v.edges.unexplained.filter((e) => e.stored).length +
-          v.steps.unexplained.length,
-        0,
-      ) + concepts.length;
+    // What the skill must do: nodes, stored edges, steps, concepts and tours without a summary (or with a TODO one),
+    // each id once (a box on two maps is one summary to write).
+    const untoldTours = model.tours
+      .filter((t) => typeof t.summary !== "string" || t.summary.trim() === "" || isTodo(t.summary))
+      .map((t) => t.id);
+    const unexplained = new Set([
+      ...views.flatMap((v) => [
+        ...v.nodes.unexplained,
+        ...v.edges.unexplained.filter((e) => e.stored).map((e) => e.id),
+        ...v.steps.unexplained,
+      ]),
+      ...concepts,
+      ...untoldTours,
+    ]).size;
     const todo = {
       unexplained,
       drifted: drift.total,
@@ -602,6 +637,9 @@ export const statusCommand: CommandSpec = {
     }
     if (concepts.length > 0) {
       lines.push("", `concepts without summary (${concepts.length}): ${listText(concepts, 8)}`);
+    }
+    if (untoldTours.length > 0) {
+      lines.push("", `tours without summary (${untoldTours.length}): ${listText(untoldTours, 8)}`);
     }
     if (tours.length > 0) lines.push("", ...tourLines(tours));
     if (report.drifted.length > 0 || report.missing.length > 0 || report.driftedOther.length > 0) {

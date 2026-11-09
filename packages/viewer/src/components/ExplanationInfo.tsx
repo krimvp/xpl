@@ -26,6 +26,10 @@ function VersionDetails({ version }: { version: PublishedVersion }) {
   );
 }
 
+/** What each reading tab holds, in one line, above "About this guide": a first-time reader needs it first. */
+export const TABS_LINE =
+  "Tour: the steps, in order. Map: the parts and what each calls. Flow: what runs, in order. Code: the files.";
+
 /** Reader guidance belongs beside the story, rather than behind the author tools. */
 export function ExplanationInfo() {
   const state = useViewerState();
@@ -43,11 +47,17 @@ export function ExplanationInfo() {
   const record = state.explainer.review;
   const review = record && reviewShapeIssues(record).length === 0 ? record : undefined;
   const status = checkReview(state.explainer, state.model.index.index, snapshotTexts(state)).status;
-  const label = status === "out-of-date" ? "out of date" : status;
+  // A review status, in words a reader does not take for a failed check.
+  const label =
+    status === "reviewed"
+      ? "Reviewed by a person"
+      : status === "out-of-date"
+        ? "Changed since a person reviewed it"
+        : "Not yet reviewed by a person";
   return (
     <details className="guide-about" data-testid="explanation-info">
       <summary>
-        About this guide <span data-testid="review-status">Author review: {label}</span>
+        About this guide <span data-testid="review-status">{label}</span>
       </summary>
       {publication && (
         <section aria-label="Staged versions">
@@ -157,14 +167,12 @@ export function ExplanationInfo() {
         </p>
       )}
       <p>
-        Tour: the steps, in order. Map: the parts and what each calls. Flow: what runs, in order.
-        Code: the files. Present: the tour as slides. A dashed arrow is matched by name, so it can
-        be wrong.
+        Present shows the tour as slides. A dashed arrow is matched by name, so it can be wrong.
       </p>
       <p>
         {state.serverMode
-          ? "\u201cExplain this\u201d saves a request. The author runs /code-explainer feedback in Claude Code, and the changes show here."
-          : "\u201cExplain this\u201d gives you a command to run in Claude Code. A saved HTML page stays at the version it was saved from."}
+          ? "\u201cExplain this\u201d saves a request. The author runs /code-explainer feedback in their agent, and the changes show here."
+          : "\u201cAsk the author to explain this\u201d saves your question in this browser. Nothing is sent: export it from Feedback and give the file to the author. A saved HTML page stays at the version it was saved from."}
       </p>
       <AnalysisDetails />
     </details>

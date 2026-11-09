@@ -159,7 +159,7 @@ export function PresentMode() {
         <h2>{tour ? `“${tour.title}” has no steps yet` : "There is no tour to present"}</h2>
         <p>
           Leave Present and open the Tours panel: select something in a view and add it as the first
-          step. Claude can also write a tour: run <code>/code-explainer make tour</code>.
+          step. Your agent can also write a tour: run <code>/code-explainer make tour</code>.
         </p>
         <button type="button" className="btn is-primary" onClick={() => store.exitPresent()}>
           Back to Explore

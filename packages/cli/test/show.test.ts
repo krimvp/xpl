@@ -20,6 +20,13 @@ const base = () => dir;
 const DISPATCH = "sym:src/runner.ts#Runner.dispatch";
 
 describe("xpl show", () => {
+  it("an id the index does not know, with nothing close to it, says how to find one", async () => {
+    const { code, err } = await xpl(dir, "show", "nope");
+    expect(code).toBe(1);
+    expect(err).toContain('"nope" is not a file, directory or symbol in the index.');
+    expect(err).toContain("Find ids with `xpl search nope` or `xpl outline`.");
+  });
+
   it("prints the header and every line with its absolute line and 0-based offset", async () => {
     const { code, out, err } = await xpl(dir, "show", DISPATCH);
     expect(err).toBe("");

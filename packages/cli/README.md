@@ -1,50 +1,40 @@
 # xpl — code explainer
 
-Interactive diagrams linked to code in both directions. Click a box or step to see its code;
-select code to see the matching diagram elements. An authoring agent writes explanations as data, and
-xpl checks their source locations against a static index of your repository.
+xpl makes a guide to your code: diagrams linked to the source in both directions. Click a box and its code
+lights up. Put the cursor in the code and the boxes that cover it light up. An agent such as Claude writes the
+guide, and xpl checks that every code link points at code that exists now. A person reviews the text.
 
-[Try the live example](https://krimvp.github.io/xpl/).
-
-[npm package](https://www.npmjs.com/package/@krimvp/xpl).
+[Open an example guide](https://krimvp.github.io/xpl/demo/) in your browser.
 
 ## Install
 
-Install from npm (Node 22.12 or newer):
+Node 22.12 or newer. Claude Code is the default agent:
 
 ```sh
 npm install --global @krimvp/xpl
 xpl skill install
-xpl doctor --agent claude
 ```
 
-Claude Code is the default skill target. Install for another supported harness with
-`xpl skill install --agent codex`, `--agent pi`, `--agent droid` or `--agent devin`. Use `--dir <path>`
-for a project install, such as `xpl skill install --agent pi --dir .agents/skills/code-explainer`.
-The npm package bundles the CLI, viewer, grammars and skill. Authoring still requires the selected harness and its
-provider access to be installed and configured separately.
+Other agents, project installs and the supported platforms are in
+[Getting started](https://krimvp.github.io/xpl/docs/getting-started/).
 
-Install and configure the selected harness and its provider separately. In Claude Code, ask:
+## Make and read a guide
+
+In Claude Code, in your repository, ask a question and name the reader:
 
 ```text
-/code-explainer explain How does a failed job get retried?
+/code-explainer explain How does X work? Audience: maintainers.
 ```
 
-Then open or export the guide:
+`xpl view <guide>` opens the guide in the browser. `xpl bundle <guide> -o guide.html` writes one HTML file
+that holds the guide and its code, for offline reading.
 
-```sh
-xpl view <guide-name>
-xpl bundle <guide-name> -o guide.html
-```
+The package holds the CLI, the viewer, the grammars and the skill. After you update or move the CLI, run
+`xpl skill install` again to update its launcher.
 
-The package includes the CLI, viewer, WASM grammars and authoring skill. Reading and exporting
-use bundled assets; `xpl index --precise off` works without downloading precise tools.
-After updating or moving the CLI, rerun `xpl skill install` to update its launcher.
-The workflow has been checked on Linux x64; other platforms have not been verified.
+## More
 
-The [source repository](https://github.com/krimvp/xpl) is public. `npm install && npm run build` builds the
-CLI; `npm pack ./packages/cli/dist` creates a local tarball that you can install with
-`npm install -g --ignore-scripts ./krimvp-xpl-0.3.0.tgz`.
-See the bundled `skill/code-explainer/README.md` for authoring and recovery instructions.
+- [Documentation](https://krimvp.github.io/xpl/docs/), with the CLI reference.
+- [Source repository](https://github.com/krimvp/xpl).
 
 MIT license. Copyright 2026 krimvp.

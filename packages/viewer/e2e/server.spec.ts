@@ -226,7 +226,7 @@ test("managed attention distinguishes moved, drifted and missing evidence and of
   await expect(panel).toContainText("Moved: locations followed unchanged code");
   await expect(panel).toContainText("Drifted: inspect the changed code and revise its explanation");
   await expect(panel).toContainText(
-    "Missing: restore the code or explicitly replace/remove its evidence",
+    "Missing: restore the code, or replace or remove its code link",
   );
   await expect(panel).toContainText(
     "xpl resolve --root '/repos/jobrunner' '/repos/jobrunner/.explainer/retry.json.explainer.json' --write",
@@ -244,7 +244,7 @@ test("managed attention distinguishes moved, drifted and missing evidence and of
   await expect(page.locator('.details[data-details-id="concept:retry-policy"]')).toBeVisible();
   await panel.locator(".attention-list > summary").click();
   await page.getByTestId("evidence-edit").click();
-  await expect(page.getByRole("form", { name: "Edit source evidence" })).toBeVisible();
+  await expect(page.getByRole("form", { name: "Edit code links" })).toBeVisible();
   await expect(page.locator(".evidence-list")).toContainText("src/runner.ts");
   await page.getByRole("button", { name: "Cancel", exact: true }).click();
   expect(recorded.posts).toEqual([]);
@@ -492,7 +492,7 @@ test("feedback typed under Explain this is queued as the note, and the change co
   await page.evaluate(() => window.__xpl!.setView("view:dispatch"));
   await byId(page, "concept:retry-policy").click();
   await page.getByTestId("feedback").fill("Too long: one sentence is enough.");
-  await page.getByRole("button", { name: "Send to Claude" }).click();
+  await page.getByRole("button", { name: "Send to your agent" }).click();
   await expect(page.locator(".explain-note")).toContainText("Saved for later");
   expect(recorded.posts).toHaveLength(1);
   expect(recorded.posts[0]).toMatchObject({

@@ -9,30 +9,30 @@ xpl service status --json
 xpl service stop
 ```
 
-By default, the service binds to loopback. `status` reports the process, address, repository root, selected
-guide and backend. `start` without a guide reuses the saved selection. Each canonical repository root has one
-service, including symlink aliases; stop it before selecting another guide. `--root` can select another
+The service always binds to 127.0.0.1. `status` reports the process, address, repository root, selected
+guide and backend. `start` without a guide reuses the saved selection. Each repository has one service, also
+when you reach it through a symlink; stop it before you select another guide. `--root` selects another
 repository, which has its own service.
 
 ## Questions and feedback
 
-With `--backend claude`, readers can ask about a box, an arrow, a step or selected source lines. Answers retain the
-head/base range and snapshot; opening an answer reference selects its source, or shows the recorded excerpt if
-that source changed. "Show on the map" picks the boxes of the map whose code holds the lines the answer cites.
-Questions do not edit a guide or finalize revision outcomes. Without an answer backend, questions stay pending
-for an explicit offline feedback pass.
+With `--backend claude`, readers can ask about a box, an arrow, a step or selected lines of code. An answer
+keeps the lines it cites and the snapshot it read. Open a cited line to select its code, or to see the saved
+excerpt if that code changed. **Show on the map** selects the boxes whose code holds the lines the answer
+cites. A question does not edit the guide. Without an answer backend, a question waits for the next feedback
+pass (see [Feedback and revision](feedback.md)).
 
-The Feedback panel records requests and offers progress, retry and cancel controls. **Save for the next
-revision pass** records feedback without asking the worker. Browser storage is optional; refusal does not stop
-live answers. History survives reload and JSON import/export. Merging history rejects reused answer IDs and
-more than 1,000 answers per question.
+The Feedback panel records requests and shows progress, with retry and cancel. **Save for later** keeps a
+request and starts nothing. Browser storage is optional: when the browser refuses it, live answers still work.
+History survives a reload and JSON import and export. A merge of histories refuses reused answer IDs and more
+than 1,000 answers per question.
 
 ## Backends and recovery
 
 `--backend none` (the default) disables agent execution. `--backend claude` uses the installed Claude Code
 proposal runner. `--skill-dir <folder>` selects a managed skill installation; `--job-timeout <seconds>` sets
-the deadline (default 300). Both settings persist. Availability means configured, not authenticated; actual
-jobs report login and provider failures.
+the deadline (default 300). Both settings are saved. "Available" means set up, not signed in: a job reports a
+failed login or provider error when it runs.
 
 ```sh
 xpl service start jobrunner --backend claude --background
@@ -47,12 +47,12 @@ old instance and start again. A process whose identity cannot be verified is nev
 Inspect a crashed artifact-writer lock before removing it; elapsed time alone does not prove the writer
 stopped.
 
-With the Claude backend, jobs produce ordinary revision proposals and leave them awaiting author review.
-Source is read-only to the agent, and a completed job does not apply a patch. The Jobs panel lets an author
-inspect source and field changes, record a decision per request, review the combined candidate, then
-explicitly accept. Cancelled, superseded, stale or old-attempt results cannot apply. Service-owned runs refuse
-manual proposal or acceptance writes so those checks remain in force. Manual revision still works when the
-service is stopped.
+With the Claude backend, a job writes an ordinary revision proposal and waits for you to review it. The agent
+cannot change the code, and a finished job does not apply a patch. In the Jobs panel you read the code and
+text changes, decide on each request, review the combined result, then accept it. A cancelled, replaced,
+out-of-date or earlier result cannot be applied. While the service owns a run, it refuses proposals and
+acceptances made by hand, so these checks always run. Revision by hand still works when the service is
+stopped.
 
 ## Watch source changes
 
@@ -70,10 +70,10 @@ snapshot; a failed or cancelled build keeps the previous index marked out of dat
 while a drifted or missing code link blocks a ready export. Watching does not write guide text, accept revisions
 or discard feedback.
 
-Watch mode defaults to heuristic references (`--precise off`). Use `--precise auto|require` for semantic tools
-or `--scip <artifact|manifest.json>` for supplied provider data. A watched service cannot pin `--index`.
-Generated exports do not dirty the watched index. Select watch options again after restart; recovery retires
-the previous watch pointer. Paused snapshots cannot become ready.
+Watch mode uses heuristic references by default (`--precise off`). Use `--precise auto|require` to run the
+SCIP tools, or `--scip <artifact|manifest.json>` to read SCIP data that you made. A watched service cannot
+pin `--index`. Exports do not mark the watched index as changed. Choose the watch options again after a
+restart; `--recover` drops the old watch. A paused snapshot cannot become ready.
 
 After stopping the service, choose **Use loaded snapshot offline** to keep reading, editing, collecting
 feedback and exporting HTML. That export checks only its embedded snapshot and cannot check later repository
@@ -82,4 +82,4 @@ Retry save** persists offline edits. Local serving and portable HTML need no pro
 use the CLI's existing login and provider access.
 
 Verified process cleanup currently requires Linux `/proc`; manual revision works on other platforms. See the
-[CLI reference](../reference/commands.md) for all service commands and options.
+[CLI reference](../reference/index.md) for all service commands and options.

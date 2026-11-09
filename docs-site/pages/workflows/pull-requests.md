@@ -1,9 +1,9 @@
 # GitHub pull requests
 
-PR input is opt-in. Run either `xpl pr prepare` or `xpl pr create` for a PR, not both. Each fetches the PR's
-full base and head into a separate detached repository, indexes the head with `--precise off` by default and
-writes an immutable `input.json` containing the before and after source. Your working checkout stays
-untouched.
+xpl reads a pull request only when you ask. Run either `xpl pr prepare` or `xpl pr create` for a PR, not
+both. Each fetches the PR's base and head into a separate folder, indexes the head (with `--precise off` by
+default) and writes `input.json` with the code before and after. That file never changes. Your own checkout
+stays as it is.
 
 ```sh
 xpl pr prepare https://github.com/owner/repo/pull/42
@@ -12,48 +12,49 @@ xpl pr create https://github.com/owner/repo/pull/42 \
   --name pr-guide --audience reviewers --question "What changes?"
 ```
 
-`xpl pr create` scaffolds a guide and prints an agent invocation; it does not start a model. After authoring,
-finish and validate the guide:
+`xpl pr create` also creates an empty guide and prints the prompt for your agent; it does not start the
+agent. When the guide is written, finish and check it:
 
 ```sh
 xpl pr finish <input-directory>
 ```
 
-Use the input directory printed by `prepare` or `create` as `<input-directory>`. `finish` checks readiness,
-exports HTML and rechecks both GitHub commits. Its result manifest is valid only while the PR still points to
-those commits. A changed PR supersedes the result; no command here publishes anything. Network access and
-existing `gh` and git access are required. Remove retained input with `xpl pr cleanup <input-directory>`.
+`<input-directory>` is the folder that `prepare` or `create` printed. `finish` checks readiness, exports HTML
+and checks both GitHub commits again. Its result manifest is valid only while the PR still points at those
+commits; a new push makes it old. No command on this page publishes anything. You need network access and
+working `gh` and git access. `xpl pr cleanup <input-directory>` removes the input.
 
-Preparation isolates Git reads from the developer checkout and refuses filters or line-ending conversion that
-alter the fetched source bytes. Do not place the cache inside the working repository.
+The prepared folder does not read your checkout's git settings, and it refuses git filters or line-ending
+conversion that would change the fetched code. Do not put the cache inside your repository.
 
 ## Share a preview
 
-Use the result manifest reported by `finish` and the prepared repository path reported by `prepare` or
-`create` to stage the checked version directly in the folder your static host serves:
+Stage the checked version in the folder that your static host serves. Pass the result manifest that `finish`
+printed and the prepared folder that `prepare` or `create` printed:
 
 ```sh
 xpl stage pr-guide --dir /srv/previews/pr-42 --pr-result <result.json> \
   --root <prepared-repository>
 ```
 
-See [Search and saved versions](find-and-share.md) for staging and version-history behavior. Add or update
-the PR comment with the same staged directory:
+[Search and saved versions](find-and-share.md) says how staging keeps versions. Add or update the PR comment
+with the same staged folder:
 
 ```sh
 xpl pr link /srv/previews/pr-42 \
   --url https://previews.example/pr-42 --visibility team
 ```
 
-The command rechecks the PR base and head and links to both `current/index.html` and the immutable version.
-For private target repositories, use `--visibility team`; the host controls who can open the preview.
-Configure a PR workflow to run `xpl pr check-link owner/repo#42` on new commits so the comment stops
-describing an old preview as current. See the [CLI reference](../reference/commands.md).
+The command checks the PR base and head again, then links to `current/index.html` and to this version. For a
+private repository, use `--visibility team`; your host controls who can open the preview. Run
+`xpl pr check-link owner/repo#42` from a PR workflow on each new commit, so that the comment marks an old
+preview as old. See the [CLI reference](../reference/index.md).
 
-## Optional CI authoring and publishing
+## Set up CI previews (optional)
 
-The repository includes `.github/workflows/pr-preview.yml` and `scripts/pr-preview.mjs`. Copy both into
-your xpl source checkout to use this workflow elsewhere. It runs only by manual dispatch from the default
+A CI workflow can write, stage and link a preview for each PR. You need it only to automate the steps above.
+The xpl repository has `.github/workflows/pr-preview.yml` and `scripts/pr-preview.mjs`; copy both into your
+xpl source checkout to use them elsewhere. It runs only by manual dispatch from the default
 branch, after the repository variable `XPL_CI_PREVIEWS` is set to `true`. It builds that trusted branch;
 it does not execute a workflow, package install or tests from the target PR.
 
@@ -74,7 +75,7 @@ The destination uses the runner's filesystem identity and a preauthenticated mou
 runner operator. No destination credential is inferred from the PR or passed as a command argument.
 The host must enforce team access. The workflow always records visibility as `team`; that label does not
 implement authentication. It creates `pr-<number>` under the configured folder and URL. Preserve the
-folder across runs so immutable versions and the `current` symlink remain available. The host must serve
+folder between runs so the staged versions and the `current` symlink stay available. The host must serve
 symlinks, and its storage must support the atomic rename and locking used by `xpl stage`.
 
 The author executable receives exactly one argument: an absolute `handoff.json` path. It reads the

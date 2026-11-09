@@ -65,10 +65,11 @@ and provider access. The skill runs only when you invoke it, with the token from
 | `SKILL.md`                    | the skill: hard rules, the decision path, the scopes, the tour spine and budgets, accuracy           |
 | `bin/xpl`                     | launcher bound by the installer to the installed CLI; `XPL_CLI` overrides it                         |
 | `reference/create.md`         | install, example prompts, new or existing target, the PR handoff and recovery                        |
-| `reference/quick.md`          | the one-page summary, and which diagram answers which question                                       |
+| `reference/quick.md`          | what every patch needs, which diagram answers which question, what the index misses                  |
 | `reference/revise.md`         | how to answer saved feedback                                                                         |
 | `reference/writing.md`        | plain-language rules (Orwell, ASD-STE100), the word list, the fields, before/after rewrites          |
 | `reference/explain-change.md` | how to explain a PR, MR or branch diff: before/after checks, callers, tests                          |
+| `reference/explain-map.md`    | how to map every file in plain words, and keep the map current                                       |
 | `reference/patch-format.md`   | every patch element with examples, merge rules, rejection messages and fixes                         |
 | `reference/cli.md`            | every command with options and sample output                                                         |
 | `reference/examples/`         | worked patches to imitate: `go-retry` (a question), `py-overview` (a repo, from the system map down) |

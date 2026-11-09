@@ -244,6 +244,139 @@ describe("xpl draft repo: a program without a web or command-line framework", ()
   });
 });
 
+describe("xpl draft repo: who starts the program", () => {
+  it("a Go server on net/http gets Clients at its ListenAndServe call, not an Operator", async () => {
+    const dir = makeTempDir("xpl-arch-nethttp-");
+    writeFile(dir, "go.mod", "module example.com/api\n\ngo 1.22\n");
+    writeFile(
+      dir,
+      "main.go",
+      [
+        "package main",
+        "",
+        'import "net/http"',
+        "",
+        "func main() {",
+        '\thttp.HandleFunc("/orders", orders)',
+        '\thttp.ListenAndServe(":8080", nil)',
+        "}",
+        "",
+      ].join("\n"),
+    );
+    writeFile(
+      dir,
+      "orders.go",
+      'package main\n\nimport "net/http"\n\nfunc orders(w http.ResponseWriter, r *http.Request) {\n\tw.WriteHeader(200)\n}\n',
+    );
+    const { patch } = await drafted(dir);
+    const ids = patch.nodes!.map((n) => n.id);
+    expect(ids).not.toContain("grp:operator");
+    const clients = patch.nodes!.find((n) => n.id === "grp:clients")!;
+    expect(clients).toMatchObject({ role: "person", tech: "HTTP" });
+    expect(clients.anchors).toEqual([{ file: "main.go", span: { from: 6, to: 6 }, role: "usage" }]);
+    expect(graph(patch, "view:system")!.include).toContain("grp:clients");
+  });
+
+  it("a Node server on node:http and a Python one on http.server count as servers too", async () => {
+    const node = makeTempDir("xpl-arch-nodehttp-");
+    writeFile(node, "package.json", '{ "name": "api", "private": true }\n');
+    writeFile(
+      node,
+      "src/server.ts",
+      'import { createServer } from "node:http";\nimport { handle } from "./handle.js";\n\nexport function main() {\n  createServer(handle).listen(8080);\n}\n',
+    );
+    writeFile(
+      node,
+      "src/handle.ts",
+      "export function handle(req: unknown, res: unknown) {\n  return [req, res];\n}\n",
+    );
+    const ts = await drafted(node);
+    expect(ts.patch.nodes!.find((n) => n.id === "grp:clients")!.anchors).toEqual([
+      { file: "src/server.ts", span: { from: 4, to: 4 }, role: "usage" },
+    ]);
+    const py = makeTempDir("xpl-arch-pyhttp-");
+    writeFile(
+      py,
+      "app/main.py",
+      "from http.server import HTTPServer\nfrom app.handler import Handler\n\n\ndef main():\n    HTTPServer(('', 8080), Handler).serve_forever()\n",
+    );
+    writeFile(py, "app/handler.py", "class Handler:\n    def do_GET(self):\n        return 200\n");
+    const python = await drafted(py);
+    expect(python.patch.nodes!.map((n) => n.id)).toContain("grp:clients");
+    expect(python.patch.nodes!.map((n) => n.id)).not.toContain("grp:operator");
+  });
+
+  it("a net/http import without a server start is a client: the Operator stays", async () => {
+    const dir = makeTempDir("xpl-arch-httpclient-");
+    writeFile(dir, "go.mod", "module example.com/fetch\n\ngo 1.22\n");
+    writeFile(
+      dir,
+      "main.go",
+      'package main\n\nimport "net/http"\n\nfunc main() {\n\tfetch("https://example.com")\n}\n',
+    );
+    writeFile(
+      dir,
+      "fetch.go",
+      'package main\n\nimport "net/http"\n\nfunc fetch(url string) {\n\thttp.Get(url)\n}\n',
+    );
+    const { patch } = await drafted(dir);
+    const ids = patch.nodes!.map((n) => n.id);
+    expect(ids).toContain("grp:operator");
+    expect(ids).not.toContain("grp:clients");
+  });
+
+  it("finds Java's main method on its class", async () => {
+    const { patch } = await drafted(copyFixture("java-jobrunner"));
+    const operator = patch.nodes!.find((n) => n.id === "grp:operator")!;
+    expect(operator.anchors).toEqual([
+      { file: "src/main/java/jobrunner/Main.java", symbol: "Main.main", role: "definition" },
+    ]);
+  });
+
+  it("several programs under cmd/: an arrow from the Operator to each, and the shared code on their maps", async () => {
+    const dir = makeTempDir("xpl-arch-cmds-");
+    writeFile(dir, "go.mod", "module example.com/shop\n\ngo 1.22\n");
+    const main = (name: string, call: string) =>
+      [
+        "package main",
+        "",
+        'import "example.com/shop/internal/store"',
+        "",
+        "func main() {",
+        `\ts := store.Open("${name}")`,
+        `\t${call}(s)`,
+        "}",
+        "",
+        `func ${call}(s *store.Store) {`,
+        "\ts.Put(1)",
+        "\ts.Put(2)",
+        "}",
+        "",
+      ].join("\n");
+    writeFile(dir, "cmd/api/main.go", main("api", "serve"));
+    writeFile(
+      dir,
+      "cmd/api/routes.go",
+      "package main\n\nfunc routes() []string {\n\treturn nil\n}\n",
+    );
+    writeFile(dir, "cmd/worker/main.go", main("worker", "work"));
+    writeFile(dir, "cmd/worker/jobs.go", "package main\n\nfunc jobs() []int {\n\treturn nil\n}\n");
+    writeFile(
+      dir,
+      "internal/store/store.go",
+      "package store\n\ntype Store struct{ n int }\n\nfunc Open(name string) *Store {\n\treturn &Store{}\n}\n\nfunc (s *Store) Put(v int) {\n\ts.n += v\n}\n",
+    );
+    const { patch } = await drafted(dir);
+    const arrows = patch.edges!.filter((e) => e.from === "grp:operator");
+    expect(arrows.map((e) => e.to).sort()).toEqual([
+      "file:cmd/api/main.go",
+      "file:cmd/worker/main.go",
+    ]);
+    expect(graph(patch, "view:api-inside")!.include).toContain("dir:internal/store");
+    expect(graph(patch, "view:worker-inside")!.include).toContain("dir:internal/store");
+  });
+});
+
 describe("xpl draft repo: several services", () => {
   const dir = makeTempDir("xpl-arch-multi-");
   writeFile(dir, "README.md", "# shop\n\nTwo services: an API and a worker.\n");

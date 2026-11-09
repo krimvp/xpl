@@ -687,6 +687,8 @@
 }
 .snapshot-frame > svg {
   display: block;
+  /* beats the live canvas' `.pz-svg { height: auto }`, which leaves an svg outside a flex box at 150px */
+  height: 100%;
   pointer-events: none;
 }
 /* framing: the step's elements a still picture leaves out (SnapshotFrame). It replaces the fade the cut
@@ -817,6 +819,11 @@
   }
   .caption-actions select {
     flex: 1 1 12ch;
+  }
+  /* its own row: the picker keeps its width beside the box actions */
+  .explore-link {
+    flex-basis: 100%;
+    text-align: right;
   }
 }
 /* a11y: the maps a box on this one opens, as plain links under the title (manager V4) */
@@ -1108,6 +1115,8 @@
   stroke: var(--node-border);
   stroke-width: 1.5;
 }
+.flow-stage.is-hover > rect,
+.flow-stage.is-hover > polygon,
 .flow-stage:hover > rect,
 .flow-stage:hover > polygon,
 .flow-stage:focus > rect,
@@ -1140,7 +1149,10 @@
   font-size: 13px;
   pointer-events: none;
 }
-.flow-stage-label {
+/* V2-07: the step's words at 14 units, the actor line under them at 13 (flowLayout sizes the box to them; 13 is
+   the smallest flow text, which Present's zoom is set for) */
+.flow-stage .flow-stage-label {
+  font-size: 14px;
   font-weight: 600;
 }
 .flow-stage .flow-owner {
@@ -1374,6 +1386,16 @@
 .guide-summary p {
   text-wrap: pretty;
 }
+/* What each tab holds, one muted line above "About this guide" (ExplanationInfo TABS_LINE). */
+.guide-tabs-line {
+  max-width: 680px;
+  margin: 12px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+.guide-tabs-line + .guide-about {
+  margin-top: 8px;
+}
 .guide-about {
   margin: 12px 0 20px;
   padding: 10px 14px;
@@ -1455,4 +1477,16 @@
 }
 .guide-explanation:has(.guide-prose:empty) {
   grid-template-columns: minmax(0, 1fr);
+}
+
+/* A step whose excerpt has its own "Show code" does not get a second one 20px under it (GuideSource). */
+.guide-section:has(.guide-source .btn) > .section-actions {
+  display: none;
+}
+
+/* A long action ("Open its own map: <title>") wraps inside its column instead of leaving a phone screen. */
+.details .actions .btn {
+  max-width: 100%;
+  white-space: normal;
+  text-align: left;
 }

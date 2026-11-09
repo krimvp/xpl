@@ -1,7 +1,8 @@
 import { useMemo, useState } from "react";
-import { relatedFiles, type RelatedFileSet } from "@xpl/core";
+import { relatedFiles, type RelatedFileSet, type TourStep } from "@xpl/core";
+import { stepSelection } from "../derive.js";
 import { useDerived, useStore, useViewerState } from "../hooks.js";
-import { mergeSameCards, repeatsShownCode } from "../relatedCards.js";
+import { mergeSameCards, ownCards, repeatsShownCode } from "../relatedCards.js";
 
 const LABELS: Record<RelatedFileSet["kind"], string> = {
   loads: "Reads",
@@ -15,25 +16,37 @@ const LABELS: Record<RelatedFileSet["kind"], string> = {
 /** Cards shown before "Show N more": the first ones are the closest; more push the rest of the column down. */
 const CARDS_SHOWN = 2;
 
-export function RelatedFiles({ onOpen }: { onOpen: () => void }) {
+/**
+ * `reading`: the tour step scrolled to in the Tour, when it is not the step last applied. The cards then
+ * follow the step on screen, not the one clicked before the scroll.
+ */
+export function RelatedFiles({
+  onOpen,
+  reading,
+}: {
+  onOpen: () => void;
+  reading?: { tourId: string; step: TourStep };
+}) {
   const store = useStore();
   const [all, setAll] = useState<unknown>(undefined);
   const state = useViewerState();
   const derived = useDerived();
   // In the Guide, a section lists its tests itself ("Tests", under the section): not again here.
   const guide = state.perspective === "guide";
-  const links = useMemo(
-    () =>
-      mergeSameCards(
-        relatedFiles(state.selection, state.model, derived.selection.focus).filter(
-          (link) =>
-            !(guide && link.kind === "test") && !repeatsShownCode(link, derived.selection.focus),
-        ),
-      ),
-    [state.selection, state.model, derived.selection.focus, guide],
+  const step = reading?.step;
+  const tourId = reading?.tourId;
+  const selection = useMemo(
+    () => (step ? step.focus.filter((id) => state.model.hasElement(id)) : state.selection),
+    [step, state.model, state.selection],
   );
+  const focus = useMemo(
+    () =>
+      step && tourId ? stepSelection(step, tourId, state.model).focus : derived.selection.focus,
+    [step, tourId, state.model, derived.selection.focus],
+  );
+  // The code links of what is shown: the selected elements' own, and the step's.
   const anchors = [
-    ...state.selection.flatMap((id) => {
+    ...selection.flatMap((id) => {
       const element = state.model.element(id);
       if (!element || element.type === "derived-edge") return [];
       return (
@@ -46,12 +59,25 @@ export function RelatedFiles({ onOpen }: { onOpen: () => void }) {
               : element.edge
       ).anchors;
     }),
-    ...(state.applied?.code ?? []),
+    ...((step ? step.code : state.applied?.code) ?? []),
   ];
+  const links = useMemo(
+    () =>
+      mergeSameCards(
+        ownCards(
+          relatedFiles(selection, state.model, focus),
+          selection,
+          state.model,
+          new Set(anchors.map((anchor) => anchor.file)),
+        ).filter((link) => !(guide && link.kind === "test") && !repeatsShownCode(link, focus)),
+      ),
+    // (`anchors` follows `selection`, `step` and the applied step)
+    [selection, state.model, focus, guide, step, state.applied],
+  );
   // Nothing to list: no panel at all (an empty one only says that there is nothing).
   if (links.length === 0) return null;
   // "Show N more" holds for this selection only.
-  const shown = all === state.selection ? links : links.slice(0, CARDS_SHOWN);
+  const shown = all === selection ? links : links.slice(0, CARDS_SHOWN);
   return (
     <section className="related-files" aria-label="Related files">
       <h3>Related files</h3>
@@ -139,7 +165,7 @@ export function RelatedFiles({ onOpen }: { onOpen: () => void }) {
         );
       })}
       {links.length > shown.length && (
-        <button type="button" className="link" onClick={() => setAll(state.selection)}>
+        <button type="button" className="link" onClick={() => setAll(selection)}>
           Show {links.length - shown.length} more
         </button>
       )}

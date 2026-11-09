@@ -351,17 +351,20 @@ test.describe("round 2 of the review", () => {
     await openVariant(page, withTallFlow, "?perspective=flow&view=view:dispatch");
     await expect(page.locator(".flow-stage")).toHaveCount(10);
     expect(await smallestDiagramText(page)).toBeGreaterThanOrEqual(10.9);
-    const badge = page.getByTestId("pz-badge");
-    await expect(badge).toHaveText("Fit all");
-    await badge.click();
+    // one fit control: marked while part of the flow is out of sight
+    const fit = page.getByTestId("pz-fit");
+    await expect(fit).toHaveText(/^Fit all/);
+    await expect(fit).toHaveClass(/is-cue/);
+    await fit.click();
     // every stage in the pane (the text gets as small as that takes)
     await expect.poll(() => stagesInPane(page)).toBe(10);
-    await expect(badge).toHaveText("Readable size");
+    await expect(fit).toHaveText("Readable size");
     // and back to a readable first view
-    await badge.click();
+    await fit.click();
     expect(await smallestDiagramText(page)).toBeGreaterThanOrEqual(10.9);
-    // the Fit button of the toolbar shows all of it too
-    await page.getByRole("button", { name: "Fit to view" }).click();
+    // the 0 key shows all of it too
+    await page.locator(".panzoom").focus();
+    await page.keyboard.press("0");
     await expect.poll(() => stagesInPane(page)).toBe(10);
     expect(problems).toEqual([]);
   });
@@ -463,7 +466,13 @@ test.describe("the reader's screen", () => {
         .filter((c) => getComputedStyle(c).display !== "none")
         .map((c) => c.getAttribute("data-testid") ?? c.tagName.toLowerCase()),
     );
-    expect(order.slice(0, 4)).toEqual(["h2", "tour-summary", "explanation-info", "section"]);
+    expect(order.slice(0, 5)).toEqual([
+      "h2",
+      "tour-summary",
+      "tabs-line",
+      "explanation-info",
+      "section",
+    ]);
 
     // without a summary there is no placeholder
     await page.unroute("http://xpl.test/**");
@@ -674,9 +683,9 @@ test.describe("the reader's screen", () => {
   test("Explain this, in a static bundle, says plainly what to do", async ({ page }) => {
     await openVariant(page, () => undefined, "?mode=explore&view=view:dispatch");
     await byId(page, "concept:retry-policy").click();
-    await page.getByRole("button", { name: "Explain this" }).click();
+    await page.getByRole("button", { name: "Ask the author to explain this" }).click();
     await expect(page.locator(".explain-note")).toContainText(
-      "Saved in this browser for the next explicit pass.",
+      "Saved in this browser as a request to the author. Nothing is sent.",
     );
     await expect(page.getByTestId("explain-command")).toHaveText("/code-explainer feedback");
   });

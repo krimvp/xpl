@@ -3,7 +3,7 @@ import { describeDrift, freshAnchors } from "../bundle-data.js";
 import type { CommandSpec } from "../command.js";
 import type { Ctx } from "../context.js";
 import { CliError } from "../errors.js";
-import { loadExplainer, openWorkspace } from "../repo.js";
+import { loadReadExplainer, openWorkspace } from "../repo.js";
 import { startViewServer, type ViewServer } from "../server.js";
 import { readViewerHtml } from "../viewer-html.js";
 
@@ -70,13 +70,13 @@ export async function listen(
 
 export const viewCommand: CommandSpec = {
   name: "view",
-  usage: "xpl view <explainer> [--port <port>] [--host <host>] [--no-open]",
+  usage: "xpl view [explainer] [--port <port>] [--host <host>] [--no-open]",
   summary: "Serve the viewer locally with live repo access",
   details: [
     `Serves the viewer on http://127.0.0.1:<port>/ (default port ${DEFAULT_PORT}, or a free one if taken) and`,
     "opens it in the browser (best effort; --no-open skips that). The page loads the explainer, the index and",
     "the referenced files; other files are fetched lazily from the working tree. Edits made in the viewer",
-    '(layout, expanded nodes) are saved to the explainer as user edits; "explain this" clicks are queued in',
+    '(layout, expanded nodes) are saved to the explainer as user edits; "Explain this" clicks are queued in',
     ".explainer/requests.json (see `xpl status`). The explainer is re-read from disk on every request.",
     "The page polls for explanation, source and index changes and refreshes them without a reload.",
     "Source edits show a warning until you reindex. Unsaved viewer edits are preserved. Stop with Ctrl+C.",
@@ -84,6 +84,7 @@ export const viewCommand: CommandSpec = {
     "does not refuse an explainer whose anchors drifted or are missing: it warns, and the page says which parts",
     "may be out of date.",
     "The server binds to 127.0.0.1 unless --host says otherwise: anything else exposes your source code.",
+    "Omit the explainer when the repository has exactly one; otherwise supply its name.",
     "The installed CLI includes the viewer. For source development, run npm run build; XPL_VIEWER_HTML overrides it.",
   ],
   options: {
@@ -95,11 +96,11 @@ export const viewCommand: CommandSpec = {
     host: { type: "string", arg: "<host>", desc: "Address to bind (default 127.0.0.1)" },
     "no-open": { type: "boolean", desc: "Do not open the browser" },
   },
-  positionals: [{ name: "explainer" }],
+  positionals: [{ name: "explainer", required: false }],
   async run(ctx, args) {
     const port = args.int("port", { max: 65535 });
     const host = args.str("host") ?? "127.0.0.1";
-    const loaded = loadExplainer(ctx, args.positionals[0]!);
+    const loaded = loadReadExplainer(ctx, args.positionals[0], "view");
     readViewerHtml(ctx.env); // fail early, with the "run npm run build" hint
     const ws = await openWorkspace(ctx, { explainer: loaded }); // fail early when there is no index; warns if stale
     // The page re-resolves the anchors as `xpl bundle` does. It is a tool for fixing drift, so it does not refuse;

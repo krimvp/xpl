@@ -335,7 +335,7 @@ export function draftStates(input: DraftInput, entry: IndexedSymbol): Draft {
   }
   if (!states || states.length < 2) {
     throw new Error(
-      `${symId(entry)} (${withArticle(entry.kind)}) does not enumerate states: ${ENTRY_KINDS}. \`xpl outline --kind enum,type\` lists candidates`,
+      `${symId(entry)} (${withArticle(entry.kind)}) does not enumerate states: ${ENTRY_KINDS}. \`xpl outline --kind enum,type\` lists candidates.`,
     );
   }
   const limits: string[] = [];

@@ -1,37 +1,15 @@
 # Quick reference
 
-One page to keep open while you work. It sums up `SKILL.md`; when the two differ, `SKILL.md` wins. `patch-format.md`, `writing.md` and `cli.md` have the details. `xpl` is `bin/xpl` in this skill's directory, written in full.
-
-## The loop
-
-First choose the root, the audience, the question and the guide name. Then write down the purpose (SKILL.md, "Start from the purpose"). Extend an existing guide only when the user names it. Pass `--audience` and `--question` to the draft. Keep patches and output files outside the repo.
-
-| Step              | Command                                                                                         | Done when                                     |
-| ----------------- | ----------------------------------------------------------------------------------------------- | --------------------------------------------- |
-| Index, name       | `xpl index`, `xpl new <name> --title "..."`                                                     | the index matches the working tree            |
-| A change only     | `xpl change <name> <base>..<head>`                                                              | the analysis is printed                       |
-| Draft             | `xpl draft path\|repo\|change\|map\|class\|states <name> [<entry id>] -o <file>` (outside repo) | the file has the structure and `TODO`s        |
-| Read, write       | `outline`, `search`, `show <id> --refs`, `refs <id> --in\|--out`                                | every `TODO` written, every claim read        |
-| Lint, then apply  | `xpl lint <name> --patch <file> && xpl apply <name> <file>`                                     | lint exits 0 (it exits 1 on any finding)      |
-| Check             | `xpl validate <name>`, `xpl status <name>`, `xpl anchors <name> tour:<slug>`                    | valid, `0 unexplained`, each step's code fits |
-| Accuracy, re-read | a fresh subagent or a second pass; `xpl lint <name>`                                            | no claim beyond its anchors; `todo-left` 0    |
-| Ready             | `xpl ready <name>` (`--note "reason"` for intentional omissions)                                | no blockers; warning decisions recorded       |
-| Show              | `xpl bundle <name> -o <name>.html` (`--files boundary` for a change)                            | the path is in the reply                      |
-
-`bundle` runs the ready check before it writes. Pass it the same `--note`; a note never overrides an error. `--draft` makes a preview for repair, not a finished guide: say so in the reply.
-
-Keep a finding on purpose: `xpl lint ... --warn-only` (a `todo-left` error still exits 1), and say why in the reply.
-
-Java has a built-in pack with heuristic references; a checked SCIP artifact (`xpl index --scip`) makes them precise. Rust, Ruby and PHP have declarations only, and Rust also has bounded heuristic calls. Read the coverage lines of `xpl index` before you describe a path in them (`cli.md`, `xpl index`).
+One page to keep open while you work. `SKILL.md` has the workflow and the length budgets; when the two differ, `SKILL.md` wins. `patch-format.md`, `writing.md` and `cli.md` have the details. `xpl` is `bin/xpl` in this skill's directory, written in full.
 
 ## What every patch needs
 
 - **A summary for every box and participant** a view shows: overlays (`{id, summary}`) in the same patch as the view. `xpl status` counts the rest as unexplained. A summary has 2 sentences and 45 words at most, and says what the part is for.
-- **A tour summary** that gives the answer in its first sentence, then up to four reasons (2-5 sentences); for a change, the behaviour, the risk, the tests.
+- **A tour summary** that gives the answer in its first sentence, then up to four reasons. For a change, it gives the behaviour, the risk and the tests.
 - **Notes** that start with `### Plain title`, then 1-3 short sentences (50 words at most; 280 characters in a presentation). A note may hold a small pipe table for a comparison.
-- **`code` on every step**: at most 2 ranges, the one the note talks about first. Ranges over 40 lines apart are separate places, and a slide shows at most 3 places of one file (`far-ranges`).
-- **Maps** of 4-8 boxes (3-7 on a system map), `"stubs": {"mode": "none"}`, at most about 2 arrows per box (hide the rest with `hidden`).
-- **`llm` edges** only for what the index cannot see, anchored at both ends (an edge from a box to itself draws as a loop on it; in a flow, show recursion with a `recurse` link). A path through code that is not a box: one edge with `via`; a hop the index shows needs no anchors.
+- **`code` on every step**: at most 2 ranges, the one the note talks about first. For a before and after, put the base range first. Set `editor.primary` on the file the note is about. Ranges over 40 lines apart are separate places, and a slide shows at most 3 places of one file (`far-ranges`). Code that a step only shows gets a file-relative `span` with no `symbol`, so it does not widen the bundle.
+- **Maps** with the box count of SKILL.md, "The tour": at most 8 on a map a tour shows (`big-map`). Keep about 2 arrows per box, and hide the rest with `hidden`. Every graph view a tour uses has `"stubs": {"mode": "none"}`; an overview has `excludeFiles` for tests, examples and docs. The drafts set both. A tour names every box of a small map it shows, or the ones it skips (`tour-covers-map`).
+- **`llm` edges** only for what the index cannot see, anchored at both ends. An edge from a box to itself draws as a loop on it; in a flow, show recursion with a `recurse` link. A path through code that is not a box: one edge with `via`; a hop the index shows needs no anchors.
 
 ## Choose the diagram for the question
 
@@ -45,22 +23,32 @@ Java has a built-in pack with heuristic references; a checked SCIP artifact (`xp
 | How do two or three options, or a before and after, differ?            | No new diagram: a small table in the note.                                     | None.                                                                                                                          |
 | What does this word mean here?                                         | A concept card, linked from the step that first uses the word.                 | None.                                                                                                                          |
 
-Use one diagram per step, and add a new diagram only when the question changes. Put the question in each view's `scope.question`; the reader sees it with the view title. For a broad repository guide, pair the system or component map with one focused flow or sequence for an important path. In the Python job runner example, the system map answers who starts the program and what settings it reads; its startup sequence follows the code that connects the parts. In the TypeScript job runner, the overview map names the parts and the dispatch sequence follows a job from queue to worker. Label an event arrow only when source at both ends supports the publish and receive path. A `heuristic` call edge is a lead to inspect, not proof of timing or an event.
+Use one diagram per step, and add a new diagram only when the question changes. Put the question in each view's `scope.question`; the reader sees it with the view title. For a broad repository guide, pair the system or component map with one focused flow or sequence for an important path. In the Python job runner example, the system map answers who starts the program and what settings it reads. Its startup sequence follows the code that connects the parts. In the TypeScript job runner, the overview map names the parts and the dispatch sequence follows a job from queue to worker. Label an event arrow only when source at both ends supports the publish and receive path. A `heuristic` call edge is a lead to inspect, not proof of timing or an event.
 
-## Writing in one breath
+## When the index shows less than runs
 
-Plain words first, code names second: a note names at most 3 pieces of code (1 on an architecture map, 2 in a tour summary). Example values in backticks (`503`, `-1`, `null`, `/admin/*`) are fine and do not count. One topic per sentence, in the active voice, naming its subject (not a bare "It"). An instruction has 20 words at most, any other sentence 25; aim for 15. No marketing or filler words (`writing.md`, section 2b). An absolute word (all, every, never, only) needs its evidence next to it. Put it on an element with anchors, or in a note sentence that names the part the step shows. When the code changes, rewrite the text whole; never append a sentence. Lists read as complete, so check them or write "for example". Name each map box in some note, by its label in plain words ("the web server" counts for "Web servers").
+`xpl index` prints what it could analyse, and a missing arrow proves nothing. Before you say two parts do not talk, check with `search` and `show`. These patterns hide a call from `refs`:
+
+- **An interface method** has no body: `refs --out` lists its implementations as `impl` lines. Anchor the one that does the work.
+- **A `call` ref to a type** is a construction. A `call` ref to a field is a call through a stored function: anchor the field and the function (`refs <field> --in`).
+- **A method reached through a variable** (`await response(...)` runs `__call__`) has no callers in `refs --in`. `search` for the name, or find where the code builds the object.
+- **A base-class method with no body** runs a subclass method: anchor the one that runs, and link the two with an `llm` `calls` edge.
+- **Event buses, DI, callbacks, HTTP handlers, queues and config keys** connect by name. `search` for `emit`, `on(` or `register` and the topic, route or key. Then link the two ends with an `llm` edge.
+- **A reaches C through B**, and B is not a box: draw one edge from A to C with `via: [B]` (`patch-format.md` 3.3).
+- **A recursive function:** in its flow, a `next` link with `kind: "recurse"` goes back to the step where the call starts (`patch-format.md` 3.7).
+
+Java has a built-in pack with heuristic references; a checked SCIP artifact (`xpl index --scip`) makes them precise. Rust, Ruby and PHP have declarations only, and Rust also has heuristic calls in a limited set of forms. Read the coverage lines of `xpl index` before you describe a path in them (`cli.md`, `xpl index`).
 
 ## Lint findings, grouped
 
-| Group            | Rules                                                                                                                                   | Usual fix                                                                                |
-| ---------------- | --------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| Not written yet  | `todo-left` (an error)                                                                                                                  | write it                                                                                 |
-| Tour shape       | `tour-summary`, `tour-first-step`, `tour-covers-map`, `tour-length`, `unused-view`, `many-concepts`, `duplicate-step`                   | start on the map; name every box; 5-9 steps; show each diagram; say it once              |
-| Titles           | `note-heading`, `untitled-step`, `code-title`, `placeholder-title`                                                                      | `### Plain title` that says what happens                                                 |
-| Sentences        | `long-sentence`, `long-average`, `bare-it`, `passive-voice`, `we-voice`, `tool-word`, `filler-word`, `absolute-word`, `repeats-summary` | one fact per sentence, active voice, a named subject; evidence next to the claim         |
-| Load             | `long-note`, `long-summary`, `long-detail`, `long-talk-note`, `code-heavy`, `flow-label-code`                                           | say the idea in plain words; keep one code name; rewrite a summary whole, never append   |
-| Markup           | `markdown-in-plain`, `markdown-in-summary`                                                                                              | plain titles; headings and links only in `detail`                                        |
-| What readers see | `change-not-shown`, `far-ranges`, `big-map`, `crowded-map`, `system-map-no-edges`                                                       | add a step; split a step; group boxes; hide edges; check for source-backed relationships |
+| Group            | Rules                                                                                                                                                                     | Usual fix                                                                                                                                            |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Not written yet  | `todo-left` (an error)                                                                                                                                                    | write it                                                                                                                                             |
+| Tour shape       | `tour-summary`, `tour-first-step`, `tour-covers-map`, `tour-length`, `tour-ends`, `unused-view`, `many-concepts`, `duplicate-step`, `connector-start`                     | start and end on the map; name every box; steps within the SKILL.md budget (5-8 for a question); show each diagram; say it once; a note stands alone |
+| Titles           | `note-heading`, `untitled-step`, `code-title`, `placeholder-title`, `long-title`                                                                                          | `### Plain title` that says what happens                                                                                                             |
+| Sentences        | `long-sentence`, `long-average`, `bare-it`, `abstract-subject`, `passive-voice`, `we-voice`, `dash-chain`, `tool-word`, `filler-word`, `absolute-word`, `repeats-summary` | one fact per sentence, active voice, the code as the subject; evidence next to the claim                                                             |
+| Load             | `long-note`, `long-summary`, `long-detail`, `long-talk-note`, `code-heavy`, `flow-label-code`                                                                             | say the idea in plain words; keep one code name; rewrite a summary whole, never append                                                               |
+| Markup           | `markdown-in-plain`, `markdown-in-summary`                                                                                                                                | plain titles; headings and links only in `detail`                                                                                                    |
+| What readers see | `change-not-shown`, `far-ranges`, `big-map`, `crowded-map`, `system-map-no-edges`                                                                                         | add a step; split a step; group boxes; hide edges; check for source-backed relationships                                                             |
 
 The hints name the limit a fix could trip: a full tour summary wants a long sentence shortened, not split.

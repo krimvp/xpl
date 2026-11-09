@@ -19,7 +19,7 @@ export const stageCommand: CommandSpec = {
     "PR guides require --pr-result from xpl pr finish and --root pointing to the prepared checkout. Stages the",
     "validated ready HTML with version metadata and its original result manifest; rechecks GitHub base/head before promotion.",
     "--files and --note cannot change a PR result: select files and record decisions when creating that result.",
-    "Current opens its immutable version URL. About this explanation links prior versions and the reading state.",
+    "Current opens its immutable version URL. About this guide links prior versions and the reading state.",
     "Saved HTML restores navigation; explicit URL targets override it. Keep the staged tree for prior-version links.",
     "Names in author review records are self-reported. --require-review explicitly requires all-content review.",
     "No draft or drift override: a guide with readiness errors cannot be staged, even with XPL_SKIP_STALE_CHECK.",

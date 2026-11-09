@@ -13,7 +13,19 @@
       "summary": "Counts completed jobs and their durations from events on the bus."
     }
   ],
+  "concepts": [
+    {
+      "id": "concept:retry-policy",
+      "summary": "The runner puts a failed job back on the queue with a delay that doubles each time. After `maxRetries` retries, the runner moves the job to a dead-letter list."
+    }
+  ],
   "views": [
+    {
+      "id": "view:overview",
+      "stubs": {
+        "mode": "none"
+      }
+    },
     {
       "id": "view:dispatch",
       "stepsUpdate": [
@@ -29,13 +41,143 @@
           "id": "dispatch:3",
           "summary": "After a failed attempt with retries left, the runner delays the job and puts it back on the queue."
         }
+      ],
+      "frames": [
+        {
+          "id": "frame:dispatch-loop",
+          "kind": "loop",
+          "label": "while the runner is running",
+          "fromStep": "dispatch:1",
+          "toStep": "dispatch:3"
+        },
+        {
+          "id": "frame:retry",
+          "kind": "alt",
+          "label": "failed, retries left",
+          "fromStep": "dispatch:3",
+          "toStep": "dispatch:3"
+        }
       ]
     }
   ],
   "tours": [
     {
       "id": "tour:intro",
-      "summary": "Follow the scheduling code and a failed job as it returns to the queue. The worker and metrics are shown on the map; this tour leaves their internals out."
+      "title": "How a job is dispatched and retried",
+      "summary": "The runner takes each job from an in-memory queue and runs it on a worker. When an attempt fails, the runner puts the job back on the queue with a growing delay. A later pass of the same loop takes the job again. This tour leaves out the inside of the worker and the metrics.",
+      "steps": [
+        {
+          "id": "t1",
+          "view": "view:overview",
+          "focus": ["grp:scheduling"],
+          "note": "### Two files decide which job runs next\n\nScheduling is the runner and the queue. The runner decides what happens to each job, and the queue keeps the jobs and their due times.",
+          "code": [
+            {
+              "file": "src/runner.ts",
+              "symbol": "Runner",
+              "span": {
+                "from": 0,
+                "to": 5
+              },
+              "role": "definition"
+            }
+          ],
+          "editor": {
+            "primary": "src/runner.ts"
+          }
+        },
+        {
+          "id": "t2",
+          "view": "view:dispatch",
+          "focus": ["dispatch:1"],
+          "note": "### Each pass of the loop takes one job\n\nThe loop runs while the runner is running. Each pass asks the queue for the next due job. When no job is due, the loop waits and asks again.",
+          "code": [
+            {
+              "file": "src/runner.ts",
+              "symbol": "Runner.dispatch",
+              "span": {
+                "from": 1,
+                "to": 8
+              },
+              "role": "definition"
+            }
+          ],
+          "editor": {
+            "primary": "src/runner.ts"
+          }
+        },
+        {
+          "id": "t3",
+          "view": "view:dispatch",
+          "focus": ["dispatch:2"],
+          "note": "### A worker runs one attempt\n\nThe runner leases a free worker and runs the job with a timeout. The worker reports a failure in its result and does not throw.",
+          "code": [
+            {
+              "file": "src/runner.ts",
+              "symbol": "Runner.dispatch",
+              "span": {
+                "from": 18,
+                "to": 19
+              },
+              "role": "call-site"
+            },
+            {
+              "file": "src/worker.ts",
+              "symbol": "Worker.run",
+              "role": "definition"
+            }
+          ],
+          "editor": {
+            "primary": "src/runner.ts"
+          }
+        },
+        {
+          "id": "t4",
+          "view": "view:dispatch",
+          "focus": ["dispatch:3", "concept:retry-policy"],
+          "note": "### A failed job goes back on the queue\n\nWith retries left, the runner requeues the job with a delay that doubles each time. A later `pop()` hands the job out again. With no retries left, the job goes to the dead-letter list.",
+          "code": [
+            {
+              "file": "src/runner.ts",
+              "symbol": "Runner.dispatch",
+              "span": {
+                "from": 31,
+                "to": 41
+              },
+              "role": "call-site"
+            },
+            {
+              "file": "src/runner.ts",
+              "symbol": "backoffDelay",
+              "role": "definition"
+            }
+          ],
+          "editor": {
+            "primary": "src/runner.ts"
+          }
+        },
+        {
+          "id": "t5",
+          "view": "view:overview",
+          "focus": ["file:src/worker.ts", "file:src/metrics.ts"],
+          "note": "### Where to go next\n\nThe worker box answers how one attempt times out. The metrics box answers how the metrics count finished jobs from events on the bus.",
+          "code": [
+            {
+              "file": "src/worker.ts",
+              "symbol": "Worker.run",
+              "role": "definition"
+            },
+            {
+              "file": "src/metrics.ts",
+              "symbol": "registerMetrics",
+              "role": "definition"
+            }
+          ],
+          "editor": {
+            "primary": "src/worker.ts"
+          }
+        }
+      ]
     }
   ]
 }

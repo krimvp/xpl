@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { openVariant, watchProblems } from "./helpers.js";
 
-test("analysis coverage is in About this guide; a bar only when code was left out", async ({
+test("analysis coverage is in About this guide; a bar only when linked code was left out", async ({
   page,
 }) => {
   const problems = watchProblems(page);
@@ -21,6 +21,18 @@ test("analysis coverage is in About this guide; a bar only when code was left ou
     "Heuristic relationships are hints; unresolved targets may be missing.",
   );
   await expect(notice).toContainText("typescript (typescript):");
+  // a file the guide does not link to, left out of the analysis: no bar either
+  await openVariant(page, (bundle) => {
+    bundle.index.files.push({ path: "src/extra.ts", language: "typescript", hash: "x", lines: 1 });
+    bundle.index.analysis.push({
+      provider: "test-tool",
+      capabilities: { call: "supported" },
+      files: ["src/extra.ts"],
+      results: [{ capabilities: ["call"], status: "failed", analyzedFiles: [], limitations: [] }],
+    });
+  });
+  await expect(page.getByTestId("explanation-info")).toBeVisible();
+  await expect(page.getByTestId("analysis-coverage")).toHaveCount(0);
   expect(problems).toEqual([]);
 });
 
@@ -51,9 +63,17 @@ test("legacy coverage stays unknown and failed analysis is visible", async ({ pa
       ],
     });
   });
-  await expect(notice.locator("summary")).toContainText("some analysis failed");
+  // one plain line, the files at risk under it, the tool's report in About this guide
+  await expect(notice.locator("summary")).toHaveText(
+    "Some arrows may be missing: the code analysis failed in 1 file this guide links to.",
+  );
   await notice.locator("summary").click();
-  await expect(notice).toContainText("calls failed (0/1 files analyzed)");
-  await expect(notice).toContainText("typescript (test-tool): calls failed");
-  await expect(notice).not.toContainText("/private/bin/tool");
+  await expect(notice).toContainText("src/runner.ts");
+  await page.getByTestId("explanation-info").locator(":scope > summary").click();
+  const report = page.getByTestId("analysis-details");
+  await expect(report.locator("summary")).toContainText("some analysis failed");
+  await report.locator("summary").click();
+  await expect(report).toContainText("calls failed (0/1 files analyzed)");
+  await expect(report).toContainText("typescript (test-tool): calls failed");
+  await expect(report).not.toContainText("/private/bin/tool");
 });

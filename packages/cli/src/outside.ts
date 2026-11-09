@@ -486,8 +486,47 @@ export function importsOf(
 }
 
 /**
+ * A standard-library web server: the modules that serve HTTP, and the call that starts the server. The import alone
+ * proves nothing (`net/http` is also a client), so a file counts only when it also starts a server.
+ */
+const SERVER_STARTS: Partial<Record<Family, { modules: readonly string[]; start: RegExp }>> = {
+  go: {
+    modules: ["net/http"],
+    start: /\.(?:ListenAndServe|ListenAndServeTLS|Serve|ServeTLS)\s*\(/,
+  },
+  js: {
+    modules: ["http", "https", "http2", "node:http", "node:https", "node:http2"],
+    start: /\bcreateServer\s*\(/,
+  },
+  py: {
+    modules: ["http.server", "wsgiref.simple_server", "socketserver"],
+    start: /\b(?:serve_forever|make_server|(?:Threading)?HTTPServer)\s*\(/,
+  },
+};
+
+const CLIENTS = CATALOG.find((entry) => entry.slug === "clients")!;
+
+/** The first line of `lines` (comments blanked) that starts a standard-library web server, with what it called. */
+function serverStart(
+  lines: readonly string[],
+  family: Family,
+): { line: number; module: string } | undefined {
+  const server = SERVER_STARTS[family];
+  if (!server || !importsOf(lines, family).some((i) => server.modules.includes(i.module)))
+    return undefined;
+  const code = family === "py" ? withoutDocstrings(lines) : withoutComments(lines);
+  for (const [i, text] of code.entries()) {
+    const m = server.start.exec(text);
+    if (m) return { line: i + 1, module: m[0].replace(/^[.\s]+|[\s(]+$/g, "") };
+  }
+  return undefined;
+}
+
+/**
  * The outside systems the code files import, by slug, most used first (then by name). `isCode` says which files
- * count (not tests, examples or docs). At most `maxSites` sites per system are kept, in path order.
+ * count (not tests, examples or docs). At most `maxSites` sites per system are kept, in path order. A file that
+ * starts a standard-library web server (`http.ListenAndServe`, `createServer`, `serve_forever`) adds the inbound
+ * Clients, at the line that starts it.
  */
 export function findOutsideSystems(
   model: IndexModel,
@@ -532,6 +571,11 @@ export function findOutsideSystems(
       system.files.add(file);
       if (system.sites.length < maxSites && !system.sites.some((s) => s.file === file))
         system.sites.push({ file, line, module });
+    }
+    const start = found.has(CLIENTS.slug) ? undefined : serverStart(lines, family);
+    if (start) {
+      const { js: _js, py: _py, go: _go, java: _java, ...kind } = CLIENTS;
+      found.set(kind.slug, { ...kind, sites: [{ file, ...start }], files: new Set([file]) });
     }
   }
   return [...found.values()]

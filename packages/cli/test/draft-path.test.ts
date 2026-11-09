@@ -7,7 +7,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { ExplainerPatch, SequenceView } from "@xpl/core";
-import { makeTempDir, writeFile, xpl, xplJson } from "./helpers.js";
+import { copyFixture, makeTempDir, writeFile, xpl, xplJson } from "./helpers.js";
 
 interface DraftJson {
   notes: string[];
@@ -271,7 +271,7 @@ describe("xpl draft path: a question with two halves", () => {
     const second = steps.findIndex((s) => s.view === "view:serializer-loads");
     expect(steps[second]!.focus).toEqual(["sym:ser.py#Serializer.loads"]);
     expect(steps[second]!.note).toContain("the next part of the answer");
-    expect(steps.length).toBeLessThanOrEqual(9);
+    expect(steps.length).toBeLessThanOrEqual(8);
     // a participant of both halves has one summary
     const ids = patch.nodes!.map((n) => n.id);
     expect(new Set(ids).size).toBe(ids.length);
@@ -326,5 +326,79 @@ describe("xpl draft path: too many calls", () => {
     const left = notes.find((n) => n.startsWith("calls left out of the sequence"))!;
     expect(left).toContain("the ones that reach the least code");
     expect(left.match(/sym:job\.py#Job\.step\d+/g)).toHaveLength(2);
+  });
+});
+
+describe("xpl draft path: loops and branches", () => {
+  it("frames the calls of a loop and of each branch, and gives a two-way branch one tour step", async () => {
+    const dir = copyFixture("ts-jobrunner");
+    expect((await xpl(dir, "index", "--precise", "off")).code).toBe(0);
+    expect((await xpl(dir, "new", "d")).code).toBe(0);
+    const { patch, notes } = await drafted(dir, "sym:src/runner.ts#Runner.dispatch");
+    const view = sequence(patch);
+    const label = (id: string) => view.steps!.find((s) => s.id === id)!.label;
+    const frames = view.frames!.map((f) => `${f.kind} ${label(f.fromStep)}..${label(f.toStep)}`);
+    // the while loop holds every call; ack runs only when the job worked; requeue and deadLetter are two
+    // arms of one if/else, not two calls in a row
+    expect(frames).toEqual([
+      "loop pop()..deadLetter(job, result.error)",
+      "opt ack(job)..ack(job)",
+      "alt requeue(job, backoff)..deadLetter(job, result.error)",
+    ]);
+    expect(view.frames![2]!.label).toMatch(
+      /^TODO: .*`if \(attempts <= this\.config\.retry\.maxRetries\)`/,
+    );
+    // the frame has one label: the notes say so, and the author names each branch in it
+    expect(notes.join("\n")).toContain(
+      "an alt frame has one label and no line between its branches",
+    );
+    const tour = patch.tours![0]!.steps!;
+    expect(tour.length).toBeLessThanOrEqual(8);
+    const branch = tour.find(
+      (s) => s.focus.length === 2 && s.focus.every((f) => f.startsWith("runner-dispatch:")),
+    )!;
+    expect(branch.focus.map(label)).toEqual([
+      "requeue(job, backoff)",
+      "deadLetter(job, result.error)",
+    ]);
+  });
+
+  it("an if, elif and else with a call in each is one alt frame", async () => {
+    const dir = await repo({
+      "jobs.py": [
+        "def ack(job):",
+        "    print('ack', job)",
+        "    return job",
+        "",
+        "",
+        "def retry(job):",
+        "    print('retry', job)",
+        "    return job",
+        "",
+        "",
+        "def park(job):",
+        "    print('park', job)",
+        "    return job",
+        "",
+        "",
+        "def settle(job, ok, left):",
+        "    if ok:",
+        "        ack(job)",
+        "    elif left > 0:",
+        "        retry(job)",
+        "    else:",
+        "        park(job)",
+        "",
+      ].join("\n"),
+    });
+    const { patch } = await drafted(dir, "sym:jobs.py#settle");
+    const view = sequence(patch);
+    expect(view.frames).toEqual([
+      expect.objectContaining({
+        kind: "alt",
+        fromStep: view.steps![0]!.id,
+        toStep: view.steps![2]!.id,
+      }),
+    ]);
   });
 });

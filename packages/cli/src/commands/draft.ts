@@ -7,7 +7,9 @@ import {
   type IndexModel,
   type IndexedSymbol,
 } from "@xpl/core";
+import { ParserPool } from "@xpl/indexer";
 import type { CommandSpec } from "../command.js";
+import { controlBlocksOf } from "../control-blocks.js";
 import {
   DRAFT_LIMITS,
   draftChange,
@@ -26,7 +28,7 @@ import { CliError, UsageError, errorMessage } from "../errors.js";
 import { resolveCommit } from "../git.js";
 import { plural, renderIssues, withArticle } from "../format.js";
 import { atomicWrite, displayPath, jsonFile } from "../fsutil.js";
-import { loadExplainer, openWorkspace } from "../repo.js";
+import { loadReadExplainer, openWorkspace } from "../repo.js";
 import { resolveTarget } from "../target.js";
 
 const KINDS: readonly DraftKind[] = ["change", "repo", "path", "map", "class", "states"];
@@ -144,7 +146,7 @@ function pathEntry(model: IndexModel, arg: string): PathEntry {
 export const draftCommand: CommandSpec = {
   name: "draft",
   usage:
-    "xpl draft change|repo|path|map|class|states <explainer> [<entry id> ...] [--audience <reader>] [--question <question>] [-o <file>]",
+    "xpl draft change|repo|path|map|class|states [explainer] [<entry id> ...] [--audience <reader>] [--question <question>] [-o <file>]",
   summary:
     "Print a patch skeleton for a change, a repo, a path, a map, a class or the states of a type; you write the TODO text",
   details: [
@@ -152,7 +154,7 @@ export const draftCommand: CommandSpec = {
     "`TODO: <what to write>` in every text a person must write. `xpl apply` accepts it as it is; `xpl lint` reports",
     "each TODO left (`todo-left`). Write the text, check it against the code, then apply.",
     "Use --audience and --question to focus the draft. Imports suggest architecture; they do not prove",
-    "who uses the project. Path sequences list selected call sites, not every runtime branch or invocation.",
+    "who uses the project. Path sequences list selected call sites, not every call the code can make.",
     "  change <explainer>        needs the change record (`xpl change <explainer> <base>..<head>` first). A map of",
     `                            the change (changed symbols, or their files when many; direct callers outside`,
     `                            tests; one group box for the tests), and a tour in review order: what changes for`,
@@ -160,25 +162,31 @@ export const draftCommand: CommandSpec = {
     `                            risks (at most ${DRAFT_LIMITS.changeSteps} steps). Every changed file is anchored, tests too.`,
     `  repo <explainer>          two levels. A system map: the project as a service box (one per program under`,
     `                            services/, apps/ or cmd/), who reaches it and what it relies on (databases, caches,`,
-    `                            queues, other APIs, found from the import lines). A program with a main function and`,
-    `                            no web or command-line framework gets an Operator box at its main; the settings files`,
-    `                            the code loads get one Settings box, anchored at the file and the line that loads it.`,
-    `                            Each service box opens a map of its parts: the top-level folders or files (below src`,
-    `                            in a src layout; at most ${DRAFT_LIMITS.mapBoxes} boxes) and the outside systems they use. A tour from`,
-    `                            the top down that ends on where to go next.`,
-    "                            It needs a supported source language; unsupported files stay text and",
-    "                            cannot form repository levels. Inspect text with `xpl show file:<path>`.",
+    `                            queues, other APIs, found from the import lines). A web server found from its start`,
+    `                            call (Go ListenAndServe, Node createServer, Python serve_forever) gets a Clients box`,
+    `                            there. A program with a main function (Java: a main method) and no web server or`,
+    `                            command-line framework gets an Operator box, with an arrow to each part that holds a`,
+    `                            main. The settings files the code loads get one Settings box, anchored at the file`,
+    `                            and the line that loads it. Each service box opens a map of its parts: the top-level`,
+    `                            folders or files (below src in a src layout; at most ${DRAFT_LIMITS.mapBoxes} boxes) and the outside`,
+    `                            systems they use; code that several services share is on the map of each. A tour`,
+    `                            from the top down that ends on where to go next (at most ${DRAFT_LIMITS.repoSteps} steps). It needs a`,
+    "                            supported source language; unsupported files stay text and cannot form repository",
+    "                            levels. Inspect text with `xpl show file:<path>`.",
     "  path <explainer> <entry> [<entry> ...]",
     "                            a sequence of the calls the entry symbol makes (depth 1, in source order, at most",
-    `                            ${DRAFT_LIMITS.participants} participants and ${DRAFT_LIMITS.pathCalls} calls), and a tour: first a map of the files the`,
-    "                            path crosses (when it crosses two or more), then one step per main call, and last",
-    "                            where to go next.",
-    "                            Calls to helpers of the entry's own class get a lifeline of their own; recursion is a",
-    "                            call to itself; one-line helpers, type conversions and data built from a type are left",
-    "                            out (the notes list them), and so are the calls that reach the least code when there",
-    "                            are too many. Several entries: one sequence each, in one tour (a question with two",
-    "                            halves). A method a class inherits (`sym:a.py#Child.run`) starts at the base that",
-    "                            defines it, and self calls go where the class's method order finds them.",
+    `                            ${DRAFT_LIMITS.participants} participants and ${DRAFT_LIMITS.pathCalls} calls), with a loop, alt or opt frame where the code loops`,
+    "                            or branches around them. A tour of at most " +
+      DRAFT_LIMITS.pathSteps +
+      " steps: a map of the files the path",
+    "                            crosses (when it crosses two or more), the big picture, one step per main call (a",
+    "                            branch with two outcomes is one step), and where to go next. Calls to helpers of the",
+    "                            entry's own class get a lifeline of their own; recursion is a call to itself;",
+    "                            one-line helpers, type conversions and data built from a type are left out (the notes",
+    "                            list them), and so are the calls that reach the least code when there are too many.",
+    "                            Several entries: one sequence each, in one tour (a question with two halves). A",
+    "                            method a class inherits (`sym:a.py#Child.run`) starts at the base that defines it,",
+    "                            and self calls go where the class's method order finds them.",
     "  map <explainer>           a quick map of every code file outside tests: one map per folder, a folder box opens",
     "                            the map of its files. Each box gets a name and one sentence to write; a file's TODO",
     "                            holds its header comment, what it defines, who uses it and what it uses. A start tour,",
@@ -205,6 +213,7 @@ export const draftCommand: CommandSpec = {
     "keeps its own view ids and updates them), and nodes it already explains get no new summary.",
     "Prints the patch on stdout (the summary on stderr), or writes it with -o and prints the summary.",
     "Then: write the text, `xpl lint <explainer> --patch <file>`, `xpl apply <explainer> <file>`.",
+    "Omit the explainer when the repository has exactly one; otherwise supply its name.",
     "Exit codes: 0 ok, 1 no change recorded, an unknown entry, or nothing to draft, 2 usage error.",
   ],
   options: {
@@ -218,7 +227,7 @@ export const draftCommand: CommandSpec = {
   },
   positionals: [
     { name: "change|repo|path|map|class|states" },
-    { name: "explainer" },
+    { name: "explainer", required: false },
     { name: "entry", required: false, rest: true },
   ],
   async run(ctx, args) {
@@ -228,8 +237,10 @@ export const draftCommand: CommandSpec = {
         `unknown draft "${args.positionals[0]}": use change, repo, path, map, class or states`,
       );
     }
-    const name = args.positionals[1]!;
-    const entryArgs = args.positionals.slice(2);
+    // a guide name never holds `:` or `#`: a second argument that does is the entry, for the only guide
+    const second = args.positionals[1];
+    const named = second !== undefined && !/[:#]/.test(second);
+    const entryArgs = args.positionals.slice(named ? 2 : 1);
     const entryArg = entryArgs[0];
     if (kind === "path" && entryArg === undefined) {
       throw new UsageError(
@@ -251,7 +262,7 @@ export const draftCommand: CommandSpec = {
         `unexpected argument "${entryArg}": only draft path, class and states take an entry`,
       );
     }
-    const loaded = loadExplainer(ctx, name);
+    const loaded = loadReadExplainer(ctx, named ? second : undefined, "draft");
     const change = loaded.explainer.change;
     if (kind === "change" && !change) {
       throw new CliError(
@@ -271,7 +282,29 @@ export const draftCommand: CommandSpec = {
       );
     }
     const entries: PathEntry[] = [];
-    if (kind === "path") for (const arg of entryArgs) entries.push(pathEntry(ws.model, arg));
+    if (kind === "path") {
+      for (const arg of entryArgs) entries.push(pathEntry(ws.model, arg));
+      // the loops and branches of each entry, from its syntax tree: the frames of its sequence
+      const pool = new ParserPool();
+      try {
+        for (const entry of entries) {
+          const { file, range } = entry.symbol;
+          const language = ws.model.file(file)?.language;
+          const lines = ws.texts.lines(file);
+          if (!language || !lines) continue;
+          try {
+            entry.blocks = await controlBlocksOf(pool, file, language, lines.join("\n"), {
+              start: range.startLine,
+              end: range.endLine,
+            });
+          } catch {
+            // no grammar to read the file with: a sequence without frames
+          }
+        }
+      } finally {
+        await pool.dispose();
+      }
+    }
     let classEntry: IndexedSymbol | undefined;
     if (kind === "class") {
       const target = resolveTarget(ws.model, entryArg!);
@@ -343,7 +376,7 @@ export const draftCommand: CommandSpec = {
       throw new CliError(
         [
           `the draft does not apply to ${loaded.rel} (a bug in xpl draft; please report it):`,
-          ...renderIssues(check.issues),
+          ...renderIssues(check.issues, loaded.name),
         ].join("\n"),
         1,
         { issues: check.issues },
@@ -357,7 +390,9 @@ export const draftCommand: CommandSpec = {
         1,
       );
     }
-    const warnings = check.issues.map((issue) => `${issue.path}: ${issue.message}`);
+    const warnings = check.issues.map(
+      (issue) => `${issue.path}: ${issue.message.replaceAll("<explainer>", loaded.name)}`,
+    );
     const counts = draftCounts(draft.patch);
     const outOption = args.str("out");
     const outPath = outOption !== undefined ? resolve(ctx.cwd, outOption) : undefined;

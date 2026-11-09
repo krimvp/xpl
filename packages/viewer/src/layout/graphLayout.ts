@@ -124,6 +124,12 @@ export interface LayoutEdge {
   /** What the edge passes through without a box (`Edge.via`), by name: the tooltip says so. */
   via?: string[];
   /**
+   * One of two arrows between the same two boxes, one each way: both are drawn on one route (`points`, read
+   * from each one's own tail), and this is the half of it that ends at this arrow's head. A click there (its
+   * hit path, its anchor) picks this arrow, and its label sits on it.
+   */
+  own?: Point[];
+  /**
    * A point of the route that no box drawn above the edge covers: where a click on the edge lands
    * (the edge's group is built around it, so automated clicks at its centre hit the route).
    */
@@ -440,6 +446,11 @@ function buildModel(graph: DerivedGraph, changes: ChangeMarks | undefined): Mode
       kind: edge.kind,
     });
   }
+  // The boxes each ghost links to: its count is a total over them when there are several (U12).
+  const insides = new Map<string, Set<string>>();
+  for (const stub of graph.stubs)
+    if (known.has(stub.inside))
+      insides.set(stub.ghost, (insides.get(stub.ghost) ?? new Set()).add(stub.inside));
   for (const stub of graph.stubs) {
     if (!known.has(stub.inside) || seen.has(stub.id)) continue;
     seen.add(stub.id);
@@ -461,7 +472,7 @@ function buildModel(graph: DerivedGraph, changes: ChangeMarks | undefined): Mode
               },
             }),
         // Always a verb (two kinds at most; more are left to the tooltip and the details panel).
-        detail: `${kinds.slice(0, 2).join(" & ")}${kinds.length > 2 ? " …" : ""} ×${ghost.count}`,
+        detail: `${kinds.slice(0, 2).join(" & ")}${kinds.length > 2 ? " …" : ""} ×${ghost.count}${(insides.get(stub.ghost)?.size ?? 0) > 1 ? " in all" : ""}`,
         hint: `${kinds.join(", ")} ×${ghost.count}`,
       });
       roots.push(box);
@@ -994,8 +1005,23 @@ function layeredLayout(
   const held = new Map<string, EdgeMeta[]>();
   const chains = new Map<string, { from: string[]; to: string[] }>();
   const crossing = new Map<string, { edge: EdgeMeta; end: "from" | "to" }[]>();
+  // Two arrows between the same two boxes, one each way: the second (its twin) takes the first one's route,
+  // read backwards, so a two-way link is one line with a head at each end, not two long routes (V2-04).
+  const twinOf = new Map<string, EdgeMeta>();
+  {
+    const firstOf = new Map<string, EdgeMeta>();
+    for (const edge of model.edges) {
+      if (edge.stub || edge.from === edge.to) continue;
+      const back = firstOf.get(`${edge.to}\0${edge.from}`);
+      if (back && ![...twinOf.values()].includes(back) && !twinOf.has(back.id))
+        twinOf.set(edge.id, back);
+      else if (!firstOf.has(`${edge.from}\0${edge.to}`))
+        firstOf.set(`${edge.from}\0${edge.to}`, edge);
+    }
+  }
   for (const edge of model.edges) {
     if (edge.from === edge.to) continue; // a loop: drawn on its box once the boxes are placed
+    if (twinOf.has(edge.id)) continue; // drawn on its twin's route
     const holder = holderOf(model, edge.from, edge.to);
     const list = held.get(holder);
     if (list) list.push(edge);
@@ -1334,6 +1360,8 @@ function layeredLayout(
   // Each edge, whole: the inner parts on its way out of the containers around its start, the part its holder
   // routes, and the inner parts on its way into the containers around its end.
   const canvasEdges: LayoutEdge[] = [];
+  const leads = new Map<string, { laidOut: LayoutEdge; holder: LayoutNode | undefined }>();
+  const pairedWith = new Set([...twinOf.values()].map((edge) => edge.id));
   for (const edge of model.edges) {
     if (edge.from === edge.to && nodeOf.has(edge.from)) {
       const parent = parentOf.get(edge.from);
@@ -1351,11 +1379,9 @@ function layeredLayout(
         y: p.y + box.y,
       }));
     };
-    const points = joined([
-      ...chain.from.map(moved),
-      route.points,
-      ...[...chain.to].reverse().map(moved),
-    ]);
+    const points = dropDetours(
+      joined([...chain.from.map(moved), route.points, ...[...chain.to].reverse().map(moved)]),
+    );
     const laidOut: LayoutEdge = {
       id: edge.id,
       stub: edge.stub,
@@ -1369,12 +1395,43 @@ function layeredLayout(
       points,
       anchor: points[0] ?? { x: 0, y: 0 },
     };
+    if (pairedWith.has(edge.id)) laidOut.own = halfRoute(points);
     const box = edge.stub ? undefined : labelBox(edge.label);
-    const centre = box && labelOnRoute(points, box, route.level.routes.get(edge.id)?.label);
+    const centre =
+      box &&
+      (laidOut.own
+        ? labelOnRoute(laidOut.own, box, undefined)
+        : labelOnRoute(points, box, route.level.routes.get(edge.id)?.label));
     if (box && centre) {
       laidOut.label = { ...box, x: centre.x - box.width / 2, y: centre.y - box.height / 2 };
     }
     (holder ? holder.edges : canvasEdges).push(laidOut);
+    leads.set(edge.id, { laidOut, holder });
+  }
+  for (const edge of model.edges) {
+    const lead = twinOf.get(edge.id);
+    const drawn = lead && leads.get(lead.id);
+    if (!drawn) continue;
+    const points = [...drawn.laidOut.points].reverse();
+    const own = halfRoute(points);
+    const twin: LayoutEdge = {
+      id: edge.id,
+      stub: false,
+      resolution: edge.resolution,
+      kind: edge.kind,
+      title: edge.label,
+      ...(edge.via ? { via: edge.via } : {}),
+      from: edge.from,
+      to: edge.to,
+      counted: edge.counted,
+      points,
+      own,
+      anchor: own[0] ?? { x: 0, y: 0 },
+    };
+    const box = labelBox(edge.label);
+    const centre = labelOnRoute(own, box, undefined);
+    if (centre) twin.label = { ...box, x: centre.x - box.width / 2, y: centre.y - box.height / 2 };
+    (drawn.holder ? drawn.holder.edges : canvasEdges).push(twin);
   }
   if (facingAway) {
     // A port on the side of its container away from the edge's other end: the next pass turns it.
@@ -1492,8 +1549,8 @@ const overlap = (a: Box, b: Box, gap: number) =>
  * Labels of one level that would overlap ("calls ×5" over "calls ×15", where two edges share a gap) are
  * moved apart: the later one slides along its own line, as far as that line goes, else steps off it
  * across the line. Each label stays on or beside its edge. A second pass on levels of at most 150 edges
- * tries positions along the owner route when another route crosses a label. If none clears the other
- * routes, labels and boxes inside the level, the first pass's position stays.
+ * tries positions along the owner route when another route crosses a label or a box covers part of it. If
+ * none clears the other routes, labels and boxes inside the level, the first pass's position stays.
  */
 export function spreadLabels(
   edges: readonly (Pick<LayoutEdge, "points" | "label"> & { stub?: boolean })[],
@@ -1550,7 +1607,24 @@ export function spreadLabels(
     if (!label) continue;
     // (a stub's dashed line is drawn only for what a reader looks at: a label need not clear it)
     const foreign = edges.filter((other) => other !== edge && !other.stub);
-    if (!foreign.some((other) => crossesBox(other.points, label, 0))) continue;
+    // a label under a box, crossed by another line, or pushed off its own line (by another label) moves
+    const reach = LABEL_BESIDE_GAP + 2;
+    const atItsLine = crossesBox(
+      edge.points,
+      {
+        x: label.x - reach,
+        y: label.y - reach,
+        width: label.width + 2 * reach,
+        height: label.height + 2 * reach,
+      },
+      0,
+    );
+    if (
+      atItsLine &&
+      !boxes.some((box) => overlap(label, box, 0)) &&
+      !foreign.some((other) => crossesBox(other.points, label, 0))
+    )
+      continue;
     const centre = { x: label.x + label.width / 2, y: label.y + label.height / 2 };
     const otherLabels = placed.filter((other) => other !== label);
     const withinLevel = (candidate: Box) =>
@@ -1598,19 +1672,95 @@ export function spreadLabels(
       ...spots.sort((a, b) => cost(a) - cost(b)).map((spot) => spot.point),
       ...anywhere.sort((a, b) => distance(a) - distance(b)),
     ];
-    for (const point of positions) {
-      const candidate = {
-        x: point.x - label.width / 2,
-        y: point.y - label.height / 2,
-        width: label.width,
-        height: label.height,
-      };
-      if (!clear(candidate)) continue;
-      label.x = candidate.x;
-      label.y = candidate.y;
+    // When no place clears everything, the first that is clear of boxes and other labels (a line through a label
+    // reads better than a label under a box, or away from its own line), then the first that is clear of boxes.
+    const tests = [
+      clear,
+      (candidate: Box) =>
+        withinLevel(candidate) &&
+        !otherLabels.some((other) => overlap(candidate, other, LABEL_GAP)),
+      withinLevel,
+    ];
+    const stillBad =
+      !atItsLine ||
+      boxes.some((box) => overlap(label, box, 0)) ||
+      otherLabels.some((other) => overlap(label, other, LABEL_GAP));
+    for (const [n, test] of tests.entries()) {
+      // (a relaxed test only replaces a place that is itself under a box or another label)
+      if (n > 0 && !stillBad) break;
+      const point = positions.find((p) =>
+        test({
+          x: p.x - label.width / 2,
+          y: p.y - label.height / 2,
+          width: label.width,
+          height: label.height,
+        }),
+      );
+      if (!point) continue;
+      label.x = point.x - label.width / 2;
+      label.y = point.y - label.height / 2;
       break;
     }
   }
+}
+
+/** The second half of a route, by length: from its middle to its end (the head). */
+export function halfRoute(points: readonly Point[]): Point[] {
+  const total = routeLength(points);
+  let left = total / 2;
+  for (let i = 1; i < points.length; i++) {
+    const a = points[i - 1]!,
+      b = points[i]!;
+    const length = Math.abs(b.x - a.x) + Math.abs(b.y - a.y);
+    if (length >= left && length > 0) {
+      const t = left / length;
+      return [{ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t }, ...points.slice(i)];
+    }
+    left -= length;
+  }
+  return [...points];
+}
+
+/** A jog no longer than this, px, between a run and a run back the other way is a detour (`dropDetours`). */
+const DETOUR_JOG = 16;
+
+/**
+ * A right-angled route without detours: where it runs past the place it next turns to, steps a few px across
+ * (a jog between two tracks, where the parts of an edge routed at two levels meet) and runs back, it turns at
+ * that place instead. What is left lies inside the detour's own area, so it crosses nothing new.
+ */
+export function dropDetours(points: readonly Point[]): Point[] {
+  let route = [...points];
+  for (let changed = true; changed;) {
+    changed = false;
+    for (let i = 0; i + 3 < route.length; i++) {
+      const [a, b, c, d] = [route[i]!, route[i + 1]!, route[i + 2]!, route[i + 3]!];
+      const along = Math.abs(a.y - b.y) < 0.5 ? "x" : Math.abs(a.x - b.x) < 0.5 ? "y" : undefined;
+      if (!along) continue;
+      const across = along === "x" ? "y" : "x";
+      const jog = Math.abs(b[across] - c[across]);
+      if (Math.abs(b[along] - c[along]) > 0.5 || jog < 0.5 || jog > DETOUR_JOG) continue;
+      if (Math.abs(c[across] - d[across]) > 0.5) continue;
+      const out = Math.sign(b[along] - a[along]);
+      // back the other way, to a place between where the run started and where it turned
+      if (out === 0 || Math.sign(d[along] - c[along]) !== -out) continue;
+      if ((d[along] - a[along]) * out <= 0) continue;
+      const turn = { ...a, [along]: d[along] } as Point;
+      route = [...route.slice(0, i + 1), turn, ...route.slice(i + 3)];
+      changed = true;
+      break;
+    }
+  }
+  // (a turn that now lies on a straight line is no turn)
+  return route.filter((p, i) => {
+    const before = route[i - 1];
+    const after = route[i + 1];
+    if (!before || !after) return true;
+    return !(
+      (Math.abs(before.x - p.x) < 0.5 && Math.abs(p.x - after.x) < 0.5) ||
+      (Math.abs(before.y - p.y) < 0.5 && Math.abs(p.y - after.y) < 0.5)
+    );
+  });
 }
 
 /** Routes laid end to end: where one ends the next starts, so the shared point is kept once. */
@@ -1668,8 +1818,9 @@ function placeAnchors(
       2 * EDGE_BOUNDS_PAD,
   };
   const place = (edges: LayoutEdge[], origin: Point, obstacles: Box[]) => {
+    // (one of a two-way pair is picked on its own half of the shared line)
     const routes = edges.map((edge) =>
-      edge.points.map((p) => ({ x: p.x + origin.x, y: p.y + origin.y })),
+      (edge.own ?? edge.points).map((p) => ({ x: p.x + origin.x, y: p.y + origin.y })),
     );
     // the labels of the level are drawn above all of its lines (GraphView EdgeLabels)
     const labels = edges.flatMap((edge) =>

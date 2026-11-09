@@ -106,6 +106,26 @@ async function headerControls(page: Page): Promise<string[]> {
   );
 }
 
+test("a phone reader keeps the theme button in the header, and the Map leads to Explore", async ({
+  page,
+}) => {
+  const size = { width: 390, height: 844 };
+  await openVariant(page, () => undefined, "", size);
+  const header = page.locator(".header");
+  await expect(header.locator(".theme-btn")).toBeVisible();
+  for (const control of await header.locator("button:visible, select:visible").all()) {
+    const at = (await control.boundingBox())!;
+    expect(at.x).toBeGreaterThanOrEqual(0);
+    expect(at.x + at.width).toBeLessThanOrEqual(size.width);
+  }
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+    size.width,
+  );
+  await page.getByTestId("perspective-map").click();
+  await page.getByTestId("explore-link").click();
+  await expect.poll(() => stateOf(page).then((s) => s.perspective)).toBe("explore");
+});
+
 test.describe("one header in every mode", () => {
   for (const size of [
     { width: 1280, height: 720 },
@@ -228,10 +248,11 @@ test.describe("Present: a flow step", () => {
       expect(await smallestDiagramText(page)).toBeGreaterThanOrEqual(15.9);
       await expect.poll(() => selectedInPane(page)).toBe(true);
       // "Fit all", when it is offered, shows every stage
-      const badge = page.getByTestId("pz-badge");
-      if ((await badge.count()) > 0 && (await badge.textContent()) === "Fit all") {
-        // it stays off the picture until the mouse moves
-        const opacity = () => badge.evaluate((el) => getComputedStyle(el).opacity);
+      const badge = page.getByTestId("pz-fit");
+      if ((await badge.getAttribute("class"))?.includes("is-cue")) {
+        // it stays off the picture until the mouse moves (with the rest of the zoom buttons)
+        const opacity = () =>
+          page.locator(".pz-toolbar").evaluate((el) => getComputedStyle(el).opacity);
         expect(await opacity()).toBe("0");
         await page.mouse.move(size.width / 4, size.height / 3);
         await expect.poll(opacity).toBe("1");

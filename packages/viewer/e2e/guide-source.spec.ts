@@ -156,3 +156,19 @@ test("Read excerpts work in an offline bundle and fit a narrow screen", async ({
   await page.keyboard.press("Tab");
   await expect(excerpt.getByRole("button", { name: "Show code" })).toBeFocused();
 });
+
+// A tour picture fills its frame: the canvas' flex rule (`.pz-svg { height: auto }`) once left every still
+// picture at the browser's default 150px, cutting the diagram under its own frame.
+test("each tour picture is as tall as its frame", async ({ page }) => {
+  for (const bundle of [TS_BUNDLE, CHANGE_BUNDLE]) {
+    await page.goto(bundle.href);
+    const frame = page.locator(".snapshot-frame").first();
+    await expect(frame.locator("svg")).toBeVisible();
+    const [frameHeight, svgHeight] = await frame.evaluate((el) => [
+      el.getBoundingClientRect().height,
+      el.querySelector("svg")!.getBoundingClientRect().height,
+    ]);
+    expect(frameHeight).toBeGreaterThan(150);
+    expect(Math.abs(svgHeight - frameHeight)).toBeLessThan(2);
+  }
+});

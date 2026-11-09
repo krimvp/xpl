@@ -21,7 +21,7 @@ export function DiagramPane() {
     return (
       <div className="diagram">
         <div className="diagram-message">
-          This guide has no diagrams yet. Ask Claude to explain something.
+          This guide has no diagrams yet. Ask your agent to explain something.
         </div>
       </div>
     );

@@ -28,6 +28,14 @@ const NAVIGATION = [
   "snapshot",
   "source-hash",
 ];
+/** The kind of a hit, in words (steps get their own label). */
+const HIT_WORDS: Record<string, string> = {
+  source: "Code",
+  symbol: "Name in the code",
+  concept: "Concept",
+  tour: "Tour",
+  guide: "Guide",
+};
 const rangeText = (range: Range) =>
   `${range.startLine}${range.startCol === undefined ? "" : `:${range.startCol}`}-${range.endLine}${range.endCol === undefined ? "" : `:${range.endCol}`}`;
 
@@ -380,16 +388,30 @@ export function SearchLibrary({ onClose }: { onClose: () => void }) {
                           ? "tour" in hit
                             ? "Tour step"
                             : "Flow step"
-                          : hit.kind;
+                          : (HIT_WORDS[hit.kind] ?? hit.kind);
+                      // Where the hit is, in a reader's words: the file and its lines (the snapshot's commit
+                      // is in the tooltip), or the guide and its tour.
+                      const lines =
+                        "file" in hit
+                          ? hit.range.startLine === hit.range.endLine
+                            ? `line ${hit.range.startLine}`
+                            : `lines ${hit.range.startLine}–${hit.range.endLine}`
+                          : "";
                       const context =
                         "file" in hit
-                          ? `${snapshot?.explainer.title || guide} · ${hit.commit} · ${hit.file}:${rangeText(hit.range)}`
+                          ? `${snapshot?.explainer.title || guide} · ${hit.file}, ${lines}`
                           : `${embedded.find((g) => g.guideId === guide)?.explainer.title || guide}${"tour" in hit ? ` · ${hit.tour}` : ""}${"step" in hit ? ` · ${hit.step}` : ""}`;
                       const content = (
                         <>
                           <span className="search-kind">{label}</span>
                           <span className="search-result-text">{hit.text}</span>
-                          <small>
+                          <small
+                            title={
+                              "file" in hit
+                                ? `Code as of ${hit.commit}, ${hit.file}:${rangeText(hit.range)}`
+                                : undefined
+                            }
+                          >
                             {context}
                             {unavailable ? " · source not supplied" : ""}
                           </small>
@@ -419,7 +441,7 @@ export function SearchLibrary({ onClose }: { onClose: () => void }) {
               ))}
           </div>
           <aside className="search-guides" aria-label="Guide library">
-            <h3>{catalog ? "Repository guides" : "Contained guides"}</h3>
+            <h3>{catalog ? "Repository guides" : "Guides in this page"}</h3>
             {state.readOnlyGuide && /^https?:$/.test(location.protocol) && (
               <a href="./">Back to library</a>
             )}

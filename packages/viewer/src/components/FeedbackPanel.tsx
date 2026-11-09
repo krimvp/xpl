@@ -156,10 +156,10 @@ export function FeedbackPanel({ onClose }: { onClose: () => void }) {
         </button>
       </header>
       <p className="tp-intro">
-        Ask a question: Claude answers with links to the code. An answer never changes the guide.
-        &ldquo;Save for later&rdquo; keeps your request and starts nothing. Without xpl running,
-        export the file, run <code>xpl feedback &lt;guide&gt; --import feedback.json</code>, then{" "}
-        <code>/code-explainer feedback</code> in Claude Code.
+        Ask a question: your agent answers with links to the code. An answer never changes the
+        guide. &ldquo;Save for later&rdquo; keeps your request and starts nothing. Without xpl
+        running, export the file, run <code>xpl feedback &lt;guide&gt; --import feedback.json</code>
+        , then <code>/code-explainer feedback</code> in your agent.
       </p>
       <p>
         {id ? (
@@ -167,7 +167,7 @@ export function FeedbackPanel({ onClose }: { onClose: () => void }) {
             Selected: <strong>{state.model.label(id)}</strong>
           </>
         ) : (
-          "Pick a box, a step or lines of code to attach your note to."
+          "Click a box, a step or lines of code to attach your note to."
         )}
         {state.cursor && (
           <>
@@ -213,7 +213,7 @@ export function FeedbackPanel({ onClose }: { onClose: () => void }) {
                 const reason = await store.askQuestion(id, note);
                 setMessage(
                   reason
-                    ? `Saved for later. ${reason} Export the feedback JSON, run xpl feedback <guide> --import feedback.json, then /code-explainer feedback in Claude Code.`
+                    ? `Saved for later. ${reason} Export the feedback JSON, run xpl feedback <guide> --import feedback.json, then /code-explainer feedback in your agent.`
                     : "Question sent. Its answer shows here when it is ready.",
                 );
                 setNote("");
@@ -348,7 +348,7 @@ export function FeedbackPanel({ onClose }: { onClose: () => void }) {
                           setMessage("Question submitted.");
                         } catch (error) {
                           setMessage(
-                            `Question remains pending feedback. ${messageOf(error)} Run /code-explainer feedback for the next explicit pass; export JSON to carry this question offline.`,
+                            `Not sent: ${messageOf(error)} The question is saved. Run /code-explainer feedback in your agent to answer it, or export the JSON to keep it.`,
                           );
                         }
                       })

@@ -18,7 +18,7 @@ export const newCommand: CommandSpec = {
   usage: "xpl new <name> [--title <title>] [--repo <name>] [--url <url>]",
   summary: "Create an empty guide, .explainer/<name>.explainer.json, bound to the index",
   details: [
-    "Creates an empty explainer (no nodes, edges, concepts, views or tours) bound to the selected index.",
+    "Creates an empty guide (no nodes, edges, concepts, views or tours) bound to the selected index.",
     "Refuses to overwrite an existing file. Fill it with `xpl apply <name> patch.json`.",
     "The repository name (the label of the repo node) is --repo, else detected: package.json `name`, the last",
     "element of the go.mod module, pyproject.toml `[project] name`, the git remote's base name, the directory",

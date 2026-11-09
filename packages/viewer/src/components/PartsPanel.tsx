@@ -9,7 +9,7 @@ import type { DerivedGraph, GraphView, SequenceView } from "@xpl/core";
 import { viewReverseIndex } from "../derive.js";
 import { useStore, useViewerState } from "../hooks.js";
 import { renderInline } from "../markdown.js";
-import { mapParts, stepParts } from "../parts.js";
+import { linkWords, mapParts, stepParts } from "../parts.js";
 
 export interface PartsPanelProps {
   /** The map on screen (with its derived graph), or the flow or sequence on screen. */
@@ -42,6 +42,17 @@ export function PartsPanel({ view, graph, matches }: PartsPanelProps) {
   );
   const row = (id: string) => `parts-row${lit.has(id) ? " is-match" : ""}`;
   const pick = (id: string) => store.click(id);
+  // A row under the pointer (or the keyboard) lights its element on the diagram, as the box itself would.
+  const light = (id: string, on: boolean) => {
+    for (const el of document.querySelectorAll(`[data-element-id="${CSS.escape(id)}"]`))
+      el.classList.toggle("is-hover", on);
+  };
+  const hover = (id: string) => ({
+    onPointerEnter: () => light(id, true),
+    onPointerLeave: () => light(id, false),
+    onFocus: () => light(id, true),
+    onBlur: () => light(id, false),
+  });
   const summary = (text: string | undefined) =>
     text ? (
       <span className="parts-summary" dangerouslySetInnerHTML={{ __html: renderInline(text) }} />
@@ -49,9 +60,9 @@ export function PartsPanel({ view, graph, matches }: PartsPanelProps) {
 
   return (
     <section className="parts-panel" data-testid="parts-panel" aria-labelledby="parts-title">
-      <p className="eyebrow" id="parts-title">
-        {map ? "On this map" : view.type === "flow" ? "Steps of this flow" : "Steps, in order"}
-      </p>
+      <h3 className="eyebrow parts-heading" id="parts-title">
+        {map ? "On this map" : "Steps, in order"}
+      </h3>
       <p className="parts-hint">
         {map ? "Pick a box or an arrow to see its code." : "Pick a step to see its code."}
       </p>
@@ -68,16 +79,14 @@ export function PartsPanel({ view, graph, matches }: PartsPanelProps) {
                   className={row(box.id)}
                   data-part-id={box.id}
                   onClick={() => pick(box.id)}
+                  {...hover(box.id)}
                 >
                   <span className="parts-name">{box.label}</span>
                   {box.kind && <span className="parts-kind">{box.kind}</span>}
                   {summary(box.summary)}
-                  {(box.uses > 0 || box.usedBy > 0) && (
+                  {(box.uses.length > 0 || box.usedBy.length > 0) && (
                     <span className="parts-links">
-                      {[
-                        box.uses > 0 && `uses ${box.uses}`,
-                        box.usedBy > 0 && `used by ${box.usedBy}`,
-                      ]
+                      {[linkWords("uses", box.uses), linkWords("used by", box.usedBy)]
                         .filter(Boolean)
                         .join(" · ")}
                     </span>
@@ -88,8 +97,8 @@ export function PartsPanel({ view, graph, matches }: PartsPanelProps) {
           </ul>
           {map.arrows.length > 0 && (
             <>
-              <h3 className="parts-heading">Arrows with words</h3>
-              <ul className="parts-list" aria-label="Arrows with words">
+              <h3 className="eyebrow parts-heading">Named arrows</h3>
+              <ul className="parts-list" aria-label="Named arrows">
                 {map.arrows.map((arrow) => (
                   <li key={arrow.id}>
                     <button
@@ -97,6 +106,7 @@ export function PartsPanel({ view, graph, matches }: PartsPanelProps) {
                       className={row(arrow.id)}
                       data-part-id={arrow.id}
                       onClick={() => pick(arrow.id)}
+                      {...hover(arrow.id)}
                     >
                       <span className="parts-ends">
                         {arrow.from} → {arrow.to}
@@ -128,6 +138,7 @@ export function PartsPanel({ view, graph, matches }: PartsPanelProps) {
                 className={row(step.id)}
                 data-part-id={step.id}
                 onClick={() => pick(step.id)}
+                {...hover(step.id)}
               >
                 <span className="parts-number" aria-hidden="true">
                   {step.number}

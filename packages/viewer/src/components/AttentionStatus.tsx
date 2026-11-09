@@ -96,7 +96,7 @@ export function AttentionStatus() {
                         ? "Moved: locations followed unchanged code. Keep the prose."
                         : element.status === "drifted"
                           ? "Drifted: inspect the changed code and revise its explanation."
-                          : "Missing: restore the code or explicitly replace/remove its evidence."}
+                          : "Missing: restore the code, or replace or remove its code link."}
                     </p>
                     {g.path === connection.attachment!.guide && (
                       <button className="btn" onClick={() => store.select([element.id])}>

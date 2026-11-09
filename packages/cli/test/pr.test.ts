@@ -174,7 +174,7 @@ async function creation() {
       {
         id: "concept:removed-source",
         label: "Removed export",
-        summary: "The gone export is deleted from head.",
+        summary: "The change deletes the gone export from head.",
         anchors: [
           { file: "gone.ts", at: "base", find: "export const gone = 1;", role: "definition" },
         ],
@@ -222,7 +222,7 @@ async function creation() {
             id: "renamed",
             view: "view:recorded-change",
             focus: ["file:renamed.ts"],
-            note: "### The function moves without changing its body\nThe rename preserves the returned string. Compare old.ts with renamed.ts.",
+            note: "### The function moves without changing its body\nThe rename keeps the returned string. Compare old.ts with renamed.ts.",
             code: [
               {
                 file: "old.ts",

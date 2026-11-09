@@ -53,7 +53,9 @@ export async function openBundle(
  * part of it out of sight (PanZoom, "Fit all"): a spec that goes through every element fits it first.
  */
 export async function fitAll(page: Page): Promise<void> {
-  await page.getByRole("button", { name: "Fit to view" }).click();
+  const fit = page.getByTestId("pz-fit");
+  // (all of a big diagram in view already: the button offers "Readable size" instead)
+  if ((await fit.textContent())?.startsWith("Fit all")) await fit.click();
 }
 
 export const focusOf = (page: Page) => page.evaluate(() => window.__xpl!.focus());

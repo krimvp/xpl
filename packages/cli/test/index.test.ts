@@ -18,7 +18,7 @@ describe("xpl index", () => {
   it("qualifies text's absent references in help because an artifact can provide them", async () => {
     const help = await invoke(["index", "--help"]);
     expect(help.code).toBe(0);
-    expect(help.out).toContain(
+    expect(help.out.replace(/\s+/g, " ")).toContain(
       "`refs: none` (Ruby, PHP, yaml, json, toml, text without an artifact provider)",
     );
   });
@@ -40,9 +40,19 @@ describe("xpl index", () => {
     expect(out).toMatch(/yaml\s+1 file\s+16 symbols\s+refs: none/);
     expect(index.languages.typescript.refs).toBe("heuristic");
     expect(out).toContain("Analysis coverage: 12 files; some analysis is limited or unavailable.");
-    expect(out).toContain(
-      "text (text): named symbols, full declaration ranges, nesting, calls, imports, inheritance, implementations, type references, reads, writes unsupported (0/1 files analyzed).",
+    // one line per language, in name order, the provider only when it is not the language
+    const coverage = out
+      .slice(out.indexOf("Analysis coverage:"))
+      .split("\n\n")[0]!
+      .split("\n")
+      .slice(1);
+    expect(coverage[0]).toBe("all 12 files: file anchors supported (12/12 files analyzed).");
+    expect(coverage).toContain(
+      "text: named symbols, full declaration ranges, nesting, calls, imports, inheritance, implementations, type references, reads, writes unsupported (0/1 files analyzed). Only file anchors are available; named symbols and relationships are unavailable.",
     );
+    const order = coverage.slice(1).map((line) => line.split(":")[0]);
+    expect(order).toEqual([...order].sort());
+    expect(out).not.toContain("typescript (typescript)");
     expect(index.symbols.some((s: any) => s.id === "src/runner.ts#Runner.dispatch")).toBe(true);
   });
 
@@ -112,7 +122,7 @@ describe("xpl index", () => {
     expect(clean.json.extraction).toMatchObject({ enabled: false, hits: 0, misses: 11 });
     const human = await xpl(dir, "index", "--precise", "off");
     expect(human.out).toMatch(
-      /Extraction \(cache enabled\): 11 hits, 0 misses, [\d.]+ ms wall; file-local tree-sitter and tags only\./,
+      /Extraction \(cache enabled\): 11 hits, 0 misses of the 11 files with a grammar, [\d.]+ ms wall; file-local tree-sitter and tags only\./,
     );
     expect(human.out).toContain("semantic providers 0 runs");
   });
@@ -168,9 +178,19 @@ describe("xpl index", () => {
     writeFile(dir, "src/extra.ts", "export const extra = 1;\n");
     const { out } = await xpl(dir, "index", "--precise", "off");
     expect(out).toContain("hint: 1 explainer (demo) is bound to another index");
-    expect(out).toContain("xpl resolve <name> --write");
-    const json = (await xplJson(dir, "index", "--precise", "off")).json;
+    expect(out).toContain("run `xpl resolve demo --write` to move it");
+    const json = (
+      await xplJson<{ explainersToResolve: string[]; path: string }>(
+        dir,
+        "index",
+        "--precise",
+        "off",
+      )
+    ).json;
     expect(json.explainersToResolve).toEqual(["demo"]);
+    // and validate names the same command, with the guide's name, so it runs as printed
+    const validated = await xpl(dir, "validate", "demo", "--lenient", "--index", json.path);
+    expect(validated.out).toContain("run `xpl resolve demo --write` to re-resolve the anchors");
   });
 });
 

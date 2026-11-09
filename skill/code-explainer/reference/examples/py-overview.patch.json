@@ -549,6 +549,31 @@
           "editor": {
             "primary": "jobrunner/runner.py"
           }
+        },
+        {
+          "id": "t8",
+          "view": "view:overview",
+          "focus": ["grp:scheduling", "grp:events"],
+          "note": "### Where to go next\n\nThe second tour, \"How successful attempts reach metrics\", follows a finished job from the workers to the counters. For failures, ask how a failed job gets retried. That answer starts in Scheduling, where the runner chooses a retry or the dead-letter list.",
+          "code": [
+            {
+              "file": "jobrunner/runner.py",
+              "symbol": "Runner.dispatch",
+              "span": {
+                "from": 25,
+                "to": 33
+              },
+              "role": "definition"
+            },
+            {
+              "file": "jobrunner/metrics.py",
+              "symbol": "on_job_completed",
+              "role": "definition"
+            }
+          ],
+          "editor": {
+            "primary": "jobrunner/runner.py"
+          }
         }
       ]
     },

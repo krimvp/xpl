@@ -1,9 +1,9 @@
 # Languages and precision
 
 xpl indexes TypeScript, JavaScript, Python, Go and Java with language packs. YAML, JSON and TOML keys are
-symbols, so configuration entries can be anchored just like functions. Other text files receive file anchors.
-Rust has experimental declaration tags and bounded heuristic bare and receiver calls. Ruby and PHP have named
-declaration tags without relationship analysis.
+symbols, so a code link can point at a configuration entry as it points at a function. A code link to any other
+text file points at the whole file. Rust has experimental declarations and some heuristic calls inside a crate.
+Ruby and PHP have named declarations and no references.
 
 Tree-sitter WASM extracts symbols without installing language toolchains. References (calls, imports,
 inheritance, type uses and reads) come from xpl's scope-aware heuristic resolver or, when available, a
@@ -19,8 +19,8 @@ local or example one is left out. These links are always heuristic: a proxy or a
 same path. Maps show them as `requests` edges.
 
 `xpl index` reports analysis coverage separately for file anchors, symbols, declaration ranges, nesting and
-each relationship type. An empty relationship set does not prove full coverage. Saved indexes and exports
-retain analyzed files, limits and failures; older indexes load with coverage marked unknown.
+each kind of reference. An empty list of references does not prove full coverage. Saved indexes and exports
+keep the analysed files, the limits and the failures; an older index loads with its coverage marked unknown.
 
 ## Precise reference tools and artifacts
 
@@ -51,10 +51,11 @@ the heuristic may miss.
 ## Supplied SCIP artifacts and experimental languages
 
 Import generated SCIP data with `xpl index --scip <artifact|manifest.json>`. Documents need embedded source or
-a manifest tied to pre-generation source hashes. Missing ranges, parents and call classification remain
-explicit limits. Partial artifacts preserve syntax symbols; range-less artifacts cannot add declarations.
+a manifest tied to the hashes of the source before generation. Missing ranges, parents and call kinds are
+reported as limits. A partial artifact keeps the tree-sitter symbols; an artifact without ranges cannot add
+declarations.
 Without checked targets, a standalone import reports `refs: none` and fails under `--precise require`. See the
-[CLI reference](../reference/commands.md) for artifact requirements.
+[CLI reference](../reference/index.md) for artifact requirements.
 
 Rust resolves unshadowed bare root-function calls in one file. It also resolves receiver calls when a field,
 local type or one-method return type identifies a receiver and one target method. An explicit root-level `use

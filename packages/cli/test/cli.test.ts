@@ -76,11 +76,35 @@ describe("xpl cli", () => {
       }
     }
     for (const page of pages) {
-      for (const line of page.split("\n")) {
+      const lines = page.split("\n");
+      for (const [i, line] of lines.entries()) {
         expect.soft(line.length, line).toBeLessThanOrEqual(110);
+        // a paragraph wraps as a whole: no short line that stops inside a sentence before more of it
+        const next = lines[i + 1] ?? "";
+        const indent = (text: string) => /^ */.exec(text)![0].length;
+        const prose = (text: string) =>
+          /^ *[a-z(`]/.test(text) &&
+          !/^ *\S(?:\S| (?! ))* {2,}/.test(text) &&
+          !/^ *(xpl|\$) /.test(text);
+        if (
+          line.length < 70 &&
+          /[a-z,]$/.test(line) &&
+          prose(line) &&
+          prose(next) &&
+          indent(next) === indent(line)
+        )
+          expect.soft(`${line}\n${next}`, "ragged help paragraph").toBe("");
       }
       expect.soft(page).not.toMatch(/off\|auto\|require/);
     }
+  });
+
+  it("`xpl draft <kind> --help` shows the row of that kind, not the other kinds", async () => {
+    const help = (await invoke(["draft", "path", "--help"])).out;
+    expect(help).toContain("  path <explainer> <entry>");
+    expect(help).not.toMatch(/^ {2}(?:change|repo|map|class|states) </m);
+    expect(help).toContain("Exit codes:");
+    expect((await invoke(["draft", "--help"])).out).toMatch(/^ {2}states </m);
   });
 
   it("usage errors: missing argument, unknown option, bad value, extra argument", async () => {

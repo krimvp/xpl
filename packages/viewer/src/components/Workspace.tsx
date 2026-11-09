@@ -66,6 +66,9 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
     state.perspective === "guide" && reading
       ? tour?.steps.find((s) => s.id === reading)
       : undefined;
+  // The Tour scrolled on from the step last applied: the right column follows the step on screen.
+  const scrolledAway =
+    appliedStep && readingStep && readingStep.id !== appliedStep.id ? readingStep : undefined;
   // The topic panel follows the diagram on screen: a box picked on the Map that the Flow does not show is
   // not this Flow's topic (the panel says so, and shows the Flow's own title).
   const onScreen = useMemo(() => {
@@ -94,7 +97,12 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
   // panel names the flow on screen, not the box picked before the tab changed.
   const wholeFlow =
     !!active && state.perspective === "flow" && !!flow && aroundFlow(active, flow, state.model);
-  const diagramTitle = state.perspective === "map" ? map.view.title : flow?.title;
+  const diagramTitle =
+    state.perspective === "map"
+      ? map.view.title
+      : state.perspective === "flow"
+        ? flow?.title
+        : undefined;
   // A flow whose every box is done by one part (the steps of one function) names it here, once.
   const flowOwner = useMemo(
     () => (flow ? sharedActor(processFlow(flow)) : undefined),
@@ -191,7 +199,7 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
               ? stepTitle(readingStep, state.model)
               : appliedStep
                 ? stepTitle(appliedStep, state.model)
-                : (info?.title ?? diagramTitle ?? tour?.title ?? "Overview")}
+                : (info?.title ?? diagramTitle ?? (code ? "Code" : (tour?.title ?? "Overview")))}
           </span>
         </nav>
         {/* A double-click that changed the tab says so (always mounted, so a screen reader hears it). */}
@@ -295,6 +303,16 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
                           )}
                         </select>
                       )}
+                      {/* The way to Explore from reading: beside the diagrams, not under Edit. */}
+                      <button
+                        type="button"
+                        className="link explore-link"
+                        data-testid="explore-link"
+                        title="Every diagram, with filters and the details of each box"
+                        onClick={() => store.setMode("explore")}
+                      >
+                        Explore all diagrams
+                      </button>
                     </div>
                   </div>
                   {state.perspective === "map" ? (
@@ -340,7 +358,7 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
                           {stepTitle(step, state.model)}
                         </button>
                       ))}
-                      {!tour && <p>Pick a box on the map to see its code.</p>}
+                      {!tour && <p>Click a box on the map to see its code.</p>}
                     </div>
                   )}
                 </>
@@ -456,8 +474,12 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
             <PartsPanel view={map.view} graph={map.graph} matches={mapMatches} />
           )}
           {!active && state.perspective === "flow" && flow && <PartsPanel view={flow} />}
-          <RelatedFiles onOpen={() => setSourceOpen(true)} />
-          {active && (
+          <RelatedFiles
+            onOpen={() => setSourceOpen(true)}
+            reading={tour && scrolledAway ? { tourId: tour.id, step: scrolledAway } : undefined}
+          />
+          {/* scrolled away from the applied step: its code links would no longer match the step on screen */}
+          {active && !scrolledAway && (
             <details className="workspace-inspector">
               <summary>Where this is in the code</summary>
               <Details

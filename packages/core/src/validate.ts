@@ -271,7 +271,7 @@ class Validator {
     } else if (ex.index.commit !== this.index.commit) {
       this.warn(
         "index.commit",
-        `explainer was last resolved against index ${ex.index.commit}, but the index given is ${this.index.commit}; run \`xpl resolve --write\` to re-resolve the anchors`,
+        `explainer was last resolved against index ${ex.index.commit}, but the index given is ${this.index.commit}; run \`xpl resolve <explainer> --write\` to re-resolve the anchors`,
         undefined,
         "commit",
       );
@@ -324,7 +324,7 @@ class Validator {
       this.warn(
         "change.head",
         `the change ends at ${shortSha(change.head)}, but the explainer's index was built from ${commit}: ` +
-          `check out ${shortSha(change.head)}, run \`xpl index\` and \`xpl resolve <name> --write\`, ` +
+          `check out ${shortSha(change.head)}, run \`xpl index\` and \`xpl resolve <explainer> --write\`, ` +
           `or write the change again with \`xpl change <name> <base>..${commit}\``,
         undefined,
         "change",

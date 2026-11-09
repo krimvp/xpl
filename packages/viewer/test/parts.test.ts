@@ -1,6 +1,6 @@
 import { deriveGraph, ExplainerModel, type GraphView, type SequenceView } from "@xpl/core";
 import { describe, expect, it } from "vitest";
-import { firstSentence, mapParts, stepParts } from "../src/parts.js";
+import { firstSentence, linkWords, mapParts, stepParts } from "../src/parts.js";
 import { makeBundle } from "./world.js";
 
 function world() {
@@ -19,8 +19,14 @@ describe("the parts of a diagram in words", () => {
       ["Core", 0],
       ["c.yaml", 0],
     ]);
-    expect(parts.boxes[0]).toMatchObject({ summary: "A and B together.", uses: 1, usedBy: 0 });
-    expect(parts.boxes[1]).toMatchObject({ kind: "file", uses: 0, usedBy: 1 });
+    // the boxes it uses and the ones that use it, by name; a file's kind is left to its badge
+    expect(parts.boxes[0]).toMatchObject({
+      summary: "A and B together.",
+      uses: ["c.yaml"],
+      usedBy: [],
+    });
+    expect(parts.boxes[1]).toMatchObject({ uses: [], usedBy: ["Core"] });
+    expect(parts.boxes[1]!.kind).toBeUndefined();
     // an arrow its author named is listed by its words, between the names of its two boxes
     expect(parts.arrows).toEqual([
       expect.objectContaining({
@@ -46,6 +52,13 @@ describe("the parts of a diagram in words", () => {
       [2, "flow:2"],
     ]);
     expect(asFlow[0]!.from).toBeUndefined();
+  });
+
+  it("says a box's links by name, and counts them past two", () => {
+    expect(linkWords("uses", ["worker.ts"])).toBe("uses worker.ts");
+    expect(linkWords("used by", ["main.ts", "test"])).toBe("used by main.ts and test");
+    expect(linkWords("uses", ["a", "b", "c"])).toBe("uses 3 boxes here");
+    expect(linkWords("uses", [])).toBeUndefined();
   });
 
   it("keeps the first sentence of a summary, not a dot inside a name", () => {

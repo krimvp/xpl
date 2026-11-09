@@ -8,8 +8,15 @@ export interface LegendShows {
   outside: boolean;
   /** Links the explainer's author drew (events, configuration). */
   authored: boolean;
-  /** Links found by name only (heuristic). */
+  /** Links found by name only (heuristic): drawn dashed. */
   heuristic: boolean;
+  /** Arrows that hold references found both ways, by a language tool and by name: drawn dash-dot. */
+  mixed?: boolean;
+  /**
+   * The kinds of the arrows drawn (`calls`, `imports`, `extends`, ...), stubs left out, in a fixed order: the Key
+   * has a row for each, so a map of imports or of a class hierarchy is not keyed as calls.
+   */
+  kinds?: readonly string[];
   /** The change's New / Changed pills. */
   change: boolean;
   /** Boxes of code (no architecture role, or a service or component). Default: shown. */
@@ -41,6 +48,25 @@ export interface KeyIcon {
   role?: string | undefined;
 }
 
+/** The kinds a Key names, in the order it names them (an authored kind such as `emits` has the authored row). */
+export const KIND_ORDER = [
+  "calls",
+  "imports",
+  "extends",
+  "implements",
+  "references",
+  "reads",
+  "writes",
+  "requests",
+] as const;
+
+/** The head an arrow of a kind ends in: a class hierarchy and an import do not read as calls (GraphView). */
+export function headOf(kind: string): "filled" | "hollow" | "open" {
+  if (kind === "extends" || kind === "implements") return "hollow";
+  if (kind === "imports" || kind === "references") return "open";
+  return "filled";
+}
+
 const OUTSIDE_ROLES = new Set(["external", "person"]);
 const STORE_ROLES = new Set(["database", "cache", "queue", "storage"]);
 
@@ -61,6 +87,8 @@ export function mapKeyShows(
     outside: false,
     authored: false,
     heuristic: false,
+    mixed: false,
+    kinds: [],
     change: boxes.changed,
     code: false,
     outsideSystems: false,
@@ -74,6 +102,7 @@ export function mapKeyShows(
     found: false,
   };
   const icons = new Map<string, KeyIcon>();
+  const kinds = new Set<string>();
   const allEdges: LayoutEdge[] = [...edges];
   const visit = (list: readonly LayoutNode[]) => {
     for (const node of list) {
@@ -101,10 +130,13 @@ export function mapKeyShows(
   for (const edge of allEdges) {
     if (edge.stub) shows.outside = true;
     else if (edge.resolution === "llm" || edge.resolution === "user") shows.authored = true;
-    else shows.found = true;
-    if (edge.resolution === "heuristic" || edge.resolution === "mixed") shows.heuristic = true;
+    else if (edge.resolution !== "heuristic" && edge.resolution !== "mixed") shows.found = true;
+    if (edge.resolution === "heuristic") shows.heuristic = true;
+    if (edge.resolution === "mixed") shows.mixed = true;
+    if (!edge.stub) kinds.add(edge.kind);
     if (edge.counted && edge.label) shows.counts = true;
   }
   shows.icons = [...icons.values()];
+  shows.kinds = KIND_ORDER.filter((kind) => kinds.has(kind));
   return shows;
 }

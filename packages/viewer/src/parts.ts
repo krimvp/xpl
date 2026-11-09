@@ -22,9 +22,12 @@ export interface BoxPart {
   kind?: string;
   /** The first sentence of its summary. */
   summary?: string;
-  /** How many boxes of this map it uses, and how many use it (its drawn arrows, not the ones that leave). */
-  uses: number;
-  usedBy: number;
+  /**
+   * The boxes of this map it uses, and the ones that use it, by name (its drawn arrows; code outside the map
+   * does not count).
+   */
+  uses: string[];
+  usedBy: string[];
   /** 0 for a box on the map itself, 1 for a box drawn inside it, and so on. */
   depth: number;
 }
@@ -39,7 +42,7 @@ export interface ArrowPart {
 
 export interface MapParts {
   boxes: BoxPart[];
-  /** The arrows with words of their own (an author's label), in the order of the boxes they leave. */
+  /** The named arrows (an author's label), in the order of the boxes they leave. */
   arrows: ArrowPart[];
   /** How many places outside the map link to it (its ghost boxes). */
   outside: number;
@@ -64,6 +67,13 @@ export function firstSentence(text: string | undefined): string | undefined {
   return match ? match[0] : trimmed;
 }
 
+/** "uses worker.ts", "used by main.ts and test", "uses 3 boxes": the links of a box on its map, in words. */
+export function linkWords(verb: string, names: readonly string[]): string | undefined {
+  if (names.length === 0) return undefined;
+  if (names.length <= 2) return `${verb} ${names.join(" and ")}`;
+  return `${verb} ${names.length} boxes here`;
+}
+
 export function mapParts(graph: DerivedGraph, view: GraphView, model: ExplainerModel): MapParts {
   const order = new Map<string, number>();
   (Array.isArray(view.include) ? view.include : []).forEach((id, i) => order.set(id, i));
@@ -83,21 +93,33 @@ export function mapParts(graph: DerivedGraph, view: GraphView, model: ExplainerM
       (a, b) => rank(a.id) - rank(b.id) || a.label.localeCompare(b.label),
     );
     for (const node of list) {
+      const inside = children.get(node.id)?.length ?? 0;
+      // (a file is said by the box's own badge; a group says how many files it holds)
+      const badge = readerBadge(node.symbolKind ?? node.kind);
       const kind =
         node.role !== undefined
           ? (node.tech ?? ROLE_WORDS[node.role])
-          : readerBadge(node.symbolKind ?? node.kind);
+          : node.kind === "group"
+            ? inside > 0
+              ? `group of ${inside}`
+              : undefined
+            : badge === "file"
+              ? undefined
+              : badge;
       const summary = firstSentence(node.summary ?? model.node(node.id)?.summary);
       boxes.push({
         id: node.id,
         label: node.label,
         ...(kind ? { kind } : {}),
         ...(summary ? { summary } : {}),
-        uses: new Set(edges.filter((e) => e.from === node.id && e.to !== node.id).map((e) => e.to))
-          .size,
-        usedBy: new Set(
-          edges.filter((e) => e.to === node.id && e.from !== node.id).map((e) => e.from),
-        ).size,
+        uses: [
+          ...new Set(edges.filter((e) => e.from === node.id && e.to !== node.id).map((e) => e.to)),
+        ].map((id) => byId.get(id)!.label),
+        usedBy: [
+          ...new Set(
+            edges.filter((e) => e.to === node.id && e.from !== node.id).map((e) => e.from),
+          ),
+        ].map((id) => byId.get(id)!.label),
         depth,
       });
       walk(node.id, depth + 1);

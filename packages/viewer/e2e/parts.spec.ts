@@ -21,13 +21,19 @@ test("the map's parts in words: a row picks its box and shows its code; a caret 
   const boxes = panel.getByRole("list", { name: "Boxes" }).locator(".parts-name");
   await expect(boxes).toHaveText(["Scheduling", "worker.ts", "metrics.ts"]);
   // the author's arrow is listed by its words
-  await expect(panel.getByRole("list", { name: "Arrows with words" })).toContainText(
-    "job.completed",
+  await expect(panel.getByRole("list", { name: "Named arrows" })).toContainText("job.completed");
+
+  const row = panel.locator(`[data-part-id="${WORKER}"]`);
+  // a row says which boxes it links to, by name, and the pointer on it lights its box
+  await expect(row.locator(".parts-links")).toContainText("used by Scheduling");
+  await row.hover();
+  await expect(page.locator(`.workspace-diagram [data-element-id="${WORKER}"]`)).toHaveClass(
+    /is-hover/,
   );
+  await page.mouse.move(0, 0);
 
   // caret in worker.ts (nothing picked): its row lights up like its box
   await page.evaluate(() => window.__xpl!.setCursor("src/worker.ts", 20));
-  const row = panel.locator(`[data-part-id="${WORKER}"]`);
   await expect(row).toHaveClass(/is-match/);
   await expect(page.locator(`.workspace-diagram [data-element-id="${WORKER}"]`)).toHaveClass(
     /is-match/,

@@ -58,5 +58,5 @@ a severity, why it matters and a short fix. It finds:
 - code files over 1,000 lines;
 - code files that nothing else references (a guess from the index).
 
-It never prints a secret, only its first characters. It is a quick check, not a security audit. It exits 0
+It shows at most the first 4 characters of a secret. It is a quick check, not a security audit. It exits 0
 with or without findings, and 1 when there is no index.

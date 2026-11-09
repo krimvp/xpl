@@ -12,7 +12,28 @@ import { EXPLAINER_DIR, EXPLAINER_SUFFIX, readExplainerFile } from "../repo.js";
 
 const PRECISE = ["auto", "off", "require"] as const;
 
-/** Explainers bound to another index than `commit`: they need `xpl resolve --write`. */
+/**
+ * The coverage lines of `describeAnalysis`, easier to scan: one language per line in name order, the provider only
+ * when it is not the language itself (`typescript`, not `typescript (typescript)`), and the file-anchor line of
+ * every file first, as `all 13 files`.
+ */
+function coverageDetails(details: readonly string[], files: number): string[] {
+  const parsed = details.map((line) => {
+    const m = /^(\S+) \(([^)]+)\): (.*)$/.exec(line);
+    if (!m) return { key: "~", line };
+    const [, languages, provider, rest] = m as unknown as [string, string, string, string];
+    if (provider === "files") return { key: "", line: `all ${plural(files, "file")}: ${rest}` };
+    const head = provider === languages ? languages : `${languages} (${provider})`;
+    return { key: languages, line: `${head}: ${rest}` };
+  });
+  // stable: a language's lines keep their order (symbols, then relationships)
+  return parsed
+    .map((p, i) => ({ ...p, i }))
+    .sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : a.i - b.i))
+    .map((p) => p.line);
+}
+
+/** Explainers bound to another index than `commit`: they need `xpl resolve <explainer> --write`. */
 function explainersNeedingResolve(root: string, commit: string): string[] {
   const dir = join(root, EXPLAINER_DIR);
   let names: string[];
@@ -183,7 +204,7 @@ export const indexCommand: CommandSpec = {
     const { extraction, work } = result;
     lines.push(
       "",
-      `Extraction (${extraction.enabled ? "cache enabled" : "cache disabled"}): ${extraction.hits} hits, ${extraction.misses} misses, ${extraction.wallMs.toFixed(1)} ms wall; file-local tree-sitter and tags only.`,
+      `Extraction (${extraction.enabled ? "cache enabled" : "cache disabled"}): ${plural(extraction.hits, "hit")}, ${plural(extraction.misses, "miss", "misses")} of the ${plural(extraction.hits + extraction.misses, "file")} with a grammar, ${extraction.wallMs.toFixed(1)} ms wall; file-local tree-sitter and tags only.`,
     );
     if (extraction.writeFailures)
       lines.push(`Cache writes failed: ${extraction.writeFailures}; fresh facts were used.`);
@@ -192,7 +213,7 @@ export const indexCommand: CommandSpec = {
       `Fresh work: heuristic resolution ${work.heuristicResolutionMs.toFixed(1)} ms wall; semantic providers ${work.semanticRuns} runs, ${work.semanticMs.toFixed(1)} ms wall.`,
     );
     const coverage = describeAnalysis(index);
-    lines.push("", coverage.summary, ...coverage.details);
+    lines.push("", coverage.summary, ...coverageDetails(coverage.details, index.files.length));
     const { exclusions } = result;
     const excluded = exclusions.reasons.map(
       ({ reason, count, examples }) =>
@@ -200,7 +221,9 @@ export const indexCommand: CommandSpec = {
     );
     lines.push(
       "",
-      `Excluded from ${exclusions.scope}: ${excluded.length ? excluded.join("; ") : "none"}.`,
+      excluded.length
+        ? `Excluded from ${exclusions.scope}: ${excluded.join("; ")}.`
+        : "Excluded files: none.",
       exclusions.scope === "git candidates"
         ? "Git-ignored files are not counted."
         : exclusions.scope === "walked files"
@@ -210,7 +233,7 @@ export const indexCommand: CommandSpec = {
     if (stale.length > 0) {
       lines.push(
         "",
-        `hint: ${plural(stale.length, "explainer")} (${stale.join(", ")}) ${stale.length === 1 ? "is" : "are"} bound to another index; run \`xpl resolve <name> --write\` to move ${stale.length === 1 ? "it" : "them"} to this one.`,
+        `hint: ${plural(stale.length, "explainer")} (${stale.join(", ")}) ${stale.length === 1 ? "is" : "are"} bound to another index; run ${stale.map((name) => `\`xpl resolve ${name} --write\``).join(", ")} to move ${stale.length === 1 ? "it" : "them"} to this one.`,
       );
     }
     ctx.out(lines.join("\n"));

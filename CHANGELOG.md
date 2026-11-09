@@ -7,9 +7,9 @@ User-facing changes are listed here. Versions link to their changes on GitHub.
 New commands and drafts:
 
 - `xpl draft map` drafts a quick map of every code file, one map per folder, with a plain name and one
-  sentence per box. Run again, it drafts only new files and keeps the text already written. With a change
-  recorded, it adds a tour of the changed files. A folder map with more than 30 boxes groups the files that
-  use each other. (#231, #235)
+  sentence per box. Run it again and it drafts only new files and keeps the text already written. With a
+  change recorded, it adds a tour of the changed files. A folder map with more than 30 boxes groups the files
+  that use each other. (#231, #235)
 - `xpl update <guide> --since <rev>` brings a map up to date in one run: it indexes, re-resolves the code
   links, records the change and drafts the map again. (#235)
 - `xpl draft class <guide> <type>` maps what a class or interface extends and implements, and what extends or
@@ -17,7 +17,8 @@ New commands and drafts:
 - `xpl draft states <guide> <type>` drafts a flow of the states of a status type (a TypeScript enum or union
   of string literals, a Python Enum, a Go const block) and the functions that move it between them. (#237)
 - `xpl health` lists committed secrets, secrets in variables sent to the browser, committed `.env` files,
-  code files over 1,000 lines and files nothing uses. It never prints a secret and exits 0 with or without
+  code files over 1,000 lines and files nothing uses. It shows at most the first 4 characters of a secret
+  and exits 0 with or without
   findings. (#236)
 
 Guides and the viewer:
@@ -33,6 +34,10 @@ Guides and the viewer:
   hold a small table. (#239)
 - An answer from the local service offers "Show on the map", which selects the boxes whose code holds the
   answer. (#235)
+- The guide tab is now **Tour**. A tour step shows its diagram before its code, and steps are numbered. When
+  nothing is selected, the right column lists the parts of the diagram ("On this map"). Trust labels read
+  "precise (checked by a language tool)" and "heuristic (matched by name)". An arrow to code outside the map
+  is drawn only while you point at it or select it.
 
 Indexing:
 
@@ -41,6 +46,17 @@ Indexing:
   as `requests` arrows. They are always heuristic. (#238)
 - A request path built from a file's string constant reads the constant's value. `xpl draft map` leaves out
   code files that define and use nothing. (#240)
+
+Drafts and lint:
+
+- `xpl draft path` starts its tour on a map of the files the path crosses. `xpl draft repo` adds a box for
+  the person who starts the program, and one for the settings files the code loads. Both drafts end on a
+  "where to go next" step.
+- `xpl lint` checks more of the text: summaries over 2 sentences or 45 words (`long-summary`), long detail
+  paragraphs, passive voice, "we", tool words such as "anchor" in a tour, views no tour uses, too many
+  concepts and repeated steps. It knows more filler words, and a tour note may have at most 50 words.
+- The skill puts its hard rules first, starts every guide from its purpose, and gives each scope a tour shape
+  and a length budget. Its writing guide follows Orwell's rules and ASD-STE100 Simplified Technical English.
 
 Command-line messages:
 
@@ -52,8 +68,8 @@ Command-line messages:
 Docs:
 
 - The README starts with what xpl does and a picture, then a short quick start. "Try it without Claude" now
-  works for an npm install: it points to the published examples and to `xpl start`. The fixture command is
-  for a source checkout only.
+  works for an npm install: it points to the published examples and to `xpl start --entry`. The fixture
+  command is for a source checkout only.
 - The README, Getting started and the landing page show the two install commands and link to the
   [install options](skill/code-explainer/reference/create.md#install). The landing page shows the default
   agent, Claude Code.

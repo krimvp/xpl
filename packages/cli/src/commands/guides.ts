@@ -22,7 +22,7 @@ export const guidesCommand: CommandSpec = {
         "metadataError" in g
           ? `${g.id}\n  ${g.path}`
           : [
-              `${g.title}  (${g.kind}; source ${g.commit}; index ${g.indexCommit})`,
+              `${g.title}  (scope: ${g.kind}; source ${g.commit}; index ${g.indexCommit})`,
               ...(g.audience ? [`  audience: ${g.audience}`] : []),
               ...g.questions.map((q) => `  question: ${q}`),
               `  ${g.path}`,

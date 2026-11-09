@@ -123,8 +123,8 @@ export function Details({
         <textarea
           className="feedback"
           data-testid="feedback"
-          aria-label="What should Claude change?"
-          placeholder="What should Claude change? Empty: explain this in more depth."
+          aria-label="What should your agent change?"
+          placeholder="What should your agent change? Empty: explain this in more depth."
           rows={2}
           value={feedback.id === info.id ? feedback.text : ""}
           onChange={(event) => setFeedback({ id: info.id, text: event.target.value })}
@@ -249,6 +249,13 @@ export function Details({
   );
 }
 
+/** Who wrote an element, in words (the raw origin stays in the badge's tooltip). */
+const ORIGIN_WORDS: Record<string, string> = {
+  llm: "by an agent",
+  user: "by a person",
+  static: "from the code",
+};
+
 function ProvenanceBadge({ info }: { info: ElementInfo }) {
   const provenance = info.provenance!;
   const parts = [`origin: ${provenance.origin}`];
@@ -257,7 +264,7 @@ function ProvenanceBadge({ info }: { info: ElementInfo }) {
     parts.push(`edited by you: ${provenance.userFields.join(", ")}`);
   return (
     <span className={`badge origin-${provenance.origin}`} title={parts.join("\n")}>
-      {provenance.origin}
+      {ORIGIN_WORDS[provenance.origin] ?? provenance.origin}
     </span>
   );
 }
@@ -344,7 +351,7 @@ function statusHelp(status: AnchorRow["status"]): string {
     case "drifted":
       return "Found, but the text changed: the explanation may be stale";
     case "missing":
-      return "The symbol is gone: fix or drop this anchor";
+      return "The code is gone: fix or remove this code link";
     case "unresolved":
       return "Not resolved yet";
   }
@@ -354,8 +361,9 @@ type ExplainPhase =
   { kind: "idle" } | { kind: "queued" } | { kind: "command" } | { kind: "error"; message: string };
 
 /**
- * "Explain this", or with feedback typed above it "Send to Claude": with a server the request (and the
- * feedback as its note) is saved. Offline, browser storage and JSON export preserve the original context.
+ * "Explain this", or with feedback typed above it "Send to your agent": with a server the request (and the
+ * feedback as its note) is saved for the agent. A page with no server can only save it in this browser for
+ * the author, and its label says so ("Ask the author to explain this"); JSON export carries it on.
  */
 function ExplainButton({
   id,
@@ -367,6 +375,7 @@ function ExplainButton({
   onPhase: (phase: ExplainPhase) => void;
 }) {
   const store = useStore();
+  const server = useViewerState().serverMode;
   const text = note.trim();
   return (
     <button
@@ -379,7 +388,13 @@ function ExplainButton({
         );
       }}
     >
-      {text ? "Send to Claude" : "Explain this"}
+      {server
+        ? text
+          ? "Send to your agent"
+          : "Explain this"
+        : text
+          ? "Save for the author"
+          : "Ask the author to explain this"}
     </button>
   );
 }
@@ -399,7 +414,7 @@ function ExplainNote({ phase }: { phase: ExplainPhase }) {
     case "queued":
       return (
         <p className="note explain-note" role="status">
-          Saved for later. Run <code>/code-explainer feedback</code> in Claude Code to answer it.
+          Saved for later. Run <code>/code-explainer feedback</code> in your agent to answer it.
           Saving starts nothing by itself.
         </p>
       );
@@ -413,9 +428,9 @@ function ExplainNote({ phase }: { phase: ExplainPhase }) {
       return (
         <div className="command explain-note" role="status">
           <p className="note">
-            Saved in this browser for the next explicit pass. Use Feedback &gt; Export feedback
-            JSON, then import it with xpl feedback &lt;guide&gt; --import feedback.json. Saving
-            feedback does not start generation.
+            Saved in this browser as a request to the author. Nothing is sent. To pass it on, use
+            Feedback &gt; Export feedback JSON. The author imports the file with xpl feedback
+            &lt;guide&gt; --import feedback.json, then runs:
           </p>
           <div className="command-line">
             <code data-testid="explain-command">{command}</code>

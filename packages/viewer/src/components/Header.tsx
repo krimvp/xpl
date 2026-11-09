@@ -33,7 +33,7 @@ import { WorkspaceTabs } from "./WorkspaceTabs.js";
 
 /** The tooltip of the disabled Present button. */
 export const NO_TOURS_HINT =
-  "This guide has no tour yet. Run /code-explainer make tour in Claude Code, or add steps with Edit > Edit the tour.";
+  "This guide has no tour yet. Run /code-explainer make tour in your agent, or add steps with Edit > Edit the tour.";
 
 export function Header() {
   const store = useStore();

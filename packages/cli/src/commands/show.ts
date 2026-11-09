@@ -441,9 +441,9 @@ export const showCommand: CommandSpec = {
     "  <kind>  <other id>  (<file>:<line>, <precise|heuristic>)  +<offset>",
     "where +<offset> counts lines from the start of the referencing symbol: a call-site anchor's span.",
     `Long symbols are cut after ${DEFAULT_MAX_LINES} lines (--max-lines 0 prints all; --lines 401-800 selects a part).`,
-    "--at base <path> prints a changed file as it was before the change the explainer records (`xpl change`): the",
+    "--at base <path> prints a changed file as it was before the change the guide records (`xpl change`): the",
     "  offsets are those a base anchor's span uses (0-based from line 1 of the base file), and `-` marks the lines",
-    "  the change removes or rewrites. Paths only (the base commit is not indexed); --explainer picks the explainer",
+    "  the change removes or rewrites. Paths only (the base commit is not indexed); --explainer picks the guide",
     "  when more than one records a change. Automatic selection reads the discovered guide files directly.",
   ],
   options: {
@@ -466,7 +466,7 @@ export const showCommand: CommandSpec = {
     at: {
       type: "string",
       arg: "base",
-      desc: "base: the file before the change the guide records (see xpl change)",
+      desc: "The file before the change the guide records (see xpl change)",
     },
     explainer: {
       type: "string",

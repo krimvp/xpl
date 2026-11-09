@@ -17,7 +17,7 @@ maintainer through [GitHub](https://github.com/krimvp).
 option binds another interface, and then every client that can reach that interface can read the content.
 Check the network boundary before you use it. `xpl service` always binds to 127.0.0.1.
 
-The standalone HTML bundle includes source excerpts selected for the explanation and can be shared or
+The standalone HTML bundle holds the source excerpts that the guide links to, and it can be shared or
 published. Check its contents before distribution. `integrity.json` records hashes that detect missing or
 changed bundled files. It does not prove who published the package or that its contents are trustworthy.
 

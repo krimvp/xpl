@@ -15,6 +15,7 @@ import {
   layoutGraph,
   layoutGraphFitting,
   spreadLabels,
+  dropDetours,
   SUMMARY_FONT,
   ICON_ROOM,
   startAnchor,
@@ -361,6 +362,32 @@ describe("layoutGraph", () => {
     };
     const layout = await layoutGraph(graph);
     expect(layout.nodes.find((n) => n.ghost)!.detail).toBe("calls & extends ×13");
+  });
+
+  it("says a ghost's count is a total when it links to several boxes (the details give each box's share)", async () => {
+    const stub = (inside: string, count: number) => ({
+      id: `stub:in:${inside}->ghost:file:main.ts`,
+      direction: "in" as const,
+      inside,
+      ghost: "file:main.ts",
+      ghostLabel: "main.ts",
+      targets: [],
+      kinds: ["calls" as const],
+      count,
+    });
+    const graph: DerivedGraph = {
+      nodes: ["a", "b"].map((id) => ({
+        id,
+        label: `${id}.ts`,
+        kind: "file" as const,
+        container: false,
+      })),
+      edges: [],
+      stubs: [stub("a", 7), stub("b", 5)],
+      ghosts: [],
+    };
+    const layout = await layoutGraph(graph);
+    expect(layout.nodes.find((n) => n.ghost)!.detail).toBe("calls ×12 in all");
   });
 
   it("draws a ghost that folds several elements as one box that carries its pick-list", async () => {
@@ -1111,6 +1138,117 @@ describe("what a map draws", () => {
     const label = layout.edges.find((edge) => edge.id === "e2-4")!.label!;
     const foreign = layout.edges.find((edge) => edge.id === "e2-5")!;
     expect(routeHitsLabel(foreign.points, label)).toBe(false);
+  });
+});
+
+describe("labels and routes a reader can follow (round 2)", () => {
+  const overlaps = (a: Box, b: Box) =>
+    a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+  type Box = { x: number; y: number; width: number; height: number };
+
+  it("moves a label off a box it would sit under, and keeps it at its own line", () => {
+    // (the self map: "applyPatch, injectBundle, …" half under the Indexer box beside its line)
+    const route = [
+      { x: 60, y: 0 },
+      { x: 60, y: 100 },
+      { x: 180, y: 100 },
+      { x: 180, y: 240 },
+    ];
+    const edges = [
+      {
+        points: route,
+        label: { text: "applyPatch, injectBundle, …", x: 100, y: 91, width: 160, height: 18 },
+      },
+    ];
+    const box = { x: 230, y: 105, width: 100, height: 60 };
+    spreadLabels(edges, [box], { x: 0, y: 0, width: 400, height: 240 });
+    const label = edges[0]!.label!;
+    expect(overlaps(label, box)).toBe(false);
+    // on its line, or beside it and touching it
+    const grown = {
+      x: label.x - 4,
+      y: label.y - 4,
+      width: label.width + 8,
+      height: label.height + 8,
+    };
+    expect(routeHitsLabel(route, grown)).toBe(true);
+  });
+
+  it("drops a detour that runs past the turn and doubles back", () => {
+    // (the self map's "viewer page" arrow: left to x 153, up 6 px, then right again to x 330)
+    const route = [
+      { x: 403, y: 388 },
+      { x: 403, y: 359 },
+      { x: 376, y: 359 },
+      { x: 376, y: 123 },
+      { x: 153, y: 123 },
+      { x: 153, y: 117 },
+      { x: 330, y: 117 },
+      { x: 330, y: 80 },
+    ];
+    expect(dropDetours(route)).toEqual([
+      { x: 403, y: 388 },
+      { x: 403, y: 359 },
+      { x: 376, y: 359 },
+      { x: 376, y: 123 },
+      { x: 330, y: 123 },
+      { x: 330, y: 80 },
+    ]);
+    // a route that turns back around something (a long way across) keeps its shape
+    const around = [
+      { x: 0, y: 0 },
+      { x: 100, y: 0 },
+      { x: 100, y: 60 },
+      { x: 20, y: 60 },
+    ];
+    expect(dropDetours(around)).toEqual(around);
+  });
+
+  it("draws two arrows between the same two boxes, one each way, as one line with a head at each end", async () => {
+    const node = (id: string) => ({ id, label: id, kind: "group" as const, container: false });
+    const graph: DerivedGraph = {
+      nodes: [node("cli"), node("viewer"), node("core")],
+      edges: [
+        derived({
+          id: "edge:embeds",
+          from: "cli",
+          to: "viewer",
+          label: "viewer page (dist/index.html)",
+          stored: true,
+          resolution: "llm",
+        }),
+        derived({
+          id: "edge:api",
+          from: "viewer",
+          to: "cli",
+          label: "HTTP /api (xpl view)",
+          stored: true,
+          resolution: "llm",
+        }),
+        derived({ id: "edge:calls:cli->core", from: "cli", to: "core", count: 4 }),
+      ],
+      stubs: [],
+      ghosts: [],
+    };
+    for (const direction of ["DOWN", "RIGHT"] as const) {
+      const layout = await layoutGraph(graph, { direction });
+      const there = layout.edges.find((edge) => edge.id === "edge:embeds")!;
+      const back = layout.edges.find((edge) => edge.id === "edge:api")!;
+      // one route, read both ways
+      expect(back.points).toEqual([...there.points].reverse());
+      // each label on the line, apart from the other
+      expect(overlaps(there.label!, back.label!)).toBe(false);
+      // a click near an arrow's head picks that arrow: its anchor is on its own half of the line
+      const half = (edge: LayoutEdge) => {
+        const tip = edge.points.at(-1)!;
+        const tail = edge.points[0]!;
+        return (
+          Math.hypot(edge.anchor.x - tip.x, edge.anchor.y - tip.y) <=
+          Math.hypot(edge.anchor.x - tail.x, edge.anchor.y - tail.y) + 0.5
+        );
+      };
+      expect([direction, half(there), half(back)]).toEqual([direction, true, true]);
+    }
   });
 });
 

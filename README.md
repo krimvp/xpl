@@ -8,8 +8,9 @@ true; a person reviews that. Share a guide as a local page or as one HTML file.
 ![A map of how a job is dispatched. The Runner.dispatch box is selected, and its code in runner.ts is highlighted beside it.](site/images/jobrunner-light.png#gh-light-mode-only)
 ![A map of how a job is dispatched. The Runner.dispatch box is selected, and its code in runner.ts is highlighted beside it.](site/images/jobrunner-dark.png#gh-dark-mode-only)
 
-[Open this example](https://krimvp.github.io/xpl/demo/) in your browser, or read the
-[documentation](https://krimvp.github.io/xpl/docs/).
+A guide opens on its tour: steps in order, each with a small diagram and the code it links to. The Map, Flow
+and Code tabs show the whole diagrams and the files. [Open this example](https://krimvp.github.io/xpl/demo/)
+in your browser, or read the [documentation](https://krimvp.github.io/xpl/docs/).
 
 ## Quick start
 
@@ -23,12 +24,13 @@ xpl skill install
 In Claude Code, in your repository, ask a question and name the reader:
 
 ```text
-/code-explainer explain How does X work? Root: /path/to/repo. Audience: maintainers.
+/code-explainer explain How does X work? Audience: maintainers.
 ```
 
-The agent indexes the repository, writes the guide and opens it. Other agents (Codex, Pi, Factory Droid,
-Devin), shell completion and the supported platforms are in
-[Getting started](https://krimvp.github.io/xpl/docs/getting-started/).
+The agent indexes the repository (xpl lists its files, its symbols and the references between them), writes
+the guide and opens it. Other agents (Codex, Pi, Factory Droid, Devin) are in the
+[install options](https://krimvp.github.io/xpl/docs/skill/create/#install). Shell completion and the
+supported platforms are in [Getting started](https://krimvp.github.io/xpl/docs/getting-started/).
 
 ### View and export a guide
 
@@ -41,14 +43,17 @@ excerpt of its code; "Show code" opens the full range.
 Open a finished guide in your browser: the [examples](https://krimvp.github.io/xpl/#more-examples) explain
 Vite, Zod, Cobra and xpl itself. Each one is a single HTML file that you can save and open offline.
 
-To make a draft of your own repository without an agent, run this in the repository:
+To make a draft of your own repository without an agent, run this in the repository. `--entry` names the
+function where the answer starts (`xpl outline` lists the ids):
 
 ```sh
-xpl start first-guide --question "How does a request reach the database?" --audience maintainers --precise off
+xpl start first-guide --question "How does a request reach the database?" \
+  --entry src/api.ts#handleOrder --audience maintainers --precise off
 xpl view first-guide
 ```
 
-The draft holds the boxes, the steps and their code links, with TODO text for you to write.
+The draft holds the boxes, the steps and their code links, with TODO text for you to write. Without
+`--entry`, `xpl start` drafts a map of the whole repository instead of the path that answers the question.
 `xpl lint first-guide` and `xpl ready first-guide` list what is still missing.
 
 From a source checkout of xpl, you can also open the sample job runner:
@@ -78,7 +83,8 @@ committed `.env` files, code files over 1,000 lines and files that nothing uses.
 security audit. It exits 0 with or without findings, and 1 when there is no index.
 
 Readers can search a guide, leave feedback on a box or on lines of code, and ask questions through the
-optional local service. See [Search and saved versions](https://krimvp.github.io/xpl/docs/workflows/find-and-share/),
+optional local service. See
+[Search and saved versions](https://krimvp.github.io/xpl/docs/workflows/find-and-share/),
 [Feedback and revision](https://krimvp.github.io/xpl/docs/workflows/feedback/) and
 [The local service](https://krimvp.github.io/xpl/docs/workflows/service/).
 
@@ -90,7 +96,8 @@ experimental declarations and some heuristic calls. Ruby and PHP have named decl
 Every reference has one of two labels. **precise** references come from a language tool (SCIP). **heuristic**
 references come from xpl's own matching by name and scope; they are hints to confirm in the code. Web
 requests (`fetch`, axios, `requests`, `httpx`, Go `net/http`) link to the route that answers them, and these
-links are always heuristic. See [Languages and precision](https://krimvp.github.io/xpl/docs/concepts/languages/).
+links are always heuristic. See
+[Languages and precision](https://krimvp.github.io/xpl/docs/concepts/languages/).
 
 ## Using the CLI directly
 

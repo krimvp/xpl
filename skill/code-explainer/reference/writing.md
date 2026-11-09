@@ -9,7 +9,7 @@ The viewer shows your text next to the code. Four kinds of people read it:
 
 Write the tour `summary` for the manager, the notes for the newcomer, and keep every claim good enough for the reviewer. Most readers scan, so the first sentence of each text must carry its message.
 
-**Concept first, code second.** Every text says what a part is _for_, in words a person outside the team would use, before it names any code. The reader learns the idea from your words and the code from the code pane next to them. A note that strings function names together tells the reader nothing that the code does not show. The higher the level, the fewer code names (section 6). A system map names none, the inside of a service names one, and a step about code names a few.
+**Concept first, code second.** Every text says what a part is _for_ before it names any code. Use the words a person outside the team would use. The reader learns the idea from your words and the code from the code pane next to them. A note that strings function names together tells the reader nothing that the code does not show. The higher the level, the fewer code names (section 6). A system map names none, the inside of a service names one, and a step about code names a few.
 
 ## 1. Where each text goes
 
@@ -35,9 +35,9 @@ Write every authored text before ready export, including frame labels, transitio
 | arrow label to an outside box      | what passes ("stores orders", "charges cards", "sends receipts")                                   | 1-4 words                       | plain           |
 | frame `label`                      | when the steps inside run ("attempts left", "for each route")                                      | a short condition, may be code  | plain           |
 
-**Formats.** _Markdown_ fields render markdown. Headings and links go only in a note body or a `detail`. _Inline markdown_ fields render code spans and emphasis (`` `Queue.requeue` ``, `**Changed:**`), but no headings or links. _Plain_ fields are shown as written, so `**Changed:**` appears with its asterisks: write no markup there. Backticks around identifiers are fine everywhere. The reply to the user is not a field: SKILL.md, "Show the result", says what it holds.
+**Formats.** _Markdown_ fields render markdown. Headings and links go only in a note body or a `detail`. _Inline markdown_ fields render code spans and emphasis (`` `Queue.requeue` ``, `**Changed:**`), but no headings or links. _Plain_ fields are shown as written, so `**Changed:**` appears with its asterisks: write no markup there. Backticks around identifiers are fine everywhere. The reply to the user is not a field: SKILL.md, "Workflow", says what it holds.
 
-**Tables.** When a note compares two to four things (two options, a value before and after, the policies of a setting), a small table after its sentences reads faster than a list. Write a header row, a rule row, then one row per item. Start and end each row with `|`. Leave a blank line before the table. Keep each cell to a few words. `:--`, `:-:` or `--:` in the rule row aligns a column left, centre or right. Guide and Present show the table under the note, in both themes. `xpl lint` reads each cell on its own, so a row is never one long sentence, but the cells count toward the note's 50 words.
+**Tables.** A note may compare two to four things: two options, a value before and after, the policies of a setting. Then a small table after its sentences reads faster than a list. Write a header row, a rule row, then one row per item. Start and end each row with `|`. Leave a blank line before the table. Keep each cell to a few words. `:--`, `:-:` or `--:` in the rule row aligns a column left, centre or right. Guide and Present show the table under the note, in both themes. `xpl lint` reads each cell on its own, so a row is never one long sentence, but the cells count toward the note's 50 words.
 
 ```
 ### A fixed wait never grows
@@ -50,13 +50,13 @@ The backoff policy doubles the wait after each failure; the fixed one does not.
 | backoff |            500 ms |               2 s |
 ```
 
-A summary is concrete and about this code ("requeues with `baseDelay * 2^attempt`, capped at `maxDelay`"), never generic ("handles retries"). A note never repeats the summary of what its step focuses: the viewer shows that summary already. When both need the same guard condition, the summary states the guard and the note says what it means for the reader ("with the default settings, the cap is not reached"). The note adds the "so what": why this step matters, what the reader should look at, or the condition that changes the outcome. A heading is not the first sentence of the body again.
+A summary is concrete and about this code ("requeues with `baseDelay * 2^attempt`, capped at `maxDelay`"), never generic ("handles retries"). A note never repeats the summary of what its step focuses: the viewer shows that summary already. Both may need the same guard condition. Then the summary states the guard, and the note says what it means for the reader ("with the default settings, the cap is not reached"). The note adds the "so what": why this step matters, what the reader should look at, or the condition that changes the outcome. A heading is not the first sentence of the body again.
 
 ## 2. The rules
 
 1. **Short sentences, one topic each.** A sentence that tells someone to do something has 20 words at most. Any other sentence has 25 words at most; aim for 15. `xpl lint` flags a sentence over 25 words and a field whose sentences average over 20. Split at a semicolon and at "and then".
 2. **Active voice, present tense.** "The queue hands out the oldest due job", not "the oldest due job is handed out". `xpl lint` flags a field with two passive clauses or more (`passive-voice`).
-3. **Name the subject.** No sentence starts with a bare "It", "This" or "They": repeat the noun (`Runner.dispatch` calls ...). An element `summary` may start with a verb ("Runs one attempt ..."), because the viewer shows the element's name next to it. Notes and the tour summary always name their subject. `xpl lint` (`bare-it`) also flags "These are", "There is" and "There are".
+3. **Name the subject.** No sentence starts with a bare "It", "This" or "They": repeat the noun (`Runner.dispatch` calls ...). An element `summary` may start with a verb ("Runs one attempt ..."), because the viewer shows the element's name next to it. Its second sentence may then start with "It". Notes and the tour summary always name their subject. `xpl lint` (`bare-it`) also flags "These are", "There is" and "There are". Do not make a noun of the action the subject ("Discovery uses git"): name the code that does it ("`listFiles` uses git"). `xpl lint` flags this as `abstract-subject`.
 4. **Common words, one meaning each.** Use the words in section 2b. If "wrap" means "calls inside a `try`", do not also use it for "adds a layer".
 5. **Define each term the first time it appears**, in one clause: "a dead-letter list, where the runner keeps jobs with no retries left, ...". This covers protocol names, acronyms, header fields and the project's own jargon (backoff, lease, in-flight). Define it in the tour summary or the first note that uses it, not later.
 6. **Identifiers in backticks** in summaries and notes: `backoffDelay`, `Queue.requeue`. Titles: section 3.
@@ -65,7 +65,7 @@ A summary is concrete and about this code ("requeues with `baseDelay * 2^attempt
 9. **Claims you can prove.** Absolute words, guard conditions, complete lists and folklore follow the rules in SKILL.md, "Accuracy".
 10. **One concrete example** helps more than a general rule: "with the default settings, the three retries wait 500 ms, 1 s and 2 s".
 11. **Talk to the reader** about their own code: "your handler", "your config file". Do not use "we" (`xpl lint`: `we-voice`).
-12. **Plain words for the reader**, not tool words: say box, diagram (or map, flow, sequence), step and arrow. Do not say node, view, group, edge, stub, llm or call-site (section 2b). In a tour, `xpl lint` flags node, edge, anchor, evidence, upsert, llm and provenance (`tool-word`), unless a box of the guide has the word in its name.
+12. **Plain words for the reader**, not tool words: say box, diagram (or map, flow, sequence), step, arrow and code link. `xpl lint` (`tool-word`) flags node, edge, anchor, evidence, upsert, llm, provenance, stub, ghost, overlay and call-site. A word that is in the name of a box of the guide passes. Avoid "view" and "group" too.
 13. **Rewrite, do not append.** When the code changes, rewrite the text whole, so the summary still says what the part is for in 1-2 sentences. Put a new case in `detail` or in a step of its own. A summary is never a list of changes.
 14. **Tell the reader what the code does**, not what to do. "Look at", "Notice" and "Compare" are fine. Author steps (reindex, choose an anchor) belong in the skill, not in a guide.
 
@@ -93,28 +93,28 @@ They also follow the core of ASD-STE100, Simplified Technical English:
 
 ### 2b. Words
 
-**Use the word on the left**, not the ones on the right. A code name in backticks is always fine (`validate`, `emit`).
+**Use the word on the left**, not the ones on the right. A code name in backticks is always fine (`validate`, `emit`). `xpl lint` checks the vague verbs (manages, provides, supplies, preserve, retain). It does not check the code verbs (render, dispatch, emit, persist, expose, enable, allow, verify, discover), because they are real API words: choose those yourself.
 
-| Use                           | Not                                               |
-| ----------------------------- | ------------------------------------------------- |
-| use                           | utilize, leverage, harness, make use of           |
-| start                         | commence, initiate, kick off                      |
-| end                           | terminate, conclude                               |
-| check                         | verify, validate (except the `xpl validate` name) |
-| send                          | dispatch, emit (except the code name)             |
-| keep                          | retain, persist, preserve                         |
-| let                           | allow, enable, empower                            |
-| show                          | display, render, expose, showcase                 |
-| get                           | obtain, acquire, retrieve                         |
-| find                          | discover, locate                                  |
-| change                        | modify, alter, mutate                             |
-| many                          | numerous, a number of, myriad, plethora           |
-| about                         | regarding, with respect to                        |
-| because                       | due to the fact that, since (for a reason)        |
-| if                            | in the event that                                 |
-| can                           | is able to                                        |
-| before                        | prior to                                          |
-| a verb that says what it does | handles, manages, takes care of, deals with       |
+| Use                           | Not                                                |
+| ----------------------------- | -------------------------------------------------- |
+| use                           | utilize, leverage, harness (the verb), make use of |
+| start                         | commence, initiate, kick off                       |
+| end                           | terminate, conclude                                |
+| check                         | verify, validate (except the `xpl validate` name)  |
+| send                          | dispatch, emit (except the code name)              |
+| keep                          | retain, persist, preserve                          |
+| let                           | allow, enable, empower                             |
+| show                          | display, render, expose, showcase                  |
+| get                           | obtain, acquire, retrieve                          |
+| find                          | discover, locate                                   |
+| change                        | modify, alter, mutate                              |
+| many                          | numerous, a number of, myriad, plethora            |
+| about                         | regarding, with respect to                         |
+| because                       | due to the fact that, since (for a reason)         |
+| if                            | in the event that                                  |
+| can                           | is able to                                         |
+| before                        | prior to                                           |
+| a verb that says what it does | handles, manages, takes care of, deals with        |
 
 **One word, one meaning.** These words have one meaning in a guide. Use no other word for the same thing.
 
@@ -166,13 +166,13 @@ Flow step labels name a stage ("Take the next due job", "No retries left: park i
 
 ## 4. The tour summary
 
-The first thing on the screen, so it leads with the answer. The first sentence states the answer to the tour's question (what this is, what the code does, or what the change does for its users). Then up to four sentences give the reasons, one each: 2-5 sentences in plain words. A reader who stops after the first sentence still has the answer, and the steps show the reasons in the code. Use at most one or two code identifiers; example input values in backticks (`maxDelayMs: 100`, a sample header) are fine, and often the clearest way to show a behaviour change.
+The first thing on the screen, so it leads with the answer. The first sentence states the answer to the tour's question (what this is, what the code does, or what the change does for its users). Then up to four sentences give the reasons, one each: 2-5 sentences in plain words. A reader who stops after the first sentence still has the answer, and the steps show the reasons in the code. Use at most one or two code identifiers. Example input values in backticks (`maxDelayMs: 100`, a sample header) are fine. They are often the clearest way to show a behaviour change.
 
 - **Whole project:** what the project is (language and kind: "a Python web framework", "a Go command-line tool"), what it is for, and the main path in one sentence. Take what the project is from its README or package metadata (`xpl show file:README.md`, `pyproject.toml#project.description`), and say nothing the README or the code does not say.
   > go-jobrunner is a small Go program that runs background jobs from an in-memory queue. A runner takes each job, runs it on a worker, and retries a failed job with a growing delay. An event bus tells the metrics when a job finishes. This tour shows those parts and follows one job from the queue to the end.
 - **Part of a project:** the answer to the question in the first sentence, then the reasons, and what the tour leaves out.
 - **No code names in the summary** unless the reader must type one (a command, a setting). Say "the payment step", not `chargeCard`.
-  > A failed job is retried with a growing delay until its retry budget is spent. After that, the runner parks it in a dead-letter list. The runner makes each decision, and the queue stores the job again. Metrics and the worker pool are left out.
+  > The runner puts a failed job back on the queue with a growing delay, until the job uses up its retries. After that, the runner parks the job in a dead-letter list. The runner makes each decision, and the queue stores the job again. This tour leaves out the metrics and the worker pool.
 - **A change:** what changes for users (with one example), who is affected, the worst realistic failure (`explain-change.md` section 7), and what the tests cover. Example: `explain-change.md` section 10.
 
 ## 5. Rewrites
@@ -189,7 +189,7 @@ Each pair shows a mistake that reviewers found in generated explainers. The exam
 
 > Before: "Retries that never lose a job"
 >
-> After: "How a failed job is retried". The summary then says what the code does: after `retry.maxRetries` retries, the runner moves the job to a dead-letter list, which is kept in memory.
+> After: "How a failed job is retried". The summary then says what the code does: after `retry.maxRetries` retries, the runner moves the job to a dead-letter list, which the queue keeps in memory.
 
 **3. An undefined term in a slogan**
 
@@ -213,13 +213,13 @@ Each pair shows a mistake that reviewers found in generated explainers. The exam
 
 > Before: "Metrics count every finished job."
 >
-> After: "When `metrics.enabled` is true, `registerMetrics` subscribes the metrics to `job.completed`, so each successful attempt is counted. With `enabled: false`, the metrics handler is not subscribed, and the counters stay at 0."
+> After: "When `metrics.enabled` is true, `registerMetrics` subscribes the metrics to `job.completed`, so the metrics count each successful attempt. With `enabled: false`, nothing subscribes the metrics handler, and the counters stay at 0."
 
 **7. Folklore instead of code**
 
 > Before: "The worker kills a job that runs past its timeout."
 >
-> After: "`withTimeout` rejects after `timeoutMs`, so `Worker.run` reports a failure. The handler's promise is not cancelled: its work can still finish in the background." (A timeout often means "stop the work"; this code only stops waiting.)
+> After: "`withTimeout` rejects after `timeoutMs`, so `Worker.run` reports a failure. Nothing cancels the handler's promise: its work can still finish in the background." (A timeout often means "stop the work"; this code only stops waiting.)
 
 **8. A "before" claim nobody checked** (an invented change that makes `loadConfig` reject `maxDelayMs < baseDelayMs`)
 
@@ -237,7 +237,9 @@ A note is 1-3 short sentences under its title (`xpl lint`: `long-note` over 50 w
 | the inside of a service           | what job does this part do?            | each part's job in everyday words, and what it asks of the others or of an outside system | at most 1 (`code-heavy`) |
 | a flow, a sequence, a map of code | what does this step decide or hand on? | the one decision or hand-off to notice, then the code that makes it                       | at most 3 (`code-heavy`) |
 
-Start with the role in the system ("The front door: it turns a web request into an order"), then the consequence ("so a failed payment stops before the order is saved"). A comparison to something familiar helps when it is exact: "the queue works like a ticket line: the oldest due job goes first".
+Name each box of a map in some note, by its label in plain words ("the web server" counts for "Web servers"): `tour-covers-map` checks it. Steps, note lengths and boxes per map for each scope: SKILL.md, "The tour".
+
+Start with the role in the system ("The front door: it turns a web request into an order"). Then give the consequence ("so a failed payment stops before the order is saved"). A comparison to something familiar helps when it is exact: "the queue works like a ticket line: the oldest due job goes first".
 
 **9. A note that is a list of functions**
 
@@ -253,7 +255,7 @@ Start with the role in the system ("The front door: it turns a web request into 
 
 ## 7. Checklist
 
-`xpl lint <name>` checks the mechanical rules (headings, markup, sentence length, the length of summaries and detail paragraphs, bare "It", passive voice, "we", tool words, filler and absolute words, notes that repeat a summary or another tour, diagrams no tour shows, too many concepts, and disconnected system maps; `cli.md`, `xpl lint`). SKILL.md, "Accuracy", covers the claims. Read every title, label, summary and note once more, in tour order, for what neither can check:
+`xpl lint <name>` checks the mechanical rules: headings, markup, the length of sentences, summaries and `detail` paragraphs, and the words (bare "It", passive voice, "we", tool, filler and absolute words). It also checks the shape: notes that repeat a summary or another tour, diagrams no tour shows, too many concepts and disconnected system maps (`cli.md`, `xpl lint`). SKILL.md, "Accuracy", covers the claims. Read every title, label, summary and note once more, in tour order, for what neither can check:
 
 - Does the first sentence of the tour `summary` give the answer, before any reason or detail?
 - Is every term defined the first time it appears (rule 5), with one word for one meaning (rule 4)?

@@ -350,7 +350,7 @@ zoom remain navigation. Each map uses its own pins, including when another map i
 
 **Code first.** In Read and Explore, some flows open code first: the code is the main pane, and a narrow outline of the steps follows the caret. A flow does this when it has at least three steps, and all their current-code anchors are in one file. `"layout": "diagram"` keeps the diagram as the main pane; `"layout": "code-first"` requests code first for any flow; `null` restores the default.
 
-Read always keeps a sequence in the diagram pane, even when its code is all in one file or its `layout` is `"code-first"`. **Show source** opens the linked code beside it. Explore uses a narrow diagram column and a larger code pane for a sequence only with explicit `"layout": "code-first"`; it still draws lifelines, arrows and frames, without a caret-following process outline. A one-file sequence otherwise keeps Explore's usual diagram layout.
+Read always keeps a sequence in the diagram pane, even when its code is all in one file or its `layout` is `"code-first"`. **Show code** opens the linked code beside it. Explore uses a narrow diagram column and a larger code pane for a sequence only with explicit `"layout": "code-first"`; it still draws lifelines, arrows and frames, without a caret-following process outline. A one-file sequence otherwise keeps Explore's usual diagram layout.
 
 ```json patch
 {
@@ -608,6 +608,8 @@ Required: `type: "sequence"`, `title`, `participants` (lifelines, left to right)
 }
 ```
 
+**When to draw a frame.** Mark each loop and each branch on the path. Without frames, the reader sees the steps as one straight run. A `loop` wraps the steps that a `while` or `for` repeats. An `alt` wraps the steps of a branch that has other arms (an `if` with an `else`, a `switch`). An `opt` wraps the steps of an `if` with no `else`. A `par` wraps steps that run at the same time. `xpl draft path` adds these frames from the code, each with a `TODO` label that quotes the condition. A frame has one label and draws no line between the arms of an `alt`. So name each arm and its calls in the label: "ok: ack; retries left: requeue; else: dead-letter". When the choice itself is the point, draw a flow (3.7), with one branch per exit.
+
 **Editing one step** (sequence and flow views). To fix a step's summary or anchors, do not resend all the steps: `stepsUpdate` is a list of `{id, ...fields}` merged into the existing steps with those ids. The fields are those of a step (`from`, `to`, `label`, `kind`, `summary`, `anchors`, `edge`, and for a flow `shape`, `next`): `anchors` replace that step's anchors wholesale, `null` clears `summary`, `edge`, `shape` or `next`. The other steps, the frames and the tours that point at them stay as they are, and `changed` lists the view and the ids of the steps it updated. It applies after `steps` when both are sent, only to a view that exists (a new view sends `steps`), and an unknown step id is an error that names the view's steps. Like `steps`, it is skipped with a `protected` warning when the user edited the view's steps.
 
 ```json patch
@@ -758,7 +760,13 @@ An overview reads top-down, like the C4 model: first a **system map** (the servi
 
 A box for something outside the repo is a group with a `role` and **no `members`**: it is not code of the repo. Anchor it at the code that talks to it (where its client is built, where its address is configured). An `llm` edge to it counts that code as the evidence at its end, so one anchor can be the evidence at both ends. `role`, `tech` and `opens` also go on overlays (`dir:`, `file:`): `{"id": "dir:services/api", "role": "service", "opens": "view:api-inside"}`. `null` clears each.
 
-`xpl draft repo` builds both levels: it finds outside systems from the import lines (database drivers, caches, queues, HTTP clients, SDKs, web and CLI frameworks) and anchors each at its import. Those are hints: check each in the code, name the real system when the code says, and merge or drop boxes.
+`xpl draft repo` builds both levels: it finds outside systems from the import lines (database drivers, caches, queues, HTTP clients, SDKs, web and CLI frameworks) and anchors each at its import. Those are hints.
+
+**Check the draft.**
+
+- **Outside systems.** Read the code that builds each client, and name the real system ("Orders database", not "SQL database"). Check whether the default run uses it, or only an optional integration. Merge two boxes for one system, and drop a library that is only imported. Add what imports miss: `search` for a URL or a config key.
+- **Roles.** A box with a `role` and a `tech` shows what it is. For a library, the library is the `system` box, and the program that uses it is `external`, with `tech: "your app"`. A return value is an arrow label, not a box.
+- **Parts.** Give each box one job and a label a manager understands ("Payments", not `pay_svc`). Where one job spans several folders, merge them into a group (`grp:<slug>`). Each arrow gets a 1-4 word label for what passes ("stores orders").
 
 ```json patch
 {
@@ -903,6 +911,16 @@ A **sketch box** is an idea of the big picture. It shows what the user described
 ```
 
 ## 4. Merge semantics
+
+Patch only what changes, and lint the patch first:
+
+- One element's text: `{id, summary}`. Rewrite the summary whole (SKILL.md, hard rule 6).
+- One step of a flow or sequence: the view's `stepsUpdate` with that step.
+- One tour step: `{"tours": [{"id": "tour:x", "stepsUpdate": [{"id": "t3", "note": "..."}]}]}`. Send `steps` whole only to add, remove or reorder steps.
+- A box on a map: `includeAdd` / `includeRemove`. Other lists (`members`, `participants`, `anchors`) replace whole (below).
+- Use `--actor user` only for text the user dictates.
+
+The rules:
 
 - **Upsert by id.** New id: create (required fields in 3.x). Existing id: shallow merge.
 - **Shallow merge:** fields you send replace, fields you omit keep their value. Send `{"id": "grp:scheduling", "summary": "…"}` and `label` and `members` stay.

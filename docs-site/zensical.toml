@@ -26,16 +26,15 @@ nav = [
     "workflows/pull-requests.md",
     "workflows/service.md",
   ] },
-  { "CLI reference" = [
-    "reference/index.md",
-    "reference/commands.md",
-  ] },
+  { "CLI reference" = "reference/index.md" },
   { "The skill" = [
     "skill/index.md",
     "skill/create.md",
     "skill/writing.md",
     "skill/revise.md",
-    "skill/patch-format.md",
+    { "For agent authors" = [
+      "skill/patch-format.md",
+    ] },
   ] },
 ]
 

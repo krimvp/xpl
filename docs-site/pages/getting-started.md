@@ -14,9 +14,8 @@ xpl skill install
 xpl doctor --agent claude
 ```
 
-For Codex, Pi, Factory Droid or Devin, run `xpl skill install --agent <codex|pi|droid|devin>`. Run
-`xpl skill install` again after you update or move the CLI. [Install options](skill/create.md#install) has
-the install folder of each agent, the Devin setup and the install from a source checkout.
+[Install options](skill/create.md#install) covers the other agents (Codex, Pi, Factory Droid, Devin), the
+install folders, updates and the install from a source checkout.
 
 For shell completion, add `source <(xpl completion bash)` to `~/.bashrc`, or `source <(xpl completion zsh)`
 to `~/.zshrc` after `compinit`. For fish, run `xpl completion fish > ~/.config/fish/completions/xpl.fish`.
@@ -27,7 +26,7 @@ In Claude Code, in a repository in a [supported language](concepts/languages.md)
 the reader:
 
 ```text
-/code-explainer explain How does a failed job get retried? Root: /absolute/path/to/repo. Audience: maintainers. New guide: job-retries.
+/code-explainer explain How does a failed job get retried? Audience: maintainers. New guide: job-retries.
 ```
 
 Other agents use another prefix; [The skill](skill/index.md) lists them. The agent indexes the repository,
@@ -37,23 +36,23 @@ writes the guide as a patch, and `xpl` checks every code link before it saves
 
 ### Without an agent
 
-`xpl start` drafts a guide from the index. You write the text:
+To read a finished guide first, open one of the [examples](https://krimvp.github.io/xpl/#more-examples).
+To draft your own, run `xpl start`. It drafts the guide from the index, and you write the text:
 
 ```sh
-xpl start job-retries --question "How does a failed job get retried?" --audience maintainers --precise off
+xpl start job-retries --question "How does a failed job get retried?" \
+  --entry src/runner.ts#Runner.dispatch --audience maintainers --precise off
 xpl view job-retries
 ```
 
+`--entry` names the function where the answer starts; `xpl outline` lists the ids. The draft is then a
+call sequence from that function. Without `--entry`, `xpl start` drafts a map of the whole repository.
+
 `xpl start` indexes the repository, creates the guide and applies a checked draft. It prints the path of
 the draft patch and of its notes, both outside the repository. Read the notes first: they name the parts of
-the draft that are provisional or left out. Add `--entry src/runner.ts#Runner.dispatch` when the question
-starts at a known function; then the draft is a call sequence, not a repository map. Write the TODO text,
-check each claim against its code, then run `xpl lint job-retries` and `xpl ready job-retries`.
+the draft that are provisional or left out. Write the TODO text, check each claim against its code, then run
+`xpl lint job-retries` and `xpl ready job-retries`.
 
 ## View it and export HTML
 
 <!-- include README.md "### View and export a guide" -->
-
-## Try it without Claude
-
-<!-- include README.md "### Try it without Claude" -->

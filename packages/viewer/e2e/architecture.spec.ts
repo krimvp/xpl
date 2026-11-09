@@ -294,11 +294,11 @@ test.describe("architecture maps", () => {
       await page.waitForFunction(() => window.__xpl !== undefined);
       const include = (await stateOf(page)).include;
       const expand = page.locator(caption).getByRole("button", {
-        name: "Show parts of Job runner here",
+        name: "Show what is inside Job runner, here",
       });
       await expect(expand).toBeVisible();
       if (perspective === "map") {
-        await expect(expand).toHaveText("Show parts");
+        await expect(expand).toHaveText("Show inside");
         const topic = page.locator(caption).getByRole("combobox", { name: "Choose a diagram" });
         await expect
           .poll(async () => {
@@ -349,11 +349,11 @@ test.describe("architecture maps", () => {
     );
     await page.goto("http://xpl.test/?mode=explore&view=view:system");
     await page.waitForFunction(() => window.__xpl !== undefined);
-    await page.getByRole("button", { name: "Show parts of Job runner here" }).click();
+    await page.getByRole("button", { name: "Show what is inside Job runner, here" }).click();
     await expect(box(page, "grp:job-runner")).toHaveClass(/is-container/);
     await page.evaluate(() => window.__xpl!.setView("view:overview"));
     await expect(page.locator('.diagram[data-view-id="view:overview"]')).toBeVisible();
-    const expand = page.getByRole("button", { name: "Show parts of Scheduling here" });
+    const expand = page.getByRole("button", { name: "Show what is inside Scheduling, here" });
     await expect(expand).toBeVisible();
     await expand.click();
     await expect(box(page, "grp:scheduling")).toHaveClass(/is-container/);

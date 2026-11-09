@@ -509,6 +509,17 @@ test.describe("reading a changed file", () => {
     expect(problems).toEqual([]);
   });
 
+  test("the Code tab opens a whole changed file on its first change, not on its imports", async ({
+    page,
+  }) => {
+    await open(page);
+    await expect(page.getByTestId("guide")).toBeVisible();
+    await page.getByTestId("perspective-code").click();
+    const runner = pane(page, "src/runner.ts");
+    await expect(runner.locator('.xpl-removed[data-at="after:65"]')).toBeInViewport();
+    await expect(runner.getByTestId("pane-hunks")).toContainText("change 1 / 3");
+  });
+
   test("a narrow pane keeps the file name whole and puts the change controls on a second row", async ({
     page,
   }) => {
@@ -563,7 +574,7 @@ test.describe("reading the diagrams", () => {
     await page.getByTestId("legend-button").click();
     const legend = page.getByTestId("legend");
     await expect(legend).toBeVisible();
-    await expect(legend).toContainText("The one you picked");
+    await expect(legend).toContainText("Selected");
     await expect(legend).toContainText("What the change did");
     await page.keyboard.press("Escape");
     await expect(legend).toHaveCount(0);

@@ -15,7 +15,7 @@ import {
   type ExplainerModel,
   type TourStep,
 } from "@xpl/core";
-import { ExplanationInfo } from "./ExplanationInfo.js";
+import { ExplanationInfo, TABS_LINE } from "./ExplanationInfo.js";
 import { callersOf, changeSummary, type Caller } from "../callers.js";
 import { overrideFocus } from "../derive.js";
 import { changeFiles, changeOf, STATUS_WORDS } from "../diff.js";
@@ -160,14 +160,14 @@ export function Guide({
       <div className="guide-fallback">
         {staleLink && (
           <p className="guide-link-notice" role="alert" tabIndex={-1} ref={staleNotice}>
-            This link points at a tour that is no longer here. Pick a diagram below.
+            This link points at a tour that is no longer here. Click a diagram below.
           </p>
         )}
         <p className="eyebrow">Start here</p>
         <h2>{state.explainer.title}</h2>
         <Audience />
         <ExplanationInfo />
-        <p>Pick a diagram below, or open the map to see the parts of the code.</p>
+        <p>Click a diagram below, or open the map to see the parts of the code.</p>
         {state.model.views.map((view) => (
           <section className="guide-section" key={view.id}>
             <h3>{view.title}</h3>
@@ -257,6 +257,9 @@ export function Guide({
           />
         )}
         <ChangeOmissions />
+        <p className="guide-tabs-line" data-testid="tabs-line">
+          {TABS_LINE}
+        </p>
         <ExplanationInfo />
         <ChangeFiles />
         {tour.steps.map((step, index) => (
@@ -266,7 +269,7 @@ export function Guide({
             index={index}
             tourId={tour.id}
             active={step.id === active}
-            linked={step.id === active && !staleLink}
+            presentable={!staleLink}
           />
         ))}
       </div>
@@ -280,13 +283,30 @@ function ChangeOmissions() {
   if (!change) return null;
   const omissions = changeOmissions(change, state.model.index.index);
   if (omissions.length === 0) return null;
+  // The files' own lines read plainly; the tools' reports ("<provider> report: …") are for whoever checks
+  // the analysis: one plain line, the reports folded under it.
+  const reports = omissions.filter((item) => /^\S+ report: /.test(item));
+  const files = omissions.filter((item) => !reports.includes(item));
   return (
     <section className="change-omissions" data-testid="change-omissions" aria-label="Not checked">
       <h3>Not checked</h3>
       <ul>
-        {omissions.map((item) => (
+        {files.map((item) => (
           <li key={item}>{item}</li>
         ))}
+        {reports.length > 0 && (
+          <li>
+            Some arrows in the changed files may be missing, or matched by name only.
+            <details>
+              <summary>What the code analysis reported ({reports.length})</summary>
+              <ul>
+                {reports.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            </details>
+          </li>
+        )}
       </ul>
     </section>
   );
@@ -314,13 +334,14 @@ function GuideSection({
   index,
   tourId,
   active,
-  linked,
+  presentable,
 }: {
   step: TourStep;
   index: number;
   tourId: string;
   active: boolean;
-  linked: boolean;
+  /** False while the page's link names a step that is gone: the reader picks a step first. */
+  presentable: boolean;
 }) {
   const store = useStore();
   const state = useViewerState();
@@ -400,7 +421,7 @@ function GuideSection({
         <a className="btn" href={link.href} aria-label={`Link to ${where}`}>
           Link to this step
         </a>
-        {linked && (
+        {presentable && (
           <button type="button" className="btn" onClick={() => store.present(tourId, index)}>
             Present from this step
           </button>

@@ -528,8 +528,26 @@ describe("xpl status", () => {
     expect(overview.nodes.unexplained).toEqual([]);
     const dispatch = json.views.find((v: any) => v.id === "view:dispatch");
     expect(dispatch.steps.unexplained).toEqual([]);
-    // still to do: the two participants of the sequence view that are files without summary (queue, runner's symbol has one)
-    expect(json.todo.unexplained).toBe(dispatch.nodes.unexplained.length);
+    // still to do: the participants of the sequence view that are files without summary (queue, runner's symbol has
+    // one), and the tour's summary
+    expect(json.todo.unexplained).toBe(dispatch.nodes.unexplained.length + 1);
+  });
+
+  it("counts a draft's TODO summary as unexplained", async () => {
+    const dir = cloneDir(demo);
+    const patch = {
+      nodes: [
+        { id: "file:src/worker.ts", summary: "TODO: one line: what this file does." },
+        { id: "file:src/metrics.ts", summary: "Counts completed jobs." },
+      ],
+    };
+    const applied = await invoke(["apply", "demo", "-"], {
+      cwd: dir,
+      stdin: JSON.stringify(patch),
+    });
+    expect(applied.code, applied.out).toBe(0);
+    const { out } = await xpl(dir, "status", "demo");
+    expect(out).toContain("nodes without summary (1 of 3): file:src/worker.ts");
   });
 
   it("includes drifted llm elements, missing anchors and queued requests", async () => {

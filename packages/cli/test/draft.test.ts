@@ -159,6 +159,8 @@ describe.each(Object.keys(ENTRIES))("xpl draft on %s", (fixture) => {
     expect(view.include!.every((id) => !/test|README|\.ya?ml/.test(id))).toBe(true);
     const focused = patch.tours![0]!.steps!.flatMap((s) => s.focus);
     for (const box of view.include!) expect(focused).toContain(box);
+    // inside the skill's budget: parts past it share one step
+    expect(patch.tours![0]!.steps!.length).toBeLessThanOrEqual(DRAFT_LIMITS.repoSteps);
     // the first step shows what the project is: the README
     expect(patch.tours![0]!.steps![0]!.code![0]!.file).toBe("README.md");
     // the last step says where to go next, back on the system map
@@ -203,7 +205,7 @@ describe.each(Object.keys(ENTRIES))("xpl draft on %s", (fixture) => {
     expect([...tour[0]!.focus].sort()).toEqual([...files].sort());
     // then the path, call by call
     expect(tour[1]!.focus).toEqual([ENTRIES[fixture]]);
-    expect(tour.length).toBeLessThanOrEqual(DRAFT_LIMITS.pathSteps + 3);
+    expect(tour.length).toBeLessThanOrEqual(DRAFT_LIMITS.pathSteps);
     for (const step of tour.slice(2, -1)) {
       expect(steps.map((s) => s.id)).toContain(step.focus[0]);
     }

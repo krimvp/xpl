@@ -54,18 +54,23 @@ export type LintRule =
   | "tour-first-step"
   | "tour-covers-map"
   | "tour-length"
+  | "tour-ends"
   | "unused-view"
   | "many-concepts"
   | "duplicate-step"
   | "note-heading"
+  | "connector-start"
   | "code-title"
   | "placeholder-title"
+  | "long-title"
   | "long-sentence"
   | "long-average"
   | "bare-it"
+  | "abstract-subject"
   | "filler-word"
   | "passive-voice"
   | "we-voice"
+  | "dash-chain"
   | "tool-word"
   | "absolute-word"
   | "repeats-summary"
@@ -91,19 +96,25 @@ export const LINT_RULES: Record<LintRule, string> = {
   "tour-first-step": "tour that does not start with the big picture",
   "tour-covers-map": "map box the tour never visits",
   "tour-length": "tour with too many steps",
+  "tour-ends": "tour that does not end on the map",
   "unused-view": "diagram no tour step shows and no box opens",
   "many-concepts": "explainer with too many concepts",
   "duplicate-step": "tour step copied from another tour",
   "note-heading": 'note without a "### title" line',
+  "connector-start": 'note that opens with "So", "But", "And", "Also" or "Then"',
   "code-title": "title that looks like code",
   "placeholder-title": "placeholder title",
+  "long-title": "title over 12 words",
   "long-sentence": "sentence over 25 words",
   "long-average": "field with long sentences on average",
   "bare-it": 'sentence that starts with a bare "It", "This", "They" or "There is"',
+  "abstract-subject":
+    'sentence whose subject is an action, not the code ("Graph derivation combines")',
   "filler-word": "marketing or filler word",
   "passive-voice": "field with passive clauses that hide who acts",
   "we-voice": 'text that says "we" or "our"',
-  "tool-word": "word of the tool (node, edge, anchor) in a tour",
+  "dash-chain": "sentence with two or more dashes",
+  "tool-word": "word of the tool (node, edge, anchor, stub)",
   "absolute-word": "absolute word that needs evidence",
   "repeats-summary": "note that repeats a summary",
   "long-note": "note that is too long to take in at a glance",
@@ -186,8 +197,15 @@ export const LINT_LIMITS = {
   elementSummaryWords: 45,
   /** A paragraph (or list item) of a `detail` of more words than this is a finding (`long-detail`). */
   detailParagraphWords: 80,
-  /** A field with at least this many passive clauses is a finding (`passive-voice`); one is often fine. */
+  /**
+   * A field with at least this many passive clauses is a finding (`passive-voice`); one is often fine, except in
+   * the first sentence of a summary, which is half of it.
+   */
   passiveClauses: 2,
+  /** A title or note heading of more words than this is a finding (`long-title`; the skill asks for about 8). */
+  titleWords: 12,
+  /** `tour-ends` checks tours of at least this many steps (a short tour may stop where its point is). */
+  tourEndsSteps: 5,
   /** An explainer of more concepts than this is a finding (`many-concepts`; the skill asks for 0-3). */
   concepts: 5,
   /** `duplicate-step` compares notes of at least this many different content words (a short note may recur). */
@@ -258,20 +276,18 @@ export const FILLER_WORDS: Readonly<Record<string, string>> = {
   holistic: "drop it",
   empower: 'write "let"',
   empowers: 'write "lets"',
-  unlock: 'write "allow" or "enable"',
-  unlocks: 'write "allows" or "enables"',
   supercharge: "say what gets faster",
   "game-changer": "drop it",
   plethora: 'write "many"',
   myriad: 'write "many"',
   tapestry: "drop it",
-  realm: 'write "area"',
+  "the realm of": 'write "area", or name it',
   showcase: 'write "show"',
   showcases: 'write "shows"',
   boasts: 'write "has"',
   facilitate: 'write "help" or "let"',
   facilitates: 'write "helps" or "lets"',
-  harness: 'write "use"',
+  harness: 'write "use"', // the verb only: "the test harness" passes (FILLER_ONLY_BEFORE)
   "under the hood": 'write "inside", or name the part',
   "it's worth noting": "drop it and state the fact",
   "it is worth noting": "drop it and state the fact",
@@ -325,13 +341,53 @@ export const FILLER_WORDS: Readonly<Record<string, string>> = {
   notably: "drop it and state the fact",
   importantly: "drop it, or say why it matters",
   nuanced: "say what the cases are",
-  landscape: "name what you mean",
+  "the landscape of": "name what you mean",
+  // vague verbs of writing.md 2b ("a verb that says what it does", "keep"); code verbs such as render,
+  // dispatch, emit and persist are real API words, so lint leaves them to the writer, and so are "provides" and
+  // "supplies" (a React provider, "the app supplies the work"), which read fine in the showcase guides
+  manages: "say what it does with it",
+  manage: "say what it does with it",
+  "takes care of": "say what it does with it",
+  "deals with": "say what it does with it",
+  preserve: 'write "keep"',
+  preserves: 'write "keeps"',
+  preserved: 'write "kept"',
+  preserving: 'write "keeping"',
+  retain: 'write "keep"',
+  retains: 'write "keeps"',
+  explicitly: 'say who chooses ("you pass ...")',
+  various: 'name them, or write "several"',
+  "a variety of": 'write "several", or name them',
+  additionally: 'write "also", or drop it',
+  furthermore: 'write "also", or drop it',
+  moreover: 'write "also", or drop it',
+  "in other words": "drop it and say it once",
+  "it is important to": "drop it and state the fact",
+  "needless to say": "drop it",
+  straightforward: "drop it",
+  effectively: "drop it",
+  robustly: "say what it copes with",
+};
+
+/** Fillers that are plain words before some next words: "in order to a fresh copy", "first-class functions". */
+const FILLER_UNLESS_BEFORE: Readonly<Record<string, RegExp>> = {
+  "in order to":
+    /^\s+(?:a|an|the|each|its|their|this|these|that|those|every|one|your)(?![\p{L}\p{N}_'-])/iu,
+  "first-class": /^[\s-]+(?:functions?|citizens?|values?|objects?|types?)(?![\p{L}\p{N}_'-])/iu,
+  terminate:
+    /^\s+(?:[\p{L}'-]+\s+)?(?:process(?:es)?|subprocess(?:es)?|threads?|workers?|child(?:ren)?|connections?|sessions?|programs?|pods?|containers?|jobs?|tasks?|requests?)(?![\p{L}\p{N}_'-])/iu,
+  terminates:
+    /^\s+(?:[\p{L}'-]+\s+)?(?:process(?:es)?|subprocess(?:es)?|threads?|workers?|child(?:ren)?|connections?|sessions?|programs?|pods?|containers?|jobs?|tasks?|requests?)(?![\p{L}\p{N}_'-])/iu,
+};
+/** Fillers only before these words: "harness the queue" (a verb) is filler, "the test harness starts" is not. */
+const FILLER_ONLY_BEFORE: Readonly<Record<string, RegExp>> = {
+  harness: /^\s+(?:the|its|their|this|these|those|a|an|your)(?![\p{L}\p{N}_'-])/iu,
 };
 
 /**
  * Words of the tool (xpl's own names for the parts of an explainer), each with the reader's word. A tour that
  * explains code says "box" and "arrow", not "node" and "edge". Matched in lower case only (so `Node.js` and an
- * `LLM` pass), as whole words, outside code spans, in tour titles, summaries and notes. A word the explainer uses
+ * `LLM` pass), as whole words, outside code spans, in every title, summary, note and detail. A word the explainer uses
  * in the label or id of a box or a concept, or in a path a view shows, is the code's own word there (a parser's
  * syntax nodes, `anchors.ts`), so it passes.
  */
@@ -348,6 +404,14 @@ export const TOOL_WORDS: Readonly<Record<string, string>> = {
   upserts: 'write "adds or updates"',
   llm: 'write "Claude", or drop it',
   provenance: 'say who wrote it ("you", "Claude")',
+  stub: 'write "a box for code outside this map"',
+  stubs: 'write "boxes for code outside this map"',
+  ghost: 'write "a box for code outside this map", or "a removed file"',
+  ghosts: 'write "boxes for code outside this map", or "removed files"',
+  overlay: 'write "an arrow the author added"',
+  overlays: 'write "arrows the author added"',
+  "call-site": 'write "the code that calls it"',
+  "call-sites": 'write "the code that calls it"',
 };
 
 /** Absolute words: each is a claim about every case, which needs evidence (or a narrower word). */
@@ -795,6 +859,11 @@ const ADVERBS = new Set([
   "really",
 ]);
 
+/** A lowercase word in -s that may be a verb ("calls", "says"); not one in -ss, -us, -is, -os or -as (class, status). */
+function inS(word: string): boolean {
+  return /^[a-z]{3,}$/.test(word) && word.endsWith("s") && !/(?:ss|us|is|os|as)$/.test(word);
+}
+
 /**
  * Is `word` (as written, after "It" or "This") a verb? Auxiliaries, lowercase -s forms (calls, stores, means; not
  * class, status, bus) and, after "It" only, -ed forms ("It returned"; "This cached value" is an adjective).
@@ -802,9 +871,13 @@ const ADVERBS = new Set([
 function looksLikeVerb(word: string, subject: string): boolean {
   if (VERBS.has(word.toLowerCase())) return true;
   if (word !== word.toLowerCase()) return false; // "This Request ...": a name
-  if (/^[a-z]{2,}(?<!ss|us|is|ys|os|as)s$/.test(word)) return true;
+  if (NOUNS_IN_S.has(word)) return false; // "This series of calls ..."
+  if (inS(word)) return true;
   return subject === "It" && /^[a-z]{3,}ed$/.test(word);
 }
+
+/** Nouns that end in -s like a verb: "This series", "This lens". */
+const NOUNS_IN_S = new Set("series species news lens means".split(" "));
 
 /** Plural auxiliaries and modals: "These are", "Those can". */
 const PLURAL_VERBS = new Set(
@@ -836,13 +909,19 @@ function bareSubject(masked: string): string | undefined {
   return undefined;
 }
 
-/** Forms of "be" that make a passive with a past participle ("is written", "were not shown"). */
-const BE = "am|is|are|was|were|be|been|being|isn't|aren't|wasn't|weren't";
-/** Adverbs that may stand between "be" and its participle ("is not shown", "are then written"). */
+/**
+ * Forms of "be" (and "get": "gets written") that make a passive with a past participle ("is written", "were not
+ * shown"). "being" may follow one ("is being retried").
+ */
+const BE = "am|is|are|was|were|be|been|being|isn't|aren't|wasn't|weren't|get|gets|got|gotten";
+/**
+ * Up to two adverbs may stand between "be" and its participle ("is not shown", "is not yet written", "is quickly
+ * loaded"): these, or any word in -ly.
+ */
 const PASSIVE_ADVERBS =
-  "not|never|also|only|then|still|always|first|already|usually|often|now|later|again|automatically|both|each|all";
+  "not|never|also|only|then|still|always|first|already|usually|often|now|later|again|automatically|both|each|all|yet|even|just";
 const PASSIVE = new RegExp(
-  String.raw`(?<![\p{L}\p{N}_'-])(?:${BE})\s+(?:(?:${PASSIVE_ADVERBS})\s+)?([a-z]+)(?![\p{L}\p{N}_'-])`,
+  String.raw`(?<![\p{L}\p{N}_'-])(?:${BE})\s+(?:being\s+)?(?:(?:${PASSIVE_ADVERBS}|[a-z]+ly)\s+){0,2}(?:(?:re|pre|co)-)?([a-z]+)(?![\p{L}\p{N}_'-])`,
   "giu",
 );
 /** Irregular past participles; regular ones end in -ed. */
@@ -852,7 +931,8 @@ const IRREGULAR_PARTICIPLES = new Set(
     "chosen broken hidden bound brought caught fed told thought understood meant paid said sold shut split " +
     "spent stuck taught lost led laid hit cut dealt grown begun overridden overwritten rewritten redrawn " +
     "rebuilt rerun withheld forgotten forbidden driven ridden spoken stolen frozen woken torn worn sworn " +
-    "shaken mistaken undertaken arisen fallen sought lent lit shed"
+    "shaken mistaken undertaken arisen fallen sought lent lit shed set reset preset done undone redone cast " +
+    "spread spun upheld struck wound hung shut sped won"
   ).split(" "),
 );
 /** Words in -ed that are adjectives after "be" ("based on", "tired"), or not participles at all ("need"). */
@@ -860,7 +940,9 @@ const NOT_PARTICIPLES = new Set(
   (
     "based supposed interested tired concerned pleased detailed advanced experienced complicated " +
     "sophisticated dedicated varied need speed seed feed bleed breed embed hundred kindred naked wicked " +
-    "sacred rugged shred unchanged"
+    "sacred rugged shred unchanged indeed undefined unused unrelated unsupported unexpected untested " +
+    "unnamed unsigned unchecked unhandled unresolved unaffected unmodified uncommitted untracked unsaved " +
+    "outdated nested deprecated"
   ).split(" "),
 );
 
@@ -872,11 +954,88 @@ function passives(masked: string): string[] {
   for (let m = PASSIVE.exec(text); m; m = PASSIVE.exec(text)) {
     const word = m[1]!;
     if (word !== word.toLowerCase() || NOT_PARTICIPLES.has(word)) continue;
+    if (word === "started" && /^g/i.test(m[0])) continue; // "to get started"
     if (IRREGULAR_PARTICIPLES.has(word) || /^[a-z]{2,}ed$/.test(word))
       out.push(m[0].replace(/\s+/g, " "));
   }
   return out;
 }
+
+/**
+ * Nouns made of an action ("assembly", "setup") that a writer puts where the code should be: "Symbol assembly
+ * assigns ids", not "`assembleSymbols` assigns ids". Besides these, words in -tion, -sion, -ment, -ance, -ence and
+ * -ing count, except the concrete nouns of code in `CONCRETE_NOUNS`.
+ */
+const ACTION_NOUNS = new Set(
+  (
+    "assembly setup lookup dispatch discovery derivation removal retrieval renewal approval arrival " +
+    "dismissal disposal reversal withdrawal refusal analysis synthesis"
+  ).split(" "),
+);
+const ACTION_ENDING = /(?:tion|sion|ment|ance|ence|ing)$/;
+/** Nouns of code with an action ending: "Each function returns", "The option sets". */
+const CONCRETE_NOUNS = new Set(
+  (
+    "function option section session version extension collection connection transaction permission " +
+    "partition position exception condition action application definition declaration expression " +
+    "notification subscription instruction annotation mutation migration question selection region " +
+    "station mention element argument document environment segment statement comment fragment moment " +
+    "payment component department instance sentence reference sequence preference difference presence " +
+    "distance balance interface evidence audience licence license fence " +
+    "string thing ring ping king wing sibling ceiling padding heading building binding mapping setting " +
+    "listing spring morning evening nothing something everything anything during ending meaning"
+  ).split(" "),
+);
+/** First words that do not make a subject of the next: articles, owners, prepositions. */
+const NOT_SUBJECT_START = new Set(
+  (
+    "the a an each every this that these those its their your our his her one no any some all both code " +
+    "during while when if after before on in at for with from to by as once until unless since where " +
+    "here there then now so but and or also"
+  ).split(" "),
+);
+/** A finite verb in -s after a subject: "assigns", "uses"; not "status" or "class". */
+function verbInS(word: string): boolean {
+  return inS(word) && !NOUNS_IN_S.has(word);
+}
+function actionNoun(word: string): boolean {
+  const w = word.toLowerCase();
+  return ACTION_NOUNS.has(w) || (ACTION_ENDING.test(w) && w.length > 5 && !CONCRETE_NOUNS.has(w));
+}
+
+/**
+ * The made-up subject a sentence starts with, or undefined: a word and a noun of an action ("Graph derivation
+ * combines ..."), or one of `ACTION_NOUNS` alone ("Discovery uses git ..."), then a verb in -s. A sentence that
+ * starts with a verb (a box summary: "Adds a job"), an article, an owner or code names its subject. One word in
+ * -ing or -tion alone is often a thing ("Configuration holds", "Accepting boundaries produce"), so it passes.
+ */
+function abstractSubject(masked: string): string | undefined {
+  const text = masked.replace(/^[\s"'(*_]+/, "");
+  const two = /^([A-Z][a-z]+)\s+([a-z]+)\s+([a-z]+)(?![\p{L}\p{N}_'-])/u.exec(text);
+  const one = /^([A-Z][a-z]+)\s+([a-z]+)(?![\p{L}\p{N}_'-])/u.exec(text);
+  const first = (two ?? one)?.[1];
+  if (first === undefined || NOT_SUBJECT_START.has(first.toLowerCase())) return undefined;
+  if (verbInS(first.toLowerCase()) || /(?:ly|es)$/.test(first)) return undefined; // "Adds", "Finally"
+  if (two && actionNoun(two[2]!) && verbInS(two[3]!)) return `${two[1]} ${two[2]}`;
+  if (one && ACTION_NOUNS.has(one[1]!.toLowerCase()) && verbInS(one[2]!)) return one[1];
+  return undefined;
+}
+
+/**
+ * The main clause a sentence starts with: up to the first comma, semicolon, colon or dash, or the first word that
+ * opens a clause of its own ("when the flag is set", "whose error is created"). A passive there hides who acts;
+ * one in a condition after it often names a state.
+ */
+function mainClause(masked: string): string {
+  const cut =
+    /[,;:—–]|\s-{1,2}\s|(?<![\p{L}\p{N}_'-])(?:when|whenever|if|unless|after|before|once|until|while|whether|since|because|so|that|which|who|whose|where)(?![\p{L}\p{N}_'-])/iu.exec(
+      masked,
+    );
+  return cut ? masked.slice(0, cut.index) : masked;
+}
+
+/** Dashes that join clauses: an em dash, or a spaced en dash or double hyphen. */
+const DASH = /—|\s[–-]{1,2}\s/g;
 
 /** "we", "our", "us", "let's" and their forms: the explainer speaking as a team the reader is not part of. */
 const WE_WORDS =
@@ -886,6 +1045,23 @@ const WE_WORDS =
 function withoutQuotes(text: string): string {
   return text.replace(/"[^"\n]*"|“[^”\n]*”/g, (q) => " ".repeat(q.length));
 }
+
+/**
+ * Tool words that are also everyday words of code (a list node, an edge server, a regex anchor): checked in tours
+ * only, where the reader follows the guide. Element summaries and details describe code, which may have nodes and
+ * edges of its own.
+ */
+const TOUR_ONLY_TOOL_WORDS = new Set([
+  "node",
+  "nodes",
+  "edge",
+  "edges",
+  "anchor",
+  "anchors",
+  "anchored",
+]);
+/** A test double is a stub too: "stub" passes in a text about tests. */
+const TEST_CONTEXT = /\b(?:tests?|testing|mocks?|fakes?|fixtures?|spy|spies)\b/i;
 
 const TOOL_PATTERNS = Object.keys(TOOL_WORDS).map((word) => ({
   word,
@@ -1058,6 +1234,11 @@ interface ProseOptions {
    * is to be shortened, not split, so that one fix does not trip `tour-summary`.
    */
   sentenceRoom?: number;
+  /**
+   * The text is the summary of an element or a step, which sits next to its label: "It" may start sentence 2 when
+   * sentence 1 names the thing, and one passive in sentence 1 is a finding.
+   */
+  summary?: boolean;
 }
 
 interface Where {
@@ -1102,12 +1283,16 @@ class Linter {
         const to = m.index + m[0].length;
         if (taken.some(([a, b]) => from < b && to > a)) continue;
         if (CLAUSE_START_FILLERS.has(phrase) && tokenBefore(text, from).kind !== "start") continue;
+        const key = phrase.toLowerCase();
+        if (FILLER_UNLESS_BEFORE[key]?.test(text.slice(to))) continue;
+        const onlyBefore = FILLER_ONLY_BEFORE[key];
+        if (onlyBefore && !onlyBefore.test(text.slice(to))) continue;
         taken.push([from, to]);
         fillers.push({ phrase, index: from });
       }
     }
     this.weVoice(where, text, quoteAt);
-    if (where.kind === "tour" || where.kind === "tour-step") this.toolWords(where, text, quoteAt);
+    this.toolWords(where, text, quoteAt);
     if (fillers.length > 0) {
       fillers.sort((a, b) => a.index - b.index);
       const unique = [...new Set(fillers.map((f) => f.phrase))];
@@ -1162,7 +1347,12 @@ class Linter {
 
   /** `we-voice`: "we", "our", "us" or "let's" outside code spans and quotes ("US" is a place). */
   private weVoice(where: Where, text: string, quoteAt: (index: number) => string): void {
-    const found = [...withoutQuotes(text).matchAll(WE_WORDS)].filter((m) => m[0] !== "US");
+    const plain = withoutQuotes(text);
+    // "US" is a place; "us" after a number is microseconds ("1000 us")
+    const found = [...plain.matchAll(WE_WORDS)].filter(
+      (m) =>
+        m[0] !== "US" && !(m[0].toLowerCase() === "us" && /\d\s*$/.test(plain.slice(0, m.index))),
+    );
     if (found.length === 0) return;
     const unique = [...new Set(found.map((m) => m[0].toLowerCase().replace("’", "'")))];
     this.add(
@@ -1174,11 +1364,14 @@ class Linter {
     );
   }
 
-  /** `tool-word`: xpl's own words in a tour, unless the explainer's boxes or concepts name the code that way. */
+  /** `tool-word`: xpl's own words in reader text, unless the explainer's boxes or concepts name the code that way. */
   private toolWords(where: Where, text: string, quoteAt: (index: number) => string): void {
     const found: { word: string; index: number }[] = [];
+    const tour = where.kind === "tour" || where.kind === "tour-step";
     for (const { word, pattern } of TOOL_PATTERNS) {
       if (this.ownWords.has(stem(word))) continue;
+      if (!tour && TOUR_ONLY_TOOL_WORDS.has(word)) continue;
+      if (word.startsWith("stub") && TEST_CONTEXT.test(text)) continue;
       pattern.lastIndex = 0;
       for (let m = pattern.exec(text); m; m = pattern.exec(text)) {
         if (word.startsWith("edge")) {
@@ -1247,7 +1440,19 @@ class Linter {
         'say what this part is about ("Matching drops rejected types")',
       );
     }
-    this.words(where, mask(title), evidence);
+    const masked = mask(title);
+    const count = words(masked.text).length;
+    // a draft's TODO title is hint text (todo-left reports it), judged once it is written
+    if (count > LINT_LIMITS.titleWords && !/\bTODO\b/.test(title)) {
+      this.add(
+        where,
+        "long-title",
+        excerpt(title),
+        `${count} words (a title takes at most ${LINT_LIMITS.titleWords})`,
+        "keep a title near 8 words that state one fact; put the rest in the text below",
+      );
+    }
+    this.words(where, masked, evidence);
   }
 
   /**
@@ -1342,6 +1547,7 @@ class Linter {
     const masked = mask(value);
     const list = sentences(masked.text);
     const counts = list.map((s) => words(s).length);
+    let dashed = false;
     list.forEach((sentence, i) => {
       if (counts[i]! > LINT_LIMITS.sentenceWords) {
         this.add(
@@ -1354,7 +1560,32 @@ class Linter {
             : "split it: one fact per sentence, aim for 15-20 words",
         );
       }
-      const subject = bareSubject(sentence);
+      let subject = bareSubject(sentence);
+      if (subject === "It" && i > 0 && opts.summary && bareSubject(list[0]!) === undefined) {
+        subject = undefined; // the first sentence names the thing (or starts with a verb next to its label)
+      }
+      // in a summary, where the label next to it names the code and a verb start is the easy fix
+      const action = subject === undefined && opts.summary ? abstractSubject(sentence) : undefined;
+      if (action !== undefined) {
+        this.add(
+          where,
+          "abstract-subject",
+          excerpt(unmask(sentence, masked.spans)),
+          `"${action}" names an action, not the code that does it`,
+          'make the code the subject ("`assembleSymbols` assigns ids", not "Symbol assembly assigns ids"), or start a box summary with the verb ("Assigns ids ...")',
+        );
+      }
+      const dashes = withoutCode(sentence).match(DASH)?.length ?? 0;
+      if (dashes >= 2 && !dashed) {
+        dashed = true;
+        this.add(
+          where,
+          "dash-chain",
+          excerpt(unmask(sentence, masked.spans)),
+          `${dashes} dashes in one sentence`,
+          "split it into sentences, or use commas: one fact per sentence",
+        );
+      }
       if (subject !== undefined && subject.startsWith("There ")) {
         this.add(
           where,
@@ -1374,7 +1605,21 @@ class Linter {
       }
     });
     const passive = list.flatMap((sentence) => passives(sentence));
-    if (passive.length >= LINT_LIMITS.passiveClauses && !/\bTODO\b/.test(value)) {
+    const firstPassive = opts.summary && list.length > 0 ? passives(mainClause(list[0]!)) : [];
+    const passiveHint =
+      'name who does it: "The CLI writes the accepted changes", not "Accepted changes are written"; ' +
+      'for a state, use a plain verb ("is on", "runs only on Linux")';
+    if (/\bTODO\b/.test(value)) {
+      // a draft's text is judged once it is written
+    } else if (passive.length < LINT_LIMITS.passiveClauses && firstPassive.length > 0) {
+      this.add(
+        where,
+        "passive-voice",
+        excerpt(unmask(list[0]!, masked.spans)),
+        `a passive clause ("${firstPassive[0]}") in the first sentence of a summary: who does it?`,
+        passiveHint,
+      );
+    } else if (passive.length >= LINT_LIMITS.passiveClauses) {
       const shown = [...new Set(passive)].slice(0, 3);
       this.add(
         where,
@@ -1386,7 +1631,7 @@ class Linter {
           ),
         ),
         `${passive.length} passive clauses (${shown.map((p) => `"${p}"`).join(", ")}${passive.length > 3 ? ", ..." : ""}): who does it?`,
-        'name who does it: "The CLI writes the accepted changes", not "Accepted changes are written"',
+        passiveHint,
       );
     }
     const counted = counts.filter((n) => n > 0);
@@ -1652,12 +1897,13 @@ function noteTitle(note: unknown): string {
   return (HEADING.exec(line)?.[1] ?? line).trim();
 }
 
-/** `tour-first-step`, `tour-length` and `tour-covers-map` for one tour (see `LINT_RULES`). */
+/** `tour-first-step`, `tour-length`, `tour-ends` and `tour-covers-map` for one tour (see `LINT_RULES`). */
 function orderChecks(
   lint: Linter,
   tourId: string,
   tour: Record<string, unknown>,
   at: Lookup,
+  change: boolean,
 ): void {
   const where: Where = { elementId: tourId, kind: "tour", field: "steps" };
   const steps = list<unknown>(tour.steps).map(record);
@@ -1665,6 +1911,7 @@ function orderChecks(
     list<unknown>(step.focus).filter((id): id is string => typeof id === "string");
   const viewOf = (step: Record<string, unknown>) => at.views.get(str(step.view) ?? "");
 
+  const usesMap = steps.some((step) => viewOf(step)?.type === "graph");
   // the first step shows the big picture
   const first = steps[0];
   if (first !== undefined) {
@@ -1675,7 +1922,6 @@ function orderChecks(
     const late = LATE_WORDS.exec(noteTitle(first.note));
     if (late) reasons.push(`its title says "${late[0]}"`);
     const view = viewOf(first);
-    const usesMap = steps.some((step) => viewOf(step)?.type === "graph");
     if (view !== undefined && view.type !== "graph" && usesMap) {
       reasons.push(`it opens on the ${String(view.type)} ${str(view.id)}, not on the map`);
     }
@@ -1693,6 +1939,26 @@ function orderChecks(
           "tests, edge cases and open questions come last",
       );
     }
+  }
+
+  // the last step goes back to the map and says where next; a talk and a change end on their own point (the risk)
+  const last = steps.at(-1);
+  if (
+    last !== undefined &&
+    steps.length >= LINT_LIMITS.tourEndsSteps &&
+    usesMap &&
+    viewOf(last)?.type !== "graph" &&
+    !change &&
+    !isTalk(tour)
+  ) {
+    const view = viewOf(last);
+    lint.add(
+      where,
+      "tour-ends",
+      excerpt(noteTitle(last.note) || (str(last.id) ?? "")),
+      `the last step (${str(last.id) ?? "?"}) is ${view ? `on the ${String(view.type)} ${str(view.id)}` : "on no diagram"}, not on the map`,
+      "end on the map with where next: the boxes the tour did not open, or the next guide to read",
+    );
   }
 
   if (steps.length > LINT_LIMITS.tourSteps) {
@@ -2295,7 +2561,7 @@ export function lintExplainer(explainer: Explainer, model?: ExplainerModel): Lin
         `add ${range}: the answer first, then up to four reasons; for a change: what behaves differently, the risk, the tests`,
       );
     }
-    orderChecks(lint, tourId, tour, byId);
+    orderChecks(lint, tourId, tour, byId, explainer.change !== undefined);
     const talk = isTalk(tour);
     list<unknown>(tour.steps).forEach((stepValue, index) => {
       const step = record(stepValue);
@@ -2351,6 +2617,18 @@ export function lintExplainer(explainer: Explainer, model?: ExplainerModel): Lin
       }
       const masked = lint.prose(where, body, { evidence });
       if (masked === undefined) return;
+      const opener = heading
+        ? /^[\s"'(*_]*(So|But|And|Also|Then)(?=[\s,])/.exec(sentences(masked.text)[0] ?? "")
+        : null;
+      if (opener) {
+        lint.add(
+          where,
+          "connector-start",
+          excerpt(body.trim()),
+          `the note starts with "${opener[1]}", which leans on the heading or the step before`,
+          'state the fact on its own: "The map needs an index first", not "So the map needs an index first"',
+        );
+      }
       if (talk && body.trim().length > LINT_LIMITS.talkNoteChars && !/\bTODO\b/.test(body)) {
         lint.add(
           where,
@@ -2434,7 +2712,10 @@ export function lintExplainer(explainer: Explainer, model?: ExplainerModel): Lin
         }
       }
       lint.plain(at("label"), step.label, true);
-      lint.prose(at("summary"), step.summary, { evidence: { anchored: hasAnchors(step) } });
+      lint.prose(at("summary"), step.summary, {
+        evidence: { anchored: hasAnchors(step) },
+        summary: true,
+      });
       lint.summaryMarks(at("summary"), step.summary);
       lint.summaryLength(at("summary"), step.summary);
     }
@@ -2449,7 +2730,10 @@ export function lintExplainer(explainer: Explainer, model?: ExplainerModel): Lin
     const evidence: Evidence = { anchored: hasAnchors(item) };
     if (titled) lint.title({ elementId: id, kind, field: "label" }, item.label, evidence);
     lint.plain({ elementId: id, kind, field: "label" }, item.label, !titled);
-    lint.prose({ elementId: id, kind, field: "summary" }, item.summary, { evidence });
+    lint.prose({ elementId: id, kind, field: "summary" }, item.summary, {
+      evidence,
+      summary: true,
+    });
     lint.summaryMarks({ elementId: id, kind, field: "summary" }, item.summary);
     lint.summaryLength({ elementId: id, kind, field: "summary" }, item.summary);
     lint.prose({ elementId: id, kind, field: "detail" }, item.detail, { evidence });

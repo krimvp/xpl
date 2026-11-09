@@ -164,7 +164,7 @@ export function checkReadiness(
       issue.code === "change"
         ? "Regenerate the change record with xpl change <name> <base>..<head>."
         : issue.code === "commit" || /anchor/.test(issue.code ?? "")
-          ? "Run xpl resolve --write; re-explain drifted code or repair missing anchors."
+          ? "Run xpl resolve <explainer> --write; re-explain drifted code or repair missing anchors."
           : "Repair this field with xpl apply; run xpl validate again.",
   }));
   if (options.sourceWarning)
@@ -174,7 +174,7 @@ export function checkReadiness(
       elementId: "(source)",
       field: "index",
       message: options.sourceWarning,
-      hint: "Run xpl index, then xpl resolve --write and repair drifted claims.",
+      hint: "Run xpl index, then xpl resolve <explainer> --write and repair drifted claims.",
     });
   // A resolver may retain cached ranges when text is unavailable. Ready output needs readable evidence.
   for (const site of collectAnchors(explainer)) {

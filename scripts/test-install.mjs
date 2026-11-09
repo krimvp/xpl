@@ -193,7 +193,9 @@ assert.equal(damaged.checks.find((check) => check.id === "artifact").status, "mi
 assert.equal(damaged.checks.find((check) => check.id === "grammars").status, "missing");
 writeFileSync(corrupt, grammar);
 
-const browser = await chromium.launch();
+const browser = await chromium.launch(
+  process.env.XPL_CHROMIUM_PATH ? { executablePath: process.env.XPL_CHROMIUM_PATH } : {},
+);
 const results = [];
 try {
   for (const language of ["ts", "py", "go"]) {

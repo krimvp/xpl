@@ -104,6 +104,11 @@ describe("xpl start", () => {
     expect(guide.views[0].scope.question).toBe("How does a failed job get retried?");
     expect(patch.scope.audience).toBe("Maintainers");
     expect((await xpl(dir, "validate", "job-retries")).code).toBe(0);
+    // without --entry it drafted an overview, says so, and names where the path could start
+    expect(result.out).toContain("note: drafted an overview of the whole repository");
+    expect(result.out).toContain(
+      "run `xpl draft path job-retries sym:src/runner.ts#Runner.dispatch -o <file>`",
+    );
   });
 
   it("starts a path draft at a named source symbol", async () => {

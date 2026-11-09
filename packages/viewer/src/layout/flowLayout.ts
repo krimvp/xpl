@@ -1,9 +1,11 @@
 import type { ElementId, ExplainerModel, ProcessFlow } from "@xpl/core";
 import { textWidth } from "../measure.js";
 import type { Point } from "../svg.js";
+import type { Box } from "../svg.js";
 import {
   layered,
   orthogonalRoute,
+  type LayeredResult,
   separateTracks,
   sideToward,
   spreadPorts,
@@ -69,14 +71,19 @@ export function transitionText(edge: {
  * one branch is about 700 units wide, so it shows at full size in a pane of that width.)
  */
 export const STAGE_WIDTH = 250;
-export const STAGE_HEIGHT = 100;
+/** The tallest stage box: three lines of label and the actor line under them (`stageHeight`). */
+export const STAGE_HEIGHT = 102;
+/** A stage box is as tall as its words: one line of label is 66 units, each more adds a line (V2-07). */
+export function stageHeight(label: string): number {
+  return 66 + 18 * (wrapWords(label, STAGE_LABEL_CHARS, 3).length - 1);
+}
 export const DECISION_WIDTH = 300;
 export const DECISION_HEIGHT = 150;
 /** Characters per line of a stage label (three lines at most). */
 export const STAGE_LABEL_CHARS = 28;
 /** Characters per line of a transition label ("yes: HTTP below ASGI 2.4" takes two lines). */
 export const EDGE_LABEL_CHARS = 18;
-/** Font size of the flow's text (styles: `.flow-stage text`, `.flow-transition text`). */
+/** Font size of a transition's words (styles: `.flow-transition text`). */
 const FLOW_FONT = 13;
 /** Line height of a transition label. */
 export const EDGE_LABEL_LINE = 17;
@@ -167,10 +174,11 @@ export function repeatEnds(flow: ProcessFlow): {
 export async function layoutFlow(source: ProcessFlow): Promise<FlowLayout> {
   const { boxes, transitions: links } = repeatEnds(source);
   const flow = { ...source, transitions: links };
+  const labelOf = new Map(source.stages.map(({ step }) => [step.id, step.label] as const));
   const children = boxes.map(({ id, shape, copyOf }) => ({
     id,
     width: shape === "decision" ? DECISION_WIDTH : STAGE_WIDTH,
-    height: shape === "decision" ? DECISION_HEIGHT : STAGE_HEIGHT,
+    height: shape === "decision" ? DECISION_HEIGHT : stageHeight(labelOf.get(copyOf ?? id) ?? ""),
     ...(copyOf ? { copyOf } : {}),
   }));
   const labels = new Map(
@@ -204,16 +212,83 @@ export async function layoutFlow(source: ProcessFlow): Promise<FlowLayout> {
       pad: { top: 30, right: 24, bottom: 30, left: 24 },
     },
   );
-  const ports = new Map<string, Port>();
   const transitions = joins.filter(
     (edge) => result.boxes.has(edge.from) && result.boxes.has(edge.to) && edge.from !== edge.to,
   );
+  // Where a path splits, the lower step numbers go on the left (V2-06): the whole flow is mirrored when that
+  // agrees with more of its rows than dagre's own order does, and the ends a choice leads to are put in order.
+  const number = new Map(source.stages.map(({ step }, i) => [step.id, i] as const));
+  const indexOf = (id: string) =>
+    number.get(children.find((child) => child.id === id)?.copyOf ?? id) ?? 0;
+  const facing = readsBackwards(result, indexOf) ? mirrored(result) : result;
+  // The main path of a run of choices goes straight down (V1-08): a box moves under the one before it, its
+  // early exits step aside. Kept only when no route then runs through a box.
+  const straight = straightened(facing, transitions, 36, indexOf);
+  let routed: Point[][] = routeFlow(
+    straight ?? facing,
+    transitions,
+    straight ? straight.moved : new Set(),
+  );
+  let placed: LayeredResult = straight ?? facing;
+  if (straight && !clearOfBoxes(routed, transitions, straight.boxes)) {
+    routed = routeFlow(facing, transitions, new Set());
+    placed = facing;
+  }
+  return finishFlow(flow, placed, transitions, routed, labels, children);
+}
+
+/** True when more pairs of boxes side by side read against the step numbers (higher on the left) than with them. */
+function readsBackwards(result: LayeredResult, indexOf: (id: string) => number): boolean {
+  const rows = new Map<number, { id: string; x: number }[]>();
+  for (const [id, b] of result.boxes) {
+    const key = Math.round(b.y + b.height / 2);
+    rows.set(key, [...(rows.get(key) ?? []), { id, x: b.x }]);
+  }
+  let with_ = 0,
+    against = 0;
+  for (const row of rows.values())
+    for (const a of row)
+      for (const b of row)
+        if (a.x < b.x) {
+          if (indexOf(a.id) < indexOf(b.id)) with_++;
+          else if (indexOf(a.id) > indexOf(b.id)) against++;
+        }
+  return against > with_;
+}
+
+/** The layout seen in a mirror: left and right swapped. */
+function mirrored(result: LayeredResult): LayeredResult {
+  const flip = (p: Point): Point => ({ x: result.width - p.x, y: p.y });
+  return {
+    width: result.width,
+    height: result.height,
+    boxes: new Map(
+      [...result.boxes].map(([id, b]) => [id, { ...b, x: result.width - b.x - b.width }]),
+    ),
+    routes: new Map(
+      [...result.routes].map(([id, route]) => [
+        id,
+        { via: route.via.map(flip), ...(route.label ? { label: flip(route.label) } : {}) },
+      ]),
+    ),
+  };
+}
+
+/** The routes of a flow's transitions; those that touch a box in `moved` are routed afresh (dagre's track is stale). */
+function routeFlow(
+  result: LayeredResult,
+  transitions: readonly { id: string; from: string; to: string }[],
+  moved: ReadonlySet<string>,
+): Point[][] {
+  const via = (edge: { id: string; from: string; to: string }) =>
+    moved.has(edge.from) || moved.has(edge.to) ? [] : (result.routes.get(edge.id)?.via ?? []);
+  const ports = new Map<string, Port>();
   for (const edge of transitions) {
     const from = result.boxes.get(edge.from)!;
     const to = result.boxes.get(edge.to)!;
-    const via = result.routes.get(edge.id)?.via ?? [];
-    const next = via[0] ?? { x: to.x + to.width / 2, y: to.y + to.height / 2 };
-    const previous = via[via.length - 1] ?? {
+    const track = via(edge);
+    const next = track[0] ?? { x: to.x + to.width / 2, y: to.y + to.height / 2 };
+    const previous = track[track.length - 1] ?? {
       x: from.x + from.width / 2,
       y: from.y + from.height / 2,
     };
@@ -233,12 +308,157 @@ export async function layoutFlow(source: ProcessFlow): Promise<FlowLayout> {
     orthogonalRoute(
       result.boxes.get(edge.from)!,
       result.boxes.get(edge.to)!,
-      result.routes.get(edge.id)?.via ?? [],
+      via(edge),
       { from: spread.get(`${edge.id}\0from`)!, to: spread.get(`${edge.id}\0to`)! },
       "DOWN",
     ),
   );
   separateTracks(routed, "DOWN");
+  return routed;
+}
+
+/** True when no route runs through a box other than its own two. */
+function clearOfBoxes(
+  routed: readonly Point[][],
+  transitions: readonly { from: string; to: string }[],
+  boxes: ReadonlyMap<string, Box>,
+): boolean {
+  return routed.every((points, n) => {
+    const edge = transitions[n]!;
+    return [...boxes].every(
+      ([id, b]) =>
+        id === edge.from ||
+        id === edge.to ||
+        points.slice(1).every((p, i) => {
+          const a = points[i]!;
+          const left = Math.min(a.x, p.x),
+            right = Math.max(a.x, p.x),
+            top = Math.min(a.y, p.y),
+            bottom = Math.max(a.y, p.y);
+          return (
+            right <= b.x + 1 ||
+            left >= b.x + b.width - 1 ||
+            bottom <= b.y + 1 ||
+            top >= b.y + b.height - 1
+          );
+        }),
+    );
+  });
+}
+
+/**
+ * The flow with its main path straight: going down rank by rank, the main next box of each box (the one more
+ * of the flow follows; the first written on a tie) moves under it when that box has no other way in, and the
+ * boxes beside it that lead nowhere (early exits) step aside to make room. Undefined when nothing moves.
+ */
+function straightened(
+  result: LayeredResult,
+  transitions: readonly { from: string; to: string }[],
+  gap: number,
+  indexOf: (id: string) => number,
+): (LayeredResult & { moved: Set<string> }) | undefined {
+  const boxes = new Map([...result.boxes].map(([id, b]) => [id, { ...b }]));
+  const out = new Map<string, string[]>();
+  const into = new Map<string, number>();
+  for (const edge of transitions) {
+    out.set(edge.from, [...(out.get(edge.from) ?? []), edge.to]);
+    into.set(edge.to, (into.get(edge.to) ?? 0) + 1);
+  }
+  const after = new Map<string, number>();
+  const reach = (id: string, seen = new Set<string>()): number => {
+    if (after.has(id)) return after.get(id)!;
+    if (seen.has(id)) return 0;
+    seen.add(id);
+    const n = (out.get(id) ?? []).reduce((sum, next) => sum + 1 + reach(next, seen), 0);
+    after.set(id, n);
+    return n;
+  };
+  const centreY = (b: Box) => Math.round(b.y + b.height / 2);
+  const moved = new Set<string>();
+  // the boxes one choice leads to (each with no other way in), side by side in one row, in step order
+  for (const nexts of out.values()) {
+    const ends = nexts.filter((id) => into.get(id) === 1);
+    const row = ends.map((id) => boxes.get(id)!);
+    if (ends.length < 2 || row.some((b) => b.y !== row[0]!.y || b.width !== row[0]!.width))
+      continue;
+    const slots = row.map((b) => b.x).sort((a, b) => a - b);
+    [...ends]
+      .sort((a, b) => indexOf(a) - indexOf(b))
+      .forEach((id, n) => {
+        const b = boxes.get(id)!;
+        if (Math.abs(b.x - slots[n]!) < 0.5) return;
+        b.x = slots[n]!;
+        moved.add(id);
+      });
+  }
+  const ids = [...boxes.keys()].sort((a, b) => boxes.get(a)!.y - boxes.get(b)!.y);
+  for (const id of ids) {
+    const nexts = out.get(id) ?? [];
+    if (nexts.length === 0) continue;
+    if (nexts.length === 1) continue;
+    const main = [...nexts].sort((a, b) => reach(b) - reach(a))[0]!;
+    // a main path and early exits only: a box whose other ways on lead on too is two paths, not one
+    if (
+      reach(main) === 0 ||
+      nexts.some((next) => next !== main && (out.get(next) ?? []).length > 0)
+    )
+      continue;
+    const parent = boxes.get(id)!;
+    const child = boxes.get(main)!;
+    if ((into.get(main) ?? 0) !== 1 || child.y <= parent.y) continue;
+    const target = parent.x + parent.width / 2 - child.width / 2;
+    if (Math.abs(target - child.x) < 0.5) continue;
+    // the others of its rank, which must step aside: only boxes that lead nowhere may
+    const rank = [...boxes].filter(([other, b]) => other !== main && centreY(b) === centreY(child));
+    const clash = rank.filter(
+      ([, b]) => b.x < target + child.width + gap && b.x + b.width + gap > target,
+    );
+    if (clash.some(([other]) => (out.get(other) ?? []).length > 0)) continue;
+    child.x = target;
+    moved.add(main);
+    // the exits it clashes with go to the side they were on, packed away from it
+    for (const side of [-1, 1]) {
+      let edge = side < 0 ? target - gap : target + child.width + gap;
+      const list = clash
+        .filter(
+          ([, b]) =>
+            Math.sign(b.x + b.width / 2 - (target + child.width / 2)) === side ||
+            (side > 0 && b.x + b.width / 2 === target + child.width / 2),
+        )
+        .sort(([, a], [, b]) => side * (a.x - b.x));
+      for (const [other, b] of list) {
+        b.x = side < 0 ? edge - b.width : edge;
+        edge = side < 0 ? b.x - gap : b.x + b.width + gap;
+        moved.add(other);
+      }
+    }
+  }
+  if (moved.size === 0) return undefined;
+  // back inside the padding, and as wide as it now is
+  const left = Math.min(...[...boxes.values()].map((b) => b.x));
+  const shift = 24 - left;
+  for (const b of boxes.values()) b.x += shift;
+  const routes = new Map(
+    [...result.routes].map(([id, route]) => [
+      id,
+      {
+        via: route.via.map((p) => ({ x: p.x + shift, y: p.y })),
+        ...(route.label ? { label: { x: route.label.x + shift, y: route.label.y } } : {}),
+      },
+    ]),
+  );
+  const width = Math.max(...[...boxes.values()].map((b) => b.x + b.width)) + 24;
+  return { width, height: result.height, boxes, routes, moved };
+}
+
+function finishFlow(
+  flow: ProcessFlow,
+  result: LayeredResult,
+  transitions: readonly (ProcessFlow["transitions"][number] & { to: string })[],
+  routed: Point[][],
+  labels: ReadonlyMap<string, { text: string; width: number; height: number }>,
+  children: readonly { id: string; width: number; height: number; copyOf?: string }[],
+): FlowLayout {
   const loops = flow.transitions
     .filter((edge) => edge.from === edge.to && result.boxes.has(edge.from))
     .map((edge) => loopTransition(edge, result.boxes.get(edge.from)!, labels.get(edge.id)));
@@ -272,16 +492,12 @@ export async function layoutFlow(source: ProcessFlow): Promise<FlowLayout> {
               endPoint: points[points.length - 1]!,
             },
           ],
-          labels:
-            label && route?.label
-              ? [
-                  {
-                    ...label,
-                    x: route.label.x - label.width / 2,
-                    y: route.label.y - label.height / 2,
-                  },
-                ]
-              : [],
+          labels: (() => {
+            if (!label) return [];
+            const centre =
+              route?.label && onRoute(points, route.label) ? route.label : midRun(points);
+            return [{ ...label, x: centre.x - label.width / 2, y: centre.y - label.height / 2 }];
+          })(),
           ...(edge.kind ? { kind: edge.kind } : {}),
         };
       }),
@@ -289,6 +505,35 @@ export async function layoutFlow(source: ProcessFlow): Promise<FlowLayout> {
       ...exits,
     ],
   };
+}
+
+/** True when `p` lies on the route (within a few units). */
+function onRoute(points: readonly Point[], p: Point): boolean {
+  return points.slice(1).some((b, i) => {
+    const a = points[i]!;
+    return (
+      p.x >= Math.min(a.x, b.x) - 3 &&
+      p.x <= Math.max(a.x, b.x) + 3 &&
+      p.y >= Math.min(a.y, b.y) - 3 &&
+      p.y <= Math.max(a.y, b.y) + 3
+    );
+  });
+}
+
+/** The middle of the longest upright run of a route (else of its longest run): where its label goes. */
+function midRun(points: readonly Point[]): Point {
+  let best = points[0] ?? { x: 0, y: 0 };
+  let longest = -1;
+  for (let i = 1; i < points.length; i++) {
+    const a = points[i - 1]!,
+      b = points[i]!;
+    const length = Math.hypot(b.x - a.x, b.y - a.y) * (Math.abs(a.x - b.x) < 0.5 ? 2 : 1);
+    if (length > longest) {
+      longest = length;
+      best = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+    }
+  }
+  return best;
 }
 
 /** How far a loop reaches out of the right side of its box. */

@@ -57,6 +57,7 @@ import {
   type PatchTourStep,
   type PatchView,
   type Reference,
+  type SequenceFrame,
   type TextCache,
 } from "@xpl/core";
 import {
@@ -68,6 +69,7 @@ import {
   workspaceParents,
 } from "./outside.js";
 import { plural } from "./format.js";
+import type { ControlBlock } from "./control-blocks.js";
 
 export const DRAFT_LIMITS = {
   /** Boxes on a drafted map (the skill: 4-8). */
@@ -78,8 +80,10 @@ export const DRAFT_LIMITS = {
   changeSteps: 12,
   /** Calls in a drafted sequence. */
   pathCalls: 12,
-  /** Calls that get a tour step of their own (the skill: 5-9 steps, the big picture first). */
+  /** Steps of a path tour, the map, the big picture and where to go next included (the skill: 5-8). */
   pathSteps: 8,
+  /** Steps of a repo tour, where to go next included (the skill: 6-9). */
+  repoSteps: 9,
   /** Participants of a drafted sequence, the entry included. */
   participants: 6,
   /** Code ranges per tour step. */
@@ -212,7 +216,10 @@ export class FreeIds {
     add(explainer.views);
     add(explainer.tours);
     for (const view of Array.isArray(explainer.views) ? explainer.views : []) {
-      if (view.type !== "graph") add(view.steps);
+      if (view.type !== "graph") {
+        add(view.steps);
+        add(view.frames);
+      }
     }
   }
 
@@ -1524,6 +1531,26 @@ export function draftRepo(input: DraftInput): Draft {
     notes.push(
       `${insides.length} services found under ${nameList([...new Set(serviceRoots.map(dirOf))])}: one box each on the system map, and one map of the inside of each`,
     );
+    // code no service owns (Go's `internal/store` that two programs import) is a part of each service that uses it
+    const sharedUnder = (dir: string): Unit[] =>
+      children(dir).flatMap((unit) =>
+        serviceRoots.includes(unit.path)
+          ? []
+          : unit.dir && serviceRoots.some((root) => root.startsWith(`${unit.path}/`))
+            ? sharedUnder(unit.path)
+            : [unit],
+      );
+    const unused: string[] = [];
+    for (const unit of sharedUnder("")) {
+      const users = insides.filter(
+        (i) => i.units.length < L.mapBoxes && i.units.some((u) => between(u, unit) > 0),
+      );
+      for (const inside of users) inside.units.push(unit);
+      if (users.length === 0) unused.push(unit.path);
+    }
+    if (unused.length > 0) {
+      notes.push(`code outside the services that no service map shows: ${nameList(unused)}`);
+    }
   } else {
     const { units, offMap } = partsOf("");
     if (units.length > 0) {
@@ -1555,8 +1582,6 @@ export function draftRepo(input: DraftInput): Draft {
   const unitOfFile = new Map<string, Unit>();
   for (const inside of insides)
     for (const unit of inside.units) for (const f of unit.files) unitOfFile.set(f, unit);
-  const insideOfUnit = new Map<Unit, Inside>();
-  for (const inside of insides) for (const unit of inside.units) insideOfUnit.set(unit, inside);
   /** Per system: the first import site in each part that imports it (the evidence of its arrows). */
   const reach = new Map<string, { unit: Unit; anchor: AnchorInput }[]>();
   for (const system of systems) {
@@ -1636,38 +1661,56 @@ export function draftRepo(input: DraftInput): Draft {
     }
   }
 
-  // ── Who starts a program that no web or command-line framework names: a person at its `main` function. And
-  // the settings files the code loads (index `resources`): one box, anchored at the file and the line that loads it.
-  const entrySym =
+  // ── Who starts a program that no web or command-line framework names: a person at its `main` function (Java's
+  // `main` method of a top-level class too), one arrow to each part that holds a `main`. And the settings files the
+  // code loads (index `resources`): one box, anchored at the file and the line that loads it.
+  const isMain = (sym: IndexedSymbol) =>
+    (sym.kind === "function" && sym.path === "main") ||
+    (sym.kind === "method" &&
+      /^[^.]+\.main$/.test(sym.path) &&
+      model.file(sym.file)?.language === "java");
+  const mains =
     inbound.length === 0 && !library
       ? model.files
           .map((f) => f.path)
           .filter((f) => isCode(f) && unitOfFile.has(f))
           .sort()
-          .flatMap((f) => model.topLevelSymbols(f))
-          .find((sym) => sym.kind === "function" && sym.path === "main")
-      : undefined;
-  const entryUnit = entrySym ? unitOfFile.get(entrySym.file) : undefined;
-  const operatorId = entryUnit ? reuse("grp", "operator") : undefined;
-  if (entrySym && entryUnit && operatorId && !stored.has(operatorId)) {
+          .flatMap((f) => model.symbolsInFile(f).filter(isMain).slice(0, 1))
+      : [];
+  const mainsByUnit = new Map<Unit, IndexedSymbol[]>();
+  for (const sym of mains) {
+    const unit = unitOfFile.get(sym.file)!;
+    mainsByUnit.set(unit, [...(mainsByUnit.get(unit) ?? []), sym]);
+  }
+  const entrySym = mains[0];
+  const operatorId = entrySym ? reuse("grp", "operator") : undefined;
+  if (entrySym && operatorId && !stored.has(operatorId)) {
+    const where =
+      mains.length === 1
+        ? `it starts at ${tick(entrySym.path)} in ${entrySym.file}`
+        : `${mains.length} programs start at ${tick(entrySym.path)}: ${nameList(mains.map((m) => m.file))}`;
     nodes.push({
       id: operatorId,
       label: "Operator",
       role: "person",
       parent: "repo",
       summary: todo(
-        `one line: who starts the program and how (it starts at ${tick(entrySym.path)} in ${entrySym.file}). Rename the box if a program, not a person, starts it.`,
+        `one line: who starts the program and how (${where}). Rename the box if a program, not a person, starts it.`,
       ),
-      anchors: [definition(entrySym)],
+      // evidence at both ends of each arrow: every `main` it starts
+      anchors: [...mainsByUnit.values()].map((syms) => definition(syms[0]!)),
     });
-    edges.push({
-      id: ids.get("edge", `operator-${slugOf(entryUnit.path)}`),
-      from: operatorId,
-      to: entryUnit.id,
-      kind: "custom",
-      label: todo("1-4 words: how they start it (for example: runs the program)"),
-      anchors: [definition(entrySym)],
-    });
+    for (const [unit, syms] of mainsByUnit) {
+      const slug = slugOf(mainsByUnit.size > 1 ? unit.path.replace(/\//g, "-") : unit.path);
+      edges.push({
+        id: ids.get("edge", `operator-${slug}`),
+        from: operatorId,
+        to: unit.id,
+        kind: "custom",
+        label: todo("1-4 words: how they start it (for example: runs the program)"),
+        anchors: [definition(syms[0]!)],
+      });
+    }
   }
   const loads: { unit: Unit; anchor: AnchorInput; files: string[] }[] = [];
   for (const resource of model.index.resources ?? []) {
@@ -1748,7 +1791,7 @@ export function draftRepo(input: DraftInput): Draft {
         };
     if (!stored.has(inside.service)) nodes.push(service);
     const used = linked.filter((s) =>
-      reach.get(s.slug)!.some((r) => insideOfUnit.get(r.unit) === inside),
+      reach.get(s.slug)!.some((r) => inside.units.includes(r.unit)),
     );
     const depth = Math.max(...inside.units.map((u) => u.path.split("/").length));
     views.push({
@@ -1763,6 +1806,7 @@ export function draftRepo(input: DraftInput): Draft {
       stubs: { mode: "none" },
     });
     for (const unit of inside.units) {
+      if (nodes.some((n) => n.id === unit.id)) continue;
       const node = overlay(
         stored,
         unit.id,
@@ -1987,7 +2031,38 @@ export function draftRepo(input: DraftInput): Draft {
       topSymbols(mainUnit, L.codeRanges).map((s) => definition(s)),
     ),
   );
-  for (const unit of order.slice(1)) {
+  // one step per part, inside the skill's budget (with the step on where to go next): the last one takes the parts
+  // that are left, together
+  const room = Math.max(1, L.repoSteps - steps.length - 1);
+  const parts = order.slice(1);
+  const groups: Unit[][] = parts.map((unit) => [unit]);
+  if (groups.length > room) groups.splice(room - 1, groups.length, parts.slice(room - 1));
+  for (const group of groups) {
+    if (group.length > 1) {
+      steps.push(
+        tourStep(
+          model,
+          nextId(),
+          main.viewId,
+          group.map((u) => u.id),
+          note(
+            todo("what these smaller parts are for, as a plain statement"),
+            todo(
+              `one short sentence each, in everyday words: ${nameList(
+                group.map((u) => baseName(u.path)),
+                10,
+              )}.`,
+            ),
+          ),
+          group
+            .flatMap((u) => topSymbols(u, 1))
+            .slice(0, L.codeRanges)
+            .map((s) => definition(s)),
+        ),
+      );
+      continue;
+    }
+    const unit = group[0]!;
     const inner = unit.dir ? unit.files.map((f) => baseName(f)) : [];
     const uses = linked.filter((s) => reach.get(s.slug)!.some((r) => r.unit === unit));
     steps.push(
@@ -2136,6 +2211,8 @@ export interface PathEntry {
   symbol: IndexedSymbol;
   /** The class the method was asked on (`URLSafeTimedSerializer`), when it inherits the method from a base. */
   via?: IndexedSymbol;
+  /** The loops and branches in the entry's body (from its syntax tree): the frames of its sequence. */
+  blocks?: readonly ControlBlock[];
 }
 
 /**
@@ -2522,6 +2599,14 @@ function pathSequence(
     };
   });
 
+  const frames = pathFrames(entry.blocks ?? [], steps, stepSlug, ids);
+  if (frames.some((f) => f.kind === "alt")) {
+    notes.push(
+      "an alt frame has one label and no line between its branches: name each branch and its calls in the label " +
+        "(for example: ok: ack; retries left: requeue; else: deadLetter)",
+    );
+  }
+
   const view: PatchView & { type: "sequence" } = {
     id: viewId,
     type: "sequence",
@@ -2534,8 +2619,59 @@ function pathSequence(
     },
     participants,
     steps: steps.map((s) => s.step),
+    ...(frames.length > 0 ? { frames } : {}),
   };
   return { entry, entryId, view, participants, calls: steps, notes };
+}
+
+/** Frames of a drafted sequence, at most this many (the outermost first). */
+const MAX_FRAMES = 5;
+
+/**
+ * The frames around the drawn calls: a `loop` around the calls in a loop, an `alt` around the calls of a branch whose
+ * calls sit in two or more of its arms, an `opt` around the calls of a branch that has calls in one arm only. Each
+ * label is a TODO that quotes the code that decides.
+ */
+function pathFrames(
+  blocks: readonly ControlBlock[],
+  steps: readonly { call: Call; step: PatchSequenceStep }[],
+  slug: string,
+  ids: FreeIds,
+): SequenceFrame[] {
+  const lineOf = (s: { call: Call }) => s.call.ref.site.startLine;
+  const within = (r: { start: number; end: number }) =>
+    steps.filter((s) => lineOf(s) >= r.start && lineOf(s) <= r.end);
+  const frames: SequenceFrame[] = [];
+  for (const block of blocks) {
+    if (frames.length >= MAX_FRAMES) break;
+    const code = tick(block.condition);
+    let kind: SequenceFrame["kind"];
+    let inFrame: typeof steps;
+    let label: string;
+    if (block.kind === "loop") {
+      inFrame = within(block);
+      kind = "loop";
+      label = todo(`what repeats and until when, in a few words (the code: ${code})`);
+    } else {
+      const arms = block.arms.map(within).filter((list) => list.length > 0);
+      if (arms.length === 0) continue;
+      inFrame = arms.flat();
+      kind = arms.length >= 2 ? "alt" : "opt";
+      label =
+        kind === "alt"
+          ? todo(`each branch and its calls, in a few words (the code: ${code})`)
+          : todo(`when these calls run, in a few words (the code: ${code})`);
+    }
+    if (inFrame.length === 0) continue;
+    frames.push({
+      id: ids.get("frame", `${slug}-${kind}`),
+      kind,
+      label,
+      fromStep: inFrame[0]!.step.id,
+      toStep: inFrame.at(-1)!.step.id,
+    });
+  }
+  return frames;
 }
 
 /**
@@ -2557,11 +2693,20 @@ export function draftPath(input: DraftInput, entries: readonly PathEntry[]): Dra
       notes.push(entries.length > 1 ? `${tick(result.view.id)}: ${n}` : n);
   }
 
-  // the main calls of each sequence get a tour step; the budget is shared between the sequences
-  // (the tour stays at most one step longer than for one entry: each sequence has a big-picture step of its own)
+  // the tour stays inside the skill's budget (at most `pathSteps` steps): the map of the files (when the path crosses
+  // two or more), a big-picture step per sequence and the step on where to go next; the main calls of each sequence
+  // share what is left
+  const crossesFiles =
+    new Set(
+      sequences.flatMap((seq) =>
+        seq.participants
+          .map((id) => model.fileOfSymbolId(id.slice("sym:".length)))
+          .filter((f) => f !== undefined && !isTestFile(f)),
+      ),
+    ).size >= 2;
   const perSequence = Math.max(
-    2,
-    Math.floor((L.pathSteps + 1 - sequences.length) / sequences.length),
+    1,
+    Math.floor((L.pathSteps - (crossesFiles ? 2 : 1) - sequences.length) / sequences.length),
   );
   const nodes: PatchNode[] = [];
   const overlaid = new Set<string>();
@@ -2574,18 +2719,38 @@ export function draftPath(input: DraftInput, entries: readonly PathEntry[]): Dra
       const node = overlay(stored, id, todo("one sentence: what it does on this path."));
       if (node) nodes.push(node);
     }
-    let main = [...seq.calls];
+    // a branch (an alt or opt frame, the outermost one) is one tour step: its calls together, how it decides
+    const order = seq.calls.map((c) => c.step.id);
+    const branchOf = (stepId: string) =>
+      (seq.view.frames ?? []).find(
+        (f) =>
+          f.kind !== "loop" &&
+          order.indexOf(f.fromStep) <= order.indexOf(stepId) &&
+          order.indexOf(stepId) <= order.indexOf(f.toStep),
+      );
+    type Group = { calls: typeof seq.calls; frame?: SequenceFrame };
+    const groups: Group[] = [];
+    for (const call of seq.calls) {
+      const frame = branchOf(call.step.id);
+      const last = groups.at(-1);
+      if (frame && last?.frame === frame) last.calls.push(call);
+      else groups.push({ calls: [call], ...(frame ? { frame } : {}) });
+    }
+    // a branch with two outcomes says how the path ends: it keeps its step before any single call
+    const weight = (g: Group) =>
+      Math.max(...g.calls.map((c) => c.call.score)) + (g.frame?.kind === "alt" ? 1000 : 0);
+    let main = groups;
     const quiet: Call[] = [];
     while (main.length > perSequence) {
       const drop = [...main].sort(
-        (a, b) => a.call.score - b.call.score || main.indexOf(b) - main.indexOf(a),
+        (a, b) => weight(a) - weight(b) || main.indexOf(b) - main.indexOf(a),
       )[0]!;
-      quiet.push(drop.call);
+      quiet.push(...drop.calls.map((c) => c.call));
       main = main.filter((m) => m !== drop);
     }
     if (quiet.length > 0) {
       notes.push(
-        `${sequences.length > 1 ? `${tick(seq.view.id)}: ` : ""}calls without a tour step of their own (at most ${perSequence}): ` +
+        `${sequences.length > 1 ? `${tick(seq.view.id)}: ` : ""}calls without a tour step of their own (at most ${perSequence} steps): ` +
           quiet.map((c) => `sym:${c.callee.id}`).join(", "),
       );
     }
@@ -2604,7 +2769,7 @@ export function draftPath(input: DraftInput, entries: readonly PathEntry[]): Dra
             ? todo("the answer to the question, as a plain statement")
             : todo(`the next part of the answer, from ${tick(start)}, as a plain statement`),
           todo("where this path starts, what it ends with, and which call decides the outcome."),
-          "Draft scope: selected direct call sites in source order. Review conditions, loops, repeated calls and omitted branches before publishing.",
+          "Draft scope: selected direct call sites in source order, framed where the code loops or branches. Review conditions, repeated calls and omitted branches before publishing.",
           ...seq.notes
             .filter((text) => /called more than once|calls left out of the sequence/.test(text))
             .map((text) => {
@@ -2620,18 +2785,29 @@ export function draftPath(input: DraftInput, entries: readonly PathEntry[]): Dra
         [definition(seq.entry.symbol)],
       ),
     );
-    for (const { step } of main) {
+    for (const group of main) {
+      const [{ step }] = group.calls as [(typeof group.calls)[number]];
+      const branch = group.frame !== undefined;
       tourSteps.push(
         tourStep(
           model,
           next(),
           seq.view.id,
-          [step.id],
-          note(
-            todo("what this call does for the reader, as a plain statement"),
-            todo("why this call matters here, and the condition under which it runs."),
-          ),
-          step.anchors ?? [],
+          group.calls.map((c) => c.step.id),
+          branch
+            ? note(
+                todo("what this branch decides, as a plain statement"),
+                todo(
+                  `when each call runs (${nameList(group.calls.map((c) => c.step.label))}), in one short sentence each.`,
+                ),
+              )
+            : note(
+                todo("what this call does for the reader, as a plain statement"),
+                todo("why this call matters here, and the condition under which it runs."),
+              ),
+          branch
+            ? group.calls.slice(0, L.codeRanges).map((c) => c.step.anchors![0]!)
+            : (step.anchors ?? []),
         ),
       );
     }

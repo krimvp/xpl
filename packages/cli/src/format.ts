@@ -43,18 +43,22 @@ export function listText(items: readonly string[], max = 3): string {
   return items.length <= max ? items.join(", ") : `${items.slice(0, max).join(", ")}, ...`;
 }
 
-/** One line per issue: `error   nodes[1].anchors[0] (id): message`. */
-export function renderIssue(issue: Issue): string {
+/**
+ * One line per issue: `error   nodes[1].anchors[0] (id): message`. With `name`, a hint's `<explainer>` placeholder
+ * becomes the guide's name, so the command it names runs as printed.
+ */
+export function renderIssue(issue: Issue, name?: string): string {
   const where = issue.path === "" ? "(explainer)" : issue.path;
   const id =
     issue.elementId !== undefined && !where.includes(issue.elementId)
       ? ` [${issue.elementId}]`
       : "";
-  return `${issue.severity.padEnd(7)} ${where}${id}: ${issue.message}`;
+  const message = name ? issue.message.replaceAll("<explainer>", name) : issue.message;
+  return `${issue.severity.padEnd(7)} ${where}${id}: ${message}`;
 }
 
-export function renderIssues(issues: readonly Issue[]): string[] {
-  return issues.map(renderIssue);
+export function renderIssues(issues: readonly Issue[], name?: string): string[] {
+  return issues.map((issue) => renderIssue(issue, name));
 }
 
 /** `2 errors, 1 warning`. */

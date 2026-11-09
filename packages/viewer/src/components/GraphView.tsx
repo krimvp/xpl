@@ -50,6 +50,7 @@ import {
 import {
   arrowHeadPath,
   distanceToSegment,
+  openArrowHeadPath,
   roundedPath,
   routeBox,
   type Box,
@@ -57,7 +58,7 @@ import {
 } from "../svg.js";
 import { changeMarks, changeOf } from "../diff.js";
 import { useStore, useViewerState } from "../hooks.js";
-import { mapKeyShows } from "../keyMarks.js";
+import { headOf, mapKeyShows } from "../keyMarks.js";
 import { boxName, readingOrder } from "../mapOrder.js";
 import { readerBadge } from "../readerWords.js";
 import { READABLE_ZOOM } from "../viewport.js";
@@ -129,6 +130,11 @@ interface Marks {
   selected: ReadonlySet<string>;
   matches: ReadonlySet<string>;
   related: ReadonlySet<string>;
+  /**
+   * With something selected on the map: the boxes whose arrows stay in front (the selected boxes, the boxes in
+   * them, and the ends of a selected arrow). An arrow with no end among them is drawn dim (V2-05).
+   */
+  lit?: ReadonlySet<string>;
   /** In a still picture: what the frame cuts (graphLayout `cutAt`), drawn faded. */
   cut?: ReadonlySet<string>;
 }
@@ -207,6 +213,35 @@ function stateClasses(id: string, marks: Marks): string {
     (marks.related.has(id) ? " is-related" : "") +
     (marks.cut?.has(id) ? " is-cut" : "")
   );
+}
+
+/**
+ * The boxes whose arrows stay lit while something is selected: each selected box with every box inside it, and
+ * both ends of a selected arrow. Undefined when nothing on this map is selected (then no arrow is dimmed).
+ */
+function litBoxes(
+  layout: Pick<GraphLayout, "nodes" | "edges">,
+  selected: ReadonlySet<string>,
+): Set<string> | undefined {
+  if (selected.size === 0) return undefined;
+  const lit = new Set<string>();
+  const add = (node: LayoutNode) => {
+    lit.add(node.id);
+    node.children.forEach(add);
+  };
+  const visit = (list: readonly LayoutNode[], edges: readonly LayoutEdge[]) => {
+    for (const edge of edges)
+      if (selected.has(edge.id)) {
+        lit.add(edge.from);
+        lit.add(edge.to);
+      }
+    for (const node of list) {
+      if (selected.has(node.id)) add(node);
+      visit(node.children, node.edges);
+    }
+  };
+  visit(layout.nodes, layout.edges);
+  return lit.size > 0 ? lit : undefined;
 }
 
 function activate(event: KeyboardEvent, run: () => void) {
@@ -295,10 +330,16 @@ export function GraphView({
   const [menu, setMenu] = useState<GhostMenuState | undefined>();
   const [hovered, setHovered] = useState<string | undefined>();
   // Stable while nothing selected, matched or related changes, so unchanged shapes are not re-rendered.
-  const marks = useMemo<Marks>(
-    () => ({ selected: new Set(selection), matches: new Set(matches), related }),
-    [selection, matches, related],
-  );
+  const marks = useMemo<Marks>(() => {
+    const selected = new Set(selection);
+    const lit = layout ? litBoxes(layout, selected) : undefined;
+    return {
+      selected,
+      matches: new Set(matches),
+      related,
+      ...(lit ? { lit } : {}),
+    };
+  }, [selection, matches, related, layout]);
 
   const drawnCanvas = useMemo(() => (layout ? graphBounds(layout) : undefined), [layout]);
   const canvas = preview ? (frozenCanvas.current ?? drawnCanvas) : drawnCanvas;
@@ -359,8 +400,23 @@ export function GraphView({
     return box && shift(box);
   }, [layout, shift, selection]);
 
+  // The pane's shape, coarsely (steps of about 15%): when it changes (Show code halves the pane, a phone turns),
+  // the map is laid out again for it, so it never shrinks to a strip and then flips on the next click (U3).
+  const [paneShape, setPaneShape] = useState("");
+  useLayoutEffect(() => {
+    const el = host.current;
+    if (!el) return;
+    const step = (n: number) => Math.round(Math.log(Math.max(n, 1)) / Math.log(1.15));
+    const measure = () => setPaneShape(`${step(el.clientWidth)}x${step(el.clientHeight)}`);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
   // The layout direction (right or down) is chosen for the pane the diagram is drawn in.
   useEffect(() => {
+    if (paneShape === "") return; // (measured right after the first render)
     let cancelled = false;
     const el = host.current;
     const viewport = el ? { width: el.clientWidth, height: el.clientHeight } : undefined;
@@ -384,7 +440,7 @@ export function GraphView({
     return () => {
       cancelled = true;
     };
-  }, [graph, present, changes, activePins]);
+  }, [graph, present, changes, activePins, paneShape]);
 
   // The menu belongs to the layout it was opened on.
   useEffect(() => setMenu(undefined), [graph, present, viewId]);
@@ -427,13 +483,10 @@ export function GraphView({
   };
   // A reader sees the lines out of the map only for what they look at: a picked or matched box, the
   // ghost under the pointer, or a picked stub. All of them at once bury the map's own arrows.
+  // (not for what is only related: a selected arrow relates both its ends, and their lines out of the map would
+  // bury it)
   const quietStub = (edge: LayoutEdge): boolean =>
-    (present || reader) &&
-    edge.stub &&
-    ![edge.id, edge.from, edge.to].some(
-      (id) =>
-        id === hovered || marks.selected.has(id) || marks.matches.has(id) || marks.related.has(id),
-    );
+    (present || reader) && stubIsQuiet(edge, marks, hovered);
   const menuGhost = menu ? layout?.nodes.find((n) => n.id === menu.id) : undefined;
   const names = useMemo(() => boxNames(layout?.nodes ?? []), [layout]);
 
@@ -512,9 +565,9 @@ export function GraphView({
           </g>
           {/* The edges again, for the keyboard only: after the boxes, so Tab reaches the boxes first. */}
           <g className="edge-keys">
-            {layout.edges.map((edge) => (
-              <EdgeKey key={edge.id} edge={edge} />
-            ))}
+            {layout.edges.map((edge) =>
+              quietStub(edge) ? null : <EdgeKey key={edge.id} edge={edge} />,
+            )}
           </g>
         </g>
       </PanZoom>
@@ -534,7 +587,12 @@ export function GraphView({
                     onPointerDownCapture={dismiss}
                     onWheelCapture={menu ? dismissOnWheel : undefined}
                   >
-                    {keyShows && !present && <KeyLine shows={keyShows} />}
+                    {keyShows && layout && !present && (
+                      <KeyLine
+                        shows={keyShows}
+                        stubLines={allEdgesOf(layout).some((edge) => edge.stub && !quietStub(edge))}
+                      />
+                    )}
                     {body}
                     {moveError && (
                       <p className="placement-error" role="alert">
@@ -605,7 +663,12 @@ export function GraphPicture({
           <g className="graph" data-direction={layout.direction}>
             <g className="edges">
               {layout.edges.map((edge) => (
-                <EdgeShape key={edge.id} edge={edge} marks={marks} />
+                <EdgeShape
+                  key={edge.id}
+                  edge={edge}
+                  marks={marks}
+                  quiet={stubIsQuiet(edge, marks, undefined)}
+                />
               ))}
             </g>
             <EdgeLabels edges={layout.edges} marks={marks} />
@@ -666,8 +729,8 @@ function BoxShape({ node, marks }: { node: LayoutNode; marks: Marks }) {
           className="expand-here"
           x={node.width - ZOOM_SIZE - 6 - (zoomable ? ZOOM_SIZE + 4 : 0)}
           y={node.height - ZOOM_SIZE - 6}
-          label={`Show the parts of ${node.label} in its box`}
-          title="Show its parts in this box, on this map"
+          label={`Show what is inside ${node.label}, in its box`}
+          title="Show inside: what is inside it, in this box, on this map"
           onPress={() => store.toggleExpanded(node.id)}
         >
           {/* a box with boxes in it: open it on this map */}
@@ -1360,14 +1423,39 @@ function EdgeKey({ edge }: { edge: LayoutEdge }) {
       }
       onKeyDown={(event) => activate(event, () => select(event))}
     >
-      <path d={roundedPath(edge.points)} />
+      <path d={roundedPath(edge.own ?? edge.points)} />
     </g>
+  );
+}
+
+/** Every edge of a layout, the ones its containers hold too. */
+function allEdgesOf(layout: Pick<GraphLayout, "nodes" | "edges">): LayoutEdge[] {
+  const out = [...layout.edges];
+  const visit = (list: readonly LayoutNode[]) => {
+    for (const node of list) {
+      out.push(...node.edges);
+      visit(node.children);
+    }
+  };
+  visit(layout.nodes);
+  return out;
+}
+
+/** A line out of the map that no one looks at: not drawn, and not in the Tab order (its ghost box still is). */
+function stubIsQuiet(edge: LayoutEdge, marks: Marks, hovered: string | undefined): boolean {
+  return (
+    edge.stub &&
+    ![edge.id, edge.from, edge.to].some(
+      (id) => id === hovered || marks.selected.has(id) || marks.matches.has(id),
+    )
   );
 }
 
 /** The classes of an edge (and of its label): kind, trust, state, and quiet in a reader view. */
 function edgeClasses(edge: LayoutEdge, marks: Marks, reader: boolean): string {
   const classes = ["edge", edge.stub ? "is-stub" : `res-${edge.resolution}`, `kind-${edge.kind}`];
+  // something is selected and this arrow touches none of it: it steps back
+  if (marks.lit && !marks.lit.has(edge.from) && !marks.lit.has(edge.to)) classes.push("is-dim");
   // A count label in a reader view: shown on hover and when the edge or an end of it is selected.
   if (
     reader &&
@@ -1447,11 +1535,22 @@ const EdgeShape = memo(function EdgeShape({
       />
       <path className="halo" d={path} />
       <path className="line" d={path} />
-      <path className="head" d={arrowHeadPath(before, tip)} />
-      <path className="hit" d={path} />
+      <EdgeHead kind={edge.kind} before={before} tip={tip} />
+      {/* one of a two-way pair takes clicks on its own half of the shared line */}
+      <path className="hit" d={edge.own ? roundedPath(edge.own) : path} />
     </g>
   );
 });
+
+/** The head of an edge, by its kind (keyMarks `headOf`): filled for a call, hollow for extends, open for imports. */
+function EdgeHead({ kind, before, tip }: { kind: string; before: Point; tip: Point }) {
+  const head = headOf(kind);
+  if (head === "hollow")
+    return <path className="head is-hollow" d={arrowHeadPath(before, tip, 12, 6.5)} />;
+  if (head === "open")
+    return <path className="head is-open" d={openArrowHeadPath(before, tip, 10, 5)} />;
+  return <path className="head" d={arrowHeadPath(before, tip)} />;
+}
 
 /**
  * The labels of a level's edges, drawn after all of its lines: a line never runs over a label (not even the

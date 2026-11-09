@@ -101,6 +101,13 @@ beforeAll(async () => {
         { id: "file:src/worker.ts", summary: "Runs the assigned job with a timeout." },
         { id: "file:src/queue.ts", summary: "Stores waiting jobs and schedules retries." },
       ],
+      concepts: [
+        {
+          id: "concept:retry-policy",
+          summary:
+            "Each failed attempt doubles the wait before the next one, up to maxRetries; then the job goes to the dead-letter list.",
+        },
+      ],
       views: [
         {
           id: "view:dispatch",

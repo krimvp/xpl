@@ -145,7 +145,7 @@ export const bundleCommand: CommandSpec = {
     "(the summary says how many the selection had left out), and so is the code before the change of every modified,",
     "renamed or deleted file (`baseFiles`, read from git), so the reader can compare before and after.",
     "Every anchor is re-resolved against the index and the code first, so the page highlights where the code is",
-    "now. A stale index is refused even with --allow-drift: run `xpl index`, then `xpl resolve --write` first.",
+    "now. A stale index is refused even with --allow-drift: run `xpl index`, then `xpl resolve <explainer> --write` first.",
     "An anchor whose text moved gets its new lines. When some anchors drifted (their code changed) or are",
     "missing (their code is gone), the command refuses: the page would point at the wrong code. Run",
     "`xpl resolve <explainer> --write` and re-explain what it lists. --allow-drift is a legacy draft preview flag; it warns,",

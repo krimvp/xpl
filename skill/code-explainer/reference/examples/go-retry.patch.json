@@ -471,8 +471,8 @@
         {
           "id": "t3",
           "view": "view:retry",
-          "focus": ["retry:5", "concept:retry-policy"],
-          "note": "### A job gets a fixed number of retries\n\nWith the default `maxRetries: 3`, a job that keeps failing runs four times: the first attempt and three retries.",
+          "focus": ["retry:6", "concept:retry-policy"],
+          "note": "### Three retries, each waiting twice as long\n\nWith the default `maxRetries: 3`, a job that keeps failing runs four times. The delay doubles after each failure, and the 30 s cap is not reached.\n\n| Retry | Waits |\n| ----- | ----: |\n| 1 | 500 ms |\n| 2 | 1 s |\n| 3 | 2 s |",
           "code": [
             {
               "file": "internal/runner/runner.go",
@@ -484,30 +484,9 @@
               "role": "call-site"
             },
             {
-              "file": "config/default.yaml",
-              "symbol": "retry",
-              "role": "config"
-            }
-          ],
-          "editor": {
-            "primary": "internal/runner/runner.go"
-          }
-        },
-        {
-          "id": "t4",
-          "view": "view:retry",
-          "focus": ["retry:6"],
-          "note": "### The delay doubles after each failure\n\nWith the default settings, the three retries wait 500 ms, 1 s and 2 s. The 30 s cap is not reached.",
-          "code": [
-            {
               "file": "internal/runner/runner.go",
               "symbol": "backoffDelay",
               "role": "definition"
-            },
-            {
-              "file": "config/default.yaml",
-              "symbol": "retry",
-              "role": "config"
             }
           ],
           "editor": {
@@ -610,6 +589,27 @@
           ],
           "editor": {
             "primary": "cmd/jobrunner/main.go"
+          }
+        },
+        {
+          "id": "t9",
+          "view": "view:retry-code",
+          "focus": ["grp:retry-engine"],
+          "note": "### Where to go next\n\nThis tour left out the worker pool and the metrics. \"How does a worker run one attempt?\" follows `Worker.Run` and its timeout. \"How do finished jobs reach the metrics?\" maps the event bus.",
+          "code": [
+            {
+              "file": "internal/worker/worker.go",
+              "symbol": "Worker.Run",
+              "role": "definition"
+            },
+            {
+              "file": "internal/metrics/metrics.go",
+              "symbol": "Metrics.OnJobCompleted",
+              "role": "definition"
+            }
+          ],
+          "editor": {
+            "primary": "internal/worker/worker.go"
           }
         }
       ]

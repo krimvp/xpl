@@ -238,7 +238,7 @@ test("live catalog stays scoped to its attachment and switching refuses unsaved 
   await expect(page.getByTestId("evidence-edit")).toBeDisabled();
   const prior = requests.length;
   await page.getByRole("button", { name: "Search and guides" }).click();
-  await expect(panel).toContainText("Contained guides");
+  await expect(panel).toContainText("Guides in this page");
   expect(requests.slice(prior)).toEqual([]);
   await expect(panel.getByRole("link", { name: "Back to library" })).toHaveAttribute("href", "./");
   await panel.getByRole("link", { name: "Back to library" }).click();
@@ -346,7 +346,8 @@ test("source and symbol search keeps each contained guide's commit and missing-s
     await panel.getByRole("searchbox").fill("archivedOnly");
     const symbol = panel.locator('a[data-kind="symbol"]').filter({ hasText: "archivedOnly" });
     await expect(symbol).toContainText("Archived guide");
-    await expect(symbol).toContainText("archived-commit");
+    // the commit is in the tooltip, not in the reader's text
+    await expect(symbol.locator("small")).toHaveAttribute("title", /archived-commit/);
     await symbol.focus();
     await page.keyboard.press("Enter");
     await expect(page.locator(".header .title")).toHaveText("Archived guide");

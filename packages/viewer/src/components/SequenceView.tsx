@@ -10,6 +10,8 @@ import { DiagramText } from "./DiagramText.js";
 import type { ExplainerModel, SequenceView as SequenceViewData } from "@xpl/core";
 import { useMemo, type KeyboardEvent, type MouseEvent } from "react";
 import {
+  frameTabWidth,
+  LABEL_LINE,
   layoutSequence,
   type FrameBox,
   type Lifeline,
@@ -301,8 +303,18 @@ function StickyHeads({
   );
 }
 
+/** The plate under a step's words: all of its lines. */
+function plateOf(row: Row) {
+  return {
+    x: (row.labelAnchor === "middle" ? row.labelX - row.labelWidth / 2 : row.labelX) - 4,
+    y: row.labelY - 14,
+    width: row.labelWidth + 8,
+    height: 19 + (row.lines.length - 1) * LABEL_LINE,
+  };
+}
+
 function FrameShape({ box }: { box: FrameBox }) {
-  const tab = box.frame.kind.length * 7.5 + 16;
+  const tab = frameTabWidth(box.frame.kind);
   return (
     <g className={`frame kind-${box.frame.kind}`} data-frame-id={box.frame.id}>
       <rect
@@ -385,17 +397,23 @@ function StepShape({
       />
       <path className="line" d={path} />
       <path className="head" d={head} />
-      {/* On a plate of the canvas' colour: no lifeline runs through the words. */}
-      <rect
-        className="label-plate"
-        x={(row.labelAnchor === "middle" ? row.labelX - row.labelWidth / 2 : row.labelX) - 4}
-        y={row.labelY - 14}
-        width={row.labelWidth + 8}
-        height={19}
-        rx={4}
-      />
+      {/* On a plate of the canvas' colour, tinted like each frame it sits in (N16): no lifeline runs through
+          the words, and inside a loop the plate is not a white box on the grey frame. */}
+      {[0, ...Array.from({ length: row.depth }, (_, n) => n + 1)].map((n) => (
+        <rect
+          key={n}
+          className={n === 0 ? "label-plate" : "label-plate-tint"}
+          {...plateOf(row)}
+          rx={4}
+        />
+      ))}
       <text className="label" x={row.labelX} y={row.labelY} textAnchor={row.labelAnchor}>
-        {step.label ?? ""}
+        {row.lines.map((line, n) => (
+          <tspan key={n} x={row.labelX} dy={n === 0 ? 0 : LABEL_LINE}>
+            {/* the space keeps the words apart when the text is read or copied as one */}
+            {n < row.lines.length - 1 ? `${line} ` : line}
+          </tspan>
+        ))}
       </text>
       {/* Its number, where it starts: the number the text view, the parts list and the prose use. */}
       <g className="step-number" aria-hidden="true">

@@ -76,7 +76,7 @@ export function DiagramText(props: Props) {
         ))}
       </ul>
       <h3>Arrows</h3>
-      {"flow" in props && <p>Pick an arrow to see the code at both of its ends.</p>}
+      {"flow" in props && <p>Click an arrow to see the code at both of its ends.</p>}
       {relationships.length === 0 && <p>This diagram has no arrows.</p>}
       <ul aria-label="Arrows">
         {relationships.map((edge, index) => (

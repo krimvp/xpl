@@ -57,8 +57,9 @@ reads). Every reference is labelled:
 - **heuristic** (matched by name): from xpl's own resolver, which matches names by scope, when no precise
   tool ran or a tool did not describe the file.
 
-The viewer draws heuristic arrows lighter, and the agent treats them as hints to confirm by reading the
-code. [Languages and precision](languages.md) lists what each language gets and what precise analysis costs.
+The viewer draws heuristic arrows dashed, in both themes, and the agent treats them as hints to confirm by
+reading the code. [Languages and precision](languages.md) lists what each language gets and what precise
+analysis costs.
 
 ## Readiness
 

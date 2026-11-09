@@ -280,7 +280,7 @@ test.describe("graph view", () => {
     expect(Math.round(before.x - after.x)).toBe(60);
     expect(Math.round(before.y - after.y)).toBe(30);
 
-    await page.getByRole("button", { name: "Fit to view" }).click();
+    await page.getByTestId("pz-fit").click();
     await expect.poll(zoom).toBeCloseTo(fitZoom, 2);
     // Buttons and keys.
     await page.getByRole("button", { name: "Zoom in" }).click();
@@ -358,7 +358,7 @@ test.describe("details panel", () => {
   test("Explain this shows the skill command when there is no server", async ({ page }) => {
     await openBundle(page, "view:dispatch");
     await byId(page, "concept:retry-policy").click();
-    await page.getByRole("button", { name: "Explain this" }).click();
+    await page.getByRole("button", { name: "Ask the author to explain this" }).click();
     await expect(page.getByTestId("explain-command")).toHaveText("/code-explainer feedback");
   });
 

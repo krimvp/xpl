@@ -1065,6 +1065,33 @@ describe("order checks", () => {
     expect(only(tourOn("view:flow").findings, "tour-covers-map")).toEqual([]);
   });
 
+  it("tour-ends: a tour of 5 or more steps that uses a map ends on the map; talks and changes may end elsewhere", () => {
+    const steps = (last: string): [string, string[], string][] => [
+      ["view:map", ["grp:core"], "The runner has three parts"],
+      ["view:map", ["file:src/worker.ts"], "The worker runs the job"],
+      ["view:flow", ["flow:1"], "What happens to a job"],
+      ["view:map", ["file:src/metrics.ts"], "Metrics count the jobs"],
+      [last, last === "view:map" ? ["grp:tests"] : ["flow:1"], "Where to look next"],
+    ];
+    const ends = (parts: Explainer) => only(lintExplainer(parts).findings, "tour-ends");
+    const found = ends(orderTour(steps("view:flow")));
+    expect(found).toHaveLength(1);
+    expect(found[0]).toMatchObject({ elementId: "tour:o", kind: "tour", field: "steps" });
+    expect(found[0]!.message).toContain(
+      "the last step (t5) is on the flow view:flow, not on the map",
+    );
+    expect(found[0]!.hint).toContain("where next");
+    expect(ends(orderTour(steps("view:map")))).toEqual([]);
+    expect(ends(orderTour(steps("view:flow").slice(1)))).toEqual([]);
+    expect(ends(orderTour(steps("view:flow"), { title: "Demo: how a job runs" }))).toEqual([]);
+    expect(
+      ends({
+        ...orderTour(steps("view:flow")),
+        change: { base: "a", head: "b", files: [] },
+      } as Explainer),
+    ).toEqual([]);
+  });
+
   it("tour-length: more than 12 steps", () => {
     const steps = (n: number) =>
       Array.from(
@@ -1794,7 +1821,7 @@ describe("lintExplainer: length, voice and words", () => {
     ]);
   });
 
-  it("passive-voice: two passive clauses in a field; one, adjectives and code do not count", () => {
+  it("passive-voice: two passive clauses in a field; one after the first sentence, adjectives and code do not count", () => {
     const { findings } = lintExplainer(
       explainer({
         concepts: [
@@ -1803,7 +1830,7 @@ describe("lintExplainer: length, voice and words", () => {
             "Accepted changes are written to disk. Protected ones are skipped.",
           ),
           conceptWith("concept:irregular", "The map is drawn first. Then the boxes are not shown."),
-          conceptWith("concept:one", "The file is written once. The CLI reports it."),
+          conceptWith("concept:one", "The CLI reports it. The file is written once."),
           conceptWith("concept:adjective", "The id is based on the path. The run is done."),
           conceptWith("concept:code", "The `is written` flag and the `are skipped` list stay."),
           conceptWith(
@@ -1885,11 +1912,54 @@ describe("lintExplainer: length, voice and words", () => {
       }),
     );
     expect(only(tree.findings, "tool-word")).toEqual([]);
-    // element summaries describe code, which may have nodes and edges of its own
-    const element = lintExplainer(
-      explainer({ concepts: [conceptWith("concept:g", "The graph keeps nodes and edges.")] }),
+  });
+
+  it("tool-word: box, arrow and concept texts too (stub, ghost, overlay, call-site, evidence); not node, edge or anchor there", () => {
+    const { findings } = lintExplainer(
+      explainer({
+        nodes: [
+          {
+            id: "file:src/graph.ts",
+            label: "Graph",
+            summary: "Adds the overlays an author drew to the derived arrows.",
+            detail: "Each stub stands for code outside the map; a ghost box marks a removed file.",
+            anchors: [],
+          },
+        ],
+        edges: [
+          {
+            id: "edge:a",
+            from: "file:src/graph.ts",
+            to: "file:src/graph.ts",
+            kind: "call",
+            summary: "The call-site passes the evidence on.",
+            anchors: [],
+          },
+        ],
+        concepts: [conceptWith("concept:g", "The graph keeps nodes and edges.")],
+      }),
     );
-    expect(only(element.findings, "tool-word")).toEqual([]);
+    expect(only(findings, "tool-word").map((f) => [f.elementId, f.field, f.message])).toEqual([
+      ["file:src/graph.ts", "summary", '"overlays": a word of the tool, not of the code'],
+      ["file:src/graph.ts", "detail", '"stub", "ghost": words of the tool, not of the code'],
+      ["edge:a", "summary", '"call-site", "evidence": words of the tool, not of the code'],
+    ]);
+    expect(only(findings, "tool-word")[2]!.hint).toContain(
+      '"call-site": write "the code that calls it"',
+    );
+    // a guide whose boxes are named after the word explains that word: it is the code's word there
+    const own = lintExplainer(
+      explainer({
+        nodes: [{ id: "file:test/stubs.ts", label: "Test stubs", anchors: [] }],
+        concepts: [conceptWith("concept:s", "Each stub returns a fixed answer.")],
+      }),
+    );
+    expect(only(own.findings, "tool-word")).toEqual([]);
+    // a test double is a stub too
+    const tests = lintExplainer(
+      explainer({ concepts: [conceptWith("concept:t", "The test uses a stub for the clock.")] }),
+    );
+    expect(only(tests.findings, "tool-word")).toEqual([]);
   });
 
   it("filler-word: wordy phrases, weak intensifiers, stale metaphors and long words for short ones", () => {
@@ -1915,6 +1985,206 @@ describe("lintExplainer: length, voice and words", () => {
       ["concept:c6", '"note that": marketing or filler'],
     ]);
     expect(only(findings, "filler-word")[0]!.hint).toBe('"in order to": write "to"');
+  });
+});
+
+describe("lintExplainer: words and voice on real code English", () => {
+  const ids = (findings: readonly LintFinding[], rule: LintRule) =>
+    only(findings, rule).map((f) => f.elementId);
+  const concepts = (summaries: string[]) =>
+    lintExplainer(
+      explainer({ concepts: summaries.map((s, i) => conceptWith(`concept:c${i + 1}`, s)) }),
+    ).findings;
+
+  it("passive-voice: one passive in the first sentence of a summary; notes and details need two", () => {
+    const { findings } = lintExplainer(
+      explainer({
+        concepts: [
+          conceptWith("concept:first", "References are lifted to the boxes of their ends."),
+          conceptWith("concept:second", "The CLI reports drift. User-owned drift is listed apart."),
+          conceptWith(
+            "concept:detail",
+            "The CLI reports drift.",
+            "User-owned drift is listed apart.",
+          ),
+        ],
+        tours: [tour(["### Drift\n\nUser-owned drift is listed apart. The CLI reports it."])],
+      }),
+    );
+    expect(only(findings, "passive-voice").map((f) => [f.elementId, f.message])).toEqual([
+      [
+        "concept:first",
+        'a passive clause ("are lifted") in the first sentence of a summary: who does it?',
+      ],
+    ]);
+  });
+
+  it("passive-voice: irregular, get-, being-, adverb and re- forms count; adjectives in -ed do not", () => {
+    const found = concepts([
+      "The flag is set by the caller.",
+      "The work is done by the worker.",
+      "The file gets written once.",
+      "The job is being retried.",
+      "The text is not yet written.",
+      "The config is quickly loaded.",
+      "The page is then re-rendered.",
+      "The value is cast to a string.",
+      // adjectives and an active "gets"
+      "The value is undefined here.",
+      "The port is unused.",
+      "The two paths are unrelated.",
+      "The call is indeed slow.",
+      "The map is outdated.",
+      "The list is nested two levels deep.",
+      "The worker gets the job.",
+    ]);
+    expect(ids(found, "passive-voice")).toEqual(
+      [1, 2, 3, 4, 5, 6, 7, 8].map((i) => `concept:c${i}`),
+    );
+    expect(only(found, "passive-voice")[3]!.message).toContain('"is being retried"');
+  });
+
+  it('bare-it: "It" may start sentence 2 of a summary whose first sentence names the thing', () => {
+    const found = concepts([
+      "Runs one attempt on a worker. It also publishes the result.",
+      "The queue keeps the jobs. It hands out the oldest one first.",
+      "It runs one attempt. It also publishes the result.",
+      "There is one queue. It holds the jobs.",
+      "The queue keeps the jobs. This is the store.",
+      "This series of calls ends in the store.",
+      "This status is final.",
+    ]);
+    expect(ids(found, "bare-it")).toEqual([
+      "concept:c3",
+      "concept:c3",
+      "concept:c4",
+      "concept:c4",
+      "concept:c5",
+    ]);
+    // a note is read on its own after a jump: "It" in its second sentence still needs a subject
+    const notes = lintExplainer(
+      explainer({ tours: [tour(["### Runs\n\nThe runner takes a job. It runs the job."])] }),
+    );
+    expect(ids(notes.findings, "bare-it")).toEqual(["tour:t/t1"]);
+  });
+
+  it("abstract-subject: a noun made of an action as the subject; a verb start, an article or code passes", () => {
+    const found = concepts([
+      "Symbol assembly assigns ids and parents.",
+      "Discovery uses git to list the files.",
+      "Graph derivation combines the references.",
+      "Anchor construction resolves the names.",
+      "Editor setup supplies the theme.",
+      // passes
+      "Runs one attempt on the worker.",
+      "Adds a job to the queue.",
+      "The derivation combines the references.",
+      "`deriveGraph` combines the references.",
+      "Each lookup returns one symbol.",
+      "Retries wait 500 ms.",
+      "Settings hold the theme.",
+      "Configuration holds the settings.",
+      "Accepting boundaries produce updates.",
+    ]);
+    expect(ids(found, "abstract-subject")).toEqual([1, 2, 3, 4, 5].map((i) => `concept:c${i}`));
+    expect(only(found, "abstract-subject")[0]).toMatchObject({
+      message: '"Symbol assembly" names an action, not the code that does it',
+    });
+    expect(only(found, "abstract-subject")[0]!.hint).toContain("make the code the subject");
+    // a note has no label next to it to start from: lint leaves its subjects to the writer
+    const note = lintExplainer(
+      explainer({ tours: [tour(["### Arrows\n\nGraph derivation combines the references."])] }),
+    );
+    expect(ids(note.findings, "abstract-subject")).toEqual([]);
+  });
+
+  it("filler-word: the vague verbs and connectors of writing.md 2b; code verbs pass", () => {
+    const found = concepts([
+      "The store manages navigation and editing.",
+      "The helper takes care of the lock.",
+      "The patch preserves the fields you wrote.",
+      "The cache retains the last tree.",
+      "Additionally, the queue retries the job.",
+      "Moreover, the worker waits.",
+      "The caller explicitly passes a timeout.",
+      "The runner keeps various jobs.",
+      // code verbs: chosen by the writer, not flagged
+      "The view renders the map and the store dispatches an action.",
+      "The worker emits an event and persists the job.",
+      "The app supplies the work, and the provider provides the theme.",
+    ]);
+    expect(ids(found, "filler-word")).toEqual([1, 2, 3, 4, 5, 6, 7, 8].map((i) => `concept:c${i}`));
+    expect(only(found, "filler-word")[2]!.hint).toBe('"preserves": write "keeps"');
+    expect(only(found, "filler-word")[4]!.hint).toContain('write "also", or drop it');
+  });
+
+  it("filler-word: ordinary code English passes (mutex, first-class functions, landscape, harness, child process)", () => {
+    const found = concepts([
+      "The worker unlocks the mutex after the write.",
+      "Go has first-class functions, so the handler is a value.",
+      "On a phone in landscape, the sidebar folds away.",
+      "Each iframe runs in its own realm, with its own globals.",
+      "The runner applies the patches in order to a fresh copy.",
+      "The test harness starts a fake server.",
+      "The supervisor terminates the child process after 5 s.",
+      // the same words as filler
+      "The new API has first-class support for retries.",
+      "The landscape of job queues is wide.",
+      "The runner retries in order to recover.",
+      "The tool can harness the queue.",
+    ]);
+    expect(ids(found, "filler-word")).toEqual([8, 9, 10, 11].map((i) => `concept:c${i}`));
+  });
+
+  it('we-voice: "us" after a number is microseconds', () => {
+    expect(ids(concepts(["The value is in µs, so 1000 us is one ms."]), "we-voice")).toEqual([]);
+  });
+
+  it("dash-chain: two dashes in one sentence; one dash passes", () => {
+    const found = concepts([
+      "The runner takes a job — the oldest — and runs it.",
+      "The runner takes a job -- the oldest -- and runs it.",
+      "The runner takes the oldest job — then runs it.",
+    ]);
+    expect(ids(found, "dash-chain")).toEqual(["concept:c1", "concept:c2"]);
+    expect(only(found, "dash-chain")[0]!.hint).toContain("split it into sentences");
+  });
+
+  it("long-title: a title or note heading over 12 words", () => {
+    const { findings } = lintExplainer(
+      explainer({
+        tours: [
+          tour(
+            [
+              "### After resolve: the to-do list and a re-explain that leaves your edits alone\n\nThe runner takes a job.",
+              "### How the runner picks the next job\n\nThe runner takes a job.",
+              "### TODO: a plain title that says what happens in this step of the tour\n\nThe runner takes a job.",
+            ],
+            { title: "How a job runs" },
+          ),
+        ],
+      }),
+    );
+    expect(only(findings, "long-title").map((f) => [f.elementId, f.field, f.message])).toEqual([
+      ["tour:t/t1", "note heading", "13 words (a title takes at most 12)"],
+    ]);
+  });
+
+  it('connector-start: a note body that opens with "So", "But", "And", "Also" or "Then"', () => {
+    const { findings } = lintExplainer(
+      explainer({
+        tours: [
+          tour([
+            "### The map\n\nSo the map needs an index first.",
+            "### The map\n\nBut the map can be empty.",
+            "### The map\n\nThe map needs an index. So the CLI builds one.",
+            "### The map\n\nSome maps need an index.",
+          ]),
+        ],
+      }),
+    );
+    expect(ids(findings, "connector-start")).toEqual(["tour:t/t1", "tour:t/t2"]);
+    expect(only(findings, "connector-start")[0]!.message).toContain('"So"');
   });
 });
 
@@ -2252,7 +2522,7 @@ describe("xpl lint", () => {
       // the rejection lines are the ones apply prints
       expect(lint.out.split("\n").slice(0, -1)).toEqual(apply.out.split("\n"));
       expect(lint.out.split("\n").at(-1)).toBe(
-        "nothing linted: fix the patch, then run `xpl lint --patch` again",
+        "nothing linted: fix the patch, then run `xpl lint demo --patch bad.json` again",
       );
       const json = await xplJson(dir, "lint", "demo", "--patch", "bad.json");
       expect(json.code).toBe(1);

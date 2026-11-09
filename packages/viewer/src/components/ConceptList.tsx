@@ -15,7 +15,7 @@ export function ConceptList() {
       </h2>
       {concepts.length === 0 ? (
         <p className="empty">
-          No concepts yet. Concepts capture cross-cutting ideas such as a retry policy.
+          No concepts yet. A concept is an idea that spans several files, such as a retry policy.
         </p>
       ) : (
         <ul className="concept-list">

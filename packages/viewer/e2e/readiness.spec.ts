@@ -273,7 +273,7 @@ test("offline all-content review survives HTML reopening and explicitly gates te
   page,
 }) => {
   await openVariant(page, complete);
-  await expect(page.getByTestId("review-status")).toHaveText("Author review: unchecked");
+  await expect(page.getByTestId("review-status")).toHaveText("Not yet reviewed by a person");
   await (await openEditMenu(page)).getByTestId("edit-save-html").click();
   await expect(page.getByTestId("save-html-ready")).toBeEnabled();
   await page.getByLabel("Require a current review of all stored content (team policy)").check();
@@ -291,7 +291,7 @@ test("offline all-content review survives HTML reopening and explicitly gates te
   );
   await dialog.getByRole("button", { name: "Record inspected review", exact: true }).click();
   await expect(dialog).not.toBeVisible();
-  await expect(page.getByTestId("review-status")).toHaveText("Author review: reviewed");
+  await expect(page.getByTestId("review-status")).toHaveText("Reviewed by a person");
   await page.getByTestId("explanation-info").locator(":scope > summary").click();
   await expect(page.getByTestId("explanation-info")).toContainText("Ada (self-reported)");
   await expect(page.getByTestId("explanation-info")).toContainText(
@@ -322,7 +322,7 @@ test("offline all-content review survives HTML reopening and explicitly gates te
     return route.abort();
   });
   await page.goto("http://xpl.test/");
-  await expect(page.getByTestId("review-status")).toHaveText("Author review: reviewed");
+  await expect(page.getByTestId("review-status")).toHaveText("Reviewed by a person");
   await (await openEditMenu(page)).getByTestId("edit-save-html").click();
   await expect(
     page.getByLabel("Require a current review of all stored content (team policy)"),
@@ -337,7 +337,7 @@ test("offline all-content review survives HTML reopening and explicitly gates te
     .fill("### Changed explanation\n\nThe runner starts another dispatch pass.");
   await page.getByRole("button", { name: "Close the tour panel" }).click();
   await page.getByRole("button", { name: "Tour", exact: true }).click();
-  await expect(page.getByTestId("review-status")).toHaveText("Author review: out of date");
+  await expect(page.getByTestId("review-status")).toHaveText("Changed since a person reviewed it");
   await (await openEditMenu(page)).getByTestId("edit-save-html").click();
   await expect(page.getByTestId("save-review-status")).toHaveText("Author review: out of date");
   await expect(page.getByTestId("save-html-ready")).toBeDisabled();
@@ -394,14 +394,14 @@ test("live author recording sends only a review user edit and refuses changes si
   bundle.explainer.title = "Dispatching jobs after inspection";
   await dialog.getByRole("button", { name: "Record inspected review" }).click();
   await expect(dialog.getByRole("alert")).toContainText("inspect again");
-  await expect(page.getByTestId("review-status")).toHaveText("Author review: unchecked");
+  await expect(page.getByTestId("review-status")).toHaveText("Not yet reviewed by a person");
   await dialog.getByRole("button", { name: "Inspect current snapshot" }).click();
   await expect(dialog.getByTestId("review-inspection")).toContainText(
     "Dispatching jobs after inspection",
   );
   await dialog.getByRole("button", { name: "Record inspected review" }).click();
   await expect(dialog).not.toBeVisible();
-  await expect(page.getByTestId("review-status")).toHaveText("Author review: reviewed");
+  await expect(page.getByTestId("review-status")).toHaveText("Reviewed by a person");
   expect(puts).toHaveLength(2);
   expect(Object.keys(puts[1] as object)).toEqual(["review"]);
   expect(bundle.explainer.review?.reviewer).toBe("Grace");
@@ -424,7 +424,7 @@ test("selected review requires reinspection, survives unrelated tour edits and c
   await expect(dialog.getByTestId("review-inspection")).toContainText("concept:retry-policy");
   await dialog.getByRole("button", { name: "Record inspected review" }).click();
   await expect(dialog).not.toBeVisible();
-  await expect(page.getByTestId("review-status")).toHaveText("Author review: reviewed");
+  await expect(page.getByTestId("review-status")).toHaveText("Reviewed by a person");
   await openTourEditor(page);
   await page
     .getByTestId("tour-step-note")
@@ -432,7 +432,7 @@ test("selected review requires reinspection, survives unrelated tour edits and c
     .fill("### Another tour introduction\n\nThe runner starts scheduling jobs.");
   await page.getByRole("button", { name: "Close the tour panel" }).click();
   await page.getByRole("button", { name: "Tour", exact: true }).click();
-  await expect(page.getByTestId("review-status")).toHaveText("Author review: reviewed");
+  await expect(page.getByTestId("review-status")).toHaveText("Reviewed by a person");
   await (await openEditMenu(page)).getByTestId("edit-save-html").click();
   await expect(page.getByTestId("save-html-ready")).toBeEnabled();
   await page.getByLabel("Require a current review of all stored content (team policy)").check();
@@ -443,5 +443,5 @@ test("selected review requires reinspection, survives unrelated tour edits and c
   await expect(dialog.getByRole("button", { name: "Remove review" })).toBeEnabled();
   await dialog.getByRole("button", { name: "Remove review" }).click();
   await expect(dialog).not.toBeVisible();
-  await expect(page.getByTestId("review-status")).toHaveText("Author review: unchecked");
+  await expect(page.getByTestId("review-status")).toHaveText("Not yet reviewed by a person");
 });

@@ -12,7 +12,7 @@ import {
 import { makeBundle, TEXTS } from "./world.js";
 import { workspaceMap, workspaceView } from "../src/workspace.js";
 import { ViewerStore } from "../src/store.js";
-import { mergeSameCards, repeatsShownCode } from "../src/relatedCards.js";
+import { mergeSameCards, ownCards, repeatsShownCode } from "../src/relatedCards.js";
 
 describe("process flows and related files", () => {
   it("supports explicit decisions, labeled branches, terminal outcomes and code anchors", () => {
@@ -140,6 +140,42 @@ describe("process flows and related files", () => {
       summary: "The override replaces matching default keys.",
       resolution: "annotated",
     });
+  });
+
+  it("a box that holds other code shows only its own cards, not those found inside it", () => {
+    const bundle = makeBundle();
+    bundle.index.resources = [
+      {
+        from: "src/a.ts#A.run",
+        files: ["config/c.yaml"],
+        kind: "loads",
+        site: { startLine: 12, endLine: 12 },
+        resolution: "inferred",
+      },
+    ];
+    bundle.explainer.edges.push({
+      id: "edge:core-reads",
+      from: "grp:core",
+      to: "file:config/c.yaml",
+      kind: "loads",
+      label: "Reads its settings",
+      anchors: [],
+      provenance: { origin: "user" },
+    });
+    const model = new ExplainerModel(bundle.explainer, bundle.index);
+    const links = relatedFiles(["grp:core"], model);
+    // the core group holds A.run, so the index's read inside it is listed for the group too
+    expect(links.map((link) => link.id)).toEqual(["resource:0", "edge:core-reads"]);
+    expect(ownCards(links, ["grp:core"], model).map((link) => link.id)).toEqual([
+      "edge:core-reads",
+    ]);
+    // a setting card stays only for a file the box's own code links (or its step's) name
+    const setting = { ...links[0]!, id: "anchor:config:config/c.yaml" };
+    expect(ownCards([setting], ["grp:core"], model)).toEqual([]);
+    expect(ownCards([setting], ["grp:core"], model, new Set(["config/c.yaml"]))).toEqual([setting]);
+    // a box of code keeps every card
+    const run = relatedFiles(["sym:src/a.ts#A.run"], model);
+    expect(ownCards(run, ["sym:src/a.ts#A.run"], model)).toEqual(run);
   });
 
   it("leaves out a setting card for a file whose code the step already shows", () => {

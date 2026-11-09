@@ -117,8 +117,9 @@ test.describe("the keyboard on a map", () => {
     const service = page.locator('.diagram [data-element-id="grp:job-runner"]');
     await page.locator('.diagram [data-element-id="grp:operator"]').click();
     await page.locator(".diagram .panzoom").focus();
-    // Tab to the service box (the operator is picked, the service has the focus)
-    for (let i = 0; i < 6; i++) {
+    // Tab past the zoom buttons (they come first) to the service box (the operator is picked, the service
+    // has the focus)
+    for (let i = 0; i < 16; i++) {
       await page.keyboard.press("Tab");
       if (await service.evaluate((el) => el === document.activeElement)) break;
     }

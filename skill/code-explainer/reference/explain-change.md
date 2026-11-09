@@ -54,14 +54,14 @@ A "before" claim is any sentence about the old code: "used to", "no longer", "al
 - **Never infer old behaviour from the hunk alone.** Removed lines show what the old code said, not what it did for every input. A removed `split(":")[0]` cuts at the first `:`, not the last. An old lookup may have raised an exception that a caller turned into a 500. Run the base when the result depends on a library or on input values (section 1).
 - **Anchor it in the base.** A base anchor points at the old lines of a modified, renamed or deleted file: `{"file": "src/config.ts", "at": "base", "find": "<text from the old file>", "role": "usage"}`, or a `span` counted from line 1 of the old file (the offsets `xpl show --at base` prints). No `symbol`: the base is not indexed. Put it next to the head anchor of the same claim, in the order of SKILL.md, "The tour" (range order). Code that the change does not touch is anchored without `at`: its old code is its current code. Format: `patch-format.md` section 1.
 - **Write it "Before: ... Now: ..."**, with the input that shows the difference: "Before: `maxDelayMs: 100` with `baseDelayMs: 500` made each retry wait 100 ms. Now: `loadConfig` throws `config: retry.maxDelayMs must be at least retry.baseDelayMs`."
-- **The bundle shows the diff** (SKILL.md, "Show the result"): rewritten lines mark changed words on both
+- **The bundle shows the diff** (SKILL.md, "Workflow", step 9): rewritten lines mark changed words on both
   sides when the before text is available. The text explains what the change means, not which lines moved.
 
 ## 5. Who else is affected
 
 Start from the callers and tests `xpl change` printed. It sees direct calls only, so check, for each changed symbol:
 
-1. **Direct callers.** Read each one, anchor each caller that now behaves differently, and say why. List the others in one note as unaffected, with the reason. "Callers via instance" are a guess (SKILL.md, hard rule 2): the code builds the class, and the changed method runs when the instance is called. "Callers: none found" is common for a method reached through a variable, a framework or a library: find the callers with `search` (SKILL.md, "Reading the code", which also says when you may name a library as the caller).
+1. **Direct callers.** Read each one, anchor each caller that now behaves differently, and say why. List the others in one note as unaffected, with the reason. "Callers via instance" are a guess (SKILL.md, hard rule 2): the code builds the class, and the changed method runs when the instance is called. "Callers: none found" is common for a method reached through a variable, a framework or a library: find the callers with `search` (`quick.md`, "When the index shows less than runs"). SKILL.md, "Reading the code", says when you may name a library as the caller.
 2. **Consumers of a changed result.** When the change alters what a function returns or builds (a value, a URL, a status, an error), follow one more level: `xpl refs <caller> --in`. (Example: `runnerConfig` passes the retry settings to `Runner`, so `backoffDelay` sees only valid values now.)
 3. **Public entry points.** `search` for the name in `index.ts`, `__init__.py`, `__all__` and `export {`. A change to an exported function affects users outside the repo.
 4. **Siblings.** Other code that does the same job without the changed helper: `search -i` for the key, header, error text or concept. Say whether each one already behaves the new way, and anchor it.
@@ -105,7 +105,7 @@ Above about 10 changed source files, or with parts that do not depend on each ot
 
 ## 9. Before you show it
 
-Run the accuracy pass, then bundle and reply: SKILL.md, "Check before you show it" and "Show the result".
+Run the accuracy pass, then bundle and reply: SKILL.md, "Workflow", steps 8 and 9 and "The reply".
 
 ## 10. Worked outline (the invented `loadConfig` change: 2 files, +14 -0)
 

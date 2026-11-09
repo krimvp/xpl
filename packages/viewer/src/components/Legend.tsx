@@ -5,7 +5,7 @@
  * `Legend` is the key of a map, `FlowKey` of a process flow, `SequenceKey` of a sequence diagram.
  */
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
-import type { LegendShows } from "../keyMarks.js";
+import { headOf, type LegendShows } from "../keyMarks.js";
 import { BoxIcon } from "./icons.js";
 
 /** What each icon stands for, in plain words. */
@@ -64,10 +64,10 @@ export function Legend({ shows }: { shows: LegendShows }) {
           />
         </Row>
       )}
-      <Row label="The one you picked">
+      <Row label="Selected">
         <rect className="lg-box is-selected" x="1" y="3" width="30" height="16" rx="4" />
       </Row>
-      <Row label="Related to the one you picked">
+      <Row label="Linked to what is selected">
         <rect className="lg-box is-related" x="1" y="3" width="30" height="16" rx="4" />
       </Row>
       {shows.icons && shows.icons.length > 0 && (
@@ -98,7 +98,7 @@ export function Legend({ shows }: { shows: LegendShows }) {
         </Row>
       )}
       {shows.expandHere && (
-        <Row label="Show its parts in this box, on this map">
+        <Row label="Show inside: what is inside it, in this box, on this map">
           <CornerMark>
             <rect x={3.5} y={3.5} width={15} height={15} rx={2.5} />
             <rect x={6.5} y={9} width={4} height={4} rx={1} />
@@ -107,30 +107,42 @@ export function Legend({ shows }: { shows: LegendShows }) {
           </CornerMark>
         </Row>
       )}
-      <Row label="Calls: the arrow points at the code being called">
-        <Arrow className="lg-edge" />
-      </Row>
+      {(shows.kinds ?? ["calls"]).map((kind) => (
+        <Row key={kind} label={KIND_WORDS[kind] ?? kind}>
+          <Arrow className="lg-edge" head={headOf(kind)} />
+        </Row>
+      ))}
       {shows.counts && (
         <Row label="calls ×3: the code calls it from 3 places" text="×3">
           <Arrow className="lg-edge" />
         </Row>
       )}
       {shows.authored && (
-        <Row label="An arrow the guide's author added: an event, a setting, a request">
+        <Row label="An arrow the guide's author added, checked against the code: an event, a setting, a request">
           <Arrow className="lg-edge is-authored" />
         </Row>
       )}
+      {shows.found && (shows.heuristic || shows.mixed) && (
+        <Row label="Solid: found in the code by a language tool (precise)">
+          <Arrow className="lg-edge" />
+        </Row>
+      )}
       {shows.heuristic && (
-        <Row label="Includes likely links found by name; mixed confidence also includes precise references">
+        <Row label="Dashed: matched by name (heuristic), so it can be wrong">
           <Arrow className="lg-edge is-heuristic" />
+        </Row>
+      )}
+      {shows.mixed && (
+        <Row label="Dash-dot: some of its code links are precise, some are matched by name">
+          <Arrow className="lg-edge is-mixed" />
         </Row>
       )}
       {shows.outside && (
         <>
-          <Row label="Code outside this map (+ adds it): how often it is called">
+          <Row label="Dashed box: code outside this map. Pick it to add it; its number says how often it is used">
             <rect className="lg-box is-ghost" x="1" y="3" width="30" height="16" rx="4" />
           </Row>
-          <Row label="A call to or from code outside this map">
+          <Row label="Dotted: an arrow to or from code outside this map (shown for the selected box)">
             <Arrow className="lg-edge is-stub" />
           </Row>
         </>
@@ -145,27 +157,93 @@ export function Legend({ shows }: { shows: LegendShows }) {
   );
 }
 
+/** What each kind of arrow means, for the Key's rows (the kinds a map draws, `LegendShows.kinds`). */
+const KIND_WORDS: Record<string, string> = {
+  calls: "Calls: the arrow points at the code being called",
+  imports: "Imports (open head): the file uses code from the file it points at",
+  extends: "Extends (hollow head): points at the parent class or type",
+  implements: "Implements (hollow head): points at the interface it fulfils",
+  references: "Uses a type (open head): points at the type it names",
+  reads: "Reads: points at the data it reads",
+  writes: "Writes: points at the data it changes",
+  requests: "Requests: a web call, pointing at the code that answers it",
+};
+
+/** The short words for a kind on the key line (only when a map mixes kinds). */
+const KIND_SHORT: Record<string, string> = {
+  calls: "calls",
+  imports: "imports",
+  extends: "extends",
+  implements: "implements",
+  references: "uses a type",
+  reads: "reads",
+  writes: "writes",
+  requests: "web request",
+};
+
 /**
- * The colours of a map's arrows in one line under its caption, for the marks the map draws: a reader learns
- * them without opening the Key. Nothing when every arrow is the plain kind.
+ * The marks of a map's arrows in one line under its caption, for the marks the map draws now: a reader learns
+ * them without opening the Key. Each swatch is drawn with the Key's classes, so its colour and dash are the
+ * map's. `stubLines`: lines to code outside the map are on screen (else only their dashed boxes are). Nothing
+ * when every arrow is the plain kind.
  */
-export function KeyLine({ shows }: { shows: LegendShows }) {
-  const items: { className: string; words: string }[] = [];
+export function KeyLine({ shows, stubLines = false }: { shows: LegendShows; stubLines?: boolean }) {
+  const items: { key: string; swatch: ReactNode; words: string }[] = [];
+  const line = (className: string, head: Head = "filled") => (
+    <svg className="key-swatch" width="26" height="12" viewBox="0 0 32 22" aria-hidden="true">
+      <Arrow className={className} head={head} />
+    </svg>
+  );
+  const kinds = shows.kinds ?? [];
+  // the kinds when the map mixes them, or draws only arrows that are not calls (a class hierarchy)
+  if (kinds.length > 1 || (kinds.length === 1 && kinds[0] !== "calls"))
+    for (const kind of kinds)
+      items.push({
+        key: `kind-${kind}`,
+        swatch: line("lg-edge", headOf(kind)),
+        words: KIND_SHORT[kind] ?? kind,
+      });
   if (shows.authored)
     items.push({
-      className: "is-authored",
+      key: "authored",
+      swatch: line("lg-edge is-authored"),
       words: "added by the author, checked against the code",
     });
-  if (shows.found && (shows.authored || shows.heuristic || shows.outside))
-    items.push({ className: "is-found", words: "found in the code" });
-  if (shows.heuristic) items.push({ className: "is-heuristic", words: "matched by name" });
-  if (shows.outside) items.push({ className: "is-stub", words: "leads outside this map" });
+  if (shows.found && (shows.authored || shows.heuristic || shows.mixed || shows.outside))
+    items.push({ key: "found", swatch: line("lg-edge is-found"), words: "found in the code" });
+  if (shows.heuristic)
+    items.push({
+      key: "heuristic",
+      swatch: line("lg-edge is-heuristic"),
+      words: "matched by name",
+    });
+  if (shows.mixed)
+    items.push({
+      key: "mixed",
+      swatch: line("lg-edge is-mixed"),
+      words: "partly matched by name",
+    });
+  if (shows.outside) {
+    items.push({
+      key: "ghost",
+      swatch: (
+        <svg className="key-swatch" width="26" height="14" viewBox="0 0 32 22" aria-hidden="true">
+          <rect className="lg-box is-ghost" x="1" y="3" width="30" height="16" rx="4" />
+        </svg>
+      ),
+      words: stubLines
+        ? "code outside this map"
+        : "code outside this map (pick a box to see its arrows)",
+    });
+    if (stubLines)
+      items.push({ key: "stub", swatch: line("lg-edge is-stub"), words: "leads outside this map" });
+  }
   if (items.length === 0) return null;
   return (
-    <p className="key-line" data-testid="key-line" aria-label="Arrows on this map">
+    <p className="key-line" data-testid="key-line" aria-label="Key to this map's lines">
       {items.map((item) => (
-        <span key={item.className} className="key-line-item">
-          <span className={`key-swatch ${item.className}`} aria-hidden="true" />
+        <span key={item.key} className="key-line-item" data-key-item={item.key}>
+          {item.swatch}
           {item.words}
         </span>
       ))}
@@ -209,7 +287,7 @@ export function FlowKey({ shows }: { shows: FlowKeyShows }) {
           </g>
         </Row>
       )}
-      <Row label="The one you picked">
+      <Row label="Selected">
         <g className="flow-stage is-selected">
           <rect x="2" y="4" width="28" height="14" rx="5" />
         </g>
@@ -220,7 +298,7 @@ export function FlowKey({ shows }: { shows: FlowKeyShows }) {
         </g>
       </Row>
       <Row label={shows.projected ? "Then: the order the steps run in" : "Then: what runs next"}>
-        <Arrow className={`lg-edge${shows.projected ? " is-stub" : ""}`} />
+        <Arrow className={`lg-edge${shows.projected ? " is-projected" : ""}`} />
       </Row>
       {shows.recurse && (
         <Row label="One level down: the function calls itself, and the steps from the arrow's end run again for the smaller piece">
@@ -356,11 +434,16 @@ function Row({ label, text, children }: { label: string; text?: string; children
   );
 }
 
-function Arrow({ className }: { className: string }) {
+type Head = "filled" | "hollow" | "open";
+
+/** A short arrow with the head its kind ends in on the map (keyMarks `headOf`). */
+function Arrow({ className, head = "filled" }: { className: string; head?: Head }) {
   return (
     <g className={className}>
-      <line x1="1" y1="11" x2="25" y2="11" />
-      <path d="M24 7 L31 11 L24 15 Z" />
+      <line x1="1" y1="11" x2={head === "hollow" ? 20 : 25} y2="11" />
+      {head === "filled" && <path d="M24 7 L31 11 L24 15 Z" />}
+      {head === "hollow" && <path className="is-hollow" d="M20 5.5 L31 11 L20 16.5 Z" />}
+      {head === "open" && <path className="is-open" d="M24 6.5 L31 11 L24 15.5" />}
     </g>
   );
 }
