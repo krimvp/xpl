@@ -1849,7 +1849,7 @@ export function draftRepo(input: DraftInput): Draft {
   }
   if (linked.length > 0) {
     notes.push(
-      `outside systems found from the import lines (hints: check each in the code): ${plainList(
+      `outside systems found from the import lines${linked.some((s) => s.sites.some((site) => site.module.startsWith("`bin`"))) ? " and a package.json `bin`" : ""} (hints: check each in the code): ${plainList(
         linked.map((s) => `${s.label} (${s.tech})`),
         10,
       )}`,

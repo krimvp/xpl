@@ -729,6 +729,9 @@ describe("xpl draft repo: where the project says it starts", () => {
     expect(notes).toContain(
       "room is left for 2 more steps (9 at most), the main path and its risks: run `xpl draft path shop sym:packages/cli/src/cli.ts#run` (where the `bin` of `packages/cli/package.json` starts) and copy the steps you keep",
     );
+    expect(notes).toContain(
+      "outside systems found from the import lines and a package.json `bin` (hints: check each in the code): User at the terminal (command line)",
+    );
   });
 
   it("a package's main file that hands on to another file starts at that file's function, not a helper", async () => {
