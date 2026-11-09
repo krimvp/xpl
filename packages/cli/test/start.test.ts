@@ -122,6 +122,51 @@ describe("xpl start", () => {
     );
   });
 
+  it("names no entry from common words or the project's name: it names where the bin starts, or says none was found", async () => {
+    const write = (bin: boolean) => {
+      const dir = makeTempDir("xpl-start-words-");
+      writeFile(
+        dir,
+        "package.json",
+        `{ "name": "kv"${bin ? ', "bin": { "kv": "dist/kv.js" }' : ""} }\n`,
+      );
+      writeFile(dir, "src/main.ts", 'import { run } from "./cli.js";\n\nrun(process.argv);\n');
+      writeFile(
+        dir,
+        "src/cli.ts",
+        'import { put } from "./store.js";\n\nexport function run(argv: string[]): number {\n  put(argv[0]!, argv[1]!);\n  return 0;\n}\n',
+      );
+      writeFile(
+        dir,
+        "src/store.ts",
+        "const kv = new Map<string, string>();\n\nexport function put(key: string, value: string): void {\n  kv.set(key, value);\n}\n\nexport function get(key: string): string | undefined {\n  return kv.get(key);\n}\n",
+      );
+      return dir;
+    };
+    const start = (dir: string) =>
+      xpl(
+        dir,
+        "start",
+        "guide",
+        "--question",
+        "How is kv put together?",
+        "--audience",
+        "A new contributor",
+        "--precise",
+        "off",
+      );
+    const declared = await start(write(true));
+    expect(declared.code, declared.err).toBe(0);
+    expect(declared.out).toContain(
+      "note: drafted an overview of the whole repository, not the path that answers the question (no --entry). To draft that path, run `xpl draft path guide sym:src/cli.ts#run -o <file>` (where the `bin` of `package.json` starts; no word of the question names a function), or pass --entry next time.\n",
+    );
+    const none = await start(write(false));
+    expect(none.code, none.err).toBe(0);
+    expect(none.out).toContain(
+      "note: drafted an overview of the whole repository, not the path that answers the question (no --entry). No word of the question names a function, and no manifest names where the main path starts, so no entry is guessed: find the function the path starts at with `xpl search <word>`, then run `xpl draft path guide <entry> -o <file>`.\n",
+    );
+  });
+
   it("starts a path draft at a named source symbol", async () => {
     const dir = copyFixture();
     const result = await xpl(

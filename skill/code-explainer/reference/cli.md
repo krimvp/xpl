@@ -466,7 +466,7 @@ next: write each TODO, then `xpl lint shop --patch /work/map.json` and `xpl appl
 
 ## `xpl start <name> --question <question> --audience <reader> [--entry <symbol>] [--precise auto|off|require]`
 
-Creates a first guide in one command. It runs `index`, `new`, `draft` and `apply`, using the same source anchor checks as manual authoring. Without `--entry`, the draft is a repository map, not the path that answers the question. The output says so, and names a function to start that path at, with the `xpl draft path` command to run. The function is a guess from the question's words, ranked by the words in its name and code. With an indexed function or method such as `src/runner.ts#Runner.dispatch`, it is a call sequence from that entry. The applied guide contains TODO text and can be opened with `xpl view <name>`; complete and check the text before sharing. The patch and all draft notes are saved in a temporary directory outside the repository. The text output shows up to three notes and apply warnings; `--json` includes their full lists. The `xpl draft path` command is named once, in the last note. Existing guides are never overwritten.
+Creates a first guide in one command. It runs `index`, `new`, `draft` and `apply`, using the same source anchor checks as manual authoring. Without `--entry`, the draft is a repository map, not the path that answers the question. The output says so, and names a function to start that path at, with the `xpl draft path` command to run. The function is a guess from the question's words, ranked by the words in its name and code. Common words (`how`, `put`, `get`, `make`, `work`, ...) and the project's own name pick nothing: with no other word, it is where a manifest says the project starts (as for `xpl draft repo`), labeled so, or the output says no entry is guessed. With an indexed function or method such as `src/runner.ts#Runner.dispatch`, it is a call sequence from that entry. The applied guide contains TODO text and can be opened with `xpl view <name>`; complete and check the text before sharing. The patch and all draft notes are saved in a temporary directory outside the repository. The text output shows up to three notes and apply warnings; `--json` includes their full lists. The `xpl draft path` command is named once, in the last note. Existing guides are never overwritten.
 
 ```
 $ xpl start job-retries --question "How does a failed job get retried?" --audience maintainers --precise off
@@ -476,11 +476,12 @@ draft notes: /tmp/xpl-first-guide-…/draft-notes.json
 note: the draft guesses the kind of project, its users and its entry points from the code and its import lines: check each in the README and the code
 note: settings files the code loads (from the index): `config/default.yaml`; check that the code reads each at run time
 note: room is left for 2 more steps (9 at most), the main path and its risks
+note: 1 more in /tmp/xpl-first-guide-…/draft-notes.json
 note: drafted an overview of the whole repository, not the path that answers the question (no --entry). To draft that path, run `xpl draft path job-retries sym:src/runner.ts#Runner.dispatch -o <file>` (a guess from the question's words), or pass --entry next time.
 next: write the TODOs in /tmp/xpl-first-guide-…/draft.patch.json and run `xpl apply job-retries /tmp/xpl-first-guide-…/draft.patch.json`, then `xpl lint job-retries`. `xpl view job-retries` also edits the step notes (Edit > Edit the tour) and box texts (Edit text), not the titles or the tour summary
 ```
 
-`--precise off` uses heuristic references; confirm calls against source before completing the explanation. `--json` returns the guide and draft paths, `drafted` (`repo` or `path`), `suggestedEntry` (without `--entry`, when a function matches), notes file, notes and apply warnings.
+`--precise off` uses heuristic references; confirm calls against source before completing the explanation. `--json` returns the guide and draft paths, `drafted` (`repo` or `path`), `suggestedEntry` (without `--entry`, when a function matches or a manifest declares the entry), notes file, notes and apply warnings.
 
 ## `xpl new <name> [--title <title>] [--repo <name>] [--url <url>]`
 
