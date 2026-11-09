@@ -1,12 +1,17 @@
 /** File-system helpers: atomic writes, tolerant JSON reading, the working-tree reader. */
 import { randomBytes } from "node:crypto";
-import { existsSync, readFileSync, realpathSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { mkdir, rename, rmdir, unlink, writeFile } from "node:fs/promises";
 import { basename, dirname, join, relative, isAbsolute, sep } from "node:path";
 import { CliError, errorMessage } from "./errors.js";
 
-/** Writes `data` next to `path` and renames it into place, so readers never see a half-written file. */
+/** Writes `data` next to `path` and renames it into place, so readers never see a half-written file.
+ * A symlink is followed (the link stays). A device or FIFO (`-o /dev/null`) is written in place: a rename
+ * would replace it with a regular file. */
 export async function atomicWrite(path: string, data: string): Promise<void> {
+  const existing = statSync(path, { throwIfNoEntry: false });
+  if (existing && !existing.isFile()) return writeFile(path, data);
+  if (existing) path = realpathSync(path);
   const dir = dirname(path);
   await mkdir(dir, { recursive: true });
   const tmp = join(dir, `.${basename(path)}.${process.pid}.${randomBytes(4).toString("hex")}.tmp`);

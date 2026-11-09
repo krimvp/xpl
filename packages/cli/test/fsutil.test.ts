@@ -1,8 +1,9 @@
-import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
+import { execFileSync, spawn } from "node:child_process";
+import { existsSync, lstatSync, readFileSync, symlinkSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { withFileLock } from "../src/fsutil.js";
+import { atomicWrite, withFileLock } from "../src/fsutil.js";
 import { makeTempDir, readJson, writeFile } from "./helpers.js";
 
 describe("file transactions", () => {
@@ -50,5 +51,26 @@ describe("file transactions", () => {
       }),
     ).rejects.toThrow("failed");
     expect(await withFileLock(path, async () => "next writer")).toBe("next writer");
+  });
+});
+
+describe("atomic writes to a target that is not a regular file", () => {
+  // `-o /dev/null` once renamed a temp file over the device and left /dev/null a regular file.
+  it("writes through a FIFO (as for /dev/null) and keeps it a FIFO", async () => {
+    const fifo = join(makeTempDir(), "out");
+    execFileSync("mkfifo", [fifo]);
+    const read = readFile(fifo, "utf8");
+    await atomicWrite(fifo, "data\n");
+    expect(await read).toBe("data\n");
+    expect(lstatSync(fifo).isFIFO()).toBe(true);
+  }, 5_000);
+
+  it("writes through a symlink and keeps the link", async () => {
+    const dir = makeTempDir();
+    const target = writeFile(dir, "real.json", "old");
+    symlinkSync(target, join(dir, "link.json"));
+    await atomicWrite(join(dir, "link.json"), "new");
+    expect(lstatSync(join(dir, "link.json")).isSymbolicLink()).toBe(true);
+    expect(readFileSync(target, "utf8")).toBe("new");
   });
 });
