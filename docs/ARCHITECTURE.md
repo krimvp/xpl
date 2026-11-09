@@ -2841,7 +2841,7 @@ lines below already say so, so a guide without SCIP (TypeScript, Java) gets no b
 many files; it opens into their paths. Under "About
 this guide", **What xpl could read** (`readerCoverage`) gives one plain line per language in the diagrams'
 words ("TypeScript (8 files): names in full; arrows matched by name, so some can be missing."). The
-analyser's own report, by capability and provider id, is for authors (`xpl index --verbose`).
+analyzer's own report, by capability and provider id, is for authors (`xpl index --verbose`).
 It describes the original indexed repository, including when only some sources are embedded or the index
 is pruned. A legacy index shows coverage unknown. Live refresh and Save as HTML use the current index report.
 In a change guide, a bounded **Not checked** section below the author's summary names observed limits from

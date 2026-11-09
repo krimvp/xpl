@@ -31,7 +31,7 @@ Use one diagram per step, and add a new diagram only when the question changes. 
 
 ## When the index shows less than runs
 
-`xpl index` prints what it could analyse, and a missing arrow proves nothing. Before you say two parts do not talk, check with `search` and `show`. These patterns hide a call from `refs`:
+`xpl index` prints what it could analyze, and a missing arrow proves nothing. Before you say two parts do not talk, check with `search` and `show`. These patterns hide a call from `refs`:
 
 - **An interface method** has no body: `refs --out` lists its implementations as `impl` lines. Anchor the one that does the work.
 - **A `call` ref to a type** is a construction. A `call` ref to a field is a call through a stored function: anchor the field and the function (`refs <field> --in`).

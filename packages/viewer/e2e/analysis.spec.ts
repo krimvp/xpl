@@ -10,7 +10,7 @@ test("analysis coverage is in About this guide; a bar only when linked code was 
   await expect(page.getByTestId("analysis-coverage")).toHaveCount(0);
   await page.getByTestId("explanation-info").locator(":scope > summary").click();
   const notice = page.getByTestId("analysis-details");
-  // one plain line per language, in the diagrams' words (the analyser's report is for authors)
+  // one plain line per language, in the diagrams' words (the analyzer's report is for authors)
   await expect(notice.locator("summary")).toHaveText(
     "What xpl could read: 12 files. Some arrows are matched by name and can be missing.",
   );

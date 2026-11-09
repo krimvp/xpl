@@ -75,7 +75,7 @@ Guides and the viewer:
   sequence or flow opens whole. Present keeps the lifelines that send a sequence's drawn arrows in frame.
 - Folding a table of a data map keeps its arrows, which then start at the folded table, and keeps every other
   box where it was.
-- A guide with no map of its own gets a Map tab only when its flow has 3 parts or more. That map's title is
+- A guide with no map of its own gets a Map tab only when its flow has 3 parts or more. That map is titled
   "Parts of" and the flow's title, and its boxes are not drawn larger than normal size.
 - Two arrow labels on one line, in opposite directions, sit on either side of the line, so they no longer
   read as one label.
@@ -84,8 +84,8 @@ Guides and the viewer:
 - On a phone, the Map and Flow tabs open on the diagram, not on the code a Tour step opened.
 - A flow too tall for its pane is also laid out left to right, or in 2-4 parts side by side, and the shape
   that reads larger wins. A decision diamond is as big as its words, and its arrows meet its outline.
-- A flow of states (`xpl draft states`) draws the states as pills and the moves between them as flat dotted
-  boxes, with no step numbers.
+- A flow of states (`xpl draft states`) is drawn as a state diagram: the states are pills and each move is a
+  labelled arrow between two states, with no step numbers. A move is still a link to its code.
 - On a Go map an embedded field or interface reads "embeds" (or "embeds a type in"), not "extends".
 - Explore keeps the diagram's height when you select something: Details open at the top of the code column,
   and the file tree stays beside the code.
@@ -96,6 +96,16 @@ Guides and the viewer:
 - J and K step through the Tour. The Code tab with nothing selected has no empty column.
 - The box, arrow or step whose code holds the caret is magenta, so it is not confused with the orange "called
   here" mark in the code.
+- On a shared HTML page, Feedback saves a question with "Save for the author" and says how to send it.
+- Closing a dialog gives the focus back to the button that opened it. Feedback keeps Tab inside while it is
+  open. A Tour picture says in words what it shows and what it lights up, and Present reads each step's title
+  to a screen reader. Enter on a map box shows its code.
+- At 200% zoom the header stays one row. A Present step with no code gives the diagram the code's width.
+- A long flow keeps one layout in the Tour, after "Fit all" and in Explore. On a phone it is one column, top
+  to bottom.
+- A selected row of a data map lists its own "holds" arrow and marks the table it holds as linked.
+- Code in backticks in a box summary is drawn as code on the box.
+- "About this guide" says in one plain line per language what xpl could read.
 
 Indexing:
 
@@ -109,6 +119,10 @@ Indexing:
   the crate's own name) are file imports (heuristic). `xpl health` and `xpl draft map` read them as "this
   file is used". `xpl health` no longer calls a file unused when its language's analysis does not follow
   imports: it says how many files it cannot tell about.
+- Java: a call on a field resolves through the type of the class's field, and a bare call resolves to a
+  method of the enclosing class. `xpl health` never calls a file that declares a program's entry point
+  (Java `static void main`, Python `__main__`, Go `func main`, Rust `fn main`) unused.
+- `xpl outline` shows the code files of a Maven layout by default: a chain of single folders is one row.
 
 Drafts and lint:
 
@@ -137,6 +151,11 @@ Drafts and lint:
   130 characters or starts with an article, "This", "It" or the file's name (`map-box`).
 - `xpl draft class` leaves types in test files off the map, with a note, unless the entry is in one. A Go
   entry's links read "embeds" and "embedded by".
+- `xpl draft path` writes a TODO for each file box of its files map. A step label cuts long arguments to
+  their names and the names of the calls in them.
+- `map-box` also flags a file name as a label, and a box sentence that starts with a vague verb ("Handles",
+  "Contains"), a noun or a word in -ing or -ed.
+- `xpl feedback` lists each request with the question the reader typed and keeps one of two equal saves.
 - `-o /dev/null` no longer replaces `/dev/null` with a regular file: xpl writes to a device in place.
 - The skill puts its hard rules first, starts every guide from its purpose, and gives each scope a tour shape
   and a length budget. Its writing guide follows Orwell's rules and ASD-STE100 Simplified Technical English.

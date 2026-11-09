@@ -323,7 +323,7 @@ test.describe("the change in the reading screens", () => {
     await expect(page.getByTestId("change-omissions")).toHaveCount(0);
   });
 
-  test("a guide analysed by a language tool lists the tool's limits, not name matching", async ({
+  test("a guide analyzed by a language tool lists the tool's limits, not name matching", async ({
     page,
   }) => {
     const { html, bundle } = readEmbeddedBundle(CHANGE_BUNDLE);

@@ -23,7 +23,7 @@ same path. Maps draw them as `requests` arrows.
 `refs: precise` (with the tool's name), `refs: heuristic` or `refs: none`. A plain line under the table names
 each language whose references are matched by name or whose symbols can be missing. `xpl index --verbose` also
 lists, for each kind of symbol and reference, what was found and what is not supported. No reference found
-does not mean there is none. Saved indexes and exports keep the analysed files, the limits and the failures;
+does not mean there is none. Saved indexes and exports keep the analyzed files, the limits and the failures;
 an older index loads with its coverage marked unknown.
 
 ## Precise reference tools and artifacts

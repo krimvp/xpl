@@ -45,7 +45,7 @@ export function AnalysisCoverage() {
 }
 
 /**
- * What xpl could read, inside "About this guide": one plain line per language. The analyser's own report
+ * What xpl could read, inside "About this guide": one plain line per language. The analyzer's own report
  * is for authors (`xpl index --verbose`).
  */
 export function AnalysisDetails() {
@@ -99,7 +99,7 @@ export function coverageGap(
   const reports = index.analysis ?? [];
   // The reports split their files over several results per kind of relationship (the tree-sitter pack for
   // most, a SCIP tool for the rest): a file is left out of a kind when no result of any report that did not
-  // fail analysed it, or when a tool failed on it.
+  // fail analyzed it, or when a tool failed on it.
   const covered = new Map<string, Set<FilePath>>();
   for (const report of reports)
     for (const result of report.results)

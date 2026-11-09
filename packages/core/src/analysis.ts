@@ -118,7 +118,7 @@ const fileCount = (n: number) => `${n} ${n === 1 ? "file" : "files"}`;
 
 /**
  * What xpl could read, for readers: a summary and one plain line per language, in the diagrams' words
- * ("names", "arrows", "matched by name"). `describeAnalysis` keeps the analyser's own report for authors.
+ * ("names", "arrows", "matched by name"). `describeAnalysis` keeps the analyzer's own report for authors.
  */
 export function readerCoverage(index: SymbolIndex): { summary: string; lines: string[] } {
   if (!index.analysis)
