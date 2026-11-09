@@ -53,7 +53,13 @@ export function DiagramPane() {
     <div className="diagram" data-view-id={view.id} data-view-type={view.type}>
       <div className="diagram-caption">
         <ZoomTrail viewId={view.id} />
-        <span className="caption-title">{view.title}</span>
+        {/* (in Present the question gives way to the "Fit all" cue: the title says it on hover) */}
+        <span
+          className="caption-title"
+          title={present && question ? plainWords(question) : undefined}
+        >
+          {view.title}
+        </span>
         {/* (cut short on a narrow slide: the whole question on hover) */}
         {question && (
           <span

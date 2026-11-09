@@ -168,3 +168,33 @@ describe("the parts of a diagram in words", () => {
     expect(firstSentence(undefined)).toBeUndefined();
   });
 });
+
+// the parts list numbered a flow of states 1..n, while the diagram numbers nothing (a state machine has no order)
+describe("the parts of a flow of states", () => {
+  it("marks each step a state or a move, so the list numbers none of them", () => {
+    const { model, flow } = world();
+    const T = "sym:src/a.ts#A";
+    const mover = "sym:src/a.ts#A.run";
+    const step = (id: string, from: string, next: string[]) => ({
+      ...flow.steps[0]!,
+      id,
+      from,
+      to: from,
+      label: id,
+      next: next.map((n) => ({ step: n })),
+    });
+    const states: SequenceView = {
+      ...flow,
+      type: "flow",
+      scope: { root: "repo", depth: 2, entryPoints: ["src/a.ts#A"] },
+      participants: [T, mover],
+      frames: [],
+      steps: [step("waiting", T, ["take"]), step("take", mover, ["done"]), step("done", T, [])],
+    };
+    expect(stepParts(states, model).map((part) => [part.id, part.role])).toEqual([
+      ["waiting", "state"],
+      ["take", "move"],
+      ["done", "state"],
+    ]);
+  });
+});

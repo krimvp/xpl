@@ -187,3 +187,63 @@ export function mapKeyShows(
   shows.kinds = KIND_ORDER.filter((kind) => kinds.has(kind));
   return shows;
 }
+
+/** A kind of arrow in a few words, for the key line. */
+const KIND_SHORT: Record<string, string> = {
+  calls: "calls",
+  imports: "imports",
+  extends: "extends",
+  embeds: "embeds",
+  implements: "implements",
+  references: "uses a type",
+  holds: "a field holds this type",
+  reads: "reads",
+  writes: "writes",
+  requests: "web request",
+};
+
+/**
+ * The items of a map's key line (`KeyLine`), by key (`kind-<kind>`, `authored`, `found`, `heuristic`, `mixed`,
+ * `ghost`, `stub`, `shared`), each with its words. `stubLines`: lines to code outside the map are on screen
+ * (else only their dashed boxes are). None when every arrow is the plain kind. No two items look alike: a
+ * map of calls alone says "calls, found in the code" once, not a "calls" arrow and a "found" arrow that are
+ * the same solid line; and it names "calls" only when it draws arrows found in the code.
+ */
+export function keyLineItems(
+  shows: LegendShows,
+  stubLines = false,
+  shared?: string,
+): { key: string; words: string }[] {
+  const items: { key: string; words: string }[] = [];
+  if (shared) items.push({ key: "shared", words: `every box: ${shared}` });
+  const kinds = shows.kinds ?? [];
+  const onlyCalls = kinds.length === 1 && kinds[0] === "calls";
+  const kindItems = kinds.map((kind) => ({ key: `kind-${kind}`, words: KIND_SHORT[kind] ?? kind }));
+  // the kinds when the map mixes them, or draws only arrows that are not calls (a class hierarchy)
+  if (kinds.length > 0 && !onlyCalls) items.push(...kindItems);
+  if (shows.authored)
+    items.push({ key: "authored", words: "added by the author, checked against the code" });
+  const found = shows.found && (shows.authored || shows.heuristic || shows.mixed || shows.outside);
+  if (found)
+    items.push({
+      key: "found",
+      words: onlyCalls ? "calls, found in the code" : "found in the code",
+    });
+  if (shows.heuristic) items.push({ key: "heuristic", words: "matched by name" });
+  if (shows.mixed) items.push({ key: "mixed", words: "partly matched by name" });
+  if (shows.outside) {
+    items.push({
+      key: "ghost",
+      words: stubLines
+        ? "code outside this map"
+        : "code outside this map (pick a box to see its arrows)",
+    });
+    if (stubLines) items.push({ key: "stub", words: "leads outside this map" });
+  }
+  if (items.length === 0) return [];
+  // a map of calls alone names them when the line says anything else, so an arrow without words has one
+  // here; not when its only arrows are the author's (they carry their own words)
+  const derived = shows.found || shows.heuristic || shows.mixed;
+  if (onlyCalls && !found && derived) items.splice(shared ? 1 : 0, 0, ...kindItems);
+  return items;
+}

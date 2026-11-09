@@ -842,6 +842,28 @@ export function setLineWrapping(view: EditorView, on: boolean): void {
  * A read-only editor: the document cannot change, but the caret and selection still work. The caller
  * owns the view and must `destroy()` it.
  */
+/**
+ * A jump to a line ("start" or "center": a focus, a hunk, a caller row) scrolls the pane's own scroller and
+ * nothing around it. CodeMirror's default scrolls every scrollable ancestor too, so in a stack of panes each
+ * pane pulled the column down to itself, and the last one mounted won. Caret moves ("nearest") keep the
+ * default: the column follows the caret.
+ */
+const paneOnlyScroll = EditorView.scrollHandler.of((view, range, options) => {
+  if (options.y !== "start" && options.y !== "center") return false;
+  // Called while the editor writes its layout: read the height map, not the DOM positions of the text.
+  const block = view.lineBlockAt(range.head);
+  const scroller = view.scrollDOM;
+  const content =
+    view.contentDOM.getBoundingClientRect().top -
+    scroller.getBoundingClientRect().top +
+    scroller.scrollTop;
+  scroller.scrollTop =
+    options.y === "start"
+      ? content + block.top - options.yMargin
+      : content + block.top + block.height / 2 - scroller.clientHeight / 2;
+  return true;
+});
+
 export function createReadOnlyEditor(
   parent: HTMLElement,
   doc: string,
@@ -869,6 +891,7 @@ export function createReadOnlyEditor(
     syntaxHighlighting(themedHighlight),
     baseTheme,
     focusField,
+    paneOnlyScroll,
     languageSupport(language),
   ];
   if (handlers) {

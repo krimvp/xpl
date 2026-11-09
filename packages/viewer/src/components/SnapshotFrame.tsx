@@ -1,5 +1,6 @@
 /** The frame of the Guide's still pictures (Snapshot.tsx), shared by every kind of diagram. */
 import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { wholePicture } from "../layout/graphLayout.js";
 import { snapshotView, type Box, type Focus, type Transform } from "../viewport.js";
 
 /** The picture's height at most, px. */
@@ -45,14 +46,17 @@ export function SnapshotFrame({
     observer.observe(el);
     return () => observer.disconnect();
   }, []);
-  const placed = snapshotView(
-    paneWidth,
-    SNAPSHOT_HEIGHT,
-    { width, height },
-    focus,
-    SNAPSHOT_TALL_HEIGHT,
-    SNAPSHOT_NAMED_HEIGHT,
-  );
+  // (a step about every box: the whole diagram, smaller, never a frame of part of it)
+  const placed =
+    wholePicture(paneWidth, SNAPSHOT_NAMED_HEIGHT, { width, height }, focus) ??
+    snapshotView(
+      paneWidth,
+      SNAPSHOT_HEIGHT,
+      { width, height },
+      focus,
+      SNAPSHOT_TALL_HEIGHT,
+      SNAPSHOT_NAMED_HEIGHT,
+    );
   return (
     <div
       ref={box}

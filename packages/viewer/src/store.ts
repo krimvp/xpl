@@ -1761,7 +1761,7 @@ export class ViewerStore {
       this.set({
         feedback: held,
         feedbackStorageError:
-          "Browser storage unavailable: localStorage is not defined. Export feedback JSON to keep it.",
+          "Browser storage unavailable: this browser does not let the page save. Export the feedback file to keep your note.",
       });
       return;
     }
@@ -1777,10 +1777,11 @@ export class ViewerStore {
         const json = localStorage.getItem(key);
         if (json !== null) stored.push(parseFeedbackRequest(JSON.parse(json)));
       }
-    } catch (error) {
+    } catch {
       this.set({
         feedback: held,
-        feedbackStorageError: `Browser storage unavailable: ${String(error)}. Export feedback JSON to keep it.`,
+        feedbackStorageError:
+          "Browser storage unavailable: this browser does not let the page save. Export the feedback file to keep your note.",
       });
       return;
     }
@@ -1796,9 +1797,10 @@ export class ViewerStore {
         const key = `${prefix}${encodeURIComponent(request.id)}:revision:${request.outcome.revision}:${hashText(json)}`;
         if (localStorage.getItem(key) === null) localStorage.setItem(key, json);
       }
-    } catch (error) {
+    } catch {
       this.set({
-        feedbackStorageError: `Browser storage unavailable: ${String(error)}. Export feedback JSON to keep it.`,
+        feedbackStorageError:
+          "Browser storage unavailable: this browser does not let the page save. Export the feedback file to keep your note.",
       });
     }
   }

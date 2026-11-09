@@ -442,6 +442,93 @@ test("a Tour step with no related files lists its own code, which opens it; a ph
   await expect(page.locator(".workspace-context")).toBeHidden();
 });
 
+test("a narrow pane header cuts the folder at its start, next to the whole file name", async ({
+  page,
+}) => {
+  await page.goto(`${TS_BUNDLE.href}?perspective=map`);
+  await page.evaluate(() => window.__xpl!.select(["concept:retry-policy"]));
+  await page.locator(".workspace-location").getByRole("button", { name: "Show code" }).click();
+  const file = page.locator(".workspace-source .pane-file").filter({ hasText: "default.yaml" });
+  await expect(file).toBeVisible();
+  // room for the name and three letters of "config/"
+  await file.evaluate((el) => {
+    el.style.maxWidth = "15ch";
+    el.style.minWidth = "15ch";
+  });
+  const ends = () =>
+    file.evaluate((el) => {
+      const dir = el.querySelector(".dir")!;
+      const walker = document.createTreeWalker(dir, NodeFilter.SHOW_TEXT);
+      const text = walker.nextNode() as Text;
+      const char = (i: number) => {
+        const range = document.createRange();
+        range.setStart(text, i);
+        range.setEnd(text, i + 1);
+        return range.getBoundingClientRect();
+      };
+      const box = dir.getBoundingClientRect();
+      const name = el.querySelector("b")!;
+      return {
+        text: text.data,
+        // the slash before the name in sight, the first letter cut off
+        lastInSight: char(text.data.length - 1).right <= box.right + 0.5,
+        firstInSight: char(0).left >= box.left - 0.5,
+        nameWhole: name.scrollWidth <= name.clientWidth,
+      };
+    });
+  await expect
+    .poll(ends)
+    .toEqual({ text: "config/", lastInSight: true, firstInSight: false, nameWhole: true });
+});
+
+test("beside the code, a map's trail of levels stays one line, its last level whole", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1024, height: 768 });
+  await page.goto(`${ARCHITECTURE_BUNDLE.href}?perspective=map&view=view:overview`);
+  await byId(page, "grp:scheduling").first().click();
+  await page.locator(".workspace-location").getByRole("button", { name: "Show code" }).click();
+  await expect(page.locator(".workspace-source .editor-stack .pane").first()).toBeVisible();
+  const trail = page.locator(".workspace-caption").getByTestId("zoom-trail");
+  await expect(trail).toContainText("Job runner");
+  await expect
+    .poll(() =>
+      trail.evaluate((el) => {
+        const last = el.lastElementChild as HTMLElement;
+        return {
+          oneLine: Math.round(el.getBoundingClientRect().height) === last.offsetHeight,
+          lastWhole: last.scrollWidth <= last.clientWidth,
+          left:
+            Math.round(el.getBoundingClientRect().left) ===
+            Math.round(el.parentElement!.getBoundingClientRect().left),
+        };
+      }),
+    )
+    .toEqual({ oneLine: true, lastWhole: true, left: true });
+});
+
+test("a phone Tour step with a settings file and a test keeps the whole height for the text", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(TS_BUNDLE.href);
+  await page.getByTestId("guide-step-picker").selectOption("1");
+  await expect
+    .poll(async () => (await page.evaluate(() => window.__xpl!.state())).stepId)
+    .toBe("t2");
+  // the step's card names its code, the settings file included; the side panel would only repeat it
+  await expect(page.getByTestId("step-code").last()).toContainText("default.yaml");
+  await expect(page.locator(".workspace-context")).toBeHidden();
+  // the text runs to the bottom of the screen
+  await expect
+    .poll(() =>
+      page
+        .locator(".workspace-primary")
+        .evaluate((el) => Math.round(el.getBoundingClientRect().bottom)),
+    )
+    .toBe(844);
+});
+
 /**
  * Present: a slide keeps the 12px text floor. A diagram that does not read whole at that size in the
  * 40% column gets a wider one (up to 65%) and then fits whole; one still too big starts on the step's focus,
@@ -644,6 +731,29 @@ test.describe("Present keeps the 12px floor and widens the diagram column", () =
     expect(problems).toEqual([]);
   });
 
+  test("1280x720: while part of the map is out of sight, the question gives way to the Fit all cue", async ({
+    page,
+  }) => {
+    const question =
+      "Which file starts the runner, which one holds the queue, and which one reads the settings?";
+    await openVariant(
+      page,
+      (bundle: Loose) => {
+        addTour(bundle);
+        const files = (bundle.explainer.views as Loose[]).find((view) => view.id === "view:files")!;
+        files.scope.question = question;
+      },
+      "?mode=present&tour=tour:d7&step=1",
+      { width: 1280, height: 720 },
+    );
+    await expect(page.getByTestId("pz-fit")).toContainText("out of sight");
+    // (beside the cue it kept a few letters): hidden, and the title says it on hover
+    await expect(page.locator(".present .caption-question")).toBeHidden();
+    await expect(page.locator(".present .caption-title")).toHaveAttribute("title", question);
+    const title = page.locator(".present .caption-title");
+    await expect.poll(() => title.evaluate((el) => el.scrollWidth - el.clientWidth)).toBe(0);
+  });
+
   // `xpl draft map` writes one step about every box of its map. A frame of part of that map started on
   // a corner, with the boxes at its left edge cut mid-word, while the Map tab fits all of them.
   const SUMMARIES = [
@@ -684,6 +794,38 @@ test.describe("Present keeps the 12px floor and widens the diagram column", () =
       steps: [{ id: "m1", view: "view:files", focus: FILES, note: "Every part of the runner." }],
     });
   };
+  test("the Tour at 1024: a step about every box of a map shows all of them whole in its picture", async ({
+    page,
+  }) => {
+    // (a frame of part of the map cut one box at the edge: the whole map reads, smaller)
+    await openVariant(page, addMapTour, "?tour=tour:map", { width: 1024, height: 900 });
+    const picture = page
+      .locator('.guide-section[data-section-id="m1"]')
+      .getByTestId("guide-snapshot");
+    const frame = picture.locator(".snapshot-frame");
+    await expect(frame.locator(".node").first()).toBeVisible();
+    await expect
+      .poll(() =>
+        frame.evaluate((el) => {
+          const pane = el.getBoundingClientRect();
+          const boxes = [...el.querySelectorAll(".nodes .node")].map((n) =>
+            n.getBoundingClientRect(),
+          );
+          return {
+            boxes: boxes.length,
+            whole: boxes.filter(
+              (b) =>
+                b.left >= pane.left - 1 &&
+                b.right <= pane.right + 1 &&
+                b.top >= pane.top - 1 &&
+                b.bottom <= pane.bottom + 1,
+            ).length,
+          };
+        }),
+      )
+      .toEqual({ boxes: 7, whole: 7 });
+  });
+
   for (const size of [
     { width: 1440, height: 900 },
     { width: 1280, height: 720 },
@@ -864,4 +1006,62 @@ test("a reading tab opens on the Tour's step on screen, not on the one applied b
   await page.getByTestId("perspective-flow").click();
   await expect(page.getByTestId("breadcrumb-topic")).toContainText("Where failures go");
   await expect(page.locator('[data-element-id="dispatch:3"]').first()).toHaveClass(/is-selected/);
+});
+
+/**
+ * The TS page with the `job.completed` arrow linked to code in eight files, and the retry-policy concept to
+ * code in seven of them: more panes than fit.
+ */
+const manyFiles = (bundle: Loose) => {
+  const edge = bundle.explainer.edges.find((e: Loose) => e.id === "edge:job-completed");
+  const concept = bundle.explainer.concepts.find((c: Loose) => c.id === "concept:retry-policy");
+  const more = ["src/bus.ts", "src/config.ts", "src/main.ts", "src/queue.ts", "src/worker.ts"];
+  const at = (file: string) => ({
+    file,
+    role: "definition",
+    resolved: {
+      commit: edge.anchors[0].resolved.commit,
+      range: { startLine: 30, endLine: 31 },
+      status: "ok",
+    },
+  });
+  for (const file of [...more.slice(0, -1), "src/runner.ts", "test/retry.test.ts"])
+    edge.anchors.push(at(file));
+  for (const file of more) concept.anchors.push(at(file));
+};
+
+test("an arrow with code in 8 files opens the code column on its first file, each pane on its range", async ({
+  page,
+}) => {
+  await openVariant(page, manyFiles, "?perspective=map", { width: 1440, height: 900 });
+  await byId(page, "edge:job-completed").first().click();
+  await page.locator(".workspace-location").getByRole("button", { name: "Show code" }).click();
+  const stack = page.locator(".workspace-source .editor-stack");
+  await expect(stack.locator(".pane")).toHaveCount(8);
+  await expect(stack.locator(".pane").first()).toContainText("worker.ts");
+  // each pane scrolled inside itself, not the column: the column stays on its first pane
+  await expect
+    .poll(() => stack.evaluate((el) => [el.scrollHeight > el.clientHeight + 200, el.scrollTop]))
+    .toEqual([true, 0]);
+  // the first pane shows the call (line 51 of worker.ts): 44px under its top edge, less the part of a
+  // line it scrolls past so that it starts on a whole line
+  const first = stack.locator(".pane").first().locator(".cm-scroller");
+  await expect
+    .poll(() =>
+      first.evaluate((el) => {
+        const line = [...el.querySelectorAll(".cm-lineNumbers .cm-gutterElement")].find(
+          (g) => g.textContent === "51",
+        );
+        return line
+          ? Math.round(line.getBoundingClientRect().top - el.getBoundingClientRect().top)
+          : null;
+      }),
+    )
+    .toBe(40);
+  // read down the column, then select something else with as many files: it starts on its first pane
+  await stack.evaluate((el) => (el.scrollTop = el.scrollHeight));
+  await expect.poll(() => stack.evaluate((el) => el.scrollTop)).toBeGreaterThan(200);
+  await page.evaluate(() => window.__xpl!.select(["concept:retry-policy"]));
+  await expect(stack.locator(".pane")).toHaveCount(8);
+  await expect.poll(() => stack.evaluate((el) => el.scrollTop)).toBe(0);
 });

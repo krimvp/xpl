@@ -93,4 +93,20 @@ describe("sequenceFocus: the first view of a big sequence", () => {
       .map((lane) => lane.id);
     expect(halves).toEqual([]);
   });
+
+  it("zooms out, down to the frame's floor, to keep the lifelines the arrows after the step end on", () => {
+    // a little narrower than the diagram: at the readable zoom the last lifeline would be cut or left out
+    const pane = { w: seq.width * 0.85, h: seq.height + 40 };
+    const { k, x } = frameView(pane, seq, sequenceFocus(seq, new Set(["s1"])), {
+      ...options,
+      shrink: 0.7,
+    })!.transform;
+    const whole = seq.lifelines
+      .filter((lane) => {
+        const left = x + (lane.x - lane.headWidth / 2) * k;
+        return left >= -1 && left + lane.headWidth * k <= pane.w + 1;
+      })
+      .map((lane) => lane.id);
+    expect(whole).toEqual(LANES);
+  });
 });

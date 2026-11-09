@@ -2,6 +2,7 @@
 import {
   asIndexModel,
   hashText,
+  isTestFile,
   query,
   type QueryGuide,
   type QueryHit,
@@ -9,13 +10,21 @@ import {
 } from "@xpl/core";
 
 export const SEARCH_PAGE_SIZE = 16;
+/** The guide's own words first (they answer the question), then the code's names, then its text. */
 const GROUPS = [
-  { id: "symbols", title: "Symbols", kinds: ["symbol"] },
-  { id: "concepts", title: "Concepts", kinds: ["concept"] },
   { id: "steps", title: "Tour and flow steps", kinds: ["step"] },
+  { id: "concepts", title: "Concepts", kinds: ["concept"] },
   { id: "guides", title: "Guides and tours", kinds: ["guide", "tour"] },
+  { id: "symbols", title: "Symbols", kinds: ["symbol"] },
   { id: "source", title: "Source", kinds: ["source"] },
 ] as const;
+
+/**
+ * Names whose code is in the page come first, and names in tests after the others: in a real repository the
+ * test cases are sentences that match most words, and they hid the code the reader looks for.
+ */
+const symbolRank = (hit: SearchHit, files: Record<string, string>) =>
+  "file" in hit ? (hit.file in files ? 0 : 2) + (isTestFile(hit.file) ? 1 : 0) : 0;
 export type SearchGroupId = (typeof GROUPS)[number]["id"];
 export type SearchPages = Partial<Record<SearchGroupId, number>>;
 export type SearchGroup = {
@@ -61,28 +70,40 @@ self.onmessage = (event: MessageEvent<SearchMessage>) => {
           }
           return hash;
         };
+        // (names are ranked, so all of them are read; the other groups page in the index's order)
+        const ranked = group.id === "symbols";
         const result = query(indexes[i]!, (file) => guide.files[file], {
           pattern: message.pattern,
           ignoreCase: true,
-          limit: SEARCH_PAGE_SIZE,
-          offset: Math.max(0, offset - total),
+          limit: ranked ? 0 : SEARCH_PAGE_SIZE,
+          offset: ranked ? 0 : Math.max(0, offset - total),
           kinds: group.kinds,
           guides: [{ id: guide.id, explainer: guide.explainer }],
           textOrigin: "supplied",
         });
         hits.push(
-          ...result.hits.slice(0, SEARCH_PAGE_SIZE - hits.length).map((hit) => {
-            const hash =
-              hit.kind === "source" || hit.kind === "symbol" ? sourceHash(hit.file) : undefined;
-            return {
-              ...hit,
-              guide: guide.id,
-              commit: guide.index.commit,
-              ...(hash === undefined ? {} : { sourceHash: hash }),
-            };
-          }),
+          ...result.hits
+            .slice(0, ranked ? undefined : SEARCH_PAGE_SIZE - hits.length)
+            .map((hit) => {
+              const hash =
+                hit.kind === "source" || hit.kind === "symbol" ? sourceHash(hit.file) : undefined;
+              return {
+                ...hit,
+                guide: guide.id,
+                commit: guide.index.commit,
+                ...(hash === undefined ? {} : { sourceHash: hash }),
+              };
+            }),
         );
         total += result.total;
+      }
+      if (group.id === "symbols") {
+        const files = new Map(snapshot!.snapshots.map((g) => [g.id, g.files]));
+        const ranked = hits
+          .map((hit, at) => ({ hit, at, rank: symbolRank(hit, files.get(hit.guide) ?? {}) }))
+          .sort((a, b) => a.rank - b.rank || a.at - b.at)
+          .map(({ hit }) => hit);
+        hits.splice(0, hits.length, ...ranked.slice(offset, offset + SEARCH_PAGE_SIZE));
       }
       // Minified source and long prose never become megabytes of text on the UI thread.
       for (const hit of hits) {

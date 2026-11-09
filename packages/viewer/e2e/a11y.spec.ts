@@ -15,6 +15,17 @@ import {
   withBundle,
 } from "./helpers.js";
 
+/** True when the focus is on the last visible control of the dialog `selector` (focusTrap.ts FOCUSABLE). */
+function lastControlFocused(selector: string): boolean {
+  const root = document.querySelector(selector)!;
+  const controls = [
+    ...root.querySelectorAll<HTMLElement>(
+      "input:not(:disabled), select:not(:disabled), textarea:not(:disabled), button:not(:disabled), a[href], summary",
+    ),
+  ].filter((el) => el.getClientRects().length > 0);
+  return controls.length > 1 && document.activeElement === controls.at(-1);
+}
+
 test.describe("who the page is for", () => {
   test("the author's audience line shows under the guide's title", async ({ page }) => {
     const { html, bundle } = readEmbeddedBundle();
@@ -188,6 +199,8 @@ test.describe("short and narrow screens", () => {
       page,
       (bundle) => {
         bundle.explainer.title = "How the job runner hands out jobs and retries them";
+        // (a question would take a second caption row)
+        bundle.explainer.views[0].scope.question = "Which part hands a job to a worker?";
       },
       "",
       { width: 720, height: 450 },
@@ -197,6 +210,7 @@ test.describe("short and narrow screens", () => {
     await expect(page.getByTestId("topic-summary")).toBeVisible();
     // (a second header row took 40px of the 450)
     expect((await page.locator(".header").boundingBox())!.height).toBeLessThan(48);
+    await expect(page.locator(".workspace-caption .view-question")).toBeHidden();
     const diagram = (await page.locator(".workspace-diagram").boundingBox())!;
     expect(diagram.height).toBeGreaterThanOrEqual(225);
     expect(diagram.y + diagram.height).toBeLessThanOrEqual(450);
@@ -289,8 +303,11 @@ test.describe("dialogs give the keyboard back where it was", () => {
     await opener.click();
     const panel = page.getByRole("dialog", { name: "Reader feedback" });
     await expect(panel).toBeFocused();
-    // Tab from the panel's last control comes back to its first, never to the page behind it
     const inside = () => page.evaluate(() => !!document.activeElement?.closest(".feedback-panel"));
+    // Shift+Tab from the panel itself goes round to its last control, never to the page behind it
+    await page.keyboard.press("Shift+Tab");
+    await expect.poll(() => page.evaluate(lastControlFocused, ".feedback-panel")).toBe(true);
+    // Tab from the panel's last control comes back to its first
     for (let i = 0; i < 15; i++) {
       await page.keyboard.press("Tab");
       expect(await inside()).toBe(true);
@@ -300,6 +317,21 @@ test.describe("dialogs give the keyboard back where it was", () => {
     await page.keyboard.press("Escape");
     await expect(panel).toHaveCount(0);
     await expect(opener).toBeFocused();
+  });
+
+  test("Search keeps Tab inside both ways while open", async ({ page }) => {
+    await page.goto(TS_BUNDLE.href);
+    await page.getByRole("button", { name: "Search and guides" }).click();
+    const panel = page.getByRole("dialog", { name: "Search and guides" });
+    await expect(panel.getByRole("searchbox")).toBeFocused();
+    // Shift+Tab from the first control (Close) goes round to the last, and Tab back to the first
+    const close = panel.getByRole("button", { name: "Close search" });
+    await page.keyboard.press("Shift+Tab");
+    await expect(close).toBeFocused();
+    await page.keyboard.press("Shift+Tab");
+    await expect.poll(() => page.evaluate(lastControlFocused, ".search-library")).toBe(true);
+    await page.keyboard.press("Tab");
+    await expect(close).toBeFocused();
   });
 
   for (const [item, name] of [

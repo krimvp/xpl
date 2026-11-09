@@ -165,6 +165,17 @@ test("a click on an arm's condition selects its steps and their code; the caret 
   await expect(arm(page, 1)).not.toHaveClass(/is-match/);
 });
 
+// loop > opt > alt > alt drew four grey layers, the innermost words on the darkest one
+test("only the outermost frame is tinted: a frame inside another is an outline", async ({
+  page,
+}) => {
+  await openOutcome(page);
+  const fill = (id: string) =>
+    page.locator(`[data-frame-id="${id}"] .frame-box`).evaluate((el) => getComputedStyle(el).fill);
+  expect(await fill("frame:loop")).not.toBe("none");
+  expect(await fill("frame:outcome")).toBe("none");
+});
+
 test("at phone width the arms and their conditions stay inside the frame", async ({ page }) => {
   await openOutcome(page, { width: 390, height: 844 });
   await page.getByRole("button", { name: "Fit all" }).click();

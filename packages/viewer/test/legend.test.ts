@@ -1,6 +1,6 @@
 /** The map's Key lists only what the map shows: outside systems, icons, corner buttons, counts (M9). */
 import { describe, expect, it } from "vitest";
-import { mapKeyShows } from "../src/keyMarks.js";
+import { keyLineItems, mapKeyShows, type LegendShows } from "../src/keyMarks.js";
 import type { LayoutEdge, LayoutNode } from "../src/layout/graphLayout.js";
 
 const node = (id: string, extra: Partial<LayoutNode> = {}): LayoutNode => ({
@@ -159,5 +159,42 @@ describe("mapKeyShows", () => {
       boxes(),
     );
     expect(shows.kinds).toEqual(["extends", "embeds"]);
+  });
+});
+
+// ky's "Inside ky": "→ calls · → added by the author · → found in the code", the first and last the same
+// grey arrow; its system map drew only the author's arrows and still listed "→ calls"
+describe("the key line under a map", () => {
+  const keys = (shows: Partial<LegendShows>) =>
+    keyLineItems({
+      outside: false,
+      authored: false,
+      heuristic: false,
+      change: false,
+      ...shows,
+    }).map((item) => `${item.key}: ${item.words}`);
+  it("says calls found in the code once when the map's found arrows are all calls", () => {
+    expect(keys({ kinds: ["calls"], found: true, authored: true })).toEqual([
+      "authored: added by the author, checked against the code",
+      "found: calls, found in the code",
+    ]);
+  });
+  it("names no kind on a map whose only arrows are the author's", () => {
+    expect(keys({ kinds: ["calls"], authored: true })).toEqual([
+      "authored: added by the author, checked against the code",
+    ]);
+  });
+  it("still names calls beside arrows matched by name, and every kind when the map mixes them", () => {
+    expect(keys({ kinds: ["calls"], authored: true, heuristic: true })).toEqual([
+      "kind-calls: calls",
+      "authored: added by the author, checked against the code",
+      "heuristic: matched by name",
+    ]);
+    expect(keys({ kinds: ["calls", "extends"], found: true, heuristic: true })).toEqual([
+      "kind-calls: calls",
+      "kind-extends: extends",
+      "found: found in the code",
+      "heuristic: matched by name",
+    ]);
   });
 });

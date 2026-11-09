@@ -357,7 +357,10 @@ function ReadingOrder({
 /** A frame's box, under the steps. */
 function FrameBoxShape({ box }: { box: FrameBox }) {
   return (
-    <g className={`frame kind-${box.frame.kind}`} data-frame-id={box.frame.id}>
+    <g
+      className={`frame kind-${box.frame.kind}${box.depth > 0 ? " is-nested" : ""}`}
+      data-frame-id={box.frame.id}
+    >
       <rect
         className="frame-box"
         x={box.x}

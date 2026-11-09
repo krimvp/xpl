@@ -172,6 +172,20 @@ describe("a flow done by one part", () => {
     expect(stageActor(flow.stages[1]!.step, names, 34, "stage", own)).toBe("→ retry");
     expect(stageActor(flow.stages[1]!.step, names, 34, "decision", own)).toBe("");
   });
+  // ky's retry decision: 11 of 12 boxes repeated "Ky.#calculateRetryDelay" under their words
+  it("names the part nearly every box starts from; a box another part does names that part", () => {
+    const own = "sym:Ky.ts#Ky.#calculateRetryDelay";
+    const other = "sym:Ky.ts#Ky.#calculateDelay";
+    const flow = { stages: [...Array(11)].map(() => stage(own, own)).concat(stage(other, other)) };
+    expect(sharedActor(flow)).toBe(own);
+    expect(stageActor(flow.stages[0]!.step, names, 34, "decision", own)).toBe("");
+    expect(stageActor(flow.stages[11]!.step, names, 34, "stage", own)).toBe("calculateDelay");
+    // three of four is not enough: two parts do the work
+    const half = {
+      stages: [stage(own, own), stage(own, own), stage(own, own), stage(other, other)],
+    };
+    expect(sharedActor(half)).toBe(undefined);
+  });
   it("is none when two parts do the work, or there is one box", () => {
     expect(
       sharedActor({ stages: [stage("sym:a#A", "sym:a#B"), stage("sym:a#B", "sym:a#A")] }),

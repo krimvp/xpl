@@ -5,7 +5,8 @@
  *
  * - Each selected arrow is one focus box: its label with both its lifelines (who talks to whom), and the
  *   condition of the choice it is in when that is near (an `alt` from its top, so the first arm's condition
- *   shows too). Its label (`core`) is what stays in view when even one is too wide.
+ *   shows too). Its label (`core`) is what stays in view when even one is too wide. The lifelines the arrows
+ *   after it join are its neighbours: they come in, nearest first, while the frame can zoom out for them.
  * - Above each, the room the sticky lifeline names take once the view starts lower down: a label is shown
  *   under them, never behind them.
  * - A selected lifeline is its head, with its own arrows as neighbours: they come in while there is room.
@@ -74,6 +75,12 @@ export function sequenceFocus(
     }
     core ??= label;
     boxes.push(roomAbove(unionBox(own)!));
+    // (the lifelines the arrows after it end on, at its height: the frame zooms out, down to its floor, to
+    // keep their names whole, so the reader sees where the run goes next)
+    const after = layout.rows.slice(layout.rows.indexOf(row) + 1);
+    for (const id of new Set(after.flatMap((next) => [next.step.from, next.step.to])))
+      if (id !== row.step.from && id !== row.step.to)
+        neighbours.push(...column(id, label.y, label.height));
   }
   for (const lifeline of layout.lifelines) {
     if (!selected.has(lifeline.id)) continue;

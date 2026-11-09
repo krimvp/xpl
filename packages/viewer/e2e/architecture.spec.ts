@@ -201,6 +201,13 @@ test.describe("architecture maps", () => {
     await expect(buttonsOf(page, "grp:job-runner").locator(".zoom")).toHaveCount(1);
     await expect(buttonsOf(page, "grp:settings-file").locator(".zoom")).toHaveCount(0);
     await expect(page.getByTestId("zoom-trail")).toHaveCount(0);
+    // the corner buttons sit in the name's row, which keeps room for them (a box summary's last lines
+    // ran under them at the bottom corner)
+    const service = (await box(page, "grp:job-runner").locator(".box").boundingBox())!;
+    const buttons = buttonsOf(page, "grp:job-runner").locator(".zoom, .expand-here");
+    await expect(buttons).toHaveCount(2);
+    for (const button of await buttons.all())
+      expect((await button.boundingBox())!.y - service.y).toBeLessThan(12);
   });
 
   test("the zoom button opens the inside, and the trail leads back up", async ({ page }) => {

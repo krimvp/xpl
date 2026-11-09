@@ -1,11 +1,11 @@
 /**
  * The key of a diagram: what its boxes, outlines, lines, icons and buttons mean, behind a "Key" button beside
- * the zoom buttons. Each row draws the real mark (the same classes as the diagram, so the colours follow the
+ * the zoom buttons. Each row draws the real mark (the same classes as the diagram, so the colors follow the
  * theme) and says what it means in plain words. Rows for things the diagram does not show are left out.
  * `Legend` is the key of a map, `FlowKey` of a process flow, `SequenceKey` of a sequence diagram.
  */
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
-import { headOf, type LegendShows } from "../keyMarks.js";
+import { headOf, keyLineItems, type LegendShows } from "../keyMarks.js";
 import { readerBadge } from "../readerWords.js";
 import { BoxIcon } from "./icons.js";
 
@@ -197,24 +197,10 @@ const KIND_WORDS: Record<string, string> = {
 };
 
 /** The short words for a kind on the key line (only when a map mixes kinds). */
-const KIND_SHORT: Record<string, string> = {
-  calls: "calls",
-  imports: "imports",
-  extends: "extends",
-  embeds: "embeds",
-  implements: "implements",
-  references: "uses a type",
-  holds: "a field holds this type",
-  reads: "reads",
-  writes: "writes",
-  requests: "web request",
-};
-
 /**
  * The marks of a map's arrows in one line under its caption, for the marks the map draws now: a reader learns
- * them without opening the Key. Each swatch is drawn with the Key's classes, so its colour and dash are the
- * map's. `stubLines`: lines to code outside the map are on screen (else only their dashed boxes are). Nothing
- * when every arrow is the plain kind.
+ * them without opening the Key (`keyLineItems` picks them). Each swatch is drawn with the Key's classes, so its
+ * colour and dash are the map's.
  */
 export function KeyLine({
   shows,
@@ -226,69 +212,28 @@ export function KeyLine({
   /** The technology or role every box shares, drawn on none of them (graphLayout `sharedBadge`). */
   sharedBadge?: string | undefined;
 }) {
-  const items: { key: string; swatch: ReactNode; words: string }[] = [];
-  if (sharedBadge)
-    items.push({
-      key: "shared",
-      swatch: null,
-      words: `every box: ${readerBadge(sharedBadge) ?? sharedBadge}`,
-    });
   const line = (className: string, head: Head = "filled") => (
     <svg className="key-swatch" width="26" height="12" viewBox="0 0 32 22" aria-hidden="true">
       <Arrow className={className} head={head} />
     </svg>
   );
-  const kinds = shows.kinds ?? [];
-  // the kinds when the map mixes them, or draws only arrows that are not calls (a class hierarchy); a map of
-  // calls alone names them when the line says anything else, so an arrow without words has one here
-  const kindItems = kinds.map((kind) => ({
-    key: `kind-${kind}`,
-    swatch: line("lg-edge", headOf(kind)),
-    words: KIND_SHORT[kind] ?? kind,
-  }));
-  if (kinds.length > 1 || (kinds.length === 1 && kinds[0] !== "calls")) items.push(...kindItems);
-  if (shows.authored)
-    items.push({
-      key: "authored",
-      swatch: line("lg-edge is-authored"),
-      words: "added by the author, checked against the code",
-    });
-  if (shows.found && (shows.authored || shows.heuristic || shows.mixed || shows.outside))
-    items.push({ key: "found", swatch: line("lg-edge is-found"), words: "found in the code" });
-  if (shows.heuristic)
-    items.push({
-      key: "heuristic",
-      swatch: line("lg-edge is-heuristic"),
-      words: "matched by name",
-    });
-  if (shows.mixed)
-    items.push({
-      key: "mixed",
-      swatch: line("lg-edge is-mixed"),
-      words: "partly matched by name",
-    });
-  if (shows.outside) {
-    items.push({
-      key: "ghost",
-      swatch: (
+  const swatch = (key: string): ReactNode => {
+    if (key === "shared") return null;
+    if (key.startsWith("kind-")) return line("lg-edge", headOf(key.slice(5)));
+    if (key === "ghost")
+      return (
         <svg className="key-swatch" width="26" height="14" viewBox="0 0 32 22" aria-hidden="true">
           <rect className="lg-box is-ghost" x="1" y="3" width="30" height="16" rx="4" />
         </svg>
-      ),
-      words: stubLines
-        ? "code outside this map"
-        : "code outside this map (pick a box to see its arrows)",
-    });
-    if (stubLines)
-      items.push({ key: "stub", swatch: line("lg-edge is-stub"), words: "leads outside this map" });
-  }
+      );
+    return line(`lg-edge is-${key}`);
+  };
+  const items = keyLineItems(
+    shows,
+    stubLines,
+    sharedBadge && (readerBadge(sharedBadge) ?? sharedBadge),
+  ).map((item) => ({ ...item, swatch: swatch(item.key) }));
   if (items.length === 0) return null;
-  if (
-    kinds.length === 1 &&
-    kinds[0] === "calls" &&
-    items.every((item) => item.key !== "kind-calls")
-  )
-    items.splice(sharedBadge ? 1 : 0, 0, ...kindItems);
   return (
     // a11y: a list a screen reader names and counts, each item with the look of its mark in words
     <ul className="key-line" data-testid="key-line" aria-label="Key to this map's lines">
@@ -524,7 +469,7 @@ function KeyButton({ foot, children }: { foot: string; children: ReactNode }) {
         data-testid="legend-button"
         aria-expanded={open}
         aria-controls={open ? id : undefined}
-        title="What the boxes, lines and colours mean"
+        title="What the boxes, lines and colors mean"
         onClick={() => setOpen((was) => !was)}
       >
         Key

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { splitLines, type FocusRange, type TourStep } from "@xpl/core";
 import { stepSelection } from "../derive.js";
+import { changeAt, changeOf, needsBase, paneDiff } from "../diff.js";
 import { useStore, useViewerState } from "../hooks.js";
 import { firstContentLine } from "../readerWords.js";
 
@@ -85,6 +86,29 @@ export function GuideSource({
     else void store.ensureFile(file);
   }, [store, file, base, text]);
   const lines = useMemo(() => (text === undefined ? [] : splitLines(text)), [text]);
+  // What the change did to these lines, with the code pane's marks: removed lines on the code before, added
+  // and rewritten ones on the code after, the words a rewrite changed; the lines around them stay plain.
+  const change = changeOf(state.explainer);
+  const changed = file !== undefined && state.showChanges ? changeAt(change, file) : undefined;
+  const baseText = file !== undefined ? state.baseFiles[file] : undefined;
+  const headText = file !== undefined ? state.files[file] : undefined;
+  useEffect(() => {
+    if (changed && !base && baseText === undefined && needsBase(change, changed.path))
+      void store.ensureBaseFile(changed.path);
+  }, [store, changed, base, baseText, change]);
+  const marks = useMemo(
+    () =>
+      changed
+        ? paneDiff(
+            base ? "base" : undefined,
+            changed,
+            baseText === undefined ? undefined : splitLines(baseText),
+            undefined,
+            headText === undefined ? undefined : splitLines(headText),
+          )
+        : null,
+    [changed, base, baseText, headText],
+  );
   const range = focus?.range;
   const checked = focus?.status === "ok" || focus?.status === "moved";
   const available =
@@ -129,14 +153,29 @@ export function GuideSource({
             aria-label={`Source lines ${start} to ${end}${base ? ", before the change" : ""}`}
           >
             <code>
-              {lines.slice(start - 1, end).map((line, offset) => (
-                <span className="guide-source-line" key={offset}>
-                  <span className="guide-source-number" aria-hidden="true">
-                    {start + offset}
+              {lines.slice(start - 1, end).map((line, offset) => {
+                const n = start + offset;
+                const mark = marks?.gone?.has(n) ? "is-gone" : marks?.lines?.has(n) ? "is-add" : "";
+                const word = mark ? marks?.words?.get(n) : undefined;
+                return (
+                  <span className={`guide-source-line ${mark}`.trim()} key={offset}>
+                    <span className="guide-source-number" aria-hidden="true">
+                      {n}
+                    </span>
+                    {word ? (
+                      <>
+                        {line.slice(0, word.from)}
+                        <span className={base ? "xpl-word-del" : "xpl-word-add"}>
+                          {line.slice(word.from, word.to)}
+                        </span>
+                        {line.slice(word.to)}
+                      </>
+                    ) : (
+                      line
+                    )}
                   </span>
-                  {line}
-                </span>
-              ))}
+                );
+              })}
             </code>
           </pre>
           <div className="guide-source-actions">

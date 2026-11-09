@@ -226,3 +226,50 @@ test("a Before/Now step numbers its code links in the step's order and pages to 
     "this.config.retry.baseDelayMs * attempts",
   );
 });
+
+test("a change step's excerpt marks the lines the change removes or adds, and leaves the lines around them plain", async ({
+  page,
+}) => {
+  const { html, bundle } = readEmbeddedBundle(CHANGE_BUNDLE);
+  const edited = bundle as Parameters<Parameters<typeof openVariant>[1]>[0];
+  edited.explainer.tours[0].steps = [
+    {
+      id: "marks",
+      view: "view:overview",
+      focus: [],
+      note: "Before: one delay. Now: a growing delay, and a cap.",
+      code: [
+        // base 76-77 became head 75-78; head 106-110 are new lines
+        {
+          file: "src/runner.ts",
+          at: "base",
+          role: "context",
+          resolved: { status: "ok", range: { startLine: 74, endLine: 79 } },
+        },
+        {
+          file: "src/runner.ts",
+          role: "definition",
+          resolved: { status: "ok", range: { startLine: 103, endLine: 110 } },
+        },
+      ],
+    },
+  ];
+  await page.route("http://xpl.test/**", (route) =>
+    route.fulfill({ contentType: "text/html", body: withBundle(html, edited) }),
+  );
+  await page.goto("http://xpl.test/");
+  const excerpt = page.getByRole("region", { name: "Source excerpt, step 1" });
+  const marked = (mark: string) =>
+    excerpt
+      .locator(`.guide-source-line.${mark} .guide-source-number`)
+      .evaluateAll((els) => els.map((el) => Number(el.textContent)));
+  await expect(excerpt.locator(".guide-source-caption")).toContainText("before the change");
+  await expect.poll(() => marked("is-gone")).toEqual([76, 77]);
+  await expect.poll(() => marked("is-add")).toEqual([]);
+  // the words the rewrite changed, as in the code pane
+  await expect(excerpt.locator(".xpl-word-del").first()).toBeVisible();
+  await excerpt.getByRole("button", { name: "Next code link (2 of 2)" }).click();
+  await expect(excerpt.locator(".guide-source-caption")).not.toContainText("before the change");
+  await expect.poll(() => marked("is-add")).toEqual([106, 107, 108, 109, 110]);
+  await expect.poll(() => marked("is-gone")).toEqual([]);
+});

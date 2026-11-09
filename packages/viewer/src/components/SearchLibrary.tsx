@@ -1,6 +1,12 @@
 import { createPortal } from "react-dom";
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
-import { describeAnalysis, guideCatalog, type GuideDescriptor, type Range } from "@xpl/core";
+import {
+  describeAnalysis,
+  guideCatalog,
+  isTestFile,
+  type GuideDescriptor,
+  type Range,
+} from "@xpl/core";
 import SearchWorker from "../search-worker.ts?worker&inline";
 import type {
   SearchMessage,
@@ -53,6 +59,11 @@ const KIND_WORDS: Record<string, string> = {
 /** A name hit's kicker: its kind in words ("Function", "Struct"), else "Name". */
 const kindLabel = (node: { kindWord?: string; symbolKind?: string } | undefined): string =>
   KIND_WORDS[node?.kindWord ?? node?.symbolKind ?? ""] ?? "Name";
+/** A function in a test file is a test case: "Test", not "Function". */
+const testCase = (
+  hit: { file: string },
+  node: { kindWord?: string; symbolKind?: string } | undefined,
+): boolean => isTestFile(hit.file) && (node?.kindWord ?? node?.symbolKind) === "function";
 const rangeText = (range: Range) =>
   `${range.startLine}${range.startCol === undefined ? "" : `:${range.startCol}`}-${range.endLine}${range.endCol === undefined ? "" : `:${range.endCol}`}`;
 
@@ -389,7 +400,12 @@ export function SearchLibrary({ onClose }: { onClose: () => void }) {
                             ? "Tour step"
                             : "Flow step"
                           : hit.kind === "symbol"
-                            ? kindLabel(guide === current ? state.model.node(hit.id) : undefined)
+                            ? testCase(
+                                hit,
+                                guide === current ? state.model.node(hit.id) : undefined,
+                              )
+                              ? "Test"
+                              : kindLabel(guide === current ? state.model.node(hit.id) : undefined)
                             : (HIT_WORDS[hit.kind] ?? hit.kind);
                       // Where the hit is, in a reader's words: the file and its lines (the snapshot's commit
                       // is in the tooltip), or the guide and its tour.

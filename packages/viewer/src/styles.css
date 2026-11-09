@@ -2592,6 +2592,11 @@ code {
   stroke: var(--border-strong);
   stroke-width: 1.2;
 }
+/* one tint for the outermost frame only: nested frames are outlines, so loop > opt > alt > alt does not
+   darken toward black under the innermost words */
+.frame.is-nested .frame-box {
+  fill: none;
+}
 
 .frame .frame-tab {
   fill: var(--panel-2);
@@ -3498,11 +3503,14 @@ code {
   white-space: nowrap;
 }
 
-/* When the pane is narrow the directory gives way, never the file name. */
+/* When the pane is narrow the directory gives way, never the file name. It is cut at its start, next to
+   the name ("…/types/"): the right-to-left box puts the ellipsis on the left, the <bdi> keeps the path in
+   its order. */
 .pane-file .dir {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+  direction: rtl;
   color: var(--muted);
 }
 
@@ -4019,6 +4027,12 @@ code {
 .present .caption-question {
   flex: 1 1 0;
   min-width: 0;
+}
+/* While part of the diagram is out of sight the "Fit all" cue stays in the bar, and the question gives way:
+   beside the cue it kept a few letters. The title says it on hover. (A second line for it would shrink the
+   diagram after it was framed, and move the frame.) */
+.present .diagram-caption:has(.pz-fit.is-cue) .caption-question {
+  display: none;
 }
 
 .present .diagram-caption .zoom-trail {
@@ -5821,9 +5835,6 @@ code {
 .matrix-cell {
   min-width: max(var(--matrix-cell), calc(var(--matrix-digits, 2) * 1ch + 14px));
   text-align: center;
-}
-.matrix-cell.is-below {
-  background: color-mix(in srgb, var(--warn) 5%, var(--panel));
 }
 .matrix-cell.is-diagonal {
   background: var(--matrix-mark);

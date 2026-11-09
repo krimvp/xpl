@@ -139,13 +139,13 @@ export function pictureWords(
   lit: readonly string[],
   word: "boxes" | "lifelines" | "steps",
 ): string {
-  const list = (names: readonly string[]) => {
-    const unique = [...new Set(names)];
-    return unique.length > PICTURE_NAMES
-      ? `${unique.slice(0, PICTURE_NAMES).join(", ")} and ${unique.length - PICTURE_NAMES} more`
-      : unique.join(", ");
-  };
+  const list = (names: readonly string[]) =>
+    names.length > PICTURE_NAMES
+      ? `${names.slice(0, PICTURE_NAMES).join(", ")} and ${names.length - PICTURE_NAMES} more`
+      : names.join(", ");
+  // (every part by its name, two of one name included, so the count and the list agree; a part lit twice
+  // is named once)
   const shows = parts.length ? `Shows ${parts.length} ${word}: ${list(parts)}.` : "";
-  const marked = lit.length ? `Lit: ${list(lit)}.` : "";
+  const marked = lit.length ? `Lit: ${list([...new Set(lit)])}.` : "";
   return [shows, marked].filter(Boolean).join(" ");
 }

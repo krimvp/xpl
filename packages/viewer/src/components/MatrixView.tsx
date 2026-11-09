@@ -245,7 +245,7 @@ export function MatrixView({
           {tables
             ? "A number counts the fields that hold the column's type"
             : "A number counts the code links"}
-          {anyAuthored ? "; • marks an arrow the author added" : ""}. The grey diagonal is each box
+          {anyAuthored ? "; • marks an arrow the author added" : ""}. The gray diagonal is each box
           against itself.{" "}
           {anyBack && (
             <span className="matrix-key-back">
@@ -403,10 +403,7 @@ export function MatrixView({
                             <td
                               key={col.id}
                               role="gridcell"
-                              className={
-                                "matrix-cell" +
-                                (r === c ? " is-diagonal" : r > c ? " is-below" : "")
-                              }
+                              className={"matrix-cell" + (r === c ? " is-diagonal" : "")}
                               data-r={r}
                               data-c={c}
                               tabIndex={tab(p)}

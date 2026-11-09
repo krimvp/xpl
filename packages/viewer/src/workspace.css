@@ -790,6 +790,30 @@
   font-size: 20px;
   margin: 0;
 }
+/* the trail of levels above the title is one line: a level above gives way (cut short, whole on hover),
+   never the current one. Beside the code the column is narrow, and the trail broke into four lines. */
+.workspace-caption > div {
+  min-width: 0;
+}
+.workspace-caption .zoom-trail {
+  flex-wrap: nowrap;
+  min-width: 0;
+  white-space: nowrap;
+}
+.workspace-caption .zoom-trail > span {
+  display: flex;
+  min-width: 0;
+}
+.workspace-caption .zoom-trail > span:last-child,
+.workspace-caption .zoom-trail > span > span {
+  flex: none;
+}
+.workspace-caption .zoom-trail button {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: left;
+}
 .view-question {
   margin: 4px 0 0;
   color: var(--muted);
@@ -935,7 +959,8 @@
   overflow-wrap: anywhere;
 }
 /* the Tour keeps its right column for every step of a tour that has related files; a step with
-   none lists where its own code is. On a phone the step's card shows that code already: no bar for it. */
+   none lists where its own code is. On a phone the step's card shows the step's code (its settings and
+   tests included) already: the Tour shows no panel for the cards, so the text keeps the whole height. */
 .related-files.is-own-code ul {
   margin: 0;
   padding: 0;
@@ -947,10 +972,11 @@
   font-size: 12px;
 }
 @media (max-width: 760px) {
-  .related-files.is-own-code {
+  .related-files.is-own-code,
+  .workspace[data-perspective="guide"] .related-files {
     display: none;
   }
-  .workspace[data-perspective="guide"] .workspace-context:not(:has(> :not(.is-own-code))) {
+  .workspace[data-perspective="guide"] .workspace-context:not(:has(> :not(.related-files))) {
     display: none;
   }
 }
@@ -1503,10 +1529,15 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
-/* the code before a change reads as removed lines, as in the code pane. */
-.guide-source pre.is-before {
-  border-left: 3px solid var(--danger);
-  background: color-mix(in srgb, var(--danger) 7%, transparent);
+/* the lines a change removes (code before it) or adds and rewrites (code after it), as in the code pane;
+   the lines around them stay plain. */
+.guide-source-line.is-gone {
+  background-color: var(--diff-del-bg);
+  box-shadow: inset 3px 0 0 var(--diff-del-bar);
+}
+.guide-source-line.is-add {
+  background-color: var(--diff-add-bg);
+  box-shadow: inset 3px 0 0 var(--diff-add-bar);
 }
 .guide-source-actions {
   display: flex;

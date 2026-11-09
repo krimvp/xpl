@@ -11,6 +11,7 @@ import {
   watchProblems,
   openEditMenu,
   toExplore,
+  openVariant,
 } from "./helpers.js";
 
 // A real file:// page: no service can fill in omitted source or guide snapshots.
@@ -573,4 +574,34 @@ test("a source link can move to a change's Before file and survive reload", asyn
   await expect(page.getByTestId("no-data")).toContainText(
     `Source file "src/legacy.ts" changed within snapshot "${bundle.index.commit}"`,
   );
+});
+
+test("the guide's steps come before the code's names, and test cases come last, named Test", async ({
+  page,
+}) => {
+  await openVariant(page, (bundle) => {
+    bundle.explainer.tours[0].steps[1].note = "A failed job is requeued with a growing delay.";
+  });
+  await page.getByRole("button", { name: "Search and guides" }).click();
+  const panel = page.getByRole("dialog", { name: "Search and guides" });
+  await panel.getByRole("searchbox").fill("requeue");
+  await expect(panel.locator(".search-group h3").first()).toHaveText("Tour and flow steps");
+  const symbols = panel.getByRole("region", { name: "Symbols" });
+  await expect
+    .poll(() =>
+      symbols
+        .locator(".search-result")
+        .evaluateAll((els) =>
+          els.map(
+            (el) =>
+              `${el.querySelector(".search-kind")!.textContent} ${el.querySelector(".search-result-text")!.textContent}`,
+          ),
+        ),
+    )
+    .toEqual([
+      "Method Queue.requeue",
+      "Method RecordingQueue.requeue",
+      "Test fails twice, then succeeds: acked after two requeues",
+      "Test always fails: dead-lettered after maxRetries requeues",
+    ]);
 });

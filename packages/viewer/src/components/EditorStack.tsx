@@ -637,7 +637,12 @@ const EditorPane = memo(function EditorPane({
           title={shown}
           style={{ minWidth: `${Math.min(basename.length, 40)}ch` }}
         >
-          {slash !== -1 && <span className="dir">{shown.slice(0, slash + 1)}</span>}
+          {/* (cut at its start: "…/types/" next to the name, never "s…" that reads as part of it) */}
+          {slash !== -1 && (
+            <span className="dir">
+              <bdi>{shown.slice(0, slash + 1)}</bdi>
+            </span>
+          )}
           <b>{basename}</b>
         </span>
         {inside && !folded && (

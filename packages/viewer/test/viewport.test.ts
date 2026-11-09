@@ -252,15 +252,17 @@ describe("frameView: the first view of a diagram", () => {
     expect(whole(false)).toEqual([true, true, false, false, false]);
   });
 
-  it("of two windows that each cut one box, takes the one that cuts none at its start", () => {
-    // the pane shows 400 units at 1. Around the focus, `before` and `after` cannot both be whole: the window
-    // nearer the centred one holds `after` and cuts `before` at the left edge, where its name is.
+  it("of two windows that each cut one box and hold as many, takes the one that cuts none at its start", () => {
+    // the pane shows 400 units at 1, and the focus overlaps both of its neighbours (an arrow's words over two
+    // lifeline heads), so every window cuts one of them at least. Holding `before` whole cuts `after` at the
+    // right edge; holding `after` whole, the window nearer the centred one, cuts `before` at the left edge,
+    // where its name is.
     const size = { w: 420, h: 120 };
     const content = { width: 2000, height: 100 };
     const options = { padding: 10, maxZoom: 1, whole: 1, readable: 1 };
     const keep = { x: 1300, y: 0, width: 40, height: 50 };
-    const before = { x: 995, y: 0, width: 300, height: 50 };
-    const after = { x: 1345, y: 0, width: 250, height: 50 };
+    const before = { x: 960, y: 0, width: 360, height: 50 };
+    const after = { x: 1320, y: 0, width: 320, height: 50 };
     const view = frameView(
       size,
       content,

@@ -283,7 +283,18 @@ test.describe("Present: a flow step", () => {
   test("flow boxes are named by their actor (the step's from), not by where the call goes", async ({
     page,
   }) => {
-    await openVariant(page, withEightStageFlow, "?perspective=flow&view=view:dispatch");
+    // (two of eight stages done elsewhere: no part does four in five, so no box leaves its actor out)
+    await openVariant(
+      page,
+      (bundle) => {
+        withEightStageFlow(bundle);
+        const view = bundle.explainer.views.find((v: Loose) => v.id === "view:dispatch");
+        view.steps[6].from = QUEUE;
+        view.steps[6].to = QUEUE;
+      },
+      "?perspective=flow&view=view:dispatch",
+    );
+    await expect(page.getByTestId("caption-owner")).toHaveCount(0);
     const owner = (id: string) => byId(page, id).locator(".flow-owner");
     // "Acknowledge the job" is done by the runner, handing the job to the queue
     await expect(owner("dispatch:5")).toHaveText("Runner.dispatch → queue.ts");
@@ -310,6 +321,17 @@ test.describe("Present: a flow step", () => {
     // the runner's own boxes say nothing more; a box that hands work on says where it goes
     await expect(owner("dispatch:2")).toHaveCount(0);
     await expect(owner("dispatch:5")).toHaveText("→ queue.ts");
+  });
+
+  // ky's retry decision: 11 of 12 boxes repeated "Ky.#calculateRetryDelay"
+  test("a flow whose steps nearly all start in one part names it once; the other box names its own", async ({
+    page,
+  }) => {
+    await openVariant(page, withEightStageFlow, "?perspective=flow&view=view:dispatch");
+    await expect(page.getByTestId("caption-owner")).toHaveText("The steps of Runner.dispatch");
+    const owner = (id: string) => byId(page, id).locator(".flow-owner");
+    await expect(owner("dispatch:2")).toHaveCount(0);
+    await expect(owner("dispatch:4")).toHaveText("worker.ts");
   });
 });
 

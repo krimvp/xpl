@@ -10,6 +10,7 @@ import {
   firstContentLine,
   looksLikeCode,
   mapEdgeSource,
+  pictureWords,
   readerBadge,
   roleWords,
 } from "../src/readerWords.js";
@@ -241,5 +242,19 @@ describe("a person's text in a sentence", () => {
     expect(asSentence("Tests not read")).toBe("Tests not read.");
     expect(asSentence("Tests not read.")).toBe("Tests not read.");
     expect(asSentence("Which tests? ")).toBe("Which tests?");
+  });
+});
+
+describe("pictureWords: what a still picture shows, for a screen reader", () => {
+  it("counts the parts it names, two of one name included, and names a lit part once", () => {
+    expect(pictureWords(["index.ts", "util.ts", "index.ts"], ["util.ts", "util.ts"], "boxes")).toBe(
+      "Shows 3 boxes: index.ts, util.ts, index.ts. Lit: util.ts.",
+    );
+  });
+  it("names the first 8 parts, then says how many more", () => {
+    const names = Array.from({ length: 10 }, (_, i) => `p${i + 1}`);
+    expect(pictureWords(names, [], "steps")).toBe(
+      "Shows 10 steps: p1, p2, p3, p4, p5, p6, p7, p8 and 2 more.",
+    );
   });
 });
