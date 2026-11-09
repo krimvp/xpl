@@ -75,8 +75,8 @@ Guides and the viewer:
   sequence or flow opens whole. Present keeps the lifelines that send a sequence's drawn arrows in frame.
 - Folding a table of a data map keeps its arrows, which then start at the folded table, and keeps every other
   box where it was.
-- A guide with no map of its own gets a Map tab only when its flow has 3 parts or more. The tab is named
-  "Parts of" the flow, and its boxes are not drawn larger than normal size.
+- A guide with no map of its own gets a Map tab only when its flow has 3 parts or more. That map's title is
+  "Parts of" and the flow's title, and its boxes are not drawn larger than normal size.
 - Two arrow labels on one line, in opposite directions, sit on either side of the line, so they no longer
   read as one label.
 - An `implements` arrow lifted to a file or a folder reads "implements an interface in". A value declared
@@ -143,8 +143,13 @@ Docs:
   than its budget. The languages page describes the `refs:` column of `xpl index` and `--verbose`.
 - SECURITY.md names the supported line (0.3.x) and says that only `xpl view` takes `--host`. The README and
   the docs list every supported language, including Rust, and give the exit codes of `xpl health`.
+- The landing page names the languages xpl reads and links to the languages page. On a phone its picture
+  is a phone-sized view of the same sequence, so its labels can be read.
+- The skill says which 2 steps of `xpl draft path` to keep in a repository guide, and where they go. It
+  tells the agent to read the coverage lines of `xpl index` for Rust, Ruby and PHP. The Vite overview
+  links its "starts dev server" arrow to the `server.listen()` call.
 
-## [0.3.0]
+## [0.3.0] - 2026-10-09
 
 - xpl indexes Java repositories and named Ruby, PHP and Rust declarations. Rust support also resolves bounded
   same-file calls. Relationships are still labeled as heuristic when precise evidence is unavailable.
@@ -162,16 +167,16 @@ Docs:
 The `v0.2.3` and `v0.2.4` tags were failed release attempts and did not publish npm packages. This release
 follows the last published package, 0.2.2.
 
-## [0.2.2]
+## [0.2.2] - 2026-10-07
 
 - The website adds four self-contained examples from Vite and Zod. Readers can open them in a browser or
   save them for offline reading, with links to each source revision and license.
 
-## [0.2.1]
+## [0.2.1] - 2026-10-07
 
 - The landing page links to the public GitHub repository. The shorter README points to the docs for detailed workflows.
 
-## [0.2.0]
+## [0.2.0] - 2026-10-07
 
 - Authors can keep a local xpl service connected to a repository, watch source changes, and find guides that
   need attention.

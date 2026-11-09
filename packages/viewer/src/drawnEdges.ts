@@ -47,3 +47,17 @@ export function isHolds(edge: { kind: string; label?: string | undefined }): boo
 export function kindCount(kind: string, count: number): string {
   return count === 1 && (kind === "extends" || kind === "implements") ? kind : `${kind} ×${count}`;
 }
+
+/**
+ * A row's type, with the type it holds named as its table on the map is: a table drawn as
+ * "runner.Config" (two types share the name) makes the row's "Config" read "runner.Config", and a table drawn
+ * as "Retry" makes "config.Retry" read "Retry". Any other type is left as the code writes it.
+ */
+export function rowTypeText(type: string, table: string | undefined): string {
+  if (!table) return type;
+  const base = table.split(".").pop()!;
+  if (!/^[A-Za-z_]\w*$/.test(base)) return type;
+  const named = new RegExp(`(?<![\\w.])(?:[A-Za-z_]\\w*\\.)*${base}(?![\\w.])`, "g");
+  const found = type.match(named);
+  return found && found.length === 1 ? type.replace(named, table) : type;
+}

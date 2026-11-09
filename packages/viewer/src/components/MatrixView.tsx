@@ -438,7 +438,7 @@ export function MatrixView({
                             }
                             {...track(p)}
                           >
-                            {cell.authored ? "•" : cell.count}
+                            <span className="matrix-count">{cell.authored ? "•" : cell.count}</span>
                             {showKinds && !cell.authored && (
                               <span className="matrix-kind" aria-hidden="true">
                                 {glyphs(cell.kinds).join("")}

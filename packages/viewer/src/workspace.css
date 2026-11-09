@@ -346,6 +346,20 @@
 .guide-contents > button:hover {
   background: var(--hover);
 }
+/* The keys that step through the tour (Guide.tsx), under the list of steps. */
+.guide-keys {
+  margin: 14px 8px 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.guide-keys kbd {
+  font: inherit;
+  font-weight: 600;
+  padding: 0 5px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
 .guide-body,
 .guide-fallback {
   padding: 34px clamp(20px, 4vw, 60px) 60px;
@@ -1597,15 +1611,34 @@
   }
 }
 /* r3-frame (R3-3): in the Tour the right column shows only when it has something for the step on screen
-   (related files, or a box picked from the step); otherwise the text takes its width. */
-.workspace[data-perspective="guide"] .workspace-context:empty {
+   (related files, or a box picked from the step); otherwise the text takes its width. The Code tab with
+   nothing selected gives the code that width too. */
+.workspace:is([data-perspective="guide"], [data-perspective="code"]) .workspace-context:empty {
   display: none;
 }
-.workspace[data-perspective="guide"] .workspace-columns:has(> .workspace-context:empty) {
+.workspace:is([data-perspective="guide"], [data-perspective="code"])
+  .workspace-columns:has(> .workspace-context:empty) {
   grid-template-columns: minmax(0, 1fr);
 }
 
 /* R5-4: in a Tour picture the lifeline names kept at the top hide what scrolled under them completely. */
 .guide-snapshot .sticky-band {
   opacity: 1;
+}
+/* A repeated end's copy (dashed, no number): the same step, drawn again near another way into it. */
+.flow-stage.is-copy > rect {
+  stroke-dasharray: 6 4;
+}
+/* A flow of states (xpl draft states): a state is a pill with a firm edge, a move a flat box on the panel colour. */
+.flow-stage.is-state > rect {
+  stroke-width: 2.5;
+}
+.flow-stage.is-move > rect {
+  fill: var(--panel-2);
+  stroke-dasharray: 2 3;
+}
+/* Which diagram a chip's step is in, when two chips have the same name. */
+.guide-mini-where {
+  color: var(--muted);
+  font-weight: 400;
 }

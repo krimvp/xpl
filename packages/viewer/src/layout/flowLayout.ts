@@ -1,8 +1,9 @@
-import type { ElementId, ExplainerModel, ProcessFlow } from "@xpl/core";
+import type { ElementId, ExplainerModel, ProcessFlow, SequenceView } from "@xpl/core";
 import { textWidth } from "../measure.js";
 import type { Point } from "../svg.js";
 import type { Box } from "../svg.js";
 import {
+  type Direction,
   layered,
   orthogonalRoute,
   type LayeredResult,
@@ -16,6 +17,18 @@ import {
 export interface FlowLayout {
   width: number;
   height: number;
+  /** Which way the steps run: `DOWN` (top to bottom, the default) or `RIGHT` (left to right). */
+  direction: Direction;
+  /**
+   * Characters per line of a box's label (`wrapWords`), by shape: a left-to-right flow has narrower boxes,
+   * and its diamonds are narrow and tall.
+   */
+  labelChars: { stage: number; decision: number };
+  /**
+   * In how many parts a long flow is set, like lines of text: columns side by side (top to bottom) or rows
+   * one under the other (left to right). An arrow from the end of one part to the next runs between them.
+   */
+  parts: number;
   /**
    * The boxes, by layout id: a stage's id, or for a repeated end (`copyOf`) an id of its own. A stage drawn
    * more than once is one element: a click on any of its boxes picks it.
@@ -71,14 +84,51 @@ export function transitionText(edge: {
  * one branch is about 700 units wide, so it shows at full size in a pane of that width.)
  */
 export const STAGE_WIDTH = 250;
-/** A stage box is as tall as its words: one line of label is 66 units, each more adds a line (V2-07). */
-export function stageHeight(label: string): number {
-  return 66 + 18 * (wrapWords(label, STAGE_LABEL_CHARS, 3).length - 1);
-}
-export const DECISION_WIDTH = 300;
-export const DECISION_HEIGHT = 150;
+/**
+ * A left-to-right flow's stage box: narrower, with fewer characters per line. Its width runs along the
+ * flow, so each unit saved is saved once per step.
+ */
+export const STAGE_WIDTH_ACROSS = 190;
 /** Characters per line of a stage label (three lines at most). */
 export const STAGE_LABEL_CHARS = 28;
+/** Characters per line of a stage label in a left-to-right flow. */
+export const STAGE_LABEL_CHARS_ACROSS = 20;
+/** Characters per line of a decision's label in a left-to-right flow: a narrower, taller diamond. */
+export const DECISION_LABEL_CHARS_ACROSS = 14;
+/** A stage box is as tall as its words: one line of label is 66 units, each more adds a line (V2-07). */
+export function stageHeight(label: string, chars = STAGE_LABEL_CHARS): number {
+  return 66 + 18 * (wrapWords(label, chars, 3).length - 1);
+}
+/** The largest a decision diamond gets; a short question gets a smaller one (`decisionSize`). */
+export const DECISION_WIDTH = 300;
+export const DECISION_HEIGHT = 150;
+/** The smallest decision diamond. */
+const DECISION_MIN = { width: 150, height: 84 };
+/** Font size and line height of a stage's label (styles: `.flow-stage .flow-stage-label`), and of its actor line. */
+const STAGE_FONT = 14;
+const STAGE_LINE = 20;
+const OWNER_FONT = 13;
+
+/**
+ * A decision diamond's size: just big enough to hold its words. The text block (the label's lines and the
+ * actor line under them) fits inside a diamond twice its width and twice its height, plus a margin.
+ */
+export function decisionSize(
+  label: string,
+  actor = "",
+  chars = STAGE_LABEL_CHARS,
+): { width: number; height: number } {
+  const lines = wrapWords(label, chars, 3);
+  const textW = Math.max(
+    ...lines.map((line) => textWidth(line, STAGE_FONT, 600)),
+    actor ? textWidth(actor, OWNER_FONT) : 0,
+  );
+  const textH = STAGE_LINE * lines.length + (actor ? 18 : 0);
+  return {
+    width: Math.round(Math.min(DECISION_WIDTH, Math.max(DECISION_MIN.width, 2 * textW + 44))),
+    height: Math.round(Math.min(DECISION_HEIGHT, Math.max(DECISION_MIN.height, 2 * textH + 20))),
+  };
+}
 /** Characters per line of a transition label ("yes: HTTP below ASGI 2.4" takes two lines). */
 export const EDGE_LABEL_CHARS = 18;
 /** Font size of a transition's words (styles: `.flow-transition text`). */
@@ -168,26 +218,62 @@ export function repeatEnds(flow: ProcessFlow): {
   return { boxes, transitions };
 }
 
-/** Lays out a flow top-down: stages in layers, right-angled transitions with their labels between them. */
-export async function layoutFlow(source: ProcessFlow): Promise<FlowLayout> {
+/** How a flow is laid out. */
+export interface FlowLayoutOptions {
+  /** `DOWN` (the default) or `RIGHT`. */
+  direction?: Direction;
+  /** In how many parts to set the flow (`FlowLayout.parts`, default 1); fewer when it has fewer places to cut. */
+  parts?: number;
+  /** The actor line drawn under each step's label, by step id: a decision diamond is sized to hold it. */
+  actors?: ReadonlyMap<string, string>;
+}
+
+/**
+ * Lays out a flow: stages in layers, right-angled transitions with their labels between them. Top to
+ * bottom by default; left to right (`direction: "RIGHT"`) is the same layout turned: it is computed top to
+ * bottom with every box and label turned on its side, then turned back, so the rules below (lower step
+ * numbers first where a path splits, a straight main path, routes clear of boxes) hold either way.
+ */
+export async function layoutFlow(
+  source: ProcessFlow,
+  options: FlowLayoutOptions = {},
+): Promise<FlowLayout> {
+  const direction = options.direction ?? "DOWN";
+  const across = direction === "RIGHT";
+  const labelChars = across
+    ? { stage: STAGE_LABEL_CHARS_ACROSS, decision: DECISION_LABEL_CHARS_ACROSS }
+    : { stage: STAGE_LABEL_CHARS, decision: STAGE_LABEL_CHARS };
+  // in a left-to-right flow every size goes in turned, and the result is turned back at the end
+  const turn = <T extends { width: number; height: number }>(size: T): T =>
+    across ? { ...size, width: size.height, height: size.width } : size;
   const { boxes, transitions: links } = repeatEnds(source);
   const flow = { ...source, transitions: links };
   const labelOf = new Map(source.stages.map(({ step }) => [step.id, step.label] as const));
-  const children = boxes.map(({ id, shape, copyOf }) => ({
-    id,
-    width: shape === "decision" ? DECISION_WIDTH : STAGE_WIDTH,
-    height: shape === "decision" ? DECISION_HEIGHT : stageHeight(labelOf.get(copyOf ?? id) ?? ""),
-    ...(copyOf ? { copyOf } : {}),
-  }));
+  const decisions = new Set(boxes.filter((b) => b.shape === "decision").map((b) => b.id));
+  const children = boxes.map(({ id, shape, copyOf }) => {
+    const label = labelOf.get(copyOf ?? id) ?? "";
+    return {
+      id,
+      ...turn(
+        shape === "decision"
+          ? decisionSize(label, options.actors?.get(copyOf ?? id), labelChars.decision)
+          : {
+              width: across ? STAGE_WIDTH_ACROSS : STAGE_WIDTH,
+              height: stageHeight(label, labelChars.stage),
+            },
+      ),
+      ...(copyOf ? { copyOf } : {}),
+    };
+  });
   const labels = new Map(
     flow.transitions.flatMap((edge) => {
       const text = transitionText(edge);
       if (!text) return [];
       const lines = wrapWords(text, EDGE_LABEL_CHARS);
-      const size = {
+      const size = turn({
         width: Math.max(...lines.map((line) => textWidth(line, FLOW_FONT))) + 16,
         height: 8 + EDGE_LABEL_LINE * lines.length,
-      };
+      });
       return [[edge.id, { text, ...size }] as const];
     }),
   );
@@ -204,8 +290,8 @@ export async function layoutFlow(source: ProcessFlow): Promise<FlowLayout> {
     })),
     {
       direction: "DOWN",
-      nodeGap: 36,
-      layerGap: 70,
+      nodeGap: across ? 28 : 36,
+      layerGap: across ? 56 : 70,
       edgeGap: 14,
       pad: { top: 30, right: 24, bottom: 30, left: 24 },
     },
@@ -236,7 +322,323 @@ export async function layoutFlow(source: ProcessFlow): Promise<FlowLayout> {
     routed = routeFlow(facing, transitions, new Set());
     placed = facing;
   }
-  return finishFlow(flow, placed, transitions, routed, labels, children);
+  onDiamonds(routed, transitions, placed.boxes, decisions);
+  const laid = finishFlow(flow, placed, transitions, routed, labels, children, decisions);
+  const parts = Math.max(1, Math.floor(options.parts ?? 1));
+  const split = parts > 1 ? inParts(laid, parts) : undefined;
+  const out = { ...(split ?? laid), direction, labelChars, parts: split ? parts : 1 };
+  return across ? turned(out) : out;
+}
+
+/**
+ * A decision's arrows start and end on the diamond's outline, not on its bounding box: an arrow that
+ * leaves the bottom beside the tip starts where the diamond's lower edge is above it.
+ */
+function onDiamonds(
+  routed: Point[][],
+  transitions: readonly { from: string; to: string }[],
+  boxes: ReadonlyMap<string, Box>,
+  decisions: ReadonlySet<string>,
+): void {
+  const snap = (point: Point, next: Point, id: string) => {
+    const b = boxes.get(id);
+    if (!b || !decisions.has(id) || Math.abs(point.x - next.x) > 0.5) return;
+    const cx = b.x + b.width / 2,
+      cy = b.y + b.height / 2;
+    const off = Math.min(1, Math.abs(point.x - cx) / (b.width / 2));
+    point.y = cy + Math.sign(point.y - cy) * (b.height / 2) * (1 - off);
+  };
+  routed.forEach((points, n) => {
+    const edge = transitions[n]!;
+    if (points.length < 2) return;
+    snap(points[0]!, points[1]!, edge.from);
+    snap(points[points.length - 1]!, points[points.length - 2]!, edge.to);
+  });
+}
+
+/** A layout computed top to bottom with turned sizes, turned back: x and y swap, and so do width and height. */
+function turned(layout: FlowLayout): FlowLayout {
+  const p = (point: Point): Point => ({ x: point.y, y: point.x });
+  return {
+    ...layout,
+    width: layout.height,
+    height: layout.width,
+    children: layout.children.map((c) => ({
+      ...c,
+      x: c.y,
+      y: c.x,
+      width: c.height,
+      height: c.width,
+    })),
+    edges: layout.edges.map((edge) => ({
+      ...edge,
+      sections: edge.sections.map((s) => ({
+        startPoint: p(s.startPoint),
+        bendPoints: s.bendPoints.map(p),
+        endPoint: p(s.endPoint),
+      })),
+      labels: edge.labels.map((l) => ({ ...l, x: l.y, y: l.x, width: l.height, height: l.width })),
+    })),
+  };
+}
+
+/** The scale a flow is shown at when fitted into a pane (PanZoom's "Fit"). */
+function flowFit(
+  layout: { width: number; height: number },
+  pane: { width: number; height: number },
+) {
+  return Math.min(
+    FIT_MAX_ZOOM,
+    (pane.width - 48) / layout.width,
+    (pane.height - 48) / layout.height,
+  );
+}
+/** The largest zoom a fitted flow is drawn at (PanZoom's default `maxFitZoom`). */
+const FIT_MAX_ZOOM = 1.25;
+/** Left to right has to fit this much larger to win: a flow reads top to bottom otherwise. */
+const ACROSS_MARGIN = 1.08;
+
+/**
+ * Lays the flow out for a pane of the given size, as a data map does (`layoutGraphFitting`): top to bottom,
+ * unless that cannot show the flow at its natural size and left to right fits it in the pane at a larger
+ * scale. A long run of choices is one tall column top to bottom; turned, it fills a wide pane.
+ */
+export async function layoutFlowFitting(
+  flow: ProcessFlow,
+  pane: { width: number; height: number } | undefined,
+  options: Omit<FlowLayoutOptions, "direction" | "parts"> = {},
+): Promise<FlowLayout> {
+  const down = await layoutFlow(flow, options);
+  if (!pane || pane.width <= 0 || pane.height <= 0 || flowFit(down, pane) >= 1) return down;
+  let best = down;
+  for (const direction of ["DOWN", "RIGHT"] as const)
+    for (let parts = 1; parts <= MAX_PARTS; parts++) {
+      if (direction === "DOWN" && parts === 1) continue;
+      const layout = await layoutFlow(flow, { ...options, direction, parts });
+      if (layout.parts !== parts) break;
+      if (flowFit(layout, pane) > flowFit(best, pane) * (best === down ? ACROSS_MARGIN : 1))
+        best = layout;
+    }
+  return best;
+}
+
+/** The most parts a flow is set in (`FlowLayout.parts`). */
+const MAX_PARTS = 4;
+/** The space between two parts of a flow: the arrows from one part to the next run in it. */
+const PART_GAP = 56;
+
+/**
+ * A top-to-bottom layout set in `parts` columns side by side, like a newspaper: cut between two layers
+ * (where every arrow across the cut goes down, and its label is above the cut), each lower piece moved up
+ * beside the one before. An arrow across a cut goes down past the bottom of its column, through the gap to
+ * the right, up over the next column and down into its box. Undefined when there are not enough such cuts.
+ * (A left-to-right flow is set in rows the same way: it is laid out turned.)
+ */
+function inParts(
+  layout: Omit<FlowLayout, "direction" | "labelChars" | "parts">,
+  parts: number,
+): Omit<FlowLayout, "direction" | "labelChars" | "parts"> | undefined {
+  const boxes = new Map(layout.children.map((c) => [c.id, c] as const));
+  const top = Math.min(...layout.children.map((c) => c.y));
+  const bottom = Math.max(...layout.children.map((c) => c.y + c.height));
+  // the tops of the bands of boxes after the first: where the flow can be cut
+  const spans = [...layout.children].sort((a, b) => a.y - b.y);
+  const cuts: number[] = [];
+  let reach = -Infinity;
+  for (const c of spans) {
+    if (c.y > reach + 0.5 && reach > -Infinity) cuts.push(c.y);
+    reach = Math.max(reach, c.y + c.height);
+  }
+  const pointsOf = (edge: FlowLayout["edges"][number]) =>
+    edge.sections.flatMap((s) => [s.startPoint, ...s.bendPoints, s.endPoint]);
+  const fits = (cut: number) =>
+    layout.edges.every((edge) => {
+      if (edge.to === undefined || edge.to === edge.from) return true;
+      const above = (id: string) => boxes.get(id)!.y < cut;
+      if (above(edge.from) === above(edge.to)) return true;
+      // only arrows that go down across the cut, their words above it
+      return above(edge.from) && edge.labels.every((l) => l.y + l.height < cut);
+    });
+  // the cuts that make the longest part shortest, each arrow across a cut beyond the first counted as an
+  // eighth of the flow's length: a part that ends on a choice leaves its exits hanging in the next one
+  const valid = cuts.filter(fits);
+  const across = (cut: number) =>
+    layout.edges.filter(
+      (edge) =>
+        edge.to !== undefined &&
+        edge.to !== edge.from &&
+        boxes.get(edge.from)!.y < cut !== boxes.get(edge.to)!.y < cut,
+    ).length;
+  const crossings = new Map(valid.map((cut) => [cut, across(cut)] as const));
+  let chosen: number[] | undefined;
+  let cost = Infinity;
+  const pick = (from: number, list: number[]) => {
+    if (list.length === parts - 1) {
+      const ends = [top, ...list, bottom];
+      const longest = Math.max(...ends.slice(1).map((end, i) => end - ends[i]!));
+      const extra = list.reduce((sum, cut) => sum + crossings.get(cut)! - 1, 0);
+      const value = longest + ((bottom - top) / 8) * extra;
+      if (value < cost) {
+        cost = value;
+        chosen = list;
+      }
+      return;
+    }
+    for (let i = from; i < valid.length; i++) pick(i + 1, [...list, valid[i]!]);
+  };
+  if (valid.length <= 24) pick(0, []);
+  if (!chosen) return undefined;
+  const cutsAt: number[] = chosen;
+  cutsAt.sort((a, b) => a - b);
+  const partOf = (id: string) => {
+    const y = boxes.get(id)!.y;
+    return cutsAt.filter((cut) => y >= cut).length;
+  };
+  if (new Set(layout.children.map((c) => partOf(c.id))).size !== parts) return undefined;
+  const crossing = layout.edges.filter(
+    (edge) =>
+      edge.to !== undefined && edge.to !== edge.from && partOf(edge.from) !== partOf(edge.to),
+  );
+  // each part's extent across, from its boxes, its own arrows and words, and the upper ends of the arrows that leave it
+  const kept = new Map(
+    crossing.map((edge) => {
+      const points = pointsOf(edge);
+      const cut = cutsAt[partOf(edge.from)]!;
+      const at = points.findIndex((p) => p.y >= cut);
+      const head = points.slice(0, Math.max(1, at));
+      // a sideways jog toward where the box used to be is dropped when the arrow can go straight down
+      // from before it, past no box of its part
+      const part = partOf(edge.from);
+      const clear = (p: Point) =>
+        layout.children.every(
+          (c) =>
+            c.id === edge.from ||
+            partOf(c.id) !== part ||
+            c.y + c.height <= p.y ||
+            p.x <= c.x ||
+            p.x >= c.x + c.width,
+        );
+      while (
+        head.length >= 2 &&
+        Math.abs(head[head.length - 1]!.y - head[head.length - 2]!.y) < 0.5 &&
+        clear(head[head.length - 2]!)
+      )
+        head.pop();
+      return [edge.id, head] as const;
+    }),
+  );
+  const lo = Array<number>(parts).fill(Infinity),
+    hi = Array<number>(parts).fill(-Infinity),
+    low = Array<number>(parts).fill(-Infinity);
+  const extend = (part: number, x0: number, x1: number, y1: number) => {
+    lo[part] = Math.min(lo[part]!, x0);
+    hi[part] = Math.max(hi[part]!, x1);
+    low[part] = Math.max(low[part]!, y1);
+  };
+  for (const c of layout.children) extend(partOf(c.id), c.x, c.x + c.width, c.y + c.height);
+  for (const edge of layout.edges) {
+    const part = partOf(edge.from);
+    const points = kept.get(edge.id) ?? pointsOf(edge);
+    for (const p of points) extend(part, p.x, p.x, crossing.includes(edge) ? -Infinity : p.y);
+    for (const l of edge.labels) extend(part, l.x, l.x + l.width, l.y + l.height);
+  }
+  const lanes = crossing.length;
+  const dx: number[] = [],
+    dy: number[] = [];
+  let cursor = Math.min(...lo);
+  for (let part = 0; part < parts; part++) {
+    dx.push(cursor - lo[part]!);
+    dy.push(part === 0 ? 0 : top - cutsAt[part - 1]!);
+    cursor += hi[part]! - lo[part]! + PART_GAP + 8 * Math.max(0, lanes - 1);
+  }
+  const move =
+    (part: number) =>
+    (p: Point): Point => ({ x: p.x + dx[part]!, y: p.y + dy[part]! });
+  const children = layout.children.map((c) => {
+    const m = move(partOf(c.id))(c);
+    return { ...c, x: m.x, y: m.y };
+  });
+  const edges = layout.edges.map((edge) => {
+    const from = partOf(edge.from);
+    if (!crossing.includes(edge)) {
+      const m = move(from);
+      return {
+        ...edge,
+        sections: edge.sections.map((s) => ({
+          startPoint: m(s.startPoint),
+          bendPoints: s.bendPoints.map(m),
+          endPoint: m(s.endPoint),
+        })),
+        labels: edge.labels.map((l) => ({ ...l, ...m(l) })),
+      };
+    }
+    const lane = crossing.indexOf(edge);
+    const to = partOf(edge.to!);
+    const head = kept.get(edge.id)!.map(move(from));
+    const last = head[head.length - 1]!;
+    const points = pointsOf(edge);
+    const end = move(to)(points[points.length - 1]!);
+    const run = low[from]! + dy[from]! + 18 + 8 * lane;
+    const gutter = hi[from]! + dx[from]! + PART_GAP / 2 + 8 * lane;
+    const over = top - 16 - 8 * lane;
+    const route = [
+      ...head,
+      { x: last.x, y: run },
+      { x: gutter, y: run },
+      { x: gutter, y: over },
+      { x: end.x, y: over },
+      end,
+    ];
+    return {
+      ...edge,
+      sections: [
+        {
+          startPoint: route[0]!,
+          bendPoints: route.slice(1, -1),
+          endPoint: route[route.length - 1]!,
+        },
+      ],
+      labels: edge.labels.map((l) => ({ ...l, ...move(from)(l) })),
+    };
+  });
+  // everything back inside the picture, with the padding the layout had
+  const all = edges.flatMap((edge) => [
+    ...pointsOf(edge),
+    ...edge.labels.flatMap((l) => [
+      { x: l.x, y: l.y },
+      { x: l.x + l.width, y: l.y + l.height },
+    ]),
+  ]);
+  const minX = Math.min(...children.map((c) => c.x), ...all.map((p) => p.x));
+  const minY = Math.min(...children.map((c) => c.y), ...all.map((p) => p.y));
+  const shiftX = Math.max(0, 24 - minX),
+    shiftY = Math.max(0, 30 - minY);
+  const shifted = (p: Point): Point => ({ x: p.x + shiftX, y: p.y + shiftY });
+  const outChildren = children.map((c) => ({ ...c, ...shifted(c) }));
+  const outEdges = edges.map((edge) => ({
+    ...edge,
+    sections: edge.sections.map((s) => ({
+      startPoint: shifted(s.startPoint),
+      bendPoints: s.bendPoints.map(shifted),
+      endPoint: shifted(s.endPoint),
+    })),
+    labels: edge.labels.map((l) => ({ ...l, ...shifted(l) })),
+  }));
+  const maxX = Math.max(
+    ...outChildren.map((c) => c.x + c.width),
+    ...outEdges.flatMap((edge) => [
+      ...pointsOf(edge).map((p) => p.x),
+      ...edge.labels.map((l) => l.x + l.width),
+    ]),
+  );
+  const maxY = Math.max(
+    ...outChildren.map((c) => c.y + c.height),
+    ...outEdges.flatMap((edge) => [
+      ...pointsOf(edge).map((p) => p.y),
+      ...edge.labels.map((l) => l.y + l.height),
+    ]),
+  );
+  return { width: maxX + 24, height: maxY + 30, children: outChildren, edges: outEdges };
 }
 
 /** True when more pairs of boxes side by side read against the step numbers (higher on the left) than with them. */
@@ -494,13 +896,28 @@ function finishFlow(
   routed: Point[][],
   labels: ReadonlyMap<string, { text: string; width: number; height: number }>,
   children: readonly { id: string; width: number; height: number; copyOf?: string }[],
-): FlowLayout {
+  decisions: ReadonlySet<string>,
+): Omit<FlowLayout, "direction" | "labelChars" | "parts"> {
   const loops = flow.transitions
     .filter((edge) => edge.from === edge.to && result.boxes.has(edge.from))
-    .map((edge) => loopTransition(edge, result.boxes.get(edge.from)!, labels.get(edge.id)));
+    .map((edge) =>
+      loopTransition(
+        edge,
+        result.boxes.get(edge.from)!,
+        labels.get(edge.id),
+        decisions.has(edge.from),
+      ),
+    );
   const exits = flow.transitions
     .filter((edge) => edge.to === undefined && result.boxes.has(edge.from))
-    .map((edge) => exitTransition(edge, result.boxes.get(edge.from)!, labels.get(edge.id)));
+    .map((edge) =>
+      exitTransition(
+        edge,
+        result.boxes.get(edge.from)!,
+        labels.get(edge.id),
+        decisions.has(edge.from),
+      ),
+    );
   const right = Math.max(
     result.width,
     ...[...loops, ...exits].flatMap((loop) => [
@@ -584,9 +1001,9 @@ function loopTransition(
   edge: ProcessFlow["transitions"][number],
   box: { x: number; y: number; width: number; height: number },
   label: { text: string; width: number; height: number } | undefined,
+  diamond: boolean,
 ): FlowLayout["edges"][number] {
   const right = box.x + box.width;
-  const diamond = box.height === DECISION_HEIGHT && box.width === DECISION_WIDTH;
   const start = { x: right, y: box.y + (diamond ? box.height / 2 : box.height * 0.68) };
   const end = diamond
     ? { x: box.x + box.width * 0.75 + 6, y: box.y + box.height / 4 + 3 }
@@ -628,9 +1045,9 @@ function exitTransition(
   edge: ProcessFlow["transitions"][number],
   box: { x: number; y: number; width: number; height: number },
   label: { text: string; width: number; height: number } | undefined,
+  diamond: boolean,
 ): FlowLayout["edges"][number] {
   const right = box.x + box.width;
-  const diamond = box.height === DECISION_HEIGHT && box.width === DECISION_WIDTH;
   const start = diamond
     ? { x: box.x + box.width * 0.75, y: box.y + box.height / 4 }
     : { x: right, y: box.y + box.height / 2 };
@@ -722,4 +1139,34 @@ function anchorOwner(
   const id = anchor.symbol ? `sym:${anchor.file}#${anchor.symbol}` : `file:${anchor.file}`;
   const inside = (participant: ElementId) => participant === id || contains(participant, id);
   return inside(step.to) && !inside(step.from) ? step.to : undefined;
+}
+
+/**
+ * The states and the moves of a flow that `xpl draft states` drew, by step id, or undefined for any
+ * other flow. Such a flow starts at the status type (its entry point and first participant); a state step
+ * runs from that type to itself and leads only to moves, and a move step runs inside the function that
+ * makes it and leads to one state. The viewer draws states as pills and moves as plain boxes, with no step
+ * numbers: a state machine has no order to number.
+ */
+export function stateRoles(
+  view: Pick<SequenceView, "type" | "scope" | "participants" | "steps">,
+): Map<string, "state" | "move"> | undefined {
+  const entry = view.scope?.entryPoints?.[0];
+  const owner = Array.isArray(view.participants) ? view.participants[0] : undefined;
+  const steps = Array.isArray(view.steps) ? view.steps : [];
+  if (view.type !== "flow" || !entry || !owner || steps.length < 2) return undefined;
+  if (owner !== `sym:${entry}` && owner !== `file:${entry}`) return undefined;
+  const roles = new Map<string, "state" | "move">();
+  for (const step of steps) {
+    if (step.from !== step.to) return undefined;
+    roles.set(step.id, step.from === owner ? "state" : "move");
+  }
+  const ok = steps.every((step) => {
+    const next = (step.next ?? []).map((link) => roles.get(link.step ?? ""));
+    return roles.get(step.id) === "state"
+      ? next.every((role) => role === "move")
+      : next.length === 1 && next[0] === "state";
+  });
+  const kinds = new Set(roles.values());
+  return ok && kinds.size === 2 ? roles : undefined;
 }

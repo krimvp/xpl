@@ -448,7 +448,7 @@ function renderAnchor(a: AnchorReport, n: number, name: string): string[] {
   }
   if (a.stored) {
     out.push(
-      `     (the explainer file still says ${a.stored.status}, lines ${rangeText(a.stored.range)}: run \`xpl resolve ${name} --write\`)`,
+      `     (the guide file still says ${a.stored.status}, lines ${rangeText(a.stored.range)}: run \`xpl resolve ${name} --write\`)`,
     );
   }
   if (a.reason) out.push(`     ${a.reason}`);
@@ -474,7 +474,7 @@ function headerOf(e: ElementReport): string {
 export const anchorsCommand: CommandSpec = {
   name: "anchors",
   usage: "xpl anchors [explainer] [<id> ...] [--full] [--max-lines <n>]",
-  summary: "Each anchor of an element with its resolved lines and code",
+  summary: "Print each code link of an element with its lines and code",
   details: [
     "Prints each anchor of each element with anchors (or of the ids you give) and its code:",
     "  <n>. <role>  <file>#<symbol> +<from>..<to>  <status>  lines <a>-<b>",

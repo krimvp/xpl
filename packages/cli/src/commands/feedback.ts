@@ -28,17 +28,17 @@ export const feedbackCommand: CommandSpec = {
     import: {
       type: "string",
       arg: "<file>",
-      desc: "Import feedback by ID and merge outcomes by revision",
+      desc: "Merge the requests of this file into the guide's feedback",
     },
     export: {
       type: "string",
       arg: "<file>",
-      desc: "Export requests including original context and outcomes",
+      desc: "Write the requests, with their context and outcomes",
     },
     outcomes: {
       type: "string",
       arg: "<file>",
-      desc: "Record outcomes only for selected request IDs",
+      desc: "Record what was done with these requests",
     },
   },
   positionals: [{ name: "explainer" }],
@@ -58,9 +58,7 @@ export const feedbackCommand: CommandSpec = {
       const path = resolve(ctx.cwd, args.str("import")!);
       const file = parseFeedbackFile(parseJson(readTextFile(path, "feedback"), path));
       if (file.requests.some((r) => r.explainer !== undefined && r.explainer !== loaded.name))
-        throw new CliError(
-          "feedback names a different explainer; import it with its original guide name",
-        );
+        throw new CliError("feedback names a different guide; import it with that guide's name");
       imported = (await importRequests(ctx.root, file.requests)).imported;
     }
     const queue = readRequests(ctx.root);
@@ -124,7 +122,7 @@ export const feedbackCommand: CommandSpec = {
             (r) =>
               `${r.id}  ${r.outcome.status}${r.contextStatus === "outdated" ? " (outdated context)" : ""}  ${r.kind} ${r.elementId}\n  ${r.outcome.reason}${r.contextReason ? `\n  ${r.contextReason}` : ""}`,
           ),
-          "Invoke code-explainer in your harness for the next explicit feedback pass. Saving feedback does not start generation.",
+          "To act on the requests, start the code-explainer skill in your agent. Saving feedback starts nothing.",
         ].join("\n"),
       );
     return 0;

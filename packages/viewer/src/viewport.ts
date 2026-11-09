@@ -34,6 +34,8 @@ export const READABLE_FLOOR = 0.6;
 export const READABLE_ZOOM = 0.75;
 /** A frame may be drawn at down to this share of the readable zoom, to get the whole focus in. */
 export const FRAME_SHRINK = 0.7;
+/** A focus this share of the diagram's width and height, or more, is all of it (`frameView`). */
+const WHOLE_SHARE = 0.9;
 
 export const clamp = (value: number, lo: number, hi: number): number =>
   Math.min(hi, Math.max(lo, value));
@@ -157,7 +159,8 @@ export function boxInView(t: Transform, size: Size, box: Box): boolean {
 /**
  * The first view of a diagram: one rule for the live canvases, Present and the Guide's still pictures.
  *
- * 1. All of it, when it fits at `whole` or more (its text stays readable).
+ * 1. All of it, when it fits at `whole` or more (its text stays readable), or when the focus spans all of it
+ *    and it fits at `READABLE_FLOOR` or more.
  * 2. Else the focus with as many of its neighbours as fit with it (nearest first), when the focus fits at
  *    `shrink` × the readable zoom or more (or `focusMin`: then the neighbours only come in at the zoom the
  *    focus needs); else as many of the focus boxes as fit, from the first. A frame is drawn at the readable
@@ -180,6 +183,16 @@ export function frameView(
   const { padding } = options;
   const raw = rawFitScale(size, content, padding);
   if (raw >= (options.whole ?? READABLE_FLOOR))
+    return { transform: fit, partial: false, hidden: 0, context: 0 };
+  // A focus that spans all of the diagram (a step about every box of a map): a frame of part of it shows a
+  // corner with boxes cut at the edges, and names no part. All of it, while that reads at READABLE_FLOOR.
+  const spread = unionBox(focus?.boxes ?? []);
+  if (
+    spread &&
+    spread.width >= WHOLE_SHARE * content.width &&
+    spread.height >= WHOLE_SHARE * content.height &&
+    raw >= Math.min(options.whole ?? READABLE_FLOOR, READABLE_FLOOR)
+  )
     return { transform: fit, partial: false, hidden: 0, context: 0 };
 
   const readable = options.readable ?? READABLE_ZOOM;

@@ -319,7 +319,7 @@ export async function stalenessOf(
   const newer = listIndexFiles(env.root).find((c) => c.commit === current && c.abs !== indexFile);
   if (newer) {
     message += ` (an index for the current tree exists: ${displayPath(env.root, newer.abs)}${
-      explainer ? `; run \`xpl resolve ${explainer.name} --write\` to move the explainer to it` : ""
+      explainer ? `; run \`xpl resolve ${explainer.name} --write\` to move the guide to it` : ""
     })`;
   } else if (explainer) {
     message += `, then \`xpl resolve ${explainer.name} --write\``;
@@ -408,9 +408,9 @@ export function resolveExplainerPath(env: RepoEnv, arg: string): string {
   }
   const existing = listExplainerNames(env.root);
   throw new CliError(
-    `no explainer "${arg}" (looked for ${candidates.map((c) => displayPath(env.root, c)).join(", ")}). ` +
+    `no guide "${arg}" (looked for ${candidates.map((c) => displayPath(env.root, c)).join(", ")}). ` +
       (existing.length > 0
-        ? `Existing explainers: ${existing.join(", ")}.`
+        ? `Guides here: ${existing.join(", ")}.`
         : `There are none yet; create one with \`xpl new ${arg}\`.`),
   );
 }
@@ -418,7 +418,7 @@ export function resolveExplainerPath(env: RepoEnv, arg: string): string {
 export function readExplainerFile(abs: string): Explainer {
   const data = parseJson(readTextFile(abs, "explainer"), abs);
   if (typeof data !== "object" || data === null || Array.isArray(data)) {
-    throw new CliError(`${abs} does not contain a JSON object (expected an explainer)`);
+    throw new CliError(`${abs} does not contain a JSON object (expected a guide)`);
   }
   return data as Explainer;
 }
@@ -445,11 +445,10 @@ export function loadReadExplainer(
 /** The name of the repository's only explainer, reported on stderr; a usage error when there are none or several. */
 export function onlyExplainerName(ctx: Ctx, command: string): string {
   const names = listExplainerNames(ctx.root);
-  if (names.length === 0)
-    throw new UsageError("no explainers found; create one with `xpl new <name>`");
+  if (names.length === 0) throw new UsageError("no guides found; create one with `xpl new <name>`");
   if (names.length > 1)
     throw new UsageError(
-      `supply an explainer for xpl ${command}; available explainers: ${names.join(", ")}`,
+      `supply a guide name for xpl ${command}; guides here: ${names.join(", ")}`,
     );
   ctx.io.err(`using ${names[0]}`);
   return names[0]!;

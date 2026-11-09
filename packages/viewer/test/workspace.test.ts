@@ -13,11 +13,13 @@ import { searchFor } from "../src/url.js";
 import {
   aroundFlow,
   flowRelated,
+  hasFlowTab,
   hasMapTab,
   layoutView,
   topicElements,
   workspaceMap,
 } from "../src/workspace.js";
+import { tabsLine } from "../src/components/ExplanationInfo.js";
 
 describe("explanation workspace", () => {
   it("starts with the guide but preserves explicit explore and present launches", () => {
@@ -266,5 +268,21 @@ describe("the map a guide without one gets", () => {
       hasMapTab(withoutMap(["sym:src/a.ts#A.run", "sym:src/a.ts#A.stop", "file:src/b.ts"])),
     ).toBe(true);
     expect(hasMapTab(new ViewerStore(makeBundle()).getState())).toBe(true);
+  });
+});
+
+// a guide with no flow or sequence showed a Flow tab that listed the tour's steps under the name "Flow"
+describe("the Flow tab", () => {
+  it("is there only when the guide has a flow or a sequence, and the tabs line names only the tabs shown", () => {
+    const bundle = makeBundle();
+    expect(hasFlowTab(new ViewerStore(bundle).getState())).toBe(true);
+    bundle.explainer.views = bundle.explainer.views.filter((view) => view.type === "graph");
+    for (const tour of bundle.explainer.tours)
+      for (const step of tour.steps) step.view = "view:overview";
+    const state = new ViewerStore(bundle).getState();
+    expect(hasFlowTab(state)).toBe(false);
+    expect(tabsLine({ map: hasMapTab(state), flow: hasFlowTab(state) })).toBe(
+      "Tour: the steps, in order. Map: the parts and what each calls. Code: the files.",
+    );
   });
 });

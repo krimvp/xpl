@@ -42,7 +42,7 @@ function compareVersions(left: string, right: string): number | undefined {
 export const doctorCommand: CommandSpec = {
   name: "doctor",
   usage: "xpl doctor [--agent none|claude|codex|pi|droid|devin] [--skill-dir <folder>]",
-  summary: "Diagnose local setup without downloading tools or starting authoring",
+  summary: "Check the local setup; download nothing and start no agent",
   details: [
     "Checks Node 22.12 or newer, the bundled files and the grammars. A failed check exits 1.",
     "With --agent, it also checks that agent's skill and command. It does not check sign-in.",

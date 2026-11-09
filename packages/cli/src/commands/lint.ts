@@ -50,7 +50,7 @@ export const lintCommand: CommandSpec = {
     patch: {
       type: "string",
       arg: "<file|->",
-      desc: "Lint the explainer as it would be after this patch (`-`: stdin); nothing is written",
+      desc: "Lint the guide as it would be after this patch (`-`: stdin); nothing is written",
     },
     "warn-only": {
       type: "boolean",

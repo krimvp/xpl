@@ -4,13 +4,12 @@ import { localGuideCatalog } from "../guide-library.js";
 export const guidesCommand: CommandSpec = {
   name: "guides",
   usage: "xpl guides",
-  summary: "List local guides by title, question, audience and snapshot",
+  summary: "List the local guides with their title, question, reader and commits",
   details: [
-    "Reads .explainer/*.explainer.json without a service or symbol index. Shows recorded titles,",
-    "view questions, audience, scope roots and source/index commits; filenames are only stable keys.",
-    "Metadata is not a readiness or freshness check; use xpl ready or xpl status <name> for evidence.",
-    "Loadable guides stay listed by ID/path when metadata is invalid. Empty titles stay recorded as empty.",
-    "Read or metadata errors are reported separately (exit 1); no guides is exit 0.",
+    "Lists each guide in .explainer/ with its title, question, reader and the commits it was made from.",
+    "It needs no index and no service. The list does not say whether a guide is ready or up to date:",
+    "run `xpl ready` or `xpl status <name>` for that. A guide with bad metadata is still listed, by its",
+    "file, and reported. Exit codes: 0 a list (also an empty one), 1 a file unreadable or with bad metadata.",
   ],
   options: {},
   positionals: [],

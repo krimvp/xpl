@@ -21,27 +21,31 @@ export const prCommand: CommandSpec = {
   ],
   options: {
     name: { type: "string", arg: "<guide>", desc: "New guide name for create" },
-    audience: { type: "string", arg: "<reader>", desc: "Creation audience" },
-    question: { type: "string", arg: "<question>", desc: "Creation intent" },
+    audience: { type: "string", arg: "<reader>", desc: "Who the new guide is for" },
+    question: { type: "string", arg: "<question>", desc: "The question the new guide answers" },
     "skill-dir": {
       type: "string",
       arg: "<folder>",
-      desc: "Installed code-explainer skill directory",
+      desc: "The folder of the installed code-explainer skill",
     },
-    note: { type: "string", arg: "<reason>", desc: "Finish: record warning or omission decisions" },
+    note: {
+      type: "string",
+      arg: "<reason>",
+      desc: "Finish: write why you keep a warning or leave something out",
+    },
     "require-review": {
       type: "boolean",
-      desc: "Finish: require a current author review of all content",
+      desc: "Finish: fail unless a person reviewed the current text",
     },
     "cache-dir": {
       type: "string",
       arg: "<dir>",
-      desc: "Owned storage outside the developer checkout",
+      desc: "Folder for checkouts and inputs, outside your checkout",
     },
     precise: {
       type: "string",
       arg: "auto|off|require",
-      desc: "Head reference analysis (default off)",
+      desc: "Reference analysis of the head (default off)",
     },
     url: {
       type: "string",
@@ -113,7 +117,7 @@ export const prCommand: CommandSpec = {
         });
       else
         ctx.out(
-          `${result.status}: ${result.manifestPath}${result.status === "superseded" ? "\nPR base/head changed; retained as historical output. Explicitly create the updated PR." : "\nLocal result only; publishing must recheck the PR before promoting current."}`,
+          `${result.status}: ${result.manifestPath}${result.status === "superseded" ? "\nPR base/head changed; this output is kept as history. Create the updated PR." : "\nLocal result only; publishing must recheck the PR before promoting current."}`,
         );
       return result.status === "ready" ? 0 : 1;
     }
@@ -156,7 +160,7 @@ export const prCommand: CommandSpec = {
       });
     else
       ctx.out(
-        `prepared ${pr.url}\nbase: ${pr.base.sha}\nhead: ${pr.head.sha}\nrepository: ${prepared.repository}\ninput manifest: ${prepared.manifestPath}\n${handoff ? `Invoke the installed skill explicitly:\n${handoff.invocation}` : "Input only; use pr create for installed skill handoff."}`,
+        `prepared ${pr.url}\nbase: ${pr.base.sha}\nhead: ${pr.head.sha}\nrepository: ${prepared.repository}\ninput manifest: ${prepared.manifestPath}\n${handoff ? `Start the installed skill:\n${handoff.invocation}` : "Input only; use pr create for installed skill handoff."}`,
       );
     return 0;
   },

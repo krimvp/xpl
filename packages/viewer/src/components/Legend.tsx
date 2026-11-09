@@ -48,7 +48,13 @@ export function Legend({ shows }: { shows: LegendShows }) {
         </Row>
       )}
       {shows.code !== false && (
-        <Row label="A part of the code: a file, a function, a group of files">
+        <Row
+          label={
+            shows.tables
+              ? "A type drawn as one box: an interface, or a table folded to its name"
+              : "A part of the code: a file, a function, a group of files"
+          }
+        >
           <rect className="lg-box" x="1" y="3" width="30" height="16" rx="4" />
         </Row>
       )}
@@ -180,6 +186,8 @@ const KIND_WORDS: Record<string, string> = {
   calls: "Calls: the arrow points at the code being called",
   imports: "Imports (open head): the file uses code from the file it points at",
   extends: "Extends (hollow head): points at the parent class or type",
+  embeds:
+    "Embeds (hollow head): the struct or interface takes in the type it points at, with its fields and methods",
   implements: "Implements (hollow head): points at the interface it fulfils",
   references: "Uses a type (open head): points at the type it names",
   holds: "Holds (open head): the field in that row holds a value of the type it points at",
@@ -193,6 +201,7 @@ const KIND_SHORT: Record<string, string> = {
   calls: "calls",
   imports: "imports",
   extends: "extends",
+  embeds: "embeds",
   implements: "implements",
   references: "uses a type",
   holds: "a field holds this type",
@@ -303,6 +312,10 @@ export interface FlowKeyShows {
   recurse?: boolean;
   /** A return to the caller, up one level. */
   returns?: boolean;
+  /** An end drawn again near another way into it (`repeatEnds`). */
+  copies?: boolean;
+  /** A flow of states and the moves between them (`stateRoles`). */
+  states?: boolean;
 }
 
 /** The key of a process flow (FlowDiagram). */
@@ -314,6 +327,20 @@ export function FlowKey({ shows }: { shows: FlowKeyShows }) {
           <rect x="1" y="3" width="30" height="16" rx="5" />
         </g>
       </Row>
+      {shows.states && (
+        <>
+          <Row label="A state the value can be in (no number: the states have no fixed order)">
+            <g className="flow-stage is-state">
+              <rect x="1" y="3" width="30" height="16" rx="8" />
+            </g>
+          </Row>
+          <Row label="A move: the code that changes the state, from the state before it to the one after">
+            <g className="flow-stage is-move">
+              <rect x="1" y="3" width="30" height="16" rx="2" />
+            </g>
+          </Row>
+        </>
+      )}
       {shows.decision && (
         <Row label="A choice: the path splits here">
           <g className="flow-stage">
@@ -324,6 +351,13 @@ export function FlowKey({ shows }: { shows: FlowKeyShows }) {
       {shows.terminal && (
         <Row label="Where it starts or ends">
           <g className="flow-stage">
+            <rect x="1" y="3" width="30" height="16" rx="8" />
+          </g>
+        </Row>
+      )}
+      {shows.copies && (
+        <Row label="An end drawn again near another way into it (dashed, no number): the same step">
+          <g className="flow-stage is-copy">
             <rect x="1" y="3" width="30" height="16" rx="8" />
           </g>
         </Row>

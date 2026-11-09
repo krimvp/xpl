@@ -208,7 +208,7 @@ describe("xpl index", () => {
     expect((await xpl(dir, "new", "demo")).code).toBe(0);
     writeFile(dir, "src/extra.ts", "export const extra = 1;\n");
     const { out } = await xpl(dir, "index", "--precise", "off");
-    expect(out).toContain("hint: 1 explainer (demo) is bound to another index");
+    expect(out).toContain("hint: 1 guide (demo) is bound to another index");
     expect(out).toContain("run `xpl resolve demo --write` to move it");
     const json = (
       await xplJson<{ explainersToResolve: string[]; path: string }>(
@@ -221,7 +221,7 @@ describe("xpl index", () => {
     expect(json.explainersToResolve).toEqual(["demo"]);
     // and validate names the same command, with the guide's name, so it runs as printed
     const validated = await xpl(dir, "validate", "demo", "--lenient", "--index", json.path);
-    expect(validated.out).toContain("run `xpl resolve demo --write` to re-resolve the anchors");
+    expect(validated.out).toContain("run `xpl resolve demo --write` to check its code links again");
   });
 });
 

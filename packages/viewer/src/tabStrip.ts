@@ -25,12 +25,15 @@ export function stripEdges(
  * The scroll position that brings a tab (the run `[left, right]` of the strip's scrollable width) into
  * sight. It is the current position when the tab is in sight already, clear of the arrows and fades that
  * overlay the ends of the strip (`room` wide). A tab too wide for that but not for the strip is centred;
- * one wider than the strip is shown from its start. Always within what the strip can scroll to.
+ * one wider than the strip is shown from its start. Always within what the strip can scroll to. With the
+ * tabs' `starts`, a scroll forward goes on to the next tab's start, so the strip never begins mid-word in
+ * the tab before.
  */
 export function revealOffset(
   strip: { scrollLeft: number; width: number; scrollWidth: number },
   tab: { left: number; right: number },
   room: number,
+  starts: readonly number[] = [],
 ): number {
   const max = Math.max(0, strip.scrollWidth - strip.width);
   const width = tab.right - tab.left;
@@ -43,6 +46,8 @@ export function revealOffset(
     next = tab.left - room;
   } else if (tab.right + room > next + strip.width) {
     next = tab.right + room - strip.width;
+    const start = Math.min(...starts.filter((at) => at - room >= next && at <= tab.left));
+    if (Number.isFinite(start)) next = start - room;
   }
   return Math.min(max, Math.max(0, next));
 }

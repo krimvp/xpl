@@ -27,9 +27,20 @@ function VersionDetails({ version }: { version: PublishedVersion }) {
   );
 }
 
-/** What each reading tab holds, in one line, above "About this guide": a first-time reader needs it first. */
-export const TABS_LINE =
-  "Tour: the steps, in order. Map: the parts and what each calls. Flow: what runs, in order. Code: the files.";
+/**
+ * What each reading tab holds, in one line, above "About this guide": a first-time reader needs it first.
+ * It names only the tabs the page shows (`hasMapTab`, `hasFlowTab`).
+ */
+export function tabsLine(tabs: { map: boolean; flow: boolean }): string {
+  return [
+    "Tour: the steps, in order.",
+    tabs.map && "Map: the parts and what each calls.",
+    tabs.flow && "Flow: what runs, in order.",
+    "Code: the files.",
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
 
 /** Reader guidance belongs beside the story, rather than behind the author tools. */
 export function ExplanationInfo() {

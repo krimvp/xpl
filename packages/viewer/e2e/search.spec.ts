@@ -56,6 +56,13 @@ test("offline library searches supplied source and prose, opens exact links and 
     await input.fill("requeue");
     const source = panel.locator('[data-kind="source"]').filter({ hasText: "requeue" }).first();
     await expect(source).toBeVisible();
+    // a name says what kind of name it is, in sentence case
+    await expect(
+      panel
+        .locator('[data-kind="symbol"]')
+        .filter({ hasText: /^Method ?Queue\.requeue/ })
+        .locator(".search-kind"),
+    ).toHaveText("Method");
     const link = await source.getAttribute("href");
     expect(link).toMatch(/file=src%2Fqueue.ts.*range=/);
     await source.click();
@@ -82,12 +89,15 @@ test("offline library searches supplied source and prose, opens exact links and 
     await panel.getByRole("link", { name: /Retry subsystem/ }).click();
     await expect(page.locator(".header .title")).toHaveText("Retry subsystem");
     await page.getByRole("button", { name: "Search and guides" }).click();
-    await expect(panel).toContainText("Analysis unavailable");
-    await expect(panel).toContainText("pruned");
-    await expect(panel).toContainText("not included in this export");
+    // what the page leaves out is said in plain words, behind one disclosure
+    const limits = panel.getByTestId("search-limits");
+    await expect(limits).toContainText("This page does not say which code xpl could read.");
+    await expect(limits).toContainText("may be one it left out");
+    await expect(limits).toContainText("files are not in this page, so their code is not searched");
+    await expect(panel).not.toContainText(/pruned|evidence of absence|snapshot|not supplied/);
     await input.fill("no-such-phrase-12345");
     await expect(panel.getByRole("status")).toContainText("No matches in this page");
-    await expect(panel).toContainText("Analysis unavailable");
+    await expect(limits).toContainText("This page does not say which code xpl could read.");
     await panel.getByRole("button", { name: "Close search" }).click();
     await (await openEditMenu(page)).getByTestId("edit-save-html").click();
     const [download] = await Promise.all([
@@ -378,9 +388,9 @@ test("source and symbol search keeps each contained guide's commit and missing-s
     await expect(page.locator(".header .title")).toHaveText("Archived guide");
     await page.getByRole("button", { name: "Search and guides" }).click();
     await panel.getByRole("searchbox").fill("omittedOnly");
-    await expect(panel.locator('[data-kind="symbol"]')).toContainText("source not supplied");
+    await expect(panel.locator('[data-kind="symbol"]')).toContainText("code not in this page");
     await expect(panel.locator('a[data-kind="symbol"]')).toHaveCount(0);
-    await expect(panel).toContainText("pruned");
+    await expect(panel.getByTestId("search-limits")).toContainText("may be one it left out");
     await page.goto(url + "?guide=archive&snapshot=current-commit&file=src/metrics.ts&range=2-2");
     await expect(page.getByTestId("no-data")).toContainText("snapshot");
     await expect(page.locator(".cm-content")).toHaveCount(0);

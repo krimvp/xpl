@@ -26,8 +26,9 @@
   --accent: #2160d6;
   --accent-fg: #ffffff;
   --accent-soft: #e2ebfc;
-  --match: #d97706;
-  --match-soft: #fdebc6;
+  /* What holds the caret, on a diagram: magenta, not the code's orange for "called here". */
+  --match: #c0267e;
+  --match-soft: #fbe3f1;
   --related: #0b7a6a;
   --related-soft: #d3f0ea;
   --danger: #b83227;
@@ -140,8 +141,8 @@
   --accent: #6ea2ff;
   --accent-fg: #0b1220;
   --accent-soft: #1d2f52;
-  --match: #ffb443;
-  --match-soft: #4a3610;
+  --match: #f27cc6;
+  --match-soft: #4a1a38;
   --related: #4ad6bf;
   --related-soft: #10403a;
   --danger: #ff8078;
@@ -165,7 +166,7 @@
   --edge-heuristic: #596574;
   --edge-llm: #b58cff;
   --edge-user: #4ade80;
-  --edge-stub: #75818f;
+  --edge-stub: #8794a2;
   --matrix-mark: #6f7b8a;
   --ghost-border: #66727f;
   --frame-bg: rgba(160, 175, 200, 0.06);
@@ -1122,9 +1123,10 @@ code {
   min-width: 0;
 }
 
+/* (the diagram, then one line of concept chips: the diagram keeps the height) */
 .left {
   display: grid;
-  grid-template-rows: minmax(0, 1fr) 8px var(--lower-height, 280px);
+  grid-template-rows: minmax(0, 1fr) auto;
   min-height: 0;
   min-width: 0;
   padding: 8px 0 8px 8px;
@@ -1134,6 +1136,21 @@ code {
   min-height: 0;
   min-width: 0;
   padding: 8px 8px 8px 0;
+}
+
+/* What is selected sits at the top of the code column, not under the diagram (the row splitter
+   between them resizes it). */
+.right.has-details {
+  display: grid;
+  grid-template-rows: minmax(0, var(--lower-height, 280px)) 8px minmax(0, 1fr);
+}
+.right.has-details > .details {
+  min-height: 0;
+  overflow: auto;
+  padding: 10px 12px 12px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
 }
 
 /* D9: no code on screen: the code column is the file tree alone (a strip when folded), and the diagram
@@ -1195,18 +1212,8 @@ code {
   }
 }
 
-.lower {
-  display: grid;
-  grid-template-columns: minmax(190px, 36%) minmax(0, 1fr);
-  gap: 8px;
-  min-height: 0;
-}
-
-/* V6-01: nothing selected yet: Concepts and Details are one line under the diagram (concept names as chips,
-   then a hint), so the diagram gets the height. The first selection opens the panels. */
-.explore.is-folded .left {
-  grid-template-rows: minmax(0, 1fr) auto;
-}
+/* Concepts are one line under the diagram (concept names as chips, then a hint until the first
+   selection), so the diagram gets the height. */
 .lower.is-folded {
   display: flex;
   align-items: center;
@@ -1251,21 +1258,6 @@ code {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-/* l3: a code-first view: the diagram column is a narrow outline, so its two panels sit one above the other. */
-.explore.is-code-first .lower {
-  grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: minmax(0, 35%) minmax(0, 1fr);
-}
-
-.lower > section {
-  min-height: 0;
-  overflow: auto;
-  padding: 10px 12px 12px;
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 8px;
 }
 
 .splitter {
@@ -1921,6 +1913,13 @@ code {
   text-anchor: end;
 }
 
+/* A field's name and type are code: no contextual alternates, which draw "=>" as an arrow glyph. */
+.node.is-row .row-name,
+.node.is-row .row-type {
+  font-variant-ligatures: none;
+  font-feature-settings: "calt" 0;
+}
+
 .node .badge rect {
   fill: hsl(var(--k-hue, 220) var(--pill-s) var(--pill-bg-l));
 }
@@ -2410,9 +2409,9 @@ code {
   pointer-events: none;
 }
 
+/* (opaque: the words of an arrow that scrolled under the names do not show through) */
 .sticky-band {
   fill: var(--canvas);
-  opacity: 0.94;
 }
 
 .lifeline-head .head {
@@ -2576,6 +2575,11 @@ code {
   font-size: 12px;
   font-weight: 500;
   fill: var(--muted);
+}
+
+/* An arm's condition reads as well as a call's words: their size (its tone stays the conditions' one). */
+.frame-label.arm-label {
+  font-size: 13px;
 }
 
 /* What an alt with arms decides: set apart from the conditions in brackets, which share one tone (R4-17). */
@@ -3829,9 +3833,14 @@ code {
   .pane-ranges {
     order: 11;
   }
-  /* "in X" takes what is left of the first row (ellipsized) instead of pushing the roles down. */
+  /* "in X" takes what is left of the first row (ellipsized) instead of pushing the roles down. The path
+     too: counted at its whole width, it sent the "called here" pill to a row of its own. */
   .pane-inside {
     flex: 1 1 0;
+  }
+  .pane-file {
+    flex: 1 1 0;
+    max-width: max-content;
   }
 }
 
@@ -4528,10 +4537,6 @@ code {
     padding-left: 8px;
   }
 
-  .lower {
-    grid-template-columns: minmax(0, 1fr);
-    overflow: auto;
-  }
   .lower.is-folded {
     flex-wrap: wrap;
   }
@@ -5631,8 +5636,10 @@ code {
   overflow: hidden;
 }
 /* Cells grow on a small map (size-l, size-m) and keep a 30px floor on a big one; wide counts widen them. */
+/* (in the middle of its pane: a small matrix pinned to the left left most of the pane empty beside it) */
 .matrix-grid {
   --matrix-cell: 30px;
+  margin: 0 auto;
   border-collapse: separate;
   border-spacing: 0;
   font-size: 12.5px;
@@ -5741,6 +5748,12 @@ code {
     0 0 2px var(--panel),
     0 0 3px var(--panel);
   cursor: pointer;
+}
+/* a count on a plate of the panel colour: the stripes of a heuristic cell do not run through its digits */
+.matrix-count {
+  padding: 0 3px;
+  border-radius: 3px;
+  background: var(--panel);
 }
 .matrix-cell.res-precise,
 .matrix-cell.res-static,

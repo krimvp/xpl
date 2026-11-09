@@ -258,7 +258,7 @@ function commandHelp(command: CommandSpec, topic?: string): string {
     "",
     "Global options:",
     ...optionRows(GLOBAL_OPTIONS),
-    `More: reference/cli.md, "xpl ${command.name}", or ${DOCS_URL}`,
+    `More: the skill's reference/cli.md ("xpl ${command.name}"), or ${DOCS_URL}`,
   ].join("\n");
 }
 

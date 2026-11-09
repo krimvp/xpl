@@ -286,7 +286,9 @@ describe("xpl status --view: what one view draws", () => {
     ]);
     const { out } = await ok(dir, "status", "crowd", "--view", "view:crowd");
     expect(out).toContain("view:crowd (graph): Around run");
-    expect(out).toMatch(/edges drawn \(\d+: 0 stored, \d+ derived\), most references first:/);
+    expect(out).toMatch(
+      /arrows drawn \(\d+: 0 stored, \d+ found in the code\), most references first:/,
+    );
     expect(out).toContain(`hidden (2):\n    ${first}  calls  `);
     expect(out).toContain(
       "edge:gone  (matches nothing this view would draw now: remove it from hidden)",

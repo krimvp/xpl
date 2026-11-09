@@ -1841,6 +1841,63 @@ describe("lintExplainer: length, voice and words", () => {
     expect(only(findings, "long-summary")[0]!.hint).toContain("do not append");
   });
 
+  it("map-box: a box a map draws with its summary takes a label of at most 5 words and one short sentence that starts with a verb", () => {
+    const long =
+      "This file is where the crate declares its public modules, so that the binary, the tests and the examples can all reach each of them by one short path.";
+    const box = (id: string, label: string, summary: string) => ({ id, label, summary });
+    const { findings } = lintExplainer(
+      explainer({
+        nodes: [
+          box("file:src/lib.rs", "The module declarations file of the crate root", long),
+          box("file:src/queue.rs", "Job queue", "Keeps jobs in order until a worker takes one."),
+          box("file:src/runner.rs", "Job dispatcher", "The dispatcher hands each job to a worker."),
+          box("file:src/bus.rs", "Event messages", "bus.rs tells listeners when a job is done."),
+          box("dir:src/jobs", "Jobs", "TODO: one plain sentence"),
+          // the same text on a box that a map does not draw with its summary: no finding
+          box("file:src/other.rs", "The module declarations file of the crate root", long),
+        ],
+        views: [
+          {
+            id: "view:map",
+            type: "graph",
+            title: "The job runner",
+            include: [
+              "file:src/lib.rs",
+              "file:src/queue.rs",
+              "file:src/runner.rs",
+              "file:src/bus.rs",
+              "dir:src/jobs",
+            ],
+            boxText: "summary",
+          },
+          { id: "view:other", type: "graph", title: "Other", include: ["file:src/other.rs"] },
+        ],
+      }),
+    );
+    expect(only(findings, "map-box").map((f) => [f.elementId, f.field, f.message])).toEqual([
+      [
+        "file:src/lib.rs",
+        "label",
+        "8 words (more than 5): a box on a map that shows summaries takes a label of 2-5 plain words",
+      ],
+      [
+        "file:src/lib.rs",
+        "summary",
+        '150 characters (more than 130); it starts with "This", not a verb: the box shows this sentence under its label',
+      ],
+      [
+        "file:src/runner.rs",
+        "summary",
+        'it starts with "The", not a verb: the box shows this sentence under its label',
+      ],
+      [
+        "file:src/bus.rs",
+        "summary",
+        'it starts with "bus.rs", not a verb: the box shows this sentence under its label',
+      ],
+    ]);
+  });
+
   it("long-summary: the summary of a flow or sequence step counts too", () => {
     const { findings } = lintExplainer(
       explainer({
@@ -2723,7 +2780,7 @@ describe("xpl lint", () => {
     expect((await xpl(demo, "lint", "demo", "--loud")).code).toBe(2);
     const missing = await xpl(demo, "lint", "nope");
     expect(missing.code).toBe(1);
-    expect(missing.err).toContain('no explainer "nope"');
+    expect(missing.err).toContain('no guide "nope"');
     const help = await invoke(["lint", "--help"]);
     expect(help.code).toBe(0);
     expect(help.out).toContain(

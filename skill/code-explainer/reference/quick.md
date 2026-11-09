@@ -41,7 +41,7 @@ Use one diagram per step, and add a new diagram only when the question changes. 
 - **A reaches C through B**, and B is not a box: draw one edge from A to C with `via: [B]` (`patch-format.md` 3.3).
 - **A recursive function:** in its flow, a `next` link with `kind: "recurse"` goes back to the step where the call starts (`patch-format.md` 3.7).
 
-Java has a built-in pack with heuristic references; a checked SCIP artifact (`xpl index --scip`) makes them precise. Rust, Ruby and PHP have declarations only, and Rust also has heuristic calls in a limited set of forms. Read the coverage lines of `xpl index` before you describe a path in them (`cli.md`, `xpl index`).
+Java has a built-in pack with heuristic references; a checked SCIP artifact (`xpl index --scip`) makes them precise. Ruby and PHP have declarations only. Rust has declarations and, in a few forms, heuristic calls. Read the coverage lines of `xpl index` before you describe a path in them (`cli.md`, `xpl index`).
 
 ## Lint findings, grouped
 

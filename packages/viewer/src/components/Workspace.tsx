@@ -186,8 +186,8 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
     lastPerspective.current = state.perspective;
     if (state.perspective !== "map" && state.perspective !== "flow") return;
     if (!matchMedia(`(max-width: ${PHONE_WIDTH}px)`).matches) return;
+    // (the effect above then scrolls the column back to its top)
     setSourceOpen(false);
-    columns.current?.scrollTo({ top: 0, behavior: "instant" });
   }, [state.perspective]);
 
   // "Who calls it" in the code: the callers are listed in the topic column. Beside the code on a screen too
@@ -346,7 +346,12 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
                           Steps, in order ↓
                         </button>
                       )}
-                      {viewQuestion && <p className="view-question">{viewQuestion}</p>}
+                      {viewQuestion && (
+                        <p
+                          className="view-question"
+                          dangerouslySetInnerHTML={{ __html: renderInline(viewQuestion) }}
+                        />
+                      )}
                       {state.perspective === "flow" && flowOwner && (
                         <p className="caption-owner" data-testid="caption-owner">
                           The steps of <code>{state.model.label(flowOwner)}</code>
@@ -544,7 +549,9 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
             <section className="topic-summary" data-testid="topic-summary">
               <p className="eyebrow">This flow</p>
               <h2>{diagramTitle}</h2>
-              {flow?.scope?.question && <p>{flow.scope.question}</p>}
+              {flow?.scope?.question && (
+                <p dangerouslySetInnerHTML={{ __html: renderInline(flow.scope.question) }} />
+              )}
               <p data-testid="topic-around-flow">This flow runs inside {info.title}.</p>
             </section>
           )}

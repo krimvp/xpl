@@ -18,6 +18,12 @@ import {
   type ChangeMarks,
   type GraphLayout,
 } from "./layout/graphLayout.js";
+import {
+  layoutFlow,
+  layoutFlowFitting,
+  type FlowLayout,
+  type FlowLayoutOptions,
+} from "./layout/flowLayout.js";
 import type { ViewerState } from "./store.js";
 
 export function topicElements(ids: readonly ElementId[], model: ExplainerModel): Set<ElementId> {
@@ -181,6 +187,14 @@ export function hasMapTab(state: ViewerState): boolean {
   );
 }
 
+/**
+ * True when the Flow tab has a flow or a sequence to show. A guide without one gets no Flow tab: a list of
+ * the tour's steps under the name "Flow" only repeated the Tour.
+ */
+export function hasFlowTab(state: Pick<ViewerState, "model">): boolean {
+  return state.model.views.some((view) => view.type === "sequence" || view.type === "flow");
+}
+
 export function workspaceMap(state: ViewerState) {
   const authored = workspaceView(state, "map") as GraphView | undefined;
   const process = workspaceView(state, "flow") as SequenceView | undefined;
@@ -313,5 +327,25 @@ export async function layoutView(
   const layout = await layoutGraphFitting(graph, viewport, maxZoom, padding, changes, pins);
   // (a layout with no direction, the grid fallback, decides nothing)
   if (!layout.fallback && viewport) directions.set(viewId, layout.direction);
+  return layout;
+}
+
+/** Per flow view: the direction and the number of parts it was first laid out in (as `directions`). */
+const flowShapes = new Map<string, Pick<FlowLayout, "direction" | "parts">>();
+
+/**
+ * `layoutFlowFitting` the first time a flow is drawn with a pane size; the same direction and parts every
+ * time after, so the Tour's picture, the Flow tab and Explore draw a flow the same way round.
+ */
+export async function layoutFlowView(
+  viewId: string,
+  flow: ProcessFlow,
+  pane: { width: number; height: number } | undefined,
+  options: Omit<FlowLayoutOptions, "direction" | "parts"> = {},
+): Promise<FlowLayout> {
+  const known = flowShapes.get(viewId);
+  if (known) return layoutFlow(flow, { ...options, ...known });
+  const layout = await layoutFlowFitting(flow, pane, options);
+  if (pane) flowShapes.set(viewId, { direction: layout.direction, parts: layout.parts });
   return layout;
 }

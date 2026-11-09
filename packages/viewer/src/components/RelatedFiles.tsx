@@ -102,43 +102,53 @@ export function RelatedFiles({
     // (`anchors` follows `selection`, `step` and the applied step)
     [selection, state.model, focus, guide, step, state.applied],
   );
+  // The step's own code, in the Tour: one click from showing it.
+  const places = keepPlace ? ownPlaces(focus) : [];
+  const own = places.length > 0 && (
+    <ul data-testid="step-code">
+      {places.map((place) => (
+        <li key={`${place.file}:${place.from}`}>
+          <button
+            type="button"
+            className="resource-file"
+            onClick={() => {
+              store.openFile(place.file, place.from);
+              onOpen();
+            }}
+          >
+            {place.file.slice(place.file.lastIndexOf("/") + 1)}
+            <span className="step-code-lines">
+              {place.from === place.to ? `line ${place.from}` : `lines ${place.from}–${place.to}`}
+            </span>
+          </button>
+        </li>
+      ))}
+    </ul>
+  );
+  // One name for the column in the Tour, whatever it lists: the step's code, then the files it relates to
+  // Elsewhere it lists what the selection relates to.
+  const applied = state.applied
+    ? state.model.tour(state.applied.tourId)?.steps.find((one) => one.id === state.applied!.stepId)
+    : undefined;
+  const ofStep =
+    guide && (step !== undefined || selection.every((id) => applied?.focus.includes(id) ?? false));
+  const title = ofStep ? "This step's code" : "Related files";
   // Nothing to list: no panel at all (an empty one only says that there is nothing), unless the column
-  // stays for the tour: then it lists where the step's own code is (R5-3), one click from showing it.
+  // stays for the tour: then it lists where the step's own code is.
   if (links.length === 0) {
-    if (!keepPlace) return null;
-    const places = ownPlaces(focus);
-    return places.length > 0 ? (
-      <section className="related-files is-own-code" aria-label="This step's code">
-        <h3>This step's code</h3>
-        <ul data-testid="step-code">
-          {places.map((place) => (
-            <li key={`${place.file}:${place.from}`}>
-              <button
-                type="button"
-                className="resource-file"
-                onClick={() => {
-                  store.openFile(place.file, place.from);
-                  onOpen();
-                }}
-              >
-                {place.file.slice(place.file.lastIndexOf("/") + 1)}
-                <span className="step-code-lines">
-                  {place.from === place.to
-                    ? `line ${place.from}`
-                    : `lines ${place.from}–${place.to}`}
-                </span>
-              </button>
-            </li>
-          ))}
-        </ul>
+    return own ? (
+      <section className="related-files is-own-code" aria-label={title}>
+        <h3>{title}</h3>
+        {own}
       </section>
     ) : null;
   }
   // "Show N more" holds for this selection only.
   const shown = all === selection ? links : links.slice(0, CARDS_SHOWN);
   return (
-    <section className="related-files" aria-label="Related files">
-      <h3>Related files</h3>
+    <section className="related-files" aria-label={title}>
+      <h3>{title}</h3>
+      {own}
       {shown.map((link) => {
         // One file named by its path: the path once, as the link that opens it.
         const single = link.files.length === 1 && link.files[0] === link.label;

@@ -1,6 +1,6 @@
 /** The keyboard meets a map's boxes in reading order, by names that start with the label (M13). */
 import { describe, expect, it } from "vitest";
-import { boxName, readingOrder } from "../src/mapOrder.js";
+import { boxName, readingOrder, tabOrder } from "../src/mapOrder.js";
 
 describe("readingOrder", () => {
   it("goes top-down, then left to right within a row", () => {
@@ -21,6 +21,23 @@ describe("readingOrder", () => {
       { id: "below", x: 0, y: 200 },
     ];
     expect(readingOrder(boxes).map((b) => b.id)).toEqual(["left", "right", "below"]);
+  });
+});
+
+describe("tabOrder", () => {
+  it("takes the map's own boxes first, then the boxes outside it", () => {
+    const nodes = [
+      { id: "ghost:file:src/main.ts", x: 0, y: 0, ghost: true },
+      { id: "file:src/worker.ts", x: 200, y: 0 },
+      { id: "grp:scheduling", x: 0, y: 100 },
+      { id: "ghost:file:src/bus.ts", x: 400, y: 100, ghost: true },
+    ];
+    expect(tabOrder(nodes, []).map((node) => node.id)).toEqual([
+      "file:src/worker.ts",
+      "grp:scheduling",
+      "ghost:file:src/main.ts",
+      "ghost:file:src/bus.ts",
+    ]);
   });
 });
 

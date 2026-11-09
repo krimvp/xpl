@@ -169,6 +169,9 @@ export function sideToward(box: Box, toward: Point, direction: Direction): Side 
   return toward[main] >= centre ? "end" : "start";
 }
 
+/** The least room between two arrows that leave one side of a box, px, where the side has it (`spreadPorts`). */
+const PORT_GAP = 16;
+
 /**
  * The cross coordinate of every port, by `edgeId:from` / `edgeId:to`: the ports of one side of one box are
  * spread evenly in the order of where they go, so arrows leave side by side. Wide ports use more of
@@ -179,6 +182,7 @@ export function spreadPorts(
   boxes: ReadonlyMap<string, Box>,
   direction: Direction,
   wide = false,
+  roomy?: ReadonlySet<string>,
 ): Map<string, number> {
   const { cross } = axes(direction);
   const groups = new Map<string, string[]>();
@@ -202,6 +206,17 @@ export function spreadPorts(
         : 0.2 + (0.6 * (i + 1)) / (keys.length + 1);
       out.set(key, start + size * fraction);
     });
+    // the boxes in `roomy` (a table folded to one box): ports at least `PORT_GAP` apart where the side has
+    // room (in its middle 70%); its middle 60% put two arrows 8-10 px apart, side by side, words on each other
+    if (!wide && keys.length > 1 && roomy?.has(ports.get(keys[0]!)!.box)) {
+      const gap = Math.min(PORT_GAP, (size * 0.7) / (keys.length - 1));
+      const first = out.get(keys[0]!)!;
+      const step = out.get(keys[1]!)! - first;
+      if (step < gap) {
+        const middle = start + size / 2;
+        keys.forEach((key, i) => out.set(key, middle + (i - (keys.length - 1) / 2) * gap));
+      }
+    }
   }
   return out;
 }

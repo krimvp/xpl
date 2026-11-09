@@ -330,12 +330,12 @@ async function showBase(ctx: Ctx, args: Args, options: CodeOptions): Promise<num
       .filter((candidate) => candidate.explainer.change !== undefined);
     if (withChange.length === 0) {
       throw new CliError(
-        "no explainer here records a change, so there is no code before it: run `xpl change <name> <base>..<head>` first",
+        "no guide here records a change, so there is no code before it: run `xpl change <name> <base>..<head>` first",
       );
     }
     if (withChange.length > 1) {
       throw new UsageError(
-        `several explainers record a change (${withChange.map((c) => c.name).join(", ")}): pick one with --explainer <name>`,
+        `several guides record a change (${withChange.map((c) => c.name).join(", ")}): pick one with --explainer <name>`,
       );
     }
     loaded = withChange[0]!;
@@ -442,7 +442,7 @@ export const showCommand: CommandSpec = {
   name: "show",
   usage:
     "xpl show <id> [--refs] [--context <n>] [--lines <a-b>] [--max-lines <n>] | xpl show --at base <path> [--lines <a-b>] [--explainer <name>]",
-  summary: "Code with 0-based offsets relative to the symbol (what spans use), plus refs",
+  summary: "Print a symbol's code with the offsets a span uses (0-based), and its references",
   details: [
     "Header: <id> (<kind>) <file>:<first>-<last> <hash>. Then each code line: <line> <offset>│ <code>.",
     "The offset counts from 0 at the symbol's first line: it is what an anchor's span {from, to} uses.",

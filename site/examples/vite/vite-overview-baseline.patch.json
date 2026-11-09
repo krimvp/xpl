@@ -105,6 +105,11 @@
           "role": "call-site"
         },
         {
+          "file": "packages/vite/src/node/cli.ts",
+          "find": "await server.listen()",
+          "role": "call-site"
+        },
+        {
           "file": "packages/vite/src/node/server/index.ts",
           "symbol": "createServer",
           "find": "export function createServer(",

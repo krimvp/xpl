@@ -140,6 +140,21 @@ describe.each([
     expect(dim).toBeLessThan(contrast(v("--muted"), v("--canvas")));
   });
 
+  // orange meant two things, the diagram element that holds the caret and the code's "called here"
+  it("the caret's mark on a diagram: 3:1 on the canvas, its text readable on its tint, not the call-site hue", () => {
+    expect(contrast(v("--match"), v("--canvas"))).toBeGreaterThanOrEqual(3);
+    expect(contrast(v("--fg"), over(v("--match-soft"), v("--canvas")))).toBeGreaterThanOrEqual(4.5);
+    const hue = ([r, g, b]: Rgba) => {
+      const max = Math.max(r, g, b),
+        min = Math.min(r, g, b),
+        d = max - min;
+      const h = max === r ? ((g - b) / d) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+      return (h * 60 + 360) % 360;
+    };
+    const apart = Math.abs(hue(v("--match")) - hue(v("--hl-call-site-bar")));
+    expect(Math.min(apart, 360 - apart)).toBeGreaterThanOrEqual(60);
+  });
+
   it("diagram lines and box borders on the canvas", () => {
     const canvas = v("--canvas");
     const low = ["--edge", "--edge-heuristic", "--edge-stub", "--ghost-border", "--node-border"]

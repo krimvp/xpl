@@ -404,6 +404,38 @@ describe("deriveGraph: derived edges", () => {
     expect(types.graph.edges.find((e) => e.kind === "implements")!.label).toBeUndefined();
   });
 
+  it("names a Go struct's embedded type with 'embeds', since Go has no inheritance; other languages keep 'extends'", () => {
+    const world = makeWorld({
+      files: [
+        { path: "runner/runner.go", lines: 10, language: "go" },
+        { path: "queue/queue.go", lines: 10, language: "go" },
+        { path: "src/a.ts", lines: 10 },
+        { path: "src/b.ts", lines: 10 },
+      ],
+      symbols: [
+        { id: "runner/runner.go#recording", kind: "class", start: 1, end: 3 },
+        { id: "queue/queue.go#Queue", kind: "class", start: 1, end: 3 },
+        { id: "src/a.ts#Child", kind: "class", start: 1, end: 3 },
+        { id: "src/b.ts#Parent", kind: "class", start: 1, end: 3 },
+      ],
+      refs: [
+        {
+          from: "runner/runner.go#recording",
+          to: "queue/queue.go#Queue",
+          kind: "extends",
+          line: 2,
+        },
+        { from: "src/a.ts#Child", to: "src/b.ts#Parent", kind: "extends", line: 1 },
+      ],
+    });
+    const label = (include: string[]) =>
+      derive(include, {}, {}, world).graph.edges.find((e) => e.kind === "extends")!.label;
+    expect(label(["sym:runner/runner.go#recording", "sym:queue/queue.go#Queue"])).toBe("embeds");
+    expect(label(["file:runner/runner.go", "file:queue/queue.go"])).toBe("embeds a type in");
+    expect(label(["sym:src/a.ts#Child", "sym:src/b.ts#Parent"])).toBeUndefined();
+    expect(label(["file:src/a.ts", "file:src/b.ts"])).toBe("extends a type in");
+  });
+
   it("aggregates through a group, and skips edges internal to it", () => {
     const { graph } = derive(
       ["grp:scheduling", F.worker],

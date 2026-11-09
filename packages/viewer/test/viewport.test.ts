@@ -233,6 +233,53 @@ describe("frameView: the first view of a diagram", () => {
     expect(slid.transform.k).toBe(plain.transform.k);
   });
 
+  it("with fill, of two places that cut no box, takes the one that holds more of them whole", () => {
+    // the pane shows 400 units at 1 (420 - 2 × 10). The focus at 300-400 is in view from 0 to 300. At 0 the
+    // window holds `alone`; at 202 it holds the three boxes on the right. Neither cuts a box.
+    const size = { w: 420, h: 120 };
+    const content = { width: 1000, height: 100 };
+    const options = { padding: 10, maxZoom: 1, whole: 1, readable: 1 };
+    const keep = { x: 300, y: 0, width: 100, height: 50 };
+    const alone = { x: 10, y: 0, width: 50, height: 50 };
+    const right = [420, 480, 540].map((x) => ({ x, y: 0, width: 50, height: 50 }));
+    const others = [alone, keep, ...right];
+    const whole = (fill: boolean) => {
+      const view = frameView(size, content, { boxes: [keep], others, fill }, options)!;
+      return others.map((box) => boxInView(view.transform, size, box));
+    };
+    expect(whole(true)).toEqual([false, true, true, true, true]);
+    // without it, the place nearer the start
+    expect(whole(false)).toEqual([true, true, false, false, false]);
+  });
+
+  it("starts whole when the focus is all of the diagram and it fits at READABLE_FLOOR", () => {
+    // a step about every box of a map (Present, floor 1): framing a part of it shows a corner, cut mid-box
+    const size = { w: 924, h: 640 };
+    const options = { padding: 10, maxZoom: 1.6, whole: 1, readable: 1 };
+    const grid = (width: number, height: number) =>
+      [0, 1, 2, 3].flatMap((column) =>
+        [0, 1].map((row) => ({
+          x: column * (width / 4),
+          y: row * (height / 2),
+          width: width / 4 - 40,
+          height: height / 2 - 40,
+        })),
+      );
+    // fits at (924 - 20) / 1290 = 0.70: under the floor, over READABLE_FLOOR
+    const content = { width: 1290, height: 800 };
+    const boxes = grid(content.width, content.height);
+    const all = frameView(size, content, { boxes, others: boxes }, options)!;
+    expect(all.partial).toBe(false);
+    expect(all.transform).toEqual(fitTransform(size, content, options));
+    // the same diagram with a focus of one box starts on that box, at the floor
+    const one = frameView(size, content, { boxes: [boxes[7]!], others: boxes }, options)!;
+    expect([one.partial, one.transform.k]).toEqual([true, 1]);
+    // too big to read whole even at READABLE_FLOOR: framed as before
+    const big = { width: 2000, height: 1300 };
+    const far = frameView(size, big, { boxes: grid(big.width, big.height) }, options)!;
+    expect(far.partial).toBe(true);
+  });
+
   it("frames the union of several focused elements when it fits, else the first and counts the rest", () => {
     const a = { x: 1000, y: 1000, width: 200, height: 100 };
     const b = { x: 1500, y: 1100, width: 200, height: 100 };

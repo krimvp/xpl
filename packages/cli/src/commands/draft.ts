@@ -185,11 +185,11 @@ export const draftCommand: CommandSpec = {
   ],
   options: {
     out: { type: "string", short: "o", arg: "<file>", desc: "Write the patch to a file" },
-    audience: { type: "string", arg: "<reader>", desc: "Who this explanation is for" },
+    audience: { type: "string", arg: "<reader>", desc: "Who the guide is for" },
     question: {
       type: "string",
       arg: "<question>",
-      desc: "The question the explanation should answer",
+      desc: "The question the guide answers",
     },
   },
   positionals: [

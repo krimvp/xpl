@@ -379,7 +379,7 @@ describe("xpl anchors after the code changed", () => {
       "  1. call-site  src/runner.ts#Runner.dispatch +34..36  moved  lines 79-81",
     );
     expect(lines[2]).toBe(
-      "     (the explainer file still says ok, lines 76-78: run `xpl resolve demo --write`)",
+      "     (the guide file still says ok, lines 76-78: run `xpl resolve demo --write`)",
     );
     expect(lines[3]).toBe("     79 34│         await this.queue.requeue(");
   });

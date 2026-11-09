@@ -37,7 +37,7 @@ describe("xpl cli", () => {
     expect(viaFlag.out).toContain("--context <n>");
     expect(viaFlag.out).toContain("--root <dir>");
     expect(viaFlag.out).toMatch(
-      /\nMore: reference\/cli\.md, "xpl show", or https:\/\/krimvp\.github\.io\/xpl\/docs\/reference\/$/,
+      /\nMore: the skill's reference\/cli\.md \("xpl show"\), or https:\/\/krimvp\.github\.io\/xpl\/docs\/reference\/$/,
     );
     expect(viaFlag.out).not.toContain("docs/ARCHITECTURE.md");
     const viaHelp = await invoke(["help", "apply"]);
@@ -106,7 +106,9 @@ describe("xpl cli", () => {
       const help = (await invoke([command.name, "--help"])).out;
       const lines = help.split("\n");
       const name = `xpl ${command.name}`;
-      expect.soft(lines.at(-1), name).toMatch(/^More: reference\/cli\.md, "xpl \S+", or https:/);
+      expect
+        .soft(lines.at(-1), name)
+        .toMatch(/^More: the skill's reference\/cli\.md \("xpl \S+"\), or https:/);
       const options = lines.indexOf("Options:");
       const global = lines.indexOf("Global options:");
       const optionLines = options === -1 ? [] : lines.slice(options + 1, global - 1);

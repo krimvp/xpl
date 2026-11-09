@@ -121,3 +121,8 @@ export function asSentence(text: string): string {
   const trimmed = text.trim();
   return /[.!?]$/.test(trimmed) ? trimmed : `${trimmed}.`;
 }
+
+/** Inline markdown as plain words, for a tooltip: the backticks of `code` dropped. */
+export function plainWords(text: string): string {
+  return text.replace(/`/g, "");
+}

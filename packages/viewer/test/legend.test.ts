@@ -146,4 +146,18 @@ describe("mapKeyShows", () => {
     expect(shows.countKind).toBe("implements");
     expect(shows.icons!.map((icon) => icon.name)).toEqual(["class"]);
   });
+
+  // Go has no parent types: its embedded types were keyed "Extends: points at the parent class"
+  it("keys Go's embedded types as embeds, apart from a class that extends another", () => {
+    const shows = mapKeyShows(
+      [node("sym:a#A"), node("sym:b#B")],
+      [
+        edge("e1", { kind: "extends", title: "embeds" }),
+        edge("e2", { kind: "extends", title: "embeds a type in" }),
+        edge("e3", { kind: "extends" }),
+      ],
+      boxes(),
+    );
+    expect(shows.kinds).toEqual(["extends", "embeds"]);
+  });
 });

@@ -64,3 +64,23 @@ describe("xpl health", () => {
     }
   });
 });
+
+describe("xpl health on Rust", () => {
+  it("counts `mod` declarations and crate imports as uses, so no used module reads as unused", async () => {
+    const dir = makeTempDir("xpl-health-rs-");
+    writeFile(dir, "Cargo.toml", '[package]\nname = "job-runner"\nversion = "0.1.0"\n');
+    writeFile(dir, "src/lib.rs", "pub mod config;\npub mod runner;\n");
+    writeFile(dir, "src/main.rs", "use job_runner::runner::Runner;\n\nfn main() {}\n");
+    writeFile(dir, "src/runner.rs", "use crate::config::Settings;\n\npub struct Runner;\n");
+    writeFile(dir, "src/config.rs", "pub struct Settings;\n");
+    writeFile(dir, "src/orphan.rs", "pub struct Left;\n");
+    const indexed = await xpl(dir, "index", "--precise", "off");
+    expect(indexed.code, indexed.err).toBe(0);
+    const { code, json } = await xplJson(dir, "health");
+    expect(code).toBe(0);
+    expect(json.findings.map((f: any) => `${f.check} ${f.file}`)).toEqual([
+      "unused-file src/orphan.rs",
+    ]);
+    expect(json.notes).toEqual([]);
+  });
+});

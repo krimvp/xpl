@@ -22,13 +22,13 @@ export function boxName(label: string, kind?: string, change?: string): string {
 /**
  * The order Tab takes a map's boxes in. A data map's tables (`rows`) go in the order the map starts in (GraphView
  * `order`: the tour's first box, then the view's include list), one stop each; their rows are reached with the
- * arrow keys (D9). Any other map: reading order.
+ * arrow keys (D9). Any other map: reading order. The boxes outside the map (`ghost`) come after its own.
  */
-export function tabOrder<T extends { id: string; x: number; y: number; rows?: boolean }>(
-  nodes: readonly T[],
-  order: readonly string[],
-): T[] {
-  const read = readingOrder(nodes);
+export function tabOrder<
+  T extends { id: string; x: number; y: number; rows?: boolean; ghost?: boolean },
+>(nodes: readonly T[], order: readonly string[]): T[] {
+  const sorted = readingOrder(nodes);
+  const read = [...sorted.filter((node) => !node.ghost), ...sorted.filter((node) => node.ghost)];
   if (!nodes.some((node) => node.rows)) return read;
   const rank = (id: string) => {
     const i = order.indexOf(id);

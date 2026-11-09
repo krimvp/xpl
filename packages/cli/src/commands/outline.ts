@@ -17,7 +17,7 @@ export const DEFAULT_OUTLINE_LINES = 400;
 export const outlineCommand: CommandSpec = {
   name: "outline",
   usage: "xpl outline [--under <id>] [--depth <n>] [--kind <k,...>] [--keys] [--limit <n>]",
-  summary: "Dir/file/symbol tree with kind, lines, fan-in/fan-out",
+  summary: "List the folders, files and symbols with their kind, lines and fan-in/fan-out",
   details: [
     "One line per element: <id>  <kind>  <first>-<last line>  in=<fan-in> out=<fan-out>.",
     "Paste the ids into patches (sym:src/a.ts#A.b) or into other commands.",

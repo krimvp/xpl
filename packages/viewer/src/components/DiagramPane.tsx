@@ -14,6 +14,8 @@ import { FoldBackAction } from "./FoldBackAction.js";
 import { SequenceView } from "./SequenceView.js";
 import { ZoomTrail } from "./ZoomTrail.js";
 import { codeFirstView, startOrder } from "../workspace.js";
+import { renderInline } from "../markdown.js";
+import { plainWords } from "../readerWords.js";
 
 export function DiagramPane() {
   const state = useViewerState();
@@ -52,7 +54,14 @@ export function DiagramPane() {
       <div className="diagram-caption">
         <ZoomTrail viewId={view.id} />
         <span className="caption-title">{view.title}</span>
-        {question && <span className="caption-question">{question}</span>}
+        {/* (cut short on a narrow slide: the whole question on hover) */}
+        {question && (
+          <span
+            className="caption-question"
+            title={plainWords(question)}
+            dangerouslySetInnerHTML={{ __html: renderInline(question) }}
+          />
+        )}
         {view.type === "graph" && derived.view.graph && (
           <>
             <ExpandInPlaceAction nodes={derived.view.graph.nodes} />

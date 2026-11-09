@@ -624,7 +624,7 @@ export async function startViewServer(options: ViewServerOptions): Promise<ViewS
       const state = await loadState();
       const change = state.loaded.explainer.change;
       if (change === undefined) {
-        throw new HttpError(404, "the explainer records no change, so there is no code before it");
+        throw new HttpError(404, "the guide records no change, so there is no code before it");
       }
       const changed = baseFileOf(change, path);
       if (!changed || changed.path !== path) {
@@ -766,7 +766,7 @@ export async function startViewServer(options: ViewServerOptions): Promise<ViewS
             throw new HttpError(400, errorMessage(error));
           }
           if (request.explainer !== undefined && request.explainer !== name)
-            throw new HttpError(400, "feedback names a different explainer");
+            throw new HttpError(400, "feedback names a different guide");
           await serial(() => importRequests(env.root, [request]));
           const state = await loadState();
           const contextReason =

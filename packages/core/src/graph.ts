@@ -825,11 +825,21 @@ export function deriveGraph(
   // a row's arrow: the field holds a value of that type ("Queue.ready holds Job")
   // an interface or a parent type lifted to a box that is no type (a file, a folder, a group): "Job queue
   // implements Runner" would say the queue is a kind of runner; it implements an interface in it (R6-R3)
-  for (const edge of outEdges)
-    if (!edge.stored && edge.label === undefined && !isType(edge.to)) {
-      if (edge.kind === "implements") edge.label = "implements an interface in";
-      else if (edge.kind === "extends") edge.label = "extends a type in";
-    }
+  // Go has no inheritance: its `extends` references are embedded fields and interface elements ("embeds")
+  const fromGo = (id: ElementId): boolean => {
+    const parsed = parseId(id);
+    const file =
+      parsed.type === "file" ? parsed.path : parsed.type === "symbol" ? parsed.file : undefined;
+    return file !== undefined && index.file(file)?.language === "go";
+  };
+  for (const edge of outEdges) {
+    if (edge.stored || edge.label !== undefined) continue;
+    const type = isType(edge.to);
+    if (edge.kind === "implements" && !type) edge.label = "implements an interface in";
+    else if (edge.kind === "extends" && fromGo(edge.from))
+      edge.label = type ? "embeds" : "embeds a type in";
+    else if (edge.kind === "extends" && !type) edge.label = "extends a type in";
+  }
   for (const edge of outEdges)
     if (
       edge.kind === "references" &&

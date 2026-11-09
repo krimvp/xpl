@@ -87,6 +87,11 @@ function verbsOf(edge: DerivedGraph["edges"][number]): [string, string] {
     return edge.label && !edge.stored
       ? [edge.label, "has an interface implemented by"]
       : ["implements", "implemented by"];
+  // Go has no parent types: core labels its embedded types "embeds" ("embeds a type in" when lifted)
+  if (edge.kind === "extends" && !edge.stored && edge.label?.startsWith("embeds"))
+    return edge.label === "embeds"
+      ? ["embeds", "embedded by"]
+      : [edge.label, "has a type embedded by"];
   if (edge.kind === "extends")
     return edge.label && !edge.stored
       ? [edge.label, "has a type extended by"]

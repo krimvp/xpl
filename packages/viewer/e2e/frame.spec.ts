@@ -209,14 +209,72 @@ test.describe("Explore with nothing selected gives the diagram the height (V6-01
     // (with the panels open, 464px: three stages at the flow's 11px floor)
     expect((await explore(page)).height).toBeGreaterThan(700);
     expect(await smallestDiagramText(page)).toBeGreaterThanOrEqual(10.5);
-    // the concept is a chip on the strip; its click opens Concepts and Details, the diagram re-fits once
+    // the concept is a chip on the strip; its click opens Details above the code, the diagram keeps its height
+    const before = (await explore(page)).height;
     await page.getByRole("button", { name: "Retry policy" }).click();
-    await expect(page.getByTestId("lower-folded")).toHaveCount(0);
-    await expect(page.locator('.details[data-details-id="concept:retry-policy"]')).toBeVisible();
-    await expect.poll(async () => (await explore(page)).height).toBeLessThan(560);
-    // clearing the selection keeps the panels: the diagram does not move again
+    await expect(
+      page.locator('.right .details[data-details-id="concept:retry-policy"]'),
+    ).toBeVisible();
+    await expect.poll(async () => (await explore(page)).height).toBe(before);
+    // clearing the selection keeps Details: the diagram does not move again
     await page.keyboard.press("Escape");
-    await expect(page.locator(".lower .details")).toBeVisible();
+    await expect(page.locator(".right .details")).toBeVisible();
+    expect(problems).toEqual([]);
+  });
+
+  /**
+   * The first selection brings the code and Details. Details goes into the code column, above the code: the
+   * diagram keeps its height and re-fits once, to what was selected.
+   */
+  test("a step selected in a long sequence: the pane keeps 700px or more, with its neighbours and both lifelines in view", async ({
+    page,
+  }) => {
+    const problems = watchProblems(page);
+    const lanes = ["main", "runner", "queue", "worker", "bus", "metrics"].map(
+      (name) => `file:src/${name}.ts`,
+    );
+    await openVariant(
+      page,
+      (bundle) => {
+        const view = bundle.explainer.views.find((v: Loose) => v.id === "view:dispatch");
+        const template = view.steps[0];
+        view.participants = lanes;
+        view.frames = [];
+        view.steps = Array.from({ length: 16 }, (_, i) => ({
+          ...structuredClone(template),
+          id: `dispatch:${i + 1}`,
+          from: lanes[i % 3],
+          to: lanes[(i % 3) + 3],
+          label: `call number ${i + 1}`,
+        }));
+      },
+      "?mode=explore&view=view:dispatch",
+      { width: 1440, height: 900 },
+    );
+    await expect(page.locator(".explore .lifeline-head").first()).toBeVisible();
+    await page.evaluate(() => window.__xpl!.select(["dispatch:8"]));
+    await expect(page.locator(".right .editor-stack .pane").first()).toBeVisible();
+    await expect(page.locator(".right .details")).toBeVisible();
+    await expect.poll(async () => (await explore(page)).height).toBeGreaterThan(700);
+    const shown = (await explore(page)).cut;
+    expect(
+      ["dispatch:7", "dispatch:8", "dispatch:9", lanes[1], lanes[4]].filter((id) =>
+        shown.includes(id!),
+      ),
+    ).toEqual([]);
+    expect(problems).toEqual([]);
+  });
+
+  test("a box clicked on the map: the pane keeps 700px or more and every box stays whole", async ({
+    page,
+  }) => {
+    const problems = watchProblems(page);
+    await page.goto(`${TS_BUNDLE.href}?mode=explore&view=view:overview`);
+    await expect(page.locator(".explore .nodes g[data-element-id]").first()).toBeVisible();
+    await byId(page, "file:src/worker.ts").first().click();
+    await expect(page.locator(".right .editor-stack .pane").first()).toBeVisible();
+    await expect.poll(async () => (await explore(page)).height).toBeGreaterThan(700);
+    await expect.poll(async () => (await explore(page)).cut).toEqual([]);
     expect(problems).toEqual([]);
   });
 });
@@ -275,9 +333,11 @@ test.describe("a phone gives the diagram most of the screen (R3-2)", () => {
       page.locator(".workspace-location").getByRole("button", { name: "Show code" }),
     ).toBeVisible();
     // the step selected in the Tour is no reason for a link to the list: clear it, then use the link
-    await page.evaluate(() => window.__xpl!.select([]));
+    await page.keyboard.press("Escape");
+    await expect.poll(() => page.evaluate(() => window.__xpl!.selection())).toEqual([]);
+    await expect(page.getByTestId("parts-panel")).not.toBeInViewport({ ratio: 1 });
     await page.getByTestId("caption-steps").click();
-    await expect(page.getByTestId("parts-panel")).toBeInViewport();
+    await expect(page.getByTestId("parts-panel")).toBeInViewport({ ratio: 1 });
     expect(problems).toEqual([]);
   });
 
@@ -330,7 +390,7 @@ test("the Tour decides its right column once per tour, so the text never changes
   await page
     .locator('.guide-section[data-section-id="t2"]')
     .evaluate((el) => el.scrollIntoView({ block: "start" }));
-  await expect(page.getByRole("region", { name: "Related files" })).toContainText(
+  await expect(page.getByRole("region", { name: "This step's code" })).toContainText(
     "config/default.yaml",
   );
   expect(await width()).toBe(before);
@@ -548,6 +608,61 @@ test.describe("Present keeps the 12px floor and widens the diagram column (D7, D
     expect(seven.smallest).toBeGreaterThanOrEqual(11.9);
     expect(problems).toEqual([]);
   });
+
+  // `xpl draft map` writes one step about every box of its map. A frame of part of that map started on
+  // a corner, with the boxes at its left edge cut mid-word, while the Map tab fits all of them.
+  const SUMMARIES = [
+    "Starts the job runner with three sample jobs, runs them, and prints what happened.",
+    "Takes the next job, gives it to a free worker, and retries it later with a growing delay.",
+    "Keeps waiting jobs in priority order and holds jobs that failed too often.",
+    "Runs one job with the handler for its kind and reports the result, with a time limit.",
+    "Sends a message to the parts that asked for it when a job succeeds, so they can react.",
+    "Counts the jobs that succeeded, by kind, adds up their run time, and prints the totals.",
+    "Reads the settings file and turns it into values such as worker count and retry delays.",
+  ];
+  const addMapTour = (bundle: Loose) => {
+    addTour(bundle);
+    const labels = [
+      "Demo program",
+      "Dispatcher",
+      "Job queue",
+      "Workers",
+      "Events",
+      "Counters",
+      "Settings",
+    ];
+    (bundle.explainer.nodes as Loose[]).push(
+      ...FILES.map((id, i) => ({
+        id,
+        kind: "file",
+        label: labels[i],
+        summary: SUMMARIES[i],
+        anchors: [],
+        provenance: { origin: "llm" },
+      })),
+    );
+    const files = (bundle.explainer.views as Loose[]).find((view) => view.id === "view:files")!;
+    files.boxText = "summary";
+    (bundle.explainer.tours as Loose[]).unshift({
+      id: "tour:map",
+      title: "Every part",
+      steps: [{ id: "m1", view: "view:files", focus: FILES, note: "Every part of the runner." }],
+    });
+  };
+  for (const size of [
+    { width: 1440, height: 900 },
+    { width: 1280, height: 720 },
+  ])
+    test(`${size.width}x${size.height}: a step about every box of a map starts with all of them whole`, async ({
+      page,
+    }) => {
+      const problems = watchProblems(page);
+      await openVariant(page, addMapTour, "?mode=present&tour=tour:map", size);
+      await expect(page.locator(".present-left .nodes g[data-element-id]")).toHaveCount(7);
+      await expect.poll(async () => (await slide(page)).cut).toEqual([]);
+      await expect(page.getByTestId("pz-fit")).not.toContainText("out of sight");
+      expect(problems).toEqual([]);
+    });
 });
 
 test("Present: the slide's title bar keeps no room for Save image and Text view, so the title is whole (adhd R6-2)", async ({
@@ -562,6 +677,56 @@ test("Present: the slide's title bar keeps no room for Save image and Text view,
   // (the two buttons are there, only out of the slide)
   await expect(page.locator(".present .pz-toolbar .pz-save")).toBeHidden();
   await expect(page.locator(".present .pz-toolbar .pz-text")).toBeHidden();
+});
+
+test("a view's question shows its `code` as code, and a slide cut short gives all of it on hover", async ({
+  page,
+}) => {
+  const ask = (bundle: Loose) => {
+    const view = bundle.explainer.views.find((v: Loose) => v.id === "view:dispatch");
+    view.scope.question =
+      "How does `Runner.dispatch` hand a job to a worker, and what happens when it fails?";
+  };
+  await openVariant(page, ask, "?perspective=flow", { width: 1440, height: 900 });
+  await expect(page.locator(".view-question code")).toHaveText("Runner.dispatch");
+  await expect(page.locator(".view-question")).not.toContainText("`");
+  await openVariant(page, ask, "?mode=present&step=2", { width: 1280, height: 720 });
+  const question = page.locator(".present .caption-question");
+  await expect(question.locator("code")).toHaveText("Runner.dispatch");
+  await expect(question).toHaveAttribute(
+    "title",
+    "How does Runner.dispatch hand a job to a worker, and what happens when it fails?",
+  );
+});
+
+test("the Code tab with a file open and nothing selected gives the code the whole width", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(`${TS_BUNDLE.href}?perspective=code`);
+  await page.locator('.tree-row[data-path="src/queue.ts"]').click();
+  await expect(page.locator(".workspace-source .pane").first()).toBeVisible();
+  await expect(page.locator(".workspace-context")).toBeHidden();
+  const right = await page
+    .locator(".workspace-source")
+    .evaluate((el) => Math.round(el.getBoundingClientRect().right));
+  expect(right).toBe(1440);
+});
+
+test("J and K step through the Tour, and the list of steps says so", async ({ page }) => {
+  await page.goto(TS_BUNDLE.href);
+  await expect(page.getByTestId("guide")).toBeVisible();
+  await expect(page.getByTestId("guide-keys")).toHaveText("Keys: J next step, K previous step.");
+  const step = () => page.evaluate(() => window.__xpl!.state().stepId);
+  await expect.poll(step).toBe("t1");
+  await page.keyboard.press("j");
+  await expect.poll(step).toBe("t2");
+  await expect(page.locator('.guide-section[data-section-id="t2"]')).toBeInViewport();
+  // (the last step: J does nothing more)
+  await page.keyboard.press("j");
+  await expect.poll(step).toBe("t2");
+  await page.keyboard.press("k");
+  await expect.poll(step).toBe("t1");
 });
 
 test.describe("the phone caption's disclosure (R4-21, R4-22)", () => {

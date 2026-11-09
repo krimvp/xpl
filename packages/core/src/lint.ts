@@ -89,7 +89,8 @@ export type LintRule =
   | "big-map"
   | "many-participants"
   | "crowded-map"
-  | "system-map-no-edges";
+  | "system-map-no-edges"
+  | "map-box";
 
 /** The rules in the order the count line lists them, with a short name for people. */
 export const LINT_RULES: Record<LintRule, string> = {
@@ -134,6 +135,7 @@ export const LINT_RULES: Record<LintRule, string> = {
   "many-participants": "sequence with too many participants for a tour",
   "crowded-map": "map with too many arrows",
   "system-map-no-edges": "system map with no visible arrows",
+  "map-box": "box on a map of summaries with a long label or sentence",
 };
 
 export type LintElementKind =
@@ -205,6 +207,13 @@ export const LINT_LIMITS = {
    * the first sentence of a summary, which is half of it.
    */
   passiveClauses: 2,
+  /**
+   * A box on a map that draws its summary (`boxText: "summary"`, the explain map) takes a label of at most this
+   * many words (the skill: 2-5)...
+   */
+  mapLabelWords: 5,
+  /** ...and a summary of at most this many characters, code marks left out (the skill: about 120; `map-box`). */
+  mapSummaryChars: 130,
   /** A title or note heading of more words than this is a finding (`long-title`; the skill asks for about 8). */
   titleWords: 12,
   /** `tour-ends` checks tours of at least this many steps (a short tour may stop where its point is). */
@@ -2677,6 +2686,76 @@ function placeholderChecks(lint: Linter, explainer: Explainer): void {
 }
 
 /** The checks of `xpl lint` on one explainer, in document order (see the file comment). */
+/** First words that show a box sentence does not start with a verb ("This file …", "The dispatcher …"). */
+const NOT_VERB_START = new Set([
+  "this",
+  "the",
+  "a",
+  "an",
+  "it",
+  "these",
+  "its",
+  "here",
+  "contains",
+]);
+
+/**
+ * `map-box`: the explain map's box rules, on every box a graph view draws with its summary (`boxText: "summary"`):
+ * a label of at most `mapLabelWords` words, and a sentence of at most `mapSummaryChars` characters that starts with
+ * a verb (not with an article, "This" or the file's own name). TODOs wait.
+ */
+function mapBoxChecks(lint: Linter, explainer: Explainer): void {
+  const drawn = new Set<string>();
+  for (const view of list(explainer.views)) {
+    const v = record(view);
+    if (v.type !== "graph" || v.boxText !== "summary") continue;
+    for (const id of list(v.include)) if (typeof id === "string") drawn.add(id);
+  }
+  for (const value of list(explainer.nodes)) {
+    const node = record(value);
+    const id = str(node.id);
+    if (id === undefined || !drawn.has(id)) continue;
+    const label = str(node.label);
+    if (label !== undefined && !/\bTODO\b/.test(label)) {
+      const count = words(mask(label).text).length;
+      if (count > LINT_LIMITS.mapLabelWords)
+        lint.add(
+          { elementId: id, kind: "node", field: "label" },
+          "map-box",
+          excerpt(label),
+          `${count} words (more than ${LINT_LIMITS.mapLabelWords}): a box on a map that shows summaries takes a label of 2-5 plain words`,
+          'name what the part does for the project in 2-5 everyday words ("Job queue", not `queue.rs`)',
+        );
+    }
+    const summary = str(node.summary);
+    if (summary === undefined || summary.trim() === "" || /\bTODO\b/.test(summary)) continue;
+    const plain = summary.replace(/`/g, "").trim();
+    const first = plain.split(/\s+/)[0]!.replace(/[,:;]$/, "");
+    const file =
+      id
+        .replace(/^(?:file|dir):/, "")
+        .split("/")
+        .pop() ?? "";
+    const problems: string[] = [];
+    if (plain.length > LINT_LIMITS.mapSummaryChars)
+      problems.push(`${plain.length} characters (more than ${LINT_LIMITS.mapSummaryChars})`);
+    if (
+      NOT_VERB_START.has(first.toLowerCase()) ||
+      first === file ||
+      (file.includes(".") && first === file.slice(0, file.lastIndexOf(".")))
+    )
+      problems.push(`it starts with "${first}", not a verb`);
+    if (problems.length === 0) continue;
+    lint.add(
+      { elementId: id, kind: "node", field: "summary" },
+      "map-box",
+      excerpt(summary),
+      `${problems.join("; ")}: the box shows this sentence under its label`,
+      'write one sentence of about 120 characters at most that starts with a verb and says what it does for the project ("Keeps jobs in order until a worker takes one.")',
+    );
+  }
+}
+
 export function lintExplainer(explainer: Explainer, model?: ExplainerModel): LintResult {
   // the code's own words: the labels and ids of boxes and concepts, and the boxes and lifelines views show
   const own = [...list(explainer.nodes), ...list(explainer.concepts)].flatMap((item) => [
@@ -2949,6 +3028,7 @@ export function lintExplainer(explainer: Explainer, model?: ExplainerModel): Lin
   for (const concept of list(explainer.concepts)) element("concept", concept);
 
   structureChecks(lint, explainer);
+  mapBoxChecks(lint, explainer);
   mapChecks(lint, explainer, byId, model);
   changeChecks(lint, explainer, byId);
   placeholderChecks(lint, explainer);

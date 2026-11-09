@@ -1,6 +1,7 @@
 /**
- * The viewer shell. Explore mode: header, then the diagram with the concept list and the details panel
- * below it on the left, the file tree and the editor stack on the right, with resizable splits. Present
+ * The viewer shell. Explore mode: header, then the diagram with the concepts as one line of chips under it
+ * on the left, the details panel above the file tree and the editor stack on the right, with resizable
+ * splits. Present
  * mode (present/PresentMode.tsx) plays a tour: the diagram and a caption on the left, the code on the
  * right, no file tree. The keys of both modes are handled here, in one place.
  */
@@ -78,11 +79,14 @@ function Shell() {
     document.title = pageTitle ? `${pageTitle} · xpl` : "xpl viewer";
   }, [pageTitle]);
 
-  // Explore: Escape clears the selection (unless the key is meant for a form field or a panel).
+  // Explore and the Map and Flow tabs: Escape clears the selection (unless the key is meant for a form field
+  // or a panel). (The Tour's selection is its step's: it stays.)
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape" || event.defaultPrevented) return;
-      if (store.getState().mode !== "explore" || isFormField(event.target)) return;
+      const { mode, perspective } = store.getState();
+      if (mode !== "explore" || isFormField(event.target)) return;
+      if (perspective !== "explore" && perspective !== "map" && perspective !== "flow") return;
       store.clearSelection();
     };
     window.addEventListener("keydown", onKeyDown);
@@ -225,17 +229,18 @@ function ExploreLayout({
     (view?.type === "flow" || (view?.type === "sequence" && view.layout === "code-first"));
   const width = codeFirst ? outlineWidth : leftWidth;
   const setWidth = codeFirst ? setOutlineWidth : setLeftWidth;
-  // V6-01: while nothing has been selected, Concepts and Details fold to one line under the diagram, which
-  // gets the height (a tall sequence or flow opens whole). The first selection opens them, and they stay.
+  // Concepts are one line of chips under the diagram, which keeps the height. The first
+  // selection brings Details, at the top of the code column, and it stays (clearing the selection does not
+  // move the diagram again).
   const picked = useViewerState().selection.length > 0;
-  const [panelsOpen, setPanelsOpen] = useState(false);
+  const [detailsOpen, setDetailsOpen] = useState(false);
   useEffect(() => {
-    if (picked) setPanelsOpen(true);
+    if (picked) setDetailsOpen(true);
   }, [picked]);
-  const folded = !picked && !panelsOpen;
+  const details = picked || detailsOpen;
   return (
     <main
-      className={`explore${codeFirst ? " is-code-first" : ""}${folded ? " is-folded" : ""}`}
+      className={`explore${codeFirst ? " is-code-first" : ""}`}
       style={
         {
           "--left-width": `${width}px`,
@@ -243,36 +248,34 @@ function ExploreLayout({
         } as React.CSSProperties
       }
     >
-      <section className="left" aria-label="Diagram and details">
+      <section className="left" aria-label="Diagram and concepts">
         <DiagramPane />
-        {folded ? (
-          <div className="lower is-folded" data-testid="lower-folded">
-            <ConceptList compact />
+        <div className="lower is-folded" data-testid="lower-folded">
+          <ConceptList compact />
+          {!details && (
             <p className="lower-hint">
               Select a box, an arrow, a step or a concept to see what it is.
             </p>
-          </div>
-        ) : (
-          <>
-            <Splitter
-              orientation="row"
-              label="Resize the diagram and the panels below it"
-              onResize={(d) => setLowerHeight((h) => clamp(h - d, 120, window.innerHeight - 220))}
-            />
-            <div className="lower">
-              <ConceptList />
-              <Details />
-            </div>
-          </>
-        )}
+          )}
+        </div>
       </section>
       <Splitter
         orientation="col"
         label="Resize the diagram and the code"
         onResize={(d) => setWidth((w) => clamp(w + d, 280, window.innerWidth - 360))}
       />
-      <section className="right" aria-label="Code">
-        <CodeArea tree="collapsible" idle />
+      <section className={`right${details ? " has-details" : ""}`} aria-label="Details and code">
+        {details && (
+          <>
+            <Details />
+            <Splitter
+              orientation="row"
+              label="Resize the details and the code"
+              onResize={(d) => setLowerHeight((h) => clamp(h + d, 120, window.innerHeight - 220))}
+            />
+          </>
+        )}
+        <CodeArea tree="collapsible" idle={!details} />
       </section>
     </main>
   );

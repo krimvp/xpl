@@ -1,5 +1,5 @@
 import { DiagramText } from "./DiagramText.js";
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   codeFocus,
   processFlow,
@@ -14,17 +14,23 @@ import { useStore, useViewerState } from "../hooks.js";
 import {
   EDGE_LABEL_LINE,
   EDGE_LABEL_CHARS,
-  layoutFlow,
+  layoutFlowFitting,
   levelTitle,
   type FlowLayout,
   placedStages,
   sharedActor,
+  stateRoles,
   LEVEL_WORDS,
-  STAGE_LABEL_CHARS,
   stageActor,
   wrapWords,
 } from "../layout/flowLayout.js";
-import { flowRelated, stepLinks, topicElements, topicMatches } from "../workspace.js";
+import {
+  flowRelated,
+  layoutFlowView,
+  stepLinks,
+  topicElements,
+  topicMatches,
+} from "../workspace.js";
 import { FlowKey } from "./Legend.js";
 import type { Focus } from "../viewport.js";
 import { SnapshotFrame } from "./SnapshotFrame.js";
@@ -106,10 +112,53 @@ export function FlowDiagram({ view, snapshot, outline = false }: FlowDiagramProp
     opened.current = view.id;
     if (firstStep && state.selection.length === 0 && !state.cursor) store.select([firstStep]);
   }, [outline, snapshot, layout, view.id, firstStep, state.selection.length, state.cursor, store]);
+  // The steps of one function: its name is said once over the flow (the caption), not under every box.
+  // A still picture and Present have no caption with it, so their boxes keep it.
+  const owner = snapshot || present ? undefined : sharedActor(flow);
+  // The line under each step's label: the layout sizes a decision's diamond to hold it.
+  const actors = useMemo(
+    () =>
+      new Map(
+        flow.stages.map(({ step, shape }) => [
+          step.id,
+          stageActor(step, state.model, shape === "decision" ? 26 : 34, shape, owner),
+        ]),
+      ),
+    [flow, state.model, owner],
+  );
+  // The pane's size, coarsely (as GraphView): the first one a flow is drawn in picks its direction and parts.
+  const [host, setHost] = useState<HTMLDivElement | null>(null);
+  const [pane, setPane] = useState<{ width: number; height: number }>();
+  useLayoutEffect(() => {
+    const el = host;
+    if (!el) return;
+    const step = (n: number) => Math.round(Math.log(Math.max(n, 1)) / Math.log(1.15));
+    let last = "";
+    const measure = () => {
+      const shape = `${step(el.clientWidth)}x${step(el.clientHeight)}`;
+      if (shape === last) return;
+      last = shape;
+      setPane({ width: el.clientWidth, height: el.clientHeight });
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [host]);
   useEffect(() => {
+    // a live diagram waits for its pane's size; a still picture has none and uses the window's
+    if (!snapshot && !pane) return;
     let cancelled = false;
     setError(undefined);
-    layoutFlow(flow).then(
+    const size = pane ?? {
+      width: Math.max(320, window.innerWidth - 240),
+      height: Math.max(320, window.innerHeight - 130),
+    };
+    // (a slide picks its own, for its pane, as a map's does)
+    (present
+      ? layoutFlowFitting(flow, size, { actors })
+      : layoutFlowView(view.id, flow, size, { actors })
+    ).then(
       (result) => {
         if (!cancelled) setLaidOut({ flow, layout: result });
       },
@@ -120,20 +169,24 @@ export function FlowDiagram({ view, snapshot, outline = false }: FlowDiagramProp
     return () => {
       cancelled = true;
     };
-  }, [flow]);
+  }, [flow, actors, pane, present, snapshot, view.id]);
   if (error)
     return (
       <div className="diagram-message" role="alert">
         Could not lay out the process: {error}
       </div>
     );
-  if (!layout) return <div className="diagram-message">Drawing the flow…</div>;
+  if (!layout)
+    return (
+      <div ref={setHost} className={`diagram-message flow-diagram${outline ? " is-outline" : ""}`}>
+        Drawing the flow…
+      </div>
+    );
   if (flow.stages.length === 0)
     return <div className="diagram-message">This process has no stages yet.</div>;
   const placed = placedStages(flow, layout);
-  // The steps of one function: its name is said once over the flow (the caption), not under every box.
-  // A still picture and Present have no caption with it, so their boxes keep it.
-  const owner = snapshot || present ? undefined : sharedActor(flow);
+  // a flow of states and the moves between them: states are pills, moves plain boxes, neither numbered
+  const roles = stateRoles(view);
   const relatedStages = flowRelated(
     flow,
     snapshot?.selection ?? state.selection,
@@ -315,19 +368,32 @@ export function FlowDiagram({ view, snapshot, outline = false }: FlowDiagramProp
           height = node.height ?? 100;
         const active = topics.has(step.id),
           related = relatedStages.has(step.id);
-        const label = wrapWords(step.label, STAGE_LABEL_CHARS, 3);
-        const actor = stageActor(step, state.model, shape === "decision" ? 26 : 34, shape, owner);
+        const label = wrapWords(
+          step.label,
+          layout.labelChars[shape === "decision" ? "decision" : "stage"],
+          3,
+        );
+        const actor = actors.get(step.id) ?? "";
+        const role = roles?.get(step.id);
+        // a repeated end's copies carry no number: one step 6, drawn again near each way into it
+        const numbered = !snapshot && !role && !node.copyOf;
         return (
           <g
             key={node.id}
             transform={`translate(${node.x ?? 0},${node.y ?? 0})`}
-            className={`flow-stage${active ? " is-selected" : related ? " is-related" : ""}${matches.has(step.id) ? " is-matched" : ""}`}
+            className={`flow-stage${active ? " is-selected" : related ? " is-related" : ""}${matches.has(step.id) ? " is-matched" : ""}${role ? ` is-${role}` : ""}${node.copyOf ? " is-copy" : ""}`}
             data-element-id={snapshot || node.copyOf ? undefined : step.id}
             data-copy-of={node.copyOf}
             data-stage-id={step.id}
             role={snapshot ? undefined : "button"}
             tabIndex={snapshot ? undefined : node.copyOf ? -1 : 0}
-            aria-label={snapshot ? undefined : `${numbers.get(step.id)}. ${step.label}`}
+            aria-label={
+              snapshot
+                ? undefined
+                : role
+                  ? `${role === "state" ? "State" : "Move"}: ${step.label}`
+                  : `${numbers.get(step.id)}. ${step.label}`
+            }
             onClick={(event) => {
               event.stopPropagation();
               select(step.id, event.shiftKey);
@@ -345,7 +411,19 @@ export function FlowDiagram({ view, snapshot, outline = false }: FlowDiagramProp
                 points={`${width / 2},0 ${width},${height / 2} ${width / 2},${height} 0,${height / 2}`}
               />
             ) : (
-              <rect width={width} height={height} rx={shape === "terminal" ? 44 : 12} />
+              <rect
+                width={width}
+                height={height}
+                rx={
+                  role === "state"
+                    ? height / 2
+                    : role === "move"
+                      ? 4
+                      : shape === "terminal"
+                        ? 44
+                        : 12
+                }
+              />
             )}
             <text
               className="flow-stage-label"
@@ -373,7 +451,7 @@ export function FlowDiagram({ view, snapshot, outline = false }: FlowDiagramProp
                 {actor}
               </text>
             )}
-            {!snapshot && (
+            {numbered && (
               <g
                 className="flow-step-number"
                 aria-hidden="true"
@@ -421,10 +499,16 @@ export function FlowDiagram({ view, snapshot, outline = false }: FlowDiagramProp
       </SnapshotFrame>
     );
   return (
-    <div className={`flow-diagram${outline ? " is-outline" : ""}`} data-testid="process-flow">
+    <div
+      ref={setHost}
+      className={`flow-diagram${outline ? " is-outline" : ""}`}
+      data-testid="process-flow"
+      data-direction={layout.direction}
+      data-parts={layout.parts}
+    >
       {flow.projected && (
         <p className="flow-projection" role="note">
-          Read from top to bottom. Each step is one call in the code. The arrows show the order, not
+          {readingOrder(layout)} Each step is one call in the code. The arrows show the order, not
           every possible path. A purple label above a step says when it and the steps after it run.
         </p>
       )}
@@ -458,6 +542,8 @@ export function FlowDiagram({ view, snapshot, outline = false }: FlowDiagramProp
               decision: placed.some(({ stage }) => stage.shape === "decision"),
               terminal: placed.some(({ stage }) => stage.shape === "terminal"),
               frames: placed.some(({ stage }) => stage.frames.length > 0),
+              copies: placed.some(({ node }) => node.copyOf !== undefined),
+              states: roles !== undefined,
               projected: Boolean(flow.projected),
               recurse: flow.transitions.some((edge) => edge.kind === "recurse"),
               returns: flow.transitions.some((edge) => edge.kind === "return"),
@@ -476,6 +562,17 @@ export function FlowDiagram({ view, snapshot, outline = false }: FlowDiagramProp
       )}
     </div>
   );
+}
+
+/** How to read a laid-out flow, in words: its direction, and where it goes on when it is set in parts. */
+export function readingOrder(layout: Pick<FlowLayout, "direction" | "parts">): string {
+  if (layout.direction === "RIGHT")
+    return layout.parts > 1
+      ? "Read from left to right, then on in the row below."
+      : "Read from left to right.";
+  return layout.parts > 1
+    ? "Read from top to bottom, then on in the next column."
+    : "Read from top to bottom.";
 }
 
 /**

@@ -344,24 +344,19 @@ test.describe("round 2 of the review", () => {
     });
   }
 
-  test("Read > Flow: a tall flow starts readable, and Fit all really shows all of it", async ({
+  test("Read > Flow: a tall flow is set in parts and opens whole and readable, with no cue to fit", async ({
     page,
   }) => {
     const problems = watchProblems(page);
     await openVariant(page, withTallFlow, "?perspective=flow&view=view:dispatch");
     await expect(page.locator(".flow-stage")).toHaveCount(10);
+    // (one column top to bottom: the first stages only, and "Fit all" marked as a cue)
+    await expect(page.getByTestId("process-flow")).not.toHaveAttribute("data-parts", "1");
+    await expect.poll(() => stagesInPane(page)).toBe(10);
     expect(await smallestDiagramText(page)).toBeGreaterThanOrEqual(10.9);
-    // one fit control: marked while part of the flow is out of sight
     const fit = page.getByTestId("pz-fit");
     await expect(fit).toHaveText(/^Fit all/);
-    await expect(fit).toHaveClass(/is-cue/);
-    await fit.click();
-    // every stage in the pane (the text gets as small as that takes)
-    await expect.poll(() => stagesInPane(page)).toBe(10);
-    await expect(fit).toHaveText("Readable size");
-    // and back to a readable first view
-    await fit.click();
-    expect(await smallestDiagramText(page)).toBeGreaterThanOrEqual(10.9);
+    await expect(fit).not.toHaveClass(/is-cue/);
     // the 0 key shows all of it too
     await page.locator(".panzoom").focus();
     await page.keyboard.press("0");
@@ -739,4 +734,29 @@ test("the reader's code panes do not offer Ask about selected lines: Explore's d
       name: "Ask about selected lines",
     }),
   ).toBeAttached();
+});
+
+// a step's "In the code" card listed two chips with the same name that lead to the same code
+test("a Tour step's In the code card shows one chip for two elements with the same name and code", async ({
+  page,
+}) => {
+  await openVariant(page, (bundle) => {
+    const view = bundle.explainer.views.find((v: Loose) => v.id === "view:dispatch");
+    const copy = structuredClone(view);
+    copy.id = "view:dispatch-copy";
+    copy.title = "The same calls, again";
+    copy.steps = copy.steps.map((s: Loose) => ({
+      ...s,
+      id: s.id.replace("dispatch:", "dispatch-copy:"),
+    }));
+    copy.frames = [];
+    bundle.explainer.views.push(copy);
+    const concept = bundle.explainer.concepts[0];
+    concept.related = ["dispatch:1", "dispatch-copy:1"];
+    bundle.explainer.tours[0].steps[1].focus = [concept.id];
+  });
+  const card = page.locator('.guide-section[data-section-id="t2"] .guide-mini', {
+    hasText: "In the code",
+  });
+  await expect(card.locator(".guide-mini-node")).toHaveText(["pop()"]);
 });

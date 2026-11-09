@@ -121,8 +121,8 @@ symbols can be missing (partial extraction).`), or that has no symbols (`text: f
 symbols or references.`). A failed analysis is always printed. `--verbose` also prints scoped extraction
 hits/misses and wall milliseconds, fresh heuristic-resolution time and semantic runs/time. `--json` includes
 `extraction` (`enabled`, `scope`, `hits`, `misses`, `writeFailures`, `wallMs`, optional `bypassReason`) and
-`work` (`heuristicResolutionMs`, `semanticMs`, `semanticRuns`). The text summary also prints a cache bypass reason or failed cache writes. Plain text
-without an extractor counts as neither a hit nor a miss. Measurements cover analysis stages, not CLI startup
+`work` (`heuristicResolutionMs`, `semanticMs`, `semanticRuns`). The text summary also prints a cache bypass
+reason or failed cache writes. Plain text without an extractor counts as neither a hit nor a miss. Measurements cover analysis stages, not CLI startup
 or index serialization. These incidental measurements are outside the saved index and exported viewers.
 Removing `.explainer/cache` reclaims old content entries; `--no-cache` leaves them untouched.
 
@@ -141,7 +141,7 @@ Tool commands and diagnostic details are omitted from these summaries.
 - A file with syntax errors is indexed anyway. One warning covers all such files, with the first lines to look at: `warning: 1 file(s) have syntax errors; symbols near these lines may be incomplete: src/broken.ts:2` (at most 5 files and 3 lines each). Errors that cannot have cost a symbol (a TS labelled tuple element such as `[symbol: string]`) are not reported.
 - Reference kinds: `call import extends implements type-ref read write request`. A `request` is a web request (`fetch("/api/orders")`, `axios.post(...)`, `requests.get(...)`, `http.Get(...)`) whose method and path match a route the repository defines. The routes come from Express, Koa, Hono, Fastify, Next.js route files and `pages/api`, FastAPI, Flask, net/http, chi, gin and echo. A request points at the route's handler. For an inline handler it points at the symbol around it (the module scope `<file>#` at the top level). Request references are always heuristic: a matching path does not prove which server answers. A `read` is a use of a module- or package-level variable or constant, or of a field whose type is known, that is not a call or an assignment (`this.config.retry`, `LIMIT`). The built-in syntax and tool adapters leave out locals and parameters. Artifact imports can keep role-backed references to checked local declarations. A TS `import type` and a Python `import` under `TYPE_CHECKING` are `type-ref`, not `import`: `import` references are runtime dependencies.
 - Symbols beyond declarations: config keys (`kind: key`) of yaml, json and toml files (`config/default.yaml#retry.maxRetries`, `pyproject.toml#project.scripts.flask`). TS test blocks are symbols too: statement-level `describe`/`suite`/`context`/`it`/`test` calls with a string title. Their path is the nested titles (`test/retry.test.ts#fails twice, then succeeds: acked after two requeues`; `.` and `#` in a title become `_`). Test blocks can be anchored and outlined but nothing references them by name.
-- Re-run after every code change. Explainers bound to an older index print ``hint: 1 explainer (jobrunner) is bound to another index; run `xpl resolve <name> --write` to move it to this one.``
+- Re-run after every code change. Guides bound to an older index print ``hint: 1 guide (jobrunner) is bound to another index; run `xpl resolve <name> --write` to move it to this one.``
 
 ### Generated SCIP artifacts
 
@@ -219,8 +219,10 @@ source-checked SCIP manifest with a configured Java build, then pass it with `--
 Only facts matched to checked source declarations and supported relationships are imported; inspect the
 analysis report for omissions.
 
-Rust tags are experimental. Read the saved capability results before you write graph claims, and use
-`--precise off`: xpl does not support Rust's SCIP import.
+Rust tags are experimental. They give declarations, heuristic calls in a few forms, and the imports of `mod`
+declarations and of `use` paths inside the package (`crate::`, `self::`, `super::` or the crate's own name).
+Read the coverage lines that `xpl index --verbose` prints (also under About this guide) before you write graph
+claims. xpl has no Rust SCIP import: plain `xpl index` needs no flag, and `--precise require` fails.
 
 Ruby tags also report partial declarations. They capture class, module, method and constant syntax. Qualified
 class, module and assignment targets need a preceding same-file owner declaration; unknown owners and
@@ -454,7 +456,7 @@ $ xpl start job-retries --question "How does a failed job get retried?" --audien
 created .explainer/job-retries.explainer.json for maintainers
 draft patch: /tmp/xpl-first-guide-…/draft.patch.json
 draft notes: /tmp/xpl-first-guide-…/draft-notes.json
-note: The draft guesses the kind of project, its users and its entry points from the code and its import lines: check each in the README and the code.
+note: the draft guesses the kind of project, its users and its entry points from the code and its import lines: check each in the README and the code
 note: drafted an overview of the whole repository, not the path that answers the question (no --entry). To draft that path, run `xpl draft path job-retries sym:src/runner.ts#Runner.dispatch -o <file>` (a guess from the question's words), or pass --entry next time.
 next: write the TODOs in `xpl view job-retries` (Edit > Edit the tour), or edit /tmp/xpl-first-guide-…/draft.patch.json and run `xpl apply job-retries /tmp/xpl-first-guide-…/draft.patch.json`; then `xpl lint job-retries`
 ```
@@ -634,7 +636,7 @@ drifted llm elements to re-explain (2):
     ...
 drifted, but not llm-owned (left alone) (1):
   concept:mine  (origin user)  concepts[1].anchors[0]
-missing anchors (2): fix or drop them explicitly
+missing code links (2): fix or remove each one
   dispatch:1  views[1].steps[0].anchors[1]  src/queue.ts#Queue.pop [definition]
     symbol Queue.pop is not in src/queue.ts. Did you mean: sym:src/queue.ts#Queue.take (anchor: file: "src/queue.ts", symbol: "Queue.take")?
   tour:retries/t1  tours[0].steps[0].code[1]  src/queue.ts#Queue.pop [definition]
@@ -664,13 +666,13 @@ The skill's to-do list, read-only: per view, the shown nodes, participants, stor
 - `tours (n)`: each tour with its step count, and the steps whose `focus` ids or `view` no longer exist (`1 step points at something that is gone: t2 (focus: sym:src/queue.ts#Queue.pop)`). Fix them with the tour's `stepsUpdate` (that step's `view` and `focus`). If the user edited the tour, make a new one instead.
 - `broken references (n)`: ids that no longer exist in the index (lenient validation): the overlay of a deleted symbol, an `include`, `members`, `related` or `participants` entry, a step end, a tour's `focus`. The line `, n broken references` is appended to `to do:` only when there are some.
 - `warning: stale edge overlays (n)`: stored `edge:<kind>:<a>-><b>` overlays that no graph view derives any more (the ends of a derived id follow the view's `include`, or the code changed). They are ignored until re-created on a current id; hidden edges do not count.
-- `--view <id>`: only that view, and what it draws. A graph view lists each arrow (`edge:calls:...  calls  grp:ky → grp:fetch  ×2  derived  "label"  no summary`: id, kind, ends, references, `stored` or `derived` (`derived (stored overlay)` when you overlaid it), label, whether it has a summary), most references first, then each id in its `hidden` with the arrow it takes out. A hidden id that is no arrow says what it is: a box, a stub, a ghost box, or nothing (remove it). It can also be a stored edge that is part of another arrow between the same boxes on this map: hiding it does nothing, so hide that arrow. A flow lists the links between its steps (`(back to the caller)` for a return without a step); a sequence its messages. `--json`: `{path, view: {...the view's status, edges: {drawn, hidden} | {links}}}`.
+- `--view <id>`: only that view, and what it draws. A graph view lists each arrow (`edge:calls:...  calls  grp:ky → grp:fetch  ×2  found in the code  "label"  no summary`: id, kind, ends, references, `stored` or `found in the code` (`found in the code (stored text on it)` when you overlaid it), label, whether it has a summary), most references first, then each id in its `hidden` with the arrow it takes out. A hidden id that is no arrow says what it is: a box, a stub, a ghost box, or nothing (remove it). It can also be a stored edge that is part of another arrow between the same boxes on this map: hiding it does nothing, so hide that arrow. A flow lists the links between its steps (`(back to the caller)` for a return without a step); a sequence its messages. `--json`: `{path, view: {...the view's status, edges: {drawn, hidden} | {links}}}`.
 
 ```
 $ xpl status ky --view view:system
 view:system (graph): ky between your app and the web
   boxes: 4
-  edges drawn (3: 3 stored, 0 derived), most references first:
+  arrows drawn (3: 3 stored, 0 found in the code), most references first:
     edge:app-ky  calls  grp:your-app → grp:ky  ×1  stored  "ky.get(), ky.post()"
     edge:fetch-http-api  custom  grp:fetch → grp:http-api  ×1  stored  "HTTP requests"
     edge:ky-fetch  calls  grp:ky → grp:fetch  ×1  stored  "hands over requests"
@@ -703,7 +705,7 @@ drifted llm elements to re-explain (2):
     ...
 drifted, but not llm-owned (left alone) (1):
   concept:mine  (origin user)  concepts[1].anchors[0]
-missing anchors (2): fix or drop them explicitly
+missing code links (2): fix or remove each one
   dispatch:1  views[1].steps[0].anchors[1]  src/queue.ts#Queue.pop [definition]
     symbol Queue.pop is not in src/queue.ts. Did you mean: sym:src/queue.ts#Queue.take (anchor: file: "src/queue.ts", symbol: "Queue.take")?
   ...
@@ -847,6 +849,7 @@ Checks the text a reader sees. That is the explainer title, tour titles, tour `s
 - `many-participants`: a sequence a tour shows with more than 6 participants: the lifelines get too narrow to read. Fold a helper into the lifeline that calls it, or leave out calls that do not change the answer
 - `crowded-map`: a graph view with more than 2 arrows (derived and stored) per box (needs the index). The hint and `ids` in `--json` list the least used drawn edges: put them in the view's `hidden`
 - `system-map-no-edges`: an indexed architecture map with at least one non-component role, at least two visible boxes and no visible arrows; check whether arrows the code shows are missing
+- `map-box`: a box on a map that draws its summary under the label (`boxText: "summary"`, as `xpl draft map` makes). Its label is over 5 words, or its summary is over 130 characters or starts with an article, "This", "It" or the file's own name. The explain map asks for 2-5 plain words and one sentence of about 120 characters that starts with a verb
 
 Markdown fields: a tour `summary`, a step `note` (with its `### title` line) and a `detail` take any markdown; the `summary` of an element or a step takes inline markdown; titles and labels are plain text. Code spans (`` `...` ``) are left out of the word checks and count as one word. Every finding names the element, the field, a short quote and a fix. Exit codes: 0 no findings; 1 any finding (with `--warn-only`: only a `todo-left` error), or a rejected patch; 2 usage error.
 
@@ -895,7 +898,7 @@ A quick check of the indexed files for the classic problems of code nobody read 
 - **Secrets in browser variables** (high): a `NEXT_PUBLIC_`, `VITE_`, `REACT_APP_` or `PUBLIC_` variable holding a server key or named with `SECRET`, `PRIVATE`, `PASSWORD` or `SERVICE_ROLE`.
 - **Committed `.env` files** with values: high when one is named like a secret, else medium. `.env.example` and similar are skipped.
 - **Code files over 1,000 lines** (low).
-- **Possibly unused code files** (low, a guess): no other file references the file in the index, and it is not an entry point (`main`, `index`, `cli`, `server`, `app`, …), a test, a config file or under `scripts/`, `bin/` or `cmd/`.
+- **Possibly unused code files** (low, a guess): no other file references the file in the index, and it is not an entry point (`main`, `index`, `cli`, `server`, `app`, …), a test, a config file or under `scripts/`, `bin/` or `cmd/`. When the index does not follow a language's imports, xpl cannot tell, so it reports no such file and a note says how many it could not judge (`<language>: the index does not follow imports, so xpl cannot tell whether 2 files are unused.`).
 
 In tests, fixtures, docs and examples, key shapes are reported one severity lower and the other secret checks are skipped: fake values dominate there. **A secret value is never printed**: the hint shows at most its first 4 characters, then `…`. Exit 0 with or without findings (it is a report, not a gate), 1 without an index, 2 on a usage error.
 
@@ -1084,49 +1087,144 @@ The callers and tests come from the index: a call through a variable, a callback
 
 ## `xpl draft change|repo|path|map|class|states|data [explainer] [<entry id> ...] [--audience <reader>] [--question <question>] [-o <file>]`
 
-Add `--audience "New maintainers" --question "How are retries selected?"` to focus the draft.
-The audience is saved in the patch's scope and the question in view scopes and tour summary placeholders.
-A repo draft guesses the users, entry points and outside systems: check each. Path drafts list
-selected call sites in source order, framed where the code loops or branches. Review the conditions and
-omissions before you tell the path as the order the code runs in. The first tour step also names repeated and
-capped targets. In heuristic indexes, function values are `read` references, not calls or recursion.
+Prints a patch skeleton of one draft kind, built from the index (and the change record) with no LLM. It holds the structure the index proves, and `TODO: <what to write>` in every text you must write. `xpl apply` accepts the draft as it is. Start a guide with it, then write the text and check it against the code.
 
-Prints a patch skeleton of one draft kind (below), built from the index (and the change record) with no LLM: the structure the index proves, with `TODO: <what to write>` in every text you must write. `xpl apply` accepts the draft as it is. Use it to start an explainer, then write the text and check it against the code.
+`--audience "New maintainers" --question "How are retries selected?"` focus the draft. The audience goes in the patch's scope, the question in the view scopes and the tour summary TODO.
 
-- `change <explainer>`: Needs the change record (`xpl change <explainer> <base>..<head>` first). A map "What this change touches" (`stubs: none`): the changed symbols (small changes to methods of one class share a group box; their files when there are many), their direct callers outside tests, and one group box for the changed tests. Box summaries start with `New:`, `Changed:` or `Unchanged:`. A caller is code that calls: a test (type tests in `test-d/` and `*.test-d.ts` too) or code that only names a changed type (`import type`, an annotation) is not one. A tour in review order: what changes for users, where the change enters, one step per changed piece in call order, the other changed files, who else is affected, tests and gaps, and risks. The change enters at a caller; with none outside tests, at the changed public function closest to callers. A changed piece's step shows the old lines of its first hunk (a base anchor, `at: "base"`) before the new ones. The "who else is affected" step is always there: with no other caller it says "none beyond the entry" and asks for the readers of a changed result, the public entry points and the siblings. The tests step names the symbols that no test reaches and shows the changed test files apart. At most 12 steps, with ids `t10`, `t20`, ... so a step you insert fits between two (`t15`). Every changed file is anchored, test files too; a deleted file is anchored in the code before the change.
-- `repo <explainer>`: Two levels. A system map (`view:system`, `stubs: none`) shows the project as one service box, one per program when `services/`, `apps/` or `cmd/` hold several. It shows who reaches it: a web or CLI framework, or a standard-library web server, anchored at its start call. That call is Go's `ListenAndServe` or `Serve`, Node's `createServer` in a file that imports `http`, or Python's `serve_forever`, `HTTPServer` or `make_server`. It shows what the project relies on (databases, caches, queues, file stores, other APIs), found from the import lines and anchored there. These are hints: check each. Imports in comments, JSDoc examples and docstrings, and imports of the project itself, do not count. A program with a top-level `main` function (in Java, a `main` method of a top-level class) and no web server or CLI framework gets an `Operator` box (`grp:operator`, role `person`). It is anchored at each `main`, with an arrow to each part that holds one (one per program under `cmd/`). The settings files the code loads (the index's `loads` and `configures` resources, outside tests) get one `Settings file` box (`grp:settings`, role `storage`). It is anchored at the files and at the line that loads them. An arrow comes from each part that loads one, anchored at that line and at the file it reads. When no read call takes a settings path (Go's `path := "config/default.yaml"`, passed on to `os.ReadFile`), a yaml, json, toml, ini or env file of the repository that the code names in a string literal is the lead instead (not `package.json`, `tsconfig.json`, `go.mod` and other manifests); a note asks you to check that the code reads it. A library (package metadata, but no `bin` or `start` script, no scripts in `pyproject.toml`, no `__main__.py`, no Go `package main`) gets a "Your app" box anchored at the README example that imports it, with an arrow to the service. Each service box `opens` a map of its inside: the top-level folders, or the files of a one-package project (below `src` in a `src/` layout). That map has at most 8 boxes with label and summary TODOs, plus the outside systems they use, with an arrow from each part that imports one. With several services, code outside them (a shared `internal/store`) is a box on the map of each service that uses it. A tour from the top, at most 9 steps: the system map (its first step shows the README), what it relies on, the inside, and a step per part. A part's step shows the functions and methods that other parts call most (`Runner.Dispatch`, `config.Load`), then its top symbols. The tour leaves 2 of its 9 steps for the main path and its risks, so it has at most 7; the parts with the fewest references share one step. A note names the entry to run `xpl draft path` on. The last step, `### Where to go next`, is on the system map. When files are left off the inside map, its first step lists them with the box each shares the most references with: a start for your groups.
-- `path <explainer> <id>`: A sequence of the calls the entry symbol makes (depth 1, in source order; at most 6 participants and 12 calls), each with the call site and the callee's definition as anchors. A method goes to the lifeline of its class (the entry's own class too), a function to its own; only recursion is a call of the entry to itself. A call through an interface goes to its one implementation. The draft leaves out one-line helpers of the entry's own class or file that call nothing, and conversions to a type and data built from a class with no constructor (Go's `nodeTyp(t)`). It also leaves out a one-line check that calls nothing when it is a branch's condition (Go's `if result.OK() {`): the frame's guard says it. A call that writes a log line (`log`, `logf`, `debug`, `print`, ...) is drawn but gets a tour step last. Over the caps, it leaves out the calls that reach the least code. The notes list what it left out. A tour: when the participants live in two or more files, it first shows a map of those files (`view:<entry>-files`, `edgeKinds: ["calls"]`, `stubs: none`, every box focused). A call through an interface is drawn to the file of its implementation. Then come the big picture of the path and one step per main call. Last comes a `### Where to go next` step on the map with no box focused. The tour has at most 8 steps in all. Frames come from the entry's syntax tree. A `loop` goes around the calls in a loop. An `alt` goes around a branch with calls in two or more arms (`if`/`else if`/`else`, `switch`, `match`). An `if` whose body ends in `continue`, `return`, `break`, `raise` or `throw` is an `alt` too: the code after it, to the end of its block, is its `else` arm (`if (result.ok) { ack; continue }` then the retry code). An `opt` goes around a branch with calls in one arm only. A guard that returns with no drawn call (`if err != nil { return err }`) has no frame. A guard that skips with no drawn call (`if (!job) { sleep(); continue }`) makes the rest of the loop body an `opt`; its label says what the guard skips. A frame's label is a TODO for the decision; each arm's label is a TODO that quotes its condition. A call that computes the condition (Go's `if err := q.Ack(job); err != nil`) comes before its frame, and a branch with no drawn call in its arms has no frame. The arms of an `alt` (`arms`) are drawn with a dashed line between them. A branch is one tour step that focuses its calls, and it keeps its step before single calls (an `alt` first, then an `opt`). The step of a branch whose other arm is an early exit's rest is about the arm it holds (`what happens in this arm (the code: ...)`), so it does not share a heading with the branch inside that rest. A summary names the subclasses that override a called method. No flow view: decide the stages yourself. Several entries (`path <explainer> <id> <id2>`): one sequence each and one tour through them, for a question with two halves. A method a class inherits (`sym:src/url_safe.py#URLSafeTimedSerializer.dumps`) starts at the base that defines it (a note says which), and its calls to methods of the class and its bases go where the class's method order finds them (a mixin's override).
-- `map <explainer>`: A quick map of every code file outside tests, examples, fixtures, docs and benchmarks, except files that define and use nothing (a docstring-only `__init__.py`). It drafts one graph view per folder: `view:map` for the top, `view:map-<path>` below it. The top starts below folders that hold all the code, such as `src/`. Each map has `boxText: "summary"` and the default stubs, so a folder map shows what uses it and what it uses. A folder box `opens` the map of its own folder; a folder of one file is that file, and a folder that only holds one folder is that folder. Every box gets a label and a one-sentence summary to write. A file's TODO carries what the index knows: its header comment, what it defines, and the files that use it and that it uses, by their shortest unique path. The header comment is a comment that opens the file and is not the doc of its first declaration. A start tour (`tour:map`): the top map with the README's description, then each top-level folder at the first definition of its most used file. With a change recorded, a tour `tour:changes-<head>` with one step per changed file on the map (at most 12), on its folder's map, at its first changed lines, asking how the change serves what was asked. Run it again after the code changed (`xpl index`, `xpl resolve <explainer> --write`). Only new files and folders get boxes (`includeAdd`), and the draft removes the boxes and maps of what is gone (`remove`, `includeRemove`). Written text stays. A file that moved keeps its name and sentence: it has the same text at a new path as at the commit its box was written at. The map's own tours lose the steps and code of what is gone; a folder step of the start tour shows its folder's code again. Boxes you edited whose code is gone are left for you, with a note. A new map of more than 30 boxes groups the files of its folder that use each other: pairs joined by the most references first, at most 8 files a group, kept from 3. Each group is a `grp:map-<path>-<n>` box with a label and summary TODO that `opens` a map of its files (`view:map-<path>-<n>`). The folder's map shows the groups instead of their files. A refresh keeps the group maps and drops the files that are gone from them. A map still over 30 boxes gets a note. A new map of more than 12 boxes opens as a dependency matrix (`render: "matrix"`, with a note; the reader can switch to boxes and arrows).
-- `class <explainer> <id>`: The type hierarchy around one class or interface, from the index's `extends` and `implements` references. It drafts one map (`view:<name>-types`, `edgeKinds: ["extends", "implements"]`, `stubs: none`). The map holds the types the entry extends or implements, all the way up (at most 6), the entry, and the types that extend or implement it, two levels down. It has at most 8 boxes in all; a note counts the rest. Each box gets a summary TODO that names its kind (`abstract class`, `interface`), what it extends and implements, what extends or implements it, and its methods (each name once, no constructors). A tour: the entry at its first line, then each type next to it (at most 8 steps); the first step names the boxes no step visits. An entry that is not a class or an interface, or a type with no hierarchy, is refused. Heuristic references are hints: a note says when an arrow rests on one.
-- `states <explainer> <id>`: The states of one status type and the moves between them. The entry is a TypeScript `enum` or union of string literals (`type Phase = "draft" | "live"`), a Python `Enum` class, or a Go type with a `const` block of its values in its own file; anything else is refused. It drafts one flow (`view:<name>-states`, `layout: "diagram"`) with a stage per state. A state's stage is anchored at its declaration, its first sets (an assignment, a `return`, an object key, a React setter) and its first tests (a comparison, `is`, `case`). Its summary TODO names where it is set and tested. A stage per transition is drawn from the function that makes it and anchored at both sites. A transition is drafted only where one function tests a state and then sets another under that test. The set is indented under the test or on its line. Or the test is a negated guard that leaves with `throw`, `return` or `raise`: then any set later in the guard's block counts, inside an `if`/`elif`/`else` too. An `else` branch of a plain test does not count. Enum members are found on the lines of the index's references; union literals only next to a field or parameter declared with the type. Comments and other strings do not count. At most 16 states and 16 transitions. A tour: the type, then each state (at most 11). The notes name the states never set, and the states never tested (a state the code sets but never reads looks like an end state). They name each state that a function tests and no move leaves, with that function, and count the uses that are neither a set nor a test (arguments, lists). A class that is not a status type is refused with a hint: for Python, `xpl search "(Enum)"` finds the Enum classes; when the state is where the data sits, draft the data map and write the flow by hand. Discriminated unions (`{ status: "idle" }`), Java enums and a transition split across two functions are not found: add them by hand.
-- `data <explainer> [<scope>]`: What data the code keeps and how its types relate, from the index. It drafts one data map (`view:data`, or `view:<name>-data` for a folder, a file or a type; `boxText: "members"`, `edgeKinds: ["references", "extends", "implements"]`, `stubs: none`). Each type (a class, interface, type or enum) is a table: its header, then a row per field the index knows, in code order. A row shows the type its declaration line names (`attempts: number`). A Python class's fields are its class-level annotations and the attributes `__init__` sets on `self`. An arrow goes from a field to the type it holds, and from a type to what it extends or implements; uses inside methods draw none. The scope is the repo (the default; tests, examples, docs and fixtures left out), a folder (`dir:src`), a file (`file:src/models.py`) or one type (`sym:src/queue.ts#Job`). With a type, the map starts there and takes the types at most 2 links from it. Only types that hold or are held by another one, or extend or implement one, are boxes. A type with no fields (a function type, an alias) is a box only when it is part of a hierarchy, such as an interface a type implements. The linked types fall into groups. Each group starts at the type that reaches the most other types through its fields, and never at a type with no fields. Then each next box is one that a box holds or that implements a box, the most used first. The map has at most 6 boxes in all and 8 rows a box (the fields that link to another box first). A later group keeps room for 2 boxes. Two types of one name get their package or file in front (`runner.Config`, `config.Config`), in the label and the TODOs. The notes say what is left off and why: cut by the box limit, or in a group the map has no room for (with the command that maps that group). Each box gets a summary TODO with its kind (`struct` in Go), its field count, what it holds and what holds it, and its fields of its own type (`next: Node`), which draw no arrow. Field rows get no TODO: a row shows its declaration, so a summary is extra. A tour of at most 6 steps: the first type (its lines down to its last field) and the next types in the order they joined (each with the field that links it). Then come a step on the rest of the map and a `### Where to go next` step that names the types left off. A heuristic reference gives a dashed arrow; the notes say when one is on the map.
+The same rules hold for every kind:
 
-When the index has `request` references, a new map's `edgeKinds` add `requests` to the defaults, so the code that sends a web request has an arrow to the code of the route that answers it.
+- A tour step has at most 2 code ranges. Its note is `### TODO: ...` and a body; the last `### Where to go next` step keeps its title and has no code.
+- Step counts follow the budget table in `SKILL.md`. The caps below are the draft's own.
+- Ids in the guide are not reused (`view:change-map-2`). A new tour numbers its steps after the highest `t<n>` of the guide's tours, so you can copy a step from one tour to another.
+- A box the guide already explains gets no new summary.
+- The draft is checked as `apply` checks it before it is printed.
+- A heuristic reference is a hint: a dashed arrow, and a note. Check each one in the code.
 
-Every tour step has at most 2 code ranges, and the note is `### TODO: ...` plus the body (the closing `### Where to go next` step keeps its title and has no code). Ids already in the explainer are not reused (`view:change-map-2`). The steps of a new tour are numbered after the highest `t<n>` of the guide's tours (`t8`, `t9`, ... after a 7-step overview), so you can copy a step into another tour as it is. A box the explainer already explains gets no new summary. The draft is checked the way `apply` checks it before it is printed, and for ids that exist nowhere (named in a text or a note) and focus ids that are not on their step's view.
+When the index has `request` references, a new map's `edgeKinds` add `requests`, so the code that sends a web request has an arrow to the route that answers it.
 
-For Ruby and PHP repository drafts, classes and methods inside modules or namespaces make their file eligible
-for the inside map. Imports, namespace wrappers and constants alone do not. Their index reports `refs: none`,
-so the draft adds no call arrows between those files.
+Ruby and PHP drafts: classes and methods inside modules or namespaces make a file a part of the inside map. Their index reports `refs: none`, so the draft adds no call arrows between those files. Java references stay heuristic and partial: check the draft's systems and arrows in the code.
 
-When import-derived outbound systems appear, the saved repo patch asks whether each is used on the default runtime path or is an optional integration. No such prompt appears when there are no imported outbound systems.
+`docs/ARCHITECTURE.md` §5 says how each kind finds what it draws.
 
-Repository drafts need indexed symbols and import sites to map. Java source is supported by the built-in
-grammar pack and can contribute to repository levels. Its inferred references remain heuristic and partial;
-check the draft's systems and arrows against the code before you use them in a guide.
+### `xpl draft change`
+
+Needs the change record: run `xpl change <explainer> <base>..<head>` first.
+
+**Draws**
+
+- One map, "What this change touches" (`stubs: none`). It holds the changed symbols, their direct callers outside tests, and one group box for the changed tests.
+- Box summaries that start with `New:`, `Changed:` or `Unchanged:`.
+- A code link for every changed file, tests too. A deleted file links to the code before the change (`at: "base"`).
+
+A caller is code that calls. A test, or code that only names a changed type, is not a caller.
+
+**Tour** (at most 12 steps, ids `t10`, `t20`, ... so a step you add fits between two)
+
+- What changes for users, then where the change enters.
+- One step per changed piece, in call order, with its old lines before the new ones.
+- The other changed files, who else is affected (always a step), tests and gaps, risks.
+
+**Notes it prints**
+
+- Pieces left off the map (at most 8 boxes) and pieces with no step of their own.
+- Callers that are a guess, and files with no code link.
+
+### `xpl draft repo`
+
+**Draws** two levels.
+
+- A system map (`view:system`, `stubs: none`): the project as one service box, or one per program under `services/`, `apps/` or `cmd/`.
+- Who reaches it: a web or command-line framework, or a web server start call (`ListenAndServe`). A program with only a `main` gets an `Operator` box there; a library gets a "Your app" box at the README example.
+- What it relies on (databases, queues, APIs), from its imports, and a `Settings file` box.
+- Each service box `opens` a map of its inside: at most 8 parts, and the outside systems each imports.
+
+**Tour** (at most 7 steps): the system map with the README, what it relies on, the inside, one step per part (at the functions other parts call most), then `### Where to go next`. Room is left for 2 steps of the main path.
+
+**Notes it prints**
+
+- That the kind of project and its users are a guess.
+- The settings files, and whether the code loads them or only names them.
+- The `xpl draft path` command that fills the room for the main path.
+- The outside systems found, and the files left off the inside map.
+
+### `xpl draft path <id> [<id> ...]`
+
+**Draws** a sequence of the entry's calls (depth 1, source order; at most 6 participants and 12 calls).
+
+- Each call links to its call site and to the callee's definition. A method goes to its class's lifeline; a call through an interface, to its one implementation.
+- Frames from the syntax tree: a `loop` around calls in a loop, an `alt` around a branch with calls in two or more arms (`arms`), an `opt` around a branch with calls in one arm. An `if` that ends in `continue`, `return`, `break`, `raise` or `throw` makes the rest of its block the other arm. Each label is a TODO that quotes the condition.
+- When the calls cross files, a map of those files first (`view:<entry>-files`).
+
+Several entries give one sequence each and one tour.
+
+**Tour** (at most 8 steps): the file map, the big picture, one step per main call or branch, then `### Where to go next` on the map.
+
+**Notes it prints**: calls drawn once, helpers not drawn, calls left out over the caps (those that reach the least code), calls with no step, and where an inherited entry resolves.
+
+### `xpl draft map`
+
+**Draws** a quick map of every code file outside tests, examples, fixtures, docs and benchmarks.
+
+- One graph view per folder (`boxText: "summary"`): `view:map` for the top (below `src/` when it holds all the code), `view:map-<path>` below it. A folder box `opens` its folder's map.
+- Every box gets a label and a one-sentence summary to write. A file's TODO holds its header comment, what it defines, and the files it uses and that use it.
+- Over 30 boxes, files that use each other become groups (`grp:map-<path>-<n>`) that open a map of their files. Over 12 boxes, a map opens as a dependency matrix.
+
+**Tour** (`tour:map`): the top map at the README, each top-level folder at its most used file, then where a newcomer starts reading (the entry file, at `main`). With a change recorded, `tour:changes-<head>` has a step per changed file.
+
+**Notes it prints**: the files left off and why, the files that are not code (settings, manifests), groups, matrices, moved files, and edited boxes whose code is gone.
+
+Run it again after the code changed (`xpl index`, `xpl resolve <explainer> --write`): new files get boxes, gone files lose theirs, written text stays, and a moved file keeps its text.
+
+### `xpl draft class <id>`
+
+**Draws** the type hierarchy around one class or interface, from the index's `extends` and `implements` references.
+
+- One map (`view:<name>-types`, `edgeKinds: ["extends", "implements"]`, `stubs: none`). It holds the types the entry extends or implements, all the way up (at most 6), the entry, and the types that extend or implement it, two levels down. At most 8 boxes.
+- Each box gets a summary TODO with its kind, its links and its methods. In Go, `extends` reads "embeds" and a struct is a "struct".
+- Types in test files stay off the map unless the entry is in one.
+
+**Tour** (at most 8 steps): the entry, then each type next to it. The first step names the boxes no step visits.
+
+**Notes it prints**: types left off (over the cap, or in a test file), and arrows that rest on heuristic references. An entry that is not a class or an interface, or has no hierarchy, is refused.
+
+### `xpl draft states <id>`
+
+**Draws** the states of one status type and the moves between them, as one flow (`view:<name>-states`, `layout: "diagram"`).
+
+- The entry is a TypeScript `enum` or union of string literals, a Python `Enum` class, or a Go type with a `const` block of its values in its own file. Anything else is refused, with a hint.
+- A stage per state, linked to its declaration, its first sets and its first tests.
+- A stage per transition, where one function tests a state and then sets another under that test. At most 16 states and 16 transitions.
+- The viewer draws the states as pills and the moves as flat boxes between them, with no step numbers. Keep the shape (the type as the first participant and entry point, each move inside its own function, leading to one state) and it keeps that look.
+
+**Tour** (at most 11 steps): the type, then each state.
+
+**Notes it prints**: states never set and never tested (an end state looks like that), states a function tests with no move out, uses that are neither a set nor a test, and that transitions come from matching the text. Add the moves it missed by hand: discriminated unions, Java enums and a move split across two functions are not found.
+
+### `xpl draft data [<scope>]`
+
+**Draws** what data the code keeps and how its types relate, as one data map (`view:data`, or `view:<name>-data` for a scope; `boxText: "members"`, `stubs: none`).
+
+- The scope is the repo (the default), a folder (`dir:src`), a file or one type (`sym:src/queue.ts#Job`, then the types at most 2 links from it).
+- Each type is a table: its header, then a row per field, in code order. An arrow goes from a field to the type it holds, and from a type to what it extends or implements.
+- Only linked types are boxes. At most 6 boxes and 8 rows a box. Two types of one name get their package or file in front (`runner.Config`).
+- A summary TODO per box (its kind, fields, what it holds and what holds it). Field rows get none.
+
+**Tour** (at most 6 steps): the first type, the next types in the order they joined, the rest of the map, then `### Where to go next`, which names the types left off.
+
+**Notes it prints**: the types left off and why (with the command that maps a group with no room), boxes with no rows, and heuristic arrows.
 
 ```
 $ xpl draft path jobrunner sym:src/runner.ts#Runner.dispatch -o path.json
 wrote path.json
-draft path for jobrunner: a sequence of 9 calls between 6 participants after a map of the 3 files it crosses, 5 summaries, a tour of 8 steps, 29 anchors, 45 TODOs to write
+draft path for jobrunner: a sequence of 9 calls between 6 participants after a map of the 3 files it crosses, 5 summaries, a tour of 8 steps, 29 anchors, 46 TODOs to write
 note: called more than once, drawn once at the first call: Runner.log (3 calls)
 note: not drawn, one-line helpers that call nothing: backoffDelay
 note: calls without a tour step of their own (at most 5 call steps): Runner.log, RunnerStats.record, WorkerPool.release
 next: write each TODO, then `xpl lint jobrunner --patch path.json` and `xpl apply jobrunner path.json`
 $ xpl draft map jobrunner -o map.json
 wrote map.json
-draft map for jobrunner: a map of 7 boxes, 7 summaries, a tour of 1 step (short is right for a small subject: do not pad it), 1 anchor, 20 TODOs to write
-note: 7 code files on 1 map; 1 file left off (tests, examples, fixtures, docs and benchmarks)
+draft map for jobrunner: a map of 7 boxes, 7 summaries, a tour of 2 steps (short is right for a small subject: do not pad it), 2 anchors, 22 TODOs to write
+note: 7 code files on 1 map; 1 file left off (tests, examples, fixtures, docs and benchmarks); 4 files that are not code have no box: `README.md`, `config/default.yaml`, `package.json` and `tsconfig.json`
 next: write each TODO, then `xpl lint jobrunner --patch map.json` and `xpl apply jobrunner map.json`
 $ xpl draft change jobrunner
 error: .explainer/jobrunner.explainer.json has no change recorded: run `xpl change jobrunner <base>..<head>` first (e.g. main..HEAD), then `xpl draft change jobrunner`

@@ -15,7 +15,8 @@
  * - `unused-file`: a code file with symbols that no other file references (by the index) and that is not an
  *   entry point (`ENTRY_STEMS`, `ENTRY_DIRS`), a test, a config file or a type declaration file. Marked
  *   `heuristic`; skipped when the index has no references or is pruned. A file without symbols (a list of
- *   re-exports, say) is never reported: imports through it resolve to the symbols it re-exports.
+ *   re-exports, say) is never reported: imports through it resolve to the symbols it re-exports. Nor is a file
+ *   whose language's analysis does not follow imports: a note says how many files xpl cannot tell about.
  *
  * Tests, fixtures, docs and examples (`SAMPLE_GLOBS`) hold fake secrets far more often than real ones: there,
  * key shapes are reported one severity lower and the guessing checks (assignments, tokens, URLs, `.env`, browser
@@ -484,10 +485,43 @@ function referencedFiles(model: IndexModel): Set<FilePath> {
   return used;
 }
 
+/**
+ * Files the index's analysis looked at without following imports (Rust tags record calls only, say): no
+ * reference into such a file says nothing about whether it is used. Undefined on a legacy index with no
+ * recorded analysis.
+ */
+function importBlindFiles(model: IndexModel): Set<FilePath> | undefined {
+  const reports = model.index.analysis;
+  if (!reports) return undefined;
+  const followed = new Set<FilePath>();
+  for (const report of reports)
+    for (const result of report.results)
+      if (
+        result.capabilities.includes("import") &&
+        result.status !== "unsupported" &&
+        result.status !== "failed"
+      )
+        for (const file of result.analyzedFiles) followed.add(file);
+  return new Set(model.files.map((f) => f.path).filter((path) => !followed.has(path)));
+}
+
+/** Whether the unused-file check applies to `file` at all, before the index's references are asked. */
+function unusedCandidate(model: IndexModel, file: IndexedFile): boolean {
+  return (
+    CODE_LANGUAGES.has(file.language) &&
+    // A file without symbols of its own (a re-export list, a script) is reached through what it imports.
+    model.symbolsInFile(file.path).length > 0 &&
+    model.index.languages[file.language]?.refs !== "none" &&
+    !matchesAnyGlob(file.path, SAMPLE_GLOBS) &&
+    !isEntryPoint(file.path)
+  );
+}
+
 function fileFindings(
   model: IndexModel,
   file: IndexedFile,
   used: Set<FilePath> | undefined,
+  blind: Set<FilePath> | undefined,
 ): HealthFinding[] {
   if (!CODE_LANGUAGES.has(file.language)) return [];
   const out: HealthFinding[] = [];
@@ -501,15 +535,7 @@ function fileFindings(
       ...LARGE,
     });
   }
-  if (
-    used &&
-    !used.has(file.path) &&
-    // A file without symbols of its own (a re-export list, a script) is reached through what it imports.
-    model.symbolsInFile(file.path).length > 0 &&
-    model.index.languages[file.language]?.refs !== "none" &&
-    !matchesAnyGlob(file.path, SAMPLE_GLOBS) &&
-    !isEntryPoint(file.path)
-  ) {
+  if (used && !used.has(file.path) && !blind?.has(file.path) && unusedCandidate(model, file)) {
     out.push({
       check: "unused-file",
       severity: "low",
@@ -542,11 +568,22 @@ export function healthCheck(
   } else {
     used = referencedFiles(model);
   }
+  const blind = used && importBlindFiles(model);
+  if (used && blind) {
+    const unknown = new Map<string, number>();
+    for (const file of model.files)
+      if (blind.has(file.path) && !used.has(file.path) && unusedCandidate(model, file))
+        unknown.set(file.language, (unknown.get(file.language) ?? 0) + 1);
+    for (const [language, count] of [...unknown].sort(([a], [b]) => cmp(a, b)))
+      notes.push(
+        `${language}: the index does not follow imports, so xpl cannot tell whether ${count} ${count === 1 ? "file is" : "files are"} unused.`,
+      );
+  }
 
   const findings: HealthFinding[] = [];
   let files = 0;
   for (const file of model.files) {
-    findings.push(...fileFindings(model, file, used));
+    findings.push(...fileFindings(model, file, used, blind));
     const lines = texts.lines(file.path);
     if (lines === undefined) continue;
     files++;

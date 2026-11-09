@@ -132,7 +132,8 @@ export const NOT_DESIGN: readonly string[] = [
 ];
 
 /** File and directory names that usually hold the entry point of a project. */
-const ENTRY_NAMES = /^(?:main|__main__|cli|cmd|app|apps|application|applications|index|server)$/;
+export const ENTRY_NAMES =
+  /^(?:main|__main__|cli|cmd|app|apps|application|applications|index|server)$/;
 
 export type DraftKind = "change" | "repo" | "path" | "map" | "class" | "states" | "data";
 
@@ -1487,7 +1488,7 @@ export function draftRepo(input: DraftInput): Draft {
   const ids = new FreeIds(explainer);
   const stored = storedNodeIds(explainer);
   const notes: string[] = [
-    "The draft guesses the kind of project, its users and its entry points from the code and its import lines: check each in the README and the code.",
+    "the draft guesses the kind of project, its users and its entry points from the code and its import lines: check each in the README and the code",
   ];
   /** A box of the architecture keeps its id across drafts: the service and the outside systems are the same things. */
   const reuse = (prefix: string, slug: string): string =>
@@ -1875,8 +1876,8 @@ export function draftRepo(input: DraftInput): Draft {
     }
     notes.push(
       named
-        ? `settings files named in the code: ${nameList(settingsFiles, 5)}; check that the code reads each at run time`
-        : `settings the code loads (from the index): ${nameList(settingsFiles, 5)}; check that each is read at run time`,
+        ? `settings files the code names in a string (no call that loads them found): ${nameList(settingsFiles, 5)}; check that the code reads each at run time`
+        : `settings files the code loads (from the index): ${nameList(settingsFiles, 5)}; check that the code reads each at run time`,
     );
   }
 
@@ -2191,7 +2192,7 @@ export function draftRepo(input: DraftInput): Draft {
   const pathFrom =
     mainTop && (mainTop.kind === "function" || mainTop.kind === "method") ? mainTop : entrySym;
   notes.push(
-    `the tour leaves ${PATH_ROOM} of its ${L.repoSteps} steps for the main path and its risks: run \`xpl draft path <explainer> ${pathFrom ? `sym:${pathFrom.id}` : "<entry>"}\` and copy the steps you keep`,
+    `room is left for ${PATH_ROOM} more steps (${L.repoSteps} at most), the main path and its risks: run \`xpl draft path <explainer> ${pathFrom ? `sym:${pathFrom.id}` : "<entry>"}\` and copy the steps you keep`,
   );
   // over the room, the parts with the fewest references share the last step
   const parts = order.slice(1);

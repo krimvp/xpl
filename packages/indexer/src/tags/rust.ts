@@ -30,8 +30,13 @@ registerProvider(
         : name,
     calls: {
       extract: directCalls,
-      resolveProject: receiverCalls,
+      kinds: ["call", "import"],
+      resolveProject: async (sources, declarations, eligible, signal) => [
+        ...(await moduleImports(sources, declarations, eligible, signal)),
+        ...(await receiverCalls(sources, declarations, eligible, signal)),
+      ],
       limitations: [
+        "Imports cover `mod name;` declarations and `use` paths that start with `crate`, `self`, `super` or the package's own crate name; `#[path]` attributes and re-exports are not followed.",
         "Heuristic calls cover unambiguous same-file root functions and statically identified receivers with explicit crate imports.",
         "Generic receiver calls point to a unique bound trait method; concrete implementation dispatch is not inferred from a generic type.",
         "Unknown, shadowed and ambiguous receivers, nested functions, closures, macros and cfg-dependent dispatch are not resolved.",
@@ -120,6 +125,155 @@ function directCalls(
         },
       });
     }
+  }
+  return refs;
+}
+
+/** Where the files of the module that `file` defines keep their submodules: `src/a.rs` keeps them in `src/a/`. */
+function moduleDir(file: string): string {
+  const slash = file.lastIndexOf("/") + 1;
+  return /^(?:lib|main|mod)\.rs$/.test(file.slice(slash))
+    ? file.slice(0, slash)
+    : `${file.slice(0, -3)}/`;
+}
+
+/** The package name of each `Cargo.toml` among the sources, spelled as Rust code names its crate. */
+function crateNames(sources: readonly ProviderSource[]): Map<string, string> {
+  const crates = new Map<string, string>();
+  for (const source of sources) {
+    const match = source.path.match(/^(.*\/)?Cargo\.toml$/);
+    if (!match) continue;
+    const name = source.text.match(/^\[package\][^[]*?^\s*name\s*=\s*"([^"]+)"/m)?.[1];
+    if (name) crates.set(name.replaceAll("-", "_"), `${match[1] ?? ""}src/`);
+  }
+  return crates;
+}
+
+/**
+ * File references from module structure: `mod x;` names `x.rs` (or `x/mod.rs`) beside the declaring module, and
+ * a top-level `use` of a path inside this package names the item in its file, or the file when the item is not
+ * a unique top-level declaration there. Paths outside the package (`std`, other crates) are left alone.
+ */
+async function moduleImports(
+  sources: readonly ProviderSource[],
+  declarations: readonly ProviderDeclaration[],
+  eligible: ReadonlySet<string>,
+  signal?: AbortSignal,
+): Promise<ProviderRelationship[]> {
+  const rust = sources.filter((source) => source.language === "rust" && eligible.has(source.path));
+  const paths = new Set(sources.filter((source) => source.language === "rust").map((s) => s.path));
+  const crates = crateNames(sources);
+  const topLevel = new Map<string, ProviderDeclaration[]>();
+  for (const fact of declarations) {
+    // An impl block is tagged with the name of its type; the import names the type itself.
+    if (fact.parent !== undefined || fact.path !== fact.name) continue;
+    const key = `${fact.file}\0${fact.name}`;
+    topLevel.set(key, [...(topLevel.get(key) ?? []), fact]);
+  }
+  const moduleFile = (dir: string, name: string) =>
+    [`${dir}${name}.rs`, `${dir}${name}/mod.rs`].find((path) => paths.has(path));
+  /** The file that defines the module whose submodules live in `dir`. */
+  const definingFile = (dir: string) =>
+    [`${dir}lib.rs`, `${dir}main.rs`, `${dir}mod.rs`, `${dir.slice(0, -1)}.rs`].find((path) =>
+      paths.has(path),
+    );
+  const crateRoots = [...paths].flatMap((path) => {
+    const match = path.match(/^(.*\/)?src\/(?:lib|main)\.rs$/);
+    return match ? [`${match[1] ?? ""}src/`] : [];
+  });
+  const segments = (node: Node | null): string[] => {
+    if (!node) return [];
+    if (node.type === "scoped_identifier")
+      return [
+        ...segments(node.childForFieldName("path")),
+        node.childForFieldName("name")?.text ?? "",
+      ];
+    return [node.text];
+  };
+  /** Each imported path of a use tree, with the node that names it. */
+  const flatten = (node: Node, prefix: string[]): { path: string[]; node: Node }[] => {
+    switch (node.type) {
+      case "use_as_clause":
+        return [{ path: [...prefix, ...segments(node.childForFieldName("path"))], node }];
+      case "scoped_use_list":
+        return (node.childForFieldName("list")?.namedChildren ?? []).flatMap((child) =>
+          flatten(child, [...prefix, ...segments(node.childForFieldName("path"))]),
+        );
+      case "use_list":
+        return node.namedChildren.flatMap((child) => flatten(child, prefix));
+      case "use_wildcard":
+        return [{ path: [...prefix, ...segments(node.namedChildren[0] ?? null)], node }];
+      default:
+        return [{ path: [...prefix, ...segments(node)], node }];
+    }
+  };
+  const refs: ProviderRelationship[] = [];
+  const parser = await createParser("rust");
+  try {
+    for (const source of rust) {
+      signal?.throwIfAborted();
+      const tree = parser.parse(source.text);
+      if (!tree) continue;
+      try {
+        const file = source.path;
+        const own = moduleDir(file);
+        const crateRoot = crateRoots
+          .filter((root) => file.startsWith(root) && !file.slice(root.length).startsWith("bin/"))
+          .sort((a, b) => b.length - a.length)[0];
+        const add = (to: string, node: Node) =>
+          refs.push({
+            from: `${file}#`,
+            to,
+            kind: "import",
+            file,
+            resolution: "heuristic",
+            evidence: {
+              start: [node.startPosition.row, node.startPosition.column],
+              end: [node.endPosition.row, node.endPosition.column],
+              encoding: "utf16",
+            },
+          });
+        for (const item of tree.rootNode.namedChildren) {
+          if (item.type === "mod_item" && !item.childForFieldName("body")) {
+            const target = moduleFile(own, item.childForFieldName("name")?.text ?? "");
+            if (target && target !== file) add(`${target}#`, item);
+            continue;
+          }
+          if (item.type !== "use_declaration") continue;
+          const argument = item.childForFieldName("argument");
+          if (!argument) continue;
+          for (const { path, node } of flatten(argument, [])) {
+            const head = path[0] ?? "";
+            let dir: string | undefined;
+            let rest = path.slice(1);
+            if (head === "crate") dir = crateRoot;
+            else if (crates.has(head)) dir = crates.get(head);
+            else if (head === "self" || head === "super") {
+              dir = own;
+              rest = path;
+              for (; rest[0] === "self" || rest[0] === "super"; rest = rest.slice(1))
+                if (rest[0] === "super") dir = dir.replace(/[^/]*\/$/, "");
+            }
+            if (dir === undefined) continue;
+            let target = dir === own ? file : definingFile(dir);
+            while (rest.length > 0) {
+              const next = moduleFile(dir, rest[0]!);
+              if (!next) break;
+              target = next;
+              dir = `${dir}${rest[0]}/`;
+              rest = rest.slice(1);
+            }
+            if (!target || target === file) continue;
+            const named = rest.length === 1 ? topLevel.get(`${target}\0${rest[0]}`) : undefined;
+            add(named?.length === 1 ? named[0]!.identity : `${target}#`, node);
+          }
+        }
+      } finally {
+        tree.delete();
+      }
+    }
+  } finally {
+    parser.delete();
   }
   return refs;
 }

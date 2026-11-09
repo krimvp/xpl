@@ -68,7 +68,7 @@ function parseScope(ws: Workspace, values: readonly string[]): Scope | undefined
 export const searchCommand: CommandSpec = {
   name: "search",
   usage: "xpl search <pattern> [--regex] [-i] [--limit <n>] [--under <dir|glob>] [--code]",
-  summary: "Text hits with enclosing symbol id and offset",
+  summary: "Search the text; print each hit with its symbol id and offset",
   details: [
     "Searches the text of every indexed file, line by line. The pattern is a substring, or a regex with --regex.",
     "Each hit is <file>:<line>  <symbol id> +<offset>  <line text>.",

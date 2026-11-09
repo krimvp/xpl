@@ -62,7 +62,7 @@ For a GitHub PR handoff (`handoff.json`), follow `reference/create.md`, "Author 
 
 ## Workflow
 
-1. **Index:** `xpl index`, and again when the code changes or a command says the index `does not match the working tree`.
+1. **Index:** `xpl index`, and again when the code changes or a command says the index `does not match the working tree`. On Rust, Ruby or PHP, read the coverage lines `xpl index` prints before you describe a path: xpl reads them only in part.
 2. **Name:** `xpl new <name> --title "..."`. A change gets its own guide, titled after it: `xpl new <repo>-pr-42 --title "PR 42: <what it does>"`.
 3. **A change only:** `xpl change <name> <base>..<head>` records it and prints its analysis.
 4. **Draft:** `xpl draft <kind> <name> [<entry id>] --audience "<reader>" --question "<question>" -o <file>`, outside the repo. Each text of the draft holds `TODO: <what to write>`.
@@ -132,7 +132,7 @@ Three levels, each a zoom (`opens`) into a box of the level above:
 Then:
 
 1. **Draft:** `xpl draft repo` gives the system map, a map of each service's inside, and a tour. Its arrows and outside systems are leads: check each by `patch-format.md` 3.10, "Check the draft".
-2. **Main path:** the `draft repo` tour has at most 7 steps, where next included, and leaves room for 2 steps: the main path and its risks. Run `xpl draft path` on the entry point it names (`main`, `cmd/`, a server). Its steps get ids the guide does not use yet, so copy the ones you keep into the tour as they are. Set `opens` on the box that holds the entry point to the sequence's view id.
+2. **Main path:** the `draft repo` tour has at most 7 steps, where next included, and leaves room for 2 steps: the main path and its risks. Run `xpl draft path` on the entry point it names (`main`, `cmd/`, a server). Keep 2 of its sequence steps, the answer and its risk, and put them before `### Where to go next`. Leave out its files map and its own tour: copy only the sequence view and those steps. Their ids are new to the guide, so copy them as they are. Set `opens` on the box that holds the entry point to the sequence's view id.
 3. **Tour:** the first step on the inside names the files left off the map, in one sentence. Offer 2-3 expansions in the reply.
 
 ## explain map: every file, in plain words

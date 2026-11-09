@@ -25,7 +25,7 @@ import {
   type NodeRole,
   type Stub,
 } from "@xpl/core";
-import { drawnEdges, kindCount } from "../drawnEdges.js";
+import { drawnEdges, isHolds, kindCount, rowTypeText } from "../drawnEdges.js";
 import type { ChangeStatus } from "../diff.js";
 import { textWidth } from "../measure.js";
 import {
@@ -438,6 +438,18 @@ function buildModel(graph: DerivedGraph, changes: ChangeMarks | undefined): Mode
   const parent = new Map<string, string>();
   const roots: string[] = [];
   const known = new Set(graph.nodes.map((n) => n.id));
+  // the table each row holds a value of, by its name on the map: the row's type names it the same way
+  const labels = new Map(graph.nodes.map((n) => [n.id, n.label] as const));
+  const held = new Map<string, string[]>();
+  for (const edge of graph.edges)
+    if (isHolds(edge)) held.set(edge.from, [...(held.get(edge.from) ?? []), edge.to]);
+  const rowType = (node: DerivedGraph["nodes"][number]) => {
+    const targets = held.get(node.id) ?? [];
+    return rowTypeText(
+      node.memberType!,
+      targets.length === 1 ? labels.get(targets[0]!) : undefined,
+    );
+  };
   for (const node of graph.nodes) {
     const change = changes?.get(node.id);
     nodes.set(node.id, {
@@ -453,7 +465,7 @@ function buildModel(graph: DerivedGraph, changes: ChangeMarks | undefined): Mode
       ...(node.sketch ? { sketch: true } : {}),
       ...(node.rows ? { rows: true } : {}),
       ...(node.row !== undefined ? { row: node.row } : {}),
-      ...(node.memberType !== undefined ? { memberType: node.memberType } : {}),
+      ...(node.memberType !== undefined ? { memberType: rowType(node) } : {}),
     });
   }
   // a technology or role every box of an architecture map shares ("Go" x 7) tells no box apart: it is drawn
@@ -1313,6 +1325,7 @@ function layeredLayout(
     }
   };
   index(top.nodes, undefined);
+  const dataMap = [...nodeOf.values()].some((node) => node.rows);
   const originIn = (id: string, holder: LayoutNode | undefined): Point => {
     const node = nodeOf.get(id)!;
     let x = node.x;
@@ -1425,8 +1438,12 @@ function layeredLayout(
       });
       return hits;
     };
+    // on a data map, a type drawn as one box (a folded table, an interface) spreads its arrows apart
+    const roomy = dataMap
+      ? new Set([...boxes.keys()].filter((key) => !nodeOf.get(key)?.rows && !nodeOf.get(key)?.row))
+      : undefined;
     const routeWith = (wide: boolean) => {
-      const spread = spreadPorts(ports, boxes, direction, wide);
+      const spread = spreadPorts(ports, boxes, direction, wide, roomy);
       const routes = items.map((item) =>
         orthogonalRoute(
           item.from.box,

@@ -9,7 +9,8 @@
  * - Every box gets a name and a one-sentence summary to write. The TODO of a file carries what the index knows: its
  *   header comment, what it defines, who uses it and what it uses. That is usually enough to write the sentence
  *   without opening the file.
- * - A tour "start here": the top map, then each top-level folder.
+ * - A tour "start here": the top map, then each top-level folder, then where a newcomer starts reading: the entry
+ *   file (the shallowest file with a `main` function, else with an entry name such as `main`, `index` or `app`).
  * - With a change recorded (`xpl change`), a tour of the changed files on their folder's map, one step per file,
  *   asking how each change serves what was asked. Its id names the head commit, so a later change gets a new tour.
  *
@@ -31,6 +32,7 @@ import {
   type PatchView,
 } from "@xpl/core";
 import {
+  ENTRY_NAMES,
   NOT_DESIGN,
   aboutAnchor,
   OVERVIEW_EXCLUDE,
@@ -563,6 +565,25 @@ export function draftMap(input: DraftInput): Draft {
     else tours.push({ id: tour.id, steps });
   }
 
+  /** Where a newcomer starts reading: the shallowest mapped file with a `main` function, else with an entry name. */
+  const entryFile = (): { file: string; symbol?: string } | undefined => {
+    const depth = (file: string) => file.split("/").length;
+    const first = (files: string[]) =>
+      files.sort((a, b) => depth(a) - depth(b) || a.localeCompare(b))[0];
+    const withMain = first(
+      allMapped.filter((f) =>
+        model.topLevelSymbols(f).some((s) => s.kind === "function" && s.path === "main"),
+      ),
+    );
+    if (withMain) return { file: withMain, symbol: "main" };
+    const named = first(
+      allMapped.filter((f) => ENTRY_NAMES.test(baseName(f).replace(/\.[^.]+$/, ""))),
+    );
+    return named
+      ? { file: named, ...(definitions(named)[0] ? { symbol: definitions(named)[0] } : {}) }
+      : undefined;
+  };
+
   if (!tourIds.has("tour:map")) {
     const parts = [...topFolder.dirs]
       .sort((a, b) => mappedUnder(b).length - mappedUnder(a).length || a.localeCompare(b))
@@ -593,6 +614,30 @@ export function draftMap(input: DraftInput): Draft {
         ),
       ),
     ];
+    const entry = entryFile();
+    if (entry) {
+      steps.push(
+        tourStep(
+          model,
+          `t${steps.length + 1}`,
+          viewOfFile.get(entry.file) ?? "view:map",
+          [`file:${entry.file}`],
+          note(
+            todo("where a newcomer starts reading, as a plain statement"),
+            todo(`why to start at \`${entry.file}\`: what runs first and which parts it calls.`),
+          ),
+          [
+            entry.symbol
+              ? { file: entry.file, symbol: entry.symbol, role: "definition" }
+              : undefined,
+          ],
+        ),
+      );
+    } else {
+      notes.push(
+        "no entry file found (no `main` function and no file with an entry name such as main, index, app or cli): the start tour has no step on where to start reading; add one if the project has a clear first file",
+      );
+    }
     tours.push({
       id: "tour:map",
       title: todo("start here: about 5 plain words"),
@@ -674,9 +719,16 @@ export function draftMap(input: DraftInput): Draft {
   const empty = model.files.filter(
     (f) => isCodeFile(f.path) && !offMap(f.path) && hollow(f.path),
   ).length;
+  // settings, package and text files are not boxes: say which, so a reader asking "where is the setting?" knows
+  const notCode = model.files
+    .map((f) => f.path)
+    .filter((path) => !isCodeFile(path) && !offMap(path));
   notes.unshift(
     `${plural(allMapped.length, "code file")} on ${plural(computed.size, "map")}; ${plural(left, "file")} left off (tests, examples, fixtures, docs and benchmarks)` +
-      (empty > 0 ? `; ${plural(empty, "empty file")} left off (they define and use nothing)` : ""),
+      (empty > 0 ? `; ${plural(empty, "empty file")} left off (they define and use nothing)` : "") +
+      (notCode.length > 0
+        ? `; ${notCode.length === 1 ? "1 file that is not code has" : `${notCode.length} files that are not code have`} no box: ${nameList(notCode, MAP_LIMITS.hints)}`
+        : ""),
   );
   if (grouping.length > 0) {
     notes.push(

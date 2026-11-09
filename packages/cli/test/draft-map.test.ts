@@ -112,12 +112,21 @@ describe("xpl draft map", () => {
               ["dir:src/orders"],
               [{ file: "src/orders/place.ts", symbol: "placeOrder", role: "definition" }],
             ],
+            // the last step: where a newcomer starts reading, at the entry file's `main`
+            [
+              "view:map",
+              ["file:src/main.ts"],
+              [{ file: "src/main.ts", symbol: "main", role: "definition" }],
+            ],
           ],
         ],
       ],
     );
+    expect(patch.tours?.[0]?.steps?.at(-1)?.note).toBe(
+      "### TODO: where a newcomer starts reading, as a plain statement\n\nTODO: why to start at `src/main.ts`: what runs first and which parts it calls.",
+    );
     expect(notes).toEqual([
-      "4 code files on 2 maps; 1 file left off (tests, examples, fixtures, docs and benchmarks)",
+      "4 code files on 2 maps; 1 file left off (tests, examples, fixtures, docs and benchmarks); 2 files that are not code have no box: `README.md` and `package.json`",
     ]);
     const lint = await xplJson<{ counts: Record<string, number> }>(dir, "lint", "shop");
     expect(Object.keys(lint.json.counts)).toEqual(["todo-left"]);
@@ -257,11 +266,12 @@ describe("xpl draft map", () => {
         [
           ["t1", [{ file: "README.md", span: { from: 2, to: 2 }, role: "usage" }]],
           ["t2", [{ file: "src/orders/checkout.ts", symbol: "placeOrder", role: "definition" }]],
+          ["t3", [{ file: "src/main.ts", symbol: "main", role: "definition" }]],
         ],
       ],
     ]);
     expect(notes).toEqual([
-      "4 code files on 2 maps; 1 file left off (tests, examples, fixtures, docs and benchmarks)",
+      "4 code files on 2 maps; 1 file left off (tests, examples, fixtures, docs and benchmarks); 2 files that are not code have no box: `README.md` and `package.json`",
       "1 moved file keeps its text: src/orders/place.ts -> src/orders/checkout.ts",
     ]);
   });
@@ -377,7 +387,8 @@ describe("xpl draft map on a crowded folder", () => {
     // the folder's map shows the groups, not their files
     expect(view(patch, "view:map")?.include).toEqual(groups.map((g) => g.id));
     expect(notes).toEqual([
-      "32 code files on 5 maps; 0 files left off (tests, examples, fixtures, docs and benchmarks)",
+      "32 code files on 5 maps; 0 files left off (tests, examples, fixtures, docs and benchmarks); 1 file that is not code has no box: `package.json`",
+      "no entry file found (no `main` function and no file with an entry name such as main, index, app or cli): the start tour has no step on where to start reading; add one if the project has a clear first file",
       "crowded maps get groups of files that use each other (the top: 4 groups of 32 files): name each group, or remove the ones that are not one job",
     ]);
   });

@@ -103,6 +103,8 @@ const LABEL_CHARS = 40;
 export const LABEL_LINE = 17;
 /** The font of a frame's kind and condition (styles: `.frame-kind`, `.frame-label`). */
 const FRAME_FONT = 12;
+/** Font size of an arm's condition (styles: `.frame-label.arm-label`): a call's words' size. */
+const ARM_FONT = 13;
 
 /** The tab of a frame ("loop", "alt"): as SequenceView draws it. */
 export function frameTabWidth(kind: string): number {
@@ -111,7 +113,7 @@ export function frameTabWidth(kind: string): number {
 
 /** How wide a frame must be to hold an arm's condition in brackets, on one line. */
 function armLabelWidth(label: string): number {
-  return 8 + Math.ceil(textWidth(`[${label}]`, FRAME_FONT, 500)) + 12;
+  return 8 + Math.ceil(textWidth(`[${label}]`, ARM_FONT, 500)) + 12;
 }
 
 /** How wide a frame must be to hold its tab and its condition in brackets, on one line. */

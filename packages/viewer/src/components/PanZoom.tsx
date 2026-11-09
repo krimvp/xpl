@@ -48,6 +48,10 @@ import { createPortal } from "react-dom";
 import { saveDiagramImage } from "../image.js";
 
 const FIT_PADDING = 24;
+/** On a phone a diagram that fits at this zoom or more starts whole (14-unit labels at 10px). */
+const PHONE_WHOLE_ZOOM = 10 / 14;
+/** The room around a fitted diagram on a phone, px. */
+const PHONE_FIT_PADDING = 8;
 /** Fitting never blows a small diagram up by more than this (a talk allows more: `maxFitZoom`). */
 const MAX_FIT_ZOOM = 1.25;
 /** In Present the diagram is enlarged more, and fitted closer to the edge: it is read from further away. */
@@ -190,7 +194,7 @@ export function PanZoom({
   maxFitZoom = MAX_FIT_ZOOM,
   minFitZoom,
   panCue = true,
-  fitPadding = FIT_PADDING,
+  fitPadding: askedPadding,
   readableZoom,
   readableMin,
   focusMin,
@@ -204,6 +208,10 @@ export function PanZoom({
   imageName,
   keyboardMore,
 }: PanZoomProps) {
+  // A phone keeps less room around a fitted diagram: 32px more of its width is a narrow sequence read whole
+  // rather than framed on one or two lifelines.
+  const fitPadding =
+    askedPadding ?? (window.innerWidth <= PHONE_WIDTH ? PHONE_FIT_PADDING : FIT_PADDING);
   const wrap = useRef<HTMLDivElement>(null);
   /** The canvas: the pane's size is its size (on a phone the toolbar sits above it, not over it). */
   const canvas = useRef<SVGSVGElement>(null);
@@ -278,7 +286,11 @@ export function PanZoom({
 
   // In Present a frame of the focus keeps the floor too (D7: text never under 12px when a slide starts).
   const least = presenting ? (readableMin ?? readableZoom) : readableMin;
-  const floor = readableZoom !== undefined ? (least ?? readableZoom) : READABLE_FLOOR;
+  const own = readableZoom !== undefined ? (least ?? readableZoom) : READABLE_FLOOR;
+  // A phone (not a slide) shows all of a diagram whose 14-unit labels read at 10px, rather than one or two
+  // lifelines of it at 11px.
+  const floor =
+    !presenting && window.innerWidth <= PHONE_WIDTH ? Math.min(own, PHONE_WHOLE_ZOOM) : own;
   const options = useMemo(
     () => ({
       padding: fitPadding,

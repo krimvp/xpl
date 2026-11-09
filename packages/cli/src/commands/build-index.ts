@@ -108,7 +108,7 @@ export const indexCommand: CommandSpec = {
   name: "index",
   usage:
     "xpl index [--precise auto|off|require] [--commit <c>] [--no-cache] [--scip <artifact|manifest.json>] [--verbose]",
-  summary: "Build and write the symbol index; print languages and excluded source candidates",
+  summary: "Build and write the symbol index; print the languages and the excluded files",
   details: [
     "Writes .explainer/index-<commit>.json: the commit is the short HEAD of a clean git tree, else wt-<hash>.",
     "Each language line ends with how far its references can be trusted.",
@@ -282,7 +282,7 @@ export const indexCommand: CommandSpec = {
     if (stale.length > 0) {
       lines.push(
         "",
-        `hint: ${plural(stale.length, "explainer")} (${stale.join(", ")}) ${stale.length === 1 ? "is" : "are"} bound to another index; run ${stale.map((name) => `\`xpl resolve ${name} --write\``).join(", ")} to move ${stale.length === 1 ? "it" : "them"} to this one.`,
+        `hint: ${plural(stale.length, "guide")} (${stale.join(", ")}) ${stale.length === 1 ? "is" : "are"} bound to another index; run ${stale.map((name) => `\`xpl resolve ${name} --write\``).join(", ")} to move ${stale.length === 1 ? "it" : "them"} to this one.`,
       );
     }
     ctx.out(lines.join("\n"));

@@ -114,7 +114,7 @@ describe("xpl draft repo: one service and what it relies on", () => {
     expect(patch.nodes!.find((n) => n.label === "flask")?.role).toBe("component");
     expect(patch.nodes!.map((n) => n.id)).not.toContain("grp:user");
     expect(patch.nodes!.map((n) => n.id)).toContain("grp:your-app");
-    expect(notes.some((n) => n.startsWith("The draft guesses the kind of project"))).toBe(true);
+    expect(notes.some((n) => n.startsWith("the draft guesses the kind of project"))).toBe(true);
     expect(patch.tours![0]!.steps!.map((step) => step.note).join("\n")).not.toContain(
       "default runtime path",
     );
@@ -242,7 +242,9 @@ describe("xpl draft repo: a program without a web or command-line framework", ()
       { file: "src/main.ts", span: { from: 39, to: 39 }, role: "usage" },
       { file: "config/default.yaml", role: "config" },
     ]);
-    expect(notes.join("\n")).toContain("config/default.yaml");
+    expect(notes).toContain(
+      "settings files the code loads (from the index): `config/default.yaml`; check that the code reads each at run time",
+    );
   });
 
   it("two parts that each load their own settings file: each arrow ends on a file the box anchors", async () => {
@@ -378,7 +380,9 @@ describe("xpl draft repo: who starts the program", () => {
     expect(patch.edges!.map((e) => `${e.from} -> ${e.to}`)).toContain(
       "dir:cmd/jobrunner -> grp:settings",
     );
-    expect(notes.join("\n")).toContain("named in the code: `config/default.yaml`");
+    expect(notes).toContain(
+      "settings files the code names in a string (no call that loads them found): `config/default.yaml`; check that the code reads each at run time",
+    );
     // a part's step shows what the other parts call (Runner.Dispatch, config.Load), not its first types
     const steps = patch.tours![0]!.steps!;
     const codeOf = (box: string) =>
@@ -387,7 +391,9 @@ describe("xpl draft repo: who starts the program", () => {
     expect(codeOf("dir:internal/config")).toContain("Load");
     // 2 of the 9 steps are left for the main path and its risks; the notes say how to fill them
     expect(steps.length).toBeLessThanOrEqual(7);
-    expect(notes.join("\n")).toContain("`xpl draft path shop sym:cmd/jobrunner/main.go#run`");
+    expect(notes).toContain(
+      "room is left for 2 more steps (9 at most), the main path and its risks: run `xpl draft path shop sym:cmd/jobrunner/main.go#run` and copy the steps you keep",
+    );
     // a path drafted next numbers its steps after the tour already there, so they can be copied over
     const path = await xplJson<DraftJson>(
       dir,

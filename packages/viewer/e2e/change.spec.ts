@@ -434,12 +434,18 @@ test.describe("the change in the reading screens", () => {
     await page.waitForFunction(() => window.__xpl !== undefined);
     const pill = byId(page, "dispatch:2").locator(".change-pill");
     await expect(pill.locator("text")).toHaveText("New");
-    // on the diamond's upper right edge: right of its middle, above its middle
+    // on the diamond's upper right edge: its centre is on the diamond itself, not in the empty corner
+    // of the diamond's bounding box where a box's pill goes, and right of the middle and above it
     const box = (await byId(page, "dispatch:2").locator(":scope > polygon").boundingBox())!;
     const at = (await pill.boundingBox())!;
-    expect(at.x + at.width / 2).toBeGreaterThan(box.x + box.width / 2);
-    expect(at.y + at.height / 2).toBeLessThan(box.y + box.height / 2);
-    expect(at.x + at.width).toBeLessThanOrEqual(box.x + box.width + 1);
+    const [cx, cy] = [at.x + at.width / 2, at.y + at.height / 2];
+    const [mx, my] = [box.x + box.width / 2, box.y + box.height / 2];
+    expect(cx).toBeGreaterThan(mx);
+    expect(cy).toBeLessThan(my);
+    // |dx| / half-width + |dy| / half-height: 1 on the outline, more outside it
+    expect(Math.abs(cx - mx) / (box.width / 2) + Math.abs(cy - my) / (box.height / 2)).toBeLessThan(
+      1.05,
+    );
     expect(problems).toEqual([]);
   });
 

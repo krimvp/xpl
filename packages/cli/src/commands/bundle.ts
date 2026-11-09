@@ -148,20 +148,20 @@ export const bundleCommand: CommandSpec = {
     },
     draft: {
       type: "boolean",
-      desc: "Write an explicitly labelled draft preview, even with readiness errors",
+      desc: "Write a page marked draft, even with readiness errors",
     },
     note: {
       type: "string",
       arg: "<reason>",
-      desc: "Record an author decision about warnings or omissions",
+      desc: "Write why you keep a warning or leave something out",
     },
     "require-review": {
       type: "boolean",
-      desc: "Team policy: require a current author review of all stored content",
+      desc: "Fail unless a person reviewed the current text",
     },
     "allow-drift": {
       type: "boolean",
-      desc: "Legacy draft preview for drifted/missing anchors; output is labelled draft",
+      desc: "Write a page marked draft when code links drifted or are missing",
     },
   },
   positionals: [{ name: "explainer", required: false }],

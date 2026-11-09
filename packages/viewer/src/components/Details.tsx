@@ -515,16 +515,26 @@ function MapConnections({ id, graph }: { id: string; graph: DerivedGraph }) {
   const [all, setAll] = useState(false);
   const names = new Map(graph.nodes.map((node) => [node.id, node.label]));
   if (!names.has(id)) return null;
+  // a table on a data map: its arrows start at its rows ("queue holds Queue"), named with the row
+  // (a row of another table is named by its table, its field in the words after it)
+  const rows = new Map(
+    graph.nodes.flatMap((node) =>
+      node.row !== undefined && node.parent ? [[node.id, node] as const] : [],
+    ),
+  );
+  const tableOf = (end: string) => rows.get(end)?.parent ?? end;
+  const mine = (end: string) => tableOf(end) === id;
   const arrows = [
     ...graph.edges
-      .filter((edge) => edge.from === id || edge.to === id)
+      .filter((edge) => mine(edge.from) !== mine(edge.to))
       .map((edge) => {
-        const outgoing = edge.from === id;
+        const outgoing = mine(edge.from);
+        const row = (rows.get(edge.from) ?? rows.get(edge.to))?.label;
         return {
           id: edge.id,
           direction: outgoing ? "To" : "From",
-          other: names.get(outgoing ? edge.to : edge.from),
-          relationship: edge.label ?? edge.kind,
+          other: names.get(tableOf(outgoing ? edge.to : edge.from)),
+          relationship: `${edge.label ?? edge.kind}${row ? ` (field ${row})` : ""}`,
           count: edge.count,
           source: mapEdgeSource(edge),
         };
@@ -564,7 +574,8 @@ function MapConnections({ id, graph }: { id: string; graph: DerivedGraph }) {
               </span>
               <span className="map-connection-relation">
                 {arrow.relationship}
-                {arrow.count > 1 ? ` ×${arrow.count}` : ""}
+                {/* (a count of 1 is said when it is part of a total: "calls ×1 (of 2 in all)") */}
+                {arrow.count > 1 || "total" in arrow ? ` ×${arrow.count}` : ""}
                 {"total" in arrow ? ` (of ${arrow.total} in all)` : ""} · {arrow.source}
               </span>
             </button>

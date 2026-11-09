@@ -200,14 +200,17 @@ test("a focused table folds with minus and opens with plus or =, keeping its arr
     await expect(
       page.locator(`.edge-key[data-key-for="edge:references:${DEAD}->${JOB}"]`),
     ).toHaveCount(1);
-    // the other tables stay where they were (within 2 px)
+    // the other tables stay where they were (within 2 px); a failure names the table and how far it moved
     for (const [i, id] of [JOB, QUEUE].entries())
       await expect
-        .poll(async () => {
-          const [x, y] = await at(id);
-          return Math.abs(x! - others[i]![0]!) + Math.abs(y! - others[i]![1]!) <= 2;
-        })
-        .toBe(true);
+        .poll(
+          async () => {
+            const [x, y] = await at(id);
+            return Math.abs(x! - others[i]![0]!) + Math.abs(y! - others[i]![1]!);
+          },
+          { message: `${id} moved by (px)` },
+        )
+        .toBeLessThanOrEqual(2);
     await expect(byId(page, DEAD)).toBeFocused();
     await page.keyboard.press(open);
     await expect(byId(page, DEAD)).toHaveClass(/is-table/);
@@ -234,6 +237,21 @@ test("a row the step's code names is marked on its own table", async ({ page }) 
   expect(await page.evaluate(() => window.__xpl!.present("tour:data", 0))).toBe(true);
   await expect(byId(page, `${QUEUE}.ready`)).toHaveClass(/is-related/);
   await expect(byId(page, `${QUEUE}.dead`)).not.toHaveClass(/is-related/);
+});
+
+// a selected table listed none of its rows' arrows, and the tables it holds were not marked linked
+test("a selected table lists its rows' arrows and marks the tables it holds as linked", async ({
+  page,
+}) => {
+  await openDataMap(page, "perspective=map");
+  await page.evaluate((id) => window.__xpl!.select([id]), DEAD);
+  const connections = page.getByTestId("map-connections");
+  await expect(connections.locator("li")).toHaveText([
+    "To Job holds (field job) · heuristic: matched by name",
+    "From Queue holds (field dead) · heuristic: matched by name",
+  ]);
+  await expect(byId(page, JOB)).toHaveClass(/is-related/);
+  await expect(byId(page, QUEUE)).toHaveClass(/is-related/);
 });
 
 // R4-4: a clicked row showed only its name ("job"), not its table or its type

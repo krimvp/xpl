@@ -5,7 +5,7 @@ import { describeReadiness, workspaceReadiness } from "../readiness.js";
 export const readyCommand: CommandSpec = {
   name: "ready",
   usage: "xpl ready [explainer] [--note <reason>] [--require-review]",
-  summary: "Check source links, required content and reader findings before export",
+  summary: "Check code links, required text and lint findings before export",
   details: [
     "Checks a guide before you export it: the code links, the index, the text it needs, and lint.",
     "Errors block ready HTML. Warnings ask for your judgment.",
@@ -17,12 +17,12 @@ export const readyCommand: CommandSpec = {
   options: {
     "require-review": {
       type: "boolean",
-      desc: "Team policy: require a current author review of all stored content",
+      desc: "Fail unless a person reviewed the current text",
     },
     note: {
       type: "string",
       arg: "<reason>",
-      desc: "Record an author decision about warnings or omissions",
+      desc: "Write why you keep a warning or leave something out",
     },
   },
   positionals: [{ name: "explainer", required: false }],

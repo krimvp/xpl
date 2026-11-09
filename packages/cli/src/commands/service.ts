@@ -407,7 +407,7 @@ export const serviceCommand: CommandSpec = {
     const guide = args.positionals[1] ?? (saved ? join(p.root, saved.guide) : undefined);
     if (!guide)
       throw new UsageError(
-        "first service start needs an explainer; use xpl service start <explainer>",
+        "the first service start needs a guide; use xpl service start <explainer>",
       );
     const loaded = loadExplainer(ctx, guide);
     loaded.abs = localPath(p.root, loaded.abs);

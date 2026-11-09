@@ -116,3 +116,35 @@ describe("details of a drawn aggregate", () => {
     ).toEqual([12, 25]);
   });
 });
+
+// an implements arrow counted references ("1 reference from queue.Queue to JobQueue") under the bare
+// heading "implements"
+describe("details of a type's place in a hierarchy", () => {
+  it("says which type implements which, with no count of references", () => {
+    const bundle = makeBundle();
+    bundle.index.refs.push({
+      from: "src/b.ts#B",
+      to: "src/a.ts#A",
+      kind: "implements",
+      site: { startLine: 1, endLine: 1, startCol: 1, endCol: 13 },
+      resolution: "precise",
+    });
+    const view = bundle.explainer.views.find((v) => v.id === "view:overview")!;
+    Object.assign(view, {
+      include: ["sym:src/a.ts#A", "sym:src/b.ts#B"],
+      edgeKinds: ["implements"],
+    });
+    const state = new ViewerStore(bundle).getState();
+    const info = describeElement(
+      "edge:implements:sym:src/b.ts#B->sym:src/a.ts#A",
+      state.model,
+      getDerived(state).view,
+    );
+    expect(info.title).toBe("B implements A");
+    expect(info.kind).toBe("implements");
+    expect(info.summary).toBe(
+      "B implements A, found in the code (precise: checked by a language tool).",
+    );
+    expect(info.facts.map((f) => f.label)).not.toContain("References");
+  });
+});

@@ -772,7 +772,7 @@ it.each(["remove", "reanchor"] as const)(
     expect((await xpl(root, "revise", "demo", "--run", run, "--proposal", remove)).code).toBe(0);
     const implicit = await xplJson(root, "revise", "demo", "--run", run, "--decisions", choose());
     expect(implicit.code).toBe(1);
-    expect(implicit.json.error).toMatch(/missing anchor.*explicitly/);
+    expect(implicit.json.error).toMatch(/missing anchor on .*: decide /);
     expect(readJson(root, ".explainer/demo.explainer.json")).toEqual(before);
     const explicit = await xplJson(
       root,

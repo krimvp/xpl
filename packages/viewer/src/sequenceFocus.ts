@@ -9,9 +9,9 @@
  * - Above each, the room the sticky lifeline names take once the view starts lower down: a label is shown
  *   under them, never behind them.
  * - A selected lifeline is its head, with its own arrows as neighbours: they come in while there is room.
- * - `others`: every arrow's words, and every arrow end to end with them, with the same room above. The
- *   frame slides to cut as few as it can: it does not start mid-label, and keeps the lifelines the arrows in
- *   sight join, not empty ones (`fill`; R6-1, V6-05).
+ * - `others`: every arrow's words, every arrow end to end with them (with the same room above), and every
+ *   lifeline. The frame slides to cut as few as it can: it does not start mid-label or cut a lifeline's name
+ *   in half, and keeps the lifelines the arrows in sight join, not empty ones (`fill`).
  */
 import type { SequenceLayout, Row } from "./layout/sequenceLayout.js";
 import { frameLabelWidth } from "./layout/sequenceLayout.js";
@@ -110,5 +110,13 @@ export function sequenceFocus(
     };
     return [roomAbove(words), roomAbove(unionBox([words, band])!)];
   });
+  // (and each lifeline, top to bottom: a side does not cut its name in half)
+  for (const lifeline of layout.lifelines)
+    others.push({
+      x: lifeline.x - lifeline.headWidth / 2,
+      y: lifeline.headTop,
+      width: lifeline.headWidth,
+      height: layout.height - lifeline.headTop,
+    });
   return { boxes, neighbours, others, core, fill: true };
 }

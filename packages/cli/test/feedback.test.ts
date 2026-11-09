@@ -57,7 +57,7 @@ it("imports, inspects, exports and records outcomes by ID while reporting outdat
   const recorded = await xpl(root, "feedback", "demo", "--outcomes", outcomes);
   expect(recorded.code).toBe(0);
   expect(recorded.out).toContain(
-    "Invoke code-explainer in your harness for the next explicit feedback pass.",
+    "To act on the requests, start the code-explainer skill in your agent.",
   );
   expect((await xpl(root, "feedback", "demo", "--export", scratch + "/retry.json")).code).toBe(0);
   expect(readJson(scratch, "retry.json").requests[0]).toMatchObject({

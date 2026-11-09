@@ -72,4 +72,23 @@ describe("sequenceFocus: the first view of a big sequence", () => {
     // (the empty first lifeline is the one left out, not one the arrows in sight join)
     expect(inside(LANES[0]!)).toBe(false);
   });
+
+  it("does not cut a lifeline's name at a side when a place that cuts none exists", () => {
+    // 60% of the width: a frame that holds next(job) can stop between two lifelines on both sides
+    const narrow = { w: seq.width * 0.6, h: seq.height + 40 };
+    const { k, x } = frameView(
+      narrow,
+      seq,
+      sequenceFocus(seq, new Set(["s2"])),
+      options,
+    )!.transform;
+    const halves = seq.lifelines
+      .filter((lane) => {
+        const left = x + (lane.x - lane.headWidth / 2) * k;
+        const right = left + lane.headWidth * k;
+        return (left < 0 && right > 0) || (left < narrow.w && right > narrow.w);
+      })
+      .map((lane) => lane.id);
+    expect(halves).toEqual([]);
+  });
 });

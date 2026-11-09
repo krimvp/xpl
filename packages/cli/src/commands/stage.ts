@@ -20,27 +20,30 @@ export const stageCommand: CommandSpec = {
     dir: {
       type: "string",
       arg: "<outside-folder>",
-      desc: "Local version storage outside the source checkout (required)",
+      desc: "Folder for the staged versions, outside the checkout (required)",
     },
-    preview: { type: "boolean", desc: "Show readiness and included files without writing" },
+    preview: {
+      type: "boolean",
+      desc: "Show the readiness and the files it would include; write nothing",
+    },
     files: {
       type: "string",
       arg: "referenced|boundary|all",
-      desc: "Source selection (default referenced; PR results keep their selection)",
+      desc: "Files to include (default referenced; a PR result keeps its own)",
     },
     note: {
       type: "string",
       arg: "<reason>",
-      desc: "Record an author decision about warnings or omissions",
+      desc: "Write why you keep a warning or leave something out",
     },
     "require-review": {
       type: "boolean",
-      desc: "Require a current author review of all stored content",
+      desc: "Fail unless a person reviewed the current text",
     },
     "pr-result": {
       type: "string",
       arg: "<result.json>",
-      desc: "Matching immutable ready result from xpl pr finish",
+      desc: "The result.json that `xpl pr finish` wrote for this guide",
     },
   },
   positionals: [{ name: "explainer" }],

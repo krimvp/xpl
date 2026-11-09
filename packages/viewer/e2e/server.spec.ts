@@ -641,10 +641,17 @@ test("a source edit refreshes Code and the freshness warning without changing th
     sourceWarning: "Source changed: run xpl index before relying on indexed relationships.",
   };
   recorded.explainer = bundle.explainer;
-  await expect(page.locator('[data-file="src/runner.ts"] .cm-editor')).toContainText(
-    "Updated source while the page is open",
-    { timeout: 10_000 },
-  );
+  // (the line is the file's last: the editor, under Details in the code column, draws it once scrolled to)
+  await expect
+    .poll(
+      () =>
+        page.locator('[data-file="src/runner.ts"] .cm-scroller').evaluate((el) => {
+          el.scrollTop = el.scrollHeight;
+          return el.textContent!.includes("Updated source while the page is open");
+        }),
+      { timeout: 10_000 },
+    )
+    .toBe(true);
   await expect(page.getByTestId("source-warning")).toContainText("run xpl index");
   expect(await selectionOf(page)).toEqual(["dispatch:3"]);
   expect(problems).toEqual([]);

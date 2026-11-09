@@ -41,7 +41,7 @@ export function renderResolveReport(report: ResolveReport): string[] {
     }
   }
   if (report.missing.length > 0) {
-    lines.push(`missing anchors (${report.missing.length}): fix or drop them explicitly`);
+    lines.push(`missing code links (${report.missing.length}): fix or remove each one`);
     for (const missing of report.missing) {
       lines.push(
         `  ${missing.elementId}  ${missing.path}  ${describeAnchor(missing.anchor)} [${missing.anchor.role}]`,
@@ -57,10 +57,10 @@ export const resolveCommand: CommandSpec = {
   usage: "xpl resolve [explainer] [--write] [--allow-stale]",
   summary: "Check each code link again; list the text to rewrite and the links whose code is gone",
   details: [
-    "Checks every anchor again against the index of the current code: ok, moved, drifted or missing.",
+    "Checks every code link again against the index of the current code: ok, moved, drifted or missing.",
     "Moved code keeps its text and gets its new lines. Drifted text needs a rewrite; missing code needs a fix.",
     "It uses --index, else the index of the current commit, else the newest one; never the guide's old one.",
-    "--write saves the new lines and the index binding. Drifted anchors stay drifted until you rewrite them.",
+    "--write saves the new lines and the index binding. Drifted code links stay drifted until you rewrite them.",
     "--write refuses (exit 1) when the index does not match the working tree: run `xpl index` first.",
     "With one guide in the repository, leave out its name.",
   ],
@@ -113,7 +113,7 @@ export const resolveCommand: CommandSpec = {
           ...renderResolveReport(report),
           write
             ? `written: ${loaded.rel}`
-            : "not written: pass --write to save the re-resolved explainer",
+            : "not written: pass --write to save the guide with the new lines",
         ].join("\n"),
       );
       return 0;

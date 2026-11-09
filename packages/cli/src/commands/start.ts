@@ -74,7 +74,7 @@ export const startCommand: CommandSpec = {
   name: "start",
   usage:
     "xpl start <name> --question <question> --audience <reader> [--entry <symbol>] [--precise auto|off|require]",
-  summary: "Create an index-backed first guide and a draft for a question and reader",
+  summary: "Make a first guide and its draft for a question and a reader",
   details: [
     "Indexes the repository, creates a new guide, drafts a repository map and applies the draft.",
     "--entry starts a call sequence at one indexed function or method instead of a repository map: the path",
@@ -82,7 +82,7 @@ export const startCommand: CommandSpec = {
     "the words of the question.",
     "The draft patch and all draft notes are saved outside the repository. Up to three notes and apply",
     "warnings print here; --json returns the full lists. Review the TODO text and notes before sharing.",
-    "Use --precise off when optional reference tools are unavailable. Existing guides are never overwritten.",
+    "With no reference tool installed, use --precise off. It never overwrites a guide.",
     "Next: open the guide with `xpl view <name>`, complete the TODOs, then run `xpl lint <name>`.",
   ],
   options: {

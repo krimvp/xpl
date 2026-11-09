@@ -30,9 +30,10 @@ the map.
 
 Edit > **Mark as reviewed** records your name, what you checked (the text and the code links) and what you did
 not check. **About this guide** shows the review state: **Not yet reviewed by a person**, **Reviewed by a
-person** or **Changed since a person reviewed it**. It is separate from the code checks. A review of named boxes and steps covers them and their code links; a change to
-other code does not make it out of date. A review of the whole repository covers every indexed file. A saved
-HTML page holds the review, but it cannot see later changes to the repository.
+person** or **Changed since a person reviewed it**. It is separate from the code checks. A review of named
+boxes and steps covers them and their code links; a change to other code does not make it out of date. A
+review of the whole repository covers every indexed file. A saved HTML page holds the review, but it cannot
+see later changes to the repository.
 
 A review is optional. `xpl ready --require-review` and `xpl bundle --require-review` refuse a guide without a
 current review of all its content. The team-policy option of **Save as HTML** asks for the same, and the

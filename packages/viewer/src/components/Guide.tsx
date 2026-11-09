@@ -15,7 +15,7 @@ import {
   type ExplainerModel,
   type TourStep,
 } from "@xpl/core";
-import { ExplanationInfo, TABS_LINE } from "./ExplanationInfo.js";
+import { ExplanationInfo, tabsLine } from "./ExplanationInfo.js";
 import { callersOf, changeSummary, type Caller } from "../callers.js";
 import { overrideFocus } from "../derive.js";
 import { changeFiles, changeOf, STATUS_WORDS } from "../diff.js";
@@ -23,6 +23,8 @@ import { readLaunchParams } from "../data.js";
 import { useStore, useViewerState } from "../hooks.js";
 import { renderInline, renderMarkdown } from "../markdown.js";
 import { stepTests } from "../stepTests.js";
+import { isFormField } from "../present/keys.js";
+import { hasFlowTab, hasMapTab } from "../workspace.js";
 import { stepText, stepTitle } from "../stepTitle.js";
 import { TourPicker } from "./Header.js";
 import { Snapshot } from "./Snapshot.js";
@@ -92,6 +94,26 @@ export function Guide({
     return () => scroller.removeEventListener("scroll", update);
   }, [tour?.id]);
   const current = reading ?? active;
+  // J and K step through the tour, unless the key is meant for a text field, the code or a menu.
+  const currentRef = useRef(current);
+  currentRef.current = current;
+  useEffect(() => {
+    if (!tour) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.ctrlKey || event.metaKey || event.altKey || event.defaultPrevented) return;
+      const by = event.key === "j" ? 1 : event.key === "k" ? -1 : 0;
+      if (by === 0 || isFormField(event.target)) return;
+      if (event.target instanceof Element && event.target.closest(".cm-editor, [role=menu]"))
+        return;
+      const at = tour.steps.findIndex((step) => step.id === currentRef.current);
+      const next = Math.min(tour.steps.length - 1, Math.max(0, at + by));
+      if (next === at) return;
+      event.preventDefault();
+      store.previewStep(tour.id, next);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [tour, store]);
   useEffect(() => onReading?.(reading), [reading, onReading]);
   // The step on screen, for the reading tabs (R4-5): Map, Flow or Code clicked while another step than the
   // applied one is on screen opens on that step (WorkspaceTabs).
@@ -180,7 +202,9 @@ export function Guide({
         {state.model.views.map((view) => (
           <section className="guide-section" key={view.id}>
             <h3>{view.title}</h3>
-            <p>{view.scope?.question}</p>
+            {view.scope?.question && (
+              <p dangerouslySetInnerHTML={{ __html: renderInline(view.scope.question) }} />
+            )}
             {state.model.concepts.map((concept) => (
               <p key={concept.id}>
                 <button className="link" onClick={() => store.select([concept.id])}>
@@ -222,6 +246,9 @@ export function Guide({
             {title(step)}
           </button>
         ))}
+        <p className="guide-keys" data-testid="guide-keys">
+          Keys: <kbd>J</kbd> next step, <kbd>K</kbd> previous step.
+        </p>
       </nav>
       <div className="guide-body" ref={body}>
         {staleLink && (
@@ -267,7 +294,7 @@ export function Guide({
         )}
         <ChangeOmissions />
         <p className="guide-tabs-line" data-testid="tabs-line">
-          {TABS_LINE}
+          {tabsLine({ map: hasMapTab(state), flow: hasFlowTab(state) })}
         </p>
         <ExplanationInfo />
         <ChangeFiles />
@@ -555,7 +582,33 @@ function GuideSection({
             </figure>
           );
         }
-        const fresh = members.filter((member) => !callEnds.has(member));
+        // one chip per name and code: two elements with the same name and lines are one link
+        const seen = new Set<string>();
+        const fresh = members.filter((member) => {
+          if (callEnds.has(member)) return false;
+          const at = codeFocus([member], state.model)[0];
+          const key = `${state.model.label(member)}\0${at ? `${at.file}:${at.range.startLine}-${at.range.endLine}` : member}`;
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
+        // a name that is still there twice (steps of two diagrams): each says which diagram it is in
+        const twice = new Set(
+          fresh
+            .map((member) => state.model.label(member))
+            .filter((label, i, all) => all.indexOf(label) !== i),
+        );
+        const chipName = (member: string) => {
+          const element = state.model.element(member);
+          const label = state.model.label(member);
+          return twice.has(label) && element?.type === "step" ? (
+            <>
+              {label} <span className="guide-mini-where">· {element.view.title}</span>
+            </>
+          ) : (
+            label
+          );
+        };
         return fresh.length > 0 && !onlyTests ? (
           <figure className="guide-mini" key={id}>
             <figcaption>In the code</figcaption>
@@ -566,7 +619,7 @@ function GuideSection({
                   key={member}
                   onClick={() => store.select([member])}
                 >
-                  {state.model.label(member)}
+                  {chipName(member)}
                 </button>
               ))}
             </div>

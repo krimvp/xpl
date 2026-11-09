@@ -57,6 +57,7 @@ export const KIND_ORDER = [
   "calls",
   "imports",
   "extends",
+  "embeds",
   "implements",
   "references",
   "holds",
@@ -67,7 +68,7 @@ export const KIND_ORDER = [
 
 /** The head an arrow of a kind ends in: a class hierarchy and an import do not read as calls (GraphView). */
 export function headOf(kind: string): "filled" | "hollow" | "open" {
-  if (kind === "extends" || kind === "implements") return "hollow";
+  if (kind === "extends" || kind === "embeds" || kind === "implements") return "hollow";
   if (kind === "imports" || kind === "references" || kind === "holds") return "open";
   return "filled";
 }
@@ -168,8 +169,15 @@ export function mapKeyShows(
     if (edge.resolution === "heuristic") shows.heuristic = true;
     if (edge.resolution === "mixed") shows.mixed = true;
     // a field's arrow on a data map (core names it "holds"), keyed apart from a type named in code
+    // and Go's embedded types (core names them "embeds"): Go has no parent types to "extend"
     if (!edge.stub)
-      kinds.add(edge.kind === "references" && edge.title === "holds" ? "holds" : edge.kind);
+      kinds.add(
+        edge.kind === "references" && edge.title === "holds"
+          ? "holds"
+          : edge.kind === "extends" && edge.title?.startsWith("embeds")
+            ? "embeds"
+            : edge.kind,
+      );
     if (edge.counted && edge.label && !shows.counts) {
       shows.counts = true;
       shows.countKind = edge.kind;

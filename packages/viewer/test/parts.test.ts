@@ -77,6 +77,33 @@ describe("the parts of a diagram in words", () => {
     ]);
   });
 
+  // Go has no parent types: an embedded type read "extends" / "extended by"
+  it("says embeds and embedded by for a Go struct's embedded type", () => {
+    const { model, overview } = world();
+    const graph = deriveGraph(overview, model);
+    const edge = (label: string) => ({
+      id: "edge:extends:grp:core->file:config/c.yaml",
+      from: "grp:core",
+      to: "file:config/c.yaml",
+      kind: "extends" as const,
+      label,
+      count: 1,
+      resolution: "heuristic" as const,
+      stored: false,
+      anchors: [],
+    });
+    graph.edges = [edge("embeds")];
+    expect(mapParts(graph, overview, model).boxes.map((box) => box.links)).toEqual([
+      ["embeds c.yaml"],
+      ["embedded by Core"],
+    ]);
+    graph.edges = [edge("embeds a type in")];
+    expect(mapParts(graph, overview, model).boxes.map((box) => box.links)).toEqual([
+      ["embeds a type in c.yaml"],
+      ["has a type embedded by Core"],
+    ]);
+  });
+
   it("says a box's links by name, and counts them past two", () => {
     expect(linkWords("uses", ["worker.ts"])).toBe("uses worker.ts");
     expect(linkWords("used by", ["main.ts", "test"])).toBe("used by main.ts and test");

@@ -260,7 +260,7 @@ describe.each([python, go])("regeneration on the $name fixture", (lang) => {
         resolved: { status: "missing", range: lang.requeueRange },
       });
       const text = await xpl(r.dir, "resolve", NAME);
-      expect(text.out).toContain("missing anchors (1): fix or drop them explicitly");
+      expect(text.out).toContain("missing code links (1): fix or remove each one");
       expect(text.out).toContain(
         `  requeue:1  views[0].steps[0].anchors[1]  ${lang.queueFile}#${lang.requeue} [definition]`,
       );

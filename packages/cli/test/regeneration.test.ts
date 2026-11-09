@@ -1041,9 +1041,9 @@ describe("all five edits in one second commit", () => {
       expect(llm).toContain(id);
     expect(llm).not.toContain("concept:retry-tuning");
     expect(llm).not.toContain("concept:ack-semantics");
-    const other = section("drifted, but not llm-owned (left alone) (1):", "missing anchors (1)");
+    const other = section("drifted, but not llm-owned (left alone) (1):", "missing code links (1)");
     expect(other).toContain("concept:retry-tuning");
-    const missing = section("missing anchors (1):");
+    const missing = section("missing code links (1):");
     expect(missing).toContain("concept:ack-semantics");
     expect(missing).toContain("src/queue.ts#Queue.ack [definition]");
     expect(missing).toContain("symbol Queue.ack is not in src/queue.ts");

@@ -395,7 +395,11 @@ function drawnEdgeLine(edge: DrawnEdge): string {
     edge.kind,
     `${edge.from} → ${edge.to}`,
     `×${edge.count}`,
-    edge.origin === "stored" ? "stored" : edge.overlay ? "derived (stored overlay)" : "derived",
+    edge.origin === "stored"
+      ? "stored"
+      : edge.overlay
+        ? "found in the code (stored text on it)"
+        : "found in the code",
     ...(edge.label ? [`"${edge.label}"`] : []),
     ...(edge.summary ? [] : ["no summary"]),
   ].join("  ");
@@ -406,7 +410,7 @@ function viewEdgeLines(edges: ViewEdges): string[] {
   if (edges.drawn) {
     const stored = edges.drawn.filter((e) => e.origin === "stored").length;
     lines.push(
-      `  edges drawn (${edges.drawn.length}: ${stored} stored, ${edges.drawn.length - stored} derived), most references first:`,
+      `  arrows drawn (${edges.drawn.length}: ${stored} stored, ${edges.drawn.length - stored} found in the code), most references first:`,
       ...edges.drawn.map((edge) => `    ${drawnEdgeLine(edge)}`),
     );
   }
@@ -439,7 +443,7 @@ export const statusCommand: CommandSpec = {
   name: "status",
   usage: "xpl status [explainer] [--view <id>] [--all]",
   summary:
-    "To-do list: boxes with no text, changed or missing code links, reader requests, tour problems",
+    "List what a guide still needs: boxes with no text, changed or missing code links, reader requests, tour problems",
   details: [
     "The to-do list of a guide. It changes nothing.",
     "It lists the boxes, arrows and steps that a view shows with no text, and the tours with no summary.",
@@ -452,19 +456,19 @@ export const statusCommand: CommandSpec = {
   options: {
     all: {
       type: "boolean",
-      desc: "Inventory all repository guides against the current index without writing",
+      desc: "Check every guide in the repository against the current index; write nothing",
     },
     view: {
       type: "string",
       arg: "<id>",
-      desc: "Only this view, with the edges (or step links) it draws and what its hidden takes out",
+      desc: "Only this view: the arrows (or step links) it draws and what its `hidden` list leaves out",
     },
   },
   positionals: [{ name: "explainer", required: false }],
   async run(ctx, args) {
     if (args.flag("all")) {
       if (args.positionals.length || args.str("view"))
-        throw new UsageError("--all cannot be combined with an explainer or --view");
+        throw new UsageError("--all cannot be combined with a guide name or --view");
       const ws = await openWorkspace(ctx);
       const guides = guideInventory(ctx, ws.model, ws.texts);
       const watch = readWatchState(ctx.root) ?? null;

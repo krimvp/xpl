@@ -18,7 +18,7 @@ export const refsCommand: CommandSpec = {
   name: "refs",
   usage:
     "xpl refs <id> [--in|--out] [--kind <k>] [--depth <n>] [--max-children <n>] [--limit <n>] [--tests]",
-  summary: "Call/reference hierarchy with sites",
+  summary: "List the references into or out of a symbol, with where each is",
   details: [
     "Lists the references that leave (--out, the default) or enter (--in) an element, in source order:",
     "  <kind>  <other id>  (<file>:<line>, <precise|heuristic>)  +<offset>",

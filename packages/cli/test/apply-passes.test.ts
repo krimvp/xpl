@@ -268,7 +268,7 @@ describe("xpl apply: which stream says what", () => {
     const noExplainer = await invoke(["apply", "nope", "broken.json"], { cwd: dir });
     expect(noExplainer.code).toBe(1);
     expect(noExplainer.out).toBe("");
-    expect(noExplainer.err).toMatch(/^error: no explainer "nope"/);
+    expect(noExplainer.err).toMatch(/^error: no guide "nope"/);
     const usage = await invoke(["apply", "demo"], { cwd: dir });
     expect(usage.code).toBe(2);
     expect(usage.out).toBe("");

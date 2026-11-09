@@ -255,6 +255,35 @@ function anchoredRows(layout: Pick<GraphLayout, "nodes">, anchors: readonly Code
 }
 
 /**
+ * On a data map, the tables a selected table holds or is held by (through its rows' arrows), marked as linked
+ * the way a selected box's neighbours are.
+ */
+function heldTables(
+  layout: Pick<GraphLayout, "nodes" | "edges">,
+  selected: ReadonlySet<string>,
+): string[] {
+  const tableOf = new Map<string, string>();
+  const visit = (list: readonly LayoutNode[]) => {
+    for (const node of list) {
+      if (node.rows) {
+        tableOf.set(node.id, node.id);
+        for (const row of node.children) tableOf.set(row.id, node.id);
+      }
+      visit(node.children);
+    }
+  };
+  visit(layout.nodes);
+  const out = new Set<string>();
+  for (const edge of allEdgesOf(layout)) {
+    const from = tableOf.get(edge.from) ?? edge.from;
+    const to = tableOf.get(edge.to) ?? edge.to;
+    if (selected.has(from) && tableOf.has(from) && to !== from) out.add(to);
+    if (selected.has(to) && tableOf.has(to) && to !== from) out.add(from);
+  }
+  return [...out];
+}
+
+/**
  * The boxes whose arrows stay lit while something is selected: each selected box with every box inside it, and
  * both ends of a selected arrow. Undefined when nothing on this map is selected (then no arrow is dimmed).
  */
@@ -389,10 +418,11 @@ export function GraphView({
     // a row whose field the step's code points at (Queue.ready, "used here" for the Job table) is marked on its
     // own table, as a caret on that line would mark it (V5-07)
     const rows = dataMap && layout ? anchoredRows(layout, [...stepAnchors(selection)]) : [];
+    const held = dataMap && layout ? heldTables(layout, selected) : [];
     return {
       selected,
       matches: new Set(matches),
-      related: rows.length > 0 ? new Set([...related, ...rows]) : related,
+      related: rows.length + held.length > 0 ? new Set([...related, ...rows, ...held]) : related,
       ...(lit ? { lit } : {}),
       ...(arrowPicked ? { arrowPicked } : {}),
     };

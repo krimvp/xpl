@@ -238,8 +238,8 @@ describe("xpl apply", () => {
   it("names the explainers that exist when the name is wrong", async () => {
     const { code, err } = await xpl(demo, "apply", "demmo", PATCH_PATH);
     expect(code).toBe(1);
-    expect(err).toContain('no explainer "demmo"');
-    expect(err).toContain("Existing explainers: demo");
+    expect(err).toContain('no guide "demmo"');
+    expect(err).toContain("Guides here: demo");
   });
 
   it("finds the explainer by name, file name or path", async () => {
@@ -460,7 +460,7 @@ describe("xpl resolve", () => {
     expect((await xpl(dir, "index", "--precise", "off")).code).toBe(0);
     const { code, out } = await xpl(dir, "resolve", "demo", "--write");
     expect(code).toBe(0);
-    expect(out).toMatch(/missing anchors \(1\): fix or drop them explicitly/);
+    expect(out).toMatch(/missing code links \(1\): fix or remove each one/);
     expect(out).toContain(
       "dispatch:1  views[1].steps[0].anchors[1]  src/queue.ts#Queue.pop [definition]",
     );
@@ -579,7 +579,7 @@ describe("xpl status", () => {
       /to do: \d+ with no text, [1-9]\d* changed code links, 1 missing code links, 1 request$/m,
     );
     expect(out).toContain("drifted llm elements to re-explain");
-    expect(out).toContain("missing anchors (1)");
+    expect(out).toContain("missing code links (1)");
     expect(out).toContain(
       '2026-01-01T00:00:00.000Z  expand sym:src/runner.ts#Runner.dispatch  "why a loop?"',
     );

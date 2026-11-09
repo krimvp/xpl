@@ -1114,7 +1114,7 @@ describe("xpl view", () => {
       env: viewerEnv,
     });
     expect(noExplainer.code).toBe(1);
-    expect(noExplainer.err).toContain('no explainer "ghost"');
+    expect(noExplainer.err).toContain('no guide "ghost"');
     const badPort = await invoke(["view", "demo", "--port", "70000", "--root", demo], {
       cwd: demo,
       env: viewerEnv,

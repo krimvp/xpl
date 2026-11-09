@@ -18,6 +18,7 @@ import {
 } from "@xpl/core";
 import { useViewerState } from "../hooks.js";
 import {
+  absoluteBoxes,
   cutAt,
   graphBounds,
   frameFocus,
@@ -212,7 +213,8 @@ function GraphSnapshot({
           ...focused,
           boxes: focused.boxes.map(shift),
           neighbours: focused.neighbours?.map(shift),
-          others: focused.others?.map(shift),
+          // (every box and group frame: the picture slides to cut as few as it can)
+          others: [...absoluteBoxes(layout.nodes).values()].map(shift),
         }
       }
       where="Map"

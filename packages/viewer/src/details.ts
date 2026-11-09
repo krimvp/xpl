@@ -259,27 +259,38 @@ function buildInfo(id: ElementId, model: ExplainerModel, vd: ViewDerived): Eleme
       const holds = derived !== undefined && isHolds(derived);
       const from = holds ? fieldName(ref.from, model) : model.label(ref.from);
       const to = model.label(ref.to);
+      // a type's place in a hierarchy (extends, implements; Go's embeds) is said once, not counted as
+      // references: "queue.Queue implements JobQueue"
+      const verb =
+        derived && !holds && (ref.kind === "extends" || ref.kind === "implements")
+          ? (derived.label ?? ref.kind)
+          : undefined;
+      const trust = derived && trustWords(derived.resolution);
       const info: ElementInfo = {
         id,
         type: "derived-edge",
         title: holds
           ? `${from} holds ${to}`
-          : derived
-            ? (derived.label ?? kindCount(derived.kind, derived.count))
-            : ref.kind,
-        kind: holds ? "holds" : ref.kind,
+          : verb
+            ? `${from} ${verb} ${to}`
+            : derived
+              ? (derived.label ?? kindCount(derived.kind, derived.count))
+              : ref.kind,
+        kind: holds ? "holds" : (verb ?? ref.kind),
         where: `${from} → ${to}`,
         summary: holds
-          ? `The field ${from} holds a value of type ${to}, found in the code${trustWords(derived.resolution) ? ` (${trustWords(derived.resolution)})` : ""}.`
-          : derived
-            ? `${plural(derived.count, "reference")} from ${from} to ${to}, found in the code${trustWords(derived.resolution) ? ` (${trustWords(derived.resolution)})` : ""}.`
-            : `An arrow found in the code (${ref.kind}).`,
+          ? `The field ${from} holds a value of type ${to}, found in the code${trust ? ` (${trust})` : ""}.`
+          : verb
+            ? `${from} ${verb} ${to}, found in the code${trust ? ` (${trust})` : ""}.`
+            : derived
+              ? `${plural(derived.count, "reference")} from ${from} to ${to}, found in the code${trust ? ` (${trust})` : ""}.`
+              : `An arrow found in the code (${ref.kind}).`,
         facts: [
           { label: "From", value: from },
           { label: "To", value: to },
           ...(derived
             ? [
-                ...(holds ? [] : [{ label: "References", value: String(derived.count) }]),
+                ...(holds || verb ? [] : [{ label: "References", value: String(derived.count) }]),
                 { label: "Resolution", value: derived.resolution },
               ]
             : []),

@@ -356,6 +356,64 @@ describe("healthCheck: large and possibly unused files", () => {
     ]);
   });
 
+  it("cannot tell, and says so, for a file whose language's analysis does not follow imports", () => {
+    const world = makeWorld({
+      files: [
+        { path: "src/runner.rs", language: "rust" },
+        { path: "src/queue.rs", language: "rust" },
+        { path: "src/orphan.ts" },
+      ],
+      refs: [{ from: "src/runner.rs#run", to: "src/queue.rs#push", kind: "call", line: 2 }],
+      symbols: [
+        { id: "src/runner.rs#run", start: 2, end: 3 },
+        { id: "src/queue.rs#push", start: 2, end: 3 },
+        { id: "src/orphan.ts#run", start: 2, end: 3 },
+      ],
+    });
+    world.index.analysis = [
+      {
+        provider: "rust-tags",
+        capabilities: { call: "partial" },
+        files: ["src/runner.rs", "src/queue.rs"],
+        results: [
+          {
+            capabilities: ["call"],
+            status: "partial",
+            analyzedFiles: ["src/runner.rs", "src/queue.rs"],
+            limitations: [],
+          },
+          { capabilities: ["import"], status: "unsupported", analyzedFiles: [], limitations: [] },
+        ],
+      },
+      {
+        provider: "typescript",
+        capabilities: { import: "partial" },
+        files: ["src/orphan.ts"],
+        results: [
+          {
+            capabilities: ["call", "import"],
+            status: "partial",
+            analyzedFiles: ["src/orphan.ts"],
+            limitations: [],
+          },
+        ],
+      },
+    ];
+    const report = healthCheck(world.model, world.getText);
+    expect(brief(report.findings)).toEqual([
+      {
+        check: "unused-file",
+        severity: "low",
+        at: "src/orphan.ts:1",
+        title: "Possibly unused file",
+        heuristic: true,
+      },
+    ]);
+    expect(report.notes).toEqual([
+      "rust: the index does not follow imports, so xpl cannot tell whether 1 file is unused.",
+    ]);
+  });
+
   it("skips the unused check, with a note, when the index has no references", () => {
     const report = check(
       [{ path: "src/orphan.ts" }],

@@ -1,4 +1,4 @@
-import { drawnEdges } from "../src/drawnEdges.js";
+import { drawnEdges, rowTypeText } from "../src/drawnEdges.js";
 import {
   deriveGraph,
   ExplainerModel,
@@ -1286,7 +1286,7 @@ describe("labels and routes a reader can follow (round 2)", () => {
         Math.max(a!.x, b!.x) - Math.min(a!.x + a!.width, b!.x + b!.width),
         Math.max(a!.y, b!.y) - Math.min(a!.y + a!.height, b!.y + b!.height),
       );
-      expect([direction, gap >= 4]).toEqual([direction, true]);
+      expect(gap, direction).toBeGreaterThanOrEqual(4);
       // and the line runs between them, not under one of them (each label beside its own half)
       const line = layout.edges[0]!.points;
       expect([direction, routeHitsLabel(line, a!), routeHitsLabel(line, b!)]).toEqual([
@@ -1517,5 +1517,20 @@ describe("tables", () => {
   it("is laid out in the direction that draws it larger in the pane", async () => {
     expect((await layoutGraphFitting(graph, { width: 300, height: 1200 })).direction).toBe("DOWN");
     expect((await layoutGraphFitting(graph, { width: 1200, height: 300 })).direction).toBe("RIGHT");
+  });
+});
+
+// the table read "runner.Config" but its row's type "Config"; the table "Retry" but the row "config.Retry"
+describe("a row's type names the table it holds as the map does", () => {
+  it("qualifies or unqualifies the type's name to the table's, and leaves other types as written", () => {
+    expect(rowTypeText("Config", "runner.Config")).toBe("runner.Config");
+    expect(rowTypeText("*Config", "runner.Config")).toBe("*runner.Config");
+    expect(rowTypeText("config.Retry", "Retry")).toBe("Retry");
+    expect(rowTypeText("[]Job", "Job")).toBe("[]Job");
+    expect(rowTypeText("Array<(worker: Worker) => void>", undefined)).toBe(
+      "Array<(worker: Worker) => void>",
+    );
+    // (two mentions: which one is the table is not clear, so the code's words stay)
+    expect(rowTypeText("Map<Job, Job>", "queue.Job")).toBe("Map<Job, Job>");
   });
 });

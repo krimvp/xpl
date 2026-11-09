@@ -19,7 +19,7 @@ FastAPI, Flask, net/http, chi, gin, echo; simple prefix mounts included). Parame
 local or example one is left out. These links are always heuristic: a proxy or another server can answer the
 same path. Maps draw them as `requests` arrows.
 
-`xpl index` prints one line per language. The line ends with how far its references can be trusted:
+`xpl index` prints one line per language. The line ends with how much you can trust its references:
 `refs: precise` (with the tool's name), `refs: heuristic` or `refs: none`. A plain line under the table names
 each language whose references are matched by name or whose symbols can be missing. `xpl index --verbose` also
 lists, for each kind of symbol and reference, what was found and what is not supported. No reference found

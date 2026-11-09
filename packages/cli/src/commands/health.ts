@@ -13,7 +13,8 @@ const DISCLAIMER = "a quick check, not a security audit";
 export const healthCommand: CommandSpec = {
   name: "health",
   usage: "xpl health",
-  summary: "Quick check for committed secrets, files over 1,000 lines and files that may be unused",
+  summary:
+    "Check quickly for committed secrets, files over 1,000 lines and files that may be unused",
   details: [
     "Lists common problems, each with its file and line, a severity, why it matters and a fix.",
     "It finds keys and passwords in the code (masked), secrets sent to the browser and committed .env files.",

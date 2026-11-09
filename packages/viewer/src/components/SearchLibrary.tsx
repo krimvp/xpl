@@ -12,6 +12,7 @@ import type {
 import { containedGuides } from "../library.js";
 import { ServerApi, messageOf } from "../data.js";
 import { useStore, useViewerState } from "../hooks.js";
+import { renderInline } from "../markdown.js";
 import "../search.css";
 
 const NAVIGATION = [
@@ -31,11 +32,26 @@ const NAVIGATION = [
 /** The kind of a hit, in words (steps get their own label). */
 const HIT_WORDS: Record<string, string> = {
   source: "Code",
-  symbol: "Name in the code",
   concept: "Concept",
   tour: "Tour",
   guide: "Guide",
 };
+/** A name's kind, in words (the index's kinds; Go structs and fields as `symbolKindWord` says). */
+const KIND_WORDS: Record<string, string> = {
+  class: "Class",
+  struct: "Struct",
+  interface: "Interface",
+  function: "Function",
+  method: "Method",
+  type: "Type",
+  variable: "Variable",
+  field: "Field",
+  enum: "Enum",
+  key: "Settings key",
+};
+/** A name hit's kicker: its kind in words ("Function", "Struct"), else "Name". */
+const kindLabel = (node: { kindWord?: string; symbolKind?: string } | undefined): string =>
+  KIND_WORDS[node?.kindWord ?? node?.symbolKind ?? ""] ?? "Name";
 const rangeText = (range: Range) =>
   `${range.startLine}${range.startCol === undefined ? "" : `:${range.startCol}`}-${range.endLine}${range.endCol === undefined ? "" : `:${range.endCol}`}`;
 
@@ -274,60 +290,58 @@ export function SearchLibrary({ onClose }: { onClose: () => void }) {
               />
             </label>
             <p className="search-scope" title={`Code as of ${index.commit}`}>
-              This page holds {included} of {index.files.length} files of code. Search looks in the
-              code, its names and the text of {embedded.length}{" "}
-              {embedded.length === 1 ? "guide" : "guides"}.
+              This page holds {included} of {index.files.length} files. Search looks in their code,
+              their names and the text of{" "}
+              {embedded.length === 1 ? "the guide" : `${embedded.length} guides`}.
             </p>
-            <div className="search-limits">
-              {embedded
-                .filter((g) => g.guideId !== current)
-                .map((g) => (
-                  <p key={g.guideId}>
-                    {g.explainer.title || g.guideId} · snapshot <code>{g.index.commit}</code>:{" "}
-                    {g.index.files.filter((f) => f.path in g.files).length} of{" "}
-                    {g.index.files.length} indexed files supplied.
-                    {g.index.files.some((f) => !(f.path in g.files))
-                      ? " Missing source is not searched or opened from another guide."
-                      : ""}
-                    {g.index.pruned ? " Index pruned; omitted symbols cannot be searched." : ""}
-                    {!g.index.analysis?.length ? " Analysis unavailable." : ""}
-                    {g.sourceWarning ? ` ${g.sourceWarning}` : ""}
-                  </p>
-                ))}
-              {catalog && (
-                <p>
-                  Catalog-only guides have no source snapshot in this page; open a guide to search
-                  its available source.
-                </p>
-              )}
-              {missing > 0 && (
-                <p>
-                  {missing} indexed files{" "}
-                  {state.serverMode
-                    ? "not loaded; open them to include their supplied text"
-                    : "not included in this export"}
-                  .
-                </p>
-              )}
-              {index.pruned && (
-                <p>
-                  Index pruned: {index.symbols.length} of {index.pruned.symbols} symbols and{" "}
-                  {index.refs.length} of {index.pruned.refs} references retained. Omitted analysis
-                  is not evidence of absence.
-                </p>
-              )}
-              {!index.analysis?.length && (
-                <p>Analysis unavailable: this page does not say which code xpl could analyse.</p>
-              )}
-              <details>
-                <summary>Analysis coverage and limits</summary>
-                <ul>
-                  {coverage.details.map((detail, i) => (
-                    <li key={i}>{detail}</li>
+            {/* What the page leaves out, in plain words, behind one disclosure: a reader searches first. */}
+            <details className="search-limits" data-testid="search-limits">
+              <summary>What search cannot find here</summary>
+              <ul>
+                {missing > 0 && (
+                  <li>
+                    {state.serverMode
+                      ? `${missing} files are not loaded yet. Open a file to search its code.`
+                      : `${missing} files are not in this page, so their code is not searched.`}
+                  </li>
+                )}
+                {index.pruned && (
+                  <li>
+                    The page keeps {index.symbols.length.toLocaleString("en")} of{" "}
+                    {index.pruned.symbols.toLocaleString("en")} names and{" "}
+                    {index.refs.length.toLocaleString("en")} of{" "}
+                    {index.pruned.refs.toLocaleString("en")} references. A name or an arrow that is
+                    not found may be one it left out.
+                  </li>
+                )}
+                {!index.analysis?.length && (
+                  <li>This page does not say which code xpl could read.</li>
+                )}
+                {embedded
+                  .filter((g) => g.guideId !== current)
+                  .map((g) => (
+                    <li key={g.guideId}>
+                      {g.explainer.title || g.guideId}:{" "}
+                      {g.index.files.filter((f) => f.path in g.files).length} of{" "}
+                      {g.index.files.length} files are in this page.
+                      {g.index.pruned ? " Some of its names are left out." : ""}
+                      {!g.index.analysis?.length
+                        ? " It does not say which code xpl could read."
+                        : ""}
+                      {g.sourceWarning ? ` ${g.sourceWarning}` : ""}
+                    </li>
                   ))}
-                </ul>
-              </details>
-            </div>
+                {catalog && (
+                  <li>
+                    A guide that is only listed has no code in this page: open it to search its
+                    code.
+                  </li>
+                )}
+                {coverage.details.map((detail, i) => (
+                  <li key={i}>{detail}</li>
+                ))}
+              </ul>
+            </details>
             <p role="status" className="search-status">
               {busy
                 ? "Searching…"
@@ -388,7 +402,9 @@ export function SearchLibrary({ onClose }: { onClose: () => void }) {
                           ? "tour" in hit
                             ? "Tour step"
                             : "Flow step"
-                          : (HIT_WORDS[hit.kind] ?? hit.kind);
+                          : hit.kind === "symbol"
+                            ? kindLabel(guide === current ? state.model.node(hit.id) : undefined)
+                            : (HIT_WORDS[hit.kind] ?? hit.kind);
                       // Where the hit is, in a reader's words: the file and its lines (the snapshot's commit
                       // is in the tooltip), or the guide and its tour.
                       const lines =
@@ -413,7 +429,7 @@ export function SearchLibrary({ onClose }: { onClose: () => void }) {
                             }
                           >
                             {context}
-                            {unavailable ? " · source not supplied" : ""}
+                            {unavailable ? " · code not in this page" : ""}
                           </small>
                         </>
                       );
@@ -462,12 +478,9 @@ export function SearchLibrary({ onClose }: { onClose: () => void }) {
                       onClick={(e) => open(e, g.id)}
                     >
                       <strong>{g.title || "Untitled guide"}</strong>
-                      <small>
-                        {g.kind} · {g.commit}
-                      </small>
                       {g.audience && <span>For {g.audience}</span>}
                       {g.questions.map((q) => (
-                        <span key={q}>{q}</span>
+                        <span key={q} dangerouslySetInnerHTML={{ __html: renderInline(q) }} />
                       ))}
                     </a>
                   )}
