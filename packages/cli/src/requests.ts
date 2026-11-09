@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import {
   hashText,
+  FEEDBACK_NOT_RECORDED,
   parseFeedbackRequest,
   sameFeedbackContext,
   mergeFeedbackRequests,
@@ -63,7 +64,7 @@ function storedRequest(value: unknown, position: number): FeedbackRequest {
       outcome: {
         revision: 0,
         status: "outdated",
-        reason: "Original snapshot was not recorded. Explicit reconciliation is required.",
+        reason: FEEDBACK_NOT_RECORDED,
         at,
       },
     });
@@ -141,7 +142,7 @@ export async function appendRequest(
         ? {
             revision: 0,
             status: "outdated",
-            reason: "Original snapshot was not recorded. Explicit reconciliation is required.",
+            reason: FEEDBACK_NOT_RECORDED,
             at,
           }
         : { revision: 0, status: "pending", reason: "Awaiting an explicit revision pass.", at },

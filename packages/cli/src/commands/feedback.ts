@@ -9,6 +9,7 @@ import {
 } from "@xpl/core";
 import type { CommandSpec } from "../command.js";
 import { CliError } from "../errors.js";
+import { plural } from "../format.js";
 import { atomicWrite, jsonFile, parseJson, readTextFile } from "../fsutil.js";
 import {
   importRequests,
@@ -105,8 +106,8 @@ export const feedbackCommand: CommandSpec = {
       );
     }
     const feedback = { schema: FEEDBACK_SCHEMA, requests: mine };
-    if (args.str("export"))
-      await atomicWrite(resolve(ctx.cwd, args.str("export")!), jsonFile(feedback));
+    const exportTo = args.str("export");
+    if (exportTo) await atomicWrite(resolve(ctx.cwd, exportTo), jsonFile(feedback));
     const requests = mine.map((r) => {
       const contextReason =
         feedbackContextReason(r, current) ?? (ws.stale ? ws.stale.message : undefined);
@@ -121,9 +122,13 @@ export const feedbackCommand: CommandSpec = {
     else
       ctx.out(
         [
+          ...(exportTo ? [`wrote ${exportTo} (${plural(mine.length, "request")})`] : []),
           ...(imported !== undefined
-            ? [`Imported ${imported}; ${mine.length} stored request(s).`]
+            ? [
+                `imported ${plural(imported, "request")}; ${mine.length} ${mine.length === 1 ? "is" : "are"} stored for ${loaded.name}`,
+              ]
             : []),
+          ...(requests.length === 0 ? [`no reader requests for ${loaded.name}`] : []),
           ...requests.flatMap((r) => requestLines(r, r.contextReason)),
           ...(requests.some(isOpenRequest)
             ? [

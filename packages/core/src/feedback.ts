@@ -56,9 +56,9 @@ export interface FeedbackFile {
   requests: FeedbackRequest[];
 }
 
-function object(value: unknown): Record<string, unknown> {
+function object(value: unknown, field?: string, shape = ""): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value))
-    throw new Error("expected an object");
+    throw new Error(field ? `${field} must be an object${shape}` : "expected an object");
   return value as Record<string, unknown>;
 }
 
@@ -81,7 +81,7 @@ function timestamp(value: unknown): string {
 
 /** Repository-relative, positive inclusive source selection. */
 function parseFeedbackRange(value: unknown): NonNullable<FeedbackRequest["range"]> {
-  const selected = object(value);
+  const selected = object(value, "range");
   const file = text(selected.file, "range.file", 2000);
   if (
     file.startsWith("/") ||
@@ -111,7 +111,7 @@ export function parseFeedbackRequest(value: unknown): FeedbackRequest {
   const data = object(value);
   const kind = text(data.kind, "kind", 20);
   if (!["correct", "explain", "expand"].includes(kind)) throw new Error("unknown feedback kind");
-  const result = object(data.outcome);
+  const result = object(data.outcome, "outcome", " {revision, status, reason, at}");
   // Existing v1 exports predate counters. Their times cannot establish an ordering.
   const revision = result.revision === undefined ? 0 : result.revision;
   if (typeof revision !== "number" || !Number.isSafeInteger(revision) || revision < 0)
@@ -122,7 +122,7 @@ export function parseFeedbackRequest(value: unknown): FeedbackRequest {
   }
   let context: ArtifactIdentity | null = null;
   if (data.context !== null) {
-    const identity = object(data.context);
+    const identity = object(data.context, "context");
     context = {
       explainerHash: text(identity.explainerHash, "explainerHash", 200),
       sourceHash: text(identity.sourceHash, "sourceHash", 200),
@@ -166,7 +166,20 @@ export function parseFeedbackFile(value: unknown): FeedbackFile {
   const data = object(value);
   if (data.schema !== FEEDBACK_SCHEMA || !Array.isArray(data.requests))
     throw new Error(`expected ${FEEDBACK_SCHEMA} with a requests array`);
-  return { schema: FEEDBACK_SCHEMA, requests: data.requests.map(parseFeedbackRequest) };
+  return {
+    schema: FEEDBACK_SCHEMA,
+    requests: data.requests.map((request: unknown, i) => {
+      try {
+        return parseFeedbackRequest(request);
+      } catch (error) {
+        const id = (request as { id?: unknown } | null)?.id;
+        const message = error instanceof Error ? error.message : String(error);
+        throw new Error(
+          `request ${i + 1}${typeof id === "string" ? ` (id ${id})` : ""}: ${message}`,
+        );
+      }
+    }),
+  };
 }
 
 export function sameFeedbackContext(
@@ -227,6 +240,10 @@ export function duplicateRequest(
   );
 }
 
+/** Why a request whose page did not record what the reader saw is outdated. */
+export const FEEDBACK_NOT_RECORDED =
+  "The page did not record what the reader saw: check the request against the current text before you answer it.";
+
 /** Outdated context is reported separately, so importing an old result never discards its reason. */
 export function feedbackContextReason(
   request: FeedbackRequest,
@@ -236,8 +253,8 @@ export function feedbackContextReason(
   return sameFeedbackContext(request.context, current)
     ? undefined
     : request.context === null
-      ? "Original snapshot was not recorded. Explicit reconciliation is required."
-      : "Explanation or source snapshot changed. Explicit reconciliation is required.";
+      ? FEEDBACK_NOT_RECORDED
+      : "The guide or its code changed after the reader asked: check the request against the current text before you answer it.";
 }
 
 /** Parse and hash recorded evidence before using it as an answer's validation source. */
@@ -312,7 +329,7 @@ function parseAnswers(
   const ids = new Set<string>();
   return value.map((entry) => {
     const data = object(entry);
-    const identity = object(data.context);
+    const identity = object(data.context, "context");
     const original = {
       explainerHash: text(identity.explainerHash, "answer.explainerHash", 200),
       sourceHash: text(identity.sourceHash, "answer.sourceHash", 200),

@@ -133,7 +133,7 @@ export function FeedbackPanel({ onClose }: { onClose: () => void }) {
       .refreshFeedback()
       .catch((error) =>
         setMessage(
-          `Could not read disk feedback: ${messageOf(error)}. Your browser feedback can still be exported.`,
+          `Could not read the saved requests: ${messageOf(error)}. The ones in this browser can still be exported.`,
         ),
       );
   }, [store]);
@@ -384,7 +384,7 @@ export function FeedbackPanel({ onClose }: { onClose: () => void }) {
                           setMessage("Question submitted.");
                         } catch (error) {
                           setMessage(
-                            `Not sent: ${messageOf(error)} The question is saved. Run /code-explainer feedback in your agent to answer it, or export the JSON to keep it.`,
+                            `Not sent: ${messageOf(error)}. The question is saved. Run /code-explainer feedback in your agent to answer it, or export the feedback file to keep it.`,
                           );
                         }
                       })

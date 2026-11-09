@@ -94,6 +94,12 @@ test("a shared page saves a question for the author, says how to send it, and li
   await expect(item).not.toContainText("Revision");
   await expect(item).not.toContainText("(head)");
   await expect(item.getByRole("button", { name: "Get an answer" })).toHaveCount(0);
+  // the author, in Explore, sees the request's id: the one `xpl feedback` lists
+  await page.keyboard.press("Escape");
+  await page.goto("http://xpl.test/?mode=explore");
+  await page.getByRole("button", { name: /^Feedback/ }).click();
+  const id = await panel.locator(".feedback-list > li").first().getAttribute("data-request-id");
+  await expect(panel.locator(".feedback-list > li code").first()).toHaveText(id!);
 });
 
 test("feedback captured after an offline view edit survives reload with its edited context", async ({

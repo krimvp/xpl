@@ -79,7 +79,37 @@ it("imports, inspects, exports and records outcomes by ID while reporting outdat
     contextStatus: "outdated",
     outcome: { status: "unresolved", reason: "Run failed; retry available." },
   });
-  expect(changed.json.requests[0].contextReason).toMatch(/snapshot changed|stale/);
+  expect(changed.json.requests[0].contextReason).toMatch(/changed after the reader asked|stale/);
+});
+
+it("says when there is nothing, and what it wrote", async () => {
+  const root = cloneDir(demo);
+  const empty = await xpl(root, "feedback", "demo");
+  expect(empty.out).toBe("no reader requests for demo");
+  const out = makeTempDir() + "/none.json";
+  const exported = await xpl(root, "feedback", "demo", "--export", out);
+  expect(exported.out).toBe(`wrote ${out} (0 requests)\nno reader requests for demo`);
+});
+
+it("a request without its outcome names the request and the field", async () => {
+  const root = cloneDir(demo);
+  const request = {
+    id: "r2",
+    elementId: "file:src/runner.ts",
+    kind: "explain",
+    at: "2026-10-04T12:00:00.000Z",
+    context: null,
+  };
+  const input = writeFile(
+    makeTempDir(),
+    "bad.json",
+    JSON.stringify({ schema: FEEDBACK_SCHEMA, requests: [request] }),
+  );
+  const rejected = await xpl(root, "feedback", "demo", "--import", input);
+  expect(rejected.code).toBe(1);
+  expect(rejected.err).toContain(
+    "request 1 (id r2): outcome must be an object {revision, status, reason, at}",
+  );
 });
 
 it("refuses malformed imports without replacing existing disk feedback", async () => {
@@ -103,11 +133,11 @@ it("lists each request with the reader's note, keeps one of two equal saves, and
     fullIndex(root),
   );
   const at = "2026-10-04T12:00:00.000Z";
-  const question = (id: string) => ({
+  const question = (id: string, note = "Does a timeout count as a failed attempt?") => ({
     id,
     elementId: "file:src/worker.ts",
     kind: "explain",
-    note: "Does a timeout count as a failed attempt?",
+    note,
     at,
     context,
     outcome: { revision: 0, status: "pending", reason: "Awaiting an explicit revision pass.", at },
@@ -115,20 +145,29 @@ it("lists each request with the reader's note, keeps one of two equal saves, and
   const input = writeFile(
     scratch,
     "feedback.json",
-    JSON.stringify({ schema: FEEDBACK_SCHEMA, requests: [question("q1"), question("q2")] }),
+    JSON.stringify({
+      schema: FEEDBACK_SCHEMA,
+      // q3 asks another question about the same element: it is not a duplicate of q1
+      requests: [question("q1"), question("q2"), question("q3", "Who retries it?")],
+    }),
   );
   const imported = await xpl(root, "feedback", "demo", "--import", input);
   expect(imported.code).toBe(0);
   expect(imported.out.split("\n")).toEqual([
-    "Imported 1; 1 stored request(s).",
+    "imported 2 requests; 2 are stored for demo",
     "q1  pending  question file:src/worker.ts",
     '  "Does a timeout count as a failed attempt?"',
+    "q3  pending  question file:src/worker.ts",
+    '  "Who retries it?"',
     "To act on the requests, start the code-explainer skill in your agent. Saving feedback starts nothing.",
   ]);
   const outcomes = writeFile(
     scratch,
     "outcomes.json",
-    JSON.stringify([{ id: "q1", context, status: "addressed", reason: "Step 4 answers it." }]),
+    JSON.stringify([
+      { id: "q1", context, status: "addressed", reason: "Step 4 answers it." },
+      { id: "q3", context, status: "addressed", reason: "Step 5 answers it." },
+    ]),
   );
   expect((await xpl(root, "feedback", "demo", "--outcomes", outcomes)).code).toBe(0);
   // the guide changes when the author answers: an answered request has no context left to reconcile
@@ -140,5 +179,17 @@ it("lists each request with the reader's note, keeps one of two equal saves, and
     "q1  addressed  question file:src/worker.ts",
     '  "Does a timeout count as a failed attempt?"',
     "  Step 4 answers it.",
+    "q3  addressed  question file:src/worker.ts",
+    '  "Who retries it?"',
+    "  Step 5 answers it.",
   ]);
+  // the same question asked again after the author answered it is a new request
+  const again = writeFile(
+    scratch,
+    "again.json",
+    JSON.stringify({ schema: FEEDBACK_SCHEMA, requests: [question("q4")] }),
+  );
+  const reasked = await xplJson(root, "feedback", "demo", "--import", again);
+  expect(reasked.json.imported).toBe(1);
+  expect(reasked.json.requests.map((r: { id: string }) => r.id)).toEqual(["q1", "q3", "q4"]);
 });
