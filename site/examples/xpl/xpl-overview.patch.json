@@ -43,7 +43,7 @@
       "id": "dir:packages/indexer/src",
       "kind": "dir",
       "label": "Source index",
-      "summary": "Discovers source files and records declarations, ranges, and labelled relationships.",
+      "summary": "Discovers source files and records declarations, ranges, and labeled relationships.",
       "parent": "dir:packages/indexer",
       "role": "component",
       "anchors": []
