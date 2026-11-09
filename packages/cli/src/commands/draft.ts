@@ -425,6 +425,7 @@ export const draftCommand: CommandSpec = {
         ...(outPath ? { out: displayPath(ctx.cwd, outPath) } : {}),
         counts,
         notes: draft.notes.map((n) => n.replaceAll("<explainer>", loaded.name)),
+        ...(draft.entry ? { entry: draft.entry } : {}),
         ...(warnings.length > 0 ? { applyWarnings: warnings } : {}),
         patch: draft.patch,
       });

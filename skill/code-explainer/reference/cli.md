@@ -1177,7 +1177,7 @@ A caller is code that calls. A test, or code that only names a changed type, is 
 **Draws** two levels.
 
 - A system map (`view:system`, `stubs: none`): the project as one service box, or one per program under `services/`, `apps/` or `cmd/`.
-- Who reaches it: a web or command-line framework, or a web server start call (`ListenAndServe`). A program with only a `main` gets an `Operator` box there. A library is the `system` box, and a "Your app" box (`role: external`, `tech: your app`) at the README example calls it.
+- Who reaches it: a web or command-line framework, a web server start call (`ListenAndServe`), or a package.json `bin` (a User at the terminal). A program with only a `main` gets an `Operator` box there. A library is the `system` box, and a "Your app" box (`role: external`, `tech: your app`) at the README example calls it.
 - What it relies on (databases, queues, APIs), from its imports, and a `Settings file` box.
 - Each arrow it adds there gets a label TODO and a summary TODO, so `ready` finds no empty text once the TODOs are written.
 - Each service box `opens` a map of its inside: at most 8 parts, and the outside systems each imports. Code that is not the product gets no box: tests, examples, fixtures, docs, benchmarks, playgrounds, project templates (`templates/`, `template-*/`), demos and sandboxes.
@@ -1188,7 +1188,7 @@ A caller is code that calls. A test, or code that only names a changed type, is 
 
 - That the kind of project and its users are a guess.
 - The settings files, and whether the code loads them or only names them.
-- The `xpl draft path` command that fills the room for the main path. For a library it starts where the request goes, past the builder that returns the client (ky: `Ky.create`, not `createInstance`). In Ruby or PHP, which have no references, the note says to write those steps from `xpl show` instead.
+- The `xpl draft path` command that fills the room for the main path. It starts where a manifest says the project starts, and says which: a package.json `bin`, `exports` or `main` (a built `dist/` path read back to its source), or a pyproject.toml script. In that file it takes the `main`, or the function its top level calls or re-exports that reaches the most code (`main.ts` calls `run`; vite: `createServer`; express: `createApplication`). With no such entry it guesses; for a library, where the request goes, past the builder that returns the client. In Ruby or PHP, which have no references, the note says to write those steps from `xpl show` instead.
 - The outside systems found, the files left off the inside map, and the code files left off because they are not the product, counted by folder.
 
 ### `xpl draft path <id> [<id> ...]`
@@ -1316,7 +1316,7 @@ A step of the path sequence and its tour step:
 
 What the draft cannot know, you write: every title, summary and note; the groups of a repo map (one box per responsibility); which caller matters and why; "before" claims (read the base with `xpl show --at base`); what the tests check; the risk. The draft names what it left out (`note:` lines). Write the patch outside the repo, then `xpl lint <explainer> --patch <file>`: `todo-left` lists each placeholder still there (an error-level finding: lint exits 1 until every one is written). Without `-o` the patch goes to stdout and the summary to stderr.
 
-`--json`: `{ok, kind, path, out?, counts: {views, maps, boxes, rows, participants, sequenceSteps, overlays, groups, tourSteps, anchors, todos}, notes: [text], applyWarnings?, patch}`. Exit codes: 0 ok, 1 no change recorded, an entry that is not a symbol, or nothing to draft, 2 usage error.
+`--json`: `{ok, kind, path, out?, counts: {views, maps, boxes, rows, participants, sequenceSteps, overlays, groups, tourSteps, anchors, todos}, notes: [text], entry?: {id, how}, applyWarnings?, patch}` (`entry`: `repo`, where a manifest says the main path starts). Exit codes: 0 ok, 1 no change recorded, an entry that is not a symbol, or nothing to draft, 2 usage error.
 
 ## `xpl view [explainer] [--port <port>] [--host <host>] [--no-open]`
 

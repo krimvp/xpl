@@ -66,6 +66,7 @@ import {
   type TextCache,
 } from "@xpl/core";
 import {
+  declaredEntry,
   declaredLibrary,
   findOutsideSystems,
   isLibrary,
@@ -219,6 +220,8 @@ export interface Draft {
   patch: ExplainerPatch;
   /** What the person running the command should know: what was left out and why. Plain sentences. */
   notes: string[];
+  /** `repo`: where the main path starts when a manifest declares it, and where it is declared. */
+  entry?: { id: string; how: string };
 }
 
 // ─── Text ───────────────────────────────────────────────────────────────────────────────────────
@@ -2321,15 +2324,27 @@ export function draftRepo(input: DraftInput): Draft {
   const room = Math.max(1, L.repoSteps - PATH_ROOM - steps.length - 1);
   const topCallable =
     mainTop && (mainTop.kind === "function" || mainTop.kind === "method") ? mainTop : undefined;
-  // a library's main path is the request its entry makes, not the builder that returns the entry
+  // where the project says it starts (a library's API, not its secondary tools), in the service the tour opens
+  const declared = declaredEntry(
+    model,
+    texts,
+    isCode,
+    library ? ["exports", "main"] : ["bin", "[project.scripts]", "exports", "main"],
+  );
+  const declaredFrom =
+    declared && main.units.some((u) => u.files.includes(declared.symbol.file))
+      ? declared
+      : undefined;
+  // else a guess: a library's main path is the request its entry makes, not the builder that returns the entry
   const pathFrom =
-    library && topCallable ? requestPath(model, isCode, topCallable) : (topCallable ?? entrySym);
+    declaredFrom?.symbol ??
+    (library && topCallable ? requestPath(model, isCode, topCallable) : (topCallable ?? entrySym));
   const blind = noReferences(model, pathFrom?.file ?? mainUnit.files[0]);
   notes.push(
     `room is left for ${PATH_ROOM} more steps (${L.repoSteps} at most), the main path and its risks: ` +
       (blind
         ? `the index has no references for ${blind}, so \`xpl draft path\` cannot draw it; write those steps from \`xpl show\``
-        : `run \`xpl draft path <explainer> ${pathFrom ? `sym:${pathFrom.id}` : "<entry>"}\` and copy the steps you keep`),
+        : `run \`xpl draft path <explainer> ${pathFrom ? `sym:${pathFrom.id}` : "<entry>"}\`${declaredFrom ? ` (where ${declaredFrom.how} starts)` : ""} and copy the steps you keep`),
   );
   // over the room, the parts with the fewest references share the last step
   const parts = order.slice(1);
@@ -2435,7 +2450,14 @@ export function draftRepo(input: DraftInput): Draft {
       },
     ],
   };
-  return { kind: "repo", patch, notes };
+  return {
+    kind: "repo",
+    patch,
+    notes,
+    ...(declaredFrom
+      ? { entry: { id: `sym:${declaredFrom.symbol.id}`, how: declaredFrom.how } }
+      : {}),
+  };
 }
 
 // ─── draft path ─────────────────────────────────────────────────────────────────────────────────

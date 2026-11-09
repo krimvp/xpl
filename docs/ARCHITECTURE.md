@@ -1941,17 +1941,30 @@ it to a file; `--json` adds the counts and what was left out.
   at that import. `excludeFiles` for tests and docs on both. The tour: the system map, what it relies on, the
   inside of the biggest service, then one step per part, the main part first, inside the skill's repo budget
   (`DRAFT_LIMITS.repoSteps`, 9 steps with where next) less `PATH_ROOM` (2) for the main path and its risks,
-  which a note says to draft with `xpl draft path` on the main part's top function (a library: `requestPath`
-  walks down from it through the one callee that reaches 90% of what it reaches, past builders and wrappers,
-  until the calls spread out; ky's createInstance -> createRequest -> `Ky.create`), and where next shows
-  that function's code: when the parts do not fit,
+  which a note says to draft with `xpl draft path` where the project says it starts (`declaredEntry` in
+  `outside.ts`), else on the main part's top function (a library: `requestPath` walks down from it through
+  the one callee that reaches 90% of what it reaches, past builders and wrappers, until the calls spread out;
+  a `fetchy` with no manifest entry: create -> `request`), and where next shows that function's code. The
+  declared entries: per package, the one with the most code first, a package.json's `bin`, `exports["."]`,
+  then `main` (`index.js` by default), and a pyproject.toml's `[project.scripts]` (a library's `bin` and
+  scripts are secondary tools and do not count). A built path is read back to its source: `dist/node/index.js`
+  to `src/node/index.ts`, else the package's `src/main`, `src/cli` or `src/index` (xpl's `dist/xpl.mjs` to
+  `src/main.ts`). In that file the path starts at the function the manifest names, else its `main`, else, of
+  the functions its module scope calls or re-exports and its own, the one that reaches the most code
+  (`main.ts` calls `run`; vite's `src/node/index.ts` re-exports `createServer`); a file with none of those
+  starts in the file it loads (express's `index.js` -> `lib/express.js`, `createApplication`). The first
+  entry whose function reaches other code wins, and it must sit in the service the tour opens; the note says
+  where it is declared, and `draft --json` returns it as `entry`. When the parts do not fit,
   the parts with the fewest references share one step. A part's step shows the functions and methods other
   parts call most, then its top symbols. With no `loads` resource, a settings file (yaml, json, toml, ini,
   env; not a manifest) that the code names in a string literal is the Settings box's lead. A new tour's steps
   are numbered after the highest `t<n>` of the guide's tours (`continueStepIds`), so a step copied between
   tours keeps its own id. A file that imports a standard-library web server module and also calls what starts
   it (`ListenAndServe`, `createServer`, `serve_forever`; `outside.ts` `SERVER_STARTS`) adds the inbound
-  Clients at that line, since the import alone (`net/http` is also a client) proves nothing. Only a program
+  Clients at that line, since the import alone (`net/http` is also a client) proves nothing. A package.json
+  `bin` adds the User at the terminal when no CLI framework did and the README does not call the project a
+  library or framework, anchored where the bin's file calls its entry and at the entry (xpl parses its
+  arguments with `node:util` `parseArgs`, which no catalog names). Only a program
   with no inbound system and no library shape gets an Operator (`role: person`) at its `main` (a Java `main`
   method of a top-level class too), with one arrow to each part that holds one. A library (`isLibrary`:
   package metadata and no program to run, or a README that says library or framework) is the `system` box, and

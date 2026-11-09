@@ -679,6 +679,85 @@ describe("importsOf", () => {
   });
 });
 
+describe("xpl draft repo: where the project says it starts", () => {
+  it("a bin built to dist/ starts at its source, and its user is at the terminal", async () => {
+    const dir = makeTempDir("xpl-arch-bin-");
+    writeFile(dir, "package.json", '{ "name": "tool-mono", "private": true }\n');
+    writeFile(dir, "pnpm-workspace.yaml", "packages:\n  - 'packages/*'\n");
+    writeFile(
+      dir,
+      "packages/cli/package.json",
+      '{ "name": "@tool/cli", "bin": { "tool": "dist/tool.mjs" } }\n',
+    );
+    writeFile(
+      dir,
+      "packages/cli/src/main.ts",
+      'import { setup } from "./setup.js";\nimport { run } from "./cli.js";\n\nsetup();\nprocess.exitCode = await run(process.argv.slice(2));\n',
+    );
+    writeFile(dir, "packages/cli/src/setup.ts", "export function setup(): void {}\n");
+    writeFile(
+      dir,
+      "packages/cli/src/cli.ts",
+      'import type { Options } from "./types.js";\nimport { parse } from "./parse.js";\nimport { build } from "@tool/core";\n\nexport async function run(argv: string[]): Promise<number> {\n  const options: Options = parse(argv);\n  return build(options);\n}\n',
+    );
+    writeFile(
+      dir,
+      "packages/cli/src/parse.ts",
+      'import type { Options } from "./types.js";\n\nexport function parse(argv: string[]): Options {\n  return { argv };\n}\n',
+    );
+    writeFile(
+      dir,
+      "packages/cli/src/types.ts",
+      "export interface Options {\n  argv: string[];\n}\n",
+    );
+    writeFile(
+      dir,
+      "packages/core/package.json",
+      '{ "name": "@tool/core", "exports": { ".": "./src/index.ts" } }\n',
+    );
+    writeFile(
+      dir,
+      "packages/core/src/index.ts",
+      'import type { Options } from "../../cli/src/types.js";\n\nexport function build(options: Options): number {\n  return options.argv.length;\n}\n',
+    );
+    const { patch, notes } = await drafted(dir);
+    expect(graph(patch, "view:system")?.include).toEqual(["grp:user", "grp:tool-mono"]);
+    expect(patch.nodes!.find((n) => n.id === "grp:user")).toMatchObject({
+      label: "User at the terminal",
+      anchors: [{ file: "packages/cli/src/cli.ts", span: { from: 4, to: 4 }, role: "usage" }],
+    });
+    expect(notes).toContain(
+      "room is left for 2 more steps (9 at most), the main path and its risks: run `xpl draft path shop sym:packages/cli/src/cli.ts#run` (where the `bin` of `packages/cli/package.json` starts) and copy the steps you keep",
+    );
+  });
+
+  it("a package's main file that hands on to another file starts at that file's function, not a helper", async () => {
+    const dir = makeTempDir("xpl-arch-main-");
+    writeFile(dir, "README.md", "# webby\n\nA minimalist web framework.\n");
+    writeFile(dir, "package.json", '{ "name": "webby" }\n');
+    writeFile(dir, "index.js", "'use strict';\n\nmodule.exports = require('./lib/webby');\n");
+    writeFile(
+      dir,
+      "lib/webby.js",
+      "var application = require('./application');\n\nexports = module.exports = createApplication;\n\nfunction createApplication() {\n  var app = {};\n  application.init(app);\n  return app;\n}\n",
+    );
+    writeFile(
+      dir,
+      "lib/application.js",
+      "exports.init = function init(app) {\n  app.settings = {};\n};\n\nfunction tryRender(view) {\n  return view;\n}\nexports.tryRender = tryRender;\n",
+    );
+    writeFile(
+      dir,
+      "lib/response.js",
+      "var application = require('./application');\n\nexports.render = function render(view) {\n  return application.tryRender(view);\n};\nexports.send = function send(view) {\n  return application.tryRender(view);\n};\n",
+    );
+    const { notes } = await drafted(dir);
+    expect(notes).toContain(
+      "room is left for 2 more steps (9 at most), the main path and its risks: run `xpl draft path shop sym:lib/webby.js#createApplication` (where the `main` of `package.json` starts) and copy the steps you keep",
+    );
+  });
+});
+
 describe("xpl draft repo: a library with its programs in cmd/", () => {
   it("is one project whose parts include the programs, when they hold less than half of the code", async () => {
     const dir = makeTempDir("xpl-arch-lib-");
