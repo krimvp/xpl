@@ -271,7 +271,7 @@
               "role": "definition"
             }
           ],
-          "note": "### The patch is parsed as JSON\n\nThe author may pass a file path or pipe JSON through standard input. A parse failure stops the command before merging.",
+          "note": "### xpl parses the patch as JSON\n\nThe author may pass a file path or pipe JSON through standard input. A parse failure stops the command before merging.",
           "editor": {
             "primary": "packages/cli/src/commands/apply.ts"
           }

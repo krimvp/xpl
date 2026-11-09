@@ -53,7 +53,7 @@
               "label": "parse"
             },
             {
-              "step": "outcome:6",
+              "step": "outcome:8",
               "label": "safeParse"
             }
           ]
@@ -62,10 +62,10 @@
           "id": "outcome:2",
           "from": "file:packages/zod/src/v4/classic/schemas.ts",
           "to": "sym:packages/zod/src/v4/core/parse.ts#_parse",
-          "label": "parse runs the schema",
+          "label": "parse found issues?",
           "kind": "call",
-          "shape": "stage",
-          "summary": "`parse` starts with an empty issue list and runs the schema synchronously.",
+          "shape": "decision",
+          "summary": "`parse` runs the schema synchronously with an empty issue list, then checks whether it collected any.",
           "anchors": [
             {
               "file": "packages/zod/src/v4/classic/schemas.ts",
@@ -83,18 +83,7 @@
               "symbol": "_parse",
               "find": "throw new core.$ZodAsyncError();",
               "role": "definition"
-            }
-          ]
-        },
-        {
-          "id": "outcome:3",
-          "from": "sym:packages/zod/src/v4/core/parse.ts#_parse",
-          "to": "sym:packages/zod/src/v4/core/parse.ts#_parse",
-          "label": "parse found issues?",
-          "kind": "call",
-          "shape": "decision",
-          "summary": "`parse` checks whether the schema collected validation issues.",
-          "anchors": [
+            },
             {
               "file": "packages/zod/src/v4/core/parse.ts",
               "symbol": "_parse",
@@ -108,24 +97,30 @@
               "label": "yes"
             },
             {
-              "step": "outcome:4",
+              "step": "outcome:3",
               "label": "no"
             }
           ]
         },
         {
-          "id": "outcome:4",
+          "id": "outcome:3",
           "from": "sym:packages/zod/src/v4/core/parse.ts#_parse",
           "to": "sym:packages/zod/src/v4/core/parse.ts#_parse",
-          "label": "Return parsed value",
+          "label": "Return parsed data",
           "kind": "call",
           "shape": "terminal",
-          "summary": "With no issues, `parse` returns the parsed value directly.",
+          "summary": "With no issues, `parse` returns the value itself and `safeParse` returns `success: true` with `data`.",
           "anchors": [
             {
               "file": "packages/zod/src/v4/core/parse.ts",
               "symbol": "_parse",
               "find": "return result.value as core.output<typeof schema>;",
+              "role": "definition"
+            },
+            {
+              "file": "packages/zod/src/v4/core/parse.ts",
+              "symbol": "_safeParse",
+              "find": "({ success: true, data: result.value } as any)",
               "role": "definition"
             }
           ]
@@ -154,13 +149,13 @@
           ]
         },
         {
-          "id": "outcome:6",
+          "id": "outcome:8",
           "from": "file:packages/zod/src/v4/classic/schemas.ts",
           "to": "sym:packages/zod/src/v4/core/parse.ts#_safeParse",
-          "label": "safeParse runs the schema",
+          "label": "safeParse found issues?",
           "kind": "call",
-          "shape": "stage",
-          "summary": "`safeParse` also starts with an empty issue list and runs the schema synchronously.",
+          "shape": "decision",
+          "summary": "`safeParse` runs the schema the same way. A nonempty issue list selects a failed result.",
           "anchors": [
             {
               "file": "packages/zod/src/v4/classic/schemas.ts",
@@ -178,18 +173,7 @@
               "symbol": "_safeParse",
               "find": "throw new core.$ZodAsyncError();",
               "role": "definition"
-            }
-          ]
-        },
-        {
-          "id": "outcome:7",
-          "from": "sym:packages/zod/src/v4/core/parse.ts#_safeParse",
-          "to": "sym:packages/zod/src/v4/core/parse.ts#_safeParse",
-          "label": "safeParse found issues?",
-          "kind": "call",
-          "shape": "decision",
-          "summary": "`safeParse` selects a failed result when the issue list is nonempty.",
-          "anchors": [
+            },
             {
               "file": "packages/zod/src/v4/core/parse.ts",
               "symbol": "_safeParse",
@@ -199,40 +183,23 @@
           ],
           "next": [
             {
-              "step": "outcome:9",
+              "step": "outcome:4",
               "label": "yes"
             },
             {
-              "step": "outcome:8",
+              "step": "outcome:3",
               "label": "no"
             }
           ]
         },
         {
-          "id": "outcome:8",
-          "from": "sym:packages/zod/src/v4/core/parse.ts#_safeParse",
-          "to": "sym:packages/zod/src/v4/core/parse.ts#_safeParse",
-          "label": "Return successful result",
-          "kind": "call",
-          "shape": "terminal",
-          "summary": "With no issues, `safeParse` returns `success: true` and parsed `data`.",
-          "anchors": [
-            {
-              "file": "packages/zod/src/v4/core/parse.ts",
-              "symbol": "_safeParse",
-              "find": "({ success: true, data: result.value } as any)",
-              "role": "definition"
-            }
-          ]
-        },
-        {
-          "id": "outcome:9",
+          "id": "outcome:4",
           "from": "sym:packages/zod/src/v4/core/parse.ts#_safeParse",
           "to": "sym:packages/zod/src/v4/core/parse.ts#failure",
-          "label": "Return failed result",
+          "label": "Caller reads error?",
           "kind": "call",
-          "shape": "stage",
-          "summary": "With issues, `safeParse` returns `success: false` through `failure`.",
+          "shape": "decision",
+          "summary": "With issues, `safeParse` returns `success: false` through `failure`. Its `error` getter runs only when a caller reads it.",
           "anchors": [
             {
               "file": "packages/zod/src/v4/core/parse.ts",
@@ -245,18 +212,7 @@
               "symbol": "failure",
               "find": "success: false,",
               "role": "definition"
-            }
-          ]
-        },
-        {
-          "id": "outcome:10",
-          "from": "sym:packages/zod/src/v4/core/parse.ts#failure",
-          "to": "sym:packages/zod/src/v4/core/parse.ts#failure",
-          "label": "Does caller read error?",
-          "kind": "call",
-          "shape": "decision",
-          "summary": "The failed result builds an error only if its `error` getter is read.",
-          "anchors": [
+            },
             {
               "file": "packages/zod/src/v4/core/parse.ts",
               "symbol": "failure",
@@ -266,17 +222,17 @@
           ],
           "next": [
             {
-              "step": "outcome:11",
+              "step": "outcome:6",
               "label": "yes"
             },
             {
-              "step": "outcome:12",
+              "step": "outcome:7",
               "label": "no"
             }
           ]
         },
         {
-          "id": "outcome:11",
+          "id": "outcome:6",
           "from": "sym:packages/zod/src/v4/core/parse.ts#failure",
           "to": "sym:packages/zod/src/v4/core/parse.ts#failure",
           "label": "Build and cache error",
@@ -299,7 +255,7 @@
           ]
         },
         {
-          "id": "outcome:12",
+          "id": "outcome:7",
           "from": "sym:packages/zod/src/v4/core/parse.ts#failure",
           "to": "sym:packages/zod/src/v4/core/parse.ts#failure",
           "label": "Keep failed result",
@@ -352,7 +308,7 @@
           "view": "view:outcome",
           "focus": [
             "outcome:2",
-            "outcome:6"
+            "outcome:8"
           ],
           "note": "### Both methods run the schema\n\nEach method calls the synchronous schema run with an empty issue list. If that run unexpectedly returns a Promise, either method throws an async error.",
           "code": [
@@ -377,9 +333,7 @@
           "id": "t3",
           "view": "view:outcome",
           "focus": [
-            "outcome:3",
-            "outcome:4",
-            "outcome:8"
+            "outcome:3"
           ],
           "note": "### No issues return parsed data\n\nThe caller of parse gets the value with no wrapper. safeParse wraps it as `{ success: true, data }`, so the caller tests the success flag before it reads the data.",
           "code": [
@@ -405,7 +359,7 @@
           "view": "view:outcome",
           "focus": [
             "outcome:5",
-            "outcome:9"
+            "outcome:4"
           ],
           "note": "### Issues produce different outcomes\n\nparse throws an error that holds the finished issues, so the caller needs a try block. safeParse returns `{ success: false, error }` from `failure`, so the caller branches on the success flag.",
           "code": [
@@ -430,9 +384,9 @@
           "id": "t5",
           "view": "view:outcome",
           "focus": [
-            "outcome:10",
-            "outcome:11",
-            "outcome:12"
+            "outcome:4",
+            "outcome:6",
+            "outcome:7"
           ],
           "note": "### The failed result constructs its error on demand\n\nA caller that needs only the flag avoids the cost of finalizing issues. Reading the error later pays that cost once.",
           "code": [

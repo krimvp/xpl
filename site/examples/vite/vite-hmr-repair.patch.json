@@ -63,7 +63,7 @@
           "id": "hmr:2",
           "from": "sym:packages/vite/src/node/server/hmr.ts#updateModules",
           "to": "sym:packages/vite/src/node/server/hmr.ts#updateModules",
-          "label": "Dead end found?",
+          "label": "Dead end or circular?",
           "kind": "call",
           "anchors": [
             {
@@ -74,30 +74,7 @@
                 "to": 29
               },
               "role": "definition"
-            }
-          ],
-          "summary": "A dead end requires a browser reload rather than a targeted update.",
-          "shape": "decision",
-          "next": [
-            {
-              "step": "hmr:4",
-              "label": "yes"
             },
-            {
-              "step": "hmr:9",
-              "label": "no"
-            }
-          ]
-        },
-        {
-          "id": "hmr:9",
-          "from": "sym:packages/vite/src/node/server/hmr.ts#updateModules",
-          "to": "sym:packages/vite/src/node/server/hmr.ts#updateModules",
-          "label": "Circular invalidation?",
-          "kind": "call",
-          "shape": "decision",
-          "summary": "If a boundary accepts through the module that first invalidated this update, Vite reloads.",
-          "anchors": [
             {
               "file": "packages/vite/src/node/server/hmr.ts",
               "symbol": "updateModules",
@@ -105,6 +82,8 @@
               "role": "definition"
             }
           ],
+          "summary": "A dead end needs a reload. So does a boundary that leads back to the module that first invalidated this update.",
+          "shape": "decision",
           "next": [
             {
               "step": "hmr:4",
@@ -329,7 +308,7 @@
           "id": "t-circular",
           "view": "view:hmr",
           "focus": [
-            "hmr:9"
+            "hmr:2"
           ],
           "note": "### A circular invalidation reloads\n\nWhen an accepted boundary leads back to the module that first invalidated this update, Vite chooses a full reload instead of sending any update.",
           "code": [
